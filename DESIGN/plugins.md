@@ -82,15 +82,13 @@ service CogPlugin {
 3.  **Register:** Plugin declares routes, hooks, and resources.
 4.  **Run:** Plugin accepts requests.
 
-### Access Control & Storage Models
-
-Plugins request permissions in their manifest. Cog enforces these via the VFS and SQL Proxy.
-
-- **`DB_SANDBOX` (Default):** The plugin is given its own SQLite file (e.g., `app_data/{id}/plugin.db`) in the user's data directory. It has full control over this file but cannot see `user.db` or other plugins' databases.
-- **`DB_USER_READ / DB_USER_WRITE`:** The plugin is granted access to the main `user.db`.
-- **`FILES_SANDBOX` (Default):** The plugin is granted a private directory (e.g., `app_data/{id}/`). Files here are managed by the plugin and are not visible in the user's main `files/` UI.
-- **`FILES_USER_READ / FILES_USER_WRITE`:** The plugin is granted access to the user's main `files/` directory.
-- **`ACCESS_NETWORK`:** Permission to make outbound network calls.
+### Access Control
+Permissions are requested in the plugin manifest (`plugin.json` or `Manifest` struct).
+- `ACCESS_FILES_READ`: Read user files.
+- `ACCESS_FILES_WRITE`: Write user files.
+- `ACCESS_DB_READ`: Read user SQLite.
+- `ACCESS_DB_WRITE`: Write user SQLite.
+- `ACCESS_NETWORK`: Make outbound network calls.
 
 ### Sharing & Resources
 Plugins define "Resources" that can be shared.
@@ -102,7 +100,7 @@ Plugins define "Resources" that can be shared.
 ## Security
 - **CSRF:** All plugin routes are automatically protected by Cog's CSRF middleware.
 - **Isolation:** gRPC plugins run in separate processes. If they crash, the main server survives.
-- **Sandboxing:** (Future) External plugins could be sandboxed (e.g., Wasm).
+- **Sandboxing:** (Future) External plugins could be sandboxed (e.g., Wasm) or remote.
 
 ## Distribution
 - **System Plugins:** Installed in `/var/lib/cog/plugins/`. Available to all.
