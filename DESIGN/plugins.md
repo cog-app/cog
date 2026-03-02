@@ -7,24 +7,45 @@ Cog's plugin system is designed for flexibility and performance. Plugins can be 
 
 Since plugins may run in separate processes (gRPC), they cannot always open the SQLite file directly. Cog provides ways for plugins to query data:
 
-### 1. SQL Proxy (Low-Level)
-For plugins with `DB_SANDBOX` or `DB_USER_READ/WRITE` permissions, Cog exposes a gRPC service that acts as a SQL proxy.
+### 1. SQL Proxy & Data Access
+For plugins with `DB_READ:<plugin_id>` or `DB_WRITE:<plugin_id>` permissions, the Host automatically **attaches** the requested databases to every connection for that plugin.
 
-- **Streaming Results:** Queries return a stream of rows.
-- **Isolation:** The host enforces that plugins only access their permitted database files.
+- **Isolation:** Plugins cannot execute `ATTACH DATABASE` themselves; it is managed by the Host based on permissions.
+- **FS Functions:** To allow indexing file contents and performing storage operations directly via SQL, the Host exposes custom SQLite functions:
+    - `read_file(path)`: Returns the full content of a file.
+    - `head_file(path, bytes)`: Returns the first N bytes of a file.
+    - `write_file(path, blob)`: Writes data to the user's storage.
+    - `file_exists(path)`: Returns 1 if the file exists, 0 otherwise.
+    - `file_size(path)`: Returns the size of the file in bytes.
+- **Semantics:** These functions use `fs.FS` paths and respect the user's storage backend (Local, S3, etc.).
 
-### 2. Resource Metadata (Sharing)
-Resources are not a separate API, but **metadata** describing tables and columns in the plugin's (or user's) SQLite database. This metadata allows Cog to manage sharing.
+### 2. Routing & CSRF
+Plugins register routes via the `PluginRegistrar`. Cog handles the underlying routing and security (CSRF) based on the registration type.
+
+- **APIs (`/api/{plugin_id}/{path}`):**
+    - **Purpose:** Data exchange (JSON), mobile apps, external integrations.
+    - **CSRF:** Bypassed (uses Bearer tokens or App Passwords).
+    - **Mounting:** Default is `/api/{plugin_id}/`. Plugins with `ROUTE_GLOBAL_BIND` can mount outside this prefix.
+- **Pages (`/apps/{plugin_id}/{path}`):**
+    - **Purpose:** User-facing HTML (HTMX).
+    - **CSRF:** The route handler receives a CSRF token to be used by any POST/PUT/DELETE actions.
+    - **Registration:**
+        - **Handler-based:** The plugin provides an `http.Handler` and renders the full page or fragment.
+        - **Template-based:** The plugin provides a Go template string. Cog renders this template and allows it to execute SQLite queries directly to reduce gRPC round-trips for data-heavy pages.
+- **Actions:**
+    - **Purpose:** State-changing operations (POST/PUT/DELETE) from forms or HTMX.
+    - **Format:** Returns HTMX fragments.
+    - **CSRF:** Strictly enforced using the plugin's namespaced secret.
+- **Resources (`/apps/{plugin_id}/{resource_name}/{resource_id}`):**
+    - Standardized URLs for specific plugin objects.
+    - Used as the destination for **Global Search** results and **Public Link Sharing**.
+
+### 3. Resource Metadata (Sharing)
+Resources are **metadata definitions** that describe tables and columns in the plugin's (or user's) SQLite database. This metadata allows Cog to manage sharing.
 
 - **Definition:** Plugins define which tables/rows represent shareable objects (e.g., a "Deck" or "Task").
 - **Sharing Logic:** Cog uses this metadata to manage entries in the global `shares` table.
 - **Cross-User Access:** When User B accesses a resource shared by User A, Cog invokes the plugin with a connection to User A's database, scoped to the specific shared identifiers and User B's permissions.
-
-### 3. Cross-Plugin Queries (The Host as Orchestrator)
-When a user performs a global search, the Host:
-1.  Queries its internal `files` metadata.
-2.  Parallelizes "Search" RPC calls to all active plugins.
-3.  Aggregates the streaming responses into a single HTMX view.
 
 ## Communication Interfaces
 
@@ -39,9 +60,12 @@ type Plugin interface {
 }
 
 type PluginRegistrar interface {
-    RegisterRoute(method, path string, handler http.Handler)
-    RegisterHook(hookName string, callback func(interface{}))
+    RegisterAPI(path string, handler http.Handler)
+    RegisterPage(path string, handler http.Handler)
+    RegisterTemplPage(path string, template string) // Page with direct SQL template access
+    RegisterAction(method, path string, handler http.Handler)
     RegisterResource(name string, handler ResourceHandler)
+    RegisterHook(hookName string, callback func(interface{}))
     GetDB() *sql.DB // Access to user's private DB
     GetFS() fs.FS   // Access to user's files
 }
