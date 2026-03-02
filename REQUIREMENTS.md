@@ -6,7 +6,13 @@ Cog is a file storage and plugin platform designed to be a high-performance, Go-
 
 ## Core Features
 
-- **NextCloud Compatibility:** API compatible with NextCloud apps for Authentication, Files, WebDAV, CalDAV, CardDAV, and News (RSS).
+- **File Access Protocols:**
+  - **WebDAV:** Primary for NextCloud compatibility.
+  - **SFTP:** High-performance transfers, compatible with `rsync`.
+  - **Samba (SMB):** For native OS network drive mapping.
+  - **FTP / FTPS:** Legacy compatibility.
+  - **S3 API:** Allows Cog to act as an S3-compatible storage provider.
+  - **Extensibility:** Architecture designed to easily plug in new protocol handlers.
 - **Filesystem Abstraction:**
   - Internal interface inspired by `hackpadfs`.
   - Support for mounting directories within user directories.

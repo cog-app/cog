@@ -5,35 +5,20 @@ Cog's plugin system is designed for flexibility and performance. Plugins can be 
 
 ## Data Access & Queries
 
-Since plugins may run in separate processes (gRPC), they cannot always open the SQLite file directly. Cog provides two primary ways for plugins to query data:
+Since plugins may run in separate processes (gRPC), they cannot always open the SQLite file directly. Cog provides ways for plugins to query data:
 
 ### 1. SQL Proxy (Low-Level)
-For plugins with `ACCESS_DB_READ/WRITE` permissions, Cog exposes a gRPC service that acts as a SQL proxy. This allows plugins to execute arbitrary SQL against the user's private SQLite database.
+For plugins with `DB_SANDBOX` or `DB_USER_READ/WRITE` permissions, Cog exposes a gRPC service that acts as a SQL proxy.
 
-- **Streaming Results:** Queries return a stream of rows to minimize memory overhead for large result sets.
-- **Isolation:** The host enforces that plugins only access their own tables or permitted system tables.
+- **Streaming Results:** Queries return a stream of rows.
+- **Isolation:** The host enforces that plugins only access their permitted database files.
 
-```protobuf
-service DatabaseService {
-    // Executes a query and streams back rows as encoded Map/JSON or Protobuf Values
-    rpc QueryStream(SQLRequest) returns (stream Row);
-    rpc Exec(SQLRequest) returns (ExecResponse);
-}
-```
+### 2. Resource Metadata (Sharing)
+Resources are not a separate API, but **metadata** describing tables and columns in the plugin's (or user's) SQLite database. This metadata allows Cog to manage sharing.
 
-### 2. Resource API (High-Level)
-This is the preferred method for most plugins. Instead of writing SQL, plugins interact with "Resources" (Files, Calendar Events, etc.).
-
-- **Streaming Filter:** Plugins can request resources with filters (e.g., `modified_since: 1234567`).
-- **Optimization:** The host optimizes these queries using indexes in the SQLite DB and streams the results.
-
-```go
-// Example Go SDK usage for a gRPC plugin
-rows, err := cog.DB().Query("SELECT * FROM my_plugin_table WHERE status = ?", "active")
-for rows.Next() {
-    // Rows are streamed from the host to the plugin process
-}
-```
+- **Definition:** Plugins define which tables/rows represent shareable objects (e.g., a "Deck" or "Task").
+- **Sharing Logic:** Cog uses this metadata to manage entries in the global `shares` table.
+- **Cross-User Access:** When User B accesses a resource shared by User A, Cog invokes the plugin with a connection to User A's database, scoped to the specific shared identifiers and User B's permissions.
 
 ### 3. Cross-Plugin Queries (The Host as Orchestrator)
 When a user performs a global search, the Host:
@@ -82,13 +67,16 @@ service CogPlugin {
 3.  **Register:** Plugin declares routes, hooks, and resources.
 4.  **Run:** Plugin accepts requests.
 
-### Access Control
-Permissions are requested in the plugin manifest (`plugin.json` or `Manifest` struct).
-- `ACCESS_FILES_READ`: Read user files.
-- `ACCESS_FILES_WRITE`: Write user files.
-- `ACCESS_DB_READ`: Read user SQLite.
-- `ACCESS_DB_WRITE`: Write user SQLite.
-- `ACCESS_NETWORK`: Make outbound network calls.
+### Access Control & Storage Models
+
+Plugins request permissions in their manifest. Cog enforces these via the VFS and SQL Proxy.
+
+- **`DB_SANDBOX` (Default):** The plugin is given its own SQLite file (e.g., `app_data/{id}/plugin.db`) in the user's data directory. It has full control over this file but cannot see `user.db` or other plugins' databases.
+- **`DB_USER_READ / DB_USER_WRITE`:** The plugin is granted access to the main `user.db`.
+- **`FILES_SANDBOX` (Default):** The plugin is granted a private directory (e.g., `app_data/{id}/`). Files here are managed by the plugin and are not visible in the user's main `files/` UI.
+- **`FILES_USER_READ / FILES_USER_WRITE`:** The plugin is granted access to the user's main `files/` directory.
+- **`ROUTE_GLOBAL_BIND`:** Allows the plugin to bind routes outside of its `/apps/{id}/` prefix (e.g., `remote.php/`, `index.php/`). **Restriction:** Only granted to plugins installed at the **System/Admin level**.
+- **`ACCESS_NETWORK`:** Permission to make outbound network calls.
 
 ### Sharing & Resources
 Plugins define "Resources" that can be shared.

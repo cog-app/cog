@@ -37,14 +37,26 @@ Certain resources "own" others.
 - The `shares` table primarily stores explicit shares.
 - Access checks for files perform a recursive check up the directory tree if no direct share is found.
 
-## Plugin Resources
+## Plugin Resources (SQLite Metadata)
 
-Plugins must register their resource hierarchy if they want implicit sharing.
+Resources are **metadata definitions** that describe tables and key columns within a plugin's SQLite database. This allows Cog to manage sharing without the plugin needing to implement its own sharing logic.
 
-- _Example:_ A "Project Management" plugin.
-- Resource: `Project` (Parent) -> `Task` (Child).
-- If `Project` is shared, `Task` is accessible.
-- The plugin implements a `CheckParentAccess(childID string) bool` interface or provides the parent ID to Cog during registration.
+### Metadata Registration
+Plugins register their shareable resources by specifying:
+- **Resource Type:** (e.g., `deck`, `calendar_event`)
+- **Table Name:** The SQLite table where the resource is stored.
+- **Identity Column:** The column (e.g., `id`, `uuid`) that uniquely identifies the resource.
+- **Parent Column:** (Optional) For hierarchical sharing (e.g., `project_id` on a `task` table).
+
+### Shared Access Execution
+When User B attempts to access a resource owned by User A:
+1.  **Permission Check:** Cog verifies the share exists in the global `shares` table.
+2.  **Context Injection:** Cog invokes the plugin, but instead of connecting it to User B's database, it provides a connection to **User A's database**.
+3.  **Scoped ID/Permissions:** The request context includes the specific resource IDs User B is allowed to see and their permission bitmask.
+4.  **Plugin Logic:** The plugin performs standard SQLite queries on the provided connection. Cog's SQL Proxy ensures the plugin cannot query rows outside the shared scope if restricted.
+
+## Implicit Sharing (Hierarchy)
+If a plugin registers a hierarchy (e.g., `Deck` owns `Cards`), sharing the `Deck` implicitly grants access to all `Cards` where `card.deck_id == deck.id`.
 
 ## Public Sharing
 
