@@ -24,30 +24,36 @@ A small global SQLite database (or manageable configuration file) handles routin
 
 ## User Database Schema (Per-User SQLite)
 
-Each user has a `user.db` (or `.cog.db`) inside their data root.
+Each user has a `user.db` inside their data root which contains core system state (like sharing). Individual plugins (including the `files` plugin) store their data in their own `app_data/{plugin_id}/plugin.db`.
 
-### Filesystem Metadata
+### Database Connection Strategy
+To support the `sqlite3_update_hook` required for the search indexer, Cog uses:
+- **WAL Mode:** `PRAGMA journal_mode=WAL` is enabled on all databases.
+- **Single Connection Pool:** Each user context uses a single shared connection pool (or a dedicated primary connection for the update hook) to ensure all writes are captured.
+
+### Core System State (`user.db`)
+
+**Table: `shares`**
+- `id` (UUID)
+- `resource_type` (Text, e.g., 'files:file', 'calendar:event')
+- `resource_id` (Text)
+- `owner_id` (UUID)
+- `shared_with` (UUID)
+- `permissions` (Integer bitmask)
+- `token` (Text, Nullable)
+- `expiration` (Integer, Nullable)
+
+### Files Plugin Metadata (`app_data/files/plugin.db`)
 **Table: `files`**
 - `id` (Integer PK)
-- `path` (Text, Indexed, Relative to user root)
+- `path` (Text, Indexed)
 - `parent_path` (Text, Indexed)
 - `name` (Text)
 - `size` (Integer)
 - `mtime` (Integer)
 - `mime_type` (Text)
-- `etag` (Text, for WebDAV sync)
+- `etag` (Text)
 - `is_dir` (Boolean)
-
-### Sharing
-**Table: `shares`**
-- `id` (UUID)
-- `resource_type` (Text, e.g., 'file', 'calendar_event')
-- `resource_id` (Text, e.g., path for files, UUID for others)
-- `owner_id` (UUID, User who owns this)
-- `shared_with` (UUID, User or Group ID)
-- `permissions` (Integer bitmask: Read, Write, Share, etc.)
-- `token` (Text, Nullable, for public link sharing)
-- `expiration` (Integer, Nullable)
 
 ### Plugins (Generic Storage)
 Plugins can request their own tables, but standard practice is to use namespaced tables or a Key-Value store provided by the host.
@@ -58,6 +64,14 @@ Plugins can request their own tables, but standard practice is to use namespaced
 - `value` (Blob)
 - `updated_at` (Integer)
 - *Primary Key: (plugin_id, key)*
+
+## Search Index (Per-User)
+
+To support full-text search without bloating the main metadata database, Cog maintains a separate search index for each user.
+
+- **File:** `search.db` (if using SQLite FTS) or a Bleve index directory.
+- **Location:** `app_data/system/search/`
+- **Isolation:** Independent of `user.db` to allow for easy reconstruction and specialized optimization.
 
 ### Calendar (CalDAV) - Core Plugin Schema
 **Table: `calendars`**

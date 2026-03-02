@@ -55,6 +55,9 @@ When User B attempts to access a resource owned by User A:
 3.  **Scoped ID/Permissions:** The request context includes the specific resource IDs User B is allowed to see and their permission bitmask.
 4.  **Plugin Logic:** The plugin performs standard SQLite queries on the provided connection. Cog's SQL Proxy ensures the plugin cannot query rows outside the shared scope if restricted.
 
+### Search Indexing
+When a resource is shared, Cog ensures it is indexed in the recipient's personal search index. This allows users to find shared content (e.g., a shared Deck or Note) using the global search bar without navigating to the specific plugin first.
+
 ## Implicit Sharing (Hierarchy)
 If a plugin registers a hierarchy (e.g., `Deck` owns `Cards`), sharing the `Deck` implicitly grants access to all `Cards` where `card.deck_id == deck.id`.
 

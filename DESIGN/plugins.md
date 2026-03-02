@@ -71,12 +71,24 @@ service CogPlugin {
 
 Plugins request permissions in their manifest. Cog enforces these via the VFS and SQL Proxy.
 
-- **`DB_SANDBOX` (Default):** The plugin is given its own SQLite file (e.g., `app_data/{id}/plugin.db`) in the user's data directory. It has full control over this file but cannot see `user.db` or other plugins' databases.
-- **`DB_USER_READ / DB_USER_WRITE`:** The plugin is granted access to the main `user.db`.
-- **`FILES_SANDBOX` (Default):** The plugin is granted a private directory (e.g., `app_data/{id}/`). Files here are managed by the plugin and are not visible in the user's main `files/` UI.
-- **`FILES_USER_READ / FILES_USER_WRITE`:** The plugin is granted access to the user's main `files/` directory.
+- **`DB_SANDBOX` (Default):** The plugin is given its own SQLite file (e.g., `app_data/{id}/plugin.db`) in the user's data directory. It has full control over this file but cannot see other plugins' databases.
+- **`DB_READ:<plugin_id> / DB_WRITE:<plugin_id>`:** The plugin is granted access to a specific other plugin's database. For example, `DB_READ:files` grants access to the file metadata database.
+- **`FILES_SANDBOX` (Default):** The plugin is granted a private directory (e.g., `app_data/{id}/`).
+- **`FS_READ:<plugin_id> / FS_WRITE:<plugin_id>`:** The plugin is granted access to the virtual filesystem exported by another plugin. `FS_READ:files` is the equivalent of accessing the user's primary files.
 - **`ROUTE_GLOBAL_BIND`:** Allows the plugin to bind routes outside of its `/apps/{id}/` prefix (e.g., `remote.php/`, `index.php/`). **Restriction:** Only granted to plugins installed at the **System/Admin level**.
-- **`ACCESS_NETWORK`:** Permission to make outbound network calls.
+
+### Files as a Plugin
+In Cog, the core file management system is itself a system plugin with the ID `files`. 
+- **Metadata:** Stored in the `files` plugin's private database.
+- **Storage:** Manages the user's `files/` directory via the VFS.
+- **Permissions:** Other plugins request `DB_READ:files` or `FS_WRITE:files` to interact with the user's files.
+
+### Search & Indexing
+Plugins can extend Cog's global search by registering a `SearchProvider`.
+- **Enrichment Query:** Plugins provide a SQL template (using `IN (?)`) that fetches the full "Source of Truth" for a batch of `rowid`s.
+- **Dependency Mapping:** Plugins define secondary tables (e.g., tags, categories) that trigger a re-index of a parent resource when changed.
+- **Field Mapping:** Plugins specify how SQL columns map to Bleve field types (`Text`, `Numeric`, `Date`) and if they should be `Stored` or `Indexed Only`.
+- **Delete Handling:** Cog automatically handles `DELETE` hooks and purges the index if an enrichment query returns no rows for a resource.
 
 ### Sharing & Resources
 Plugins define "Resources" that can be shared.

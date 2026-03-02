@@ -45,11 +45,13 @@ Metadata (permissions, tags, sharing status, custom attributes) is decoupled fro
 ├── plugins/             # External plugin binaries
 └── data/                # User data root
     ├── alice/           # User 'alice' root
-    │   ├── user.db      # Main user database (Metadata, Core Apps)
-    │   ├── files/       # Main GUI files (Visible to user)
+    │   ├── user.db      # Core system state (Sharing, Groups)
+    │   ├── files/       # Managed by the 'files' plugin
     │   │   ├── Documents/
     │   │   └── Photos/
     │   └── app_data/    # Plugin sandboxes
+    │       ├── files/   # 'files' plugin data
+    │       │   └── plugin.db
     │       ├── rss/     # 'rss' plugin sandbox
     │       │   ├── plugin.db
     │       │   └── cache/
