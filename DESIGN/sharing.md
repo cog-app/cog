@@ -3,6 +3,7 @@
 ## Conceptual Model
 
 Sharing in Cog is **Resource-Based** and **Hierarchical**.
+The canonical share records are stored in the global/system database.
 
 ### Entities
 
@@ -17,6 +18,8 @@ Groups are defined recursively.
 - Group A contains User 1, User 2, and Group B.
 - Group B contains User 3.
 - Sharing to Group A implicitly shares to User 1, 2, 3.
+
+To keep permission checks fast, Cog may maintain a `group_membership_closure` cache in the global DB.
 
 **Resolution Logic:**
 When checking permissions for User X on Object Y:
@@ -37,6 +40,8 @@ Certain resources "own" others.
 - The `shares` table primarily stores explicit shares.
 - Access checks for files perform a recursive check up the directory tree if no direct share is found.
 
+For files, share records target a stable file/directory ID from the `files` plugin metadata. Path is treated as mutable metadata.
+
 ## Plugin Resources (SQLite Metadata)
 
 Resources are **metadata definitions** that describe tables and key columns within a plugin's SQLite database. This allows Cog to manage sharing without the plugin needing to implement its own sharing logic.
@@ -50,10 +55,12 @@ Plugins register their shareable resources by specifying:
 
 ### Shared Access Execution
 When User B attempts to access a resource owned by User A:
-1.  **Permission Check:** Cog verifies the share exists in the global `shares` table.
+1.  **Permission Check:** Cog resolves User B's effective subjects (user ID + group IDs) and verifies access in the global `shares` table.
 2.  **Context Injection:** Cog invokes the plugin, but instead of connecting it to User B's database, it provides a connection to **User A's database**.
 3.  **Scoped ID/Permissions:** The request context includes the specific resource IDs User B is allowed to see and their permission bitmask.
 4.  **Plugin Logic:** The plugin performs standard SQLite queries on the provided connection. Cog's SQL Proxy ensures the plugin cannot query rows outside the shared scope if restricted.
+
+No cross-file SQLite foreign keys are assumed between the global `shares` DB and per-user/plugin databases.
 
 ### Search Indexing
 When a resource is shared, Cog ensures it is indexed in the recipient's personal search index. This allows users to find shared content (e.g., a shared Deck or Note) using the global search bar without navigating to the specific plugin first.
@@ -66,3 +73,16 @@ If a plugin registers a hierarchy (e.g., `Deck` owns `Cards`), sharing the `Deck
 - **Link Shares:** A unique token is generated.
 - **Expiration:** Optional auto-expiry.
 - **Password Protection:** Optional hashed password stored with the share.
+
+## Global Share Record Shape
+
+- `id` (UUID)
+- `owner_user_id` (UUID)
+- `resource_type` (Text)
+- `resource_id` (Text)
+- `subject_type` ('USER' or 'GROUP')
+- `subject_id` (UUID)
+- `permissions` (Integer bitmask)
+- `token` (Text, Nullable)
+- `password_hash` (Text, Nullable)
+- `expiration` (Integer, Nullable)

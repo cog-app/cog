@@ -29,7 +29,9 @@ Files are stored "flat" on the backing storage to ensure portability and ease of
 
 ### 4. Metadata Strategy
 
-Metadata (permissions, tags, sharing status, custom attributes) is decoupled from the file content but linked via path.
+Metadata (permissions, tags, sharing status, custom attributes) is decoupled from the file content.
+
+- **Stable Identity:** Files have stable IDs in the `files` plugin metadata. Paths are mutable attributes so shares survive rename/move operations.
 
 - **Lazy Synchronization:** When a directory is listed via Cog, the system compares the VFS state with the SQLite metadata.
   - _New File on Disk:_ Entry created in SQLite.
@@ -45,7 +47,7 @@ Metadata (permissions, tags, sharing status, custom attributes) is decoupled fro
 ├── plugins/             # External plugin binaries
 └── data/                # User data root
     ├── alice/           # User 'alice' root
-    │   ├── user.db      # Core system state (Sharing, Groups)
+    │   ├── user.db      # User-scoped state (settings, auth artifacts)
     │   ├── files/       # Managed by the 'files' plugin
     │   │   ├── Documents/
     │   │   └── Photos/
@@ -65,8 +67,9 @@ Metadata (permissions, tags, sharing status, custom attributes) is decoupled fro
 
 ### User Storage Components
 
-1.  **`user.db`**: The primary SQLite database. Contains file metadata for the `files/` directory, sharing records, and core plugin data (Calendar, Contacts).
+1.  **`user.db`**: User-scoped SQLite state (for example settings and protocol auth artifacts). It does not contain global sharing state.
 2.  **`files/`**: The "Home" directory for the user. This is what they see when they log into the web UI or connect via WebDAV.
 3.  **`app_data/`**: Isolated storage for plugins. Each plugin gets a subdirectory named after its ID.
     - **`plugin.db`**: An independent SQLite database for the plugin's private state.
     - **Filesystem Sandbox**: Any additional files the plugin needs to store (e.g., thumbnails, local caches).
+4.  **Global `shares` DB**: Stored under `/var/lib/cog/system/` and used for cross-user/group sharing lookups.

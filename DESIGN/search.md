@@ -1,15 +1,16 @@
 # Search Design
 
-Cog provides a unified search interface that aggregates results from the filesystem and all active plugins. Search is powered by a per-user Bleve index, synchronized in real-time with the underlying SQLite databases.
+Cog provides a unified search interface that aggregates results from the filesystem and all active plugins. Search is powered by a per-user Bleve index and is **eventually consistent** with underlying SQLite databases.
 
 ## 1. Architecture: The Collector Pipeline
 
 The search system uses an asynchronous "Collector" pipeline to ensure that indexing does not block database transactions or degrade application performance.
 
 ### Data Source & Change Detection
-- **Single Connection Hook:** Cog uses a shared connection pool with `PRAGMA journal_mode=WAL`. The system registers a `sqlite3_update_hook` on the primary connection to capture every `INSERT`, `UPDATE`, and `DELETE`.
+- **Single Writer Hook:** Cog uses `PRAGMA journal_mode=WAL` and a single writer connection per database. The system registers `sqlite3_update_hook` on that writer connection to capture committed `INSERT`, `UPDATE`, and `DELETE` operations.
 - **Asynchronous Processing:** The `UpdateHook` callback performs a non-blocking push of the `(table, rowid, operation)` to a buffered Go channel.
 - **Deduplication:** The Collector deduplicates `rowid`s within a batch window (e.g., 50ms). If a row is updated multiple times rapidly, it is only re-indexed once.
+- **Consistency Model:** The search index may lag writes briefly. Cog guarantees convergence, not read-your-write behavior.
 
 ### Indexing Pipeline (The Collector)
 The Collector accumulates IDs from the channel and triggers a "flush" based on a buffer size (e.g., 100 items) or a time limit (e.g., 200ms of inactivity).
@@ -45,8 +46,9 @@ Each plugin must provide a SQL template that accepts a slice of `rowid`s (using 
 
 ## 4. Shared Resource Indexing
 
-If a resource indexed by a plugin is shared (via the Cog `shares` table), Cog ensures that the index entries are propagated to the personal search indexes of all recipients.
+If a resource indexed by a plugin is shared (via the global Cog `shares` table), Cog propagates index updates to recipients asynchronously.
 
-- **Automatic Propagation:** When a share is created, Cog triggers an index update for the recipient.
-- **Real-time Updates:** When a plugin updates an indexed resource, Cog checks for active shares and automatically updates the index for all users with access.
+- **Automatic Propagation:** When a share is created, Cog enqueues an index update job for the recipient.
+- **Asynchronous Updates:** When a plugin updates an indexed resource, Cog checks active shares and enqueues updates for users with access.
 - **Privacy:** Recipients only see results for IDs they have been granted access to. The Host manages this scoping by correlating the plugin's resource ID with active sharing records.
+- **Backpressure:** The propagation worker uses retries and bounded queues; in overload conditions, indexing latency increases but authorization rules remain correct.

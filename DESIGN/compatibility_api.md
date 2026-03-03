@@ -30,7 +30,7 @@ Cog supports the NextCloud-specific `OC-Chunked` header for reliable uploads of 
 
 ## 3. Calendars & Contacts (CalDAV/CardDAV)
 
-These are managed by the **Calendar** and **Contacts** plugins, which bind routes globally to maintain compatibility.
+These are managed by privileged internal plugins (**Calendar**, **Contacts**) and host aggregators that bind routes globally to maintain compatibility.
 
 ### Endpoints
 - **Discovery:** `/.well-known/caldav` and `/.well-known/carddav`
@@ -58,6 +58,7 @@ While standard plugins are restricted to `/apps/{id}/`, compatibility plugins (C
 - **Requirement:** Can only be granted to plugins installed by a System Administrator.
 - **Mechanism:** Allows the plugin to use `http.ServeMux` patterns that overlap with `remote.php/` or `index.php/`.
 - **Conflict Resolution:** If multiple plugins attempt to bind the same global route, the Host prioritizes built-in/system plugins and logs a warning for others.
+- **Privileged Internal Preference:** Core compatibility routes should be implemented by privileged internal plugins where possible.
 
 ```go
 // Example: Calendar Plugin Registration
@@ -66,3 +67,9 @@ registrar.RegisterGlobalRoute("GET /remote.php/dav/calendars/{user}/", davHandle
 
 ## 6. CSRF & Security
 For compatibility routes used by external apps (non-browser), CSRF checks are bypassed if a valid **App Password** or **Bearer Token** is provided in the `Authorization` header. Browser-based access to these routes still requires standard CSRF validation.
+
+## 7. Shared Concepts
+
+Compatibility routes should follow canonical concepts/data shapes from `DESIGN/concepts_and_types.md`:
+- Resources identified by stable `(resource_type, resource_id)`.
+- Authorization resolved from global `shares` + group membership expansion.

@@ -4,6 +4,8 @@
 
 Cog is a file storage and plugin platform designed to be a high-performance, Go-based alternative to NextCloud. It maintains API compatibility with NextCloud ecosystem apps while utilizing a modern, streaming-optimized architecture.
 
+For canonical terminology and shared data shape outlines, see `DESIGN/concepts_and_types.md`.
+
 ## Core Features
 
 - **File Access Protocols:**
@@ -26,13 +28,15 @@ Cog is a file storage and plugin platform designed to be a high-performance, Go-
 
 ## Data Storage
 
-- **User Data:** Stored in individual SQLite databases per user (Server-side).
-- **File Metadata:** Stored in the user's SQLite database.
+- **User Data:** Stored in individual SQLite databases per user (server-side).
+- **File Metadata:** Stored in the privileged `files` plugin database (`app_data/files/plugin.db`) per user.
+- **Global Sharing State:** Stored in a system/global SQLite database for efficient cross-user and cross-group lookups.
 - **Directory Structure:** A specific directory is allocated per user, plus shared storage areas.
 
 ## Plugin System
 
-- **Architecture:** Plugins communicate via gRPC or direct Go interface (compiled-in).
+- **Architecture:** Plugins can run externally over gRPC or internally via direct Go interfaces (compiled-in).
+- **Privileged Internal Plugins:** Some built-in plugins (notably `files`) are in-process only and cannot be implemented over gRPC. These plugins may use host-only extension interfaces not available to third-party plugins.
 - **Installation Levels:** User, Group, or System.
 - **Access Control:** Plugins can have isolated or full access to user SQLite data and files.
 - **Capabilities:**
@@ -50,5 +54,5 @@ Cog is a file storage and plugin platform designed to be a high-performance, Go-
 
 ## Developer Interface
 
-- **Go Package:** A dedicated package provided to implement the Go interface for both the host and the plugin (gRPC bridge).
+- **Go Package:** A dedicated package provided to implement host/plugin interfaces and the gRPC bridge for external plugins.
 - **Optimization:** API designed for streaming queries and file transfers.

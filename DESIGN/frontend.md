@@ -50,6 +50,10 @@ Cog uses a structured routing system to balance ease of use with security (CSRF 
 - **Resources (`/apps/{plugin_id}/{resource_name}/{resource_id}`):**
     - **Purpose:** Direct linking to specific plugin objects.
     - **Use Cases:** Global search results, public shares, notifications.
+- **Compatibility/Global Routes (`/remote.php/*`, `/index.php/*`, `/.well-known/*`):**
+    - **Purpose:** NextCloud protocol/client compatibility.
+    - **Binding:** Host or privileged internal plugins; not the default plugin route model.
+    - **CSRF:** Token-authenticated non-browser requests are exempt.
 
 ### CSRF Implementation
 
@@ -64,6 +68,10 @@ To support NextCloud apps (which often expect specific DOM structures or endpoin
 - **OCS API:** Implements Open Collaboration Services API responses.
 - **WebDAV:** Standard implementation for file browsing.
 - **Theme:** CSS variables will attempt to match standard NC variables where possible to allow simple NC apps to render decently, though perfect visual parity is secondary to Cog's own design.
+
+## Shared Concepts & Types
+
+UI and route handlers should use the canonical architecture terms and shared data shape outlines documented in `DESIGN/concepts_and_types.md`.
 
 ## Routing
 

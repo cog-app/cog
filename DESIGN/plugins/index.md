@@ -1,23 +1,34 @@
 # Plugin Architecture
 
+## Plugin Index
+
+- [`files`](./files.md): Core privileged storage plugin.
+- [`calendar`](./calendar.md): CalDAV calendar plugin.
+- [`tasks`](./tasks.md): Task/VTODO plugin with CalDAV provider integration.
+- [`contacts`](./contacts.md): CardDAV contacts plugin.
+- [`rss`](./rss.md): News/RSS ingestion and compatibility plugin.
+- [`notes`](./notes.md): Notes and tagging plugin.
+
 ## Overview
-Cog's plugin system is designed for flexibility and performance. Plugins can be compiled directly into the binary (Core/1st Party) or run as separate processes communicating via gRPC.
+Cog's plugin system is designed for flexibility and performance. Plugins can be:
+- Compiled directly into the binary (core/1st-party); these may use privileged hooks into the application.
+- Run as separate processes communicating via gRPC (external/3rd-party).
 
 ## Data Access & Queries
 
-Since plugins may run in separate processes (gRPC), they cannot always open the SQLite file directly. Cog provides ways for plugins to query data:
+External plugins may run in separate processes (gRPC), so they cannot always open SQLite files directly. Cog provides controlled data access paths:
 
 ### 1. SQL Proxy & Data Access
 For plugins with `DB_READ:<plugin_id>` or `DB_WRITE:<plugin_id>` permissions, the Host automatically **attaches** the requested databases to every connection for that plugin.
 
 - **Isolation:** Plugins cannot execute `ATTACH DATABASE` themselves; it is managed by the Host based on permissions.
-- **FS Functions:** To allow indexing file contents and performing storage operations directly via SQL, the Host exposes custom SQLite functions:
+- **FS Functions:** For bounded metadata/content extraction in SQL, the Host exposes custom SQLite functions:
     - `read_file(path)`: Returns the full content of a file.
     - `head_file(path, bytes)`: Returns the first N bytes of a file.
-    - `write_file(path, blob)`: Writes data to the user's storage.
     - `file_exists(path)`: Returns 1 if the file exists, 0 otherwise.
     - `file_size(path)`: Returns the size of the file in bytes.
 - **Semantics:** These functions use `fs.FS` paths and respect the user's storage backend (Local, S3, etc.).
+- **Writes:** File writes should go through explicit host/plugin APIs, not SQL scalar functions.
 
 ### 2. Routing & CSRF
 Plugins register routes via the `PluginRegistrar`. Cog handles the underlying routing and security (CSRF) based on the registration type.
@@ -73,7 +84,8 @@ type PluginRegistrar interface {
 ```
 
 ### 2. gRPC Interface (External)
-Used for third-party plugins or those written in other languages (if supported later). A `bridge` package adapts the gRPC calls to the native Go interface.
+Used for third-party plugins or those written in other languages (if supported later). A `bridge` package adapts gRPC calls to the native Go interface.
+Privileged internal plugins (for example `files`) are not gRPC-loadable.
 
 **Proto Definition (Sketch):**
 ```protobuf
@@ -101,12 +113,14 @@ Plugins request permissions in their manifest. Cog enforces these via the VFS an
 - **`FILES_SANDBOX` (Default):** The plugin is granted a private directory (e.g., `app_data/{id}/`).
 - **`FS_READ:<plugin_id> / FS_WRITE:<plugin_id>`:** The plugin is granted access to the virtual filesystem exported by another plugin. `FS_READ:files` is the equivalent of accessing the user's primary files.
 - **`ROUTE_GLOBAL_BIND`:** Allows the plugin to bind routes outside of its `/apps/{id}/` prefix (e.g., `remote.php/`, `index.php/`). **Restriction:** Only granted to plugins installed at the **System/Admin level**.
+- **`PRIVILEGED_INTERNAL` (built-in only):** Host-only capability for in-process plugins. Not grantable to external plugins.
 
 ### Files as a Plugin
-In Cog, the core file management system is itself a system plugin with the ID `files`. 
+In Cog, the core file management system is itself a privileged internal plugin with the ID `files`.
 - **Metadata:** Stored in the `files` plugin's private database.
 - **Storage:** Manages the user's `files/` directory via the VFS.
 - **Permissions:** Other plugins request `DB_READ:files` or `FS_WRITE:files` to interact with the user's files.
+- **Loading Model:** In-process only. Not implementable over gRPC.
 
 ### Search & Indexing
 Plugins can extend Cog's global search by registering a `SearchProvider`.
@@ -123,7 +137,7 @@ Plugins define "Resources" that can be shared.
 - When User B accesses the deck, Cog checks `shares` table and then invokes the plugin with the context of User B accessing User A's resource.
 
 ## Security
-- **CSRF:** All plugin routes are automatically protected by Cog's CSRF middleware.
+- **CSRF:** Page and action routes are protected by Cog's CSRF middleware. Token-authenticated API/compat routes are exempt.
 - **Isolation:** gRPC plugins run in separate processes. If they crash, the main server survives.
 - **Sandboxing:** (Future) External plugins could be sandboxed (e.g., Wasm) or remote.
 
