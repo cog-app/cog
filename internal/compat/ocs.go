@@ -79,6 +79,14 @@ func HandleCurrentUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleWebDAVStub responds to WebDAV presence checks (HEAD/PROPFIND on /remote.php/dav).
+// NC clients probe this to confirm the server is a valid NextCloud instance.
+func HandleWebDAVStub(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("DAV", "1, 3, extended-mkcol")
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+}
+
 // HandleStatus returns the server status.
 func HandleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
