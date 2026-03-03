@@ -47,10 +47,10 @@ func writeOCSError(w http.ResponseWriter, statusCode int, ocsCode int, message s
 func HandleCapabilities(w http.ResponseWriter, r *http.Request) {
 	writeOCS(w, http.StatusOK, map[string]any{
 		"version": map[string]any{
-			"major":   0,
-			"minor":   1,
+			"major":   31,
+			"minor":   0,
 			"micro":   0,
-			"string":  "0.1.0",
+			"string":  "31.0.0",
 			"edition": "",
 		},
 		"capabilities": map[string]any{
@@ -94,8 +94,8 @@ func HandleStatus(w http.ResponseWriter, r *http.Request) {
 		"installed":       true,
 		"maintenance":     false,
 		"needsDbUpgrade":  false,
-		"version":         "0.1.0.0",
-		"versionstring":   "0.1.0",
+		"version":         "31.0.0.0",
+		"versionstring":   "31.0.0",
 		"edition":         "",
 		"productname":     "Cog",
 		"extendedSupport": false,

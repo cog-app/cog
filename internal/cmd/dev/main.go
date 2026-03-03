@@ -1,11 +1,13 @@
-// Dev tool for Cog. Usage: go tool dev
+// Dev tool for Cog. Usage: go tool dev [-reset]
 //
-// Resets tmp/dev state, creates a test user, and runs cog with
-// request logging enabled. Ctrl-C to stop.
+// Builds cog, ensures a test user exists, and runs with request logging.
+// Logs are teed to tmp/dev/cog.log. Use -reset to wipe state first.
 package main
 
 import (
+	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -21,10 +23,16 @@ const (
 )
 
 func main() {
+	reset := flag.Bool("reset", false, "wipe tmp/dev state before starting")
+	flag.Parse()
+
 	devDir := filepath.Join("tmp", "dev")
 
-	// Wipe and recreate dev state
-	os.RemoveAll(devDir)
+	if *reset {
+		log.Println("Resetting dev state...")
+		os.RemoveAll(devDir)
+	}
+
 	if err := os.MkdirAll(devDir, 0o755); err != nil {
 		log.Fatalf("mkdir: %v", err)
 	}
@@ -42,27 +50,43 @@ func main() {
 
 	bin := filepath.Join(devDir, "cog")
 
-	// Create test user
-	log.Printf("Creating test user %s:%s", testUser, testPass)
-	create := exec.Command(bin, "--db", dbPath, "--create-user", testUser+":"+testPass)
-	create.Stdout = os.Stdout
-	create.Stderr = os.Stderr
-	if err := create.Run(); err != nil {
-		log.Fatalf("create-user failed: %v", err)
+	// Idempotent seed: only create if DB doesn't exist yet
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		log.Printf("Creating test user %s:%s", testUser, testPass)
+		create := exec.Command(bin, "--db", dbPath, "--create-user", testUser+":"+testPass)
+		create.Stdout = os.Stdout
+		create.Stderr = os.Stderr
+		if err := create.Run(); err != nil {
+			log.Fatalf("create-user failed: %v", err)
+		}
+	} else {
+		log.Printf("Using existing DB (user: %s)", testUser)
 	}
+
+	// Open log file for tee
+	logPath := filepath.Join(devDir, "cog.log")
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		log.Fatalf("open log file: %v", err)
+	}
+	defer logFile.Close()
+
+	teeOut := io.MultiWriter(os.Stdout, logFile)
+	teeErr := io.MultiWriter(os.Stderr, logFile)
 
 	// Run server with request logging
 	hostname, _ := os.Hostname()
 	baseURL := fmt.Sprintf("http://%s%s", hostname, addr)
 	log.Printf("Starting cog on %s (base-url %s, log-requests on)", addr, baseURL)
+	log.Printf("Logs: %s", logPath)
 	srv := exec.Command(bin,
 		"--db", dbPath,
 		"--addr", addr,
 		"--base-url", baseURL,
 		"--log-requests",
 	)
-	srv.Stdout = os.Stdout
-	srv.Stderr = os.Stderr
+	srv.Stdout = teeOut
+	srv.Stderr = teeErr
 
 	if err := srv.Start(); err != nil {
 		log.Fatalf("start failed: %v", err)
@@ -77,7 +101,6 @@ func main() {
 	}()
 
 	if err := srv.Wait(); err != nil {
-		// Exit with the child's exit code if possible
 		if exit, ok := err.(*exec.ExitError); ok {
 			os.Exit(exit.ExitCode())
 		}

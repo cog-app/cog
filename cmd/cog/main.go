@@ -92,6 +92,9 @@ func main() {
 	mux.HandleFunc("/remote.php/dav/", compat.HandleWebDAVStub)
 	mux.HandleFunc("/remote.php/", compat.HandleWebDAVStub)
 
+	// Stub routes (avatar, notifications, connectivity, etc.)
+	compat.RegisterStubs(mux)
+
 	// Login Flow v2
 	mux.HandleFunc("POST /index.php/login/v2", loginFlow.HandleInit)
 	mux.HandleFunc("POST /index.php/login/v2/poll", loginFlow.HandlePoll)

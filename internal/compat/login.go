@@ -186,13 +186,13 @@ func (h *LoginFlowHandler) processGrant(w http.ResponseWriter, r *http.Request, 
 	h.mu.Unlock()
 
 	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprint(w, `<!DOCTYPE html><html><body><h1>Login Granted</h1><p>You can close this window and return to your app.</p></body></html>`)
+	fmt.Fprint(w, `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h1>Login Granted</h1><p>You can close this window and return to your app.</p></body></html>`)
 }
 
 func (h *LoginFlowHandler) renderGrantPage(w http.ResponseWriter, token string, errMsg string) {
 	tmpl := template.Must(template.New("grant").Parse(`<!DOCTYPE html>
 <html>
-<head><title>Cog - Login</title></head>
+<head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Cog - Login</title></head>
 <body>
 <h1>Grant App Access</h1>
 {{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
