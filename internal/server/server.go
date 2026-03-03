@@ -6,6 +6,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/compat"
+	"git.duckfam.us/jj-software/cog/internal/plugin/files"
 	"git.duckfam.us/jj-software/cog/internal/services"
 )
 
@@ -41,6 +42,13 @@ func New(p *services.Providers) http.Handler {
 	mux.HandleFunc("POST /index.php/login/v2/poll", loginFlow.HandlePoll)
 	mux.HandleFunc("GET /index.php/login/v2/grant", loginFlow.HandleGrant)
 	mux.HandleFunc("POST /index.php/login/v2/grant", loginFlow.HandleGrant)
+
+	// Files & Sharing API
+	filesAPI := files.NewAPI(p.Files, p.Shares, p.Users)
+	filesAPI.RegisterRoutes(mux)
+
+	// Register and start plugins
+	p.Plugins.Add(p.Files)
 
 	return authMW.Wrap(mux)
 }

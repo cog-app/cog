@@ -28,6 +28,7 @@ func main() {
 	var (
 		addr       = flag.String("addr", ":8580", "listen address")
 		dbPath     = flag.String("db", "system.db", "path to system database")
+		dataDir    = flag.String("data-dir", "data", "root directory for user data")
 		createUser = flag.String("create-user", "", "create a user (username:password) and exit")
 		baseURL    = flag.String("base-url", defaultBaseURL(), "external base URL")
 		logReqs    = flag.Bool("log-requests", false, "log full HTTP request/response bodies")
@@ -37,6 +38,7 @@ func main() {
 	cfg := config.Config{
 		Addr:    *addr,
 		DBPath:  *dbPath,
+		DataDir: *dataDir,
 		BaseURL: *baseURL,
 	}
 

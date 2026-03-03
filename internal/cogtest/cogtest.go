@@ -49,7 +49,7 @@ type Env struct {
 	Handler   http.Handler
 }
 
-// New creates a fresh test environment with an in-memory DB.
+// New creates a fresh test environment with an in-memory DB and temp data dir.
 // The returned Client routes requests through the server handler directly.
 func New(t testing.TB) *Env {
 	t.Helper()
@@ -60,12 +60,15 @@ func New(t testing.TB) *Env {
 	}
 	t.Cleanup(func() { sysDB.Close() })
 
+	dataDir := t.TempDir()
+
 	// Start with a placeholder URL; replace once we know the real one.
 	ts := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(ts.Close)
 
 	cfg := config.Config{
 		BaseURL: ts.URL,
+		DataDir: dataDir,
 	}
 
 	p := services.NewFromDB(cfg, sysDB)
@@ -166,6 +169,40 @@ func (e *Env) doReq(t testing.TB, method, path string, body io.Reader, opts []HT
 	return &Response{Response: resp, t: t}
 }
 
+// PostJSON performs a POST request with a JSON body.
+func (e *Env) PostJSON(t testing.TB, path string, body any, opts ...HTTPOpt) *Response {
+	t.Helper()
+	data, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("cogtest: marshal JSON: %v", err)
+	}
+	opts = append([]HTTPOpt{Header("Content-Type", "application/json")}, opts...)
+	return e.doReq(t, "POST", path, strings.NewReader(string(data)), opts)
+}
+
+// PostText performs a POST request with a plain text body.
+func (e *Env) PostText(t testing.TB, path string, data string, opts ...HTTPOpt) *Response {
+	t.Helper()
+	opts = append([]HTTPOpt{Header("Content-Type", "text/plain")}, opts...)
+	return e.doReq(t, "POST", path, strings.NewReader(string(data)), opts)
+}
+
+// Delete performs a DELETE request.
+func (e *Env) Delete(t testing.TB, path string, opts ...HTTPOpt) *Response {
+	t.Helper()
+	return e.doReq(t, "DELETE", path, nil, opts)
+}
+
+// NewRequest creates an http.Request for use with Do().
+func NewRequest(t testing.TB, method, url string, body io.Reader) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		t.Fatalf("cogtest: new request: %v", err)
+	}
+	return req
+}
+
 // BasicAuth returns an HTTPOpt that sets Basic authentication.
 func BasicAuth(username, password string) HTTPOpt {
 	req, _ := http.NewRequest("GET", "/", nil)
@@ -231,6 +268,18 @@ func (r *Response) Contains(substr string) *Response {
 	if !strings.Contains(body, substr) {
 		r.t.Fatalf("%s %s body does not contain %q\nbody: %s",
 			r.Request.Method, r.Request.URL.Path, substr, body)
+	}
+	return r
+}
+
+// Equals asserts the response body equals the given string exactly.
+// Returns r for chaining.
+func (r *Response) Equals(want string) *Response {
+	r.t.Helper()
+	body := r.ReadBody()
+	if body != want {
+		r.t.Fatalf("%s %s body mismatch\nwant: %q\n got: %q",
+			r.Request.Method, r.Request.URL.Path, want, body)
 	}
 	return r
 }

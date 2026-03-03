@@ -4,10 +4,14 @@ package services
 import (
 	"database/sql"
 	"fmt"
+	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin/files"
+	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
@@ -18,6 +22,9 @@ type Providers struct {
 	Users        *user.Store
 	Sessions     *auth.SessionStore
 	AppPasswords *auth.AppPasswordStore
+	Plugins      *plugin.Registry
+	Shares       *share.Store
+	Files        *files.Plugin
 }
 
 // New opens the system database and constructs all service providers.
@@ -27,28 +34,38 @@ func New(cfg config.Config) (*Providers, error) {
 		return nil, fmt.Errorf("open system db: %w", err)
 	}
 
-	return &Providers{
-		Config:       cfg,
-		DB:           sysDB,
-		Users:        user.NewStore(sysDB),
-		Sessions:     auth.NewSessionStore(sysDB),
-		AppPasswords: auth.NewAppPasswordStore(sysDB),
-	}, nil
+	return newFromDB(cfg, sysDB, http.NewServeMux()), nil
 }
 
 // NewFromDB constructs providers from an existing database connection.
 // Useful for tests that use :memory: databases.
 func NewFromDB(cfg config.Config, sysDB *sql.DB) *Providers {
+	return newFromDB(cfg, sysDB, http.NewServeMux())
+}
+
+// NewFromDBWithMux constructs providers with a specific ServeMux.
+func NewFromDBWithMux(cfg config.Config, sysDB *sql.DB, mux *http.ServeMux) *Providers {
+	return newFromDB(cfg, sysDB, mux)
+}
+
+func newFromDB(cfg config.Config, sysDB *sql.DB, mux *http.ServeMux) *Providers {
+	registry := plugin.NewRegistry(cfg.DataDir, mux)
+	filesPlugin := files.New(registry)
+
 	return &Providers{
 		Config:       cfg,
 		DB:           sysDB,
 		Users:        user.NewStore(sysDB),
 		Sessions:     auth.NewSessionStore(sysDB),
 		AppPasswords: auth.NewAppPasswordStore(sysDB),
+		Plugins:      registry,
+		Shares:       share.NewStore(sysDB),
+		Files:        filesPlugin,
 	}
 }
 
 // Close releases resources held by the providers.
 func (p *Providers) Close() error {
+	p.Plugins.Stop()
 	return p.DB.Close()
 }

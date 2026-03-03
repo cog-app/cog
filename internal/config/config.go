@@ -6,4 +6,5 @@ type Config struct {
 	Addr    string `json:"addr"`
 	DBPath  string `json:"db_path"`
 	BaseURL string `json:"base_url"`
+	DataDir string `json:"data_dir"` // Root directory for user data (e.g. /var/lib/cog/data)
 }
