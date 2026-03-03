@@ -8,14 +8,14 @@
 
 ## Component Library
 
-Cog exports a Go package `github.com/duckfam/cog/ui` containing `templ` components. This ensures plugins look native.
+Cog exports a Go package `git.duckfam.us/jj-software/cog/ui` containing `templ` components. This ensures plugins look native.
 
 ### Usage Example (Go/Templ)
 
 ```go
 package myplugin
 
-import "github.com/duckfam/cog/ui"
+import "git.duckfam.us/jj-software/cog/ui"
 
 templ ShowWidget(data string) {
     @ui.PageLayout("My Widget") {
@@ -34,26 +34,26 @@ Cog uses a structured routing system to balance ease of use with security (CSRF 
 ### Route Patterns
 
 - **APIs (`/api/{plugin_id}/*`):**
-    - **Purpose:** Data exchange, mobile apps, third-party integrations.
-    - **Format:** Typically JSON.
-    - **CSRF:** Bypassed. Auth is handled via Bearer tokens or App Passwords.
+  - **Purpose:** Data exchange, mobile apps, third-party integrations.
+  - **Format:** Typically JSON.
+  - **CSRF:** Bypassed. Auth is handled via Bearer tokens or App Passwords.
 - **Pages (`/apps/{plugin_id}/*`):**
-    - **Purpose:** User-facing HTML interfaces.
-    - **Format:** HTML (rendered via `templ` or Go templates).
-    - **CSRF:** GET requests are safe; forms within pages must include a CSRF token for the plugin.
-    - **Optimization:** Can use server-side Go templates with direct SQLite access to minimize round-trips for dynamic data.
+  - **Purpose:** User-facing HTML interfaces.
+  - **Format:** HTML (rendered via `templ` or Go templates).
+  - **CSRF:** GET requests are safe; forms within pages must include a CSRF token for the plugin.
+  - **Optimization:** Can use server-side Go templates with direct SQLite access to minimize round-trips for dynamic data.
 - **Actions:**
-    - **Method:** POST, PUT, DELETE.
-    - **Purpose:** State-changing operations (form submissions).
-    - **Format:** HTMX fragments.
-    - **CSRF:** Strictly enforced. Tokens are namespaced per plugin.
+  - **Method:** POST, PUT, DELETE.
+  - **Purpose:** State-changing operations (form submissions).
+  - **Format:** HTMX fragments.
+  - **CSRF:** Strictly enforced. Tokens are namespaced per plugin.
 - **Resources (`/apps/{plugin_id}/{resource_name}/{resource_id}`):**
-    - **Purpose:** Direct linking to specific plugin objects.
-    - **Use Cases:** Global search results, public shares, notifications.
+  - **Purpose:** Direct linking to specific plugin objects.
+  - **Use Cases:** Global search results, public shares, notifications.
 - **Compatibility/Global Routes (`/remote.php/*`, `/index.php/*`, `/.well-known/*`):**
-    - **Purpose:** NextCloud protocol/client compatibility.
-    - **Binding:** Host or privileged internal plugins; not the default plugin route model.
-    - **CSRF:** Token-authenticated non-browser requests are exempt.
+  - **Purpose:** NextCloud protocol/client compatibility.
+  - **Binding:** Host or privileged internal plugins; not the default plugin route model.
+  - **CSRF:** Token-authenticated non-browser requests are exempt.
 
 ### CSRF Implementation
 
