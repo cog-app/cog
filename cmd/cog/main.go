@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/server"
-	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/internal/services"
 )
 
 func defaultBaseURL() string {
@@ -34,13 +34,17 @@ func main() {
 	)
 	flag.Parse()
 
-	sysDB, err := db.OpenSystem(*dbPath)
-	if err != nil {
-		log.Fatalf("Failed to open system database: %v", err)
+	cfg := config.Config{
+		Addr:    *addr,
+		DBPath:  *dbPath,
+		BaseURL: *baseURL,
 	}
-	defer sysDB.Close()
 
-	users := user.NewStore(sysDB)
+	p, err := services.New(cfg)
+	if err != nil {
+		log.Fatalf("Failed to initialize: %v", err)
+	}
+	defer p.Close()
 
 	// Handle --create-user
 	if *createUser != "" {
@@ -49,7 +53,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Usage: --create-user username:password\n")
 			os.Exit(1)
 		}
-		u, err := users.Create(parts[0], parts[1])
+		u, err := p.Users.Create(parts[0], parts[1])
 		if err != nil {
 			log.Fatalf("Failed to create user: %v", err)
 		}
@@ -57,13 +61,13 @@ func main() {
 		return
 	}
 
-	var handler http.Handler = server.New(server.Config{DB: sysDB, BaseURL: *baseURL})
+	var handler http.Handler = server.New(p)
 	if *logReqs {
 		handler = requestLogger(handler)
 	}
 
-	log.Printf("Cog listening on %s", *addr)
-	if err := http.ListenAndServe(*addr, handler); err != nil {
+	log.Printf("Cog listening on %s", cfg.Addr)
+	if err := http.ListenAndServe(cfg.Addr, handler); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -72,7 +76,6 @@ func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		// Dump the full incoming request (headers + body)
 		dump, err := httputil.DumpRequest(r, true)
 		if err != nil {
 			log.Printf("--- REQUEST (dump error: %v) %s %s", err, r.Method, r.URL)
@@ -80,12 +83,6 @@ func requestLogger(next http.Handler) http.Handler {
 			log.Printf("--- REQUEST ---\n%s", dump)
 		}
 
-		// r.Body is consumed by DumpRequest; restore it so handlers can read it
-		// DumpRequest already handles this internally, but if body was form-encoded
-		// we need the parsed form to work. Re-parse from the dump.
-		// Actually httputil.DumpRequest replaces the body with a new reader, so we're fine.
-
-		// Wrap the ResponseWriter to capture status code and body
 		rec := &responseRecorder{ResponseWriter: w, statusCode: 200}
 		next.ServeHTTP(rec, r)
 
@@ -110,14 +107,12 @@ func (r *responseRecorder) Write(b []byte) (int, error) {
 	return r.ResponseWriter.Write(b)
 }
 
-// Ensure Flush is proxied if the underlying writer supports it.
 func (r *responseRecorder) Flush() {
 	if f, ok := r.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
 }
 
-// Keep io.ReaderFrom working for large responses.
 func (r *responseRecorder) ReadFrom(src io.Reader) (int64, error) {
 	return io.Copy(r.ResponseWriter, src)
 }

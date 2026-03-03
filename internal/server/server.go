@@ -2,33 +2,22 @@
 package server
 
 import (
-	"database/sql"
 	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/compat"
-	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/internal/services"
 )
 
-// Config holds the dependencies needed to build the handler.
-type Config struct {
-	DB      *sql.DB
-	BaseURL string
-}
-
 // New builds the full HTTP handler with all routes and middleware.
-func New(cfg Config) http.Handler {
-	users := user.NewStore(cfg.DB)
-	sessions := auth.NewSessionStore(cfg.DB)
-	appPasswords := auth.NewAppPasswordStore(cfg.DB)
-
+func New(p *services.Providers) http.Handler {
 	authMW := &auth.Middleware{
-		Users:        users,
-		Sessions:     sessions,
-		AppPasswords: appPasswords,
+		Users:        p.Users,
+		Sessions:     p.Sessions,
+		AppPasswords: p.AppPasswords,
 	}
 
-	loginFlow := compat.NewLoginFlowHandler(users, appPasswords, sessions, cfg.BaseURL)
+	loginFlow := compat.NewLoginFlowHandler(p.Users, p.AppPasswords, p.Sessions, p.Config.BaseURL)
 
 	mux := http.NewServeMux()
 
