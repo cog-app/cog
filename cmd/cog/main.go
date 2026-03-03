@@ -11,9 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"git.duckfam.us/jj-software/cog/internal/auth"
-	"git.duckfam.us/jj-software/cog/internal/compat"
 	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/internal/server"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
@@ -42,8 +41,6 @@ func main() {
 	defer sysDB.Close()
 
 	users := user.NewStore(sysDB)
-	sessions := auth.NewSessionStore(sysDB)
-	appPasswords := auth.NewAppPasswordStore(sysDB)
 
 	// Handle --create-user
 	if *createUser != "" {
@@ -60,48 +57,7 @@ func main() {
 		return
 	}
 
-	// Auth middleware
-	authMW := &auth.Middleware{
-		Users:        users,
-		Sessions:     sessions,
-		AppPasswords: appPasswords,
-	}
-
-	// Login Flow v2
-	loginFlow := compat.NewLoginFlowHandler(users, appPasswords, sessions, *baseURL)
-
-	// Periodic cleanup of expired login flows
-	go func() {
-		for range time.Tick(time.Minute) {
-			loginFlow.Cleanup()
-		}
-	}()
-
-	// Routes
-	mux := http.NewServeMux()
-
-	// Status & OCS
-	mux.HandleFunc("GET /status.php", compat.HandleStatus)
-	mux.HandleFunc("GET /ocs/v1.php/cloud/capabilities", compat.HandleCapabilities)
-	mux.HandleFunc("GET /ocs/v2.php/cloud/capabilities", compat.HandleCapabilities)
-	mux.Handle("GET /ocs/v1.php/cloud/user", auth.RequireAuth(http.HandlerFunc(compat.HandleCurrentUser)))
-	mux.Handle("GET /ocs/v2.php/cloud/user", auth.RequireAuth(http.HandlerFunc(compat.HandleCurrentUser)))
-
-	// WebDAV stub (presence check for NC clients)
-	mux.HandleFunc("/remote.php/dav", compat.HandleWebDAVStub)
-	mux.HandleFunc("/remote.php/dav/", compat.HandleWebDAVStub)
-	mux.HandleFunc("/remote.php/", compat.HandleWebDAVStub)
-
-	// Stub routes (avatar, notifications, connectivity, etc.)
-	compat.RegisterStubs(mux)
-
-	// Login Flow v2
-	mux.HandleFunc("POST /index.php/login/v2", loginFlow.HandleInit)
-	mux.HandleFunc("POST /index.php/login/v2/poll", loginFlow.HandlePoll)
-	mux.HandleFunc("GET /index.php/login/v2/grant", loginFlow.HandleGrant)
-	mux.HandleFunc("POST /index.php/login/v2/grant", loginFlow.HandleGrant)
-
-	var handler http.Handler = authMW.Wrap(mux)
+	var handler http.Handler = server.New(server.Config{DB: sysDB, BaseURL: *baseURL})
 	if *logReqs {
 		handler = requestLogger(handler)
 	}
