@@ -84,14 +84,20 @@ func New(t testing.TB) *Env {
 
 // --- Setup helpers ---
 
-// CreateUser creates a test user and returns it.
-func (e *Env) CreateUser(t testing.TB, username, password string) *user.User {
+// User wraps a user with pre-built auth for convenient test usage.
+type User struct {
+	*user.User
+	Auth HTTPOpt
+}
+
+// CreateUser creates a test user and returns a TestUser with embedded auth.
+func (e *Env) CreateUser(t testing.TB, username, password string) *User {
 	t.Helper()
 	u, err := e.Providers.Users.Create(username, password)
 	if err != nil {
 		t.Fatalf("cogtest: create user %q: %v", username, err)
 	}
-	return u
+	return &User{User: u, Auth: BasicAuth(username, password)}
 }
 
 // --- HTTP helpers ---

@@ -12,7 +12,7 @@ import (
 // observed from a real device connecting to Cog.
 func TestNCLoginFlow(t *testing.T) {
 	env := cogtest.New(t)
-	u := env.CreateUser(t, "admin", "admin")
+	admin := env.CreateUser(t, "admin", "admin")
 
 	// Step 1: GET /status.php — server discovery
 	var status struct {
@@ -82,18 +82,18 @@ func TestNCLoginFlow(t *testing.T) {
 	}
 	env.Get(t, "/ocs/v2.php/cloud/user?format=json", appAuth).
 		Status(200).JSON(&ocsResp)
-	require.Equal(t, u.ID, ocsResp.OCS.Data.ID)
+	require.Equal(t, admin.ID, ocsResp.OCS.Data.ID)
 	require.Equal(t, "admin", ocsResp.OCS.Data.DisplayName)
 
 	// Step 9: HEAD /remote.php/dav/files/{user_id}/ — file root presence
-	env.Head(t, "/remote.php/dav/files/"+u.ID+"/", appAuth).Status(200)
+	env.Head(t, "/remote.php/dav/files/"+admin.ID+"/", appAuth).Status(200)
 
 	// Step 10: GET /ocs/v2.php/cloud/capabilities
 	env.Get(t, "/ocs/v2.php/cloud/capabilities?format=json", appAuth).Status(200)
 
 	// Step 11: Stub endpoints should all return 200
 	stubs := []string{
-		"/index.php/avatar/" + u.ID + "/512",
+		"/index.php/avatar/" + admin.ID + "/512",
 		"/ocs/v2.php/apps/notifications/api/v2/notifications?format=json",
 		"/ocs/v2.php/apps/recommendations/api/v1/recommendations?format=json",
 		"/ocs/v2.php/apps/user_status/api/v1/user_status?format=json",
