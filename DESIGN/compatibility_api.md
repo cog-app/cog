@@ -36,6 +36,7 @@ These are managed by the **Calendar** and **Contacts** plugins, which bind route
 - **Discovery:** `/.well-known/caldav` and `/.well-known/carddav`
   - These must redirect to the correct service endpoints.
 - **CalDAV:** `remote.php/dav/calendars/{username}/`
+  - **Aggregation:** This endpoint is managed by the Host. It queries all registered `CalDAVProvider`s from all active plugins (Calendar, Tasks, Deck, etc.) and aggregates their collections into a single DAV namespace.
 - **CardDAV:** `remote.php/dav/addressbooks/{username}/`
 - **Principal:** `remote.php/dav/principals/users/{username}/`
 

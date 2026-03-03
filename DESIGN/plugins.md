@@ -65,6 +65,7 @@ type PluginRegistrar interface {
     RegisterTemplPage(path string, template string) // Page with direct SQL template access
     RegisterAction(method, path string, handler http.Handler)
     RegisterResource(name string, handler ResourceHandler)
+    RegisterCalDAVProvider(handler CalDAVProvider) // Enumerate CalDAV collections
     RegisterHook(hookName string, callback func(interface{}))
     GetDB() *sql.DB // Access to user's private DB
     GetFS() fs.FS   // Access to user's files
