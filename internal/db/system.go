@@ -34,7 +34,9 @@ func migrate(db *sql.DB) error {
 		username TEXT NOT NULL UNIQUE,
 		password_hash TEXT NOT NULL,
 		home_mount TEXT NOT NULL,
-		created_at INTEGER NOT NULL
+		created_at INTEGER NOT NULL,
+		is_admin INTEGER NOT NULL DEFAULT 0,
+		display_name TEXT NOT NULL DEFAULT ''
 	);
 
 	CREATE TABLE IF NOT EXISTS sessions (
@@ -84,6 +86,44 @@ func migrate(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_shares_resource ON shares(resource_type, resource_id);
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_shares_token ON shares(token) WHERE token IS NOT NULL;
 	`
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+
+	// Add columns to existing databases (SQLite has no ALTER TABLE ADD COLUMN IF NOT EXISTS).
+	for _, col := range []struct{ name, ddl string }{
+		{"is_admin", "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0"},
+		{"display_name", "ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"},
+	} {
+		var count int
+		rows, err := db.Query("PRAGMA table_info(users)")
+		if err != nil {
+			return fmt.Errorf("pragma table_info: %w", err)
+		}
+		found := false
+		for rows.Next() {
+			var cid int
+			var name, typ string
+			var notnull int
+			var dflt sql.NullString
+			var pk int
+			if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+				rows.Close()
+				return err
+			}
+			count++
+			if name == col.name {
+				found = true
+			}
+		}
+		rows.Close()
+		_ = count
+		if !found {
+			if _, err := db.Exec(col.ddl); err != nil {
+				return fmt.Errorf("add column %s: %w", col.name, err)
+			}
+		}
+	}
+
+	return nil
 }

@@ -39,6 +39,15 @@ func main() {
 
 	dbPath := filepath.Join(devDir, "system.db")
 
+	// Generate templ code
+	log.Println("Generating templ...")
+	tgen := exec.Command("go", "tool", "templ", "generate")
+	tgen.Stdout = os.Stdout
+	tgen.Stderr = os.Stderr
+	if err := tgen.Run(); err != nil {
+		log.Fatalf("templ generate failed: %v", err)
+	}
+
 	// Build cog
 	log.Println("Building cog...")
 	build := exec.Command("go", "build", "-o", filepath.Join(devDir, "cog"), "./cmd/cog")
@@ -52,7 +61,7 @@ func main() {
 
 	// Idempotent seed: only create if DB doesn't exist yet
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		log.Printf("Creating test user %s:%s", testUser, testPass)
+		log.Printf("Creating test user %s:%s (admin)", testUser, testPass)
 		create := exec.Command(bin, "--db", dbPath, "--create-user", testUser+":"+testPass)
 		create.Stdout = os.Stdout
 		create.Stderr = os.Stderr

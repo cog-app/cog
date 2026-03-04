@@ -1,0 +1,26 @@
+package ui
+
+// Card renders a card wrapper with an optional title.
+templ Card(title string) {
+	<div class="card">
+		if title != "" {
+			<div class="card-title">{ title }</div>
+		}
+		{ children... }
+	</div>
+}
+
+// Alert renders a styled alert message.
+templ Alert(kind string, msg string) {
+	if msg != "" {
+		<div class={ "alert alert-" + kind }>{ msg }</div>
+	}
+}
+
+// FormField renders a labeled input field.
+templ FormField(label, name, typ, value, placeholder string) {
+	<div class="form-group">
+		<label for={ name }>{ label }</label>
+		<input class="form-control" type={ typ } id={ name } name={ name } value={ value } placeholder={ placeholder }/>
+	</div>
+}

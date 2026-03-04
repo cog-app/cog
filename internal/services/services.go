@@ -2,6 +2,7 @@
 package services
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/plugin/files"
 	"git.duckfam.us/jj-software/cog/internal/share"
@@ -25,6 +27,8 @@ type Providers struct {
 	Plugins      *plugin.Registry
 	Shares       *share.Store
 	Files        *files.Plugin
+	Groups       *group.Store
+	CSRFSecret   []byte
 }
 
 // New opens the system database and constructs all service providers.
@@ -52,6 +56,9 @@ func newFromDB(cfg config.Config, sysDB *sql.DB, mux *http.ServeMux) *Providers 
 	registry := plugin.NewRegistry(cfg.DataDir, mux)
 	filesPlugin := files.New(registry)
 
+	secret := make([]byte, 32)
+	rand.Read(secret)
+
 	return &Providers{
 		Config:       cfg,
 		DB:           sysDB,
@@ -61,6 +68,8 @@ func newFromDB(cfg config.Config, sysDB *sql.DB, mux *http.ServeMux) *Providers 
 		Plugins:      registry,
 		Shares:       share.NewStore(sysDB),
 		Files:        filesPlugin,
+		Groups:       group.NewStore(sysDB),
+		CSRFSecret:   secret,
 	}
 }
 

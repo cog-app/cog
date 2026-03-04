@@ -1,0 +1,28 @@
+package web
+
+import "git.duckfam.us/jj-software/cog/ui"
+
+templ settingsPage(pd ui.PageData, flash string, flashKind string) {
+	@ui.Base(pd) {
+		<h1 style="margin-bottom:1rem">Settings</h1>
+		if flash != "" {
+			@ui.Alert(flashKind, flash)
+		}
+		@ui.Card("Profile") {
+			<form method="post" action="/settings/profile">
+				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+				@ui.FormField("Display Name", "display_name", "text", pd.User.DisplayName, "Your display name")
+				<button class="btn btn-primary" type="submit">Save</button>
+			</form>
+		}
+		@ui.Card("Change Password") {
+			<form method="post" action="/settings/password">
+				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+				@ui.FormField("Current Password", "current_password", "password", "", "")
+				@ui.FormField("New Password", "new_password", "password", "", "")
+				@ui.FormField("Confirm New Password", "confirm_password", "password", "", "")
+				<button class="btn btn-primary" type="submit">Change Password</button>
+			</form>
+		}
+	}
+}
