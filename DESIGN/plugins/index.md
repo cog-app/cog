@@ -2,7 +2,8 @@
 
 ## Plugin Index
 
-- [`files`](./files.md): Core privileged storage plugin.
+- [`dashboard`](./dashboard.md): Root page with app grid and widget aggregation (protected).
+- [`files`](./files.md): Core privileged storage plugin (protected).
 - [`calendar`](./calendar.md): CalDAV calendar plugin.
 - [`tasks`](./tasks.md): Task/VTODO plugin with CalDAV provider integration.
 - [`contacts`](./contacts.md): CardDAV contacts plugin.
@@ -85,6 +86,8 @@ type PluginRegistrar interface {
     RegisterResource(name string, handler ResourceHandler)
     RegisterCalDAVProvider(handler CalDAVProvider) // Enumerate CalDAV collections
     RegisterHook(hookName string, callback func(interface{}))
+    RegisterNavItem(item NavItem)   // Add entry to the app navbar
+    RegisterWidget(w Widget)        // Add dashboard widget
     GetDB() *sql.DB // Access to user's private DB
     GetFS() fs.FS   // Access to user's files
 }

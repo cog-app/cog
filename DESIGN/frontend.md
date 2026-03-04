@@ -75,7 +75,54 @@ UI and route handlers should use the canonical architecture terms and shared dat
 
 ## Routing
 
-- `/`: Dashboard
-- `/files/*`: File browser
-- `/apps/{plugin_id}/*`: Plugin routes
-- `/settings`: User settings
+- `/`: Dashboard (plugin, shows app grid + widgets)
+- `/apps/{plugin_id}/*`: Plugin routes (pages, actions, resources)
+- `/settings`: User settings (profile, avatar, password, storage)
+- `/admin/`: Admin area (users, groups, volumes, plugins)
+- `/avatar/{id}`: User avatar image (falls back to SVG initials)
+
+## Navigation
+
+The navbar is dynamically built from plugin-registered nav items via `Registry.NavItems()`. Plugins call `RegisterNavItem()` during registration to add entries. The default setup produces:
+
+- **Dashboard** — registered by the dashboard plugin
+- **Files** — registered by the files plugin
+
+Settings and Admin links appear only in the user dropdown menu (top-right), not in the main navbar.
+
+### User Dropdown
+
+The dropdown toggle displays the user's avatar (small circle) and display name. The menu contains:
+- Settings link
+- Admin link (if user is admin)
+- Logout form
+
+### Avatars
+
+- Uploaded via `/settings/avatar` (JPEG or PNG)
+- Served from `/avatar/{user_id}` — the handler returns the uploaded image or generates an SVG with the user's initials and a deterministic background color.
+- Stored on disk at `{dataDir}/avatars/{user_id}.ext`
+- Filename tracked in `users.avatar` column
+
+## Dashboard & Widgets
+
+The dashboard plugin renders a grid of app cards (one per plugin nav item, excluding dashboard itself) followed by widget sections. Plugins register widgets during `Register()`:
+
+```go
+registrar.RegisterWidget(plugin.Widget{
+    Title:    "Recent Files",
+    Priority: 10, // lower = higher on page
+    Render:   func(ctx context.Context, w io.Writer, userID string) error { ... },
+})
+```
+
+Widgets are sorted by priority and rendered server-side inside `ui.Card` wrappers.
+
+## Plugin Enable/Disable
+
+Admins manage plugins at `/admin/plugins`. Disabling a plugin:
+- Removes its nav items from the navbar
+- Excludes its widgets from the dashboard
+- Can 404 its routes via `RequirePluginEnabled()` middleware
+
+Protected plugins (dashboard, files) cannot be disabled.

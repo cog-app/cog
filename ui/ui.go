@@ -18,4 +18,5 @@ type NavItem struct {
 	Label  string
 	URL    string
 	Active bool
+	Icon   string
 }

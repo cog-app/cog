@@ -12,6 +12,26 @@ templ settingsPage(pd ui.PageData, flash string, flashKind string, mounts []moun
 		if flash != "" {
 			@ui.Alert(flashKind, flash)
 		}
+		@ui.Card("Avatar") {
+			<div class="flex gap-1 items-center" style="margin-bottom:1rem">
+				<img class="avatar-lg" src={ "/avatar/" + pd.User.ID }/>
+				<div>
+					<form method="post" action="/settings/avatar" enctype="multipart/form-data" style="display:inline">
+						<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+						<input type="file" name="avatar" accept="image/jpeg,image/png" required style="max-width:250px"/>
+						<button class="btn btn-primary btn-sm" type="submit">Upload</button>
+					</form>
+					if pd.User.Avatar != "" {
+						<button
+							class="btn btn-danger btn-sm"
+							style="margin-left:0.5rem"
+							hx-delete="/settings/avatar"
+							hx-confirm="Remove your avatar?"
+						>Remove</button>
+					}
+				</div>
+			</div>
+		}
 		@ui.Card("Profile") {
 			<form method="post" action="/settings/profile">
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>

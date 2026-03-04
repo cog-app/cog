@@ -346,3 +346,31 @@ a:hover { text-decoration: underline; }
     background: #e3f2fd;
     color: #1565c0;
 }
+
+/* Avatars */
+.avatar-sm { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; vertical-align: middle; }
+.avatar-lg { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; }
+
+/* App grid (dashboard) */
+.app-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.app-card {
+    text-align: center;
+    padding: 1.5rem;
+    color: var(--color-text);
+    transition: border-color 0.15s;
+}
+
+.app-card:hover {
+    border-color: var(--color-primary);
+    text-decoration: none;
+}
+
+.app-card-label {
+    font-weight: 600;
+    font-size: 1.1rem;
+}

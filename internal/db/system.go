@@ -109,6 +109,11 @@ func migrate(db *sql.DB) error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_mounts_user ON mounts(user_id);
 	CREATE INDEX IF NOT EXISTS idx_mounts_volume ON mounts(volume_id);
+
+	CREATE TABLE IF NOT EXISTS plugin_settings (
+		plugin_id TEXT PRIMARY KEY,
+		enabled INTEGER NOT NULL DEFAULT 1
+	);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		return err
@@ -125,6 +130,7 @@ func migrate(db *sql.DB) error {
 		{"users", "display_name", "ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"},
 		{"volumes", "owner_id", "ALTER TABLE volumes ADD COLUMN owner_id TEXT REFERENCES users(id)"},
 		{"volumes", "config", "ALTER TABLE volumes ADD COLUMN config TEXT NOT NULL DEFAULT '{}'"},
+		{"users", "avatar", "ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT ''"},
 	} {
 		rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", col.table))
 		if err != nil {

@@ -4,6 +4,7 @@ package plugin
 import (
 	"context"
 	"database/sql"
+	"io"
 	"io/fs"
 	"net/http"
 )
@@ -41,6 +42,24 @@ type Registrar interface {
 	RegisterResource(def ResourceDef)
 	// RegisterHook subscribes to a named hook event.
 	RegisterHook(hookName string, callback HookCallback)
+	// RegisterNavItem adds a navigation entry to the app navbar.
+	RegisterNavItem(item NavItem)
+	// RegisterWidget registers a dashboard widget.
+	RegisterWidget(w Widget)
+}
+
+// NavItem is a navigation entry registered by a plugin for the app navbar.
+type NavItem struct {
+	Label string // display label, e.g. "Files"
+	URL   string // link target, e.g. "/apps/files"
+	Icon  string // optional CSS class
+}
+
+// Widget is a dashboard widget registered by a plugin.
+type Widget struct {
+	Title    string
+	Priority int // lower = rendered first
+	Render   func(ctx context.Context, w io.Writer, userID string) error
 }
 
 // HookCallback is a function invoked when a hook event fires.

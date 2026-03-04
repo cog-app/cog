@@ -3,14 +3,20 @@ package web
 
 import (
 	"net/http"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
 // pageData builds a PageData from the request context.
 func pageData(r *http.Request, title string, secret []byte) ui.PageData {
+	return pageDataWithNav(r, title, secret, nil)
+}
+
+// pageDataWithNav builds a PageData with plugin nav items from the registry.
+func pageDataWithNav(r *http.Request, title string, secret []byte, registry *plugin.Registry) ui.PageData {
 	u := auth.UserFromContext(r.Context())
 	sessID := auth.SessionIDFromContext(r.Context())
 	var csrf string
@@ -21,18 +27,24 @@ func pageData(r *http.Request, title string, secret []byte) ui.PageData {
 		Title:     title,
 		User:      u,
 		CSRFToken: csrf,
-		Nav:       defaultNav(r.URL.Path, u),
+		Nav:       buildNav(r.URL.Path, registry),
 	}
 }
 
-func defaultNav(path string, u *user.User) []ui.NavItem {
-	nav := []ui.NavItem{
-		{Label: "Dashboard", URL: "/", Active: path == "/"},
-		{Label: "Settings", URL: "/settings", Active: path == "/settings"},
+func buildNav(path string, registry *plugin.Registry) []ui.NavItem {
+	if registry == nil {
+		return nil
 	}
-	if u != nil && u.IsAdmin {
-		isAdmin := len(path) >= 6 && path[:6] == "/admin"
-		nav = append(nav, ui.NavItem{Label: "Admin", URL: "/admin/", Active: isAdmin})
+	pluginNav := registry.NavItems()
+	nav := make([]ui.NavItem, 0, len(pluginNav))
+	for _, item := range pluginNav {
+		active := path == item.URL || (item.URL != "/" && strings.HasPrefix(path, item.URL))
+		nav = append(nav, ui.NavItem{
+			Label:  item.Label,
+			URL:    item.URL,
+			Active: active,
+			Icon:   item.Icon,
+		})
 	}
 	return nav
 }

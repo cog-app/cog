@@ -7,6 +7,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/compat"
+	"git.duckfam.us/jj-software/cog/internal/plugin/dashboard"
 	"git.duckfam.us/jj-software/cog/internal/plugin/files"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/volume"
@@ -30,22 +31,36 @@ func New(p *services.Providers) http.Handler {
 	staticSub, _ := fs.Sub(ui.StaticFS, "static")
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
 
+	// --- Register plugins ---
+	// Dashboard plugin (protected — cannot be disabled).
+	dashPlugin := &dashboard.Plugin{Registry: p.Plugins, Secret: p.CSRFSecret}
+	p.Plugins.Add(dashPlugin)
+	p.Plugins.SetProtected(dashboard.PluginID)
+
+	// Files plugin (protected).
+	p.Plugins.Add(p.Files)
+	p.Plugins.SetProtected(files.PluginID)
+
 	// --- Web UI handlers ---
 	volAccess := &volume.Access{Volumes: p.Volumes, Shares: p.Shares}
 	loginH := &web.LoginHandler{Users: p.Users, Sessions: p.Sessions, Secret: p.CSRFSecret}
-	dashH := &web.DashboardHandler{Secret: p.CSRFSecret}
 	settingsH := &web.SettingsHandler{Users: p.Users, Volumes: p.Volumes, Mounts: p.Mounts, Access: volAccess, Secret: p.CSRFSecret}
-	adminH := &web.AdminHandler{Users: p.Users, Groups: p.Groups, Volumes: p.Volumes, Mounts: p.Mounts, Secret: p.CSRFSecret}
+	adminH := &web.AdminHandler{Users: p.Users, Groups: p.Groups, Volumes: p.Volumes, Mounts: p.Mounts, Plugins: p.Plugins, Secret: p.CSRFSecret}
 	adminVolH := &web.AdminVolumeHandler{Volumes: p.Volumes, Secret: p.CSRFSecret}
 	volBrowserH := &web.VolumeBrowserHandler{Access: volAccess, Secret: p.CSRFSecret}
+	avatarH := &web.AvatarHandler{Users: p.Users, DataDir: p.Config.DataDir, Secret: p.CSRFSecret}
 
 	// Login/logout — unauthenticated
 	mux.HandleFunc("GET /login", loginH.ShowLogin)
 	mux.HandleFunc("POST /login", loginH.HandleLogin)
 	mux.HandleFunc("POST /logout", loginH.HandleLogout)
 
-	// Dashboard
-	mux.Handle("GET /{$}", auth.RequireAuthWeb(http.HandlerFunc(dashH.ServeHTTP)))
+	// Dashboard (root route from dashboard plugin)
+	mux.Handle("GET /{$}", auth.RequireAuthWeb(dashPlugin.Handler()))
+
+	// Avatar
+	mux.Handle("GET /avatar/{id}", http.HandlerFunc(avatarH.Serve))
+	mux.Handle("GET /avatar/{id}/initials", http.HandlerFunc(avatarH.ServeInitials))
 
 	// Settings
 	csrfWeb := func(h http.Handler) http.Handler {
@@ -58,6 +73,8 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("DELETE /settings/mounts/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteMount)))
 	mux.Handle("POST /settings/volumes", csrfWeb(http.HandlerFunc(settingsH.CreateVolume)))
 	mux.Handle("DELETE /settings/volumes/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteVolume)))
+	mux.Handle("POST /settings/avatar", csrfWeb(http.HandlerFunc(avatarH.Upload)))
+	mux.Handle("DELETE /settings/avatar", csrfWeb(http.HandlerFunc(avatarH.Delete)))
 
 	// Admin — require auth + admin + CSRF on mutations
 	adminAuth := func(h http.Handler) http.Handler {
@@ -91,12 +108,20 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("POST /admin/volumes/{id}", adminMut(http.HandlerFunc(adminVolH.UpdateVolume)))
 	mux.Handle("DELETE /admin/volumes/{id}", adminMut(http.HandlerFunc(adminVolH.DeleteVolume)))
 
+	mux.Handle("GET /admin/plugins", adminAuth(http.HandlerFunc(adminH.ListPlugins)))
+	mux.Handle("POST /admin/plugins/{id}/toggle", adminMut(http.HandlerFunc(adminH.TogglePlugin)))
+
 	// Volume browser
 	mux.Handle("GET /volumes/{id}/browse", auth.RequireAuthWeb(http.HandlerFunc(volBrowserH.Browse)))
 	mux.Handle("GET /volumes/{id}/download", auth.RequireAuthWeb(http.HandlerFunc(volBrowserH.Download)))
 	mux.Handle("POST /volumes/{id}/upload", csrfWeb(http.HandlerFunc(volBrowserH.Upload)))
 	mux.Handle("POST /volumes/{id}/mkdir", csrfWeb(http.HandlerFunc(volBrowserH.MkDir)))
 	mux.Handle("DELETE /volumes/{id}/file", csrfWeb(http.HandlerFunc(volBrowserH.DeleteFile)))
+
+	// Files plugin page (simple redirect to volume browser for now)
+	mux.Handle("GET /apps/files", auth.RequireAuthWeb(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	})))
 
 	// --- Status & OCS ---
 	mux.HandleFunc("GET /status.php", compat.HandleStatus)
@@ -132,9 +157,6 @@ func New(p *services.Providers) http.Handler {
 	// --- Files & Sharing API ---
 	filesAPI := files.NewAPI(p.Files, p.Shares, p.Users)
 	filesAPI.RegisterRoutes(mux)
-
-	// Register and start plugins
-	p.Plugins.Add(p.Files)
 
 	return authMW.Wrap(mux)
 }

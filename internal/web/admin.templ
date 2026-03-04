@@ -25,6 +25,10 @@ templ adminIndexPage(pd ui.PageData) {
 				<p>Manage storage volumes and backends.</p>
 				<a class="btn btn-primary" href="/admin/volumes">Manage Volumes</a>
 			}
+			@ui.Card("Plugins") {
+				<p>Enable or disable installed plugins.</p>
+				<a class="btn btn-primary" href="/admin/plugins">Manage Plugins</a>
+			}
 		</div>
 	}
 }
@@ -246,4 +250,55 @@ func memberLabel(m group.Member, users []user.User) string {
 		}
 	}
 	return m.MemberID
+}
+
+// --- Plugins ---
+
+templ adminPluginsPage(pd ui.PageData, plugins []PluginInfo) {
+	@ui.Base(pd) {
+		<div class="flex justify-between items-center" style="margin-bottom:1rem">
+			<h1>Plugins</h1>
+		</div>
+		@ui.Card("") {
+			<table class="table">
+				<thead>
+					<tr>
+						<th>Plugin</th>
+						<th>Status</th>
+						<th class="text-right">Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, p := range plugins {
+						<tr>
+							<td>{ p.ID }</td>
+							<td>
+								if p.Enabled {
+									<span class="badge badge-admin">Enabled</span>
+								} else {
+									<span class="badge">Disabled</span>
+								}
+								if p.Protected {
+									<span class="badge" style="margin-left:0.25rem">Protected</span>
+								}
+							</td>
+							<td class="text-right">
+								if !p.Protected {
+									<form method="post" action={ templ.SafeURL("/admin/plugins/" + p.ID + "/toggle") } style="display:inline">
+										<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+										if p.Enabled {
+											<button class="btn btn-outline btn-sm" type="submit">Disable</button>
+										} else {
+											<button class="btn btn-primary btn-sm" type="submit">Enable</button>
+										}
+									</form>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+		<a class="btn btn-outline" href="/admin/">Back</a>
+	}
 }

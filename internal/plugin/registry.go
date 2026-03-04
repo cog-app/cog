@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -34,18 +35,28 @@ type Registry struct {
 	mu    sync.Mutex
 	dbs   map[string]*sql.DB
 	order []string // plugin IDs in registration order
+
+	// Plugin enable/disable state.
+	enabled   map[string]bool // true = enabled (default)
+	protected map[string]bool // plugins that cannot be disabled
+	sysDB     *sql.DB         // system database for persisting plugin settings
 }
 
 // NewRegistry creates a new plugin registry.
 // dataDir is the root of user data (e.g. /var/lib/cog/data).
-func NewRegistry(dataDir string, mux *http.ServeMux) *Registry {
-	return &Registry{
+func NewRegistry(dataDir string, mux *http.ServeMux, sysDB *sql.DB) *Registry {
+	r := &Registry{
 		dataDir:    dataDir,
 		plugins:    make(map[string]Plugin),
 		mux:        mux,
 		registrars: make(map[string]*pluginRegistrar),
 		dbs:        make(map[string]*sql.DB),
+		enabled:    make(map[string]bool),
+		protected:  make(map[string]bool),
+		sysDB:      sysDB,
 	}
+	r.loadEnabledState()
+	return r
 }
 
 // Add registers a plugin with the registry.
@@ -192,6 +203,8 @@ type pluginRegistrar struct {
 	mux       *http.ServeMux
 	resources map[string]ResourceDef
 	hooks     map[string][]HookCallback
+	navItems  []NavItem
+	widgets   []Widget
 }
 
 func (pr *pluginRegistrar) RegisterAPI(path string, handler http.Handler) {
@@ -225,4 +238,122 @@ func (pr *pluginRegistrar) RegisterResource(def ResourceDef) {
 
 func (pr *pluginRegistrar) RegisterHook(hookName string, callback HookCallback) {
 	pr.hooks[hookName] = append(pr.hooks[hookName], callback)
+}
+
+func (pr *pluginRegistrar) RegisterNavItem(item NavItem) {
+	pr.navItems = append(pr.navItems, item)
+}
+
+func (pr *pluginRegistrar) RegisterWidget(w Widget) {
+	pr.widgets = append(pr.widgets, w)
+}
+
+// --- Plugin enable/disable ---
+
+// SetProtected marks a plugin as always-on (cannot be disabled).
+func (r *Registry) SetProtected(pluginID string) {
+	r.protected[pluginID] = true
+}
+
+// IsProtected returns true if a plugin cannot be disabled.
+func (r *Registry) IsProtected(pluginID string) bool {
+	return r.protected[pluginID]
+}
+
+// IsEnabled returns true if the plugin is currently enabled.
+func (r *Registry) IsEnabled(pluginID string) bool {
+	if r.protected[pluginID] {
+		return true
+	}
+	enabled, ok := r.enabled[pluginID]
+	if !ok {
+		return true // default enabled
+	}
+	return enabled
+}
+
+// SetEnabled enables or disables a plugin and persists the state.
+func (r *Registry) SetEnabled(pluginID string, enabled bool) {
+	if r.protected[pluginID] {
+		return
+	}
+	r.enabled[pluginID] = enabled
+	if r.sysDB != nil {
+		r.sysDB.Exec(
+			`INSERT INTO plugin_settings (plugin_id, enabled) VALUES (?, ?) ON CONFLICT(plugin_id) DO UPDATE SET enabled = ?`,
+			pluginID, boolToInt(enabled), boolToInt(enabled),
+		)
+	}
+}
+
+// PluginIDs returns all registered plugin IDs in registration order.
+func (r *Registry) PluginIDs() []string {
+	return r.order
+}
+
+func (r *Registry) loadEnabledState() {
+	if r.sysDB == nil {
+		return
+	}
+	rows, err := r.sysDB.Query(`SELECT plugin_id, enabled FROM plugin_settings`)
+	if err != nil {
+		return // table may not exist yet
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var enabled int
+		if rows.Scan(&id, &enabled) == nil {
+			r.enabled[id] = enabled != 0
+		}
+	}
+}
+
+// NavItems returns nav items from all enabled plugins.
+func (r *Registry) NavItems() []NavItem {
+	var items []NavItem
+	for _, id := range r.order {
+		if !r.IsEnabled(id) {
+			continue
+		}
+		reg := r.registrars[id]
+		items = append(items, reg.navItems...)
+	}
+	return items
+}
+
+// Widgets returns widgets from all enabled plugins, sorted by priority.
+func (r *Registry) Widgets() []Widget {
+	var widgets []Widget
+	for _, id := range r.order {
+		if !r.IsEnabled(id) {
+			continue
+		}
+		reg := r.registrars[id]
+		widgets = append(widgets, reg.widgets...)
+	}
+	sort.Slice(widgets, func(i, j int) bool {
+		return widgets[i].Priority < widgets[j].Priority
+	})
+	return widgets
+}
+
+// RequirePluginEnabled returns middleware that 404s if the plugin is disabled.
+func (r *Registry) RequirePluginEnabled(pluginID string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if !r.IsEnabled(pluginID) {
+				http.NotFound(w, req)
+				return
+			}
+			next.ServeHTTP(w, req)
+		})
+	}
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

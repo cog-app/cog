@@ -44,6 +44,7 @@ templ Base(pd PageData) {
 templ UserDropdown(pd PageData) {
 	<div class="dropdown" tabindex="0">
 		<button class="dropdown-toggle" type="button">
+			<img class="avatar-sm" src={ fmt.Sprintf("/avatar/%s", pd.User.ID) }/>
 			if pd.User.DisplayName != "" {
 				{ pd.User.DisplayName }
 			} else {
@@ -54,7 +55,7 @@ templ UserDropdown(pd PageData) {
 		<div class="dropdown-menu">
 			<a href="/settings">Settings</a>
 			if pd.User.IsAdmin {
-				<a href="/admin/users">Admin</a>
+				<a href="/admin/">Admin</a>
 			}
 			<div class="dropdown-divider"></div>
 			<form method="post" action="/logout">

@@ -5,16 +5,18 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/mount"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 )
 
 type AdminHandler struct {
-	Users   *user.Store
-	Groups  *group.Store
-	Volumes *volume.Store
-	Mounts  *mount.Store
-	Secret  []byte
+	Users    *user.Store
+	Groups   *group.Store
+	Volumes  *volume.Store
+	Mounts   *mount.Store
+	Plugins  *plugin.Registry
+	Secret   []byte
 }
 
 // --- Index ---
@@ -205,4 +207,39 @@ func (h *AdminHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	memberID := r.PathValue("member_id")
 	h.Groups.RemoveMember(groupID, memberID)
 	w.WriteHeader(http.StatusOK)
+}
+
+// --- Plugins ---
+
+// PluginInfo holds display data for the admin plugins page.
+type PluginInfo struct {
+	ID        string
+	Enabled   bool
+	Protected bool
+}
+
+func (h *AdminHandler) ListPlugins(w http.ResponseWriter, r *http.Request) {
+	pd := pageData(r, "Plugins", h.Secret)
+	var plugins []PluginInfo
+	if h.Plugins != nil {
+		for _, id := range h.Plugins.PluginIDs() {
+			plugins = append(plugins, PluginInfo{
+				ID:        id,
+				Enabled:   h.Plugins.IsEnabled(id),
+				Protected: h.Plugins.IsProtected(id),
+			})
+		}
+	}
+	adminPluginsPage(pd, plugins).Render(r.Context(), w)
+}
+
+func (h *AdminHandler) TogglePlugin(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if h.Plugins == nil || h.Plugins.IsProtected(id) {
+		http.Error(w, "cannot toggle this plugin", http.StatusBadRequest)
+		return
+	}
+	enabled := !h.Plugins.IsEnabled(id)
+	h.Plugins.SetEnabled(id, enabled)
+	http.Redirect(w, r, "/admin/plugins", http.StatusSeeOther)
 }

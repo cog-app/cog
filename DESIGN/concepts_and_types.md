@@ -91,6 +91,24 @@ type SearchPropagationJob struct {
 }
 ```
 
+## UI Extension Types
+
+```go
+// Navigation entry registered by a plugin for the app navbar.
+type NavItem struct {
+    Label string // display label, e.g. "Files"
+    URL   string // link target, e.g. "/apps/files"
+    Icon  string // optional CSS class
+}
+
+// Dashboard widget rendered on the root page.
+type Widget struct {
+    Title    string
+    Priority int // lower = rendered first
+    Render   func(ctx context.Context, w io.Writer, userID string) error
+}
+```
+
 ## Invariants
 
 - `shares` is global and canonical.

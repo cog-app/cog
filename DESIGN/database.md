@@ -11,6 +11,9 @@ A global SQLite database handles system-wide identity, sharing, and routing stat
 - `password_hash`
 - `home_mount` (Path to data root, e.g., `local://var/lib/cog/data/alice`)
 - `created_at`
+- `is_admin` (Boolean, first user auto-promoted)
+- `display_name` (Text)
+- `avatar` (Text, filename in `{dataDir}/avatars/`, empty = no avatar)
 
 **Table: `groups`**
 - `id` (UUID)
@@ -41,6 +44,12 @@ A global SQLite database handles system-wide identity, sharing, and routing stat
 - `(owner_user_id)`
 - `(resource_type, resource_id)`
 - `(token)` where token is not null
+
+**Table: `plugin_settings`**
+- `plugin_id` (Text PK)
+- `enabled` (Integer, 1 = enabled, 0 = disabled)
+
+Stores admin-managed plugin enable/disable state. Plugins default to enabled if no row exists. Protected plugins (dashboard, files) ignore this table.
 
 **Table: `group_membership_closure` (optional cache)**
 - `ancestor_group_id`

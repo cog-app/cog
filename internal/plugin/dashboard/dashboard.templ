@@ -1,0 +1,50 @@
+package dashboard
+
+import (
+	"context"
+	"io"
+
+	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/ui"
+)
+
+templ dashboardPage(pd ui.PageData, apps []AppLink, widgets []plugin.Widget, userID string) {
+	@ui.Base(pd) {
+		<h1 style="margin-bottom:1rem">Dashboard</h1>
+		if len(apps) > 0 {
+			<div class="app-grid">
+				for _, app := range apps {
+					<a href={ templ.SafeURL(app.URL) } class="card app-card">
+						<div class="app-card-label">{ app.Label }</div>
+					</a>
+				}
+			</div>
+		}
+		if len(widgets) > 0 {
+			<div style="margin-top:1.5rem">
+				for _, w := range widgets {
+					@ui.Card(w.Title) {
+						@widgetContent(w, userID)
+					}
+				}
+			</div>
+		}
+		if len(apps) == 0 && len(widgets) == 0 {
+			<div class="card">
+				<p>
+					You are logged in as <strong>{ pd.User.Username }</strong>.
+				</p>
+			</div>
+		}
+	}
+}
+
+templ widgetContent(w plugin.Widget, userID string) {
+	@widgetAdapter(w, userID)
+}
+
+func widgetAdapter(w plugin.Widget, userID string) templ.Component {
+	return templ.ComponentFunc(func(ctx context.Context, wr io.Writer) error {
+		return w.Render(ctx, wr, userID)
+	})
+}

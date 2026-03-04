@@ -22,12 +22,14 @@ type User struct {
 	CreatedAt    time.Time
 	IsAdmin      bool
 	DisplayName  string
+	Avatar       string
 }
 
 // UpdateOpts specifies which fields to update. Nil fields are left unchanged.
 type UpdateOpts struct {
 	DisplayName *string
 	IsAdmin     *bool
+	Avatar      *string
 }
 
 type Store struct {
@@ -82,13 +84,13 @@ func (s *Store) Create(username, password string) (*User, error) {
 
 func (s *Store) GetByUsername(username string) (*User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name FROM users WHERE username = ?`, username,
+		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar FROM users WHERE username = ?`, username,
 	))
 }
 
 func (s *Store) GetByID(id string) (*User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name FROM users WHERE id = ?`, id,
+		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar FROM users WHERE id = ?`, id,
 	))
 }
 
@@ -111,7 +113,7 @@ func (s *Store) Authenticate(username, password string) (*User, error) {
 // List returns all users ordered by username.
 func (s *Store) List() ([]User, error) {
 	rows, err := s.db.Query(
-		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name FROM users ORDER BY username`,
+		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar FROM users ORDER BY username`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
@@ -123,7 +125,7 @@ func (s *Store) List() ([]User, error) {
 		var u User
 		var createdAt int64
 		var isAdmin int
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar); err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
 		u.CreatedAt = time.Unix(createdAt, 0)
@@ -154,6 +156,11 @@ func (s *Store) Update(id string, opts UpdateOpts) error {
 		}
 		if _, err := s.db.Exec(`UPDATE users SET is_admin = ? WHERE id = ?`, admin, id); err != nil {
 			return fmt.Errorf("update is_admin: %w", err)
+		}
+	}
+	if opts.Avatar != nil {
+		if _, err := s.db.Exec(`UPDATE users SET avatar = ? WHERE id = ?`, *opts.Avatar, id); err != nil {
+			return fmt.Errorf("update avatar: %w", err)
 		}
 	}
 	return nil
@@ -196,7 +203,7 @@ func (s *Store) scanUser(row *sql.Row) (*User, error) {
 	var u User
 	var createdAt int64
 	var isAdmin int
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
