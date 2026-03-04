@@ -367,6 +367,7 @@ func (a *API) handlePublicLinkCreate(w http.ResponseWriter, r *http.Request) {
 		ResourceID   string `json:"resource_id"`
 		Permissions  uint32 `json:"permissions"`
 		Expiration   *int64 `json:"expiration"` // unix timestamp
+		Password     string `json:"password"`   // optional password protection
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -385,9 +386,9 @@ func (a *API) handlePublicLinkCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rec, err := a.shares.CreatePublicLink(
+	rec, err := a.shares.CreatePublicLinkWithPassword(
 		u.ID, req.ResourceType, req.ResourceID,
-		req.Permissions, req.Expiration,
+		req.Permissions, req.Expiration, req.Password,
 	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -407,6 +408,18 @@ func (a *API) handlePublicLinkAccess(w http.ResponseWriter, r *http.Request) {
 	rec, err := a.shares.GetByToken(token)
 	if err != nil {
 		http.Error(w, "link not found or expired", http.StatusNotFound)
+		return
+	}
+
+	// Check password if set.
+	if err := a.checkSharePassword(rec, r); err != nil {
+		if err == share.ErrPasswordRequired {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Password required"`)
+			http.Error(w, "password required", http.StatusUnauthorized)
+		} else {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Password required"`)
+			http.Error(w, "incorrect password", http.StatusUnauthorized)
+		}
 		return
 	}
 
@@ -455,6 +468,18 @@ func (a *API) handlePublicLinkDownload(w http.ResponseWriter, r *http.Request) {
 	rec, err := a.shares.GetByToken(token)
 	if err != nil {
 		http.Error(w, "link not found or expired", http.StatusNotFound)
+		return
+	}
+
+	// Check password if set.
+	if err := a.checkSharePassword(rec, r); err != nil {
+		if err == share.ErrPasswordRequired {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Password required"`)
+			http.Error(w, "password required", http.StatusUnauthorized)
+		} else {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Password required"`)
+			http.Error(w, "incorrect password", http.StatusUnauthorized)
+		}
 		return
 	}
 
@@ -568,6 +593,21 @@ func (a *API) verifyOwnership(u *user.User, resourceType, resourceID string) err
 	}
 
 	return nil
+}
+
+// checkSharePassword extracts a password from the request (Basic auth or query param)
+// and validates it against the share record.
+func (a *API) checkSharePassword(rec *share.Record, r *http.Request) error {
+	if rec.PasswordHash == nil || *rec.PasswordHash == "" {
+		return nil
+	}
+	// Try Basic auth password first (username is ignored for share links).
+	if _, password, ok := r.BasicAuth(); ok {
+		return share.CheckPassword(rec, password)
+	}
+	// Fall back to query parameter.
+	password := r.URL.Query().Get("password")
+	return share.CheckPassword(rec, password)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

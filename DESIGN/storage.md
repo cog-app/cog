@@ -4,21 +4,23 @@
 
 Cog uses a virtual filesystem abstraction inspired by `hackpadfs`. This allows seamless integration of various storage backends while presenting a unified hierarchy to the user.
 
-### 1. The Virtual File System (VFS)
+### 1. The Virtual File System (VFS) — Volumes & Mounts
 
-The root of the VFS is a composition of mount points.
+The VFS is built on the **volume/mount system**. A `volume` represents a storage backend, and a `mount` binds a volume (or subpath) to a location in a user's virtual filesystem.
 
-- **Root:** `/`
-- **User Home:** `/users/{username}/`
-- **Shared:** `/shared/`
+- Each user has a **root mount** (`/`) pointing to their default volume, created automatically during user provisioning.
+- Additional mounts can attach remote or shared storage at arbitrary paths within the user's tree.
+- The `volume.Backend` interface is the filesystem abstraction. Backends are selected by the volume's URI scheme.
 
 ### 2. Backends
 
-The `fs.FS` interface will be implemented by drivers for:
+The `volume.Backend` interface is implemented by drivers for:
 
-- **Local Disk:** Direct mapping to the OS filesystem.
-- **S3 / Object Storage:** Translating object keys to file paths.
-- **Google Drive:** API wrapper.
+- **`file://`** — Local disk. Direct mapping to the OS filesystem.
+- **`webdav://`** — Remote WebDAV server.
+- **`mem://`** — In-memory (used for testing).
+
+Future backends (S3, Google Drive, SFTP, SMB, FTP) will implement the same interface.
 
 ### 3. Flat File Storage
 

@@ -114,6 +114,13 @@ func migrate(db *sql.DB) error {
 		plugin_id TEXT PRIMARY KEY,
 		enabled INTEGER NOT NULL DEFAULT 1
 	);
+
+	CREATE TABLE IF NOT EXISTS group_membership_closure (
+		ancestor_group_id TEXT NOT NULL,
+		descendant_user_id TEXT NOT NULL,
+		depth INTEGER NOT NULL,
+		PRIMARY KEY (ancestor_group_id, descendant_user_id)
+	);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		return err

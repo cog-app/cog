@@ -64,16 +64,16 @@ func newFromDB(cfg config.Config, sysDB *sql.DB, mux *http.ServeMux) *Providers 
 	// Bootstrap default volume and root mounts for existing users.
 	mount.Bootstrap(cfg.DataDir, users, volumes, mounts)
 
-	registry := plugin.NewRegistry(cfg.DataDir, mux, sysDB)
+	secret := make([]byte, 32)
+	rand.Read(secret)
+
+	registry := plugin.NewRegistry(cfg.DataDir, mux, sysDB, secret)
 
 	// Wire mount resolver into plugin registry.
 	resolver := mount.NewResolver(users, mounts, volumes)
 	registry.SetMountResolver(resolver)
 
 	filesPlugin := files.New(registry)
-
-	secret := make([]byte, 32)
-	rand.Read(secret)
 
 	return &Providers{
 		Config:       cfg,

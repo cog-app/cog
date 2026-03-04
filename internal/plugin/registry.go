@@ -11,6 +11,7 @@ import (
 	"sort"
 	"sync"
 
+	"git.duckfam.us/jj-software/cog/internal/auth"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -37,14 +38,16 @@ type Registry struct {
 	order []string // plugin IDs in registration order
 
 	// Plugin enable/disable state.
-	enabled   map[string]bool // true = enabled (default)
-	protected map[string]bool // plugins that cannot be disabled
-	sysDB     *sql.DB         // system database for persisting plugin settings
+	enabled    map[string]bool // true = enabled (default)
+	protected  map[string]bool // plugins that cannot be disabled
+	sysDB      *sql.DB         // system database for persisting plugin settings
+	csrfSecret []byte          // CSRF secret for plugin-scoped tokens
 }
 
 // NewRegistry creates a new plugin registry.
 // dataDir is the root of user data (e.g. /var/lib/cog/data).
-func NewRegistry(dataDir string, mux *http.ServeMux, sysDB *sql.DB) *Registry {
+// csrfSecret is used for plugin-scoped CSRF token generation.
+func NewRegistry(dataDir string, mux *http.ServeMux, sysDB *sql.DB, csrfSecret []byte) *Registry {
 	r := &Registry{
 		dataDir:    dataDir,
 		plugins:    make(map[string]Plugin),
@@ -54,6 +57,7 @@ func NewRegistry(dataDir string, mux *http.ServeMux, sysDB *sql.DB) *Registry {
 		enabled:    make(map[string]bool),
 		protected:  make(map[string]bool),
 		sysDB:      sysDB,
+		csrfSecret: csrfSecret,
 	}
 	r.loadEnabledState()
 	return r
@@ -74,10 +78,12 @@ func (r *Registry) Add(p Plugin) error {
 	}
 
 	reg := &pluginRegistrar{
-		pluginID:  id,
-		mux:       r.mux,
-		resources: make(map[string]ResourceDef),
-		hooks:     make(map[string][]HookCallback),
+		pluginID:   id,
+		mux:        r.mux,
+		registry:   r,
+		csrfSecret: r.csrfSecret,
+		resources:  make(map[string]ResourceDef),
+		hooks:      make(map[string][]HookCallback),
 	}
 	r.registrars[id] = reg
 
@@ -134,6 +140,57 @@ func (r *Registry) PluginDB(username, pluginID string) (*sql.DB, error) {
 	db.SetMaxOpenConns(1)
 	r.dbs[key] = db
 	return db, nil
+}
+
+// UserDB returns (or opens) the per-user database.
+// Path: {dataDir}/{username}/user.db
+// Creates user_settings and ssh_keys tables on first access.
+func (r *Registry) UserDB(username string) (*sql.DB, error) {
+	key := username + ":__user__"
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if db, ok := r.dbs[key]; ok {
+		return db, nil
+	}
+
+	dir := filepath.Join(r.dataDir, username)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return nil, fmt.Errorf("create user dir: %w", err)
+	}
+
+	dbPath := filepath.Join(dir, "user.db")
+	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_foreign_keys=on")
+	if err != nil {
+		return nil, fmt.Errorf("open user db %s: %w", dbPath, err)
+	}
+	db.SetMaxOpenConns(1)
+
+	if err := migrateUserDB(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate user db: %w", err)
+	}
+
+	r.dbs[key] = db
+	return db, nil
+}
+
+func migrateUserDB(db *sql.DB) error {
+	const schema = `
+	CREATE TABLE IF NOT EXISTS user_settings (
+		key TEXT PRIMARY KEY,
+		value BLOB,
+		updated_at INTEGER NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS ssh_keys (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		public_key TEXT NOT NULL,
+		created_at INTEGER NOT NULL
+	);
+	`
+	_, err := db.Exec(schema)
+	return err
 }
 
 // SetMountResolver sets an optional mount resolver for path resolution.
@@ -204,41 +261,50 @@ func (r *Registry) Plugin(id string) (Plugin, bool) {
 
 // pluginRegistrar implements Registrar for a specific plugin.
 type pluginRegistrar struct {
-	pluginID  string
-	mux       *http.ServeMux
-	resources map[string]ResourceDef
-	hooks     map[string][]HookCallback
-	navItems  []NavItem
-	widgets   []Widget
+	pluginID   string
+	mux        *http.ServeMux
+	registry   *Registry
+	csrfSecret []byte
+	resources  map[string]ResourceDef
+	hooks      map[string][]HookCallback
+	navItems   []NavItem
+	widgets    []Widget
+}
+
+// wrap applies RequirePluginEnabled middleware to a handler.
+func (pr *pluginRegistrar) wrap(h http.Handler) http.Handler {
+	return pr.registry.RequirePluginEnabled(pr.pluginID)(h)
 }
 
 func (pr *pluginRegistrar) RegisterAPI(path string, handler http.Handler) {
 	pattern := fmt.Sprintf("/api/%s/%s", pr.pluginID, path)
-	pr.mux.Handle(pattern, handler)
+	pr.mux.Handle(pattern, pr.wrap(handler))
 }
 
 func (pr *pluginRegistrar) RegisterPage(path string, handler http.Handler) {
 	pattern := fmt.Sprintf("/apps/%s/%s", pr.pluginID, path)
-	pr.mux.Handle(pattern, handler)
+	pr.mux.Handle(pattern, pr.wrap(handler))
 }
 
 func (pr *pluginRegistrar) RegisterAction(method, path string, handler http.Handler) {
 	pattern := fmt.Sprintf("%s /apps/%s/%s", method, pr.pluginID, path)
-	pr.mux.Handle(pattern, handler)
+	// Actions use session cookies, so enforce plugin-scoped CSRF.
+	wrapped := auth.RequireCSRFFor(pr.pluginID, pr.csrfSecret, handler)
+	pr.mux.Handle(pattern, pr.wrap(wrapped))
 }
 
 func (pr *pluginRegistrar) RegisterResource(def ResourceDef) {
 	pr.resources[def.Type] = def
 	// Mount the resource handler at /apps/{plugin_id}/{type}/{id}
 	pattern := fmt.Sprintf("/apps/%s/%s/", pr.pluginID, def.Type)
-	pr.mux.Handle(pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	pr.mux.Handle(pattern, pr.wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resourceID := r.PathValue("id")
 		if resourceID == "" {
 			// Extract from URL path
 			resourceID = filepath.Base(r.URL.Path)
 		}
 		def.Handler.ServeResource(w, r, resourceID)
-	}))
+	})))
 }
 
 func (pr *pluginRegistrar) RegisterHook(hookName string, callback HookCallback) {

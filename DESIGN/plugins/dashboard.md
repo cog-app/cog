@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS plugin_settings (
 - When a plugin is disabled:
   - Its nav items are removed from the navbar.
   - Its widgets are excluded from the dashboard.
-  - Routes registered via `RegisterPage`, `RegisterAPI`, and `RegisterAction` can be wrapped with `Registry.RequirePluginEnabled()` middleware to return 404.
+  - All routes registered via `RegisterPage`, `RegisterAPI`, `RegisterAction`, and `RegisterResource` are automatically wrapped with `RequirePluginEnabled()` middleware to return 404.
 
 ## User Avatars
 

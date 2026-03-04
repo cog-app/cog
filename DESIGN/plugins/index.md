@@ -66,7 +66,7 @@ Plugins register routes via the `PluginRegistrar`. Cog handles the underlying ro
 - **Actions:**
   - **Purpose:** State-changing operations (POST/PUT/DELETE) from forms or HTMX.
   - **Format:** Returns HTMX fragments.
-  - **CSRF:** Strictly enforced using the plugin's namespaced secret.
+  - **CSRF:** Strictly enforced. Tokens are namespaced per plugin via `HMAC(secret, sessionID+pluginID)`, automatically applied by `RegisterAction()`.
 - **Resources (`/apps/{plugin_id}/{resource_name}/{resource_id}`):**
   - Standardized URLs for specific plugin objects.
   - Used as the destination for **Global Search** results and **Public Link Sharing**.

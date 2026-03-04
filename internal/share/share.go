@@ -10,10 +10,13 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var ErrNotFound = errors.New("share not found")
 var ErrAccessDenied = errors.New("access denied")
+var ErrPasswordRequired = errors.New("password required")
+var ErrPasswordIncorrect = errors.New("incorrect password")
 
 // Record is a canonical global share record.
 type Record struct {
@@ -118,6 +121,55 @@ func (s *Store) CreatePublicLink(ownerUserID, resourceType, resourceID string, p
 	}, nil
 }
 
+// CreatePublicLinkWithPassword creates a password-protected public link.
+func (s *Store) CreatePublicLinkWithPassword(ownerUserID, resourceType, resourceID string, permissions uint32, expiration *int64, password string) (*Record, error) {
+	rec, err := s.CreatePublicLink(ownerUserID, resourceType, resourceID, permissions, expiration)
+	if err != nil {
+		return nil, err
+	}
+	if password != "" {
+		if err := s.SetPassword(rec.ID, password); err != nil {
+			return nil, err
+		}
+	}
+	return rec, nil
+}
+
+// SetPassword sets a bcrypt-hashed password on a share.
+func (s *Store) SetPassword(shareID, password string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	res, err := s.db.Exec(`UPDATE shares SET password_hash = ?, updated_at = ? WHERE id = ?`,
+		string(hash), time.Now().Unix(), shareID)
+	if err != nil {
+		return fmt.Errorf("set share password: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// CheckPassword verifies a password against the share's hash.
+// Returns nil if the share has no password set.
+// Returns ErrPasswordRequired if the share has a password but none was provided.
+// Returns ErrPasswordIncorrect if the password doesn't match.
+func CheckPassword(rec *Record, password string) error {
+	if rec.PasswordHash == nil || *rec.PasswordHash == "" {
+		return nil // no password required
+	}
+	if password == "" {
+		return ErrPasswordRequired
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(*rec.PasswordHash), []byte(password)); err != nil {
+		return ErrPasswordIncorrect
+	}
+	return nil
+}
+
 // Get retrieves a share by ID.
 func (s *Store) Get(id string) (*Record, error) {
 	return s.scanRecord(s.db.QueryRow(`
@@ -181,8 +233,8 @@ func (s *Store) ListBySubject(subjectID string) ([]Record, error) {
 		FROM shares s
 		WHERE (s.subject_type = 'USER' AND s.subject_id = ?)
 		   OR (s.subject_type = 'GROUP' AND s.subject_id IN (
-				SELECT group_id FROM group_members
-				WHERE member_type = 'USER' AND member_id = ?
+				SELECT ancestor_group_id FROM group_membership_closure
+				WHERE descendant_user_id = ?
 			))
 		ORDER BY s.created_at DESC`, subjectID, subjectID)
 	if err != nil {
@@ -221,8 +273,8 @@ func (s *Store) CheckAccess(userID, resourceType, resourceID string) (*AccessDec
 		  AND (
 			(s.subject_type = 'USER' AND s.subject_id = ?)
 			OR (s.subject_type = 'GROUP' AND s.subject_id IN (
-				SELECT group_id FROM group_members
-				WHERE member_type = 'USER' AND member_id = ?
+				SELECT ancestor_group_id FROM group_membership_closure
+				WHERE descendant_user_id = ?
 			))
 		  )
 		  AND (s.expiration IS NULL OR s.expiration > ?)`,

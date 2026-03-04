@@ -51,10 +51,36 @@ A global SQLite database handles system-wide identity, sharing, and routing stat
 
 Stores admin-managed plugin enable/disable state. Plugins default to enabled if no row exists. Protected plugins (dashboard, files) ignore this table.
 
-**Table: `group_membership_closure` (optional cache)**
+**Table: `volumes`**
+- `id` (UUID)
+- `name` (Unique)
+- `description` (Text)
+- `uri` (Text, e.g. `file:///var/lib/cog/data/alice/files`)
+- `created_by` (Text, default 'system')
+- `created_at` (Integer)
+- `owner_id` (UUID FK, Nullable)
+- `config` (JSON text, default '{}')
+
+Volumes represent storage backends. The `uri` scheme selects the backend driver (`file://`, `webdav://`, `mem://`). The `volume.Backend` interface provides the filesystem abstraction.
+
+**Table: `mounts`**
+- `id` (UUID)
+- `user_id` (UUID FK)
+- `user_path` (Text, e.g. `/`)
+- `volume_id` (UUID FK)
+- `volume_subpath` (Text, default '')
+- `read_only` (Integer, default 0)
+- `created_at` (Integer)
+- Unique: `(user_id, user_path)`
+
+Mounts bind a volume (or subpath within it) to a location in a user's virtual filesystem. Each user has a root mount (`/`) created during provisioning.
+
+**Table: `group_membership_closure` (cache)**
 - `ancestor_group_id`
 - `descendant_user_id`
 - `depth`
+
+Materialized closure table rebuilt after any group membership change. Used by share queries (`CheckAccess`, `ListBySubject`) for fast transitive group permission lookups instead of recursive subqueries.
 
 ## User Database Schema (Per-User SQLite)
 
@@ -94,14 +120,7 @@ The `files` plugin is a privileged in-process plugin. It uses the standard plugi
 - `is_dir` (Boolean)
 
 ### Plugins (Generic Storage)
-Plugins can request their own tables, but standard practice is to use namespaced tables or a Key-Value store provided by the host.
-
-**Table: `plugin_kv`**
-- `plugin_id` (Text)
-- `key` (Text)
-- `value` (Blob)
-- `updated_at` (Integer)
-- *Primary Key: (plugin_id, key)*
+Plugins can request their own tables within their per-user `plugin.db` database. Each plugin gets an isolated SQLite database at `app_data/{plugin_id}/plugin.db`.
 
 ## Search Index (Per-User)
 

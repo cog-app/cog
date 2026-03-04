@@ -68,6 +68,8 @@ func (h *WebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleMkcol(w, r, u, filePath)
 	case "MOVE":
 		h.handleMove(w, r, u, filePath)
+	case "COPY":
+		h.handleCopy(w, r, u, filePath)
 	default:
 		w.Header().Set("DAV", "1, 3, extended-mkcol")
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -262,6 +264,95 @@ func (h *WebDAVHandler) handleMove(w http.ResponseWriter, r *http.Request, u *us
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+}
+
+// --- COPY ---
+
+func (h *WebDAVHandler) handleCopy(w http.ResponseWriter, r *http.Request, u *user.User, srcPath string) {
+	dest := r.Header.Get("Destination")
+	if dest == "" {
+		http.Error(w, "missing Destination header", http.StatusBadRequest)
+		return
+	}
+
+	destPath := dest
+	if idx := strings.Index(dest, "/remote.php/"); idx >= 0 {
+		destPath = dest[idx:]
+	}
+	_, newPath := h.extractPath(destPath)
+
+	overwrite := r.Header.Get("Overwrite")
+	if overwrite == "" {
+		overwrite = "T"
+	}
+
+	// Check if destination exists.
+	destMeta, _ := h.Files.GetByPath(u.Username, newPath)
+	if destMeta != nil && overwrite == "F" {
+		http.Error(w, "destination exists", http.StatusPreconditionFailed)
+		return
+	}
+
+	srcMeta, err := h.Files.GetByPath(u.Username, srcPath)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	if srcMeta.IsDir {
+		if err := h.copyDir(u.Username, srcPath, newPath); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	} else {
+		if err := h.copyFile(u.Username, srcPath, newPath); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if destMeta != nil {
+		w.WriteHeader(http.StatusNoContent) // overwritten
+	} else {
+		w.WriteHeader(http.StatusCreated)
+	}
+}
+
+func (h *WebDAVHandler) copyFile(username, srcPath, destPath string) error {
+	f, _, err := h.Files.Download(username, srcPath)
+	if err != nil {
+		return fmt.Errorf("copy download: %w", err)
+	}
+	defer f.Close()
+
+	_, err = h.Files.Upload(username, destPath, f)
+	return err
+}
+
+func (h *WebDAVHandler) copyDir(username, srcPath, destPath string) error {
+	if _, err := h.Files.CreateDir(username, destPath); err != nil {
+		return fmt.Errorf("copy mkdir: %w", err)
+	}
+
+	children, err := h.Files.List(username, srcPath)
+	if err != nil {
+		return fmt.Errorf("copy list: %w", err)
+	}
+
+	for i := range children {
+		child := &children[i]
+		childDest := destPath + "/" + child.Name
+		if child.IsDir {
+			if err := h.copyDir(username, child.Path, childDest); err != nil {
+				return err
+			}
+		} else {
+			if err := h.copyFile(username, child.Path, childDest); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // HandleDirectDownload handles POST /ocs/v2.php/apps/dav/api/v1/direct.

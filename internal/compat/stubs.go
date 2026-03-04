@@ -59,6 +59,16 @@ func HandlePreview(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
 }
 
+// HandleWellKnownCalDAV redirects to the DAV endpoint for CalDAV discovery.
+func HandleWellKnownCalDAV(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/remote.php/dav/", http.StatusMovedPermanently)
+}
+
+// HandleWellKnownCardDAV redirects to the DAV endpoint for CardDAV discovery.
+func HandleWellKnownCardDAV(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/remote.php/dav/", http.StatusMovedPermanently)
+}
+
 // RegisterStubs registers all stub/TODO routes on the given mux.
 // These are minimal responses to keep NC clients happy while
 // real implementations are built out.
@@ -84,5 +94,9 @@ func RegisterStubs(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ocs/v2.php/apps/user_status/api/v1/user_status", HandleUserStatus)
 	mux.HandleFunc("GET /ocs/v1.php/apps/user_status/api/v1/user_status", HandleUserStatus)
 
-	fmt.Println("Registered stub routes: avatar, notifications, recommendations, user_status, preview, connectivity check")
+	// .well-known discovery redirects
+	mux.HandleFunc("GET /.well-known/caldav", HandleWellKnownCalDAV)
+	mux.HandleFunc("GET /.well-known/carddav", HandleWellKnownCardDAV)
+
+	fmt.Println("Registered stub routes: avatar, notifications, recommendations, user_status, preview, connectivity check, well-known")
 }

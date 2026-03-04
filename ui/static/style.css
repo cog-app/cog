@@ -237,6 +237,13 @@ a:hover { text-decoration: underline; }
 }
 .btn-outline:hover { background: var(--color-bg); }
 
+.btn-secondary {
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    color: var(--color-text);
+}
+.btn-secondary:hover { background: var(--color-bg); }
+
 .btn-sm {
     padding: 0.3rem 0.6rem;
     font-size: 0.8rem;

@@ -103,6 +103,7 @@ func (s *Store) Delete(id string) error {
 	if n == 0 {
 		return ErrNotFound
 	}
+	s.RebuildClosure()
 	return nil
 }
 
@@ -111,6 +112,9 @@ func (s *Store) AddMember(groupID, memberID, memberType string) error {
 		`INSERT OR IGNORE INTO group_members (group_id, member_id, member_type) VALUES (?, ?, ?)`,
 		groupID, memberID, memberType,
 	)
+	if err == nil {
+		s.RebuildClosure()
+	}
 	return err
 }
 
@@ -119,6 +123,9 @@ func (s *Store) RemoveMember(groupID, memberID string) error {
 		`DELETE FROM group_members WHERE group_id = ? AND member_id = ?`,
 		groupID, memberID,
 	)
+	if err == nil {
+		s.RebuildClosure()
+	}
 	return err
 }
 
@@ -164,6 +171,34 @@ func (s *Store) ListGroupsForUser(userID string) ([]Group, error) {
 		groups = append(groups, g)
 	}
 	return groups, rows.Err()
+}
+
+// RebuildClosure recomputes the group_membership_closure table.
+// It uses a recursive CTE to walk the group tree and find all
+// (ancestor_group, descendant_user) pairs at each depth level.
+func (s *Store) RebuildClosure() {
+	_, _ = s.db.Exec(`
+		DELETE FROM group_membership_closure;
+
+		INSERT INTO group_membership_closure (ancestor_group_id, descendant_user_id, depth)
+		WITH RECURSIVE closure(group_id, user_id, depth) AS (
+			-- Base case: direct USER members
+			SELECT gm.group_id, gm.member_id, 0
+			FROM group_members gm
+			WHERE gm.member_type = 'USER'
+
+			UNION ALL
+
+			-- Recursive case: walk up through group nesting
+			SELECT gm.group_id, c.user_id, c.depth + 1
+			FROM group_members gm
+			JOIN closure c ON gm.member_id = c.group_id
+			WHERE gm.member_type = 'GROUP'
+		)
+		SELECT group_id, user_id, MIN(depth)
+		FROM closure
+		GROUP BY group_id, user_id
+	`)
 }
 
 func generateID() (string, error) {

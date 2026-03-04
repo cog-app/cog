@@ -21,7 +21,7 @@ templ ShowWidget(data string) {
     @ui.PageLayout("My Widget") {
         @ui.Card() {
             <h1>{ data }</h1>
-            @ui.Button(ui.ButtonPrimary, "Click Me")
+            @ui.Button("primary", "Click Me")
         }
     }
 }
@@ -57,9 +57,9 @@ Cog uses a structured routing system to balance ease of use with security (CSRF 
 
 ### CSRF Implementation
 
-1.  **Namespacing:** Each plugin has its own CSRF secret to ensure a compromise in one plugin doesn't affect others.
-2.  **Middleware:** The Host provides a global CSRF middleware that validates tokens for all `/apps/` and `/settings/` routes.
-3.  **HTMX Integration:** HTMX requests automatically include the CSRF token in the `X-CSRF-Token` header via a global event listener configured in the main layout.
+1.  **Namespacing:** CSRF tokens are scoped per-plugin via `HMAC-SHA256(secret, sessionID || 0x00 || pluginID)`. A single global CSRF secret produces unique tokens for each plugin, so a token leaked from one plugin cannot be used against another.
+2.  **Middleware:** `RegisterAction()` automatically wraps handlers with plugin-scoped CSRF validation. Non-plugin routes (settings, admin, logout) use the global CSRF token (`HMAC(secret, sessionID)` without a plugin ID).
+3.  **HTMX Integration:** HTMX requests automatically include the CSRF token in the `X-CSRF-Token` header via a global event listener configured in the main layout. Plugin pages must use `auth.CSRFTokenFor(sessionID, pluginID, secret)` to generate their scoped token.
 
 ## NextCloud Compatibility
 
@@ -123,6 +123,6 @@ Widgets are sorted by priority and rendered server-side inside `ui.Card` wrapper
 Admins manage plugins at `/admin/plugins`. Disabling a plugin:
 - Removes its nav items from the navbar
 - Excludes its widgets from the dashboard
-- Can 404 its routes via `RequirePluginEnabled()` middleware
+- Routes automatically 404 via `RequirePluginEnabled()` middleware (applied by all `Register*` methods)
 
 Protected plugins (dashboard, files) cannot be disabled.

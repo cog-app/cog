@@ -17,6 +17,15 @@ templ Alert(kind string, msg string) {
 	}
 }
 
+// Button renders a styled button. Kind can be "primary", "danger", or "secondary" (default).
+templ Button(kind string, label string) {
+	if kind == "" {
+		<button class="btn btn-secondary">{ label }</button>
+	} else {
+		<button class={ "btn btn-" + kind }>{ label }</button>
+	}
+}
+
 // FormField renders a labeled input field.
 templ FormField(label, name, typ, value, placeholder string) {
 	<div class="form-group">
