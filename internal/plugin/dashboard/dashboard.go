@@ -19,8 +19,10 @@ type WidgetProvider interface {
 	IsEnabled(string) bool
 }
 
-// Plugin is the dashboard plugin.
+// Plugin is the dashboard plugin. Embedding Protected makes the
+// registry auto-detect it as always-on.
 type Plugin struct {
+	plugin.Protected
 	Registry WidgetProvider
 	Secret   []byte
 }

@@ -44,7 +44,13 @@ go test ./internal/server
 
 **Files plugin** (`internal/plugin/files/`): Core privileged plugin (in-process, not gRPC). Each user gets a separate SQLite database for file metadata. Handles upload, download, list, delete, rename, search.
 
-**Plugin system** (`internal/plugin/`): Plugins implement `Plugin` interface (ID, Register, Start, Stop). Registration provides hooks for APIs, pages, actions, resources. Plugins get per-user databases via the registry.
+**Plugin system**: Split into public and internal packages:
+- `plugin/` — Public API for plugin authors (`Plugin`, `Registrar` interfaces, types, permission constants).
+- `plugin/plugpb/` — gRPC proto definition for out-of-process plugins. Generated via `go generate` using `goprotoc`.
+- `plugin/plugcmd/` — `Run(plugin.Plugin)` helper for building external plugin binaries.
+- `internal/plugin/` — Host-side registry, `Protected` marker struct, type aliases, and `grpcPlugin` adapter.
+- Privileged plugins embed `internal/plugin.Protected`; the registry auto-detects this in `Add()`.
+- `cog.go` — Root package with `cog.Run(cfg, ...plugin.Plugin)` convenience entry point for custom builds.
 
 **NextCloud compat** (`internal/compat/`): OCS endpoints, Login Flow v2, WebDAV at `/remote.php/dav/files/{user_id}/*`, direct download tokens.
 
@@ -55,7 +61,11 @@ go test ./internal/server
 - **Single-writer SQLite**: WAL mode, `MaxOpenConns=1`, foreign keys enabled
 - **Per-user plugin databases**: Each plugin gets its own SQLite DB per user
 - **Context-based auth**: Authenticated user propagated via request context
-- **Dev tool**: `go tool dev` is defined in `go.mod` as a Go 1.24 tool dependency (`internal/cmd/dev`)
+- **Protected pattern**: Privileged plugins embed `internal/plugin.Protected`; auto-detected by registry (no `SetProtected` call)
+- **Custom builds**: `cog.Run(cfg, extraPlugin1, extraPlugin2)` starts a server with additional plugins
+- **gRPC plugins**: External plugin binaries use `plugcmd.Run(p)` and are loaded via `registry.LoadExternal(path)`
+- **Proto generation**: `cd plugin/plugpb && go generate` (uses `goprotoc`, no external `protoc` needed)
+- **Dev tool**: `go tool dev` is defined in `go.mod` as a Go tool dependency (`internal/cmd/dev`)
 - **Design docs**: `/DESIGN/` directory contains specs for requirements, database schema, file protocols, sharing, frontend stack (HTMX + templ), and NextCloud API compatibility
 
 ## Testing

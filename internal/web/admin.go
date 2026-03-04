@@ -226,7 +226,7 @@ func (h *AdminHandler) ListPlugins(w http.ResponseWriter, r *http.Request) {
 			plugins = append(plugins, PluginInfo{
 				ID:        id,
 				Enabled:   h.Plugins.IsEnabled(id),
-				Protected: h.Plugins.IsProtected(id),
+				Protected: h.Plugins.IsPluginProtected(id),
 			})
 		}
 	}
@@ -235,7 +235,7 @@ func (h *AdminHandler) ListPlugins(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminHandler) TogglePlugin(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if h.Plugins == nil || h.Plugins.IsProtected(id) {
+	if h.Plugins == nil || h.Plugins.IsPluginProtected(id) {
 		http.Error(w, "cannot toggle this plugin", http.StatusBadRequest)
 		return
 	}

@@ -15,7 +15,22 @@
 Cog's plugin system is designed for flexibility and performance. Plugins can be:
 
 - Compiled directly into the binary (core/1st-party); these may use privileged hooks into the application.
-- Run as separate processes communicating via gRPC (external/3rd-party).
+- Run as separate processes communicating via gRPC (external/3rd-party). See [`grpc_bridge.md`](./grpc_bridge.md).
+
+### Package Layout
+
+- **`plugin/`** — Public plugin API. External authors import this to implement plugins.
+  - `plugin.go` — `Plugin`, `Registrar` interfaces and all public types.
+  - `plugpb/` — gRPC proto definition and generated code.
+  - `plugcmd/` — `Run(plugin.Plugin)` helper for building plugin binaries.
+- **`internal/plugin/`** — Host-side registry and privileged types.
+  - `plugin.go` — `Protected` struct, type aliases to `plugin/`.
+  - `registry.go` — Registry, route mounting, enable/disable.
+  - `grpc.go` — `grpcPlugin` adapter and `LoadExternal`.
+
+### Protected Pattern
+
+Privileged plugins (dashboard, files) embed `internal/plugin.Protected`. The registry auto-detects this in `Add()` and marks them as always-on. There is no `SetProtected` call.
 
 ## Data Access & Queries
 
@@ -71,40 +86,42 @@ Resources are **metadata definitions** that describe tables and columns in the p
 Used for internal plugins and high-performance extensions.
 
 ```go
+// plugin/plugin.go — public API
 type Plugin interface {
     ID() string
-    Register(registrar PluginRegistrar) error
+    Register(registrar Registrar) error
     Start(ctx context.Context) error
     Stop() error
 }
 
-type PluginRegistrar interface {
+type Registrar interface {
     RegisterAPI(path string, handler http.Handler)
     RegisterPage(path string, handler http.Handler)
-    RegisterTemplPage(path string, template string) // Page with direct SQL template access
     RegisterAction(method, path string, handler http.Handler)
-    RegisterResource(name string, handler ResourceHandler)
-    RegisterCalDAVProvider(handler CalDAVProvider) // Enumerate CalDAV collections
-    RegisterHook(hookName string, callback func(interface{}))
-    RegisterNavItem(item NavItem)   // Add entry to the app navbar
-    RegisterWidget(w Widget)        // Add dashboard widget
-    GetDB() *sql.DB // Access to user's private DB
-    GetFS() fs.FS   // Access to user's files
+    RegisterResource(def ResourceDef)
+    RegisterHook(hookName string, callback HookCallback)
+    RegisterNavItem(item NavItem)
+    RegisterWidget(w Widget)
 }
 ```
 
 ### 2. gRPC Interface (External)
 
-Used for third-party plugins or those written in other languages (if supported later). A `bridge` package adapts gRPC calls to the native Go interface.
+Used for third-party plugins or those written in other languages (if supported later). The `plugin/plugpb` package defines the wire protocol; `plugin/plugcmd` provides the plugin-side helper; `internal/plugin/grpc.go` provides the host-side adapter.
 Privileged internal plugins (for example `files`) are not gRPC-loadable.
 
-**Proto Definition (Sketch):**
+See [`grpc_bridge.md`](./grpc_bridge.md) for the full protocol definition and usage guide.
+
+**Proto Service (from `plugin/plugpb/plugin.proto`):**
 
 ```protobuf
-service CogPlugin {
-    rpc Register(RegisterRequest) returns (RegisterResponse);
-    rpc HandleRequest(HttpRequest) returns (HttpResponse);
-    rpc OnHook(HookEvent) returns (Empty);
+service PluginService {
+    rpc GetID(Empty) returns (IDResponse);
+    rpc Register(Empty) returns (stream RegistrationEvent);
+    rpc Start(Empty) returns (Empty);
+    rpc Stop(Empty) returns (Empty);
+    rpc HandleHTTPRequest(HTTPRequest) returns (HTTPResponse);
+    rpc RenderWidget(RenderWidgetRequest) returns (RenderWidgetResponse);
 }
 ```
 

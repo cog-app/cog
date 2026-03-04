@@ -60,6 +60,7 @@ func NewRegistry(dataDir string, mux *http.ServeMux, sysDB *sql.DB) *Registry {
 }
 
 // Add registers a plugin with the registry.
+// If the plugin embeds Protected, it is automatically marked as always-on.
 func (r *Registry) Add(p Plugin) error {
 	id := p.ID()
 	if _, exists := r.plugins[id]; exists {
@@ -67,6 +68,10 @@ func (r *Registry) Add(p Plugin) error {
 	}
 	r.plugins[id] = p
 	r.order = append(r.order, id)
+
+	if IsProtected(p) {
+		r.protected[id] = true
+	}
 
 	reg := &pluginRegistrar{
 		pluginID:  id,
@@ -250,19 +255,14 @@ func (pr *pluginRegistrar) RegisterWidget(w Widget) {
 
 // --- Plugin enable/disable ---
 
-// SetProtected marks a plugin as always-on (cannot be disabled).
-func (r *Registry) SetProtected(pluginID string) {
-	r.protected[pluginID] = true
-}
-
-// IsProtected returns true if a plugin cannot be disabled.
-func (r *Registry) IsProtected(pluginID string) bool {
+// IsPluginProtected returns true if a plugin cannot be disabled.
+func (r *Registry) IsPluginProtected(pluginID string) bool {
 	return r.protected[pluginID]
 }
 
 // IsEnabled returns true if the plugin is currently enabled.
 func (r *Registry) IsEnabled(pluginID string) bool {
-	if r.protected[pluginID] {
+	if r.IsPluginProtected(pluginID) {
 		return true
 	}
 	enabled, ok := r.enabled[pluginID]
@@ -274,7 +274,7 @@ func (r *Registry) IsEnabled(pluginID string) bool {
 
 // SetEnabled enables or disables a plugin and persists the state.
 func (r *Registry) SetEnabled(pluginID string, enabled bool) {
-	if r.protected[pluginID] {
+	if r.IsPluginProtected(pluginID) {
 		return
 	}
 	r.enabled[pluginID] = enabled

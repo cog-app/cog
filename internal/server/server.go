@@ -12,11 +12,13 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/internal/web"
+	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
 // New builds the full HTTP handler with all routes and middleware.
-func New(p *services.Providers) http.Handler {
+// Extra plugins from custom builds are registered after the protected core plugins.
+func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	authMW := &auth.Middleware{
 		Users:        p.Users,
 		Sessions:     p.Sessions,
@@ -32,14 +34,15 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
 
 	// --- Register plugins ---
-	// Dashboard plugin (protected — cannot be disabled).
+	// Dashboard and files plugins embed Protected and are auto-detected.
 	dashPlugin := &dashboard.Plugin{Registry: p.Plugins, Secret: p.CSRFSecret}
 	p.Plugins.Add(dashPlugin)
-	p.Plugins.SetProtected(dashboard.PluginID)
-
-	// Files plugin (protected).
 	p.Plugins.Add(p.Files)
-	p.Plugins.SetProtected(files.PluginID)
+
+	// Extra plugins from custom builds.
+	for _, ep := range extraPlugins {
+		p.Plugins.Add(ep)
+	}
 
 	// --- Web UI handlers ---
 	volAccess := &volume.Access{Volumes: p.Volumes, Shares: p.Shares}

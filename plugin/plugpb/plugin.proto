@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+package plugpb;
+
+option go_package = "git.duckfam.us/jj-software/cog/plugin/plugpb";
+
+// PluginService is implemented by the plugin binary (gRPC server).
+// The Cog host is the gRPC client.
+service PluginService {
+  // GetID returns the plugin's unique identifier.
+  rpc GetID(Empty) returns (IDResponse);
+  // Register streams registration events back to the host.
+  rpc Register(Empty) returns (stream RegistrationEvent);
+  // Start signals the plugin to begin background work.
+  rpc Start(Empty) returns (Empty);
+  // Stop signals the plugin to shut down gracefully.
+  rpc Stop(Empty) returns (Empty);
+  // HandleHTTPRequest proxies an HTTP request to a registered handler.
+  rpc HandleHTTPRequest(HTTPRequest) returns (HTTPResponse);
+  // RenderWidget renders a dashboard widget to HTML.
+  rpc RenderWidget(RenderWidgetRequest) returns (RenderWidgetResponse);
+}
+
+message Empty {}
+
+message IDResponse {
+  string id = 1;
+}
+
+// RegistrationEvent is a single declaration made during Register().
+message RegistrationEvent {
+  oneof event {
+    RegisterAPIEvent api = 1;
+    RegisterPageEvent page = 2;
+    RegisterActionEvent action = 3;
+    RegisterResourceEvent resource = 4;
+    RegisterHookEvent hook = 5;
+    RegisterNavItemEvent nav_item = 6;
+    RegisterWidgetEvent widget = 7;
+  }
+}
+
+message RegisterAPIEvent {
+  string path = 1;
+  // route_key is a host-assigned key to dispatch HandleHTTPRequest calls.
+  string route_key = 2;
+}
+
+message RegisterPageEvent {
+  string path = 1;
+  string route_key = 2;
+}
+
+message RegisterActionEvent {
+  string method = 1;
+  string path = 2;
+  string route_key = 3;
+}
+
+message RegisterResourceEvent {
+  string type = 1;
+  string table = 2;
+  string id_column = 3;
+  string parent_column = 4;
+  // route_key for the resource handler.
+  string route_key = 5;
+}
+
+message RegisterHookEvent {
+  string hook_name = 1;
+}
+
+message RegisterNavItemEvent {
+  string label = 1;
+  string url = 2;
+  string icon = 3;
+}
+
+message RegisterWidgetEvent {
+  string title = 1;
+  int32 priority = 2;
+  // widget_key used to dispatch RenderWidget calls.
+  string widget_key = 3;
+}
+
+// HTTPRequest is a proxied HTTP request sent from host to plugin.
+message HTTPRequest {
+  string route_key = 1;
+  string method = 2;
+  string path = 3;
+  string query = 4;
+  map<string, HeaderValues> headers = 5;
+  bytes body = 6;
+  // user_id of the authenticated user (empty if unauthenticated).
+  string user_id = 7;
+  string username = 8;
+  // resource_id is set for resource handler dispatches.
+  string resource_id = 9;
+}
+
+// HeaderValues holds multiple values for a single HTTP header key.
+message HeaderValues {
+  repeated string values = 1;
+}
+
+// HTTPResponse is the plugin's response to a proxied HTTP request.
+message HTTPResponse {
+  int32 status_code = 1;
+  map<string, HeaderValues> headers = 2;
+  bytes body = 3;
+}
+
+message RenderWidgetRequest {
+  string widget_key = 1;
+  string user_id = 2;
+}
+
+message RenderWidgetResponse {
+  bytes html = 1;
+}
