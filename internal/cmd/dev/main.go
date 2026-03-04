@@ -79,10 +79,12 @@ func main() {
 	baseURL := fmt.Sprintf("http://%s%s", hostname, addr)
 	log.Printf("Starting cog on %s (base-url %s, log-requests on)", addr, baseURL)
 	log.Printf("Logs: %s", logPath)
+	dataDir := filepath.Join(devDir, "data")
 	srv := exec.Command(bin,
 		"--db", dbPath,
 		"--addr", addr,
 		"--base-url", baseURL,
+		"--data-dir", dataDir,
 		"--log-requests",
 	)
 	srv.Stdout = teeOut

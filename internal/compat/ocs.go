@@ -79,12 +79,18 @@ func HandleCurrentUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleWebDAVStub responds to WebDAV presence checks (HEAD/PROPFIND on /remote.php/dav).
+// HandleWebDAVStub responds to WebDAV presence checks (HEAD/PROPFIND/OPTIONS on /remote.php/dav).
 // NC clients probe this to confirm the server is a valid NextCloud instance.
+// Write methods (PUT, MKCOL, MOVE, DELETE) are rejected so that unhandled
+// paths (e.g. /remote.php/dav/uploads/) don't silently swallow data.
 func HandleWebDAVStub(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("DAV", "1, 3, extended-mkcol")
-	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusOK)
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, "PROPFIND", http.MethodOptions:
+		w.WriteHeader(http.StatusOK)
+	default:
+		http.Error(w, "not implemented", http.StatusMethodNotAllowed)
+	}
 }
 
 // HandleStatus returns the server status.

@@ -29,10 +29,23 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /ocs/v1.php/cloud/user", auth.RequireAuth(http.HandlerFunc(compat.HandleCurrentUser)))
 	mux.Handle("GET /ocs/v2.php/cloud/user", auth.RequireAuth(http.HandlerFunc(compat.HandleCurrentUser)))
 
-	// WebDAV stub (presence check for NC clients)
+	// WebDAV file operations (NC clients)
+	webdav := &compat.WebDAVHandler{Files: p.Files, Users: p.Users}
+	mux.Handle("/remote.php/dav/files/", auth.RequireAuth(webdav))
+
+	// Direct download API (NC Android app uses this instead of WebDAV GET)
+	mux.Handle("POST /ocs/v2.php/apps/dav/api/v1/direct", auth.RequireAuth(webdav.HandleDirectDownload(p.Config.BaseURL)))
+	mux.Handle("POST /ocs/v1.php/apps/dav/api/v1/direct", auth.RequireAuth(webdav.HandleDirectDownload(p.Config.BaseURL)))
+
+	// Token-based direct file serving (no auth — token is the credential)
+	mux.HandleFunc("GET /remote.php/dav/direct/", webdav.HandleDirectServe)
+
+	// WebDAV stub for non-file DAV paths (presence check, CalDAV, etc.)
+	// Only exact /remote.php/dav for HEAD/PROPFIND presence checks.
+	// The /remote.php/dav/ prefix catches unhandled sub-paths (uploads, CalDAV)
+	// but rejects write methods so uploads aren't silently swallowed.
 	mux.HandleFunc("/remote.php/dav", compat.HandleWebDAVStub)
 	mux.HandleFunc("/remote.php/dav/", compat.HandleWebDAVStub)
-	mux.HandleFunc("/remote.php/", compat.HandleWebDAVStub)
 
 	// Stub routes (avatar, notifications, connectivity, etc.)
 	compat.RegisterStubs(mux)

@@ -197,8 +197,8 @@ func (h *LoginFlowHandler) renderGrantPage(w http.ResponseWriter, token string, 
 <h1>Grant App Access</h1>
 {{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
 <form method="POST" action="?token={{.Token}}">
-  <label>Username: <input type="text" name="username" required></label><br>
-  <label>Password: <input type="password" name="password" required></label><br>
+  <label>Username: <input type="text" name="username" value="admin" required></label><br>
+  <label>Password: <input type="password" name="password" value="admin" required></label><br>
   <button type="submit">Grant Access</button>
 </form>
 </body>

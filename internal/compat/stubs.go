@@ -52,12 +52,22 @@ func HandleConnectivityCheck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// HandlePreview returns a 404 with a proper OCS error for file previews.
+// NC clients request GET /index.php/core/preview?fileId=N for thumbnails.
+// Returning a clean 404 prevents the app from caching fileId=-1.
+func HandlePreview(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotFound)
+}
+
 // RegisterStubs registers all stub/TODO routes on the given mux.
 // These are minimal responses to keep NC clients happy while
 // real implementations are built out.
 func RegisterStubs(mux *http.ServeMux) {
 	// Connectivity check
 	mux.HandleFunc("GET /index.php/204", HandleConnectivityCheck)
+
+	// Preview (not implemented — nc:has-preview=false tells clients not to ask)
+	mux.HandleFunc("GET /index.php/core/preview", HandlePreview)
 
 	// Avatar
 	mux.HandleFunc("GET /index.php/avatar/{userID}/{size}", HandleAvatar)
@@ -74,5 +84,5 @@ func RegisterStubs(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ocs/v2.php/apps/user_status/api/v1/user_status", HandleUserStatus)
 	mux.HandleFunc("GET /ocs/v1.php/apps/user_status/api/v1/user_status", HandleUserStatus)
 
-	fmt.Println("Registered stub routes: avatar, notifications, recommendations, user_status, connectivity check")
+	fmt.Println("Registered stub routes: avatar, notifications, recommendations, user_status, preview, connectivity check")
 }
