@@ -45,18 +45,34 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	}
 
 	// --- Web UI handlers ---
-	volAccess := &volume.Access{Volumes: p.Volumes, Shares: p.Shares}
-	loginH := &web.LoginHandler{Users: p.Users, Sessions: p.Sessions, Secret: p.CSRFSecret}
-	settingsH := &web.SettingsHandler{Users: p.Users, Volumes: p.Volumes, Mounts: p.Mounts, Access: volAccess, Secret: p.CSRFSecret}
-	adminH := &web.AdminHandler{Users: p.Users, Groups: p.Groups, Volumes: p.Volumes, Mounts: p.Mounts, Plugins: p.Plugins, Secret: p.CSRFSecret}
-	adminVolH := &web.AdminVolumeHandler{Volumes: p.Volumes, Secret: p.CSRFSecret}
-	volBrowserH := &web.VolumeBrowserHandler{Access: volAccess, Secret: p.CSRFSecret}
+	volAccess := &volume.Access{Volumes: p.Volumes, Shares: p.Shares, DB: p.DB}
+	loginH := &web.LoginHandler{Users: p.Users, Sessions: p.Sessions, Volumes: p.Volumes, Mounts: p.Mounts, Settings: p.Settings, Secret: p.CSRFSecret}
+	settingsH := &web.SettingsHandler{Users: p.Users, Volumes: p.Volumes, Mounts: p.Mounts, Access: volAccess, Registry: p.Plugins, Secret: p.CSRFSecret}
+	adminH := &web.AdminHandler{Users: p.Users, Groups: p.Groups, Volumes: p.Volumes, Mounts: p.Mounts, Plugins: p.Plugins, Settings: p.Settings, Secret: p.CSRFSecret}
+	adminVolH := &web.AdminVolumeHandler{Volumes: p.Volumes, Registry: p.Plugins, Secret: p.CSRFSecret}
+	volBrowserH := &web.VolumeBrowserHandler{Access: volAccess, Registry: p.Plugins, Secret: p.CSRFSecret}
 	avatarH := &web.AvatarHandler{Users: p.Users, DataDir: p.Config.DataDir, Secret: p.CSRFSecret}
+	groupH := &web.GroupHandler{
+		Groups:      p.Groups,
+		Users:       p.Users,
+		Volumes:     p.Volumes,
+		Mounts:      p.Mounts,
+		Invitations: p.Invitations,
+		Sessions:    p.Sessions,
+		Settings:    p.Settings,
+		Access:      volAccess,
+		Email:       p.Email,
+		BaseURL:     p.Config.BaseURL,
+		Registry:    p.Plugins,
+		Secret:      p.CSRFSecret,
+	}
 
-	// Login/logout — unauthenticated
+	// Login/logout/register — unauthenticated
 	mux.HandleFunc("GET /login", loginH.ShowLogin)
 	mux.HandleFunc("POST /login", loginH.HandleLogin)
 	mux.HandleFunc("POST /logout", loginH.HandleLogout)
+	mux.HandleFunc("GET /register", loginH.ShowRegister)
+	mux.HandleFunc("POST /register", loginH.HandleRegister)
 
 	// Dashboard (root route from dashboard plugin)
 	mux.Handle("GET /{$}", auth.RequireAuthWeb(dashPlugin.Handler()))
@@ -69,7 +85,10 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	csrfWeb := func(h http.Handler) http.Handler {
 		return auth.RequireAuthWeb(auth.RequireCSRF(p.CSRFSecret, h))
 	}
-	mux.Handle("GET /settings", auth.RequireAuthWeb(http.HandlerFunc(settingsH.Show)))
+	mux.Handle("GET /settings/{$}", auth.RequireAuthWeb(http.HandlerFunc(settingsH.RedirectToProfile)))
+	mux.Handle("GET /settings/profile", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowProfile)))
+	mux.Handle("GET /settings/security", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowSecurity)))
+	mux.Handle("GET /settings/storage", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowStorage)))
 	mux.Handle("POST /settings/profile", csrfWeb(http.HandlerFunc(settingsH.UpdateProfile)))
 	mux.Handle("POST /settings/password", csrfWeb(http.HandlerFunc(settingsH.UpdatePassword)))
 	mux.Handle("POST /settings/mounts", csrfWeb(http.HandlerFunc(settingsH.CreateMount)))
@@ -78,6 +97,24 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("DELETE /settings/volumes/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteVolume)))
 	mux.Handle("POST /settings/avatar", csrfWeb(http.HandlerFunc(avatarH.Upload)))
 	mux.Handle("DELETE /settings/avatar", csrfWeb(http.HandlerFunc(avatarH.Delete)))
+
+	// Settings: groups
+	mux.Handle("GET /settings/groups", auth.RequireAuthWeb(http.HandlerFunc(groupH.ListGroups)))
+	mux.Handle("GET /settings/groups/{id}", auth.RequireAuthWeb(http.HandlerFunc(groupH.ShowGroup)))
+	mux.Handle("POST /settings/groups", csrfWeb(http.HandlerFunc(groupH.CreateGroup)))
+	mux.Handle("POST /settings/groups/{id}", csrfWeb(http.HandlerFunc(groupH.UpdateGroup)))
+	mux.Handle("POST /settings/groups/{id}/members", csrfWeb(http.HandlerFunc(groupH.AddMember)))
+	mux.Handle("POST /settings/groups/{id}/members/{member_id}/type", csrfWeb(http.HandlerFunc(groupH.UpdateMemberType)))
+	mux.Handle("DELETE /settings/groups/{id}/members/{member_id}", csrfWeb(http.HandlerFunc(groupH.RemoveMember)))
+	mux.Handle("POST /settings/groups/{id}/invites", csrfWeb(http.HandlerFunc(groupH.CreateInvite)))
+	mux.Handle("DELETE /settings/groups/{id}/invites/{invite_id}", csrfWeb(http.HandlerFunc(groupH.RevokeInvite)))
+	mux.Handle("POST /settings/groups/{id}/mounts", csrfWeb(http.HandlerFunc(groupH.CreateGroupMount)))
+	mux.Handle("DELETE /settings/groups/{id}/mounts/{mount_id}", csrfWeb(http.HandlerFunc(groupH.DeleteGroupMount)))
+	mux.Handle("POST /settings/groups/{id}/volumes", csrfWeb(http.HandlerFunc(groupH.CreateGroupVolume)))
+
+	// Invite acceptance (works for both authenticated and unauthenticated users)
+	mux.HandleFunc("GET /invite/{token}", groupH.AcceptInviteForm)
+	mux.HandleFunc("POST /invite/{token}", groupH.AcceptInvite)
 
 	// Admin — require auth + admin + CSRF on mutations
 	adminAuth := func(h http.Handler) http.Handler {
@@ -100,7 +137,7 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("POST /admin/groups", adminMut(http.HandlerFunc(adminH.CreateGroup)))
 	mux.Handle("GET /admin/groups/{id}", adminAuth(http.HandlerFunc(adminH.EditGroupForm)))
 	mux.Handle("POST /admin/groups/{id}", adminMut(http.HandlerFunc(adminH.UpdateGroup)))
-	mux.Handle("DELETE /admin/groups/{id}", adminMut(http.HandlerFunc(adminH.DeleteGroup)))
+	mux.Handle("POST /admin/groups/{id}/delete", adminMut(http.HandlerFunc(adminH.DeleteGroup)))
 	mux.Handle("POST /admin/groups/{id}/members", adminMut(http.HandlerFunc(adminH.AddMember)))
 	mux.Handle("DELETE /admin/groups/{id}/members/{member_id}", adminMut(http.HandlerFunc(adminH.RemoveMember)))
 
@@ -110,6 +147,9 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("GET /admin/volumes/{id}", adminAuth(http.HandlerFunc(adminVolH.EditVolumeForm)))
 	mux.Handle("POST /admin/volumes/{id}", adminMut(http.HandlerFunc(adminVolH.UpdateVolume)))
 	mux.Handle("DELETE /admin/volumes/{id}", adminMut(http.HandlerFunc(adminVolH.DeleteVolume)))
+
+	mux.Handle("GET /admin/settings", adminAuth(http.HandlerFunc(adminH.ShowSettings)))
+	mux.Handle("POST /admin/settings", adminMut(http.HandlerFunc(adminH.UpdateSettings)))
 
 	mux.Handle("GET /admin/plugins", adminAuth(http.HandlerFunc(adminH.ListPlugins)))
 	mux.Handle("POST /admin/plugins/{id}/toggle", adminMut(http.HandlerFunc(adminH.TogglePlugin)))
@@ -121,10 +161,11 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("POST /volumes/{id}/mkdir", csrfWeb(http.HandlerFunc(volBrowserH.MkDir)))
 	mux.Handle("DELETE /volumes/{id}/file", csrfWeb(http.HandlerFunc(volBrowserH.DeleteFile)))
 
-	// Files plugin page (simple redirect to volume browser for now)
-	mux.Handle("GET /apps/files", auth.RequireAuthWeb(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-	})))
+	// Files plugin page — path is in the URL after /apps/files/
+	filesH := &web.FilesHandler{Files: p.Files, Registry: p.Plugins, Secret: p.CSRFSecret}
+	mux.Handle("GET /apps/files/{path...}", auth.RequireAuthWeb(http.HandlerFunc(filesH.ServeGet)))
+	mux.Handle("POST /apps/files/{path...}", csrfWeb(http.HandlerFunc(filesH.ServePost)))
+	mux.Handle("DELETE /apps/files/{path...}", csrfWeb(http.HandlerFunc(filesH.ServeDelete)))
 
 	// --- Status & OCS ---
 	mux.HandleFunc("GET /status.php", compat.HandleStatus)

@@ -13,14 +13,8 @@ Cog (Cloud On Go) is a Go-based file storage and plugin platform with NextCloud 
 go tool dev
 go tool dev -reset   # wipe tmp/dev state first
 
-# Build production binary
-go build -o cog ./cmd/cog
-
-# Run production binary
-./cog --addr :8580 --db system.db --data-dir data --base-url http://host:8580
-
-# Create a user
-./cog --create-user username:password
+# Run code generators
+go generate ./...
 
 # Run all tests
 go test ./...
@@ -31,6 +25,10 @@ go test -run TestNCLoginFlow ./internal/server
 # Run tests in a specific package
 go test ./internal/server
 ```
+
+Performance is important. Avoid redundant work, N+1 queries, and unnecessary round-trips. Use strong-types when easily available.
+
+Avoid running tools outside of the Go tool. Tools should be versioned with go.mod. Prefer `go generate` over `go tool <tool>` over anything installed in the path.
 
 ## Architecture
 
@@ -45,6 +43,7 @@ go test ./internal/server
 **Files plugin** (`internal/plugin/files/`): Core privileged plugin (in-process, not gRPC). Each user gets a separate SQLite database for file metadata. Handles upload, download, list, delete, rename, search.
 
 **Plugin system**: Split into public and internal packages:
+
 - `plugin/` — Public API for plugin authors (`Plugin`, `Registrar` interfaces, types, permission constants).
 - `plugin/plugpb/` — gRPC proto definition for out-of-process plugins. Generated via `go generate` using `goprotoc`.
 - `plugin/plugcmd/` — `Run(plugin.Plugin)` helper for building external plugin binaries.
@@ -55,6 +54,10 @@ go test ./internal/server
 **NextCloud compat** (`internal/compat/`): OCS endpoints, Login Flow v2, WebDAV at `/remote.php/dav/files/{user_id}/*`, direct download tokens.
 
 **Sharing** (`internal/share/`): Bitmask permissions (Read=1, Write=2, Reshare=4). Subjects: USER, GROUP, PUBLIC. Resources scoped as `plugin:resourcetype`.
+
+## Web Patterns
+
+- **Post-Redirect-Get (PRG)**: POST handlers must never render HTML directly. On success or error, set a flash cookie via `setFlash(w, kind, msg)` or `setFlashURL(w, kind, msg, url)` and redirect (303). The subsequent GET handler reads the flash with `getFlash(w, r)` and passes it to the template. This prevents "re-submit form?" dialogs on browser refresh. Exception: HTMX partial responses (hx-swap) may return HTML from POST since the browser doesn't navigate.
 
 ## Key Patterns
 
@@ -73,6 +76,7 @@ go test ./internal/server
 Tests use the `internal/cogtest` package which spins up a full server with in-memory SQLite and temp data directory. Requests route directly through the handler (no network).
 
 Key helpers:
+
 - `cogtest.New(t)` — creates test environment with `Providers`, `Client`, `Handler`
 - `env.CreateUser("name", "pass")` — returns a user with embedded auth helpers
 - Request methods: `env.Get()`, `env.PostJSON()`, `env.Do()` etc.

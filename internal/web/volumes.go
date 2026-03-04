@@ -8,13 +8,15 @@ import (
 	"path/filepath"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 )
 
 // VolumeBrowserHandler serves the volume browser UI.
 type VolumeBrowserHandler struct {
-	Access *volume.Access
-	Secret []byte
+	Access   *volume.Access
+	Registry *plugin.Registry
+	Secret   []byte
 }
 
 func (h *VolumeBrowserHandler) Browse(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +52,7 @@ func (h *VolumeBrowserHandler) Browse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pd := pageData(r, "Browse: "+vol.Name, h.Secret)
+	pd := pageDataWithNav(r, "Browse: "+vol.Name, h.Secret, h.Registry)
 	volumeBrowsePage(pd, vol, dirPath, items).Render(r.Context(), w)
 }
 

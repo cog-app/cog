@@ -6,9 +6,18 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/volume"
 )
 
-templ settingsPage(pd ui.PageData, flash string, flashKind string, mounts []mount.Mount, volumes []volume.Volume, ownedVolumes []volume.Volume) {
-	@ui.Base(pd) {
-		<h1 style="margin-bottom:1rem">Settings</h1>
+func settingsSidebar(active string) []ui.SidebarItem {
+	return []ui.SidebarItem{
+		{Label: "Profile", URL: "/settings/profile", Active: active == "profile"},
+		{Label: "Security", URL: "/settings/security", Active: active == "security"},
+		{Label: "Storage", URL: "/settings/storage", Active: active == "storage"},
+		{Label: "Groups", URL: "/settings/groups", Active: active == "groups"},
+	}
+}
+
+templ settingsProfilePage(pd ui.PageData, flash string, flashKind string) {
+	@ui.SidebarPage(pd, settingsSidebar("profile")) {
+		<h1 style="margin-bottom:1rem">Profile</h1>
 		if flash != "" {
 			@ui.Alert(flashKind, flash)
 		}
@@ -36,8 +45,18 @@ templ settingsPage(pd ui.PageData, flash string, flashKind string, mounts []moun
 			<form method="post" action="/settings/profile">
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 				@ui.FormField("Display Name", "display_name", "text", pd.User.DisplayName, "Your display name")
+				@ui.FormField("Email", "email", "email", pd.User.Email, "your@email.com")
 				<button class="btn btn-primary" type="submit">Save</button>
 			</form>
+		}
+	}
+}
+
+templ settingsSecurityPage(pd ui.PageData, flash string, flashKind string) {
+	@ui.SidebarPage(pd, settingsSidebar("security")) {
+		<h1 style="margin-bottom:1rem">Security</h1>
+		if flash != "" {
+			@ui.Alert(flashKind, flash)
 		}
 		@ui.Card("Change Password") {
 			<form method="post" action="/settings/password">
@@ -48,7 +67,16 @@ templ settingsPage(pd ui.PageData, flash string, flashKind string, mounts []moun
 				<button class="btn btn-primary" type="submit">Change Password</button>
 			</form>
 		}
-		@ui.Card("Storage") {
+	}
+}
+
+templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts []mount.Mount, volumes []volume.Volume, ownedVolumes []volume.Volume) {
+	@ui.SidebarPage(pd, settingsSidebar("storage")) {
+		<h1 style="margin-bottom:1rem">Storage</h1>
+		if flash != "" {
+			@ui.Alert(flashKind, flash)
+		}
+		@ui.Card("Mounts") {
 			<table class="table">
 				<thead>
 					<tr>

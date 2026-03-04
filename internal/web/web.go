@@ -24,10 +24,11 @@ func pageDataWithNav(r *http.Request, title string, secret []byte, registry *plu
 		csrf = auth.CSRFToken(sessID, secret)
 	}
 	return ui.PageData{
-		Title:     title,
-		User:      u,
-		CSRFToken: csrf,
-		Nav:       buildNav(r.URL.Path, registry),
+		Title:       title,
+		User:        u,
+		CSRFToken:   csrf,
+		Nav:         buildNav(r.URL.Path, registry),
+		RequestPath: r.URL.Path,
 	}
 }
 

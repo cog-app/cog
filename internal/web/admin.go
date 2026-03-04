@@ -2,10 +2,12 @@ package web
 
 import (
 	"net/http"
+	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 )
@@ -16,42 +18,54 @@ type AdminHandler struct {
 	Volumes  *volume.Store
 	Mounts   *mount.Store
 	Plugins  *plugin.Registry
+	Settings *settings.Store
 	Secret   []byte
 }
 
 // --- Index ---
 
 func (h *AdminHandler) Index(w http.ResponseWriter, r *http.Request) {
-	pd := pageData(r, "Admin", h.Secret)
+	pd := pageDataWithNav(r, "Admin", h.Secret, h.Plugins)
 	adminIndexPage(pd).Render(r.Context(), w)
 }
 
 // --- Users ---
 
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	pd := pageData(r, "Users", h.Secret)
+	pd := pageDataWithNav(r, "Users", h.Secret, h.Plugins)
 	users, _ := h.Users.List()
-	adminUsersPage(pd, users, "", "").Render(r.Context(), w)
+	flash := getFlash(w, r)
+	var flashMsg, flashKind string
+	if flash != nil {
+		flashMsg, flashKind = flash.Message, flash.Kind
+	}
+	adminUsersPage(pd, users, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 func (h *AdminHandler) NewUserForm(w http.ResponseWriter, r *http.Request) {
-	pd := pageData(r, "New User", h.Secret)
-	adminUserNewPage(pd, "").Render(r.Context(), w)
+	pd := pageDataWithNav(r, "New User", h.Secret, h.Plugins)
+	flash := getFlash(w, r)
+	var errMsg string
+	if flash != nil {
+		errMsg = flash.Message
+	}
+	adminUserNewPage(pd, errMsg).Render(r.Context(), w)
 }
 
 func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
-	pd := pageData(r, "New User", h.Secret)
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
 	if username == "" || password == "" {
-		adminUserNewPage(pd, "Username and password are required.").Render(r.Context(), w)
+		setFlash(w, "error", "Username and password are required.")
+		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
 		return
 	}
 
 	u, err := h.Users.Create(username, password)
 	if err != nil {
-		adminUserNewPage(pd, "Failed to create user: "+err.Error()).Render(r.Context(), w)
+		setFlash(w, "error", "Failed to create user: "+err.Error())
+		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
 		return
 	}
 
@@ -73,20 +87,24 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) EditUserForm(w http.ResponseWriter, r *http.Request) {
-	pd := pageData(r, "Edit User", h.Secret)
+	pd := pageDataWithNav(r, "Edit User", h.Secret, h.Plugins)
 	id := r.PathValue("id")
 	u, err := h.Users.GetByID(id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	adminUserEditPage(pd, u, "", "").Render(r.Context(), w)
+	flash := getFlash(w, r)
+	var flashMsg, flashKind string
+	if flash != nil {
+		flashMsg, flashKind = flash.Message, flash.Kind
+	}
+	adminUserEditPage(pd, u, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	u, err := h.Users.GetByID(id)
-	if err != nil {
+	if _, err := h.Users.GetByID(id); err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -95,30 +113,29 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	isAdmin := r.FormValue("is_admin") == "1"
 	h.Users.Update(id, user.UpdateOpts{DisplayName: &displayName, IsAdmin: &isAdmin})
 
-	// Refresh
-	u, _ = h.Users.GetByID(id)
-	pd := pageData(r, "Edit User", h.Secret)
-	adminUserEditPage(pd, u, "User updated.", "success").Render(r.Context(), w)
+	setFlash(w, "success", "User updated.")
+	http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 }
 
 func (h *AdminHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	u, err := h.Users.GetByID(id)
-	if err != nil {
+	if _, err := h.Users.GetByID(id); err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	newPass := r.FormValue("new_password")
-	pd := pageData(r, "Edit User", h.Secret)
 	if newPass == "" {
-		adminUserEditPage(pd, u, "Password cannot be empty.", "error").Render(r.Context(), w)
+		setFlash(w, "error", "Password cannot be empty.")
+		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 		return
 	}
 	if err := h.Users.UpdatePassword(id, newPass); err != nil {
-		adminUserEditPage(pd, u, "Failed to reset password.", "error").Render(r.Context(), w)
+		setFlash(w, "error", "Failed to reset password.")
+		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 		return
 	}
-	adminUserEditPage(pd, u, "Password reset.", "success").Render(r.Context(), w)
+	setFlash(w, "success", "Password reset.")
+	http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 }
 
 func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
@@ -138,25 +155,38 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 // --- Groups ---
 
 func (h *AdminHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
-	pd := pageData(r, "Groups", h.Secret)
+	pd := pageDataWithNav(r, "Groups", h.Secret, h.Plugins)
 	groups, _ := h.Groups.List()
-	adminGroupsPage(pd, groups, "", "").Render(r.Context(), w)
+	flash := getFlash(w, r)
+	var flashMsg, flashKind string
+	if flash != nil {
+		flashMsg, flashKind = flash.Message, flash.Kind
+	}
+	adminGroupsPage(pd, groups, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 func (h *AdminHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	name := r.FormValue("name")
 	if name == "" {
-		pd := pageData(r, "Groups", h.Secret)
-		groups, _ := h.Groups.List()
-		adminGroupsPage(pd, groups, "Group name is required.", "error").Render(r.Context(), w)
+		setFlash(w, "error", "Group name is required.")
+		http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
 		return
 	}
-	h.Groups.Create(name, nil)
+	ownerID := r.FormValue("owner_id")
+	g, err := h.Groups.Create(name, nil, nil)
+	if err != nil {
+		setFlash(w, "error", "Failed to create group: "+err.Error())
+		http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
+		return
+	}
+	if ownerID != "" {
+		h.Groups.AddMember(g.ID, ownerID, "OWNER")
+	}
 	http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
 }
 
 func (h *AdminHandler) EditGroupForm(w http.ResponseWriter, r *http.Request) {
-	pd := pageData(r, "Edit Group", h.Secret)
+	pd := pageDataWithNav(r, "Edit Group", h.Secret, h.Plugins)
 	id := r.PathValue("id")
 	g, err := h.Groups.Get(id)
 	if err != nil {
@@ -165,30 +195,36 @@ func (h *AdminHandler) EditGroupForm(w http.ResponseWriter, r *http.Request) {
 	}
 	members, _ := h.Groups.ListMembers(id)
 	users, _ := h.Users.List()
-	adminGroupEditPage(pd, g, members, users, "", "").Render(r.Context(), w)
+	flash := getFlash(w, r)
+	var flashMsg, flashKind string
+	if flash != nil {
+		flashMsg, flashKind = flash.Message, flash.Kind
+	}
+	adminGroupEditPage(pd, g, members, users, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 func (h *AdminHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	name := r.FormValue("name")
+
 	if err := h.Groups.Update(id, name); err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	g, _ := h.Groups.Get(id)
-	members, _ := h.Groups.ListMembers(id)
-	users, _ := h.Users.List()
-	pd := pageData(r, "Edit Group", h.Secret)
-	adminGroupEditPage(pd, g, members, users, "Group updated.", "success").Render(r.Context(), w)
+
+	setFlash(w, "success", "Group updated.")
+	http.Redirect(w, r, "/admin/groups/"+id, http.StatusSeeOther)
 }
 
 func (h *AdminHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := h.Groups.Delete(id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		setFlash(w, "error", "Failed to delete group: "+err.Error())
+		http.Redirect(w, r, "/admin/groups/"+id, http.StatusSeeOther)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	setFlash(w, "success", "Group deleted.")
+	http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
 }
 
 func (h *AdminHandler) AddMember(w http.ResponseWriter, r *http.Request) {
@@ -219,7 +255,7 @@ type PluginInfo struct {
 }
 
 func (h *AdminHandler) ListPlugins(w http.ResponseWriter, r *http.Request) {
-	pd := pageData(r, "Plugins", h.Secret)
+	pd := pageDataWithNav(r, "Plugins", h.Secret, h.Plugins)
 	var plugins []PluginInfo
 	if h.Plugins != nil {
 		for _, id := range h.Plugins.PluginIDs() {
@@ -242,4 +278,36 @@ func (h *AdminHandler) TogglePlugin(w http.ResponseWriter, r *http.Request) {
 	enabled := !h.Plugins.IsEnabled(id)
 	h.Plugins.SetEnabled(id, enabled)
 	http.Redirect(w, r, "/admin/plugins", http.StatusSeeOther)
+}
+
+// --- Settings ---
+
+func (h *AdminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
+	pd := pageDataWithNav(r, "Settings", h.Secret, h.Plugins)
+	pubReg := h.Settings != nil && h.Settings.GetBool(settings.KeyPublicRegistration)
+	expiryHours := settings.DefaultInviteExpiryHours
+	if h.Settings != nil {
+		expiryHours = h.Settings.GetInt(settings.KeyInviteExpiryHours, settings.DefaultInviteExpiryHours)
+	}
+	flash := getFlash(w, r)
+	var flashMsg, flashKind string
+	if flash != nil {
+		flashMsg, flashKind = flash.Message, flash.Kind
+	}
+	adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), flashMsg, flashKind).Render(r.Context(), w)
+}
+
+func (h *AdminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
+	pubReg := r.FormValue("public_registration") == "1"
+	expiryStr := r.FormValue("invite_expiry_hours")
+	expiryHours, err := strconv.Atoi(expiryStr)
+	if err != nil || expiryHours < 1 {
+		expiryHours = settings.DefaultInviteExpiryHours
+	}
+	if h.Settings != nil {
+		h.Settings.SetBool(settings.KeyPublicRegistration, pubReg)
+		h.Settings.SetInt(settings.KeyInviteExpiryHours, expiryHours)
+	}
+	setFlash(w, "success", "Settings saved.")
+	http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
 }

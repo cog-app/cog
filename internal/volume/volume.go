@@ -26,6 +26,7 @@ type Volume struct {
 	CreatedAt   time.Time
 	OwnerID     *string
 	Config      string
+	OwnerType   string // "user" (default) or "group"
 }
 
 // ParsedURI represents a parsed volume URI.
@@ -77,12 +78,20 @@ func NewStore(db *sql.DB) *Store {
 }
 
 func (s *Store) Create(name, description, uri, createdBy string, ownerID *string, config string) (*Volume, error) {
+	return s.CreateWithOwnerType(name, description, uri, createdBy, ownerID, "user", config)
+}
+
+// CreateWithOwnerType creates a volume with an explicit owner type ("user" or "group").
+func (s *Store) CreateWithOwnerType(name, description, uri, createdBy string, ownerID *string, ownerType, config string) (*Volume, error) {
 	// Validate URI.
 	if _, err := ParseURI(uri); err != nil {
 		return nil, err
 	}
 	if config == "" {
 		config = "{}"
+	}
+	if ownerType == "" {
+		ownerType = "user"
 	}
 
 	id, err := generateID()
@@ -92,8 +101,8 @@ func (s *Store) Create(name, description, uri, createdBy string, ownerID *string
 
 	now := time.Now().Unix()
 	_, err = s.db.Exec(
-		`INSERT INTO volumes (id, name, description, uri, created_by, created_at, owner_id, config) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, name, description, uri, createdBy, now, ownerID, config,
+		`INSERT INTO volumes (id, name, description, uri, created_by, created_at, owner_id, config, owner_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, name, description, uri, createdBy, now, ownerID, config, ownerType,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert volume: %w", err)
@@ -108,6 +117,7 @@ func (s *Store) Create(name, description, uri, createdBy string, ownerID *string
 		CreatedAt:   time.Unix(now, 0),
 		OwnerID:     ownerID,
 		Config:      config,
+		OwnerType:   ownerType,
 	}, nil
 }
 
@@ -115,8 +125,8 @@ func (s *Store) GetByID(id string) (*Volume, error) {
 	var v Volume
 	var createdAt int64
 	err := s.db.QueryRow(
-		`SELECT id, name, description, uri, created_by, created_at, owner_id, config FROM volumes WHERE id = ?`, id,
-	).Scan(&v.ID, &v.Name, &v.Description, &v.URI, &v.CreatedBy, &createdAt, &v.OwnerID, &v.Config)
+		`SELECT id, name, description, uri, created_by, created_at, owner_id, config, owner_type FROM volumes WHERE id = ?`, id,
+	).Scan(&v.ID, &v.Name, &v.Description, &v.URI, &v.CreatedBy, &createdAt, &v.OwnerID, &v.Config, &v.OwnerType)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -131,8 +141,8 @@ func (s *Store) GetByName(name string) (*Volume, error) {
 	var v Volume
 	var createdAt int64
 	err := s.db.QueryRow(
-		`SELECT id, name, description, uri, created_by, created_at, owner_id, config FROM volumes WHERE name = ?`, name,
-	).Scan(&v.ID, &v.Name, &v.Description, &v.URI, &v.CreatedBy, &createdAt, &v.OwnerID, &v.Config)
+		`SELECT id, name, description, uri, created_by, created_at, owner_id, config, owner_type FROM volumes WHERE name = ?`, name,
+	).Scan(&v.ID, &v.Name, &v.Description, &v.URI, &v.CreatedBy, &createdAt, &v.OwnerID, &v.Config, &v.OwnerType)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -145,7 +155,7 @@ func (s *Store) GetByName(name string) (*Volume, error) {
 
 func (s *Store) List() ([]Volume, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, description, uri, created_by, created_at, owner_id, config FROM volumes ORDER BY name`,
+		`SELECT id, name, description, uri, created_by, created_at, owner_id, config, owner_type FROM volumes ORDER BY name`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list volumes: %w", err)
@@ -156,7 +166,7 @@ func (s *Store) List() ([]Volume, error) {
 	for rows.Next() {
 		var v Volume
 		var createdAt int64
-		if err := rows.Scan(&v.ID, &v.Name, &v.Description, &v.URI, &v.CreatedBy, &createdAt, &v.OwnerID, &v.Config); err != nil {
+		if err := rows.Scan(&v.ID, &v.Name, &v.Description, &v.URI, &v.CreatedBy, &createdAt, &v.OwnerID, &v.Config, &v.OwnerType); err != nil {
 			return nil, fmt.Errorf("scan volume: %w", err)
 		}
 		v.CreatedAt = time.Unix(createdAt, 0)
@@ -169,7 +179,7 @@ func (s *Store) List() ([]Volume, error) {
 // volumes owned by the user, and volumes whose IDs are in sharedVolumeIDs.
 func (s *Store) ListAccessible(userID string, sharedVolumeIDs []string) ([]Volume, error) {
 	// Build query with placeholders for shared IDs.
-	query := `SELECT id, name, description, uri, created_by, created_at, owner_id, config
+	query := `SELECT id, name, description, uri, created_by, created_at, owner_id, config, owner_type
 		FROM volumes WHERE owner_id IS NULL OR owner_id = ?`
 	args := []any{userID}
 
@@ -193,7 +203,7 @@ func (s *Store) ListAccessible(userID string, sharedVolumeIDs []string) ([]Volum
 	for rows.Next() {
 		var v Volume
 		var createdAt int64
-		if err := rows.Scan(&v.ID, &v.Name, &v.Description, &v.URI, &v.CreatedBy, &createdAt, &v.OwnerID, &v.Config); err != nil {
+		if err := rows.Scan(&v.ID, &v.Name, &v.Description, &v.URI, &v.CreatedBy, &createdAt, &v.OwnerID, &v.Config, &v.OwnerType); err != nil {
 			return nil, fmt.Errorf("scan volume: %w", err)
 		}
 		v.CreatedAt = time.Unix(createdAt, 0)

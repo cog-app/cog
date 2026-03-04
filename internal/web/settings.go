@@ -6,23 +6,55 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/mount"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type SettingsHandler struct {
-	Users   *user.Store
-	Volumes *volume.Store
-	Mounts  *mount.Store
-	Access  *volume.Access
-	Secret  []byte
+	Users    *user.Store
+	Volumes  *volume.Store
+	Mounts   *mount.Store
+	Access   *volume.Access
+	Registry *plugin.Registry
+	Secret   []byte
 }
 
-func (h *SettingsHandler) Show(w http.ResponseWriter, r *http.Request) {
-	pd := pageData(r, "Settings", h.Secret)
+// RedirectToProfile redirects /settings → /settings/profile.
+func (h *SettingsHandler) RedirectToProfile(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/settings/profile", http.StatusSeeOther)
+}
+
+func (h *SettingsHandler) ShowProfile(w http.ResponseWriter, r *http.Request) {
+	pd := pageDataWithNav(r, "Profile", h.Secret, h.Registry)
+	flash := getFlash(w, r)
+	var flashMsg, flashKind string
+	if flash != nil {
+		flashMsg, flashKind = flash.Message, flash.Kind
+	}
+	settingsProfilePage(pd, flashMsg, flashKind).Render(r.Context(), w)
+}
+
+func (h *SettingsHandler) ShowSecurity(w http.ResponseWriter, r *http.Request) {
+	pd := pageDataWithNav(r, "Security", h.Secret, h.Registry)
+	flash := getFlash(w, r)
+	var flashMsg, flashKind string
+	if flash != nil {
+		flashMsg, flashKind = flash.Message, flash.Kind
+	}
+	settingsSecurityPage(pd, flashMsg, flashKind).Render(r.Context(), w)
+}
+
+func (h *SettingsHandler) ShowStorage(w http.ResponseWriter, r *http.Request) {
+	pd := pageDataWithNav(r, "Storage", h.Secret, h.Registry)
 	mounts, volumes, ownedVolumes := h.userMountsAndVolumes(r)
-	settingsPage(pd, "", "", mounts, volumes, ownedVolumes).Render(r.Context(), w)
+	flash := getFlash(w, r)
+	var flashMsg, flashKind string
+	if flash != nil {
+		flashMsg, flashKind = flash.Message, flash.Kind
+	}
+	settingsStoragePage(pd, flashMsg, flashKind, mounts, volumes, ownedVolumes).Render(r.Context(), w)
 }
 
 // userMountsAndVolumes loads the current user's mounts, accessible volumes, and owned volumes.
@@ -51,18 +83,13 @@ func (h *SettingsHandler) userMountsAndVolumes(r *http.Request) ([]mount.Mount, 
 func (h *SettingsHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	displayName := r.FormValue("display_name")
-	if err := h.Users.Update(u.ID, user.UpdateOpts{DisplayName: &displayName}); err != nil {
-		pd := pageData(r, "Settings", h.Secret)
-		mounts, volumes, ownedVolumes := h.userMountsAndVolumes(r)
-		settingsPage(pd, "Failed to update profile.", "error", mounts, volumes, ownedVolumes).Render(r.Context(), w)
-		return
+	email := r.FormValue("email")
+	if err := h.Users.Update(u.ID, user.UpdateOpts{DisplayName: &displayName, Email: &email}); err != nil {
+		setFlash(w, "error", "Failed to update profile.")
+	} else {
+		setFlash(w, "success", "Profile updated.")
 	}
-	// Refresh user in context for the response.
-	u.DisplayName = displayName
-	pd := pageData(r, "Settings", h.Secret)
-	pd.User = u
-	mounts, volumes, ownedVolumes := h.userMountsAndVolumes(r)
-	settingsPage(pd, "Profile updated.", "success", mounts, volumes, ownedVolumes).Render(r.Context(), w)
+	http.Redirect(w, r, "/settings/profile", http.StatusSeeOther)
 }
 
 func (h *SettingsHandler) UpdatePassword(w http.ResponseWriter, r *http.Request) {
@@ -71,31 +98,32 @@ func (h *SettingsHandler) UpdatePassword(w http.ResponseWriter, r *http.Request)
 	newPass := r.FormValue("new_password")
 	confirm := r.FormValue("confirm_password")
 
-	pd := pageData(r, "Settings", h.Secret)
-
-	mounts, volumes, ownedVolumes := h.userMountsAndVolumes(r)
-
 	if newPass != confirm {
-		settingsPage(pd, "New passwords do not match.", "error", mounts, volumes, ownedVolumes).Render(r.Context(), w)
+		setFlash(w, "error", "New passwords do not match.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
 	if newPass == "" {
-		settingsPage(pd, "New password cannot be empty.", "error", mounts, volumes, ownedVolumes).Render(r.Context(), w)
+		setFlash(w, "error", "New password cannot be empty.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
 
 	// Verify current password.
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(current)); err != nil {
-		settingsPage(pd, "Current password is incorrect.", "error", mounts, volumes, ownedVolumes).Render(r.Context(), w)
+		setFlash(w, "error", "Current password is incorrect.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
 
 	if err := h.Users.UpdatePassword(u.ID, newPass); err != nil {
-		settingsPage(pd, "Failed to update password.", "error", mounts, volumes, ownedVolumes).Render(r.Context(), w)
+		setFlash(w, "error", "Failed to update password.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
 
-	settingsPage(pd, "Password changed.", "success", mounts, volumes, ownedVolumes).Render(r.Context(), w)
+	setFlash(w, "success", "Password changed.")
+	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 }
 
 func (h *SettingsHandler) CreateMount(w http.ResponseWriter, r *http.Request) {
@@ -104,32 +132,28 @@ func (h *SettingsHandler) CreateMount(w http.ResponseWriter, r *http.Request) {
 	userPath := r.FormValue("user_path")
 	volumeSubpath := r.FormValue("volume_subpath")
 
-	pd := pageData(r, "Settings", h.Secret)
-
 	if volumeID == "" || userPath == "" {
-		mounts, volumes, ownedVolumes := h.userMountsAndVolumes(r)
-		settingsPage(pd, "Volume and path are required.", "error", mounts, volumes, ownedVolumes).Render(r.Context(), w)
+		setFlash(w, "error", "Volume and path are required.")
+		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
 		return
 	}
 
 	// Access check on the volume.
 	if h.Access != nil {
 		if ok, _ := h.Access.CanAccess(u.ID, volumeID); !ok {
-			mounts, volumes, ownedVolumes := h.userMountsAndVolumes(r)
-			settingsPage(pd, "You do not have access to that volume.", "error", mounts, volumes, ownedVolumes).Render(r.Context(), w)
+			setFlash(w, "error", "You do not have access to that volume.")
+			http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
 			return
 		}
 	}
 
 	_, err := h.Mounts.Create(u.ID, userPath, volumeID, volumeSubpath, false)
 	if err != nil {
-		mounts, volumes, ownedVolumes := h.userMountsAndVolumes(r)
-		settingsPage(pd, "Failed to create mount: "+err.Error(), "error", mounts, volumes, ownedVolumes).Render(r.Context(), w)
-		return
+		setFlash(w, "error", "Failed to create mount: "+err.Error())
+	} else {
+		setFlash(w, "success", "Mount added.")
 	}
-
-	mounts, volumes, ownedVolumes := h.userMountsAndVolumes(r)
-	settingsPage(pd, "Mount added.", "success", mounts, volumes, ownedVolumes).Render(r.Context(), w)
+	http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
 }
 
 func (h *SettingsHandler) CreateVolume(w http.ResponseWriter, r *http.Request) {
@@ -141,11 +165,9 @@ func (h *SettingsHandler) CreateVolume(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("webdav_password")
 	token := r.FormValue("webdav_token")
 
-	pd := pageData(r, "Settings", h.Secret)
-
 	if name == "" || remoteURL == "" {
-		mounts, volumes, ownedVolumes := h.userMountsAndVolumes(r)
-		settingsPage(pd, "Name and remote URL are required.", "error", mounts, volumes, ownedVolumes).Render(r.Context(), w)
+		setFlash(w, "error", "Name and remote URL are required.")
+		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
 		return
 	}
 
@@ -160,13 +182,11 @@ func (h *SettingsHandler) CreateVolume(w http.ResponseWriter, r *http.Request) {
 
 	_, err := h.Volumes.Create(name, "WebDAV volume", "webdav://"+name, u.Username, &u.ID, string(cfgJSON))
 	if err != nil {
-		mounts, volumes, ownedVolumes := h.userMountsAndVolumes(r)
-		settingsPage(pd, "Failed to create volume: "+err.Error(), "error", mounts, volumes, ownedVolumes).Render(r.Context(), w)
-		return
+		setFlash(w, "error", "Failed to create volume: "+err.Error())
+	} else {
+		setFlash(w, "success", "Volume created.")
 	}
-
-	mounts, volumes, ownedVolumes := h.userMountsAndVolumes(r)
-	settingsPage(pd, "Volume created.", "success", mounts, volumes, ownedVolumes).Render(r.Context(), w)
+	http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
 }
 
 func (h *SettingsHandler) DeleteVolume(w http.ResponseWriter, r *http.Request) {

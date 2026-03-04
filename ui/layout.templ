@@ -1,6 +1,9 @@
 package ui
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Base renders the full HTML page with navbar and content area.
 templ Base(pd PageData) {
@@ -40,6 +43,34 @@ templ Base(pd PageData) {
 	</html>
 }
 
+// SidebarPage renders a page with a sidebar and main content area.
+templ SidebarPage(pd PageData, sidebar []SidebarItem) {
+	@Base(pd) {
+		<div class="sidebar-layout">
+			<nav class="sidebar">
+				for _, item := range sidebar {
+					if item.Active {
+						<a href={ templ.SafeURL(item.URL) } class="sidebar-item active">{ item.Label }</a>
+					} else {
+						<a href={ templ.SafeURL(item.URL) } class="sidebar-item">{ item.Label }</a>
+					}
+				}
+			</nav>
+			<div class="sidebar-content">
+				{ children... }
+			</div>
+		</div>
+	}
+}
+
+// dropdownActive returns "active" if the current request path matches or starts with the given URL.
+func dropdownActive(requestPath, url string) string {
+	if requestPath == url || strings.HasPrefix(requestPath, url+"/") || (url != "/" && strings.HasPrefix(requestPath, url)) {
+		return "active"
+	}
+	return ""
+}
+
 // UserDropdown renders the user menu in the navbar.
 templ UserDropdown(pd PageData) {
 	<div class="dropdown" tabindex="0">
@@ -53,9 +84,13 @@ templ UserDropdown(pd PageData) {
 			<span>&#9662;</span>
 		</button>
 		<div class="dropdown-menu">
-			<a href="/settings">Settings</a>
+			<a href="/settings/profile" class={ dropdownActive(pd.RequestPath, "/settings/profile") }>Profile</a>
+			<a href="/settings/security" class={ dropdownActive(pd.RequestPath, "/settings/security") }>Security</a>
+			<a href="/settings/storage" class={ dropdownActive(pd.RequestPath, "/settings/storage") }>Storage</a>
+			<a href="/settings/groups" class={ dropdownActive(pd.RequestPath, "/settings/groups") }>Groups</a>
 			if pd.User.IsAdmin {
-				<a href="/admin/">Admin</a>
+				<div class="dropdown-divider"></div>
+				<a href="/admin/" class={ dropdownActive(pd.RequestPath, "/admin") }>Admin</a>
 			}
 			<div class="dropdown-divider"></div>
 			<form method="post" action="/logout">
@@ -67,7 +102,7 @@ templ UserDropdown(pd PageData) {
 }
 
 // LoginPage renders the standalone login page (no navbar).
-templ LoginPage(errMsg string, csrfToken string) {
+templ LoginPage(errMsg string, csrfToken string, next string, registrationEnabled bool) {
 	<!DOCTYPE html>
 	<html lang="en">
 	<head>
@@ -85,6 +120,9 @@ templ LoginPage(errMsg string, csrfToken string) {
 				}
 				<form method="post" action="/login">
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					if next != "" {
+						<input type="hidden" name="next" value={ next }/>
+					}
 					<div class="form-group">
 						<label for="username">Username</label>
 						<input class="form-control" type="text" id="username" name="username" required autofocus/>
@@ -95,6 +133,65 @@ templ LoginPage(errMsg string, csrfToken string) {
 					</div>
 					<button class="btn btn-primary" type="submit" style="width:100%;margin-top:0.5rem">Log in</button>
 				</form>
+				if registrationEnabled {
+					<p style="text-align:center;margin-top:1rem">
+						Don't have an account?
+						if next != "" {
+							<a href={ templ.SafeURL("/register?next=" + next) }>Register</a>
+						} else {
+							<a href="/register">Register</a>
+						}
+					</p>
+				}
+			</div>
+		</div>
+	</body>
+	</html>
+}
+
+// RegisterPage renders the standalone registration page.
+templ RegisterPage(errMsg string, next string) {
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="utf-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1"/>
+		<title>Register — Cog</title>
+		<link rel="stylesheet" href="/static/style.css"/>
+	</head>
+	<body>
+		<div class="login-container">
+			<div class="card login-card">
+				<div class="login-title">Cog</div>
+				if errMsg != "" {
+					<div class="alert alert-error">{ errMsg }</div>
+				}
+				<form method="post" action="/register">
+					if next != "" {
+						<input type="hidden" name="next" value={ next }/>
+					}
+					<div class="form-group">
+						<label for="username">Username</label>
+						<input class="form-control" type="text" id="username" name="username" required autofocus/>
+					</div>
+					<div class="form-group">
+						<label for="password">Password</label>
+						<input class="form-control" type="password" id="password" name="password" required/>
+					</div>
+					<div class="form-group">
+						<label for="confirm">Confirm Password</label>
+						<input class="form-control" type="password" id="confirm" name="confirm" required/>
+					</div>
+					<button class="btn btn-primary" type="submit" style="width:100%;margin-top:0.5rem">Register</button>
+				</form>
+				<p style="text-align:center;margin-top:1rem">
+					Already have an account?
+					if next != "" {
+						<a href={ templ.SafeURL("/login?next=" + next) }>Log in</a>
+					} else {
+						<a href="/login">Log in</a>
+					}
+				</p>
 			</div>
 		</div>
 	</body>

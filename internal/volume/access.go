@@ -1,6 +1,7 @@
 package volume
 
 import (
+	"database/sql"
 	"fmt"
 
 	"git.duckfam.us/jj-software/cog/internal/share"
@@ -13,11 +14,12 @@ const ShareResourceType = "system:volume"
 type Access struct {
 	Volumes *Store
 	Shares  *share.Store
+	DB      *sql.DB // system DB for group membership queries
 }
 
 // CanAccess returns true if the user can access the given volume.
 // Access is granted if: the volume has no owner (system volume), the user owns it,
-// or it has been shared with the user.
+// the volume is group-owned and user is in the group, or it has been shared with the user.
 func (a *Access) CanAccess(userID, volumeID string) (bool, error) {
 	vol, err := a.Volumes.GetByID(volumeID)
 	if err != nil {
@@ -27,9 +29,20 @@ func (a *Access) CanAccess(userID, volumeID string) (bool, error) {
 	if vol.OwnerID == nil {
 		return true, nil
 	}
-	// Owner has access.
-	if *vol.OwnerID == userID {
+	// User-owned: owner has access.
+	if vol.OwnerType == "user" && *vol.OwnerID == userID {
 		return true, nil
+	}
+	// Group-owned: check group membership.
+	if vol.OwnerType == "group" && a.DB != nil {
+		var count int
+		err := a.DB.QueryRow(
+			`SELECT COUNT(*) FROM group_membership_closure WHERE ancestor_group_id = ? AND descendant_user_id = ?`,
+			*vol.OwnerID, userID,
+		).Scan(&count)
+		if err == nil && count > 0 {
+			return true, nil
+		}
 	}
 	// Check shares.
 	decision, err := a.Shares.CheckAccess(userID, ShareResourceType, volumeID)
@@ -52,7 +65,28 @@ func (a *Access) ListAccessible(userID string) ([]Volume, error) {
 			sharedIDs = append(sharedIDs, s.ResourceID)
 		}
 	}
-	return a.Volumes.ListAccessible(userID, sharedIDs)
+
+	// Find group-owned volume IDs via group membership.
+	var groupVolumeIDs []string
+	if a.DB != nil {
+		rows, err := a.DB.Query(`
+			SELECT v.id FROM volumes v
+			JOIN group_membership_closure gmc ON v.owner_id = gmc.ancestor_group_id
+			WHERE v.owner_type = 'group' AND gmc.descendant_user_id = ?`, userID)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var id string
+				if rows.Scan(&id) == nil {
+					groupVolumeIDs = append(groupVolumeIDs, id)
+				}
+			}
+		}
+	}
+
+	// Merge shared and group volume IDs.
+	allExtraIDs := append(sharedIDs, groupVolumeIDs...)
+	return a.Volumes.ListAccessible(userID, allExtraIDs)
 }
 
 // ShareVolume creates a share record for a volume. Only the owner can share.

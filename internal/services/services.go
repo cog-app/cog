@@ -10,10 +10,12 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/internal/email"
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/plugin/files"
+	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
@@ -30,8 +32,11 @@ type Providers struct {
 	Shares       *share.Store
 	Files        *files.Plugin
 	Groups       *group.Store
+	Invitations  *group.InvitationStore
 	Volumes      *volume.Store
 	Mounts       *mount.Store
+	Settings     *settings.Store
+	Email        *email.Sender
 	CSRFSecret   []byte
 }
 
@@ -85,8 +90,11 @@ func newFromDB(cfg config.Config, sysDB *sql.DB, mux *http.ServeMux) *Providers 
 		Shares:       share.NewStore(sysDB),
 		Files:        filesPlugin,
 		Groups:       group.NewStore(sysDB),
+		Invitations:  group.NewInvitationStore(sysDB),
 		Volumes:      volumes,
 		Mounts:       mounts,
+		Settings:     settings.NewStore(sysDB),
+		Email:        email.NewFromConfig(cfg),
 		CSRFSecret:   secret,
 	}
 }

@@ -63,7 +63,7 @@ func migrate(db *sql.DB) error {
 	CREATE TABLE IF NOT EXISTS group_members (
 		group_id TEXT NOT NULL REFERENCES groups(id),
 		member_id TEXT NOT NULL,
-		member_type TEXT NOT NULL CHECK(member_type IN ('USER', 'GROUP')),
+		member_type TEXT NOT NULL CHECK(member_type IN ('USER', 'OWNER')),
 		PRIMARY KEY (group_id, member_id)
 	);
 
@@ -110,6 +110,11 @@ func migrate(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_mounts_user ON mounts(user_id);
 	CREATE INDEX IF NOT EXISTS idx_mounts_volume ON mounts(volume_id);
 
+	CREATE TABLE IF NOT EXISTS system_settings (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL DEFAULT ''
+	);
+
 	CREATE TABLE IF NOT EXISTS plugin_settings (
 		plugin_id TEXT PRIMARY KEY,
 		enabled INTEGER NOT NULL DEFAULT 1
@@ -120,6 +125,28 @@ func migrate(db *sql.DB) error {
 		descendant_user_id TEXT NOT NULL,
 		depth INTEGER NOT NULL,
 		PRIMARY KEY (ancestor_group_id, descendant_user_id)
+	);
+
+	CREATE TABLE IF NOT EXISTS group_invitations (
+		id TEXT PRIMARY KEY,
+		group_id TEXT NOT NULL REFERENCES groups(id),
+		email TEXT NOT NULL DEFAULT '',
+		token TEXT NOT NULL UNIQUE,
+		invited_by TEXT NOT NULL REFERENCES users(id),
+		created_at INTEGER NOT NULL,
+		expires_at INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_group_invitations_token ON group_invitations(token);
+
+	CREATE TABLE IF NOT EXISTS group_mounts (
+		id TEXT PRIMARY KEY,
+		group_id TEXT NOT NULL REFERENCES groups(id),
+		user_path TEXT NOT NULL,
+		volume_id TEXT NOT NULL REFERENCES volumes(id),
+		volume_subpath TEXT NOT NULL DEFAULT '',
+		read_only INTEGER NOT NULL DEFAULT 0,
+		created_at INTEGER NOT NULL,
+		UNIQUE(group_id, user_path)
 	);
 	`
 	if _, err := db.Exec(schema); err != nil {
@@ -138,6 +165,10 @@ func migrate(db *sql.DB) error {
 		{"volumes", "owner_id", "ALTER TABLE volumes ADD COLUMN owner_id TEXT REFERENCES users(id)"},
 		{"volumes", "config", "ALTER TABLE volumes ADD COLUMN config TEXT NOT NULL DEFAULT '{}'"},
 		{"users", "avatar", "ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT ''"},
+		{"groups", "owner_id", "ALTER TABLE groups ADD COLUMN owner_id TEXT REFERENCES users(id)"},
+		{"users", "email", "ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''"},
+		{"volumes", "owner_type", "ALTER TABLE volumes ADD COLUMN owner_type TEXT NOT NULL DEFAULT 'user'"},
+		{"group_invitations", "member_type", "ALTER TABLE group_invitations ADD COLUMN member_type TEXT NOT NULL DEFAULT 'USER'"},
 	} {
 		rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", col.table))
 		if err != nil {
@@ -165,6 +196,9 @@ func migrate(db *sql.DB) error {
 			}
 		}
 	}
+
+	// Migrate legacy GROUP member_type to USER (GROUP type replaced by OWNER/USER).
+	_, _ = db.Exec(`UPDATE group_members SET member_type = 'USER' WHERE member_type = 'GROUP'`)
 
 	return nil
 }

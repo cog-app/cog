@@ -1,0 +1,148 @@
+package web
+
+import (
+	"fmt"
+	"git.duckfam.us/jj-software/cog/ui"
+	"git.duckfam.us/jj-software/cog/internal/plugin/files"
+	"time"
+)
+
+templ filesPage(pd ui.PageData, dirPath string, items []files.FileMeta) {
+	@ui.Base(pd) {
+		<h1 style="margin-bottom:0.5rem">Files</h1>
+		@filesBreadcrumbs(dirPath)
+		@ui.Card("") {
+			<div class="flex gap-1 items-end mb-2" style="flex-wrap:wrap">
+				<form method="post" action={ templ.SafeURL("/apps/files" + dirPath) } class="flex gap-1 items-end">
+					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+					<input class="form-control" type="text" name="name" placeholder="New folder" required style="max-width:200px"/>
+					<button class="btn btn-outline btn-sm" type="submit">Create Folder</button>
+				</form>
+				<form method="post" action={ templ.SafeURL("/apps/files" + dirPath) } enctype="multipart/form-data" class="flex gap-1 items-end">
+					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+					<input class="form-control" type="file" name="file" required style="max-width:300px"/>
+					<button class="btn btn-primary btn-sm" type="submit">Upload</button>
+				</form>
+			</div>
+			<table class="table">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Size</th>
+						<th>Modified</th>
+						<th class="text-right">Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					if dirPath != "/" {
+						<tr>
+							<td>
+								<a href={ templ.SafeURL("/apps/files" + parentDir(dirPath)) }>../</a>
+							</td>
+							<td></td>
+							<td></td>
+							<td></td>
+						</tr>
+					}
+					for _, f := range items {
+						<tr id={ "file-" + safeDomID(f.Path) }>
+							<td>
+								if f.IsDir {
+									<a href={ templ.SafeURL("/apps/files" + f.Path) }>{ f.Name }/</a>
+								} else {
+									<a href={ templ.SafeURL("/apps/files" + f.Path) }>{ f.Name }</a>
+								}
+							</td>
+							<td>
+								if !f.IsDir {
+									{ formatSize(f.Size) }
+								}
+							</td>
+							<td>
+								if f.MTime > 0 {
+									{ time.Unix(f.MTime, 0).Format("2006-01-02 15:04") }
+								}
+							</td>
+							<td class="text-right">
+								<button
+									class="btn btn-danger btn-sm"
+									hx-delete={ "/apps/files" + f.Path }
+									hx-target={ "#file-" + safeDomID(f.Path) }
+									hx-swap="outerHTML"
+									hx-confirm={ "Delete " + f.Name + "?" }
+								>Delete</button>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	}
+}
+
+templ filesBreadcrumbs(dirPath string) {
+	<nav style="margin-bottom:1rem">
+		<a href="/apps/files/">root</a>
+		for _, seg := range breadcrumbSegments(dirPath) {
+			<span> / </span>
+			<a href={ templ.SafeURL("/apps/files" + seg.Path) }>{ seg.Name }</a>
+		}
+	</nav>
+}
+
+templ fileViewPage(pd ui.PageData, filePath string, meta *files.FileMeta, kind string, textContent string) {
+	@ui.Base(pd) {
+		@filesBreadcrumbs(parentDir(filePath))
+		@ui.Card(meta.Name) {
+			<div class="flex gap-1 items-center mb-2">
+				<span class="text-muted">{ meta.MimeType }</span>
+				<span class="text-muted">{ formatSize(meta.Size) }</span>
+				<a href={ templ.SafeURL("/apps/files" + filePath + "?dl=1") } class="btn btn-primary btn-sm">Download</a>
+				<button
+					class="btn btn-danger btn-sm"
+					hx-delete={ "/apps/files" + filePath }
+					hx-confirm={ "Delete " + meta.Name + "?" }
+					hx-on::after-request="if(event.detail.successful) window.location=this.getAttribute('data-back')"
+					data-back={ "/apps/files" + parentDir(filePath) }
+				>Delete</button>
+			</div>
+			if kind == "image" {
+				<div style="text-align:center">
+					<img
+						src={ "/apps/files" + filePath + "?raw=1" }
+						alt={ meta.Name }
+						style="max-width:100%;max-height:80vh"
+					/>
+				</div>
+			}
+			if kind == "text" {
+				<textarea
+					class="form-control"
+					style="width:100%;min-height:400px;font-family:monospace;font-size:0.85rem;white-space:pre;tab-size:4"
+					readonly
+				>{ textContent }</textarea>
+			}
+			if kind == "video" {
+				<video controls style="max-width:100%;max-height:80vh">
+					<source src={ "/apps/files" + filePath + "?raw=1" } type={ meta.MimeType }/>
+				</video>
+			}
+			if kind == "audio" {
+				<audio controls style="width:100%">
+					<source src={ "/apps/files" + filePath + "?raw=1" } type={ meta.MimeType }/>
+				</audio>
+			}
+			if kind == "pdf" {
+				<iframe
+					src={ "/apps/files" + filePath + "?raw=1" }
+					style="width:100%;height:80vh;border:1px solid var(--color-border)"
+				></iframe>
+			}
+			if kind == "binary" {
+				<p class="text-muted">
+					{ fmt.Sprintf("No preview available for %s.", meta.MimeType) }
+				</p>
+			}
+		}
+	}
+}

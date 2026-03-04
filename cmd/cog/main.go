@@ -32,14 +32,24 @@ func main() {
 		createUser = flag.String("create-user", "", "create a user (username:password) and exit")
 		baseURL    = flag.String("base-url", defaultBaseURL(), "external base URL")
 		logReqs    = flag.Bool("log-requests", false, "log full HTTP request/response bodies")
+		smtpHost   = flag.String("smtp-host", "", "SMTP server hostname")
+		smtpPort   = flag.Int("smtp-port", 587, "SMTP server port")
+		smtpUser   = flag.String("smtp-user", "", "SMTP username")
+		smtpPass   = flag.String("smtp-pass", "", "SMTP password")
+		smtpFrom   = flag.String("smtp-from", "", "SMTP from address")
 	)
 	flag.Parse()
 
 	cfg := config.Config{
-		Addr:    *addr,
-		DBPath:  *dbPath,
-		DataDir: *dataDir,
-		BaseURL: *baseURL,
+		Addr:     *addr,
+		DBPath:   *dbPath,
+		DataDir:  *dataDir,
+		BaseURL:  *baseURL,
+		SMTPHost: *smtpHost,
+		SMTPPort: *smtpPort,
+		SMTPUser: *smtpUser,
+		SMTPPass: *smtpPass,
+		SMTPFrom: *smtpFrom,
 	}
 
 	p, err := services.New(cfg)

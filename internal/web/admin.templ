@@ -7,10 +7,21 @@ import (
 	"fmt"
 )
 
+func adminSidebar(active string) []ui.SidebarItem {
+	return []ui.SidebarItem{
+		{Label: "Overview", URL: "/admin/", Active: active == "index"},
+		{Label: "Users", URL: "/admin/users", Active: active == "users"},
+		{Label: "Groups", URL: "/admin/groups", Active: active == "groups"},
+		{Label: "Volumes", URL: "/admin/volumes", Active: active == "volumes"},
+		{Label: "Plugins", URL: "/admin/plugins", Active: active == "plugins"},
+		{Label: "Settings", URL: "/admin/settings", Active: active == "settings"},
+	}
+}
+
 // --- Index ---
 
 templ adminIndexPage(pd ui.PageData) {
-	@ui.Base(pd) {
+	@ui.SidebarPage(pd, adminSidebar("index")) {
 		<h1 style="margin-bottom:1rem">Administration</h1>
 		<div class="flex gap-1" style="flex-wrap:wrap">
 			@ui.Card("Users") {
@@ -29,6 +40,10 @@ templ adminIndexPage(pd ui.PageData) {
 				<p>Enable or disable installed plugins.</p>
 				<a class="btn btn-primary" href="/admin/plugins">Manage Plugins</a>
 			}
+			@ui.Card("Settings") {
+				<p>Configure system settings like registration.</p>
+				<a class="btn btn-primary" href="/admin/settings">System Settings</a>
+			}
 		</div>
 	}
 }
@@ -36,7 +51,7 @@ templ adminIndexPage(pd ui.PageData) {
 // --- Users ---
 
 templ adminUsersPage(pd ui.PageData, users []user.User, flash string, flashKind string) {
-	@ui.Base(pd) {
+	@ui.SidebarPage(pd, adminSidebar("users")) {
 		<div class="flex justify-between items-center" style="margin-bottom:1rem">
 			<h1>Users</h1>
 			<a class="btn btn-primary" href="/admin/users/new">New User</a>
@@ -83,7 +98,7 @@ templ adminUsersPage(pd ui.PageData, users []user.User, flash string, flashKind 
 }
 
 templ adminUserNewPage(pd ui.PageData, errMsg string) {
-	@ui.Base(pd) {
+	@ui.SidebarPage(pd, adminSidebar("users")) {
 		<h1 style="margin-bottom:1rem">New User</h1>
 		if errMsg != "" {
 			@ui.Alert("error", errMsg)
@@ -107,7 +122,7 @@ templ adminUserNewPage(pd ui.PageData, errMsg string) {
 }
 
 templ adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind string) {
-	@ui.Base(pd) {
+	@ui.SidebarPage(pd, adminSidebar("users")) {
 		<h1 style="margin-bottom:1rem">Edit User: { u.Username }</h1>
 		if flash != "" {
 			@ui.Alert(flashKind, flash)
@@ -143,7 +158,7 @@ templ adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind st
 // --- Groups ---
 
 templ adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashKind string) {
-	@ui.Base(pd) {
+	@ui.SidebarPage(pd, adminSidebar("groups")) {
 		<div class="flex justify-between items-center" style="margin-bottom:1rem">
 			<h1>Groups</h1>
 		</div>
@@ -153,47 +168,23 @@ templ adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashK
 		@ui.Card("Create Group") {
 			<form method="post" action="/admin/groups" class="flex gap-1 items-center">
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				<input class="form-control" type="text" name="name" placeholder="Group name" required style="max-width:300px"/>
+				<input class="form-control" type="text" name="name" placeholder="Group name" required style="max-width:200px"/>
 				<button class="btn btn-primary" type="submit">Create</button>
 			</form>
 		}
 		@ui.Card("") {
-			<table class="table">
-				<thead>
-					<tr>
-						<th>Name</th>
-						<th class="text-right">Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					for _, g := range groups {
-						<tr id={ "group-" + g.ID }>
-							<td>{ g.Name }</td>
-							<td class="text-right">
-								<a class="btn btn-outline btn-sm" href={ templ.SafeURL("/admin/groups/" + g.ID) }>Edit</a>
-								<button
-									class="btn btn-danger btn-sm"
-									hx-delete={ "/admin/groups/" + g.ID }
-									hx-target={ "#group-" + g.ID }
-									hx-swap="outerHTML"
-									hx-confirm="Delete this group?"
-								>Delete</button>
-							</td>
-						</tr>
-					}
-				</tbody>
-			</table>
+			@groupTable(groups, "/admin/groups/")
 		}
 	}
 }
 
 templ adminGroupEditPage(pd ui.PageData, g *group.Group, members []group.Member, users []user.User, flash string, flashKind string) {
-	@ui.Base(pd) {
+	@ui.SidebarPage(pd, adminSidebar("groups")) {
 		<h1 style="margin-bottom:1rem">Edit Group: { g.Name }</h1>
 		if flash != "" {
 			@ui.Alert(flashKind, flash)
 		}
-		@ui.Card("Group Name") {
+		@ui.Card("Group Settings") {
 			<form method="post" action={ templ.SafeURL("/admin/groups/" + g.ID) }>
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 				@ui.FormField("Name", "name", "text", g.Name, "")
@@ -238,24 +229,62 @@ templ adminGroupEditPage(pd ui.PageData, g *group.Group, members []group.Member,
 				</tbody>
 			</table>
 		}
+		@ui.Card("Danger Zone") {
+			<p class="text-muted" style="margin-bottom:0.5rem">Deleting a group removes all members and cannot be undone.</p>
+			<form method="post" action={ templ.SafeURL("/admin/groups/" + g.ID + "/delete") } onsubmit="return confirm('Are you sure you want to delete this group?')">
+				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+				<button class="btn btn-danger" type="submit">Delete Group</button>
+			</form>
+		}
 	}
 }
 
 func memberLabel(m group.Member, users []user.User) string {
-	if m.MemberType == "USER" {
-		for _, u := range users {
-			if u.ID == m.MemberID {
-				return u.Username
-			}
+	for _, u := range users {
+		if u.ID == m.MemberID {
+			return u.Username
 		}
 	}
 	return m.MemberID
 }
 
+// --- Settings ---
+
+templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, flash string, flashKind string) {
+	@ui.SidebarPage(pd, adminSidebar("settings")) {
+		<h1 style="margin-bottom:1rem">System Settings</h1>
+		if flash != "" {
+			@ui.Alert(flashKind, flash)
+		}
+		@ui.Card("Registration") {
+			<form method="post" action="/admin/settings">
+				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+				<div class="form-group">
+					<label class="form-check">
+						if publicRegistration {
+							<input type="checkbox" name="public_registration" value="1" checked/>
+						} else {
+							<input type="checkbox" name="public_registration" value="1"/>
+						}
+						Allow public registration
+					</label>
+					<p class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">When enabled, anyone can create an account from the login page.</p>
+				</div>
+				<div class="form-group">
+					<label class="form-label" for="invite_expiry_hours">Invite link expiry (hours)</label>
+					<input class="form-control" type="number" id="invite_expiry_hours" name="invite_expiry_hours" value={ inviteExpiryHours } min="1" style="max-width:200px"/>
+					<p class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">How long group invitation links remain valid. Default: 72 hours.</p>
+				</div>
+				<button class="btn btn-primary" type="submit">Save Settings</button>
+			</form>
+		}
+	}
+}
+
 // --- Plugins ---
 
 templ adminPluginsPage(pd ui.PageData, plugins []PluginInfo) {
-	@ui.Base(pd) {
+	@ui.SidebarPage(pd, adminSidebar("plugins")) {
 		<div class="flex justify-between items-center" style="margin-bottom:1rem">
 			<h1>Plugins</h1>
 		</div>
@@ -299,6 +328,5 @@ templ adminPluginsPage(pd ui.PageData, plugins []PluginInfo) {
 				</tbody>
 			</table>
 		}
-		<a class="btn btn-outline" href="/admin/">Back</a>
 	}
 }
