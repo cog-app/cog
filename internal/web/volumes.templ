@@ -1,0 +1,155 @@
+package web
+
+import (
+	"fmt"
+	"git.duckfam.us/jj-software/cog/ui"
+	"git.duckfam.us/jj-software/cog/internal/volume"
+	"path"
+)
+
+templ volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items []volume.FileInfo) {
+	@ui.Base(pd) {
+		<h1 style="margin-bottom:0.5rem">{ vol.Name }</h1>
+		@volumeBreadcrumbs(vol.ID, dirPath)
+		@ui.Card("") {
+			<div class="flex gap-1 items-end mb-2" style="flex-wrap:wrap">
+				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/volumes/%s/mkdir?path=%s", vol.ID, dirPath)) } class="flex gap-1 items-end">
+					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+					<input class="form-control" type="text" name="name" placeholder="New folder" required style="max-width:200px"/>
+					<button class="btn btn-outline btn-sm" type="submit">Create Folder</button>
+				</form>
+				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/volumes/%s/upload?path=%s", vol.ID, dirPath)) } enctype="multipart/form-data" class="flex gap-1 items-end">
+					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+					<input class="form-control" type="file" name="file" required style="max-width:300px"/>
+					<button class="btn btn-primary btn-sm" type="submit">Upload</button>
+				</form>
+			</div>
+			<table class="table">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Size</th>
+						<th>Modified</th>
+						<th class="text-right">Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					if dirPath != "/" && dirPath != "" {
+						<tr>
+							<td>
+								<a href={ templ.SafeURL(fmt.Sprintf("/volumes/%s/browse?path=%s", vol.ID, parentDir(dirPath))) }>../</a>
+							</td>
+							<td></td>
+							<td></td>
+							<td></td>
+						</tr>
+					}
+					for _, f := range items {
+						<tr id={ "file-" + safeDomID(f.Path) }>
+							<td>
+								if f.IsDir {
+									<a href={ templ.SafeURL(fmt.Sprintf("/volumes/%s/browse?path=%s", vol.ID, f.Path)) }>{ f.Name }/</a>
+								} else {
+									<a href={ templ.SafeURL(fmt.Sprintf("/volumes/%s/download?path=%s", vol.ID, f.Path)) }>{ f.Name }</a>
+								}
+							</td>
+							<td>
+								if !f.IsDir {
+									{ formatSize(f.Size) }
+								}
+							</td>
+							<td>
+								if !f.ModTime.IsZero() {
+									{ f.ModTime.Format("2006-01-02 15:04") }
+								}
+							</td>
+							<td class="text-right">
+								<button
+									class="btn btn-danger btn-sm"
+									hx-delete={ fmt.Sprintf("/volumes/%s/file?path=%s", vol.ID, f.Path) }
+									hx-target={ "#file-" + safeDomID(f.Path) }
+									hx-swap="outerHTML"
+									hx-confirm={ "Delete " + f.Name + "?" }
+								>Delete</button>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	}
+}
+
+templ volumeBreadcrumbs(volID string, dirPath string) {
+	<nav style="margin-bottom:1rem">
+		<a href={ templ.SafeURL("/volumes/" + volID + "/browse") }>root</a>
+		for _, seg := range breadcrumbSegments(dirPath) {
+			<span> / </span>
+			<a href={ templ.SafeURL(fmt.Sprintf("/volumes/%s/browse?path=%s", volID, seg.Path)) }>{ seg.Name }</a>
+		}
+	</nav>
+}
+
+type breadcrumbSeg struct {
+	Name string
+	Path string
+}
+
+func breadcrumbSegments(dirPath string) []breadcrumbSeg {
+	cleaned := path.Clean("/" + dirPath)
+	if cleaned == "/" {
+		return nil
+	}
+	parts := splitPath(cleaned)
+	var segs []breadcrumbSeg
+	for i, p := range parts {
+		segs = append(segs, breadcrumbSeg{
+			Name: p,
+			Path: "/" + path.Join(parts[:i+1]...),
+		})
+	}
+	return segs
+}
+
+func splitPath(p string) []string {
+	var parts []string
+	clean := path.Clean(p)
+	for clean != "/" && clean != "." && clean != "" {
+		parts = append([]string{path.Base(clean)}, parts...)
+		clean = path.Dir(clean)
+	}
+	return parts
+}
+
+func parentDir(p string) string {
+	parent := path.Dir(path.Clean("/" + p))
+	if parent == "." {
+		return "/"
+	}
+	return parent
+}
+
+func safeDomID(p string) string {
+	var out []byte
+	for _, c := range []byte(p) {
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' {
+			out = append(out, c)
+		} else {
+			out = append(out, '_')
+		}
+	}
+	return string(out)
+}
+
+func formatSize(size int64) string {
+	if size < 1024 {
+		return fmt.Sprintf("%d B", size)
+	}
+	if size < 1024*1024 {
+		return fmt.Sprintf("%.1f KB", float64(size)/1024)
+	}
+	if size < 1024*1024*1024 {
+		return fmt.Sprintf("%.1f MB", float64(size)/(1024*1024))
+	}
+	return fmt.Sprintf("%.1f GB", float64(size)/(1024*1024*1024))
+}

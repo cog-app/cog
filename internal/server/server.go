@@ -9,6 +9,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/compat"
 	"git.duckfam.us/jj-software/cog/internal/plugin/files"
 	"git.duckfam.us/jj-software/cog/internal/services"
+	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -30,10 +31,13 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
 
 	// --- Web UI handlers ---
+	volAccess := &volume.Access{Volumes: p.Volumes, Shares: p.Shares}
 	loginH := &web.LoginHandler{Users: p.Users, Sessions: p.Sessions, Secret: p.CSRFSecret}
 	dashH := &web.DashboardHandler{Secret: p.CSRFSecret}
-	settingsH := &web.SettingsHandler{Users: p.Users, Secret: p.CSRFSecret}
-	adminH := &web.AdminHandler{Users: p.Users, Groups: p.Groups, Secret: p.CSRFSecret}
+	settingsH := &web.SettingsHandler{Users: p.Users, Volumes: p.Volumes, Mounts: p.Mounts, Access: volAccess, Secret: p.CSRFSecret}
+	adminH := &web.AdminHandler{Users: p.Users, Groups: p.Groups, Volumes: p.Volumes, Mounts: p.Mounts, Secret: p.CSRFSecret}
+	adminVolH := &web.AdminVolumeHandler{Volumes: p.Volumes, Secret: p.CSRFSecret}
+	volBrowserH := &web.VolumeBrowserHandler{Access: volAccess, Secret: p.CSRFSecret}
 
 	// Login/logout — unauthenticated
 	mux.HandleFunc("GET /login", loginH.ShowLogin)
@@ -50,6 +54,10 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /settings", auth.RequireAuthWeb(http.HandlerFunc(settingsH.Show)))
 	mux.Handle("POST /settings/profile", csrfWeb(http.HandlerFunc(settingsH.UpdateProfile)))
 	mux.Handle("POST /settings/password", csrfWeb(http.HandlerFunc(settingsH.UpdatePassword)))
+	mux.Handle("POST /settings/mounts", csrfWeb(http.HandlerFunc(settingsH.CreateMount)))
+	mux.Handle("DELETE /settings/mounts/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteMount)))
+	mux.Handle("POST /settings/volumes", csrfWeb(http.HandlerFunc(settingsH.CreateVolume)))
+	mux.Handle("DELETE /settings/volumes/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteVolume)))
 
 	// Admin — require auth + admin + CSRF on mutations
 	adminAuth := func(h http.Handler) http.Handler {
@@ -59,6 +67,7 @@ func New(p *services.Providers) http.Handler {
 		return auth.RequireAuthWeb(auth.RequireAdmin(auth.RequireCSRF(p.CSRFSecret, h)))
 	}
 
+	mux.Handle("GET /admin/{$}", adminAuth(http.HandlerFunc(adminH.Index)))
 	mux.Handle("GET /admin/users", adminAuth(http.HandlerFunc(adminH.ListUsers)))
 	mux.Handle("GET /admin/users/new", adminAuth(http.HandlerFunc(adminH.NewUserForm)))
 	mux.Handle("POST /admin/users", adminMut(http.HandlerFunc(adminH.CreateUser)))
@@ -74,6 +83,20 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("DELETE /admin/groups/{id}", adminMut(http.HandlerFunc(adminH.DeleteGroup)))
 	mux.Handle("POST /admin/groups/{id}/members", adminMut(http.HandlerFunc(adminH.AddMember)))
 	mux.Handle("DELETE /admin/groups/{id}/members/{member_id}", adminMut(http.HandlerFunc(adminH.RemoveMember)))
+
+	mux.Handle("GET /admin/volumes", adminAuth(http.HandlerFunc(adminVolH.ListVolumes)))
+	mux.Handle("GET /admin/volumes/new", adminAuth(http.HandlerFunc(adminVolH.NewVolumeForm)))
+	mux.Handle("POST /admin/volumes", adminMut(http.HandlerFunc(adminVolH.CreateVolume)))
+	mux.Handle("GET /admin/volumes/{id}", adminAuth(http.HandlerFunc(adminVolH.EditVolumeForm)))
+	mux.Handle("POST /admin/volumes/{id}", adminMut(http.HandlerFunc(adminVolH.UpdateVolume)))
+	mux.Handle("DELETE /admin/volumes/{id}", adminMut(http.HandlerFunc(adminVolH.DeleteVolume)))
+
+	// Volume browser
+	mux.Handle("GET /volumes/{id}/browse", auth.RequireAuthWeb(http.HandlerFunc(volBrowserH.Browse)))
+	mux.Handle("GET /volumes/{id}/download", auth.RequireAuthWeb(http.HandlerFunc(volBrowserH.Download)))
+	mux.Handle("POST /volumes/{id}/upload", csrfWeb(http.HandlerFunc(volBrowserH.Upload)))
+	mux.Handle("POST /volumes/{id}/mkdir", csrfWeb(http.HandlerFunc(volBrowserH.MkDir)))
+	mux.Handle("DELETE /volumes/{id}/file", csrfWeb(http.HandlerFunc(volBrowserH.DeleteFile)))
 
 	// --- Status & OCS ---
 	mux.HandleFunc("GET /status.php", compat.HandleStatus)

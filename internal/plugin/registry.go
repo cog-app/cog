@@ -13,12 +13,19 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// MountResolver resolves user file paths via the mount system.
+type MountResolver interface {
+	UserFilesDir(username string) (string, error)
+	EnsureUserDirs(username string) error
+}
+
 // Registry manages plugin lifecycle, per-user database provisioning,
 // and HTTP route mounting.
 type Registry struct {
-	dataDir string
-	plugins map[string]Plugin
-	mux     *http.ServeMux
+	dataDir       string
+	plugins       map[string]Plugin
+	mux           *http.ServeMux
+	mountResolver MountResolver
 
 	// pluginRegistrars tracks registrations made during Register().
 	registrars map[string]*pluginRegistrar
@@ -113,22 +120,43 @@ func (r *Registry) PluginDB(username, pluginID string) (*sql.DB, error) {
 	return db, nil
 }
 
+// SetMountResolver sets an optional mount resolver for path resolution.
+func (r *Registry) SetMountResolver(mr MountResolver) {
+	r.mountResolver = mr
+}
+
 // UserFilesDir returns the path to the user's files directory.
+// If a mount resolver is set, it delegates to it; otherwise falls back to the hardcoded path.
 func (r *Registry) UserFilesDir(username string) string {
+	if r.mountResolver != nil {
+		if dir, err := r.mountResolver.UserFilesDir(username); err == nil {
+			return dir
+		}
+	}
 	return filepath.Join(r.dataDir, username, "files")
 }
 
 // EnsureUserDirs creates the standard directory structure for a user.
+// If a mount resolver is set, it delegates to it for the files directory.
 func (r *Registry) EnsureUserDirs(username string) error {
-	dirs := []string{
-		filepath.Join(r.dataDir, username, "files"),
-		filepath.Join(r.dataDir, username, "app_data"),
-	}
-	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0700); err != nil {
-			return fmt.Errorf("create user dir %s: %w", dir, err)
+	if r.mountResolver != nil {
+		if err := r.mountResolver.EnsureUserDirs(username); err != nil {
+			log.Printf("mount resolver EnsureUserDirs failed for %q, falling back: %v", username, err)
 		}
 	}
+
+	// Always ensure app_data directory exists.
+	appDataDir := filepath.Join(r.dataDir, username, "app_data")
+	if err := os.MkdirAll(appDataDir, 0700); err != nil {
+		return fmt.Errorf("create user dir %s: %w", appDataDir, err)
+	}
+
+	// Ensure the files directory from the resolved path.
+	filesDir := r.UserFilesDir(username)
+	if err := os.MkdirAll(filesDir, 0700); err != nil {
+		return fmt.Errorf("create user dir %s: %w", filesDir, err)
+	}
+
 	return nil
 }
 

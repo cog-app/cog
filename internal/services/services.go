@@ -11,10 +11,12 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/internal/group"
+	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/plugin/files"
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/internal/volume"
 )
 
 // Providers holds all runtime services and the config that created them.
@@ -28,6 +30,8 @@ type Providers struct {
 	Shares       *share.Store
 	Files        *files.Plugin
 	Groups       *group.Store
+	Volumes      *volume.Store
+	Mounts       *mount.Store
 	CSRFSecret   []byte
 }
 
@@ -53,7 +57,19 @@ func NewFromDBWithMux(cfg config.Config, sysDB *sql.DB, mux *http.ServeMux) *Pro
 }
 
 func newFromDB(cfg config.Config, sysDB *sql.DB, mux *http.ServeMux) *Providers {
+	users := user.NewStore(sysDB)
+	volumes := volume.NewStore(sysDB)
+	mounts := mount.NewStore(sysDB)
+
+	// Bootstrap default volume and root mounts for existing users.
+	mount.Bootstrap(cfg.DataDir, users, volumes, mounts)
+
 	registry := plugin.NewRegistry(cfg.DataDir, mux)
+
+	// Wire mount resolver into plugin registry.
+	resolver := mount.NewResolver(users, mounts, volumes)
+	registry.SetMountResolver(resolver)
+
 	filesPlugin := files.New(registry)
 
 	secret := make([]byte, 32)
@@ -62,13 +78,15 @@ func newFromDB(cfg config.Config, sysDB *sql.DB, mux *http.ServeMux) *Providers 
 	return &Providers{
 		Config:       cfg,
 		DB:           sysDB,
-		Users:        user.NewStore(sysDB),
+		Users:        users,
 		Sessions:     auth.NewSessionStore(sysDB),
 		AppPasswords: auth.NewAppPasswordStore(sysDB),
 		Plugins:      registry,
 		Shares:       share.NewStore(sysDB),
 		Files:        filesPlugin,
 		Groups:       group.NewStore(sysDB),
+		Volumes:      volumes,
+		Mounts:       mounts,
 		CSRFSecret:   secret,
 	}
 }

@@ -7,6 +7,28 @@ import (
 	"fmt"
 )
 
+// --- Index ---
+
+templ adminIndexPage(pd ui.PageData) {
+	@ui.Base(pd) {
+		<h1 style="margin-bottom:1rem">Administration</h1>
+		<div class="flex gap-1" style="flex-wrap:wrap">
+			@ui.Card("Users") {
+				<p>Manage user accounts, permissions, and passwords.</p>
+				<a class="btn btn-primary" href="/admin/users">Manage Users</a>
+			}
+			@ui.Card("Groups") {
+				<p>Manage groups and group memberships.</p>
+				<a class="btn btn-primary" href="/admin/groups">Manage Groups</a>
+			}
+			@ui.Card("Volumes") {
+				<p>Manage storage volumes and backends.</p>
+				<a class="btn btn-primary" href="/admin/volumes">Manage Volumes</a>
+			}
+		</div>
+	}
+}
+
 // --- Users ---
 
 templ adminUsersPage(pd ui.PageData, users []user.User, flash string, flashKind string) {

@@ -59,6 +59,13 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to create user: %v", err)
 		}
+		// Create root mount pointing to default volume.
+		if p.Volumes != nil && p.Mounts != nil {
+			if defVol, volErr := p.Volumes.GetByName("default"); volErr == nil {
+				subpath := u.Username + "/files"
+				p.Mounts.Create(u.ID, "/", defVol.ID, subpath, false)
+			}
+		}
 		fmt.Printf("Created user %q (id: %s)\n", u.Username, u.ID)
 		return
 	}

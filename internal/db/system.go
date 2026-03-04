@@ -85,18 +85,48 @@ func migrate(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_shares_owner ON shares(owner_user_id);
 	CREATE INDEX IF NOT EXISTS idx_shares_resource ON shares(resource_type, resource_id);
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_shares_token ON shares(token) WHERE token IS NOT NULL;
+
+	CREATE TABLE IF NOT EXISTS volumes (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL UNIQUE,
+		description TEXT NOT NULL DEFAULT '',
+		uri TEXT NOT NULL,
+		created_by TEXT NOT NULL DEFAULT 'system',
+		created_at INTEGER NOT NULL,
+		owner_id TEXT REFERENCES users(id),
+		config TEXT NOT NULL DEFAULT '{}'
+	);
+
+	CREATE TABLE IF NOT EXISTS mounts (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id),
+		user_path TEXT NOT NULL,
+		volume_id TEXT NOT NULL REFERENCES volumes(id),
+		volume_subpath TEXT NOT NULL DEFAULT '',
+		read_only INTEGER NOT NULL DEFAULT 0,
+		created_at INTEGER NOT NULL,
+		UNIQUE(user_id, user_path)
+	);
+	CREATE INDEX IF NOT EXISTS idx_mounts_user ON mounts(user_id);
+	CREATE INDEX IF NOT EXISTS idx_mounts_volume ON mounts(volume_id);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		return err
 	}
 
 	// Add columns to existing databases (SQLite has no ALTER TABLE ADD COLUMN IF NOT EXISTS).
-	for _, col := range []struct{ name, ddl string }{
-		{"is_admin", "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0"},
-		{"display_name", "ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"},
+	type colMigration struct {
+		table string
+		name  string
+		ddl   string
+	}
+	for _, col := range []colMigration{
+		{"users", "is_admin", "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0"},
+		{"users", "display_name", "ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"},
+		{"volumes", "owner_id", "ALTER TABLE volumes ADD COLUMN owner_id TEXT REFERENCES users(id)"},
+		{"volumes", "config", "ALTER TABLE volumes ADD COLUMN config TEXT NOT NULL DEFAULT '{}'"},
 	} {
-		var count int
-		rows, err := db.Query("PRAGMA table_info(users)")
+		rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", col.table))
 		if err != nil {
 			return fmt.Errorf("pragma table_info: %w", err)
 		}
@@ -111,13 +141,11 @@ func migrate(db *sql.DB) error {
 				rows.Close()
 				return err
 			}
-			count++
 			if name == col.name {
 				found = true
 			}
 		}
 		rows.Close()
-		_ = count
 		if !found {
 			if _, err := db.Exec(col.ddl); err != nil {
 				return fmt.Errorf("add column %s: %w", col.name, err)

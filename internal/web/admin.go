@@ -4,13 +4,24 @@ import (
 	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/group"
+	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/internal/volume"
 )
 
 type AdminHandler struct {
-	Users  *user.Store
-	Groups *group.Store
-	Secret []byte
+	Users   *user.Store
+	Groups  *group.Store
+	Volumes *volume.Store
+	Mounts  *mount.Store
+	Secret  []byte
+}
+
+// --- Index ---
+
+func (h *AdminHandler) Index(w http.ResponseWriter, r *http.Request) {
+	pd := pageData(r, "Admin", h.Secret)
+	adminIndexPage(pd).Render(r.Context(), w)
 }
 
 // --- Users ---
@@ -46,6 +57,14 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	if r.FormValue("is_admin") == "1" {
 		isAdmin := true
 		h.Users.Update(u.ID, user.UpdateOpts{IsAdmin: &isAdmin})
+	}
+
+	// Create root mount pointing to default volume.
+	if h.Volumes != nil && h.Mounts != nil {
+		if defVol, err := h.Volumes.GetByName("default"); err == nil {
+			subpath := u.Username + "/files"
+			h.Mounts.Create(u.ID, "/", defVol.ID, subpath, false)
+		}
 	}
 
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
@@ -102,6 +121,10 @@ func (h *AdminHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	// Delete mounts before user (no ON DELETE CASCADE).
+	if h.Mounts != nil {
+		h.Mounts.DeleteByUser(id)
+	}
 	if err := h.Users.Delete(id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

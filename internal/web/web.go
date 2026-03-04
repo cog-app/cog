@@ -31,7 +31,8 @@ func defaultNav(path string, u *user.User) []ui.NavItem {
 		{Label: "Settings", URL: "/settings", Active: path == "/settings"},
 	}
 	if u != nil && u.IsAdmin {
-		nav = append(nav, ui.NavItem{Label: "Admin", URL: "/admin/users", Active: len(path) >= 6 && path[:6] == "/admin"})
+		isAdmin := len(path) >= 6 && path[:6] == "/admin"
+		nav = append(nav, ui.NavItem{Label: "Admin", URL: "/admin/", Active: isAdmin})
 	}
 	return nav
 }

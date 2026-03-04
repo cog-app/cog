@@ -1,0 +1,87 @@
+package web
+
+import (
+	"git.duckfam.us/jj-software/cog/ui"
+	"git.duckfam.us/jj-software/cog/internal/volume"
+)
+
+templ adminVolumesPage(pd ui.PageData, volumes []volume.Volume, flash string, flashKind string) {
+	@ui.Base(pd) {
+		<div class="flex justify-between items-center" style="margin-bottom:1rem">
+			<h1>Volumes</h1>
+			<a class="btn btn-primary" href="/admin/volumes/new">New Volume</a>
+		</div>
+		if flash != "" {
+			@ui.Alert(flashKind, flash)
+		}
+		@ui.Card("") {
+			<table class="table">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>URI</th>
+						<th>Description</th>
+						<th class="text-right">Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, v := range volumes {
+						<tr id={ "volume-" + v.ID }>
+							<td>{ v.Name }</td>
+							<td><code>{ v.URI }</code></td>
+							<td>{ v.Description }</td>
+							<td class="text-right">
+								<a class="btn btn-outline btn-sm" href={ templ.SafeURL("/admin/volumes/" + v.ID) }>Edit</a>
+								<button
+									class="btn btn-danger btn-sm"
+									hx-delete={ "/admin/volumes/" + v.ID }
+									hx-target={ "#volume-" + v.ID }
+									hx-swap="outerHTML"
+									hx-confirm="Delete this volume?"
+								>Delete</button>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	}
+}
+
+templ adminVolumeNewPage(pd ui.PageData, errMsg string) {
+	@ui.Base(pd) {
+		<h1 style="margin-bottom:1rem">New Volume</h1>
+		if errMsg != "" {
+			@ui.Alert("error", errMsg)
+		}
+		@ui.Card("") {
+			<form method="post" action="/admin/volumes">
+				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+				@ui.FormField("Name", "name", "text", "", "Unique volume name")
+				@ui.FormField("URI", "uri", "text", "", "e.g. file:///mnt/data")
+				@ui.FormField("Description", "description", "text", "", "Optional description")
+				<button class="btn btn-primary" type="submit">Create Volume</button>
+				<a class="btn btn-outline" href="/admin/volumes" style="margin-left:0.5rem">Cancel</a>
+			</form>
+		}
+	}
+}
+
+templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, flash string, flashKind string) {
+	@ui.Base(pd) {
+		<h1 style="margin-bottom:1rem">Edit Volume: { v.Name }</h1>
+		if flash != "" {
+			@ui.Alert(flashKind, flash)
+		}
+		@ui.Card("") {
+			<form method="post" action={ templ.SafeURL("/admin/volumes/" + v.ID) }>
+				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+				@ui.FormField("Name", "name", "text", v.Name, "")
+				@ui.FormField("URI", "uri", "text", v.URI, "")
+				@ui.FormField("Description", "description", "text", v.Description, "")
+				<button class="btn btn-primary" type="submit">Save</button>
+				<a class="btn btn-outline" href="/admin/volumes" style="margin-left:0.5rem">Back</a>
+			</form>
+		}
+	}
+}
