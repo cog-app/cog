@@ -80,7 +80,7 @@ func main() {
 		return
 	}
 
-	var handler http.Handler = web.New(p)
+	handler := web.New(p)
 	if *logReqs {
 		handler = requestLogger(handler)
 	}

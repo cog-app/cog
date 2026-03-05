@@ -13,11 +13,6 @@ import (
 
 type handler struct{ p *services.Providers }
 
-// pageData builds a PageData from the request context.
-func pageData(r *http.Request, title string, secret []byte) ui.PageData {
-	return pageDataWithNav(r, title, secret, nil)
-}
-
 // pageDataWithNav builds a PageData with plugin nav items from the registry.
 func pageDataWithNav(r *http.Request, title string, secret []byte, registry *plugin.Registry) ui.PageData {
 	u := auth.UserFromContext(r.Context())

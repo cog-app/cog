@@ -88,12 +88,11 @@ func main() {
 	baseURL := fmt.Sprintf("http://%s%s", hostname, addr)
 	log.Printf("Starting cog on %s (base-url %s, log-requests on)", addr, baseURL)
 	log.Printf("Logs: %s", logPath)
-	dataDir := filepath.Join(devDir, "data")
 	srv := exec.Command(bin,
 		"--db", dbPath,
 		"--addr", addr,
 		"--base-url", baseURL,
-		"--data-dir", dataDir,
+		"--data-dir", filepath.Join(devDir, "data"),
 		"--log-requests",
 	)
 	srv.Stdout = teeOut
@@ -112,7 +111,11 @@ func main() {
 	}()
 
 	if err := srv.Wait(); err != nil {
+		log.Printf("cog exited: %v", err)
 		if exit, ok := err.(*exec.ExitError); ok {
+			if stderr := exit.Stderr; len(stderr) > 0 {
+				log.Printf("cog stderr: %s", stderr)
+			}
 			os.Exit(exit.ExitCode())
 		}
 		log.Fatal(err)
