@@ -25,11 +25,7 @@ templ filesPage(pd ui.PageData, dirPath string, items []files.FileMeta) {
 					<input class="form-control" type="text" name="name" placeholder="New folder" required style="max-width:200px"/>
 					<button class="btn btn-outline btn-sm" type="submit">Create Folder</button>
 				</form>
-				<form method="post" action={ templ.SafeURL("/apps/files" + dirPath) } enctype="multipart/form-data" class="flex gap-1 items-end">
-					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-					<input class="form-control" type="file" name="file" required style="max-width:300px"/>
-					<button class="btn btn-primary btn-sm" type="submit">Upload</button>
-				</form>
+				@ui.Upload("/apps/files" + dirPath, "file", "", pd.CSRFToken, "Upload", "btn btn-primary btn-sm")
 			</div>
 			<table class="table">
 				<thead>

@@ -207,6 +207,9 @@ templ contactsIndexPage(pd ui.PageData, books []AddressBook, cards []CardWithBoo
 }
 
 templ contactDetailModal(pd ui.PageData, c *Card, book *AddressBook, books []AddressBook) {
+	if c.PhotoPath != "" {
+		<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:80px;height:80px;border-radius:50%;object-fit:cover;margin-bottom:0.75rem;display:block"/>
+	}
 	<h2 style="margin-top:0">{ c.FN }</h2>
 	<!-- Display all emails -->
 	for _, e := range ParseEmailsJSON(c.EmailsJSON) {
@@ -265,20 +268,11 @@ templ contactDetailModal(pd ui.PageData, c *Card, book *AddressBook, books []Add
 	}
 	<div class="sidebar-divider" style="margin:1rem 0"></div>
 	<h3>Edit Contact</h3>
-	<!-- Photo upload (separate multipart form) -->
-	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/contacts/contacts/%d/photo", c.ID)) } enctype="multipart/form-data" style="margin-bottom:1rem">
-		<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-		<div class="form-group">
-			<label>Photo</label>
-			if c.PhotoPath != "" {
-				<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:64px;height:64px;border-radius:50%;object-fit:cover;margin-bottom:0.5rem;display:block"/>
-			}
-			<div class="flex gap-1 items-end">
-				<input class="form-control" type="file" name="photo" accept="image/*" style="max-width:200px"/>
-				<button class="btn btn-outline btn-sm" type="submit">Upload</button>
-			</div>
-		</div>
-	</form>
+	<!-- Photo upload -->
+	<div class="form-group">
+		<label>Photo</label>
+		@ui.Upload(fmt.Sprintf("/apps/contacts/contacts/%d/photo", c.ID), "photo", "image/*", pd.CSRFToken, "Upload Photo", "btn btn-outline btn-sm")
+	</div>
 	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/contacts/contacts/%d", c.ID)) }>
 		<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 		<div class="form-group">

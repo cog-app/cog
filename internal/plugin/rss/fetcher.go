@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -251,7 +252,38 @@ func fetchFeed(client *http.Client, db *sql.DB, feed *Feed) error {
 		}
 	}
 
+	// Auto-mark-read: apply regex pattern if configured.
+	if feed.AutoReadPattern != "" {
+		if re, err := regexp.Compile(feed.AutoReadPattern); err == nil {
+			autoMarkReadByRegex(db, feed.ID, re)
+		}
+	}
+
 	return nil
+}
+
+// autoMarkReadByRegex marks unread items matching the regex as read.
+// We do this in Go since SQLite's REGEXP requires a custom function.
+func autoMarkReadByRegex(db *sql.DB, feedID int64, re *regexp.Regexp) {
+	rows, err := db.Query(`SELECT id, title FROM items WHERE feed_id = ? AND is_read = 0`, feedID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		var title string
+		if err := rows.Scan(&id, &title); err != nil {
+			continue
+		}
+		if re.MatchString(title) {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) > 0 {
+		MarkItemsRead(db, ids)
+	}
 }
 
 func recordError(db *sql.DB, feed *Feed, fetchErr error) error {

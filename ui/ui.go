@@ -91,9 +91,3 @@ type PermissionLevelChoice struct {
 	Permissions uint32
 }
 
-// UserChoice is a user option for the share target picker.
-type UserChoice struct {
-	ID       string
-	Username string
-	Name     string
-}

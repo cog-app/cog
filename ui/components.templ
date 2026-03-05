@@ -61,3 +61,45 @@ templ FormField(label, name, typ, value, placeholder string) {
 		<input class="form-control" type={ typ } id={ name } name={ name } value={ value } placeholder={ placeholder }/>
 	</div>
 }
+
+// Upload renders a file upload button that uploads immediately on selection.
+// It looks like a styled button; clicking opens the file picker, and selecting
+// a file submits the form automatically.
+templ Upload(action, name, accept, csrfToken, label, btnClass string) {
+	<form method="post" action={ templ.SafeURL(action) } enctype="multipart/form-data" style="display:inline">
+		<input type="hidden" name="csrf_token" value={ csrfToken }/>
+		<label class={ uploadBtnClass(btnClass) } style="cursor:pointer">
+			{ label }
+			<input type="file" name={ name } accept={ accept } style="display:none" onchange="this.form.submit()"/>
+		</label>
+	</form>
+}
+
+func uploadBtnClass(btnClass string) string {
+	if btnClass == "" {
+		return "btn btn-primary btn-sm"
+	}
+	return btnClass
+}
+
+// ShareLink renders a copyable share link with a copy button.
+// If displayText is non-empty, it is shown instead of the full URL.
+templ ShareLink(url, displayText string) {
+	<div class="share-link">
+		if displayText != "" {
+			<code style="font-size:0.85rem">{ displayText }</code>
+		} else {
+			<code style="font-size:0.85rem;word-break:break-all">{ url }</code>
+		}
+		<button class="btn btn-outline btn-sm" style="white-space:nowrap;padding:0.2rem 0.5rem;font-size:0.8rem" onclick={ copyShareLink(url) }>Copy</button>
+	</div>
+}
+
+script copyShareLink(text string) {
+	navigator.clipboard.writeText(text).then(function() {
+		var btn = event.currentTarget;
+		var orig = btn.textContent;
+		btn.textContent = "Copied!";
+		setTimeout(function() { btn.textContent = orig; }, 1500);
+	});
+}

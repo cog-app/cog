@@ -72,26 +72,10 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 		shares = append(shares, sd)
 	}
 
-	// Get users for the share target picker (exclude self).
-	var users []ui.UserChoice
-	for u2, err := range h.p.Users.List() {
-		if err != nil {
-			break
-		}
-		if u2.ID == u.ID {
-			continue
-		}
-		name := u2.DisplayName
-		if name == "" {
-			name = u2.Username
-		}
-		users = append(users, ui.UserChoice{ID: u2.ID, Username: u2.Username, Name: name})
-	}
-
 	sessID := auth.SessionIDFromContext(r.Context())
 	csrf := auth.CSRFToken(sessID, h.p.CSRFSecret)
 
-	ui.SharePanel(resType, resID, csrf, shares, levelChoices, users).Render(r.Context(), w)
+	ui.SharePanel(resType, resID, csrf, shares, levelChoices).Render(r.Context(), w)
 }
 
 // CreateShareForm handles POST from the share panel form (form-encoded, HTMX).
@@ -216,6 +200,65 @@ func (h *shareHandler) UserSearch(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
+}
+
+// PickerSearch returns HTML partial results for the user/group picker.
+// GET /api/picker/search?type=user&q=foo
+// GET /api/picker/search?type=group&q=foo
+func (h *shareHandler) PickerSearch(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	q := strings.ToLower(r.URL.Query().Get("q"))
+	typ := r.URL.Query().Get("type")
+
+	var items []ui.PickerItem
+
+	switch typ {
+	case "group":
+		for g, err := range h.p.Groups.List() {
+			if err != nil {
+				break
+			}
+			if q != "" && !strings.Contains(strings.ToLower(g.Name), q) {
+				continue
+			}
+			items = append(items, ui.PickerItem{
+				ID:   g.ID,
+				Name: g.Name,
+				Sub:  fmt.Sprintf("%d members", g.MemberCount),
+			})
+			if len(items) >= 10 {
+				break
+			}
+		}
+	default: // "user"
+		for u2, err := range h.p.Users.List() {
+			if err != nil {
+				break
+			}
+			if u2.ID == u.ID {
+				continue
+			}
+			name := u2.DisplayName
+			if name == "" {
+				name = u2.Username
+			}
+			if q != "" && !strings.Contains(strings.ToLower(u2.Username), q) &&
+				!strings.Contains(strings.ToLower(name), q) {
+				continue
+			}
+			items = append(items, ui.PickerItem{
+				ID:        u2.ID,
+				Name:      name,
+				Sub:       u2.Username,
+				AvatarURL: "/avatar/" + u2.ID,
+			})
+			if len(items) >= 10 {
+				break
+			}
+		}
+	}
+
+	ui.PickerResults(items).Render(r.Context(), w)
 }
 
 func defaultPermissionLevels() []plugin.PermissionLevel {

@@ -8,6 +8,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -162,5 +163,15 @@ func migrate(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_items_starred ON items(is_starred, published_at DESC);
 		CREATE INDEX IF NOT EXISTS idx_feeds_next_check ON feeds(next_check_at);
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Migration: add auto_read_pattern column if it doesn't exist.
+	_, err = db.Exec(`ALTER TABLE feeds ADD COLUMN auto_read_pattern TEXT NOT NULL DEFAULT ''`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return err
+	}
+
+	return nil
 }

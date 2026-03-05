@@ -32,6 +32,7 @@ type Feed struct {
 	LastError       string
 	Paused          bool
 	CreatedAt       int64
+	AutoReadPattern string
 }
 
 // Item is a normalized feed entry with read/starred state.
@@ -109,7 +110,7 @@ func RenameFolder(db *sql.DB, id int64, name string) error {
 func ListFeeds(db *sql.DB) ([]Feed, error) {
 	rows, err := db.Query(`SELECT id, folder_id, url, site_url, title, favicon_url,
 		etag, last_modified, poll_interval_sec, next_check_at, last_checked_at,
-		last_success_at, error_count, last_error, paused, created_at
+		last_success_at, error_count, last_error, paused, created_at, auto_read_pattern
 		FROM feeds ORDER BY title`)
 	if err != nil {
 		return nil, err
@@ -122,12 +123,12 @@ func GetFeed(db *sql.DB, id int64) (*Feed, error) {
 	var f Feed
 	err := db.QueryRow(`SELECT id, folder_id, url, site_url, title, favicon_url,
 		etag, last_modified, poll_interval_sec, next_check_at, last_checked_at,
-		last_success_at, error_count, last_error, paused, created_at
+		last_success_at, error_count, last_error, paused, created_at, auto_read_pattern
 		FROM feeds WHERE id = ?`, id).Scan(
 		&f.ID, &f.FolderID, &f.URL, &f.SiteURL, &f.Title, &f.FaviconURL,
 		&f.ETag, &f.LastModified, &f.PollIntervalSec, &f.NextCheckAt,
 		&f.LastCheckedAt, &f.LastSuccessAt, &f.ErrorCount, &f.LastError,
-		&f.Paused, &f.CreatedAt)
+		&f.Paused, &f.CreatedAt, &f.AutoReadPattern)
 	if err != nil {
 		return nil, err
 	}
@@ -158,11 +159,16 @@ func RenameFeed(db *sql.DB, id int64, title string) error {
 	return err
 }
 
+func SetFeedAutoReadPattern(db *sql.DB, id int64, pattern string) error {
+	_, err := db.Exec(`UPDATE feeds SET auto_read_pattern = ? WHERE id = ?`, pattern, id)
+	return err
+}
+
 // FeedsDue returns feeds that need to be checked.
 func FeedsDue(db *sql.DB, now int64) ([]Feed, error) {
 	rows, err := db.Query(`SELECT id, folder_id, url, site_url, title, favicon_url,
 		etag, last_modified, poll_interval_sec, next_check_at, last_checked_at,
-		last_success_at, error_count, last_error, paused, created_at
+		last_success_at, error_count, last_error, paused, created_at, auto_read_pattern
 		FROM feeds WHERE next_check_at <= ? AND paused = 0`, now)
 	if err != nil {
 		return nil, err
@@ -179,7 +185,7 @@ func scanFeeds(rows *sql.Rows) ([]Feed, error) {
 			&f.ID, &f.FolderID, &f.URL, &f.SiteURL, &f.Title, &f.FaviconURL,
 			&f.ETag, &f.LastModified, &f.PollIntervalSec, &f.NextCheckAt,
 			&f.LastCheckedAt, &f.LastSuccessAt, &f.ErrorCount, &f.LastError,
-			&f.Paused, &f.CreatedAt); err != nil {
+			&f.Paused, &f.CreatedAt, &f.AutoReadPattern); err != nil {
 			return nil, err
 		}
 		feeds = append(feeds, f)
@@ -217,6 +223,16 @@ func FeedItems(db *sql.DB, feedID int64, limit int) ([]ItemWithFeed, error) {
 		FROM items i JOIN feeds f ON i.feed_id = f.id
 		WHERE i.feed_id = ?
 		ORDER BY i.published_at DESC LIMIT ?`, feedID, limit)
+}
+
+// FolderItems returns unread items for all feeds in a folder, newest first.
+func FolderItems(db *sql.DB, folderID int64, limit int) ([]ItemWithFeed, error) {
+	return queryItems(db, `SELECT i.id, i.feed_id, i.guid, i.title, i.author, i.url,
+		i.content_html, i.published_at, i.fetched_at, i.is_read, i.is_starred, i.content_hash,
+		f.title
+		FROM items i JOIN feeds f ON i.feed_id = f.id
+		WHERE f.folder_id = ?
+		ORDER BY i.published_at DESC LIMIT ?`, folderID, limit)
 }
 
 // AllItems returns all items, newest first (for NC News API).

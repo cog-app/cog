@@ -7,7 +7,7 @@ import (
 
 // SharePanel renders the sharing UI panel that can be embedded in any plugin's settings page.
 // Load it via HTMX: hx-get="/api/shares/panel?type=calendar:calendar&id=5" hx-target="#share-panel"
-templ SharePanel(resourceType, resourceID, csrfToken string, shares []ShareDisplayItem, levels []PermissionLevelChoice, users []UserChoice) {
+templ SharePanel(resourceType, resourceID, csrfToken string, shares []ShareDisplayItem, levels []PermissionLevelChoice) {
 	<div id="share-panel">
 		<h3 style="margin-bottom:0.75rem">Sharing</h3>
 		if len(shares) > 0 {
@@ -71,12 +71,7 @@ templ SharePanel(resourceType, resourceID, csrfToken string, shares []ShareDispl
 				<input type="hidden" name="resource_id" value={ resourceID }/>
 				<div style="flex:1;min-width:150px">
 					<label style="font-size:0.85rem;font-weight:500">User</label>
-					<select name="subject_id" class="form-control" required>
-						<option value="">Select user...</option>
-						for _, u := range users {
-							<option value={ u.ID }>{ u.Name } ({ u.Username })</option>
-						}
-					</select>
+					@Picker("/api/picker/search?type=user", "subject_id", "Search users...", false)
 				</div>
 				<div style="min-width:120px">
 					<label style="font-size:0.85rem;font-weight:500">Permission</label>

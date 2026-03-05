@@ -167,12 +167,14 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("GET /apps/rss/{$}", auth.RequireAuthWeb(http.HandlerFunc(rssPages.Index)))
 	mux.Handle("GET /apps/rss/feed/{id}", auth.RequireAuthWeb(http.HandlerFunc(rssPages.Feed)))
 	mux.Handle("GET /apps/rss/starred", auth.RequireAuthWeb(http.HandlerFunc(rssPages.Starred)))
+	mux.Handle("GET /apps/rss/folder/{id}", auth.RequireAuthWeb(http.HandlerFunc(rssPages.FolderView)))
 	mux.Handle("GET /apps/rss/settings", auth.RequireAuthWeb(http.HandlerFunc(rssPages.Settings)))
 	mux.Handle("GET /apps/rss/opml/export", auth.RequireAuthWeb(http.HandlerFunc(rssPages.ExportOPML)))
 	mux.Handle("POST /apps/rss/feeds", csrfWeb(http.HandlerFunc(rssPages.AddFeed)))
 	mux.Handle("DELETE /apps/rss/feeds/{id}", csrfWeb(http.HandlerFunc(rssPages.DeleteFeed)))
 	mux.Handle("POST /apps/rss/feeds/{id}/read", csrfWeb(http.HandlerFunc(rssPages.MarkFeedRead)))
 	mux.Handle("POST /apps/rss/feeds/{id}/refresh", csrfWeb(http.HandlerFunc(rssPages.RefreshFeed)))
+	mux.Handle("POST /apps/rss/feeds/{id}/auto-read", csrfWeb(http.HandlerFunc(rssPages.SetAutoReadPattern)))
 	mux.Handle("POST /apps/rss/folders", csrfWeb(http.HandlerFunc(rssPages.AddFolder)))
 	mux.Handle("DELETE /apps/rss/folders/{id}", csrfWeb(http.HandlerFunc(rssPages.DeleteFolder)))
 	mux.Handle("POST /apps/rss/items/{id}/read", csrfWeb(http.HandlerFunc(rssPages.ToggleRead)))
@@ -272,6 +274,7 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("POST /api/shares/public-link-form", csrfWeb(http.HandlerFunc(shareH.CreatePublicLinkForm)))
 	mux.Handle("DELETE /api/shares/{id}/delete", csrfWeb(http.HandlerFunc(shareH.DeleteShareHTMX)))
 	mux.Handle("GET /api/users/search", auth.RequireAuth(http.HandlerFunc(shareH.UserSearch)))
+	mux.Handle("GET /api/picker/search", auth.RequireAuth(http.HandlerFunc(shareH.PickerSearch)))
 
 	// --- Search API ---
 	searchH := searchHandler{h}

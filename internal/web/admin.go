@@ -193,17 +193,13 @@ func (h *adminHandler) EditGroupForm(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	users, _ := seq.Collect(h.p.Users.List())
-	userNames := make(map[string]string, len(users))
-	for _, u := range users {
-		userNames[u.ID] = u.Username
-	}
+	userNames, _ := seq.ToMap(h.p.Users.List(), func(u user.User) string { return u.ID }, func(u user.User) string { return u.Username })
 	flash := getFlash(w, r)
 	var flashMsg, flashKind string
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminGroupEditPage(pd, g, h.p.Groups.ListMembers(id), users, userNames, flashMsg, flashKind).Render(r.Context(), w)
+	adminGroupEditPage(pd, g, h.p.Groups.ListMembers(id), userNames, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 func (h *adminHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {

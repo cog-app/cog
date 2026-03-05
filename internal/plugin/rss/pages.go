@@ -169,6 +169,34 @@ func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
 	rssStarredPage(pd, sb, items).Render(r.Context(), w)
 }
 
+// FolderView shows items for all feeds in a folder.
+func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
+	db, err := h.userDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid folder id", http.StatusBadRequest)
+		return
+	}
+	folder, err := GetFolder(db, id)
+	if err != nil {
+		http.Error(w, "folder not found", http.StatusNotFound)
+		return
+	}
+	sb := h.buildSidebar(db, "/apps/rss/folder/"+idStr)
+	if r.URL.Query().Get("partial") == "sidebar" {
+		rssSidebar(sb).Render(r.Context(), w)
+		return
+	}
+	pd := h.pageData(r, folder.Name)
+	items, _ := FolderItems(db, id, 200)
+	rssFolderPage(pd, sb, folder, items).Render(r.Context(), w)
+}
+
 // Settings shows feed/folder management.
 func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 	db, err := h.userDB(r)
@@ -440,6 +468,26 @@ func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	http.Redirect(w, r, "/apps/rss/settings", http.StatusSeeOther)
+}
+
+// SetAutoReadPattern handles POST to set the auto-read regex pattern for a feed.
+func (h *Pages) SetAutoReadPattern(w http.ResponseWriter, r *http.Request) {
+	db, err := h.userDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	pattern := r.FormValue("pattern")
+	if err := SetFeedAutoReadPattern(db, id, pattern); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	http.Redirect(w, r, "/apps/rss/settings", http.StatusSeeOther)
 }
 

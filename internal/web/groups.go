@@ -219,15 +219,14 @@ func (h *groupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username := r.FormValue("username")
-	target, err := h.p.Users.GetByUsername(username)
-	if err != nil {
-		setFlash(w, "error", "User not found.")
+	memberID := r.FormValue("member_id")
+	if memberID == "" {
+		setFlash(w, "error", "Please select a user.")
 		http.Redirect(w, r, "/settings/groups/"+groupID, http.StatusSeeOther)
 		return
 	}
 
-	if err := h.p.Groups.AddMember(groupID, target.ID, "USER"); err != nil {
+	if err := h.p.Groups.AddMember(groupID, memberID, "USER"); err != nil {
 		setFlash(w, "error", "Failed to add member: "+err.Error())
 	}
 	http.Redirect(w, r, "/settings/groups/"+groupID, http.StatusSeeOther)

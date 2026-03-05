@@ -26,11 +26,7 @@ templ settingsProfilePage(pd ui.PageData, flash string, flashKind string) {
 			<div class="flex gap-1 items-center" style="margin-bottom:1rem">
 				<img class="avatar-lg" src={ "/avatar/" + pd.User.ID }/>
 				<div>
-					<form method="post" action="/settings/avatar" enctype="multipart/form-data" style="display:inline">
-						<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-						<input type="file" name="avatar" accept="image/jpeg,image/png" required style="max-width:250px"/>
-						<button class="btn btn-primary btn-sm" type="submit">Upload</button>
-					</form>
+					@ui.Upload("/settings/avatar", "avatar", "image/jpeg,image/png", pd.CSRFToken, "Upload Avatar", "btn btn-primary btn-sm")
 					if pd.User.Avatar != "" {
 						<button
 							class="btn btn-danger btn-sm"

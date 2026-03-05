@@ -1,23 +1,17 @@
-- General components
-  - User/Group picker: New implementation in package ui. Include profile pictures, display name with fallback. Fuzz searching with the index; optional multiselect. First use: adding users to groups and visa-versa, sharing with specific users.
-  - Upload: Make a reusable upload component in ui. It should just look like a button, and show the file picker modal when clicked. When a file is selected, upload immediately without a second button. Replaces uploads in files, profile picture, and contact photos.
-  - Share link: Make a reusable component for links to share. Use this for the calendar share and the group invite.
 - Calendar
   - Implement reminders as browser notifications
   - If RRULE is too complex for GUI; display as a textbox for infinite capability. Use github.com/teambition/rrule-go (add dependency) to replace existing RRULE handling code.
   - Regardless of textbox or GUI, describe RRULE configuration as human-readable text (rrule-go can do this).
   - When editing an event, don't disable the color picker. Set the picker to the default color on the calendar. If the value changes, check the box. If the box is unchecked, reset the color to the calendar's default. When saving, if the box is unchecked, leave it blank.
-- News
-  - Set an optional per-feed regex of articles to auto-mark read.
 - User settings
   - When you update your profile picture, it doesn't update until you force a cache update. Store a timestamp of when the profile was uploaded and include as query parameter for cache busting.
 - Admin area
   - /admin/groups/{id} should use the literally same templ component as /settings/groups/{id}; the admin one doesn't let you change the membership type, manage storage, or extend invites. It does have a master delete which should only appear for administrators. Share the component with a flag for admin-only features.
   - Replace the /admin/ overview page with /admin/settings/, but rename it "General"
-  - Allow adding users to group (use the new User/Group picker)
+  - Allow adding users to group (already uses the User/Group picker)
 - Files
   - Drag-and-drop should work anywhere on the main area of the page (perhaps the whole page). Pure JS implementation.
-  - The file input should be styled to look like the Upload button and should upload immediately on selection. Use the new reusable Upload component.
+  - The file input already uses the Upload component but drag-and-drop needs the same integration.
   - Allow editing plain text documents.
   - Allow renaming files/folders.
   - Allow bulk file operations.

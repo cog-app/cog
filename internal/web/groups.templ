@@ -65,7 +65,9 @@ templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members iter.Seq2[
 			if isOwner {
 				<form method="post" action={ templ.SafeURL("/settings/groups/" + g.ID + "/members") } class="flex gap-1 items-center mb-2">
 					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-					<input class="form-control" type="text" name="username" placeholder="Username" required style="max-width:300px"/>
+					<div style="min-width:250px">
+						@ui.Picker("/api/picker/search?type=user", "member_id", "Search users...", false)
+					</div>
 					<button class="btn btn-primary" type="submit">Add Member</button>
 				</form>
 			}
@@ -162,12 +164,7 @@ templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members iter.Seq2[
 									</td>
 									<td>{ inv.MemberType }</td>
 									<td>
-										<code style="font-size:0.8rem">{ inv.Token[:16] }...</code>
-										<button
-											class="btn btn-outline btn-sm"
-											style="margin-left:0.25rem;padding:0.15rem 0.4rem;font-size:0.75rem"
-											onclick={ copyToClipboard(baseURL + "/invite/" + inv.Token) }
-										>Copy</button>
+										@ui.ShareLink(baseURL + "/invite/" + inv.Token, inv.Token[:16] + "...")
 									</td>
 									<td class="text-right">
 										<button
@@ -359,15 +356,6 @@ templ groupTable(groups iter.Seq2[group.Group, error], urlPrefix string) {
 
 script goTo(url string) {
 	window.location = url;
-}
-
-script copyToClipboard(text string) {
-	var btn = document.activeElement;
-	navigator.clipboard.writeText(text).then(function() {
-		var orig = btn.textContent;
-		btn.textContent = "Copied!";
-		setTimeout(function() { btn.textContent = orig; }, 1500);
-	});
 }
 
 func emailPlaceholder(smtpAvailable bool) string {
