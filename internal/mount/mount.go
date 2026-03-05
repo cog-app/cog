@@ -14,13 +14,13 @@ import (
 var ErrNotFound = errors.New("mount not found")
 
 type Mount struct {
-	ID             string
-	UserID         string
-	UserPath       string
-	VolumeID       string
-	VolumeSubpath  string
-	ReadOnly       bool
-	CreatedAt      time.Time
+	ID            string
+	UserID        string
+	UserPath      string
+	VolumeID      string
+	VolumeSubpath string
+	ReadOnly      bool
+	CreatedAt     time.Time
 }
 
 type Store struct {

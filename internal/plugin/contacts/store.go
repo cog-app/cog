@@ -200,9 +200,13 @@ func UpsertCard(db *sql.DB, bookID int64, uid, uri, vcardData string, fields VCa
 func DeleteCard(db *sql.DB, bookID int64, uid string) error {
 	// Record deletion for sync-token tracking.
 	var syncToken int64
-	db.QueryRow(`SELECT sync_token FROM address_books WHERE id = ?`, bookID).Scan(&syncToken)
-	db.Exec(`INSERT INTO deleted_cards (address_book_id, uid, deleted_at_token) VALUES (?, ?, ?)`,
-		bookID, uid, syncToken+1)
+	if err := db.QueryRow(`SELECT sync_token FROM address_books WHERE id = ?`, bookID).Scan(&syncToken); err != nil {
+		return fmt.Errorf("get sync token: %w", err)
+	}
+	if _, err := db.Exec(`INSERT INTO deleted_cards (address_book_id, uid, deleted_at_token) VALUES (?, ?, ?)`,
+		bookID, uid, syncToken+1); err != nil {
+		return fmt.Errorf("record deletion: %w", err)
+	}
 
 	_, err := db.Exec(`DELETE FROM cards WHERE address_book_id = ? AND uid = ?`, bookID, uid)
 	if err != nil {
@@ -213,16 +217,19 @@ func DeleteCard(db *sql.DB, bookID int64, uid string) error {
 
 func DeleteCardByID(db *sql.DB, id int64) error {
 	var bookID int64
-	if err := db.QueryRow(`SELECT address_book_id FROM cards WHERE id = ?`, id).Scan(&bookID); err != nil {
+	var uid string
+	if err := db.QueryRow(`SELECT address_book_id, uid FROM cards WHERE id = ?`, id).Scan(&bookID, &uid); err != nil {
 		return err
 	}
-	var uid string
-	db.QueryRow(`SELECT uid FROM cards WHERE id = ?`, id).Scan(&uid)
 
 	var syncToken int64
-	db.QueryRow(`SELECT sync_token FROM address_books WHERE id = ?`, bookID).Scan(&syncToken)
-	db.Exec(`INSERT INTO deleted_cards (address_book_id, uid, deleted_at_token) VALUES (?, ?, ?)`,
-		bookID, uid, syncToken+1)
+	if err := db.QueryRow(`SELECT sync_token FROM address_books WHERE id = ?`, bookID).Scan(&syncToken); err != nil {
+		return fmt.Errorf("get sync token: %w", err)
+	}
+	if _, err := db.Exec(`INSERT INTO deleted_cards (address_book_id, uid, deleted_at_token) VALUES (?, ?, ?)`,
+		bookID, uid, syncToken+1); err != nil {
+		return fmt.Errorf("record deletion: %w", err)
+	}
 
 	if _, err := db.Exec(`DELETE FROM cards WHERE id = ?`, id); err != nil {
 		return err
@@ -237,6 +244,31 @@ func AllCards(db *sql.DB, limit int) ([]CardWithBook, error) {
 		b.name, b.color
 		FROM cards c JOIN address_books b ON c.address_book_id = b.id
 		ORDER BY c.fn LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cards []CardWithBook
+	for rows.Next() {
+		var cw CardWithBook
+		if err := rows.Scan(&cw.ID, &cw.AddressBookID, &cw.UID, &cw.URI, &cw.ETag, &cw.FN, &cw.Email, &cw.Tel,
+			&cw.VCardData, &cw.Rev, &cw.CreatedAt, &cw.UpdatedAt,
+			&cw.BookName, &cw.BookColor); err != nil {
+			return nil, err
+		}
+		cards = append(cards, cw)
+	}
+	return cards, rows.Err()
+}
+
+// CardsByAddressBook returns cards for a specific address book, joined with book info.
+func CardsByAddressBook(db *sql.DB, bookID int64, limit int) ([]CardWithBook, error) {
+	rows, err := db.Query(`SELECT c.id, c.address_book_id, c.uid, c.uri, c.etag, c.fn, c.email, c.tel,
+		c.vcard_data, c.rev, c.created_at, c.updated_at,
+		b.name, b.color
+		FROM cards c JOIN address_books b ON c.address_book_id = b.id
+		WHERE c.address_book_id = ?
+		ORDER BY c.fn LIMIT ?`, bookID, limit)
 	if err != nil {
 		return nil, err
 	}

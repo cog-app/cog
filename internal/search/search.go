@@ -21,15 +21,15 @@ type Change struct {
 
 // Document is an indexable unit fed into the Bleve index.
 type Document struct {
-	ID     string                 // "{source}:{rowid}"
+	ID     string         // "{source}:{rowid}"
 	Fields map[string]any // name, subtext, content, etc.
 }
 
 // Hit is a single search result from the index.
 type Hit struct {
-	ID     string                 `json:"id"`
-	Score  float64                `json:"score"`
-	Source string                 `json:"source"`
+	ID     string         `json:"id"`
+	Score  float64        `json:"score"`
+	Source string         `json:"source"`
 	Fields map[string]any `json:"fields"`
 }
 

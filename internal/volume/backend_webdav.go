@@ -53,7 +53,7 @@ type davMultistatus struct {
 }
 
 type davResponse struct {
-	Href     string       `xml:"href"`
+	Href     string        `xml:"href"`
 	Propstat []davPropStat `xml:"propstat"`
 }
 

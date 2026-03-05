@@ -197,9 +197,13 @@ func UpsertEvent(db *sql.DB, calendarID int64, uid, icsData string, fields VEven
 func DeleteEvent(db *sql.DB, calendarID int64, uid string) error {
 	// Record deletion for sync-token tracking before deleting.
 	var syncToken int64
-	db.QueryRow(`SELECT sync_token FROM calendars WHERE id = ?`, calendarID).Scan(&syncToken)
-	db.Exec(`INSERT INTO deleted_events (calendar_id, uid, deleted_at_token) VALUES (?, ?, ?)`,
-		calendarID, uid, syncToken+1)
+	if err := db.QueryRow(`SELECT sync_token FROM calendars WHERE id = ?`, calendarID).Scan(&syncToken); err != nil {
+		return fmt.Errorf("get sync token: %w", err)
+	}
+	if _, err := db.Exec(`INSERT INTO deleted_events (calendar_id, uid, deleted_at_token) VALUES (?, ?, ?)`,
+		calendarID, uid, syncToken+1); err != nil {
+		return fmt.Errorf("record deletion: %w", err)
+	}
 
 	_, err := db.Exec(`DELETE FROM events WHERE calendar_id = ? AND uid = ?`, calendarID, uid)
 	if err != nil {

@@ -387,7 +387,6 @@ func (s *Store) scanRecord(row *sql.Row) (*Record, error) {
 	return &r, nil
 }
 
-
 func generateID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {

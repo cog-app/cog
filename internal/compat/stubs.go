@@ -40,13 +40,13 @@ func HandleRecommendations(w http.ResponseWriter, r *http.Request) {
 // Route: GET /ocs/v2.php/apps/user_status/api/v1/user_status
 func HandleUserStatus(w http.ResponseWriter, r *http.Request) {
 	writeOCS(w, http.StatusOK, map[string]any{
-		"userId":        "",
-		"message":       nil,
-		"messageId":     nil,
+		"userId":              "",
+		"message":             nil,
+		"messageId":           nil,
 		"messageIsPredefined": false,
-		"icon":          nil,
-		"clearAt":       nil,
-		"status":        "online",
+		"icon":                nil,
+		"clearAt":             nil,
+		"status":              "online",
 		"statusIsUserDefined": false,
 	})
 }

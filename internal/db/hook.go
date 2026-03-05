@@ -21,5 +21,10 @@ func OpenHooked(path string, hook func(op int, db, table string, rowid int64)) (
 			return nil
 		},
 	})
-	return sql.Open(driverName, path+"?_journal_mode=WAL&_foreign_keys=on")
+	db, err := sql.Open(driverName, path+"?_journal_mode=WAL&_foreign_keys=on")
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	return db, nil
 }

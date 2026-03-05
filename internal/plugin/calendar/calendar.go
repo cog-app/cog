@@ -97,6 +97,7 @@ func migrate(db *sql.DB) error {
 
 		CREATE INDEX IF NOT EXISTS idx_events_calendar ON events(calendar_id);
 		CREATE INDEX IF NOT EXISTS idx_events_dtstart ON events(dtstart);
+		CREATE INDEX IF NOT EXISTS idx_events_cal_start ON events(calendar_id, dtstart);
 	`)
 	return err
 }

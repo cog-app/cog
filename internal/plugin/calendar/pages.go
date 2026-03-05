@@ -133,12 +133,12 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type fcEvent struct {
-		ID    int64  `json:"id"`
-		Title string `json:"title"`
-		Start string `json:"start"`
-		End   string `json:"end"`
-		AllDay bool  `json:"allDay"`
-		Color string `json:"color"`
+		ID            int64  `json:"id"`
+		Title         string `json:"title"`
+		Start         string `json:"start"`
+		End           string `json:"end"`
+		AllDay        bool   `json:"allDay"`
+		Color         string `json:"color"`
 		ExtendedProps struct {
 			Location    string `json:"location"`
 			Description string `json:"description"`
@@ -149,10 +149,10 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 	var result []fcEvent
 	for _, ev := range events {
 		fc := fcEvent{
-			ID:    ev.ID,
-			Title: ev.Summary,
+			ID:     ev.ID,
+			Title:  ev.Summary,
 			AllDay: ev.IsAllDay,
-			Color: ev.CalendarColor,
+			Color:  ev.CalendarColor,
 		}
 		if ev.IsAllDay {
 			fc.Start = time.Unix(ev.DTStart, 0).UTC().Format("2006-01-02")

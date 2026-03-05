@@ -77,19 +77,13 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 
 	pd := h.pageData(r, "Contacts")
 	books, _ := ListAddressBooks(db)
-	cards, _ := AllCards(db, 500)
 
-	// Filter by book if query param present.
-	bookIDStr := r.URL.Query().Get("book")
-	if bookIDStr != "" {
+	var cards []CardWithBook
+	if bookIDStr := r.URL.Query().Get("book"); bookIDStr != "" {
 		bookID, _ := strconv.ParseInt(bookIDStr, 10, 64)
-		var filtered []CardWithBook
-		for _, c := range cards {
-			if c.AddressBookID == bookID {
-				filtered = append(filtered, c)
-			}
-		}
-		cards = filtered
+		cards, _ = CardsByAddressBook(db, bookID, 500)
+	} else {
+		cards, _ = AllCards(db, 500)
 	}
 
 	contactsIndexPage(pd, books, cards).Render(r.Context(), w)

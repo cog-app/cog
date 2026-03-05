@@ -459,7 +459,7 @@ type multiStatus struct {
 }
 
 type propfindEntry struct {
-	Href    string  `xml:"D:href"`
+	Href     string   `xml:"D:href"`
 	Propstat propstat `xml:"D:propstat"`
 }
 
@@ -469,17 +469,17 @@ type propstat struct {
 }
 
 type prop struct {
-	DisplayName      string        `xml:"D:displayname"`
-	ContentType      string        `xml:"D:getcontenttype,omitempty"`
-	ContentLength    int64         `xml:"D:getcontentlength"`
-	ETag             string        `xml:"D:getetag,omitempty"`
-	LastModified     string        `xml:"D:getlastmodified,omitempty"`
-	ResourceType     *resourceType `xml:"D:resourcetype"`
-	OCId             string        `xml:"oc:id"`
-	OCFileId         string        `xml:"oc:fileid"`
-	OCPermissions    string        `xml:"oc:permissions"`
-	OCSize           int64         `xml:"oc:size"`
-	NCHasPreview     bool          `xml:"nc:has-preview"`
+	DisplayName   string        `xml:"D:displayname"`
+	ContentType   string        `xml:"D:getcontenttype,omitempty"`
+	ContentLength int64         `xml:"D:getcontentlength"`
+	ETag          string        `xml:"D:getetag,omitempty"`
+	LastModified  string        `xml:"D:getlastmodified,omitempty"`
+	ResourceType  *resourceType `xml:"D:resourcetype"`
+	OCId          string        `xml:"oc:id"`
+	OCFileID      string        `xml:"oc:fileid"`
+	OCPermissions string        `xml:"oc:permissions"`
+	OCSize        int64         `xml:"oc:size"`
+	NCHasPreview  bool          `xml:"nc:has-preview"`
 }
 
 type resourceType struct {
@@ -514,7 +514,7 @@ func metaToEntry(href string, meta *files.FileMeta) propfindEntry {
 				LastModified:  time.Unix(meta.MTime, 0).UTC().Format(http.TimeFormat),
 				ResourceType:  &rt,
 				OCId:          fmt.Sprintf("%08d", meta.ID),
-				OCFileId:      fmt.Sprintf("%d", meta.ID),
+				OCFileID:      strconv.FormatInt(meta.ID, 10),
 				OCPermissions: permissions,
 				OCSize:        meta.Size,
 				NCHasPreview:  files.HasPreview(meta.MimeType),

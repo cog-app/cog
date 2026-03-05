@@ -233,8 +233,8 @@ func (a *API) handleShareCreate(w http.ResponseWriter, r *http.Request) {
 		ResourceType string `json:"resource_type"` // e.g. "files:file"
 		ResourceID   string `json:"resource_id"`   // file ID
 		SubjectType  string `json:"subject_type"`  // "USER"
-		SubjectID    string `json:"subject_id"`     // user ID
-		Permissions  uint32 `json:"permissions"`    // bitmask
+		SubjectID    string `json:"subject_id"`    // user ID
+		Permissions  uint32 `json:"permissions"`   // bitmask
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -302,7 +302,7 @@ func (a *API) handleSharesWithMe(w http.ResponseWriter, r *http.Request) {
 	type enrichedShare struct {
 		share.Record
 		OwnerUsername string    `json:"owner_username"`
-		File         *FileMeta `json:"file,omitempty"`
+		File          *FileMeta `json:"file,omitempty"`
 	}
 
 	var enriched []enrichedShare

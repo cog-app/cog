@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -20,9 +21,39 @@ import (
 var sanitizer = bluemonday.UGCPolicy()
 
 var feedLinkTypes = map[string]bool{
-	"application/rss+xml":  true,
-	"application/atom+xml": true,
+	"application/rss+xml":   true,
+	"application/atom+xml":  true,
 	"application/feed+json": true,
+}
+
+// validateFeedURL checks that a URL is safe to fetch (no SSRF).
+func validateFeedURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("unsupported scheme %q: only http and https are allowed", u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return errors.New("empty hostname")
+	}
+	// Reject private/loopback IPs.
+	ips, err := net.LookupHost(host)
+	if err != nil {
+		return fmt.Errorf("resolve host: %w", err)
+	}
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return fmt.Errorf("host %s resolves to private/loopback address %s", host, ipStr)
+		}
+	}
+	return nil
 }
 
 // ResolveURL fetches the given URL, determines if it's a feed or HTML page,
@@ -30,6 +61,9 @@ var feedLinkTypes = map[string]bool{
 // it unchanged. If it's HTML, it extracts <link rel="alternate"> feed URLs
 // and returns the first valid one. Returns an error if no feed can be found.
 func ResolveURL(client *http.Client, rawURL string) (string, error) {
+	if err := validateFeedURL(rawURL); err != nil {
+		return "", err
+	}
 	req, err := http.NewRequest("GET", rawURL, nil)
 	if err != nil {
 		return "", err
@@ -92,11 +126,17 @@ func ResolveURL(client *http.Client, rawURL string) (string, error) {
 	if feedURL == "" {
 		return "", errors.New("no feed found at URL")
 	}
+	if err := validateFeedURL(feedURL); err != nil {
+		return "", err
+	}
 	return feedURL, nil
 }
 
 // fetchFeed fetches and processes a single feed, upserting items into the DB.
 func fetchFeed(client *http.Client, db *sql.DB, feed *Feed) error {
+	if err := validateFeedURL(feed.URL); err != nil {
+		return recordError(db, feed, err)
+	}
 	req, err := http.NewRequest("GET", feed.URL, nil)
 	if err != nil {
 		return err

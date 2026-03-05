@@ -1,6 +1,7 @@
 package web
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -60,14 +61,18 @@ func (h *adminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	// Set admin if checked.
 	if r.FormValue("is_admin") == "1" {
 		isAdmin := true
-		h.p.Users.Update(u.ID, user.UpdateOpts{IsAdmin: &isAdmin})
+		if err := h.p.Users.Update(u.ID, user.UpdateOpts{IsAdmin: &isAdmin}); err != nil {
+			log.Printf("admin: set admin for %s: %v", u.ID, err)
+		}
 	}
 
 	// Create root mount pointing to default volume.
 	if h.p.Volumes != nil && h.p.Mounts != nil {
 		if defVol, err := h.p.Volumes.GetByName("default"); err == nil {
 			subpath := u.Username + "/files"
-			h.p.Mounts.Create(u.ID, "/", defVol.ID, subpath, false)
+			if _, err := h.p.Mounts.Create(u.ID, "/", defVol.ID, subpath, false); err != nil {
+				log.Printf("admin: create mount for %s: %v", u.Username, err)
+			}
 		}
 	}
 
@@ -99,7 +104,11 @@ func (h *adminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	displayName := r.FormValue("display_name")
 	isAdmin := r.FormValue("is_admin") == "1"
-	h.p.Users.Update(id, user.UpdateOpts{DisplayName: &displayName, IsAdmin: &isAdmin})
+	if err := h.p.Users.Update(id, user.UpdateOpts{DisplayName: &displayName, IsAdmin: &isAdmin}); err != nil {
+		setFlash(w, "error", "Failed to update user.")
+		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
+		return
+	}
 
 	setFlash(w, "success", "User updated.")
 	http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)

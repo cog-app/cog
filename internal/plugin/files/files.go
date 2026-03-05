@@ -14,6 +14,7 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -440,7 +441,7 @@ func (p *Plugin) ParentID(username string, fileID int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%d", parent.ID), nil
+	return strconv.FormatInt(parent.ID, 10), nil
 }
 
 // reconcile performs lazy synchronization between disk and metadata.
@@ -558,7 +559,10 @@ func detectMimeType(name string) string {
 
 func generateETag() string {
 	b := make([]byte, 8)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fall back to timestamp-based etag on entropy exhaustion.
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
 	return hex.EncodeToString(b)
 }
 
@@ -585,7 +589,7 @@ func ResourceType(meta *FileMeta) string {
 
 // IDString returns the file ID as a string (for use in share records).
 func IDString(meta *FileMeta) string {
-	return fmt.Sprintf("%d", meta.ID)
+	return strconv.FormatInt(meta.ID, 10)
 }
 
 // Search returns files matching a simple name pattern.

@@ -17,6 +17,7 @@ func OpenSystem(path string) (*sql.DB, error) {
 	}
 
 	// Single writer: limit to one open connection for writes.
+	db.SetMaxOpenConns(1)
 
 	if err := Migrate(db); err != nil {
 		db.Close()
@@ -66,6 +67,7 @@ func Migrate(db *sql.DB) error {
 		member_type TEXT NOT NULL CHECK(member_type IN ('USER', 'OWNER')),
 		PRIMARY KEY (group_id, member_id)
 	);
+	CREATE INDEX IF NOT EXISTS idx_group_members_member ON group_members(member_id);
 
 	CREATE TABLE IF NOT EXISTS shares (
 		id TEXT PRIMARY KEY,

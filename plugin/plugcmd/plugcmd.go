@@ -49,8 +49,8 @@ type pluginServer struct {
 	plugin cogplugin.Plugin
 
 	mu       sync.Mutex
-	handlers map[string]http.Handler        // route_key -> handler
-	widgets  map[string]cogplugin.Widget     // widget_key -> widget
+	handlers map[string]http.Handler     // route_key -> handler
+	widgets  map[string]cogplugin.Widget // widget_key -> widget
 	hooks    map[string][]cogplugin.HookCallback
 }
 
@@ -254,5 +254,5 @@ type responseCapture struct {
 }
 
 func (r *responseCapture) Header() http.Header         { return r.header }
-func (r *responseCapture) WriteHeader(code int)         { r.statusCode = code }
-func (r *responseCapture) Write(b []byte) (int, error)  { return r.body.Write(b) }
+func (r *responseCapture) WriteHeader(code int)        { r.statusCode = code }
+func (r *responseCapture) Write(b []byte) (int, error) { return r.body.Write(b) }

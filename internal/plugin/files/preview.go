@@ -3,14 +3,14 @@ package files
 import (
 	"fmt"
 	"image"
-	"image/jpeg"
 	_ "image/gif"
+	"image/jpeg"
 	_ "image/png"
 	"os"
 	"path/filepath"
 
-	_ "golang.org/x/image/webp"
 	"golang.org/x/image/draw"
+	_ "golang.org/x/image/webp"
 )
 
 // HasPreview returns true if the MIME type supports thumbnail generation.

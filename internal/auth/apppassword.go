@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/subtle"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -62,7 +63,7 @@ func (s *AppPasswordStore) Create(userID, name string) (plaintext string, ap *Ap
 }
 
 // Validate checks a plaintext token against all app passwords and returns the
-// owning user ID if valid.
+// owning user ID if valid. It iterates all candidates to prevent timing leaks.
 func (s *AppPasswordStore) Validate(token string) (userID string, err error) {
 	rows, err := s.db.Query(`SELECT id, user_id, token_hash FROM app_passwords`)
 	if err != nil {
@@ -70,17 +71,23 @@ func (s *AppPasswordStore) Validate(token string) (userID string, err error) {
 	}
 	defer rows.Close()
 
+	var matchedUID string
+	matched := 0
 	for rows.Next() {
 		var id, uid, hash string
 		if err := rows.Scan(&id, &uid, &hash); err != nil {
 			return "", fmt.Errorf("scan app password: %w", err)
 		}
 		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(token)) == nil {
-			return uid, nil
+			matchedUID = uid
+			matched = 1
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return "", err
+	}
+	if subtle.ConstantTimeEq(int32(matched), 1) == 1 {
+		return matchedUID, nil
 	}
 	return "", errors.New("invalid app password")
 }

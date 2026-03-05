@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -36,7 +37,8 @@ func (h *CardDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(path, "/remote.php/dav/addressbooks/") {
 		db, err := h.plugin.DB(u.Username)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Printf("carddav: db error for %s: %v", u.Username, err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 		EnsureDefaultAddressBook(db)
@@ -157,7 +159,8 @@ func (h *CardDAVHandler) mkAddressBook(w http.ResponseWriter, r *http.Request, d
 
 	_, err := CreateAddressBook(db, bookUID, name, description, color)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
+		log.Printf("carddav: create address book %s: %v", bookUID, err)
+		http.Error(w, "Conflict", http.StatusConflict)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
@@ -220,7 +223,8 @@ func (h *CardDAVHandler) card(w http.ResponseWriter, r *http.Request, db *sql.DB
 
 		c, err := UpsertCard(db, book.ID, cardUID, cardURI, vcardData, fields)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Printf("carddav: upsert card %s: %v", cardUID, err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 
@@ -355,7 +359,7 @@ func (h *CardDAVHandler) reportSyncCollection(w http.ResponseWriter, db *sql.DB,
 		}
 	}
 
-	writeSyncMultiStatus(w, responses, fmt.Sprintf("http://cog/ns/sync/%d", book.SyncToken))
+	writeSyncMultiStatus(w, responses, "http://cog/ns/sync/"+strconv.FormatInt(book.SyncToken, 10))
 }
 
 // --- PROPPATCH handler ---
@@ -435,9 +439,9 @@ func bookResponse(href string, book *AddressBook, username string) davResponse {
 		Props: []xmlProp{
 			rawProp("D:resourcetype", `<D:collection/><CR:addressbook xmlns:CR="urn:ietf:params:xml:ns:carddav"/>`),
 			textProp("D:displayname", book.Name),
-			textProp("CS:getctag", fmt.Sprintf("%d", book.CTag)),
-			textProp("D:getetag", fmt.Sprintf(`"%d"`, book.CTag)),
-			textProp("D:sync-token", fmt.Sprintf("http://cog/ns/sync/%d", book.SyncToken)),
+			textProp("CS:getctag", strconv.FormatInt(book.CTag, 10)),
+			textProp("D:getetag", `"`+strconv.FormatInt(book.CTag, 10)+`"`),
+			textProp("D:sync-token", "http://cog/ns/sync/"+strconv.FormatInt(book.SyncToken, 10)),
 			textProp("CR:addressbook-description", book.Description),
 			rawProp("D:current-user-privilege-set",
 				`<D:privilege><D:all/></D:privilege>`+

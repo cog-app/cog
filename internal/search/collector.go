@@ -20,8 +20,8 @@ const (
 type Collector struct {
 	ch       chan Change
 	index    *Index
-	sources  map[string]SearchSource   // name -> source
-	tableMap map[string]SearchSource   // table name -> source
+	sources  map[string]SearchSource // name -> source
+	tableMap map[string]SearchSource // table name -> source
 	dbFunc   func() *sql.DB
 
 	done chan struct{}

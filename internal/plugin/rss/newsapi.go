@@ -173,7 +173,7 @@ func (a *NewsAPI) listFeeds(w http.ResponseWriter, db *sql.DB) {
 	}
 	starredCount, _ := StarredCount(db)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"feeds":       feedsToAPI(feeds),
+		"feeds":        feedsToAPI(feeds),
 		"starredCount": starredCount,
 	})
 }
@@ -372,24 +372,24 @@ func feedsToAPI(feeds []Feed) []map[string]any {
 
 func itemToAPI(it ItemWithFeed) map[string]any {
 	return map[string]any{
-		"id":                 it.ID,
-		"guid":               it.GUID,
-		"guidHash":           it.ContentHash,
-		"url":                it.URL,
-		"title":              it.Title,
-		"author":             it.Author,
-		"pubDate":            it.PublishedAt,
-		"body":               it.ContentHTML,
-		"feedId":             it.FeedID,
-		"unread":             !it.IsRead,
-		"starred":            it.IsStarred,
-		"lastModified":       it.FetchedAt,
-		"fingerprint":        it.ContentHash,
-		"contentHash":        it.ContentHash,
-		"enclosureMime":      nil,
-		"enclosureLink":      nil,
-		"mediaThumbnail":     nil,
-		"mediaDescription":   nil,
+		"id":               it.ID,
+		"guid":             it.GUID,
+		"guidHash":         it.ContentHash,
+		"url":              it.URL,
+		"title":            it.Title,
+		"author":           it.Author,
+		"pubDate":          it.PublishedAt,
+		"body":             it.ContentHTML,
+		"feedId":           it.FeedID,
+		"unread":           !it.IsRead,
+		"starred":          it.IsStarred,
+		"lastModified":     it.FetchedAt,
+		"fingerprint":      it.ContentHash,
+		"contentHash":      it.ContentHash,
+		"enclosureMime":    nil,
+		"enclosureLink":    nil,
+		"mediaThumbnail":   nil,
+		"mediaDescription": nil,
 	}
 }
 

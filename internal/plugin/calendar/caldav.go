@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -42,7 +43,8 @@ func (h *CalDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(path, "/remote.php/dav/calendars/") {
 		db, err := h.plugin.DB(u.Username)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Printf("caldav: db error for %s: %v", u.Username, err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 		EnsureDefaultCalendar(db)
@@ -192,7 +194,8 @@ func (h *CalDAVHandler) mkCalendar(w http.ResponseWriter, r *http.Request, db *s
 
 	_, err := CreateCalendar(db, calUID, name, color, description)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
+		log.Printf("caldav: create calendar %s: %v", calUID, err)
+		http.Error(w, "Conflict", http.StatusConflict)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
@@ -252,7 +255,8 @@ func (h *CalDAVHandler) event(w http.ResponseWriter, r *http.Request, db *sql.DB
 
 		ev, err := UpsertEvent(db, cal.ID, eventUID, icsData, fields)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Printf("caldav: upsert event %s: %v", eventUID, err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 
@@ -416,7 +420,7 @@ func (h *CalDAVHandler) reportSyncCollection(w http.ResponseWriter, db *sql.DB, 
 		}
 	}
 
-	writeSyncMultiStatus(w, responses, fmt.Sprintf("http://cog/ns/sync/%d", cal.SyncToken))
+	writeSyncMultiStatus(w, responses, "http://cog/ns/sync/"+strconv.FormatInt(cal.SyncToken, 10))
 }
 
 func parseCalDAVDate(s string) time.Time {
@@ -511,11 +515,11 @@ func calResponse(href string, cal *Calendar, username string) davResponse {
 			rawProp("D:resourcetype", `<D:collection/><C:calendar/>`),
 			textProp("D:displayname", cal.Name),
 			textProp("ICAL:calendar-color", cal.Color),
-			textProp("CS:getctag", fmt.Sprintf("%d", cal.CTag)),
-			textProp("D:getetag", fmt.Sprintf(`"%d"`, cal.CTag)),
+			textProp("CS:getctag", strconv.FormatInt(cal.CTag, 10)),
+			textProp("D:getetag", `"`+strconv.FormatInt(cal.CTag, 10)+`"`),
 			rawProp("C:supported-calendar-component-set", `<C:comp name="VEVENT"/>`),
 			textProp("C:calendar-description", cal.Description),
-			textProp("D:sync-token", fmt.Sprintf("http://cog/ns/sync/%d", cal.SyncToken)),
+			textProp("D:sync-token", "http://cog/ns/sync/"+strconv.FormatInt(cal.SyncToken, 10)),
 			rawProp("D:current-user-privilege-set",
 				`<D:privilege><D:all/></D:privilege>`+
 					`<D:privilege><D:read/></D:privilege>`+

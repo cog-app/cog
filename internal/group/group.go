@@ -112,8 +112,7 @@ func (s *Store) Delete(id string) error {
 	if n == 0 {
 		return ErrNotFound
 	}
-	s.RebuildClosure()
-	return nil
+	return s.RebuildClosure()
 }
 
 func (s *Store) AddMember(groupID, memberID, memberType string) error {
@@ -121,10 +120,10 @@ func (s *Store) AddMember(groupID, memberID, memberType string) error {
 		`INSERT OR IGNORE INTO group_members (group_id, member_id, member_type) VALUES (?, ?, ?)`,
 		groupID, memberID, memberType,
 	)
-	if err == nil {
-		s.RebuildClosure()
+	if err != nil {
+		return err
 	}
-	return err
+	return s.RebuildClosure()
 }
 
 // UpdateMemberType changes the member_type for an existing group member.
@@ -140,8 +139,7 @@ func (s *Store) UpdateMemberType(groupID, memberID, memberType string) error {
 	if n == 0 {
 		return ErrNotFound
 	}
-	s.RebuildClosure()
-	return nil
+	return s.RebuildClosure()
 }
 
 func (s *Store) RemoveMember(groupID, memberID string) error {
@@ -149,10 +147,10 @@ func (s *Store) RemoveMember(groupID, memberID string) error {
 		`DELETE FROM group_members WHERE group_id = ? AND member_id = ?`,
 		groupID, memberID,
 	)
-	if err == nil {
-		s.RebuildClosure()
+	if err != nil {
+		return err
 	}
-	return err
+	return s.RebuildClosure()
 }
 
 func (s *Store) ListMembers(groupID string) iter.Seq2[Member, error] {
@@ -261,13 +259,14 @@ func (s *Store) IsOwnerMember(groupID, userID string) (bool, error) {
 
 // RebuildClosure recomputes the group_membership_closure table.
 // All members are user IDs (OWNER or USER type), so no recursive walk needed.
-func (s *Store) RebuildClosure() {
-	_, _ = s.db.Exec(`
+func (s *Store) RebuildClosure() error {
+	_, err := s.db.Exec(`
 		DELETE FROM group_membership_closure;
 
 		INSERT INTO group_membership_closure (ancestor_group_id, descendant_user_id, depth)
 		SELECT group_id, member_id, 0 FROM group_members
 	`)
+	return err
 }
 
 func generateID() (string, error) {
