@@ -8,6 +8,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/compat"
 	"git.duckfam.us/jj-software/cog/internal/plugin/dashboard"
 	"git.duckfam.us/jj-software/cog/internal/plugin/files"
+	"git.duckfam.us/jj-software/cog/internal/plugin/rss"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
@@ -150,6 +151,29 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("GET /apps/files/{path...}", auth.RequireAuthWeb(http.HandlerFunc(filesH.ServeGet)))
 	mux.Handle("POST /apps/files/{path...}", csrfWeb(http.HandlerFunc(filesH.ServePost)))
 	mux.Handle("DELETE /apps/files/{path...}", csrfWeb(http.HandlerFunc(filesH.ServeDelete)))
+
+	// --- RSS plugin ---
+	rssPlugin := rss.New(p.Plugins, p.Config.DataDir)
+	p.Plugins.Add(rssPlugin)
+
+	rssPages := rss.NewPages(rssPlugin, p.CSRFSecret, p.Plugins)
+	mux.Handle("GET /apps/rss/{$}", auth.RequireAuthWeb(http.HandlerFunc(rssPages.Index)))
+	mux.Handle("GET /apps/rss/feed/{id}", auth.RequireAuthWeb(http.HandlerFunc(rssPages.Feed)))
+	mux.Handle("GET /apps/rss/starred", auth.RequireAuthWeb(http.HandlerFunc(rssPages.Starred)))
+	mux.Handle("GET /apps/rss/settings", auth.RequireAuthWeb(http.HandlerFunc(rssPages.Settings)))
+	mux.Handle("GET /apps/rss/opml/export", auth.RequireAuthWeb(http.HandlerFunc(rssPages.ExportOPML)))
+	mux.Handle("POST /apps/rss/feeds", csrfWeb(http.HandlerFunc(rssPages.AddFeed)))
+	mux.Handle("DELETE /apps/rss/feeds/{id}", csrfWeb(http.HandlerFunc(rssPages.DeleteFeed)))
+	mux.Handle("POST /apps/rss/feeds/{id}/read", csrfWeb(http.HandlerFunc(rssPages.MarkFeedRead)))
+	mux.Handle("POST /apps/rss/folders", csrfWeb(http.HandlerFunc(rssPages.AddFolder)))
+	mux.Handle("DELETE /apps/rss/folders/{id}", csrfWeb(http.HandlerFunc(rssPages.DeleteFolder)))
+	mux.Handle("POST /apps/rss/items/{id}/read", csrfWeb(http.HandlerFunc(rssPages.ToggleRead)))
+	mux.Handle("POST /apps/rss/items/{id}/star", csrfWeb(http.HandlerFunc(rssPages.ToggleStar)))
+	mux.Handle("POST /apps/rss/items/read-all", csrfWeb(http.HandlerFunc(rssPages.MarkAllRead)))
+	mux.Handle("POST /apps/rss/opml/import", csrfWeb(http.HandlerFunc(rssPages.ImportOPML)))
+
+	newsAPI := rss.NewNewsAPI(rssPlugin)
+	mux.Handle("/index.php/apps/news/api/", auth.RequireAuth(newsAPI))
 
 	// --- Status & OCS ---
 	mux.HandleFunc("GET /status.php", compat.HandleStatus)

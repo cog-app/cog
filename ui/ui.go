@@ -38,6 +38,7 @@ type PageLink struct {
 // AllPages is the static list of navigable pages.
 var AllPages = []PageLink{
 	{Label: "Files", URL: "/apps/files/", Keywords: "documents uploads"},
+	{Label: "News", URL: "/apps/rss/", Keywords: "rss atom feed reader articles"},
 	{Label: "Profile", URL: "/settings/profile", Keywords: "account name email avatar"},
 	{Label: "Security", URL: "/settings/security", Keywords: "password app passwords"},
 	{Label: "Storage", URL: "/settings/storage", Keywords: "mounts volumes disk"},

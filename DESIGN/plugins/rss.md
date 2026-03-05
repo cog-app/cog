@@ -5,7 +5,7 @@ The RSS plugin (`id: rss`) provides feed subscriptions, article ingestion, and N
 ## 1. Role and Loading Model
 
 - **Plugin Type:** 1st-party plugin.
-- **Recommended Deployment:** Privileged internal plugin for compatibility routes and high-throughput polling.
+- Uses only the public plugin interface
 - **Storage:** `app_data/rss/plugin.db` per user.
 - **Cache Files:** Optional under `app_data/rss/cache/` for HTTP cache metadata, favicons, and temporary parser artifacts.
 
@@ -24,16 +24,19 @@ The RSS plugin (`id: rss`) provides feed subscriptions, article ingestion, and N
 ## 3. Sync and Fetch Pipeline
 
 ### Polling
+
 - Scheduler selects feeds using `next_check_at` and backoff state.
 - Fetches use conditional requests (`If-None-Match`, `If-Modified-Since`) to minimize bandwidth.
 - 304 responses only update check timestamps.
 
 ### Parsing and Upsert
+
 - Parse RSS/Atom with strict size/time limits.
 - Normalize feed/item fields and upsert by `(feed_id, guid)` fallback `(feed_id, url)`.
 - Keep write batches bounded to avoid long SQLite write transactions.
 
 ### Failure Handling
+
 - Track consecutive failures per feed.
 - Apply exponential backoff and jitter.
 - Mark feeds as paused after a threshold; UI exposes retry controls.
@@ -48,10 +51,6 @@ The RSS plugin (`id: rss`) provides feed subscriptions, article ingestion, and N
 ## 5. Sharing and Resources
 
 - Default behavior: feeds and items are private to the user.
-- Optional future sharing:
-  - Share folder (`rss:folder`) to expose grouped feeds.
-  - Share feed (`rss:feed`) for read-only subscription views.
-- If enabled, sharing uses global `shares` records and standard Cog permission resolution.
 
 ## 6. Search Indexing
 
@@ -77,3 +76,6 @@ The RSS plugin (`id: rss`) provides feed subscriptions, article ingestion, and N
 - Restrict outbound fetch protocols to `http`/`https`.
 - Validate and normalize redirect chains with max-hop limits.
 
+## 9. Import/Export
+
+- Abonnements (OPML) format to import/export feeds.

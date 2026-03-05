@@ -56,7 +56,7 @@ func RequireCSRFFor(pluginID string, secret []byte, next http.Handler) http.Hand
 		if r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE" || r.Method == "PATCH" {
 			sessID := SessionIDFromContext(r.Context())
 			if sessID == "" || !ValidateCSRFFor(r, sessID, pluginID, secret) {
-				http.Error(w, "Forbidden — invalid CSRF token", http.StatusForbidden)
+				csrfReject(w, r)
 				return
 			}
 		}
@@ -70,10 +70,27 @@ func RequireCSRF(secret []byte, next http.Handler) http.Handler {
 		if r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE" || r.Method == "PATCH" {
 			sessID := SessionIDFromContext(r.Context())
 			if sessID == "" || !ValidateCSRF(r, sessID, secret) {
-				http.Error(w, "Forbidden — invalid CSRF token", http.StatusForbidden)
+				csrfReject(w, r)
 				return
 			}
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// csrfReject responds to a CSRF failure. For HTMX requests it sends
+// HX-Refresh to trigger a full page reload (which fetches a new token).
+// For regular form POSTs it redirects back to the page via GET.
+func csrfReject(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Refresh", "true")
+		http.Error(w, "Forbidden — invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	// Redirect back so the user gets a fresh page with a valid token.
+	target := r.Header.Get("Referer")
+	if target == "" {
+		target = r.URL.Path
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }

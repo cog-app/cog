@@ -287,6 +287,11 @@ func hitURL(hit search.Hit) string {
 		return "/admin/groups/" + idPart
 	case "volumes":
 		return "/admin/volumes/" + idPart
+	case "rss":
+		if sub, ok := hit.Fields["subtext"].(string); ok && sub != "" {
+			return sub
+		}
+		return "/apps/rss/"
 	default:
 		return "/"
 	}
