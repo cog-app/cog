@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	plugpkg "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
+	rrulelib "github.com/teambition/rrule-go"
 )
 
 type navProvider interface {
@@ -441,28 +441,30 @@ func (h *Pages) CreateCalendar(w http.ResponseWriter, r *http.Request) {
 }
 
 func buildRRule(r *http.Request) string {
-	freq := r.FormValue("recurrence")
-	if freq == "" {
+	r.ParseForm()
+	freq := r.FormValue("rrule_freq")
+	if freq == "CUSTOM" {
+		return strings.TrimSpace(r.FormValue("rrule"))
+	}
+	if freq == "" || freq == "NONE" {
 		return ""
 	}
-	rrule := "FREQ=" + freq
-	if interval := r.FormValue("recurrence_interval"); interval != "" && interval != "1" {
-		rrule += ";INTERVAL=" + interval
+	parts := []string{"FREQ=" + freq}
+	if interval := r.FormValue("rrule_interval"); interval != "" && interval != "1" {
+		parts = append(parts, "INTERVAL="+interval)
 	}
 	if freq == "WEEKLY" {
-		if err := r.ParseForm(); err == nil {
-			days := r.Form["recurrence_byday"]
-			if len(days) > 0 {
-				rrule += ";BYDAY=" + strings.Join(days, ",")
-			}
+		if days := r.Form["rrule_byday"]; len(days) > 0 {
+			parts = append(parts, "BYDAY="+strings.Join(days, ","))
 		}
 	}
-	if until := r.FormValue("recurrence_until"); until != "" {
-		if t, err := time.Parse("2006-01-02", until); err == nil {
-			rrule += ";UNTIL=" + t.Format("20060102") + "T235959Z"
+	if until := r.FormValue("rrule_until"); until != "" {
+		t, err := time.Parse("2006-01-02", until)
+		if err == nil {
+			parts = append(parts, "UNTIL="+t.Format("20060102T150405Z"))
 		}
 	}
-	return rrule
+	return strings.Join(parts, ";")
 }
 
 func eventRRule(ev *Event) string {
@@ -473,46 +475,88 @@ func eventRRule(ev *Event) string {
 	return FormatRRule(fields.RRule)
 }
 
-func eventRRuleFreq(ev *Event) string {
-	fields, _ := ParseVEvent(ev.ICSData)
-	if fields.RRule == "" {
+func eventRRuleRaw(ev *Event) string {
+	fields, err := ParseVEvent(ev.ICSData)
+	if err != nil {
 		return ""
 	}
-	for part := range strings.SplitSeq(fields.RRule, ";") {
-		k, v, _ := strings.Cut(part, "=")
-		if strings.ToUpper(k) == "FREQ" {
-			return v
+	return fields.RRule
+}
+
+// rruleParams parses an RRULE string into key=value pairs.
+func rruleParams(rrule string) map[string]string {
+	m := make(map[string]string)
+	for _, part := range strings.Split(rrule, ";") {
+		if kv := strings.SplitN(part, "=", 2); len(kv) == 2 {
+			m[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
 		}
 	}
-	return ""
+	return m
+}
+
+// eventRRuleIsSimple returns true if the RRULE can be represented by the GUI dropdowns
+// (FREQ + optional INTERVAL + optional BYDAY for WEEKLY + optional UNTIL).
+func eventRRuleIsSimple(ev *Event) bool {
+	raw := eventRRuleRaw(ev)
+	if raw == "" {
+		return true
+	}
+	p := rruleParams(raw)
+	freq := p["FREQ"]
+	if freq != "DAILY" && freq != "WEEKLY" && freq != "MONTHLY" && freq != "YEARLY" {
+		return false
+	}
+	for k := range p {
+		switch k {
+		case "FREQ", "INTERVAL", "UNTIL":
+			// always ok
+		case "BYDAY":
+			if freq != "WEEKLY" {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func eventRRuleFreq(ev *Event) string {
+	raw := eventRRuleRaw(ev)
+	if raw == "" {
+		return "NONE"
+	}
+	if !eventRRuleIsSimple(ev) {
+		return "CUSTOM"
+	}
+	return rruleParams(raw)["FREQ"]
 }
 
 func eventRRuleInterval(ev *Event) string {
-	fields, _ := ParseVEvent(ev.ICSData)
-	if fields.RRule == "" {
-		return "1"
-	}
-	for part := range strings.SplitSeq(fields.RRule, ";") {
-		k, v, _ := strings.Cut(part, "=")
-		if strings.ToUpper(k) == "INTERVAL" {
-			return v
-		}
+	p := rruleParams(eventRRuleRaw(ev))
+	if v, ok := p["INTERVAL"]; ok {
+		return v
 	}
 	return "1"
 }
 
-func eventRRuleUntil(ev *Event) string {
-	fields, _ := ParseVEvent(ev.ICSData)
-	if fields.RRule == "" {
-		return ""
+func eventRRuleByDay(ev *Event) map[string]bool {
+	p := rruleParams(eventRRuleRaw(ev))
+	m := make(map[string]bool)
+	if days, ok := p["BYDAY"]; ok {
+		for _, d := range strings.Split(days, ",") {
+			m[strings.TrimSpace(d)] = true
+		}
 	}
-	for part := range strings.SplitSeq(fields.RRule, ";") {
-		k, v, _ := strings.Cut(part, "=")
-		if strings.ToUpper(k) == "UNTIL" {
-			if t, err := time.Parse("20060102T150405Z", v); err == nil {
-				return t.Format("2006-01-02")
-			}
-			if t, err := time.Parse("20060102", v); err == nil {
+	return m
+}
+
+func eventRRuleUntil(ev *Event) string {
+	p := rruleParams(eventRRuleRaw(ev))
+	if u, ok := p["UNTIL"]; ok {
+		// Try to parse RRULE UNTIL format and return as date input value
+		for _, layout := range []string{"20060102T150405Z", "20060102"} {
+			if t, err := time.Parse(layout, u); err == nil {
 				return t.Format("2006-01-02")
 			}
 		}
@@ -520,18 +564,8 @@ func eventRRuleUntil(ev *Event) string {
 	return ""
 }
 
-func eventRRuleByDay(ev *Event) []string {
-	fields, _ := ParseVEvent(ev.ICSData)
-	if fields.RRule == "" {
-		return nil
-	}
-	for part := range strings.SplitSeq(fields.RRule, ";") {
-		k, v, _ := strings.Cut(part, "=")
-		if strings.ToUpper(k) == "BYDAY" {
-			return strings.Split(v, ",")
-		}
-	}
-	return nil
+func hasByDay(days map[string]bool, day string) bool {
+	return days[day]
 }
 
 // parseAttendeeForm extracts attendee fields from form data.
@@ -642,87 +676,25 @@ func expandRRule(ev EventWithCalendar, rangeStart, rangeEnd time.Time) []EventWi
 		return []EventWithCalendar{ev}
 	}
 
-	params := make(map[string]string)
-	for part := range strings.SplitSeq(fields.RRule, ";") {
-		k, v, _ := strings.Cut(part, "=")
-		params[strings.ToUpper(k)] = v
+	rule, err := rrulelib.StrToRRule(fields.RRule)
+	if err != nil {
+		return []EventWithCalendar{ev}
 	}
-
-	freq := params["FREQ"]
-	interval := 1
-	if v, ok := params["INTERVAL"]; ok {
-		fmt.Sscanf(v, "%d", &interval)
-	}
-
-	var until time.Time
-	if v, ok := params["UNTIL"]; ok {
-		until, _ = time.Parse("20060102T150405Z", v)
-		if until.IsZero() {
-			until, _ = time.Parse("20060102", v)
-		}
-	}
-	if until.IsZero() {
-		until = rangeEnd
-	}
-
-	count := 0
-	maxCount := 365
-	if v, ok := params["COUNT"]; ok {
-		fmt.Sscanf(v, "%d", &maxCount)
-	}
+	rule.DTStart(fields.DTStart)
 
 	duration := time.Unix(ev.DTEnd, 0).Sub(time.Unix(ev.DTStart, 0))
+	occurrences := rule.Between(rangeStart.Add(-duration), rangeEnd, true)
+
 	var result []EventWithCalendar
-	cur := fields.DTStart
-
-	// BYDAY for weekly
-	var byDays []time.Weekday
-	if freq == "WEEKLY" {
-		if bd, ok := params["BYDAY"]; ok {
-			dayMap := map[string]time.Weekday{
-				"MO": time.Monday, "TU": time.Tuesday, "WE": time.Wednesday,
-				"TH": time.Thursday, "FR": time.Friday, "SA": time.Saturday, "SU": time.Sunday,
-			}
-			for d := range strings.SplitSeq(bd, ",") {
-				if wd, ok := dayMap[strings.TrimSpace(d)]; ok {
-					byDays = append(byDays, wd)
-				}
-			}
+	for _, occ := range occurrences {
+		occEnd := occ.Add(duration)
+		if occEnd.Before(rangeStart) {
+			continue
 		}
-	}
-
-	for count < maxCount && !cur.After(until) && !cur.After(rangeEnd) {
-		occEnd := cur.Add(duration)
-		if !occEnd.Before(rangeStart) && !cur.After(rangeEnd) {
-			if len(byDays) > 0 {
-				matched := slices.Contains(byDays, cur.Weekday())
-				if !matched {
-					cur = cur.AddDate(0, 0, 1)
-					continue
-				}
-			}
-			occ := ev
-			occ.DTStart = cur.Unix()
-			occ.DTEnd = occEnd.Unix()
-			result = append(result, occ)
-		}
-		count++
-		switch freq {
-		case "DAILY":
-			cur = cur.AddDate(0, 0, interval)
-		case "WEEKLY":
-			if len(byDays) > 0 {
-				cur = cur.AddDate(0, 0, 1)
-			} else {
-				cur = cur.AddDate(0, 0, 7*interval)
-			}
-		case "MONTHLY":
-			cur = cur.AddDate(0, interval, 0)
-		case "YEARLY":
-			cur = cur.AddDate(interval, 0, 0)
-		default:
-			return []EventWithCalendar{ev}
-		}
+		e := ev
+		e.DTStart = occ.Unix()
+		e.DTEnd = occEnd.Unix()
+		result = append(result, e)
 	}
 
 	if len(result) == 0 {
