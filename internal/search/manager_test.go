@@ -1,7 +1,6 @@
 package search
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 	"time"
@@ -29,8 +28,7 @@ func TestManagerSystemSearch(t *testing.T) {
 	mgr := NewManager(dataDir)
 	mgr.SetSystemDB(sysDB)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	if err := mgr.Start(ctx); err != nil {
 		t.Fatalf("start: %v", err)
@@ -71,8 +69,7 @@ func TestManagerSystemSearchLiveUpdates(t *testing.T) {
 	mgr := NewManager(dataDir)
 	mgr.SetSystemDB(sysDB)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	if err := mgr.Start(ctx); err != nil {
 		t.Fatal(err)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -117,7 +118,9 @@ func (a *API) handleDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", meta.MimeType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
 	w.Header().Set("ETag", meta.ETag)
-	io.Copy(w, f)
+	if _, err := io.Copy(w, f); err != nil {
+		log.Printf("files: download copy error: %v", err)
+	}
 }
 
 func (a *API) handleMkdir(w http.ResponseWriter, r *http.Request) {
@@ -522,7 +525,9 @@ func (a *API) handlePublicLinkDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", meta.MimeType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
 	w.Header().Set("ETag", meta.ETag)
-	io.Copy(w, f)
+	if _, err := io.Copy(w, f); err != nil {
+		log.Printf("files: public link download copy error: %v", err)
+	}
 }
 
 func (a *API) handleSharedDownload(w http.ResponseWriter, r *http.Request) {
@@ -575,7 +580,9 @@ func (a *API) handleSharedDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", meta.MimeType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
 	w.Header().Set("ETag", meta.ETag)
-	io.Copy(w, f)
+	if _, err := io.Copy(w, f); err != nil {
+		log.Printf("files: shared download copy error: %v", err)
+	}
 }
 
 func (a *API) verifyOwnership(u *user.User, resourceType, resourceID string) error {
@@ -614,5 +621,7 @@ func (a *API) checkSharePassword(rec *share.Record, r *http.Request) error {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("files: json encode error: %v", err)
+	}
 }

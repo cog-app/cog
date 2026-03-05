@@ -83,7 +83,7 @@ func NewFromDB(cfg config.Config, sysDB *sql.DB) *Providers {
 	mount.Bootstrap(cfg.DataDir, users, volumes, mounts)
 
 	secret := make([]byte, 32)
-	rand.Read(secret)
+	_, _ = rand.Read(secret) // crypto/rand.Read always succeeds or panics
 
 	registry := plugin.NewRegistry(cfg.DataDir, http.NewServeMux(), sysDB, secret)
 

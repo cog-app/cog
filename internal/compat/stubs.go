@@ -90,10 +90,7 @@ func (h *PreviewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	x, _ := strconv.Atoi(r.URL.Query().Get("x"))
 	y, _ := strconv.Atoi(r.URL.Query().Get("y"))
-	size := x
-	if y > size {
-		size = y
-	}
+	size := max(y, x)
 	if size <= 0 {
 		size = 256
 	}

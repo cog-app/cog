@@ -1,7 +1,6 @@
 package search
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"testing"
@@ -64,8 +63,7 @@ func TestCollectorBatchFlush(t *testing.T) {
 	db.Exec("INSERT INTO items (name) VALUES ('alpha')")
 	db.Exec("INSERT INTO items (name) VALUES ('beta')")
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	c := NewCollector(idx, func() *sql.DB { return db })
 	c.RegisterSource(&testSource{name: "test", tables: []string{"items"}})
@@ -158,8 +156,7 @@ func TestCollectorIgnoresUnknownTables(t *testing.T) {
 
 	db := setupTestDB(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	c := NewCollector(idx, func() *sql.DB { return db })
 	c.RegisterSource(&testSource{name: "test", tables: []string{"items"}})

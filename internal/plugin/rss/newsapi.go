@@ -36,8 +36,8 @@ func (a *NewsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Strip the prefix to get the API path.
 	path := r.URL.Path
 	for _, prefix := range []string{"/index.php/apps/news/api/v1-2", "/index.php/apps/news/api"} {
-		if strings.HasPrefix(path, prefix) {
-			path = strings.TrimPrefix(path, prefix)
+		if after, ok := strings.CutPrefix(path, prefix); ok {
+			path = after
 			break
 		}
 	}

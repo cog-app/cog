@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"path"
 	"strconv"
@@ -188,7 +189,9 @@ func (h *WebDAVHandler) handleGet(w http.ResponseWriter, r *http.Request, u *use
 	if r.Method == http.MethodHead {
 		return
 	}
-	io.Copy(w, f)
+	if _, err := io.Copy(w, f); err != nil {
+		log.Printf("webdav: GET copy error: %v", err)
+	}
 }
 
 // --- PUT ---
@@ -445,7 +448,9 @@ func (h *WebDAVHandler) HandleDirectServe(w http.ResponseWriter, r *http.Request
 	w.Header().Set("ETag", `"`+meta.ETag+`"`)
 	w.Header().Set("Content-Length", strconv.FormatInt(meta.Size, 10))
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
-	io.Copy(w, f)
+	if _, err := io.Copy(w, f); err != nil {
+		log.Printf("webdav: direct download copy error: %v", err)
+	}
 }
 
 // --- XML types for PROPFIND responses ---

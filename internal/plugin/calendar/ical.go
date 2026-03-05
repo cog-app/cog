@@ -223,7 +223,7 @@ func FormatRRule(rrule string) string {
 		return ""
 	}
 	params := make(map[string]string)
-	for _, part := range strings.Split(rrule, ";") {
+	for part := range strings.SplitSeq(rrule, ";") {
 		k, v, _ := strings.Cut(part, "=")
 		params[strings.ToUpper(k)] = v
 	}

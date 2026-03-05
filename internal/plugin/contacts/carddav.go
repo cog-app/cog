@@ -41,7 +41,9 @@ func (h *CardDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		EnsureDefaultAddressBook(db)
+		if err := EnsureDefaultAddressBook(db); err != nil {
+			log.Printf("carddav: ensure default address book: %v", err)
+		}
 		h.dispatch(w, r, db, u.Username)
 		return
 	}
@@ -130,7 +132,11 @@ func (h *CardDAVHandler) addressBookCollection(w http.ResponseWriter, r *http.Re
 	case "MKCOL":
 		h.mkAddressBook(w, r, db, bookUID)
 	case http.MethodDelete:
-		DeleteAddressBook(db, book.ID)
+		if err := DeleteAddressBook(db, book.ID); err != nil {
+			log.Printf("carddav: delete address book %d: %v", book.ID, err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodOptions:
 		writeOptions(w)
@@ -382,7 +388,11 @@ func (h *CardDAVHandler) handleProppatch(w http.ResponseWriter, r *http.Request,
 		description = d
 	}
 
-	UpdateAddressBook(db, book.ID, name, description, color)
+	if err := UpdateAddressBook(db, book.ID, name, description, color); err != nil {
+		log.Printf("carddav: update address book %d: %v", book.ID, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
 
 	bookHref := "/remote.php/dav/addressbooks/" + username + "/" + book.UID + "/"
 	var propNames []string

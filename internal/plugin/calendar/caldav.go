@@ -47,7 +47,9 @@ func (h *CalDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		EnsureDefaultCalendar(db)
+		if err := EnsureDefaultCalendar(db); err != nil {
+			log.Printf("caldav: ensure default calendar: %v", err)
+		}
 		h.dispatch(w, r, db, u.Username)
 		return
 	}
@@ -165,7 +167,11 @@ func (h *CalDAVHandler) calendarCollection(w http.ResponseWriter, r *http.Reques
 	case "MKCALENDAR":
 		h.mkCalendar(w, r, db, calUID)
 	case http.MethodDelete:
-		DeleteCalendar(db, cal.ID)
+		if err := DeleteCalendar(db, cal.ID); err != nil {
+			log.Printf("caldav: delete calendar %d: %v", cal.ID, err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodOptions:
 		writeOptions(w)
@@ -456,7 +462,11 @@ func (h *CalDAVHandler) handleProppatch(w http.ResponseWriter, r *http.Request, 
 		description = d
 	}
 
-	UpdateCalendar(db, cal.ID, name, color, description)
+	if err := UpdateCalendar(db, cal.ID, name, color, description); err != nil {
+		log.Printf("caldav: update calendar %d: %v", cal.ID, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
 
 	// Return 207 with success for each property.
 	calHref := "/remote.php/dav/calendars/" + username + "/" + cal.UID + "/"
