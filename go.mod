@@ -12,6 +12,7 @@ tool (
 
 require (
 	github.com/a-h/templ v0.3.1001
+	github.com/blevesearch/bleve/v2 v2.5.7
 	github.com/mattn/go-sqlite3 v1.14.24
 	golang.org/x/crypto v0.47.0
 	google.golang.org/grpc v1.79.1
@@ -23,7 +24,6 @@ require (
 	github.com/a-h/parse v0.0.0-20250122154542-74294addb73e // indirect
 	github.com/andybalholm/brotli v1.1.0 // indirect
 	github.com/bits-and-blooms/bitset v1.22.0 // indirect
-	github.com/blevesearch/bleve/v2 v2.5.7 // indirect
 	github.com/blevesearch/bleve_index_api v1.2.11 // indirect
 	github.com/blevesearch/geo v0.2.4 // indirect
 	github.com/blevesearch/go-faiss v1.0.26 // indirect
