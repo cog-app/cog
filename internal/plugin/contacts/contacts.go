@@ -9,6 +9,8 @@ import (
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 )
 
+//go:generate go tool templ generate -log-level warn
+
 const PluginID = "contacts"
 
 type dbProvider interface {

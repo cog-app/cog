@@ -12,6 +12,8 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
+//go:generate go tool templ generate -log-level warn
+
 type navProvider interface {
 	NavItems() []plugin.NavItem
 }

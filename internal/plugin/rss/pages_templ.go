@@ -53,7 +53,7 @@ func rssSidebar(sb sidebarData) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var2).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -71,7 +71,7 @@ func rssSidebar(sb sidebarData) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(sb.TotalUnread))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 16, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 16, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -98,7 +98,7 @@ func rssSidebar(sb sidebarData) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var5).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -116,7 +116,7 @@ func rssSidebar(sb sidebarData) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(sb.StarredCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 22, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 22, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -139,7 +139,7 @@ func rssSidebar(sb sidebarData) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(folder.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 28, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 28, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -186,7 +186,7 @@ func rssSidebar(sb sidebarData) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var9).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -233,7 +233,7 @@ func sidebarFeedLink(feed Feed, sb sidebarData) templ.Component {
 		var templ_7745c5c3_Var13 templ.SafeURL
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/rss/feed/%d", feed.ID)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 47, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 47, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -246,7 +246,7 @@ func sidebarFeedLink(feed Feed, sb sidebarData) templ.Component {
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var12).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -259,7 +259,7 @@ func sidebarFeedLink(feed Feed, sb sidebarData) templ.Component {
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(feedDisplayTitle(feed))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 50, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 50, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -277,7 +277,7 @@ func sidebarFeedLink(feed Feed, sb sidebarData) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(sb.UnreadCounts[feed.ID]))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 52, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 52, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -349,7 +349,7 @@ func rssIndexPage(pd ui.PageData, sb sidebarData, items []ItemWithFeed) templ.Co
 				var templ_7745c5c3_Var19 string
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 66, Col: 66}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 66, Col: 66}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
@@ -455,7 +455,7 @@ func rssFeedPage(pd ui.PageData, sb sidebarData, feed *Feed, items []ItemWithFee
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(feedDisplayTitle(*feed))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 89, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 89, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -468,7 +468,7 @@ func rssFeedPage(pd ui.PageData, sb sidebarData, feed *Feed, items []ItemWithFee
 			var templ_7745c5c3_Var24 templ.SafeURL
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/rss/feeds/%d/read", feed.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 90, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 90, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
@@ -481,7 +481,7 @@ func rssFeedPage(pd ui.PageData, sb sidebarData, feed *Feed, items []ItemWithFee
 			var templ_7745c5c3_Var25 string
 			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 91, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 91, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 			if templ_7745c5c3_Err != nil {
@@ -700,7 +700,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var33 string
 		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("item-%d", item.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 137, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 137, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 		if templ_7745c5c3_Err != nil {
@@ -713,7 +713,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var34 string
 		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var32).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 		if templ_7745c5c3_Err != nil {
@@ -726,7 +726,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var35 string
 		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(item.FeedTitle)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 141, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 141, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 		if templ_7745c5c3_Err != nil {
@@ -744,7 +744,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var36 string
 			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(item.Author)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 143, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 143, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 			if templ_7745c5c3_Err != nil {
@@ -762,7 +762,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var37 string
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(formatTime(item.PublishedAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 145, Col: 88}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 145, Col: 88}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
@@ -780,7 +780,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var38 templ.SafeURL
 			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(item.URL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 149, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 149, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 			if templ_7745c5c3_Err != nil {
@@ -793,7 +793,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var39 string
 			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(item.Title)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 149, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 149, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 			if templ_7745c5c3_Err != nil {
@@ -807,7 +807,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(item.Title)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 151, Col: 18}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 151, Col: 18}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
@@ -830,7 +830,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var42 string
 		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var41).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 		if templ_7745c5c3_Err != nil {
@@ -843,7 +843,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var43 string
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/rss/items/%d/star", item.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 158, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 158, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 		if templ_7745c5c3_Err != nil {
@@ -856,7 +856,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var44 string
 		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#item-%d", item.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 159, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 159, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
@@ -884,7 +884,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var45 string
 		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/rss/items/%d/read", item.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 171, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 171, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 		if templ_7745c5c3_Err != nil {
@@ -897,7 +897,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var46 string
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#item-%d", item.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 172, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 172, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 		if templ_7745c5c3_Err != nil {
@@ -994,7 +994,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 				var templ_7745c5c3_Var50 string
 				templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 196, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 196, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 				if templ_7745c5c3_Err != nil {
@@ -1017,7 +1017,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 						var templ_7745c5c3_Var51 string
 						templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(f.ID, 10))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 207, Col: 53}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 207, Col: 53}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 						if templ_7745c5c3_Err != nil {
@@ -1030,7 +1030,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 						var templ_7745c5c3_Var52 string
 						templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(f.Name)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 207, Col: 64}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 207, Col: 64}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 						if templ_7745c5c3_Err != nil {
@@ -1086,7 +1086,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 						var templ_7745c5c3_Var54 string
 						templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("feed-%d", feed.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 231, Col: 49}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 231, Col: 49}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 						if templ_7745c5c3_Err != nil {
@@ -1099,7 +1099,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 						var templ_7745c5c3_Var55 string
 						templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(feedDisplayTitle(feed))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 232, Col: 38}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 232, Col: 38}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 						if templ_7745c5c3_Err != nil {
@@ -1112,7 +1112,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 						var templ_7745c5c3_Var56 string
 						templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(feed.URL)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 234, Col: 33}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 234, Col: 33}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 						if templ_7745c5c3_Err != nil {
@@ -1125,7 +1125,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 						var templ_7745c5c3_Var57 string
 						templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(feed.URL)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 234, Col: 46}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 234, Col: 46}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 						if templ_7745c5c3_Err != nil {
@@ -1138,7 +1138,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 						var templ_7745c5c3_Var58 string
 						templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(feedFolderName(feed, folders))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 237, Col: 42}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 237, Col: 42}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 						if templ_7745c5c3_Err != nil {
@@ -1156,7 +1156,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 							var templ_7745c5c3_Var59 string
 							templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(feed.LastError)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 241, Col: 60}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 241, Col: 60}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 							if templ_7745c5c3_Err != nil {
@@ -1184,7 +1184,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 						var templ_7745c5c3_Var60 string
 						templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/rss/feeds/%d", feed.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 251, Col: 66}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 251, Col: 66}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 						if templ_7745c5c3_Err != nil {
@@ -1197,7 +1197,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 						var templ_7745c5c3_Var61 string
 						templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#feed-%d", feed.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 252, Col: 56}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 252, Col: 56}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 						if templ_7745c5c3_Err != nil {
@@ -1238,7 +1238,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 				var templ_7745c5c3_Var63 string
 				templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 265, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 265, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 				if templ_7745c5c3_Err != nil {
@@ -1261,7 +1261,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 						var templ_7745c5c3_Var64 string
 						templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("folder-%d", folder.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 279, Col: 53}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 279, Col: 53}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 						if templ_7745c5c3_Err != nil {
@@ -1274,7 +1274,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 						var templ_7745c5c3_Var65 string
 						templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(folder.Name)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 280, Col: 27}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 280, Col: 27}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 						if templ_7745c5c3_Err != nil {
@@ -1287,7 +1287,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 						var templ_7745c5c3_Var66 string
 						templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/rss/folders/%d", folder.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 284, Col: 70}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 284, Col: 70}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 						if templ_7745c5c3_Err != nil {
@@ -1300,7 +1300,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 						var templ_7745c5c3_Var67 string
 						templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#folder-%d", folder.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 285, Col: 60}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 285, Col: 60}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 						if templ_7745c5c3_Err != nil {
@@ -1341,7 +1341,7 @@ func rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fol
 				var templ_7745c5c3_Var69 string
 				templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/plugin/rss/pages.templ`, Line: 300, Col: 66}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 300, Col: 66}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 				if templ_7745c5c3_Err != nil {

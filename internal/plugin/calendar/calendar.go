@@ -8,6 +8,8 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
+//go:generate go tool templ generate -log-level warn
+
 const PluginID = "calendar"
 
 type dbProvider interface {

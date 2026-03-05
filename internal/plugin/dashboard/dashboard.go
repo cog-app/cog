@@ -1,6 +1,8 @@
 // Package dashboard implements the dashboard plugin which provides the root page.
 package dashboard
 
+//go:generate go tool templ generate -log-level warn
+
 import (
 	"context"
 	"net/http"
