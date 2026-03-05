@@ -348,6 +348,18 @@ func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ImportOPML(db, data)
+
+	// Fetch all newly imported feeds immediately in the background.
+	u := auth.UserFromContext(r.Context())
+	feeds, _ := ListFeeds(db)
+	go func() {
+		for i := range feeds {
+			if feeds[i].LastCheckedAt == 0 {
+				h.plugin.FetchNow(u.Username, feeds[i].ID)
+			}
+		}
+	}()
+
 	http.Redirect(w, r, "/apps/rss/settings", http.StatusSeeOther)
 }
 
