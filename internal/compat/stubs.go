@@ -5,7 +5,12 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"net/http"
+	"strconv"
+
+	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/plugin/files"
 )
 
 // HandleAvatar returns a placeholder avatar image.
@@ -52,11 +57,57 @@ func HandleConnectivityCheck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// HandlePreview returns a 404 with a proper OCS error for file previews.
-// NC clients request GET /index.php/core/preview?fileId=N for thumbnails.
-// Returning a clean 404 prevents the app from caching fileId=-1.
-func HandlePreview(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotFound)
+// PreviewHandler serves NextCloud-compatible preview thumbnails.
+// Route: GET /index.php/core/preview?fileId=N&x=W&y=H
+type PreviewHandler struct {
+	Files *files.Plugin
+}
+
+func (h *PreviewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	fileIDStr := r.URL.Query().Get("fileId")
+	fileID, err := strconv.ParseInt(fileIDStr, 10, 64)
+	if err != nil || fileID <= 0 {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	meta, err := h.Files.GetByID(u.Username, fileID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	if !files.HasPreview(meta.MimeType) {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	x, _ := strconv.Atoi(r.URL.Query().Get("x"))
+	y, _ := strconv.Atoi(r.URL.Query().Get("y"))
+	size := x
+	if y > size {
+		size = y
+	}
+	if size <= 0 {
+		size = 256
+	}
+
+	f, err := h.Files.Preview(u.Username, meta.Path, size)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	io.Copy(w, f)
 }
 
 // HandleWellKnownCalDAV redirects to the DAV endpoint for CalDAV discovery.
@@ -75,9 +126,6 @@ func HandleWellKnownCardDAV(w http.ResponseWriter, r *http.Request) {
 func RegisterStubs(mux *http.ServeMux) {
 	// Connectivity check
 	mux.HandleFunc("GET /index.php/204", HandleConnectivityCheck)
-
-	// Preview (not implemented — nc:has-preview=false tells clients not to ask)
-	mux.HandleFunc("GET /index.php/core/preview", HandlePreview)
 
 	// Avatar
 	mux.HandleFunc("GET /index.php/avatar/{userID}/{size}", HandleAvatar)
@@ -98,5 +146,5 @@ func RegisterStubs(mux *http.ServeMux) {
 	mux.HandleFunc("GET /.well-known/caldav", HandleWellKnownCalDAV)
 	mux.HandleFunc("GET /.well-known/carddav", HandleWellKnownCardDAV)
 
-	fmt.Println("Registered stub routes: avatar, notifications, recommendations, user_status, preview, connectivity check, well-known")
+	fmt.Println("Registered stub routes: avatar, notifications, recommendations, user_status, connectivity check, well-known")
 }

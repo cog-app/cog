@@ -90,6 +90,8 @@ func (h searchHandler) SearchPartial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pages := ui.MatchPages(q, u.IsAdmin)
+
 	var userHits []search.Hit
 	var systemHits []search.Hit
 
@@ -105,5 +107,5 @@ func (h searchHandler) SearchPartial(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	ui.SearchResults(userHits, systemHits, u.IsAdmin).Render(r.Context(), w)
+	ui.SearchResults(pages, userHits, systemHits, u.IsAdmin).Render(r.Context(), w)
 }

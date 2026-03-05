@@ -309,9 +309,18 @@ func hitSubtext(hit search.Hit) string {
 }
 
 // SearchResults renders the search results dropdown partial.
-templ SearchResults(userHits, systemHits []search.Hit, isAdmin bool) {
-	if len(userHits) == 0 && len(systemHits) == 0 {
+templ SearchResults(pages []PageLink, userHits, systemHits []search.Hit, isAdmin bool) {
+	if len(pages) == 0 && len(userHits) == 0 && len(systemHits) == 0 {
 		<div class="search-empty">No results</div>
+	}
+	if len(pages) > 0 {
+		<div class="search-section">Pages</div>
+		for _, page := range pages {
+			<a class="search-hit" href={ templ.SafeURL(page.URL) }>
+				<span class="search-hit-name">{ page.Label }</span>
+				<span class="search-hit-sub">{ page.URL }</span>
+			</a>
+		}
 	}
 	if len(userHits) > 0 {
 		<div class="search-section">My Resources</div>

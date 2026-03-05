@@ -173,6 +173,10 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.HandleFunc("/remote.php/dav", compat.HandleWebDAVStub)
 	mux.HandleFunc("/remote.php/dav/", compat.HandleWebDAVStub)
 
+	// NC preview endpoint (needs auth + files plugin)
+	previewH := &compat.PreviewHandler{Files: p.Files}
+	mux.Handle("GET /index.php/core/preview", auth.RequireAuth(previewH))
+
 	// Stub routes (avatar, notifications, connectivity, etc.)
 	compat.RegisterStubs(mux)
 

@@ -5,10 +5,15 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -135,6 +140,7 @@ func seedFiles(filesDir string) {
 		{"Documents/welcome.md", "# Welcome to Cog\n\nThis is a sample document.\n"},
 		{"Documents/notes.txt", "Some quick notes for testing.\n"},
 		{"Photos/readme.txt", "Drop images here.\n"},
+		{"Photos/pattern.png", string(generatePatternPNG())},
 		{"Projects/hello.go", "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello from Cog!\")\n}\n"},
 	}
 
@@ -153,4 +159,22 @@ func seedFiles(filesDir string) {
 		}
 		log.Printf("Seeded %s", s.path)
 	}
+}
+
+// generatePatternPNG creates a 256x256 PNG with a colorful plasma-like pattern.
+func generatePatternPNG() []byte {
+	const size = 256
+	img := image.NewRGBA(image.Rect(0, 0, size, size))
+	for y := range size {
+		for x := range size {
+			fx, fy := float64(x)/float64(size), float64(y)/float64(size)
+			r := uint8(128 + 127*math.Sin(fx*2*math.Pi*3))
+			g := uint8(128 + 127*math.Sin(fy*2*math.Pi*3+2))
+			b := uint8(128 + 127*math.Sin((fx+fy)*2*math.Pi*2+4))
+			img.SetRGBA(x, y, color.RGBA{R: r, G: g, B: b, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	png.Encode(&buf, img)
+	return buf.Bytes()
 }

@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,6 +70,12 @@ func (h *FilesHandler) ServeGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ?preview=1 → serve resized JPEG thumbnail.
+	if r.URL.Query().Get("preview") == "1" {
+		h.servePreview(w, r, u.Username, fp, meta)
+		return
+	}
+
 	// File → view page.
 	pd := pageDataWithNav(r, meta.Name, h.p.CSRFSecret, h.p.Plugins)
 	kind := fileViewKind(meta.MimeType)
@@ -114,6 +121,32 @@ func (h *FilesHandler) serveRaw(w http.ResponseWriter, r *http.Request, username
 	}
 	w.Header().Set("Content-Type", ct)
 	http.ServeContent(w, r, meta.Name, time.Unix(meta.MTime, 0), f)
+}
+
+func (h *FilesHandler) servePreview(w http.ResponseWriter, r *http.Request, username, fp string, meta *files.FileMeta) {
+	if !files.HasPreview(meta.MimeType) {
+		http.Error(w, "no preview available", http.StatusNotFound)
+		return
+	}
+
+	size := 256
+	if s := r.URL.Query().Get("size"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			size = n
+		}
+	}
+
+	f, err := h.p.Files.Preview(username, fp, size)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("ETag", `"`+meta.ETag+`"`)
+	io.Copy(w, f)
 }
 
 func (h *FilesHandler) readText(username, fp string) (string, error) {
@@ -186,6 +219,32 @@ func (h *FilesHandler) ServeDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// fileIconName returns the icon category for a file.
+func fileIconName(mimeType string, isDir bool) string {
+	if isDir {
+		return "folder"
+	}
+	if strings.HasPrefix(mimeType, "image/") {
+		return "image"
+	}
+	if strings.HasPrefix(mimeType, "text/") {
+		return "text"
+	}
+	if strings.HasPrefix(mimeType, "audio/") {
+		return "audio"
+	}
+	if strings.HasPrefix(mimeType, "video/") {
+		return "video"
+	}
+	switch mimeType {
+	case "application/json", "application/xml", "application/javascript",
+		"application/x-yaml", "application/toml", "application/x-sh",
+		"application/sql", "application/x-httpd-php":
+		return "text"
+	}
+	return "file"
 }
 
 // fileViewKind categorizes a MIME type for the view page.

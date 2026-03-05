@@ -517,6 +517,7 @@ func metaToEntry(href string, meta *files.FileMeta) propfindEntry {
 				OCFileId:      fmt.Sprintf("%d", meta.ID),
 				OCPermissions: permissions,
 				OCSize:        meta.Size,
+				NCHasPreview:  files.HasPreview(meta.MimeType),
 			},
 		},
 	}
