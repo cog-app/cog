@@ -129,7 +129,8 @@ a:hover { text-decoration: underline; }
     cursor: pointer;
 }
 
-.search-hit:hover {
+.search-hit:hover,
+.search-hit-active {
     background: var(--color-bg);
     text-decoration: none;
 }

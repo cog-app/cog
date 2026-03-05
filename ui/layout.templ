@@ -34,7 +34,8 @@ templ Base(pd PageData) {
 			</ul>
 			if pd.User != nil {
 				<div class="navbar-search">
-					<input type="search" name="q" placeholder="Search..."
+					<input type="search" name="q" placeholder="Search (/)..."
+						id="search-box"
 						class="form-control search-input"
 						hx-get="/api/search/partial"
 						hx-trigger="input changed delay:200ms, search"
@@ -52,6 +53,60 @@ templ Base(pd PageData) {
 		<main class="content">
 			{ children... }
 		</main>
+		<script>
+		(function() {
+			var box = document.getElementById("search-box");
+			if (!box) return;
+			var results = document.getElementById("search-results");
+
+			document.addEventListener("keydown", function(e) {
+				if (e.key === "/" && !e.ctrlKey && !e.metaKey &&
+					!["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName) &&
+					!document.activeElement.isContentEditable) {
+					e.preventDefault();
+					box.focus();
+					box.select();
+				}
+			});
+
+			box.addEventListener("keydown", function(e) {
+				var hits = results.querySelectorAll(".search-hit");
+				if (!hits.length) {
+					if (e.key === "Escape") { box.blur(); }
+					return;
+				}
+				var cur = results.querySelector(".search-hit-active");
+				var idx = cur ? Array.prototype.indexOf.call(hits, cur) : -1;
+
+				if (e.key === "ArrowDown") {
+					e.preventDefault();
+					if (cur) cur.classList.remove("search-hit-active");
+					idx = (idx + 1) % hits.length;
+					hits[idx].classList.add("search-hit-active");
+					hits[idx].scrollIntoView({block:"nearest"});
+				} else if (e.key === "ArrowUp") {
+					e.preventDefault();
+					if (cur) cur.classList.remove("search-hit-active");
+					idx = idx <= 0 ? hits.length - 1 : idx - 1;
+					hits[idx].classList.add("search-hit-active");
+					hits[idx].scrollIntoView({block:"nearest"});
+				} else if (e.key === "Enter") {
+					if (cur) {
+						e.preventDefault();
+						cur.click();
+					}
+				} else if (e.key === "Escape") {
+					box.blur();
+				}
+			});
+
+			new MutationObserver(function() {
+				var hits = results.querySelectorAll(".search-hit");
+				hits.forEach(function(h) { h.classList.remove("search-hit-active"); });
+				if (hits.length) hits[0].classList.add("search-hit-active");
+			}).observe(results, {childList: true});
+		})();
+		</script>
 	</body>
 	</html>
 }
