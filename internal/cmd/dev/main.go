@@ -87,6 +87,9 @@ func main() {
 	// Seed calendar events.
 	seedCalendar(filepath.Join(devDir, "data", testUser, "app_data", "calendar"))
 
+	// Seed contacts.
+	seedContacts(filepath.Join(devDir, "data", testUser, "app_data", "contacts"))
+
 	// Open log file for tee
 	logPath := filepath.Join(devDir, "cog.log")
 	logFile, err := os.Create(logPath)
@@ -313,6 +316,120 @@ func icsAllDay(uid, summary, dtstart, dtend string) string {
 	s += "DTSTART;VALUE=DATE:" + dtstart + "\r\n"
 	s += "DTEND;VALUE=DATE:" + dtend + "\r\n"
 	s += "END:VEVENT\r\nEND:VCALENDAR\r\n"
+	return s
+}
+
+// seedContacts creates sample contacts if the contacts DB doesn't exist.
+func seedContacts(contactsDir string) {
+	dbPath := filepath.Join(contactsDir, "plugin.db")
+	if _, err := os.Stat(dbPath); err == nil {
+		return // already seeded
+	}
+	if err := os.MkdirAll(contactsDir, 0o755); err != nil {
+		log.Printf("seed contacts: mkdir: %v", err)
+		return
+	}
+
+	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_foreign_keys=on")
+	if err != nil {
+		log.Printf("seed contacts: open db: %v", err)
+		return
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS address_books (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			uid TEXT NOT NULL UNIQUE,
+			name TEXT NOT NULL DEFAULT 'Contacts',
+			description TEXT NOT NULL DEFAULT '',
+			color TEXT NOT NULL DEFAULT '#0082c9',
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			sync_token INTEGER NOT NULL DEFAULT 0,
+			ctag INTEGER NOT NULL DEFAULT 1,
+			created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+			updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+		);
+		CREATE TABLE IF NOT EXISTS cards (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			address_book_id INTEGER NOT NULL REFERENCES address_books(id) ON DELETE CASCADE,
+			uid TEXT NOT NULL,
+			uri TEXT NOT NULL,
+			etag TEXT NOT NULL,
+			fn TEXT NOT NULL DEFAULT '',
+			email TEXT NOT NULL DEFAULT '',
+			tel TEXT NOT NULL DEFAULT '',
+			vcard_data TEXT NOT NULL,
+			rev TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+			updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+			UNIQUE(address_book_id, uid)
+		);
+		CREATE INDEX IF NOT EXISTS idx_cards_book ON cards(address_book_id);
+		CREATE INDEX IF NOT EXISTS idx_cards_uid ON cards(uid);
+		CREATE TABLE IF NOT EXISTS deleted_cards (
+			address_book_id INTEGER NOT NULL,
+			uid TEXT NOT NULL,
+			deleted_at_token INTEGER NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_deleted_cards_book ON deleted_cards(address_book_id, deleted_at_token);
+	`); err != nil {
+		log.Printf("seed contacts: migrate: %v", err)
+		return
+	}
+
+	db.Exec(`INSERT INTO address_books (uid, name, color) VALUES ('contacts', 'Contacts', '#0082c9')`)
+	db.Exec(`INSERT INTO address_books (uid, name, color) VALUES ('work', 'Work', '#e64a19')`)
+
+	type seedCard struct {
+		bookUID string
+		uid     string
+		fn      string
+		email   string
+		tel     string
+	}
+
+	contacts := []seedCard{
+		{"contacts", "alice-smith", "Alice Smith", "alice@example.com", "+1-555-0101"},
+		{"contacts", "bob-jones", "Bob Jones", "bob.jones@example.com", "+1-555-0102"},
+		{"contacts", "carol-white", "Carol White", "carol@example.com", ""},
+		{"contacts", "david-brown", "David Brown", "", "+1-555-0104"},
+		{"work", "emma-wilson", "Emma Wilson", "emma.wilson@company.com", "+1-555-0201"},
+		{"work", "frank-taylor", "Frank Taylor", "frank.t@company.com", "+1-555-0202"},
+		{"work", "grace-lee", "Grace Lee", "grace.lee@company.com", "+1-555-0203"},
+	}
+
+	for _, c := range contacts {
+		vcard := vcard(c.uid, c.fn, c.email, c.tel)
+		etag := fmt.Sprintf("%x", md5.Sum([]byte(vcard)))
+		uri := c.uid + ".vcf"
+		var bookID int64
+		db.QueryRow(`SELECT id FROM address_books WHERE uid = ?`, c.bookUID).Scan(&bookID)
+		_, err := db.Exec(`INSERT INTO cards (address_book_id, uid, uri, etag, fn, email, tel, vcard_data)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			bookID, c.uid, uri, etag, c.fn, c.email, c.tel, vcard)
+		if err != nil {
+			log.Printf("seed contact %s: %v", c.uid, err)
+		} else {
+			log.Printf("Seeded contact: %s", c.fn)
+		}
+	}
+
+	db.Exec(`UPDATE address_books SET ctag = (SELECT COUNT(*) FROM cards WHERE address_book_id = address_books.id)`)
+}
+
+func vcard(uid, fn, email, tel string) string {
+	s := "BEGIN:VCARD\r\nVERSION:3.0\r\n"
+	s += "UID:" + uid + "\r\n"
+	s += "FN:" + fn + "\r\n"
+	if email != "" {
+		s += "EMAIL;TYPE=INTERNET:" + email + "\r\n"
+	}
+	if tel != "" {
+		s += "TEL;TYPE=CELL:" + tel + "\r\n"
+	}
+	s += "REV:20260305T120000Z\r\n"
+	s += "END:VCARD\r\n"
 	return s
 }
 

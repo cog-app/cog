@@ -7,6 +7,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/compat"
 	"git.duckfam.us/jj-software/cog/internal/plugin/calendar"
+	"git.duckfam.us/jj-software/cog/internal/plugin/contacts"
 	"git.duckfam.us/jj-software/cog/internal/plugin/dashboard"
 	"git.duckfam.us/jj-software/cog/internal/plugin/files"
 	"git.duckfam.us/jj-software/cog/internal/plugin/rss"
@@ -195,6 +196,24 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	caldav := calendar.NewCalDAVHandler(calPlugin)
 	mux.Handle("/remote.php/dav/calendars/", auth.RequireAuth(caldav))
 	mux.Handle("/remote.php/dav/principals/", auth.RequireAuth(caldav))
+
+	// --- Contacts plugin ---
+	contactsPlugin := contacts.New(p.Plugins)
+	p.Plugins.Add(contactsPlugin)
+
+	contactsPages := contacts.NewPages(contactsPlugin, p.CSRFSecret, p.Plugins)
+	mux.Handle("GET /apps/contacts/{$}", auth.RequireAuthWeb(http.HandlerFunc(contactsPages.Index)))
+	mux.Handle("GET /apps/contacts/settings", auth.RequireAuthWeb(http.HandlerFunc(contactsPages.Settings)))
+	mux.Handle("GET /apps/contacts/contacts/{id}", auth.RequireAuth(http.HandlerFunc(contactsPages.ContactDetail)))
+	mux.Handle("POST /apps/contacts/contacts/{id}", csrfWeb(http.HandlerFunc(contactsPages.UpdateContact)))
+	mux.Handle("POST /apps/contacts/contacts", csrfWeb(http.HandlerFunc(contactsPages.CreateContact)))
+	mux.Handle("DELETE /apps/contacts/contacts/{id}", csrfWeb(http.HandlerFunc(contactsPages.DeleteContact)))
+	mux.Handle("POST /apps/contacts/books", csrfWeb(http.HandlerFunc(contactsPages.CreateAddressBookHandler)))
+	mux.Handle("DELETE /apps/contacts/books/{id}", csrfWeb(http.HandlerFunc(contactsPages.DeleteAddressBookHandler)))
+
+	// CardDAV endpoints
+	carddav := contacts.NewCardDAVHandler(contactsPlugin)
+	mux.Handle("/remote.php/dav/addressbooks/", auth.RequireAuth(carddav))
 
 	// --- Status & OCS ---
 	mux.HandleFunc("GET /status.php", compat.HandleStatus)

@@ -59,6 +59,7 @@ func (h *CalDAVHandler) handlePrincipal(w http.ResponseWriter, r *http.Request, 
 	case "PROPFIND":
 		href := "/remote.php/dav/principals/users/" + username + "/"
 		calHome := "/remote.php/dav/calendars/" + username + "/"
+		bookHome := "/remote.php/dav/addressbooks/" + username + "/"
 		writeMultiStatus(w, []davResponse{{
 			Href: href,
 			Props: []xmlProp{
@@ -66,6 +67,7 @@ func (h *CalDAVHandler) handlePrincipal(w http.ResponseWriter, r *http.Request, 
 				textProp("D:displayname", username),
 				rawProp("D:current-user-principal", fmt.Sprintf(`<D:href>%s</D:href>`, href)),
 				rawProp("C:calendar-home-set", fmt.Sprintf(`<D:href>%s</D:href>`, calHome)),
+				rawProp("CR:addressbook-home-set", fmt.Sprintf(`<D:href>%s</D:href>`, bookHome)),
 				rawProp("D:supported-report-set",
 					`<D:supported-report><D:report><C:calendar-multiget/></D:report></D:supported-report>`+
 						`<D:supported-report><D:report><C:calendar-query/></D:report></D:supported-report>`+
@@ -468,7 +470,7 @@ func (h *CalDAVHandler) handleProppatch(w http.ResponseWriter, r *http.Request, 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(207)
 	io.WriteString(w, xmlHeader)
-	io.WriteString(w, `<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:ICAL="http://apple.com/ns/ical/">`)
+	io.WriteString(w, `<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:CS="http://calendarserver.org/ns/" xmlns:ICAL="http://apple.com/ns/ical/">`)
 	io.WriteString(w, `<D:response>`)
 	fmt.Fprintf(w, `<D:href>%s</D:href>`, escapeXML(calHref))
 	io.WriteString(w, `<D:propstat><D:prop>`)
@@ -555,7 +557,7 @@ func writeMultiStatus(w http.ResponseWriter, responses []davResponse) {
 	w.WriteHeader(207)
 
 	io.WriteString(w, xmlHeader)
-	io.WriteString(w, `<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:CS="http://calendarserver.org/ns/" xmlns:ICAL="http://apple.com/ns/ical/">`)
+	io.WriteString(w, `<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:CS="http://calendarserver.org/ns/" xmlns:CR="urn:ietf:params:xml:ns:carddav" xmlns:ICAL="http://apple.com/ns/ical/">`)
 
 	for _, resp := range responses {
 		writeResponseElement(w, resp)
@@ -570,7 +572,7 @@ func writeSyncMultiStatus(w http.ResponseWriter, responses []davResponse, syncTo
 	w.WriteHeader(207)
 
 	io.WriteString(w, xmlHeader)
-	io.WriteString(w, `<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:CS="http://calendarserver.org/ns/" xmlns:ICAL="http://apple.com/ns/ical/">`)
+	io.WriteString(w, `<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:CS="http://calendarserver.org/ns/" xmlns:CR="urn:ietf:params:xml:ns:carddav" xmlns:ICAL="http://apple.com/ns/ical/">`)
 
 	for _, resp := range responses {
 		writeResponseElement(w, resp)

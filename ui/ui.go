@@ -39,6 +39,7 @@ type PageLink struct {
 var AllPages = []PageLink{
 	{Label: "Files", URL: "/apps/files/", Keywords: "documents uploads"},
 	{Label: "Calendar", URL: "/apps/calendar/", Keywords: "events schedule caldav"},
+	{Label: "Contacts", URL: "/apps/contacts/", Keywords: "address book carddav vcard people"},
 	{Label: "News", URL: "/apps/rss/", Keywords: "rss atom feed reader articles"},
 	{Label: "Profile", URL: "/settings/profile", Keywords: "account name email avatar"},
 	{Label: "Security", URL: "/settings/security", Keywords: "password app passwords"},

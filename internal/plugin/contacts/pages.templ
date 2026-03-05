@@ -1,0 +1,323 @@
+package contacts
+
+import (
+	"fmt"
+	"strconv"
+
+	"git.duckfam.us/jj-software/cog/ui"
+)
+
+templ contactsSidebar(books []AddressBook, activePath string) {
+	<nav class="sidebar">
+		<a href="/apps/contacts/" class={ sidebarClass(activePath, "/apps/contacts/") }>All Contacts</a>
+		<div class="sidebar-divider"></div>
+		<div style="padding:0.25rem 0.75rem;font-size:0.8rem;font-weight:600;text-transform:uppercase;color:var(--color-muted, #888)">Address Books</div>
+		for _, book := range books {
+			<a href={ templ.SafeURL(fmt.Sprintf("/apps/contacts/?book=%d", book.ID)) }
+				class="sidebar-item" style="display:flex;align-items:center;gap:0.5rem">
+				<span style={ fmt.Sprintf("display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s", book.Color) }></span>
+				{ book.Name }
+			</a>
+		}
+		<div class="sidebar-divider"></div>
+		<a href="/apps/contacts/settings" class={ sidebarClass(activePath, "/apps/contacts/settings") }>Settings</a>
+	</nav>
+}
+
+templ contactsIndexPage(pd ui.PageData, books []AddressBook, cards []CardWithBook) {
+	@ui.Base(pd) {
+		<div class="sidebar-layout">
+			@contactsSidebar(books, "/apps/contacts/")
+			<div class="sidebar-content">
+				<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+					<h1 style="margin:0">Contacts</h1>
+					<button class="btn btn-primary" onclick="document.getElementById('create-contact-modal').style.display='flex'">New Contact</button>
+				</div>
+				if len(cards) == 0 {
+					@ui.Card("") {
+						<p class="text-muted">No contacts yet. Create one or sync with a CardDAV client.</p>
+					}
+				} else {
+					<div id="contacts-list">
+						<table class="table">
+							<thead>
+								<tr>
+									<th></th>
+									<th>Name</th>
+									<th>Email</th>
+									<th>Phone</th>
+									<th>Book</th>
+									<th class="text-right">Actions</th>
+								</tr>
+							</thead>
+							<tbody>
+								for _, c := range cards {
+									<tr id={ fmt.Sprintf("contact-%d", c.ID) } style="cursor:pointer"
+										onclick={ templ.ComponentScript{Call: fmt.Sprintf("showContactDetail(%d)", c.ID)} }>
+										<td>
+											<span class="avatar-initials" style={ fmt.Sprintf("background:%s", c.BookColor) }>{ contactInitials(c.FN) }</span>
+										</td>
+										<td style="font-weight:500">{ c.FN }</td>
+										<td>{ c.Email }</td>
+										<td>{ c.Tel }</td>
+										<td>
+											<span style={ fmt.Sprintf("display:inline-block;width:8px;height:8px;border-radius:50%%;background:%s;vertical-align:middle;margin-right:4px", c.BookColor) }></span>
+											{ c.BookName }
+										</td>
+										<td class="text-right">
+											<button
+												class="btn btn-danger btn-sm"
+												hx-delete={ fmt.Sprintf("/apps/contacts/contacts/%d", c.ID) }
+												hx-target={ fmt.Sprintf("#contact-%d", c.ID) }
+												hx-swap="outerHTML"
+												hx-confirm="Delete this contact?"
+												onclick="event.stopPropagation()"
+											>Delete</button>
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				}
+			</div>
+		</div>
+		<!-- Contact detail modal -->
+		<div id="contact-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+			<div class="modal-content" id="contact-modal-body"></div>
+		</div>
+		<!-- Create contact modal -->
+		<div id="create-contact-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+			<div class="modal-content">
+				<h2 style="margin-top:0">New Contact</h2>
+				<form method="post" action="/apps/contacts/contacts">
+					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+					<div class="form-group">
+						<label for="cc-book">Address Book</label>
+						<select class="form-control" id="cc-book" name="address_book_id">
+							for _, book := range books {
+								<option value={ strconv.FormatInt(book.ID, 10) }>{ book.Name }</option>
+							}
+						</select>
+					</div>
+					<div class="form-group">
+						<label for="cc-fn">Name</label>
+						<input class="form-control" type="text" id="cc-fn" name="fn" required/>
+					</div>
+					<div class="form-group">
+						<label for="cc-email">Email</label>
+						<input class="form-control" type="email" id="cc-email" name="email"/>
+					</div>
+					<div class="form-group">
+						<label for="cc-tel">Phone</label>
+						<input class="form-control" type="tel" id="cc-tel" name="tel"/>
+					</div>
+					<div class="flex gap-1" style="justify-content:flex-end">
+						<button type="button" class="btn" onclick="document.getElementById('create-contact-modal').style.display='none'">Cancel</button>
+						<button type="submit" class="btn btn-primary">Create</button>
+					</div>
+				</form>
+			</div>
+		</div>
+		<style>
+			.modal-overlay {
+				position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+				background: rgba(0,0,0,0.5); z-index: 1000;
+				display: flex; align-items: center; justify-content: center;
+			}
+			.modal-content {
+				background: var(--color-bg, #fff); border-radius: 8px;
+				padding: 1.5rem; max-width: 500px; width: 90%;
+				max-height: 80vh; overflow-y: auto;
+				box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+			}
+			.avatar-initials {
+				display: inline-flex; align-items: center; justify-content: center;
+				width: 32px; height: 32px; border-radius: 50%;
+				color: #fff; font-weight: 600; font-size: 0.8rem;
+			}
+		</style>
+		<script>
+		function showContactDetail(id) {
+			fetch('/apps/contacts/contacts/' + id, {
+				headers: {'X-CSRF-Token': document.querySelector('[name=csrf_token]').value}
+			})
+			.then(function(r) { return r.text(); })
+			.then(function(html) {
+				document.getElementById('contact-modal-body').innerHTML = html;
+				document.getElementById('contact-modal').style.display = 'flex';
+			});
+		}
+		</script>
+	}
+}
+
+templ contactDetailModal(pd ui.PageData, c *Card, book *AddressBook, books []AddressBook) {
+	<h2 style="margin-top:0">{ c.FN }</h2>
+	if c.Email != "" {
+		<p><strong>Email:</strong> <a href={ templ.SafeURL("mailto:" + c.Email) }>{ c.Email }</a></p>
+	}
+	if c.Tel != "" {
+		<p><strong>Phone:</strong> <a href={ templ.SafeURL("tel:" + c.Tel) }>{ c.Tel }</a></p>
+	}
+	if book != nil {
+		<p class="text-muted" style="font-size:0.85rem">
+			<span style={ fmt.Sprintf("display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s;vertical-align:middle", book.Color) }></span>
+			{ " " + book.Name }
+		</p>
+	}
+	<div class="sidebar-divider" style="margin:1rem 0"></div>
+	<h3>Edit Contact</h3>
+	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/contacts/contacts/%d", c.ID)) }>
+		<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+		<div class="form-group">
+			<label for="em-book">Address Book</label>
+			<select class="form-control" id="em-book" name="address_book_id">
+				for _, b := range books {
+					if b.ID == c.AddressBookID {
+						<option value={ strconv.FormatInt(b.ID, 10) } selected>{ b.Name }</option>
+					} else {
+						<option value={ strconv.FormatInt(b.ID, 10) }>{ b.Name }</option>
+					}
+				}
+			</select>
+		</div>
+		<div class="form-group">
+			<label for="em-fn">Name</label>
+			<input class="form-control" type="text" id="em-fn" name="fn" value={ c.FN } required/>
+		</div>
+		<div class="form-group">
+			<label for="em-email">Email</label>
+			<input class="form-control" type="email" id="em-email" name="email" value={ c.Email }/>
+		</div>
+		<div class="form-group">
+			<label for="em-tel">Phone</label>
+			<input class="form-control" type="tel" id="em-tel" name="tel" value={ c.Tel }/>
+		</div>
+		<div class="flex gap-1" style="justify-content:space-between">
+			<button type="button" class="btn btn-danger"
+				hx-delete={ fmt.Sprintf("/apps/contacts/contacts/%d", c.ID) }
+				hx-confirm="Delete this contact?"
+				hx-on::after-request="document.getElementById('contact-modal').style.display='none';location.reload()"
+			>Delete</button>
+			<div class="flex gap-1">
+				<button type="button" class="btn" onclick="document.getElementById('contact-modal').style.display='none'">Cancel</button>
+				<button type="submit" class="btn btn-primary">Save</button>
+			</div>
+		</div>
+	</form>
+}
+
+templ contactsSettingsPage(pd ui.PageData, books []AddressBook) {
+	@ui.Base(pd) {
+		<div class="sidebar-layout">
+			@contactsSidebar(books, "/apps/contacts/settings")
+			<div class="sidebar-content">
+				<h1>Contacts Settings</h1>
+				@ui.Card("Create Address Book") {
+					<form method="post" action="/apps/contacts/books" class="flex gap-1 items-end">
+						<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+						<div class="form-group" style="margin-bottom:0">
+							<label for="name">Name</label>
+							<input class="form-control" type="text" id="name" name="name" placeholder="Work" required/>
+						</div>
+						<div class="form-group" style="margin-bottom:0">
+							<label for="uid">URL slug</label>
+							<input class="form-control" type="text" id="uid" name="uid" placeholder="work"/>
+						</div>
+						<div class="form-group" style="margin-bottom:0">
+							<label for="color">Color</label>
+							<input class="form-control" type="color" id="color" name="color" value="#0082c9"/>
+						</div>
+						<button class="btn btn-primary" type="submit">Create</button>
+					</form>
+				}
+				@ui.Card("Address Books") {
+					if len(books) == 0 {
+						<p class="text-muted">No address books.</p>
+					} else {
+						<table class="table">
+							<thead>
+								<tr>
+									<th>Color</th>
+									<th>Name</th>
+									<th>UID</th>
+									<th>CTag</th>
+									<th class="text-right">Actions</th>
+								</tr>
+							</thead>
+							<tbody>
+								for _, book := range books {
+									<tr id={ fmt.Sprintf("book-%d", book.ID) }>
+										<td><span style={ fmt.Sprintf("display:inline-block;width:16px;height:16px;border-radius:50%%;background:%s", book.Color) }></span></td>
+										<td>{ book.Name }</td>
+										<td>{ book.UID }</td>
+										<td>{ strconv.FormatInt(book.CTag, 10) }</td>
+										<td class="text-right">
+											<button
+												class="btn btn-danger btn-sm"
+												hx-delete={ fmt.Sprintf("/apps/contacts/books/%d", book.ID) }
+												hx-target={ fmt.Sprintf("#book-%d", book.ID) }
+												hx-swap="outerHTML"
+												hx-confirm="Delete this address book and all its contacts?"
+											>Delete</button>
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					}
+				}
+				@ui.Card("CardDAV Access") {
+					<p class="text-muted">
+						Configure your CardDAV client with:
+					</p>
+					<ul>
+						<li><strong>Server:</strong> <code>your-server-url</code></li>
+						<li><strong>Path:</strong> <code>/remote.php/dav</code></li>
+						<li><strong>Username/Password:</strong> your Cog credentials or an app password</li>
+					</ul>
+				}
+			</div>
+		</div>
+	}
+}
+
+func sidebarClass(activePath, itemPath string) string {
+	if activePath == itemPath {
+		return "sidebar-item active"
+	}
+	return "sidebar-item"
+}
+
+func contactInitials(fn string) string {
+	if fn == "" {
+		return "?"
+	}
+	parts := splitName(fn)
+	if len(parts) >= 2 {
+		return string([]rune(parts[0])[:1]) + string([]rune(parts[len(parts)-1])[:1])
+	}
+	runes := []rune(fn)
+	if len(runes) >= 2 {
+		return string(runes[:2])
+	}
+	return string(runes[:1])
+}
+
+func splitName(s string) []string {
+	var parts []string
+	start := 0
+	for i, r := range s {
+		if r == ' ' {
+			if i > start {
+				parts = append(parts, s[start:i])
+			}
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		parts = append(parts, s[start:])
+	}
+	return parts
+}
