@@ -22,26 +22,15 @@ templ adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], 
 						<th>Name</th>
 						<th>URI</th>
 						<th>Description</th>
-						<th class="text-right">Actions</th>
 					</tr>
 				</thead>
 				<tbody>
 					for v, err := range volumes {
 						if err == nil {
-						<tr id={ "volume-" + v.ID }>
+						<tr style="cursor:pointer" onclick={ goTo("/admin/volumes/" + v.ID) }>
 							<td>{ v.Name }</td>
 							<td><code>{ v.URI }</code></td>
 							<td>{ v.Description }</td>
-							<td class="text-right">
-								<a class="btn btn-outline btn-sm" href={ templ.SafeURL("/admin/volumes/" + v.ID) }>Edit</a>
-								<button
-									class="btn btn-danger btn-sm"
-									hx-delete={ "/admin/volumes/" + v.ID }
-									hx-target={ "#volume-" + v.ID }
-									hx-swap="outerHTML"
-									hx-confirm="Delete this volume?"
-								>Delete</button>
-							</td>
 						</tr>
 						}
 					}
@@ -85,6 +74,15 @@ templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, flash string, flashK
 				<button class="btn btn-primary" type="submit">Save</button>
 				<a class="btn btn-outline" href="/admin/volumes" style="margin-left:0.5rem">Back</a>
 			</form>
+		}
+		@ui.Card("Danger Zone") {
+			<p class="text-muted" style="margin-bottom:0.5rem">Deleting a volume cannot be undone.</p>
+			<button
+				class="btn btn-danger"
+				hx-delete={ "/admin/volumes/" + v.ID }
+				hx-confirm="Delete this volume? This cannot be undone."
+				hx-on::after-request="window.location='/admin/volumes'"
+			>Delete Volume</button>
 		}
 	}
 }

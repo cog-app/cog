@@ -576,8 +576,60 @@ a:hover { text-decoration: underline; }
     color: var(--color-text-muted);
     font-size: 0.9rem;
     line-height: 1.5;
-    max-height: 4.5em;
+}
+
+.rss-item-summary-line {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+}
+
+.rss-item-content {
+    font-size: 0.9rem;
+    line-height: 1.6;
+    overflow: hidden;
+    word-break: break-word;
+}
+
+.rss-item-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius);
+}
+
+/* Sidebar folders (collapsible) */
+.sidebar-folder {
+    margin: 0;
+}
+
+.sidebar-folder > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    user-select: none;
+}
+
+.sidebar-folder > summary::-webkit-details-marker {
+    display: none;
+}
+
+.sidebar-folder > summary::before {
+    content: "\25B6";
+    display: inline-block;
+    font-size: 0.6rem;
+    margin-right: 0.4rem;
+    transition: transform 0.15s;
+}
+
+.sidebar-folder[open] > summary::before {
+    transform: rotate(90deg);
 }
 
 .rss-item-active {

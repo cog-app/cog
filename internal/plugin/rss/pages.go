@@ -114,8 +114,12 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	pd := h.pageData(r, "News")
 	sb := h.buildSidebar(db, "/apps/rss/")
+	if r.URL.Query().Get("partial") == "sidebar" {
+		rssSidebar(sb).Render(r.Context(), w)
+		return
+	}
+	pd := h.pageData(r, "News")
 	items, _ := UnreadItems(db, 200)
 	rssIndexPage(pd, sb, items).Render(r.Context(), w)
 }
@@ -138,8 +142,12 @@ func (h *Pages) Feed(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "feed not found", http.StatusNotFound)
 		return
 	}
-	pd := h.pageData(r, feed.Title)
 	sb := h.buildSidebar(db, "/apps/rss/feed/"+idStr)
+	if r.URL.Query().Get("partial") == "sidebar" {
+		rssSidebar(sb).Render(r.Context(), w)
+		return
+	}
+	pd := h.pageData(r, feed.Title)
 	items, _ := FeedItems(db, id, 200)
 	rssFeedPage(pd, sb, feed, items).Render(r.Context(), w)
 }
@@ -151,8 +159,12 @@ func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	pd := h.pageData(r, "Starred")
 	sb := h.buildSidebar(db, "/apps/rss/starred")
+	if r.URL.Query().Get("partial") == "sidebar" {
+		rssSidebar(sb).Render(r.Context(), w)
+		return
+	}
+	pd := h.pageData(r, "Starred")
 	items, _ := StarredItems(db, 200)
 	rssStarredPage(pd, sb, items).Render(r.Context(), w)
 }

@@ -48,7 +48,6 @@ templ contactsIndexPage(pd ui.PageData, books []AddressBook, cards []CardWithBoo
 									<th>Phone</th>
 									<th>Org</th>
 									<th>Book</th>
-									<th class="text-right">Actions</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -69,16 +68,6 @@ templ contactsIndexPage(pd ui.PageData, books []AddressBook, cards []CardWithBoo
 										<td>
 											<span style={ fmt.Sprintf("display:inline-block;width:8px;height:8px;border-radius:50%%;background:%s;vertical-align:middle;margin-right:4px", c.BookColor) }></span>
 											{ c.BookName }
-										</td>
-										<td class="text-right">
-											<button
-												class="btn btn-danger btn-sm"
-												hx-delete={ fmt.Sprintf("/apps/contacts/contacts/%d", c.ID) }
-												hx-target={ fmt.Sprintf("#contact-%d", c.ID) }
-												hx-swap="outerHTML"
-												hx-confirm="Delete this contact?"
-												onclick="event.stopPropagation()"
-											>Delete</button>
 										</td>
 									</tr>
 								}
@@ -218,9 +207,6 @@ templ contactsIndexPage(pd ui.PageData, books []AddressBook, cards []CardWithBoo
 }
 
 templ contactDetailModal(pd ui.PageData, c *Card, book *AddressBook, books []AddressBook) {
-	if c.PhotoPath != "" {
-		<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:80px;height:80px;border-radius:50%;object-fit:cover;margin-bottom:0.75rem;display:block"/>
-	}
 	<h2 style="margin-top:0">{ c.FN }</h2>
 	<!-- Display all emails -->
 	for _, e := range ParseEmailsJSON(c.EmailsJSON) {

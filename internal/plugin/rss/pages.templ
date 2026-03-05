@@ -11,7 +11,14 @@ import (
 )
 
 templ rssSidebar(sb sidebarData) {
-	<nav class="sidebar">
+	<nav class="sidebar" id="rss-sidebar"
+		if hasPendingFeeds(sb.Feeds) {
+			hx-get={ sb.ActivePath + "?partial=sidebar" }
+			hx-trigger="every 2s"
+			hx-target="#rss-sidebar"
+			hx-swap="outerHTML"
+		}
+	>
 		<a href="/apps/rss/" class={ sidebarClass(sb.ActivePath, "/apps/rss/") }>
 			All
 			if sb.TotalUnread > 0 {
@@ -26,14 +33,14 @@ templ rssSidebar(sb sidebarData) {
 		</a>
 		<div class="sidebar-divider"></div>
 		for _, folder := range sb.Folders {
-			<div class="sidebar-group">
-				<span class="sidebar-group-label">{ folder.Name }</span>
+			<details class="sidebar-folder" data-folder-id={ strconv.FormatInt(folder.ID, 10) } open?={ isFolderActive(folder, sb) }>
+				<summary class="sidebar-group-label">{ folder.Name }</summary>
 				for _, feed := range sb.Feeds {
 					if feed.FolderID.Valid && feed.FolderID.Int64 == folder.ID {
 						@sidebarFeedLink(feed, sb)
 					}
 				}
-			</div>
+			</details>
 		}
 		for _, feed := range sb.Feeds {
 			if !feed.FolderID.Valid {
@@ -43,6 +50,27 @@ templ rssSidebar(sb sidebarData) {
 		<div class="sidebar-divider"></div>
 		<a href="/apps/rss/settings" class={ sidebarClass(sb.ActivePath, "/apps/rss/settings") }>Settings</a>
 	</nav>
+	<script>
+	// Preserve folder open/closed state across HTMX sidebar refreshes
+	(function() {
+		var openFolders = new Set();
+		document.addEventListener('htmx:beforeSwap', function(e) {
+			if (e.detail.target && e.detail.target.id === 'rss-sidebar') {
+				openFolders.clear();
+				e.detail.target.querySelectorAll('details[data-folder-id]').forEach(function(d) {
+					if (d.open) openFolders.add(d.getAttribute('data-folder-id'));
+				});
+			}
+		});
+		document.addEventListener('htmx:afterSwap', function(e) {
+			if (e.detail.target && e.detail.target.id === 'rss-sidebar') {
+				e.detail.target.querySelectorAll('details[data-folder-id]').forEach(function(d) {
+					if (openFolders.has(d.getAttribute('data-folder-id'))) d.open = true;
+				});
+			}
+		});
+	})();
+	</script>
 }
 
 templ sidebarFeedLink(feed Feed, sb sidebarData) {
@@ -140,14 +168,17 @@ templ rssItemList(items []ItemWithFeed, csrfToken string) {
 	function toggleArticle(id) {
 		var el = document.getElementById('detail-' + id);
 		var row = document.getElementById('item-' + id);
+		var summary = document.getElementById('summary-' + id);
 		if (!el) return;
 		var isOpen = el.style.display !== 'none';
 		// Close all open details
 		document.querySelectorAll('.rss-item-detail').forEach(function(d) { d.style.display = 'none'; });
 		document.querySelectorAll('.rss-item-active').forEach(function(r) { r.classList.remove('rss-item-active'); });
+		document.querySelectorAll('.rss-item-summary-line').forEach(function(s) { s.style.display = ''; });
 		if (!isOpen) {
 			el.style.display = '';
 			row.classList.add('rss-item-active');
+			if (summary) summary.style.display = 'none';
 			// Auto mark as read
 			fetch('/apps/rss/items/' + id + '/mark-read', {
 				method: 'POST',
@@ -202,8 +233,23 @@ templ rssItemRow(item ItemWithFeed, csrfToken string) {
 				<div style="font-weight:500;cursor:pointer" onclick={ templ.ComponentScript{Call: fmt.Sprintf("toggleArticle(%d)", item.ID)} }>
 					{ item.Title }
 				</div>
+				if itemSummary(item.ContentHTML) != "" {
+					<div id={ fmt.Sprintf("summary-%d", item.ID) } class="rss-item-summary-line">
+						{ itemSummary(item.ContentHTML) }
+					</div>
+				}
 			</div>
 			<div class="flex gap-1" style="flex-shrink:0">
+				if item.URL != "" {
+					<a
+						href={ templ.SafeURL(item.URL) }
+						target="_blank"
+						rel="noopener"
+						class="btn btn-outline btn-sm"
+						title="Open article"
+						onclick="event.stopPropagation()"
+					>&#8599;</a>
+				}
 				<button
 					class={ starBtnClass(item.IsStarred) }
 					hx-post={ fmt.Sprintf("/apps/rss/items/%d/star", item.ID) }
@@ -236,7 +282,11 @@ templ rssItemRow(item ItemWithFeed, csrfToken string) {
 			if itemPreviewImage(item.ContentHTML) != "" {
 				<img class="rss-item-preview-img" src={ itemPreviewImage(item.ContentHTML) } alt=""/>
 			}
-			if itemSummary(item.ContentHTML) != "" {
+			if item.ContentHTML != "" {
+				<div class="rss-item-content">
+					@templ.Raw(item.ContentHTML)
+				</div>
+			} else if itemSummary(item.ContentHTML) != "" {
 				<p class="rss-item-summary">{ itemSummary(item.ContentHTML) }</p>
 			}
 			<div style="margin-top:0.75rem;clear:both">
@@ -404,6 +454,26 @@ func sidebarFeedClass(f Feed, sb sidebarData) string {
 
 func isFeedPending(f Feed) bool {
 	return f.LastCheckedAt == 0 && f.LastError == ""
+}
+
+func hasPendingFeeds(feeds []Feed) bool {
+	for _, f := range feeds {
+		if isFeedPending(f) {
+			return true
+		}
+	}
+	return false
+}
+
+func isFolderActive(folder Folder, sb sidebarData) bool {
+	for _, feed := range sb.Feeds {
+		if feed.FolderID.Valid && feed.FolderID.Int64 == folder.ID {
+			if sb.ActivePath == fmt.Sprintf("/apps/rss/feed/%d", feed.ID) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func feedFolderName(f Feed, folders []Folder) string {

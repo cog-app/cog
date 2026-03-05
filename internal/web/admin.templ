@@ -67,29 +67,18 @@ templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], flash st
 						<th>Username</th>
 						<th>Display Name</th>
 						<th>Role</th>
-						<th class="text-right">Actions</th>
 					</tr>
 				</thead>
 				<tbody>
 					for u, err := range users {
 						if err == nil {
-						<tr id={ "user-" + u.ID }>
+						<tr style="cursor:pointer" onclick={ goTo("/admin/users/" + u.ID) }>
 							<td>{ u.Username }</td>
 							<td>{ u.DisplayName }</td>
 							<td>
 								if u.IsAdmin {
 									<span class="badge badge-admin">Admin</span>
 								}
-							</td>
-							<td class="text-right">
-								<a class="btn btn-outline btn-sm" href={ templ.SafeURL("/admin/users/" + u.ID) }>Edit</a>
-								<button
-									class="btn btn-danger btn-sm"
-									hx-delete={ "/admin/users/" + u.ID }
-									hx-target={ "#user-" + u.ID }
-									hx-swap="outerHTML"
-									hx-confirm="Delete this user?"
-								>Delete</button>
 							</td>
 						</tr>
 						}
@@ -154,6 +143,15 @@ templ adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind st
 				@ui.FormField("New Password", "new_password", "password", "", "")
 				<button class="btn btn-primary" type="submit">Reset Password</button>
 			</form>
+		}
+		@ui.Card("Danger Zone") {
+			<p class="text-muted" style="margin-bottom:0.5rem">Deleting a user removes all their data and cannot be undone.</p>
+			<button
+				class="btn btn-danger"
+				hx-delete={ "/admin/users/" + u.ID }
+				hx-confirm="Delete this user? This cannot be undone."
+				hx-on::after-request="window.location='/admin/users'"
+			>Delete User</button>
 		}
 	}
 }
