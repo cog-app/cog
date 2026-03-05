@@ -7,8 +7,11 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/ui"
 )
+
+type handler struct{ p *services.Providers }
 
 // pageData builds a PageData from the request context.
 func pageData(r *http.Request, title string, secret []byte) ui.PageData {

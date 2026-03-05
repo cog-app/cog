@@ -42,13 +42,14 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	}
 
 	// --- Web UI handlers ---
-	loginH := &loginHandler{p: p}
-	settingsH := &settingsHandler{p: p}
-	adminH := &adminHandler{p: p}
-	adminVolH := &adminVolumeHandler{p: p}
-	volBrowserH := &volumeBrowserHandler{p: p}
-	avatarH := &avatarHandler{p: p}
-	groupH := &groupHandler{p: p}
+	h := handler{p}
+	loginH := &loginHandler{h}
+	settingsH := &settingsHandler{h}
+	adminH := &adminHandler{h}
+	adminVolH := &adminVolumeHandler{h}
+	volBrowserH := &volumeBrowserHandler{h}
+	avatarH := &avatarHandler{h}
+	groupH := &groupHandler{h}
 
 	// Login/logout/register — unauthenticated
 	mux.HandleFunc("GET /login", loginH.ShowLogin)

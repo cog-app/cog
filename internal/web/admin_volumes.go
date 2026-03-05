@@ -4,10 +4,9 @@ import (
 	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	"git.duckfam.us/jj-software/cog/internal/services"
 )
 
-type adminVolumeHandler struct{ p *services.Providers }
+type adminVolumeHandler struct{ handler }
 
 func (h *adminVolumeHandler) ListVolumes(w http.ResponseWriter, r *http.Request) {
 	pd := pageDataWithNav(r, "Volumes", h.p.CSRFSecret, h.p.Plugins)

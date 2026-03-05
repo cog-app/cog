@@ -9,13 +9,12 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/seq"
-	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"golang.org/x/crypto/bcrypt"
 )
 
-type settingsHandler struct{ p *services.Providers }
+type settingsHandler struct{ handler }
 
 // RedirectToProfile redirects /settings → /settings/profile.
 func (h *settingsHandler) RedirectToProfile(w http.ResponseWriter, r *http.Request) {

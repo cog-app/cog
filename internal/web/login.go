@@ -6,12 +6,11 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
-type loginHandler struct{ p *services.Providers }
+type loginHandler struct{ handler }
 
 // safeNext validates a next-redirect parameter to prevent open redirects.
 func safeNext(next string) string {

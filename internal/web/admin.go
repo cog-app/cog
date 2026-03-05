@@ -10,7 +10,9 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
-type adminHandler struct{ p *services.Providers }
+type handler struct{ p *services.Providers }
+
+type adminHandler struct{ handler }
 
 // --- Index ---
 

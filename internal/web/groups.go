@@ -10,7 +10,6 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/seq"
-	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
@@ -18,7 +17,7 @@ import (
 )
 
 // groupHandler handles user-facing group management.
-type groupHandler struct{ p *services.Providers }
+type groupHandler struct{ handler }
 
 // canManageGroup returns true if the user is the group owner or an admin.
 func (h *groupHandler) canManageGroup(groupID string, u *user.User) bool {

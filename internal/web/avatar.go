@@ -14,11 +14,10 @@ import (
 	"unicode"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
-type avatarHandler struct{ p *services.Providers }
+type avatarHandler struct{ handler }
 
 func (h *avatarHandler) avatarsDir() string {
 	return filepath.Join(h.p.Config.DataDir, "avatars")

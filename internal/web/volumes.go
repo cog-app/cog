@@ -8,12 +8,11 @@ import (
 	"path/filepath"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 )
 
 // volumeBrowserHandler serves the volume browser UI.
-type volumeBrowserHandler struct{ p *services.Providers }
+type volumeBrowserHandler struct{ handler }
 
 func (h *volumeBrowserHandler) Browse(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
