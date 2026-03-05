@@ -207,7 +207,10 @@ func (h *Pages) DeleteFeed(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	DeleteFeed(db, id)
+	if err := DeleteFeed(db, id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -223,7 +226,10 @@ func (h *Pages) MarkFeedRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	MarkFeedRead(db, id)
+	if err := MarkFeedRead(db, id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	http.Redirect(w, r, "/apps/rss/feed/"+r.PathValue("id"), http.StatusSeeOther)
 }
 
@@ -236,7 +242,10 @@ func (h *Pages) AddFolder(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.FormValue("name")
 	if name != "" {
-		CreateFolder(db, name)
+		if _, err := CreateFolder(db, name); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 	http.Redirect(w, r, "/apps/rss/settings", http.StatusSeeOther)
 }
@@ -253,7 +262,10 @@ func (h *Pages) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	DeleteFolder(db, id)
+	if err := DeleteFolder(db, id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -269,7 +281,10 @@ func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	ToggleItemRead(db, id)
+	if err := ToggleItemRead(db, id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	// Return updated item row for HTMX swap.
 	item, err := GetItem(db, id)
 	if err != nil {
@@ -282,7 +297,7 @@ func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
 		feedTitle = feed.Title
 	}
 	iwf := ItemWithFeed{Item: *item, FeedTitle: feedTitle}
-	rssItemRow(iwf, h.pageData(r, "").CSRFToken).Render(r.Context(), w)
+	_ = rssItemRow(iwf, h.pageData(r, "").CSRFToken).Render(r.Context(), w)
 }
 
 // ToggleStar handles POST to toggle star state of an item.
@@ -297,7 +312,10 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	ToggleItemStar(db, id)
+	if err := ToggleItemStar(db, id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	item, err := GetItem(db, id)
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
@@ -309,7 +327,7 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 		feedTitle = feed.Title
 	}
 	iwf := ItemWithFeed{Item: *item, FeedTitle: feedTitle}
-	rssItemRow(iwf, h.pageData(r, "").CSRFToken).Render(r.Context(), w)
+	_ = rssItemRow(iwf, h.pageData(r, "").CSRFToken).Render(r.Context(), w)
 }
 
 // MarkAllRead handles POST to mark all items as read.
@@ -319,7 +337,10 @@ func (h *Pages) MarkAllRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	MarkAllRead(db)
+	if err := MarkAllRead(db); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	http.Redirect(w, r, "/apps/rss/", http.StatusSeeOther)
 }
 
@@ -347,7 +368,10 @@ func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ImportOPML(db, data)
+	if _, err := ImportOPML(db, data); err != nil {
+		http.Redirect(w, r, "/apps/rss/settings", http.StatusSeeOther)
+		return
+	}
 
 	// Fetch all newly imported feeds immediately in the background.
 	u := auth.UserFromContext(r.Context())

@@ -179,7 +179,11 @@ func (h *groupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add creator as an owner member.
-	h.p.Groups.AddMember(g.ID, u.ID, "OWNER")
+	if err := h.p.Groups.AddMember(g.ID, u.ID, "OWNER"); err != nil {
+		setFlash(w, "error", "Group created but failed to add owner: "+err.Error())
+		http.Redirect(w, r, "/settings/groups", http.StatusSeeOther)
+		return
+	}
 
 	http.Redirect(w, r, "/settings/groups/"+g.ID, http.StatusSeeOther)
 }
@@ -223,7 +227,9 @@ func (h *groupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.p.Groups.AddMember(groupID, target.ID, "USER")
+	if err := h.p.Groups.AddMember(groupID, target.ID, "USER"); err != nil {
+		setFlash(w, "error", "Failed to add member: "+err.Error())
+	}
 	http.Redirect(w, r, "/settings/groups/"+groupID, http.StatusSeeOther)
 }
 

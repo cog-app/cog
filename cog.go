@@ -82,7 +82,9 @@ func Main(plugins ...plugin.Plugin) {
 		if p.Volumes != nil && p.Mounts != nil {
 			if defVol, volErr := p.Volumes.GetByName("default"); volErr == nil {
 				subpath := u.Username + "/files"
-				p.Mounts.Create(u.ID, "/", defVol.ID, subpath, false)
+				if _, err := p.Mounts.Create(u.ID, "/", defVol.ID, subpath, false); err != nil {
+					log.Printf("create mount for %s: %v", u.Username, err)
+				}
 			}
 		}
 		fmt.Printf("Created user %q (id: %s)\n", u.Username, u.ID)

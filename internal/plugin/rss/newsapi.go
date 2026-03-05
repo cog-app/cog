@@ -218,7 +218,10 @@ func (a *NewsAPI) moveFeed(w http.ResponseWriter, r *http.Request, db *sql.DB, i
 	var body struct {
 		FolderID *int64 `json:"folderId"`
 	}
-	json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
 	var folderID sql.NullInt64
 	if body.FolderID != nil && *body.FolderID > 0 {
 		folderID = sql.NullInt64{Int64: *body.FolderID, Valid: true}
@@ -249,11 +252,20 @@ func (a *NewsAPI) markFeedRead(w http.ResponseWriter, r *http.Request, db *sql.D
 	var body struct {
 		NewestItemID int64 `json:"newestItemId"`
 	}
-	json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
 	if body.NewestItemID > 0 {
-		MarkFeedReadBefore(db, id, body.NewestItemID)
+		if err := MarkFeedReadBefore(db, id, body.NewestItemID); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 	} else {
-		MarkFeedRead(db, id)
+		if err := MarkFeedRead(db, id); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -289,12 +301,18 @@ func (a *NewsAPI) getUpdatedItems(w http.ResponseWriter, r *http.Request, db *sq
 }
 
 func (a *NewsAPI) setItemRead(w http.ResponseWriter, db *sql.DB, id int64, read bool) {
-	SetItemRead(db, id, read)
+	if err := SetItemRead(db, id, read); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
 func (a *NewsAPI) setItemStarred(w http.ResponseWriter, db *sql.DB, id int64, starred bool) {
-	SetItemStarred(db, id, starred)
+	if err := SetItemStarred(db, id, starred); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -302,11 +320,19 @@ func (a *NewsAPI) bulkRead(w http.ResponseWriter, r *http.Request, db *sql.DB, r
 	var body struct {
 		Items []int64 `json:"items"`
 	}
-	json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	var err error
 	if read {
-		MarkItemsRead(db, body.Items)
+		err = MarkItemsRead(db, body.Items)
 	} else {
-		MarkItemsUnread(db, body.Items)
+		err = MarkItemsUnread(db, body.Items)
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -315,11 +341,19 @@ func (a *NewsAPI) bulkStar(w http.ResponseWriter, r *http.Request, db *sql.DB, s
 	var body struct {
 		Items []int64 `json:"items"`
 	}
-	json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	var err error
 	if star {
-		StarItems(db, body.Items)
+		err = StarItems(db, body.Items)
 	} else {
-		UnstarItems(db, body.Items)
+		err = UnstarItems(db, body.Items)
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -406,7 +440,7 @@ func itemsToAPI(items []ItemWithFeed) []map[string]any {
 func writeJSON(w http.ResponseWriter, code int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func pathID(path, prefix string) int64 {

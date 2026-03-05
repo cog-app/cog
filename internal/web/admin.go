@@ -139,7 +139,9 @@ func (h *adminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	// Delete mounts before user (no ON DELETE CASCADE).
 	if h.p.Mounts != nil {
-		h.p.Mounts.DeleteByUser(id)
+		if err := h.p.Mounts.DeleteByUser(id); err != nil {
+			log.Printf("admin: delete mounts for user %s: %v", id, err)
+		}
 	}
 	if err := h.p.Users.Delete(id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -176,7 +178,9 @@ func (h *adminHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ownerID != "" {
-		h.p.Groups.AddMember(g.ID, ownerID, "OWNER")
+		if err := h.p.Groups.AddMember(g.ID, ownerID, "OWNER"); err != nil {
+			log.Printf("admin: add owner %s to group %s: %v", ownerID, g.ID, err)
+		}
 	}
 	http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
 }
@@ -233,14 +237,19 @@ func (h *adminHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	if memberType == "" {
 		memberType = "USER"
 	}
-	h.p.Groups.AddMember(groupID, memberID, memberType)
+	if err := h.p.Groups.AddMember(groupID, memberID, memberType); err != nil {
+		setFlash(w, "error", "Failed to add member: "+err.Error())
+	}
 	http.Redirect(w, r, "/admin/groups/"+groupID, http.StatusSeeOther)
 }
 
 func (h *adminHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("id")
 	memberID := r.PathValue("member_id")
-	h.p.Groups.RemoveMember(groupID, memberID)
+	if err := h.p.Groups.RemoveMember(groupID, memberID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -304,8 +313,12 @@ func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		expiryHours = settings.DefaultInviteExpiryHours
 	}
 	if h.p.Settings != nil {
-		h.p.Settings.SetBool(settings.KeyPublicRegistration, pubReg)
-		h.p.Settings.SetInt(settings.KeyInviteExpiryHours, expiryHours)
+		if err := h.p.Settings.SetBool(settings.KeyPublicRegistration, pubReg); err != nil {
+			log.Printf("admin: save public_registration: %v", err)
+		}
+		if err := h.p.Settings.SetInt(settings.KeyInviteExpiryHours, expiryHours); err != nil {
+			log.Printf("admin: save invite_expiry_hours: %v", err)
+		}
 	}
 	setFlash(w, "success", "Settings saved.")
 	http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)

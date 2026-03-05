@@ -25,6 +25,5 @@ func OpenHooked(path string, hook func(op int, db, table string, rowid int64)) (
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
 	return db, nil
 }

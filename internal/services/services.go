@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -80,7 +81,9 @@ func NewFromDB(cfg config.Config, sysDB *sql.DB) *Providers {
 	mounts := mount.NewStore(sysDB)
 
 	// Bootstrap default volume and root mounts for existing users.
-	mount.Bootstrap(cfg.DataDir, users, volumes, mounts)
+	if err := mount.Bootstrap(cfg.DataDir, users, volumes, mounts); err != nil {
+		log.Printf("mount bootstrap: %v", err)
+	}
 
 	secret := make([]byte, 32)
 	_, _ = rand.Read(secret) // crypto/rand.Read always succeeds or panics
