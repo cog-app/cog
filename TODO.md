@@ -1,8 +1,3 @@
-- Calendar
-  - Implement reminders as browser notifications
-  - If RRULE is too complex for GUI; display as a textbox for infinite capability. Use github.com/teambition/rrule-go (add dependency) to replace existing RRULE handling code.
-  - Regardless of textbox or GUI, describe RRULE configuration as human-readable text (rrule-go can do this).
-  - When editing an event, don't disable the color picker. Set the picker to the default color on the calendar. If the value changes, check the box. If the box is unchecked, reset the color to the calendar's default. When saving, if the box is unchecked, leave it blank.
 - User settings
   - When you update your profile picture, it doesn't update until you force a cache update. Store a timestamp of when the profile was uploaded and include as query parameter for cache busting.
 - Admin area

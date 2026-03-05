@@ -280,7 +280,7 @@ func EventsInRange(db *sql.DB, start, end int64) ([]EventWithCalendar, error) {
 		e.dtstart, e.dtend, e.is_all_day, e.color, e.ics_data, e.created_at, e.updated_at,
 		c.name, c.color
 		FROM events e JOIN calendars c ON e.calendar_id = c.id
-		WHERE e.dtstart < ? AND e.dtend > ?
+		WHERE e.dtstart < ? AND (e.dtend > ? OR e.ics_data LIKE '%RRULE:%')
 		ORDER BY e.dtstart`, end, start)
 	if err != nil {
 		return nil, err
@@ -331,7 +331,7 @@ func DeletedEventsSince(db *sql.DB, calendarID, sinceToken int64) ([]string, err
 func EventsInRangeForCalendar(db *sql.DB, calendarID, start, end int64) ([]Event, error) {
 	rows, err := db.Query(`SELECT id, calendar_id, uid, etag, summary, location, description,
 		dtstart, dtend, is_all_day, ics_data, created_at, updated_at
-		FROM events WHERE calendar_id = ? AND dtstart < ? AND dtend > ?
+		FROM events WHERE calendar_id = ? AND dtstart < ? AND (dtend > ? OR ics_data LIKE '%RRULE:%')
 		ORDER BY dtstart`, calendarID, end, start)
 	if err != nil {
 		return nil, err

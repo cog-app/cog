@@ -444,7 +444,8 @@ func buildRRule(r *http.Request) string {
 	r.ParseForm()
 	freq := r.FormValue("rrule_freq")
 	if freq == "CUSTOM" {
-		return strings.TrimSpace(r.FormValue("rrule"))
+		v := strings.TrimSpace(r.FormValue("rrule"))
+		return strings.TrimPrefix(v, "RRULE:")
 	}
 	if freq == "" || freq == "NONE" {
 		return ""

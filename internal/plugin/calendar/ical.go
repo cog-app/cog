@@ -113,7 +113,7 @@ func ParseVEvent(icsData string) (VEventFields, error) {
 			t, _ := parseDateTime(propFull, value)
 			f.DTEnd = t
 		case "RRULE":
-			f.RRule = value
+			f.RRule = strings.TrimPrefix(value, "RRULE:")
 		case "ATTENDEE":
 			af := AttendeeField{}
 			// Extract email from MAILTO: value
@@ -235,6 +235,8 @@ func GenerateICSFull(uid, summary, description, location string, dtstart, dtend 
 		fmt.Fprintf(&b, "LOCATION:%s\r\n", escapeICS(location))
 	}
 	if rrule != "" {
+		// Strip any "RRULE:" prefix the caller may have included.
+		rrule = strings.TrimPrefix(rrule, "RRULE:")
 		fmt.Fprintf(&b, "RRULE:%s\r\n", rrule)
 	}
 
