@@ -62,7 +62,7 @@ func main() {
 	// Idempotent seed: only create if DB doesn't exist yet
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		log.Printf("Creating test user %s:%s (admin)", testUser, testPass)
-		create := exec.Command(bin, "--db", dbPath, "--create-user", testUser+":"+testPass)
+		create := exec.Command(bin, "--db", dbPath, "--data-dir", filepath.Join(devDir, "data"), "--create-user", testUser+":"+testPass)
 		create.Stdout = os.Stdout
 		create.Stderr = os.Stderr
 		if err := create.Run(); err != nil {
@@ -71,6 +71,9 @@ func main() {
 	} else {
 		log.Printf("Using existing DB (user: %s)", testUser)
 	}
+
+	// Seed sample files so the UI isn't empty.
+	seedFiles(filepath.Join(devDir, "data", testUser, "files"))
 
 	// Open log file for tee
 	logPath := filepath.Join(devDir, "cog.log")
@@ -119,5 +122,35 @@ func main() {
 			os.Exit(exit.ExitCode())
 		}
 		log.Fatal(err)
+	}
+}
+
+// seedFiles creates sample files and directories if they don't already exist.
+func seedFiles(filesDir string) {
+	type seedFile struct {
+		path    string
+		content string
+	}
+	seeds := []seedFile{
+		{"Documents/welcome.md", "# Welcome to Cog\n\nThis is a sample document.\n"},
+		{"Documents/notes.txt", "Some quick notes for testing.\n"},
+		{"Photos/readme.txt", "Drop images here.\n"},
+		{"Projects/hello.go", "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello from Cog!\")\n}\n"},
+	}
+
+	for _, s := range seeds {
+		p := filepath.Join(filesDir, s.path)
+		if _, err := os.Stat(p); err == nil {
+			continue // already exists
+		}
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			log.Printf("seed: mkdir %s: %v", filepath.Dir(p), err)
+			continue
+		}
+		if err := os.WriteFile(p, []byte(s.content), 0o644); err != nil {
+			log.Printf("seed: write %s: %v", p, err)
+			continue
+		}
+		log.Printf("Seeded %s", s.path)
 	}
 }
