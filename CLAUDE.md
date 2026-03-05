@@ -20,10 +20,10 @@ go generate ./...
 go test ./...
 
 # Run a single test
-go test -run TestNCLoginFlow ./internal/server
+go test -run TestNCLoginFlow ./internal/web
 
 # Run tests in a specific package
-go test ./internal/server
+go test ./internal/web
 ```
 
 Performance is important. Avoid redundant work, N+1 queries, and unnecessary round-trips. Use strong-types when easily available.
@@ -36,7 +36,7 @@ Avoid running tools outside of the Go tool. Tools should be versioned with go.mo
 
 **Service layer** (`internal/services/services.go`): Central `Providers` struct wires together all dependencies (Users, Sessions, AppPasswords, Plugins, Shares, Files, DB). Constructed via `services.New(cfg)`.
 
-**HTTP routing** (`internal/server/server.go`): Uses Go 1.22+ pattern-matched routing (`GET /path`). Auth middleware wraps the entire mux; handlers extract the user via `auth.UserFromContext(ctx)`.
+**HTTP routing** (`internal/web/routes.go`): Uses Go 1.22+ pattern-matched routing (`GET /path`). Auth middleware wraps the entire mux; handlers extract the user via `auth.UserFromContext(ctx)`. Handler structs embed a `handler` base type holding `*services.Providers`.
 
 **Auth chain** (`internal/auth/`): Checks session cookie → Basic Auth → Bearer token (app passwords). `RequireAuth()` wraps handlers to enforce authentication.
 

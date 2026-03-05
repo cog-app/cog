@@ -5,12 +5,9 @@ import (
 	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/seq"
-	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
-
-type handler struct{ p *services.Providers }
 
 type adminHandler struct{ handler }
 
