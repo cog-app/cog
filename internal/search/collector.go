@@ -124,9 +124,6 @@ func (c *Collector) run(ctx context.Context) {
 
 func (c *Collector) flush(pending map[SearchSource]map[int64]Op) {
 	db := c.dbFunc()
-	if db == nil {
-		return
-	}
 
 	for src, rows := range pending {
 		var enrichIDs []int64
@@ -176,11 +173,28 @@ func (c *Collector) flush(pending map[SearchSource]map[int64]Op) {
 // Used for initial bootstrap or re-indexing.
 func (c *Collector) FullSync() error {
 	db := c.dbFunc()
-	if db == nil {
-		return fmt.Errorf("database not available")
-	}
 
 	for _, src := range c.sources {
+		// Sources that manage their own DB implement SelfSyncer.
+		if ss, ok := src.(SelfSyncer); ok {
+			docs, err := ss.SelfSync()
+			if err != nil {
+				log.Printf("search: full sync self-sync %s: %v", src.Name(), err)
+				continue
+			}
+			if len(docs) > 0 {
+				if err := c.index.Batch(docs, nil); err != nil {
+					log.Printf("search: full sync batch %s: %v", src.Name(), err)
+				}
+			}
+			continue
+		}
+
+		if db == nil {
+			log.Printf("search: full sync skip %s: no database", src.Name())
+			continue
+		}
+
 		// Query all rowIDs from each table.
 		for _, table := range src.Tables() {
 			rows, err := db.Query(fmt.Sprintf("SELECT rowid FROM %s", table))

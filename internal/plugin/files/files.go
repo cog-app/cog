@@ -76,6 +76,25 @@ func (p *Plugin) Register(registrar plugin.Registrar) error {
 			{Column: "name", Field: "name"},
 			{Column: "path", Field: "subtext"},
 		},
+		ContentFunc: func(filesDir string, cols map[string]string) string {
+			if !isTextMIME(cols["mime_type"]) {
+				return ""
+			}
+			path := cols["path"]
+			if path == "" {
+				return ""
+			}
+			fsPath := filepath.Join(filesDir, path)
+			info, err := os.Stat(fsPath)
+			if err != nil || info.Size() > 1<<20 { // skip >1MB
+				return ""
+			}
+			data, err := os.ReadFile(fsPath)
+			if err != nil {
+				return ""
+			}
+			return string(data)
+		},
 	})
 	return nil
 }
@@ -541,6 +560,19 @@ func generateETag() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// isTextMIME returns true for MIME types whose content should be indexed.
+func isTextMIME(m string) bool {
+	if strings.HasPrefix(m, "text/") {
+		return true
+	}
+	switch m {
+	case "application/json", "application/xml", "application/javascript",
+		"application/x-yaml", "application/toml":
+		return true
+	}
+	return false
 }
 
 // ResourceType returns the full resource type string for sharing.

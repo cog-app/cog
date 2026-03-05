@@ -13,3 +13,10 @@ type SearchSource interface {
 	// Row IDs not found in the database are considered deleted (omitted from results).
 	Enrich(db *sql.DB, rowIDs []int64) ([]Document, error)
 }
+
+// SelfSyncer is an optional interface for SearchSource implementations that
+// manage their own database connection. The collector calls SelfSync instead
+// of querying rowIDs from the collector's shared database.
+type SelfSyncer interface {
+	SelfSync() ([]Document, error)
+}

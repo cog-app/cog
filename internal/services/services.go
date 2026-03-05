@@ -67,6 +67,7 @@ func New(cfg config.Config) (*Providers, error) {
 	// Wire the DB hook factory so per-user plugin DBs get update hooks.
 	p.Plugins.SetDBHookFactory(mgr.UserDBHook)
 	mgr.SetUserDBFunc(p.Plugins.PluginDB)
+	mgr.SetFilesDirFunc(p.Plugins.UserFilesDir)
 
 	return p, nil
 }

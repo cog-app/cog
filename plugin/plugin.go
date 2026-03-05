@@ -126,6 +126,10 @@ type SearchSourceDef struct {
 	EnrichSQL string
 	// Fields maps SQL column names to index field names (name, subtext, content).
 	Fields []SearchField
+	// ContentFunc optionally returns text content to index for a row.
+	// Receives the user's files directory and all SQL column values (by column name).
+	// Return "" to skip content indexing for this row. Internal plugins only.
+	ContentFunc func(filesDir string, cols map[string]string) string
 }
 
 // SearchField maps a SQL column to an index field.

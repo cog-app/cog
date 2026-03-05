@@ -12,6 +12,8 @@ import (
 type PluginSearchSource struct {
 	pluginID string
 	def      plugin.SearchSourceDef
+	// FilesDir is the user's files directory, set by userPluginSource before Enrich.
+	FilesDir string
 }
 
 // NewPluginSearchSource creates a SearchSource from a plugin's search definition.
@@ -85,6 +87,26 @@ func (s *PluginSearchSource) Enrich(db *sql.DB, rowIDs []int64) ([]Document, err
 						fields[f.Field] = fmt.Sprint(sv)
 					}
 				}
+			}
+		}
+
+		// If ContentFunc is set, build a cols map and call it.
+		if s.def.ContentFunc != nil && s.FilesDir != "" {
+			colMap := make(map[string]string, len(cols))
+			for ci, c := range cols {
+				if v := vals[ci]; v != nil {
+					switch sv := v.(type) {
+					case string:
+						colMap[c] = sv
+					case []byte:
+						colMap[c] = string(sv)
+					default:
+						colMap[c] = fmt.Sprint(sv)
+					}
+				}
+			}
+			if content := s.def.ContentFunc(s.FilesDir, colMap); content != "" {
+				fields["content"] = content
 			}
 		}
 

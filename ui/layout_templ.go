@@ -759,7 +759,7 @@ func hitURL(hit search.Hit) string {
 	}
 
 	switch source {
-	case "files:files":
+	case "files":
 		if sub, ok := hit.Fields["subtext"].(string); ok && sub != "" {
 			return "/apps/files" + sub
 		}

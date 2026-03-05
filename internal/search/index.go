@@ -3,6 +3,7 @@ package search
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/blevesearch/bleve/v2"
 	"github.com/blevesearch/bleve/v2/mapping"
@@ -58,7 +59,9 @@ func (i *Index) Search(query string, limit, offset int) (*Result, error) {
 	if limit <= 0 {
 		limit = 20
 	}
-	q := bleve.NewMatchQuery(query)
+	matchQ := bleve.NewMatchQuery(query)
+	prefixQ := bleve.NewPrefixQuery(strings.ToLower(query))
+	q := bleve.NewDisjunctionQuery(matchQ, prefixQ)
 	req := bleve.NewSearchRequestOptions(q, limit, offset, false)
 	req.Fields = []string{"name", "subtext", "content", "source"}
 	resp, err := i.idx.Search(req)

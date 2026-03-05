@@ -30,8 +30,10 @@ type Manager struct {
 
 	// userDBFunc returns the per-user plugin DB for a given username+pluginID.
 	userDBFunc func(username, pluginID string) (*sql.DB, error)
-	ctx        context.Context
-	cancel     context.CancelFunc
+	// filesDirFunc returns the files directory for a given username.
+	filesDirFunc func(username string) string
+	ctx          context.Context
+	cancel       context.CancelFunc
 }
 
 // NewManager creates a manager. Call SetSystemDB and Start to initialize.
@@ -54,6 +56,11 @@ func (m *Manager) SetSystemDB(db *sql.DB) {
 // SetUserDBFunc sets the function to get per-user plugin databases.
 func (m *Manager) SetUserDBFunc(f func(username, pluginID string) (*sql.DB, error)) {
 	m.userDBFunc = f
+}
+
+// SetFilesDirFunc sets the function to resolve a user's files directory.
+func (m *Manager) SetFilesDirFunc(f func(username string) string) {
+	m.filesDirFunc = f
 }
 
 // RegisterPluginSource records a plugin's search source definition.
@@ -192,7 +199,7 @@ func (m *Manager) ensureUserIndex(username string) (*userSearch, error) {
 	// Register plugin sources for this user.
 	for pluginID, defs := range m.pluginSources {
 		for _, def := range defs {
-			src := newUserPluginSource(username, pluginID, def, m.userDBFunc)
+			src := newUserPluginSource(username, pluginID, def, m.userDBFunc, m.filesDirFunc)
 			collector.RegisterSource(src)
 		}
 	}
@@ -211,23 +218,66 @@ func (m *Manager) ensureUserIndex(username string) (*userSearch, error) {
 
 // userPluginSource wraps PluginSearchSource but fetches the DB per-user.
 type userPluginSource struct {
-	username string
-	pluginID string
-	inner    *PluginSearchSource
-	dbFunc   func(username, pluginID string) (*sql.DB, error)
+	username     string
+	pluginID     string
+	inner        *PluginSearchSource
+	dbFunc       func(username, pluginID string) (*sql.DB, error)
+	filesDirFunc func(username string) string
 }
 
-func newUserPluginSource(username, pluginID string, def plugin.SearchSourceDef, dbFunc func(string, string) (*sql.DB, error)) *userPluginSource {
+func newUserPluginSource(username, pluginID string, def plugin.SearchSourceDef, dbFunc func(string, string) (*sql.DB, error), filesDirFunc func(string) string) *userPluginSource {
 	return &userPluginSource{
-		username: username,
-		pluginID: pluginID,
-		inner:    NewPluginSearchSource(pluginID, def),
-		dbFunc:   dbFunc,
+		username:     username,
+		pluginID:     pluginID,
+		inner:        NewPluginSearchSource(pluginID, def),
+		dbFunc:       dbFunc,
+		filesDirFunc: filesDirFunc,
 	}
 }
 
 func (s *userPluginSource) Name() string     { return s.inner.Name() }
 func (s *userPluginSource) Tables() []string { return s.inner.Tables() }
+
+func (s *userPluginSource) SelfSync() ([]Document, error) {
+	if s.dbFunc == nil {
+		return nil, fmt.Errorf("no db func for user %s plugin %s", s.username, s.pluginID)
+	}
+	db, err := s.dbFunc(s.username, s.pluginID)
+	if err != nil {
+		return nil, err
+	}
+
+	var allDocs []Document
+	for _, table := range s.inner.Tables() {
+		rows, err := db.Query(fmt.Sprintf("SELECT rowid FROM %s", table))
+		if err != nil {
+			log.Printf("search: self-sync query %s: %v", table, err)
+			continue
+		}
+
+		var rowIDs []int64
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				continue
+			}
+			rowIDs = append(rowIDs, id)
+		}
+		rows.Close()
+
+		if len(rowIDs) == 0 {
+			continue
+		}
+
+		// Enrich via the normal path (which uses its own DB).
+		docs, err := s.Enrich(nil, rowIDs)
+		if err != nil {
+			return nil, err
+		}
+		allDocs = append(allDocs, docs...)
+	}
+	return allDocs, nil
+}
 
 func (s *userPluginSource) Enrich(_ *sql.DB, rowIDs []int64) ([]Document, error) {
 	if s.dbFunc == nil {
@@ -236,6 +286,9 @@ func (s *userPluginSource) Enrich(_ *sql.DB, rowIDs []int64) ([]Document, error)
 	db, err := s.dbFunc(s.username, s.pluginID)
 	if err != nil {
 		return nil, err
+	}
+	if s.filesDirFunc != nil {
+		s.inner.FilesDir = s.filesDirFunc(s.username)
 	}
 	return s.inner.Enrich(db, rowIDs)
 }
