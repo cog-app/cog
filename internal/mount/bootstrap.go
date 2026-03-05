@@ -30,13 +30,11 @@ func Bootstrap(dataDir string, users *user.Store, volumes *volume.Store, mounts 
 	}
 
 	// Ensure every user has a root mount.
-	allUsers, err := users.List()
-	if err != nil {
-		return fmt.Errorf("list users: %w", err)
-	}
-
-	for _, u := range allUsers {
-		_, err := mounts.GetUserRoot(u.ID)
+	for u, err := range users.List() {
+		if err != nil {
+			return fmt.Errorf("list users: %w", err)
+		}
+		_, err = mounts.GetUserRoot(u.ID)
 		if errors.Is(err, ErrNotFound) {
 			subpath := u.Username + "/files"
 			if _, err := mounts.Create(u.ID, "/", defaultVol.ID, subpath, false); err != nil {

@@ -8,28 +8,24 @@ import (
 	"path/filepath"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 )
 
-// VolumeBrowserHandler serves the volume browser UI.
-type VolumeBrowserHandler struct {
-	Access   *volume.Access
-	Registry *plugin.Registry
-	Secret   []byte
-}
+// volumeBrowserHandler serves the volume browser UI.
+type volumeBrowserHandler struct{ p *services.Providers }
 
-func (h *VolumeBrowserHandler) Browse(w http.ResponseWriter, r *http.Request) {
+func (h *volumeBrowserHandler) Browse(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	ok, err := h.Access.CanAccess(u.ID, volID)
+	ok, err := h.p.Access.CanAccess(u.ID, volID)
 	if err != nil || !ok {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
-	vol, err := h.Access.Volumes.GetByID(volID)
+	vol, err := h.p.Access.Volumes.GetByID(volID)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -52,21 +48,21 @@ func (h *VolumeBrowserHandler) Browse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pd := pageDataWithNav(r, "Browse: "+vol.Name, h.Secret, h.Registry)
+	pd := pageDataWithNav(r, "Browse: "+vol.Name, h.p.CSRFSecret, h.p.Plugins)
 	volumeBrowsePage(pd, vol, dirPath, items).Render(r.Context(), w)
 }
 
-func (h *VolumeBrowserHandler) Download(w http.ResponseWriter, r *http.Request) {
+func (h *volumeBrowserHandler) Download(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	ok, _ := h.Access.CanAccess(u.ID, volID)
+	ok, _ := h.p.Access.CanAccess(u.ID, volID)
 	if !ok {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
-	vol, err := h.Access.Volumes.GetByID(volID)
+	vol, err := h.p.Access.Volumes.GetByID(volID)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -96,17 +92,17 @@ func (h *VolumeBrowserHandler) Download(w http.ResponseWriter, r *http.Request) 
 	io.Copy(w, rc)
 }
 
-func (h *VolumeBrowserHandler) Upload(w http.ResponseWriter, r *http.Request) {
+func (h *volumeBrowserHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	ok, _ := h.Access.CanAccess(u.ID, volID)
+	ok, _ := h.p.Access.CanAccess(u.ID, volID)
 	if !ok {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
-	vol, err := h.Access.Volumes.GetByID(volID)
+	vol, err := h.p.Access.Volumes.GetByID(volID)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -145,17 +141,17 @@ func (h *VolumeBrowserHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/volumes/"+volID+"/browse?path="+dirPath, http.StatusSeeOther)
 }
 
-func (h *VolumeBrowserHandler) MkDir(w http.ResponseWriter, r *http.Request) {
+func (h *volumeBrowserHandler) MkDir(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	ok, _ := h.Access.CanAccess(u.ID, volID)
+	ok, _ := h.p.Access.CanAccess(u.ID, volID)
 	if !ok {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
-	vol, err := h.Access.Volumes.GetByID(volID)
+	vol, err := h.p.Access.Volumes.GetByID(volID)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -183,17 +179,17 @@ func (h *VolumeBrowserHandler) MkDir(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/volumes/"+volID+"/browse?path="+dirPath, http.StatusSeeOther)
 }
 
-func (h *VolumeBrowserHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
+func (h *volumeBrowserHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	ok, _ := h.Access.CanAccess(u.ID, volID)
+	ok, _ := h.p.Access.CanAccess(u.ID, volID)
 	if !ok {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
-	vol, err := h.Access.Volumes.GetByID(volID)
+	vol, err := h.p.Access.Volumes.GetByID(volID)
 	if err != nil {
 		http.NotFound(w, r)
 		return

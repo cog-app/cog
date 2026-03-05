@@ -14,23 +14,20 @@ import (
 	"unicode"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
-type AvatarHandler struct {
-	Users   *user.Store
-	DataDir string
-	Secret  []byte
-}
+type avatarHandler struct{ p *services.Providers }
 
-func (h *AvatarHandler) avatarsDir() string {
-	return filepath.Join(h.DataDir, "avatars")
+func (h *avatarHandler) avatarsDir() string {
+	return filepath.Join(h.p.Config.DataDir, "avatars")
 }
 
 // Serve serves a user's avatar image or falls back to initials SVG.
-func (h *AvatarHandler) Serve(w http.ResponseWriter, r *http.Request) {
+func (h *avatarHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	u, err := h.Users.GetByID(id)
+	u, err := h.p.Users.GetByID(id)
 	if err != nil {
 		h.serveInitials(w, "?", id)
 		return
@@ -57,9 +54,9 @@ func (h *AvatarHandler) Serve(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServeInitials serves an SVG with the user's initials.
-func (h *AvatarHandler) ServeInitials(w http.ResponseWriter, r *http.Request) {
+func (h *avatarHandler) ServeInitials(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	u, err := h.Users.GetByID(id)
+	u, err := h.p.Users.GetByID(id)
 	if err != nil {
 		h.serveInitials(w, "?", id)
 		return
@@ -67,7 +64,7 @@ func (h *AvatarHandler) ServeInitials(w http.ResponseWriter, r *http.Request) {
 	h.serveInitials(w, initials(u.Username, u.DisplayName), u.Username)
 }
 
-func (h *AvatarHandler) serveInitials(w http.ResponseWriter, init string, seed string) {
+func (h *avatarHandler) serveInitials(w http.ResponseWriter, init string, seed string) {
 	colors := []string{
 		"#e53935", "#8e24aa", "#3949ab", "#039be5",
 		"#00897b", "#43a047", "#f4511e", "#6d4c41",
@@ -85,7 +82,7 @@ func (h *AvatarHandler) serveInitials(w http.ResponseWriter, init string, seed s
 }
 
 // Upload handles avatar image upload.
-func (h *AvatarHandler) Upload(w http.ResponseWriter, r *http.Request) {
+func (h *avatarHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 
 	file, header, err := r.FormFile("avatar")
@@ -149,19 +146,19 @@ func (h *AvatarHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.Users.Update(u.ID, user.UpdateOpts{Avatar: &filename})
+	h.p.Users.Update(u.ID, user.UpdateOpts{Avatar: &filename})
 
 	http.Redirect(w, r, "/settings", http.StatusSeeOther)
 }
 
 // Delete removes the user's avatar.
-func (h *AvatarHandler) Delete(w http.ResponseWriter, r *http.Request) {
+func (h *avatarHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u.Avatar != "" {
 		os.Remove(filepath.Join(h.avatarsDir(), u.Avatar))
 	}
 	empty := ""
-	h.Users.Update(u.ID, user.UpdateOpts{Avatar: &empty})
+	h.p.Users.Update(u.ID, user.UpdateOpts{Avatar: &empty})
 	w.WriteHeader(http.StatusOK)
 }
 

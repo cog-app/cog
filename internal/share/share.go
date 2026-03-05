@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"iter"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -210,53 +211,104 @@ func (s *Store) Delete(id string) error {
 }
 
 // ListByOwner returns all shares owned by a user.
-func (s *Store) ListByOwner(ownerUserID string) ([]Record, error) {
-	rows, err := s.db.Query(`
-		SELECT id, owner_user_id, resource_type, resource_id,
-			subject_type, subject_id, permissions, token, password_hash,
-			expiration, created_at, updated_at
-		FROM shares WHERE owner_user_id = ?
-		ORDER BY created_at DESC`, ownerUserID)
-	if err != nil {
-		return nil, fmt.Errorf("list shares by owner: %w", err)
+func (s *Store) ListByOwner(ownerUserID string) iter.Seq2[Record, error] {
+	return func(yield func(Record, error) bool) {
+		rows, err := s.db.Query(`
+			SELECT id, owner_user_id, resource_type, resource_id,
+				subject_type, subject_id, permissions, token, password_hash,
+				expiration, created_at, updated_at
+			FROM shares WHERE owner_user_id = ?
+			ORDER BY created_at DESC`, ownerUserID)
+		if err != nil {
+			yield(Record{}, fmt.Errorf("list shares by owner: %w", err))
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var r Record
+			if err := rows.Scan(&r.ID, &r.OwnerUserID, &r.ResourceType, &r.ResourceID,
+				&r.SubjectType, &r.SubjectID, &r.Permissions, &r.Token, &r.PasswordHash,
+				&r.Expiration, &r.CreatedAt, &r.UpdatedAt); err != nil {
+				yield(Record{}, fmt.Errorf("scan share: %w", err))
+				return
+			}
+			if !yield(r, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(Record{}, err)
+		}
 	}
-	defer rows.Close()
-	return s.scanRecords(rows)
 }
 
 // ListBySubject returns all shares targeting a specific user.
-func (s *Store) ListBySubject(subjectID string) ([]Record, error) {
-	rows, err := s.db.Query(`
-		SELECT s.id, s.owner_user_id, s.resource_type, s.resource_id,
-			s.subject_type, s.subject_id, s.permissions, s.token, s.password_hash,
-			s.expiration, s.created_at, s.updated_at
-		FROM shares s
-		WHERE (s.subject_type = 'USER' AND s.subject_id = ?)
-		   OR (s.subject_type = 'GROUP' AND s.subject_id IN (
-				SELECT ancestor_group_id FROM group_membership_closure
-				WHERE descendant_user_id = ?
-			))
-		ORDER BY s.created_at DESC`, subjectID, subjectID)
-	if err != nil {
-		return nil, fmt.Errorf("list shares by subject: %w", err)
+func (s *Store) ListBySubject(subjectID string) iter.Seq2[Record, error] {
+	return func(yield func(Record, error) bool) {
+		rows, err := s.db.Query(`
+			SELECT s.id, s.owner_user_id, s.resource_type, s.resource_id,
+				s.subject_type, s.subject_id, s.permissions, s.token, s.password_hash,
+				s.expiration, s.created_at, s.updated_at
+			FROM shares s
+			WHERE (s.subject_type = 'USER' AND s.subject_id = ?)
+			   OR (s.subject_type = 'GROUP' AND s.subject_id IN (
+					SELECT ancestor_group_id FROM group_membership_closure
+					WHERE descendant_user_id = ?
+				))
+			ORDER BY s.created_at DESC`, subjectID, subjectID)
+		if err != nil {
+			yield(Record{}, fmt.Errorf("list shares by subject: %w", err))
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var r Record
+			if err := rows.Scan(&r.ID, &r.OwnerUserID, &r.ResourceType, &r.ResourceID,
+				&r.SubjectType, &r.SubjectID, &r.Permissions, &r.Token, &r.PasswordHash,
+				&r.Expiration, &r.CreatedAt, &r.UpdatedAt); err != nil {
+				yield(Record{}, fmt.Errorf("scan share: %w", err))
+				return
+			}
+			if !yield(r, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(Record{}, err)
+		}
 	}
-	defer rows.Close()
-	return s.scanRecords(rows)
 }
 
 // ListByResource returns all shares for a specific resource.
-func (s *Store) ListByResource(resourceType, resourceID string) ([]Record, error) {
-	rows, err := s.db.Query(`
-		SELECT id, owner_user_id, resource_type, resource_id,
-			subject_type, subject_id, permissions, token, password_hash,
-			expiration, created_at, updated_at
-		FROM shares WHERE resource_type = ? AND resource_id = ?
-		ORDER BY created_at DESC`, resourceType, resourceID)
-	if err != nil {
-		return nil, fmt.Errorf("list shares by resource: %w", err)
+func (s *Store) ListByResource(resourceType, resourceID string) iter.Seq2[Record, error] {
+	return func(yield func(Record, error) bool) {
+		rows, err := s.db.Query(`
+			SELECT id, owner_user_id, resource_type, resource_id,
+				subject_type, subject_id, permissions, token, password_hash,
+				expiration, created_at, updated_at
+			FROM shares WHERE resource_type = ? AND resource_id = ?
+			ORDER BY created_at DESC`, resourceType, resourceID)
+		if err != nil {
+			yield(Record{}, fmt.Errorf("list shares by resource: %w", err))
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var r Record
+			if err := rows.Scan(&r.ID, &r.OwnerUserID, &r.ResourceType, &r.ResourceID,
+				&r.SubjectType, &r.SubjectID, &r.Permissions, &r.Token, &r.PasswordHash,
+				&r.Expiration, &r.CreatedAt, &r.UpdatedAt); err != nil {
+				yield(Record{}, fmt.Errorf("scan share: %w", err))
+				return
+			}
+			if !yield(r, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(Record{}, err)
+		}
 	}
-	defer rows.Close()
-	return s.scanRecords(rows)
 }
 
 // CheckAccess determines whether a user has access to a resource.
@@ -335,19 +387,6 @@ func (s *Store) scanRecord(row *sql.Row) (*Record, error) {
 	return &r, nil
 }
 
-func (s *Store) scanRecords(rows *sql.Rows) ([]Record, error) {
-	var records []Record
-	for rows.Next() {
-		var r Record
-		if err := rows.Scan(&r.ID, &r.OwnerUserID, &r.ResourceType, &r.ResourceID,
-			&r.SubjectType, &r.SubjectID, &r.Permissions, &r.Token, &r.PasswordHash,
-			&r.Expiration, &r.CreatedAt, &r.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan share: %w", err)
-		}
-		records = append(records, r)
-	}
-	return records, rows.Err()
-}
 
 func generateID() (string, error) {
 	b := make([]byte, 16)

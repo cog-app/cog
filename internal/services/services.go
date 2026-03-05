@@ -35,6 +35,7 @@ type Providers struct {
 	Invitations  *group.InvitationStore
 	Volumes      *volume.Store
 	Mounts       *mount.Store
+	Access       *volume.Access
 	Settings     *settings.Store
 	Email        *email.Sender
 	CSRFSecret   []byte
@@ -47,21 +48,12 @@ func New(cfg config.Config) (*Providers, error) {
 		return nil, fmt.Errorf("open system db: %w", err)
 	}
 
-	return newFromDB(cfg, sysDB, http.NewServeMux()), nil
+	return NewFromDB(cfg, sysDB), nil
 }
 
 // NewFromDB constructs providers from an existing database connection.
 // Useful for tests that use :memory: databases.
 func NewFromDB(cfg config.Config, sysDB *sql.DB) *Providers {
-	return newFromDB(cfg, sysDB, http.NewServeMux())
-}
-
-// NewFromDBWithMux constructs providers with a specific ServeMux.
-func NewFromDBWithMux(cfg config.Config, sysDB *sql.DB, mux *http.ServeMux) *Providers {
-	return newFromDB(cfg, sysDB, mux)
-}
-
-func newFromDB(cfg config.Config, sysDB *sql.DB, mux *http.ServeMux) *Providers {
 	users := user.NewStore(sysDB)
 	volumes := volume.NewStore(sysDB)
 	mounts := mount.NewStore(sysDB)
@@ -72,13 +64,14 @@ func newFromDB(cfg config.Config, sysDB *sql.DB, mux *http.ServeMux) *Providers 
 	secret := make([]byte, 32)
 	rand.Read(secret)
 
-	registry := plugin.NewRegistry(cfg.DataDir, mux, sysDB, secret)
+	registry := plugin.NewRegistry(cfg.DataDir, http.NewServeMux(), sysDB, secret)
 
 	// Wire mount resolver into plugin registry.
 	resolver := mount.NewResolver(users, mounts, volumes)
 	registry.SetMountResolver(resolver)
 
 	filesPlugin := files.New(registry)
+	shares := share.NewStore(sysDB)
 
 	return &Providers{
 		Config:       cfg,
@@ -87,12 +80,13 @@ func newFromDB(cfg config.Config, sysDB *sql.DB, mux *http.ServeMux) *Providers 
 		Sessions:     auth.NewSessionStore(sysDB),
 		AppPasswords: auth.NewAppPasswordStore(sysDB),
 		Plugins:      registry,
-		Shares:       share.NewStore(sysDB),
+		Shares:       shares,
 		Files:        filesPlugin,
 		Groups:       group.NewStore(sysDB),
 		Invitations:  group.NewInvitationStore(sysDB),
 		Volumes:      volumes,
 		Mounts:       mounts,
+		Access:       &volume.Access{Volumes: volumes, Shares: shares, DB: sysDB},
 		Settings:     settings.NewStore(sysDB),
 		Email:        email.NewFromConfig(cfg),
 		CSRFSecret:   secret,

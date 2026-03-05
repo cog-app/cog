@@ -1,5 +1,4 @@
-// Package server wires up the Cog HTTP handler.
-package server
+package web
 
 import (
 	"io/fs"
@@ -10,8 +9,6 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/plugin/dashboard"
 	"git.duckfam.us/jj-software/cog/internal/plugin/files"
 	"git.duckfam.us/jj-software/cog/internal/services"
-	"git.duckfam.us/jj-software/cog/internal/volume"
-	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -45,27 +42,13 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	}
 
 	// --- Web UI handlers ---
-	volAccess := &volume.Access{Volumes: p.Volumes, Shares: p.Shares, DB: p.DB}
-	loginH := &web.LoginHandler{Users: p.Users, Sessions: p.Sessions, Volumes: p.Volumes, Mounts: p.Mounts, Settings: p.Settings, Secret: p.CSRFSecret}
-	settingsH := &web.SettingsHandler{Users: p.Users, Volumes: p.Volumes, Mounts: p.Mounts, Access: volAccess, Registry: p.Plugins, Secret: p.CSRFSecret}
-	adminH := &web.AdminHandler{Users: p.Users, Groups: p.Groups, Volumes: p.Volumes, Mounts: p.Mounts, Plugins: p.Plugins, Settings: p.Settings, Secret: p.CSRFSecret}
-	adminVolH := &web.AdminVolumeHandler{Volumes: p.Volumes, Registry: p.Plugins, Secret: p.CSRFSecret}
-	volBrowserH := &web.VolumeBrowserHandler{Access: volAccess, Registry: p.Plugins, Secret: p.CSRFSecret}
-	avatarH := &web.AvatarHandler{Users: p.Users, DataDir: p.Config.DataDir, Secret: p.CSRFSecret}
-	groupH := &web.GroupHandler{
-		Groups:      p.Groups,
-		Users:       p.Users,
-		Volumes:     p.Volumes,
-		Mounts:      p.Mounts,
-		Invitations: p.Invitations,
-		Sessions:    p.Sessions,
-		Settings:    p.Settings,
-		Access:      volAccess,
-		Email:       p.Email,
-		BaseURL:     p.Config.BaseURL,
-		Registry:    p.Plugins,
-		Secret:      p.CSRFSecret,
-	}
+	loginH := &loginHandler{p: p}
+	settingsH := &settingsHandler{p: p}
+	adminH := &adminHandler{p: p}
+	adminVolH := &adminVolumeHandler{p: p}
+	volBrowserH := &volumeBrowserHandler{p: p}
+	avatarH := &avatarHandler{p: p}
+	groupH := &groupHandler{p: p}
 
 	// Login/logout/register — unauthenticated
 	mux.HandleFunc("GET /login", loginH.ShowLogin)
@@ -162,7 +145,7 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("DELETE /volumes/{id}/file", csrfWeb(http.HandlerFunc(volBrowserH.DeleteFile)))
 
 	// Files plugin page — path is in the URL after /apps/files/
-	filesH := &web.FilesHandler{Files: p.Files, Registry: p.Plugins, Secret: p.CSRFSecret}
+	filesH := &FilesHandler{p: p}
 	mux.Handle("GET /apps/files/{path...}", auth.RequireAuthWeb(http.HandlerFunc(filesH.ServeGet)))
 	mux.Handle("POST /apps/files/{path...}", csrfWeb(http.HandlerFunc(filesH.ServePost)))
 	mux.Handle("DELETE /apps/files/{path...}", csrfWeb(http.HandlerFunc(filesH.ServeDelete)))

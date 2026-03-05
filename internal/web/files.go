@@ -8,16 +8,12 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/plugin/files"
+	"git.duckfam.us/jj-software/cog/internal/services"
 )
 
 // FilesHandler serves the files browser UI at /apps/files/.
-type FilesHandler struct {
-	Files    *files.Plugin
-	Registry *plugin.Registry
-	Secret   []byte
-}
+type FilesHandler struct{ p *services.Providers }
 
 // filePath extracts and cleans the {path...} wildcard from the request.
 func filePath(r *http.Request) string {
@@ -38,12 +34,12 @@ func (h *FilesHandler) ServeGet(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	fp := filePath(r)
 
-	if err := h.Files.EnsureRootDir(u.Username); err != nil {
+	if err := h.p.Files.EnsureRootDir(u.Username); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	meta, err := h.Files.GetByPath(u.Username, fp)
+	meta, err := h.p.Files.GetByPath(u.Username, fp)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -51,12 +47,12 @@ func (h *FilesHandler) ServeGet(w http.ResponseWriter, r *http.Request) {
 
 	// Directory → listing.
 	if meta.IsDir {
-		items, err := h.Files.List(u.Username, fp)
+		items, err := h.p.Files.List(u.Username, fp)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		pd := pageDataWithNav(r, "Files", h.Secret, h.Registry)
+		pd := pageDataWithNav(r, "Files", h.p.CSRFSecret, h.p.Plugins)
 		filesPage(pd, fp, items).Render(r.Context(), w)
 		return
 	}
@@ -74,7 +70,7 @@ func (h *FilesHandler) ServeGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// File → view page.
-	pd := pageDataWithNav(r, meta.Name, h.Secret, h.Registry)
+	pd := pageDataWithNav(r, meta.Name, h.p.CSRFSecret, h.p.Plugins)
 	kind := fileViewKind(meta.MimeType)
 
 	var textContent string
@@ -88,7 +84,7 @@ func (h *FilesHandler) ServeGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *FilesHandler) serveDownload(w http.ResponseWriter, r *http.Request, username, fp string, meta *files.FileMeta) {
-	f, _, err := h.Files.Download(username, fp)
+	f, _, err := h.p.Files.Download(username, fp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -105,7 +101,7 @@ func (h *FilesHandler) serveDownload(w http.ResponseWriter, r *http.Request, use
 }
 
 func (h *FilesHandler) serveRaw(w http.ResponseWriter, r *http.Request, username, fp string, meta *files.FileMeta) {
-	f, _, err := h.Files.Download(username, fp)
+	f, _, err := h.p.Files.Download(username, fp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -121,7 +117,7 @@ func (h *FilesHandler) serveRaw(w http.ResponseWriter, r *http.Request, username
 }
 
 func (h *FilesHandler) readText(username, fp string) (string, error) {
-	f, _, err := h.Files.Download(username, fp)
+	f, _, err := h.p.Files.Download(username, fp)
 	if err != nil {
 		return "", err
 	}
@@ -146,7 +142,7 @@ func (h *FilesHandler) ServePost(w http.ResponseWriter, r *http.Request) {
 	name := r.FormValue("name")
 	if name != "" {
 		dest := path.Join(dirPath, name)
-		if _, err := h.Files.CreateDir(u.Username, dest); err != nil {
+		if _, err := h.p.Files.CreateDir(u.Username, dest); err != nil {
 			http.Error(w, "mkdir failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -168,7 +164,7 @@ func (h *FilesHandler) ServePost(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	dest := path.Join(dirPath, header.Filename)
-	if _, err := h.Files.Upload(u.Username, dest, file); err != nil {
+	if _, err := h.p.Files.Upload(u.Username, dest, file); err != nil {
 		http.Error(w, "upload failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -185,7 +181,7 @@ func (h *FilesHandler) ServeDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Files.Delete(u.Username, fp); err != nil {
+	if err := h.p.Files.Delete(u.Username, fp); err != nil {
 		http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"iter"
 	"time"
 )
 
@@ -90,27 +91,33 @@ func (s *InvitationStore) GetByToken(token string) (*Invitation, error) {
 }
 
 // ListByGroup returns all pending (non-expired) invitations for a group.
-func (s *InvitationStore) ListByGroup(groupID string) ([]Invitation, error) {
-	rows, err := s.db.Query(
-		`SELECT id, group_id, email, token, invited_by, member_type, created_at, expires_at
-		FROM group_invitations WHERE group_id = ? AND expires_at > ?
-		ORDER BY created_at DESC`,
-		groupID, time.Now().Unix(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list invitations: %w", err)
-	}
-	defer rows.Close()
-
-	var invitations []Invitation
-	for rows.Next() {
-		var inv Invitation
-		if err := rows.Scan(&inv.ID, &inv.GroupID, &inv.Email, &inv.Token, &inv.InvitedBy, &inv.MemberType, &inv.CreatedAt, &inv.ExpiresAt); err != nil {
-			return nil, fmt.Errorf("scan invitation: %w", err)
+func (s *InvitationStore) ListByGroup(groupID string) iter.Seq2[Invitation, error] {
+	return func(yield func(Invitation, error) bool) {
+		rows, err := s.db.Query(
+			`SELECT id, group_id, email, token, invited_by, member_type, created_at, expires_at
+			FROM group_invitations WHERE group_id = ? AND expires_at > ?
+			ORDER BY created_at DESC`,
+			groupID, time.Now().Unix(),
+		)
+		if err != nil {
+			yield(Invitation{}, fmt.Errorf("list invitations: %w", err))
+			return
 		}
-		invitations = append(invitations, inv)
+		defer rows.Close()
+		for rows.Next() {
+			var inv Invitation
+			if err := rows.Scan(&inv.ID, &inv.GroupID, &inv.Email, &inv.Token, &inv.InvitedBy, &inv.MemberType, &inv.CreatedAt, &inv.ExpiresAt); err != nil {
+				yield(Invitation{}, fmt.Errorf("scan invitation: %w", err))
+				return
+			}
+			if !yield(inv, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(Invitation{}, err)
+		}
 	}
-	return invitations, rows.Err()
 }
 
 // Delete removes an invitation by ID.

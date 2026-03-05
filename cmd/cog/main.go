@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/config"
-	"git.duckfam.us/jj-software/cog/internal/server"
 	"git.duckfam.us/jj-software/cog/internal/services"
+	"git.duckfam.us/jj-software/cog/internal/web"
 )
 
 func defaultBaseURL() string {
@@ -80,7 +80,7 @@ func main() {
 		return
 	}
 
-	var handler http.Handler = server.New(p)
+	var handler http.Handler = web.New(p)
 	if *logReqs {
 		handler = requestLogger(handler)
 	}

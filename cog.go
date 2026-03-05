@@ -7,8 +7,8 @@ import (
 	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/config"
-	"git.duckfam.us/jj-software/cog/internal/server"
 	"git.duckfam.us/jj-software/cog/internal/services"
+	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
@@ -24,7 +24,7 @@ func Run(cfg Config, plugins ...plugin.Plugin) error {
 	}
 	defer p.Close()
 
-	handler := server.New(p, plugins...)
+	handler := web.New(p, plugins...)
 
 	log.Printf("Cog listening on %s", cfg.Addr)
 	return http.ListenAndServe(cfg.Addr, handler)

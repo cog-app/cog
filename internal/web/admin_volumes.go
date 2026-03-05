@@ -4,29 +4,23 @@ import (
 	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	"git.duckfam.us/jj-software/cog/internal/plugin"
-	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/internal/services"
 )
 
-type AdminVolumeHandler struct {
-	Volumes  *volume.Store
-	Registry *plugin.Registry
-	Secret   []byte
-}
+type adminVolumeHandler struct{ p *services.Providers }
 
-func (h *AdminVolumeHandler) ListVolumes(w http.ResponseWriter, r *http.Request) {
-	pd := pageDataWithNav(r, "Volumes", h.Secret, h.Registry)
-	volumes, _ := h.Volumes.List()
+func (h *adminVolumeHandler) ListVolumes(w http.ResponseWriter, r *http.Request) {
+	pd := pageDataWithNav(r, "Volumes", h.p.CSRFSecret, h.p.Plugins)
 	flash := getFlash(w, r)
 	var flashMsg, flashKind string
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminVolumesPage(pd, volumes, flashMsg, flashKind).Render(r.Context(), w)
+	adminVolumesPage(pd, h.p.Volumes.List(), flashMsg, flashKind).Render(r.Context(), w)
 }
 
-func (h *AdminVolumeHandler) NewVolumeForm(w http.ResponseWriter, r *http.Request) {
-	pd := pageDataWithNav(r, "New Volume", h.Secret, h.Registry)
+func (h *adminVolumeHandler) NewVolumeForm(w http.ResponseWriter, r *http.Request) {
+	pd := pageDataWithNav(r, "New Volume", h.p.CSRFSecret, h.p.Plugins)
 	flash := getFlash(w, r)
 	var errMsg string
 	if flash != nil {
@@ -35,7 +29,7 @@ func (h *AdminVolumeHandler) NewVolumeForm(w http.ResponseWriter, r *http.Reques
 	adminVolumeNewPage(pd, errMsg).Render(r.Context(), w)
 }
 
-func (h *AdminVolumeHandler) CreateVolume(w http.ResponseWriter, r *http.Request) {
+func (h *adminVolumeHandler) CreateVolume(w http.ResponseWriter, r *http.Request) {
 	name := r.FormValue("name")
 	uri := r.FormValue("uri")
 
@@ -46,7 +40,7 @@ func (h *AdminVolumeHandler) CreateVolume(w http.ResponseWriter, r *http.Request
 	}
 
 	u := auth.UserFromContext(r.Context())
-	_, err := h.Volumes.Create(name, r.FormValue("description"), uri, u.Username, nil, "{}")
+	_, err := h.p.Volumes.Create(name, r.FormValue("description"), uri, u.Username, nil, "{}")
 	if err != nil {
 		setFlash(w, "error", "Failed to create volume: "+err.Error())
 		http.Redirect(w, r, "/admin/volumes/new", http.StatusSeeOther)
@@ -56,10 +50,10 @@ func (h *AdminVolumeHandler) CreateVolume(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, "/admin/volumes", http.StatusSeeOther)
 }
 
-func (h *AdminVolumeHandler) EditVolumeForm(w http.ResponseWriter, r *http.Request) {
-	pd := pageDataWithNav(r, "Edit Volume", h.Secret, h.Registry)
+func (h *adminVolumeHandler) EditVolumeForm(w http.ResponseWriter, r *http.Request) {
+	pd := pageDataWithNav(r, "Edit Volume", h.p.CSRFSecret, h.p.Plugins)
 	id := r.PathValue("id")
-	v, err := h.Volumes.GetByID(id)
+	v, err := h.p.Volumes.GetByID(id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -72,9 +66,9 @@ func (h *AdminVolumeHandler) EditVolumeForm(w http.ResponseWriter, r *http.Reque
 	adminVolumeEditPage(pd, v, flashMsg, flashKind).Render(r.Context(), w)
 }
 
-func (h *AdminVolumeHandler) UpdateVolume(w http.ResponseWriter, r *http.Request) {
+func (h *adminVolumeHandler) UpdateVolume(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := h.Volumes.GetByID(id); err != nil {
+	if _, err := h.p.Volumes.GetByID(id); err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -83,7 +77,7 @@ func (h *AdminVolumeHandler) UpdateVolume(w http.ResponseWriter, r *http.Request
 	description := r.FormValue("description")
 	uri := r.FormValue("uri")
 
-	if err := h.Volumes.Update(id, name, description, uri); err != nil {
+	if err := h.p.Volumes.Update(id, name, description, uri); err != nil {
 		setFlash(w, "error", "Failed to update: "+err.Error())
 	} else {
 		setFlash(w, "success", "Volume updated.")
@@ -91,9 +85,9 @@ func (h *AdminVolumeHandler) UpdateVolume(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, "/admin/volumes/"+id, http.StatusSeeOther)
 }
 
-func (h *AdminVolumeHandler) DeleteVolume(w http.ResponseWriter, r *http.Request) {
+func (h *adminVolumeHandler) DeleteVolume(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := h.Volumes.Delete(id); err != nil {
+	if err := h.p.Volumes.Delete(id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -3,6 +3,7 @@ package volume
 import (
 	"database/sql"
 	"fmt"
+	"iter"
 
 	"git.duckfam.us/jj-software/cog/internal/share"
 )
@@ -53,40 +54,49 @@ func (a *Access) CanAccess(userID, volumeID string) (bool, error) {
 }
 
 // ListAccessible returns all volumes accessible to the user.
-func (a *Access) ListAccessible(userID string) ([]Volume, error) {
-	// Find volume IDs shared with this user.
-	shares, err := a.Shares.ListBySubject(userID)
-	if err != nil {
-		return nil, fmt.Errorf("list volume shares: %w", err)
-	}
-	var sharedIDs []string
-	for _, s := range shares {
-		if s.ResourceType == ShareResourceType {
-			sharedIDs = append(sharedIDs, s.ResourceID)
+func (a *Access) ListAccessible(userID string) iter.Seq2[Volume, error] {
+	return func(yield func(Volume, error) bool) {
+		// Find volume IDs shared with this user.
+		var sharedIDs []string
+		for s, err := range a.Shares.ListBySubject(userID) {
+			if err != nil {
+				yield(Volume{}, fmt.Errorf("list volume shares: %w", err))
+				return
+			}
+			if s.ResourceType == ShareResourceType {
+				sharedIDs = append(sharedIDs, s.ResourceID)
+			}
 		}
-	}
 
-	// Find group-owned volume IDs via group membership.
-	var groupVolumeIDs []string
-	if a.DB != nil {
-		rows, err := a.DB.Query(`
-			SELECT v.id FROM volumes v
-			JOIN group_membership_closure gmc ON v.owner_id = gmc.ancestor_group_id
-			WHERE v.owner_type = 'group' AND gmc.descendant_user_id = ?`, userID)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var id string
-				if rows.Scan(&id) == nil {
-					groupVolumeIDs = append(groupVolumeIDs, id)
+		// Find group-owned volume IDs via group membership.
+		var groupVolumeIDs []string
+		if a.DB != nil {
+			rows, err := a.DB.Query(`
+				SELECT v.id FROM volumes v
+				JOIN group_membership_closure gmc ON v.owner_id = gmc.ancestor_group_id
+				WHERE v.owner_type = 'group' AND gmc.descendant_user_id = ?`, userID)
+			if err == nil {
+				defer rows.Close()
+				for rows.Next() {
+					var id string
+					if rows.Scan(&id) == nil {
+						groupVolumeIDs = append(groupVolumeIDs, id)
+					}
 				}
 			}
 		}
-	}
 
-	// Merge shared and group volume IDs.
-	allExtraIDs := append(sharedIDs, groupVolumeIDs...)
-	return a.Volumes.ListAccessible(userID, allExtraIDs)
+		// Merge shared and group volume IDs.
+		allExtraIDs := append(sharedIDs, groupVolumeIDs...)
+		for v, err := range a.Volumes.ListAccessible(userID, allExtraIDs) {
+			if !yield(v, err) {
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}
 }
 
 // ShareVolume creates a share record for a volume. Only the owner can share.

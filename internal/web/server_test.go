@@ -1,4 +1,4 @@
-package server_test
+package web_test
 
 import (
 	"net/url"

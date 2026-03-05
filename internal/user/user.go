@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"iter"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -113,28 +114,34 @@ func (s *Store) Authenticate(username, password string) (*User, error) {
 }
 
 // List returns all users ordered by username.
-func (s *Store) List() ([]User, error) {
-	rows, err := s.db.Query(
-		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email FROM users ORDER BY username`,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list users: %w", err)
-	}
-	defer rows.Close()
-
-	var users []User
-	for rows.Next() {
-		var u User
-		var createdAt int64
-		var isAdmin int
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar, &u.Email); err != nil {
-			return nil, fmt.Errorf("scan user: %w", err)
+func (s *Store) List() iter.Seq2[User, error] {
+	return func(yield func(User, error) bool) {
+		rows, err := s.db.Query(
+			`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email FROM users ORDER BY username`,
+		)
+		if err != nil {
+			yield(User{}, fmt.Errorf("list users: %w", err))
+			return
 		}
-		u.CreatedAt = time.Unix(createdAt, 0)
-		u.IsAdmin = isAdmin != 0
-		users = append(users, u)
+		defer rows.Close()
+		for rows.Next() {
+			var u User
+			var createdAt int64
+			var isAdmin int
+			if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar, &u.Email); err != nil {
+				yield(User{}, fmt.Errorf("scan user: %w", err))
+				return
+			}
+			u.CreatedAt = time.Unix(createdAt, 0)
+			u.IsAdmin = isAdmin != 0
+			if !yield(u, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(User{}, err)
+		}
 	}
-	return users, rows.Err()
 }
 
 // Count returns the total number of users.

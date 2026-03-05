@@ -15,8 +15,8 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
-	"git.duckfam.us/jj-software/cog/internal/server"
 	"git.duckfam.us/jj-software/cog/internal/services"
+	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
@@ -72,7 +72,7 @@ func New(t testing.TB) *Env {
 	}
 
 	p := services.NewFromDB(cfg, sysDB)
-	handler := server.New(p)
+	handler := web.New(p)
 	ts.Config.Handler = handler
 
 	return &Env{

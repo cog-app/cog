@@ -3,9 +3,10 @@ package web
 import (
 	"git.duckfam.us/jj-software/cog/ui"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"iter"
 )
 
-templ adminVolumesPage(pd ui.PageData, volumes []volume.Volume, flash string, flashKind string) {
+templ adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], flash string, flashKind string) {
 	@ui.SidebarPage(pd, adminSidebar("volumes")) {
 		<div class="flex justify-between items-center" style="margin-bottom:1rem">
 			<h1>Volumes</h1>
@@ -25,7 +26,8 @@ templ adminVolumesPage(pd ui.PageData, volumes []volume.Volume, flash string, fl
 					</tr>
 				</thead>
 				<tbody>
-					for _, v := range volumes {
+					for v, err := range volumes {
+						if err == nil {
 						<tr id={ "volume-" + v.ID }>
 							<td>{ v.Name }</td>
 							<td><code>{ v.URI }</code></td>
@@ -41,6 +43,7 @@ templ adminVolumesPage(pd ui.PageData, volumes []volume.Volume, flash string, fl
 								>Delete</button>
 							</td>
 						</tr>
+						}
 					}
 				</tbody>
 			</table>

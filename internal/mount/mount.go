@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"iter"
 	"time"
 )
 
@@ -79,29 +80,35 @@ func (s *Store) GetByID(id string) (*Mount, error) {
 	return &m, nil
 }
 
-func (s *Store) ListByUser(userID string) ([]Mount, error) {
-	rows, err := s.db.Query(
-		`SELECT id, user_id, user_path, volume_id, volume_subpath, read_only, created_at FROM mounts WHERE user_id = ? ORDER BY user_path`,
-		userID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list mounts: %w", err)
-	}
-	defer rows.Close()
-
-	var mounts []Mount
-	for rows.Next() {
-		var m Mount
-		var createdAt int64
-		var ro int
-		if err := rows.Scan(&m.ID, &m.UserID, &m.UserPath, &m.VolumeID, &m.VolumeSubpath, &ro, &createdAt); err != nil {
-			return nil, fmt.Errorf("scan mount: %w", err)
+func (s *Store) ListByUser(userID string) iter.Seq2[Mount, error] {
+	return func(yield func(Mount, error) bool) {
+		rows, err := s.db.Query(
+			`SELECT id, user_id, user_path, volume_id, volume_subpath, read_only, created_at FROM mounts WHERE user_id = ? ORDER BY user_path`,
+			userID,
+		)
+		if err != nil {
+			yield(Mount{}, fmt.Errorf("list mounts: %w", err))
+			return
 		}
-		m.ReadOnly = ro != 0
-		m.CreatedAt = time.Unix(createdAt, 0)
-		mounts = append(mounts, m)
+		defer rows.Close()
+		for rows.Next() {
+			var m Mount
+			var createdAt int64
+			var ro int
+			if err := rows.Scan(&m.ID, &m.UserID, &m.UserPath, &m.VolumeID, &m.VolumeSubpath, &ro, &createdAt); err != nil {
+				yield(Mount{}, fmt.Errorf("scan mount: %w", err))
+				return
+			}
+			m.ReadOnly = ro != 0
+			m.CreatedAt = time.Unix(createdAt, 0)
+			if !yield(m, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(Mount{}, err)
+		}
 	}
-	return mounts, rows.Err()
 }
 
 // GetUserRoot returns the root mount (user_path="/") for a user.

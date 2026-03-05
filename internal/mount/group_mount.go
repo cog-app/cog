@@ -2,6 +2,7 @@ package mount
 
 import (
 	"fmt"
+	"iter"
 	"time"
 )
 
@@ -49,30 +50,36 @@ func (s *Store) CreateGroupMount(groupID, userPath, volumeID, volumeSubpath stri
 }
 
 // ListGroupMounts returns all mounts for a group.
-func (s *Store) ListGroupMounts(groupID string) ([]GroupMount, error) {
-	rows, err := s.db.Query(
-		`SELECT id, group_id, user_path, volume_id, volume_subpath, read_only, created_at
-		FROM group_mounts WHERE group_id = ? ORDER BY user_path`,
-		groupID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list group mounts: %w", err)
-	}
-	defer rows.Close()
-
-	var mounts []GroupMount
-	for rows.Next() {
-		var m GroupMount
-		var createdAt int64
-		var ro int
-		if err := rows.Scan(&m.ID, &m.GroupID, &m.UserPath, &m.VolumeID, &m.VolumeSubpath, &ro, &createdAt); err != nil {
-			return nil, fmt.Errorf("scan group mount: %w", err)
+func (s *Store) ListGroupMounts(groupID string) iter.Seq2[GroupMount, error] {
+	return func(yield func(GroupMount, error) bool) {
+		rows, err := s.db.Query(
+			`SELECT id, group_id, user_path, volume_id, volume_subpath, read_only, created_at
+			FROM group_mounts WHERE group_id = ? ORDER BY user_path`,
+			groupID,
+		)
+		if err != nil {
+			yield(GroupMount{}, fmt.Errorf("list group mounts: %w", err))
+			return
 		}
-		m.ReadOnly = ro != 0
-		m.CreatedAt = time.Unix(createdAt, 0)
-		mounts = append(mounts, m)
+		defer rows.Close()
+		for rows.Next() {
+			var m GroupMount
+			var createdAt int64
+			var ro int
+			if err := rows.Scan(&m.ID, &m.GroupID, &m.UserPath, &m.VolumeID, &m.VolumeSubpath, &ro, &createdAt); err != nil {
+				yield(GroupMount{}, fmt.Errorf("scan group mount: %w", err))
+				return
+			}
+			m.ReadOnly = ro != 0
+			m.CreatedAt = time.Unix(createdAt, 0)
+			if !yield(m, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(GroupMount{}, err)
+		}
 	}
-	return mounts, rows.Err()
 }
 
 // DeleteGroupMount removes a group mount by ID.
@@ -89,29 +96,35 @@ func (s *Store) DeleteGroupMount(id string) error {
 }
 
 // ListGroupMountsForUser returns all group mounts accessible to a user via their group memberships.
-func (s *Store) ListGroupMountsForUser(userID string) ([]GroupMount, error) {
-	rows, err := s.db.Query(`
-		SELECT gm.id, gm.group_id, gm.user_path, gm.volume_id, gm.volume_subpath, gm.read_only, gm.created_at
-		FROM group_mounts gm
-		JOIN group_membership_closure gmc ON gm.group_id = gmc.ancestor_group_id
-		WHERE gmc.descendant_user_id = ?
-		ORDER BY gm.user_path`, userID)
-	if err != nil {
-		return nil, fmt.Errorf("list group mounts for user: %w", err)
-	}
-	defer rows.Close()
-
-	var mounts []GroupMount
-	for rows.Next() {
-		var m GroupMount
-		var createdAt int64
-		var ro int
-		if err := rows.Scan(&m.ID, &m.GroupID, &m.UserPath, &m.VolumeID, &m.VolumeSubpath, &ro, &createdAt); err != nil {
-			return nil, fmt.Errorf("scan group mount: %w", err)
+func (s *Store) ListGroupMountsForUser(userID string) iter.Seq2[GroupMount, error] {
+	return func(yield func(GroupMount, error) bool) {
+		rows, err := s.db.Query(`
+			SELECT gm.id, gm.group_id, gm.user_path, gm.volume_id, gm.volume_subpath, gm.read_only, gm.created_at
+			FROM group_mounts gm
+			JOIN group_membership_closure gmc ON gm.group_id = gmc.ancestor_group_id
+			WHERE gmc.descendant_user_id = ?
+			ORDER BY gm.user_path`, userID)
+		if err != nil {
+			yield(GroupMount{}, fmt.Errorf("list group mounts for user: %w", err))
+			return
 		}
-		m.ReadOnly = ro != 0
-		m.CreatedAt = time.Unix(createdAt, 0)
-		mounts = append(mounts, m)
+		defer rows.Close()
+		for rows.Next() {
+			var m GroupMount
+			var createdAt int64
+			var ro int
+			if err := rows.Scan(&m.ID, &m.GroupID, &m.UserPath, &m.VolumeID, &m.VolumeSubpath, &ro, &createdAt); err != nil {
+				yield(GroupMount{}, fmt.Errorf("scan group mount: %w", err))
+				return
+			}
+			m.ReadOnly = ro != 0
+			m.CreatedAt = time.Unix(createdAt, 0)
+			if !yield(m, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(GroupMount{}, err)
+		}
 	}
-	return mounts, rows.Err()
 }

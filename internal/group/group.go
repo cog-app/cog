@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"iter"
 )
 
 var ErrNotFound = errors.New("group not found")
@@ -62,22 +63,28 @@ func (s *Store) Get(id string) (*Group, error) {
 	return &g, nil
 }
 
-func (s *Store) List() ([]Group, error) {
-	rows, err := s.db.Query(`SELECT g.id, g.name, g.parent_group_id, g.owner_id, (SELECT COUNT(*) FROM group_members gm WHERE gm.group_id = g.id) FROM groups g ORDER BY g.name`)
-	if err != nil {
-		return nil, fmt.Errorf("list groups: %w", err)
-	}
-	defer rows.Close()
-
-	var groups []Group
-	for rows.Next() {
-		var g Group
-		if err := rows.Scan(&g.ID, &g.Name, &g.ParentGroupID, &g.OwnerID, &g.MemberCount); err != nil {
-			return nil, fmt.Errorf("scan group: %w", err)
+func (s *Store) List() iter.Seq2[Group, error] {
+	return func(yield func(Group, error) bool) {
+		rows, err := s.db.Query(`SELECT g.id, g.name, g.parent_group_id, g.owner_id, (SELECT COUNT(*) FROM group_members gm WHERE gm.group_id = g.id) FROM groups g ORDER BY g.name`)
+		if err != nil {
+			yield(Group{}, fmt.Errorf("list groups: %w", err))
+			return
 		}
-		groups = append(groups, g)
+		defer rows.Close()
+		for rows.Next() {
+			var g Group
+			if err := rows.Scan(&g.ID, &g.Name, &g.ParentGroupID, &g.OwnerID, &g.MemberCount); err != nil {
+				yield(Group{}, fmt.Errorf("scan group: %w", err))
+				return
+			}
+			if !yield(g, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(Group{}, err)
+		}
 	}
-	return groups, rows.Err()
 }
 
 func (s *Store) Update(id, name string) error {
@@ -148,74 +155,92 @@ func (s *Store) RemoveMember(groupID, memberID string) error {
 	return err
 }
 
-func (s *Store) ListMembers(groupID string) ([]Member, error) {
-	rows, err := s.db.Query(
-		`SELECT group_id, member_id, member_type FROM group_members WHERE group_id = ? ORDER BY member_type, member_id`,
-		groupID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list members: %w", err)
-	}
-	defer rows.Close()
-
-	var members []Member
-	for rows.Next() {
-		var m Member
-		if err := rows.Scan(&m.GroupID, &m.MemberID, &m.MemberType); err != nil {
-			return nil, fmt.Errorf("scan member: %w", err)
+func (s *Store) ListMembers(groupID string) iter.Seq2[Member, error] {
+	return func(yield func(Member, error) bool) {
+		rows, err := s.db.Query(
+			`SELECT group_id, member_id, member_type FROM group_members WHERE group_id = ? ORDER BY member_type, member_id`,
+			groupID,
+		)
+		if err != nil {
+			yield(Member{}, fmt.Errorf("list members: %w", err))
+			return
 		}
-		members = append(members, m)
+		defer rows.Close()
+		for rows.Next() {
+			var m Member
+			if err := rows.Scan(&m.GroupID, &m.MemberID, &m.MemberType); err != nil {
+				yield(Member{}, fmt.Errorf("scan member: %w", err))
+				return
+			}
+			if !yield(m, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(Member{}, err)
+		}
 	}
-	return members, rows.Err()
 }
 
-func (s *Store) ListGroupsForUser(userID string) ([]Group, error) {
-	rows, err := s.db.Query(`
-		SELECT g.id, g.name, g.parent_group_id, g.owner_id,
-			(SELECT COUNT(*) FROM group_members gm2 WHERE gm2.group_id = g.id)
-		FROM groups g
-		JOIN group_members gm ON g.id = gm.group_id
-		WHERE gm.member_id = ? AND gm.member_type IN ('USER', 'OWNER')
-		ORDER BY g.name`, userID)
-	if err != nil {
-		return nil, fmt.Errorf("list groups for user: %w", err)
-	}
-	defer rows.Close()
-
-	var groups []Group
-	for rows.Next() {
-		var g Group
-		if err := rows.Scan(&g.ID, &g.Name, &g.ParentGroupID, &g.OwnerID, &g.MemberCount); err != nil {
-			return nil, fmt.Errorf("scan group: %w", err)
+func (s *Store) ListGroupsForUser(userID string) iter.Seq2[Group, error] {
+	return func(yield func(Group, error) bool) {
+		rows, err := s.db.Query(`
+			SELECT g.id, g.name, g.parent_group_id, g.owner_id,
+				(SELECT COUNT(*) FROM group_members gm2 WHERE gm2.group_id = g.id)
+			FROM groups g
+			JOIN group_members gm ON g.id = gm.group_id
+			WHERE gm.member_id = ? AND gm.member_type IN ('USER', 'OWNER')
+			ORDER BY g.name`, userID)
+		if err != nil {
+			yield(Group{}, fmt.Errorf("list groups for user: %w", err))
+			return
 		}
-		groups = append(groups, g)
+		defer rows.Close()
+		for rows.Next() {
+			var g Group
+			if err := rows.Scan(&g.ID, &g.Name, &g.ParentGroupID, &g.OwnerID, &g.MemberCount); err != nil {
+				yield(Group{}, fmt.Errorf("scan group: %w", err))
+				return
+			}
+			if !yield(g, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(Group{}, err)
+		}
 	}
-	return groups, rows.Err()
 }
 
 // ListOwnedByUser returns all groups where the user is an OWNER member.
-func (s *Store) ListOwnedByUser(userID string) ([]Group, error) {
-	rows, err := s.db.Query(`
-		SELECT g.id, g.name, g.parent_group_id, g.owner_id,
-			(SELECT COUNT(*) FROM group_members gm2 WHERE gm2.group_id = g.id)
-		FROM groups g
-		JOIN group_members gm ON g.id = gm.group_id
-		WHERE gm.member_id = ? AND gm.member_type = 'OWNER'
-		ORDER BY g.name`, userID)
-	if err != nil {
-		return nil, fmt.Errorf("list owned groups: %w", err)
-	}
-	defer rows.Close()
-
-	var groups []Group
-	for rows.Next() {
-		var g Group
-		if err := rows.Scan(&g.ID, &g.Name, &g.ParentGroupID, &g.OwnerID, &g.MemberCount); err != nil {
-			return nil, fmt.Errorf("scan group: %w", err)
+func (s *Store) ListOwnedByUser(userID string) iter.Seq2[Group, error] {
+	return func(yield func(Group, error) bool) {
+		rows, err := s.db.Query(`
+			SELECT g.id, g.name, g.parent_group_id, g.owner_id,
+				(SELECT COUNT(*) FROM group_members gm2 WHERE gm2.group_id = g.id)
+			FROM groups g
+			JOIN group_members gm ON g.id = gm.group_id
+			WHERE gm.member_id = ? AND gm.member_type = 'OWNER'
+			ORDER BY g.name`, userID)
+		if err != nil {
+			yield(Group{}, fmt.Errorf("list owned groups: %w", err))
+			return
 		}
-		groups = append(groups, g)
+		defer rows.Close()
+		for rows.Next() {
+			var g Group
+			if err := rows.Scan(&g.ID, &g.Name, &g.ParentGroupID, &g.OwnerID, &g.MemberCount); err != nil {
+				yield(Group{}, fmt.Errorf("scan group: %w", err))
+				return
+			}
+			if !yield(g, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(Group{}, err)
+		}
 	}
-	return groups, rows.Err()
 }
 
 // IsOwnerMember returns true if the user is an OWNER member of the group.

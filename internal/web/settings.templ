@@ -4,6 +4,7 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"iter"
 )
 
 func settingsSidebar(active string) []ui.SidebarItem {
@@ -70,7 +71,7 @@ templ settingsSecurityPage(pd ui.PageData, flash string, flashKind string) {
 	}
 }
 
-templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts []mount.Mount, volumes []volume.Volume, ownedVolumes []volume.Volume) {
+templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts iter.Seq2[mount.Mount, error], volumes []volume.Volume, volumeNames map[string]string, ownedVolumes iter.Seq2[volume.Volume, error], hasOwnedVolumes bool) {
 	@ui.SidebarPage(pd, settingsSidebar("storage")) {
 		<h1 style="margin-bottom:1rem">Storage</h1>
 		if flash != "" {
@@ -88,10 +89,11 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 					</tr>
 				</thead>
 				<tbody>
-					for _, m := range mounts {
+					for m, err := range mounts {
+						if err == nil {
 						<tr id={ "mount-" + m.ID }>
 							<td>{ m.UserPath }</td>
-							<td>{ volumeName(m.VolumeID, volumes) }</td>
+							<td>{ volumeNames[m.VolumeID] }</td>
 							<td>{ m.VolumeSubpath }</td>
 							<td>
 								if m.ReadOnly {
@@ -112,6 +114,7 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 								}
 							</td>
 						</tr>
+						}
 					}
 				</tbody>
 			</table>
@@ -140,7 +143,7 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 			</form>
 		}
 		@ui.Card("My Volumes") {
-			if len(ownedVolumes) > 0 {
+			if hasOwnedVolumes {
 				<table class="table">
 					<thead>
 						<tr>
@@ -150,7 +153,8 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 						</tr>
 					</thead>
 					<tbody>
-						for _, v := range ownedVolumes {
+						for v, err := range ownedVolumes {
+							if err == nil {
 							<tr id={ "uservol-" + v.ID }>
 								<td>{ v.Name }</td>
 								<td><code>{ v.URI }</code></td>
@@ -165,6 +169,7 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 									>Delete</button>
 								</td>
 							</tr>
+							}
 						}
 					</tbody>
 				</table>
@@ -190,13 +195,4 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 			</form>
 		}
 	}
-}
-
-func volumeName(volumeID string, volumes []volume.Volume) string {
-	for _, v := range volumes {
-		if v.ID == volumeID {
-			return v.Name
-		}
-	}
-	return volumeID
 }

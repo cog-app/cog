@@ -4,12 +4,12 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/mount"
-	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"iter"
 	"fmt"
 )
 
-templ settingsGroupsPage(pd ui.PageData, ownedGroups []group.Group, memberGroups []group.Group, flash string, flashKind string) {
+templ settingsGroupsPage(pd ui.PageData, ownedGroups iter.Seq2[group.Group, error], hasOwnedGroups bool, memberGroups iter.Seq2[group.Group, error], hasMemberGroups bool, flash string, flashKind string) {
 	@ui.SidebarPage(pd, settingsSidebar("groups")) {
 		<h1 style="margin-bottom:1rem">Groups</h1>
 		if flash != "" {
@@ -23,14 +23,14 @@ templ settingsGroupsPage(pd ui.PageData, ownedGroups []group.Group, memberGroups
 			</form>
 		}
 		@ui.Card("My Groups") {
-			if len(ownedGroups) > 0 {
+			if hasOwnedGroups {
 				@groupTable(ownedGroups, "/settings/groups/")
 			} else {
 				<p class="text-muted">You don't own any groups yet.</p>
 			}
 		}
 		@ui.Card("Member Of") {
-			if len(memberGroups) > 0 {
+			if hasMemberGroups {
 				@groupTable(memberGroups, "/settings/groups/")
 			} else {
 				<p class="text-muted">You're not a member of any other groups.</p>
@@ -39,7 +39,7 @@ templ settingsGroupsPage(pd ui.PageData, ownedGroups []group.Group, memberGroups
 	}
 }
 
-templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members []group.Member, users []user.User, invitations []group.Invitation, groupMounts []mount.GroupMount, groupVolumes []volume.Volume, accessibleVolumes []volume.Volume, isOwner bool, smtpAvailable bool, baseURL string, flash string, flashKind string, lastInviteURL string) {
+templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members iter.Seq2[group.Member, error], userNames map[string]string, invitations iter.Seq2[group.Invitation, error], hasInvitations bool, groupMounts iter.Seq2[mount.GroupMount, error], hasGroupMounts bool, groupVolumes iter.Seq2[volume.Volume, error], hasGroupVolumes bool, accessibleVolumes []volume.Volume, volumeNames map[string]string, isOwner bool, smtpAvailable bool, baseURL string, flash string, flashKind string, lastInviteURL string) {
 	@ui.SidebarPage(pd, settingsSidebar("groups")) {
 		<h1 style="margin-bottom:1rem">Group: { g.Name }</h1>
 		if flash != "" {
@@ -78,9 +78,10 @@ templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members []group.Me
 					</tr>
 				</thead>
 				<tbody>
-					for _, m := range members {
+					for m, err := range members {
+						if err == nil {
 						<tr id={ fmt.Sprintf("member-%s-%s", g.ID, m.MemberID) }>
-							<td>{ memberLabel(m, users) }</td>
+							<td>{ userNames[m.MemberID] }</td>
 							<td>
 								if isOwner {
 									<form method="post" action={ templ.SafeURL(fmt.Sprintf("/settings/groups/%s/members/%s/type", g.ID, m.MemberID)) } style="display:inline">
@@ -119,6 +120,7 @@ templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members []group.Me
 								}
 							</td>
 						</tr>
+						}
 					}
 				</tbody>
 			</table>
@@ -137,7 +139,7 @@ templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members []group.Me
 				if smtpAvailable {
 					<p class="text-muted" style="font-size:0.85rem">An email will be sent if an address is provided.</p>
 				}
-				if len(invitations) > 0 {
+				if hasInvitations {
 					<table class="table mb-0">
 						<thead>
 							<tr>
@@ -148,7 +150,8 @@ templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members []group.Me
 							</tr>
 						</thead>
 						<tbody>
-							for _, inv := range invitations {
+							for inv, err := range invitations {
+								if err == nil {
 								<tr id={ "invite-" + inv.ID }>
 									<td>
 										if inv.Email != "" {
@@ -175,6 +178,7 @@ templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members []group.Me
 										>Revoke</button>
 									</td>
 								</tr>
+								}
 							}
 						</tbody>
 					</table>
@@ -182,7 +186,7 @@ templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members []group.Me
 			}
 			@ui.Card("Group Storage") {
 				<h4>Group Volumes</h4>
-				if len(groupVolumes) > 0 {
+				if hasGroupVolumes {
 					<table class="table">
 						<thead>
 							<tr>
@@ -192,7 +196,8 @@ templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members []group.Me
 							</tr>
 						</thead>
 						<tbody>
-							for _, v := range groupVolumes {
+							for v, err := range groupVolumes {
+								if err == nil {
 								<tr>
 									<td>{ v.Name }</td>
 									<td><code>{ v.URI }</code></td>
@@ -200,6 +205,7 @@ templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members []group.Me
 										<a class="btn btn-outline btn-sm" href={ templ.SafeURL("/volumes/" + v.ID + "/browse") }>Browse</a>
 									</td>
 								</tr>
+								}
 							}
 						</tbody>
 					</table>
@@ -212,7 +218,7 @@ templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members []group.Me
 					<button class="btn btn-primary" type="submit">Create Volume</button>
 				</form>
 				<h4 style="margin-top:1rem">Group Mounts</h4>
-				if len(groupMounts) > 0 {
+				if hasGroupMounts {
 					<table class="table">
 						<thead>
 							<tr>
@@ -223,10 +229,11 @@ templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members []group.Me
 							</tr>
 						</thead>
 						<tbody>
-							for _, m := range groupMounts {
+							for m, err := range groupMounts {
+								if err == nil {
 								<tr id={ "gmount-" + m.ID }>
 									<td>{ m.UserPath }</td>
-									<td>{ groupMountVolumeName(m.VolumeID, accessibleVolumes) }</td>
+									<td>{ volumeNames[m.VolumeID] }</td>
 									<td>{ m.VolumeSubpath }</td>
 									<td class="text-right">
 										<button
@@ -237,6 +244,7 @@ templ settingsGroupDetailPage(pd ui.PageData, g *group.Group, members []group.Me
 										>Remove</button>
 									</td>
 								</tr>
+								}
 							}
 						</tbody>
 					</table>
@@ -328,7 +336,7 @@ templ inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, is
 
 // groupTable renders a clickable table of groups with member counts.
 // urlPrefix is prepended to the group ID for the row link (e.g. "/settings/groups/" or "/admin/groups/").
-templ groupTable(groups []group.Group, urlPrefix string) {
+templ groupTable(groups iter.Seq2[group.Group, error], urlPrefix string) {
 	<table class="table">
 		<thead>
 			<tr>
@@ -337,11 +345,13 @@ templ groupTable(groups []group.Group, urlPrefix string) {
 			</tr>
 		</thead>
 		<tbody>
-			for _, g := range groups {
+			for g, err := range groups {
+				if err == nil {
 				<tr style="cursor:pointer" onclick={ goTo(urlPrefix + g.ID) }>
 					<td>{ g.Name }</td>
 					<td>{ fmt.Sprint(g.MemberCount) }</td>
 				</tr>
+				}
 			}
 		</tbody>
 	</table>
@@ -365,13 +375,4 @@ func emailPlaceholder(smtpAvailable bool) string {
 		return "Email (optional, will send invite)"
 	}
 	return "Email (optional, SMTP not configured)"
-}
-
-func groupMountVolumeName(volumeID string, volumes []volume.Volume) string {
-	for _, v := range volumes {
-		if v.ID == volumeID {
-			return v.Name
-		}
-	}
-	return volumeID
 }

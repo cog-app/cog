@@ -9,6 +9,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
@@ -273,7 +274,7 @@ func (a *API) handleShareCreate(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleShareList(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 
-	records, err := a.shares.ListByOwner(u.ID)
+	records, err := seq.Collect(a.shares.ListByOwner(u.ID))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -288,7 +289,7 @@ func (a *API) handleShareList(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleSharesWithMe(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 
-	records, err := a.shares.ListBySubject(u.ID)
+	records, err := seq.Collect(a.shares.ListBySubject(u.ID))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
