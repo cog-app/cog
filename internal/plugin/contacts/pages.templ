@@ -209,6 +209,8 @@ templ contactsIndexPage(pd ui.PageData, books []AddressBook, cards []CardWithBoo
 templ contactDetailModal(pd ui.PageData, c *Card, book *AddressBook, books []AddressBook) {
 	if c.PhotoPath != "" {
 		<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:80px;height:80px;border-radius:50%;object-fit:cover;margin-bottom:0.75rem;display:block"/>
+	} else {
+		<span class="avatar-initials" style={ fmt.Sprintf("width:80px;height:80px;font-size:1.5rem;margin-bottom:0.75rem;display:inline-flex;background:%s", contactColor(c, book)) }>{ contactInitials(c.FN) }</span>
 	}
 	<h2 style="margin-top:0">{ c.FN }</h2>
 	<!-- Display all emails -->
@@ -469,6 +471,13 @@ func sidebarClass(activePath, itemPath string) string {
 		return "sidebar-item active"
 	}
 	return "sidebar-item"
+}
+
+func contactColor(c *Card, book *AddressBook) string {
+	if book != nil && book.Color != "" {
+		return book.Color
+	}
+	return "#888"
 }
 
 func contactInitials(fn string) string {
