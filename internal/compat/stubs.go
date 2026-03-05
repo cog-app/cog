@@ -144,7 +144,9 @@ func RegisterStubs(mux *http.ServeMux) {
 
 	// .well-known discovery redirects
 	mux.HandleFunc("GET /.well-known/caldav", HandleWellKnownCalDAV)
+	mux.HandleFunc("PROPFIND /.well-known/caldav", HandleWellKnownCalDAV)
 	mux.HandleFunc("GET /.well-known/carddav", HandleWellKnownCardDAV)
+	mux.HandleFunc("PROPFIND /.well-known/carddav", HandleWellKnownCardDAV)
 
 	fmt.Println("Registered stub routes: avatar, notifications, recommendations, user_status, connectivity check, well-known")
 }

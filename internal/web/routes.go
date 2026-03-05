@@ -6,6 +6,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/compat"
+	"git.duckfam.us/jj-software/cog/internal/plugin/calendar"
 	"git.duckfam.us/jj-software/cog/internal/plugin/dashboard"
 	"git.duckfam.us/jj-software/cog/internal/plugin/files"
 	"git.duckfam.us/jj-software/cog/internal/plugin/rss"
@@ -175,6 +176,26 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	newsAPI := rss.NewNewsAPI(rssPlugin)
 	mux.Handle("/index.php/apps/news/api/", auth.RequireAuth(newsAPI))
 
+	// --- Calendar plugin ---
+	calPlugin := calendar.New(p.Plugins)
+	p.Plugins.Add(calPlugin)
+
+	calPages := calendar.NewPages(calPlugin, p.CSRFSecret, p.Plugins)
+	mux.Handle("GET /apps/calendar/{$}", auth.RequireAuthWeb(http.HandlerFunc(calPages.Index)))
+	mux.Handle("GET /apps/calendar/settings", auth.RequireAuthWeb(http.HandlerFunc(calPages.Settings)))
+	mux.Handle("GET /apps/calendar/events.json", auth.RequireAuth(http.HandlerFunc(calPages.EventsJSON)))
+	mux.Handle("GET /apps/calendar/events/{id}", auth.RequireAuth(http.HandlerFunc(calPages.EventDetail)))
+	mux.Handle("POST /apps/calendar/events/{id}", csrfWeb(http.HandlerFunc(calPages.UpdateEvent)))
+	mux.Handle("POST /apps/calendar/events", csrfWeb(http.HandlerFunc(calPages.CreateEvent)))
+	mux.Handle("DELETE /apps/calendar/events/{id}", csrfWeb(http.HandlerFunc(calPages.DeleteEvent)))
+	mux.Handle("POST /apps/calendar/calendars", csrfWeb(http.HandlerFunc(calPages.CreateCalendar)))
+	mux.Handle("DELETE /apps/calendar/calendars/{id}", csrfWeb(http.HandlerFunc(calPages.DeleteCalendarHandler)))
+
+	// CalDAV endpoints
+	caldav := calendar.NewCalDAVHandler(calPlugin)
+	mux.Handle("/remote.php/dav/calendars/", auth.RequireAuth(caldav))
+	mux.Handle("/remote.php/dav/principals/", auth.RequireAuth(caldav))
+
 	// --- Status & OCS ---
 	mux.HandleFunc("GET /status.php", compat.HandleStatus)
 	mux.HandleFunc("GET /ocs/v1.php/cloud/capabilities", compat.HandleCapabilities)
@@ -193,7 +214,11 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	// Token-based direct file serving (no auth — token is the credential)
 	mux.HandleFunc("GET /remote.php/dav/direct/", webdav.HandleDirectServe)
 
-	// WebDAV stub for non-file DAV paths (presence check, CalDAV, etc.)
+	// CalDAV/CardDAV discovery: PROPFIND on /remote.php/dav/ returns current-user-principal.
+	mux.Handle("PROPFIND /remote.php/dav/{$}", auth.RequireAuth(http.HandlerFunc(calendar.HandleDAVRoot)))
+	mux.Handle("PROPFIND /remote.php/dav", auth.RequireAuth(http.HandlerFunc(calendar.HandleDAVRoot)))
+
+	// WebDAV stub for non-file DAV paths (presence check, HEAD/OPTIONS/GET)
 	mux.HandleFunc("/remote.php/dav", compat.HandleWebDAVStub)
 	mux.HandleFunc("/remote.php/dav/", compat.HandleWebDAVStub)
 

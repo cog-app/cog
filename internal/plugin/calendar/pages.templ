@@ -1,0 +1,368 @@
+package calendar
+
+import (
+	"fmt"
+	"strconv"
+	"time"
+
+	"git.duckfam.us/jj-software/cog/ui"
+)
+
+templ calSidebar(calendars []Calendar, activePath string, csrfToken string) {
+	<nav class="sidebar">
+		<a href="/apps/calendar/" class={ sidebarClass(activePath, "/apps/calendar/") }>All Events</a>
+		<div class="sidebar-divider"></div>
+		<div style="padding:0.25rem 0.75rem;font-size:0.8rem;font-weight:600;text-transform:uppercase;color:var(--color-muted, #888)">Calendars</div>
+		for _, cal := range calendars {
+			<label class="sidebar-item" style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+				<input type="checkbox" class="cal-toggle" data-calendar-id={ strconv.FormatInt(cal.ID, 10) } checked
+					style="accent-color:var(--cal-color);--cal-color:inherit"
+				/>
+				<span style={ fmt.Sprintf("display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s;flex-shrink:0", cal.Color) }></span>
+				{ cal.Name }
+			</label>
+		}
+		<div class="sidebar-divider"></div>
+		<a href="/apps/calendar/settings" class={ sidebarClass(activePath, "/apps/calendar/settings") }>Settings</a>
+	</nav>
+}
+
+templ calIndexPage(pd ui.PageData, calendars []Calendar) {
+	@ui.Base(pd) {
+		<script src="/static/vendor/fullcalendar.min.js"></script>
+		<div class="sidebar-layout">
+			@calSidebar(calendars, "/apps/calendar/", pd.CSRFToken)
+			<div class="sidebar-content">
+				<div id="calendar" style="min-height:600px"></div>
+			</div>
+		</div>
+		<!-- Event detail modal -->
+		<div id="event-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+			<div class="modal-content" id="event-modal-body"></div>
+		</div>
+		<!-- Create event modal -->
+		<div id="create-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+			<div class="modal-content">
+				<h2 style="margin-top:0">New Event</h2>
+				<form method="post" action="/apps/calendar/events" id="create-event-form">
+					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+					<div class="form-group">
+						<label for="ce-calendar">Calendar</label>
+						<select class="form-control" id="ce-calendar" name="calendar_id">
+							for _, cal := range calendars {
+								<option value={ strconv.FormatInt(cal.ID, 10) }>{ cal.Name }</option>
+							}
+						</select>
+					</div>
+					<div class="form-group">
+						<label for="ce-summary">Title</label>
+						<input class="form-control" type="text" id="ce-summary" name="summary" required/>
+					</div>
+					<div class="form-group">
+						<label>
+							<input type="checkbox" id="ce-allday" name="all_day"/> All day
+						</label>
+					</div>
+					<div id="ce-datetime-fields">
+						<div class="form-group">
+							<label for="ce-start">Start</label>
+							<input class="form-control" type="datetime-local" id="ce-start" name="datetime_start" required/>
+						</div>
+						<div class="form-group">
+							<label for="ce-end">End</label>
+							<input class="form-control" type="datetime-local" id="ce-end" name="datetime_end"/>
+						</div>
+					</div>
+					<div id="ce-date-fields" style="display:none">
+						<div class="form-group">
+							<label for="ce-date-start">Start Date</label>
+							<input class="form-control" type="date" id="ce-date-start" name="date_start"/>
+						</div>
+						<div class="form-group">
+							<label for="ce-date-end">End Date</label>
+							<input class="form-control" type="date" id="ce-date-end" name="date_end"/>
+						</div>
+					</div>
+					<div class="form-group">
+						<label for="ce-location">Location</label>
+						<input class="form-control" type="text" id="ce-location" name="location"/>
+					</div>
+					<div class="form-group">
+						<label for="ce-description">Description</label>
+						<textarea class="form-control" id="ce-description" name="description" rows="3"></textarea>
+					</div>
+					<div class="flex gap-1" style="justify-content:flex-end">
+						<button type="button" class="btn" onclick="document.getElementById('create-modal').style.display='none'">Cancel</button>
+						<button type="submit" class="btn btn-primary">Create</button>
+					</div>
+				</form>
+			</div>
+		</div>
+		<style>
+			.modal-overlay {
+				position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+				background: rgba(0,0,0,0.5); z-index: 1000;
+				display: flex; align-items: center; justify-content: center;
+			}
+			.modal-content {
+				background: var(--color-bg, #fff); border-radius: 8px;
+				padding: 1.5rem; max-width: 500px; width: 90%;
+				max-height: 80vh; overflow-y: auto;
+				box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+			}
+		</style>
+		<script>
+		(function() {
+			var calEl = document.getElementById('calendar');
+			var calendar = new FullCalendar.Calendar(calEl, {
+				initialView: 'dayGridMonth',
+				headerToolbar: {
+					left: 'prev,next today',
+					center: 'title',
+					right: 'dayGridMonth,timeGridWeek,timeGridDay'
+				},
+				events: '/apps/calendar/events.json',
+				editable: false,
+				selectable: true,
+				eventClick: function(info) {
+					info.jsEvent.preventDefault();
+					var id = info.event.id;
+					fetch('/apps/calendar/events/' + id, {
+						headers: {'X-CSRF-Token': document.querySelector('[name=csrf_token]').value}
+					})
+					.then(function(r) { return r.text(); })
+					.then(function(html) {
+						document.getElementById('event-modal-body').innerHTML = html;
+						document.getElementById('event-modal').style.display = 'flex';
+					});
+				},
+				dateClick: function(info) {
+					var modal = document.getElementById('create-modal');
+					var isAllDay = info.allDay;
+					if (isAllDay) {
+						document.getElementById('ce-allday').checked = true;
+						document.getElementById('ce-datetime-fields').style.display = 'none';
+						document.getElementById('ce-date-fields').style.display = '';
+						document.getElementById('ce-date-start').value = info.dateStr;
+					} else {
+						document.getElementById('ce-allday').checked = false;
+						document.getElementById('ce-datetime-fields').style.display = '';
+						document.getElementById('ce-date-fields').style.display = 'none';
+						document.getElementById('ce-start').value = info.dateStr.slice(0, 16);
+					}
+					modal.style.display = 'flex';
+					document.getElementById('ce-summary').focus();
+				},
+				height: 'auto'
+			});
+			calendar.render();
+
+			// Calendar toggle checkboxes
+			document.querySelectorAll('.cal-toggle').forEach(function(cb) {
+				cb.addEventListener('change', function() {
+					var calId = parseInt(this.dataset.calendarId);
+					calendar.getEvents().forEach(function(ev) {
+						if (ev.extendedProps.calendarId === calId) {
+							ev.setProp('display', cb.checked ? 'auto' : 'none');
+						}
+					});
+				});
+			});
+
+			// All-day toggle in create modal
+			document.getElementById('ce-allday').addEventListener('change', function() {
+				document.getElementById('ce-datetime-fields').style.display = this.checked ? 'none' : '';
+				document.getElementById('ce-date-fields').style.display = this.checked ? '' : 'none';
+			});
+		})();
+		</script>
+	}
+}
+
+templ calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calendar) {
+	<h2 style="margin-top:0">{ ev.Summary }</h2>
+	<div class="text-muted" style="margin-bottom:1rem">
+		{ formatEventTime(ev.DTStart, ev.DTEnd, ev.IsAllDay) }
+		if ev.Location != "" {
+			<span> · { ev.Location }</span>
+		}
+	</div>
+	if ev.Description != "" {
+		<p>{ ev.Description }</p>
+	}
+	if cal != nil {
+		<p class="text-muted" style="font-size:0.85rem">
+			<span style={ fmt.Sprintf("display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s;vertical-align:middle", cal.Color) }></span>
+			{ " " + cal.Name }
+		</p>
+	}
+	<div class="sidebar-divider" style="margin:1rem 0"></div>
+	<h3>Edit Event</h3>
+	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d", ev.ID)) }>
+		<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+		<div class="form-group">
+			<label for="em-calendar">Calendar</label>
+			<select class="form-control" id="em-calendar" name="calendar_id">
+				for _, c := range calendars {
+					if c.ID == ev.CalendarID {
+						<option value={ strconv.FormatInt(c.ID, 10) } selected>{ c.Name }</option>
+					} else {
+						<option value={ strconv.FormatInt(c.ID, 10) }>{ c.Name }</option>
+					}
+				}
+			</select>
+		</div>
+		<div class="form-group">
+			<label for="em-summary">Title</label>
+			<input class="form-control" type="text" id="em-summary" name="summary" value={ ev.Summary } required/>
+		</div>
+		<div class="form-group">
+			<label>
+				if ev.IsAllDay {
+					<input type="checkbox" name="all_day" checked/> All day
+				} else {
+					<input type="checkbox" name="all_day"/> All day
+				}
+			</label>
+		</div>
+		if ev.IsAllDay {
+			<div class="form-group">
+				<label for="em-date-start">Start Date</label>
+				<input class="form-control" type="date" id="em-date-start" name="date_start" value={ time.Unix(ev.DTStart, 0).UTC().Format("2006-01-02") }/>
+			</div>
+			<div class="form-group">
+				<label for="em-date-end">End Date</label>
+				<input class="form-control" type="date" id="em-date-end" name="date_end" value={ time.Unix(ev.DTEnd, 0).UTC().Format("2006-01-02") }/>
+			</div>
+		} else {
+			<div class="form-group">
+				<label for="em-start">Start</label>
+				<input class="form-control" type="datetime-local" id="em-start" name="datetime_start" value={ time.Unix(ev.DTStart, 0).UTC().Format("2006-01-02T15:04") }/>
+			</div>
+			<div class="form-group">
+				<label for="em-end">End</label>
+				<input class="form-control" type="datetime-local" id="em-end" name="datetime_end" value={ time.Unix(ev.DTEnd, 0).UTC().Format("2006-01-02T15:04") }/>
+			</div>
+		}
+		<div class="form-group">
+			<label for="em-location">Location</label>
+			<input class="form-control" type="text" id="em-location" name="location" value={ ev.Location }/>
+		</div>
+		<div class="form-group">
+			<label for="em-description">Description</label>
+			<textarea class="form-control" id="em-description" name="description" rows="3">{ ev.Description }</textarea>
+		</div>
+		<div class="flex gap-1" style="justify-content:space-between">
+			<button type="button" class="btn btn-danger"
+				hx-delete={ fmt.Sprintf("/apps/calendar/events/%d", ev.ID) }
+				hx-confirm="Delete this event?"
+				hx-on::after-request="document.getElementById('event-modal').style.display='none';location.reload()"
+			>Delete</button>
+			<div class="flex gap-1">
+				<button type="button" class="btn" onclick="document.getElementById('event-modal').style.display='none'">Cancel</button>
+				<button type="submit" class="btn btn-primary">Save</button>
+			</div>
+		</div>
+	</form>
+}
+
+templ calSettingsPage(pd ui.PageData, calendars []Calendar) {
+	@ui.Base(pd) {
+		<div class="sidebar-layout">
+			@calSidebar(calendars, "/apps/calendar/settings", pd.CSRFToken)
+			<div class="sidebar-content">
+				<h1>Calendar Settings</h1>
+				@ui.Card("Create Calendar") {
+					<form method="post" action="/apps/calendar/calendars" class="flex gap-1 items-end">
+						<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+						<div class="form-group" style="margin-bottom:0">
+							<label for="name">Name</label>
+							<input class="form-control" type="text" id="name" name="name" placeholder="Work" required/>
+						</div>
+						<div class="form-group" style="margin-bottom:0">
+							<label for="uid">URL slug</label>
+							<input class="form-control" type="text" id="uid" name="uid" placeholder="work"/>
+						</div>
+						<div class="form-group" style="margin-bottom:0">
+							<label for="color">Color</label>
+							<input class="form-control" type="color" id="color" name="color" value="#0082c9"/>
+						</div>
+						<button class="btn btn-primary" type="submit">Create</button>
+					</form>
+				}
+				@ui.Card("Calendars") {
+					if len(calendars) == 0 {
+						<p class="text-muted">No calendars.</p>
+					} else {
+						<table class="table">
+							<thead>
+								<tr>
+									<th>Color</th>
+									<th>Name</th>
+									<th>UID</th>
+									<th>CTag</th>
+									<th class="text-right">Actions</th>
+								</tr>
+							</thead>
+							<tbody>
+								for _, cal := range calendars {
+									<tr id={ fmt.Sprintf("cal-%d", cal.ID) }>
+										<td><span style={ fmt.Sprintf("display:inline-block;width:16px;height:16px;border-radius:50%%;background:%s", cal.Color) }></span></td>
+										<td>{ cal.Name }</td>
+										<td>{ cal.UID }</td>
+										<td>{ strconv.FormatInt(cal.CTag, 10) }</td>
+										<td class="text-right">
+											<button
+												class="btn btn-danger btn-sm"
+												hx-delete={ fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID) }
+												hx-target={ fmt.Sprintf("#cal-%d", cal.ID) }
+												hx-swap="outerHTML"
+												hx-confirm="Delete this calendar and all its events?"
+											>Delete</button>
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					}
+				}
+				@ui.Card("CalDAV Access") {
+					<p class="text-muted">
+						Configure your CalDAV client with:
+					</p>
+					<ul>
+						<li><strong>Server:</strong> <code>your-server-url</code></li>
+						<li><strong>Path:</strong> <code>/remote.php/dav</code></li>
+						<li><strong>Username/Password:</strong> your Cog credentials or an app password</li>
+					</ul>
+				}
+			</div>
+		</div>
+	}
+}
+
+func sidebarClass(activePath, itemPath string) string {
+	if activePath == itemPath {
+		return "sidebar-item active"
+	}
+	return "sidebar-item"
+}
+
+func formatEventTime(dtstart, dtend int64, isAllDay bool) string {
+	if dtstart == 0 {
+		return ""
+	}
+	start := time.Unix(dtstart, 0)
+	if isAllDay {
+		return start.Format("Mon, Jan 2 2006")
+	}
+	end := time.Unix(dtend, 0)
+	now := time.Now()
+	if start.Year() == now.Year() && start.YearDay() == now.YearDay() {
+		return fmt.Sprintf("Today %s – %s", start.Format("15:04"), end.Format("15:04"))
+	}
+	if start.Year() == now.Year() {
+		return fmt.Sprintf("%s %s – %s", start.Format("Mon, Jan 2"), start.Format("15:04"), end.Format("15:04"))
+	}
+	return fmt.Sprintf("%s %s – %s", start.Format("2006-01-02"), start.Format("15:04"), end.Format("15:04"))
+}

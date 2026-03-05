@@ -292,6 +292,8 @@ func hitURL(hit search.Hit) string {
 			return sub
 		}
 		return "/apps/rss/"
+	case "calendar":
+		return "/apps/calendar/"
 	default:
 		return "/"
 	}
