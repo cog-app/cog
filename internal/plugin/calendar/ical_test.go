@@ -182,7 +182,7 @@ func TestGenerateICSFull(t *testing.T) {
 	end := time.Date(2026, 3, 15, 15, 0, 0, 0, time.UTC)
 	alarms := []VAlarm{{Action: "DISPLAY", Trigger: "-PT10M"}}
 
-	ics := GenerateICSFull("full-uid", "Meeting", "", "", start, end, false, "FREQ=WEEKLY", alarms)
+	ics := GenerateICSFull("full-uid", "Meeting", "", "", start, end, false, "FREQ=WEEKLY", alarms, nil)
 
 	if !strings.Contains(ics, "RRULE:FREQ=WEEKLY") {
 		t.Error("missing RRULE")

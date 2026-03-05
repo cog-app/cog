@@ -12,10 +12,19 @@ import (
 
 // Permission bitmask values for share records.
 const (
-	PermRead    uint32 = 1 << iota // 1
-	PermWrite                      // 2
-	PermReshare                    // 4
+	PermRead      uint32 = 1 << iota // 1
+	PermWrite                        // 2
+	PermReshare                      // 4
+	PermFreeBusy                     // 8
+	PermSchedule                     // 16
 )
+
+// PermissionLevel is a named permission preset that plugins define
+// for their shareable resources.
+type PermissionLevel struct {
+	Label       string // "Read-only", "Read/Write", "Free/Busy"
+	Permissions uint32 // bitmask
+}
 
 // Plugin is the core interface that all plugins must implement.
 type Plugin interface {
@@ -82,6 +91,9 @@ type ResourceDef struct {
 	ParentColumn string
 	// Handler serves requests for individual resources.
 	Handler ResourceHandler
+	// PermissionLevels defines the named permission presets available for sharing.
+	// If empty, defaults to Read-only and Read/Write.
+	PermissionLevels []PermissionLevel
 }
 
 // ResourceHandler serves requests for a specific resource instance.

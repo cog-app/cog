@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+func fileResourceType(isDir bool) string {
+	if isDir {
+		return "files:directory"
+	}
+	return "files:file"
+}
+
 templ filesPage(pd ui.PageData, dirPath string, items []files.FileMeta) {
 	@ui.Base(pd) {
 		<h1 style="margin-bottom:0.5rem">Files</h1>
@@ -140,6 +147,12 @@ templ fileViewPage(pd ui.PageData, filePath string, meta *files.FileMeta, kind s
 				<span class="text-muted">{ formatSize(meta.Size) }</span>
 				<a href={ templ.SafeURL("/apps/files" + filePath + "?dl=1") } class="btn btn-primary btn-sm">Download</a>
 				<button
+					class="btn btn-outline btn-sm"
+					hx-get={ fmt.Sprintf("/api/shares/panel?type=%s&id=%d", fileResourceType(meta.IsDir), meta.ID) }
+					hx-target="#file-share-panel"
+					hx-swap="innerHTML"
+				>Share</button>
+				<button
 					class="btn btn-danger btn-sm"
 					hx-delete={ "/apps/files" + filePath }
 					hx-confirm={ "Delete " + meta.Name + "?" }
@@ -147,6 +160,7 @@ templ fileViewPage(pd ui.PageData, filePath string, meta *files.FileMeta, kind s
 					data-back={ "/apps/files" + parentDir(filePath) }
 				>Delete</button>
 			</div>
+			<div id="file-share-panel"></div>
 			if kind == "image" {
 				<div style="text-align:center">
 					<img

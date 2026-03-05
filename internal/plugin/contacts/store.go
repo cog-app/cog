@@ -30,6 +30,13 @@ type Card struct {
 	FN            string
 	Email         string
 	Tel           string
+	Org           string
+	Title         string
+	Note          string
+	EmailsJSON    string
+	PhonesJSON    string
+	AddressesJSON string
+	PhotoPath     string
 	VCardData     string
 	Rev           string
 	CreatedAt     int64
@@ -39,9 +46,13 @@ type Card struct {
 // CardWithBook extends Card with address book metadata for display.
 type CardWithBook struct {
 	Card
-	BookName  string
-	BookColor string
+	BookName      string
+	BookColor     string
+	OwnerUsername string // non-empty when from a shared address book
 }
+
+// cardColumns is the list of columns selected for card queries.
+const cardColumns = `id, address_book_id, uid, uri, etag, fn, email, tel, org, title, note, emails_json, phones_json, addresses_json, photo_path, vcard_data, rev, created_at, updated_at`
 
 // --- Address Book CRUD ---
 
@@ -128,7 +139,7 @@ func EnsureDefaultAddressBook(db *sql.DB) error {
 // --- Card CRUD ---
 
 func ListCards(db *sql.DB, bookID int64) ([]Card, error) {
-	rows, err := db.Query(`SELECT id, address_book_id, uid, uri, etag, fn, email, tel, vcard_data, rev, created_at, updated_at
+	rows, err := db.Query(`SELECT `+cardColumns+`
 		FROM cards WHERE address_book_id = ? ORDER BY fn`, bookID)
 	if err != nil {
 		return nil, err
@@ -139,9 +150,11 @@ func ListCards(db *sql.DB, bookID int64) ([]Card, error) {
 
 func GetCardByUID(db *sql.DB, bookID int64, uid string) (*Card, error) {
 	var c Card
-	err := db.QueryRow(`SELECT id, address_book_id, uid, uri, etag, fn, email, tel, vcard_data, rev, created_at, updated_at
+	err := db.QueryRow(`SELECT `+cardColumns+`
 		FROM cards WHERE address_book_id = ? AND uid = ?`, bookID, uid).
-		Scan(&c.ID, &c.AddressBookID, &c.UID, &c.URI, &c.ETag, &c.FN, &c.Email, &c.Tel, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt)
+		Scan(&c.ID, &c.AddressBookID, &c.UID, &c.URI, &c.ETag, &c.FN, &c.Email, &c.Tel,
+			&c.Org, &c.Title, &c.Note, &c.EmailsJSON, &c.PhonesJSON, &c.AddressesJSON,
+			&c.PhotoPath, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -150,9 +163,11 @@ func GetCardByUID(db *sql.DB, bookID int64, uid string) (*Card, error) {
 
 func GetCardByURI(db *sql.DB, bookID int64, uri string) (*Card, error) {
 	var c Card
-	err := db.QueryRow(`SELECT id, address_book_id, uid, uri, etag, fn, email, tel, vcard_data, rev, created_at, updated_at
+	err := db.QueryRow(`SELECT `+cardColumns+`
 		FROM cards WHERE address_book_id = ? AND uri = ?`, bookID, uri).
-		Scan(&c.ID, &c.AddressBookID, &c.UID, &c.URI, &c.ETag, &c.FN, &c.Email, &c.Tel, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt)
+		Scan(&c.ID, &c.AddressBookID, &c.UID, &c.URI, &c.ETag, &c.FN, &c.Email, &c.Tel,
+			&c.Org, &c.Title, &c.Note, &c.EmailsJSON, &c.PhonesJSON, &c.AddressesJSON,
+			&c.PhotoPath, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -161,9 +176,11 @@ func GetCardByURI(db *sql.DB, bookID int64, uri string) (*Card, error) {
 
 func GetCard(db *sql.DB, id int64) (*Card, error) {
 	var c Card
-	err := db.QueryRow(`SELECT id, address_book_id, uid, uri, etag, fn, email, tel, vcard_data, rev, created_at, updated_at
+	err := db.QueryRow(`SELECT `+cardColumns+`
 		FROM cards WHERE id = ?`, id).
-		Scan(&c.ID, &c.AddressBookID, &c.UID, &c.URI, &c.ETag, &c.FN, &c.Email, &c.Tel, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt)
+		Scan(&c.ID, &c.AddressBookID, &c.UID, &c.URI, &c.ETag, &c.FN, &c.Email, &c.Tel,
+			&c.Org, &c.Title, &c.Note, &c.EmailsJSON, &c.PhonesJSON, &c.AddressesJSON,
+			&c.PhotoPath, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -174,18 +191,27 @@ func GetCard(db *sql.DB, id int64) (*Card, error) {
 func UpsertCard(db *sql.DB, bookID int64, uid, uri, vcardData string, fields VCardFields) (*Card, error) {
 	etag := fmt.Sprintf("%x", md5.Sum([]byte(vcardData)))
 
-	_, err := db.Exec(`INSERT INTO cards (address_book_id, uid, uri, etag, fn, email, tel, vcard_data, rev)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := db.Exec(`INSERT INTO cards (address_book_id, uid, uri, etag, fn, email, tel, org, title, note, emails_json, phones_json, addresses_json, vcard_data, rev)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(address_book_id, uid) DO UPDATE SET
 			uri = excluded.uri,
 			etag = excluded.etag,
 			fn = excluded.fn,
 			email = excluded.email,
 			tel = excluded.tel,
+			org = excluded.org,
+			title = excluded.title,
+			note = excluded.note,
+			emails_json = excluded.emails_json,
+			phones_json = excluded.phones_json,
+			addresses_json = excluded.addresses_json,
 			vcard_data = excluded.vcard_data,
 			rev = excluded.rev,
 			updated_at = unixepoch()`,
-		bookID, uid, uri, etag, fields.FN, fields.Email, fields.Tel, vcardData, fields.Rev)
+		bookID, uid, uri, etag, fields.FN, fields.Email, fields.Tel,
+		fields.Org, fields.Title, fields.Note,
+		fields.EmailsJSON, fields.PhonesJSON, fields.AddressesJSON,
+		vcardData, fields.Rev)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +266,8 @@ func DeleteCardByID(db *sql.DB, id int64) error {
 // AllCards returns all cards joined with address book info, ordered by name.
 func AllCards(db *sql.DB, limit int) ([]CardWithBook, error) {
 	rows, err := db.Query(`SELECT c.id, c.address_book_id, c.uid, c.uri, c.etag, c.fn, c.email, c.tel,
-		c.vcard_data, c.rev, c.created_at, c.updated_at,
+		c.org, c.title, c.note, c.emails_json, c.phones_json, c.addresses_json,
+		c.photo_path, c.vcard_data, c.rev, c.created_at, c.updated_at,
 		b.name, b.color
 		FROM cards c JOIN address_books b ON c.address_book_id = b.id
 		ORDER BY c.fn LIMIT ?`, limit)
@@ -252,7 +279,8 @@ func AllCards(db *sql.DB, limit int) ([]CardWithBook, error) {
 	for rows.Next() {
 		var cw CardWithBook
 		if err := rows.Scan(&cw.ID, &cw.AddressBookID, &cw.UID, &cw.URI, &cw.ETag, &cw.FN, &cw.Email, &cw.Tel,
-			&cw.VCardData, &cw.Rev, &cw.CreatedAt, &cw.UpdatedAt,
+			&cw.Org, &cw.Title, &cw.Note, &cw.EmailsJSON, &cw.PhonesJSON, &cw.AddressesJSON,
+			&cw.PhotoPath, &cw.VCardData, &cw.Rev, &cw.CreatedAt, &cw.UpdatedAt,
 			&cw.BookName, &cw.BookColor); err != nil {
 			return nil, err
 		}
@@ -264,7 +292,8 @@ func AllCards(db *sql.DB, limit int) ([]CardWithBook, error) {
 // CardsByAddressBook returns cards for a specific address book, joined with book info.
 func CardsByAddressBook(db *sql.DB, bookID int64, limit int) ([]CardWithBook, error) {
 	rows, err := db.Query(`SELECT c.id, c.address_book_id, c.uid, c.uri, c.etag, c.fn, c.email, c.tel,
-		c.vcard_data, c.rev, c.created_at, c.updated_at,
+		c.org, c.title, c.note, c.emails_json, c.phones_json, c.addresses_json,
+		c.photo_path, c.vcard_data, c.rev, c.created_at, c.updated_at,
 		b.name, b.color
 		FROM cards c JOIN address_books b ON c.address_book_id = b.id
 		WHERE c.address_book_id = ?
@@ -277,7 +306,8 @@ func CardsByAddressBook(db *sql.DB, bookID int64, limit int) ([]CardWithBook, er
 	for rows.Next() {
 		var cw CardWithBook
 		if err := rows.Scan(&cw.ID, &cw.AddressBookID, &cw.UID, &cw.URI, &cw.ETag, &cw.FN, &cw.Email, &cw.Tel,
-			&cw.VCardData, &cw.Rev, &cw.CreatedAt, &cw.UpdatedAt,
+			&cw.Org, &cw.Title, &cw.Note, &cw.EmailsJSON, &cw.PhonesJSON, &cw.AddressesJSON,
+			&cw.PhotoPath, &cw.VCardData, &cw.Rev, &cw.CreatedAt, &cw.UpdatedAt,
 			&cw.BookName, &cw.BookColor); err != nil {
 			return nil, err
 		}
@@ -310,7 +340,8 @@ func scanCards(rows *sql.Rows) ([]Card, error) {
 	for rows.Next() {
 		var c Card
 		if err := rows.Scan(&c.ID, &c.AddressBookID, &c.UID, &c.URI, &c.ETag, &c.FN, &c.Email, &c.Tel,
-			&c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt); err != nil {
+			&c.Org, &c.Title, &c.Note, &c.EmailsJSON, &c.PhonesJSON, &c.AddressesJSON,
+			&c.PhotoPath, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, err
 		}
 		cards = append(cards, c)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	plugpkg "git.duckfam.us/jj-software/cog/plugin"
 )
 
 // CalDAVHandler implements CalDAV for the calendar plugin.
@@ -40,17 +41,27 @@ func (h *CalDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.HasPrefix(path, "/remote.php/dav/calendars/") {
-		db, err := h.plugin.DB(u.Username)
+	if after, ok := strings.CutPrefix(path, "/remote.php/dav/calendars/"); ok {
+		// Determine which user's calendars are being accessed.
+		rest := after
+		parts := strings.SplitN(rest, "/", 2)
+		targetUser := parts[0]
+		if targetUser == "" {
+			targetUser = u.Username
+		}
+
+		db, err := h.plugin.DB(targetUser)
 		if err != nil {
-			log.Printf("caldav: db error for %s: %v", u.Username, err)
+			log.Printf("caldav: db error for %s: %v", targetUser, err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		if err := EnsureDefaultCalendar(db); err != nil {
-			log.Printf("caldav: ensure default calendar: %v", err)
+		if targetUser == u.Username {
+			if err := EnsureDefaultCalendar(db); err != nil {
+				log.Printf("caldav: ensure default calendar: %v", err)
+			}
 		}
-		h.dispatch(w, r, db, u.Username)
+		h.dispatch(w, r, db, u.Username, targetUser)
 		return
 	}
 
@@ -87,27 +98,34 @@ func (h *CalDAVHandler) handlePrincipal(w http.ResponseWriter, r *http.Request, 
 }
 
 // dispatch routes calendar requests by path depth.
-func (h *CalDAVHandler) dispatch(w http.ResponseWriter, r *http.Request, db *sql.DB, username string) {
+// username is the authenticated user; targetUser is the user whose calendars are being accessed.
+func (h *CalDAVHandler) dispatch(w http.ResponseWriter, r *http.Request, db *sql.DB, username, targetUser string) {
 	rest := strings.TrimPrefix(r.URL.Path, "/remote.php/dav/calendars/")
 	parts := strings.SplitN(rest, "/", 3) // [user, caluid?, eventuid?]
 
 	switch {
 	case len(parts) <= 1 || parts[1] == "":
-		h.calendarHome(w, r, db, username)
+		h.calendarHome(w, r, db, username, targetUser)
 	case len(parts) == 2 || parts[2] == "":
-		h.calendarCollection(w, r, db, username, strings.TrimSuffix(parts[1], "/"))
+		h.calendarCollection(w, r, db, username, targetUser, strings.TrimSuffix(parts[1], "/"))
 	default:
 		eventFile := strings.TrimSuffix(parts[2], "/")
 		if eventFile == "" {
-			h.calendarCollection(w, r, db, username, parts[1])
+			h.calendarCollection(w, r, db, username, targetUser, parts[1])
 			return
 		}
-		h.event(w, r, db, username, parts[1], strings.TrimSuffix(eventFile, ".ics"))
+		h.event(w, r, db, username, targetUser, parts[1], strings.TrimSuffix(eventFile, ".ics"))
 	}
 }
 
 // calendarHome lists all calendars for a user.
-func (h *CalDAVHandler) calendarHome(w http.ResponseWriter, r *http.Request, db *sql.DB, username string) {
+func (h *CalDAVHandler) calendarHome(w http.ResponseWriter, r *http.Request, db *sql.DB, username, targetUser string) {
+	// If accessing another user's calendar home, deny unless shares exist (handled per-calendar).
+	if targetUser != username {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
 	switch r.Method {
 	case "PROPFIND":
 		homeHref := "/remote.php/dav/calendars/" + username + "/"
@@ -122,9 +140,17 @@ func (h *CalDAVHandler) calendarHome(w http.ResponseWriter, r *http.Request, db 
 		}}
 
 		if depth != "0" {
+			// Own calendars.
 			cals, _ := ListCalendars(db)
 			for _, cal := range cals {
 				responses = append(responses, calResponse(homeHref+cal.UID+"/", &cal, username))
+			}
+			// Shared calendars from other users.
+			shared, _ := h.plugin.SharedCalendars(username)
+			for _, sc := range shared {
+				sharedHref := "/remote.php/dav/calendars/" + sc.OwnerUsername + "/" + sc.UID + "/"
+				resp := sharedCalResponse(sharedHref, &sc, username)
+				responses = append(responses, resp)
 			}
 		}
 		writeMultiStatus(w, responses)
@@ -136,10 +162,10 @@ func (h *CalDAVHandler) calendarHome(w http.ResponseWriter, r *http.Request, db 
 }
 
 // calendarCollection handles PROPFIND/MKCALENDAR/DELETE/REPORT/PROPPATCH on a single calendar.
-func (h *CalDAVHandler) calendarCollection(w http.ResponseWriter, r *http.Request, db *sql.DB, username, calUID string) {
+func (h *CalDAVHandler) calendarCollection(w http.ResponseWriter, r *http.Request, db *sql.DB, username, targetUser, calUID string) {
 	cal, err := GetCalendarByUID(db, calUID)
 	if err != nil {
-		if r.Method == "MKCALENDAR" {
+		if r.Method == "MKCALENDAR" && targetUser == username {
 			h.mkCalendar(w, r, db, calUID)
 			return
 		}
@@ -147,11 +173,22 @@ func (h *CalDAVHandler) calendarCollection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// If accessing another user's calendar, check share permissions.
+	var sharePerms uint32
+	if targetUser != username {
+		perms, _, err := h.plugin.CheckCalendarAccess(username, cal.UID)
+		if err != nil || perms == 0 {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		sharePerms = perms
+	}
+
 	switch r.Method {
 	case "PROPFIND":
-		calHref := "/remote.php/dav/calendars/" + username + "/" + calUID + "/"
+		calHref := "/remote.php/dav/calendars/" + targetUser + "/" + calUID + "/"
 		depth := r.Header.Get("Depth")
-		responses := []davResponse{calResponse(calHref, cal, username)}
+		responses := []davResponse{calResponse(calHref, cal, targetUser)}
 
 		if depth != "0" {
 			events, _ := ListEvents(db, cal.ID)
@@ -161,12 +198,27 @@ func (h *CalDAVHandler) calendarCollection(w http.ResponseWriter, r *http.Reques
 		}
 		writeMultiStatus(w, responses)
 	case "REPORT":
-		h.handleReport(w, r, db, username, cal)
+		h.handleReport(w, r, db, targetUser, cal)
 	case "PROPPATCH":
-		h.handleProppatch(w, r, db, username, cal)
+		if targetUser != username {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		h.handleProppatch(w, r, db, targetUser, cal)
 	case "MKCALENDAR":
+		if targetUser != username {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
 		h.mkCalendar(w, r, db, calUID)
 	case http.MethodDelete:
+		if targetUser != username {
+			// Shared calendar: require PermWrite.
+			if sharePerms&plugpkg.PermWrite == 0 {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+		}
 		if err := DeleteCalendar(db, cal.ID); err != nil {
 			log.Printf("caldav: delete calendar %d: %v", cal.ID, err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -208,15 +260,31 @@ func (h *CalDAVHandler) mkCalendar(w http.ResponseWriter, r *http.Request, db *s
 }
 
 // event handles GET/PUT/DELETE/PROPFIND on a single event resource.
-func (h *CalDAVHandler) event(w http.ResponseWriter, r *http.Request, db *sql.DB, username, calUID, eventUID string) {
+func (h *CalDAVHandler) event(w http.ResponseWriter, r *http.Request, db *sql.DB, username, targetUser, calUID, eventUID string) {
 	cal, err := GetCalendarByUID(db, calUID)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
+	// If accessing another user's calendar, check share permissions.
+	var sharePerms uint32
+	if targetUser != username {
+		perms, _, err := h.plugin.CheckCalendarAccess(username, cal.UID)
+		if err != nil || perms == 0 {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		sharePerms = perms
+	}
+
 	switch r.Method {
 	case http.MethodGet:
+		// For shared calendars, require PermRead or PermFreeBusy.
+		if targetUser != username && sharePerms&(plugpkg.PermRead|plugpkg.PermFreeBusy) == 0 {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
 		ev, err := GetEventByUID(db, cal.ID, eventUID)
 		if err != nil {
 			w.WriteHeader(http.StatusNotFound)
@@ -224,9 +292,22 @@ func (h *CalDAVHandler) event(w http.ResponseWriter, r *http.Request, db *sql.DB
 		}
 		w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
 		w.Header().Set("ETag", `"`+ev.ETag+`"`)
-		io.WriteString(w, ev.ICSData)
+		if targetUser != username && sharePerms&plugpkg.PermRead == 0 && sharePerms&plugpkg.PermFreeBusy != 0 {
+			// Free/Busy only: return a stripped-down ICS with only timing info.
+			ics := GenerateICSFull(ev.UID, "Busy", "", "", time.Unix(ev.DTStart, 0).UTC(), time.Unix(ev.DTEnd, 0).UTC(), ev.IsAllDay, "", nil, nil)
+			io.WriteString(w, ics)
+		} else {
+			io.WriteString(w, ev.ICSData)
+		}
 
 	case http.MethodPut:
+		// Require PermWrite for shared calendars.
+		if targetUser != username {
+			if sharePerms&plugpkg.PermWrite == 0 {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+		}
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		if err != nil {
 			http.Error(w, "read body", http.StatusBadRequest)
@@ -270,6 +351,13 @@ func (h *CalDAVHandler) event(w http.ResponseWriter, r *http.Request, db *sql.DB
 		w.WriteHeader(http.StatusCreated)
 
 	case http.MethodDelete:
+		// Require PermWrite for shared calendars.
+		if targetUser != username {
+			if sharePerms&plugpkg.PermWrite == 0 {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+		}
 		if err := DeleteEvent(db, cal.ID, eventUID); err != nil {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -277,12 +365,16 @@ func (h *CalDAVHandler) event(w http.ResponseWriter, r *http.Request, db *sql.DB
 		w.WriteHeader(http.StatusNoContent)
 
 	case "PROPFIND":
+		if targetUser != username && sharePerms&(plugpkg.PermRead|plugpkg.PermFreeBusy) == 0 {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
 		ev, err := GetEventByUID(db, cal.ID, eventUID)
 		if err != nil {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		evHref := "/remote.php/dav/calendars/" + username + "/" + calUID + "/" + eventUID + ".ics"
+		evHref := "/remote.php/dav/calendars/" + targetUser + "/" + calUID + "/" + eventUID + ".ics"
 		writeMultiStatus(w, []davResponse{eventResponse(evHref, ev)})
 
 	case http.MethodOptions:
@@ -535,6 +627,40 @@ func calResponse(href string, cal *Calendar, username string) davResponse {
 					`<D:privilege><D:read/></D:privilege>`+
 					`<D:privilege><D:write/></D:privilege>`+
 					`<D:privilege><D:write-content/></D:privilege>`),
+			rawProp("D:owner", fmt.Sprintf(`<D:href>%s</D:href>`, ownerHref)),
+			rawProp("D:supported-report-set",
+				`<D:supported-report><D:report><C:calendar-multiget/></D:report></D:supported-report>`+
+					`<D:supported-report><D:report><C:calendar-query/></D:report></D:supported-report>`+
+					`<D:supported-report><D:report><D:sync-collection/></D:report></D:supported-report>`),
+		},
+	}
+}
+
+func sharedCalResponse(href string, sc *SharedCalendar, username string) davResponse {
+	ownerHref := "/remote.php/dav/principals/users/" + sc.OwnerUsername + "/"
+	var privs string
+	if sc.Permissions&plugpkg.PermRead != 0 {
+		privs += `<D:privilege><D:read/></D:privilege>`
+	}
+	if sc.Permissions&plugpkg.PermWrite != 0 {
+		privs += `<D:privilege><D:write/></D:privilege><D:privilege><D:write-content/></D:privilege>`
+	}
+	if privs == "" {
+		// FreeBusy-only still allows reading (limited data).
+		privs = `<D:privilege><D:read/></D:privilege>`
+	}
+	return davResponse{
+		Href: href,
+		Props: []xmlProp{
+			rawProp("D:resourcetype", `<D:collection/><C:calendar/>`),
+			textProp("D:displayname", sc.Calendar.Name+" ("+sc.OwnerUsername+")"),
+			textProp("ICAL:calendar-color", sc.Calendar.Color),
+			textProp("CS:getctag", strconv.FormatInt(sc.Calendar.CTag, 10)),
+			textProp("D:getetag", `"`+strconv.FormatInt(sc.Calendar.CTag, 10)+`"`),
+			rawProp("C:supported-calendar-component-set", `<C:comp name="VEVENT"/>`),
+			textProp("C:calendar-description", sc.Calendar.Description),
+			textProp("D:sync-token", "http://cog/ns/sync/"+strconv.FormatInt(sc.Calendar.SyncToken, 10)),
+			rawProp("D:current-user-privilege-set", privs),
 			rawProp("D:owner", fmt.Sprintf(`<D:href>%s</D:href>`, ownerHref)),
 			rawProp("D:supported-report-set",
 				`<D:supported-report><D:report><C:calendar-multiget/></D:report></D:supported-report>`+

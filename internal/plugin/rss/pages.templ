@@ -2,7 +2,9 @@ package rss
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/ui"
@@ -45,9 +47,12 @@ templ rssSidebar(sb sidebarData) {
 
 templ sidebarFeedLink(feed Feed, sb sidebarData) {
 	<a href={ templ.SafeURL(fmt.Sprintf("/apps/rss/feed/%d", feed.ID)) }
-		class={ sidebarClass(sb.ActivePath, fmt.Sprintf("/apps/rss/feed/%d", feed.ID)) }
-		style="padding-left:1.5rem;font-size:0.9rem">
-		{ feedDisplayTitle(feed) }
+		class={ sidebarFeedClass(feed, sb) }
+		style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem">
+		<span class="sidebar-item-text">{ feedDisplayTitle(feed) }</span>
+		if isFeedPending(feed) {
+			<span class="spinner-sm"></span>
+		}
 		if sb.UnreadCounts[feed.ID] > 0 {
 			<span class="badge">{ strconv.Itoa(sb.UnreadCounts[feed.ID]) }</span>
 		}
@@ -131,6 +136,56 @@ templ rssItemList(items []ItemWithFeed, csrfToken string) {
 			@rssItemRow(item, csrfToken)
 		}
 	</div>
+	<script>
+	function toggleArticle(id) {
+		var el = document.getElementById('detail-' + id);
+		var row = document.getElementById('item-' + id);
+		if (!el) return;
+		var isOpen = el.style.display !== 'none';
+		// Close all open details
+		document.querySelectorAll('.rss-item-detail').forEach(function(d) { d.style.display = 'none'; });
+		document.querySelectorAll('.rss-item-active').forEach(function(r) { r.classList.remove('rss-item-active'); });
+		if (!isOpen) {
+			el.style.display = '';
+			row.classList.add('rss-item-active');
+			// Auto mark as read
+			fetch('/apps/rss/items/' + id + '/mark-read', {
+				method: 'POST',
+				headers: {'X-CSRF-Token': document.querySelector('[name=csrf_token]') ? document.querySelector('[name=csrf_token]').value : ''}
+			});
+		}
+	}
+	(function() {
+		document.addEventListener('keydown', function(e) {
+			if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+			var items = Array.from(document.querySelectorAll('.rss-item'));
+			var active = document.querySelector('.rss-item-active');
+			var idx = active ? items.indexOf(active) : -1;
+			if (e.key === 'j') {
+				e.preventDefault();
+				var next = idx + 1;
+				if (next < items.length) {
+					var id = items[next].id.replace('item-', '');
+					toggleArticle(id);
+					items[next].scrollIntoView({block: 'nearest', behavior: 'smooth'});
+				}
+			} else if (e.key === 'k') {
+				e.preventDefault();
+				var prev = idx - 1;
+				if (prev >= 0) {
+					var id = items[prev].id.replace('item-', '');
+					toggleArticle(id);
+					items[prev].scrollIntoView({block: 'nearest', behavior: 'smooth'});
+				}
+			} else if (e.key === 'o' || e.key === 'Enter') {
+				if (active) {
+					var link = active.querySelector('.rss-item-detail a[target=_blank]');
+					if (link) { e.preventDefault(); window.open(link.href, '_blank'); }
+				}
+			}
+		});
+	})();
+	</script>
 }
 
 templ rssItemRow(item ItemWithFeed, csrfToken string) {
@@ -140,16 +195,12 @@ templ rssItemRow(item ItemWithFeed, csrfToken string) {
 				<div class="flex items-center gap-1" style="flex-wrap:wrap">
 					<span class="text-muted" style="font-size:0.8rem">{ item.FeedTitle }</span>
 					if item.Author != "" {
-						<span class="text-muted" style="font-size:0.8rem">· { item.Author }</span>
+						<span class="text-muted" style="font-size:0.8rem">&middot; { item.Author }</span>
 					}
-					<span class="text-muted" style="font-size:0.8rem">· { formatTime(item.PublishedAt) }</span>
+					<span class="text-muted" style="font-size:0.8rem">&middot; { formatTime(item.PublishedAt) }</span>
 				</div>
-				<div style="font-weight:500">
-					if item.URL != "" {
-						<a href={ templ.SafeURL(item.URL) } target="_blank" rel="noopener">{ item.Title }</a>
-					} else {
-						{ item.Title }
-					}
+				<div style="font-weight:500;cursor:pointer" onclick={ templ.ComponentScript{Call: fmt.Sprintf("toggleArticle(%d)", item.ID)} }>
+					{ item.Title }
 				</div>
 			</div>
 			<div class="flex gap-1" style="flex-shrink:0">
@@ -179,6 +230,19 @@ templ rssItemRow(item ItemWithFeed, csrfToken string) {
 						&#9679;
 					}
 				</button>
+			</div>
+		</div>
+		<div id={ fmt.Sprintf("detail-%d", item.ID) } class="rss-item-detail" style="display:none">
+			if itemPreviewImage(item.ContentHTML) != "" {
+				<img class="rss-item-preview-img" src={ itemPreviewImage(item.ContentHTML) } alt=""/>
+			}
+			if itemSummary(item.ContentHTML) != "" {
+				<p class="rss-item-summary">{ itemSummary(item.ContentHTML) }</p>
+			}
+			<div style="margin-top:0.75rem;clear:both">
+				if item.URL != "" {
+					<a href={ templ.SafeURL(item.URL) } target="_blank" rel="noopener" class="btn btn-outline btn-sm">Open article</a>
+				}
 			</div>
 		</div>
 	</div>
@@ -246,6 +310,11 @@ templ rssSettingsPage(pd ui.PageData, sb sidebarData, feeds []Feed, folders []Fo
 											}
 										</td>
 										<td class="text-right">
+											<button
+												class="btn btn-outline btn-sm"
+												hx-post={ fmt.Sprintf("/apps/rss/feeds/%d/refresh", feed.ID) }
+												hx-swap="none"
+											>Refresh</button>
 											<button
 												class="btn btn-danger btn-sm"
 												hx-delete={ fmt.Sprintf("/apps/rss/feeds/%d", feed.ID) }
@@ -319,7 +388,22 @@ func feedDisplayTitle(f Feed) string {
 	if f.Title != "" {
 		return f.Title
 	}
+	if u, err := url.Parse(f.URL); err == nil && u.Host != "" {
+		return u.Host
+	}
 	return f.URL
+}
+
+func sidebarFeedClass(f Feed, sb sidebarData) string {
+	base := sidebarClass(sb.ActivePath, fmt.Sprintf("/apps/rss/feed/%d", f.ID))
+	if f.LastError != "" {
+		return base + " text-danger"
+	}
+	return base
+}
+
+func isFeedPending(f Feed) bool {
+	return f.LastCheckedAt == 0 && f.LastError == ""
 }
 
 func feedFolderName(f Feed, folders []Folder) string {
@@ -361,4 +445,58 @@ func starBtnClass(isStarred bool) string {
 		return "btn btn-sm"
 	}
 	return "btn btn-outline btn-sm"
+}
+
+func itemPreviewImage(html string) string {
+	// Simple regex-free extraction of first img src from HTML content
+	idx := strings.Index(html, "<img")
+	if idx == -1 {
+		return ""
+	}
+	rest := html[idx:]
+	srcIdx := strings.Index(rest, "src=\"")
+	if srcIdx == -1 {
+		srcIdx = strings.Index(rest, "src='")
+		if srcIdx == -1 {
+			return ""
+		}
+		rest = rest[srcIdx+5:]
+		end := strings.Index(rest, "'")
+		if end == -1 {
+			return ""
+		}
+		return rest[:end]
+	}
+	rest = rest[srcIdx+5:]
+	end := strings.Index(rest, "\"")
+	if end == -1 {
+		return ""
+	}
+	return rest[:end]
+}
+
+func itemSummary(html string) string {
+	// Strip HTML tags for plain text summary
+	var b strings.Builder
+	inTag := false
+	count := 0
+	for _, r := range html {
+		if r == '<' {
+			inTag = true
+			continue
+		}
+		if r == '>' {
+			inTag = false
+			continue
+		}
+		if !inTag {
+			b.WriteRune(r)
+			count++
+			if count >= 300 {
+				b.WriteString("...")
+				break
+			}
+		}
+	}
+	return b.String()
 }

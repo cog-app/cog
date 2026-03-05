@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/share"
+	"git.duckfam.us/jj-software/cog/internal/user"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 )
 
@@ -17,15 +20,76 @@ type dbProvider interface {
 	PluginDB(username, pluginID string) (*sql.DB, error)
 }
 
+// userLookup resolves a user ID to user information.
+// Satisfied by *user.Store from internal/user.
+type userLookup interface {
+	GetByID(id string) (*user.User, error)
+}
+
 // Plugin is the contacts plugin.
 type Plugin struct {
 	plugin.Protected
 	registry dbProvider
+	dataDir  string
+	shares   *share.Store
+	users    userLookup
 }
 
 // New creates a new Contacts plugin instance.
-func New(registry dbProvider) *Plugin {
-	return &Plugin{registry: registry}
+func New(registry dbProvider, dataDir string, shares *share.Store, users userLookup) *Plugin {
+	return &Plugin{registry: registry, dataDir: dataDir, shares: shares, users: users}
+}
+
+// sharedAddressBook describes an address book shared to the current user.
+type sharedAddressBook struct {
+	OwnerUsername string
+	Book         *AddressBook
+	Perms        uint32
+}
+
+// sharedBooks returns address books shared to the given user (by user ID).
+func (p *Plugin) sharedBooks(userID string) []sharedAddressBook {
+	var result []sharedAddressBook
+	for rec, err := range p.shares.ListBySubject(userID) {
+		if err != nil {
+			log.Printf("contacts: list shared books: %v", err)
+			break
+		}
+		if rec.ResourceType != "contacts:address_book" {
+			continue
+		}
+		ownerUser, err := p.users.GetByID(rec.OwnerUserID)
+		if err != nil {
+			log.Printf("contacts: lookup user %s: %v", rec.OwnerUserID, err)
+			continue
+		}
+		ownerUsername := ownerUser.Username
+		ownerDB, err := p.DB(ownerUsername)
+		if err != nil {
+			log.Printf("contacts: db for %s: %v", ownerUsername, err)
+			continue
+		}
+		book, err := GetAddressBookByUID(ownerDB, rec.ResourceID)
+		if err != nil {
+			continue
+		}
+		result = append(result, sharedAddressBook{
+			OwnerUsername: ownerUsername,
+			Book:         book,
+			Perms:        rec.Permissions,
+		})
+	}
+	return result
+}
+
+// checkBookAccess checks if userID has at least requiredPerm on an address book
+// owned by ownerUsername. Returns true if the user IS the owner, or if a share grants access.
+func (p *Plugin) checkBookAccess(userID, ownerUsername, bookUID string, requiredPerm uint32) bool {
+	decision, err := p.shares.CheckAccess(userID, "contacts:address_book", bookUID)
+	if err != nil {
+		return false
+	}
+	return decision.Allowed && (decision.EffectivePerms&requiredPerm) == requiredPerm
 }
 
 func (p *Plugin) ID() string { return PluginID }
@@ -45,6 +109,10 @@ func (p *Plugin) Register(registrar cogplugin.Registrar) error {
 		Type:     "address_book",
 		Table:    "address_books",
 		IDColumn: "uid",
+		PermissionLevels: []cogplugin.PermissionLevel{
+			{Label: "Read-only", Permissions: cogplugin.PermRead},
+			{Label: "Read/Write", Permissions: cogplugin.PermRead | cogplugin.PermWrite},
+		},
 	})
 	return nil
 }
@@ -61,7 +129,87 @@ func (p *Plugin) DB(username string) (*sql.DB, error) {
 	if err := migrate(db); err != nil {
 		return nil, fmt.Errorf("migrate contacts db for %s: %w", username, err)
 	}
+	if err := migrateV2(db); err != nil {
+		return nil, fmt.Errorf("migrate v2 contacts db for %s: %w", username, err)
+	}
+	if err := migrateV3(db); err != nil {
+		return nil, fmt.Errorf("migrate v3 contacts db for %s: %w", username, err)
+	}
 	return db, nil
+}
+
+func migrateV2(db *sql.DB) error {
+	// Check if org column exists already.
+	var hasOrg bool
+	rows, err := db.Query(`PRAGMA table_info(cards)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "org" {
+			hasOrg = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasOrg {
+		return nil
+	}
+
+	stmts := []string{
+		`ALTER TABLE cards ADD COLUMN org TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE cards ADD COLUMN title TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE cards ADD COLUMN note TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE cards ADD COLUMN emails_json TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE cards ADD COLUMN phones_json TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE cards ADD COLUMN addresses_json TEXT NOT NULL DEFAULT '[]'`,
+	}
+	for _, s := range stmts {
+		if _, err := db.Exec(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func migrateV3(db *sql.DB) error {
+	var hasPhoto bool
+	rows, err := db.Query(`PRAGMA table_info(cards)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "photo_path" {
+			hasPhoto = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasPhoto {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE cards ADD COLUMN photo_path TEXT NOT NULL DEFAULT ''`)
+	return err
 }
 
 func migrate(db *sql.DB) error {

@@ -11,6 +11,7 @@ import templruntime "github.com/a-h/templ/runtime"
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/ui"
@@ -71,7 +72,7 @@ func calSidebar(calendars []Calendar, activePath string, csrfToken string) templ
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(cal.ID, 10))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 18, Col: 94}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 19, Col: 94}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -84,7 +85,7 @@ func calSidebar(calendars []Calendar, activePath string, csrfToken string) templ
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s;flex-shrink:0", cal.Color))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 21, Col: 134}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 22, Col: 134}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -97,7 +98,7 @@ func calSidebar(calendars []Calendar, activePath string, csrfToken string) templ
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(cal.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 22, Col: 14}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 23, Col: 14}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
@@ -186,7 +187,7 @@ func calIndexPage(pd ui.PageData, calendars []Calendar) templ.Component {
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 48, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 49, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -204,7 +205,7 @@ func calIndexPage(pd ui.PageData, calendars []Calendar) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(cal.ID, 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 53, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 54, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -217,7 +218,7 @@ func calIndexPage(pd ui.PageData, calendars []Calendar) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(cal.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 53, Col: 66}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 54, Col: 66}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -228,7 +229,7 @@ func calIndexPage(pd ui.PageData, calendars []Calendar) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</select></div><div class=\"form-group\"><label for=\"ce-summary\">Title</label> <input class=\"form-control\" type=\"text\" id=\"ce-summary\" name=\"summary\" required></div><div class=\"form-group\"><label><input type=\"checkbox\" id=\"ce-allday\" name=\"all_day\"> All day</label></div><div id=\"ce-datetime-fields\"><div class=\"form-group\"><label for=\"ce-start\">Start</label> <input class=\"form-control\" type=\"datetime-local\" id=\"ce-start\" name=\"datetime_start\" required></div><div class=\"form-group\"><label for=\"ce-end\">End</label> <input class=\"form-control\" type=\"datetime-local\" id=\"ce-end\" name=\"datetime_end\"></div></div><div id=\"ce-date-fields\" style=\"display:none\"><div class=\"form-group\"><label for=\"ce-date-start\">Start Date</label> <input class=\"form-control\" type=\"date\" id=\"ce-date-start\" name=\"date_start\"></div><div class=\"form-group\"><label for=\"ce-date-end\">End Date</label> <input class=\"form-control\" type=\"date\" id=\"ce-date-end\" name=\"date_end\"></div></div><div class=\"form-group\"><label for=\"ce-location\">Location</label> <input class=\"form-control\" type=\"text\" id=\"ce-location\" name=\"location\"></div><div class=\"form-group\"><label for=\"ce-description\">Description</label> <textarea class=\"form-control\" id=\"ce-description\" name=\"description\" rows=\"3\"></textarea></div><div class=\"flex gap-1\" style=\"justify-content:flex-end\"><button type=\"button\" class=\"btn\" onclick=\"document.getElementById('create-modal').style.display='none'\">Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Create</button></div></form></div></div><style>\n\t\t\t.modal-overlay {\n\t\t\t\tposition: fixed; top: 0; left: 0; right: 0; bottom: 0;\n\t\t\t\tbackground: rgba(0,0,0,0.5); z-index: 1000;\n\t\t\t\tdisplay: flex; align-items: center; justify-content: center;\n\t\t\t}\n\t\t\t.modal-content {\n\t\t\t\tbackground: var(--color-bg, #fff); border-radius: 8px;\n\t\t\t\tpadding: 1.5rem; max-width: 500px; width: 90%;\n\t\t\t\tmax-height: 80vh; overflow-y: auto;\n\t\t\t\tbox-shadow: 0 4px 24px rgba(0,0,0,0.2);\n\t\t\t}\n\t\t</style> <script>\n\t\t(function() {\n\t\t\tvar calEl = document.getElementById('calendar');\n\t\t\tvar calendar = new FullCalendar.Calendar(calEl, {\n\t\t\t\tinitialView: 'dayGridMonth',\n\t\t\t\theaderToolbar: {\n\t\t\t\t\tleft: 'prev,next today',\n\t\t\t\t\tcenter: 'title',\n\t\t\t\t\tright: 'dayGridMonth,timeGridWeek,timeGridDay'\n\t\t\t\t},\n\t\t\t\tevents: '/apps/calendar/events.json',\n\t\t\t\teditable: false,\n\t\t\t\tselectable: true,\n\t\t\t\teventClick: function(info) {\n\t\t\t\t\tinfo.jsEvent.preventDefault();\n\t\t\t\t\tvar id = info.event.id;\n\t\t\t\t\tfetch('/apps/calendar/events/' + id, {\n\t\t\t\t\t\theaders: {'X-CSRF-Token': document.querySelector('[name=csrf_token]').value}\n\t\t\t\t\t})\n\t\t\t\t\t.then(function(r) { return r.text(); })\n\t\t\t\t\t.then(function(html) {\n\t\t\t\t\t\tdocument.getElementById('event-modal-body').innerHTML = html;\n\t\t\t\t\t\tdocument.getElementById('event-modal').style.display = 'flex';\n\t\t\t\t\t});\n\t\t\t\t},\n\t\t\t\tdateClick: function(info) {\n\t\t\t\t\tvar modal = document.getElementById('create-modal');\n\t\t\t\t\tvar isAllDay = info.allDay;\n\t\t\t\t\tif (isAllDay) {\n\t\t\t\t\t\tdocument.getElementById('ce-allday').checked = true;\n\t\t\t\t\t\tdocument.getElementById('ce-datetime-fields').style.display = 'none';\n\t\t\t\t\t\tdocument.getElementById('ce-date-fields').style.display = '';\n\t\t\t\t\t\tdocument.getElementById('ce-date-start').value = info.dateStr;\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdocument.getElementById('ce-allday').checked = false;\n\t\t\t\t\t\tdocument.getElementById('ce-datetime-fields').style.display = '';\n\t\t\t\t\t\tdocument.getElementById('ce-date-fields').style.display = 'none';\n\t\t\t\t\t\tdocument.getElementById('ce-start').value = info.dateStr.slice(0, 16);\n\t\t\t\t\t}\n\t\t\t\t\tmodal.style.display = 'flex';\n\t\t\t\t\tdocument.getElementById('ce-summary').focus();\n\t\t\t\t},\n\t\t\t\theight: 'auto'\n\t\t\t});\n\t\t\tcalendar.render();\n\n\t\t\t// Calendar toggle checkboxes\n\t\t\tdocument.querySelectorAll('.cal-toggle').forEach(function(cb) {\n\t\t\t\tcb.addEventListener('change', function() {\n\t\t\t\t\tvar calId = parseInt(this.dataset.calendarId);\n\t\t\t\t\tcalendar.getEvents().forEach(function(ev) {\n\t\t\t\t\t\tif (ev.extendedProps.calendarId === calId) {\n\t\t\t\t\t\t\tev.setProp('display', cb.checked ? 'auto' : 'none');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t});\n\n\t\t\t// All-day toggle in create modal\n\t\t\tdocument.getElementById('ce-allday').addEventListener('change', function() {\n\t\t\t\tdocument.getElementById('ce-datetime-fields').style.display = this.checked ? 'none' : '';\n\t\t\t\tdocument.getElementById('ce-date-fields').style.display = this.checked ? '' : 'none';\n\t\t\t});\n\t\t})();\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</select></div><div class=\"form-group\"><label for=\"ce-summary\">Title</label> <input class=\"form-control\" type=\"text\" id=\"ce-summary\" name=\"summary\" required></div><div class=\"form-group\"><label><input type=\"checkbox\" id=\"ce-allday\" name=\"all_day\"> All day</label></div><div id=\"ce-datetime-fields\"><div class=\"form-group\"><label for=\"ce-start\">Start</label> <input class=\"form-control\" type=\"datetime-local\" id=\"ce-start\" name=\"datetime_start\" required></div><div class=\"form-group\"><label for=\"ce-end\">End</label> <input class=\"form-control\" type=\"datetime-local\" id=\"ce-end\" name=\"datetime_end\"></div></div><div id=\"ce-date-fields\" style=\"display:none\"><div class=\"form-group\"><label for=\"ce-date-start\">Start Date</label> <input class=\"form-control\" type=\"date\" id=\"ce-date-start\" name=\"date_start\"></div><div class=\"form-group\"><label for=\"ce-date-end\">End Date</label> <input class=\"form-control\" type=\"date\" id=\"ce-date-end\" name=\"date_end\"></div></div><div class=\"form-group\"><label for=\"ce-location\">Location</label> <input class=\"form-control\" type=\"text\" id=\"ce-location\" name=\"location\"></div><div class=\"form-group\"><label for=\"ce-description\">Description</label> <textarea class=\"form-control\" id=\"ce-description\" name=\"description\" rows=\"3\"></textarea></div><div class=\"form-group\"><label for=\"ce-recurrence\">Repeat</label> <select class=\"form-control\" id=\"ce-recurrence\" name=\"recurrence\" onchange=\"toggleRecurrenceOpts(this, 'ce')\"><option value=\"\">None</option> <option value=\"DAILY\">Daily</option> <option value=\"WEEKLY\">Weekly</option> <option value=\"MONTHLY\">Monthly</option> <option value=\"YEARLY\">Yearly</option></select></div><div id=\"ce-recurrence-opts\" style=\"display:none\"><div class=\"form-group\"><label for=\"ce-interval\">Every</label><div class=\"flex gap-1 items-center\"><input class=\"form-control\" type=\"number\" id=\"ce-interval\" name=\"recurrence_interval\" min=\"1\" value=\"1\" style=\"width:80px\"> <span id=\"ce-interval-unit\">days</span></div></div><div id=\"ce-byday-group\" style=\"display:none\" class=\"form-group\"><label>On days</label><div class=\"flex gap-1\" style=\"flex-wrap:wrap\"><label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"MO\"> Mon</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"TU\"> Tue</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"WE\"> Wed</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"TH\"> Thu</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"FR\"> Fri</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"SA\"> Sat</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"SU\"> Sun</label></div></div><div class=\"form-group\"><label for=\"ce-until\">Until (optional)</label> <input class=\"form-control\" type=\"date\" id=\"ce-until\" name=\"recurrence_until\"></div></div><div class=\"form-group\"><label>Attendees</label><div id=\"ce-attendees\"></div><button type=\"button\" class=\"btn btn-sm\" onclick=\"addAttendeeRow('ce-attendees')\">Add attendee</button></div><div class=\"form-group\"><label for=\"ce-color\">Event Color (optional)</label> <input class=\"form-control\" type=\"color\" id=\"ce-color\" name=\"color\" value=\"\" style=\"width:60px;padding:2px\"> <label style=\"font-size:0.8rem;font-weight:normal\"><input type=\"checkbox\" id=\"ce-color-enable\"> Custom color</label></div><div class=\"flex gap-1\" style=\"justify-content:flex-end\"><button type=\"button\" class=\"btn\" onclick=\"document.getElementById('create-modal').style.display='none'\">Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Create</button></div></form></div></div><style>\n\t\t\t.modal-overlay {\n\t\t\t\tposition: fixed; top: 0; left: 0; right: 0; bottom: 0;\n\t\t\t\tbackground: rgba(0,0,0,0.5); z-index: 1000;\n\t\t\t\tdisplay: flex; align-items: center; justify-content: center;\n\t\t\t}\n\t\t\t.modal-content {\n\t\t\t\tbackground: var(--color-bg, #fff); border-radius: 8px;\n\t\t\t\tpadding: 1.5rem; max-width: 500px; width: 90%;\n\t\t\t\tmax-height: 80vh; overflow-y: auto;\n\t\t\t\tbox-shadow: 0 4px 24px rgba(0,0,0,0.2);\n\t\t\t}\n\t\t</style> <script>\n\t\tfunction addAttendeeRow(containerId) {\n\t\t\tvar container = document.getElementById(containerId);\n\t\t\tvar row = document.createElement('div');\n\t\t\trow.className = 'flex gap-1 items-center';\n\t\t\trow.style.marginBottom = '0.25rem';\n\t\t\trow.innerHTML = '<input class=\"form-control\" type=\"email\" name=\"attendee_email\" placeholder=\"email@example.com\" style=\"flex:1\"/>' +\n\t\t\t\t'<input class=\"form-control\" type=\"text\" name=\"attendee_name\" placeholder=\"Name\" style=\"flex:1\"/>' +\n\t\t\t\t'<select class=\"form-control\" name=\"attendee_role\" style=\"width:auto\">' +\n\t\t\t\t'<option value=\"REQ-PARTICIPANT\" selected>Required</option>' +\n\t\t\t\t'<option value=\"OPT-PARTICIPANT\">Optional</option>' +\n\t\t\t\t'<option value=\"CHAIR\">Chair</option></select>' +\n\t\t\t\t'<button type=\"button\" class=\"btn btn-sm\" onclick=\"this.parentElement.remove()\">Remove</button>';\n\t\t\tcontainer.appendChild(row);\n\t\t}\n\t\tfunction toggleRecurrenceOpts(sel, prefix) {\n\t\t\tvar opts = document.getElementById(prefix + '-recurrence-opts');\n\t\t\tvar byday = document.getElementById(prefix + '-byday-group');\n\t\t\tvar unitSpan = document.getElementById(prefix + '-interval-unit');\n\t\t\topts.style.display = sel.value ? '' : 'none';\n\t\t\tbyday.style.display = sel.value === 'WEEKLY' ? '' : 'none';\n\t\t\tvar units = {DAILY:'days',WEEKLY:'weeks',MONTHLY:'months',YEARLY:'years'};\n\t\t\tunitSpan.textContent = units[sel.value] || '';\n\t\t}\n\t\t(function() {\n\t\t\tvar calEl = document.getElementById('calendar');\n\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\tvar initDate = params.get('date');\n\t\t\tvar calOpts = {\n\t\t\t\tinitialView: 'dayGridMonth',\n\t\t\t\theaderToolbar: {\n\t\t\t\t\tleft: 'prev,next today',\n\t\t\t\t\tcenter: 'title',\n\t\t\t\t\tright: 'dayGridMonth,timeGridWeek,timeGridDay'\n\t\t\t\t},\n\t\t\t\tevents: '/apps/calendar/events.json',\n\t\t\t\teditable: false,\n\t\t\t\tselectable: true,\n\t\t\t\tdatesSet: function(info) {\n\t\t\t\t\tvar d = info.view.currentStart.toISOString().slice(0, 10);\n\t\t\t\t\thistory.replaceState(null, '', '/apps/calendar/?date=' + d);\n\t\t\t\t},\n\t\t\t\teventClick: function(info) {\n\t\t\t\t\tinfo.jsEvent.preventDefault();\n\t\t\t\t\tvar id = info.event.id;\n\t\t\t\t\tfetch('/apps/calendar/events/' + id, {\n\t\t\t\t\t\theaders: {'X-CSRF-Token': document.querySelector('[name=csrf_token]').value}\n\t\t\t\t\t})\n\t\t\t\t\t.then(function(r) { return r.text(); })\n\t\t\t\t\t.then(function(html) {\n\t\t\t\t\t\tdocument.getElementById('event-modal-body').innerHTML = html;\n\t\t\t\t\t\tdocument.getElementById('event-modal').style.display = 'flex';\n\t\t\t\t\t});\n\t\t\t\t},\n\t\t\t\tdateClick: function(info) {\n\t\t\t\t\tvar modal = document.getElementById('create-modal');\n\t\t\t\t\tvar isAllDay = info.allDay;\n\t\t\t\t\tif (isAllDay) {\n\t\t\t\t\t\tdocument.getElementById('ce-allday').checked = true;\n\t\t\t\t\t\tdocument.getElementById('ce-datetime-fields').style.display = 'none';\n\t\t\t\t\t\tdocument.getElementById('ce-date-fields').style.display = '';\n\t\t\t\t\t\tdocument.getElementById('ce-date-start').value = info.dateStr;\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdocument.getElementById('ce-allday').checked = false;\n\t\t\t\t\t\tdocument.getElementById('ce-datetime-fields').style.display = '';\n\t\t\t\t\t\tdocument.getElementById('ce-date-fields').style.display = 'none';\n\t\t\t\t\t\tdocument.getElementById('ce-start').value = info.dateStr.slice(0, 16);\n\t\t\t\t\t}\n\t\t\t\t\tmodal.style.display = 'flex';\n\t\t\t\t\tdocument.getElementById('ce-summary').focus();\n\t\t\t\t},\n\t\t\t\theight: 'auto'\n\t\t\t};\n\t\t\tif (initDate) { calOpts.initialDate = initDate; }\n\t\t\tvar calendar = new FullCalendar.Calendar(calEl, calOpts);\n\t\t\tcalendar.render();\n\n\t\t\t// Calendar toggle checkboxes\n\t\t\tdocument.querySelectorAll('.cal-toggle').forEach(function(cb) {\n\t\t\t\tcb.addEventListener('change', function() {\n\t\t\t\t\tvar calId = parseInt(this.dataset.calendarId);\n\t\t\t\t\tcalendar.getEvents().forEach(function(ev) {\n\t\t\t\t\t\tif (ev.extendedProps.calendarId === calId) {\n\t\t\t\t\t\t\tev.setProp('display', cb.checked ? 'auto' : 'none');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t});\n\n\t\t\t// Color enable checkbox in create modal\n\t\t\tvar ceColor = document.getElementById('ce-color');\n\t\t\tvar ceColorEnable = document.getElementById('ce-color-enable');\n\t\t\tceColor.disabled = true;\n\t\t\tceColorEnable.addEventListener('change', function() {\n\t\t\t\tceColor.disabled = !this.checked;\n\t\t\t\tif (!this.checked) ceColor.value = '';\n\t\t\t});\n\n\t\t\t// All-day toggle in create modal\n\t\t\tdocument.getElementById('ce-allday').addEventListener('change', function() {\n\t\t\t\tdocument.getElementById('ce-datetime-fields').style.display = this.checked ? 'none' : '';\n\t\t\t\tdocument.getElementById('ce-date-fields').style.display = this.checked ? '' : 'none';\n\t\t\t});\n\t\t})();\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -242,7 +243,7 @@ func calIndexPage(pd ui.PageData, calendars []Calendar) templ.Component {
 	})
 }
 
-func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calendar) templ.Component {
+func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -270,7 +271,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Summary)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 183, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 269, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -283,7 +284,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(formatEventTime(ev.DTStart, ev.DTEnd, ev.IsAllDay))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 185, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 271, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -301,7 +302,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Location)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 187, Col: 26}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 273, Col: 26}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -324,7 +325,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Description)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 191, Col: 21}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 277, Col: 21}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -335,268 +336,718 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 				return templ_7745c5c3_Err
 			}
 		}
-		if cal != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<p class=\"text-muted\" style=\"font-size:0.85rem\"><span style=\"")
+		if eventRRule(ev) != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<p class=\"text-muted\" style=\"font-size:0.85rem\">Repeats: ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var19 string
-			templ_7745c5c3_Var19, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s;vertical-align:middle", cal.Color))
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(eventRRule(ev))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 195, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 280, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\"></span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</p>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		if cal != nil {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<p class=\"text-muted\" style=\"font-size:0.85rem\"><span style=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var20 string
-			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(" " + cal.Name)
+			templ_7745c5c3_Var20, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s;vertical-align:middle", cal.Color))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 196, Col: 19}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 284, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\"></span> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var21 string
+			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(" " + cal.Name)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 285, Col: 19}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<div class=\"sidebar-divider\" style=\"margin:1rem 0\"></div><h3>Edit Event</h3><form method=\"post\" action=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var21 templ.SafeURL
-		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d", ev.ID)))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 201, Col: 91}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var22 string
-		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 202, Col: 61}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\"><div class=\"form-group\"><label for=\"em-calendar\">Calendar</label> <select class=\"form-control\" id=\"em-calendar\" name=\"calendar_id\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		for _, c := range calendars {
-			if c.ID == ev.CalendarID {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<option value=\"")
+		if len(attendees) > 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<div style=\"margin-top:0.75rem\"><strong style=\"font-size:0.85rem\">Attendees</strong><ul style=\"list-style:none;padding:0;margin:0.25rem 0\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, att := range attendees {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<li style=\"padding:0.25rem 0;font-size:0.85rem\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var23 string
-				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(c.ID, 10))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 208, Col: 49}
+				if att.DisplayName != "" {
+					var templ_7745c5c3_Var22 string
+					templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(att.DisplayName)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 295, Col: 24}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, " ")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else {
+					var templ_7745c5c3_Var23 string
+					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(att.Email)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 297, Col: 18}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, " ")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" selected>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<span class=\"text-muted\">(")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var24 string
-				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
+				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(att.Email)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 208, Col: 69}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 300, Col: 19}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</option>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, ") — ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if att.Status == "ACCEPTED" {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<span style=\"color:green\">Accepted</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else if att.Status == "DECLINED" {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<span style=\"color:red\">Declined</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else if att.Status == "TENTATIVE" {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<span style=\"color:orange\">Tentative</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "<span>Pending</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</span></li>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</ul></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<div class=\"sidebar-divider\" style=\"margin:1rem 0\"></div><h3>Edit Event</h3><form method=\"post\" action=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var25 templ.SafeURL
+		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d", ev.ID)))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 318, Col: 91}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var26 string
+		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 319, Col: 61}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\"><div class=\"form-group\"><label for=\"em-calendar\">Calendar</label> <select class=\"form-control\" id=\"em-calendar\" name=\"calendar_id\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		for _, c := range calendars {
+			if c.ID == ev.CalendarID {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<option value=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var27 string
+				templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(c.ID, 10))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 325, Col: 49}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\" selected>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var28 string
+				templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 325, Col: 69}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "</option>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<option value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "<option value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var25 string
-				templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(c.ID, 10))
+				var templ_7745c5c3_Var29 string
+				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(c.ID, 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 210, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 327, Col: 49}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\">")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var26 string
-				templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 210, Col: 60}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</option>")
+				var templ_7745c5c3_Var30 string
+				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 327, Col: 60}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "</option>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</select></div><div class=\"form-group\"><label for=\"em-summary\">Title</label> <input class=\"form-control\" type=\"text\" id=\"em-summary\" name=\"summary\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</select></div><div class=\"form-group\"><label for=\"em-summary\">Title</label> <input class=\"form-control\" type=\"text\" id=\"em-summary\" name=\"summary\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var27 string
-		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Summary)
+		var templ_7745c5c3_Var31 string
+		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Summary)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 217, Col: 92}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 334, Col: 92}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\" required></div><div class=\"form-group\"><label>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "\" required></div><div class=\"form-group\"><label>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if ev.IsAllDay {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "<input type=\"checkbox\" name=\"all_day\" checked> All day")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "<input type=\"checkbox\" name=\"all_day\" checked> All day")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<input type=\"checkbox\" name=\"all_day\"> All day")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "<input type=\"checkbox\" name=\"all_day\"> All day")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</label></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</label></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if ev.IsAllDay {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<div class=\"form-group\"><label for=\"em-date-start\">Start Date</label> <input class=\"form-control\" type=\"date\" id=\"em-date-start\" name=\"date_start\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<div class=\"form-group\"><label for=\"em-date-start\">Start Date</label> <input class=\"form-control\" type=\"date\" id=\"em-date-start\" name=\"date_start\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var28 string
-			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(ev.DTStart, 0).UTC().Format("2006-01-02"))
+			var templ_7745c5c3_Var32 string
+			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(ev.DTStart, 0).UTC().Format("2006-01-02"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 231, Col: 140}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 348, Col: 140}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "\"></div><div class=\"form-group\"><label for=\"em-date-end\">End Date</label> <input class=\"form-control\" type=\"date\" id=\"em-date-end\" name=\"date_end\" value=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var29 string
-			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(ev.DTEnd, 0).UTC().Format("2006-01-02"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 235, Col: 134}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "\"></div><div class=\"form-group\"><label for=\"em-date-end\">End Date</label> <input class=\"form-control\" type=\"date\" id=\"em-date-end\" name=\"date_end\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\"></div>")
+			var templ_7745c5c3_Var33 string
+			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(ev.DTEnd, 0).UTC().Format("2006-01-02"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 352, Col: 134}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<div class=\"form-group\"><label for=\"em-start\">Start</label> <input class=\"form-control\" type=\"datetime-local\" id=\"em-start\" name=\"datetime_start\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "<div class=\"form-group\"><label for=\"em-start\">Start</label> <input class=\"form-control\" type=\"datetime-local\" id=\"em-start\" name=\"datetime_start\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var30 string
-			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(ev.DTStart, 0).UTC().Format("2006-01-02T15:04"))
+			var templ_7745c5c3_Var34 string
+			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(ev.DTStart, 0).UTC().Format("2006-01-02T15:04"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 240, Col: 155}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 357, Col: 155}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\"></div><div class=\"form-group\"><label for=\"em-end\">End</label> <input class=\"form-control\" type=\"datetime-local\" id=\"em-end\" name=\"datetime_end\" value=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var31 string
-			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(ev.DTEnd, 0).UTC().Format("2006-01-02T15:04"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 244, Col: 149}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "\"></div><div class=\"form-group\"><label for=\"em-end\">End</label> <input class=\"form-control\" type=\"datetime-local\" id=\"em-end\" name=\"datetime_end\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "\"></div>")
+			var templ_7745c5c3_Var35 string
+			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(ev.DTEnd, 0).UTC().Format("2006-01-02T15:04"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 361, Col: 149}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "<div class=\"form-group\"><label for=\"em-location\">Location</label> <input class=\"form-control\" type=\"text\" id=\"em-location\" name=\"location\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "<div class=\"form-group\"><label for=\"em-location\">Location</label> <input class=\"form-control\" type=\"text\" id=\"em-location\" name=\"location\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var32 string
-		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Location)
+		var templ_7745c5c3_Var36 string
+		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Location)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 249, Col: 95}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 366, Col: 95}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\"></div><div class=\"form-group\"><label for=\"em-description\">Description</label> <textarea class=\"form-control\" id=\"em-description\" name=\"description\" rows=\"3\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var33 string
-		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Description)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 253, Col: 98}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "\"></div><div class=\"form-group\"><label for=\"em-description\">Description</label> <textarea class=\"form-control\" id=\"em-description\" name=\"description\" rows=\"3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "</textarea></div><div class=\"flex gap-1\" style=\"justify-content:space-between\"><button type=\"button\" class=\"btn btn-danger\" hx-delete=\"")
+		var templ_7745c5c3_Var37 string
+		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Description)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 370, Col: 98}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var34 string
-		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/calendar/events/%d", ev.ID))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 257, Col: 62}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</textarea></div><div class=\"form-group\"><label for=\"em-recurrence\">Repeat</label> <select class=\"form-control\" id=\"em-recurrence\" name=\"recurrence\" onchange=\"toggleRecurrenceOpts(this, 'em')\"><option value=\"\">None</option> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "\" hx-confirm=\"Delete this event?\" hx-on::after-request=\"document.getElementById('event-modal').style.display='none';location.reload()\">Delete</button><div class=\"flex gap-1\"><button type=\"button\" class=\"btn\" onclick=\"document.getElementById('event-modal').style.display='none'\">Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Save</button></div></div></form>")
+		if eventRRuleFreq(ev) == "DAILY" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "<option value=\"DAILY\" selected>Daily</option> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "<option value=\"DAILY\">Daily</option> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		if eventRRuleFreq(ev) == "WEEKLY" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<option value=\"WEEKLY\" selected>Weekly</option> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<option value=\"WEEKLY\">Weekly</option> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		if eventRRuleFreq(ev) == "MONTHLY" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "<option value=\"MONTHLY\" selected>Monthly</option> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "<option value=\"MONTHLY\">Monthly</option> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		if eventRRuleFreq(ev) == "YEARLY" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "<option value=\"YEARLY\" selected>Yearly</option>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<option value=\"YEARLY\">Yearly</option>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "</select></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if eventRRuleFreq(ev) != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<div id=\"em-recurrence-opts\"><div class=\"form-group\"><label for=\"em-interval\">Every</label><div class=\"flex gap-1 items-center\"><input class=\"form-control\" type=\"number\" id=\"em-interval\" name=\"recurrence_interval\" min=\"1\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var38 string
+			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(eventRRuleInterval(ev))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 403, Col: 130}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\" style=\"width:80px\"> <span id=\"em-interval-unit\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if eventRRuleFreq(ev) == "DAILY" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "days")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else if eventRRuleFreq(ev) == "WEEKLY" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "weeks")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else if eventRRuleFreq(ev) == "MONTHLY" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "months")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "years")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</span></div></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if eventRRuleFreq(ev) == "WEEKLY" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "<div id=\"em-byday-group\" class=\"form-group\"><label>On days</label><div class=\"flex gap-1\" style=\"flex-wrap:wrap\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = emByDayCheckbox(ev, "MO", "Mon").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = emByDayCheckbox(ev, "TU", "Tue").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = emByDayCheckbox(ev, "WE", "Wed").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = emByDayCheckbox(ev, "TH", "Thu").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = emByDayCheckbox(ev, "FR", "Fri").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = emByDayCheckbox(ev, "SA", "Sat").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = emByDayCheckbox(ev, "SU", "Sun").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "</div></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "<div id=\"em-byday-group\" style=\"display:none\" class=\"form-group\"><label>On days</label><div class=\"flex gap-1\" style=\"flex-wrap:wrap\"><label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"MO\"> Mon</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"TU\"> Tue</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"WE\"> Wed</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"TH\"> Thu</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"FR\"> Fri</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"SA\"> Sat</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"SU\"> Sun</label></div></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "<div class=\"form-group\"><label for=\"em-until\">Until (optional)</label> <input class=\"form-control\" type=\"date\" id=\"em-until\" name=\"recurrence_until\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var39 string
+			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(eventRRuleUntil(ev))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 446, Col: 110}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "\"></div></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "<div id=\"em-recurrence-opts\" style=\"display:none\"><div class=\"form-group\"><label for=\"em-interval\">Every</label><div class=\"flex gap-1 items-center\"><input class=\"form-control\" type=\"number\" id=\"em-interval\" name=\"recurrence_interval\" min=\"1\" value=\"1\" style=\"width:80px\"> <span id=\"em-interval-unit\">days</span></div></div><div id=\"em-byday-group\" style=\"display:none\" class=\"form-group\"><label>On days</label><div class=\"flex gap-1\" style=\"flex-wrap:wrap\"><label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"MO\"> Mon</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"TU\"> Tue</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"WE\"> Wed</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"TH\"> Thu</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"FR\"> Fri</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"SA\"> Sat</label> <label><input type=\"checkbox\" name=\"recurrence_byday\" value=\"SU\"> Sun</label></div></div><div class=\"form-group\"><label for=\"em-until\">Until (optional)</label> <input class=\"form-control\" type=\"date\" id=\"em-until\" name=\"recurrence_until\"></div></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "<div class=\"form-group\"><label>Attendees</label><div id=\"em-attendees\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		for _, att := range attendees {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "<div class=\"flex gap-1 items-center\" style=\"margin-bottom:0.25rem\"><input class=\"form-control\" type=\"email\" name=\"attendee_email\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var40 string
+			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(att.Email)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 481, Col: 86}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "\" placeholder=\"email@example.com\" style=\"flex:1\"> <input class=\"form-control\" type=\"text\" name=\"attendee_name\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var41 string
+			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(att.DisplayName)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 482, Col: 90}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "\" placeholder=\"Name\" style=\"flex:1\"> <select class=\"form-control\" name=\"attendee_role\" style=\"width:auto\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if att.Role == "CHAIR" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "<option value=\"REQ-PARTICIPANT\">Required</option> <option value=\"OPT-PARTICIPANT\">Optional</option> <option value=\"CHAIR\" selected>Chair</option>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else if att.Role == "OPT-PARTICIPANT" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "<option value=\"REQ-PARTICIPANT\">Required</option> <option value=\"OPT-PARTICIPANT\" selected>Optional</option> <option value=\"CHAIR\">Chair</option>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "<option value=\"REQ-PARTICIPANT\" selected>Required</option> <option value=\"OPT-PARTICIPANT\">Optional</option> <option value=\"CHAIR\">Chair</option>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "</select> <button type=\"button\" class=\"btn btn-sm\" onclick=\"this.parentElement.remove()\">Remove</button></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "</div><button type=\"button\" class=\"btn btn-sm\" onclick=\"addAttendeeRow('em-attendees')\">Add attendee</button></div><div class=\"form-group\"><label for=\"em-color\">Event Color</label> ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if ev.Color != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "<input class=\"form-control\" type=\"color\" id=\"em-color\" name=\"color\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var42 string
+			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Color)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 507, Col: 88}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "\" style=\"width:60px;padding:2px\"> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "<input class=\"form-control\" type=\"color\" id=\"em-color\" name=\"color\" value=\"\" style=\"width:60px;padding:2px\" disabled> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		if ev.Color != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "<label style=\"font-size:0.8rem;font-weight:normal\"><input type=\"checkbox\" checked onchange=\"document.getElementById('em-color').disabled=!this.checked;if(!this.checked)document.getElementById('em-color').value=''\"> Custom color</label>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "<label style=\"font-size:0.8rem;font-weight:normal\"><input type=\"checkbox\" onchange=\"document.getElementById('em-color').disabled=!this.checked;if(!this.checked)document.getElementById('em-color').value=''\"> Custom color</label>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "</div><div class=\"flex gap-1\" style=\"justify-content:space-between\"><button type=\"button\" class=\"btn btn-danger\" hx-delete=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var43 string
+		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/calendar/events/%d", ev.ID))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 519, Col: 62}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "\" hx-confirm=\"Delete this event?\" hx-on::after-request=\"document.getElementById('event-modal').style.display='none';location.reload()\">Delete</button><div class=\"flex gap-1\"><button type=\"button\" class=\"btn\" onclick=\"document.getElementById('event-modal').style.display='none'\">Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Save</button></div></div></form>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func hasByDay(ev *Event, day string) bool {
+	for _, d := range eventRRuleByDay(ev) {
+		if strings.TrimSpace(d) == day {
+			return true
+		}
+	}
+	return false
+}
+
+func emByDayCheckbox(ev *Event, value string, label string) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var44 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var44 == nil {
+			templ_7745c5c3_Var44 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "<label>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if hasByDay(ev, value) {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "<input type=\"checkbox\" name=\"recurrence_byday\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var45 string
+			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(value)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 543, Col: 63}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "\" checked> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "<input type=\"checkbox\" name=\"recurrence_byday\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var46 string
+			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(value)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 545, Col: 63}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "\"> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		var templ_7745c5c3_Var47 string
+		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 547, Col: 9}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "</label>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -620,12 +1071,12 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var35 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var35 == nil {
-			templ_7745c5c3_Var35 = templ.NopComponent
+		templ_7745c5c3_Var48 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var48 == nil {
+			templ_7745c5c3_Var48 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var36 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var49 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -637,7 +1088,7 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<div class=\"sidebar-layout\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "<div class=\"sidebar-layout\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -645,11 +1096,11 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "<div class=\"sidebar-content\"><h1>Calendar Settings</h1>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "<div class=\"sidebar-content\"><h1>Calendar Settings</h1>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var37 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var50 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -661,30 +1112,30 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "<form method=\"post\" action=\"/apps/calendar/calendars\" class=\"flex gap-1 items-end\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "<form method=\"post\" action=\"/apps/calendar/calendars\" class=\"flex gap-1 items-end\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var38 string
-				templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
+				var templ_7745c5c3_Var51 string
+				templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 277, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 559, Col: 65}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "\"><div class=\"form-group\" style=\"margin-bottom:0\"><label for=\"name\">Name</label> <input class=\"form-control\" type=\"text\" id=\"name\" name=\"name\" placeholder=\"Work\" required></div><div class=\"form-group\" style=\"margin-bottom:0\"><label for=\"uid\">URL slug</label> <input class=\"form-control\" type=\"text\" id=\"uid\" name=\"uid\" placeholder=\"work\"></div><div class=\"form-group\" style=\"margin-bottom:0\"><label for=\"color\">Color</label> <input class=\"form-control\" type=\"color\" id=\"color\" name=\"color\" value=\"#0082c9\"></div><button class=\"btn btn-primary\" type=\"submit\">Create</button></form>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "\"><div class=\"form-group\" style=\"margin-bottom:0\"><label for=\"name\">Name</label> <input class=\"form-control\" type=\"text\" id=\"name\" name=\"name\" placeholder=\"Work\" required></div><div class=\"form-group\" style=\"margin-bottom:0\"><label for=\"uid\">URL slug</label> <input class=\"form-control\" type=\"text\" id=\"uid\" name=\"uid\" placeholder=\"work\"></div><div class=\"form-group\" style=\"margin-bottom:0\"><label for=\"color\">Color</label> <input class=\"form-control\" type=\"color\" id=\"color\" name=\"color\" value=\"#0082c9\"></div><button class=\"btn btn-primary\" type=\"submit\">Create</button></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.Card("Create Calendar").Render(templ.WithChildren(ctx, templ_7745c5c3_Var37), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.Card("Create Calendar").Render(templ.WithChildren(ctx, templ_7745c5c3_Var50), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var39 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var52 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -697,124 +1148,163 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 				}
 				ctx = templ.InitializeContext(ctx)
 				if len(calendars) == 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<p class=\"text-muted\">No calendars.</p>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "<p class=\"text-muted\">No calendars.</p>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<table class=\"table\"><thead><tr><th>Color</th><th>Name</th><th>UID</th><th>CTag</th><th class=\"text-right\">Actions</th></tr></thead> <tbody>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "<table class=\"table\"><thead><tr><th>Color</th><th>Name</th><th>UID</th><th>CTag</th><th class=\"text-right\">Actions</th></tr></thead> <tbody>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					for _, cal := range calendars {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<tr id=\"")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "<tr id=\"")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						var templ_7745c5c3_Var40 string
-						templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-%d", cal.ID))
+						var templ_7745c5c3_Var53 string
+						templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-%d", cal.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 309, Col: 47}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 591, Col: 47}
 						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "\"><td><span style=\"")
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						var templ_7745c5c3_Var41 string
-						templ_7745c5c3_Var41, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("display:inline-block;width:16px;height:16px;border-radius:50%%;background:%s", cal.Color))
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 310, Col: 130}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "\"><td><span style=\"")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "\"></span></td><td>")
+						var templ_7745c5c3_Var54 string
+						templ_7745c5c3_Var54, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("display:inline-block;width:16px;height:16px;border-radius:50%%;background:%s", cal.Color))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 592, Col: 130}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						var templ_7745c5c3_Var42 string
-						templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(cal.Name)
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 311, Col: 24}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "\"></span></td><td>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</td><td>")
+						var templ_7745c5c3_Var55 string
+						templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(cal.Name)
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 593, Col: 24}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						var templ_7745c5c3_Var43 string
-						templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(cal.UID)
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 312, Col: 23}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "</td><td>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</td><td>")
+						var templ_7745c5c3_Var56 string
+						templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(cal.UID)
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 594, Col: 23}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						var templ_7745c5c3_Var44 string
-						templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(cal.CTag, 10))
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 313, Col: 47}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "</td><td>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "</td><td class=\"text-right\"><button class=\"btn btn-danger btn-sm\" hx-delete=\"")
+						var templ_7745c5c3_Var57 string
+						templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(cal.CTag, 10))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 595, Col: 47}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						var templ_7745c5c3_Var45 string
-						templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID))
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 317, Col: 74}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "</td><td class=\"text-right\" style=\"display:flex;gap:0.25rem;justify-content:flex-end\"><button class=\"btn btn-outline btn-sm\" hx-get=\"")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\" hx-target=\"")
+						var templ_7745c5c3_Var58 string
+						templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/shares/panel?type=calendar:calendar&id=%d", cal.ID))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 599, Col: 90}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						var templ_7745c5c3_Var46 string
-						templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#cal-%d", cal.ID))
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 318, Col: 54}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "\" hx-target=\"")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "\" hx-swap=\"outerHTML\" hx-confirm=\"Delete this calendar and all its events?\">Delete</button></td></tr>")
+						var templ_7745c5c3_Var59 string
+						templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#cal-share-%d", cal.ID))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 600, Col: 60}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "\" hx-swap=\"innerHTML\">Share</button> <button class=\"btn btn-danger btn-sm\" hx-delete=\"")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var60 string
+						templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 605, Col: 74}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "\" hx-target=\"")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var61 string
+						templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#cal-%d", cal.ID))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 606, Col: 54}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "\" hx-swap=\"outerHTML\" hx-confirm=\"Delete this calendar and all its events?\">Delete</button></td></tr><tr><td colspan=\"5\" id=\"")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var62 string
+						templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-share-%d", cal.ID))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 613, Col: 66}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "\"></td></tr>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "</tbody></table>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "</tbody></table>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.Card("Calendars").Render(templ.WithChildren(ctx, templ_7745c5c3_Var39), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.Card("Calendars").Render(templ.WithChildren(ctx, templ_7745c5c3_Var52), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var47 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var63 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -826,23 +1316,23 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<p class=\"text-muted\">Configure your CalDAV client with:</p><ul><li><strong>Server:</strong> <code>your-server-url</code></li><li><strong>Path:</strong> <code>/remote.php/dav</code></li><li><strong>Username/Password:</strong> your Cog credentials or an app password</li></ul>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "<p class=\"text-muted\">Configure your CalDAV client with:</p><ul><li><strong>Server:</strong> <code>your-server-url</code></li><li><strong>Path:</strong> <code>/remote.php/dav</code></li><li><strong>Username/Password:</strong> your Cog credentials or an app password</li></ul>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.Card("CalDAV Access").Render(templ.WithChildren(ctx, templ_7745c5c3_Var47), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.Card("CalDAV Access").Render(templ.WithChildren(ctx, templ_7745c5c3_Var63), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "</div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "</div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.Base(pd).Render(templ.WithChildren(ctx, templ_7745c5c3_Var36), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.Base(pd).Render(templ.WithChildren(ctx, templ_7745c5c3_Var49), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

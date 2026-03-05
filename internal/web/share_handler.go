@@ -1,0 +1,235 @@
+package web
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/share"
+	"git.duckfam.us/jj-software/cog/ui"
+)
+
+type shareHandler struct{ handler }
+
+// SharePanel serves the HTMX share panel partial for a resource.
+// GET /api/shares/panel?type=calendar:calendar&id=5
+func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	resType := r.URL.Query().Get("type")
+	resID := r.URL.Query().Get("id")
+	if resType == "" || resID == "" {
+		http.Error(w, "type and id required", http.StatusBadRequest)
+		return
+	}
+
+	// Look up permission levels for this resource type.
+	levels := defaultPermissionLevels()
+	if def, ok := h.p.Plugins.ResourceDefByType(resType); ok && len(def.PermissionLevels) > 0 {
+		levels = def.PermissionLevels
+	}
+
+	// Convert to UI types.
+	var levelChoices []ui.PermissionLevelChoice
+	for _, l := range levels {
+		levelChoices = append(levelChoices, ui.PermissionLevelChoice{Label: l.Label, Permissions: l.Permissions})
+	}
+
+	// Get existing shares for this resource.
+	var shares []ui.ShareDisplayItem
+	for rec, err := range h.p.Shares.ListByResource(resType, resID) {
+		if err != nil {
+			break
+		}
+		if rec.OwnerUserID != u.ID {
+			continue // only show shares owned by this user
+		}
+		sd := ui.ShareDisplayItem{
+			ID:          rec.ID,
+			SubjectType: rec.SubjectType,
+			PermLabel:   permissionLabel(rec.Permissions, levels),
+		}
+		switch rec.SubjectType {
+		case "USER":
+			if su, err := h.p.Users.GetByID(rec.SubjectID); err == nil {
+				sd.SubjectName = su.DisplayName
+				if sd.SubjectName == "" {
+					sd.SubjectName = su.Username
+				}
+			}
+		case "GROUP":
+			sd.SubjectName = rec.SubjectID
+		case "PUBLIC":
+			sd.SubjectName = "Public link"
+			if rec.Token != nil {
+				sd.Token = *rec.Token
+			}
+		}
+		shares = append(shares, sd)
+	}
+
+	// Get users for the share target picker (exclude self).
+	var users []ui.UserChoice
+	for u2, err := range h.p.Users.List() {
+		if err != nil {
+			break
+		}
+		if u2.ID == u.ID {
+			continue
+		}
+		name := u2.DisplayName
+		if name == "" {
+			name = u2.Username
+		}
+		users = append(users, ui.UserChoice{ID: u2.ID, Username: u2.Username, Name: name})
+	}
+
+	sessID := auth.SessionIDFromContext(r.Context())
+	csrf := auth.CSRFToken(sessID, h.p.CSRFSecret)
+
+	ui.SharePanel(resType, resID, csrf, shares, levelChoices, users).Render(r.Context(), w)
+}
+
+// CreateShareForm handles POST from the share panel form (form-encoded, HTMX).
+func (h *shareHandler) CreateShareForm(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+
+	resType := r.FormValue("resource_type")
+	resID := r.FormValue("resource_id")
+	subjectID := r.FormValue("subject_id")
+	permStr := r.FormValue("permissions")
+
+	if resType == "" || resID == "" || subjectID == "" {
+		http.Error(w, "missing fields", http.StatusBadRequest)
+		return
+	}
+
+	var perms uint32 = plugin.PermRead
+	if permStr != "" {
+		if v, err := strconv.ParseUint(permStr, 10, 32); err == nil && v > 0 {
+			perms = uint32(v)
+		}
+	}
+
+	_, err := h.p.Shares.Create(u.ID, resType, resID, "USER", subjectID, perms)
+	if err != nil {
+		log.Printf("share create error: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Return the refreshed panel via HTMX.
+	r.URL.RawQuery = fmt.Sprintf("type=%s&id=%s", resType, resID)
+	h.SharePanel(w, r)
+}
+
+// CreatePublicLinkForm handles POST from the share panel public link form (HTMX).
+func (h *shareHandler) CreatePublicLinkForm(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+
+	resType := r.FormValue("resource_type")
+	resID := r.FormValue("resource_id")
+	permStr := r.FormValue("permissions")
+
+	if resType == "" || resID == "" {
+		http.Error(w, "missing fields", http.StatusBadRequest)
+		return
+	}
+
+	var perms uint32 = plugin.PermRead
+	if permStr != "" {
+		if v, err := strconv.ParseUint(permStr, 10, 32); err == nil && v > 0 {
+			perms = uint32(v)
+		}
+	}
+
+	_, err := h.p.Shares.CreatePublicLink(u.ID, resType, resID, perms, nil)
+	if err != nil {
+		log.Printf("public link create error: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	r.URL.RawQuery = fmt.Sprintf("type=%s&id=%s", resType, resID)
+	h.SharePanel(w, r)
+}
+
+// DeleteShareHTMX handles DELETE from the share panel (HTMX).
+func (h *shareHandler) DeleteShareHTMX(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	shareID := r.PathValue("id")
+
+	rec, err := h.p.Shares.Get(shareID)
+	if err != nil {
+		http.Error(w, "share not found", http.StatusNotFound)
+		return
+	}
+	if rec.OwnerUserID != u.ID {
+		http.Error(w, "not your share", http.StatusForbidden)
+		return
+	}
+
+	if err := h.p.Shares.Delete(shareID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("")) // empty response for HTMX swap
+}
+
+// UserSearch returns users matching a query (for share target autocomplete).
+// GET /api/users/search?q=foo
+func (h *shareHandler) UserSearch(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	q := strings.ToLower(r.URL.Query().Get("q"))
+
+	var results []map[string]string
+	for u2, err := range h.p.Users.List() {
+		if err != nil {
+			break
+		}
+		if u2.ID == u.ID {
+			continue
+		}
+		if q != "" && !strings.Contains(strings.ToLower(u2.Username), q) &&
+			!strings.Contains(strings.ToLower(u2.DisplayName), q) {
+			continue
+		}
+		name := u2.DisplayName
+		if name == "" {
+			name = u2.Username
+		}
+		results = append(results, map[string]string{
+			"id":       u2.ID,
+			"username": u2.Username,
+			"name":     name,
+		})
+		if len(results) >= 10 {
+			break
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
+func defaultPermissionLevels() []plugin.PermissionLevel {
+	return []plugin.PermissionLevel{
+		{Label: "Read-only", Permissions: plugin.PermRead},
+		{Label: "Read/Write", Permissions: plugin.PermRead | plugin.PermWrite},
+	}
+}
+
+func permissionLabel(perms uint32, levels []plugin.PermissionLevel) string {
+	for _, l := range levels {
+		if l.Permissions == perms {
+			return l.Label
+		}
+	}
+	return strings.Join(share.PermissionNames(perms), ", ")
+}

@@ -46,6 +46,7 @@ templ contactsIndexPage(pd ui.PageData, books []AddressBook, cards []CardWithBoo
 									<th>Name</th>
 									<th>Email</th>
 									<th>Phone</th>
+									<th>Org</th>
 									<th>Book</th>
 									<th class="text-right">Actions</th>
 								</tr>
@@ -55,11 +56,16 @@ templ contactsIndexPage(pd ui.PageData, books []AddressBook, cards []CardWithBoo
 									<tr id={ fmt.Sprintf("contact-%d", c.ID) } style="cursor:pointer"
 										onclick={ templ.ComponentScript{Call: fmt.Sprintf("showContactDetail(%d)", c.ID)} }>
 										<td>
-											<span class="avatar-initials" style={ fmt.Sprintf("background:%s", c.BookColor) }>{ contactInitials(c.FN) }</span>
+											if c.PhotoPath != "" {
+												<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover"/>
+											} else {
+												<span class="avatar-initials" style={ fmt.Sprintf("background:%s", c.BookColor) }>{ contactInitials(c.FN) }</span>
+											}
 										</td>
 										<td style="font-weight:500">{ c.FN }</td>
 										<td>{ c.Email }</td>
 										<td>{ c.Tel }</td>
+										<td>{ c.Org }</td>
 										<td>
 											<span style={ fmt.Sprintf("display:inline-block;width:8px;height:8px;border-radius:50%%;background:%s;vertical-align:middle;margin-right:4px", c.BookColor) }></span>
 											{ c.BookName }
@@ -104,13 +110,52 @@ templ contactsIndexPage(pd ui.PageData, books []AddressBook, cards []CardWithBoo
 						<label for="cc-fn">Name</label>
 						<input class="form-control" type="text" id="cc-fn" name="fn" required/>
 					</div>
+					<!-- Emails -->
+					<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
+						<legend style="font-weight:500;font-size:0.9rem">Emails</legend>
+						<div id="cc-emails">
+							<div class="flex gap-1 items-end mb-1">
+								<select class="form-control" name="email_type" style="width:100px">
+									<option value="INTERNET">Personal</option>
+									<option value="WORK">Work</option>
+									<option value="HOME">Home</option>
+								</select>
+								<input class="form-control" type="email" name="email_value" placeholder="email@example.com" style="flex:1"/>
+							</div>
+						</div>
+						<button type="button" class="btn btn-outline btn-sm" onclick="addField('cc-emails','email')">+ Add email</button>
+					</fieldset>
+					<!-- Phones -->
+					<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
+						<legend style="font-weight:500;font-size:0.9rem">Phones</legend>
+						<div id="cc-phones">
+							<div class="flex gap-1 items-end mb-1">
+								<select class="form-control" name="phone_type" style="width:100px">
+									<option value="CELL">Cell</option>
+									<option value="WORK">Work</option>
+									<option value="HOME">Home</option>
+									<option value="FAX">Fax</option>
+								</select>
+								<input class="form-control" type="tel" name="phone_value" placeholder="+1 555-1234" style="flex:1"/>
+							</div>
+						</div>
+						<button type="button" class="btn btn-outline btn-sm" onclick="addField('cc-phones','phone')">+ Add phone</button>
+					</fieldset>
+					<!-- Business fields -->
+					<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
+						<legend style="font-weight:500;font-size:0.9rem">Work</legend>
+						<div class="form-group">
+							<label for="cc-org">Organization</label>
+							<input class="form-control" type="text" id="cc-org" name="org"/>
+						</div>
+						<div class="form-group">
+							<label for="cc-title">Title</label>
+							<input class="form-control" type="text" id="cc-title" name="title"/>
+						</div>
+					</fieldset>
 					<div class="form-group">
-						<label for="cc-email">Email</label>
-						<input class="form-control" type="email" id="cc-email" name="email"/>
-					</div>
-					<div class="form-group">
-						<label for="cc-tel">Phone</label>
-						<input class="form-control" type="tel" id="cc-tel" name="tel"/>
+						<label for="cc-note">Note</label>
+						<textarea class="form-control" id="cc-note" name="note" rows="3"></textarea>
 					</div>
 					<div class="flex gap-1" style="justify-content:flex-end">
 						<button type="button" class="btn" onclick="document.getElementById('create-contact-modal').style.display='none'">Cancel</button>
@@ -136,6 +181,7 @@ templ contactsIndexPage(pd ui.PageData, books []AddressBook, cards []CardWithBoo
 				width: 32px; height: 32px; border-radius: 50%;
 				color: #fff; font-weight: 600; font-size: 0.8rem;
 			}
+			.typed-label { font-size:0.75rem; color:var(--color-muted,#888); text-transform:uppercase; }
 		</style>
 		<script>
 		function showContactDetail(id) {
@@ -148,17 +194,82 @@ templ contactsIndexPage(pd ui.PageData, books []AddressBook, cards []CardWithBoo
 				document.getElementById('contact-modal').style.display = 'flex';
 			});
 		}
+		function addField(containerId, kind) {
+			var container = document.getElementById(containerId);
+			var row = document.createElement('div');
+			row.className = 'flex gap-1 items-end mb-1';
+			if (kind === 'email') {
+				row.innerHTML = '<select class="form-control" name="email_type" style="width:100px">' +
+					'<option value="INTERNET">Personal</option><option value="WORK">Work</option><option value="HOME">Home</option>' +
+					'</select>' +
+					'<input class="form-control" type="email" name="email_value" placeholder="email@example.com" style="flex:1"/>' +
+					'<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>';
+			} else {
+				row.innerHTML = '<select class="form-control" name="phone_type" style="width:100px">' +
+					'<option value="CELL">Cell</option><option value="WORK">Work</option><option value="HOME">Home</option><option value="FAX">Fax</option>' +
+					'</select>' +
+					'<input class="form-control" type="tel" name="phone_value" placeholder="+1 555-1234" style="flex:1"/>' +
+					'<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>';
+			}
+			container.appendChild(row);
+		}
 		</script>
 	}
 }
 
 templ contactDetailModal(pd ui.PageData, c *Card, book *AddressBook, books []AddressBook) {
+	if c.PhotoPath != "" {
+		<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:80px;height:80px;border-radius:50%;object-fit:cover;margin-bottom:0.75rem;display:block"/>
+	}
 	<h2 style="margin-top:0">{ c.FN }</h2>
-	if c.Email != "" {
+	<!-- Display all emails -->
+	for _, e := range ParseEmailsJSON(c.EmailsJSON) {
+		<p>
+			<span class="typed-label">{ e.Type }</span><br/>
+			<a href={ templ.SafeURL("mailto:" + e.Value) }>{ e.Value }</a>
+		</p>
+	}
+	if len(ParseEmailsJSON(c.EmailsJSON)) == 0 && c.Email != "" {
 		<p><strong>Email:</strong> <a href={ templ.SafeURL("mailto:" + c.Email) }>{ c.Email }</a></p>
 	}
-	if c.Tel != "" {
+	<!-- Display all phones -->
+	for _, p := range ParsePhonesJSON(c.PhonesJSON) {
+		<p>
+			<span class="typed-label">{ p.Type }</span><br/>
+			<a href={ templ.SafeURL("tel:" + p.Value) }>{ p.Value }</a>
+		</p>
+	}
+	if len(ParsePhonesJSON(c.PhonesJSON)) == 0 && c.Tel != "" {
 		<p><strong>Phone:</strong> <a href={ templ.SafeURL("tel:" + c.Tel) }>{ c.Tel }</a></p>
+	}
+	<!-- Business fields -->
+	if c.Org != "" {
+		<p><strong>Organization:</strong> { c.Org }</p>
+	}
+	if c.Title != "" {
+		<p><strong>Title:</strong> { c.Title }</p>
+	}
+	if c.Note != "" {
+		<p><strong>Note:</strong> { c.Note }</p>
+	}
+	<!-- Addresses -->
+	for _, a := range ParseAddressesJSON(c.AddressesJSON) {
+		<p>
+			<span class="typed-label">{ a.Type } Address</span><br/>
+			if a.Street != "" {
+				{ a.Street }<br/>
+			}
+			if a.City != "" || a.State != "" || a.Zip != "" {
+				{ a.City }
+				if a.City != "" && a.State != "" {
+					{ ", " }
+				}
+				{ a.State } { a.Zip }<br/>
+			}
+			if a.Country != "" {
+				{ a.Country }
+			}
+		</p>
 	}
 	if book != nil {
 		<p class="text-muted" style="font-size:0.85rem">
@@ -168,6 +279,20 @@ templ contactDetailModal(pd ui.PageData, c *Card, book *AddressBook, books []Add
 	}
 	<div class="sidebar-divider" style="margin:1rem 0"></div>
 	<h3>Edit Contact</h3>
+	<!-- Photo upload (separate multipart form) -->
+	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/contacts/contacts/%d/photo", c.ID)) } enctype="multipart/form-data" style="margin-bottom:1rem">
+		<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+		<div class="form-group">
+			<label>Photo</label>
+			if c.PhotoPath != "" {
+				<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:64px;height:64px;border-radius:50%;object-fit:cover;margin-bottom:0.5rem;display:block"/>
+			}
+			<div class="flex gap-1 items-end">
+				<input class="form-control" type="file" name="photo" accept="image/*" style="max-width:200px"/>
+				<button class="btn btn-outline btn-sm" type="submit">Upload</button>
+			</div>
+		</div>
+	</form>
 	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/contacts/contacts/%d", c.ID)) }>
 		<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 		<div class="form-group">
@@ -186,13 +311,79 @@ templ contactDetailModal(pd ui.PageData, c *Card, book *AddressBook, books []Add
 			<label for="em-fn">Name</label>
 			<input class="form-control" type="text" id="em-fn" name="fn" value={ c.FN } required/>
 		</div>
+		<!-- Edit emails -->
+		<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
+			<legend style="font-weight:500;font-size:0.9rem">Emails</legend>
+			<div id="em-emails">
+				for _, e := range ParseEmailsJSON(c.EmailsJSON) {
+					<div class="flex gap-1 items-end mb-1">
+						<select class="form-control" name="email_type" style="width:100px">
+							<option value="INTERNET" selected?={ e.Type == "INTERNET" || e.Type == "" }>Personal</option>
+							<option value="WORK" selected?={ e.Type == "WORK" }>Work</option>
+							<option value="HOME" selected?={ e.Type == "HOME" }>Home</option>
+						</select>
+						<input class="form-control" type="email" name="email_value" value={ e.Value } style="flex:1"/>
+						<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>
+					</div>
+				}
+				if len(ParseEmailsJSON(c.EmailsJSON)) == 0 {
+					<div class="flex gap-1 items-end mb-1">
+						<select class="form-control" name="email_type" style="width:100px">
+							<option value="INTERNET">Personal</option>
+							<option value="WORK">Work</option>
+							<option value="HOME">Home</option>
+						</select>
+						<input class="form-control" type="email" name="email_value" value={ c.Email } style="flex:1"/>
+					</div>
+				}
+			</div>
+			<button type="button" class="btn btn-outline btn-sm" onclick="addField('em-emails','email')">+ Add email</button>
+		</fieldset>
+		<!-- Edit phones -->
+		<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
+			<legend style="font-weight:500;font-size:0.9rem">Phones</legend>
+			<div id="em-phones">
+				for _, p := range ParsePhonesJSON(c.PhonesJSON) {
+					<div class="flex gap-1 items-end mb-1">
+						<select class="form-control" name="phone_type" style="width:100px">
+							<option value="CELL" selected?={ p.Type == "CELL" || p.Type == "" }>Cell</option>
+							<option value="WORK" selected?={ p.Type == "WORK" }>Work</option>
+							<option value="HOME" selected?={ p.Type == "HOME" }>Home</option>
+							<option value="FAX" selected?={ p.Type == "FAX" }>Fax</option>
+						</select>
+						<input class="form-control" type="tel" name="phone_value" value={ p.Value } style="flex:1"/>
+						<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>
+					</div>
+				}
+				if len(ParsePhonesJSON(c.PhonesJSON)) == 0 {
+					<div class="flex gap-1 items-end mb-1">
+						<select class="form-control" name="phone_type" style="width:100px">
+							<option value="CELL">Cell</option>
+							<option value="WORK">Work</option>
+							<option value="HOME">Home</option>
+							<option value="FAX">Fax</option>
+						</select>
+						<input class="form-control" type="tel" name="phone_value" value={ c.Tel } style="flex:1"/>
+					</div>
+				}
+			</div>
+			<button type="button" class="btn btn-outline btn-sm" onclick="addField('em-phones','phone')">+ Add phone</button>
+		</fieldset>
+		<!-- Business fields -->
+		<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
+			<legend style="font-weight:500;font-size:0.9rem">Work</legend>
+			<div class="form-group">
+				<label for="em-org">Organization</label>
+				<input class="form-control" type="text" id="em-org" name="org" value={ c.Org }/>
+			</div>
+			<div class="form-group">
+				<label for="em-title">Title</label>
+				<input class="form-control" type="text" id="em-title" name="title" value={ c.Title }/>
+			</div>
+		</fieldset>
 		<div class="form-group">
-			<label for="em-email">Email</label>
-			<input class="form-control" type="email" id="em-email" name="email" value={ c.Email }/>
-		</div>
-		<div class="form-group">
-			<label for="em-tel">Phone</label>
-			<input class="form-control" type="tel" id="em-tel" name="tel" value={ c.Tel }/>
+			<label for="em-note">Note</label>
+			<textarea class="form-control" id="em-note" name="note" rows="3">{ c.Note }</textarea>
 		</div>
 		<div class="flex gap-1" style="justify-content:space-between">
 			<button type="button" class="btn btn-danger"
@@ -253,7 +444,13 @@ templ contactsSettingsPage(pd ui.PageData, books []AddressBook) {
 										<td>{ book.Name }</td>
 										<td>{ book.UID }</td>
 										<td>{ strconv.FormatInt(book.CTag, 10) }</td>
-										<td class="text-right">
+										<td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
+											<button
+												class="btn btn-outline btn-sm"
+												hx-get={ fmt.Sprintf("/api/shares/panel?type=contacts:address_book&id=%d", book.ID) }
+												hx-target={ fmt.Sprintf("#book-share-%d", book.ID) }
+												hx-swap="innerHTML"
+											>Share</button>
 											<button
 												class="btn btn-danger btn-sm"
 												hx-delete={ fmt.Sprintf("/apps/contacts/books/%d", book.ID) }
@@ -261,6 +458,10 @@ templ contactsSettingsPage(pd ui.PageData, books []AddressBook) {
 												hx-swap="outerHTML"
 												hx-confirm="Delete this address book and all its contacts?"
 											>Delete</button>
+										</td>
+									</tr>
+									<tr>
+										<td colspan="5" id={ fmt.Sprintf("book-share-%d", book.ID) }>
 										</td>
 									</tr>
 								}

@@ -57,7 +57,7 @@ func New(registry pluginDBProvider) *Plugin {
 func (p *Plugin) ID() string { return PluginID }
 
 func (p *Plugin) Register(registrar plugin.Registrar) error {
-	registrar.RegisterNavItem(plugin.NavItem{Label: "Files", URL: "/apps/files"})
+	registrar.RegisterNavItem(plugin.NavItem{Label: "Files", URL: "/apps/files", Icon: "files"})
 	registrar.RegisterResource(plugin.ResourceDef{
 		Type:         "file",
 		Table:        "files",

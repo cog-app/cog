@@ -2,26 +2,34 @@ package dashboard
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
-templ dashboardPage(pd ui.PageData, apps []AppLink, widgets []plugin.Widget, userID string) {
+templ dashboardPage(pd ui.PageData, apps []AppLink, widgets []plugin.Widget, userID string, columns int) {
 	@ui.Base(pd) {
-		<h1 style="margin-bottom:1rem">Dashboard</h1>
+		<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+			<h1 style="margin:0">Dashboard</h1>
+			<a href="/dashboard/edit" class="btn btn-outline btn-sm">Customize</a>
+		</div>
 		if len(apps) > 0 {
 			<div class="app-grid">
 				for _, app := range apps {
 					<a href={ templ.SafeURL(app.URL) } class="card app-card">
+						<div style="margin-bottom:0.5rem">
+							@appIcon(app.Icon)
+						</div>
 						<div class="app-card-label">{ app.Label }</div>
 					</a>
 				}
 			</div>
 		}
 		if len(widgets) > 0 {
-			<div style="margin-top:1.5rem">
+			<div style={ fmt.Sprintf("margin-top:1.5rem;display:grid;grid-template-columns:repeat(%d,1fr);gap:1rem", columns) }>
 				for _, w := range widgets {
 					@ui.Card(w.Title) {
 						@widgetContent(w, userID)
@@ -39,6 +47,63 @@ templ dashboardPage(pd ui.PageData, apps []AppLink, widgets []plugin.Widget, use
 	}
 }
 
+templ dashboardEditPage(pd ui.PageData, allWidgets []plugin.Widget, layout *Layout, enabledSet map[string]bool) {
+	@ui.Base(pd) {
+		<h1 style="margin-bottom:1rem">Customize Dashboard</h1>
+		<form method="post" action="/dashboard/layout">
+			<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+			@ui.Card("Layout") {
+				<div style="margin-bottom:0.5rem">
+					<label style="font-weight:500">Columns</label>
+				</div>
+				<div style="display:flex;gap:1rem">
+					for _, n := range []int{1, 2, 3} {
+						<label style="display:flex;align-items:center;gap:0.25rem">
+							if n == layout.Columns {
+								<input type="radio" name="columns" value={ strconv.Itoa(n) } checked/>
+							} else {
+								<input type="radio" name="columns" value={ strconv.Itoa(n) }/>
+							}
+							{ strconv.Itoa(n) }
+						</label>
+					}
+				</div>
+			}
+			@ui.Card("Widgets") {
+				<p style="color:var(--color-text-muted);margin-bottom:0.75rem">Check widgets to show. Use the arrows to reorder.</p>
+				<div id="widget-list">
+					for _, w := range allWidgets {
+						<div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem;border:1px solid var(--color-border);border-radius:var(--radius);margin-bottom:0.5rem">
+							if enabledSet[w.Title] {
+								<input type="checkbox" name="widget_order" value={ w.Title } checked/>
+							} else {
+								<input type="checkbox" name="widget_order" value={ w.Title }/>
+							}
+							<span style="flex:1;font-weight:500">{ w.Title }</span>
+							<button type="button" class="btn btn-outline btn-sm" onclick="moveWidget(this.closest('[style]'),-1)">Up</button>
+							<button type="button" class="btn btn-outline btn-sm" onclick="moveWidget(this.closest('[style]'),1)">Down</button>
+						</div>
+					}
+				</div>
+			}
+			<div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
+				<a href="/" class="btn">Cancel</a>
+				<button type="submit" class="btn btn-primary">Save</button>
+			</div>
+		</form>
+		<script>
+		function moveWidget(el, dir) {
+			var parent = el.parentNode;
+			if (dir === -1 && el.previousElementSibling) {
+				parent.insertBefore(el, el.previousElementSibling);
+			} else if (dir === 1 && el.nextElementSibling) {
+				parent.insertBefore(el.nextElementSibling, el);
+			}
+		}
+		</script>
+	}
+}
+
 templ widgetContent(w plugin.Widget, userID string) {
 	@widgetAdapter(w, userID)
 }
@@ -47,4 +112,35 @@ func widgetAdapter(w plugin.Widget, userID string) templ.Component {
 	return templ.ComponentFunc(func(ctx context.Context, wr io.Writer) error {
 		return w.Render(ctx, wr, userID)
 	})
+}
+
+templ appIcon(icon string) {
+	switch icon {
+		case "calendar":
+			<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+				<line x1="16" y1="2" x2="16" y2="6"></line>
+				<line x1="8" y1="2" x2="8" y2="6"></line>
+				<line x1="3" y1="10" x2="21" y2="10"></line>
+			</svg>
+		case "rss":
+			<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M4 11a9 9 0 0 1 9 9"></path>
+				<path d="M4 4a16 16 0 0 1 16 16"></path>
+				<circle cx="5" cy="19" r="1"></circle>
+			</svg>
+		case "contacts":
+			<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+				<path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+			</svg>
+		case "files":
+			<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+			</svg>
+		default:
+			<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+			</svg>
+	}
 }

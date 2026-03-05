@@ -3,6 +3,7 @@ package calendar
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/ui"
@@ -91,6 +92,51 @@ templ calIndexPage(pd ui.PageData, calendars []Calendar) {
 						<label for="ce-description">Description</label>
 						<textarea class="form-control" id="ce-description" name="description" rows="3"></textarea>
 					</div>
+					<div class="form-group">
+						<label for="ce-recurrence">Repeat</label>
+						<select class="form-control" id="ce-recurrence" name="recurrence" onchange="toggleRecurrenceOpts(this, 'ce')">
+							<option value="">None</option>
+							<option value="DAILY">Daily</option>
+							<option value="WEEKLY">Weekly</option>
+							<option value="MONTHLY">Monthly</option>
+							<option value="YEARLY">Yearly</option>
+						</select>
+					</div>
+					<div id="ce-recurrence-opts" style="display:none">
+						<div class="form-group">
+							<label for="ce-interval">Every</label>
+							<div class="flex gap-1 items-center">
+								<input class="form-control" type="number" id="ce-interval" name="recurrence_interval" min="1" value="1" style="width:80px"/>
+								<span id="ce-interval-unit">days</span>
+							</div>
+						</div>
+						<div id="ce-byday-group" style="display:none" class="form-group">
+							<label>On days</label>
+							<div class="flex gap-1" style="flex-wrap:wrap">
+								<label><input type="checkbox" name="recurrence_byday" value="MO"/> Mon</label>
+								<label><input type="checkbox" name="recurrence_byday" value="TU"/> Tue</label>
+								<label><input type="checkbox" name="recurrence_byday" value="WE"/> Wed</label>
+								<label><input type="checkbox" name="recurrence_byday" value="TH"/> Thu</label>
+								<label><input type="checkbox" name="recurrence_byday" value="FR"/> Fri</label>
+								<label><input type="checkbox" name="recurrence_byday" value="SA"/> Sat</label>
+								<label><input type="checkbox" name="recurrence_byday" value="SU"/> Sun</label>
+							</div>
+						</div>
+						<div class="form-group">
+							<label for="ce-until">Until (optional)</label>
+							<input class="form-control" type="date" id="ce-until" name="recurrence_until"/>
+						</div>
+					</div>
+					<div class="form-group">
+						<label>Attendees</label>
+						<div id="ce-attendees"></div>
+						<button type="button" class="btn btn-sm" onclick="addAttendeeRow('ce-attendees')">Add attendee</button>
+					</div>
+					<div class="form-group">
+						<label for="ce-color">Event Color (optional)</label>
+						<input class="form-control" type="color" id="ce-color" name="color" value="" style="width:60px;padding:2px"/>
+						<label style="font-size:0.8rem;font-weight:normal"><input type="checkbox" id="ce-color-enable"/> Custom color</label>
+					</div>
 					<div class="flex gap-1" style="justify-content:flex-end">
 						<button type="button" class="btn" onclick="document.getElementById('create-modal').style.display='none'">Cancel</button>
 						<button type="submit" class="btn btn-primary">Create</button>
@@ -112,9 +158,34 @@ templ calIndexPage(pd ui.PageData, calendars []Calendar) {
 			}
 		</style>
 		<script>
+		function addAttendeeRow(containerId) {
+			var container = document.getElementById(containerId);
+			var row = document.createElement('div');
+			row.className = 'flex gap-1 items-center';
+			row.style.marginBottom = '0.25rem';
+			row.innerHTML = '<input class="form-control" type="email" name="attendee_email" placeholder="email@example.com" style="flex:1"/>' +
+				'<input class="form-control" type="text" name="attendee_name" placeholder="Name" style="flex:1"/>' +
+				'<select class="form-control" name="attendee_role" style="width:auto">' +
+				'<option value="REQ-PARTICIPANT" selected>Required</option>' +
+				'<option value="OPT-PARTICIPANT">Optional</option>' +
+				'<option value="CHAIR">Chair</option></select>' +
+				'<button type="button" class="btn btn-sm" onclick="this.parentElement.remove()">Remove</button>';
+			container.appendChild(row);
+		}
+		function toggleRecurrenceOpts(sel, prefix) {
+			var opts = document.getElementById(prefix + '-recurrence-opts');
+			var byday = document.getElementById(prefix + '-byday-group');
+			var unitSpan = document.getElementById(prefix + '-interval-unit');
+			opts.style.display = sel.value ? '' : 'none';
+			byday.style.display = sel.value === 'WEEKLY' ? '' : 'none';
+			var units = {DAILY:'days',WEEKLY:'weeks',MONTHLY:'months',YEARLY:'years'};
+			unitSpan.textContent = units[sel.value] || '';
+		}
 		(function() {
 			var calEl = document.getElementById('calendar');
-			var calendar = new FullCalendar.Calendar(calEl, {
+			var params = new URLSearchParams(window.location.search);
+			var initDate = params.get('date');
+			var calOpts = {
 				initialView: 'dayGridMonth',
 				headerToolbar: {
 					left: 'prev,next today',
@@ -124,6 +195,10 @@ templ calIndexPage(pd ui.PageData, calendars []Calendar) {
 				events: '/apps/calendar/events.json',
 				editable: false,
 				selectable: true,
+				datesSet: function(info) {
+					var d = info.view.currentStart.toISOString().slice(0, 10);
+					history.replaceState(null, '', '/apps/calendar/?date=' + d);
+				},
 				eventClick: function(info) {
 					info.jsEvent.preventDefault();
 					var id = info.event.id;
@@ -154,7 +229,9 @@ templ calIndexPage(pd ui.PageData, calendars []Calendar) {
 					document.getElementById('ce-summary').focus();
 				},
 				height: 'auto'
-			});
+			};
+			if (initDate) { calOpts.initialDate = initDate; }
+			var calendar = new FullCalendar.Calendar(calEl, calOpts);
 			calendar.render();
 
 			// Calendar toggle checkboxes
@@ -169,6 +246,15 @@ templ calIndexPage(pd ui.PageData, calendars []Calendar) {
 				});
 			});
 
+			// Color enable checkbox in create modal
+			var ceColor = document.getElementById('ce-color');
+			var ceColorEnable = document.getElementById('ce-color-enable');
+			ceColor.disabled = true;
+			ceColorEnable.addEventListener('change', function() {
+				ceColor.disabled = !this.checked;
+				if (!this.checked) ceColor.value = '';
+			});
+
 			// All-day toggle in create modal
 			document.getElementById('ce-allday').addEventListener('change', function() {
 				document.getElementById('ce-datetime-fields').style.display = this.checked ? 'none' : '';
@@ -179,7 +265,7 @@ templ calIndexPage(pd ui.PageData, calendars []Calendar) {
 	}
 }
 
-templ calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calendar) {
+templ calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee) {
 	<h2 style="margin-top:0">{ ev.Summary }</h2>
 	<div class="text-muted" style="margin-bottom:1rem">
 		{ formatEventTime(ev.DTStart, ev.DTEnd, ev.IsAllDay) }
@@ -190,11 +276,42 @@ templ calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calend
 	if ev.Description != "" {
 		<p>{ ev.Description }</p>
 	}
+	if eventRRule(ev) != "" {
+		<p class="text-muted" style="font-size:0.85rem">Repeats: { eventRRule(ev) }</p>
+	}
 	if cal != nil {
 		<p class="text-muted" style="font-size:0.85rem">
 			<span style={ fmt.Sprintf("display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s;vertical-align:middle", cal.Color) }></span>
 			{ " " + cal.Name }
 		</p>
+	}
+	if len(attendees) > 0 {
+		<div style="margin-top:0.75rem">
+			<strong style="font-size:0.85rem">Attendees</strong>
+			<ul style="list-style:none;padding:0;margin:0.25rem 0">
+				for _, att := range attendees {
+					<li style="padding:0.25rem 0;font-size:0.85rem">
+						if att.DisplayName != "" {
+							{ att.DisplayName }
+						} else {
+							{ att.Email }
+						}
+						<span class="text-muted">
+							({ att.Email }) —
+							if att.Status == "ACCEPTED" {
+								<span style="color:green">Accepted</span>
+							} else if att.Status == "DECLINED" {
+								<span style="color:red">Declined</span>
+							} else if att.Status == "TENTATIVE" {
+								<span style="color:orange">Tentative</span>
+							} else {
+								<span>Pending</span>
+							}
+						</span>
+					</li>
+				}
+			</ul>
+		</div>
 	}
 	<div class="sidebar-divider" style="margin:1rem 0"></div>
 	<h3>Edit Event</h3>
@@ -252,6 +369,151 @@ templ calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calend
 			<label for="em-description">Description</label>
 			<textarea class="form-control" id="em-description" name="description" rows="3">{ ev.Description }</textarea>
 		</div>
+		<div class="form-group">
+			<label for="em-recurrence">Repeat</label>
+			<select class="form-control" id="em-recurrence" name="recurrence" onchange="toggleRecurrenceOpts(this, 'em')">
+				<option value="">None</option>
+				if eventRRuleFreq(ev) == "DAILY" {
+					<option value="DAILY" selected>Daily</option>
+				} else {
+					<option value="DAILY">Daily</option>
+				}
+				if eventRRuleFreq(ev) == "WEEKLY" {
+					<option value="WEEKLY" selected>Weekly</option>
+				} else {
+					<option value="WEEKLY">Weekly</option>
+				}
+				if eventRRuleFreq(ev) == "MONTHLY" {
+					<option value="MONTHLY" selected>Monthly</option>
+				} else {
+					<option value="MONTHLY">Monthly</option>
+				}
+				if eventRRuleFreq(ev) == "YEARLY" {
+					<option value="YEARLY" selected>Yearly</option>
+				} else {
+					<option value="YEARLY">Yearly</option>
+				}
+			</select>
+		</div>
+		if eventRRuleFreq(ev) != "" {
+			<div id="em-recurrence-opts">
+				<div class="form-group">
+					<label for="em-interval">Every</label>
+					<div class="flex gap-1 items-center">
+						<input class="form-control" type="number" id="em-interval" name="recurrence_interval" min="1" value={ eventRRuleInterval(ev) } style="width:80px"/>
+						<span id="em-interval-unit">
+							if eventRRuleFreq(ev) == "DAILY" {
+								days
+							} else if eventRRuleFreq(ev) == "WEEKLY" {
+								weeks
+							} else if eventRRuleFreq(ev) == "MONTHLY" {
+								months
+							} else {
+								years
+							}
+						</span>
+					</div>
+				</div>
+				if eventRRuleFreq(ev) == "WEEKLY" {
+					<div id="em-byday-group" class="form-group">
+						<label>On days</label>
+						<div class="flex gap-1" style="flex-wrap:wrap">
+							@emByDayCheckbox(ev, "MO", "Mon")
+							@emByDayCheckbox(ev, "TU", "Tue")
+							@emByDayCheckbox(ev, "WE", "Wed")
+							@emByDayCheckbox(ev, "TH", "Thu")
+							@emByDayCheckbox(ev, "FR", "Fri")
+							@emByDayCheckbox(ev, "SA", "Sat")
+							@emByDayCheckbox(ev, "SU", "Sun")
+						</div>
+					</div>
+				} else {
+					<div id="em-byday-group" style="display:none" class="form-group">
+						<label>On days</label>
+						<div class="flex gap-1" style="flex-wrap:wrap">
+							<label><input type="checkbox" name="recurrence_byday" value="MO"/> Mon</label>
+							<label><input type="checkbox" name="recurrence_byday" value="TU"/> Tue</label>
+							<label><input type="checkbox" name="recurrence_byday" value="WE"/> Wed</label>
+							<label><input type="checkbox" name="recurrence_byday" value="TH"/> Thu</label>
+							<label><input type="checkbox" name="recurrence_byday" value="FR"/> Fri</label>
+							<label><input type="checkbox" name="recurrence_byday" value="SA"/> Sat</label>
+							<label><input type="checkbox" name="recurrence_byday" value="SU"/> Sun</label>
+						</div>
+					</div>
+				}
+				<div class="form-group">
+					<label for="em-until">Until (optional)</label>
+					<input class="form-control" type="date" id="em-until" name="recurrence_until" value={ eventRRuleUntil(ev) }/>
+				</div>
+			</div>
+		} else {
+			<div id="em-recurrence-opts" style="display:none">
+				<div class="form-group">
+					<label for="em-interval">Every</label>
+					<div class="flex gap-1 items-center">
+						<input class="form-control" type="number" id="em-interval" name="recurrence_interval" min="1" value="1" style="width:80px"/>
+						<span id="em-interval-unit">days</span>
+					</div>
+				</div>
+				<div id="em-byday-group" style="display:none" class="form-group">
+					<label>On days</label>
+					<div class="flex gap-1" style="flex-wrap:wrap">
+						<label><input type="checkbox" name="recurrence_byday" value="MO"/> Mon</label>
+						<label><input type="checkbox" name="recurrence_byday" value="TU"/> Tue</label>
+						<label><input type="checkbox" name="recurrence_byday" value="WE"/> Wed</label>
+						<label><input type="checkbox" name="recurrence_byday" value="TH"/> Thu</label>
+						<label><input type="checkbox" name="recurrence_byday" value="FR"/> Fri</label>
+						<label><input type="checkbox" name="recurrence_byday" value="SA"/> Sat</label>
+						<label><input type="checkbox" name="recurrence_byday" value="SU"/> Sun</label>
+					</div>
+				</div>
+				<div class="form-group">
+					<label for="em-until">Until (optional)</label>
+					<input class="form-control" type="date" id="em-until" name="recurrence_until"/>
+				</div>
+			</div>
+		}
+		<div class="form-group">
+			<label>Attendees</label>
+			<div id="em-attendees">
+				for _, att := range attendees {
+					<div class="flex gap-1 items-center" style="margin-bottom:0.25rem">
+						<input class="form-control" type="email" name="attendee_email" value={ att.Email } placeholder="email@example.com" style="flex:1"/>
+						<input class="form-control" type="text" name="attendee_name" value={ att.DisplayName } placeholder="Name" style="flex:1"/>
+						<select class="form-control" name="attendee_role" style="width:auto">
+							if att.Role == "CHAIR" {
+								<option value="REQ-PARTICIPANT">Required</option>
+								<option value="OPT-PARTICIPANT">Optional</option>
+								<option value="CHAIR" selected>Chair</option>
+							} else if att.Role == "OPT-PARTICIPANT" {
+								<option value="REQ-PARTICIPANT">Required</option>
+								<option value="OPT-PARTICIPANT" selected>Optional</option>
+								<option value="CHAIR">Chair</option>
+							} else {
+								<option value="REQ-PARTICIPANT" selected>Required</option>
+								<option value="OPT-PARTICIPANT">Optional</option>
+								<option value="CHAIR">Chair</option>
+							}
+						</select>
+						<button type="button" class="btn btn-sm" onclick="this.parentElement.remove()">Remove</button>
+					</div>
+				}
+			</div>
+			<button type="button" class="btn btn-sm" onclick="addAttendeeRow('em-attendees')">Add attendee</button>
+		</div>
+		<div class="form-group">
+			<label for="em-color">Event Color</label>
+			if ev.Color != "" {
+				<input class="form-control" type="color" id="em-color" name="color" value={ ev.Color } style="width:60px;padding:2px"/>
+			} else {
+				<input class="form-control" type="color" id="em-color" name="color" value="" style="width:60px;padding:2px" disabled/>
+			}
+			if ev.Color != "" {
+				<label style="font-size:0.8rem;font-weight:normal"><input type="checkbox" checked onchange="document.getElementById('em-color').disabled=!this.checked;if(!this.checked)document.getElementById('em-color').value=''"/> Custom color</label>
+			} else {
+				<label style="font-size:0.8rem;font-weight:normal"><input type="checkbox" onchange="document.getElementById('em-color').disabled=!this.checked;if(!this.checked)document.getElementById('em-color').value=''"/> Custom color</label>
+			}
+		</div>
 		<div class="flex gap-1" style="justify-content:space-between">
 			<button type="button" class="btn btn-danger"
 				hx-delete={ fmt.Sprintf("/apps/calendar/events/%d", ev.ID) }
@@ -264,6 +526,26 @@ templ calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calend
 			</div>
 		</div>
 	</form>
+}
+
+func hasByDay(ev *Event, day string) bool {
+	for _, d := range eventRRuleByDay(ev) {
+		if strings.TrimSpace(d) == day {
+			return true
+		}
+	}
+	return false
+}
+
+templ emByDayCheckbox(ev *Event, value string, label string) {
+	<label>
+		if hasByDay(ev, value) {
+			<input type="checkbox" name="recurrence_byday" value={ value } checked/>
+		} else {
+			<input type="checkbox" name="recurrence_byday" value={ value }/>
+		}
+		{ label }
+	</label>
 }
 
 templ calSettingsPage(pd ui.PageData, calendars []Calendar) {
@@ -311,7 +593,13 @@ templ calSettingsPage(pd ui.PageData, calendars []Calendar) {
 										<td>{ cal.Name }</td>
 										<td>{ cal.UID }</td>
 										<td>{ strconv.FormatInt(cal.CTag, 10) }</td>
-										<td class="text-right">
+										<td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
+											<button
+												class="btn btn-outline btn-sm"
+												hx-get={ fmt.Sprintf("/api/shares/panel?type=calendar:calendar&id=%d", cal.ID) }
+												hx-target={ fmt.Sprintf("#cal-share-%d", cal.ID) }
+												hx-swap="innerHTML"
+											>Share</button>
 											<button
 												class="btn btn-danger btn-sm"
 												hx-delete={ fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID) }
@@ -319,6 +607,10 @@ templ calSettingsPage(pd ui.PageData, calendars []Calendar) {
 												hx-swap="outerHTML"
 												hx-confirm="Delete this calendar and all its events?"
 											>Delete</button>
+										</td>
+									</tr>
+									<tr>
+										<td colspan="5" id={ fmt.Sprintf("cal-share-%d", cal.ID) }>
 										</td>
 									</tr>
 								}

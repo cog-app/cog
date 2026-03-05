@@ -63,6 +63,7 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 
 	// Dashboard (root route from dashboard plugin)
 	mux.Handle("GET /{$}", auth.RequireAuthWeb(dashPlugin.Handler()))
+	mux.Handle("GET /dashboard/edit", auth.RequireAuthWeb(dashPlugin.EditHandler()))
 
 	// Avatar
 	mux.Handle("GET /avatar/{id}", http.HandlerFunc(avatarH.Serve))
@@ -72,6 +73,10 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	csrfWeb := func(h http.Handler) http.Handler {
 		return auth.RequireAuthWeb(auth.RequireCSRF(p.CSRFSecret, h))
 	}
+
+	// Dashboard layout save (needs csrfWeb)
+	mux.Handle("POST /dashboard/layout", csrfWeb(dashPlugin.SaveLayoutHandler()))
+
 	mux.Handle("GET /settings/{$}", auth.RequireAuthWeb(http.HandlerFunc(settingsH.RedirectToProfile)))
 	mux.Handle("GET /settings/profile", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowProfile)))
 	mux.Handle("GET /settings/security", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowSecurity)))
@@ -167,9 +172,11 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("POST /apps/rss/feeds", csrfWeb(http.HandlerFunc(rssPages.AddFeed)))
 	mux.Handle("DELETE /apps/rss/feeds/{id}", csrfWeb(http.HandlerFunc(rssPages.DeleteFeed)))
 	mux.Handle("POST /apps/rss/feeds/{id}/read", csrfWeb(http.HandlerFunc(rssPages.MarkFeedRead)))
+	mux.Handle("POST /apps/rss/feeds/{id}/refresh", csrfWeb(http.HandlerFunc(rssPages.RefreshFeed)))
 	mux.Handle("POST /apps/rss/folders", csrfWeb(http.HandlerFunc(rssPages.AddFolder)))
 	mux.Handle("DELETE /apps/rss/folders/{id}", csrfWeb(http.HandlerFunc(rssPages.DeleteFolder)))
 	mux.Handle("POST /apps/rss/items/{id}/read", csrfWeb(http.HandlerFunc(rssPages.ToggleRead)))
+	mux.Handle("POST /apps/rss/items/{id}/mark-read", csrfWeb(http.HandlerFunc(rssPages.MarkRead)))
 	mux.Handle("POST /apps/rss/items/{id}/star", csrfWeb(http.HandlerFunc(rssPages.ToggleStar)))
 	mux.Handle("POST /apps/rss/items/read-all", csrfWeb(http.HandlerFunc(rssPages.MarkAllRead)))
 	mux.Handle("POST /apps/rss/opml/import", csrfWeb(http.HandlerFunc(rssPages.ImportOPML)))
@@ -178,7 +185,7 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("/index.php/apps/news/api/", auth.RequireAuth(newsAPI))
 
 	// --- Calendar plugin ---
-	calPlugin := calendar.New(p.Plugins)
+	calPlugin := calendar.New(p.Plugins, p.Shares, p.Email)
 	p.Plugins.Add(calPlugin)
 
 	calPages := calendar.NewPages(calPlugin, p.CSRFSecret, p.Plugins)
@@ -189,8 +196,10 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("POST /apps/calendar/events/{id}", csrfWeb(http.HandlerFunc(calPages.UpdateEvent)))
 	mux.Handle("POST /apps/calendar/events", csrfWeb(http.HandlerFunc(calPages.CreateEvent)))
 	mux.Handle("DELETE /apps/calendar/events/{id}", csrfWeb(http.HandlerFunc(calPages.DeleteEvent)))
+	mux.Handle("POST /apps/calendar/events/{id}/respond", csrfWeb(http.HandlerFunc(calPages.RespondToInvite)))
 	mux.Handle("POST /apps/calendar/calendars", csrfWeb(http.HandlerFunc(calPages.CreateCalendar)))
 	mux.Handle("DELETE /apps/calendar/calendars/{id}", csrfWeb(http.HandlerFunc(calPages.DeleteCalendarHandler)))
+	mux.Handle("GET /apps/calendar/notifications", auth.RequireAuth(http.HandlerFunc(calPages.Notifications)))
 
 	// CalDAV endpoints
 	caldav := calendar.NewCalDAVHandler(calPlugin)
@@ -198,7 +207,7 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("/remote.php/dav/principals/", auth.RequireAuth(caldav))
 
 	// --- Contacts plugin ---
-	contactsPlugin := contacts.New(p.Plugins)
+	contactsPlugin := contacts.New(p.Plugins, p.Config.DataDir, p.Shares, p.Users)
 	p.Plugins.Add(contactsPlugin)
 
 	contactsPages := contacts.NewPages(contactsPlugin, p.CSRFSecret, p.Plugins)
@@ -208,6 +217,8 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("POST /apps/contacts/contacts/{id}", csrfWeb(http.HandlerFunc(contactsPages.UpdateContact)))
 	mux.Handle("POST /apps/contacts/contacts", csrfWeb(http.HandlerFunc(contactsPages.CreateContact)))
 	mux.Handle("DELETE /apps/contacts/contacts/{id}", csrfWeb(http.HandlerFunc(contactsPages.DeleteContact)))
+	mux.Handle("GET /apps/contacts/photos/{id}", auth.RequireAuth(http.HandlerFunc(contactsPages.ServePhoto)))
+	mux.Handle("POST /apps/contacts/contacts/{id}/photo", csrfWeb(http.HandlerFunc(contactsPages.UploadPhoto)))
 	mux.Handle("POST /apps/contacts/books", csrfWeb(http.HandlerFunc(contactsPages.CreateAddressBookHandler)))
 	mux.Handle("DELETE /apps/contacts/books/{id}", csrfWeb(http.HandlerFunc(contactsPages.DeleteAddressBookHandler)))
 
@@ -253,6 +264,14 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.HandleFunc("POST /index.php/login/v2/poll", loginFlow.HandlePoll)
 	mux.HandleFunc("GET /index.php/login/v2/grant", loginFlow.HandleGrant)
 	mux.HandleFunc("POST /index.php/login/v2/grant", loginFlow.HandleGrant)
+
+	// --- Share UI (generic, HTMX) ---
+	shareH := shareHandler{h}
+	mux.Handle("GET /api/shares/panel", auth.RequireAuth(http.HandlerFunc(shareH.SharePanel)))
+	mux.Handle("POST /api/shares/create", csrfWeb(http.HandlerFunc(shareH.CreateShareForm)))
+	mux.Handle("POST /api/shares/public-link-form", csrfWeb(http.HandlerFunc(shareH.CreatePublicLinkForm)))
+	mux.Handle("DELETE /api/shares/{id}/delete", csrfWeb(http.HandlerFunc(shareH.DeleteShareHTMX)))
+	mux.Handle("GET /api/users/search", auth.RequireAuth(http.HandlerFunc(shareH.UserSearch)))
 
 	// --- Search API ---
 	searchH := searchHandler{h}

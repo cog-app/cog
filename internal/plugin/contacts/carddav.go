@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
 // CardDAVHandler implements CardDAV for the contacts plugin.
@@ -34,7 +36,18 @@ func (h *CardDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	path := r.URL.Path
 
-	if strings.HasPrefix(path, "/remote.php/dav/addressbooks/") {
+	if after, ok := strings.CutPrefix(path, "/remote.php/dav/addressbooks/"); ok {
+		// Check if the request targets another user's address books (shared).
+		rest := after
+		parts := strings.SplitN(rest, "/", 2)
+		targetUser := parts[0]
+
+		if targetUser != "" && targetUser != u.Username {
+			// Accessing another user's address books via sharing.
+			h.dispatchShared(w, r, u, targetUser)
+			return
+		}
+
 		db, err := h.plugin.DB(u.Username)
 		if err != nil {
 			log.Printf("carddav: db error for %s: %v", u.Username, err)
@@ -49,6 +62,103 @@ func (h *CardDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNotFound)
+}
+
+// dispatchShared handles CardDAV requests for another user's address books
+// that have been shared with the requesting user.
+func (h *CardDAVHandler) dispatchShared(w http.ResponseWriter, r *http.Request, u *user.User, targetUser string) {
+	rest := strings.TrimPrefix(r.URL.Path, "/remote.php/dav/addressbooks/")
+	parts := strings.SplitN(rest, "/", 3) // [targetUser, bookUID?, cardURI?]
+
+	targetDB, err := h.plugin.DB(targetUser)
+	if err != nil {
+		log.Printf("carddav: shared db for %s: %v", targetUser, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if len(parts) <= 1 || parts[1] == "" {
+		// Listing shared user's address books — only show those shared with us.
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	bookUID := strings.TrimSuffix(parts[1], "/")
+	// Check that this book is shared with the user.
+	if !h.plugin.checkBookAccess(u.ID, targetUser, bookUID, plugin.PermRead) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	if len(parts) == 2 || parts[2] == "" {
+		// Address book collection operations on shared book.
+		h.addressBookCollectionShared(w, r, targetDB, targetUser, bookUID, u)
+		return
+	}
+	// Individual card.
+	h.cardShared(w, r, targetDB, targetUser, bookUID, strings.TrimSuffix(parts[2], "/"), u)
+}
+
+// addressBookCollectionShared handles PROPFIND/REPORT on a shared address book.
+func (h *CardDAVHandler) addressBookCollectionShared(w http.ResponseWriter, r *http.Request, db *sql.DB, targetUser, bookUID string, u *user.User) {
+	book, err := GetAddressBookByUID(db, bookUID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	switch r.Method {
+	case "PROPFIND":
+		bookHref := "/remote.php/dav/addressbooks/" + targetUser + "/" + bookUID + "/"
+		depth := r.Header.Get("Depth")
+		responses := []davResponse{bookResponse(bookHref, book, targetUser)}
+		if depth != "0" {
+			cards, _ := ListCards(db, book.ID)
+			for _, c := range cards {
+				responses = append(responses, cardResponse(bookHref+c.URI, &c))
+			}
+		}
+		writeMultiStatus(w, responses)
+	case "REPORT":
+		h.handleReport(w, r, db, targetUser, book)
+	case http.MethodOptions:
+		writeOptions(w)
+	default:
+		// No write operations on shared books unless user has write perm.
+		if !h.plugin.checkBookAccess(u.ID, targetUser, bookUID, plugin.PermWrite) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+// cardShared handles GET/PUT/DELETE/PROPFIND on a card in a shared address book.
+func (h *CardDAVHandler) cardShared(w http.ResponseWriter, r *http.Request, db *sql.DB, targetUser, bookUID, cardURI string, u *user.User) {
+	book, err := GetAddressBookByUID(db, bookUID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	cardUID := strings.TrimSuffix(cardURI, ".vcf")
+
+	switch r.Method {
+	case http.MethodGet, "PROPFIND":
+		// Read access already checked by dispatchShared.
+		h.card(w, r, db, targetUser, bookUID, cardURI)
+	case http.MethodPut, http.MethodDelete:
+		if !h.plugin.checkBookAccess(u.ID, targetUser, book.UID, plugin.PermWrite) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		h.card(w, r, db, targetUser, bookUID, cardURI)
+	case http.MethodOptions:
+		writeOptions(w)
+	default:
+		_ = cardUID // suppress unused
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
 }
 
 // dispatch routes addressbook requests by path depth.
@@ -71,7 +181,7 @@ func (h *CardDAVHandler) dispatch(w http.ResponseWriter, r *http.Request, db *sq
 	}
 }
 
-// addressBookHome lists all address books for a user.
+// addressBookHome lists all address books for a user (including shared).
 func (h *CardDAVHandler) addressBookHome(w http.ResponseWriter, r *http.Request, db *sql.DB, username string) {
 	switch r.Method {
 	case "PROPFIND":
@@ -90,6 +200,15 @@ func (h *CardDAVHandler) addressBookHome(w http.ResponseWriter, r *http.Request,
 			books, _ := ListAddressBooks(db)
 			for _, book := range books {
 				responses = append(responses, bookResponse(homeHref+book.UID+"/", &book, username))
+			}
+
+			// Include shared address books.
+			u := auth.UserFromContext(r.Context())
+			if u != nil {
+				for _, sb := range h.plugin.sharedBooks(u.ID) {
+					sharedHref := "/remote.php/dav/addressbooks/" + sb.OwnerUsername + "/" + sb.Book.UID + "/"
+					responses = append(responses, bookResponse(sharedHref, sb.Book, sb.OwnerUsername))
+				}
 			}
 		}
 		writeMultiStatus(w, responses)

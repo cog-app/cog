@@ -5,6 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"html"
+	"io"
 	"net/http"
 	"time"
 
@@ -50,6 +52,11 @@ func (p *Plugin) ID() string { return PluginID }
 
 func (p *Plugin) Register(registrar plugin.Registrar) error {
 	registrar.RegisterNavItem(plugin.NavItem{Label: "News", URL: "/apps/rss", Icon: "rss"})
+	registrar.RegisterWidget(plugin.Widget{
+		Title:    "Recent Articles",
+		Priority: 20,
+		Render:   p.renderWidget,
+	})
 	registrar.RegisterSearchSource(plugin.SearchSourceDef{
 		PrimaryTable: "items",
 		EnrichSQL:    "SELECT rowid, title, url, content_html FROM items WHERE rowid IN (?)",
@@ -87,6 +94,23 @@ func (p *Plugin) DB(username string) (*sql.DB, error) {
 		return nil, fmt.Errorf("migrate rss db for %s: %w", username, err)
 	}
 	return db, nil
+}
+
+func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
+	db, err := p.DB(userID)
+	if err != nil {
+		return nil
+	}
+	items, _ := UnreadItems(db, 5)
+	if len(items) == 0 {
+		_, _ = io.WriteString(w, `<p class="text-muted">No unread articles.</p>`)
+		return nil
+	}
+	for _, it := range items {
+		_, _ = fmt.Fprintf(w, `<div style="padding:0.4rem 0;border-bottom:1px solid var(--color-border)"><a href="/apps/rss/feed/%d" style="font-weight:500">%s</a><div class="text-muted" style="font-size:0.85rem">%s</div></div>`,
+			it.FeedID, html.EscapeString(it.Title), html.EscapeString(it.FeedTitle))
+	}
+	return nil
 }
 
 func migrate(db *sql.DB) error {

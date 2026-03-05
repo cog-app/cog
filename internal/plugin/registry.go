@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -252,6 +253,23 @@ func (r *Registry) EnsureUserDirs(username string) error {
 	}
 
 	return nil
+}
+
+// ResourceDefByType looks up a resource definition by its full type string
+// (e.g., "calendar:calendar", "contacts:address_book").
+// Returns the def and true if found, zero value and false otherwise.
+func (r *Registry) ResourceDefByType(fullType string) (ResourceDef, bool) {
+	parts := strings.SplitN(fullType, ":", 2)
+	if len(parts) != 2 {
+		return ResourceDef{}, false
+	}
+	pluginID, resType := parts[0], parts[1]
+	reg, ok := r.registrars[pluginID]
+	if !ok {
+		return ResourceDef{}, false
+	}
+	def, ok := reg.resources[resType]
+	return def, ok
 }
 
 // ResourceDefs returns all resource definitions across all plugins.

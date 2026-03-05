@@ -12,6 +12,14 @@ type VAlarm struct {
 	Trigger string // e.g. "-PT15M" (15 min before)
 }
 
+// AttendeeField holds extracted ATTENDEE property fields from an iCalendar component.
+type AttendeeField struct {
+	Email    string
+	CN       string
+	PartStat string
+	Role     string
+}
+
 // VEventFields holds extracted fields from a VEVENT component.
 type VEventFields struct {
 	UID         string
@@ -21,8 +29,10 @@ type VEventFields struct {
 	DTStart     time.Time
 	DTEnd       time.Time
 	IsAllDay    bool
+	Color       string // per-event color (Cog extension, not stored in ICS)
 	RRule       string // raw RRULE value, e.g. "FREQ=WEEKLY;BYDAY=MO,WE,FR"
 	Alarms      []VAlarm
+	Attendees   []AttendeeField
 }
 
 // ParseVEvent extracts fields from an iCalendar blob containing a VEVENT.
@@ -104,6 +114,34 @@ func ParseVEvent(icsData string) (VEventFields, error) {
 			f.DTEnd = t
 		case "RRULE":
 			f.RRule = value
+		case "ATTENDEE":
+			af := AttendeeField{}
+			// Extract email from MAILTO: value
+			mailto := strings.TrimPrefix(value, "mailto:")
+			mailto = strings.TrimPrefix(mailto, "MAILTO:")
+			af.Email = mailto
+			// Extract params from propFull (e.g. ATTENDEE;CN=Name;PARTSTAT=ACCEPTED;ROLE=REQ-PARTICIPANT)
+			for param := range strings.SplitSeq(propFull, ";") {
+				pk, pv, ok := strings.Cut(param, "=")
+				if !ok {
+					continue
+				}
+				switch strings.ToUpper(pk) {
+				case "CN":
+					af.CN = strings.Trim(pv, "\"")
+				case "PARTSTAT":
+					af.PartStat = pv
+				case "ROLE":
+					af.Role = pv
+				}
+			}
+			if af.PartStat == "" {
+				af.PartStat = "NEEDS-ACTION"
+			}
+			if af.Role == "" {
+				af.Role = "REQ-PARTICIPANT"
+			}
+			f.Attendees = append(f.Attendees, af)
 		}
 	}
 
@@ -167,11 +205,11 @@ func escapeICS(s string) string {
 
 // GenerateICS produces a minimal iCalendar blob for a single VEVENT.
 func GenerateICS(uid, summary, description, location string, dtstart, dtend time.Time, isAllDay bool) string {
-	return GenerateICSFull(uid, summary, description, location, dtstart, dtend, isAllDay, "", nil)
+	return GenerateICSFull(uid, summary, description, location, dtstart, dtend, isAllDay, "", nil, nil)
 }
 
-// GenerateICSFull produces an iCalendar blob with optional RRULE and VALARM.
-func GenerateICSFull(uid, summary, description, location string, dtstart, dtend time.Time, isAllDay bool, rrule string, alarms []VAlarm) string {
+// GenerateICSFull produces an iCalendar blob with optional RRULE, VALARM, and ATTENDEE.
+func GenerateICSFull(uid, summary, description, location string, dtstart, dtend time.Time, isAllDay bool, rrule string, alarms []VAlarm, attendees []AttendeeField) string {
 	var b strings.Builder
 	b.WriteString("BEGIN:VCALENDAR\r\n")
 	b.WriteString("VERSION:2.0\r\n")
@@ -200,6 +238,14 @@ func GenerateICSFull(uid, summary, description, location string, dtstart, dtend 
 		fmt.Fprintf(&b, "RRULE:%s\r\n", rrule)
 	}
 
+	for _, att := range attendees {
+		params := fmt.Sprintf("ATTENDEE;ROLE=%s;PARTSTAT=%s", att.Role, att.PartStat)
+		if att.CN != "" {
+			params += fmt.Sprintf(";CN=%s", att.CN)
+		}
+		fmt.Fprintf(&b, "%s:mailto:%s\r\n", params, att.Email)
+	}
+
 	fmt.Fprintf(&b, "DTSTAMP:%s\r\n", time.Now().UTC().Format("20060102T150405Z"))
 
 	for _, alarm := range alarms {
@@ -212,6 +258,48 @@ func GenerateICSFull(uid, summary, description, location string, dtstart, dtend 
 		b.WriteString("END:VALARM\r\n")
 	}
 
+	b.WriteString("END:VEVENT\r\n")
+	b.WriteString("END:VCALENDAR\r\n")
+	return b.String()
+}
+
+// GenerateICSInvite produces an iCalendar blob with METHOD for email invitations.
+func GenerateICSInvite(method, uid, summary, description, location string, dtstart, dtend time.Time, isAllDay bool, attendees []AttendeeField) string {
+	var b strings.Builder
+	b.WriteString("BEGIN:VCALENDAR\r\n")
+	b.WriteString("VERSION:2.0\r\n")
+	b.WriteString("PRODID:-//Cog//Calendar//EN\r\n")
+	fmt.Fprintf(&b, "METHOD:%s\r\n", method)
+	b.WriteString("BEGIN:VEVENT\r\n")
+	fmt.Fprintf(&b, "UID:%s\r\n", uid)
+
+	if isAllDay {
+		fmt.Fprintf(&b, "DTSTART;VALUE=DATE:%s\r\n", dtstart.Format("20060102"))
+		fmt.Fprintf(&b, "DTEND;VALUE=DATE:%s\r\n", dtend.Format("20060102"))
+	} else {
+		fmt.Fprintf(&b, "DTSTART:%s\r\n", dtstart.UTC().Format("20060102T150405Z"))
+		fmt.Fprintf(&b, "DTEND:%s\r\n", dtend.UTC().Format("20060102T150405Z"))
+	}
+
+	if summary != "" {
+		fmt.Fprintf(&b, "SUMMARY:%s\r\n", escapeICS(summary))
+	}
+	if description != "" {
+		fmt.Fprintf(&b, "DESCRIPTION:%s\r\n", escapeICS(description))
+	}
+	if location != "" {
+		fmt.Fprintf(&b, "LOCATION:%s\r\n", escapeICS(location))
+	}
+
+	for _, att := range attendees {
+		params := fmt.Sprintf("ATTENDEE;ROLE=%s;PARTSTAT=%s", att.Role, att.PartStat)
+		if att.CN != "" {
+			params += fmt.Sprintf(";CN=%s", att.CN)
+		}
+		fmt.Fprintf(&b, "%s:mailto:%s\r\n", params, att.Email)
+	}
+
+	fmt.Fprintf(&b, "DTSTAMP:%s\r\n", time.Now().UTC().Format("20060102T150405Z"))
 	b.WriteString("END:VEVENT\r\n")
 	b.WriteString("END:VCALENDAR\r\n")
 	return b.String()

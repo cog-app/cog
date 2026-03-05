@@ -20,12 +20,15 @@ type SubjectRef = cogplugin.SubjectRef
 type ResourceRef = cogplugin.ResourceRef
 type SearchSourceDef = cogplugin.SearchSourceDef
 type SearchField = cogplugin.SearchField
+type PermissionLevel = cogplugin.PermissionLevel
 
 // Re-export permission constants (cannot alias constants).
 const (
-	PermRead    = cogplugin.PermRead
-	PermWrite   = cogplugin.PermWrite
-	PermReshare = cogplugin.PermReshare
+	PermRead     = cogplugin.PermRead
+	PermWrite    = cogplugin.PermWrite
+	PermReshare  = cogplugin.PermReshare
+	PermFreeBusy = cogplugin.PermFreeBusy
+	PermSchedule = cogplugin.PermSchedule
 )
 
 // protectedPlugin is unexported — only embeddable from within internal/plugin.

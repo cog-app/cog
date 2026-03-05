@@ -1,0 +1,115 @@
+package ui
+
+import (
+	"fmt"
+	"strconv"
+)
+
+// SharePanel renders the sharing UI panel that can be embedded in any plugin's settings page.
+// Load it via HTMX: hx-get="/api/shares/panel?type=calendar:calendar&id=5" hx-target="#share-panel"
+templ SharePanel(resourceType, resourceID, csrfToken string, shares []ShareDisplayItem, levels []PermissionLevelChoice, users []UserChoice) {
+	<div id="share-panel">
+		<h3 style="margin-bottom:0.75rem">Sharing</h3>
+		if len(shares) > 0 {
+			<table style="width:100%;border-collapse:collapse;margin-bottom:1rem">
+				<thead>
+					<tr style="text-align:left;border-bottom:1px solid var(--color-border)">
+						<th style="padding:0.5rem">Shared with</th>
+						<th style="padding:0.5rem">Permissions</th>
+						<th style="padding:0.5rem;width:3rem"></th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, s := range shares {
+						<tr style="border-bottom:1px solid var(--color-border)">
+							<td style="padding:0.5rem">
+								if s.SubjectType == "PUBLIC" {
+									<span title="Public link">{ s.SubjectName }</span>
+									if s.Token != "" {
+										<br/>
+										<code style="font-size:0.8rem;color:var(--color-text-muted)">
+											{ fmt.Sprintf("/s/%s", s.Token) }
+										</code>
+									}
+								} else {
+									{ s.SubjectName }
+								}
+							</td>
+							<td style="padding:0.5rem">{ s.PermLabel }</td>
+							<td style="padding:0.5rem">
+								<button
+									class="btn btn-outline btn-sm"
+									style="color:var(--color-danger)"
+									hx-delete={ fmt.Sprintf("/api/shares/%s/delete", s.ID) }
+									hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, csrfToken) }
+									hx-target="#share-panel"
+									hx-get={ fmt.Sprintf("/api/shares/panel?type=%s&id=%s", resourceType, resourceID) }
+									hx-swap="outerHTML"
+									hx-trigger="click"
+									title="Remove share"
+								>
+									&times;
+								</button>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		} else {
+			<p style="color:var(--color-text-muted);margin-bottom:1rem">Not shared with anyone.</p>
+		}
+		<details style="margin-bottom:0.75rem">
+			<summary style="cursor:pointer;font-weight:500">Share with a user</summary>
+			<form
+				hx-post="/api/shares/create"
+				hx-target="#share-panel"
+				hx-swap="outerHTML"
+				style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:end;margin-top:0.5rem;padding:0.75rem;border:1px solid var(--color-border);border-radius:var(--radius)"
+			>
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<input type="hidden" name="resource_type" value={ resourceType }/>
+				<input type="hidden" name="resource_id" value={ resourceID }/>
+				<div style="flex:1;min-width:150px">
+					<label style="font-size:0.85rem;font-weight:500">User</label>
+					<select name="subject_id" class="form-control" required>
+						<option value="">Select user...</option>
+						for _, u := range users {
+							<option value={ u.ID }>{ u.Name } ({ u.Username })</option>
+						}
+					</select>
+				</div>
+				<div style="min-width:120px">
+					<label style="font-size:0.85rem;font-weight:500">Permission</label>
+					<select name="permissions" class="form-control">
+						for _, l := range levels {
+							<option value={ strconv.FormatUint(uint64(l.Permissions), 10) }>{ l.Label }</option>
+						}
+					</select>
+				</div>
+				<button type="submit" class="btn btn-primary btn-sm">Share</button>
+			</form>
+		</details>
+		<details>
+			<summary style="cursor:pointer;font-weight:500">Create public link</summary>
+			<form
+				hx-post="/api/shares/public-link-form"
+				hx-target="#share-panel"
+				hx-swap="outerHTML"
+				style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:end;margin-top:0.5rem;padding:0.75rem;border:1px solid var(--color-border);border-radius:var(--radius)"
+			>
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<input type="hidden" name="resource_type" value={ resourceType }/>
+				<input type="hidden" name="resource_id" value={ resourceID }/>
+				<div style="min-width:120px">
+					<label style="font-size:0.85rem;font-weight:500">Permission</label>
+					<select name="permissions" class="form-control">
+						for _, l := range levels {
+							<option value={ strconv.FormatUint(uint64(l.Permissions), 10) }>{ l.Label }</option>
+						}
+					</select>
+				</div>
+				<button type="submit" class="btn btn-primary btn-sm">Create Link</button>
+			</form>
+		</details>
+	</div>
+}

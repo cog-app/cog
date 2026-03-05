@@ -20,6 +20,9 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
+// seedHook is set by cog_seed.go when built with the "seed" build tag.
+var seedHook func(*services.Providers)
+
 func defaultBaseURL() string {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -92,6 +95,11 @@ func Main(plugins ...plugin.Plugin) {
 	}
 
 	handler := web.New(p)
+
+	// Run seed hook if built with -tags seed and --seed flag is set.
+	if seedHook != nil {
+		seedHook(p)
+	}
 
 	// Start search indexing after plugins are registered.
 	if err := p.StartSearch(context.Background()); err != nil {

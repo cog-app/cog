@@ -32,6 +32,7 @@ type Event struct {
 	DTStart     int64
 	DTEnd       int64
 	IsAllDay    bool
+	Color       string
 	ICSData     string
 	CreatedAt   int64
 	UpdatedAt   int64
@@ -126,7 +127,7 @@ func EnsureDefaultCalendar(db *sql.DB) error {
 // --- Event CRUD ---
 
 func ListEvents(db *sql.DB, calendarID int64) ([]Event, error) {
-	rows, err := db.Query(`SELECT id, calendar_id, uid, etag, summary, location, description, dtstart, dtend, is_all_day, ics_data, created_at, updated_at
+	rows, err := db.Query(`SELECT id, calendar_id, uid, etag, summary, location, description, dtstart, dtend, is_all_day, color, ics_data, created_at, updated_at
 		FROM events WHERE calendar_id = ? ORDER BY dtstart`, calendarID)
 	if err != nil {
 		return nil, err
@@ -137,9 +138,9 @@ func ListEvents(db *sql.DB, calendarID int64) ([]Event, error) {
 
 func GetEventByUID(db *sql.DB, calendarID int64, uid string) (*Event, error) {
 	var e Event
-	err := db.QueryRow(`SELECT id, calendar_id, uid, etag, summary, location, description, dtstart, dtend, is_all_day, ics_data, created_at, updated_at
+	err := db.QueryRow(`SELECT id, calendar_id, uid, etag, summary, location, description, dtstart, dtend, is_all_day, color, ics_data, created_at, updated_at
 		FROM events WHERE calendar_id = ? AND uid = ?`, calendarID, uid).
-		Scan(&e.ID, &e.CalendarID, &e.UID, &e.ETag, &e.Summary, &e.Location, &e.Description, &e.DTStart, &e.DTEnd, &e.IsAllDay, &e.ICSData, &e.CreatedAt, &e.UpdatedAt)
+		Scan(&e.ID, &e.CalendarID, &e.UID, &e.ETag, &e.Summary, &e.Location, &e.Description, &e.DTStart, &e.DTEnd, &e.IsAllDay, &e.Color, &e.ICSData, &e.CreatedAt, &e.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -148,9 +149,9 @@ func GetEventByUID(db *sql.DB, calendarID int64, uid string) (*Event, error) {
 
 func GetEvent(db *sql.DB, id int64) (*Event, error) {
 	var e Event
-	err := db.QueryRow(`SELECT id, calendar_id, uid, etag, summary, location, description, dtstart, dtend, is_all_day, ics_data, created_at, updated_at
+	err := db.QueryRow(`SELECT id, calendar_id, uid, etag, summary, location, description, dtstart, dtend, is_all_day, color, ics_data, created_at, updated_at
 		FROM events WHERE id = ?`, id).
-		Scan(&e.ID, &e.CalendarID, &e.UID, &e.ETag, &e.Summary, &e.Location, &e.Description, &e.DTStart, &e.DTEnd, &e.IsAllDay, &e.ICSData, &e.CreatedAt, &e.UpdatedAt)
+		Scan(&e.ID, &e.CalendarID, &e.UID, &e.ETag, &e.Summary, &e.Location, &e.Description, &e.DTStart, &e.DTEnd, &e.IsAllDay, &e.Color, &e.ICSData, &e.CreatedAt, &e.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -169,8 +170,8 @@ func UpsertEvent(db *sql.DB, calendarID int64, uid, icsData string, fields VEven
 		dtend = 0
 	}
 
-	_, err := db.Exec(`INSERT INTO events (calendar_id, uid, etag, summary, location, description, dtstart, dtend, is_all_day, ics_data)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := db.Exec(`INSERT INTO events (calendar_id, uid, etag, summary, location, description, dtstart, dtend, is_all_day, color, ics_data)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(calendar_id, uid) DO UPDATE SET
 			etag = excluded.etag,
 			summary = excluded.summary,
@@ -179,10 +180,11 @@ func UpsertEvent(db *sql.DB, calendarID int64, uid, icsData string, fields VEven
 			dtstart = excluded.dtstart,
 			dtend = excluded.dtend,
 			is_all_day = excluded.is_all_day,
+			color = excluded.color,
 			ics_data = excluded.ics_data,
 			updated_at = unixepoch()`,
 		calendarID, uid, etag, fields.Summary, fields.Location, fields.Description,
-		dtstart, dtend, fields.IsAllDay, icsData)
+		dtstart, dtend, fields.IsAllDay, fields.Color, icsData)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +228,7 @@ func DeleteEventByID(db *sql.DB, id int64) error {
 // UpcomingEvents returns events starting from now, joined with calendar info.
 func UpcomingEvents(db *sql.DB, now int64, limit int) ([]EventWithCalendar, error) {
 	rows, err := db.Query(`SELECT e.id, e.calendar_id, e.uid, e.etag, e.summary, e.location, e.description,
-		e.dtstart, e.dtend, e.is_all_day, e.ics_data, e.created_at, e.updated_at,
+		e.dtstart, e.dtend, e.is_all_day, e.color, e.ics_data, e.created_at, e.updated_at,
 		c.name, c.color
 		FROM events e JOIN calendars c ON e.calendar_id = c.id
 		WHERE e.dtstart >= ? OR e.dtend >= ?
@@ -239,7 +241,7 @@ func UpcomingEvents(db *sql.DB, now int64, limit int) ([]EventWithCalendar, erro
 	for rows.Next() {
 		var ev EventWithCalendar
 		if err := rows.Scan(&ev.ID, &ev.CalendarID, &ev.UID, &ev.ETag, &ev.Summary, &ev.Location, &ev.Description,
-			&ev.DTStart, &ev.DTEnd, &ev.IsAllDay, &ev.ICSData, &ev.CreatedAt, &ev.UpdatedAt,
+			&ev.DTStart, &ev.DTEnd, &ev.IsAllDay, &ev.Color, &ev.ICSData, &ev.CreatedAt, &ev.UpdatedAt,
 			&ev.CalendarName, &ev.CalendarColor); err != nil {
 			return nil, err
 		}
@@ -251,7 +253,7 @@ func UpcomingEvents(db *sql.DB, now int64, limit int) ([]EventWithCalendar, erro
 // AllEvents returns all events joined with calendar info, ordered by start time.
 func AllEvents(db *sql.DB, limit int) ([]EventWithCalendar, error) {
 	rows, err := db.Query(`SELECT e.id, e.calendar_id, e.uid, e.etag, e.summary, e.location, e.description,
-		e.dtstart, e.dtend, e.is_all_day, e.ics_data, e.created_at, e.updated_at,
+		e.dtstart, e.dtend, e.is_all_day, e.color, e.ics_data, e.created_at, e.updated_at,
 		c.name, c.color
 		FROM events e JOIN calendars c ON e.calendar_id = c.id
 		ORDER BY e.dtstart LIMIT ?`, limit)
@@ -263,7 +265,7 @@ func AllEvents(db *sql.DB, limit int) ([]EventWithCalendar, error) {
 	for rows.Next() {
 		var ev EventWithCalendar
 		if err := rows.Scan(&ev.ID, &ev.CalendarID, &ev.UID, &ev.ETag, &ev.Summary, &ev.Location, &ev.Description,
-			&ev.DTStart, &ev.DTEnd, &ev.IsAllDay, &ev.ICSData, &ev.CreatedAt, &ev.UpdatedAt,
+			&ev.DTStart, &ev.DTEnd, &ev.IsAllDay, &ev.Color, &ev.ICSData, &ev.CreatedAt, &ev.UpdatedAt,
 			&ev.CalendarName, &ev.CalendarColor); err != nil {
 			return nil, err
 		}
@@ -275,7 +277,7 @@ func AllEvents(db *sql.DB, limit int) ([]EventWithCalendar, error) {
 // EventsInRange returns events overlapping the given time range (unix timestamps).
 func EventsInRange(db *sql.DB, start, end int64) ([]EventWithCalendar, error) {
 	rows, err := db.Query(`SELECT e.id, e.calendar_id, e.uid, e.etag, e.summary, e.location, e.description,
-		e.dtstart, e.dtend, e.is_all_day, e.ics_data, e.created_at, e.updated_at,
+		e.dtstart, e.dtend, e.is_all_day, e.color, e.ics_data, e.created_at, e.updated_at,
 		c.name, c.color
 		FROM events e JOIN calendars c ON e.calendar_id = c.id
 		WHERE e.dtstart < ? AND e.dtend > ?
@@ -288,7 +290,7 @@ func EventsInRange(db *sql.DB, start, end int64) ([]EventWithCalendar, error) {
 	for rows.Next() {
 		var ev EventWithCalendar
 		if err := rows.Scan(&ev.ID, &ev.CalendarID, &ev.UID, &ev.ETag, &ev.Summary, &ev.Location, &ev.Description,
-			&ev.DTStart, &ev.DTEnd, &ev.IsAllDay, &ev.ICSData, &ev.CreatedAt, &ev.UpdatedAt,
+			&ev.DTStart, &ev.DTEnd, &ev.IsAllDay, &ev.Color, &ev.ICSData, &ev.CreatedAt, &ev.UpdatedAt,
 			&ev.CalendarName, &ev.CalendarColor); err != nil {
 			return nil, err
 		}
@@ -338,12 +340,63 @@ func EventsInRangeForCalendar(db *sql.DB, calendarID, start, end int64) ([]Event
 	return scanEvents(rows)
 }
 
+// Attendee represents an event attendee.
+type Attendee struct {
+	ID          int64
+	EventID     int64
+	Email       string
+	CogUser     string
+	DisplayName string
+	Status      string // NEEDS-ACTION, ACCEPTED, DECLINED, TENTATIVE
+	Role        string // REQ-PARTICIPANT, OPT-PARTICIPANT, CHAIR
+}
+
+// AddAttendee adds an attendee to an event.
+func AddAttendee(db *sql.DB, eventID int64, email, cogUser, displayName, role string) error {
+	if role == "" {
+		role = "REQ-PARTICIPANT"
+	}
+	_, err := db.Exec(`INSERT INTO event_attendees (event_id, email, cog_user, display_name, role) VALUES (?, ?, ?, ?, ?)`,
+		eventID, email, cogUser, displayName, role)
+	return err
+}
+
+// ListAttendees returns all attendees for an event.
+func ListAttendees(db *sql.DB, eventID int64) ([]Attendee, error) {
+	rows, err := db.Query(`SELECT id, event_id, email, cog_user, display_name, status, role FROM event_attendees WHERE event_id = ? ORDER BY id`, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var attendees []Attendee
+	for rows.Next() {
+		var a Attendee
+		if err := rows.Scan(&a.ID, &a.EventID, &a.Email, &a.CogUser, &a.DisplayName, &a.Status, &a.Role); err != nil {
+			return nil, err
+		}
+		attendees = append(attendees, a)
+	}
+	return attendees, rows.Err()
+}
+
+// UpdateAttendeeStatus updates the status of an attendee by event ID and email.
+func UpdateAttendeeStatus(db *sql.DB, eventID int64, email, status string) error {
+	_, err := db.Exec(`UPDATE event_attendees SET status = ? WHERE event_id = ? AND email = ?`, status, eventID, email)
+	return err
+}
+
+// DeleteAttendees removes all attendees for an event.
+func DeleteAttendees(db *sql.DB, eventID int64) error {
+	_, err := db.Exec(`DELETE FROM event_attendees WHERE event_id = ?`, eventID)
+	return err
+}
+
 func scanEvents(rows *sql.Rows) ([]Event, error) {
 	var events []Event
 	for rows.Next() {
 		var e Event
 		if err := rows.Scan(&e.ID, &e.CalendarID, &e.UID, &e.ETag, &e.Summary, &e.Location, &e.Description,
-			&e.DTStart, &e.DTEnd, &e.IsAllDay, &e.ICSData, &e.CreatedAt, &e.UpdatedAt); err != nil {
+			&e.DTStart, &e.DTEnd, &e.IsAllDay, &e.Color, &e.ICSData, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
 		events = append(events, e)

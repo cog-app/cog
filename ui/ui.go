@@ -75,3 +75,25 @@ type SidebarItem struct {
 	URL    string
 	Active bool
 }
+
+// ShareDisplayItem is a share record enriched with display info for the share panel.
+type ShareDisplayItem struct {
+	ID          string
+	SubjectType string // "USER", "GROUP", "PUBLIC"
+	SubjectName string
+	PermLabel   string
+	Token       string // for public links
+}
+
+// PermissionLevelChoice is a named permission level for the share form dropdown.
+type PermissionLevelChoice struct {
+	Label       string
+	Permissions uint32
+}
+
+// UserChoice is a user option for the share target picker.
+type UserChoice struct {
+	ID       string
+	Username string
+	Name     string
+}

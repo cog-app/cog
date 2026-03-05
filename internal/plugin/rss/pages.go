@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -77,9 +78,22 @@ type sidebarData struct {
 	ActivePath   string
 }
 
+func feedSortKey(f Feed) int {
+	if f.LastError != "" {
+		return 2 // failed
+	}
+	if f.LastCheckedAt == 0 {
+		return 1 // unsynced / pending
+	}
+	return 0 // synced OK
+}
+
 func (h *Pages) buildSidebar(db *sql.DB, activePath string) sidebarData {
 	folders, _ := ListFolders(db)
 	feeds, _ := ListFeeds(db)
+	slices.SortStableFunc(feeds, func(a, b Feed) int {
+		return feedSortKey(a) - feedSortKey(b)
+	})
 	unreadCounts, _ := FeedUnreadCounts(db)
 	totalUnread, _ := UnreadCount(db)
 	starredCount, _ := StarredCount(db)
@@ -216,6 +230,18 @@ func (h *Pages) DeleteFeed(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// RefreshFeed handles POST to force an immediate feed refresh.
+func (h *Pages) RefreshFeed(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	u := auth.UserFromContext(r.Context())
+	go h.plugin.FetchNow(u.Username, id)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // MarkFeedRead handles POST to mark all items in a feed as read.
 func (h *Pages) MarkFeedRead(w http.ResponseWriter, r *http.Request) {
 	db, err := h.userDB(r)
@@ -330,6 +356,22 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 	}
 	iwf := ItemWithFeed{Item: *item, FeedTitle: feedTitle}
 	_ = rssItemRow(iwf, h.pageData(r, "").CSRFToken).Render(r.Context(), w)
+}
+
+// MarkRead handles POST to mark an item as read (non-toggle).
+func (h *Pages) MarkRead(w http.ResponseWriter, r *http.Request) {
+	db, err := h.userDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	SetItemRead(db, id, true)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // MarkAllRead handles POST to mark all items as read.

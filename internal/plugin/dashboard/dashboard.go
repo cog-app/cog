@@ -5,7 +5,10 @@ package dashboard
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -14,11 +17,13 @@ import (
 
 const PluginID = "dashboard"
 
-// WidgetProvider gives the dashboard access to registered widgets and nav items.
+// WidgetProvider gives the dashboard access to registered widgets, nav items,
+// and per-user plugin databases.
 type WidgetProvider interface {
 	Widgets() []plugin.Widget
 	NavItems() []plugin.NavItem
 	IsEnabled(string) bool
+	PluginDB(username, pluginID string) (*sql.DB, error)
 }
 
 // Plugin is the dashboard plugin. Embedding Protected makes the
@@ -39,36 +44,56 @@ func (p *Plugin) Register(registrar plugin.Registrar) error {
 func (p *Plugin) Start(ctx context.Context) error { return nil }
 func (p *Plugin) Stop() error                     { return nil }
 
+// DB returns the dashboard plugin database for a user, running migrations if needed.
+func (p *Plugin) DB(username string) (*sql.DB, error) {
+	if p.Registry == nil {
+		return nil, fmt.Errorf("no registry")
+	}
+	db, err := p.Registry.PluginDB(username, PluginID)
+	if err != nil {
+		return nil, err
+	}
+	if err := migrateLayout(db); err != nil {
+		return nil, fmt.Errorf("migrate dashboard db for %s: %w", username, err)
+	}
+	return db, nil
+}
+
+// pageData builds the common PageData for dashboard pages.
+func (p *Plugin) pageData(r *http.Request, title string) ui.PageData {
+	u := auth.UserFromContext(r.Context())
+	sessID := auth.SessionIDFromContext(r.Context())
+	var csrf string
+	if sessID != "" {
+		csrf = auth.CSRFToken(sessID, p.Secret)
+	}
+
+	var nav []ui.NavItem
+	if p.Registry != nil {
+		for _, item := range p.Registry.NavItems() {
+			active := r.URL.Path == item.URL
+			nav = append(nav, ui.NavItem{
+				Label:  item.Label,
+				URL:    item.URL,
+				Active: active,
+				Icon:   item.Icon,
+			})
+		}
+	}
+
+	return ui.PageData{
+		Title:     title,
+		User:      u,
+		CSRFToken: csrf,
+		Nav:       nav,
+	}
+}
+
 // Handler returns an http.Handler for the dashboard page.
 func (p *Plugin) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u := auth.UserFromContext(r.Context())
-		sessID := auth.SessionIDFromContext(r.Context())
-		var csrf string
-		if sessID != "" {
-			csrf = auth.CSRFToken(sessID, p.Secret)
-		}
-
-		// Build nav from registry.
-		var nav []ui.NavItem
-		if p.Registry != nil {
-			for _, item := range p.Registry.NavItems() {
-				active := r.URL.Path == item.URL
-				nav = append(nav, ui.NavItem{
-					Label:  item.Label,
-					URL:    item.URL,
-					Active: active,
-					Icon:   item.Icon,
-				})
-			}
-		}
-
-		pd := ui.PageData{
-			Title:     "Dashboard",
-			User:      u,
-			CSRFToken: csrf,
-			Nav:       nav,
-		}
+		pd := p.pageData(r, "Dashboard")
 
 		// Collect app links from nav items (skip dashboard itself).
 		var apps []AppLink
@@ -87,7 +112,123 @@ func (p *Plugin) Handler() http.Handler {
 			widgets = p.Registry.Widgets()
 		}
 
-		dashboardPage(pd, apps, widgets, u.ID).Render(r.Context(), w)
+		// Apply user layout preferences.
+		var layout *Layout
+		db, err := p.DB(u.Username)
+		if err == nil {
+			layout, _ = GetLayout(db)
+		}
+		if layout == nil {
+			layout = &Layout{Columns: 2}
+		}
+
+		if len(layout.WidgetOrder) > 0 {
+			widgetMap := make(map[string]plugin.Widget, len(widgets))
+			for _, w := range widgets {
+				widgetMap[w.Title] = w
+			}
+			ordered := make([]plugin.Widget, 0, len(widgets))
+			for _, title := range layout.WidgetOrder {
+				if w, ok := widgetMap[title]; ok {
+					ordered = append(ordered, w)
+					delete(widgetMap, title)
+				}
+			}
+			// Widgets not in the saved order are excluded (user unchecked them).
+			widgets = ordered
+		}
+
+		dashboardPage(pd, apps, widgets, u.ID, layout.Columns).Render(r.Context(), w)
+	})
+}
+
+// EditHandler returns an http.Handler for the dashboard customization page.
+func (p *Plugin) EditHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := auth.UserFromContext(r.Context())
+		pd := p.pageData(r, "Customize Dashboard")
+
+		var allWidgets []plugin.Widget
+		if p.Registry != nil {
+			allWidgets = p.Registry.Widgets()
+		}
+
+		var layout *Layout
+		db, err := p.DB(u.Username)
+		if err == nil {
+			layout, _ = GetLayout(db)
+		}
+		if layout == nil {
+			layout = &Layout{Columns: 2}
+		}
+
+		// Build enabled set from saved order (if any).
+		enabledSet := make(map[string]bool)
+		if len(layout.WidgetOrder) > 0 {
+			for _, title := range layout.WidgetOrder {
+				enabledSet[title] = true
+			}
+		} else {
+			// Default: all enabled.
+			for _, w := range allWidgets {
+				enabledSet[w.Title] = true
+			}
+		}
+
+		// Build ordered list: saved order first, then any new widgets.
+		var orderedWidgets []plugin.Widget
+		seen := make(map[string]bool)
+		if len(layout.WidgetOrder) > 0 {
+			widgetMap := make(map[string]plugin.Widget, len(allWidgets))
+			for _, w := range allWidgets {
+				widgetMap[w.Title] = w
+			}
+			for _, title := range layout.WidgetOrder {
+				if w, ok := widgetMap[title]; ok {
+					orderedWidgets = append(orderedWidgets, w)
+					seen[title] = true
+				}
+			}
+		}
+		// Append any widgets not yet in saved order.
+		for _, w := range allWidgets {
+			if !seen[w.Title] {
+				orderedWidgets = append(orderedWidgets, w)
+			}
+		}
+
+		dashboardEditPage(pd, orderedWidgets, layout, enabledSet).Render(r.Context(), w)
+	})
+}
+
+// SaveLayoutHandler returns an http.Handler that persists dashboard layout preferences.
+func (p *Plugin) SaveLayoutHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := auth.UserFromContext(r.Context())
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+
+		db, err := p.DB(u.Username)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		cols, _ := strconv.Atoi(r.FormValue("columns"))
+		if cols < 1 || cols > 3 {
+			cols = 2
+		}
+
+		widgetOrder := r.Form["widget_order"]
+
+		if err := SaveLayout(db, &Layout{Columns: cols, WidgetOrder: widgetOrder}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})
 }
 
