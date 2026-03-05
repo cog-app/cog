@@ -17,7 +17,6 @@ func OpenSystem(path string) (*sql.DB, error) {
 	}
 
 	// Single writer: limit to one open connection for writes.
-	db.SetMaxOpenConns(1)
 
 	if err := migrate(db); err != nil {
 		db.Close()

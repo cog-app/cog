@@ -137,7 +137,6 @@ func (r *Registry) PluginDB(username, pluginID string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open plugin db %s: %w", dbPath, err)
 	}
-	db.SetMaxOpenConns(1)
 	r.dbs[key] = db
 	return db, nil
 }
@@ -164,7 +163,6 @@ func (r *Registry) UserDB(username string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open user db %s: %w", dbPath, err)
 	}
-	db.SetMaxOpenConns(1)
 
 	if err := migrateUserDB(db); err != nil {
 		db.Close()
