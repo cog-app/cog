@@ -69,6 +69,14 @@ func (p *Plugin) Register(registrar plugin.Registrar) error {
 		IDColumn:     "id",
 		ParentColumn: "parent_path",
 	})
+	registrar.RegisterSearchSource(plugin.SearchSourceDef{
+		PrimaryTable: "files",
+		EnrichSQL:    "SELECT rowid, name, path, mime_type FROM files WHERE rowid IN (?)",
+		Fields: []plugin.SearchField{
+			{Column: "name", Field: "name"},
+			{Column: "path", Field: "subtext"},
+		},
+	})
 	return nil
 }
 

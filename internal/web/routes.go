@@ -182,6 +182,12 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.HandleFunc("GET /index.php/login/v2/grant", loginFlow.HandleGrant)
 	mux.HandleFunc("POST /index.php/login/v2/grant", loginFlow.HandleGrant)
 
+	// --- Search API ---
+	searchH := searchHandler{h}
+	mux.Handle("GET /api/search", auth.RequireAuth(http.HandlerFunc(searchH.Search)))
+	mux.Handle("GET /api/search/partial", auth.RequireAuth(http.HandlerFunc(searchH.SearchPartial)))
+	mux.Handle("GET /api/admin/search", adminAuth(http.HandlerFunc(searchH.SearchSystem)))
+
 	// --- Files & Sharing API ---
 	filesAPI := files.NewAPI(p.Files, p.Shares, p.Users)
 	filesAPI.RegisterRoutes(mux)

@@ -18,6 +18,8 @@ type ResourceHandlerFunc = cogplugin.ResourceHandlerFunc
 type UserContext = cogplugin.UserContext
 type SubjectRef = cogplugin.SubjectRef
 type ResourceRef = cogplugin.ResourceRef
+type SearchSourceDef = cogplugin.SearchSourceDef
+type SearchField = cogplugin.SearchField
 
 // Re-export permission constants (cannot alias constants).
 const (

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -81,6 +82,12 @@ func main() {
 	}
 
 	handler := web.New(p)
+
+	// Start search indexing after plugins are registered.
+	if err := p.StartSearch(context.Background()); err != nil {
+		log.Printf("Warning: search init failed: %v", err)
+	}
+
 	if *logReqs {
 		handler = requestLogger(handler)
 	}

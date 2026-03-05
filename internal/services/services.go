@@ -2,6 +2,7 @@
 package services
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/plugin/files"
+	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -38,17 +40,35 @@ type Providers struct {
 	Access       *volume.Access
 	Settings     *settings.Store
 	Email        *email.Sender
+	Search       *search.Manager
 	CSRFSecret   []byte
 }
 
 // New opens the system database and constructs all service providers.
+// It sets up the search manager with a hooked system DB for real-time indexing.
 func New(cfg config.Config) (*Providers, error) {
-	sysDB, err := db.OpenSystem(cfg.DBPath)
+	mgr := search.NewManager(cfg.DataDir)
+
+	// Open the system DB with update hook feeding the search collector.
+	sysDB, err := db.OpenHooked(cfg.DBPath, mgr.SystemHook())
 	if err != nil {
 		return nil, fmt.Errorf("open system db: %w", err)
 	}
+	if err := db.Migrate(sysDB); err != nil {
+		sysDB.Close()
+		return nil, fmt.Errorf("migrate system db: %w", err)
+	}
 
-	return NewFromDB(cfg, sysDB), nil
+	mgr.SetSystemDB(sysDB)
+
+	p := NewFromDB(cfg, sysDB)
+	p.Search = mgr
+
+	// Wire the DB hook factory so per-user plugin DBs get update hooks.
+	p.Plugins.SetDBHookFactory(mgr.UserDBHook)
+	mgr.SetUserDBFunc(p.Plugins.PluginDB)
+
+	return p, nil
 }
 
 // NewFromDB constructs providers from an existing database connection.
@@ -93,8 +113,26 @@ func NewFromDB(cfg config.Config, sysDB *sql.DB) *Providers {
 	}
 }
 
+// StartSearch starts the search manager after plugins have been registered.
+// Should be called after web.New() which registers all plugins.
+func (p *Providers) StartSearch(ctx context.Context) error {
+	if p.Search == nil {
+		return nil
+	}
+	// Collect plugin search source defs from the registry.
+	for pluginID, defs := range p.Plugins.SearchSourceDefs() {
+		for _, def := range defs {
+			p.Search.RegisterPluginSource(pluginID, def)
+		}
+	}
+	return p.Search.Start(ctx)
+}
+
 // Close releases resources held by the providers.
 func (p *Providers) Close() error {
+	if p.Search != nil {
+		p.Search.Stop()
+	}
 	p.Plugins.Stop()
 	return p.DB.Close()
 }

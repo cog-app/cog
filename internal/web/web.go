@@ -21,12 +21,17 @@ func pageDataWithNav(r *http.Request, title string, secret []byte, registry *plu
 	if sessID != "" {
 		csrf = auth.CSRFToken(sessID, secret)
 	}
+	var isAdmin bool
+	if u != nil {
+		isAdmin = u.IsAdmin
+	}
 	return ui.PageData{
 		Title:       title,
 		User:        u,
 		CSRFToken:   csrf,
 		Nav:         buildNav(r.URL.Path, registry),
 		RequestPath: r.URL.Path,
+		IsAdmin:     isAdmin,
 	}
 }
 

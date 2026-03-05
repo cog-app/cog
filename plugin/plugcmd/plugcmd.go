@@ -240,6 +240,12 @@ func (r *capturingRegistrar) RegisterWidget(w cogplugin.Widget) {
 	})
 }
 
+func (r *capturingRegistrar) RegisterSearchSource(def cogplugin.SearchSourceDef) {
+	// Search source registration is handled host-side; for gRPC plugins
+	// we send it as a registration event. For now, this is a no-op stub
+	// since gRPC search source support requires protocol extension.
+}
+
 // responseCapture is a minimal http.ResponseWriter for capturing plugin responses.
 type responseCapture struct {
 	header     http.Header

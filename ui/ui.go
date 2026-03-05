@@ -12,6 +12,7 @@ type PageData struct {
 	Nav         []NavItem
 	CSRFToken   string
 	RequestPath string // current request path for active-state highlighting
+	IsAdmin     bool
 }
 
 // NavItem is a navigation link in the navbar.

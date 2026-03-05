@@ -18,7 +18,7 @@ func OpenSystem(path string) (*sql.DB, error) {
 
 	// Single writer: limit to one open connection for writes.
 
-	if err := migrate(db); err != nil {
+	if err := Migrate(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate system db: %w", err)
 	}
@@ -26,7 +26,8 @@ func OpenSystem(path string) (*sql.DB, error) {
 	return db, nil
 }
 
-func migrate(db *sql.DB) error {
+// Migrate runs all schema migrations on the system database.
+func Migrate(db *sql.DB) error {
 	const schema = `
 	CREATE TABLE IF NOT EXISTS users (
 		id TEXT PRIMARY KEY,

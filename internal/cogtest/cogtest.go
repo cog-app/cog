@@ -5,6 +5,7 @@
 package cogtest
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -15,9 +16,10 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
-	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/internal/web"
 )
 
 // HTTPOpt configures an outgoing request. Pass to Get, Post, Head, etc.
@@ -72,7 +74,19 @@ func New(t testing.TB) *Env {
 	}
 
 	p := services.NewFromDB(cfg, sysDB)
+
+	// Wire search manager for tests (uses temp dir, no hooks).
+	mgr := search.NewManager(dataDir)
+	mgr.SetSystemDB(sysDB)
+	p.Search = mgr
+
 	handler := web.New(p)
+
+	// Start search after plugins are registered.
+	if err := p.StartSearch(context.Background()); err != nil {
+		t.Fatalf("cogtest: start search: %v", err)
+	}
+	t.Cleanup(func() { mgr.Stop() })
 	ts.Config.Handler = handler
 
 	return &Env{

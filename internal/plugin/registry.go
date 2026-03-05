@@ -12,8 +12,11 @@ import (
 	"sync"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/db"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+var openHooked = db.OpenHooked
 
 // MountResolver resolves user file paths via the mount system.
 type MountResolver interface {
@@ -42,6 +45,9 @@ type Registry struct {
 	protected  map[string]bool // plugins that cannot be disabled
 	sysDB      *sql.DB         // system database for persisting plugin settings
 	csrfSecret []byte          // CSRF secret for plugin-scoped tokens
+
+	// dbHookFactory creates update hooks for per-user plugin databases.
+	dbHookFactory func(username, pluginID string) func(int, string, string, int64)
 }
 
 // NewRegistry creates a new plugin registry.
@@ -133,12 +139,23 @@ func (r *Registry) PluginDB(username, pluginID string) (*sql.DB, error) {
 	}
 
 	dbPath := filepath.Join(dir, "plugin.db")
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_foreign_keys=on")
-	if err != nil {
-		return nil, fmt.Errorf("open plugin db %s: %w", dbPath, err)
+	var pdb *sql.DB
+	if r.dbHookFactory != nil {
+		hook := r.dbHookFactory(username, pluginID)
+		var err error
+		pdb, err = openHooked(dbPath, hook)
+		if err != nil {
+			return nil, fmt.Errorf("open hooked plugin db %s: %w", dbPath, err)
+		}
+	} else {
+		var err error
+		pdb, err = sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_foreign_keys=on")
+		if err != nil {
+			return nil, fmt.Errorf("open plugin db %s: %w", dbPath, err)
+		}
 	}
-	r.dbs[key] = db
-	return db, nil
+	r.dbs[key] = pdb
+	return pdb, nil
 }
 
 // UserDB returns (or opens) the per-user database.
@@ -189,6 +206,12 @@ func migrateUserDB(db *sql.DB) error {
 	`
 	_, err := db.Exec(schema)
 	return err
+}
+
+// SetDBHookFactory sets a factory function for creating SQLite update hooks
+// on per-user plugin databases.
+func (r *Registry) SetDBHookFactory(f func(username, pluginID string) func(int, string, string, int64)) {
+	r.dbHookFactory = f
 }
 
 // SetMountResolver sets an optional mount resolver for path resolution.
@@ -259,14 +282,15 @@ func (r *Registry) Plugin(id string) (Plugin, bool) {
 
 // pluginRegistrar implements Registrar for a specific plugin.
 type pluginRegistrar struct {
-	pluginID   string
-	mux        *http.ServeMux
-	registry   *Registry
-	csrfSecret []byte
-	resources  map[string]ResourceDef
-	hooks      map[string][]HookCallback
-	navItems   []NavItem
-	widgets    []Widget
+	pluginID      string
+	mux           *http.ServeMux
+	registry      *Registry
+	csrfSecret    []byte
+	resources     map[string]ResourceDef
+	hooks         map[string][]HookCallback
+	navItems      []NavItem
+	widgets       []Widget
+	searchSources []SearchSourceDef
 }
 
 // wrap applies RequirePluginEnabled middleware to a handler.
@@ -315,6 +339,21 @@ func (pr *pluginRegistrar) RegisterNavItem(item NavItem) {
 
 func (pr *pluginRegistrar) RegisterWidget(w Widget) {
 	pr.widgets = append(pr.widgets, w)
+}
+
+func (pr *pluginRegistrar) RegisterSearchSource(def SearchSourceDef) {
+	pr.searchSources = append(pr.searchSources, def)
+}
+
+// SearchSourceDefs returns all registered search source definitions, keyed by plugin ID.
+func (r *Registry) SearchSourceDefs() map[string][]SearchSourceDef {
+	defs := make(map[string][]SearchSourceDef)
+	for id, reg := range r.registrars {
+		if len(reg.searchSources) > 0 {
+			defs[id] = reg.searchSources
+		}
+	}
+	return defs
 }
 
 // --- Plugin enable/disable ---

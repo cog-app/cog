@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 	"strings"
+
+	"git.duckfam.us/jj-software/cog/internal/search"
 )
 
 // Base renders the full HTML page with navbar and content area.
@@ -30,6 +32,17 @@ templ Base(pd PageData) {
 					</li>
 				}
 			</ul>
+			if pd.User != nil {
+				<div class="navbar-search">
+					<input type="search" name="q" placeholder="Search..."
+						class="form-control search-input"
+						hx-get="/api/search/partial"
+						hx-trigger="input changed delay:200ms, search"
+						hx-target="#search-results"
+						autocomplete="off"/>
+					<div id="search-results" class="search-results"></div>
+				</div>
+			}
 			<div class="navbar-end">
 				if pd.User != nil {
 					@UserDropdown(pd)
@@ -196,4 +209,73 @@ templ RegisterPage(errMsg string, next string) {
 		</div>
 	</body>
 	</html>
+}
+
+// hitURL returns the appropriate link URL for a search hit.
+func hitURL(hit search.Hit) string {
+	source := hit.Source
+	// Extract ID part after the source prefix (e.g. "users:123" -> "123")
+	idPart := hit.ID
+	if i := strings.Index(hit.ID, ":"); i >= 0 {
+		idPart = hit.ID[i+1:]
+	}
+
+	switch source {
+	case "files:files":
+		if sub, ok := hit.Fields["subtext"].(string); ok && sub != "" {
+			return "/apps/files" + sub
+		}
+		return "/apps/files/"
+	case "users":
+		return "/admin/users/" + idPart
+	case "groups":
+		return "/admin/groups/" + idPart
+	case "volumes":
+		return "/admin/volumes/" + idPart
+	default:
+		return "/"
+	}
+}
+
+// hitName returns the display name for a search hit.
+func hitName(hit search.Hit) string {
+	if name, ok := hit.Fields["name"].(string); ok {
+		return name
+	}
+	return hit.ID
+}
+
+// hitSubtext returns the subtext for a search hit.
+func hitSubtext(hit search.Hit) string {
+	if sub, ok := hit.Fields["subtext"].(string); ok {
+		return sub
+	}
+	return ""
+}
+
+// SearchResults renders the search results dropdown partial.
+templ SearchResults(userHits, systemHits []search.Hit, isAdmin bool) {
+	if len(userHits) == 0 && len(systemHits) == 0 {
+		<div class="search-empty">No results</div>
+	}
+	if len(userHits) > 0 {
+		<div class="search-section">My Resources</div>
+		for _, hit := range userHits {
+			<a class="search-hit" href={ templ.SafeURL(hitURL(hit)) }>
+				<span class="search-hit-name">{ hitName(hit) }</span>
+				if hitSubtext(hit) != "" {
+					<span class="search-hit-sub">{ hitSubtext(hit) }</span>
+				}
+			</a>
+		}
+	}
+	if isAdmin && len(systemHits) > 0 {
+		<div class="search-section">System</div>
+		for _, hit := range systemHits {
+			<a class="search-hit" href={ templ.SafeURL(hitURL(hit)) }>
+				<span class="search-hit-name">{ hitName(hit) }</span>
+				<span class="badge badge-admin">{ hit.Source }</span>
+			</a>
+		}
+	}
 }

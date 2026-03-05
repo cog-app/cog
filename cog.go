@@ -3,6 +3,7 @@
 package cog
 
 import (
+	"context"
 	"log"
 	"net/http"
 
@@ -25,6 +26,10 @@ func Run(cfg Config, plugins ...plugin.Plugin) error {
 	defer p.Close()
 
 	handler := web.New(p, plugins...)
+
+	if err := p.StartSearch(context.Background()); err != nil {
+		log.Printf("Warning: search init failed: %v", err)
+	}
 
 	log.Printf("Cog listening on %s", cfg.Addr)
 	return http.ListenAndServe(cfg.Addr, handler)

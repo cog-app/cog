@@ -47,6 +47,8 @@ type Registrar interface {
 	RegisterNavItem(item NavItem)
 	// RegisterWidget registers a dashboard widget.
 	RegisterWidget(w Widget)
+	// RegisterSearchSource declares a search source for full-text indexing.
+	RegisterSearchSource(def SearchSourceDef)
 }
 
 // NavItem is a navigation entry registered by a plugin for the app navbar.
@@ -113,4 +115,21 @@ type SubjectRef struct {
 type ResourceRef struct {
 	Type string // e.g. "files:file", "calendar:event"
 	ID   string // stable plugin-defined identifier
+}
+
+// SearchSourceDef describes how a plugin's data should be indexed for search.
+type SearchSourceDef struct {
+	// PrimaryTable is the SQLite table name watched via update hook.
+	PrimaryTable string
+	// EnrichSQL is a SELECT query that must return rowid as the first column,
+	// plus the mapped columns. Must contain "WHERE rowid IN (?)" as a placeholder.
+	EnrichSQL string
+	// Fields maps SQL column names to index field names (name, subtext, content).
+	Fields []SearchField
+}
+
+// SearchField maps a SQL column to an index field.
+type SearchField struct {
+	Column string // SQL column name
+	Field  string // index field name (name, subtext, content)
 }
