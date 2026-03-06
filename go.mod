@@ -15,9 +15,15 @@ require (
 	github.com/PuerkitoBio/goquery v1.8.0
 	github.com/a-h/templ v0.3.1001
 	github.com/blevesearch/bleve/v2 v2.5.7
+	github.com/esimov/pigo v1.4.6
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/mmcdole/gofeed v1.3.0
+	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
+	github.com/teambition/rrule-go v1.8.2
+	github.com/yalue/onnxruntime_go v1.27.0
+	github.com/yuin/goldmark v1.7.16
+	github.com/yuin/goldmark-highlighting/v2 v2.0.0-20230729083705-37449abec8cc
 	golang.org/x/crypto v0.47.0
 	golang.org/x/image v0.36.0
 	google.golang.org/grpc v1.79.1
@@ -53,7 +59,6 @@ require (
 	github.com/cli/browser v1.3.0 // indirect
 	github.com/dlclark/regexp2 v1.7.0 // indirect
 	github.com/duckbrain/goprotoc v0.0.0-20250112085431-c9d6f3c6ef37 // indirect
-	github.com/esimov/pigo v1.4.6 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
@@ -69,11 +74,6 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/natefinch/atomic v1.0.1 // indirect
-	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd // indirect
-	github.com/teambition/rrule-go v1.8.2 // indirect
-	github.com/yalue/onnxruntime_go v1.27.0 // indirect
-	github.com/yuin/goldmark v1.7.16 // indirect
-	github.com/yuin/goldmark-highlighting/v2 v2.0.0-20230729083705-37449abec8cc // indirect
 	go.etcd.io/bbolt v1.4.0 // indirect
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
