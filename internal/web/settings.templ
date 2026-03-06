@@ -1,9 +1,9 @@
 package web
 
 import (
-	"git.duckfam.us/jj-software/cog/ui"
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/ui"
 	"iter"
 )
 
@@ -87,29 +87,29 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 				<tbody>
 					for m, err := range mounts {
 						if err == nil {
-						<tr id={ "mount-" + m.ID }>
-							<td>{ m.UserPath }</td>
-							<td>{ volumeNames[m.VolumeID] }</td>
-							<td>{ m.VolumeSubpath }</td>
-							<td>
-								if m.ReadOnly {
-									Yes
-								} else {
-									No
-								}
-							</td>
-							<td class="text-right">
-								if m.UserPath != "/" {
-									<button
-										class="btn btn-danger btn-sm"
-										hx-delete={ "/settings/mounts/" + m.ID }
-										hx-target={ "#mount-" + m.ID }
-										hx-swap="outerHTML"
-										hx-confirm="Remove this mount?"
-									>Remove</button>
-								}
-							</td>
-						</tr>
+							<tr id={ "mount-" + m.ID }>
+								<td>{ m.UserPath }</td>
+								<td>{ volumeNames[m.VolumeID] }</td>
+								<td>{ m.VolumeSubpath }</td>
+								<td>
+									if m.ReadOnly {
+										Yes
+									} else {
+										No
+									}
+								</td>
+								<td class="text-right">
+									if m.UserPath != "/" {
+										<button
+											class="btn btn-danger btn-sm"
+											hx-delete={ "/settings/mounts/" + m.ID }
+											hx-target={ "#mount-" + m.ID }
+											hx-swap="outerHTML"
+											hx-confirm="Remove this mount?"
+										>Remove</button>
+									}
+								</td>
+							</tr>
 						}
 					}
 				</tbody>
@@ -151,20 +151,20 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 					<tbody>
 						for v, err := range ownedVolumes {
 							if err == nil {
-							<tr id={ "uservol-" + v.ID }>
-								<td>{ v.Name }</td>
-								<td><code>{ v.URI }</code></td>
-								<td class="text-right">
-									<a class="btn btn-outline btn-sm" href={ templ.SafeURL("/volumes/" + v.ID + "/browse") }>Browse</a>
-									<button
-										class="btn btn-danger btn-sm"
-										hx-delete={ "/settings/volumes/" + v.ID }
-										hx-target={ "#uservol-" + v.ID }
-										hx-swap="outerHTML"
-										hx-confirm="Delete this volume?"
-									>Delete</button>
-								</td>
-							</tr>
+								<tr id={ "uservol-" + v.ID }>
+									<td>{ v.Name }</td>
+									<td><code>{ v.URI }</code></td>
+									<td class="text-right">
+										<a class="btn btn-outline btn-sm" href={ templ.SafeURL("/volumes/" + v.ID + "/browse") }>Browse</a>
+										<button
+											class="btn btn-danger btn-sm"
+											hx-delete={ "/settings/volumes/" + v.ID }
+											hx-target={ "#uservol-" + v.ID }
+											hx-swap="outerHTML"
+											hx-confirm="Delete this volume?"
+										>Delete</button>
+									</td>
+								</tr>
 							}
 						}
 					</tbody>

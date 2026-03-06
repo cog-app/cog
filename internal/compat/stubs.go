@@ -10,7 +10,7 @@ import (
 	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	"git.duckfam.us/jj-software/cog/internal/plugin/files"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
 // HandleAvatar returns a placeholder avatar image.

@@ -14,16 +14,17 @@ func (UserSource) Tables() []string { return []string{"users"} }
 
 func (UserSource) Enrich(db *sql.DB, rowIDs []int64) ([]Document, error) {
 	return enrichQuery(db, "users", rowIDs,
-		"SELECT rowid, username, display_name FROM users WHERE rowid IN (%s)",
+		"SELECT rowid, id, username, display_name FROM users WHERE rowid IN (%s)",
 		func(rows *sql.Rows) (Document, error) {
 			var rowid int64
-			var username, displayName string
-			if err := rows.Scan(&rowid, &username, &displayName); err != nil {
+			var id, username, displayName string
+			if err := rows.Scan(&rowid, &id, &username, &displayName); err != nil {
 				return Document{}, err
 			}
 			return Document{
 				ID: fmt.Sprintf("users:%d", rowid),
 				Fields: map[string]any{
+					"_id":     id,
 					"name":    username,
 					"subtext": displayName,
 					"source":  "users",
@@ -40,16 +41,17 @@ func (GroupSource) Tables() []string { return []string{"groups"} }
 
 func (GroupSource) Enrich(db *sql.DB, rowIDs []int64) ([]Document, error) {
 	return enrichQuery(db, "groups", rowIDs,
-		"SELECT rowid, name FROM groups WHERE rowid IN (%s)",
+		"SELECT rowid, id, name FROM groups WHERE rowid IN (%s)",
 		func(rows *sql.Rows) (Document, error) {
 			var rowid int64
-			var name string
-			if err := rows.Scan(&rowid, &name); err != nil {
+			var id, name string
+			if err := rows.Scan(&rowid, &id, &name); err != nil {
 				return Document{}, err
 			}
 			return Document{
 				ID: fmt.Sprintf("groups:%d", rowid),
 				Fields: map[string]any{
+					"_id":    id,
 					"name":   name,
 					"source": "groups",
 				},
@@ -65,16 +67,17 @@ func (VolumeSource) Tables() []string { return []string{"volumes"} }
 
 func (VolumeSource) Enrich(db *sql.DB, rowIDs []int64) ([]Document, error) {
 	return enrichQuery(db, "volumes", rowIDs,
-		"SELECT rowid, name, description FROM volumes WHERE rowid IN (%s)",
+		"SELECT rowid, id, name, description FROM volumes WHERE rowid IN (%s)",
 		func(rows *sql.Rows) (Document, error) {
 			var rowid int64
-			var name, description string
-			if err := rows.Scan(&rowid, &name, &description); err != nil {
+			var id, name, description string
+			if err := rows.Scan(&rowid, &id, &name, &description); err != nil {
 				return Document{}, err
 			}
 			return Document{
 				ID: fmt.Sprintf("volumes:%d", rowid),
 				Fields: map[string]any{
+					"_id":     id,
 					"name":    name,
 					"subtext": description,
 					"source":  "volumes",

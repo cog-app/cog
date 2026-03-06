@@ -5,6 +5,7 @@ package cog
 import (
 	"flag"
 	"log"
+	"sync"
 
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/services"
@@ -81,18 +82,26 @@ func runSeed(p *services.Providers) {
 	// Bootstrap mounts for new users so plugin DBs resolve correctly.
 	mount.Bootstrap(p.Config.DataDir, p.Users, p.Volumes, p.Mounts)
 
-	// Seed plugin data for the admin user.
+	// Seed plugin data for the admin user concurrently.
+	var wg sync.WaitGroup
 	for _, id := range p.Plugins.PluginIDs() {
 		plug, ok := p.Plugins.Plugin(id)
 		if !ok {
 			continue
 		}
-		if s, ok := plug.(seeder); ok {
+		s, ok := plug.(seeder)
+		if !ok {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			if err := s.Seed("admin"); err != nil {
 				log.Printf("seed: plugin %s: %v", id, err)
 			}
-		}
+		}()
 	}
+	wg.Wait()
 
 	log.Println("Seeding complete.")
 }

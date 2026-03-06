@@ -94,7 +94,7 @@ func Main(plugins ...plugin.Plugin) {
 		return
 	}
 
-	handler := web.New(p)
+	handler := web.New(p, plugins...)
 
 	// Run seed hook if built with -tags seed and --seed flag is set.
 	if seedHook != nil {

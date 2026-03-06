@@ -138,15 +138,15 @@ func (h *groupHandler) buildGroupDetailData(w http.ResponseWriter, r *http.Reque
 	userNames, _ := seq.ToMap(h.p.Users.List(), func(u user.User) string { return u.ID }, func(u user.User) string { return u.Username })
 
 	d := groupDetailData{
-		Group:       g,
-		Members:     h.p.Groups.ListMembers(g.ID),
-		UserNames:   userNames,
-		IsOwner:     isOwner,
-		IsAdmin:     u.IsAdmin,
+		Group:         g,
+		Members:       h.p.Groups.ListMembers(g.ID),
+		UserNames:     userNames,
+		IsOwner:       isOwner,
+		IsAdmin:       u.IsAdmin,
 		SMTPAvailable: h.p.Email != nil,
-		SiteBaseURL: h.p.Config.BaseURL,
-		BasePath:    basePath,
-		VolumeNames: make(map[string]string),
+		SiteBaseURL:   h.p.Config.BaseURL,
+		BasePath:      basePath,
+		VolumeNames:   make(map[string]string),
 	}
 
 	if isOwner {

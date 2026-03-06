@@ -7,6 +7,7 @@ package plugcmd
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"log"
@@ -180,11 +181,6 @@ func (r *capturingRegistrar) RegisterAction(method, path string, handler http.Ha
 	})
 }
 
-func (r *capturingRegistrar) RegisterRoute(pattern string, handler http.Handler) {
-	// RegisterRoute is for internal plugins only (CalDAV, CardDAV, compat APIs).
-	// gRPC plugins do not support arbitrary route patterns.
-}
-
 func (r *capturingRegistrar) RegisterResource(def cogplugin.ResourceDef) {
 	key := r.nextKey("resource")
 	if def.Handler != nil {
@@ -250,6 +246,25 @@ func (r *capturingRegistrar) RegisterSearchSource(def cogplugin.SearchSourceDef)
 	// we send it as a registration event. For now, this is a no-op stub
 	// since gRPC search source support requires protocol extension.
 }
+
+// --- PluginContext service stubs (not available for gRPC plugins) ---
+
+func (r *capturingRegistrar) PluginDB(username string) (*sql.DB, error) {
+	return nil, fmt.Errorf("PluginDB not available for gRPC plugins")
+}
+func (r *capturingRegistrar) UserFilesDir(username string) string { return "" }
+func (r *capturingRegistrar) EnsureUserDirs(username string) error {
+	return fmt.Errorf("EnsureUserDirs not available for gRPC plugins")
+}
+func (r *capturingRegistrar) DataDir() string                    { return "" }
+func (r *capturingRegistrar) NavItems() []cogplugin.NavItem      { return nil }
+func (r *capturingRegistrar) Widgets() []cogplugin.Widget        { return nil }
+func (r *capturingRegistrar) CSRFSecret() []byte                 { return nil }
+func (r *capturingRegistrar) ShareStore() cogplugin.ShareStore   { return nil }
+func (r *capturingRegistrar) EmailSender() cogplugin.EmailSender { return nil }
+func (r *capturingRegistrar) UserLookup() cogplugin.UserLookup   { return nil }
+func (r *capturingRegistrar) GroupStore() cogplugin.GroupStore   { return nil }
+func (r *capturingRegistrar) FilesAccess() cogplugin.FilesAccess { return nil }
 
 // responseCapture is a minimal http.ResponseWriter for capturing plugin responses.
 type responseCapture struct {

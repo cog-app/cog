@@ -4,9 +4,9 @@ import "fmt"
 
 // PickerItem represents a selectable user or group in the picker.
 type PickerItem struct {
-	ID       string
-	Name     string // display name
-	Sub      string // secondary text (e.g. username)
+	ID        string
+	Name      string // display name
+	Sub       string // secondary text (e.g. username)
 	AvatarURL string // optional avatar URL
 }
 
@@ -113,7 +113,7 @@ templ PickerResults(items []PickerItem) {
 			<div>
 				<span class="picker-option-name">{ item.Name }</span>
 				if item.Sub != "" {
-					<span class="picker-option-sub"> { item.Sub }</span>
+					<span class="picker-option-sub">{ item.Sub }</span>
 				}
 			</div>
 		</div>

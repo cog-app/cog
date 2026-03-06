@@ -2,8 +2,8 @@ package web
 
 import (
 	"fmt"
-	"git.duckfam.us/jj-software/cog/ui"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/ui"
 	"path"
 )
 
@@ -84,7 +84,7 @@ templ volumeBreadcrumbs(volID string, dirPath string) {
 	<nav style="margin-bottom:1rem">
 		<a href={ templ.SafeURL("/volumes/" + volID + "/browse") }>root</a>
 		for _, seg := range breadcrumbSegments(dirPath) {
-			<span> / </span>
+			<span>/ </span>
 			<a href={ templ.SafeURL(fmt.Sprintf("/volumes/%s/browse?path=%s", volID, seg.Path)) }>{ seg.Name }</a>
 		}
 	</nav>

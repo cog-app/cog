@@ -16,12 +16,12 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
-	"git.duckfam.us/jj-software/cog/internal/plugin/files"
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
 // Providers holds all runtime services and the config that created them.
@@ -94,7 +94,6 @@ func NewFromDB(cfg config.Config, sysDB *sql.DB) *Providers {
 	resolver := mount.NewResolver(users, mounts, volumes)
 	registry.SetMountResolver(resolver)
 
-	filesPlugin := files.New(registry)
 	shares := share.NewStore(sysDB)
 
 	return &Providers{
@@ -105,7 +104,6 @@ func NewFromDB(cfg config.Config, sysDB *sql.DB) *Providers {
 		AppPasswords: auth.NewAppPasswordStore(sysDB),
 		Plugins:      registry,
 		Shares:       shares,
-		Files:        filesPlugin,
 		Groups:       group.NewStore(sysDB),
 		Invitations:  group.NewInvitationStore(sysDB),
 		Volumes:      volumes,

@@ -12,11 +12,11 @@ import (
 
 // Permission bitmask values for share records.
 const (
-	PermRead      uint32 = 1 << iota // 1
-	PermWrite                        // 2
-	PermReshare                      // 4
-	PermFreeBusy                     // 8
-	PermSchedule                     // 16
+	PermRead     uint32 = 1 << iota // 1
+	PermWrite                       // 2
+	PermReshare                     // 4
+	PermFreeBusy                    // 8
+	PermSchedule                    // 16
 )
 
 // PermissionLevel is a named permission preset that plugins define
@@ -31,8 +31,8 @@ type Plugin interface {
 	// ID returns the unique identifier for this plugin (e.g. "files", "calendar").
 	ID() string
 	// Register is called during startup to let the plugin declare routes,
-	// resources, and hooks via the registrar.
-	Register(registrar Registrar) error
+	// resources, and hooks via the plugin context.
+	Register(ctx PluginContext) error
 	// Start is called after registration to begin any background work.
 	Start(ctx context.Context) error
 	// Stop is called during shutdown for graceful cleanup.
@@ -43,7 +43,9 @@ type Plugin interface {
 // to declare their routes, resources, and hooks.
 type Registrar interface {
 	// RegisterPage mounts a GET handler at /apps/{plugin_id}/{path}.
-	// The handler is wrapped with auth (redirect to login) and plugin-enabled checks.
+	// The handler should render only the page content fragment — the HTML shell
+	// (navbar, head, scripts) is automatically wrapped by middleware.
+	// Use plugin.CSRFTokenFromContext(r.Context()) for CSRF tokens.
 	RegisterPage(path string, handler http.Handler)
 	// RegisterAPI mounts a GET handler at /apps/{plugin_id}/{path}.
 	// The handler is wrapped with auth (401 on failure) and plugin-enabled checks.
@@ -52,10 +54,6 @@ type Registrar interface {
 	// RegisterAction mounts a state-changing handler (POST/PUT/DELETE) at /apps/{plugin_id}/{path}.
 	// The handler is wrapped with auth, CSRF, and plugin-enabled checks.
 	RegisterAction(method, path string, handler http.Handler)
-	// RegisterRoute mounts a handler at an arbitrary pattern (Go 1.22 format).
-	// The handler is wrapped with auth (401) and plugin-enabled checks.
-	// Use this for compatibility endpoints at non-standard paths (e.g. CalDAV, CardDAV).
-	RegisterRoute(pattern string, handler http.Handler)
 	// RegisterResource declares a shareable resource type and its handler.
 	RegisterResource(def ResourceDef)
 	// RegisterHook subscribes to a named hook event.
@@ -142,18 +140,13 @@ type SearchSourceDef struct {
 	// PrimaryTable is the SQLite table name watched via update hook.
 	PrimaryTable string
 	// EnrichSQL is a SELECT query that must return rowid as the first column,
-	// plus the mapped columns. Must contain "WHERE rowid IN (?)" as a placeholder.
+	// followed by columns in display order: name, subtext, then content columns.
+	// Must contain "WHERE rowid IN (?)" as a placeholder.
+	// The first non-rowid column becomes "name", the second "subtext",
+	// and remaining columns are concatenated as "content".
 	EnrichSQL string
-	// Fields maps SQL column names to index field names (name, subtext, content).
-	Fields []SearchField
 	// ContentFunc optionally returns text content to index for a row.
 	// Receives the user's files directory and all SQL column values (by column name).
 	// Return "" to skip content indexing for this row. Internal plugins only.
 	ContentFunc func(filesDir string, cols map[string]string) string
-}
-
-// SearchField maps a SQL column to an index field.
-type SearchField struct {
-	Column string // SQL column name
-	Field  string // index field name (name, subtext, content)
 }

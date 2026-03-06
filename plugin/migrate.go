@@ -63,7 +63,7 @@ func Migrate(db *sql.DB, fsys fs.FS) error {
 func parseColumnGuard(sql string) (table, column string, ok bool) {
 	const prefix = "-- IF COLUMN "
 	const suffix = " NOT EXIST"
-	for _, line := range strings.Split(sql, "\n") {
+	for line := range strings.SplitSeq(sql, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, prefix) && strings.HasSuffix(line, suffix) {
 			ref := line[len(prefix) : len(line)-len(suffix)]

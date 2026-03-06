@@ -29,7 +29,8 @@ type grpcPlugin struct {
 
 func (g *grpcPlugin) ID() string { return g.id }
 
-func (g *grpcPlugin) Register(registrar cogplugin.Registrar) error {
+func (g *grpcPlugin) Register(ctx cogplugin.PluginContext) error {
+	registrar := ctx // gRPC plugins only use Registrar methods
 	stream, err := g.client.Register(context.Background(), &plugpb.Empty{})
 	if err != nil {
 		return fmt.Errorf("grpc Register: %w", err)

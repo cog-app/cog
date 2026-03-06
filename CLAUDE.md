@@ -12,6 +12,7 @@ Cog (Cloud On Go) is a Go-based file storage and plugin platform with NextCloud 
 # Run dev server (builds, creates admin:admin user, enables request logging)
 go tool dev
 go tool dev -reset   # wipe tmp/dev state first
+go tool templ fmt .  # format all templ files (don't bother doing this by hand)
 
 # Run code generators
 go generate ./...

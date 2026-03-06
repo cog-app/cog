@@ -1,8 +1,8 @@
 package web
 
 import (
-	"git.duckfam.us/jj-software/cog/ui"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/ui"
 	"iter"
 )
 
@@ -27,11 +27,11 @@ templ adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], 
 				<tbody>
 					for v, err := range volumes {
 						if err == nil {
-						<tr style="cursor:pointer" onclick={ goTo("/admin/volumes/" + v.ID) }>
-							<td>{ v.Name }</td>
-							<td><code>{ v.URI }</code></td>
-							<td>{ v.Description }</td>
-						</tr>
+							<tr style="cursor:pointer" onclick={ goTo("/admin/volumes/" + v.ID) }>
+								<td>{ v.Name }</td>
+								<td><code>{ v.URI }</code></td>
+								<td>{ v.Description }</td>
+							</tr>
 						}
 					}
 				</tbody>

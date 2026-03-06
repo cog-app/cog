@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,8 +13,15 @@ import (
 	"strings"
 	"sync"
 
+	"net/http/httptest"
+
+	"github.com/a-h/templ"
+
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
+
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/ui"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -23,6 +31,15 @@ var openHooked = db.OpenHooked
 type MountResolver interface {
 	UserFilesDir(username string) (string, error)
 	EnsureUserDirs(username string) error
+}
+
+// RegistryServices holds optional services that are wired into plugin contexts.
+type RegistryServices struct {
+	ShareStore  ShareStore
+	EmailSender EmailSender
+	UserLookup  UserLookup
+	GroupStore  GroupStore
+	FilesAccess FilesAccess
 }
 
 // Registry manages plugin lifecycle, per-user database provisioning,
@@ -49,6 +66,9 @@ type Registry struct {
 
 	// dbHookFactory creates update hooks for per-user plugin databases.
 	dbHookFactory func(username, pluginID string) func(int, string, string, int64)
+
+	// Optional services available to plugins.
+	services RegistryServices
 }
 
 // NewRegistry creates a new plugin registry.
@@ -303,7 +323,13 @@ func (r *Registry) Plugin(id string) (Plugin, bool) {
 	return p, ok
 }
 
-// pluginRegistrar implements Registrar for a specific plugin.
+// SetServices sets optional services available to plugins via PluginContext.
+// Must be called before Add() to ensure plugins have access during Register().
+func (r *Registry) SetServices(s RegistryServices) {
+	r.services = s
+}
+
+// pluginRegistrar implements PluginContext and PrivilegedContext for a specific plugin.
 type pluginRegistrar struct {
 	pluginID      string
 	mux           *http.ServeMux
@@ -316,6 +342,56 @@ type pluginRegistrar struct {
 	searchSources []SearchSourceDef
 }
 
+// --- PluginContext service methods ---
+
+func (pr *pluginRegistrar) PluginDB(username string) (*sql.DB, error) {
+	return pr.registry.PluginDB(username, pr.pluginID)
+}
+
+func (pr *pluginRegistrar) UserFilesDir(username string) string {
+	return pr.registry.UserFilesDir(username)
+}
+
+func (pr *pluginRegistrar) EnsureUserDirs(username string) error {
+	return pr.registry.EnsureUserDirs(username)
+}
+
+func (pr *pluginRegistrar) DataDir() string {
+	return pr.registry.dataDir
+}
+
+func (pr *pluginRegistrar) NavItems() []NavItem {
+	return pr.registry.NavItems()
+}
+
+func (pr *pluginRegistrar) Widgets() []Widget {
+	return pr.registry.Widgets()
+}
+
+func (pr *pluginRegistrar) CSRFSecret() []byte {
+	return pr.csrfSecret
+}
+
+func (pr *pluginRegistrar) ShareStore() ShareStore {
+	return pr.registry.services.ShareStore
+}
+
+func (pr *pluginRegistrar) EmailSender() EmailSender {
+	return pr.registry.services.EmailSender
+}
+
+func (pr *pluginRegistrar) UserLookup() UserLookup {
+	return pr.registry.services.UserLookup
+}
+
+func (pr *pluginRegistrar) GroupStore() GroupStore {
+	return pr.registry.services.GroupStore
+}
+
+func (pr *pluginRegistrar) FilesAccess() FilesAccess {
+	return pr.registry.services.FilesAccess
+}
+
 // wrap applies RequirePluginEnabled middleware to a handler.
 func (pr *pluginRegistrar) wrap(h http.Handler) http.Handler {
 	return pr.registry.RequirePluginEnabled(pr.pluginID)(h)
@@ -323,22 +399,110 @@ func (pr *pluginRegistrar) wrap(h http.Handler) http.Handler {
 
 func (pr *pluginRegistrar) RegisterPage(path string, handler http.Handler) {
 	pattern := fmt.Sprintf("GET /apps/%s/%s", pr.pluginID, path)
-	pr.mux.Handle(pattern, pr.wrap(auth.RequireAuthWeb(handler)))
+	wrapped := auth.RequireAuthWeb(pr.injectPluginContext(pr.shellMiddleware(handler)))
+	pr.mux.Handle(pattern, pr.wrap(wrapped))
+}
+
+// injectPluginContext injects plugin.UserFromContext and plugin.CSRFTokenFromContext
+// into the request context so plugins can use them from any handler type.
+func (pr *pluginRegistrar) injectPluginContext(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := auth.UserFromContext(r.Context())
+		sessID := auth.SessionIDFromContext(r.Context())
+		var csrf string
+		if sessID != "" {
+			csrf = auth.CSRFToken(sessID, pr.csrfSecret)
+		}
+
+		ctx := cogplugin.WithCSRFToken(r.Context(), csrf)
+		if u != nil {
+			ctx = cogplugin.WithUserInfo(ctx, &cogplugin.UserInfo{
+				ID:          u.ID,
+				Username:    u.Username,
+				DisplayName: u.DisplayName,
+				IsAdmin:     u.IsAdmin,
+			})
+		}
+		handler.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// shellMiddleware wraps a fragment handler with the full HTML shell.
+// It builds PageData from the request context, captures handler output,
+// and renders ui.Shell around it. Plugin context is injected by RegisterPage.
+func (pr *pluginRegistrar) shellMiddleware(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := auth.UserFromContext(r.Context())
+		csrf := cogplugin.CSRFTokenFromContext(r.Context())
+
+		// Capture the fragment handler's output.
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, r)
+
+		// If handler issued a redirect or error, pass through directly.
+		if rec.Code >= 300 {
+			maps.Copy(w.Header(), rec.Header())
+			w.WriteHeader(rec.Code)
+			w.Write(rec.Body.Bytes())
+			return
+		}
+
+		// Build nav items with active state.
+		var nav []ui.NavItem
+		for _, item := range pr.registry.NavItems() {
+			active := r.URL.Path == item.URL || (item.URL != "/" && len(r.URL.Path) >= len(item.URL) && r.URL.Path[:len(item.URL)] == item.URL)
+			nav = append(nav, ui.NavItem{
+				Label:  item.Label,
+				URL:    item.URL,
+				Active: active,
+				Icon:   item.Icon,
+			})
+		}
+
+		// Read page title from handler header, fallback to "Cog".
+		title := rec.Header().Get("X-Page-Title")
+		if title == "" {
+			title = "Cog"
+		}
+
+		pd := ui.PageData{
+			Title:       title,
+			User:        u,
+			CSRFToken:   csrf,
+			Nav:         nav,
+			RequestPath: r.URL.Path,
+			IsAdmin:     u != nil && u.IsAdmin,
+		}
+
+		// Copy any content headers set by the fragment (except those we override).
+		for k, v := range rec.Header() {
+			if k == "X-Page-Title" || k == "Content-Length" || k == "Content-Type" {
+				continue
+			}
+			w.Header()[k] = v
+		}
+
+		ui.Shell(pd, templ.Raw(rec.Body.String())).Render(r.Context(), w)
+	})
 }
 
 func (pr *pluginRegistrar) RegisterAPI(path string, handler http.Handler) {
 	pattern := fmt.Sprintf("GET /apps/%s/%s", pr.pluginID, path)
-	pr.mux.Handle(pattern, pr.wrap(auth.RequireAuth(handler)))
+	pr.mux.Handle(pattern, pr.wrap(auth.RequireAuth(pr.injectPluginContext(handler))))
 }
 
 func (pr *pluginRegistrar) RegisterAction(method, path string, handler http.Handler) {
 	pattern := fmt.Sprintf("%s /apps/%s/%s", method, pr.pluginID, path)
-	wrapped := auth.RequireAuthWeb(auth.RequireCSRF(pr.csrfSecret, handler))
+	wrapped := auth.RequireAuthWeb(pr.injectPluginContext(auth.RequireCSRF(pr.csrfSecret, handler)))
 	pr.mux.Handle(pattern, pr.wrap(wrapped))
 }
 
 func (pr *pluginRegistrar) RegisterRoute(pattern string, handler http.Handler) {
 	pr.mux.Handle(pattern, pr.wrap(auth.RequireAuth(handler)))
+}
+
+func (pr *pluginRegistrar) PluginByID(id string) (Plugin, bool) {
+	return pr.registry.Plugin(id)
 }
 
 func (pr *pluginRegistrar) RegisterResource(def ResourceDef) {

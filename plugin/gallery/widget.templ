@@ -1,0 +1,25 @@
+package gallery
+
+import "fmt"
+
+templ recentPhotosWidget(media []Media) {
+	if len(media) == 0 {
+		<p class="text-muted">No photos yet.</p>
+	} else {
+		<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px">
+			for _, m := range media {
+				<a
+					href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/photo/%d", m.ID)) }
+					style="aspect-ratio:1;overflow:hidden;border-radius:4px"
+				>
+					<img
+						src={ fmt.Sprintf("/apps/gallery/api/media/%d/thumbnail?size=128", m.ID) }
+						alt={ m.FileName() }
+						style="width:100%;height:100%;object-fit:cover"
+						loading="lazy"
+					/>
+				</a>
+			}
+		</div>
+	}
+}

@@ -25,6 +25,7 @@ const (
 
 func main() {
 	reset := flag.Bool("reset", false, "wipe tmp/dev state before starting")
+	stale := flag.Bool("stale", false, "skip the build step to use the previous, stale build")
 	flag.Parse()
 
 	devDir := filepath.Join("tmp", "dev")
@@ -40,22 +41,24 @@ func main() {
 
 	dbPath := filepath.Join(devDir, "system.db")
 
-	// Generate templ code
-	log.Println("Generate code...")
-	tgen := exec.Command("go", "generate", "./...")
-	tgen.Stdout = os.Stdout
-	tgen.Stderr = os.Stderr
-	if err := tgen.Run(); err != nil {
-		log.Fatalf("templ generate failed: %v", err)
-	}
+	if !*stale {
+		// Generate templ code
+		log.Println("Generate code...")
+		tgen := exec.Command("go", "generate", "./...")
+		tgen.Stdout = os.Stdout
+		tgen.Stderr = os.Stderr
+		if err := tgen.Run(); err != nil {
+			log.Fatalf("templ generate failed: %v", err)
+		}
 
-	// Build cog with seed tag
-	log.Println("Building cog (with seed support)...")
-	build := exec.Command("go", "build", "-tags", "seed", "-o", filepath.Join(devDir, "cog"), "./cmd/cog")
-	build.Stdout = os.Stdout
-	build.Stderr = os.Stderr
-	if err := build.Run(); err != nil {
-		log.Fatalf("build failed: %v", err)
+		// Build cog with seed tag
+		log.Println("Building cog (with seed support)...")
+		build := exec.Command("go", "build", "-tags", "seed", "-o", filepath.Join(devDir, "cog"), "./cmd/cog")
+		build.Stdout = os.Stdout
+		build.Stderr = os.Stderr
+		if err := build.Run(); err != nil {
+			log.Fatalf("build failed: %v", err)
+		}
 	}
 
 	bin := filepath.Join(devDir, "cog")

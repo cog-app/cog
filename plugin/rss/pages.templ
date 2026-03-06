@@ -1,0 +1,623 @@
+package rss
+
+import (
+	"fmt"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"git.duckfam.us/jj-software/cog/ui"
+)
+
+templ rssSidebar(sb sidebarData) {
+	<nav
+		class="sidebar"
+		id="rss-sidebar"
+		if hasPendingFeeds(sb.Feeds) {
+			hx-get={ sb.ActivePath + "?partial=sidebar" }
+			hx-trigger="every 2s"
+			hx-target="#rss-sidebar"
+			hx-swap="outerHTML"
+		}
+	>
+		<a href="/apps/rss/" class={ sidebarClass(sb.ActivePath, "/apps/rss/") }>
+			All
+			if sb.TotalUnread > 0 {
+				<span class="badge">{ strconv.Itoa(sb.TotalUnread) }</span>
+			}
+		</a>
+		<a href="/apps/rss/starred" class={ sidebarClass(sb.ActivePath, "/apps/rss/starred") }>
+			Starred
+			if sb.StarredCount > 0 {
+				<span class="badge">{ strconv.Itoa(sb.StarredCount) }</span>
+			}
+		</a>
+		<div class="sidebar-divider"></div>
+		for _, folder := range sb.Folders {
+			<details class="sidebar-folder" data-folder-id={ strconv.FormatInt(folder.ID, 10) } open?={ isFolderActive(folder, sb) }>
+				<summary class="sidebar-group-label">
+					<a
+						href={ templ.SafeURL(fmt.Sprintf("/apps/rss/folder/%d", folder.ID)) }
+						style="color:inherit;text-decoration:none"
+						onclick="event.stopPropagation()"
+					>{ folder.Name }</a>
+				</summary>
+				for _, feed := range sb.Feeds {
+					if feed.FolderID.Valid && feed.FolderID.Int64 == folder.ID {
+						@sidebarFeedLink(feed, sb)
+					}
+				}
+			</details>
+		}
+		for _, feed := range sb.Feeds {
+			if !feed.FolderID.Valid {
+				@sidebarFeedLink(feed, sb)
+			}
+		}
+		<div class="sidebar-divider"></div>
+		<a href="/apps/rss/settings" class={ sidebarClass(sb.ActivePath, "/apps/rss/settings") }>Settings</a>
+	</nav>
+	<script>
+	// Preserve folder open/closed state across HTMX sidebar refreshes
+	(function() {
+		var openFolders = new Set();
+		document.addEventListener('htmx:beforeSwap', function(e) {
+			if (e.detail.target && e.detail.target.id === 'rss-sidebar') {
+				openFolders.clear();
+				e.detail.target.querySelectorAll('details[data-folder-id]').forEach(function(d) {
+					if (d.open) openFolders.add(d.getAttribute('data-folder-id'));
+				});
+			}
+		});
+		document.addEventListener('htmx:afterSwap', function(e) {
+			if (e.detail.target && e.detail.target.id === 'rss-sidebar') {
+				e.detail.target.querySelectorAll('details[data-folder-id]').forEach(function(d) {
+					if (openFolders.has(d.getAttribute('data-folder-id'))) d.open = true;
+				});
+			}
+		});
+	})();
+	</script>
+}
+
+templ sidebarFeedLink(feed Feed, sb sidebarData) {
+	<a
+		href={ templ.SafeURL(fmt.Sprintf("/apps/rss/feed/%d", feed.ID)) }
+		class={ sidebarFeedClass(feed, sb) }
+		style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem"
+	>
+		<span class="sidebar-item-text">{ feedDisplayTitle(feed) }</span>
+		if isFeedPending(feed) {
+			<span class="spinner-sm"></span>
+		}
+		if sb.UnreadCounts[feed.ID] > 0 {
+			<span class="badge">{ strconv.Itoa(sb.UnreadCounts[feed.ID]) }</span>
+		}
+	</a>
+}
+
+templ rssIndexPage(sb sidebarData, items []ItemWithFeed, csrfToken string) {
+	<div class="sidebar-layout">
+		@rssSidebar(sb)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+				<h1 style="margin:0">All Articles</h1>
+				if sb.TotalUnread > 0 {
+					<form method="post" action="/apps/rss/items/read-all">
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<button class="btn btn-outline btn-sm" type="submit">Mark all read</button>
+					</form>
+				}
+			</div>
+			if len(items) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No unread articles. Subscribe to feeds in Settings.</p>
+				}
+			} else {
+				@rssItemList(items, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ rssFeedPage(sb sidebarData, feed *Feed, items []ItemWithFeed, csrfToken string) {
+	<div class="sidebar-layout">
+		@rssSidebar(sb)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+				<h1 style="margin:0">{ feedDisplayTitle(*feed) }</h1>
+				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/rss/feeds/%d/read", feed.ID)) }>
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<button class="btn btn-outline btn-sm" type="submit">Mark all read</button>
+				</form>
+			</div>
+			if feed.LastError != "" {
+				@ui.Alert("error", feed.LastError)
+			}
+			if len(items) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No articles in this feed yet.</p>
+				}
+			} else {
+				@rssItemList(items, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ rssStarredPage(sb sidebarData, items []ItemWithFeed, csrfToken string) {
+	<div class="sidebar-layout">
+		@rssSidebar(sb)
+		<div class="sidebar-content">
+			<h1>Starred</h1>
+			if len(items) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No starred articles.</p>
+				}
+			} else {
+				@rssItemList(items, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ rssFolderPage(sb sidebarData, folder *Folder, items []ItemWithFeed, csrfToken string) {
+	<div class="sidebar-layout">
+		@rssSidebar(sb)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+				<h1 style="margin:0">{ folder.Name }</h1>
+			</div>
+			if len(items) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No articles in this folder.</p>
+				}
+			} else {
+				@rssItemList(items, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ rssItemList(items []ItemWithFeed, csrfToken string) {
+	<div id="item-list">
+		for _, item := range items {
+			@rssItemRow(item, csrfToken)
+		}
+	</div>
+	<script>
+	function toggleArticle(id) {
+		var el = document.getElementById('detail-' + id);
+		var row = document.getElementById('item-' + id);
+		var summary = document.getElementById('summary-' + id);
+		if (!el) return;
+		var isOpen = el.style.display !== 'none';
+		// Close all open details
+		document.querySelectorAll('.rss-item-detail').forEach(function(d) { d.style.display = 'none'; });
+		document.querySelectorAll('.rss-item-active').forEach(function(r) { r.classList.remove('rss-item-active'); });
+		document.querySelectorAll('.rss-item-summary-line').forEach(function(s) { s.style.display = ''; });
+		if (!isOpen) {
+			el.style.display = '';
+			row.classList.add('rss-item-active');
+			if (summary) summary.style.display = 'none';
+			// Mark as read visually and on the server
+			if (!row.classList.contains('rss-item-read')) {
+				row.classList.add('rss-item-read');
+				// Update the read toggle button to show hollow circle (read state)
+				var readBtn = row.querySelector('[title="Toggle read"]');
+				if (readBtn) readBtn.innerHTML = '\u25CB';
+			}
+			fetch('/apps/rss/items/' + id + '/mark-read', {
+				method: 'POST',
+				headers: {'X-CSRF-Token': document.querySelector('[name=csrf_token]') ? document.querySelector('[name=csrf_token]').value : ''}
+			});
+		}
+	}
+	(function() {
+		document.addEventListener('keydown', function(e) {
+			if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+			var items = Array.from(document.querySelectorAll('.rss-item'));
+			var active = document.querySelector('.rss-item-active');
+			var idx = active ? items.indexOf(active) : -1;
+			if (e.key === 'j') {
+				e.preventDefault();
+				var next = idx + 1;
+				if (next < items.length) {
+					var id = items[next].id.replace('item-', '');
+					toggleArticle(id);
+					items[next].scrollIntoView({block: 'nearest', behavior: 'smooth'});
+				}
+			} else if (e.key === 'k') {
+				e.preventDefault();
+				var prev = idx - 1;
+				if (prev >= 0) {
+					var id = items[prev].id.replace('item-', '');
+					toggleArticle(id);
+					items[prev].scrollIntoView({block: 'nearest', behavior: 'smooth'});
+				}
+			} else if (e.key === 'o' || e.key === 'Enter') {
+				if (active) {
+					var link = active.querySelector('.rss-item-detail a[target=_blank]');
+					if (link) { e.preventDefault(); window.open(link.href, '_blank'); }
+				}
+			}
+		});
+	})();
+	</script>
+}
+
+templ rssItemRow(item ItemWithFeed, csrfToken string) {
+	<div id={ fmt.Sprintf("item-%d", item.ID) } class={ itemRowClass(item.IsRead) } style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0)">
+		<div class="flex items-center gap-1" style="justify-content:space-between;cursor:pointer" onclick={ templ.ComponentScript{Call: fmt.Sprintf("toggleArticle(%d)", item.ID)} }>
+			<div style="min-width:0;flex:1">
+				<div class="flex items-center gap-1" style="flex-wrap:wrap">
+					<span class="text-muted" style="font-size:0.8rem">{ item.FeedTitle }</span>
+					if item.Author != "" {
+						<span class="text-muted" style="font-size:0.8rem">&middot; { item.Author }</span>
+					}
+					<span class="text-muted" style="font-size:0.8rem">&middot; { formatTime(item.PublishedAt) }</span>
+				</div>
+				<div style="font-weight:500">
+					{ item.Title }
+				</div>
+				if itemSummary(item.ContentHTML) != "" {
+					<div id={ fmt.Sprintf("summary-%d", item.ID) } class="rss-item-summary-line">
+						{ itemSummary(item.ContentHTML) }
+					</div>
+				}
+			</div>
+			<div class="flex gap-1" style="flex-shrink:0" onclick="event.stopPropagation()">
+				if item.URL != "" {
+					<a
+						href={ templ.SafeURL(item.URL) }
+						target="_blank"
+						rel="noopener"
+						class="btn btn-outline btn-sm"
+						title="Open article"
+					>&#8599;</a>
+				}
+				<button
+					class={ starBtnClass(item.IsStarred) }
+					hx-post={ fmt.Sprintf("/apps/rss/items/%d/star", item.ID) }
+					hx-target={ fmt.Sprintf("#item-%d", item.ID) }
+					hx-swap="outerHTML"
+					title="Toggle star"
+				>
+					if item.IsStarred {
+						&#9733;
+					} else {
+						&#9734;
+					}
+				</button>
+				<button
+					class="btn btn-outline btn-sm"
+					hx-post={ fmt.Sprintf("/apps/rss/items/%d/read", item.ID) }
+					hx-target={ fmt.Sprintf("#item-%d", item.ID) }
+					hx-swap="outerHTML"
+					title="Toggle read"
+				>
+					if item.IsRead {
+						&#9675;
+					} else {
+						&#9679;
+					}
+				</button>
+			</div>
+		</div>
+		<div id={ fmt.Sprintf("detail-%d", item.ID) } class="rss-item-detail" style="display:none">
+			if itemPreviewImage(item.ContentHTML) != "" {
+				<img class="rss-item-preview-img" src={ itemPreviewImage(item.ContentHTML) } alt=""/>
+			}
+			if item.ContentHTML != "" {
+				<div class="rss-item-content">
+					@templ.Raw(item.ContentHTML)
+				</div>
+			} else if itemSummary(item.ContentHTML) != "" {
+				<p class="rss-item-summary">{ itemSummary(item.ContentHTML) }</p>
+			}
+			<div style="margin-top:0.75rem;clear:both">
+				if item.URL != "" {
+					<a href={ templ.SafeURL(item.URL) } target="_blank" rel="noopener" class="btn btn-outline btn-sm">Open article</a>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+templ rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, errMsg string, csrfToken string) {
+	<div class="sidebar-layout">
+		@rssSidebar(sb)
+		<div class="sidebar-content">
+			<h1>RSS Settings</h1>
+			@ui.Alert("error", errMsg)
+			@ui.Card("Add Feed") {
+				<form method="post" action="/apps/rss/feeds" class="flex gap-1 items-end" style="flex-wrap:wrap">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<div class="form-group" style="flex:1;min-width:200px;margin-bottom:0">
+						<label for="url">Feed URL</label>
+						<input class="form-control" type="url" id="url" name="url" placeholder="https://example.com/feed.xml" required/>
+					</div>
+					if len(folders) > 0 {
+						<div class="form-group" style="margin-bottom:0">
+							<label for="folder_id">Folder</label>
+							<select class="form-control" id="folder_id" name="folder_id">
+								<option value="">None</option>
+								for _, f := range folders {
+									<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Name }</option>
+								}
+							</select>
+						</div>
+					}
+					<button class="btn btn-primary" type="submit">Add Feed</button>
+				</form>
+			}
+			@ui.Card("Feeds") {
+				if len(feeds) == 0 {
+					<p class="text-muted">No feeds yet.</p>
+				} else {
+					<table class="table">
+						<thead>
+							<tr>
+								<th>Title</th>
+								<th>URL</th>
+								<th>Folder</th>
+								<th>Status</th>
+								<th class="text-right">Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, feed := range feeds {
+								<tr id={ fmt.Sprintf("feed-%d", feed.ID) }>
+									<td>{ feedDisplayTitle(feed) }</td>
+									<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+										<span title={ feed.URL }>{ feed.URL }</span>
+									</td>
+									<td>
+										{ feedFolderName(feed, folders) }
+									</td>
+									<td>
+										if feed.LastError != "" {
+											<span class="text-danger" title={ feed.LastError }>Error</span>
+										} else if feed.Paused {
+											<span class="text-muted">Paused</span>
+										} else {
+											<span class="text-success">OK</span>
+										}
+									</td>
+									<td class="text-right">
+										<button
+											class="btn btn-outline btn-sm"
+											hx-post={ fmt.Sprintf("/apps/rss/feeds/%d/refresh", feed.ID) }
+											hx-swap="none"
+										>Refresh</button>
+										<button
+											class="btn btn-danger btn-sm"
+											hx-delete={ fmt.Sprintf("/apps/rss/feeds/%d", feed.ID) }
+											hx-target={ fmt.Sprintf("#feed-%d", feed.ID) }
+											hx-swap="outerHTML"
+											hx-confirm="Delete this feed and all its articles?"
+										>Delete</button>
+									</td>
+								</tr>
+								<tr>
+									<td colspan="5" style="padding:0.25rem 0.75rem">
+										<form
+											method="post"
+											action={ templ.SafeURL(fmt.Sprintf("/apps/rss/feeds/%d/auto-read", feed.ID)) }
+											class="flex gap-1 items-center"
+											style="font-size:0.85rem"
+										>
+											<input type="hidden" name="csrf_token" value={ csrfToken }/>
+											<label class="text-muted" style="white-space:nowrap" for={ fmt.Sprintf("arp-%d", feed.ID) }>Auto-read regex:</label>
+											<input
+												class="form-control"
+												type="text"
+												name="pattern"
+												id={ fmt.Sprintf("arp-%d", feed.ID) }
+												value={ feed.AutoReadPattern }
+												placeholder="e.g. (?i)sponsor|ad"
+												style="max-width:250px;font-size:0.85rem;padding:0.25rem 0.5rem"
+											/>
+											<button class="btn btn-outline btn-sm" type="submit">Save</button>
+										</form>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+			}
+			@ui.Card("Folders") {
+				<form method="post" action="/apps/rss/folders" class="flex gap-1 items-end mb-2">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<input class="form-control" type="text" name="name" placeholder="New folder" required style="max-width:200px"/>
+					<button class="btn btn-outline btn-sm" type="submit">Create</button>
+				</form>
+				if len(folders) > 0 {
+					<table class="table">
+						<thead>
+							<tr>
+								<th>Name</th>
+								<th class="text-right">Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, folder := range folders {
+								<tr id={ fmt.Sprintf("folder-%d", folder.ID) }>
+									<td>{ folder.Name }</td>
+									<td class="text-right">
+										<button
+											class="btn btn-danger btn-sm"
+											hx-delete={ fmt.Sprintf("/apps/rss/folders/%d", folder.ID) }
+											hx-target={ fmt.Sprintf("#folder-%d", folder.ID) }
+											hx-swap="outerHTML"
+											hx-confirm="Delete this folder?"
+										>Delete</button>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+			}
+			@ui.Card("OPML") {
+				<div class="flex gap-1 items-center" style="flex-wrap:wrap">
+					<a href="/apps/rss/opml/export" class="btn btn-outline btn-sm">Export OPML</a>
+					<form method="post" action="/apps/rss/opml/import" enctype="multipart/form-data" class="flex gap-1 items-end">
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<input class="form-control" type="file" name="opml" accept=".opml,.xml" required style="max-width:300px"/>
+						<button class="btn btn-outline btn-sm" type="submit">Import</button>
+					</form>
+				</div>
+			}
+		</div>
+	</div>
+}
+
+func sidebarClass(activePath, itemPath string) string {
+	if activePath == itemPath {
+		return "sidebar-item active"
+	}
+	return "sidebar-item"
+}
+
+func feedDisplayTitle(f Feed) string {
+	if f.Title != "" {
+		return f.Title
+	}
+	if u, err := url.Parse(f.URL); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return f.URL
+}
+
+func sidebarFeedClass(f Feed, sb sidebarData) string {
+	base := sidebarClass(sb.ActivePath, fmt.Sprintf("/apps/rss/feed/%d", f.ID))
+	if f.LastError != "" {
+		return base + " text-danger"
+	}
+	return base
+}
+
+func isFeedPending(f Feed) bool {
+	return f.LastCheckedAt == 0 && f.LastError == ""
+}
+
+func hasPendingFeeds(feeds []Feed) bool {
+	for _, f := range feeds {
+		if isFeedPending(f) {
+			return true
+		}
+	}
+	return false
+}
+
+func isFolderActive(folder Folder, sb sidebarData) bool {
+	if sb.ActivePath == fmt.Sprintf("/apps/rss/folder/%d", folder.ID) {
+		return true
+	}
+	for _, feed := range sb.Feeds {
+		if feed.FolderID.Valid && feed.FolderID.Int64 == folder.ID {
+			if sb.ActivePath == fmt.Sprintf("/apps/rss/feed/%d", feed.ID) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func feedFolderName(f Feed, folders []Folder) string {
+	if !f.FolderID.Valid {
+		return ""
+	}
+	for _, folder := range folders {
+		if folder.ID == f.FolderID.Int64 {
+			return folder.Name
+		}
+	}
+	return ""
+}
+
+func formatTime(unix int64) string {
+	if unix == 0 {
+		return ""
+	}
+	t := time.Unix(unix, 0)
+	now := time.Now()
+	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
+		return t.Format("15:04")
+	}
+	if t.Year() == now.Year() {
+		return t.Format("Jan 2")
+	}
+	return t.Format("2006-01-02")
+}
+
+func itemRowClass(isRead bool) string {
+	if isRead {
+		return "rss-item rss-item-read"
+	}
+	return "rss-item"
+}
+
+func starBtnClass(isStarred bool) string {
+	if isStarred {
+		return "btn btn-sm"
+	}
+	return "btn btn-outline btn-sm"
+}
+
+func itemPreviewImage(html string) string {
+	// Simple regex-free extraction of first img src from HTML content
+	idx := strings.Index(html, "<img")
+	if idx == -1 {
+		return ""
+	}
+	rest := html[idx:]
+	srcIdx := strings.Index(rest, "src=\"")
+	if srcIdx == -1 {
+		srcIdx = strings.Index(rest, "src='")
+		if srcIdx == -1 {
+			return ""
+		}
+		rest = rest[srcIdx+5:]
+		end := strings.Index(rest, "'")
+		if end == -1 {
+			return ""
+		}
+		return rest[:end]
+	}
+	rest = rest[srcIdx+5:]
+	end := strings.Index(rest, "\"")
+	if end == -1 {
+		return ""
+	}
+	return rest[:end]
+}
+
+func itemSummary(html string) string {
+	// Strip HTML tags for plain text summary
+	var b strings.Builder
+	inTag := false
+	count := 0
+	for _, r := range html {
+		if r == '<' {
+			inTag = true
+			continue
+		}
+		if r == '>' {
+			inTag = false
+			continue
+		}
+		if !inTag {
+			b.WriteRune(r)
+			count++
+			if count >= 300 {
+				b.WriteString("...")
+				break
+			}
+		}
+	}
+	return b.String()
+}

@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/cogtest"
-	"git.duckfam.us/jj-software/cog/internal/plugin/files"
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
 func TestFileUploadAndDownload(t *testing.T) {

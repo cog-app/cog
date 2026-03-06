@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	"git.duckfam.us/jj-software/cog/internal/plugin/files"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
 // directToken is a short-lived token for unauthenticated file downloads.

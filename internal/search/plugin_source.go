@@ -49,12 +49,6 @@ func (s *PluginSearchSource) Enrich(db *sql.DB, rowIDs []int64) ([]Document, err
 		return nil, fmt.Errorf("columns %s: %w", s.Name(), err)
 	}
 
-	// Build column index for mapping.
-	colIdx := make(map[string]int, len(cols))
-	for i, c := range cols {
-		colIdx[c] = i
-	}
-
 	var docs []Document
 	for rows.Next() {
 		vals := make([]any, len(cols))
@@ -75,35 +69,32 @@ func (s *PluginSearchSource) Enrich(db *sql.DB, rowIDs []int64) ([]Document, err
 		fields := map[string]any{
 			"source": s.pluginID,
 		}
-		for _, f := range s.def.Fields {
-			if idx, ok := colIdx[f.Column]; ok {
-				if v := vals[idx]; v != nil {
-					switch sv := v.(type) {
-					case string:
-						fields[f.Field] = sv
-					case []byte:
-						fields[f.Field] = string(sv)
-					default:
-						fields[f.Field] = fmt.Sprint(sv)
-					}
-				}
+
+		// Map columns positionally: col[1]=name, col[2]=subtext, col[3+]=content.
+		var contentParts []string
+		for i := 1; i < len(cols); i++ {
+			sv := valString(vals[i])
+			if sv == "" {
+				continue
 			}
+			switch i {
+			case 1:
+				fields["name"] = sv
+			case 2:
+				fields["subtext"] = sv
+			default:
+				contentParts = append(contentParts, sv)
+			}
+		}
+		if len(contentParts) > 0 {
+			fields["content"] = strings.Join(contentParts, " ")
 		}
 
 		// If ContentFunc is set, build a cols map and call it.
 		if s.def.ContentFunc != nil && s.FilesDir != "" {
 			colMap := make(map[string]string, len(cols))
 			for ci, c := range cols {
-				if v := vals[ci]; v != nil {
-					switch sv := v.(type) {
-					case string:
-						colMap[c] = sv
-					case []byte:
-						colMap[c] = string(sv)
-					default:
-						colMap[c] = fmt.Sprint(sv)
-					}
-				}
+				colMap[c] = valString(vals[ci])
 			}
 			if content := s.def.ContentFunc(s.FilesDir, colMap); content != "" {
 				fields["content"] = content
@@ -116,4 +107,18 @@ func (s *PluginSearchSource) Enrich(db *sql.DB, rowIDs []int64) ([]Document, err
 		})
 	}
 	return docs, rows.Err()
+}
+
+func valString(v any) string {
+	if v == nil {
+		return ""
+	}
+	switch sv := v.(type) {
+	case string:
+		return sv
+	case []byte:
+		return string(sv)
+	default:
+		return fmt.Sprint(sv)
+	}
 }

@@ -1,10 +1,10 @@
 package web
 
 import (
-	"git.duckfam.us/jj-software/cog/ui"
-	"git.duckfam.us/jj-software/cog/internal/group"
-	"iter"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/group"
+	"git.duckfam.us/jj-software/cog/ui"
+	"iter"
 )
 
 templ settingsGroupsPage(pd ui.PageData, ownedGroups iter.Seq2[group.Group, error], hasOwnedGroups bool, memberGroups iter.Seq2[group.Group, error], hasMemberGroups bool, flash string, flashKind string) {
@@ -91,46 +91,46 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 			<tbody>
 				for m, err := range d.Members {
 					if err == nil {
-					<tr id={ fmt.Sprintf("member-%s-%s", d.Group.ID, m.MemberID) }>
-						<td>{ d.UserNames[m.MemberID] }</td>
-						<td>
-							if d.IsOwner {
-								<form method="post" action={ templ.SafeURL(fmt.Sprintf("%s/%s/members/%s/type", d.BasePath, d.Group.ID, m.MemberID)) } style="display:inline">
-									<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-									<select class="form-control" name="member_type" style="display:inline-block;width:auto;padding:0.2rem 0.4rem;font-size:0.85rem" onchange="this.form.submit()">
-										if m.MemberType == "OWNER" {
-											<option value="OWNER" selected>Owner</option>
-											<option value="USER">User</option>
-										} else {
-											<option value="OWNER">Owner</option>
-											<option value="USER" selected>User</option>
-										}
-									</select>
-								</form>
-							} else {
-								{ m.MemberType }
-							}
-						</td>
-						<td class="text-right">
-							if d.IsOwner && m.MemberID != pd.User.ID {
-								<button
-									class="btn btn-danger btn-sm"
-									hx-delete={ fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID) }
-									hx-target={ fmt.Sprintf("#member-%s-%s", d.Group.ID, m.MemberID) }
-									hx-swap="outerHTML"
-								>Remove</button>
-							}
-							if !d.IsOwner && m.MemberType == "USER" && m.MemberID == pd.User.ID {
-								<button
-									class="btn btn-danger btn-sm"
-									hx-delete={ fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID) }
-									hx-confirm="Leave this group?"
-									hx-target={ fmt.Sprintf("#member-%s-%s", d.Group.ID, m.MemberID) }
-									hx-swap="outerHTML"
-								>Leave</button>
-							}
-						</td>
-					</tr>
+						<tr id={ fmt.Sprintf("member-%s-%s", d.Group.ID, m.MemberID) }>
+							<td>{ d.UserNames[m.MemberID] }</td>
+							<td>
+								if d.IsOwner {
+									<form method="post" action={ templ.SafeURL(fmt.Sprintf("%s/%s/members/%s/type", d.BasePath, d.Group.ID, m.MemberID)) } style="display:inline">
+										<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+										<select class="form-control" name="member_type" style="display:inline-block;width:auto;padding:0.2rem 0.4rem;font-size:0.85rem" onchange="this.form.submit()">
+											if m.MemberType == "OWNER" {
+												<option value="OWNER" selected>Owner</option>
+												<option value="USER">User</option>
+											} else {
+												<option value="OWNER">Owner</option>
+												<option value="USER" selected>User</option>
+											}
+										</select>
+									</form>
+								} else {
+									{ m.MemberType }
+								}
+							</td>
+							<td class="text-right">
+								if d.IsOwner && m.MemberID != pd.User.ID {
+									<button
+										class="btn btn-danger btn-sm"
+										hx-delete={ fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID) }
+										hx-target={ fmt.Sprintf("#member-%s-%s", d.Group.ID, m.MemberID) }
+										hx-swap="outerHTML"
+									>Remove</button>
+								}
+								if !d.IsOwner && m.MemberType == "USER" && m.MemberID == pd.User.ID {
+									<button
+										class="btn btn-danger btn-sm"
+										hx-delete={ fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID) }
+										hx-confirm="Leave this group?"
+										hx-target={ fmt.Sprintf("#member-%s-%s", d.Group.ID, m.MemberID) }
+										hx-swap="outerHTML"
+									>Leave</button>
+								}
+							</td>
+						</tr>
 					}
 				}
 			</tbody>
@@ -163,27 +163,27 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 					<tbody>
 						for inv, err := range d.Invitations {
 							if err == nil {
-							<tr id={ "invite-" + inv.ID }>
-								<td>
-									if inv.Email != "" {
-										{ inv.Email }
-									} else {
-										<span class="text-muted">(link only)</span>
-									}
-								</td>
-								<td>{ inv.MemberType }</td>
-								<td>
-									@ui.ShareLink(d.SiteBaseURL + "/invite/" + inv.Token, inv.Token[:16] + "...")
-								</td>
-								<td class="text-right">
-									<button
-										class="btn btn-danger btn-sm"
-										hx-delete={ fmt.Sprintf("%s/%s/invites/%s", d.BasePath, d.Group.ID, inv.ID) }
-										hx-target={ "#invite-" + inv.ID }
-										hx-swap="outerHTML"
-									>Revoke</button>
-								</td>
-							</tr>
+								<tr id={ "invite-" + inv.ID }>
+									<td>
+										if inv.Email != "" {
+											{ inv.Email }
+										} else {
+											<span class="text-muted">(link only)</span>
+										}
+									</td>
+									<td>{ inv.MemberType }</td>
+									<td>
+										@ui.ShareLink(d.SiteBaseURL+"/invite/"+inv.Token, inv.Token[:16]+"...")
+									</td>
+									<td class="text-right">
+										<button
+											class="btn btn-danger btn-sm"
+											hx-delete={ fmt.Sprintf("%s/%s/invites/%s", d.BasePath, d.Group.ID, inv.ID) }
+											hx-target={ "#invite-" + inv.ID }
+											hx-swap="outerHTML"
+										>Revoke</button>
+									</td>
+								</tr>
 							}
 						}
 					</tbody>
@@ -204,13 +204,13 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 					<tbody>
 						for v, err := range d.GroupVolumes {
 							if err == nil {
-							<tr>
-								<td>{ v.Name }</td>
-								<td><code>{ v.URI }</code></td>
-								<td class="text-right">
-									<a class="btn btn-outline btn-sm" href={ templ.SafeURL("/volumes/" + v.ID + "/browse") }>Browse</a>
-								</td>
-							</tr>
+								<tr>
+									<td>{ v.Name }</td>
+									<td><code>{ v.URI }</code></td>
+									<td class="text-right">
+										<a class="btn btn-outline btn-sm" href={ templ.SafeURL("/volumes/" + v.ID + "/browse") }>Browse</a>
+									</td>
+								</tr>
 							}
 						}
 					</tbody>
@@ -237,19 +237,19 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 					<tbody>
 						for m, err := range d.GroupMounts {
 							if err == nil {
-							<tr id={ "gmount-" + m.ID }>
-								<td>{ m.UserPath }</td>
-								<td>{ d.VolumeNames[m.VolumeID] }</td>
-								<td>{ m.VolumeSubpath }</td>
-								<td class="text-right">
-									<button
-										class="btn btn-danger btn-sm"
-										hx-delete={ fmt.Sprintf("%s/%s/mounts/%s", d.BasePath, d.Group.ID, m.ID) }
-										hx-target={ "#gmount-" + m.ID }
-										hx-swap="outerHTML"
-									>Remove</button>
-								</td>
-							</tr>
+								<tr id={ "gmount-" + m.ID }>
+									<td>{ m.UserPath }</td>
+									<td>{ d.VolumeNames[m.VolumeID] }</td>
+									<td>{ m.VolumeSubpath }</td>
+									<td class="text-right">
+										<button
+											class="btn btn-danger btn-sm"
+											hx-delete={ fmt.Sprintf("%s/%s/mounts/%s", d.BasePath, d.Group.ID, m.ID) }
+											hx-target={ "#gmount-" + m.ID }
+											hx-swap="outerHTML"
+										>Remove</button>
+									</td>
+								</tr>
 							}
 						}
 					</tbody>
@@ -307,43 +307,43 @@ templ inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, is
 	} else {
 		<!DOCTYPE html>
 		<html lang="en">
-		<head>
-			<meta charset="utf-8"/>
-			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>Group Invitation — Cog</title>
-			<link rel="stylesheet" href="/static/style.css"/>
-		</head>
-		<body>
-			<div class="login-container">
-				<div class="card login-card">
-					<div class="login-title">Cog</div>
-					<p style="text-align:center;margin-bottom:1rem">You've been invited to join the group <strong>{ g.Name }</strong>.</p>
-					if errMsg != "" {
-						<div class="alert alert-error">{ errMsg }</div>
-					}
-					<form method="post" action={ templ.SafeURL("/invite/" + inv.Token) }>
-						<input type="hidden" name="action" value="register"/>
-						<div class="form-group">
-							<label for="username">Username</label>
-							<input class="form-control" type="text" id="username" name="username" required autofocus/>
-						</div>
-						<div class="form-group">
-							<label for="password">Password</label>
-							<input class="form-control" type="password" id="password" name="password" required/>
-						</div>
-						<div class="form-group">
-							<label for="confirm">Confirm Password</label>
-							<input class="form-control" type="password" id="confirm" name="confirm" required/>
-						</div>
-						<button class="btn btn-primary" type="submit" style="width:100%;margin-top:0.5rem">Register &amp; Join Group</button>
-					</form>
-					<p style="text-align:center;margin-top:1rem">
-						Already have an account?
-						<a href={ templ.SafeURL("/login?next=/invite/" + inv.Token) }>Log in</a>
-					</p>
+			<head>
+				<meta charset="utf-8"/>
+				<meta name="viewport" content="width=device-width, initial-scale=1"/>
+				<title>Group Invitation — Cog</title>
+				<link rel="stylesheet" href="/static/style.css"/>
+			</head>
+			<body>
+				<div class="login-container">
+					<div class="card login-card">
+						<div class="login-title">Cog</div>
+						<p style="text-align:center;margin-bottom:1rem">You've been invited to join the group <strong>{ g.Name }</strong>.</p>
+						if errMsg != "" {
+							<div class="alert alert-error">{ errMsg }</div>
+						}
+						<form method="post" action={ templ.SafeURL("/invite/" + inv.Token) }>
+							<input type="hidden" name="action" value="register"/>
+							<div class="form-group">
+								<label for="username">Username</label>
+								<input class="form-control" type="text" id="username" name="username" required autofocus/>
+							</div>
+							<div class="form-group">
+								<label for="password">Password</label>
+								<input class="form-control" type="password" id="password" name="password" required/>
+							</div>
+							<div class="form-group">
+								<label for="confirm">Confirm Password</label>
+								<input class="form-control" type="password" id="confirm" name="confirm" required/>
+							</div>
+							<button class="btn btn-primary" type="submit" style="width:100%;margin-top:0.5rem">Register &amp; Join Group</button>
+						</form>
+						<p style="text-align:center;margin-top:1rem">
+							Already have an account?
+							<a href={ templ.SafeURL("/login?next=/invite/" + inv.Token) }>Log in</a>
+						</p>
+					</div>
 				</div>
-			</div>
-		</body>
+			</body>
 		</html>
 	}
 }
@@ -361,10 +361,10 @@ templ groupTable(groups iter.Seq2[group.Group, error], urlPrefix string) {
 		<tbody>
 			for g, err := range groups {
 				if err == nil {
-				<tr style="cursor:pointer" onclick={ goTo(urlPrefix + g.ID) }>
-					<td>{ g.Name }</td>
-					<td>{ fmt.Sprint(g.MemberCount) }</td>
-				</tr>
+					<tr style="cursor:pointer" onclick={ goTo(urlPrefix + g.ID) }>
+						<td>{ g.Name }</td>
+						<td>{ fmt.Sprint(g.MemberCount) }</td>
+					</tr>
 				}
 			}
 		</tbody>

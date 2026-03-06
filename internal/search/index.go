@@ -63,7 +63,7 @@ func (i *Index) Search(query string, limit, offset int) (*Result, error) {
 	prefixQ := bleve.NewPrefixQuery(strings.ToLower(query))
 	q := bleve.NewDisjunctionQuery(matchQ, prefixQ)
 	req := bleve.NewSearchRequestOptions(q, limit, offset, false)
-	req.Fields = []string{"name", "subtext", "content", "source"}
+	req.Fields = []string{"_id", "name", "subtext", "content", "source"}
 	resp, err := i.idx.Search(req)
 	if err != nil {
 		return nil, fmt.Errorf("search: %w", err)
@@ -100,6 +100,7 @@ func buildMapping() mapping.IndexMapping {
 	keywordField.Store = true
 
 	docMapping := bleve.NewDocumentMapping()
+	docMapping.AddFieldMappingsAt("_id", keywordField)
 	docMapping.AddFieldMappingsAt("name", textField)
 	docMapping.AddFieldMappingsAt("subtext", textField)
 	docMapping.AddFieldMappingsAt("content", textField)

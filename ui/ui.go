@@ -90,4 +90,3 @@ type PermissionLevelChoice struct {
 	Label       string
 	Permissions uint32
 }
-

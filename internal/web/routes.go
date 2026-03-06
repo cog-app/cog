@@ -6,21 +6,17 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/compat"
-	"git.duckfam.us/jj-software/cog/internal/plugin/calendar"
-	"git.duckfam.us/jj-software/cog/internal/plugin/contacts"
-	"git.duckfam.us/jj-software/cog/internal/plugin/dashboard"
-	"git.duckfam.us/jj-software/cog/internal/plugin/files"
-	"git.duckfam.us/jj-software/cog/internal/plugin/gallery"
-	"git.duckfam.us/jj-software/cog/internal/plugin/notes"
-	"git.duckfam.us/jj-software/cog/internal/plugin/rss"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/plugin/calendar"
+	"git.duckfam.us/jj-software/cog/plugin/dashboard"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
 // New builds the full HTTP handler with all routes and middleware.
-// Extra plugins from custom builds are registered after the protected core plugins.
-func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
+// All plugins (including first-party) are passed in via the plugins slice.
+func New(p *services.Providers, plugins ...plugin.Plugin) http.Handler {
 	authMW := &auth.Middleware{
 		Users:        p.Users,
 		Sessions:     p.Sessions,
@@ -36,22 +32,19 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	staticSub, _ := fs.Sub(ui.StaticFS, "static")
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
 
-	// --- Register plugins ---
-	// Dashboard and files plugins embed Protected and are auto-detected.
-	dashPlugin := &dashboard.Plugin{Registry: p.Plugins, Secret: p.CSRFSecret, Groups: p.Groups, Users: p.Users}
-	p.Plugins.Add(dashPlugin)
-	p.Plugins.Add(p.Files)
+	// --- Wire optional services for plugins ---
+	p.Plugins.SetServices(buildRegistryServices(p.Plugins, p.Shares, p.Email, p.Users, p.Groups))
 
-	// Content plugins — routes are registered via the plugin Registrar interface.
-	p.Plugins.Add(rss.New(p.Plugins, p.Config.DataDir, p.CSRFSecret))
-	p.Plugins.Add(calendar.New(p.Plugins, p.Shares, p.Email, p.CSRFSecret))
-	p.Plugins.Add(contacts.New(p.Plugins, p.Config.DataDir, p.Shares, p.Users, p.CSRFSecret))
-	p.Plugins.Add(notes.New(p.Plugins, p.CSRFSecret))
-	p.Plugins.Add(gallery.New(p.Plugins, p.Files, p.Config.DataDir, p.CSRFSecret))
-
-	// Extra plugins from custom builds.
-	for _, ep := range extraPlugins {
-		p.Plugins.Add(ep)
+	// --- Register all plugins ---
+	var dashPlugin *dashboard.Plugin
+	for _, pl := range plugins {
+		p.Plugins.Add(pl)
+		if dp, ok := pl.(*dashboard.Plugin); ok {
+			dashPlugin = dp
+		}
+		if fp, ok := pl.(*files.Plugin); ok {
+			p.Files = fp
+		}
 	}
 
 	// --- Web UI handlers ---

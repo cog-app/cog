@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	"git.duckfam.us/jj-software/cog/internal/plugin/files"
 	"git.duckfam.us/jj-software/cog/internal/services"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
 // FilesHandler serves the files browser UI at /apps/files/.

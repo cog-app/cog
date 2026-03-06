@@ -1,9 +1,9 @@
 package web
 
 import (
-	"git.duckfam.us/jj-software/cog/ui"
-	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/group"
+	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/ui"
 	"iter"
 )
 
@@ -18,7 +18,6 @@ func adminSidebar(active string) []ui.SidebarItem {
 }
 
 // --- Users ---
-
 templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], flash string, flashKind string) {
 	@ui.SidebarPage(pd, adminSidebar("users")) {
 		<div class="flex justify-between items-center" style="margin-bottom:1rem">
@@ -40,15 +39,15 @@ templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], flash st
 				<tbody>
 					for u, err := range users {
 						if err == nil {
-						<tr style="cursor:pointer" onclick={ goTo("/admin/users/" + u.ID) }>
-							<td>{ u.Username }</td>
-							<td>{ u.DisplayName }</td>
-							<td>
-								if u.IsAdmin {
-									<span class="badge badge-admin">Admin</span>
-								}
-							</td>
-						</tr>
+							<tr style="cursor:pointer" onclick={ goTo("/admin/users/" + u.ID) }>
+								<td>{ u.Username }</td>
+								<td>{ u.DisplayName }</td>
+								<td>
+									if u.IsAdmin {
+										<span class="badge badge-admin">Admin</span>
+									}
+								</td>
+							</tr>
 						}
 					}
 				</tbody>
@@ -125,7 +124,6 @@ templ adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind st
 }
 
 // --- Groups ---
-
 templ adminGroupsPage(pd ui.PageData, groups iter.Seq2[group.Group, error], flash string, flashKind string) {
 	@ui.SidebarPage(pd, adminSidebar("groups")) {
 		<div class="flex justify-between items-center" style="margin-bottom:1rem">
@@ -147,9 +145,7 @@ templ adminGroupsPage(pd ui.PageData, groups iter.Seq2[group.Group, error], flas
 	}
 }
 
-
 // --- Settings ---
-
 templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, flash string, flashKind string) {
 	@ui.SidebarPage(pd, adminSidebar("settings")) {
 		<h1 style="margin-bottom:1rem">System Settings</h1>
@@ -182,7 +178,6 @@ templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHou
 }
 
 // --- Plugins ---
-
 templ adminPluginsPage(pd ui.PageData, plugins []PluginInfo) {
 	@ui.SidebarPage(pd, adminSidebar("plugins")) {
 		<div class="flex justify-between items-center" style="margin-bottom:1rem">

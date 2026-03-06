@@ -20,6 +20,13 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/web"
+	"git.duckfam.us/jj-software/cog/plugin/calendar"
+	"git.duckfam.us/jj-software/cog/plugin/contacts"
+	"git.duckfam.us/jj-software/cog/plugin/dashboard"
+	"git.duckfam.us/jj-software/cog/plugin/files"
+	"git.duckfam.us/jj-software/cog/plugin/gallery"
+	"git.duckfam.us/jj-software/cog/plugin/notes"
+	"git.duckfam.us/jj-software/cog/plugin/rss"
 )
 
 // HTTPOpt configures an outgoing request. Pass to Get, Post, Head, etc.
@@ -80,7 +87,15 @@ func New(t testing.TB) *Env {
 	mgr.SetSystemDB(sysDB)
 	p.Search = mgr
 
-	handler := web.New(p)
+	handler := web.New(p,
+		dashboard.New(),
+		files.New(),
+		calendar.New(),
+		contacts.New(),
+		notes.New(),
+		rss.New(),
+		gallery.New(),
+	)
 
 	// Start search after plugins are registered.
 	if err := p.StartSearch(context.Background()); err != nil {

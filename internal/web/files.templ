@@ -2,8 +2,8 @@ package web
 
 import (
 	"fmt"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/ui"
-	"git.duckfam.us/jj-software/cog/internal/plugin/files"
 	"time"
 )
 
@@ -25,7 +25,7 @@ templ filesPage(pd ui.PageData, dirPath string, items []files.FileMeta) {
 					<input class="form-control" type="text" name="name" placeholder="New folder" required style="max-width:200px"/>
 					<button class="btn btn-outline btn-sm" type="submit">Create Folder</button>
 				</form>
-				@ui.Upload("/apps/files" + dirPath, "file", "", pd.CSRFToken, "Upload", "btn btn-primary btn-sm")
+				@ui.Upload("/apps/files"+dirPath, "file", "", pd.CSRFToken, "Upload", "btn btn-primary btn-sm")
 				<button id="bulk-delete-btn" class="btn btn-danger btn-sm" style="display:none" onclick="bulkDelete()">Delete Selected</button>
 			</div>
 			<div id="drop-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,100,200,0.15);z-index:1000;pointer-events:none;border:3px dashed var(--color-primary,#0082c9);margin:8px">
@@ -56,7 +56,12 @@ templ filesPage(pd ui.PageData, dirPath string, items []files.FileMeta) {
 						</tr>
 					}
 					for _, f := range items {
-						<tr id={ "file-" + safeDomID(f.Path) } if f.IsDir { data-dir={ f.Path } }>
+						<tr
+							id={ "file-" + safeDomID(f.Path) }
+							if f.IsDir {
+								data-dir={ f.Path }
+							}
+						>
 							<td><input type="checkbox" class="file-check" value={ f.Path } onchange="updateBulkBtn()"/></td>
 							<td>
 								<div style="display:flex;align-items:center;gap:0.5rem">
@@ -265,7 +270,7 @@ templ filesBreadcrumbs(dirPath string) {
 	<nav style="margin-bottom:1rem">
 		<a href="/apps/files/">root</a>
 		for _, seg := range breadcrumbSegments(dirPath) {
-			<span> / </span>
+			<span>/ </span>
 			<a href={ templ.SafeURL("/apps/files" + seg.Path) }>{ seg.Name }</a>
 		}
 	</nav>
