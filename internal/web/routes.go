@@ -137,7 +137,13 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("POST /admin/groups/{id}", adminMut(http.HandlerFunc(adminH.UpdateGroup)))
 	mux.Handle("POST /admin/groups/{id}/delete", adminMut(http.HandlerFunc(adminH.DeleteGroup)))
 	mux.Handle("POST /admin/groups/{id}/members", adminMut(http.HandlerFunc(adminH.AddMember)))
+	mux.Handle("POST /admin/groups/{id}/members/{member_id}/type", adminMut(http.HandlerFunc(groupH.UpdateMemberType)))
 	mux.Handle("DELETE /admin/groups/{id}/members/{member_id}", adminMut(http.HandlerFunc(adminH.RemoveMember)))
+	mux.Handle("POST /admin/groups/{id}/invites", adminMut(http.HandlerFunc(groupH.CreateInvite)))
+	mux.Handle("DELETE /admin/groups/{id}/invites/{invite_id}", adminMut(http.HandlerFunc(groupH.RevokeInvite)))
+	mux.Handle("POST /admin/groups/{id}/mounts", adminMut(http.HandlerFunc(groupH.CreateGroupMount)))
+	mux.Handle("DELETE /admin/groups/{id}/mounts/{mount_id}", adminMut(http.HandlerFunc(groupH.DeleteGroupMount)))
+	mux.Handle("POST /admin/groups/{id}/volumes", adminMut(http.HandlerFunc(groupH.CreateGroupVolume)))
 
 	mux.Handle("GET /admin/volumes", adminAuth(http.HandlerFunc(adminVolH.ListVolumes)))
 	mux.Handle("GET /admin/volumes/new", adminAuth(http.HandlerFunc(adminVolH.NewVolumeForm)))

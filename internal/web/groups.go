@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"iter"
 	"net/http"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/group"
@@ -16,8 +17,40 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
+// groupDetailData holds all data needed by the shared group detail template.
+type groupDetailData struct {
+	Group             *group.Group
+	Members           iter.Seq2[group.Member, error]
+	UserNames         map[string]string
+	Invitations       iter.Seq2[group.Invitation, error]
+	HasInvitations    bool
+	GroupMounts       iter.Seq2[mount.GroupMount, error]
+	HasGroupMounts    bool
+	GroupVolumes      iter.Seq2[volume.Volume, error]
+	HasGroupVolumes   bool
+	AccessibleVolumes []volume.Volume
+	VolumeNames       map[string]string
+	IsOwner           bool
+	IsAdmin           bool
+	SMTPAvailable     bool
+	SiteBaseURL       string
+	BasePath          string // "/settings/groups" or "/admin/groups"
+	Flash             string
+	FlashKind         string
+	LastInviteURL     string
+}
+
 // groupHandler handles user-facing group management.
 type groupHandler struct{ handler }
+
+// groupBasePath returns the base path for group URLs based on the request path.
+// Returns "/admin/groups" for admin routes, "/settings/groups" otherwise.
+func groupBasePath(r *http.Request) string {
+	if strings.HasPrefix(r.URL.Path, "/admin/") {
+		return "/admin/groups"
+	}
+	return "/settings/groups"
+}
 
 // canManageGroup returns true if the user is the group owner or an admin.
 func (h *groupHandler) canManageGroup(groupID string, u *user.User) bool {
@@ -99,66 +132,70 @@ func (h *groupHandler) ShowGroup(w http.ResponseWriter, r *http.Request) {
 	h.renderGroupDetail(w, r, g, isOwner)
 }
 
-func (h *groupHandler) renderGroupDetail(w http.ResponseWriter, r *http.Request, g *group.Group, isOwner bool) {
-	pd := pageDataWithNav(r, "Group: "+g.Name, h.p.CSRFSecret, h.p.Plugins)
+// buildGroupDetailData gathers all data needed by the shared group detail template.
+func (h *groupHandler) buildGroupDetailData(w http.ResponseWriter, r *http.Request, g *group.Group, isOwner bool, basePath string) groupDetailData {
+	u := auth.UserFromContext(r.Context())
 	userNames, _ := seq.ToMap(h.p.Users.List(), func(u user.User) string { return u.ID }, func(u user.User) string { return u.Username })
 
-	var invitations iter.Seq2[group.Invitation, error]
-	var hasInvitations bool
-	var groupMounts iter.Seq2[mount.GroupMount, error]
-	var hasGroupMounts bool
-	var groupVolumes iter.Seq2[volume.Volume, error]
-	var hasGroupVolumes bool
-	var accessibleVolumes []volume.Volume
+	d := groupDetailData{
+		Group:       g,
+		Members:     h.p.Groups.ListMembers(g.ID),
+		UserNames:   userNames,
+		IsOwner:     isOwner,
+		IsAdmin:     u.IsAdmin,
+		SMTPAvailable: h.p.Email != nil,
+		SiteBaseURL: h.p.Config.BaseURL,
+		BasePath:    basePath,
+		VolumeNames: make(map[string]string),
+	}
 
 	if isOwner {
 		var invErr error
-		_, invitations, invErr = seq.Peek(h.p.Invitations.ListByGroup(g.ID))
-		hasInvitations = !errors.Is(invErr, seq.ErrEmpty)
-		if !hasInvitations {
-			invitations = h.p.Invitations.ListByGroup(g.ID)
+		_, d.Invitations, invErr = seq.Peek(h.p.Invitations.ListByGroup(g.ID))
+		d.HasInvitations = !errors.Is(invErr, seq.ErrEmpty)
+		if !d.HasInvitations {
+			d.Invitations = h.p.Invitations.ListByGroup(g.ID)
 		}
 
 		var gmErr error
-		_, groupMounts, gmErr = seq.Peek(h.p.Mounts.ListGroupMounts(g.ID))
-		hasGroupMounts = !errors.Is(gmErr, seq.ErrEmpty)
-		if !hasGroupMounts {
-			groupMounts = h.p.Mounts.ListGroupMounts(g.ID)
+		_, d.GroupMounts, gmErr = seq.Peek(h.p.Mounts.ListGroupMounts(g.ID))
+		d.HasGroupMounts = !errors.Is(gmErr, seq.ErrEmpty)
+		if !d.HasGroupMounts {
+			d.GroupMounts = h.p.Mounts.ListGroupMounts(g.ID)
 		}
 
-		// Find group-owned volumes.
 		groupVolFilter := seq.Filter(h.p.Volumes.List(), func(v volume.Volume) bool {
 			return v.OwnerType == "group" && v.OwnerID != nil && *v.OwnerID == g.ID
 		})
 		var gvErr error
-		_, groupVolumes, gvErr = seq.Peek(groupVolFilter)
-		hasGroupVolumes = !errors.Is(gvErr, seq.ErrEmpty)
-		if !hasGroupVolumes {
-			groupVolumes = seq.Filter(h.p.Volumes.List(), func(v volume.Volume) bool {
+		_, d.GroupVolumes, gvErr = seq.Peek(groupVolFilter)
+		d.HasGroupVolumes = !errors.Is(gvErr, seq.ErrEmpty)
+		if !d.HasGroupVolumes {
+			d.GroupVolumes = seq.Filter(h.p.Volumes.List(), func(v volume.Volume) bool {
 				return v.OwnerType == "group" && v.OwnerID != nil && *v.OwnerID == g.ID
 			})
 		}
 
-		// Accessible volumes for mount creation (need slice for <select>).
-		u := auth.UserFromContext(r.Context())
 		if h.p.Access != nil {
-			accessibleVolumes, _ = seq.Collect(h.p.Access.ListAccessible(u.ID))
+			d.AccessibleVolumes, _ = seq.Collect(h.p.Access.ListAccessible(u.ID))
+		}
+		for _, v := range d.AccessibleVolumes {
+			d.VolumeNames[v.ID] = v.Name
 		}
 	}
 
-	volumeNames := make(map[string]string, len(accessibleVolumes))
-	for _, v := range accessibleVolumes {
-		volumeNames[v.ID] = v.Name
-	}
-
 	flash := getFlash(w, r)
-	var flashMsg, flashKind, flashURL string
 	if flash != nil {
-		flashMsg, flashKind, flashURL = flash.Message, flash.Kind, flash.URL
+		d.Flash, d.FlashKind, d.LastInviteURL = flash.Message, flash.Kind, flash.URL
 	}
 
-	smtpAvailable := h.p.Email != nil
-	settingsGroupDetailPage(pd, g, h.p.Groups.ListMembers(g.ID), userNames, invitations, hasInvitations, groupMounts, hasGroupMounts, groupVolumes, hasGroupVolumes, accessibleVolumes, volumeNames, isOwner, smtpAvailable, h.p.Config.BaseURL, flashMsg, flashKind, flashURL).Render(r.Context(), w)
+	return d
+}
+
+func (h *groupHandler) renderGroupDetail(w http.ResponseWriter, r *http.Request, g *group.Group, isOwner bool) {
+	pd := pageDataWithNav(r, "Group: "+g.Name, h.p.CSRFSecret, h.p.Plugins)
+	d := h.buildGroupDetailData(w, r, g, isOwner, "/settings/groups")
+	settingsGroupDetailPage(pd, d).Render(r.Context(), w)
 }
 
 // CreateGroup handles POST /settings/groups.
@@ -188,7 +225,7 @@ func (h *groupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/settings/groups/"+g.ID, http.StatusSeeOther)
 }
 
-// UpdateGroup handles POST /settings/groups/{id}.
+// UpdateGroup handles POST /settings/groups/{id} and POST /admin/groups/{id}.
 func (h *groupHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	id := r.PathValue("id")
@@ -201,16 +238,17 @@ func (h *groupHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	base := groupBasePath(r)
 	name := r.FormValue("name")
 	if err := h.p.Groups.Update(id, name); err != nil {
 		setFlash(w, "error", "Failed to update group.")
 	} else {
 		setFlash(w, "success", "Group updated.")
 	}
-	http.Redirect(w, r, "/settings/groups/"+id, http.StatusSeeOther)
+	http.Redirect(w, r, base+"/"+id, http.StatusSeeOther)
 }
 
-// AddMember handles POST /settings/groups/{id}/members.
+// AddMember handles POST /settings/groups/{id}/members and POST /admin/groups/{id}/members.
 func (h *groupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	groupID := r.PathValue("id")
@@ -219,17 +257,18 @@ func (h *groupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	base := groupBasePath(r)
 	memberID := r.FormValue("member_id")
 	if memberID == "" {
 		setFlash(w, "error", "Please select a user.")
-		http.Redirect(w, r, "/settings/groups/"+groupID, http.StatusSeeOther)
+		http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
 		return
 	}
 
 	if err := h.p.Groups.AddMember(groupID, memberID, "USER"); err != nil {
 		setFlash(w, "error", "Failed to add member: "+err.Error())
 	}
-	http.Redirect(w, r, "/settings/groups/"+groupID, http.StatusSeeOther)
+	http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
 }
 
 // RemoveMember handles DELETE /settings/groups/{id}/members/{member_id}.
@@ -269,10 +308,10 @@ func (h *groupHandler) UpdateMemberType(w http.ResponseWriter, r *http.Request) 
 		setFlash(w, "error", "Failed to update member type.")
 	}
 
-	http.Redirect(w, r, "/settings/groups/"+groupID, http.StatusSeeOther)
+	http.Redirect(w, r, groupBasePath(r)+"/"+groupID, http.StatusSeeOther)
 }
 
-// CreateInvite handles POST /settings/groups/{id}/invites.
+// CreateInvite handles POST /settings/groups/{id}/invites and POST /admin/groups/{id}/invites.
 func (h *groupHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	groupID := r.PathValue("id")
@@ -281,6 +320,7 @@ func (h *groupHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	base := groupBasePath(r)
 	inviteEmail := r.FormValue("email")
 	memberType := r.FormValue("member_type")
 	if memberType != "OWNER" {
@@ -293,7 +333,7 @@ func (h *groupHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 	inv, err := h.p.Invitations.Create(groupID, inviteEmail, u.ID, expiryHours, memberType)
 	if err != nil {
 		setFlash(w, "error", "Failed to create invite: "+err.Error())
-		http.Redirect(w, r, "/settings/groups/"+groupID, http.StatusSeeOther)
+		http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
 		return
 	}
 
@@ -308,13 +348,13 @@ func (h *groupHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := h.p.Email.SendGroupInvite(inviteEmail, g.Name, inviterName, inviteURL); err != nil {
 			setFlash(w, "error", "Invite created but email failed: "+err.Error())
-			http.Redirect(w, r, "/settings/groups/"+groupID, http.StatusSeeOther)
+			http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
 			return
 		}
 	}
 
 	setFlashURL(w, "success", "Invite created.", inviteURL)
-	http.Redirect(w, r, "/settings/groups/"+groupID, http.StatusSeeOther)
+	http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
 }
 
 // RevokeInvite handles DELETE /settings/groups/{id}/invites/{invite_id}.
@@ -441,7 +481,7 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/settings/groups/"+inv.GroupID, http.StatusSeeOther)
 }
 
-// CreateGroupMount handles POST /settings/groups/{id}/mounts.
+// CreateGroupMount handles POST /settings/groups/{id}/mounts and POST /admin/groups/{id}/mounts.
 func (h *groupHandler) CreateGroupMount(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	groupID := r.PathValue("id")
@@ -450,13 +490,14 @@ func (h *groupHandler) CreateGroupMount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	base := groupBasePath(r)
 	volumeID := r.FormValue("volume_id")
 	userPath := r.FormValue("user_path")
 	volumeSubpath := r.FormValue("volume_subpath")
 
 	if volumeID == "" || userPath == "" {
 		setFlash(w, "error", "Volume and path are required.")
-		http.Redirect(w, r, "/settings/groups/"+groupID, http.StatusSeeOther)
+		http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
 		return
 	}
 
@@ -466,7 +507,7 @@ func (h *groupHandler) CreateGroupMount(w http.ResponseWriter, r *http.Request) 
 	} else {
 		setFlash(w, "success", "Group mount added.")
 	}
-	http.Redirect(w, r, "/settings/groups/"+groupID, http.StatusSeeOther)
+	http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
 }
 
 // DeleteGroupMount handles DELETE /settings/groups/{id}/mounts/{mount_id}.
@@ -483,7 +524,7 @@ func (h *groupHandler) DeleteGroupMount(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusOK)
 }
 
-// CreateGroupVolume handles POST /settings/groups/{id}/volumes.
+// CreateGroupVolume handles POST /settings/groups/{id}/volumes and POST /admin/groups/{id}/volumes.
 func (h *groupHandler) CreateGroupVolume(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	groupID := r.PathValue("id")
@@ -492,10 +533,11 @@ func (h *groupHandler) CreateGroupVolume(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	base := groupBasePath(r)
 	name := r.FormValue("name")
 	if name == "" {
 		setFlash(w, "error", "Volume name is required.")
-		http.Redirect(w, r, "/settings/groups/"+groupID, http.StatusSeeOther)
+		http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
 		return
 	}
 
@@ -507,5 +549,5 @@ func (h *groupHandler) CreateGroupVolume(w http.ResponseWriter, r *http.Request)
 	} else {
 		setFlash(w, "success", "Group volume created.")
 	}
-	http.Redirect(w, r, "/settings/groups/"+groupID, http.StatusSeeOther)
+	http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
 }

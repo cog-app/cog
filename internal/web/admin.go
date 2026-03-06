@@ -5,18 +5,16 @@ import (
 	"net/http"
 	"strconv"
 
-	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
 type adminHandler struct{ handler }
 
-// --- Index ---
+// --- Index (redirect to settings) ---
 
 func (h *adminHandler) Index(w http.ResponseWriter, r *http.Request) {
-	pd := pageDataWithNav(r, "Admin", h.p.CSRFSecret, h.p.Plugins)
-	adminIndexPage(pd).Render(r.Context(), w)
+	http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
 }
 
 // --- Users ---
@@ -186,33 +184,21 @@ func (h *adminHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *adminHandler) EditGroupForm(w http.ResponseWriter, r *http.Request) {
-	pd := pageDataWithNav(r, "Edit Group", h.p.CSRFSecret, h.p.Plugins)
 	id := r.PathValue("id")
 	g, err := h.p.Groups.Get(id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	userNames, _ := seq.ToMap(h.p.Users.List(), func(u user.User) string { return u.ID }, func(u user.User) string { return u.Username })
-	flash := getFlash(w, r)
-	var flashMsg, flashKind string
-	if flash != nil {
-		flashMsg, flashKind = flash.Message, flash.Kind
-	}
-	adminGroupEditPage(pd, g, h.p.Groups.ListMembers(id), userNames, flashMsg, flashKind).Render(r.Context(), w)
+	pd := pageDataWithNav(r, "Group: "+g.Name, h.p.CSRFSecret, h.p.Plugins)
+	gh := groupHandler{h.handler}
+	d := gh.buildGroupDetailData(w, r, g, true, "/admin/groups")
+	adminGroupDetailPage(pd, d).Render(r.Context(), w)
 }
 
 func (h *adminHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	name := r.FormValue("name")
-
-	if err := h.p.Groups.Update(id, name); err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	setFlash(w, "success", "Group updated.")
-	http.Redirect(w, r, "/admin/groups/"+id, http.StatusSeeOther)
+	gh := groupHandler{h.handler}
+	gh.UpdateGroup(w, r)
 }
 
 func (h *adminHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
@@ -227,16 +213,8 @@ func (h *adminHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *adminHandler) AddMember(w http.ResponseWriter, r *http.Request) {
-	groupID := r.PathValue("id")
-	memberID := r.FormValue("member_id")
-	memberType := r.FormValue("member_type")
-	if memberType == "" {
-		memberType = "USER"
-	}
-	if err := h.p.Groups.AddMember(groupID, memberID, memberType); err != nil {
-		setFlash(w, "error", "Failed to add member: "+err.Error())
-	}
-	http.Redirect(w, r, "/admin/groups/"+groupID, http.StatusSeeOther)
+	gh := groupHandler{h.handler}
+	gh.AddMember(w, r)
 }
 
 func (h *adminHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
