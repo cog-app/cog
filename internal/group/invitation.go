@@ -17,7 +17,7 @@ type Invitation struct {
 	Email      string
 	Token      string
 	InvitedBy  string
-	MemberType string // "USER" or "OWNER"
+	MemberType MemberType
 	CreatedAt  int64
 	ExpiresAt  int64
 }
@@ -34,12 +34,12 @@ func NewInvitationStore(db *sql.DB) *InvitationStore {
 
 // Create generates a new invitation with the given expiry (in hours) and a 24-byte random token.
 // If expiryHours is <= 0, defaults to 72 hours. memberType should be "USER" or "OWNER".
-func (s *InvitationStore) Create(groupID, email, invitedBy string, expiryHours int, memberType string) (*Invitation, error) {
+func (s *InvitationStore) Create(groupID, email, invitedBy string, expiryHours int, memberType MemberType) (*Invitation, error) {
 	if expiryHours <= 0 {
 		expiryHours = 72
 	}
 	if memberType == "" {
-		memberType = "USER"
+		memberType = User
 	}
 	id, err := generateID()
 	if err != nil {

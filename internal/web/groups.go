@@ -265,7 +265,7 @@ func (h *groupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.p.Groups.AddMember(groupID, memberID, "USER"); err != nil {
+	if err := h.p.Groups.AddMember(groupID, memberID, group.User); err != nil {
 		setFlash(w, "error", "Failed to add member: "+err.Error())
 	}
 	http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
@@ -298,8 +298,8 @@ func (h *groupHandler) UpdateMemberType(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	memberType := r.FormValue("member_type")
-	if memberType != "USER" && memberType != "OWNER" {
+	memberType := group.MemberType(r.FormValue("member_type"))
+	if !memberType.IsValid() {
 		http.Error(w, "invalid member type", http.StatusBadRequest)
 		return
 	}
@@ -322,9 +322,9 @@ func (h *groupHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 
 	base := groupBasePath(r)
 	inviteEmail := r.FormValue("email")
-	memberType := r.FormValue("member_type")
-	if memberType != "OWNER" {
-		memberType = "USER"
+	memberType := group.MemberType(r.FormValue("member_type"))
+	if memberType != group.Owner {
+		memberType = group.User
 	}
 	expiryHours := settings.DefaultInviteExpiryHours
 	if h.p.Settings != nil {

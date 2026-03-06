@@ -99,11 +99,11 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 										<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 										<select class="form-control" name="member_type" style="display:inline-block;width:auto;padding:0.2rem 0.4rem;font-size:0.85rem" onchange="this.form.submit()">
 											if m.MemberType == "OWNER" {
-												<option value="OWNER" selected>Owner</option>
-												<option value="USER">User</option>
+												<option value={ group.Owner } selected>Owner</option>
+												<option value={ group.User }>User</option>
 											} else {
-												<option value="OWNER">Owner</option>
-												<option value="USER" selected>User</option>
+												<option value={ group.Owner }>Owner</option>
+												<option value={ group.User } selected>User</option>
 											}
 										</select>
 									</form>
@@ -120,7 +120,7 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 										hx-swap="outerHTML"
 									>Remove</button>
 								}
-								if !d.IsOwner && m.MemberType == "USER" && m.MemberID == pd.User.ID {
+								if !d.IsOwner && m.MemberType == group.User && m.MemberID == pd.User.ID {
 									<button
 										class="btn btn-danger btn-sm"
 										hx-delete={ fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID) }
@@ -142,8 +142,8 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 				<input class="form-control" type="email" name="email" placeholder={ emailPlaceholder(d.SMTPAvailable) } style="max-width:300px"/>
 				<select class="form-control" name="member_type" style="max-width:120px">
-					<option value="USER" selected>User</option>
-					<option value="OWNER">Owner</option>
+					<option value={ group.User } selected>User</option>
+					<option value={ group.Owner }>Owner</option>
 				</select>
 				<button class="btn btn-primary" type="submit">Create Invite</button>
 			</form>

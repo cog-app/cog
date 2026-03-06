@@ -1,5 +1,3 @@
-//go:build seed
-
 package cog
 
 import (
@@ -7,6 +5,7 @@ import (
 	"log"
 	"sync"
 
+	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -124,11 +123,11 @@ func seedGroup(p *services.Providers, adminID string, memberIDs []string) {
 		log.Printf("seed: create group: %v", err)
 		return
 	}
-	if err := p.Groups.AddMember(g.ID, adminID, "OWNER"); err != nil {
+	if err := p.Groups.AddMember(g.ID, adminID, group.Owner); err != nil {
 		log.Printf("seed: add admin to group: %v", err)
 	}
 	for _, id := range memberIDs {
-		if err := p.Groups.AddMember(g.ID, id, "USER"); err != nil {
+		if err := p.Groups.AddMember(g.ID, id, group.User); err != nil {
 			log.Printf("seed: add member to group: %v", err)
 		}
 	}

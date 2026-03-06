@@ -23,7 +23,23 @@ type Group struct {
 type Member struct {
 	GroupID    string
 	MemberID   string
-	MemberType string // "USER" or "OWNER"
+	MemberType MemberType
+}
+
+type MemberType string
+
+const (
+	Owner MemberType = "OWNER"
+	User  MemberType = "USER"
+)
+
+func (t MemberType) IsValid() bool {
+	switch t {
+	case Owner, User:
+		return true
+	default:
+		return false
+	}
 }
 
 type Store struct {
@@ -115,7 +131,7 @@ func (s *Store) Delete(id string) error {
 	return s.RebuildClosure()
 }
 
-func (s *Store) AddMember(groupID, memberID, memberType string) error {
+func (s *Store) AddMember(groupID, memberID string, memberType MemberType) error {
 	_, err := s.db.Exec(
 		`INSERT OR IGNORE INTO group_members (group_id, member_id, member_type) VALUES (?, ?, ?)`,
 		groupID, memberID, memberType,
@@ -127,7 +143,7 @@ func (s *Store) AddMember(groupID, memberID, memberType string) error {
 }
 
 // UpdateMemberType changes the member_type for an existing group member.
-func (s *Store) UpdateMemberType(groupID, memberID, memberType string) error {
+func (s *Store) UpdateMemberType(groupID, memberID string, memberType MemberType) error {
 	res, err := s.db.Exec(
 		`UPDATE group_members SET member_type = ? WHERE group_id = ? AND member_id = ?`,
 		memberType, groupID, memberID,
