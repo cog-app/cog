@@ -27,7 +27,12 @@ templ filesPage(pd ui.PageData, dirPath string, items []files.FileMeta) {
 				</form>
 				@ui.Upload("/apps/files" + dirPath, "file", "", pd.CSRFToken, "Upload", "btn btn-primary btn-sm")
 			</div>
-			<table class="table">
+			<div id="drop-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,100,200,0.15);z-index:1000;pointer-events:none;border:3px dashed var(--color-primary,#0082c9);margin:8px">
+				<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.5rem;font-weight:600;color:var(--color-primary,#0082c9);background:var(--color-bg,#fff);padding:1rem 2rem;border-radius:8px">
+					Drop files to upload
+				</div>
+			</div>
+			<table class="table" id="files-table">
 				<thead>
 					<tr>
 						<th>Name</th>
@@ -48,42 +53,146 @@ templ filesPage(pd ui.PageData, dirPath string, items []files.FileMeta) {
 						</tr>
 					}
 					for _, f := range items {
-						<tr id={ "file-" + safeDomID(f.Path) }>
-							<td>
-								<div style="display:flex;align-items:center;gap:0.5rem">
-									@fileIcon(f.MimeType, f.IsDir)
-									if f.IsDir {
+						if f.IsDir {
+							<tr id={ "file-" + safeDomID(f.Path) } data-dir={ f.Path }>
+								<td>
+									<div style="display:flex;align-items:center;gap:0.5rem">
+										@fileIcon(f.MimeType, f.IsDir)
 										<a href={ templ.SafeURL("/apps/files" + f.Path) }>{ f.Name }/</a>
-									} else {
-										<a href={ templ.SafeURL("/apps/files" + f.Path) }>{ f.Name }</a>
+									</div>
+								</td>
+								<td></td>
+								<td>
+									if f.MTime > 0 {
+										{ time.Unix(f.MTime, 0).Format("2006-01-02 15:04") }
 									}
-								</div>
-							</td>
-							<td>
-								if !f.IsDir {
-									{ formatSize(f.Size) }
-								}
-							</td>
-							<td>
-								if f.MTime > 0 {
-									{ time.Unix(f.MTime, 0).Format("2006-01-02 15:04") }
-								}
-							</td>
-							<td class="text-right">
-								<button
-									class="btn btn-danger btn-sm"
-									hx-delete={ "/apps/files" + f.Path }
-									hx-target={ "#file-" + safeDomID(f.Path) }
-									hx-swap="outerHTML"
-									hx-confirm={ "Delete " + f.Name + "?" }
-								>Delete</button>
-							</td>
-						</tr>
+								</td>
+								<td class="text-right">
+									<button
+										class="btn btn-danger btn-sm"
+										hx-delete={ "/apps/files" + f.Path }
+										hx-target={ "#file-" + safeDomID(f.Path) }
+										hx-swap="outerHTML"
+										hx-confirm={ "Delete " + f.Name + "?" }
+									>Delete</button>
+								</td>
+							</tr>
+						} else {
+							<tr id={ "file-" + safeDomID(f.Path) }>
+								<td>
+									<div style="display:flex;align-items:center;gap:0.5rem">
+										@fileIcon(f.MimeType, f.IsDir)
+										<a href={ templ.SafeURL("/apps/files" + f.Path) }>{ f.Name }</a>
+									</div>
+								</td>
+								<td>{ formatSize(f.Size) }</td>
+								<td>
+									if f.MTime > 0 {
+										{ time.Unix(f.MTime, 0).Format("2006-01-02 15:04") }
+									}
+								</td>
+								<td class="text-right">
+									<button
+										class="btn btn-danger btn-sm"
+										hx-delete={ "/apps/files" + f.Path }
+										hx-target={ "#file-" + safeDomID(f.Path) }
+										hx-swap="outerHTML"
+										hx-confirm={ "Delete " + f.Name + "?" }
+									>Delete</button>
+								</td>
+							</tr>
+						}
 					}
 				</tbody>
 			</table>
 		}
+		@filesDragDrop(dirPath, pd.CSRFToken)
 	}
+}
+
+templ filesDragDrop(dirPath string, csrfToken string) {
+	<script type="text/javascript">
+	(function() {
+		var basePath = {{ dirPath }};
+		var csrf = {{ csrfToken }};
+		var overlay = document.getElementById('drop-overlay');
+		var dragCount = 0;
+
+		document.addEventListener('dragenter', function(e) {
+			if (!e.dataTransfer.types.includes('Files')) return;
+			e.preventDefault();
+			dragCount++;
+			overlay.style.display = '';
+		});
+
+		document.addEventListener('dragleave', function(e) {
+			dragCount--;
+			if (dragCount <= 0) {
+				dragCount = 0;
+				overlay.style.display = 'none';
+			}
+		});
+
+		document.addEventListener('dragover', function(e) {
+			if (!e.dataTransfer.types.includes('Files')) return;
+			e.preventDefault();
+			// Highlight folder row if hovering over one.
+			var row = e.target.closest('tr[data-dir]');
+			document.querySelectorAll('tr[data-dir]').forEach(function(r) {
+				r.style.background = '';
+			});
+			if (row) {
+				row.style.background = 'var(--color-primary-light, rgba(0,130,201,0.1))';
+			}
+		});
+
+		document.addEventListener('drop', function(e) {
+			e.preventDefault();
+			dragCount = 0;
+			overlay.style.display = 'none';
+			document.querySelectorAll('tr[data-dir]').forEach(function(r) {
+				r.style.background = '';
+			});
+
+			var files = e.dataTransfer.files;
+			if (!files.length) return;
+
+			// Determine upload target: folder row or current directory.
+			var row = e.target.closest('tr[data-dir]');
+			var uploadPath = row ? row.getAttribute('data-dir') : basePath;
+
+			var pending = files.length;
+			var errors = [];
+
+			for (var i = 0; i < files.length; i++) {
+				var fd = new FormData();
+				fd.append('csrf_token', csrf);
+				fd.append('file', files[i]);
+				fetch('/apps/files' + uploadPath, {
+					method: 'POST',
+					body: fd,
+					redirect: 'manual'
+				}).then(function(resp) {
+					if (resp.status >= 400) {
+						errors.push('Upload failed: ' + resp.statusText);
+					}
+					pending--;
+					if (pending === 0) {
+						if (errors.length > 0) alert(errors.join('\n'));
+						window.location.reload();
+					}
+				}).catch(function(err) {
+					errors.push(err.message);
+					pending--;
+					if (pending === 0) {
+						if (errors.length > 0) alert(errors.join('\n'));
+						window.location.reload();
+					}
+				});
+			}
+		});
+	})();
+	</script>
 }
 
 templ filesBreadcrumbs(dirPath string) {
