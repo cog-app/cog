@@ -37,6 +37,7 @@ type Card struct {
 	PhonesJSON    string
 	AddressesJSON string
 	PhotoPath     string
+	IsStarred     bool
 	VCardData     string
 	Rev           string
 	CreatedAt     int64
@@ -52,7 +53,7 @@ type CardWithBook struct {
 }
 
 // cardColumns is the list of columns selected for card queries.
-const cardColumns = `id, address_book_id, uid, uri, etag, fn, email, tel, org, title, note, emails_json, phones_json, addresses_json, photo_path, vcard_data, rev, created_at, updated_at`
+const cardColumns = `id, address_book_id, uid, uri, etag, fn, email, tel, org, title, note, emails_json, phones_json, addresses_json, photo_path, is_starred, vcard_data, rev, created_at, updated_at`
 
 // --- Address Book CRUD ---
 
@@ -154,7 +155,7 @@ func GetCardByUID(db *sql.DB, bookID int64, uid string) (*Card, error) {
 		FROM cards WHERE address_book_id = ? AND uid = ?`, bookID, uid).
 		Scan(&c.ID, &c.AddressBookID, &c.UID, &c.URI, &c.ETag, &c.FN, &c.Email, &c.Tel,
 			&c.Org, &c.Title, &c.Note, &c.EmailsJSON, &c.PhonesJSON, &c.AddressesJSON,
-			&c.PhotoPath, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt)
+			&c.PhotoPath, &c.IsStarred, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +168,7 @@ func GetCardByURI(db *sql.DB, bookID int64, uri string) (*Card, error) {
 		FROM cards WHERE address_book_id = ? AND uri = ?`, bookID, uri).
 		Scan(&c.ID, &c.AddressBookID, &c.UID, &c.URI, &c.ETag, &c.FN, &c.Email, &c.Tel,
 			&c.Org, &c.Title, &c.Note, &c.EmailsJSON, &c.PhonesJSON, &c.AddressesJSON,
-			&c.PhotoPath, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt)
+			&c.PhotoPath, &c.IsStarred, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +181,7 @@ func GetCard(db *sql.DB, id int64) (*Card, error) {
 		FROM cards WHERE id = ?`, id).
 		Scan(&c.ID, &c.AddressBookID, &c.UID, &c.URI, &c.ETag, &c.FN, &c.Email, &c.Tel,
 			&c.Org, &c.Title, &c.Note, &c.EmailsJSON, &c.PhonesJSON, &c.AddressesJSON,
-			&c.PhotoPath, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt)
+			&c.PhotoPath, &c.IsStarred, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +268,7 @@ func DeleteCardByID(db *sql.DB, id int64) error {
 func AllCards(db *sql.DB, limit int) ([]CardWithBook, error) {
 	rows, err := db.Query(`SELECT c.id, c.address_book_id, c.uid, c.uri, c.etag, c.fn, c.email, c.tel,
 		c.org, c.title, c.note, c.emails_json, c.phones_json, c.addresses_json,
-		c.photo_path, c.vcard_data, c.rev, c.created_at, c.updated_at,
+		c.photo_path, c.is_starred, c.vcard_data, c.rev, c.created_at, c.updated_at,
 		b.name, b.color
 		FROM cards c JOIN address_books b ON c.address_book_id = b.id
 		ORDER BY c.fn LIMIT ?`, limit)
@@ -280,7 +281,7 @@ func AllCards(db *sql.DB, limit int) ([]CardWithBook, error) {
 		var cw CardWithBook
 		if err := rows.Scan(&cw.ID, &cw.AddressBookID, &cw.UID, &cw.URI, &cw.ETag, &cw.FN, &cw.Email, &cw.Tel,
 			&cw.Org, &cw.Title, &cw.Note, &cw.EmailsJSON, &cw.PhonesJSON, &cw.AddressesJSON,
-			&cw.PhotoPath, &cw.VCardData, &cw.Rev, &cw.CreatedAt, &cw.UpdatedAt,
+			&cw.PhotoPath, &cw.IsStarred, &cw.VCardData, &cw.Rev, &cw.CreatedAt, &cw.UpdatedAt,
 			&cw.BookName, &cw.BookColor); err != nil {
 			return nil, err
 		}
@@ -293,7 +294,7 @@ func AllCards(db *sql.DB, limit int) ([]CardWithBook, error) {
 func CardsByAddressBook(db *sql.DB, bookID int64, limit int) ([]CardWithBook, error) {
 	rows, err := db.Query(`SELECT c.id, c.address_book_id, c.uid, c.uri, c.etag, c.fn, c.email, c.tel,
 		c.org, c.title, c.note, c.emails_json, c.phones_json, c.addresses_json,
-		c.photo_path, c.vcard_data, c.rev, c.created_at, c.updated_at,
+		c.photo_path, c.is_starred, c.vcard_data, c.rev, c.created_at, c.updated_at,
 		b.name, b.color
 		FROM cards c JOIN address_books b ON c.address_book_id = b.id
 		WHERE c.address_book_id = ?
@@ -307,7 +308,7 @@ func CardsByAddressBook(db *sql.DB, bookID int64, limit int) ([]CardWithBook, er
 		var cw CardWithBook
 		if err := rows.Scan(&cw.ID, &cw.AddressBookID, &cw.UID, &cw.URI, &cw.ETag, &cw.FN, &cw.Email, &cw.Tel,
 			&cw.Org, &cw.Title, &cw.Note, &cw.EmailsJSON, &cw.PhonesJSON, &cw.AddressesJSON,
-			&cw.PhotoPath, &cw.VCardData, &cw.Rev, &cw.CreatedAt, &cw.UpdatedAt,
+			&cw.PhotoPath, &cw.IsStarred, &cw.VCardData, &cw.Rev, &cw.CreatedAt, &cw.UpdatedAt,
 			&cw.BookName, &cw.BookColor); err != nil {
 			return nil, err
 		}
@@ -335,13 +336,50 @@ func DeletedCardsSince(db *sql.DB, bookID, sinceToken int64) ([]string, error) {
 	return uids, rows.Err()
 }
 
+// StarredContacts returns starred contacts with address book info.
+func StarredContacts(db *sql.DB, limit int) ([]CardWithBook, error) {
+	rows, err := db.Query(`SELECT c.id, c.address_book_id, c.uid, c.uri, c.etag, c.fn, c.email, c.tel,
+		c.org, c.title, c.note, c.emails_json, c.phones_json, c.addresses_json,
+		c.photo_path, c.is_starred, c.vcard_data, c.rev, c.created_at, c.updated_at,
+		b.name, b.color
+		FROM cards c JOIN address_books b ON c.address_book_id = b.id
+		WHERE c.is_starred = 1
+		ORDER BY c.fn LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cards []CardWithBook
+	for rows.Next() {
+		var cw CardWithBook
+		if err := rows.Scan(&cw.ID, &cw.AddressBookID, &cw.UID, &cw.URI, &cw.ETag, &cw.FN, &cw.Email, &cw.Tel,
+			&cw.Org, &cw.Title, &cw.Note, &cw.EmailsJSON, &cw.PhonesJSON, &cw.AddressesJSON,
+			&cw.PhotoPath, &cw.IsStarred, &cw.VCardData, &cw.Rev, &cw.CreatedAt, &cw.UpdatedAt,
+			&cw.BookName, &cw.BookColor); err != nil {
+			return nil, err
+		}
+		cards = append(cards, cw)
+	}
+	return cards, rows.Err()
+}
+
+// SetStarred sets or clears the starred flag on a contact.
+func SetStarred(db *sql.DB, cardID int64, starred bool) error {
+	val := 0
+	if starred {
+		val = 1
+	}
+	_, err := db.Exec(`UPDATE cards SET is_starred = ? WHERE id = ?`, val, cardID)
+	return err
+}
+
 func scanCards(rows *sql.Rows) ([]Card, error) {
 	var cards []Card
 	for rows.Next() {
 		var c Card
 		if err := rows.Scan(&c.ID, &c.AddressBookID, &c.UID, &c.URI, &c.ETag, &c.FN, &c.Email, &c.Tel,
 			&c.Org, &c.Title, &c.Note, &c.EmailsJSON, &c.PhonesJSON, &c.AddressesJSON,
-			&c.PhotoPath, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt); err != nil {
+			&c.PhotoPath, &c.IsStarred, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, err
 		}
 		cards = append(cards, c)

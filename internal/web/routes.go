@@ -36,7 +36,7 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 
 	// --- Register plugins ---
 	// Dashboard and files plugins embed Protected and are auto-detected.
-	dashPlugin := &dashboard.Plugin{Registry: p.Plugins, Secret: p.CSRFSecret}
+	dashPlugin := &dashboard.Plugin{Registry: p.Plugins, Secret: p.CSRFSecret, Groups: p.Groups, Users: p.Users}
 	p.Plugins.Add(dashPlugin)
 	p.Plugins.Add(p.Files)
 

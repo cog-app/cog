@@ -7,11 +7,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
@@ -32,13 +35,41 @@ type Plugin struct {
 	plugin.Protected
 	Registry WidgetProvider
 	Secret   []byte
+	Groups   *group.Store
+	Users    *user.Store
 }
 
 func (p *Plugin) ID() string { return PluginID }
 
 func (p *Plugin) Register(registrar plugin.Registrar) error {
 	registrar.RegisterNavItem(plugin.NavItem{Label: "Dashboard", URL: "/"})
+	registrar.RegisterWidget(plugin.Widget{
+		Title:    "Your Groups",
+		Priority: 50,
+		Render:   p.renderWidget,
+	})
 	return nil
+}
+
+func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, username string) error {
+	if p.Groups == nil || p.Users == nil {
+		return nil
+	}
+	u, err := p.Users.GetByUsername(username)
+	if err != nil {
+		return nil
+	}
+	var groups []group.Group
+	for g, err := range p.Groups.ListGroupsForUser(u.ID) {
+		if err != nil {
+			break
+		}
+		groups = append(groups, g)
+		if len(groups) >= 5 {
+			break
+		}
+	}
+	return groupsWidget(groups).Render(ctx, w)
 }
 
 func (p *Plugin) Start(ctx context.Context) error { return nil }
@@ -138,7 +169,7 @@ func (p *Plugin) Handler() http.Handler {
 			widgets = ordered
 		}
 
-		dashboardPage(pd, apps, widgets, u.ID, layout.Columns).Render(r.Context(), w)
+		dashboardPage(pd, apps, widgets, u.Username, layout.Columns).Render(r.Context(), w)
 	})
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"html"
 	"io"
 	"net/http"
 	"strings"
@@ -114,23 +113,7 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) e
 		return nil
 	}
 	events, _ := UpcomingEvents(db, time.Now().Unix(), 5)
-	if len(events) == 0 {
-		_, _ = io.WriteString(w, `<p class="text-muted">No upcoming events.</p>`)
-		return nil
-	}
-	for _, ev := range events {
-		start := time.Unix(ev.DTStart, 0).UTC()
-		var t string
-		if ev.IsAllDay {
-			t = start.Format("Mon, Jan 2")
-		} else {
-			t = start.Format("Mon, Jan 2 15:04")
-		}
-		_, _ = fmt.Fprintf(w, `<div style="padding:0.4rem 0;border-bottom:1px solid var(--color-border)"><a href="/apps/calendar/?date=%s" style="font-weight:500">%s</a><div class="text-muted" style="font-size:0.85rem">%s</div></div>`,
-			start.Format("2006-01-02"),
-			html.EscapeString(ev.Summary), html.EscapeString(t))
-	}
-	return nil
+	return eventsWidget(events).Render(ctx, w)
 }
 
 // SharedCalendar describes a calendar shared to the current user from another user.

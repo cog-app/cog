@@ -10,6 +10,7 @@ import (
 templ contactsSidebar(books []AddressBook, activePath string) {
 	<nav class="sidebar">
 		<a href="/apps/contacts/" class={ sidebarClass(activePath, "/apps/contacts/") }>All Contacts</a>
+		<a href="/apps/contacts/starred" class={ sidebarClass(activePath, "/apps/contacts/starred") }>★ Starred</a>
 		<div class="sidebar-divider"></div>
 		<div style="padding:0.25rem 0.75rem;font-size:0.8rem;font-weight:600;text-transform:uppercase;color:var(--color-muted, #888)">Address Books</div>
 		for _, book := range books {
@@ -179,7 +180,9 @@ templ contactsIndexPage(pd ui.PageData, books []AddressBook, cards []CardWithBoo
 			})
 			.then(function(r) { return r.text(); })
 			.then(function(html) {
-				document.getElementById('contact-modal-body').innerHTML = html;
+				var el = document.getElementById('contact-modal-body');
+				el.innerHTML = html;
+				htmx.process(el);
 				document.getElementById('contact-modal').style.display = 'flex';
 			});
 		}
@@ -206,13 +209,109 @@ templ contactsIndexPage(pd ui.PageData, books []AddressBook, cards []CardWithBoo
 	}
 }
 
+templ contactsStarredPage(pd ui.PageData, books []AddressBook, cards []CardWithBook) {
+	@ui.Base(pd) {
+		<div class="sidebar-layout">
+			@contactsSidebar(books, "/apps/contacts/starred")
+			<div class="sidebar-content">
+				<h1>Starred Contacts</h1>
+				if len(cards) == 0 {
+					@ui.Card("") {
+						<p class="text-muted">No starred contacts. Open a contact and click the star to add them here.</p>
+					}
+				} else {
+					<div id="contacts-list">
+						<table class="table">
+							<thead>
+								<tr>
+									<th></th>
+									<th>Name</th>
+									<th>Email</th>
+									<th>Phone</th>
+									<th>Org</th>
+									<th>Book</th>
+								</tr>
+							</thead>
+							<tbody>
+								for _, c := range cards {
+									<tr id={ fmt.Sprintf("contact-%d", c.ID) } style="cursor:pointer"
+										onclick={ templ.ComponentScript{Call: fmt.Sprintf("showContactDetail(%d)", c.ID)} }>
+										<td>
+											if c.PhotoPath != "" {
+												<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover"/>
+											} else {
+												<span class="avatar-initials" style={ fmt.Sprintf("background:%s", c.BookColor) }>{ contactInitials(c.FN) }</span>
+											}
+										</td>
+										<td style="font-weight:500">{ c.FN }</td>
+										<td>{ c.Email }</td>
+										<td>{ c.Tel }</td>
+										<td>{ c.Org }</td>
+										<td>
+											<span style={ fmt.Sprintf("display:inline-block;width:8px;height:8px;border-radius:50%%;background:%s;vertical-align:middle;margin-right:4px", c.BookColor) }></span>
+											{ c.BookName }
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				}
+			</div>
+		</div>
+		<!-- Contact detail modal -->
+		<div id="contact-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+			<div class="modal-content" id="contact-modal-body"></div>
+		</div>
+		<style>
+			.modal-overlay {
+				position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+				background: rgba(0,0,0,0.5); z-index: 1000;
+				display: flex; align-items: center; justify-content: center;
+			}
+			.modal-content {
+				background: var(--color-bg, #fff); border-radius: 8px;
+				padding: 1.5rem; max-width: 500px; width: 90%;
+				max-height: 80vh; overflow-y: auto;
+				box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+			}
+			.avatar-initials {
+				display: inline-flex; align-items: center; justify-content: center;
+				width: 32px; height: 32px; border-radius: 50%;
+				color: #fff; font-weight: 600; font-size: 0.8rem;
+			}
+		</style>
+		<script>
+		function showContactDetail(id) {
+			fetch('/apps/contacts/contacts/' + id, {
+				headers: {'X-CSRF-Token': document.querySelector('[name=csrf_token]').value}
+			})
+			.then(function(r) { return r.text(); })
+			.then(function(html) {
+				var el = document.getElementById('contact-modal-body');
+				el.innerHTML = html;
+				htmx.process(el);
+				document.getElementById('contact-modal').style.display = 'flex';
+			});
+		}
+		</script>
+	}
+}
+
 templ contactDetailModal(pd ui.PageData, c *Card, book *AddressBook, books []AddressBook) {
 	if c.PhotoPath != "" {
 		<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:80px;height:80px;border-radius:50%;object-fit:cover;margin-bottom:0.75rem;display:block"/>
 	} else {
 		<span class="avatar-initials" style={ fmt.Sprintf("width:80px;height:80px;font-size:1.5rem;margin-bottom:0.75rem;display:inline-flex;background:%s", contactColor(c, book)) }>{ contactInitials(c.FN) }</span>
 	}
-	<h2 style="margin-top:0">{ c.FN }</h2>
+	<div class="flex items-center gap-1" style="margin-bottom:0.5rem">
+		<h2 style="margin:0">{ c.FN }</h2>
+		if c.IsStarred {
+			<button class="btn btn-outline btn-sm" hx-post={ fmt.Sprintf("/apps/contacts/contacts/%d/star", c.ID) } hx-swap="outerHTML" title="Toggle star">★</button>
+		} else {
+			<button class="btn btn-outline btn-sm" hx-post={ fmt.Sprintf("/apps/contacts/contacts/%d/star", c.ID) } hx-swap="outerHTML" title="Toggle star">☆</button>
+		}
+	</div>
 	<!-- Display all emails -->
 	for _, e := range ParseEmailsJSON(c.EmailsJSON) {
 		<p>

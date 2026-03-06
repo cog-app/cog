@@ -3,6 +3,8 @@
 // metadata layer for user files.
 package files
 
+//go:generate go tool templ generate -log-level warn
+
 import (
 	"context"
 	"crypto/rand"
@@ -58,6 +60,11 @@ func (p *Plugin) ID() string { return PluginID }
 
 func (p *Plugin) Register(registrar plugin.Registrar) error {
 	registrar.RegisterNavItem(plugin.NavItem{Label: "Files", URL: "/apps/files", Icon: "files"})
+	registrar.RegisterWidget(plugin.Widget{
+		Title:    "Recent Files",
+		Priority: 30,
+		Render:   p.renderWidget,
+	})
 	registrar.RegisterResource(plugin.ResourceDef{
 		Type:         "file",
 		Table:        "files",
@@ -98,6 +105,15 @@ func (p *Plugin) Register(registrar plugin.Registrar) error {
 		},
 	})
 	return nil
+}
+
+func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
+	db, err := p.DB(userID)
+	if err != nil {
+		return nil
+	}
+	files, _ := RecentFiles(db, 5)
+	return recentFilesWidget(files).Render(ctx, w)
 }
 
 func (p *Plugin) Start(ctx context.Context) error { return nil }
@@ -564,6 +580,47 @@ func generateETag() string {
 		return fmt.Sprintf("%x", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(b)
+}
+
+// RecentFiles returns the most recently modified non-directory files.
+func RecentFiles(db *sql.DB, limit int) ([]FileMeta, error) {
+	rows, err := db.Query(`
+		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir
+		FROM files WHERE is_dir = 0
+		ORDER BY mtime DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("recent files: %w", err)
+	}
+	defer rows.Close()
+
+	var files []FileMeta
+	for rows.Next() {
+		var f FileMeta
+		if err := rows.Scan(&f.ID, &f.Path, &f.ParentPath, &f.Name,
+			&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir); err != nil {
+			return nil, fmt.Errorf("scan file: %w", err)
+		}
+		files = append(files, f)
+	}
+	return files, rows.Err()
+}
+
+func formatSize(b int64) string {
+	const (
+		kb = 1024
+		mb = 1024 * kb
+		gb = 1024 * mb
+	)
+	switch {
+	case b >= gb:
+		return fmt.Sprintf("%.1f GB", float64(b)/float64(gb))
+	case b >= mb:
+		return fmt.Sprintf("%.1f MB", float64(b)/float64(mb))
+	case b >= kb:
+		return fmt.Sprintf("%.1f KB", float64(b)/float64(kb))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }
 
 // isTextMIME returns true for MIME types whose content should be indexed.

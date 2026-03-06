@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 
@@ -99,6 +100,11 @@ func (p *Plugin) ID() string { return PluginID }
 
 func (p *Plugin) Register(registrar cogplugin.Registrar) error {
 	registrar.RegisterNavItem(cogplugin.NavItem{Label: "Contacts", URL: "/apps/contacts", Icon: "contacts"})
+	registrar.RegisterWidget(cogplugin.Widget{
+		Title:    "Starred Contacts",
+		Priority: 40,
+		Render:   p.renderWidget,
+	})
 	registrar.RegisterSearchSource(cogplugin.SearchSourceDef{
 		PrimaryTable: "cards",
 		EnrichSQL:    "SELECT rowid, fn, email, tel FROM cards WHERE rowid IN (?)",
@@ -121,6 +127,7 @@ func (p *Plugin) Register(registrar cogplugin.Registrar) error {
 	// Web UI routes
 	pages := NewPages(p, p.secret, p.registry)
 	registrar.RegisterPage("{$}", http.HandlerFunc(pages.Index))
+	registrar.RegisterPage("starred", http.HandlerFunc(pages.Starred))
 	registrar.RegisterPage("settings", http.HandlerFunc(pages.Settings))
 	registrar.RegisterAPI("contacts/{id}", http.HandlerFunc(pages.ContactDetail))
 	registrar.RegisterAction("POST", "contacts/{id}", http.HandlerFunc(pages.UpdateContact))
@@ -131,11 +138,22 @@ func (p *Plugin) Register(registrar cogplugin.Registrar) error {
 	registrar.RegisterAction("POST", "books", http.HandlerFunc(pages.CreateAddressBookHandler))
 	registrar.RegisterAction("DELETE", "books/{id}", http.HandlerFunc(pages.DeleteAddressBookHandler))
 
+	registrar.RegisterAction("POST", "contacts/{id}/star", http.HandlerFunc(pages.ToggleStar))
+
 	// CardDAV endpoints
 	carddav := NewCardDAVHandler(p)
 	registrar.RegisterRoute("/remote.php/dav/addressbooks/", carddav)
 
 	return nil
+}
+
+func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
+	db, err := p.DB(userID)
+	if err != nil {
+		return nil
+	}
+	cards, _ := StarredContacts(db, 5)
+	return starredContactsWidget(cards).Render(ctx, w)
 }
 
 func (p *Plugin) Start(ctx context.Context) error { return nil }
@@ -155,6 +173,9 @@ func (p *Plugin) DB(username string) (*sql.DB, error) {
 	}
 	if err := migrateV3(db); err != nil {
 		return nil, fmt.Errorf("migrate v3 contacts db for %s: %w", username, err)
+	}
+	if err := migrateV4(db); err != nil {
+		return nil, fmt.Errorf("migrate v4 contacts db for %s: %w", username, err)
 	}
 	return db, nil
 }
@@ -230,6 +251,36 @@ func migrateV3(db *sql.DB) error {
 		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE cards ADD COLUMN photo_path TEXT NOT NULL DEFAULT ''`)
+	return err
+}
+
+func migrateV4(db *sql.DB) error {
+	var hasStarred bool
+	rows, err := db.Query(`PRAGMA table_info(cards)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "is_starred" {
+			hasStarred = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasStarred {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE cards ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0`)
 	return err
 }
 

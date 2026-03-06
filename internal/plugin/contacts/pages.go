@@ -120,6 +120,19 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	contactsIndexPage(pd, books, cards).Render(r.Context(), w)
 }
 
+// Starred shows starred contacts.
+func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
+	db, err := h.userDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	pd := h.pageData(r, "Starred Contacts")
+	books, _ := ListAddressBooks(db)
+	cards, _ := StarredContacts(db, 500)
+	contactsStarredPage(pd, books, cards).Render(r.Context(), w)
+}
+
 // Settings shows address book management.
 func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 	db, err := h.userDB(r)
@@ -504,6 +517,36 @@ func (h *Pages) ServePhoto(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	io.Copy(w, f)
+}
+
+// ToggleStar toggles the starred state of a contact and returns the updated star button HTML.
+func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	db, err := h.userDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	c, err := GetCard(db, id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	newStarred := !c.IsStarred
+	if err := SetStarred(db, id, newStarred); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Return updated star button HTML for HTMX swap.
+	icon := "☆"
+	if newStarred {
+		icon = "★"
+	}
+	fmt.Fprintf(w, `<button class="btn btn-outline btn-sm" hx-post="/apps/contacts/contacts/%d/star" hx-swap="outerHTML" title="Toggle star">%s</button>`, id, icon)
 }
 
 // parseTypedValues extracts paired type/value form arrays into a slice of TypedValue.
