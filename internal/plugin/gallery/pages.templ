@@ -431,6 +431,7 @@ templ settingsPage(pd ui.PageData, db *sql.DB, total int) {
 								<option value="pigo" selected?={ GetSetting(db, "recognition_backend", "none") == "pigo" }>Pigo (local face detection)</option>
 								<option value="ollama" selected?={ GetSetting(db, "recognition_backend", "none") == "ollama" }>Ollama</option>
 								<option value="openai" selected?={ GetSetting(db, "recognition_backend", "none") == "openai" }>OpenAI-compatible</option>
+								<option value="onnx" selected?={ GetSetting(db, "recognition_backend", "none") == "onnx" }>ONNX (local)</option>
 							</select>
 						</div>
 						<div class="form-group" style="margin-bottom:0.75rem">
@@ -450,6 +451,20 @@ templ settingsPage(pd ui.PageData, db *sql.DB, total int) {
 							<input type="text" name="recognition_model" class="input"
 								value={ GetSetting(db, "recognition_model", "") }
 								placeholder="llava:13b"/>
+						</div>
+						<div class="form-group" style="margin-bottom:0.75rem">
+							<label>ONNX Runtime Library Path</label>
+							<input type="text" name="onnx_library_path" class="input"
+								value={ GetSetting(db, "onnx_library_path", "") }
+								placeholder="/usr/lib/libonnxruntime.so"/>
+							<small class="text-muted">Required for ONNX backend. Leave blank to auto-detect.</small>
+						</div>
+						<div class="form-group" style="margin-bottom:0.75rem">
+							<label>ONNX Models Directory</label>
+							<input type="text" name="onnx_models_dir" class="input"
+								value={ GetSetting(db, "onnx_models_dir", "") }
+								placeholder="(auto: data dir)"/>
+							<small class="text-muted">Where to store ONNX model files. Leave blank for default.</small>
 						</div>
 						<button type="submit" class="btn btn-primary btn-sm">Save</button>
 					</form>

@@ -453,6 +453,8 @@ func (h *Pages) SaveRecognitionSettings(w http.ResponseWriter, r *http.Request) 
 	SetSetting(db, "recognition_url", r.FormValue("recognition_url"))
 	SetSetting(db, "recognition_api_key", r.FormValue("recognition_api_key"))
 	SetSetting(db, "recognition_model", r.FormValue("recognition_model"))
+	SetSetting(db, "onnx_library_path", r.FormValue("onnx_library_path"))
+	SetSetting(db, "onnx_models_dir", r.FormValue("onnx_models_dir"))
 	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
 }
 

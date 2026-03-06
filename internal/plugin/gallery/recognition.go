@@ -62,6 +62,18 @@ func (p *Plugin) getRecognitionBackend(db *sql.DB) RecognitionBackend {
 		}
 	case "pigo":
 		return &PigoBackend{}
+	case "onnx":
+		modelsDir := GetSetting(db, "onnx_models_dir", "")
+		if modelsDir == "" {
+			modelsDir = p.dataDir + "/onnx_models"
+		}
+		b := &OnnxBackend{
+			ModelsDir:   modelsDir,
+			LibraryPath: GetSetting(db, "onnx_library_path", ""),
+		}
+		if b.Available() {
+			return b
+		}
 	}
 
 	return nil
