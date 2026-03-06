@@ -76,6 +76,12 @@ func (h *FilesHandler) ServeGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ?pdfpreview=1 → serve office document converted to PDF.
+	if r.URL.Query().Get("pdfpreview") == "1" {
+		h.serveDocumentPreview(w, r, u.Username, fp, meta)
+		return
+	}
+
 	// File → view page.
 	pd := pageDataWithNav(r, meta.Name, h.p.CSRFSecret, h.p.Plugins)
 	kind := fileViewKind(meta.MimeType)
@@ -152,6 +158,20 @@ func (h *FilesHandler) servePreview(w http.ResponseWriter, r *http.Request, user
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.Header().Set("ETag", `"`+meta.ETag+`"`)
 	io.Copy(w, f)
+}
+
+func (h *FilesHandler) serveDocumentPreview(w http.ResponseWriter, r *http.Request, username, fp string, meta *files.FileMeta) {
+	f, err := h.p.Files.PreviewPDF(username, fp)
+	if err != nil {
+		http.Error(w, "preview unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("ETag", `"`+meta.ETag+`"`)
+	http.ServeContent(w, r, meta.Name+".pdf", time.Unix(meta.MTime, 0), f)
 }
 
 func (h *FilesHandler) readText(username, fp string) (string, error) {
@@ -291,6 +311,9 @@ func fileViewKind(mimeType string) string {
 	}
 	if mimeType == "application/pdf" {
 		return "pdf"
+	}
+	if files.IsOfficeDocument(mimeType) && files.LibreOfficeAvailable() {
+		return "office"
 	}
 	return "binary"
 }

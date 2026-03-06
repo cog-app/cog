@@ -373,6 +373,12 @@ templ fileViewPage(pd ui.PageData, filePath string, meta *files.FileMeta, kind s
 					style="width:100%;height:80vh;border:1px solid var(--color-border)"
 				></iframe>
 			}
+			if kind == "office" {
+				<iframe
+					src={ "/apps/files" + filePath + "?pdfpreview=1" }
+					style="width:100%;height:80vh;border:1px solid var(--color-border)"
+				></iframe>
+			}
 			if kind == "binary" {
 				<p class="text-muted">
 					{ fmt.Sprintf("No preview available for %s.", meta.MimeType) }
