@@ -1,0 +1,311 @@
+package notes
+
+import (
+	"fmt"
+	"strconv"
+	"time"
+
+	"git.duckfam.us/jj-software/cog/ui"
+)
+
+templ notesSidebar(sb sidebarData) {
+	<nav class="sidebar" id="notes-sidebar">
+		<a href="/apps/notes/" class={ sidebarClass(sb.ActivePath, "/apps/notes/") }>
+			All Notes
+			if sb.NoteCount > 0 {
+				<span class="badge">{ strconv.Itoa(sb.NoteCount) }</span>
+			}
+		</a>
+		<a href="/apps/notes/starred" class={ sidebarClass(sb.ActivePath, "/apps/notes/starred") }>
+			Starred
+			if sb.StarredCount > 0 {
+				<span class="badge">{ strconv.Itoa(sb.StarredCount) }</span>
+			}
+		</a>
+		if len(sb.Categories) > 0 {
+			<div class="sidebar-divider"></div>
+			for _, cat := range sb.Categories {
+				<a href={ templ.SafeURL("/apps/notes/category/" + cat) }
+					class={ sidebarClass(sb.ActivePath, "/apps/notes/category/" + cat) }
+					style="padding-left:1.5rem;font-size:0.9rem">
+					{ cat }
+				</a>
+			}
+		}
+		<div class="sidebar-divider"></div>
+		<a href="/apps/notes/new" class={ sidebarClass(sb.ActivePath, "/apps/notes/new") }>
+			+ New Note
+		</a>
+	</nav>
+}
+
+templ notesIndexPage(pd ui.PageData, sb sidebarData, notes []Note, csrfToken string) {
+	@ui.Base(pd) {
+		<div class="sidebar-layout">
+			@notesSidebar(sb)
+			<div class="sidebar-content">
+				<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+					<h1 style="margin:0">All Notes</h1>
+					<a href="/apps/notes/new" class="btn btn-primary btn-sm">New Note</a>
+				</div>
+				if len(notes) == 0 {
+					@ui.Card("") {
+						<p class="text-muted">No notes yet. Create your first note!</p>
+					}
+				} else {
+					@noteList(notes, csrfToken)
+				}
+			</div>
+		</div>
+	}
+}
+
+templ notesCategoryPage(pd ui.PageData, sb sidebarData, category string, notes []Note, csrfToken string) {
+	@ui.Base(pd) {
+		<div class="sidebar-layout">
+			@notesSidebar(sb)
+			<div class="sidebar-content">
+				<h1>{ category }</h1>
+				if len(notes) == 0 {
+					@ui.Card("") {
+						<p class="text-muted">No notes in this category.</p>
+					}
+				} else {
+					@noteList(notes, csrfToken)
+				}
+			</div>
+		</div>
+	}
+}
+
+templ notesStarredPage(pd ui.PageData, sb sidebarData, notes []Note, csrfToken string) {
+	@ui.Base(pd) {
+		<div class="sidebar-layout">
+			@notesSidebar(sb)
+			<div class="sidebar-content">
+				<h1>Starred Notes</h1>
+				if len(notes) == 0 {
+					@ui.Card("") {
+						<p class="text-muted">No starred notes.</p>
+					}
+				} else {
+					@noteList(notes, csrfToken)
+				}
+			</div>
+		</div>
+	}
+}
+
+templ noteViewPage(pd ui.PageData, sb sidebarData, note *Note, renderedHTML string, csrfToken string, extras viewExtras) {
+	@ui.Base(pd) {
+		if extras.NeedsKaTeX {
+			<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"/>
+			<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+			<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+		}
+		if extras.NeedsMermaid {
+			<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+		}
+		<div class="sidebar-layout">
+			@notesSidebar(sb)
+			<div class="sidebar-content">
+				<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+					<h1 style="margin:0">{ note.Title() }</h1>
+					<div class="flex gap-1">
+						<a href={ templ.SafeURL(fmt.Sprintf("/apps/notes/note/%d/edit", note.ID)) } class="btn btn-outline btn-sm">Edit</a>
+						<button
+							class="btn btn-danger btn-sm"
+							hx-delete={ fmt.Sprintf("/apps/notes/notes/%d", note.ID) }
+							hx-confirm="Delete this note?"
+							hx-target="closest .sidebar-layout"
+							hx-swap="innerHTML"
+						>Delete</button>
+					</div>
+				</div>
+				if note.Category != "" {
+					<div class="mb-2">
+						<a href={ templ.SafeURL("/apps/notes/category/" + note.Category) } class="badge">{ note.Category }</a>
+					</div>
+				}
+				<div class="text-muted mb-2" style="font-size:0.85rem">
+					Last modified: { formatTime(note.Modified) }
+				</div>
+				@ui.Card("") {
+					<div class="note-content">
+						@templ.Raw(renderedHTML)
+					</div>
+				}
+			</div>
+		</div>
+		if extras.NeedsKaTeX {
+			<script>
+				renderMathInElement(document.querySelector('.note-content'), {
+					delimiters: [
+						{left: '$$', right: '$$', display: true},
+						{left: '$', right: '$', display: false}
+					],
+					throwOnError: false
+				});
+			</script>
+		}
+		if extras.NeedsMermaid {
+			<script>mermaid.initialize({startOnLoad: true, theme: 'default'});</script>
+		}
+	}
+}
+
+templ noteEditPage(pd ui.PageData, sb sidebarData, note *Note, content string, categories []string, csrfToken string) {
+	@ui.Base(pd) {
+		<div class="sidebar-layout">
+			@notesSidebar(sb)
+			<div class="sidebar-content">
+				<h1>Edit: { note.Title() }</h1>
+				@ui.Card("") {
+					<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/notes/notes/%d", note.ID)) }>
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<input type="hidden" name="etag" value={ note.ETag }/>
+						<div class="form-group">
+							<label for="title">Title</label>
+							<input class="form-control" type="text" id="title" name="title" value={ note.Title() } required/>
+						</div>
+						<div class="form-group">
+							<label for="category">Category</label>
+							<input class="form-control" type="text" id="category" name="category" value={ note.Category }
+								list="categories" placeholder="e.g. recipes"/>
+							<datalist id="categories">
+								for _, cat := range categories {
+									<option value={ cat }/>
+								}
+							</datalist>
+						</div>
+						<div class="form-group">
+							<label for="content">Content (Markdown)</label>
+							<textarea class="form-control" id="content" name="content" rows="20"
+								style="font-family:monospace;white-space:pre-wrap">{ content }</textarea>
+						</div>
+						<div class="flex gap-1">
+							<button class="btn btn-primary" type="submit">Save</button>
+							<a href={ templ.SafeURL(fmt.Sprintf("/apps/notes/note/%d", note.ID)) } class="btn btn-outline">Cancel</a>
+						</div>
+					</form>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ noteNewPage(pd ui.PageData, sb sidebarData, categories []string, csrfToken string) {
+	@ui.Base(pd) {
+		<div class="sidebar-layout">
+			@notesSidebar(sb)
+			<div class="sidebar-content">
+				<h1>New Note</h1>
+				@ui.Card("") {
+					<form method="post" action="/apps/notes/notes">
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<div class="form-group">
+							<label for="title">Title</label>
+							<input class="form-control" type="text" id="title" name="title" placeholder="My Note" required/>
+						</div>
+						<div class="form-group">
+							<label for="category">Category</label>
+							<input class="form-control" type="text" id="category" name="category"
+								list="categories" placeholder="e.g. recipes"/>
+							<datalist id="categories">
+								for _, cat := range categories {
+									<option value={ cat }/>
+								}
+							</datalist>
+						</div>
+						<div class="form-group">
+							<label for="content">Content (Markdown)</label>
+							<textarea class="form-control" id="content" name="content" rows="20"
+								style="font-family:monospace;white-space:pre-wrap" placeholder="# Hello World"></textarea>
+						</div>
+						<div class="flex gap-1">
+							<button class="btn btn-primary" type="submit">Create</button>
+							<a href="/apps/notes/" class="btn btn-outline">Cancel</a>
+						</div>
+					</form>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ noteList(notes []Note, csrfToken string) {
+	<div id="note-list">
+		for _, note := range notes {
+			@noteRow(&note, csrfToken)
+		}
+	</div>
+}
+
+templ noteRow(note *Note, csrfToken string) {
+	<div id={ fmt.Sprintf("note-%d", note.ID) } style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0);display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
+		<div style="min-width:0;flex:1">
+			<div class="flex items-center gap-1" style="flex-wrap:wrap">
+				<a href={ templ.SafeURL(fmt.Sprintf("/apps/notes/note/%d", note.ID)) } style="font-weight:500">
+					{ note.Title() }
+				</a>
+				if note.Category != "" {
+					<span class="badge" style="font-size:0.75rem">{ note.Category }</span>
+				}
+			</div>
+			<div class="text-muted" style="font-size:0.85rem">
+				{ formatTime(note.Modified) }
+			</div>
+		</div>
+		<div class="flex gap-1" style="flex-shrink:0">
+			<button
+				class={ starBtnClass(note.Favorite) }
+				hx-post={ fmt.Sprintf("/apps/notes/notes/%d/star", note.ID) }
+				hx-target={ fmt.Sprintf("#note-%d", note.ID) }
+				hx-swap="outerHTML"
+				title="Toggle star"
+			>
+				if note.Favorite {
+					&#9733;
+				} else {
+					&#9734;
+				}
+			</button>
+			<button
+				class="btn btn-danger btn-sm"
+				hx-delete={ fmt.Sprintf("/apps/notes/notes/%d", note.ID) }
+				hx-target={ fmt.Sprintf("#note-%d", note.ID) }
+				hx-swap="outerHTML"
+				hx-confirm="Delete this note?"
+			>&#10005;</button>
+		</div>
+	</div>
+}
+
+func sidebarClass(activePath, itemPath string) string {
+	if activePath == itemPath {
+		return "sidebar-item active"
+	}
+	return "sidebar-item"
+}
+
+func starBtnClass(isFavorite bool) string {
+	if isFavorite {
+		return "btn btn-sm"
+	}
+	return "btn btn-outline btn-sm"
+}
+
+func formatTime(unix int64) string {
+	if unix == 0 {
+		return ""
+	}
+	t := time.Unix(unix, 0)
+	now := time.Now()
+	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
+		return t.Format("15:04")
+	}
+	if t.Year() == now.Year() {
+		return t.Format("Jan 2")
+	}
+	return t.Format("2006-01-02")
+}

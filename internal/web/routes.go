@@ -10,6 +10,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/plugin/contacts"
 	"git.duckfam.us/jj-software/cog/internal/plugin/dashboard"
 	"git.duckfam.us/jj-software/cog/internal/plugin/files"
+	"git.duckfam.us/jj-software/cog/internal/plugin/notes"
 	"git.duckfam.us/jj-software/cog/internal/plugin/rss"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/plugin"
@@ -44,6 +45,7 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	p.Plugins.Add(rss.New(p.Plugins, p.Config.DataDir, p.CSRFSecret))
 	p.Plugins.Add(calendar.New(p.Plugins, p.Shares, p.Email, p.CSRFSecret))
 	p.Plugins.Add(contacts.New(p.Plugins, p.Config.DataDir, p.Shares, p.Users, p.CSRFSecret))
+	p.Plugins.Add(notes.New(p.Plugins, p.CSRFSecret))
 
 	// Extra plugins from custom builds.
 	for _, ep := range extraPlugins {
