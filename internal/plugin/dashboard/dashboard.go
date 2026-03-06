@@ -6,6 +6,7 @@ package dashboard
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,8 +16,12 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 )
+
+//go:embed sql/schema.sql
+var sqlFS embed.FS
 
 const PluginID = "dashboard"
 
@@ -84,7 +89,7 @@ func (p *Plugin) DB(username string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := migrateLayout(db); err != nil {
+	if err := cogplugin.Migrate(db, sqlFS); err != nil {
 		return nil, fmt.Errorf("migrate dashboard db for %s: %w", username, err)
 	}
 	return db, nil

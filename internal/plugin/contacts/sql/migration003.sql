@@ -1,0 +1,2 @@
+-- IF COLUMN cards.is_starred NOT EXIST
+ALTER TABLE cards ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0;

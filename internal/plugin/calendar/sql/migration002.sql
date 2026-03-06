@@ -1,0 +1,2 @@
+-- IF COLUMN events.color NOT EXIST
+ALTER TABLE events ADD COLUMN color TEXT NOT NULL DEFAULT '';

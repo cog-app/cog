@@ -3,6 +3,7 @@ package contacts
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"fmt"
 	"io"
 	"log"
@@ -15,6 +16,10 @@ import (
 )
 
 //go:generate go tool templ generate -log-level warn
+//go:generate go tool migratesql .
+
+//go:embed sql/schema.sql sql/migration*.sql
+var sqlFS embed.FS
 
 const PluginID = "contacts"
 
@@ -165,166 +170,8 @@ func (p *Plugin) DB(username string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := migrate(db); err != nil {
+	if err := cogplugin.Migrate(db, sqlFS); err != nil {
 		return nil, fmt.Errorf("migrate contacts db for %s: %w", username, err)
 	}
-	if err := migrateV2(db); err != nil {
-		return nil, fmt.Errorf("migrate v2 contacts db for %s: %w", username, err)
-	}
-	if err := migrateV3(db); err != nil {
-		return nil, fmt.Errorf("migrate v3 contacts db for %s: %w", username, err)
-	}
-	if err := migrateV4(db); err != nil {
-		return nil, fmt.Errorf("migrate v4 contacts db for %s: %w", username, err)
-	}
 	return db, nil
-}
-
-func migrateV2(db *sql.DB) error {
-	// Check if org column exists already.
-	var hasOrg bool
-	rows, err := db.Query(`PRAGMA table_info(cards)`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, typ string
-		var notnull int
-		var dflt sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
-			return err
-		}
-		if name == "org" {
-			hasOrg = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if hasOrg {
-		return nil
-	}
-
-	stmts := []string{
-		`ALTER TABLE cards ADD COLUMN org TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE cards ADD COLUMN title TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE cards ADD COLUMN note TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE cards ADD COLUMN emails_json TEXT NOT NULL DEFAULT '[]'`,
-		`ALTER TABLE cards ADD COLUMN phones_json TEXT NOT NULL DEFAULT '[]'`,
-		`ALTER TABLE cards ADD COLUMN addresses_json TEXT NOT NULL DEFAULT '[]'`,
-	}
-	for _, s := range stmts {
-		if _, err := db.Exec(s); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func migrateV3(db *sql.DB) error {
-	var hasPhoto bool
-	rows, err := db.Query(`PRAGMA table_info(cards)`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, typ string
-		var notnull int
-		var dflt sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
-			return err
-		}
-		if name == "photo_path" {
-			hasPhoto = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if hasPhoto {
-		return nil
-	}
-	_, err = db.Exec(`ALTER TABLE cards ADD COLUMN photo_path TEXT NOT NULL DEFAULT ''`)
-	return err
-}
-
-func migrateV4(db *sql.DB) error {
-	var hasStarred bool
-	rows, err := db.Query(`PRAGMA table_info(cards)`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, typ string
-		var notnull int
-		var dflt sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
-			return err
-		}
-		if name == "is_starred" {
-			hasStarred = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if hasStarred {
-		return nil
-	}
-	_, err = db.Exec(`ALTER TABLE cards ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0`)
-	return err
-}
-
-func migrate(db *sql.DB) error {
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS address_books (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			uid TEXT NOT NULL UNIQUE,
-			name TEXT NOT NULL DEFAULT 'Contacts',
-			description TEXT NOT NULL DEFAULT '',
-			color TEXT NOT NULL DEFAULT '#0082c9',
-			sort_order INTEGER NOT NULL DEFAULT 0,
-			sync_token INTEGER NOT NULL DEFAULT 0,
-			ctag INTEGER NOT NULL DEFAULT 1,
-			created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-			updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-		);
-
-		CREATE TABLE IF NOT EXISTS cards (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			address_book_id INTEGER NOT NULL REFERENCES address_books(id) ON DELETE CASCADE,
-			uid TEXT NOT NULL,
-			uri TEXT NOT NULL,
-			etag TEXT NOT NULL,
-			fn TEXT NOT NULL DEFAULT '',
-			email TEXT NOT NULL DEFAULT '',
-			tel TEXT NOT NULL DEFAULT '',
-			vcard_data TEXT NOT NULL,
-			rev TEXT NOT NULL DEFAULT '',
-			created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-			updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-			UNIQUE(address_book_id, uid)
-		);
-
-		CREATE INDEX IF NOT EXISTS idx_cards_book ON cards(address_book_id);
-		CREATE INDEX IF NOT EXISTS idx_cards_uid ON cards(uid);
-		CREATE INDEX IF NOT EXISTS idx_cards_uri ON cards(uri);
-
-		CREATE TABLE IF NOT EXISTS deleted_cards (
-			address_book_id INTEGER NOT NULL,
-			uid TEXT NOT NULL,
-			deleted_at_token INTEGER NOT NULL
-		);
-		CREATE INDEX IF NOT EXISTS idx_deleted_cards_book ON deleted_cards(address_book_id, deleted_at_token);
-	`)
-	return err
 }

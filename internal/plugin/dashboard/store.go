@@ -11,17 +11,6 @@ type Layout struct {
 	WidgetOrder []string `json:"widget_order"`
 }
 
-func migrateLayout(db *sql.DB) error {
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS layout (
-			id INTEGER PRIMARY KEY CHECK (id = 1),
-			columns INTEGER NOT NULL DEFAULT 2,
-			widget_order TEXT NOT NULL DEFAULT '[]'
-		)
-	`)
-	return err
-}
-
 // GetLayout returns the user's saved layout, or a default if none exists.
 func GetLayout(db *sql.DB) (*Layout, error) {
 	var l Layout

@@ -3,6 +3,7 @@ package calendar
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,9 +13,14 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/email"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/share"
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 )
 
 //go:generate go tool templ generate -log-level warn
+//go:generate go tool migratesql .
+
+//go:embed sql/schema.sql sql/migration*.sql
+var sqlFS embed.FS
 
 const PluginID = "calendar"
 
@@ -179,165 +185,10 @@ func (p *Plugin) DB(username string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := migrate(db); err != nil {
+	if err := cogplugin.Migrate(db, sqlFS); err != nil {
 		return nil, fmt.Errorf("migrate calendar db for %s: %w", username, err)
 	}
-	if err := migrateV2(db); err != nil {
-		return nil, fmt.Errorf("migrate v2 calendar db for %s: %w", username, err)
-	}
-	if err := migrateV3(db); err != nil {
-		return nil, fmt.Errorf("migrate v3 calendar db for %s: %w", username, err)
-	}
-	if err := migrateV4(db); err != nil {
-		return nil, fmt.Errorf("migrate v4 calendar db for %s: %w", username, err)
-	}
-	if err := migrateV5(db); err != nil {
-		return nil, fmt.Errorf("migrate v5 calendar db for %s: %w", username, err)
-	}
 	return db, nil
-}
-
-func migrate(db *sql.DB) error {
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS calendars (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			uid TEXT NOT NULL UNIQUE,
-			name TEXT NOT NULL DEFAULT 'Personal',
-			color TEXT NOT NULL DEFAULT '#0082c9',
-			description TEXT NOT NULL DEFAULT '',
-			sort_order INTEGER NOT NULL DEFAULT 0,
-			ctag INTEGER NOT NULL DEFAULT 1,
-			created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-			updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-		);
-
-		CREATE TABLE IF NOT EXISTS events (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			calendar_id INTEGER NOT NULL REFERENCES calendars(id) ON DELETE CASCADE,
-			uid TEXT NOT NULL,
-			etag TEXT NOT NULL,
-			summary TEXT NOT NULL DEFAULT '',
-			location TEXT NOT NULL DEFAULT '',
-			description TEXT NOT NULL DEFAULT '',
-			dtstart INTEGER NOT NULL DEFAULT 0,
-			dtend INTEGER NOT NULL DEFAULT 0,
-			is_all_day INTEGER NOT NULL DEFAULT 0,
-			ics_data TEXT NOT NULL,
-			created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-			updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-			UNIQUE(calendar_id, uid)
-		);
-
-		CREATE INDEX IF NOT EXISTS idx_events_calendar ON events(calendar_id);
-		CREATE INDEX IF NOT EXISTS idx_events_dtstart ON events(dtstart);
-		CREATE INDEX IF NOT EXISTS idx_events_cal_start ON events(calendar_id, dtstart);
-	`)
-	return err
-}
-
-func migrateV2(db *sql.DB) error {
-	// Check if sync_token column exists.
-	var hasSyncToken bool
-	rows, err := db.Query(`PRAGMA table_info(calendars)`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, typ string
-		var notnull int
-		var dflt sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
-			return err
-		}
-		if name == "sync_token" {
-			hasSyncToken = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	if !hasSyncToken {
-		if _, err := db.Exec(`ALTER TABLE calendars ADD COLUMN sync_token INTEGER NOT NULL DEFAULT 0`); err != nil {
-			return err
-		}
-	}
-
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS deleted_events (
-			calendar_id INTEGER NOT NULL,
-			uid TEXT NOT NULL,
-			deleted_at_token INTEGER NOT NULL
-		);
-		CREATE INDEX IF NOT EXISTS idx_deleted_events_cal ON deleted_events(calendar_id, deleted_at_token);
-	`)
-	return err
-}
-
-func migrateV3(db *sql.DB) error {
-	// Add color column to events table.
-	var hasColor bool
-	rows, err := db.Query(`PRAGMA table_info(events)`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, typ string
-		var notnull int
-		var dflt sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
-			return err
-		}
-		if name == "color" {
-			hasColor = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if hasColor {
-		return nil
-	}
-	_, err = db.Exec(`ALTER TABLE events ADD COLUMN color TEXT NOT NULL DEFAULT ''`)
-	return err
-}
-
-func migrateV4(db *sql.DB) error {
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS event_attendees (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-			email TEXT NOT NULL,
-			cog_user TEXT NOT NULL DEFAULT '',
-			display_name TEXT NOT NULL DEFAULT '',
-			status TEXT NOT NULL DEFAULT 'NEEDS-ACTION',
-			role TEXT NOT NULL DEFAULT 'REQ-PARTICIPANT',
-			created_at INTEGER NOT NULL DEFAULT (unixepoch())
-		);
-		CREATE INDEX IF NOT EXISTS idx_attendees_event ON event_attendees(event_id);
-		CREATE INDEX IF NOT EXISTS idx_attendees_user ON event_attendees(cog_user);
-	`)
-	return err
-}
-
-func migrateV5(db *sql.DB) error {
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS notifications (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-			trigger_at INTEGER NOT NULL,
-			fired INTEGER NOT NULL DEFAULT 0,
-			created_at INTEGER NOT NULL DEFAULT (unixepoch())
-		);
-		CREATE INDEX IF NOT EXISTS idx_notifications_fire ON notifications(fired, trigger_at);
-	`)
-	return err
 }
 
 // Notification represents a pending or fired reminder notification.

@@ -1,0 +1,15 @@
+CREATE TABLE IF NOT EXISTS files (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	path TEXT NOT NULL,
+	parent_path TEXT NOT NULL,
+	name TEXT NOT NULL,
+	size INTEGER NOT NULL DEFAULT 0,
+	mtime INTEGER NOT NULL,
+	mime_type TEXT NOT NULL DEFAULT '',
+	etag TEXT NOT NULL,
+	is_dir INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
+CREATE INDEX IF NOT EXISTS idx_files_parent ON files(parent_path);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_files_path_unique ON files(path);

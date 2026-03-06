@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS layout (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	columns INTEGER NOT NULL DEFAULT 2,
+	widget_order TEXT NOT NULL DEFAULT '[]'
+);

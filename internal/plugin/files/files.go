@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"embed"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -21,7 +22,11 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 )
+
+//go:embed sql/schema.sql
+var sqlFS embed.FS
 
 const PluginID = "files"
 
@@ -125,30 +130,10 @@ func (p *Plugin) DB(username string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := migrate(db); err != nil {
+	if err := cogplugin.Migrate(db, sqlFS); err != nil {
 		return nil, fmt.Errorf("migrate files db for %s: %w", username, err)
 	}
 	return db, nil
-}
-
-func migrate(db *sql.DB) error {
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS files (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			path TEXT NOT NULL,
-			parent_path TEXT NOT NULL,
-			name TEXT NOT NULL,
-			size INTEGER NOT NULL DEFAULT 0,
-			mtime INTEGER NOT NULL,
-			mime_type TEXT NOT NULL DEFAULT '',
-			etag TEXT NOT NULL,
-			is_dir INTEGER NOT NULL DEFAULT 0
-		);
-		CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
-		CREATE INDEX IF NOT EXISTS idx_files_parent ON files(parent_path);
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_files_path_unique ON files(path);
-	`)
-	return err
 }
 
 // EnsureRootDir creates the root directory metadata entry if it doesn't exist.
