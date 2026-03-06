@@ -32,12 +32,13 @@ type dbProvider interface {
 
 // Plugin is the gallery plugin.
 type Plugin struct {
-	registry dbProvider
-	files    *files.Plugin
-	secret   []byte
-	dataDir  string
-	cancel   context.CancelFunc
-	done     chan struct{}
+	registry  dbProvider
+	files     *files.Plugin
+	secret    []byte
+	dataDir   string
+	geocoder  *Geocoder
+	cancel    context.CancelFunc
+	done      chan struct{}
 }
 
 // New creates a new Gallery plugin instance.
@@ -47,6 +48,7 @@ func New(registry dbProvider, files *files.Plugin, dataDir string, secret []byte
 		files:    files,
 		dataDir:  dataDir,
 		secret:   secret,
+		geocoder: NewDefaultGeocoder(),
 	}
 }
 
@@ -61,10 +63,11 @@ func (p *Plugin) Register(registrar plugin.Registrar) error {
 	})
 	registrar.RegisterSearchSource(plugin.SearchSourceDef{
 		PrimaryTable: "media",
-		EnrichSQL:    "SELECT rowid, file_path, place_name, camera_model FROM media WHERE rowid IN (?)",
+		EnrichSQL:    "SELECT rowid, file_path, place_name, camera_model, ocr_text FROM media WHERE rowid IN (?)",
 		Fields: []plugin.SearchField{
 			{Column: "file_path", Field: "name"},
 			{Column: "place_name", Field: "subtext"},
+			{Column: "ocr_text", Field: "content"},
 		},
 	})
 
@@ -91,6 +94,10 @@ func (p *Plugin) Register(registrar plugin.Registrar) error {
 	registrar.RegisterAction("POST", "people/{id}/merge", http.HandlerFunc(pages.MergePeople))
 	registrar.RegisterAction("POST", "people/{id}/hide", http.HandlerFunc(pages.HidePerson))
 	registrar.RegisterAction("POST", "settings/scan", http.HandlerFunc(pages.TriggerScan))
+	registrar.RegisterAction("POST", "settings/recognition", http.HandlerFunc(pages.SaveRecognitionSettings))
+	registrar.RegisterAction("POST", "rename/preview", http.HandlerFunc(pages.RenamePreview))
+	registrar.RegisterAction("POST", "rename/apply", http.HandlerFunc(pages.RenameApply))
+	registrar.RegisterAction("POST", "rename/undo", http.HandlerFunc(pages.RenameUndo))
 
 	// Memories API compatibility
 	memoriesAPI := NewMemoriesAPI(p)

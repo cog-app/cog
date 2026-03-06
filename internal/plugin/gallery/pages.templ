@@ -276,6 +276,11 @@ templ photoViewPage(pd ui.PageData, m *Media, tags []Tag) {
 								</div>
 							}
 						}
+						if strings.TrimSpace(m.OCRText) != "" {
+							@ui.Card("Text (OCR)") {
+								<pre style="white-space:pre-wrap;font-size:0.85rem;margin:0">{ strings.TrimSpace(m.OCRText) }</pre>
+							}
+						}
 					</div>
 				</div>
 			</div>
@@ -403,6 +408,115 @@ templ settingsPage(pd ui.PageData, db *sql.DB, total int) {
 					<form method="post" action="/apps/gallery/settings/scan">
 						<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 						<button type="submit" class="btn btn-primary btn-sm">Scan Now</button>
+					</form>
+				}
+				@ui.Card("Image Recognition") {
+					<form method="post" action="/apps/gallery/settings/recognition">
+						<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+						<div class="form-group" style="margin-bottom:0.75rem">
+							<label>
+								<input
+									type="checkbox"
+									name="recognition_enabled"
+									value="true"
+									checked?={ GetSetting(db, "recognition_enabled", "false") == "true" }
+								/>
+								Enable image recognition
+							</label>
+						</div>
+						<div class="form-group" style="margin-bottom:0.75rem">
+							<label>Backend</label>
+							<select name="recognition_backend" class="input">
+								<option value="none" selected?={ GetSetting(db, "recognition_backend", "none") == "none" }>None</option>
+								<option value="pigo" selected?={ GetSetting(db, "recognition_backend", "none") == "pigo" }>Pigo (local face detection)</option>
+								<option value="ollama" selected?={ GetSetting(db, "recognition_backend", "none") == "ollama" }>Ollama</option>
+								<option value="openai" selected?={ GetSetting(db, "recognition_backend", "none") == "openai" }>OpenAI-compatible</option>
+							</select>
+						</div>
+						<div class="form-group" style="margin-bottom:0.75rem">
+							<label>URL</label>
+							<input type="text" name="recognition_url" class="input"
+								value={ GetSetting(db, "recognition_url", "") }
+								placeholder="http://localhost:11434"/>
+						</div>
+						<div class="form-group" style="margin-bottom:0.75rem">
+							<label>API Key (for OpenAI)</label>
+							<input type="password" name="recognition_api_key" class="input"
+								value={ GetSetting(db, "recognition_api_key", "") }
+								placeholder="sk-..."/>
+						</div>
+						<div class="form-group" style="margin-bottom:0.75rem">
+							<label>Model</label>
+							<input type="text" name="recognition_model" class="input"
+								value={ GetSetting(db, "recognition_model", "") }
+								placeholder="llava:13b"/>
+						</div>
+						<button type="submit" class="btn btn-primary btn-sm">Save</button>
+					</form>
+				}
+				@ui.Card("File Rename") {
+					<p class="text-muted" style="margin-bottom:0.75rem">
+						Rename files using a Go template pattern. Available variables:
+						<code>Year, Month, Day, Hour, Minute, Second, Camera, Lens, Original, Ext, Place, Country</code>
+					</p>
+					<form method="post" action="/apps/gallery/rename/preview">
+						<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+						<div class="form-group" style="margin-bottom:0.75rem">
+							<label>Pattern</label>
+							<input type="text" name="pattern" class="input"
+								value={ GetSetting(db, "rename_pattern", "{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}") }
+								placeholder="{{.Year}}/{{.Month}}-{{.Day}}/{{.Original}}{{.Ext}}"/>
+						</div>
+						<button type="submit" class="btn btn-primary btn-sm">Preview Rename</button>
+					</form>
+					<form method="post" action="/apps/gallery/rename/undo" style="margin-top:0.5rem">
+						<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+						<button type="submit" class="btn btn-sm">Undo Last Rename</button>
+					</form>
+				}
+			</div>
+		</div>
+	}
+}
+
+// --- Rename Preview Page ---
+
+templ renamePreviewPage(pd ui.PageData, pattern string, previews []RenamePreview) {
+	@ui.Base(pd) {
+		<div class="sidebar-layout">
+			@gallerySidebar(pd.RequestPath, 0)
+			<div class="sidebar-content">
+				<h1>Rename Preview</h1>
+				<p>Pattern: <code>{ pattern }</code></p>
+				if len(previews) == 0 {
+					@ui.Card("") {
+						<p class="text-muted">No files would be renamed with this pattern.</p>
+					}
+				} else {
+					<p>{ strconv.Itoa(len(previews)) } files will be renamed:</p>
+					@ui.Card("") {
+						<table style="width:100%;font-size:0.85rem">
+							<thead>
+								<tr>
+									<th>Current Path</th>
+									<th>New Path</th>
+								</tr>
+							</thead>
+							<tbody>
+								for _, p := range previews {
+									<tr>
+										<td>{ p.OldPath }</td>
+										<td>{ p.NewPath }</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					}
+					<form method="post" action="/apps/gallery/rename/apply" style="margin-top:1rem">
+						<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+						<input type="hidden" name="pattern" value={ pattern }/>
+						<button type="submit" class="btn btn-primary">Apply Rename</button>
+						<a href="/apps/gallery/settings" class="btn" style="margin-left:0.5rem">Cancel</a>
 					</form>
 				}
 			</div>

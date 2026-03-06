@@ -49,6 +49,7 @@ type Media struct {
 	City            string
 	RecognitionState int
 	RecognitionAt   *int64
+	OCRText         string
 }
 
 // IsVideo reports whether this media item is a video.
@@ -137,7 +138,7 @@ var mediaCols = `id, file_id, file_path, file_etag, mime_type, width, height, or
 	date_taken, date_indexed, latitude, longitude, altitude,
 	camera_make, camera_model, lens_model, focal_length, f_number, exposure_time,
 	iso, flash, duration_ms, video_codec, audio_codec,
-	place_name, country, region, city, recognition_state, recognition_at`
+	place_name, country, region, city, recognition_state, recognition_at, ocr_text`
 
 func scanMedia(row interface{ Scan(...any) error }) (*Media, error) {
 	var m Media
@@ -148,6 +149,7 @@ func scanMedia(row interface{ Scan(...any) error }) (*Media, error) {
 		&m.CameraMake, &m.CameraModel, &m.LensModel, &m.FocalLength, &m.FNumber, &m.ExposureTime,
 		&m.ISO, &m.Flash, &m.DurationMs, &m.VideoCodec, &m.AudioCodec,
 		&m.PlaceName, &m.Country, &m.Region, &m.City, &m.RecognitionState, &m.RecognitionAt,
+		&m.OCRText,
 	)
 	return &m, err
 }
@@ -249,13 +251,14 @@ func InsertMedia(db *sql.DB, m *Media) (int64, error) {
 		date_taken, date_indexed, latitude, longitude, altitude,
 		camera_make, camera_model, lens_model, focal_length, f_number, exposure_time,
 		iso, flash, duration_ms, video_codec, audio_codec,
-		place_name, country, region, city, recognition_state, recognition_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		place_name, country, region, city, recognition_state, recognition_at, ocr_text
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.FileID, m.FilePath, m.FileETag, m.MimeType, m.Width, m.Height, m.Orientation,
 		m.DateTaken, m.DateIndexed, m.Latitude, m.Longitude, m.Altitude,
 		m.CameraMake, m.CameraModel, m.LensModel, m.FocalLength, m.FNumber, m.ExposureTime,
 		m.ISO, m.Flash, m.DurationMs, m.VideoCodec, m.AudioCodec,
 		m.PlaceName, m.Country, m.Region, m.City, m.RecognitionState, m.RecognitionAt,
+		m.OCRText,
 	)
 	if err != nil {
 		return 0, err
@@ -271,14 +274,14 @@ func UpdateMediaMetadata(db *sql.DB, m *Media) error {
 		camera_make = ?, camera_model = ?, lens_model = ?, focal_length = ?, f_number = ?,
 		exposure_time = ?, iso = ?, flash = ?, duration_ms = ?, video_codec = ?, audio_codec = ?,
 		place_name = ?, country = ?, region = ?, city = ?,
-		recognition_state = ?, recognition_at = ?
+		recognition_state = ?, recognition_at = ?, ocr_text = ?
 		WHERE id = ?`,
 		m.FilePath, m.FileETag, m.MimeType, m.Width, m.Height, m.Orientation,
 		m.DateTaken, m.DateIndexed, m.Latitude, m.Longitude, m.Altitude,
 		m.CameraMake, m.CameraModel, m.LensModel, m.FocalLength, m.FNumber,
 		m.ExposureTime, m.ISO, m.Flash, m.DurationMs, m.VideoCodec, m.AudioCodec,
 		m.PlaceName, m.Country, m.Region, m.City,
-		m.RecognitionState, m.RecognitionAt,
+		m.RecognitionState, m.RecognitionAt, m.OCRText,
 		m.ID,
 	)
 	return err

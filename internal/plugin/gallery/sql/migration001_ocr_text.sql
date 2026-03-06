@@ -1,0 +1,2 @@
+-- IF COLUMN media.ocr_text NOT EXIST
+ALTER TABLE media ADD COLUMN ocr_text TEXT NOT NULL DEFAULT '';

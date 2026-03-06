@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS media (
     region TEXT NOT NULL DEFAULT '',
     city TEXT NOT NULL DEFAULT '',
     recognition_state INTEGER NOT NULL DEFAULT 0,
-    recognition_at INTEGER
+    recognition_at INTEGER,
+    ocr_text TEXT NOT NULL DEFAULT ''
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_media_file_id ON media(file_id);

@@ -440,3 +440,70 @@ func (h *Pages) TriggerScan(w http.ResponseWriter, r *http.Request) {
 	go h.plugin.ScanUser(context.Background(), username)
 	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
 }
+
+// SaveRecognitionSettings saves recognition backend settings.
+func (h *Pages) SaveRecognitionSettings(w http.ResponseWriter, r *http.Request) {
+	db, err := h.userDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	SetSetting(db, "recognition_enabled", r.FormValue("recognition_enabled"))
+	SetSetting(db, "recognition_backend", r.FormValue("recognition_backend"))
+	SetSetting(db, "recognition_url", r.FormValue("recognition_url"))
+	SetSetting(db, "recognition_api_key", r.FormValue("recognition_api_key"))
+	SetSetting(db, "recognition_model", r.FormValue("recognition_model"))
+	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
+}
+
+// RenamePreview shows a preview of the rename operation.
+func (h *Pages) RenamePreview(w http.ResponseWriter, r *http.Request) {
+	db, err := h.userDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	pattern := r.FormValue("pattern")
+	if pattern == "" {
+		http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
+		return
+	}
+	previews, err := PreviewRename(db, pattern)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	pd := h.pageData(r, "Rename Preview")
+	renamePreviewPage(pd, pattern, previews).Render(r.Context(), w)
+}
+
+// RenameApply executes the rename operation.
+func (h *Pages) RenameApply(w http.ResponseWriter, r *http.Request) {
+	db, err := h.userDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	pattern := r.FormValue("pattern")
+	previews, err := PreviewRename(db, pattern)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	username := h.username(r)
+	if err := h.plugin.ApplyRename(username, previews); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
+}
+
+// RenameUndo reverses the most recent rename batch.
+func (h *Pages) RenameUndo(w http.ResponseWriter, r *http.Request) {
+	username := h.username(r)
+	if err := h.plugin.UndoLastRename(username); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
+}

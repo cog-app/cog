@@ -73,9 +73,27 @@ func (p *Plugin) scanUser(ctx context.Context, username string) error {
 		return fmt.Errorf("metadata: %w", err)
 	}
 
-	// Stage 3: Auto-album generation
+	// Stage 3: OCR text extraction (if tesseract available)
+	if err := p.extractOCR(ctx, galleryDB, username); err != nil {
+		log.Printf("gallery: ocr for %s: %v", username, err)
+	}
+
+	// Stage 4: Reverse geocoding
+	p.reverseGeocode(galleryDB)
+
+	// Stage 5: Auto-album generation
 	if err := p.generateAutoAlbums(ctx, galleryDB); err != nil {
 		return fmt.Errorf("auto-albums: %w", err)
+	}
+
+	// Stage 6: Image recognition (if configured)
+	if err := p.runRecognition(ctx, galleryDB, username); err != nil {
+		log.Printf("gallery: recognition for %s: %v", username, err)
+	}
+
+	// Stage 7: Face clustering
+	if err := clusterFaces(galleryDB); err != nil {
+		log.Printf("gallery: clustering for %s: %v", username, err)
 	}
 
 	return nil
@@ -201,6 +219,56 @@ func (p *Plugin) extractMetadata(ctx context.Context, db *sql.DB, username strin
 	return nil
 }
 
+// extractOCR runs tesseract on images that haven't been OCR'd yet.
+func (p *Plugin) extractOCR(ctx context.Context, db *sql.DB, username string) error {
+	if !TesseractAvailable() {
+		return nil
+	}
+	if GetSetting(db, "ocr_enabled", "true") != "true" {
+		return nil
+	}
+
+	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media
+		WHERE ocr_text = '' AND mime_type LIKE 'image/%' AND width > 0
+		LIMIT 50`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	items, err := scanMediaRows(rows)
+	if err != nil {
+		return err
+	}
+
+	filesDir := p.registry.UserFilesDir(username)
+
+	for i := range items {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		m := &items[i]
+		srcPath := filepath.Join(filesDir, m.FilePath)
+
+		text, err := tesseractOCR(srcPath)
+		if err != nil {
+			log.Printf("gallery: ocr %s: %v", m.FilePath, err)
+			// Mark as attempted so we don't retry — store a sentinel.
+			db.Exec(`UPDATE media SET ocr_text = ' ' WHERE id = ?`, m.ID)
+			continue
+		}
+		if text == "" {
+			// No text found — store a single space sentinel to avoid re-processing.
+			text = " "
+		}
+
+		db.Exec(`UPDATE media SET ocr_text = ? WHERE id = ?`, text, m.ID)
+	}
+
+	return nil
+}
+
 // extractImageMetadata reads EXIF and image dimensions from an image file.
 func extractImageMetadata(path string, m *Media) {
 	f, err := os.Open(path)
@@ -242,9 +310,30 @@ func extractVideoMetadata(path string, m *Media) {
 	}
 }
 
+// reverseGeocode fills in place_name for media with GPS coordinates but no city.
+func (p *Plugin) reverseGeocode(db *sql.DB) {
+	rows, err := db.Query(`SELECT id, latitude, longitude FROM media
+		WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND city = ''`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int64
+		var lat, lon float64
+		if err := rows.Scan(&id, &lat, &lon); err != nil {
+			continue
+		}
+		city, region, country, placeName := p.geocoder.Reverse(lat, lon)
+		db.Exec(`UPDATE media SET city = ?, region = ?, country = ?, place_name = ? WHERE id = ?`,
+			city, region, country, placeName, id)
+	}
+}
+
 // generateAutoAlbums creates auto-albums by date (month) and folder.
 func (p *Plugin) generateAutoAlbums(ctx context.Context, db *sql.DB) error {
-	rows, err := db.Query(`SELECT id, file_path, date_taken, date_indexed, camera_make, camera_model
+	rows, err := db.Query(`SELECT id, file_path, date_taken, date_indexed, camera_make, camera_model, city, country
 		FROM media ORDER BY COALESCE(date_taken, date_indexed) DESC`)
 	if err != nil {
 		return err
@@ -258,12 +347,14 @@ func (p *Plugin) generateAutoAlbums(ctx context.Context, db *sql.DB) error {
 		DateIndexed int64
 		CameraMake  string
 		CameraModel string
+		City        string
+		Country     string
 	}
 
 	var refs []mediaRef
 	for rows.Next() {
 		var r mediaRef
-		if err := rows.Scan(&r.ID, &r.FilePath, &r.DateTaken, &r.DateIndexed, &r.CameraMake, &r.CameraModel); err != nil {
+		if err := rows.Scan(&r.ID, &r.FilePath, &r.DateTaken, &r.DateIndexed, &r.CameraMake, &r.CameraModel, &r.City, &r.Country); err != nil {
 			return err
 		}
 		refs = append(refs, r)
@@ -309,6 +400,18 @@ func (p *Plugin) generateAutoAlbums(ctx context.Context, db *sql.DB) error {
 				AddMediaToAlbum(db, albumID, r.ID)
 			}
 		}
+
+		// Location album (by city)
+		if r.City != "" {
+			locationKey := r.City + "/" + r.Country
+			locationName := r.City
+			if r.Country != "" {
+				locationName = r.City + ", " + r.Country
+			}
+			if albumID, err := UpsertAutoAlbum(db, AlbumLocation, locationKey, locationName); err == nil {
+				AddMediaToAlbum(db, albumID, r.ID)
+			}
+		}
 	}
 
 	return nil
@@ -350,7 +453,3 @@ func (p *Plugin) videoThumbnail(username string, m *Media, size int) (*os.File, 
 	return os.Open(cachePath)
 }
 
-// thumbnailURL returns the URL to a media item's thumbnail.
-func thumbnailURL(m *Media) string {
-	return fmt.Sprintf("/apps/gallery/api/media/%d/thumbnail", m.ID)
-}
