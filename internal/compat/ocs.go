@@ -63,6 +63,9 @@ func HandleCapabilities(w http.ResponseWriter, r *http.Request) {
 			"news": map[string]any{
 				"version": "25.0.0-alpha1",
 			},
+			"notes": map[string]any{
+				"api_version": []string{"0.2", "1.3"},
+			},
 		},
 	})
 }

@@ -40,7 +40,12 @@ func (a *NotesAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := r.URL.Path
-	for _, prefix := range []string{"/index.php/apps/notes/api/v1", "/index.php/apps/notes/api"} {
+	for _, prefix := range []string{
+		"/index.php/apps/notes/api/v1.3",
+		"/index.php/apps/notes/api/v1",
+		"/index.php/apps/notes/api/v0.2",
+		"/index.php/apps/notes/api",
+	} {
 		if after, ok := strings.CutPrefix(path, prefix); ok {
 			path = after
 			break
