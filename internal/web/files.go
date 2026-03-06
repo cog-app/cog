@@ -237,6 +237,11 @@ func (h *FilesHandler) ServeDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// isImageFile returns true if the MIME type is a previewable image.
+func isImageFile(mimeType string) bool {
+	return files.HasPreview(mimeType)
+}
+
 // fileIconName returns the icon category for a file.
 func fileIconName(mimeType string, isDir bool) string {
 	if isDir {
