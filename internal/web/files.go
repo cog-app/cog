@@ -87,7 +87,12 @@ func (h *FilesHandler) ServeGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	fileViewPage(pd, fp, meta, kind, textContent).Render(r.Context(), w)
+	var flashMsg, flashKind string
+	if flash := getFlash(w, r); flash != nil {
+		flashMsg, flashKind = flash.Message, flash.Kind
+	}
+
+	fileViewPage(pd, fp, meta, kind, textContent, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 func (h *FilesHandler) serveDownload(w http.ResponseWriter, r *http.Request, username, fp string, meta *files.FileMeta) {
@@ -165,21 +170,32 @@ func (h *FilesHandler) readText(username, fp string) (string, error) {
 	return string(b), nil
 }
 
-// ServePost handles POST — upload file or create directory.
-// If form field "name" is set, it's a mkdir. Otherwise it's a file upload.
+// ServePost handles POST — upload file, create directory, or save text content.
 func (h *FilesHandler) ServePost(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
-	dirPath := filePath(r)
+	fp := filePath(r)
 
-	// Try mkdir first (simple form field).
+	// ?save=1 → save text content.
+	if r.URL.Query().Get("save") == "1" {
+		content := r.FormValue("content")
+		if _, err := h.p.Files.Upload(u.Username, fp, strings.NewReader(content)); err != nil {
+			http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		setFlash(w, "success", "File saved.")
+		http.Redirect(w, r, "/apps/files"+fp, http.StatusSeeOther)
+		return
+	}
+
+	// Try mkdir (simple form field).
 	name := r.FormValue("name")
 	if name != "" {
-		dest := path.Join(dirPath, name)
+		dest := path.Join(fp, name)
 		if _, err := h.p.Files.CreateDir(u.Username, dest); err != nil {
 			http.Error(w, "mkdir failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		http.Redirect(w, r, "/apps/files"+dirPath, http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/files"+fp, http.StatusSeeOther)
 		return
 	}
 
@@ -196,13 +212,13 @@ func (h *FilesHandler) ServePost(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	dest := path.Join(dirPath, header.Filename)
+	dest := path.Join(fp, header.Filename)
 	if _, err := h.p.Files.Upload(u.Username, dest, file); err != nil {
 		http.Error(w, "upload failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	http.Redirect(w, r, "/apps/files"+dirPath, http.StatusSeeOther)
+	http.Redirect(w, r, "/apps/files"+fp, http.StatusSeeOther)
 }
 
 // ServeDelete handles DELETE.
