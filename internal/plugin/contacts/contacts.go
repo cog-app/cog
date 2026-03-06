@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/share"
@@ -18,6 +19,7 @@ const PluginID = "contacts"
 
 type dbProvider interface {
 	PluginDB(username, pluginID string) (*sql.DB, error)
+	NavItems() []cogplugin.NavItem
 }
 
 // userLookup resolves a user ID to user information.
@@ -33,11 +35,12 @@ type Plugin struct {
 	dataDir  string
 	shares   *share.Store
 	users    userLookup
+	secret   []byte
 }
 
 // New creates a new Contacts plugin instance.
-func New(registry dbProvider, dataDir string, shares *share.Store, users userLookup) *Plugin {
-	return &Plugin{registry: registry, dataDir: dataDir, shares: shares, users: users}
+func New(registry dbProvider, dataDir string, shares *share.Store, users userLookup, secret []byte) *Plugin {
+	return &Plugin{registry: registry, dataDir: dataDir, shares: shares, users: users, secret: secret}
 }
 
 // sharedAddressBook describes an address book shared to the current user.
@@ -114,6 +117,24 @@ func (p *Plugin) Register(registrar cogplugin.Registrar) error {
 			{Label: "Read/Write", Permissions: cogplugin.PermRead | cogplugin.PermWrite},
 		},
 	})
+
+	// Web UI routes
+	pages := NewPages(p, p.secret, p.registry)
+	registrar.RegisterPage("{$}", http.HandlerFunc(pages.Index))
+	registrar.RegisterPage("settings", http.HandlerFunc(pages.Settings))
+	registrar.RegisterAPI("contacts/{id}", http.HandlerFunc(pages.ContactDetail))
+	registrar.RegisterAction("POST", "contacts/{id}", http.HandlerFunc(pages.UpdateContact))
+	registrar.RegisterAction("POST", "contacts", http.HandlerFunc(pages.CreateContact))
+	registrar.RegisterAction("DELETE", "contacts/{id}", http.HandlerFunc(pages.DeleteContact))
+	registrar.RegisterAPI("photos/{id}", http.HandlerFunc(pages.ServePhoto))
+	registrar.RegisterAction("POST", "contacts/{id}/photo", http.HandlerFunc(pages.UploadPhoto))
+	registrar.RegisterAction("POST", "books", http.HandlerFunc(pages.CreateAddressBookHandler))
+	registrar.RegisterAction("DELETE", "books/{id}", http.HandlerFunc(pages.DeleteAddressBookHandler))
+
+	// CardDAV endpoints
+	carddav := NewCardDAVHandler(p)
+	registrar.RegisterRoute("/remote.php/dav/addressbooks/", carddav)
+
 	return nil
 }
 

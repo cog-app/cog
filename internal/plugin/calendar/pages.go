@@ -12,25 +12,20 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/email"
-	"git.duckfam.us/jj-software/cog/internal/plugin"
 	plugpkg "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 	rrulelib "github.com/teambition/rrule-go"
 )
 
-type navProvider interface {
-	NavItems() []plugin.NavItem
-}
-
 // Pages holds the web UI handlers for the calendar plugin.
 type Pages struct {
 	plugin *Plugin
 	secret []byte
-	nav    navProvider
+	nav    dbProvider
 }
 
 // NewPages creates a new Pages handler.
-func NewPages(p *Plugin, secret []byte, nav navProvider) *Pages {
+func NewPages(p *Plugin, secret []byte, nav dbProvider) *Pages {
 	return &Pages{plugin: p, secret: secret, nav: nav}
 }
 

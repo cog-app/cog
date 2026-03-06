@@ -22,19 +22,15 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
-type navProvider interface {
-	NavItems() []plugin.NavItem
-}
-
 // Pages holds the web UI handlers for the contacts plugin.
 type Pages struct {
 	plugin *Plugin
 	secret []byte
-	nav    navProvider
+	nav    dbProvider
 }
 
 // NewPages creates a new Pages handler.
-func NewPages(p *Plugin, secret []byte, nav navProvider) *Pages {
+func NewPages(p *Plugin, secret []byte, nav dbProvider) *Pages {
 	return &Pages{plugin: p, secret: secret, nav: nav}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ const PluginID = "calendar"
 
 type dbProvider interface {
 	PluginDB(username, pluginID string) (*sql.DB, error)
+	NavItems() []plugin.NavItem
 }
 
 // Plugin is the calendar plugin.
@@ -28,13 +30,14 @@ type Plugin struct {
 	registry dbProvider
 	shares   *share.Store
 	email    *email.Sender
+	secret   []byte
 	cancel   context.CancelFunc
 	done     chan struct{}
 }
 
 // New creates a new Calendar plugin instance.
-func New(registry dbProvider, shares *share.Store, emailSender *email.Sender) *Plugin {
-	return &Plugin{registry: registry, shares: shares, email: emailSender}
+func New(registry dbProvider, shares *share.Store, emailSender *email.Sender, secret []byte) *Plugin {
+	return &Plugin{registry: registry, shares: shares, email: emailSender, secret: secret}
 }
 
 func (p *Plugin) ID() string { return PluginID }
@@ -66,6 +69,27 @@ func (p *Plugin) Register(registrar plugin.Registrar) error {
 			{Label: "Appointment Scheduling", Permissions: plugin.PermRead | plugin.PermFreeBusy | plugin.PermSchedule},
 		},
 	})
+
+	// Web UI routes
+	pages := NewPages(p, p.secret, p.registry)
+	registrar.RegisterPage("{$}", http.HandlerFunc(pages.Index))
+	registrar.RegisterPage("settings", http.HandlerFunc(pages.Settings))
+	registrar.RegisterAPI("events.json", http.HandlerFunc(pages.EventsJSON))
+	registrar.RegisterAPI("events/{id}", http.HandlerFunc(pages.EventDetail))
+	registrar.RegisterAction("POST", "events/{id}", http.HandlerFunc(pages.UpdateEvent))
+	registrar.RegisterAction("POST", "events", http.HandlerFunc(pages.CreateEvent))
+	registrar.RegisterAction("DELETE", "events/{id}", http.HandlerFunc(pages.DeleteEvent))
+	registrar.RegisterAction("POST", "events/{id}/respond", http.HandlerFunc(pages.RespondToInvite))
+	registrar.RegisterAction("POST", "calendars", http.HandlerFunc(pages.CreateCalendar))
+	registrar.RegisterAction("DELETE", "calendars/{id}", http.HandlerFunc(pages.DeleteCalendarHandler))
+	registrar.RegisterAPI("notifications", http.HandlerFunc(pages.Notifications))
+	registrar.RegisterAPI("rrule-preview", http.HandlerFunc(pages.RRulePreview))
+
+	// CalDAV endpoints
+	caldav := NewCalDAVHandler(p)
+	registrar.RegisterRoute("/remote.php/dav/calendars/", caldav)
+	registrar.RegisterRoute("/remote.php/dav/principals/", caldav)
+
 	return nil
 }
 

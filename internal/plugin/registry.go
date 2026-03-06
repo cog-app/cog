@@ -70,6 +70,11 @@ func NewRegistry(dataDir string, mux *http.ServeMux, sysDB *sql.DB, csrfSecret [
 	return r
 }
 
+// Mux returns the ServeMux that plugin routes are registered on.
+func (r *Registry) Mux() *http.ServeMux {
+	return r.mux
+}
+
 // Add registers a plugin with the registry.
 // If the plugin embeds Protected, it is automatically marked as always-on.
 func (r *Registry) Add(p Plugin) error {
@@ -316,35 +321,40 @@ func (pr *pluginRegistrar) wrap(h http.Handler) http.Handler {
 	return pr.registry.RequirePluginEnabled(pr.pluginID)(h)
 }
 
-func (pr *pluginRegistrar) RegisterAPI(path string, handler http.Handler) {
-	pattern := fmt.Sprintf("/api/%s/%s", pr.pluginID, path)
-	pr.mux.Handle(pattern, pr.wrap(handler))
+func (pr *pluginRegistrar) RegisterPage(path string, handler http.Handler) {
+	pattern := fmt.Sprintf("GET /apps/%s/%s", pr.pluginID, path)
+	pr.mux.Handle(pattern, pr.wrap(auth.RequireAuthWeb(handler)))
 }
 
-func (pr *pluginRegistrar) RegisterPage(path string, handler http.Handler) {
-	pattern := fmt.Sprintf("/apps/%s/%s", pr.pluginID, path)
-	pr.mux.Handle(pattern, pr.wrap(handler))
+func (pr *pluginRegistrar) RegisterAPI(path string, handler http.Handler) {
+	pattern := fmt.Sprintf("GET /apps/%s/%s", pr.pluginID, path)
+	pr.mux.Handle(pattern, pr.wrap(auth.RequireAuth(handler)))
 }
 
 func (pr *pluginRegistrar) RegisterAction(method, path string, handler http.Handler) {
 	pattern := fmt.Sprintf("%s /apps/%s/%s", method, pr.pluginID, path)
-	// Actions use session cookies, so enforce plugin-scoped CSRF.
-	wrapped := auth.RequireCSRFFor(pr.pluginID, pr.csrfSecret, handler)
+	wrapped := auth.RequireAuthWeb(auth.RequireCSRF(pr.csrfSecret, handler))
 	pr.mux.Handle(pattern, pr.wrap(wrapped))
+}
+
+func (pr *pluginRegistrar) RegisterRoute(pattern string, handler http.Handler) {
+	pr.mux.Handle(pattern, pr.wrap(auth.RequireAuth(handler)))
 }
 
 func (pr *pluginRegistrar) RegisterResource(def ResourceDef) {
 	pr.resources[def.Type] = def
-	// Mount the resource handler at /apps/{plugin_id}/{type}/{id}
-	pattern := fmt.Sprintf("/apps/%s/%s/", pr.pluginID, def.Type)
-	pr.mux.Handle(pattern, pr.wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resourceID := r.PathValue("id")
-		if resourceID == "" {
-			// Extract from URL path
-			resourceID = filepath.Base(r.URL.Path)
-		}
-		def.Handler.ServeResource(w, r, resourceID)
-	})))
+	if def.Handler != nil {
+		// Mount the resource handler at /apps/{plugin_id}/{type}/{id}
+		pattern := fmt.Sprintf("/apps/%s/%s/", pr.pluginID, def.Type)
+		pr.mux.Handle(pattern, pr.wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			resourceID := r.PathValue("id")
+			if resourceID == "" {
+				// Extract from URL path
+				resourceID = filepath.Base(r.URL.Path)
+			}
+			def.Handler.ServeResource(w, r, resourceID)
+		})))
+	}
 }
 
 func (pr *pluginRegistrar) RegisterHook(hookName string, callback HookCallback) {

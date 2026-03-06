@@ -27,7 +27,8 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 
 	loginFlow := compat.NewLoginFlowHandler(p.Users, p.AppPasswords, p.Sessions, p.Config.BaseURL)
 
-	mux := http.NewServeMux()
+	// Use the plugin registry's mux so plugin-registered routes share the same router.
+	mux := p.Plugins.Mux()
 
 	// --- Static assets ---
 	staticSub, _ := fs.Sub(ui.StaticFS, "static")
@@ -38,6 +39,11 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	dashPlugin := &dashboard.Plugin{Registry: p.Plugins, Secret: p.CSRFSecret}
 	p.Plugins.Add(dashPlugin)
 	p.Plugins.Add(p.Files)
+
+	// Content plugins — routes are registered via the plugin Registrar interface.
+	p.Plugins.Add(rss.New(p.Plugins, p.Config.DataDir, p.CSRFSecret))
+	p.Plugins.Add(calendar.New(p.Plugins, p.Shares, p.Email, p.CSRFSecret))
+	p.Plugins.Add(contacts.New(p.Plugins, p.Config.DataDir, p.Shares, p.Users, p.CSRFSecret))
 
 	// Extra plugins from custom builds.
 	for _, ep := range extraPlugins {
@@ -158,76 +164,6 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("GET /apps/files/{path...}", auth.RequireAuthWeb(http.HandlerFunc(filesH.ServeGet)))
 	mux.Handle("POST /apps/files/{path...}", csrfWeb(http.HandlerFunc(filesH.ServePost)))
 	mux.Handle("DELETE /apps/files/{path...}", csrfWeb(http.HandlerFunc(filesH.ServeDelete)))
-
-	// --- RSS plugin ---
-	rssPlugin := rss.New(p.Plugins, p.Config.DataDir)
-	p.Plugins.Add(rssPlugin)
-
-	rssPages := rss.NewPages(rssPlugin, p.CSRFSecret, p.Plugins)
-	mux.Handle("GET /apps/rss/{$}", auth.RequireAuthWeb(http.HandlerFunc(rssPages.Index)))
-	mux.Handle("GET /apps/rss/feed/{id}", auth.RequireAuthWeb(http.HandlerFunc(rssPages.Feed)))
-	mux.Handle("GET /apps/rss/starred", auth.RequireAuthWeb(http.HandlerFunc(rssPages.Starred)))
-	mux.Handle("GET /apps/rss/folder/{id}", auth.RequireAuthWeb(http.HandlerFunc(rssPages.FolderView)))
-	mux.Handle("GET /apps/rss/settings", auth.RequireAuthWeb(http.HandlerFunc(rssPages.Settings)))
-	mux.Handle("GET /apps/rss/opml/export", auth.RequireAuthWeb(http.HandlerFunc(rssPages.ExportOPML)))
-	mux.Handle("POST /apps/rss/feeds", csrfWeb(http.HandlerFunc(rssPages.AddFeed)))
-	mux.Handle("DELETE /apps/rss/feeds/{id}", csrfWeb(http.HandlerFunc(rssPages.DeleteFeed)))
-	mux.Handle("POST /apps/rss/feeds/{id}/read", csrfWeb(http.HandlerFunc(rssPages.MarkFeedRead)))
-	mux.Handle("POST /apps/rss/feeds/{id}/refresh", csrfWeb(http.HandlerFunc(rssPages.RefreshFeed)))
-	mux.Handle("POST /apps/rss/feeds/{id}/auto-read", csrfWeb(http.HandlerFunc(rssPages.SetAutoReadPattern)))
-	mux.Handle("POST /apps/rss/folders", csrfWeb(http.HandlerFunc(rssPages.AddFolder)))
-	mux.Handle("DELETE /apps/rss/folders/{id}", csrfWeb(http.HandlerFunc(rssPages.DeleteFolder)))
-	mux.Handle("POST /apps/rss/items/{id}/read", csrfWeb(http.HandlerFunc(rssPages.ToggleRead)))
-	mux.Handle("POST /apps/rss/items/{id}/mark-read", csrfWeb(http.HandlerFunc(rssPages.MarkRead)))
-	mux.Handle("POST /apps/rss/items/{id}/star", csrfWeb(http.HandlerFunc(rssPages.ToggleStar)))
-	mux.Handle("POST /apps/rss/items/read-all", csrfWeb(http.HandlerFunc(rssPages.MarkAllRead)))
-	mux.Handle("POST /apps/rss/opml/import", csrfWeb(http.HandlerFunc(rssPages.ImportOPML)))
-
-	newsAPI := rss.NewNewsAPI(rssPlugin)
-	mux.Handle("/index.php/apps/news/api/", auth.RequireAuth(newsAPI))
-
-	// --- Calendar plugin ---
-	calPlugin := calendar.New(p.Plugins, p.Shares, p.Email)
-	p.Plugins.Add(calPlugin)
-
-	calPages := calendar.NewPages(calPlugin, p.CSRFSecret, p.Plugins)
-	mux.Handle("GET /apps/calendar/{$}", auth.RequireAuthWeb(http.HandlerFunc(calPages.Index)))
-	mux.Handle("GET /apps/calendar/settings", auth.RequireAuthWeb(http.HandlerFunc(calPages.Settings)))
-	mux.Handle("GET /apps/calendar/events.json", auth.RequireAuth(http.HandlerFunc(calPages.EventsJSON)))
-	mux.Handle("GET /apps/calendar/events/{id}", auth.RequireAuth(http.HandlerFunc(calPages.EventDetail)))
-	mux.Handle("POST /apps/calendar/events/{id}", csrfWeb(http.HandlerFunc(calPages.UpdateEvent)))
-	mux.Handle("POST /apps/calendar/events", csrfWeb(http.HandlerFunc(calPages.CreateEvent)))
-	mux.Handle("DELETE /apps/calendar/events/{id}", csrfWeb(http.HandlerFunc(calPages.DeleteEvent)))
-	mux.Handle("POST /apps/calendar/events/{id}/respond", csrfWeb(http.HandlerFunc(calPages.RespondToInvite)))
-	mux.Handle("POST /apps/calendar/calendars", csrfWeb(http.HandlerFunc(calPages.CreateCalendar)))
-	mux.Handle("DELETE /apps/calendar/calendars/{id}", csrfWeb(http.HandlerFunc(calPages.DeleteCalendarHandler)))
-	mux.Handle("GET /apps/calendar/notifications", auth.RequireAuth(http.HandlerFunc(calPages.Notifications)))
-	mux.Handle("GET /apps/calendar/rrule-preview", auth.RequireAuth(http.HandlerFunc(calPages.RRulePreview)))
-
-	// CalDAV endpoints
-	caldav := calendar.NewCalDAVHandler(calPlugin)
-	mux.Handle("/remote.php/dav/calendars/", auth.RequireAuth(caldav))
-	mux.Handle("/remote.php/dav/principals/", auth.RequireAuth(caldav))
-
-	// --- Contacts plugin ---
-	contactsPlugin := contacts.New(p.Plugins, p.Config.DataDir, p.Shares, p.Users)
-	p.Plugins.Add(contactsPlugin)
-
-	contactsPages := contacts.NewPages(contactsPlugin, p.CSRFSecret, p.Plugins)
-	mux.Handle("GET /apps/contacts/{$}", auth.RequireAuthWeb(http.HandlerFunc(contactsPages.Index)))
-	mux.Handle("GET /apps/contacts/settings", auth.RequireAuthWeb(http.HandlerFunc(contactsPages.Settings)))
-	mux.Handle("GET /apps/contacts/contacts/{id}", auth.RequireAuth(http.HandlerFunc(contactsPages.ContactDetail)))
-	mux.Handle("POST /apps/contacts/contacts/{id}", csrfWeb(http.HandlerFunc(contactsPages.UpdateContact)))
-	mux.Handle("POST /apps/contacts/contacts", csrfWeb(http.HandlerFunc(contactsPages.CreateContact)))
-	mux.Handle("DELETE /apps/contacts/contacts/{id}", csrfWeb(http.HandlerFunc(contactsPages.DeleteContact)))
-	mux.Handle("GET /apps/contacts/photos/{id}", auth.RequireAuth(http.HandlerFunc(contactsPages.ServePhoto)))
-	mux.Handle("POST /apps/contacts/contacts/{id}/photo", csrfWeb(http.HandlerFunc(contactsPages.UploadPhoto)))
-	mux.Handle("POST /apps/contacts/books", csrfWeb(http.HandlerFunc(contactsPages.CreateAddressBookHandler)))
-	mux.Handle("DELETE /apps/contacts/books/{id}", csrfWeb(http.HandlerFunc(contactsPages.DeleteAddressBookHandler)))
-
-	// CardDAV endpoints
-	carddav := contacts.NewCardDAVHandler(contactsPlugin)
-	mux.Handle("/remote.php/dav/addressbooks/", auth.RequireAuth(carddav))
 
 	// --- Status & OCS ---
 	mux.HandleFunc("GET /status.php", compat.HandleStatus)

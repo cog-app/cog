@@ -180,6 +180,11 @@ func (r *capturingRegistrar) RegisterAction(method, path string, handler http.Ha
 	})
 }
 
+func (r *capturingRegistrar) RegisterRoute(pattern string, handler http.Handler) {
+	// RegisterRoute is for internal plugins only (CalDAV, CardDAV, compat APIs).
+	// gRPC plugins do not support arbitrary route patterns.
+}
+
 func (r *capturingRegistrar) RegisterResource(def cogplugin.ResourceDef) {
 	key := r.nextKey("resource")
 	if def.Handler != nil {

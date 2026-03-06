@@ -42,12 +42,20 @@ type Plugin interface {
 // Registrar is the host-provided interface that plugins use during registration
 // to declare their routes, resources, and hooks.
 type Registrar interface {
-	// RegisterAPI mounts a handler at /api/{plugin_id}/{path}.
-	RegisterAPI(path string, handler http.Handler)
-	// RegisterPage mounts a handler at /apps/{plugin_id}/{path}.
+	// RegisterPage mounts a GET handler at /apps/{plugin_id}/{path}.
+	// The handler is wrapped with auth (redirect to login) and plugin-enabled checks.
 	RegisterPage(path string, handler http.Handler)
-	// RegisterAction mounts a state-changing handler (POST/PUT/DELETE).
+	// RegisterAPI mounts a GET handler at /apps/{plugin_id}/{path}.
+	// The handler is wrapped with auth (401 on failure) and plugin-enabled checks.
+	// Use this for JSON endpoints and HTMX partials fetched from authenticated pages.
+	RegisterAPI(path string, handler http.Handler)
+	// RegisterAction mounts a state-changing handler (POST/PUT/DELETE) at /apps/{plugin_id}/{path}.
+	// The handler is wrapped with auth, CSRF, and plugin-enabled checks.
 	RegisterAction(method, path string, handler http.Handler)
+	// RegisterRoute mounts a handler at an arbitrary pattern (Go 1.22 format).
+	// The handler is wrapped with auth (401) and plugin-enabled checks.
+	// Use this for compatibility endpoints at non-standard paths (e.g. CalDAV, CardDAV).
+	RegisterRoute(pattern string, handler http.Handler)
 	// RegisterResource declares a shareable resource type and its handler.
 	RegisterResource(def ResourceDef)
 	// RegisterHook subscribes to a named hook event.
