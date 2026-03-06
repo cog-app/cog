@@ -203,7 +203,7 @@ func dropdownActive(requestPath, url string) string {
 templ UserDropdown(pd PageData) {
 	<div class="dropdown" tabindex="0">
 		<button class="dropdown-toggle" type="button">
-			<img class="avatar-sm" src={ fmt.Sprintf("/avatar/%s", pd.User.ID) }/>
+			<img class="avatar-sm" src={ pd.User.AvatarURL() }/>
 			if pd.User.DisplayName != "" {
 				{ pd.User.DisplayName }
 			} else {

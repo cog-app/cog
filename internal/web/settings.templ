@@ -24,7 +24,7 @@ templ settingsProfilePage(pd ui.PageData, flash string, flashKind string) {
 		}
 		@ui.Card("Avatar") {
 			<div class="flex gap-1 items-center" style="margin-bottom:1rem">
-				<img class="avatar-lg" src={ "/avatar/" + pd.User.ID }/>
+				<img class="avatar-lg" src={ pd.User.AvatarURL() }/>
 				<div>
 					@ui.Upload("/settings/avatar", "avatar", "image/jpeg,image/png", pd.CSRFToken, "Upload Avatar", "btn btn-primary btn-sm")
 					if pd.User.Avatar != "" {

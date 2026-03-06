@@ -250,7 +250,7 @@ func (h *shareHandler) PickerSearch(w http.ResponseWriter, r *http.Request) {
 				ID:        u2.ID,
 				Name:      name,
 				Sub:       u2.Username,
-				AvatarURL: "/avatar/" + u2.ID,
+				AvatarURL: u2.AvatarURL(),
 			})
 			if len(items) >= 10 {
 				break

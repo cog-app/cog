@@ -1,3 +1,5 @@
+These are tasks for CLAUDE to complete in priority order. Be sure to check the ./DESIGN/ documents too and update plans if you get more information from the dev. Remove them when you're done.
+
 - User settings
   - When you update your profile picture, it doesn't update until you force a cache update. Store a timestamp of when the profile was uploaded and include as query parameter for cache busting.
 - Admin area
@@ -5,7 +7,7 @@
   - Replace the /admin/ overview page with /admin/settings/, but rename it "General"
   - Allow adding users to group (already uses the User/Group picker)
 - Files
-  - Drag-and-drop should work anywhere on the main area of the page (perhaps the whole page). Pure JS implementation.
+  - Drag-and-drop should work anywhere on the main area of the page (perhaps the whole page). Pure JS implementation. If the drop is on a folder, upload inside of it.
   - The file input already uses the Upload component but drag-and-drop needs the same integration.
   - Allow editing plain text documents.
   - Allow renaming files/folders.

@@ -168,6 +168,7 @@ func Migrate(db *sql.DB) error {
 		{"users", "email", "ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''"},
 		{"volumes", "owner_type", "ALTER TABLE volumes ADD COLUMN owner_type TEXT NOT NULL DEFAULT 'user'"},
 		{"group_invitations", "member_type", "ALTER TABLE group_invitations ADD COLUMN member_type TEXT NOT NULL DEFAULT 'USER'"},
+		{"users", "avatar_updated_at", "ALTER TABLE users ADD COLUMN avatar_updated_at INTEGER NOT NULL DEFAULT 0"},
 	} {
 		rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", col.table))
 		if err != nil {

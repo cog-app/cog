@@ -16,15 +16,25 @@ var ErrNotFound = errors.New("user not found")
 var ErrAuthFailed = errors.New("authentication failed")
 
 type User struct {
-	ID           string
-	Username     string
-	PasswordHash string
-	HomeMount    string
-	CreatedAt    time.Time
-	IsAdmin      bool
-	DisplayName  string
-	Avatar       string
-	Email        string
+	ID              string
+	Username        string
+	PasswordHash    string
+	HomeMount       string
+	CreatedAt       time.Time
+	IsAdmin         bool
+	DisplayName     string
+	Avatar          string
+	Email           string
+	AvatarUpdatedAt int64
+}
+
+// AvatarURL returns the avatar URL with a cache-busting version parameter.
+func (u *User) AvatarURL() string {
+	url := "/avatar/" + u.ID
+	if u.AvatarUpdatedAt > 0 {
+		url += fmt.Sprintf("?v=%d", u.AvatarUpdatedAt)
+	}
+	return url
 }
 
 // UpdateOpts specifies which fields to update. Nil fields are left unchanged.
@@ -87,13 +97,13 @@ func (s *Store) Create(username, password string) (*User, error) {
 
 func (s *Store) GetByUsername(username string) (*User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email FROM users WHERE username = ?`, username,
+		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at FROM users WHERE username = ?`, username,
 	))
 }
 
 func (s *Store) GetByID(id string) (*User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email FROM users WHERE id = ?`, id,
+		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at FROM users WHERE id = ?`, id,
 	))
 }
 
@@ -117,7 +127,7 @@ func (s *Store) Authenticate(username, password string) (*User, error) {
 func (s *Store) List() iter.Seq2[User, error] {
 	return func(yield func(User, error) bool) {
 		rows, err := s.db.Query(
-			`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email FROM users ORDER BY username`,
+			`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at FROM users ORDER BY username`,
 		)
 		if err != nil {
 			yield(User{}, fmt.Errorf("list users: %w", err))
@@ -128,7 +138,7 @@ func (s *Store) List() iter.Seq2[User, error] {
 			var u User
 			var createdAt int64
 			var isAdmin int
-			if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar, &u.Email); err != nil {
+			if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar, &u.Email, &u.AvatarUpdatedAt); err != nil {
 				yield(User{}, fmt.Errorf("scan user: %w", err))
 				return
 			}
@@ -168,7 +178,8 @@ func (s *Store) Update(id string, opts UpdateOpts) error {
 		}
 	}
 	if opts.Avatar != nil {
-		if _, err := s.db.Exec(`UPDATE users SET avatar = ? WHERE id = ?`, *opts.Avatar, id); err != nil {
+		now := time.Now().Unix()
+		if _, err := s.db.Exec(`UPDATE users SET avatar = ?, avatar_updated_at = ? WHERE id = ?`, *opts.Avatar, now, id); err != nil {
 			return fmt.Errorf("update avatar: %w", err)
 		}
 	}
@@ -217,7 +228,7 @@ func (s *Store) scanUser(row *sql.Row) (*User, error) {
 	var u User
 	var createdAt int64
 	var isAdmin int
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar, &u.Email)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar, &u.Email, &u.AvatarUpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
