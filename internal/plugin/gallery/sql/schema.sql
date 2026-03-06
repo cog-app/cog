@@ -1,0 +1,116 @@
+CREATE TABLE IF NOT EXISTS media (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id INTEGER NOT NULL,
+    file_path TEXT NOT NULL,
+    file_etag TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    width INTEGER NOT NULL DEFAULT 0,
+    height INTEGER NOT NULL DEFAULT 0,
+    orientation INTEGER NOT NULL DEFAULT 1,
+    date_taken INTEGER,
+    date_indexed INTEGER NOT NULL,
+    latitude REAL,
+    longitude REAL,
+    altitude REAL,
+    camera_make TEXT NOT NULL DEFAULT '',
+    camera_model TEXT NOT NULL DEFAULT '',
+    lens_model TEXT NOT NULL DEFAULT '',
+    focal_length REAL,
+    f_number REAL,
+    exposure_time TEXT NOT NULL DEFAULT '',
+    iso INTEGER,
+    flash INTEGER,
+    duration_ms INTEGER,
+    video_codec TEXT NOT NULL DEFAULT '',
+    audio_codec TEXT NOT NULL DEFAULT '',
+    place_name TEXT NOT NULL DEFAULT '',
+    country TEXT NOT NULL DEFAULT '',
+    region TEXT NOT NULL DEFAULT '',
+    city TEXT NOT NULL DEFAULT '',
+    recognition_state INTEGER NOT NULL DEFAULT 0,
+    recognition_at INTEGER
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_media_file_id ON media(file_id);
+CREATE INDEX IF NOT EXISTS idx_media_file_path ON media(file_path);
+CREATE INDEX IF NOT EXISTS idx_media_date_taken ON media(date_taken DESC);
+CREATE INDEX IF NOT EXISTS idx_media_place ON media(country, city);
+CREATE INDEX IF NOT EXISTS idx_media_camera ON media(camera_make, camera_model);
+CREATE INDEX IF NOT EXISTS idx_media_recognition ON media(recognition_state);
+
+CREATE TABLE IF NOT EXISTS albums (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    album_type INTEGER NOT NULL DEFAULT 0,
+    auto_key TEXT NOT NULL DEFAULT '',
+    cover_media_id INTEGER REFERENCES media(id) ON DELETE SET NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_albums_type_key ON albums(album_type, auto_key);
+CREATE INDEX IF NOT EXISTS idx_albums_type ON albums(album_type);
+
+CREATE TABLE IF NOT EXISTS album_media (
+    album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+    media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    added_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (album_id, media_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_album_media_media ON album_media(media_id);
+
+CREATE TABLE IF NOT EXISTS tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    tag_type INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS media_tags (
+    media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    confidence REAL NOT NULL DEFAULT 1.0,
+    PRIMARY KEY (media_id, tag_id)
+);
+
+CREATE TABLE IF NOT EXISTS people (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL DEFAULT '',
+    representative_face_id INTEGER,
+    visible INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TABLE IF NOT EXISTS faces (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    person_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
+    x REAL NOT NULL,
+    y REAL NOT NULL,
+    w REAL NOT NULL,
+    h REAL NOT NULL,
+    embedding BLOB,
+    confidence REAL NOT NULL DEFAULT 0.0
+);
+
+CREATE INDEX IF NOT EXISTS idx_faces_media ON faces(media_id);
+CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id);
+
+CREATE TABLE IF NOT EXISTS gallery_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rename_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id INTEGER NOT NULL,
+    file_id INTEGER NOT NULL,
+    old_path TEXT NOT NULL,
+    new_path TEXT NOT NULL,
+    renamed_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_rename_log_batch ON rename_log(batch_id);
