@@ -131,7 +131,7 @@ templ calIndexPage(pd ui.PageData, calendars []Calendar) {
 					<div id="ce-rrule-custom" style="display:none">
 						<div class="form-group">
 							<label for="ce-rrule">Custom RRULE</label>
-							<input class="form-control" type="text" id="ce-rrule" name="rrule" placeholder="e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10" oninput="updateRRuleDesc(this, 'ce-rrule-desc')"/>
+							<input class="form-control" type="text" id="ce-rrule" name="rrule" placeholder="e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10" hx-get="/apps/calendar/rrule-preview" hx-trigger="input changed delay:300ms" hx-target="#ce-rrule-desc"/>
 							<div id="ce-rrule-desc" class="text-muted" style="font-size:0.85rem;margin-top:0.25rem"></div>
 						</div>
 					</div>
@@ -203,29 +203,6 @@ templ calIndexPage(pd ui.PageData, calendars []Calendar) {
 			var cb = document.getElementById(cbId);
 			if (cb && !cb.checked) document.getElementById(colorId).value = '';
 		}
-		// RRULE human-readable description (client-side approximation)
-		function updateRRuleDesc(input, descId) {
-			var val = input.value.trim().toUpperCase();
-			var el = document.getElementById(descId);
-			if (!val) { el.textContent = ''; return; }
-			var params = {};
-			val.split(';').forEach(function(p) { var kv = p.split('='); if (kv.length===2) params[kv[0]]=kv[1]; });
-			var freq = params['FREQ'] || '';
-			var interval = parseInt(params['INTERVAL'] || '1') || 1;
-			var desc = '';
-			var units = {DAILY:'day',WEEKLY:'week',MONTHLY:'month',YEARLY:'year'};
-			var unit = units[freq];
-			if (!unit) { el.textContent = val; return; }
-			desc = interval === 1 ? 'Every ' + unit : 'Every ' + interval + ' ' + unit + 's';
-			if (params['BYDAY']) {
-				var dayNames = {MO:'Mon',TU:'Tue',WE:'Wed',TH:'Thu',FR:'Fri',SA:'Sat',SU:'Sun'};
-				var days = params['BYDAY'].split(',').map(function(d){return dayNames[d.trim()]||d;});
-				desc += ' on ' + days.join(', ');
-			}
-			if (params['COUNT']) desc += ', ' + params['COUNT'] + ' times';
-			if (params['UNTIL']) desc += ', until ' + params['UNTIL'];
-			el.textContent = desc;
-		}
 		// Color picker: sync with calendar default when toggling custom off
 		function syncCalColor(sel, colorId, checkboxId) {
 			var opt = sel.options[sel.selectedIndex];
@@ -275,7 +252,9 @@ templ calIndexPage(pd ui.PageData, calendars []Calendar) {
 					})
 					.then(function(r) { return r.text(); })
 					.then(function(html) {
-						document.getElementById('event-modal-body').innerHTML = html;
+						var body = document.getElementById('event-modal-body');
+						body.innerHTML = html;
+						htmx.process(body);
 						document.getElementById('event-modal').style.display = 'flex';
 					});
 				},
@@ -486,7 +465,7 @@ templ calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calend
 			<div id="em-rrule-custom" style="display:none">
 				<div class="form-group">
 					<label for="em-rrule">Custom RRULE</label>
-					<input class="form-control" type="text" id="em-rrule" name="rrule" placeholder="e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10" oninput="updateRRuleDesc(this, 'em-rrule-desc')"/>
+					<input class="form-control" type="text" id="em-rrule" name="rrule" placeholder="e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10" hx-get="/apps/calendar/rrule-preview" hx-trigger="input changed delay:300ms" hx-target="#em-rrule-desc"/>
 					<div id="em-rrule-desc" class="text-muted" style="font-size:0.85rem;margin-top:0.25rem"></div>
 				</div>
 			</div>
@@ -516,7 +495,7 @@ templ calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calend
 			<div id="em-rrule-custom">
 				<div class="form-group">
 					<label for="em-rrule">Custom RRULE</label>
-					<input class="form-control" type="text" id="em-rrule" name="rrule" value={ eventRRuleRaw(ev) } placeholder="e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10" oninput="updateRRuleDesc(this, 'em-rrule-desc')"/>
+					<input class="form-control" type="text" id="em-rrule" name="rrule" value={ eventRRuleRaw(ev) } placeholder="e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10" hx-get="/apps/calendar/rrule-preview" hx-trigger="input changed delay:300ms" hx-target="#em-rrule-desc"/>
 					<div id="em-rrule-desc" class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">{ eventRRule(ev) }</div>
 				</div>
 			</div>
@@ -546,7 +525,7 @@ templ calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calend
 			<div id="em-rrule-custom" style="display:none">
 				<div class="form-group">
 					<label for="em-rrule">Custom RRULE</label>
-					<input class="form-control" type="text" id="em-rrule" name="rrule" placeholder="e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10" oninput="updateRRuleDesc(this, 'em-rrule-desc')"/>
+					<input class="form-control" type="text" id="em-rrule" name="rrule" placeholder="e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10" hx-get="/apps/calendar/rrule-preview" hx-trigger="input changed delay:300ms" hx-target="#em-rrule-desc"/>
 					<div id="em-rrule-desc" class="text-muted" style="font-size:0.85rem;margin-top:0.25rem"></div>
 				</div>
 			</div>

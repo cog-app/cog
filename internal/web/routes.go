@@ -202,6 +202,7 @@ func New(p *services.Providers, extraPlugins ...plugin.Plugin) http.Handler {
 	mux.Handle("POST /apps/calendar/calendars", csrfWeb(http.HandlerFunc(calPages.CreateCalendar)))
 	mux.Handle("DELETE /apps/calendar/calendars/{id}", csrfWeb(http.HandlerFunc(calPages.DeleteCalendarHandler)))
 	mux.Handle("GET /apps/calendar/notifications", auth.RequireAuth(http.HandlerFunc(calPages.Notifications)))
+	mux.Handle("GET /apps/calendar/rrule-preview", auth.RequireAuth(http.HandlerFunc(calPages.RRulePreview)))
 
 	// CalDAV endpoints
 	caldav := calendar.NewCalDAVHandler(calPlugin)

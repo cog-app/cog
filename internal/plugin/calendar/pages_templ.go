@@ -273,7 +273,7 @@ func calIndexPage(pd ui.PageData, calendars []Calendar) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div></div><div class=\"form-group\"><label for=\"ce-until\">Until (optional)</label> <input class=\"form-control\" type=\"date\" id=\"ce-until\" name=\"rrule_until\" style=\"max-width:200px\"></div></div><div id=\"ce-rrule-custom\" style=\"display:none\"><div class=\"form-group\"><label for=\"ce-rrule\">Custom RRULE</label> <input class=\"form-control\" type=\"text\" id=\"ce-rrule\" name=\"rrule\" placeholder=\"e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10\" oninput=\"updateRRuleDesc(this, 'ce-rrule-desc')\"><div id=\"ce-rrule-desc\" class=\"text-muted\" style=\"font-size:0.85rem;margin-top:0.25rem\"></div></div></div><div class=\"form-group\"><label>Attendees</label><div id=\"ce-attendees\"></div><button type=\"button\" class=\"btn btn-sm\" onclick=\"addAttendeeRow('ce-attendees')\">Add attendee</button></div><div class=\"form-group\"><label for=\"ce-color\">Event Color</label><div class=\"flex gap-1 items-center\"><input class=\"form-control\" type=\"color\" id=\"ce-color\" name=\"color\" value=\"#0082c9\" style=\"width:60px;padding:2px\"> <label style=\"font-size:0.8rem;font-weight:normal\"><input type=\"checkbox\" id=\"ce-color-enable\" onchange=\"handleColorToggle(this,'ce-color','ce-calendar')\"> Custom color</label></div></div><div class=\"flex gap-1\" style=\"justify-content:flex-end\"><button type=\"button\" class=\"btn\" onclick=\"document.getElementById('create-modal').style.display='none'\">Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Create</button></div></form></div></div><style>\n\t\t\t.modal-overlay {\n\t\t\t\tposition: fixed; top: 0; left: 0; right: 0; bottom: 0;\n\t\t\t\tbackground: rgba(0,0,0,0.5); z-index: 1000;\n\t\t\t\tdisplay: flex; align-items: center; justify-content: center;\n\t\t\t}\n\t\t\t.modal-content {\n\t\t\t\tbackground: var(--color-bg, #fff); border-radius: 8px;\n\t\t\t\tpadding: 1.5rem; max-width: 500px; width: 90%;\n\t\t\t\tmax-height: 80vh; overflow-y: auto;\n\t\t\t\tbox-shadow: 0 4px 24px rgba(0,0,0,0.2);\n\t\t\t}\n\t\t</style> <script>\n\t\tfunction addAttendeeRow(containerId) {\n\t\t\tvar container = document.getElementById(containerId);\n\t\t\tvar row = document.createElement('div');\n\t\t\trow.className = 'flex gap-1 items-center';\n\t\t\trow.style.marginBottom = '0.25rem';\n\t\t\trow.innerHTML = '<input class=\"form-control\" type=\"email\" name=\"attendee_email\" placeholder=\"email@example.com\" style=\"flex:1\"/>' +\n\t\t\t\t'<input class=\"form-control\" type=\"text\" name=\"attendee_name\" placeholder=\"Name\" style=\"flex:1\"/>' +\n\t\t\t\t'<select class=\"form-control\" name=\"attendee_role\" style=\"width:auto\">' +\n\t\t\t\t'<option value=\"REQ-PARTICIPANT\" selected>Required</option>' +\n\t\t\t\t'<option value=\"OPT-PARTICIPANT\">Optional</option>' +\n\t\t\t\t'<option value=\"CHAIR\">Chair</option></select>' +\n\t\t\t\t'<button type=\"button\" class=\"btn btn-sm\" onclick=\"this.parentElement.remove()\">Remove</button>';\n\t\t\tcontainer.appendChild(row);\n\t\t}\n\t\tfunction toggleRecurrenceOpts(prefix) {\n\t\t\tvar freq = document.getElementById(prefix + '-freq').value;\n\t\t\tvar opts = document.getElementById(prefix + '-rrule-opts');\n\t\t\tvar custom = document.getElementById(prefix + '-rrule-custom');\n\t\t\tvar byday = document.getElementById(prefix + '-byday');\n\t\t\tif (freq === 'NONE') {\n\t\t\t\tif (opts) opts.style.display = 'none';\n\t\t\t\tif (custom) custom.style.display = 'none';\n\t\t\t} else if (freq === 'CUSTOM') {\n\t\t\t\tif (opts) opts.style.display = 'none';\n\t\t\t\tif (custom) custom.style.display = '';\n\t\t\t} else {\n\t\t\t\tif (opts) opts.style.display = '';\n\t\t\t\tif (custom) custom.style.display = 'none';\n\t\t\t\tif (byday) byday.style.display = freq === 'WEEKLY' ? '' : 'none';\n\t\t\t}\n\t\t}\n\t\tfunction clearColorIfUnchecked(cbId, colorId) {\n\t\t\tvar cb = document.getElementById(cbId);\n\t\t\tif (cb && !cb.checked) document.getElementById(colorId).value = '';\n\t\t}\n\t\t// RRULE human-readable description (client-side approximation)\n\t\tfunction updateRRuleDesc(input, descId) {\n\t\t\tvar val = input.value.trim().toUpperCase();\n\t\t\tvar el = document.getElementById(descId);\n\t\t\tif (!val) { el.textContent = ''; return; }\n\t\t\tvar params = {};\n\t\t\tval.split(';').forEach(function(p) { var kv = p.split('='); if (kv.length===2) params[kv[0]]=kv[1]; });\n\t\t\tvar freq = params['FREQ'] || '';\n\t\t\tvar interval = parseInt(params['INTERVAL'] || '1') || 1;\n\t\t\tvar desc = '';\n\t\t\tvar units = {DAILY:'day',WEEKLY:'week',MONTHLY:'month',YEARLY:'year'};\n\t\t\tvar unit = units[freq];\n\t\t\tif (!unit) { el.textContent = val; return; }\n\t\t\tdesc = interval === 1 ? 'Every ' + unit : 'Every ' + interval + ' ' + unit + 's';\n\t\t\tif (params['BYDAY']) {\n\t\t\t\tvar dayNames = {MO:'Mon',TU:'Tue',WE:'Wed',TH:'Thu',FR:'Fri',SA:'Sat',SU:'Sun'};\n\t\t\t\tvar days = params['BYDAY'].split(',').map(function(d){return dayNames[d.trim()]||d;});\n\t\t\t\tdesc += ' on ' + days.join(', ');\n\t\t\t}\n\t\t\tif (params['COUNT']) desc += ', ' + params['COUNT'] + ' times';\n\t\t\tif (params['UNTIL']) desc += ', until ' + params['UNTIL'];\n\t\t\tel.textContent = desc;\n\t\t}\n\t\t// Color picker: sync with calendar default when toggling custom off\n\t\tfunction syncCalColor(sel, colorId, checkboxId) {\n\t\t\tvar opt = sel.options[sel.selectedIndex];\n\t\t\tvar color = opt.getAttribute('data-color') || '#0082c9';\n\t\t\tvar cb = document.getElementById(checkboxId);\n\t\t\tif (!cb || !cb.checked) {\n\t\t\t\tdocument.getElementById(colorId).value = color;\n\t\t\t}\n\t\t}\n\t\tfunction handleColorToggle(cb, colorId, calSelId) {\n\t\t\tif (!cb.checked) {\n\t\t\t\tvar sel = document.getElementById(calSelId);\n\t\t\t\tvar opt = sel.options[sel.selectedIndex];\n\t\t\t\tdocument.getElementById(colorId).value = opt.getAttribute('data-color') || '#0082c9';\n\t\t\t}\n\t\t}\n\t\tfunction handleColorToggleEdit(cb, colorId) {\n\t\t\t// For edit modal, unchecking resets to calendar default (stored in data attr)\n\t\t\tif (!cb.checked) {\n\t\t\t\tvar picker = document.getElementById(colorId);\n\t\t\t\tpicker.value = picker.getAttribute('data-default') || '#0082c9';\n\t\t\t}\n\t\t}\n\t\t(function() {\n\t\t\tvar calEl = document.getElementById('calendar');\n\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\tvar initDate = params.get('date');\n\t\t\tvar calOpts = {\n\t\t\t\tinitialView: 'dayGridMonth',\n\t\t\t\theaderToolbar: {\n\t\t\t\t\tleft: 'prev,next today',\n\t\t\t\t\tcenter: 'title',\n\t\t\t\t\tright: 'dayGridMonth,timeGridWeek,timeGridDay'\n\t\t\t\t},\n\t\t\t\tevents: '/apps/calendar/events.json',\n\t\t\t\teditable: false,\n\t\t\t\tselectable: true,\n\t\t\t\tdatesSet: function(info) {\n\t\t\t\t\tvar d = info.view.currentStart.toISOString().slice(0, 10);\n\t\t\t\t\thistory.replaceState(null, '', '/apps/calendar/?date=' + d);\n\t\t\t\t},\n\t\t\t\teventClick: function(info) {\n\t\t\t\t\tinfo.jsEvent.preventDefault();\n\t\t\t\t\tvar id = info.event.id;\n\t\t\t\t\tfetch('/apps/calendar/events/' + id, {\n\t\t\t\t\t\theaders: {'X-CSRF-Token': document.querySelector('[name=csrf_token]').value}\n\t\t\t\t\t})\n\t\t\t\t\t.then(function(r) { return r.text(); })\n\t\t\t\t\t.then(function(html) {\n\t\t\t\t\t\tdocument.getElementById('event-modal-body').innerHTML = html;\n\t\t\t\t\t\tdocument.getElementById('event-modal').style.display = 'flex';\n\t\t\t\t\t});\n\t\t\t\t},\n\t\t\t\tdateClick: function(info) {\n\t\t\t\t\tvar modal = document.getElementById('create-modal');\n\t\t\t\t\tvar isAllDay = info.allDay;\n\t\t\t\t\tif (isAllDay) {\n\t\t\t\t\t\tdocument.getElementById('ce-allday').checked = true;\n\t\t\t\t\t\tdocument.getElementById('ce-datetime-fields').style.display = 'none';\n\t\t\t\t\t\tdocument.getElementById('ce-date-fields').style.display = '';\n\t\t\t\t\t\tdocument.getElementById('ce-date-start').value = info.dateStr;\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdocument.getElementById('ce-allday').checked = false;\n\t\t\t\t\t\tdocument.getElementById('ce-datetime-fields').style.display = '';\n\t\t\t\t\t\tdocument.getElementById('ce-date-fields').style.display = 'none';\n\t\t\t\t\t\tdocument.getElementById('ce-start').value = info.dateStr.slice(0, 16);\n\t\t\t\t\t}\n\t\t\t\t\tmodal.style.display = 'flex';\n\t\t\t\t\tdocument.getElementById('ce-summary').focus();\n\t\t\t\t},\n\t\t\t\theight: 'auto'\n\t\t\t};\n\t\t\tif (initDate) { calOpts.initialDate = initDate; }\n\t\t\tvar calendar = new FullCalendar.Calendar(calEl, calOpts);\n\t\t\tcalendar.render();\n\n\t\t\t// Calendar toggle checkboxes\n\t\t\tdocument.querySelectorAll('.cal-toggle').forEach(function(cb) {\n\t\t\t\tcb.addEventListener('change', function() {\n\t\t\t\t\tvar calId = parseInt(this.dataset.calendarId);\n\t\t\t\t\tcalendar.getEvents().forEach(function(ev) {\n\t\t\t\t\t\tif (ev.extendedProps.calendarId === calId) {\n\t\t\t\t\t\t\tev.setProp('display', cb.checked ? 'auto' : 'none');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t});\n\n\t\t\t// Init create modal: sync color to first calendar's default\n\t\t\t(function() {\n\t\t\t\tvar sel = document.getElementById('ce-calendar');\n\t\t\t\tif (sel && sel.options.length) syncCalColor(sel, 'ce-color', 'ce-color-enable');\n\t\t\t})();\n\n\t\t\t// All-day toggle in create modal\n\t\t\tdocument.getElementById('ce-allday').addEventListener('change', function() {\n\t\t\t\tdocument.getElementById('ce-datetime-fields').style.display = this.checked ? 'none' : '';\n\t\t\t\tdocument.getElementById('ce-date-fields').style.display = this.checked ? '' : 'none';\n\t\t\t});\n\t\t})();\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div></div><div class=\"form-group\"><label for=\"ce-until\">Until (optional)</label> <input class=\"form-control\" type=\"date\" id=\"ce-until\" name=\"rrule_until\" style=\"max-width:200px\"></div></div><div id=\"ce-rrule-custom\" style=\"display:none\"><div class=\"form-group\"><label for=\"ce-rrule\">Custom RRULE</label> <input class=\"form-control\" type=\"text\" id=\"ce-rrule\" name=\"rrule\" placeholder=\"e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10\" hx-get=\"/apps/calendar/rrule-preview\" hx-trigger=\"input changed delay:300ms\" hx-target=\"#ce-rrule-desc\"><div id=\"ce-rrule-desc\" class=\"text-muted\" style=\"font-size:0.85rem;margin-top:0.25rem\"></div></div></div><div class=\"form-group\"><label>Attendees</label><div id=\"ce-attendees\"></div><button type=\"button\" class=\"btn btn-sm\" onclick=\"addAttendeeRow('ce-attendees')\">Add attendee</button></div><div class=\"form-group\"><label for=\"ce-color\">Event Color</label><div class=\"flex gap-1 items-center\"><input class=\"form-control\" type=\"color\" id=\"ce-color\" name=\"color\" value=\"#0082c9\" style=\"width:60px;padding:2px\"> <label style=\"font-size:0.8rem;font-weight:normal\"><input type=\"checkbox\" id=\"ce-color-enable\" onchange=\"handleColorToggle(this,'ce-color','ce-calendar')\"> Custom color</label></div></div><div class=\"flex gap-1\" style=\"justify-content:flex-end\"><button type=\"button\" class=\"btn\" onclick=\"document.getElementById('create-modal').style.display='none'\">Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Create</button></div></form></div></div><style>\n\t\t\t.modal-overlay {\n\t\t\t\tposition: fixed; top: 0; left: 0; right: 0; bottom: 0;\n\t\t\t\tbackground: rgba(0,0,0,0.5); z-index: 1000;\n\t\t\t\tdisplay: flex; align-items: center; justify-content: center;\n\t\t\t}\n\t\t\t.modal-content {\n\t\t\t\tbackground: var(--color-bg, #fff); border-radius: 8px;\n\t\t\t\tpadding: 1.5rem; max-width: 500px; width: 90%;\n\t\t\t\tmax-height: 80vh; overflow-y: auto;\n\t\t\t\tbox-shadow: 0 4px 24px rgba(0,0,0,0.2);\n\t\t\t}\n\t\t</style> <script>\n\t\tfunction addAttendeeRow(containerId) {\n\t\t\tvar container = document.getElementById(containerId);\n\t\t\tvar row = document.createElement('div');\n\t\t\trow.className = 'flex gap-1 items-center';\n\t\t\trow.style.marginBottom = '0.25rem';\n\t\t\trow.innerHTML = '<input class=\"form-control\" type=\"email\" name=\"attendee_email\" placeholder=\"email@example.com\" style=\"flex:1\"/>' +\n\t\t\t\t'<input class=\"form-control\" type=\"text\" name=\"attendee_name\" placeholder=\"Name\" style=\"flex:1\"/>' +\n\t\t\t\t'<select class=\"form-control\" name=\"attendee_role\" style=\"width:auto\">' +\n\t\t\t\t'<option value=\"REQ-PARTICIPANT\" selected>Required</option>' +\n\t\t\t\t'<option value=\"OPT-PARTICIPANT\">Optional</option>' +\n\t\t\t\t'<option value=\"CHAIR\">Chair</option></select>' +\n\t\t\t\t'<button type=\"button\" class=\"btn btn-sm\" onclick=\"this.parentElement.remove()\">Remove</button>';\n\t\t\tcontainer.appendChild(row);\n\t\t}\n\t\tfunction toggleRecurrenceOpts(prefix) {\n\t\t\tvar freq = document.getElementById(prefix + '-freq').value;\n\t\t\tvar opts = document.getElementById(prefix + '-rrule-opts');\n\t\t\tvar custom = document.getElementById(prefix + '-rrule-custom');\n\t\t\tvar byday = document.getElementById(prefix + '-byday');\n\t\t\tif (freq === 'NONE') {\n\t\t\t\tif (opts) opts.style.display = 'none';\n\t\t\t\tif (custom) custom.style.display = 'none';\n\t\t\t} else if (freq === 'CUSTOM') {\n\t\t\t\tif (opts) opts.style.display = 'none';\n\t\t\t\tif (custom) custom.style.display = '';\n\t\t\t} else {\n\t\t\t\tif (opts) opts.style.display = '';\n\t\t\t\tif (custom) custom.style.display = 'none';\n\t\t\t\tif (byday) byday.style.display = freq === 'WEEKLY' ? '' : 'none';\n\t\t\t}\n\t\t}\n\t\tfunction clearColorIfUnchecked(cbId, colorId) {\n\t\t\tvar cb = document.getElementById(cbId);\n\t\t\tif (cb && !cb.checked) document.getElementById(colorId).value = '';\n\t\t}\n\t\t// Color picker: sync with calendar default when toggling custom off\n\t\tfunction syncCalColor(sel, colorId, checkboxId) {\n\t\t\tvar opt = sel.options[sel.selectedIndex];\n\t\t\tvar color = opt.getAttribute('data-color') || '#0082c9';\n\t\t\tvar cb = document.getElementById(checkboxId);\n\t\t\tif (!cb || !cb.checked) {\n\t\t\t\tdocument.getElementById(colorId).value = color;\n\t\t\t}\n\t\t}\n\t\tfunction handleColorToggle(cb, colorId, calSelId) {\n\t\t\tif (!cb.checked) {\n\t\t\t\tvar sel = document.getElementById(calSelId);\n\t\t\t\tvar opt = sel.options[sel.selectedIndex];\n\t\t\t\tdocument.getElementById(colorId).value = opt.getAttribute('data-color') || '#0082c9';\n\t\t\t}\n\t\t}\n\t\tfunction handleColorToggleEdit(cb, colorId) {\n\t\t\t// For edit modal, unchecking resets to calendar default (stored in data attr)\n\t\t\tif (!cb.checked) {\n\t\t\t\tvar picker = document.getElementById(colorId);\n\t\t\t\tpicker.value = picker.getAttribute('data-default') || '#0082c9';\n\t\t\t}\n\t\t}\n\t\t(function() {\n\t\t\tvar calEl = document.getElementById('calendar');\n\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\tvar initDate = params.get('date');\n\t\t\tvar calOpts = {\n\t\t\t\tinitialView: 'dayGridMonth',\n\t\t\t\theaderToolbar: {\n\t\t\t\t\tleft: 'prev,next today',\n\t\t\t\t\tcenter: 'title',\n\t\t\t\t\tright: 'dayGridMonth,timeGridWeek,timeGridDay'\n\t\t\t\t},\n\t\t\t\tevents: '/apps/calendar/events.json',\n\t\t\t\teditable: false,\n\t\t\t\tselectable: true,\n\t\t\t\tdatesSet: function(info) {\n\t\t\t\t\tvar d = info.view.currentStart.toISOString().slice(0, 10);\n\t\t\t\t\thistory.replaceState(null, '', '/apps/calendar/?date=' + d);\n\t\t\t\t},\n\t\t\t\teventClick: function(info) {\n\t\t\t\t\tinfo.jsEvent.preventDefault();\n\t\t\t\t\tvar id = info.event.id;\n\t\t\t\t\tfetch('/apps/calendar/events/' + id, {\n\t\t\t\t\t\theaders: {'X-CSRF-Token': document.querySelector('[name=csrf_token]').value}\n\t\t\t\t\t})\n\t\t\t\t\t.then(function(r) { return r.text(); })\n\t\t\t\t\t.then(function(html) {\n\t\t\t\t\t\tvar body = document.getElementById('event-modal-body');\n\t\t\t\t\t\tbody.innerHTML = html;\n\t\t\t\t\t\thtmx.process(body);\n\t\t\t\t\t\tdocument.getElementById('event-modal').style.display = 'flex';\n\t\t\t\t\t});\n\t\t\t\t},\n\t\t\t\tdateClick: function(info) {\n\t\t\t\t\tvar modal = document.getElementById('create-modal');\n\t\t\t\t\tvar isAllDay = info.allDay;\n\t\t\t\t\tif (isAllDay) {\n\t\t\t\t\t\tdocument.getElementById('ce-allday').checked = true;\n\t\t\t\t\t\tdocument.getElementById('ce-datetime-fields').style.display = 'none';\n\t\t\t\t\t\tdocument.getElementById('ce-date-fields').style.display = '';\n\t\t\t\t\t\tdocument.getElementById('ce-date-start').value = info.dateStr;\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdocument.getElementById('ce-allday').checked = false;\n\t\t\t\t\t\tdocument.getElementById('ce-datetime-fields').style.display = '';\n\t\t\t\t\t\tdocument.getElementById('ce-date-fields').style.display = 'none';\n\t\t\t\t\t\tdocument.getElementById('ce-start').value = info.dateStr.slice(0, 16);\n\t\t\t\t\t}\n\t\t\t\t\tmodal.style.display = 'flex';\n\t\t\t\t\tdocument.getElementById('ce-summary').focus();\n\t\t\t\t},\n\t\t\t\theight: 'auto'\n\t\t\t};\n\t\t\tif (initDate) { calOpts.initialDate = initDate; }\n\t\t\tvar calendar = new FullCalendar.Calendar(calEl, calOpts);\n\t\t\tcalendar.render();\n\n\t\t\t// Calendar toggle checkboxes\n\t\t\tdocument.querySelectorAll('.cal-toggle').forEach(function(cb) {\n\t\t\t\tcb.addEventListener('change', function() {\n\t\t\t\t\tvar calId = parseInt(this.dataset.calendarId);\n\t\t\t\t\tcalendar.getEvents().forEach(function(ev) {\n\t\t\t\t\t\tif (ev.extendedProps.calendarId === calId) {\n\t\t\t\t\t\t\tev.setProp('display', cb.checked ? 'auto' : 'none');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t});\n\n\t\t\t// Init create modal: sync color to first calendar's default\n\t\t\t(function() {\n\t\t\t\tvar sel = document.getElementById('ce-calendar');\n\t\t\t\tif (sel && sel.options.length) syncCalColor(sel, 'ce-color', 'ce-color-enable');\n\t\t\t})();\n\n\t\t\t// All-day toggle in create modal\n\t\t\tdocument.getElementById('ce-allday').addEventListener('change', function() {\n\t\t\t\tdocument.getElementById('ce-datetime-fields').style.display = this.checked ? 'none' : '';\n\t\t\t\tdocument.getElementById('ce-date-fields').style.display = this.checked ? '' : 'none';\n\t\t\t});\n\t\t})();\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -315,7 +315,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Summary)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 334, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 313, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -328,7 +328,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 		var templ_7745c5c3_Var17 string
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(formatEventTime(ev.DTStart, ev.DTEnd, ev.IsAllDay))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 336, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 315, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
@@ -346,7 +346,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Location)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 338, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 317, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -369,7 +369,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Description)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 342, Col: 21}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 321, Col: 21}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -388,7 +388,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(eventRRule(ev))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 345, Col: 75}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 324, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -407,7 +407,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var21 string
 			templ_7745c5c3_Var21, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s;vertical-align:middle", cal.Color))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 349, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 328, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 			if templ_7745c5c3_Err != nil {
@@ -420,7 +420,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(" " + cal.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 350, Col: 19}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 329, Col: 19}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 			if templ_7745c5c3_Err != nil {
@@ -445,7 +445,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 					var templ_7745c5c3_Var23 string
 					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(att.DisplayName)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 360, Col: 24}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 339, Col: 24}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 					if templ_7745c5c3_Err != nil {
@@ -459,7 +459,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 					var templ_7745c5c3_Var24 string
 					templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(att.Email)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 362, Col: 18}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 341, Col: 18}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 					if templ_7745c5c3_Err != nil {
@@ -477,7 +477,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 				var templ_7745c5c3_Var25 string
 				templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(att.Email)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 365, Col: 19}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 344, Col: 19}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 				if templ_7745c5c3_Err != nil {
@@ -525,7 +525,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 		var templ_7745c5c3_Var26 templ.SafeURL
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d", ev.ID)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 383, Col: 91}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 362, Col: 91}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 		if templ_7745c5c3_Err != nil {
@@ -538,7 +538,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 		var templ_7745c5c3_Var27 string
 		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 384, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 363, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 		if templ_7745c5c3_Err != nil {
@@ -557,7 +557,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 				var templ_7745c5c3_Var28 string
 				templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(c.ID, 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 390, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 369, Col: 49}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 				if templ_7745c5c3_Err != nil {
@@ -570,7 +570,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 				var templ_7745c5c3_Var29 string
 				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 390, Col: 69}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 369, Col: 69}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 				if templ_7745c5c3_Err != nil {
@@ -588,7 +588,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 				var templ_7745c5c3_Var30 string
 				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(c.ID, 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 392, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 371, Col: 49}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 				if templ_7745c5c3_Err != nil {
@@ -601,7 +601,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 				var templ_7745c5c3_Var31 string
 				templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 392, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 371, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 				if templ_7745c5c3_Err != nil {
@@ -620,7 +620,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 		var templ_7745c5c3_Var32 string
 		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Summary)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 399, Col: 92}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 378, Col: 92}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 		if templ_7745c5c3_Err != nil {
@@ -653,7 +653,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var33 string
 			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(ev.DTStart, 0).UTC().Format("2006-01-02"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 413, Col: 140}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 392, Col: 140}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 			if templ_7745c5c3_Err != nil {
@@ -666,7 +666,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(ev.DTEnd, 0).UTC().Format("2006-01-02"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 417, Col: 134}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 396, Col: 134}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
@@ -684,7 +684,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(ev.DTStart, 0).UTC().Format("2006-01-02T15:04"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 422, Col: 155}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 401, Col: 155}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -697,7 +697,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var36 string
 			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(ev.DTEnd, 0).UTC().Format("2006-01-02T15:04"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 426, Col: 149}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 405, Col: 149}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 			if templ_7745c5c3_Err != nil {
@@ -715,7 +715,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 		var templ_7745c5c3_Var37 string
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Location)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 431, Col: 95}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 410, Col: 95}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
@@ -728,7 +728,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Description)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 435, Col: 98}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 414, Col: 98}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 		if templ_7745c5c3_Err != nil {
@@ -774,7 +774,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var39 string
 			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(eventRRuleInterval(ev))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 452, Col: 116}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 431, Col: 116}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 			if templ_7745c5c3_Err != nil {
@@ -866,13 +866,13 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(eventRRuleUntil(ev))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 483, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 462, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\" style=\"max-width:200px\"></div></div><div id=\"em-rrule-custom\" style=\"display:none\"><div class=\"form-group\"><label for=\"em-rrule\">Custom RRULE</label> <input class=\"form-control\" type=\"text\" id=\"em-rrule\" name=\"rrule\" placeholder=\"e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10\" oninput=\"updateRRuleDesc(this, 'em-rrule-desc')\"><div id=\"em-rrule-desc\" class=\"text-muted\" style=\"font-size:0.85rem;margin-top:0.25rem\"></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\" style=\"max-width:200px\"></div></div><div id=\"em-rrule-custom\" style=\"display:none\"><div class=\"form-group\"><label for=\"em-rrule\">Custom RRULE</label> <input class=\"form-control\" type=\"text\" id=\"em-rrule\" name=\"rrule\" placeholder=\"e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10\" hx-get=\"/apps/calendar/rrule-preview\" hx-trigger=\"input changed delay:300ms\" hx-target=\"#em-rrule-desc\"><div id=\"em-rrule-desc\" class=\"text-muted\" style=\"font-size:0.85rem;margin-top:0.25rem\"></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -916,20 +916,20 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(eventRRuleRaw(ev))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 519, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 498, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\" placeholder=\"e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10\" oninput=\"updateRRuleDesc(this, 'em-rrule-desc')\"><div id=\"em-rrule-desc\" class=\"text-muted\" style=\"font-size:0.85rem;margin-top:0.25rem\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\" placeholder=\"e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10\" hx-get=\"/apps/calendar/rrule-preview\" hx-trigger=\"input changed delay:300ms\" hx-target=\"#em-rrule-desc\"><div id=\"em-rrule-desc\" class=\"text-muted\" style=\"font-size:0.85rem;margin-top:0.25rem\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(eventRRule(ev))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 520, Col: 109}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 499, Col: 109}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
@@ -972,7 +972,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "</div></div><div class=\"form-group\"><label for=\"em-until\">Until (optional)</label> <input class=\"form-control\" type=\"date\" id=\"em-until\" name=\"rrule_until\" style=\"max-width:200px\"></div></div><div id=\"em-rrule-custom\" style=\"display:none\"><div class=\"form-group\"><label for=\"em-rrule\">Custom RRULE</label> <input class=\"form-control\" type=\"text\" id=\"em-rrule\" name=\"rrule\" placeholder=\"e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10\" oninput=\"updateRRuleDesc(this, 'em-rrule-desc')\"><div id=\"em-rrule-desc\" class=\"text-muted\" style=\"font-size:0.85rem;margin-top:0.25rem\"></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "</div></div><div class=\"form-group\"><label for=\"em-until\">Until (optional)</label> <input class=\"form-control\" type=\"date\" id=\"em-until\" name=\"rrule_until\" style=\"max-width:200px\"></div></div><div id=\"em-rrule-custom\" style=\"display:none\"><div class=\"form-group\"><label for=\"em-rrule\">Custom RRULE</label> <input class=\"form-control\" type=\"text\" id=\"em-rrule\" name=\"rrule\" placeholder=\"e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10\" hx-get=\"/apps/calendar/rrule-preview\" hx-trigger=\"input changed delay:300ms\" hx-target=\"#em-rrule-desc\"><div id=\"em-rrule-desc\" class=\"text-muted\" style=\"font-size:0.85rem;margin-top:0.25rem\"></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -989,7 +989,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(att.Email)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 559, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 538, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
@@ -1002,7 +1002,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 			var templ_7745c5c3_Var44 string
 			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(att.DisplayName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 560, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 539, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
@@ -1040,7 +1040,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 		var templ_7745c5c3_Var45 string
 		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(eventColorOrDefault(ev, cal))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 585, Col: 108}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 564, Col: 108}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 		if templ_7745c5c3_Err != nil {
@@ -1053,7 +1053,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 		var templ_7745c5c3_Var46 string
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(calDefaultColor(cal))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 585, Col: 146}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 564, Col: 146}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 		if templ_7745c5c3_Err != nil {
@@ -1081,7 +1081,7 @@ func calEventModal(pd ui.PageData, ev *Event, cal *Calendar, calendars []Calenda
 		var templ_7745c5c3_Var47 string
 		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/calendar/events/%d", ev.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 597, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 576, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 		if templ_7745c5c3_Err != nil {
@@ -1124,7 +1124,7 @@ func emFreqOption(value, label, selected string) templ.Component {
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(value)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 611, Col: 23}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 590, Col: 23}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
@@ -1137,7 +1137,7 @@ func emFreqOption(value, label, selected string) templ.Component {
 			var templ_7745c5c3_Var50 string
 			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 611, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 590, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 			if templ_7745c5c3_Err != nil {
@@ -1155,7 +1155,7 @@ func emFreqOption(value, label, selected string) templ.Component {
 			var templ_7745c5c3_Var51 string
 			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(value)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 613, Col: 23}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 592, Col: 23}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 			if templ_7745c5c3_Err != nil {
@@ -1168,7 +1168,7 @@ func emFreqOption(value, label, selected string) templ.Component {
 			var templ_7745c5c3_Var52 string
 			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 613, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 592, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 			if templ_7745c5c3_Err != nil {
@@ -1216,7 +1216,7 @@ func emByDayCheckbox(prefix, day, label string, checked bool) templ.Component {
 			var templ_7745c5c3_Var54 string
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(day)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 620, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 599, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 			if templ_7745c5c3_Err != nil {
@@ -1229,7 +1229,7 @@ func emByDayCheckbox(prefix, day, label string, checked bool) templ.Component {
 			var templ_7745c5c3_Var55 string
 			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 620, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 599, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 			if templ_7745c5c3_Err != nil {
@@ -1243,7 +1243,7 @@ func emByDayCheckbox(prefix, day, label string, checked bool) templ.Component {
 			var templ_7745c5c3_Var56 string
 			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(day)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 622, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 601, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 			if templ_7745c5c3_Err != nil {
@@ -1256,7 +1256,7 @@ func emByDayCheckbox(prefix, day, label string, checked bool) templ.Component {
 			var templ_7745c5c3_Var57 string
 			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 622, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 601, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 			if templ_7745c5c3_Err != nil {
@@ -1349,7 +1349,7 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 				var templ_7745c5c3_Var61 string
 				templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 649, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 628, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 				if templ_7745c5c3_Err != nil {
@@ -1395,7 +1395,7 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 						var templ_7745c5c3_Var63 string
 						templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-%d", cal.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 681, Col: 47}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 660, Col: 47}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 						if templ_7745c5c3_Err != nil {
@@ -1408,7 +1408,7 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 						var templ_7745c5c3_Var64 string
 						templ_7745c5c3_Var64, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("display:inline-block;width:16px;height:16px;border-radius:50%%;background:%s", cal.Color))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 682, Col: 130}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 661, Col: 130}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 						if templ_7745c5c3_Err != nil {
@@ -1421,7 +1421,7 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 						var templ_7745c5c3_Var65 string
 						templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(cal.Name)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 683, Col: 24}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 662, Col: 24}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 						if templ_7745c5c3_Err != nil {
@@ -1434,7 +1434,7 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 						var templ_7745c5c3_Var66 string
 						templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(cal.UID)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 684, Col: 23}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 663, Col: 23}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 						if templ_7745c5c3_Err != nil {
@@ -1447,7 +1447,7 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 						var templ_7745c5c3_Var67 string
 						templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(cal.CTag, 10))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 685, Col: 47}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 664, Col: 47}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 						if templ_7745c5c3_Err != nil {
@@ -1460,7 +1460,7 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 						var templ_7745c5c3_Var68 string
 						templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/shares/panel?type=calendar:calendar&id=%d", cal.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 689, Col: 90}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 668, Col: 90}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 						if templ_7745c5c3_Err != nil {
@@ -1473,7 +1473,7 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 						var templ_7745c5c3_Var69 string
 						templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#cal-share-%d", cal.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 690, Col: 60}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 669, Col: 60}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 						if templ_7745c5c3_Err != nil {
@@ -1486,7 +1486,7 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 						var templ_7745c5c3_Var70 string
 						templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 695, Col: 74}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 674, Col: 74}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 						if templ_7745c5c3_Err != nil {
@@ -1499,7 +1499,7 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 						var templ_7745c5c3_Var71 string
 						templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#cal-%d", cal.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 696, Col: 54}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 675, Col: 54}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 						if templ_7745c5c3_Err != nil {
@@ -1512,7 +1512,7 @@ func calSettingsPage(pd ui.PageData, calendars []Calendar) templ.Component {
 						var templ_7745c5c3_Var72 string
 						templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-share-%d", cal.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 703, Col: 66}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 682, Col: 66}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 						if templ_7745c5c3_Err != nil {

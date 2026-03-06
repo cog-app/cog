@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
 	"strconv"
 	"strings"
@@ -285,6 +286,12 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 
 	eventColor := r.FormValue("color")
 	rrule := buildRRule(r)
+	if rrule != "" {
+		if _, err := rrulelib.StrToRRule(rrule); err != nil {
+			http.Error(w, "Invalid recurrence rule: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 
 	// Parse attendees from form
 	attendeeFields := parseAttendeeForm(r)
@@ -352,6 +359,12 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	eventColor := r.FormValue("color")
 	uid := fmt.Sprintf("%d-%s", time.Now().UnixNano(), summary)
 	rrule := buildRRule(r)
+	if rrule != "" {
+		if _, err := rrulelib.StrToRRule(rrule); err != nil {
+			http.Error(w, "Invalid recurrence rule: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 
 	// Parse attendees from form
 	attendeeFields := parseAttendeeForm(r)
@@ -466,6 +479,23 @@ func buildRRule(r *http.Request) string {
 		}
 	}
 	return strings.Join(parts, ";")
+}
+
+// RRulePreview returns an HTMX partial with the human-readable RRULE or an error.
+func (h *Pages) RRulePreview(w http.ResponseWriter, r *http.Request) {
+	raw := strings.TrimSpace(r.URL.Query().Get("rrule"))
+	raw = strings.TrimPrefix(raw, "RRULE:")
+	if raw == "" {
+		w.Write([]byte(""))
+		return
+	}
+	_, err := rrulelib.StrToRRule(raw)
+	if err != nil {
+		fmt.Fprintf(w, `<span style="color:var(--color-danger,red)">Invalid RRULE: %s</span>`, template.HTMLEscapeString(err.Error()))
+		return
+	}
+	desc := FormatRRule(raw)
+	fmt.Fprintf(w, `<span>%s</span>`, template.HTMLEscapeString(desc))
 }
 
 func eventRRule(ev *Event) string {
