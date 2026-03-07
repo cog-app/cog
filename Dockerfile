@@ -9,11 +9,16 @@ RUN CGO_ENABLED=1 go build ./cmd/cog
 
 FROM alpine
 RUN apk add --no-cache \
-	libreoffice \
 	tesseract-ocr \
 	tesseract-ocr-data-eng \
 	ffmpeg \
 	ca-certificates
+# LibreOffice is on its own line to minimize the size of the layer
+RUN apk add --no-cache --no-scripts \
+	libreoffice-writer \
+	libreoffice-calc \
+	libreoffice-impress \
+	font-noto
 COPY --from=build /code/cog /usr/bin/cog
 EXPOSE 8580
 CMD [ "/usr/bin/cog", "--addr", ":8580", "--db", "/data/system.db", "--data-dir", "/data" ]
