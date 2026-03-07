@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
@@ -102,8 +103,7 @@ func NewFromDB(cfg config.Config, sysDB *sql.DB, plugins ...plugin.Plugin) *Prov
 		log.Printf("mount bootstrap: %v", err)
 	}
 
-	secret := make([]byte, 32)
-	_, _ = rand.Read(secret) // crypto/rand.Read always succeeds or panics
+	secret := loadOrCreateSecret(sysDB)
 
 	registry := plugin.NewRegistry(cfg.DataDir, http.NewServeMux(), sysDB, secret)
 	for _, p := range plugins {
@@ -157,4 +157,25 @@ func (p *Providers) Close() error {
 	}
 	p.Plugins.Stop()
 	return p.DB.Close()
+}
+
+const secretSettingKey = "csrf_secret"
+
+// loadOrCreateSecret returns the persisted CSRF secret from the system_settings
+// table, generating and storing a new one on first run.
+func loadOrCreateSecret(db *sql.DB) []byte {
+	var hexVal string
+	err := db.QueryRow(`SELECT value FROM system_settings WHERE key = ?`, secretSettingKey).Scan(&hexVal)
+	if err == nil {
+		if b, err := hex.DecodeString(hexVal); err == nil && len(b) == 32 {
+			return b
+		}
+	}
+
+	secret := make([]byte, 32)
+	_, _ = rand.Read(secret)
+	hexVal = hex.EncodeToString(secret)
+	db.Exec(`INSERT INTO system_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		secretSettingKey, hexVal)
+	return secret
 }
