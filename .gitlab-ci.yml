@@ -9,9 +9,11 @@ default:
 test:
   image: golang:1.26-alpine
   stage: test
+  before_script:
+    - apk add --no-cache gcc musl-dev
   script:
-    - go generate ./...
-    - go test ./...
+    - CGO_ENABLED=1 go generate ./...
+    - CGO_ENABLED=1 go test ./...
 
 build:
   stage: build

@@ -1,11 +1,11 @@
 FROM golang:1.26-alpine AS build
-RUN apk add git
+RUN apk add --no-cache git gcc musl-dev
 RUN git config --global --add safe.directory '*'
 
 COPY . /code
 WORKDIR /code
-RUN go generate ./...
-RUN go build ./cmd/cog
+RUN CGO_ENABLED=1 go generate ./...
+RUN CGO_ENABLED=1 go build ./cmd/cog
 
 FROM alpine
 RUN apk add --no-cache \
