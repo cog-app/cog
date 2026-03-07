@@ -499,7 +499,7 @@ func (pr *pluginRegistrar) RegisterAction(method, path string, handler http.Hand
 }
 
 func (pr *pluginRegistrar) RegisterRoute(pattern string, handler http.Handler) {
-	pr.mux.Handle(pattern, pr.wrap(auth.RequireAuth(handler)))
+	pr.mux.Handle(pattern, pr.wrap(handler))
 }
 
 func (pr *pluginRegistrar) PluginByID(id string) (Plugin, bool) {

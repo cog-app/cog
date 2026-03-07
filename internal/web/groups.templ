@@ -307,11 +307,12 @@ templ inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, is
 				<meta name="viewport" content="width=device-width, initial-scale=1"/>
 				<title>Group Invitation — Cog</title>
 				<link rel="stylesheet" href="/static/style.css"/>
+				<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
 			</head>
 			<body>
 				<div class="login-container">
 					<div class="card login-card">
-						<div class="login-title">Cog</div>
+						<div class="login-title">@ui.CogIcon(28) Cog</div>
 						<p style="text-align:center;margin-bottom:1rem">You've been invited to join the group <strong>{ g.Name }</strong>.</p>
 						if errMsg != "" {
 							<div class="alert alert-error">{ errMsg }</div>

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/search"
@@ -16,11 +17,13 @@ templ Base(pd PageData) {
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ pd.Title } — Cog</title>
 			<link rel="stylesheet" href="/static/style.css"/>
+			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
 			<script src="/static/htmx.min.js"></script>
 		</head>
 		<body hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, pd.CSRFToken) }>
 			<nav class="navbar">
-				<a class="navbar-brand" href="/">Cog</a>
+				<a class="navbar-brand" href="/">@CogIcon(20)
+Cog</a>
 				<ul class="navbar-nav">
 					for _, item := range pd.Nav {
 						<li>
@@ -195,11 +198,13 @@ templ Shell(pd PageData, body templ.Component) {
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ pd.Title } — Cog</title>
 			<link rel="stylesheet" href="/static/style.css"/>
+			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
 			<script src="/static/htmx.min.js"></script>
 		</head>
 		<body hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, pd.CSRFToken) }>
 			<nav class="navbar">
-				<a class="navbar-brand" href="/">Cog</a>
+				<a class="navbar-brand" href="/">@CogIcon(20)
+Cog</a>
 				<ul class="navbar-nav">
 					for _, item := range pd.Nav {
 						<li>
@@ -416,7 +421,7 @@ templ UserDropdown(pd PageData) {
 			<div class="dropdown-divider"></div>
 			<form method="post" action="/logout">
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				<button type="submit">Log out</button>
+				<button type="submit" onmousedown="this.closest('form').submit()">Log out</button>
 			</form>
 		</div>
 	</div>
@@ -433,11 +438,13 @@ templ LoginPage(errMsg string, csrfToken string, next string, registrationEnable
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>Login — Cog</title>
 			<link rel="stylesheet" href="/static/style.css"/>
+			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
 		</head>
 		<body>
 			<div class="login-container">
 				<div class="card login-card">
-					<div class="login-title">Cog</div>
+					<div class="login-title">@CogIcon(28)
+Cog</div>
 					if errMsg != "" {
 						<div class="alert alert-error">{ errMsg }</div>
 					}
@@ -481,11 +488,13 @@ templ RegisterPage(errMsg string, next string) {
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>Register — Cog</title>
 			<link rel="stylesheet" href="/static/style.css"/>
+			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
 		</head>
 		<body>
 			<div class="login-container">
 				<div class="card login-card">
-					<div class="login-title">Cog</div>
+					<div class="login-title">@CogIcon(28)
+Cog</div>
 					if errMsg != "" {
 						<div class="alert alert-error">{ errMsg }</div>
 					}
@@ -519,6 +528,14 @@ templ RegisterPage(errMsg string, next string) {
 			</div>
 		</body>
 	</html>
+}
+
+// CogIcon renders a cog/gear SVG at the given pixel size.
+templ CogIcon(size int) {
+	<svg width={ strconv.Itoa(size) } height={ strconv.Itoa(size) } viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle">
+		<circle cx="12" cy="12" r="3"></circle>
+		<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+	</svg>
 }
 
 // hitURL returns the appropriate link URL for a search hit.

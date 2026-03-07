@@ -485,6 +485,16 @@ a:hover { text-decoration: underline; }
     text-decoration: none;
 }
 
+.app-icon svg {
+    width: 36px;
+    height: 36px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
 .app-card-label {
     font-weight: 600;
     font-size: 1.1rem;
