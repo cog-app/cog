@@ -7,6 +7,8 @@ package cogtest
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -28,9 +30,15 @@ type HTTPOpt func(*reqOpts)
 
 // reqOpts accumulates request configuration from HTTPOpt functions.
 type reqOpts struct {
-	req        *http.Request
-	noRedirect bool
+	req          *http.Request
+	noRedirect   bool
+	stopRedirect bool
 }
+
+// errStopRedirect is a sentinel error returned by CheckRedirect
+// to stop following redirects while still capturing the response.
+var errStopRedirect = fmt.Errorf("cogtest: stop redirect")
+
 
 // Auth sets the Authorization header.
 func Auth(value string) HTTPOpt {
@@ -44,6 +52,9 @@ func Header(key, value string) HTTPOpt {
 
 // NoRedirect causes the request to fail the test on any redirect.
 var NoRedirect HTTPOpt = func(o *reqOpts) { o.noRedirect = true }
+
+// StopRedirect stops following redirects and returns the redirect response.
+var StopRedirect HTTPOpt = func(o *reqOpts) { o.stopRedirect = true }
 
 // Env is the integration test environment.
 type Env struct {
@@ -175,16 +186,22 @@ func (e *Env) doReq(t testing.TB, method, path string, body io.Reader, opts []HT
 	for _, opt := range opts {
 		opt(o)
 	}
-	if o.noRedirect {
+	if o.noRedirect || o.stopRedirect {
 		old := e.Client.CheckRedirect
-		e.Client.CheckRedirect = func(*http.Request, []*http.Request) error {
-			t.Fatalf("cogtest: unexpected redirect from %s %s", method, path)
-			return nil
+		if o.noRedirect {
+			e.Client.CheckRedirect = func(*http.Request, []*http.Request) error {
+				t.Fatalf("cogtest: unexpected redirect from %s %s", method, path)
+				return nil
+			}
+		} else {
+			e.Client.CheckRedirect = func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			}
 		}
 		defer func() { e.Client.CheckRedirect = old }()
 	}
 	resp, err := e.Client.Do(req)
-	if err != nil {
+	if err != nil && !errors.Is(err, http.ErrUseLastResponse) {
 		t.Fatalf("cogtest: %s %s: %v", method, path, err)
 	}
 	return &Response{Response: resp, t: t}
