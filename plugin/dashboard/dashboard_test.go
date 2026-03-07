@@ -3,7 +3,7 @@ package dashboard_test
 import (
 	"testing"
 
-	"git.duckfam.us/jj-software/cog/internal/cogtest"
+	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 )
 
 func TestDashboardPage(t *testing.T) {

@@ -39,7 +39,6 @@ type reqOpts struct {
 // to stop following redirects while still capturing the response.
 var errStopRedirect = fmt.Errorf("cogtest: stop redirect")
 
-
 // Auth sets the Authorization header.
 func Auth(value string) HTTPOpt {
 	return func(o *reqOpts) { o.req.Header.Set("Authorization", value) }
@@ -60,7 +59,7 @@ var StopRedirect HTTPOpt = func(o *reqOpts) { o.stopRedirect = true }
 type Env struct {
 	Providers *services.Providers
 	Client    *http.Client
-	Handler   http.Handler
+	http.Handler
 }
 
 // New creates a fresh test environment with an in-memory DB and temp data dir.

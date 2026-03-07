@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.duckfam.us/jj-software/cog/internal/cogtest"
+	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/bookmarks"
 )

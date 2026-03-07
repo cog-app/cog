@@ -3,7 +3,7 @@ package gallery_test
 import (
 	"testing"
 
-	"git.duckfam.us/jj-software/cog/internal/cogtest"
+	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/plugin/gallery"
 )
 
