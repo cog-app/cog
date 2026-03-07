@@ -31,7 +31,7 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
 
 	// --- Wire optional services for plugins ---
-	p.Plugins.SetServices(buildRegistryServices(p.Plugins, p.Shares, p.Email, p.Users, p.Groups))
+	p.Plugins.SetServices(buildRegistryServices(p.Shares, p.Email, p.Users, p.Groups))
 
 	// --- Web UI handlers ---
 	h := handler{p}
