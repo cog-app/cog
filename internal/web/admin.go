@@ -1,8 +1,10 @@
 package web
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"net/smtp"
 	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/seq"
@@ -274,6 +276,23 @@ func (h *adminHandler) TogglePlugin(w http.ResponseWriter, r *http.Request) {
 
 // --- Settings ---
 
+// smtpSettingsData holds SMTP form values for the template.
+type smtpSettingsData struct {
+	Host string
+	Port string
+	User string
+	Pass string
+	From string
+}
+
+// envConfigData holds read-only environment configuration for display.
+type envConfigData struct {
+	Addr    string
+	DBPath  string
+	BaseURL string
+	DataDir string
+}
+
 func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 	pd := pageDataWithNav(r, "Settings", h.p.CSRFSecret, h.p.Plugins)
 	pubReg := h.p.Settings != nil && h.p.Settings.GetBool(settings.KeyPublicRegistration)
@@ -281,12 +300,29 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 	if h.p.Settings != nil {
 		expiryHours = h.p.Settings.GetInt(settings.KeyInviteExpiryHours, settings.DefaultInviteExpiryHours)
 	}
+
+	var smtp smtpSettingsData
+	if h.p.Settings != nil {
+		smtp.Host, _ = h.p.Settings.Get(settings.KeySMTPHost)
+		smtp.Port = strconv.Itoa(h.p.Settings.GetInt(settings.KeySMTPPort, 587))
+		smtp.User, _ = h.p.Settings.Get(settings.KeySMTPUser)
+		smtp.Pass, _ = h.p.Settings.Get(settings.KeySMTPPass)
+		smtp.From, _ = h.p.Settings.Get(settings.KeySMTPFrom)
+	}
+
+	env := envConfigData{
+		Addr:    h.p.Config.Addr,
+		DBPath:  h.p.Config.DBPath,
+		BaseURL: h.p.Config.BaseURL,
+		DataDir: h.p.Config.DataDir,
+	}
+
 	flash := getFlash(w, r)
 	var flashMsg, flashKind string
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), flashMsg, flashKind).Render(r.Context(), w)
+	adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), smtp, env, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -303,7 +339,56 @@ func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		if err := h.p.Settings.SetInt(settings.KeyInviteExpiryHours, expiryHours); err != nil {
 			log.Printf("admin: save invite_expiry_hours: %v", err)
 		}
+
+		// Save SMTP settings.
+		if err := h.p.Settings.Set(settings.KeySMTPHost, r.FormValue("smtp_host")); err != nil {
+			log.Printf("admin: save smtp_host: %v", err)
+		}
+		smtpPort, err := strconv.Atoi(r.FormValue("smtp_port"))
+		if err != nil || smtpPort < 1 {
+			smtpPort = 587
+		}
+		if err := h.p.Settings.SetInt(settings.KeySMTPPort, smtpPort); err != nil {
+			log.Printf("admin: save smtp_port: %v", err)
+		}
+		if err := h.p.Settings.Set(settings.KeySMTPUser, r.FormValue("smtp_user")); err != nil {
+			log.Printf("admin: save smtp_user: %v", err)
+		}
+		if err := h.p.Settings.Set(settings.KeySMTPPass, r.FormValue("smtp_pass")); err != nil {
+			log.Printf("admin: save smtp_pass: %v", err)
+		}
+		if err := h.p.Settings.Set(settings.KeySMTPFrom, r.FormValue("smtp_from")); err != nil {
+			log.Printf("admin: save smtp_from: %v", err)
+		}
 	}
 	setFlash(w, "success", "Settings saved.")
 	http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
+}
+
+func (h *adminHandler) TestSMTP(w http.ResponseWriter, r *http.Request) {
+	sender := h.p.EmailSender()
+	if sender == nil {
+		smtpTestAlert("error", "SMTP not configured", "Save the SMTP host and from address first.").Render(r.Context(), w)
+		return
+	}
+	addr := fmt.Sprintf("%s:%d", sender.Host, sender.Port)
+	c, err := smtp.Dial(addr)
+	if err != nil {
+		smtpTestAlert("error", "Connection failed", err.Error()).Render(r.Context(), w)
+		return
+	}
+	defer c.Close()
+	if err := c.Hello("localhost"); err != nil {
+		smtpTestAlert("error", "EHLO failed", err.Error()).Render(r.Context(), w)
+		return
+	}
+	if sender.User != "" {
+		auth := smtp.PlainAuth("", sender.User, sender.Pass, sender.Host)
+		if err := c.Auth(auth); err != nil {
+			smtpTestAlert("error", "Authentication failed", err.Error()).Render(r.Context(), w)
+			return
+		}
+	}
+	c.Quit()
+	smtpTestAlert("success", "Connection successful", fmt.Sprintf("Connected to %s and authenticated.", addr)).Render(r.Context(), w)
 }

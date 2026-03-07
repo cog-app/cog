@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 )
 
@@ -43,6 +44,13 @@ func (e *Engine) Start(ctx context.Context) (*Browser, error) {
 	}
 
 	tabCtx, tabCancel := chromedp.NewContext(e.allocCtx)
+	// Clear cookies from previous tabs so each tab starts with a clean state.
+	if err := chromedp.Run(tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
+		return network.ClearBrowserCookies().Do(ctx)
+	})); err != nil {
+		tabCancel()
+		return nil, fmt.Errorf("webtest: new tab: %w", err)
+	}
 	// Navigate to about:blank to ensure the tab is alive.
 	if err := chromedp.Run(tabCtx, chromedp.Navigate("about:blank")); err != nil {
 		tabCancel()

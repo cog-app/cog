@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -31,18 +30,6 @@ func envOr(key, defaultVal string) string {
 	return defaultVal
 }
 
-func envIntOr(key string, defaultVal int) int {
-	v := os.Getenv(key)
-	if v == "" {
-		return defaultVal
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return defaultVal
-	}
-	return n
-}
-
 func envBool(key string) bool {
 	v := os.Getenv(key)
 	return v == "true" || v == "1" || v == "yes"
@@ -58,15 +45,10 @@ func defaultBaseURL() string {
 
 func configFromEnv() config.Config {
 	return config.Config{
-		Addr:     envOr("COG_ADDR", ":8580"),
-		DBPath:   envOr("COG_DB", "system.db"),
-		DataDir:  envOr("COG_DATA_DIR", "data"),
-		BaseURL:  envOr("COG_BASE_URL", defaultBaseURL()),
-		SMTPHost: envOr("COG_SMTP_HOST", ""),
-		SMTPPort: envIntOr("COG_SMTP_PORT", 587),
-		SMTPUser: envOr("COG_SMTP_USER", ""),
-		SMTPPass: envOr("COG_SMTP_PASS", ""),
-		SMTPFrom: envOr("COG_SMTP_FROM", ""),
+		Addr:    envOr("COG_ADDR", ":8580"),
+		DBPath:  envOr("COG_DB", "system.db"),
+		DataDir: envOr("COG_DATA_DIR", "data"),
+		BaseURL: envOr("COG_BASE_URL", defaultBaseURL()),
 	}
 }
 

@@ -2,6 +2,8 @@ package main_test
 
 import (
 	"fmt"
+	"log"
+	"net/http"
 	"testing"
 	"time"
 
@@ -9,29 +11,46 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/testing/webtest"
 )
 
+type statusLogger struct {
+	next http.Handler
+}
+
+func (h *statusLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	rec := &statusRecorder{ResponseWriter: w, statusCode: 200}
+	h.next.ServeHTTP(rec, r)
+	if r.URL.Path == "/login" {
+		log.Printf("[%s %s] status=%d", r.Method, r.URL, rec.statusCode)
+	}
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.statusCode = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
 func TestTabReuse(t *testing.T) {
-	t.Skip("disabled while we get login figured out")
 	env := cogtest.New(t, allPlugins...)
-	eng := webtest.New(env)
+	logged := &statusLogger{next: env}
+	eng := webtest.New(logged)
 	t.Cleanup(eng.Close)
 
 	for i := 0; i < 4; i++ {
-		user := fmt.Sprintf("user%d", i)
-		env.CreateUser(t, user, "pass")
+		env.CreateUser(t, fmt.Sprintf("user%d", i), "pass")
 	}
 
 	for i := 0; i < 4; i++ {
 		user := fmt.Sprintf("user%d", i)
 		t.Run(fmt.Sprintf("tab-%d", i), func(t *testing.T) {
 			b := eng.StartT(t)
-			b.SetTimeout(20 * time.Second)
 			b.Navigate(t, "/login")
-
-			// Explicitly set values via JS to avoid autofill issues
-			b.Eval(t, fmt.Sprintf(`document.querySelector('#username').value = '%s'`, user))
-			b.Eval(t, `document.querySelector('#password').value = 'pass'`)
-			b.Eval(t, `document.querySelector('form').submit()`)
-
+			b.Type(t, "#username", user)
+			b.Type(t, "#password", "pass")
+			b.Click(t, `button[type="submit"]`)
 			time.Sleep(500 * time.Millisecond)
 			url := b.URL(t)
 			t.Logf("tab %d: URL=%s", i, url)

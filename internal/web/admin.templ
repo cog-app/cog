@@ -146,15 +146,26 @@ templ adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashK
 }
 
 // --- Settings ---
-templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, flash string, flashKind string) {
+templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, smtp smtpSettingsData, env envConfigData, flash string, flashKind string) {
 	@ui.SidebarPage(pd, adminSidebar("settings")) {
 		<h1 style="margin-bottom:1rem">System Settings</h1>
 		if flash != "" {
 			@ui.Alert(flashKind, flash)
 		}
-		@ui.Card("Registration") {
-			<form method="post" action="/admin/settings">
-				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+		@ui.Card("Environment") {
+			<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">Server configuration from environment variables (read-only).</p>
+			<table class="table">
+				<tbody>
+					<tr><td style="font-weight:600;width:10rem">Listen Address</td><td><code>{ env.Addr }</code></td></tr>
+					<tr><td style="font-weight:600">Database Path</td><td><code>{ env.DBPath }</code></td></tr>
+					<tr><td style="font-weight:600">Base URL</td><td><code>{ env.BaseURL }</code></td></tr>
+					<tr><td style="font-weight:600">Data Directory</td><td><code>{ env.DataDir }</code></td></tr>
+				</tbody>
+			</table>
+		}
+		<form method="post" action="/admin/settings">
+			<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+			@ui.Card("Registration") {
 				<div class="form-group">
 					<label class="form-check">
 						if publicRegistration {
@@ -171,10 +182,39 @@ templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHou
 					<input class="form-control" type="number" id="invite_expiry_hours" name="invite_expiry_hours" value={ inviteExpiryHours } min="1" style="max-width:200px"/>
 					<p class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">How long group invitation links remain valid. Default: 72 hours.</p>
 				</div>
-				<button class="btn btn-primary" type="submit">Save Settings</button>
-			</form>
-		}
+			}
+			@ui.Card("Email (SMTP)") {
+				<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">Configure SMTP for sending invitation and notification emails.</p>
+				@ui.FormField("SMTP Host", "smtp_host", "text", smtp.Host, "smtp.example.com")
+				<div class="form-group">
+					<label for="smtp_port">SMTP Port</label>
+					<input class="form-control" type="number" id="smtp_port" name="smtp_port" value={ smtp.Port } min="1" max="65535" style="max-width:200px"/>
+				</div>
+				@ui.FormField("SMTP Username", "smtp_user", "text", smtp.User, "")
+				@ui.FormField("SMTP Password", "smtp_pass", "password", smtp.Pass, "")
+				@ui.FormField("From Address", "smtp_from", "email", smtp.From, "noreply@example.com")
+				<button
+					class="btn btn-outline btn-sm"
+					type="button"
+					hx-post="/admin/settings/test-smtp"
+					hx-target="#smtp-test-result"
+					hx-swap="innerHTML"
+					hx-headers={ "{\"X-CSRF-Token\":\"" + pd.CSRFToken + "\"}" }
+					style="margin-top:0.75rem"
+				>Test Connection</button>
+				<div id="smtp-test-result"></div>
+			}
+			<button class="btn btn-primary" type="submit">Save Settings</button>
+		</form>
 	}
+}
+
+templ smtpTestAlert(kind, title, detail string) {
+	<div class={ "alert alert-" + kind } style="position:relative">
+		<button type="button" class="alert-dismiss" onclick="this.parentElement.remove()" aria-label="Close">&times;</button>
+		<strong>{ title }</strong>
+		<p style="margin:0.25rem 0 0;font-size:0.85rem">{ detail }</p>
+	</div>
 }
 
 // --- Plugins ---

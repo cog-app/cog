@@ -133,7 +133,7 @@ func (h *groupHandler) buildGroupDetailData(w http.ResponseWriter, r *http.Reque
 		Members:       h.p.Groups.ListMembers(g.ID),
 		IsOwner:       isOwner,
 		IsAdmin:       u.IsAdmin,
-		SMTPAvailable: h.p.Email != nil,
+		SMTPAvailable: h.p.EmailSender() != nil,
 		SiteBaseURL:   h.p.Config.BaseURL,
 		BasePath:      basePath,
 		VolumeNames:   make(map[string]string),
@@ -326,13 +326,13 @@ func (h *groupHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 	inviteURL := fmt.Sprintf("%s/invite/%s", h.p.Config.BaseURL, inv.Token)
 
 	// Send email if configured and email provided.
-	if h.p.Email != nil && inviteEmail != "" {
+	if sender := h.p.EmailSender(); sender != nil && inviteEmail != "" {
 		g, _ := h.p.Groups.Get(groupID)
 		inviterName := u.DisplayName
 		if inviterName == "" {
 			inviterName = u.Username
 		}
-		if err := h.p.Email.SendGroupInvite(inviteEmail, g.Name, inviterName, inviteURL); err != nil {
+		if err := sender.SendGroupInvite(inviteEmail, g.Name, inviterName, inviteURL); err != nil {
 			setFlash(w, "error", "Invite created but email failed: "+err.Error())
 			http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
 			return

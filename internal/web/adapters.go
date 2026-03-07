@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"iter"
 
 	"git.duckfam.us/jj-software/cog/internal/email"
@@ -68,12 +69,16 @@ func (a *shareStoreAdapter) Delete(id string) error {
 	return a.s.Delete(id)
 }
 
-// emailSenderAdapter adapts *email.Sender to plugin.EmailSender.
+// emailSenderAdapter adapts a dynamic email.Sender provider to plugin.EmailSender.
 type emailSenderAdapter struct {
-	s *email.Sender
+	senderFunc func() *email.Sender
 }
 
 func (a *emailSenderAdapter) Send(to []string, subject, body string, attachments ...plugin.EmailAttachment) error {
+	s := a.senderFunc()
+	if s == nil {
+		return fmt.Errorf("SMTP not configured")
+	}
 	internal := make([]email.Attachment, len(attachments))
 	for i, att := range attachments {
 		internal[i] = email.Attachment{
@@ -82,7 +87,7 @@ func (a *emailSenderAdapter) Send(to []string, subject, body string, attachments
 			Data:        att.Data,
 		}
 	}
-	return a.s.Send(to, subject, body, internal...)
+	return s.Send(to, subject, body, internal...)
 }
 
 func (a *emailSenderAdapter) SendWithAttachments(to, subject, textBody, htmlBody string, attachments []plugin.EmailAttachment) error {
@@ -142,14 +147,14 @@ func (a *groupStoreAdapter) ListGroupsForUser(userID string) iter.Seq2[plugin.Gr
 }
 
 // buildRegistryServices constructs the adapter layer from internal services.
-func buildRegistryServices(shares *share.Store, emailSender *email.Sender, users *user.Store, groups *group.Store) internalplugin.RegistryServices {
+func buildRegistryServices(shares *share.Store, emailFunc func() *email.Sender, users *user.Store, groups *group.Store) internalplugin.RegistryServices {
 	var ss plugin.ShareStore
 	if shares != nil {
 		ss = &shareStoreAdapter{shares}
 	}
 	var es plugin.EmailSender
-	if emailSender != nil {
-		es = &emailSenderAdapter{emailSender}
+	if emailFunc != nil {
+		es = &emailSenderAdapter{emailFunc}
 	}
 	var ul plugin.UserLookup
 	if users != nil {

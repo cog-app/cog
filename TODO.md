@@ -136,10 +136,8 @@ Immediate (bugs):
 Short term (features):
 
 1. Add resource registration to Gallery, Notes, RSS plugins (enables sharing)
-2. Implement Tasks plugin (needed for Calendar VTODO/CalDAV integration)
-3. Implement Bookmarks plugin (design is complete)
-4. Add rate limiting to auth endpoints
-5. Add app password revocation UI
+2. Add rate limiting to auth endpoints
+3. Add app password revocation UI
 
 Long term:
 

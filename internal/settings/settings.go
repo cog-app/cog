@@ -10,6 +10,15 @@ const KeyPublicRegistration = "public_registration"
 const KeyInviteExpiryHours = "invite_expiry_hours"
 const DefaultInviteExpiryHours = 72
 
+// SMTP setting keys.
+const (
+	KeySMTPHost = "smtp_host"
+	KeySMTPPort = "smtp_port"
+	KeySMTPUser = "smtp_user"
+	KeySMTPPass = "smtp_pass"
+	KeySMTPFrom = "smtp_from"
+)
+
 // Store is a key/value settings store backed by the system_settings table.
 type Store struct {
 	db *sql.DB

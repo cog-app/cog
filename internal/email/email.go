@@ -9,7 +9,7 @@ import (
 	"net/smtp"
 	"net/textproto"
 
-	"git.duckfam.us/jj-software/cog/internal/config"
+	"git.duckfam.us/jj-software/cog/internal/settings"
 )
 
 // Attachment is an email file attachment.
@@ -28,17 +28,24 @@ type Sender struct {
 	From string
 }
 
-// NewFromConfig creates a Sender from config. Returns nil if SMTP is not configured.
-func NewFromConfig(cfg config.Config) *Sender {
-	if !cfg.SMTPConfigured() {
+// NewFromSettings creates a Sender from the settings store. Returns nil if SMTP is not configured.
+func NewFromSettings(s *settings.Store) *Sender {
+	if s == nil {
 		return nil
 	}
+	host, _ := s.Get(settings.KeySMTPHost)
+	from, _ := s.Get(settings.KeySMTPFrom)
+	if host == "" || from == "" {
+		return nil
+	}
+	user, _ := s.Get(settings.KeySMTPUser)
+	pass, _ := s.Get(settings.KeySMTPPass)
 	return &Sender{
-		Host: cfg.SMTPHost,
-		Port: cfg.SMTPPort,
-		User: cfg.SMTPUser,
-		Pass: cfg.SMTPPass,
-		From: cfg.SMTPFrom,
+		Host: host,
+		Port: s.GetInt(settings.KeySMTPPort, 587),
+		User: user,
+		Pass: pass,
+		From: from,
 	}
 }
 

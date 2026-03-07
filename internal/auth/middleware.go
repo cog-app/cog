@@ -38,6 +38,20 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u, sessionID := m.authenticate(r)
 		if u != nil {
+			// If authenticated via Basic Auth (no session), create a session
+			// so that CSRF tokens work for web form submissions.
+			if sessionID == "" && m.Sessions != nil {
+				if sess, err := m.Sessions.Create(u.ID); err == nil {
+					sessionID = sess.ID
+					http.SetCookie(w, &http.Cookie{
+						Name:     SessionCookieName,
+						Value:    sess.ID,
+						Path:     "/",
+						HttpOnly: true,
+						SameSite: http.SameSiteLaxMode,
+					})
+				}
+			}
 			ctx := context.WithValue(r.Context(), userContextKey, u)
 			if sessionID != "" {
 				ctx = context.WithValue(ctx, sessionContextKey, sessionID)

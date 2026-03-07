@@ -31,7 +31,7 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
 
 	// --- Wire optional services for plugins ---
-	p.Plugins.SetServices(buildRegistryServices(p.Shares, p.Email, p.Users, p.Groups))
+	p.Plugins.SetServices(buildRegistryServices(p.Shares, p.EmailSender, p.Users, p.Groups))
 
 	// --- Web UI handlers ---
 	h := handler{p}
@@ -130,6 +130,7 @@ func New(p *services.Providers) http.Handler {
 
 	mux.Handle("GET /admin/settings", adminAuth(http.HandlerFunc(adminH.ShowSettings)))
 	mux.Handle("POST /admin/settings", adminMut(http.HandlerFunc(adminH.UpdateSettings)))
+	mux.Handle("POST /admin/settings/test-smtp", adminMut(http.HandlerFunc(adminH.TestSMTP)))
 
 	mux.Handle("GET /admin/plugins", adminAuth(http.HandlerFunc(adminH.ListPlugins)))
 	mux.Handle("POST /admin/plugins/{id}/toggle", adminMut(http.HandlerFunc(adminH.TogglePlugin)))

@@ -15,6 +15,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/internal/email"
 	"git.duckfam.us/jj-software/cog/internal/group"
+
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/search"
@@ -41,7 +42,6 @@ type Providers struct {
 	Mounts       *mount.Store
 	Access       *volume.Access
 	Settings     *settings.Store
-	Email        *email.Sender
 	Search       *search.Manager
 	CSRFSecret   []byte
 }
@@ -130,7 +130,6 @@ func NewFromDB(cfg config.Config, sysDB *sql.DB, plugins ...plugin.Plugin) *Prov
 		Mounts:       mounts,
 		Access:       &volume.Access{Volumes: volumes, Shares: shares, DB: sysDB},
 		Settings:     settings.NewStore(sysDB),
-		Email:        email.NewFromConfig(cfg),
 		CSRFSecret:   secret,
 	}
 }
@@ -148,6 +147,12 @@ func (p *Providers) StartSearch(ctx context.Context) error {
 		}
 	}
 	return p.Search.Start(ctx)
+}
+
+// EmailSender returns an *email.Sender built from the current SMTP settings
+// in the database. Returns nil if SMTP is not configured.
+func (p *Providers) EmailSender() *email.Sender {
+	return email.NewFromSettings(p.Settings)
 }
 
 // Close releases resources held by the providers.
