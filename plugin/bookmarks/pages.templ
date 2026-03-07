@@ -1,0 +1,398 @@
+package bookmarks
+
+import (
+	"fmt"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"git.duckfam.us/jj-software/cog/ui"
+)
+
+templ bookmarksSidebar(sb sidebarData) {
+	<nav class="sidebar" id="bookmarks-sidebar">
+		<a href="/apps/bookmarks/" class={ sidebarClass(sb.ActivePath, "/apps/bookmarks/") }>
+			All Bookmarks
+			if sb.TotalCount > 0 {
+				<span class="badge">{ strconv.Itoa(sb.TotalCount) }</span>
+			}
+		</a>
+		<a href="/apps/bookmarks/tags" class={ sidebarClass(sb.ActivePath, "/apps/bookmarks/tags") }>
+			Tags
+		</a>
+		if len(sb.Folders) > 0 {
+			<div class="sidebar-divider"></div>
+			for _, f := range sb.Folders {
+				if f.ParentID == nil {
+					@folderSidebarItem(f, sb)
+				}
+			}
+		}
+		<div class="sidebar-divider"></div>
+		<a href="/apps/bookmarks/new" class={ sidebarClass(sb.ActivePath, "/apps/bookmarks/new") }>
+			+ New Bookmark
+		</a>
+	</nav>
+}
+
+templ folderSidebarItem(f Folder, sb sidebarData) {
+	<a
+		href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/folder/%d", f.ID)) }
+		class={ folderSidebarClass(sb.ActiveFolder, f.ID) }
+		style="padding-left:1.5rem;font-size:0.9rem"
+	>
+		{ f.Title }
+	</a>
+}
+
+templ bookmarksIndexPage(sb sidebarData, bms []Bookmark, search string, csrfToken string) {
+	<div class="sidebar-layout">
+		@bookmarksSidebar(sb)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+				<h1 style="margin:0">All Bookmarks</h1>
+				<a href="/apps/bookmarks/new" class="btn btn-primary btn-sm">Add Bookmark</a>
+			</div>
+			<form method="get" action="/apps/bookmarks/" class="mb-2">
+				<div class="flex gap-1">
+					<input class="form-control" type="text" name="q" value={ search } placeholder="Search bookmarks..." style="max-width:400px"/>
+					<button class="btn btn-outline btn-sm" type="submit">Search</button>
+				</div>
+			</form>
+			if len(bms) == 0 {
+				@ui.Card("") {
+					if search != "" {
+						<p class="text-muted">No bookmarks match your search.</p>
+					} else {
+						<p class="text-muted">No bookmarks yet. Add your first bookmark!</p>
+					}
+				}
+			} else {
+				@bookmarkList(bms, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ bookmarksFolderPage(sb sidebarData, folder *Folder, bms []Bookmark, csrfToken string) {
+	<div class="sidebar-layout">
+		@bookmarksSidebar(sb)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+				<h1 style="margin:0">{ folder.Title }</h1>
+				<div class="flex gap-1">
+					<a href="/apps/bookmarks/new" class="btn btn-primary btn-sm">Add Bookmark</a>
+					<button
+						class="btn btn-danger btn-sm"
+						hx-delete={ fmt.Sprintf("/apps/bookmarks/folders/%d", folder.ID) }
+						hx-confirm="Delete this folder and unlink its bookmarks?"
+						hx-target="body"
+					>Delete Folder</button>
+				</div>
+			</div>
+			if len(bms) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No bookmarks in this folder.</p>
+				}
+			} else {
+				@bookmarkList(bms, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ bookmarksTagsPage(sb sidebarData, tags []string, csrfToken string) {
+	<div class="sidebar-layout">
+		@bookmarksSidebar(sb)
+		<div class="sidebar-content">
+			<h1>Tags</h1>
+			if len(tags) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No tags yet.</p>
+				}
+			} else {
+				<div class="flex gap-1" style="flex-wrap:wrap">
+					for _, tag := range tags {
+						<a
+							href={ templ.SafeURL("/apps/bookmarks/tag/" + url.PathEscape(tag)) }
+							class="badge"
+							style="font-size:0.9rem;padding:0.4rem 0.8rem;cursor:pointer"
+						>{ tag }</a>
+					}
+				</div>
+			}
+		</div>
+	</div>
+}
+
+templ bookmarksTagPage(sb sidebarData, tag string, bms []Bookmark, csrfToken string) {
+	<div class="sidebar-layout">
+		@bookmarksSidebar(sb)
+		<div class="sidebar-content">
+			<h1>Tag: { tag }</h1>
+			if len(bms) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No bookmarks with this tag.</p>
+				}
+			} else {
+				@bookmarkList(bms, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ bookmarkDetailPage(sb sidebarData, bm *Bookmark, folders []Folder, csrfToken string) {
+	<div class="sidebar-layout">
+		@bookmarksSidebar(sb)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+				<h1 style="margin:0">{ bm.Title }</h1>
+				<div class="flex gap-1">
+					<a href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmark/%d/edit", bm.ID)) } class="btn btn-outline btn-sm">Edit</a>
+					<button
+						class="btn btn-danger btn-sm"
+						hx-delete={ fmt.Sprintf("/apps/bookmarks/bookmarks/%d", bm.ID) }
+						hx-confirm="Delete this bookmark?"
+						hx-target="body"
+					>Delete</button>
+				</div>
+			</div>
+			@ui.Card("") {
+				<div class="mb-2">
+					<strong>URL:</strong>
+					<a href={ templ.SafeURL(bm.URL) } target="_blank" rel="noopener">{ bm.URL }</a>
+				</div>
+				if bm.Description != "" {
+					<div class="mb-2">
+						<strong>Description:</strong>
+						<p>{ bm.Description }</p>
+					</div>
+				}
+				if len(bm.Tags) > 0 {
+					<div class="mb-2">
+						<strong>Tags:</strong>
+						<span class="flex gap-1" style="display:inline-flex;flex-wrap:wrap">
+							for _, tag := range bm.Tags {
+								<a href={ templ.SafeURL("/apps/bookmarks/tag/" + url.PathEscape(tag)) } class="badge">{ tag }</a>
+							}
+						</span>
+					</div>
+				}
+				if len(bm.Folders) > 0 {
+					<div class="mb-2">
+						<strong>Folders:</strong>
+						<span>
+							for i, fid := range bm.Folders {
+								if i > 0 {
+									{ ", " }
+								}
+								{ folderName(folders, fid) }
+							}
+						</span>
+					</div>
+				}
+				<div class="text-muted" style="font-size:0.85rem">
+					Clicks: { strconv.Itoa(bm.ClickCount) } &middot; Added: { formatTime(bm.CreatedAt) }
+				</div>
+			}
+		</div>
+	</div>
+}
+
+templ bookmarkEditPage(sb sidebarData, bm *Bookmark, folders []Folder, csrfToken string) {
+	<div class="sidebar-layout">
+		@bookmarksSidebar(sb)
+		<div class="sidebar-content">
+			<h1>Edit: { bm.Title }</h1>
+			@ui.Card("") {
+				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmarks/%d", bm.ID)) }>
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					@bookmarkForm(bm.URL, bm.Title, bm.Description, strings.Join(bm.Tags, ", "), bm.Folders, folders)
+					<div class="flex gap-1">
+						<button class="btn btn-primary" type="submit">Save</button>
+						<a href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmark/%d", bm.ID)) } class="btn btn-outline">Cancel</a>
+					</div>
+				</form>
+			}
+		</div>
+	</div>
+}
+
+templ bookmarkNewPage(sb sidebarData, folders []Folder, csrfToken string) {
+	<div class="sidebar-layout">
+		@bookmarksSidebar(sb)
+		<div class="sidebar-content">
+			<h1>New Bookmark</h1>
+			@ui.Card("") {
+				<form method="post" action="/apps/bookmarks/bookmarks">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					@bookmarkForm("", "", "", "", nil, folders)
+					<div class="flex gap-1">
+						<button class="btn btn-primary" type="submit">Add</button>
+						<a href="/apps/bookmarks/" class="btn btn-outline">Cancel</a>
+					</div>
+				</form>
+			}
+			<div style="margin-top:1.5rem">
+				@ui.Card("Create Folder") {
+					<form method="post" action="/apps/bookmarks/folders" class="flex gap-1 items-center">
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<input class="form-control" type="text" name="title" placeholder="Folder name" required style="max-width:300px"/>
+						<button class="btn btn-outline" type="submit">Create</button>
+					</form>
+				}
+			</div>
+			<div style="margin-top:1.5rem">
+				@ui.Card("Import Bookmarks") {
+					<form method="post" action="/apps/bookmarks/import" enctype="multipart/form-data" class="flex gap-1 items-center">
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<input class="form-control" type="file" name="file" accept=".html,.htm" required style="max-width:400px"/>
+						<button class="btn btn-outline" type="submit">Import</button>
+					</form>
+					<p class="text-muted" style="font-size:0.85rem;margin-top:0.5rem">Accepts Netscape Bookmark HTML format (exported from browsers).</p>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+templ bookmarkForm(bmURL, title, description, tags string, selectedFolders []int64, allFolders []Folder) {
+	<div class="form-group">
+		<label for="url">URL</label>
+		<input class="form-control" type="url" id="url" name="url" value={ bmURL } placeholder="https://example.com" required/>
+	</div>
+	<div class="form-group">
+		<label for="title">Title</label>
+		<input class="form-control" type="text" id="title" name="title" value={ title } placeholder="Page title"/>
+	</div>
+	<div class="form-group">
+		<label for="description">Description</label>
+		<textarea class="form-control" id="description" name="description" rows="3" placeholder="Optional description">{ description }</textarea>
+	</div>
+	<div class="form-group">
+		<label for="tags">Tags (comma-separated)</label>
+		<input class="form-control" type="text" id="tags" name="tags" value={ tags } placeholder="dev, reference, tools"/>
+	</div>
+	if len(allFolders) > 0 {
+		<div class="form-group">
+			<label for="folder_id">Folder</label>
+			<select class="form-control" id="folder_id" name="folder_id">
+				<option value="-1">(root)</option>
+				for _, f := range allFolders {
+					if isFolderSelected(f.ID, selectedFolders) {
+						<option value={ strconv.FormatInt(f.ID, 10) } selected>{ f.Title }</option>
+					} else {
+						<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Title }</option>
+					}
+				}
+			</select>
+		</div>
+	}
+}
+
+templ bookmarkList(bms []Bookmark, csrfToken string) {
+	<div id="bookmark-list">
+		for _, bm := range bms {
+			@bookmarkRow(&bm, csrfToken)
+		}
+	</div>
+}
+
+templ bookmarkRow(bm *Bookmark, csrfToken string) {
+	<div id={ fmt.Sprintf("bm-%d", bm.ID) } style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0);display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
+		<div style="min-width:0;flex:1">
+			<div class="flex items-center gap-1" style="flex-wrap:wrap">
+				<a href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmark/%d", bm.ID)) } style="font-weight:500">
+					{ bm.Title }
+				</a>
+				if !bm.Available {
+					<span class="badge" style="background:var(--color-danger, #d9534f);color:#fff;font-size:0.7rem">broken</span>
+				}
+			</div>
+			<div class="text-muted" style="font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+				{ displayDomain(bm.URL) }
+				if len(bm.Tags) > 0 {
+					{ " · " }
+					for i, tag := range bm.Tags {
+						if i > 0 {
+							{ ", " }
+						}
+						{ tag }
+					}
+				}
+			</div>
+		</div>
+		<div class="flex gap-1" style="flex-shrink:0">
+			<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmarks/%d/click", bm.ID)) } target="_blank" style="display:inline">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<button class="btn btn-outline btn-sm" type="submit" title="Open & track click">&#8599;</button>
+			</form>
+			<button
+				class="btn btn-danger btn-sm"
+				hx-delete={ fmt.Sprintf("/apps/bookmarks/bookmarks/%d", bm.ID) }
+				hx-target={ fmt.Sprintf("#bm-%d", bm.ID) }
+				hx-swap="outerHTML"
+				hx-confirm="Delete this bookmark?"
+			>&#10005;</button>
+		</div>
+	</div>
+}
+
+func sidebarClass(activePath, itemPath string) string {
+	if activePath == itemPath {
+		return "sidebar-item active"
+	}
+	return "sidebar-item"
+}
+
+func folderSidebarClass(activeFolder, folderID int64) string {
+	if activeFolder == folderID {
+		return "sidebar-item active"
+	}
+	return "sidebar-item"
+}
+
+func displayDomain(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return rawURL
+	}
+	return u.Host
+}
+
+func folderName(folders []Folder, id int64) string {
+	if id == -1 {
+		return "(root)"
+	}
+	for _, f := range folders {
+		if f.ID == id {
+			return f.Title
+		}
+	}
+	return strconv.FormatInt(id, 10)
+}
+
+func isFolderSelected(id int64, selected []int64) bool {
+	for _, s := range selected {
+		if s == id {
+			return true
+		}
+	}
+	return false
+}
+
+func formatTime(unix int64) string {
+	if unix == 0 {
+		return ""
+	}
+	t := time.Unix(unix, 0)
+	now := time.Now()
+	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
+		return t.Format("15:04")
+	}
+	if t.Year() == now.Year() {
+		return t.Format("Jan 2")
+	}
+	return t.Format("2006-01-02")
+}

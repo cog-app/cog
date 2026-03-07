@@ -2,6 +2,7 @@ package main
 
 import (
 	"git.duckfam.us/jj-software/cog"
+	"git.duckfam.us/jj-software/cog/plugin/bookmarks"
 	"git.duckfam.us/jj-software/cog/plugin/calendar"
 	"git.duckfam.us/jj-software/cog/plugin/contacts"
 	"git.duckfam.us/jj-software/cog/plugin/dashboard"
@@ -20,5 +21,6 @@ func main() {
 		notes.New(),
 		rss.New(),
 		gallery.New(),
+		bookmarks.New(),
 	)
 }

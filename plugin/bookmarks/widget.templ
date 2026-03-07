@@ -1,0 +1,18 @@
+package bookmarks
+
+import "fmt"
+
+templ recentBookmarksWidget(bms []Bookmark) {
+	if len(bms) == 0 {
+		<p class="text-muted">No bookmarks yet.</p>
+	} else {
+		for _, bm := range bms {
+			<div style="padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+				<a href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmark/%d", bm.ID)) } style="font-weight:500">
+					{ bm.Title }
+				</a>
+				<div class="text-muted" style="font-size:0.85rem">{ displayDomain(bm.URL) }</div>
+			</div>
+		}
+	}
+}

@@ -1,0 +1,349 @@
+package bookmarks
+
+import (
+	"database/sql"
+	"fmt"
+	"strings"
+)
+
+// Bookmark represents a saved URL with metadata.
+type Bookmark struct {
+	ID          int64
+	URL         string
+	Title       string
+	Description string
+	ClickCount  int
+	Available   bool
+	CreatedAt   int64
+	UpdatedAt   int64
+	Tags        []string
+	Folders     []int64
+}
+
+// Folder represents a hierarchical bookmark container.
+type Folder struct {
+	ID        int64
+	ParentID  *int64
+	Title     string
+	CreatedAt int64
+	UpdatedAt int64
+}
+
+// --- Bookmark CRUD ---
+
+func ListBookmarks(db *sql.DB, folderID *int64, tags []string, search string, sortBy string, page, limit int) ([]Bookmark, int, error) {
+	if limit <= 0 || limit > 300 {
+		limit = 10
+	}
+	if page < 0 {
+		page = 0
+	}
+
+	where := []string{"1=1"}
+	args := []any{}
+
+	if folderID != nil {
+		where = append(where, "b.id IN (SELECT bookmark_id FROM bookmark_folders WHERE folder_id = ?)")
+		args = append(args, *folderID)
+	}
+	for _, t := range tags {
+		where = append(where, "b.id IN (SELECT bookmark_id FROM tags WHERE tag = ?)")
+		args = append(args, t)
+	}
+	if search != "" {
+		where = append(where, "(b.title LIKE ? OR b.url LIKE ? OR b.description LIKE ?)")
+		pat := "%" + search + "%"
+		args = append(args, pat, pat, pat)
+	}
+
+	whereClause := strings.Join(where, " AND ")
+
+	// Count total.
+	var total int
+	countArgs := make([]any, len(args))
+	copy(countArgs, args)
+	if err := db.QueryRow("SELECT COUNT(*) FROM bookmarks b WHERE "+whereClause, countArgs...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	order := "b.updated_at DESC"
+	switch sortBy {
+	case "title":
+		order = "b.title COLLATE NOCASE ASC"
+	case "clickcount":
+		order = "b.click_count DESC"
+	case "url":
+		order = "b.url ASC"
+	case "added":
+		order = "b.created_at DESC"
+	}
+
+	query := fmt.Sprintf("SELECT b.id, b.url, b.title, b.description, b.click_count, b.available, b.created_at, b.updated_at FROM bookmarks b WHERE %s ORDER BY %s LIMIT ? OFFSET ?", whereClause, order)
+	args = append(args, limit, page*limit)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var bookmarks []Bookmark
+	for rows.Next() {
+		var bm Bookmark
+		if err := rows.Scan(&bm.ID, &bm.URL, &bm.Title, &bm.Description, &bm.ClickCount, &bm.Available, &bm.CreatedAt, &bm.UpdatedAt); err != nil {
+			return nil, 0, err
+		}
+		bookmarks = append(bookmarks, bm)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	// Load tags and folders for each bookmark.
+	for i := range bookmarks {
+		bookmarks[i].Tags = loadTags(db, bookmarks[i].ID)
+		bookmarks[i].Folders = loadFolders(db, bookmarks[i].ID)
+	}
+	return bookmarks, total, nil
+}
+
+func GetBookmark(db *sql.DB, id int64) (*Bookmark, error) {
+	var bm Bookmark
+	err := db.QueryRow(
+		`SELECT id, url, title, description, click_count, available, created_at, updated_at FROM bookmarks WHERE id = ?`, id,
+	).Scan(&bm.ID, &bm.URL, &bm.Title, &bm.Description, &bm.ClickCount, &bm.Available, &bm.CreatedAt, &bm.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	bm.Tags = loadTags(db, bm.ID)
+	bm.Folders = loadFolders(db, bm.ID)
+	return &bm, nil
+}
+
+func GetBookmarkByURL(db *sql.DB, url string) (*Bookmark, error) {
+	var bm Bookmark
+	err := db.QueryRow(
+		`SELECT id, url, title, description, click_count, available, created_at, updated_at FROM bookmarks WHERE url = ?`, url,
+	).Scan(&bm.ID, &bm.URL, &bm.Title, &bm.Description, &bm.ClickCount, &bm.Available, &bm.CreatedAt, &bm.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	bm.Tags = loadTags(db, bm.ID)
+	bm.Folders = loadFolders(db, bm.ID)
+	return &bm, nil
+}
+
+// CreateBookmark upserts a bookmark. If a bookmark with the same URL exists, it updates it.
+func CreateBookmark(db *sql.DB, url, title, description string, tags []string, folders []int64) (*Bookmark, error) {
+	existing, err := GetBookmarkByURL(db, url)
+	if err == nil {
+		// Upsert: update existing.
+		return UpdateBookmark(db, existing.ID, &title, &description, tags, folders)
+	}
+
+	res, err := db.Exec(
+		`INSERT INTO bookmarks (url, title, description) VALUES (?, ?, ?)`,
+		url, title, description,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("insert bookmark: %w", err)
+	}
+	id, _ := res.LastInsertId()
+
+	setTags(db, id, tags)
+	setFolders(db, id, folders)
+
+	return GetBookmark(db, id)
+}
+
+func UpdateBookmark(db *sql.DB, id int64, title, description *string, tags []string, folders []int64) (*Bookmark, error) {
+	if title != nil {
+		db.Exec(`UPDATE bookmarks SET title = ?, updated_at = unixepoch() WHERE id = ?`, *title, id)
+	}
+	if description != nil {
+		db.Exec(`UPDATE bookmarks SET description = ?, updated_at = unixepoch() WHERE id = ?`, *description, id)
+	}
+	if tags != nil {
+		setTags(db, id, tags)
+	}
+	if folders != nil {
+		setFolders(db, id, folders)
+	}
+	return GetBookmark(db, id)
+}
+
+func DeleteBookmark(db *sql.DB, id int64) error {
+	_, err := db.Exec(`DELETE FROM bookmarks WHERE id = ?`, id)
+	return err
+}
+
+func RecordClick(db *sql.DB, url string) error {
+	_, err := db.Exec(`UPDATE bookmarks SET click_count = click_count + 1, updated_at = unixepoch() WHERE url = ?`, url)
+	return err
+}
+
+func RecentBookmarks(db *sql.DB, limit int) ([]Bookmark, error) {
+	rows, err := db.Query(
+		`SELECT id, url, title, description, click_count, available, created_at, updated_at FROM bookmarks ORDER BY updated_at DESC LIMIT ?`, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var bookmarks []Bookmark
+	for rows.Next() {
+		var bm Bookmark
+		if err := rows.Scan(&bm.ID, &bm.URL, &bm.Title, &bm.Description, &bm.ClickCount, &bm.Available, &bm.CreatedAt, &bm.UpdatedAt); err != nil {
+			return nil, err
+		}
+		bm.Tags = loadTags(db, bm.ID)
+		bookmarks = append(bookmarks, bm)
+	}
+	return bookmarks, rows.Err()
+}
+
+// --- Folder CRUD ---
+
+func ListFolders(db *sql.DB) ([]Folder, error) {
+	rows, err := db.Query(`SELECT id, parent_id, title, created_at, updated_at FROM folders ORDER BY title`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var folders []Folder
+	for rows.Next() {
+		var f Folder
+		if err := rows.Scan(&f.ID, &f.ParentID, &f.Title, &f.CreatedAt, &f.UpdatedAt); err != nil {
+			return nil, err
+		}
+		folders = append(folders, f)
+	}
+	return folders, rows.Err()
+}
+
+func GetFolder(db *sql.DB, id int64) (*Folder, error) {
+	var f Folder
+	err := db.QueryRow(
+		`SELECT id, parent_id, title, created_at, updated_at FROM folders WHERE id = ?`, id,
+	).Scan(&f.ID, &f.ParentID, &f.Title, &f.CreatedAt, &f.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+func CreateFolder(db *sql.DB, title string, parentID *int64) (*Folder, error) {
+	res, err := db.Exec(`INSERT INTO folders (title, parent_id) VALUES (?, ?)`, title, parentID)
+	if err != nil {
+		return nil, fmt.Errorf("insert folder: %w", err)
+	}
+	id, _ := res.LastInsertId()
+	return GetFolder(db, id)
+}
+
+func UpdateFolder(db *sql.DB, id int64, title string, parentID *int64) error {
+	_, err := db.Exec(`UPDATE folders SET title = ?, parent_id = ?, updated_at = unixepoch() WHERE id = ?`, title, parentID, id)
+	return err
+}
+
+func DeleteFolder(db *sql.DB, id int64) error {
+	_, err := db.Exec(`DELETE FROM folders WHERE id = ?`, id)
+	return err
+}
+
+func FolderBookmarkCount(db *sql.DB, folderID int64) int {
+	var n int
+	db.QueryRow(`SELECT COUNT(*) FROM bookmark_folders WHERE folder_id = ?`, folderID).Scan(&n)
+	return n
+}
+
+// --- Tag Operations ---
+
+func ListAllTags(db *sql.DB) ([]string, error) {
+	rows, err := db.Query(`SELECT DISTINCT tag FROM tags ORDER BY tag`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tags []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		tags = append(tags, t)
+	}
+	return tags, rows.Err()
+}
+
+func RenameTag(db *sql.DB, oldTag, newTag string) error {
+	_, err := db.Exec(`UPDATE tags SET tag = ? WHERE tag = ?`, newTag, oldTag)
+	return err
+}
+
+func DeleteTag(db *sql.DB, tag string) error {
+	_, err := db.Exec(`DELETE FROM tags WHERE tag = ?`, tag)
+	return err
+}
+
+// --- Helpers ---
+
+func loadTags(db *sql.DB, bookmarkID int64) []string {
+	rows, err := db.Query(`SELECT tag FROM tags WHERE bookmark_id = ? ORDER BY tag`, bookmarkID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var tags []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return tags
+		}
+		tags = append(tags, t)
+	}
+	return tags
+}
+
+func loadFolders(db *sql.DB, bookmarkID int64) []int64 {
+	rows, err := db.Query(`SELECT folder_id FROM bookmark_folders WHERE bookmark_id = ? ORDER BY sort_order`, bookmarkID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var folders []int64
+	for rows.Next() {
+		var f int64
+		if err := rows.Scan(&f); err != nil {
+			return folders
+		}
+		folders = append(folders, f)
+	}
+	return folders
+}
+
+func setTags(db *sql.DB, bookmarkID int64, tags []string) {
+	db.Exec(`DELETE FROM tags WHERE bookmark_id = ?`, bookmarkID)
+	for _, t := range tags {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			db.Exec(`INSERT OR IGNORE INTO tags (bookmark_id, tag) VALUES (?, ?)`, bookmarkID, t)
+		}
+	}
+}
+
+func setFolders(db *sql.DB, bookmarkID int64, folders []int64) {
+	db.Exec(`DELETE FROM bookmark_folders WHERE bookmark_id = ?`, bookmarkID)
+	if len(folders) == 0 {
+		folders = []int64{-1} // root folder
+	}
+	for i, f := range folders {
+		db.Exec(`INSERT OR IGNORE INTO bookmark_folders (bookmark_id, folder_id, sort_order) VALUES (?, ?, ?)`, bookmarkID, f, i)
+	}
+}
+
+func BookmarkCount(db *sql.DB) int {
+	var n int
+	db.QueryRow(`SELECT COUNT(*) FROM bookmarks`).Scan(&n)
+	return n
+}

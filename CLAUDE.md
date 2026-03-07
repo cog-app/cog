@@ -84,4 +84,4 @@ Key helpers:
 - HTTP options: `cogtest.Auth(user)`, `cogtest.BasicAuth(user, pass)`, `cogtest.Header(k, v)`
 - Response assertions: `.Status(code)`, `.JSON(&v)`, `.Contains("text")`, `.Equals("text")`
 
-Custom assertion packages at `internal/testing/assert` (non-fatal) and `internal/testing/require` (fatal) — similar API to testify but lightweight.
+Custom assertion packages at `internal/testing/assert` (non-fatal) and `internal/testing/require` (fatal) — similar API to testify but lightweight. Don't ignore errors; use `require.NoError(t, err)`.
