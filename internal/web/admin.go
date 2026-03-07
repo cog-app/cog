@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
@@ -158,7 +159,12 @@ func (h *adminHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminGroupsPage(pd, h.p.Groups.List(), flashMsg, flashKind).Render(r.Context(), w)
+	groups, err := seq.Collect(h.p.Groups.List())
+	if err != nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	adminGroupsPage(pd, groups, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 func (h *adminHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
@@ -192,7 +198,11 @@ func (h *adminHandler) EditGroupForm(w http.ResponseWriter, r *http.Request) {
 	}
 	pd := pageDataWithNav(r, "Group: "+g.Name, h.p.CSRFSecret, h.p.Plugins)
 	gh := groupHandler{h.handler}
-	d := gh.buildGroupDetailData(w, r, g, true, "/admin/groups")
+	d, err := gh.buildGroupDetailData(w, r, g, true, "/admin/groups")
+	if err != nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
 	adminGroupDetailPage(pd, d).Render(r.Context(), w)
 }
 

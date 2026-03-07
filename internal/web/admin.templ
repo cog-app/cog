@@ -124,7 +124,7 @@ templ adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind st
 }
 
 // --- Groups ---
-templ adminGroupsPage(pd ui.PageData, groups iter.Seq2[group.Group, error], flash string, flashKind string) {
+templ adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashKind string) {
 	@ui.SidebarPage(pd, adminSidebar("groups")) {
 		<div class="flex justify-between items-center" style="margin-bottom:1rem">
 			<h1>Groups</h1>

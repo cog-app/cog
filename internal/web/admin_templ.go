@@ -511,7 +511,7 @@ func adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind str
 }
 
 // --- Groups ---
-func adminGroupsPage(pd ui.PageData, groups iter.Seq2[group.Group, error], flash string, flashKind string) templ.Component {
+func adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashKind string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {

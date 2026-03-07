@@ -1,7 +1,6 @@
 package web
 
 import (
-	"errors"
 	"fmt"
 	"iter"
 	"net/http"
@@ -21,13 +20,9 @@ import (
 type groupDetailData struct {
 	Group             *group.Group
 	Members           iter.Seq2[group.Member, error]
-	UserNames         map[string]string
-	Invitations       iter.Seq2[group.Invitation, error]
-	HasInvitations    bool
-	GroupMounts       iter.Seq2[mount.GroupMount, error]
-	HasGroupMounts    bool
-	GroupVolumes      iter.Seq2[volume.Volume, error]
-	HasGroupVolumes   bool
+	Invitations       []group.Invitation
+	GroupMounts       []mount.GroupMount
+	GroupVolumes      []volume.Volume
 	AccessibleVolumes []volume.Volume
 	VolumeNames       map[string]string
 	IsOwner           bool
@@ -66,29 +61,26 @@ func (h *groupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	pd := pageDataWithNav(r, "Groups", h.p.CSRFSecret, h.p.Plugins)
 
-	// Collect owned groups to build a set for filtering.
-	ownedGroups, _ := seq.Collect(h.p.Groups.ListOwnedByUser(u.ID))
+	ownedGroups, err := seq.Collect(h.p.Groups.ListOwnedByUser(u.ID))
+	if err != nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
 	ownedSet := make(map[string]bool, len(ownedGroups))
 	for _, g := range ownedGroups {
 		ownedSet[g.ID] = true
 	}
 
-	// Filter member groups, check emptiness with Peek.
-	_, ownedIter, hasOwnedErr := seq.Peek(seq.Filter(h.p.Groups.ListOwnedByUser(u.ID), func(g group.Group) bool { return true }))
-	hasOwned := !errors.Is(hasOwnedErr, seq.ErrEmpty)
-	if !hasOwned {
-		ownedIter = seq.Filter(h.p.Groups.ListOwnedByUser(u.ID), func(g group.Group) bool { return true })
+	allMember, err := seq.Collect(h.p.Groups.ListGroupsForUser(u.ID))
+	if err != nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
 	}
-
-	filteredMember := seq.Filter(h.p.Groups.ListGroupsForUser(u.ID), func(g group.Group) bool {
-		return !ownedSet[g.ID]
-	})
-	_, memberIter, hasMemberErr := seq.Peek(filteredMember)
-	hasMember := !errors.Is(hasMemberErr, seq.ErrEmpty)
-	if !hasMember {
-		memberIter = seq.Filter(h.p.Groups.ListGroupsForUser(u.ID), func(g group.Group) bool {
-			return !ownedSet[g.ID]
-		})
+	var memberGroups []group.Group
+	for _, g := range allMember {
+		if !ownedSet[g.ID] {
+			memberGroups = append(memberGroups, g)
+		}
 	}
 
 	flash := getFlash(w, r)
@@ -96,7 +88,7 @@ func (h *groupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	settingsGroupsPage(pd, ownedIter, hasOwned, memberIter, hasMember, flashMsg, flashKind).Render(r.Context(), w)
+	settingsGroupsPage(pd, ownedGroups, memberGroups, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 // ShowGroup shows group detail at GET /settings/groups/{id}.
@@ -133,14 +125,12 @@ func (h *groupHandler) ShowGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 // buildGroupDetailData gathers all data needed by the shared group detail template.
-func (h *groupHandler) buildGroupDetailData(w http.ResponseWriter, r *http.Request, g *group.Group, isOwner bool, basePath string) groupDetailData {
+func (h *groupHandler) buildGroupDetailData(w http.ResponseWriter, r *http.Request, g *group.Group, isOwner bool, basePath string) (groupDetailData, error) {
 	u := auth.UserFromContext(r.Context())
-	userNames, _ := seq.ToMap(h.p.Users.List(), func(u user.User) string { return u.ID }, func(u user.User) string { return u.Username })
 
 	d := groupDetailData{
 		Group:         g,
 		Members:       h.p.Groups.ListMembers(g.ID),
-		UserNames:     userNames,
 		IsOwner:       isOwner,
 		IsAdmin:       u.IsAdmin,
 		SMTPAvailable: h.p.Email != nil,
@@ -150,34 +140,26 @@ func (h *groupHandler) buildGroupDetailData(w http.ResponseWriter, r *http.Reque
 	}
 
 	if isOwner {
-		var invErr error
-		_, d.Invitations, invErr = seq.Peek(h.p.Invitations.ListByGroup(g.ID))
-		d.HasInvitations = !errors.Is(invErr, seq.ErrEmpty)
-		if !d.HasInvitations {
-			d.Invitations = h.p.Invitations.ListByGroup(g.ID)
+		var err error
+		d.Invitations, err = seq.Collect(h.p.Invitations.ListByGroup(g.ID))
+		if err != nil {
+			return groupDetailData{}, err
+		}
+		d.GroupMounts, err = seq.Collect(h.p.Mounts.ListGroupMounts(g.ID))
+		if err != nil {
+			return groupDetailData{}, err
 		}
 
-		var gmErr error
-		_, d.GroupMounts, gmErr = seq.Peek(h.p.Mounts.ListGroupMounts(g.ID))
-		d.HasGroupMounts = !errors.Is(gmErr, seq.ErrEmpty)
-		if !d.HasGroupMounts {
-			d.GroupMounts = h.p.Mounts.ListGroupMounts(g.ID)
-		}
-
-		groupVolFilter := seq.Filter(h.p.Volumes.List(), func(v volume.Volume) bool {
-			return v.OwnerType == "group" && v.OwnerID != nil && *v.OwnerID == g.ID
-		})
-		var gvErr error
-		_, d.GroupVolumes, gvErr = seq.Peek(groupVolFilter)
-		d.HasGroupVolumes = !errors.Is(gvErr, seq.ErrEmpty)
-		if !d.HasGroupVolumes {
-			d.GroupVolumes = seq.Filter(h.p.Volumes.List(), func(v volume.Volume) bool {
-				return v.OwnerType == "group" && v.OwnerID != nil && *v.OwnerID == g.ID
-			})
+		d.GroupVolumes, err = seq.Collect(h.p.Volumes.ListByOwner("group", g.ID))
+		if err != nil {
+			return groupDetailData{}, err
 		}
 
 		if h.p.Access != nil {
-			d.AccessibleVolumes, _ = seq.Collect(h.p.Access.ListAccessible(u.ID))
+			d.AccessibleVolumes, err = seq.Collect(h.p.Access.ListAccessible(u.ID))
+			if err != nil {
+				return groupDetailData{}, err
+			}
 		}
 		for _, v := range d.AccessibleVolumes {
 			d.VolumeNames[v.ID] = v.Name
@@ -189,12 +171,16 @@ func (h *groupHandler) buildGroupDetailData(w http.ResponseWriter, r *http.Reque
 		d.Flash, d.FlashKind, d.LastInviteURL = flash.Message, flash.Kind, flash.URL
 	}
 
-	return d
+	return d, nil
 }
 
 func (h *groupHandler) renderGroupDetail(w http.ResponseWriter, r *http.Request, g *group.Group, isOwner bool) {
 	pd := pageDataWithNav(r, "Group: "+g.Name, h.p.CSRFSecret, h.p.Plugins)
-	d := h.buildGroupDetailData(w, r, g, isOwner, "/settings/groups")
+	d, err := h.buildGroupDetailData(w, r, g, isOwner, "/settings/groups")
+	if err != nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
 	settingsGroupDetailPage(pd, d).Render(r.Context(), w)
 }
 

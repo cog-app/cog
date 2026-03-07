@@ -24,6 +24,7 @@ type Member struct {
 	GroupID    string
 	MemberID   string
 	MemberType MemberType
+	Username   string // populated via LEFT JOIN on users
 }
 
 type MemberType string
@@ -172,7 +173,11 @@ func (s *Store) RemoveMember(groupID, memberID string) error {
 func (s *Store) ListMembers(groupID string) iter.Seq2[Member, error] {
 	return func(yield func(Member, error) bool) {
 		rows, err := s.db.Query(
-			`SELECT group_id, member_id, member_type FROM group_members WHERE group_id = ? ORDER BY member_type, member_id`,
+			`SELECT gm.group_id, gm.member_id, gm.member_type, COALESCE(u.username, '')
+			FROM group_members gm
+			LEFT JOIN users u ON u.id = gm.member_id
+			WHERE gm.group_id = ?
+			ORDER BY gm.member_type, gm.member_id`,
 			groupID,
 		)
 		if err != nil {
@@ -182,7 +187,7 @@ func (s *Store) ListMembers(groupID string) iter.Seq2[Member, error] {
 		defer rows.Close()
 		for rows.Next() {
 			var m Member
-			if err := rows.Scan(&m.GroupID, &m.MemberID, &m.MemberType); err != nil {
+			if err := rows.Scan(&m.GroupID, &m.MemberID, &m.MemberType, &m.Username); err != nil {
 				yield(Member{}, fmt.Errorf("scan member: %w", err))
 				return
 			}

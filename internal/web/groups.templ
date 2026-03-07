@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/ui"
-	"iter"
 )
 
-templ settingsGroupsPage(pd ui.PageData, ownedGroups iter.Seq2[group.Group, error], hasOwnedGroups bool, memberGroups iter.Seq2[group.Group, error], hasMemberGroups bool, flash string, flashKind string) {
+templ settingsGroupsPage(pd ui.PageData, ownedGroups []group.Group, memberGroups []group.Group, flash string, flashKind string) {
 	@ui.SidebarPage(pd, settingsSidebar("groups")) {
 		<h1 style="margin-bottom:1rem">Groups</h1>
 		if flash != "" {
@@ -21,14 +20,14 @@ templ settingsGroupsPage(pd ui.PageData, ownedGroups iter.Seq2[group.Group, erro
 			</form>
 		}
 		@ui.Card("My Groups") {
-			if hasOwnedGroups {
+			if len(ownedGroups) > 0 {
 				@groupTable(ownedGroups, "/settings/groups/")
 			} else {
 				<p class="text-muted">You don't own any groups yet.</p>
 			}
 		}
 		@ui.Card("Member Of") {
-			if hasMemberGroups {
+			if len(memberGroups) > 0 {
 				@groupTable(memberGroups, "/settings/groups/")
 			} else {
 				<p class="text-muted">You're not a member of any other groups.</p>
@@ -90,48 +89,50 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 			</thead>
 			<tbody>
 				for m, err := range d.Members {
-					if err == nil {
-						<tr id={ fmt.Sprintf("member-%s-%s", d.Group.ID, m.MemberID) }>
-							<td>{ d.UserNames[m.MemberID] }</td>
-							<td>
-								if d.IsOwner {
-									<form method="post" action={ templ.SafeURL(fmt.Sprintf("%s/%s/members/%s/type", d.BasePath, d.Group.ID, m.MemberID)) } style="display:inline">
-										<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-										<select class="form-control" name="member_type" style="display:inline-block;width:auto;padding:0.2rem 0.4rem;font-size:0.85rem" onchange="this.form.submit()">
-											if m.MemberType == "OWNER" {
-												<option value={ group.Owner } selected>Owner</option>
-												<option value={ group.User }>User</option>
-											} else {
-												<option value={ group.Owner }>Owner</option>
-												<option value={ group.User } selected>User</option>
-											}
-										</select>
-									</form>
-								} else {
-									{ m.MemberType }
-								}
-							</td>
-							<td class="text-right">
-								if d.IsOwner && m.MemberID != pd.User.ID {
-									<button
-										class="btn btn-danger btn-sm"
-										hx-delete={ fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID) }
-										hx-target={ fmt.Sprintf("#member-%s-%s", d.Group.ID, m.MemberID) }
-										hx-swap="outerHTML"
-									>Remove</button>
-								}
-								if !d.IsOwner && m.MemberType == group.User && m.MemberID == pd.User.ID {
-									<button
-										class="btn btn-danger btn-sm"
-										hx-delete={ fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID) }
-										hx-confirm="Leave this group?"
-										hx-target={ fmt.Sprintf("#member-%s-%s", d.Group.ID, m.MemberID) }
-										hx-swap="outerHTML"
-									>Leave</button>
-								}
-							</td>
-						</tr>
-					}
+				if err != nil {
+					<tr><td colspan="3" class="text-danger">Error loading members.</td></tr>
+					break
+				}
+					<tr id={ fmt.Sprintf("member-%s-%s", d.Group.ID, m.MemberID) }>
+						<td>{ m.Username }</td>
+						<td>
+							if d.IsOwner {
+								<form method="post" action={ templ.SafeURL(fmt.Sprintf("%s/%s/members/%s/type", d.BasePath, d.Group.ID, m.MemberID)) } style="display:inline">
+									<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+									<select class="form-control" name="member_type" style="display:inline-block;width:auto;padding:0.2rem 0.4rem;font-size:0.85rem" onchange="this.form.submit()">
+										if m.MemberType == "OWNER" {
+											<option value={ group.Owner } selected>Owner</option>
+											<option value={ group.User }>User</option>
+										} else {
+											<option value={ group.Owner }>Owner</option>
+											<option value={ group.User } selected>User</option>
+										}
+									</select>
+								</form>
+							} else {
+								{ m.MemberType }
+							}
+						</td>
+						<td class="text-right">
+							if d.IsOwner && m.MemberID != pd.User.ID {
+								<button
+									class="btn btn-danger btn-sm"
+									hx-delete={ fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID) }
+									hx-target={ fmt.Sprintf("#member-%s-%s", d.Group.ID, m.MemberID) }
+									hx-swap="outerHTML"
+								>Remove</button>
+							}
+							if !d.IsOwner && m.MemberType == group.User && m.MemberID == pd.User.ID {
+								<button
+									class="btn btn-danger btn-sm"
+									hx-delete={ fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID) }
+									hx-confirm="Leave this group?"
+									hx-target={ fmt.Sprintf("#member-%s-%s", d.Group.ID, m.MemberID) }
+									hx-swap="outerHTML"
+								>Leave</button>
+							}
+						</td>
+					</tr>
 				}
 			</tbody>
 		</table>
@@ -150,7 +151,7 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 			if d.SMTPAvailable {
 				<p class="text-muted" style="font-size:0.85rem">An email will be sent if an address is provided.</p>
 			}
-			if d.HasInvitations {
+			if len(d.Invitations) > 0 {
 				<table class="table mb-0">
 					<thead>
 						<tr>
@@ -161,30 +162,28 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 						</tr>
 					</thead>
 					<tbody>
-						for inv, err := range d.Invitations {
-							if err == nil {
-								<tr id={ "invite-" + inv.ID }>
-									<td>
-										if inv.Email != "" {
-											{ inv.Email }
-										} else {
-											<span class="text-muted">(link only)</span>
-										}
-									</td>
-									<td>{ inv.MemberType }</td>
-									<td>
-										@ui.ShareLink(d.SiteBaseURL+"/invite/"+inv.Token, inv.Token[:16]+"...")
-									</td>
-									<td class="text-right">
-										<button
-											class="btn btn-danger btn-sm"
-											hx-delete={ fmt.Sprintf("%s/%s/invites/%s", d.BasePath, d.Group.ID, inv.ID) }
-											hx-target={ "#invite-" + inv.ID }
-											hx-swap="outerHTML"
-										>Revoke</button>
-									</td>
-								</tr>
-							}
+						for _, inv := range d.Invitations {
+							<tr id={ "invite-" + inv.ID }>
+								<td>
+									if inv.Email != "" {
+										{ inv.Email }
+									} else {
+										<span class="text-muted">(link only)</span>
+									}
+								</td>
+								<td>{ inv.MemberType }</td>
+								<td>
+									@ui.ShareLink(d.SiteBaseURL+"/invite/"+inv.Token, inv.Token[:16]+"...")
+								</td>
+								<td class="text-right">
+									<button
+										class="btn btn-danger btn-sm"
+										hx-delete={ fmt.Sprintf("%s/%s/invites/%s", d.BasePath, d.Group.ID, inv.ID) }
+										hx-target={ "#invite-" + inv.ID }
+										hx-swap="outerHTML"
+									>Revoke</button>
+								</td>
+							</tr>
 						}
 					</tbody>
 				</table>
@@ -192,7 +191,7 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 		}
 		@ui.Card("Group Storage") {
 			<h4>Group Volumes</h4>
-			if d.HasGroupVolumes {
+			if len(d.GroupVolumes) > 0 {
 				<table class="table">
 					<thead>
 						<tr>
@@ -202,16 +201,14 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 						</tr>
 					</thead>
 					<tbody>
-						for v, err := range d.GroupVolumes {
-							if err == nil {
-								<tr>
-									<td>{ v.Name }</td>
-									<td><code>{ v.URI }</code></td>
-									<td class="text-right">
-										<a class="btn btn-outline btn-sm" href={ templ.SafeURL("/volumes/" + v.ID + "/browse") }>Browse</a>
-									</td>
-								</tr>
-							}
+						for _, v := range d.GroupVolumes {
+							<tr>
+								<td>{ v.Name }</td>
+								<td><code>{ v.URI }</code></td>
+								<td class="text-right">
+									<a class="btn btn-outline btn-sm" href={ templ.SafeURL("/volumes/" + v.ID + "/browse") }>Browse</a>
+								</td>
+							</tr>
 						}
 					</tbody>
 				</table>
@@ -224,7 +221,7 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 				<button class="btn btn-primary" type="submit">Create Volume</button>
 			</form>
 			<h4 style="margin-top:1rem">Group Mounts</h4>
-			if d.HasGroupMounts {
+			if len(d.GroupMounts) > 0 {
 				<table class="table">
 					<thead>
 						<tr>
@@ -235,22 +232,20 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 						</tr>
 					</thead>
 					<tbody>
-						for m, err := range d.GroupMounts {
-							if err == nil {
-								<tr id={ "gmount-" + m.ID }>
-									<td>{ m.UserPath }</td>
-									<td>{ d.VolumeNames[m.VolumeID] }</td>
-									<td>{ m.VolumeSubpath }</td>
-									<td class="text-right">
-										<button
-											class="btn btn-danger btn-sm"
-											hx-delete={ fmt.Sprintf("%s/%s/mounts/%s", d.BasePath, d.Group.ID, m.ID) }
-											hx-target={ "#gmount-" + m.ID }
-											hx-swap="outerHTML"
-										>Remove</button>
-									</td>
-								</tr>
-							}
+						for _, m := range d.GroupMounts {
+							<tr id={ "gmount-" + m.ID }>
+								<td>{ m.UserPath }</td>
+								<td>{ d.VolumeNames[m.VolumeID] }</td>
+								<td>{ m.VolumeSubpath }</td>
+								<td class="text-right">
+									<button
+										class="btn btn-danger btn-sm"
+										hx-delete={ fmt.Sprintf("%s/%s/mounts/%s", d.BasePath, d.Group.ID, m.ID) }
+										hx-target={ "#gmount-" + m.ID }
+										hx-swap="outerHTML"
+									>Remove</button>
+								</td>
+							</tr>
 						}
 					</tbody>
 				</table>
@@ -350,7 +345,7 @@ templ inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, is
 
 // groupTable renders a clickable table of groups with member counts.
 // urlPrefix is prepended to the group ID for the row link (e.g. "/settings/groups/" or "/admin/groups/").
-templ groupTable(groups iter.Seq2[group.Group, error], urlPrefix string) {
+templ groupTable(groups []group.Group, urlPrefix string) {
 	<table class="table">
 		<thead>
 			<tr>
@@ -359,13 +354,11 @@ templ groupTable(groups iter.Seq2[group.Group, error], urlPrefix string) {
 			</tr>
 		</thead>
 		<tbody>
-			for g, err := range groups {
-				if err == nil {
-					<tr style="cursor:pointer" onclick={ goTo(urlPrefix + g.ID) }>
-						<td>{ g.Name }</td>
-						<td>{ fmt.Sprint(g.MemberCount) }</td>
-					</tr>
-				}
+			for _, g := range groups {
+				<tr style="cursor:pointer" onclick={ goTo(urlPrefix + g.ID) }>
+					<td>{ g.Name }</td>
+					<td>{ fmt.Sprint(g.MemberCount) }</td>
+				</tr>
 			}
 		</tbody>
 	</table>

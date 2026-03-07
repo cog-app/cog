@@ -225,6 +225,37 @@ func (s *Store) ListAccessible(userID string, sharedVolumeIDs []string) iter.Seq
 	}
 }
 
+// ListByOwner returns volumes with the given owner type and owner ID.
+func (s *Store) ListByOwner(ownerType, ownerID string) iter.Seq2[Volume, error] {
+	return func(yield func(Volume, error) bool) {
+		rows, err := s.db.Query(
+			`SELECT id, name, description, uri, created_by, created_at, owner_id, config, owner_type
+			FROM volumes WHERE owner_type = ? AND owner_id = ? ORDER BY name`,
+			ownerType, ownerID,
+		)
+		if err != nil {
+			yield(Volume{}, fmt.Errorf("list volumes by owner: %w", err))
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var v Volume
+			var createdAt int64
+			if err := rows.Scan(&v.ID, &v.Name, &v.Description, &v.URI, &v.CreatedBy, &createdAt, &v.OwnerID, &v.Config, &v.OwnerType); err != nil {
+				yield(Volume{}, fmt.Errorf("scan volume: %w", err))
+				return
+			}
+			v.CreatedAt = time.Unix(createdAt, 0)
+			if !yield(v, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(Volume{}, err)
+		}
+	}
+}
+
 func (s *Store) Update(id, name, description, uri string) error {
 	if _, err := ParseURI(uri); err != nil {
 		return err
