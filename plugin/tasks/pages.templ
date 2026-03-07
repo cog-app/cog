@@ -1,0 +1,374 @@
+package tasks
+
+import (
+	"fmt"
+	"strconv"
+	"time"
+
+	"git.duckfam.us/jj-software/cog/ui"
+)
+
+templ tasksSidebar(sb sidebarData, csrfToken string) {
+	<nav class="sidebar" id="tasks-sidebar">
+		for _, list := range sb.Lists {
+			<a
+				href={ templ.SafeURL(fmt.Sprintf("/apps/tasks/list/%d", list.ID)) }
+				class={ sidebarClass(sb.ActiveList, list.ID) }
+			>
+				<span class="sidebar-color-dot" style={ fmt.Sprintf("background:%s", list.Color) }></span>
+				{ list.Name }
+			</a>
+		}
+		<div class="sidebar-divider"></div>
+		<form method="post" action="/apps/tasks/list" class="flex gap-1 items-center" style="padding:0.5rem 1rem">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input class="form-control" type="text" name="name" placeholder="New list..." required style="flex:1;min-width:0"/>
+			<button class="btn btn-outline btn-sm" type="submit">+</button>
+		</form>
+	</nav>
+}
+
+templ tasksIndexPage(sb sidebarData, csrfToken string) {
+	<div class="sidebar-layout">
+		@tasksSidebar(sb, csrfToken)
+		<div class="sidebar-content">
+			@ui.Card("") {
+				<p class="text-muted">Create your first task list using the sidebar.</p>
+			}
+		</div>
+	</div>
+}
+
+templ tasksListPage(sb sidebarData, list *TaskList, allTasks []Task, csrfToken string) {
+	<div class="sidebar-layout">
+		@tasksSidebar(sb, csrfToken)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+				<h1 style="margin:0">
+					<span class="sidebar-color-dot" style={ fmt.Sprintf("background:%s", list.Color) }></span>
+					{ list.Name }
+				</h1>
+				<a href={ templ.SafeURL(fmt.Sprintf("/apps/tasks/list/%d/settings", list.ID)) } class="btn btn-outline btn-sm">Settings</a>
+			</div>
+			<!-- Quick add form -->
+			<form method="post" action="/apps/tasks/task" class="mb-2">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<input type="hidden" name="list_id" value={ strconv.FormatInt(list.ID, 10) }/>
+				<div class="flex gap-1">
+					<input class="form-control" type="text" name="summary" placeholder="Add a task..." required style="flex:1"/>
+					<button class="btn btn-primary btn-sm" type="submit">Add</button>
+				</div>
+			</form>
+			<!-- Task tree -->
+			<div id="task-tree">
+				@taskGroup(RootTasks(allTasks), allTasks, 0, list.ID, csrfToken)
+			</div>
+			if len(allTasks) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No tasks yet. Add your first task above!</p>
+				}
+			}
+		</div>
+	</div>
+	@sortableScript(list.ID, csrfToken)
+}
+
+templ taskGroup(tasks []Task, allTasks []Task, depth int, listID int64, csrfToken string) {
+	<div
+		class="task-group"
+		data-parent-id={ parentIDAttr(tasks) }
+		data-list-id={ strconv.FormatInt(listID, 10) }
+		style={ groupIndent(depth) }
+	>
+		for i := range tasks {
+			@taskItem(&tasks[i], allTasks, depth, csrfToken)
+		}
+	</div>
+}
+
+templ taskItem(task *Task, allTasks []Task, depth int, csrfToken string) {
+	<div
+		id={ fmt.Sprintf("task-%d", task.ID) }
+		class={ taskItemClass(task) }
+		data-task-id={ strconv.FormatInt(task.ID, 10) }
+	>
+		<div class="task-row">
+			<span class="drag-handle" title="Drag to reorder">&#9776;</span>
+			<input
+				type="checkbox"
+				if task.Status == "COMPLETED" {
+					checked
+				}
+				hx-post={ fmt.Sprintf("/apps/tasks/task/%d/toggle", task.ID) }
+				hx-target={ fmt.Sprintf("#task-%d", task.ID) }
+				hx-swap="outerHTML"
+			/>
+			<a href={ templ.SafeURL(fmt.Sprintf("/apps/tasks/task/%d", task.ID)) } class={ taskSummaryClass(task) }>
+				{ task.Summary }
+			</a>
+			if task.Priority > 0 && task.Priority <= 4 {
+				<span class="badge" style="background:#d9534f;color:#fff;font-size:0.7rem" title="High priority">!!!</span>
+			} else if task.Priority >= 5 && task.Priority <= 6 {
+				<span class="badge" style="background:#f0ad4e;color:#fff;font-size:0.7rem" title="Medium priority">!!</span>
+			}
+			if task.DueAt != nil {
+				<span class={ dueBadgeClass(*task.DueAt) } title="Due date">
+					{ formatDueDate(*task.DueAt) }
+				</span>
+			}
+			<button
+				class="btn btn-danger btn-sm"
+				style="margin-left:auto;padding:0.1rem 0.4rem;font-size:0.75rem"
+				hx-delete={ fmt.Sprintf("/apps/tasks/task/%d", task.ID) }
+				hx-target={ fmt.Sprintf("#task-%d", task.ID) }
+				hx-swap="outerHTML"
+				hx-confirm="Delete this task?"
+			>&#10005;</button>
+		</div>
+		<!-- Subtask add form (collapsed) -->
+		<details class="subtask-add" style="margin-left:2rem;margin-bottom:0.25rem">
+			<summary style="font-size:0.85rem;cursor:pointer;color:var(--color-text-muted)">+ subtask</summary>
+			<form method="post" action="/apps/tasks/task" class="flex gap-1" style="margin-top:0.25rem">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<input type="hidden" name="list_id" value={ strconv.FormatInt(task.ListID, 10) }/>
+				<input type="hidden" name="parent_id" value={ strconv.FormatInt(task.ID, 10) }/>
+				<input class="form-control" type="text" name="summary" placeholder="Subtask..." required style="flex:1;font-size:0.9rem"/>
+				<button class="btn btn-outline btn-sm" type="submit">Add</button>
+			</form>
+		</details>
+		<!-- Children -->
+		if children := ChildrenOf(allTasks, task.ID); len(children) > 0 {
+			@taskGroup(children, allTasks, depth+1, task.ListID, csrfToken)
+		}
+	</div>
+}
+
+templ taskDetailPage(sb sidebarData, task *Task, lists []TaskList, allTasks []Task, csrfToken string) {
+	<div class="sidebar-layout">
+		@tasksSidebar(sb, csrfToken)
+		<div class="sidebar-content">
+			<h1>Edit Task</h1>
+			@ui.Card("") {
+				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/tasks/task/%d", task.ID)) }>
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<div class="form-group">
+						<label for="summary">Summary</label>
+						<input class="form-control" type="text" id="summary" name="summary" value={ task.Summary } required/>
+					</div>
+					<div class="form-group">
+						<label for="description">Description</label>
+						<textarea class="form-control" id="description" name="description" rows="4">{ task.Description }</textarea>
+					</div>
+					<div class="flex gap-1" style="flex-wrap:wrap">
+						<div class="form-group" style="flex:1;min-width:200px">
+							<label for="list_id">List</label>
+							<select class="form-control" id="list_id" name="list_id">
+								for _, l := range lists {
+									if l.ID == task.ListID {
+										<option value={ strconv.FormatInt(l.ID, 10) } selected>{ l.Name }</option>
+									} else {
+										<option value={ strconv.FormatInt(l.ID, 10) }>{ l.Name }</option>
+									}
+								}
+							</select>
+						</div>
+						<div class="form-group" style="flex:1;min-width:200px">
+							<label for="parent_id">Parent Task</label>
+							<select class="form-control" id="parent_id" name="parent_id">
+								<option value="">(none)</option>
+								for _, t := range allTasks {
+									if t.ID != task.ID {
+										if task.ParentID != nil && *task.ParentID == t.ID {
+											<option value={ strconv.FormatInt(t.ID, 10) } selected>{ t.Summary }</option>
+										} else {
+											<option value={ strconv.FormatInt(t.ID, 10) }>{ t.Summary }</option>
+										}
+									}
+								}
+							</select>
+						</div>
+					</div>
+					<div class="flex gap-1" style="flex-wrap:wrap">
+						<div class="form-group" style="flex:1;min-width:150px">
+							<label for="priority">Priority (0-9)</label>
+							<input class="form-control" type="number" id="priority" name="priority" min="0" max="9" value={ strconv.Itoa(task.Priority) }/>
+						</div>
+						<div class="form-group" style="flex:1;min-width:150px">
+							<label for="status">Status</label>
+							<select class="form-control" id="status" name="status">
+								for _, s := range []string{"NEEDS-ACTION", "IN-PROCESS", "COMPLETED", "CANCELLED"} {
+									if s == task.Status {
+										<option value={ s } selected>{ s }</option>
+									} else {
+										<option value={ s }>{ s }</option>
+									}
+								}
+							</select>
+						</div>
+						<div class="form-group" style="flex:1;min-width:150px">
+							<label for="percent_complete">% Complete</label>
+							<input class="form-control" type="number" id="percent_complete" name="percent_complete" min="0" max="100" value={ strconv.Itoa(task.PercentComplete) }/>
+						</div>
+					</div>
+					<div class="flex gap-1" style="flex-wrap:wrap">
+						<div class="form-group" style="flex:1;min-width:200px">
+							<label for="due_at">Due Date</label>
+							<input class="form-control" type="datetime-local" id="due_at" name="due_at_date" value={ formatDatetimeLocal(task.DueAt) }/>
+						</div>
+						<div class="form-group" style="flex:1;min-width:200px">
+							<label for="start_at">Start Date</label>
+							<input class="form-control" type="datetime-local" id="start_at" name="start_at_date" value={ formatDatetimeLocal(task.StartAt) }/>
+						</div>
+					</div>
+					<div class="flex gap-1">
+						<button class="btn btn-primary" type="submit">Save</button>
+						<a href={ templ.SafeURL(fmt.Sprintf("/apps/tasks/list/%d", task.ListID)) } class="btn btn-outline">Cancel</a>
+					</div>
+				</form>
+			}
+		</div>
+	</div>
+}
+
+templ taskListSettingsPage(sb sidebarData, list *TaskList, csrfToken string) {
+	<div class="sidebar-layout">
+		@tasksSidebar(sb, csrfToken)
+		<div class="sidebar-content">
+			<h1>{ list.Name } — Settings</h1>
+			@ui.Card("") {
+				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/tasks/list/%d", list.ID)) }>
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<div class="form-group">
+						<label for="name">Name</label>
+						<input class="form-control" type="text" id="name" name="name" value={ list.Name } required/>
+					</div>
+					<div class="form-group">
+						<label for="color">Color</label>
+						<input class="form-control" type="color" id="color" name="color" value={ list.Color }/>
+					</div>
+					<div class="flex gap-1">
+						<button class="btn btn-primary" type="submit">Save</button>
+						<a href={ templ.SafeURL(fmt.Sprintf("/apps/tasks/list/%d", list.ID)) } class="btn btn-outline">Cancel</a>
+					</div>
+				</form>
+			}
+			<div style="margin-top:2rem">
+				@ui.Card("Danger Zone") {
+					<button
+						class="btn btn-danger"
+						hx-delete={ fmt.Sprintf("/apps/tasks/list/%d", list.ID) }
+						hx-confirm={ fmt.Sprintf("Delete '%s' and all its tasks?", list.Name) }
+					>Delete List</button>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+templ sortableScript(listID int64, csrfToken string) {
+	<script src="/static/vendor/sortable.min.js"></script>
+	<script>
+		(function() {
+			const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
+			const listId = Number(document.querySelector('[data-list-id]')?.dataset.listId || 0);
+			document.querySelectorAll('.task-group').forEach(function(el) {
+				new Sortable(el, {
+					group: 'tasks',
+					handle: '.drag-handle',
+					animation: 150,
+					fallbackOnBody: true,
+					swapThreshold: 0.65,
+					onEnd: function(evt) {
+						const parentId = evt.to.dataset.parentId || null;
+						const ids = Array.from(evt.to.children)
+							.filter(function(c) { return c.dataset && c.dataset.taskId; })
+							.map(function(c) { return Number(c.dataset.taskId); });
+						fetch('/apps/tasks/reorder', {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+								'X-CSRF-Token': csrfToken
+							},
+							body: JSON.stringify({
+								list_id: listId,
+								parent_id: parentId ? Number(parentId) : null,
+								task_ids: ids
+							})
+						});
+					}
+				});
+			});
+		})();
+	</script>
+}
+
+func sidebarClass(activeList, listID int64) string {
+	if activeList == listID {
+		return "sidebar-item active"
+	}
+	return "sidebar-item"
+}
+
+func taskItemClass(task *Task) string {
+	if task.Status == "COMPLETED" {
+		return "task-item completed"
+	}
+	return "task-item"
+}
+
+func taskSummaryClass(task *Task) string {
+	if task.Status == "COMPLETED" {
+		return "task-summary completed"
+	}
+	return "task-summary"
+}
+
+func parentIDAttr(tasks []Task) string {
+	if len(tasks) > 0 && tasks[0].ParentID != nil {
+		return strconv.FormatInt(*tasks[0].ParentID, 10)
+	}
+	return ""
+}
+
+func groupIndent(depth int) string {
+	if depth == 0 {
+		return ""
+	}
+	return fmt.Sprintf("margin-left:%drem", depth)
+}
+
+func formatDueDate(unix int64) string {
+	t := time.Unix(unix, 0)
+	now := time.Now()
+	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
+		return "Today"
+	}
+	tomorrow := now.AddDate(0, 0, 1)
+	if t.Year() == tomorrow.Year() && t.YearDay() == tomorrow.YearDay() {
+		return "Tomorrow"
+	}
+	if t.Year() == now.Year() {
+		return t.Format("Jan 2")
+	}
+	return t.Format("2006-01-02")
+}
+
+func dueBadgeClass(unix int64) string {
+	now := time.Now()
+	t := time.Unix(unix, 0)
+	if t.Before(now) {
+		return "badge badge-overdue"
+	}
+	tomorrow := now.AddDate(0, 0, 1)
+	if t.Before(tomorrow) {
+		return "badge badge-due-soon"
+	}
+	return "badge"
+}
+
+func formatDatetimeLocal(ts *int64) string {
+	if ts == nil {
+		return ""
+	}
+	return time.Unix(*ts, 0).Format("2006-01-02T15:04")
+}

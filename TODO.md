@@ -1,15 +1,10 @@
-These are tasks for CLAUDE to complete in priority order. Be sure to check the ./DESIGN/ documents too and update plans if you get more information from the dev. Remove them when you're done.
-
-- Implement ./DESIGN/plugins/bookmarks
-
-  Cog Codebase Audit Report
+Cog Codebase Audit Report
 
 1. BUGS (Fix Now)
 
 B1: ListBySubject doesn't filter expired shares
 
-internal/share/share.go:246 — Returns all shares including expired ones. CheckAccess (line 332) correctly filters on s.expiration IS NULL OR s.expiration > ?, but ListBySubject does not. UIs showing
-"shared with me" will display expired shares.
+internal/share/share.go:246 — Returns all shares including expired ones. CheckAccess (line 332) correctly filters on s.expiration IS NULL OR s.expiration > ?, but ListBySubject does not. UIs showing "shared with me" will display expired shares.
 
 B2: Direct download tokens leak memory
 
@@ -23,8 +18,7 @@ B3: Unchecked errors return 200 OK
 
 B4: RebuildClosure not atomic with member changes
 
-internal/group/group.go:131-169 — AddMember, RemoveMember, UpdateMemberType, and Delete all call RebuildClosure() as a separate statement. If the initial write succeeds but closure rebuild fails, the
-table goes stale. Should use a transaction.
+internal/group/group.go:131-169 — AddMember, RemoveMember, UpdateMemberType, and Delete all call RebuildClosure() as a separate statement. If the initial write succeeds but closure rebuild fails, the table goes stale. Should use a transaction.
 
 B5: Login Flow v2 grant form has hardcoded credentials
 
@@ -95,18 +89,6 @@ Moderate — Partially Implemented
 ├───────────────────────────────────────────────┼─────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────┤
 │ Session invalidation on password change │ Security best practice │ Existing sessions remain valid after password reset │
 └───────────────────────────────────────────────┴─────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
-
----
-
-3. CODE SMELLS
-
-S1: Iterator re-creation pattern
-
-internal/web/groups.go:65-99 and buildGroupDetailData — The seq.Peek() pattern requires re-creating iterators if empty. The same queries execute 2-3x per page load. Should collect into slices.
-
-S2: Loading all users for name lookup
-
-internal/web/groups.go:138 — seq.ToMap(h.p.Users.List(), ...) loads ALL users to get a name map. Should query only the group's member IDs.
 
 ---
 

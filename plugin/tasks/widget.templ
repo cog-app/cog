@@ -1,0 +1,38 @@
+package tasks
+
+import (
+	"fmt"
+	"time"
+)
+
+templ upcomingTasksWidget(tasks []TaskWithList) {
+	if len(tasks) == 0 {
+		<p class="text-muted">No upcoming tasks.</p>
+	} else {
+		for _, t := range tasks {
+			<div style="padding:0.4rem 0;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:0.5rem">
+				<span class="sidebar-color-dot" style={ fmt.Sprintf("background:%s", t.ListColor) }></span>
+				<a href={ templ.SafeURL(fmt.Sprintf("/apps/tasks/task/%d", t.ID)) } style="font-weight:500;flex:1">
+					{ t.Summary }
+				</a>
+				if t.DueAt != nil {
+					<span class="text-muted" style="font-size:0.85rem;white-space:nowrap">
+						{ widgetDueDate(*t.DueAt) }
+					</span>
+				}
+			</div>
+		}
+	}
+}
+
+func widgetDueDate(unix int64) string {
+	t := time.Unix(unix, 0)
+	now := time.Now()
+	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
+		return "Today"
+	}
+	if t.Year() == now.Year() {
+		return t.Format("Jan 2")
+	}
+	return t.Format("2006-01-02")
+}

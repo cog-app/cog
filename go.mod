@@ -16,6 +16,7 @@ require (
 	github.com/a-h/templ v0.3.1001
 	github.com/blevesearch/bleve/v2 v2.5.7
 	github.com/esimov/pigo v1.4.6
+	github.com/google/uuid v1.6.0
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/mmcdole/gofeed v1.3.0
