@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -94,32 +93,12 @@ func Main(plugins ...plugin.Plugin) {
 	root.AddCommand(volumeCmd(plugins))
 	root.AddCommand(settingCmd(plugins))
 
-	// Register plugin commands lazily — only probe the DB when needed
-	// (first arg contains ':' suggesting a plugin command, or for completions).
-	if needsPluginDiscovery(os.Args) {
-		addPluginCommands(root, plugins)
-	}
+	// Discover and register plugin CLI commands.
+	addPluginCommands(root, plugins)
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
-}
-
-// needsPluginDiscovery returns true if the command line suggests we need to
-// discover plugin commands (e.g. "gallery:scan" or shell completion).
-func needsPluginDiscovery(args []string) bool {
-	if len(args) < 2 {
-		return false
-	}
-	for _, arg := range args[1:] {
-		if strings.Contains(arg, ":") {
-			return true
-		}
-		if arg == "__complete" || arg == "completion" {
-			return true
-		}
-	}
-	return false
 }
 
 // addPluginCommands registers plugin CLI commands by initializing services
@@ -131,27 +110,42 @@ func addPluginCommands(root *cobra.Command, plugins []plugin.Plugin) {
 	}
 
 	for pluginID, cmds := range p.Plugins.Commands() {
-		for _, cmd := range cmds {
-			cmd := cmd
-			use := pluginID + ":" + cmd.Name
-			for _, arg := range cmd.Args {
-				use += " <" + arg + ">"
-			}
-			root.AddCommand(&cobra.Command{
-				Use:   use,
-				Short: cmd.Short,
-				Args:  cobra.ExactArgs(len(cmd.Args)),
-				RunE: func(c *cobra.Command, args []string) error {
-					return cmd.Run(c.Context(), args)
-				},
-			})
+		parent := &cobra.Command{
+			Use:   pluginID,
+			Short: pluginID + " plugin commands",
 		}
+		for _, cmd := range cmds {
+			parent.AddCommand(buildCobraCmd(cmd))
+		}
+		root.AddCommand(parent)
 	}
 
 	// Keep providers alive for the duration of the process so plugin
 	// command Run callbacks can use their captured plugin context.
 	// Clean up when the root command's context is done or on exit.
 	cobra.OnFinalize(func() { p.Close() })
+}
+
+func buildCobraCmd(def plugin.CommandDef) *cobra.Command {
+	use := def.Name
+	for _, arg := range def.Args {
+		use += " <" + arg + ">"
+	}
+	cmd := &cobra.Command{
+		Use:   use,
+		Short: def.Short,
+	}
+	if def.Run != nil {
+		run := def.Run
+		cmd.Args = cobra.ExactArgs(len(def.Args))
+		cmd.RunE = func(c *cobra.Command, args []string) error {
+			return run(c.Context(), args)
+		}
+	}
+	for _, sub := range def.Sub {
+		cmd.AddCommand(buildCobraCmd(sub))
+	}
+	return cmd
 }
 
 // Run starts a Cog server with custom context, config and error handling.
