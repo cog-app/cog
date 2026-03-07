@@ -64,7 +64,7 @@ func Main(plugins ...plugin.Plugin) {
 		SMTPFrom: *smtpFrom,
 	}
 
-	p, err := services.New(cfg)
+	p, err := services.New(cfg, plugins...)
 	if err != nil {
 		log.Fatalf("Failed to initialize: %v", err)
 	}
@@ -94,7 +94,7 @@ func Main(plugins ...plugin.Plugin) {
 		return
 	}
 
-	handler := web.New(p, plugins...)
+	handler := web.New(p)
 
 	// Run seed hook if built with -tags seed and --seed flag is set.
 	if seedHook != nil {
@@ -118,13 +118,13 @@ func Main(plugins ...plugin.Plugin) {
 
 // Run starts a Cog server with custom context, config and error handling. See [Main] for using a default installation with custom plugins.
 func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
-	p, err := services.New(cfg)
+	p, err := services.New(cfg, plugins...)
 	if err != nil {
 		return err
 	}
 	defer p.Close()
 
-	handler := web.New(p, plugins...)
+	handler := web.New(p)
 
 	if err := p.StartSearch(ctx); err != nil {
 		log.Printf("Warning: search init failed: %v", err)
@@ -133,6 +133,7 @@ func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 	log.Printf("Cog listening on %s", cfg.Addr)
 	return http.ListenAndServe(cfg.Addr, handler)
 }
+
 func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

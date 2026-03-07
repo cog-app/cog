@@ -1,20 +1,12 @@
-package web
+package files
 
 import (
 	"fmt"
-	"git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/ui"
 	"time"
 )
 
-func fileResourceType(isDir bool) string {
-	if isDir {
-		return "files:directory"
-	}
-	return "files:file"
-}
-
-templ filesPage(pd ui.PageData, dirPath string, items []files.FileMeta) {
+templ filesPage(pd ui.PageData, dirPath string, items []FileMeta) {
 	@ui.Base(pd) {
 		<h1 style="margin-bottom:0.5rem">Files</h1>
 		@filesBreadcrumbs(dirPath)
@@ -314,17 +306,17 @@ templ fileIcon(mimeType string, isDir bool) {
 	}
 }
 
-templ fileViewPage(pd ui.PageData, filePath string, meta *files.FileMeta, kind string, textContent string, flash string, flashKind string) {
+templ fileViewPage(pd ui.PageData, fp string, meta *FileMeta, kind string, textContent string, flashMsg string, flashKind string) {
 	@ui.Base(pd) {
-		@filesBreadcrumbs(parentDir(filePath))
-		if flash != "" {
-			@ui.Alert(flashKind, flash)
+		@filesBreadcrumbs(parentDir(fp))
+		if flashMsg != "" {
+			@ui.Alert(flashKind, flashMsg)
 		}
 		@ui.Card(meta.Name) {
 			<div class="flex gap-1 items-center mb-2">
 				<span class="text-muted">{ meta.MimeType }</span>
 				<span class="text-muted">{ formatSize(meta.Size) }</span>
-				<a href={ templ.SafeURL("/apps/files" + filePath + "?dl=1") } class="btn btn-primary btn-sm">Download</a>
+				<a href={ templ.SafeURL("/apps/files" + fp + "?dl=1") } class="btn btn-primary btn-sm">Download</a>
 				<button
 					class="btn btn-outline btn-sm"
 					hx-get={ fmt.Sprintf("/api/shares/panel?type=%s&id=%d", fileResourceType(meta.IsDir), meta.ID) }
@@ -333,24 +325,24 @@ templ fileViewPage(pd ui.PageData, filePath string, meta *files.FileMeta, kind s
 				>Share</button>
 				<button
 					class="btn btn-danger btn-sm"
-					hx-delete={ "/apps/files" + filePath }
+					hx-delete={ "/apps/files" + fp }
 					hx-confirm={ "Delete " + meta.Name + "?" }
 					hx-on::after-request="if(event.detail.successful) window.location=this.getAttribute('data-back')"
-					data-back={ "/apps/files" + parentDir(filePath) }
+					data-back={ "/apps/files" + parentDir(fp) }
 				>Delete</button>
 			</div>
 			<div id="file-share-panel"></div>
 			if kind == "image" {
 				<div style="text-align:center">
 					<img
-						src={ "/apps/files" + filePath + "?raw=1" }
+						src={ "/apps/files" + fp + "?raw=1" }
 						alt={ meta.Name }
 						style="max-width:100%;max-height:80vh"
 					/>
 				</div>
 			}
 			if kind == "text" {
-				<form method="post" action={ templ.SafeURL("/apps/files" + filePath + "?save=1") }>
+				<form method="post" action={ templ.SafeURL("/apps/files" + fp + "?save=1") }>
 					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 					<textarea
 						name="content"
@@ -364,23 +356,23 @@ templ fileViewPage(pd ui.PageData, filePath string, meta *files.FileMeta, kind s
 			}
 			if kind == "video" {
 				<video controls style="max-width:100%;max-height:80vh">
-					<source src={ "/apps/files" + filePath + "?raw=1" } type={ meta.MimeType }/>
+					<source src={ "/apps/files" + fp + "?raw=1" } type={ meta.MimeType }/>
 				</video>
 			}
 			if kind == "audio" {
 				<audio controls style="width:100%">
-					<source src={ "/apps/files" + filePath + "?raw=1" } type={ meta.MimeType }/>
+					<source src={ "/apps/files" + fp + "?raw=1" } type={ meta.MimeType }/>
 				</audio>
 			}
 			if kind == "pdf" {
 				<iframe
-					src={ "/apps/files" + filePath + "?raw=1" }
+					src={ "/apps/files" + fp + "?raw=1" }
 					style="width:100%;height:80vh;border:1px solid var(--color-border)"
 				></iframe>
 			}
 			if kind == "office" {
 				<iframe
-					src={ "/apps/files" + filePath + "?pdfpreview=1" }
+					src={ "/apps/files" + fp + "?pdfpreview=1" }
 					style="width:100%;height:80vh;border:1px solid var(--color-border)"
 				></iframe>
 			}

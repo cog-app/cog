@@ -15,12 +15,15 @@ import (
 	"io"
 	"log"
 	"mime"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/auth"
+	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
@@ -98,7 +101,25 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 			return string(data)
 		},
 	})
+
+	if priv, ok := ctx.(internalplugin.PrivilegedContext); ok {
+		p.registerRoutes(priv)
+	}
+
 	return nil
+}
+
+func (p *Plugin) registerRoutes(priv internalplugin.PrivilegedContext) {
+	pages := NewPages(p)
+	csrfSecret := p.ctx.CSRFSecret()
+	csrfWrap := func(h http.Handler) http.Handler {
+		return auth.RequireAuthWeb(auth.RequireCSRF(csrfSecret, h))
+	}
+
+	// Files browser UI
+	priv.RegisterRoute("GET /apps/files/{path...}", auth.RequireAuthWeb(http.HandlerFunc(pages.ServeGet)))
+	priv.RegisterRoute("POST /apps/files/{path...}", csrfWrap(http.HandlerFunc(pages.ServePost)))
+	priv.RegisterRoute("DELETE /apps/files/{path...}", csrfWrap(http.HandlerFunc(pages.ServeDelete)))
 }
 
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {

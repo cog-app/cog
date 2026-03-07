@@ -7,16 +7,14 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/compat"
 	"git.duckfam.us/jj-software/cog/internal/services"
-	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/calendar"
-	"git.duckfam.us/jj-software/cog/plugin/dashboard"
-	"git.duckfam.us/jj-software/cog/plugin/files"
+	filesPlugin "git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
 // New builds the full HTTP handler with all routes and middleware.
 // All plugins (including first-party) are passed in via the plugins slice.
-func New(p *services.Providers, plugins ...plugin.Plugin) http.Handler {
+func New(p *services.Providers) http.Handler {
 	authMW := &auth.Middleware{
 		Users:        p.Users,
 		Sessions:     p.Sessions,
@@ -35,18 +33,6 @@ func New(p *services.Providers, plugins ...plugin.Plugin) http.Handler {
 	// --- Wire optional services for plugins ---
 	p.Plugins.SetServices(buildRegistryServices(p.Plugins, p.Shares, p.Email, p.Users, p.Groups))
 
-	// --- Register all plugins ---
-	var dashPlugin *dashboard.Plugin
-	for _, pl := range plugins {
-		p.Plugins.Add(pl)
-		if dp, ok := pl.(*dashboard.Plugin); ok {
-			dashPlugin = dp
-		}
-		if fp, ok := pl.(*files.Plugin); ok {
-			p.Files = fp
-		}
-	}
-
 	// --- Web UI handlers ---
 	h := handler{p}
 	loginH := loginHandler{h}
@@ -64,10 +50,6 @@ func New(p *services.Providers, plugins ...plugin.Plugin) http.Handler {
 	mux.HandleFunc("GET /register", loginH.ShowRegister)
 	mux.HandleFunc("POST /register", loginH.HandleRegister)
 
-	// Dashboard (root route from dashboard plugin)
-	mux.Handle("GET /{$}", auth.RequireAuthWeb(dashPlugin.Handler()))
-	mux.Handle("GET /dashboard/edit", auth.RequireAuthWeb(dashPlugin.EditHandler()))
-
 	// Avatar
 	mux.Handle("GET /avatar/{id}", http.HandlerFunc(avatarH.Serve))
 	mux.Handle("GET /avatar/{id}/initials", http.HandlerFunc(avatarH.ServeInitials))
@@ -76,9 +58,6 @@ func New(p *services.Providers, plugins ...plugin.Plugin) http.Handler {
 	csrfWeb := func(h http.Handler) http.Handler {
 		return auth.RequireAuthWeb(auth.RequireCSRF(p.CSRFSecret, h))
 	}
-
-	// Dashboard layout save (needs csrfWeb)
-	mux.Handle("POST /dashboard/layout", csrfWeb(dashPlugin.SaveLayoutHandler()))
 
 	mux.Handle("GET /settings/{$}", auth.RequireAuthWeb(http.HandlerFunc(settingsH.RedirectToProfile)))
 	mux.Handle("GET /settings/profile", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowProfile)))
@@ -162,12 +141,6 @@ func New(p *services.Providers, plugins ...plugin.Plugin) http.Handler {
 	mux.Handle("POST /volumes/{id}/mkdir", csrfWeb(http.HandlerFunc(volBrowserH.MkDir)))
 	mux.Handle("DELETE /volumes/{id}/file", csrfWeb(http.HandlerFunc(volBrowserH.DeleteFile)))
 
-	// Files plugin page — path is in the URL after /apps/files/
-	filesH := &FilesHandler{p: p}
-	mux.Handle("GET /apps/files/{path...}", auth.RequireAuthWeb(http.HandlerFunc(filesH.ServeGet)))
-	mux.Handle("POST /apps/files/{path...}", csrfWeb(http.HandlerFunc(filesH.ServePost)))
-	mux.Handle("DELETE /apps/files/{path...}", csrfWeb(http.HandlerFunc(filesH.ServeDelete)))
-
 	// --- Status & OCS ---
 	mux.HandleFunc("GET /status.php", compat.HandleStatus)
 	mux.HandleFunc("GET /ocs/v1.php/cloud/capabilities", compat.HandleCapabilities)
@@ -176,15 +149,27 @@ func New(p *services.Providers, plugins ...plugin.Plugin) http.Handler {
 	mux.Handle("GET /ocs/v2.php/cloud/user", auth.RequireAuth(http.HandlerFunc(compat.HandleCurrentUser)))
 
 	// --- WebDAV file operations (NC clients) ---
-	webdav := &compat.WebDAVHandler{Files: p.Files, Users: p.Users}
-	mux.Handle("/remote.php/dav/files/", auth.RequireAuth(webdav))
+	// Look up the files plugin from the registry for compat handlers.
+	var fp *filesPlugin.Plugin
+	if plug, ok := p.Plugins.Plugin("files"); ok {
+		fp, _ = plug.(*filesPlugin.Plugin)
+	}
 
-	// Direct download API (NC Android app uses this instead of WebDAV GET)
-	mux.Handle("POST /ocs/v2.php/apps/dav/api/v1/direct", auth.RequireAuth(webdav.HandleDirectDownload(p.Config.BaseURL)))
-	mux.Handle("POST /ocs/v1.php/apps/dav/api/v1/direct", auth.RequireAuth(webdav.HandleDirectDownload(p.Config.BaseURL)))
+	if fp != nil {
+		webdav := &compat.WebDAVHandler{Files: fp}
+		mux.Handle("/remote.php/dav/files/", auth.RequireAuth(webdav))
 
-	// Token-based direct file serving (no auth — token is the credential)
-	mux.HandleFunc("GET /remote.php/dav/direct/", webdav.HandleDirectServe)
+		// Direct download API (NC Android app uses this instead of WebDAV GET)
+		mux.Handle("POST /ocs/v2.php/apps/dav/api/v1/direct", auth.RequireAuth(webdav.HandleDirectDownload(p.Config.BaseURL)))
+		mux.Handle("POST /ocs/v1.php/apps/dav/api/v1/direct", auth.RequireAuth(webdav.HandleDirectDownload(p.Config.BaseURL)))
+
+		// Token-based direct file serving (no auth — token is the credential)
+		mux.HandleFunc("GET /remote.php/dav/direct/", webdav.HandleDirectServe)
+
+		// NC preview endpoint (needs auth + files plugin)
+		previewH := &compat.PreviewHandler{Files: fp}
+		mux.Handle("GET /index.php/core/preview", auth.RequireAuth(previewH))
+	}
 
 	// CalDAV/CardDAV discovery: PROPFIND on /remote.php/dav/ returns current-user-principal.
 	mux.Handle("PROPFIND /remote.php/dav/{$}", auth.RequireAuth(http.HandlerFunc(calendar.HandleDAVRoot)))
@@ -193,10 +178,6 @@ func New(p *services.Providers, plugins ...plugin.Plugin) http.Handler {
 	// WebDAV stub for non-file DAV paths (presence check, HEAD/OPTIONS/GET)
 	mux.HandleFunc("/remote.php/dav", compat.HandleWebDAVStub)
 	mux.HandleFunc("/remote.php/dav/", compat.HandleWebDAVStub)
-
-	// NC preview endpoint (needs auth + files plugin)
-	previewH := &compat.PreviewHandler{Files: p.Files}
-	mux.Handle("GET /index.php/core/preview", auth.RequireAuth(previewH))
 
 	// Stub routes (avatar, notifications, connectivity, etc.)
 	compat.RegisterStubs(mux)
@@ -223,8 +204,10 @@ func New(p *services.Providers, plugins ...plugin.Plugin) http.Handler {
 	mux.Handle("GET /api/admin/search", adminAuth(http.HandlerFunc(searchH.SearchSystem)))
 
 	// --- Files & Sharing API ---
-	filesAPI := files.NewAPI(p.Files, p.Shares, p.Users)
-	filesAPI.RegisterRoutes(mux)
+	if fp != nil {
+		filesAPI := filesPlugin.NewAPI(fp, p.Shares, p.Users)
+		filesAPI.RegisterRoutes(mux)
+	}
 
 	return authMW.Wrap(mux)
 }

@@ -21,6 +21,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/plugin/dashboard"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
@@ -33,7 +34,6 @@ type Providers struct {
 	AppPasswords *auth.AppPasswordStore
 	Plugins      *plugin.Registry
 	Shares       *share.Store
-	Files        *files.Plugin
 	Groups       *group.Store
 	Invitations  *group.InvitationStore
 	Volumes      *volume.Store
@@ -47,7 +47,7 @@ type Providers struct {
 
 // New opens the system database and constructs all service providers.
 // It sets up the search manager with a hooked system DB for real-time indexing.
-func New(cfg config.Config) (*Providers, error) {
+func New(cfg config.Config, plugins ...plugin.Plugin) (*Providers, error) {
 	mgr := search.NewManager(cfg.DataDir)
 
 	// Open the system DB with update hook feeding the search collector.
@@ -62,7 +62,7 @@ func New(cfg config.Config) (*Providers, error) {
 
 	mgr.SetSystemDB(sysDB)
 
-	p := NewFromDB(cfg, sysDB)
+	p := NewFromDB(cfg, sysDB, plugins...)
 	p.Search = mgr
 
 	// Wire the DB hook factory so per-user plugin DBs get update hooks.
@@ -75,7 +75,24 @@ func New(cfg config.Config) (*Providers, error) {
 
 // NewFromDB constructs providers from an existing database connection.
 // Useful for tests that use :memory: databases.
-func NewFromDB(cfg config.Config, sysDB *sql.DB) *Providers {
+func NewFromDB(cfg config.Config, sysDB *sql.DB, plugins ...plugin.Plugin) *Providers {
+	// Ensure dashboard and files plugins are always present.
+	var hasFiles, hasDash bool
+	for _, p := range plugins {
+		switch p.(type) {
+		case *files.Plugin:
+			hasFiles = true
+		case *dashboard.Plugin:
+			hasDash = true
+		}
+	}
+	if !hasDash {
+		plugins = append(plugins, dashboard.New())
+	}
+	if !hasFiles {
+		plugins = append(plugins, files.New())
+	}
+
 	users := user.NewStore(sysDB)
 	volumes := volume.NewStore(sysDB)
 	mounts := mount.NewStore(sysDB)
@@ -89,6 +106,9 @@ func NewFromDB(cfg config.Config, sysDB *sql.DB) *Providers {
 	_, _ = rand.Read(secret) // crypto/rand.Read always succeeds or panics
 
 	registry := plugin.NewRegistry(cfg.DataDir, http.NewServeMux(), sysDB, secret)
+	for _, p := range plugins {
+		registry.Add(p)
+	}
 
 	// Wire mount resolver into plugin registry.
 	resolver := mount.NewResolver(users, mounts, volumes)

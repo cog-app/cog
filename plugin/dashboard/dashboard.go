@@ -14,6 +14,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -45,6 +46,19 @@ func (p *Plugin) Register(ctx cogplugin.PluginContext) error {
 		Priority: 50,
 		Render:   p.renderWidget,
 	})
+
+	if priv, ok := ctx.(internalplugin.PrivilegedContext); ok {
+		csrfSecret := p.ctx.CSRFSecret()
+		csrfWrap := func(h http.Handler) http.Handler {
+			return auth.RequireAuthWeb(auth.RequireCSRF(csrfSecret, h))
+		}
+
+		// Dashboard (root route from dashboard plugin)
+		priv.RegisterRoute("GET /{$}", auth.RequireAuthWeb(p.Handler()))
+		priv.RegisterRoute("GET /dashboard/edit", auth.RequireAuthWeb(p.EditHandler()))
+		// Dashboard layout save (needs csrfWeb)
+		priv.RegisterRoute("POST /dashboard/layout", csrfWrap(p.SaveLayoutHandler()))
+	}
 	return nil
 }
 

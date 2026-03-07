@@ -9,6 +9,8 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
+	"git.duckfam.us/jj-software/cog/plugin/calendar"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
 func webdavReq(t testing.TB, env *cogtest.Env, method, path string, body string, opts ...cogtest.HTTPOpt) *cogtest.Response {
@@ -22,7 +24,7 @@ func webdavReq(t testing.TB, env *cogtest.Env, method, path string, body string,
 }
 
 func TestWebDAV_PROPFINDRoot(t *testing.T) {
-	env := cogtest.New(t)
+	env := cogtest.New(t, calendar.New())
 	alice := env.CreateUser(t, "alice", "pass")
 
 	resp := webdavReq(t, env, "PROPFIND", "/remote.php/dav/files/"+alice.ID+"/", "",
@@ -160,7 +162,9 @@ func TestWebDAV_DirectDownload(t *testing.T) {
 
 	// Use the direct download API with a known file ID
 	// First get the file ID via the files plugin directly
-	meta, err := env.Providers.Files.GetByPath(alice.Username, "/music.mp3")
+	plug, _ := env.Providers.Plugins.Plugin("files")
+	fp := plug.(*files.Plugin)
+	meta, err := fp.GetByPath(alice.Username, "/music.mp3")
 	require.NoError(t, err)
 
 	// POST to direct download endpoint to get a token URL

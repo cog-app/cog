@@ -29,7 +29,6 @@ type directToken struct {
 // WebDAVHandler implements NextCloud-compatible WebDAV for the files plugin.
 type WebDAVHandler struct {
 	Files *files.Plugin
-	Users *user.Store
 
 	directMu     sync.Mutex
 	directTokens map[string]directToken

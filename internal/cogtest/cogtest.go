@@ -20,13 +20,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/web"
-	"git.duckfam.us/jj-software/cog/plugin/calendar"
-	"git.duckfam.us/jj-software/cog/plugin/contacts"
-	"git.duckfam.us/jj-software/cog/plugin/dashboard"
-	"git.duckfam.us/jj-software/cog/plugin/files"
-	"git.duckfam.us/jj-software/cog/plugin/gallery"
-	"git.duckfam.us/jj-software/cog/plugin/notes"
-	"git.duckfam.us/jj-software/cog/plugin/rss"
+	"git.duckfam.us/jj-software/cog/plugin"
 )
 
 // HTTPOpt configures an outgoing request. Pass to Get, Post, Head, etc.
@@ -60,7 +54,7 @@ type Env struct {
 
 // New creates a fresh test environment with an in-memory DB and temp data dir.
 // The returned Client routes requests through the server handler directly.
-func New(t testing.TB) *Env {
+func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	t.Helper()
 
 	sysDB, err := db.OpenSystem(":memory:")
@@ -80,22 +74,14 @@ func New(t testing.TB) *Env {
 		DataDir: dataDir,
 	}
 
-	p := services.NewFromDB(cfg, sysDB)
+	p := services.NewFromDB(cfg, sysDB, plugins...)
 
 	// Wire search manager for tests (uses temp dir, no hooks).
 	mgr := search.NewManager(dataDir)
 	mgr.SetSystemDB(sysDB)
 	p.Search = mgr
 
-	handler := web.New(p,
-		dashboard.New(),
-		files.New(),
-		calendar.New(),
-		contacts.New(),
-		notes.New(),
-		rss.New(),
-		gallery.New(),
-	)
+	handler := web.New(p)
 
 	// Start search after plugins are registered.
 	if err := p.StartSearch(context.Background()); err != nil {
