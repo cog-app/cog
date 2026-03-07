@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strconv"
 
-	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
 //go:generate go tool templ generate -log-level warn

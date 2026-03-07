@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	plugpkg "git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 	rrulelib "github.com/teambition/rrule-go"
 )
 
@@ -25,7 +25,7 @@ func NewPages(p *Plugin) *Pages {
 }
 
 func (h *Pages) csrfToken(r *http.Request) string {
-	return plugpkg.CSRFTokenFromContext(r.Context())
+	return plugin.CSRFTokenFromContext(r.Context())
 }
 
 // setTitle sets the page title for the shell middleware.
@@ -34,7 +34,7 @@ func setTitle(w http.ResponseWriter, title string) {
 }
 
 func (h *Pages) userDB(r *http.Request) (*sql.DB, error) {
-	u := plugpkg.UserFromContext(r.Context())
+	u := plugin.UserFromContext(r.Context())
 	return h.plugin.DB(u.Username)
 }
 
@@ -85,7 +85,7 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 		end = time.Now().AddDate(0, 2, 0)
 	}
 
-	u := plugpkg.UserFromContext(r.Context())
+	u := plugin.UserFromContext(r.Context())
 
 	var events []EventWithCalendar
 	if calIDStr != "" {
@@ -116,11 +116,11 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 				if ev.CalendarID != sc.ID {
 					continue
 				}
-				if sc.Permissions&plugpkg.PermRead != 0 {
+				if sc.Permissions&plugin.PermRead != 0 {
 					// Full read access: include all details.
 					ev.CalendarName = sc.Name + " (" + sc.OwnerUsername + ")"
 					events = append(events, ev)
-				} else if sc.Permissions&plugpkg.PermFreeBusy != 0 {
+				} else if sc.Permissions&plugin.PermFreeBusy != 0 {
 					// Free/Busy only: strip sensitive details.
 					ev.Summary = "Busy"
 					ev.Description = ""
@@ -637,7 +637,7 @@ func (h *Pages) sendInvitations(method string, ev *Event, summary, description, 
 			subject,
 			body,
 			"",
-			[]plugpkg.EmailAttachment{{
+			[]plugin.EmailAttachment{{
 				Filename:    "invite.ics",
 				ContentType: "text/calendar; method=" + method,
 				Data:        []byte(icsData),

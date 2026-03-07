@@ -23,8 +23,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
-	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
 //go:embed sql/schema.sql
@@ -60,7 +59,7 @@ func (p *Plugin) ID() string { return PluginID }
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
-	ctx.RegisterNavItem(plugin.NavItem{Label: "Files", URL: "/apps/files", Icon: "files"})
+	ctx.RegisterNavItem(plugin.NavItem{Label: "Files", URL: "/apps/files", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Recent Files",
 		Priority: 30,
@@ -102,14 +101,14 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		},
 	})
 
-	if priv, ok := ctx.(internalplugin.PrivilegedContext); ok {
+	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		p.registerRoutes(priv)
 	}
 
 	return nil
 }
 
-func (p *Plugin) registerRoutes(priv internalplugin.PrivilegedContext) {
+func (p *Plugin) registerRoutes(priv plugin.PrivilegedContext) {
 	pages := NewPages(p)
 	csrfSecret := p.ctx.CSRFSecret()
 	csrfWrap := func(h http.Handler) http.Handler {

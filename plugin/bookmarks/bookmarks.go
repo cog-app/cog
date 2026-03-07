@@ -11,8 +11,7 @@ import (
 	"io"
 	"net/http"
 
-	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
-	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
 //go:generate go tool migratesql .
@@ -37,7 +36,7 @@ func (p *Plugin) ID() string { return PluginID }
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
 
-	ctx.RegisterNavItem(plugin.NavItem{Label: "Bookmarks", URL: "/apps/bookmarks", Icon: "bookmark"})
+	ctx.RegisterNavItem(plugin.NavItem{Label: "Bookmarks", URL: "/apps/bookmarks", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Recent Bookmarks",
 		Priority: 35,
@@ -78,7 +77,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 
 	// NextCloud Bookmarks API compatibility
 	api := NewBookmarksAPI(p)
-	if priv, ok := ctx.(internalplugin.PrivilegedContext); ok {
+	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		priv.RegisterRoute("/index.php/apps/bookmarks/public/rest/v2/", api)
 	}
 

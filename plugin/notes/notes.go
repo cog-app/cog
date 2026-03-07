@@ -13,8 +13,7 @@ import (
 	"os"
 	"path/filepath"
 
-	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
-	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
 //go:generate go tool migratesql .
@@ -39,7 +38,7 @@ func (p *Plugin) ID() string { return PluginID }
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
 
-	ctx.RegisterNavItem(plugin.NavItem{Label: "Notes", URL: "/apps/notes", Icon: "notes"})
+	ctx.RegisterNavItem(plugin.NavItem{Label: "Notes", URL: "/apps/notes", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>`})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Recent Notes",
 		Priority: 30,
@@ -72,7 +71,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 
 	// NextCloud Notes API compatibility
 	notesAPI := NewNotesAPI(p)
-	if priv, ok := ctx.(internalplugin.PrivilegedContext); ok {
+	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		priv.RegisterRoute("/index.php/apps/notes/api/", notesAPI)
 	}
 

@@ -12,8 +12,7 @@ import (
 	"net/http"
 	"time"
 
-	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
-	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
 //go:generate go tool migratesql .
@@ -54,7 +53,7 @@ func (p *Plugin) ID() string { return PluginID }
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
 
-	ctx.RegisterNavItem(plugin.NavItem{Label: "News", URL: "/apps/rss", Icon: "rss"})
+	ctx.RegisterNavItem(plugin.NavItem{Label: "News", URL: "/apps/rss", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle></svg>`})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Recent Unread Articles",
 		Priority: 20,
@@ -88,7 +87,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 
 	// NextCloud News API compatibility
 	newsAPI := NewNewsAPI(p)
-	if priv, ok := ctx.(internalplugin.PrivilegedContext); ok {
+	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		priv.RegisterRoute("/index.php/apps/news/api/", newsAPI)
 	}
 

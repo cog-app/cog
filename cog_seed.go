@@ -1,7 +1,6 @@
 package cog
 
 import (
-	"flag"
 	"log"
 	"sync"
 
@@ -10,8 +9,6 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
-
-var seedEnabled = flag.Bool("seed", false, "seed development data (users, groups, plugin data)")
 
 func init() {
 	seedHook = runSeed
@@ -35,7 +32,7 @@ var seedUsers = []seedUser{
 }
 
 func runSeed(p *services.Providers) {
-	if !*seedEnabled {
+	if !envBool("COG_SEED") {
 		return
 	}
 

@@ -7,8 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
-	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
 //go:generate go tool templ generate -log-level warn
@@ -21,7 +20,7 @@ const PluginID = "tasks"
 
 // Plugin is the tasks plugin.
 type Plugin struct {
-	internalplugin.Protected
+	plugin.Protected
 	ctx plugin.PluginContext
 }
 
@@ -35,7 +34,7 @@ func (p *Plugin) ID() string { return PluginID }
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
 
-	ctx.RegisterNavItem(plugin.NavItem{Label: "Tasks", URL: "/apps/tasks", Icon: "tasks"})
+	ctx.RegisterNavItem(plugin.NavItem{Label: "Tasks", URL: "/apps/tasks", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>`})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Upcoming Tasks",
 		Priority: 20,

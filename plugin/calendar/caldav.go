@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	plugpkg "git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
 // CalDAVHandler implements CalDAV for the calendar plugin.
@@ -214,7 +214,7 @@ func (h *CalDAVHandler) calendarCollection(w http.ResponseWriter, r *http.Reques
 	case http.MethodDelete:
 		if targetUser != username {
 			// Shared calendar: require PermWrite.
-			if sharePerms&plugpkg.PermWrite == 0 {
+			if sharePerms&plugin.PermWrite == 0 {
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}
@@ -281,7 +281,7 @@ func (h *CalDAVHandler) event(w http.ResponseWriter, r *http.Request, db *sql.DB
 	switch r.Method {
 	case http.MethodGet:
 		// For shared calendars, require PermRead or PermFreeBusy.
-		if targetUser != username && sharePerms&(plugpkg.PermRead|plugpkg.PermFreeBusy) == 0 {
+		if targetUser != username && sharePerms&(plugin.PermRead|plugin.PermFreeBusy) == 0 {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
@@ -292,7 +292,7 @@ func (h *CalDAVHandler) event(w http.ResponseWriter, r *http.Request, db *sql.DB
 		}
 		w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
 		w.Header().Set("ETag", `"`+ev.ETag+`"`)
-		if targetUser != username && sharePerms&plugpkg.PermRead == 0 && sharePerms&plugpkg.PermFreeBusy != 0 {
+		if targetUser != username && sharePerms&plugin.PermRead == 0 && sharePerms&plugin.PermFreeBusy != 0 {
 			// Free/Busy only: return a stripped-down ICS with only timing info.
 			ics := GenerateICSFull(ev.UID, "Busy", "", "", time.Unix(ev.DTStart, 0).UTC(), time.Unix(ev.DTEnd, 0).UTC(), ev.IsAllDay, "", nil, nil)
 			io.WriteString(w, ics)
@@ -303,7 +303,7 @@ func (h *CalDAVHandler) event(w http.ResponseWriter, r *http.Request, db *sql.DB
 	case http.MethodPut:
 		// Require PermWrite for shared calendars.
 		if targetUser != username {
-			if sharePerms&plugpkg.PermWrite == 0 {
+			if sharePerms&plugin.PermWrite == 0 {
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}
@@ -353,7 +353,7 @@ func (h *CalDAVHandler) event(w http.ResponseWriter, r *http.Request, db *sql.DB
 	case http.MethodDelete:
 		// Require PermWrite for shared calendars.
 		if targetUser != username {
-			if sharePerms&plugpkg.PermWrite == 0 {
+			if sharePerms&plugin.PermWrite == 0 {
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}
@@ -365,7 +365,7 @@ func (h *CalDAVHandler) event(w http.ResponseWriter, r *http.Request, db *sql.DB
 		w.WriteHeader(http.StatusNoContent)
 
 	case "PROPFIND":
-		if targetUser != username && sharePerms&(plugpkg.PermRead|plugpkg.PermFreeBusy) == 0 {
+		if targetUser != username && sharePerms&(plugin.PermRead|plugin.PermFreeBusy) == 0 {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
@@ -639,10 +639,10 @@ func calResponse(href string, cal *Calendar, username string) davResponse {
 func sharedCalResponse(href string, sc *SharedCalendar, username string) davResponse {
 	ownerHref := "/remote.php/dav/principals/users/" + sc.OwnerUsername + "/"
 	var privs string
-	if sc.Permissions&plugpkg.PermRead != 0 {
+	if sc.Permissions&plugin.PermRead != 0 {
 		privs += `<D:privilege><D:read/></D:privilege>`
 	}
-	if sc.Permissions&plugpkg.PermWrite != 0 {
+	if sc.Permissions&plugin.PermWrite != 0 {
 		privs += `<D:privilege><D:write/></D:privilege><D:privilege><D:write-content/></D:privilege>`
 	}
 	if privs == "" {

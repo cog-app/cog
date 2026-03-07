@@ -21,6 +21,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/mmcdole/gofeed v1.3.0
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
+	github.com/spf13/cobra v1.10.2
 	github.com/teambition/rrule-go v1.8.2
 	github.com/yalue/onnxruntime_go v1.27.0
 	github.com/yuin/goldmark v1.7.16
@@ -65,6 +66,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jhump/gopoet v0.0.0-20190322174617-17282ff210b3 // indirect
 	github.com/jhump/protoreflect v1.11.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -75,6 +77,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/natefinch/atomic v1.0.1 // indirect
+	github.com/spf13/pflag v1.0.9 // indirect
 	go.etcd.io/bbolt v1.4.0 // indirect
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/net v0.49.0 // indirect

@@ -3,10 +3,10 @@ package dashboard
 import (
 	"fmt"
 
-	cogplugin "git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
-templ groupsWidget(groups []cogplugin.GroupInfo) {
+templ groupsWidget(groups []plugin.GroupInfo) {
 	if len(groups) == 0 {
 		<p class="text-muted">You are not in any groups.</p>
 	} else {

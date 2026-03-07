@@ -1,7 +1,7 @@
 // Dev tool for Cog. Usage: go tool dev [-reset]
 //
 // Builds cog with seed support, ensures a test user exists, and runs with
-// request logging and --seed. Logs are teed to tmp/dev/cog.log.
+// request logging and COG_SEED=true. Logs are teed to tmp/dev/cog.log.
 // Use -reset to wipe state first.
 package main
 
@@ -66,11 +66,15 @@ func main() {
 	// Idempotent seed: only create if DB doesn't exist yet
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		log.Printf("Creating test user %s:%s (admin)", testUser, testPass)
-		create := exec.Command(bin, "--db", dbPath, "--data-dir", filepath.Join(devDir, "data"), "--create-user", testUser+":"+testPass)
+		create := exec.Command(bin, "user", "create", "--admin", testUser, testPass)
+		create.Env = append(os.Environ(),
+			"COG_DB="+dbPath,
+			"COG_DATA_DIR="+filepath.Join(devDir, "data"),
+		)
 		create.Stdout = os.Stdout
 		create.Stderr = os.Stderr
 		if err := create.Run(); err != nil {
-			log.Fatalf("create-user failed: %v", err)
+			log.Fatalf("user create failed: %v", err)
 		}
 	} else {
 		log.Printf("Using existing DB (user: %s)", testUser)
@@ -92,13 +96,14 @@ func main() {
 	baseURL := fmt.Sprintf("http://%s%s", hostname, addr)
 	log.Printf("Starting cog on %s (base-url %s, log-requests on, seed on)", addr, baseURL)
 	log.Printf("Logs: %s", logPath)
-	srv := exec.Command(bin,
-		"--db", dbPath,
-		"--addr", addr,
-		"--base-url", baseURL,
-		"--data-dir", filepath.Join(devDir, "data"),
-		"--log-requests",
-		"--seed",
+	srv := exec.Command(bin, "serve")
+	srv.Env = append(os.Environ(),
+		"COG_DB="+dbPath,
+		"COG_ADDR="+addr,
+		"COG_DATA_DIR="+filepath.Join(devDir, "data"),
+		"COG_BASE_URL="+baseURL,
+		"COG_LOG_REQUESTS=true",
+		"COG_SEED=true",
 	)
 	srv.Stdout = teeOut
 	srv.Stderr = teeErr

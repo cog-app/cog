@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"github.com/google/uuid"
 )
 

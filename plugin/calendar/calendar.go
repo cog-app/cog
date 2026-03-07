@@ -10,8 +10,7 @@ import (
 	"strings"
 	"time"
 
-	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
-	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
 //go:generate go tool templ generate -log-level warn
@@ -24,7 +23,7 @@ const PluginID = "calendar"
 
 // Plugin is the calendar plugin.
 type Plugin struct {
-	internalplugin.Protected
+	plugin.Protected
 	ctx    plugin.PluginContext
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -40,7 +39,7 @@ func (p *Plugin) ID() string { return PluginID }
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
 
-	ctx.RegisterNavItem(plugin.NavItem{Label: "Calendar", URL: "/apps/calendar", Icon: "calendar"})
+	ctx.RegisterNavItem(plugin.NavItem{Label: "Calendar", URL: "/apps/calendar", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Upcoming Events",
 		Priority: 10,
@@ -79,7 +78,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 
 	// CalDAV endpoints
 	caldav := NewCalDAVHandler(p)
-	if priv, ok := ctx.(internalplugin.PrivilegedContext); ok {
+	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		priv.RegisterRoute("/remote.php/dav/calendars/", caldav)
 		priv.RegisterRoute("/remote.php/dav/principals/", caldav)
 	}

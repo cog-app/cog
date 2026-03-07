@@ -13,8 +13,7 @@ import (
 	"net/http"
 	"time"
 
-	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
-	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
@@ -46,13 +45,21 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 
 	// Obtain the concrete files plugin for operations not on FilesAccess
 	// (DB, Rename, Preview, Upload).
-	if priv, ok := ctx.(internalplugin.PrivilegedContext); ok {
+	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		if fp, found := priv.PluginByID("files"); found {
 			p.files = fp.(*files.Plugin)
 		}
+		priv.RegisterCommand(plugin.CommandDef{
+			Name:  "scan",
+			Short: "scan media files for a user",
+			Args:  []string{"username"},
+			Run: func(cmdCtx context.Context, args []string) error {
+				return p.ScanUser(cmdCtx, args[0])
+			},
+		})
 	}
 
-	ctx.RegisterNavItem(plugin.NavItem{Label: "Gallery", URL: "/apps/gallery", Icon: "gallery"})
+	ctx.RegisterNavItem(plugin.NavItem{Label: "Gallery", URL: "/apps/gallery", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Recent Photos",
 		Priority: 25,
@@ -93,7 +100,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 
 	// Memories API compatibility
 	memoriesAPI := NewMemoriesAPI(p)
-	if priv, ok := ctx.(internalplugin.PrivilegedContext); ok {
+	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		priv.RegisterRoute("GET /apps/memories/api/{path...}", memoriesAPI)
 	}
 

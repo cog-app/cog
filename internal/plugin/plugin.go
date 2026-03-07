@@ -5,6 +5,9 @@
 package plugin
 
 import (
+	"context"
+	"database/sql"
+	"io/fs"
 	"net/http"
 
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
@@ -36,6 +39,7 @@ type GroupStore = cogplugin.GroupStore
 type GroupInfo = cogplugin.GroupInfo
 type FilesAccess = cogplugin.FilesAccess
 type FileInfo = cogplugin.FileInfo
+type CommandDef = cogplugin.CommandDef
 
 // Re-export permission constants (cannot alias constants).
 const (
@@ -45,6 +49,22 @@ const (
 	PermFreeBusy = cogplugin.PermFreeBusy
 	PermSchedule = cogplugin.PermSchedule
 )
+
+// Re-export functions from the public plugin package.
+var (
+	Migrate              = cogplugin.Migrate
+	CSRFTokenFromContext = cogplugin.CSRFTokenFromContext
+	UserFromContext      = cogplugin.UserFromContext
+	WithCSRFToken        = cogplugin.WithCSRFToken
+	WithUserInfo         = cogplugin.WithUserInfo
+)
+
+// Ensure function signatures stay in sync at compile time.
+var _ func(*sql.DB, fs.FS) error                      = Migrate
+var _ func(context.Context) string                     = CSRFTokenFromContext
+var _ func(context.Context) *UserInfo                  = UserFromContext
+var _ func(context.Context, string) context.Context    = WithCSRFToken
+var _ func(context.Context, *UserInfo) context.Context = WithUserInfo
 
 // protectedPlugin is unexported — only embeddable from within internal/plugin.
 type protectedPlugin interface {
@@ -73,4 +93,6 @@ type PrivilegedContext interface {
 	// PluginByID returns a registered plugin by its ID.
 	// Used by internal plugins that need direct access to other plugins.
 	PluginByID(id string) (cogplugin.Plugin, bool)
+	// RegisterCommand declares a CLI command for the plugin.
+	RegisterCommand(def cogplugin.CommandDef)
 }

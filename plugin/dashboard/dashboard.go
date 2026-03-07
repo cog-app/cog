@@ -14,8 +14,6 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
-	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
-	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
@@ -28,7 +26,7 @@ const PluginID = "dashboard"
 // registry auto-detect it as always-on.
 type Plugin struct {
 	plugin.Protected
-	ctx cogplugin.PluginContext
+	ctx plugin.PluginContext
 }
 
 // New creates a new dashboard plugin.
@@ -38,16 +36,16 @@ func New() *Plugin {
 
 func (p *Plugin) ID() string { return PluginID }
 
-func (p *Plugin) Register(ctx cogplugin.PluginContext) error {
+func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
-	ctx.RegisterNavItem(plugin.NavItem{Label: "Dashboard", URL: "/"})
+	ctx.RegisterNavItem(plugin.NavItem{Label: "Dashboard", URL: "/", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>`})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Your Groups",
 		Priority: 50,
 		Render:   p.renderWidget,
 	})
 
-	if priv, ok := ctx.(internalplugin.PrivilegedContext); ok {
+	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		csrfSecret := p.ctx.CSRFSecret()
 		csrfWrap := func(h http.Handler) http.Handler {
 			return auth.RequireAuthWeb(auth.RequireCSRF(csrfSecret, h))
@@ -72,7 +70,7 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, username string)
 	if err != nil {
 		return nil
 	}
-	var groups []cogplugin.GroupInfo
+	var groups []plugin.GroupInfo
 	for g, err := range groupStore.ListGroupsForUser(u.ID) {
 		if err != nil {
 			break
@@ -97,7 +95,7 @@ func (p *Plugin) DB(username string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := cogplugin.Migrate(db, sqlFS); err != nil {
+	if err := plugin.Migrate(db, sqlFS); err != nil {
 		return nil, fmt.Errorf("migrate dashboard db for %s: %w", username, err)
 	}
 	return db, nil

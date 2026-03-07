@@ -4,15 +4,14 @@ package cog
 
 import (
 	"context"
-	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
-	"net/http/httputil"
 	"os"
+	"strconv"
 	"strings"
-	"time"
+
+	"github.com/spf13/cobra"
 
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/services"
@@ -23,6 +22,33 @@ import (
 // seedHook is set by cog_seed.go when built with the "seed" build tag.
 var seedHook func(*services.Providers)
 
+// Config holds server configuration for custom Cog builds.
+type Config = config.Config
+
+func envOr(key, defaultVal string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return defaultVal
+}
+
+func envIntOr(key string, defaultVal int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return defaultVal
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return defaultVal
+	}
+	return n
+}
+
+func envBool(key string) bool {
+	v := os.Getenv(key)
+	return v == "true" || v == "1" || v == "yes"
+}
+
 func defaultBaseURL() string {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -31,92 +57,105 @@ func defaultBaseURL() string {
 	return fmt.Sprintf("http://%s:8580", hostname)
 }
 
-// Config holds server configuration for custom Cog builds.
-type Config = config.Config
+func configFromEnv() config.Config {
+	return config.Config{
+		Addr:     envOr("COG_ADDR", ":8580"),
+		DBPath:   envOr("COG_DB", "system.db"),
+		DataDir:  envOr("COG_DATA_DIR", "data"),
+		BaseURL:  envOr("COG_BASE_URL", defaultBaseURL()),
+		SMTPHost: envOr("COG_SMTP_HOST", ""),
+		SMTPPort: envIntOr("COG_SMTP_PORT", 587),
+		SMTPUser: envOr("COG_SMTP_USER", ""),
+		SMTPPass: envOr("COG_SMTP_PASS", ""),
+		SMTPFrom: envOr("COG_SMTP_FROM", ""),
+	}
+}
+
+// openProviders creates a services.Providers from env-var config.
+func openProviders(plugins ...plugin.Plugin) (*services.Providers, error) {
+	return services.New(configFromEnv(), plugins...)
+}
 
 // Main starts a Cog server with optional additional plugins.
 // Protected plugins (dashboard, files) are always included.
 func Main(plugins ...plugin.Plugin) {
-	var (
-		addr       = flag.String("addr", ":8580", "listen address")
-		dbPath     = flag.String("db", "system.db", "path to system database")
-		dataDir    = flag.String("data-dir", "data", "root directory for user data")
-		createUser = flag.String("create-user", "", "create a user (username:password) and exit")
-		baseURL    = flag.String("base-url", defaultBaseURL(), "external base URL")
-		logReqs    = flag.Bool("log-requests", false, "log full HTTP request/response bodies")
-		smtpHost   = flag.String("smtp-host", "", "SMTP server hostname")
-		smtpPort   = flag.Int("smtp-port", 587, "SMTP server port")
-		smtpUser   = flag.String("smtp-user", "", "SMTP username")
-		smtpPass   = flag.String("smtp-pass", "", "SMTP password")
-		smtpFrom   = flag.String("smtp-from", "", "SMTP from address")
-	)
-	flag.Parse()
+	serve := serveCmd(plugins)
 
-	cfg := config.Config{
-		Addr:     *addr,
-		DBPath:   *dbPath,
-		DataDir:  *dataDir,
-		BaseURL:  *baseURL,
-		SMTPHost: *smtpHost,
-		SMTPPort: *smtpPort,
-		SMTPUser: *smtpUser,
-		SMTPPass: *smtpPass,
-		SMTPFrom: *smtpFrom,
+	root := &cobra.Command{
+		Use:          "cog",
+		Short:        "Cloud On Go — file storage and plugin platform",
+		SilenceUsage: true,
+		RunE:         serve.RunE, // bare `cog` runs serve
 	}
 
-	p, err := services.New(cfg, plugins...)
-	if err != nil {
-		log.Fatalf("Failed to initialize: %v", err)
-	}
-	defer p.Close()
+	root.AddCommand(serve)
+	root.AddCommand(userCmd(plugins))
+	root.AddCommand(groupCmd(plugins))
+	root.AddCommand(volumeCmd(plugins))
+	root.AddCommand(settingCmd(plugins))
 
-	// Handle --create-user
-	if *createUser != "" {
-		parts := strings.SplitN(*createUser, ":", 2)
-		if len(parts) != 2 {
-			fmt.Fprintf(os.Stderr, "Usage: --create-user username:password\n")
-			os.Exit(1)
-		}
-		u, err := p.Users.Create(parts[0], parts[1])
-		if err != nil {
-			log.Fatalf("Failed to create user: %v", err)
-		}
-		// Create root mount pointing to default volume.
-		if p.Volumes != nil && p.Mounts != nil {
-			if defVol, volErr := p.Volumes.GetByName("default"); volErr == nil {
-				subpath := u.Username + "/files"
-				if _, err := p.Mounts.Create(u.ID, "/", defVol.ID, subpath, false); err != nil {
-					log.Printf("create mount for %s: %v", u.Username, err)
-				}
-			}
-		}
-		fmt.Printf("Created user %q (id: %s)\n", u.Username, u.ID)
-		return
+	// Register plugin commands lazily — only probe the DB when needed
+	// (first arg contains ':' suggesting a plugin command, or for completions).
+	if needsPluginDiscovery(os.Args) {
+		addPluginCommands(root, plugins)
 	}
 
-	handler := web.New(p)
-
-	// Run seed hook if built with -tags seed and --seed flag is set.
-	if seedHook != nil {
-		seedHook(p)
-	}
-
-	// Start search indexing after plugins are registered.
-	if err := p.StartSearch(context.Background()); err != nil {
-		log.Printf("Warning: search init failed: %v", err)
-	}
-
-	if *logReqs {
-		handler = requestLogger(handler)
-	}
-
-	log.Printf("Cog listening on %s", cfg.Addr)
-	if err := http.ListenAndServe(cfg.Addr, handler); err != nil {
-		log.Fatal(err)
+	if err := root.Execute(); err != nil {
+		os.Exit(1)
 	}
 }
 
-// Run starts a Cog server with custom context, config and error handling. See [Main] for using a default installation with custom plugins.
+// needsPluginDiscovery returns true if the command line suggests we need to
+// discover plugin commands (e.g. "gallery:scan" or shell completion).
+func needsPluginDiscovery(args []string) bool {
+	if len(args) < 2 {
+		return false
+	}
+	for _, arg := range args[1:] {
+		if strings.Contains(arg, ":") {
+			return true
+		}
+		if arg == "__complete" || arg == "completion" {
+			return true
+		}
+	}
+	return false
+}
+
+// addPluginCommands registers plugin CLI commands by initializing services
+// (lightweight — no web server) and querying the registry for registered commands.
+func addPluginCommands(root *cobra.Command, plugins []plugin.Plugin) {
+	p, err := openProviders(plugins...)
+	if err != nil {
+		return
+	}
+
+	for pluginID, cmds := range p.Plugins.Commands() {
+		for _, cmd := range cmds {
+			cmd := cmd
+			use := pluginID + ":" + cmd.Name
+			for _, arg := range cmd.Args {
+				use += " <" + arg + ">"
+			}
+			root.AddCommand(&cobra.Command{
+				Use:   use,
+				Short: cmd.Short,
+				Args:  cobra.ExactArgs(len(cmd.Args)),
+				RunE: func(c *cobra.Command, args []string) error {
+					return cmd.Run(c.Context(), args)
+				},
+			})
+		}
+	}
+
+	// Keep providers alive for the duration of the process so plugin
+	// command Run callbacks can use their captured plugin context.
+	// Clean up when the root command's context is done or on exit.
+	cobra.OnFinalize(func() { p.Close() })
+}
+
+// Run starts a Cog server with custom context, config and error handling.
+// See [Main] for using a default installation with custom plugins.
 func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 	p, err := services.New(cfg, plugins...)
 	if err != nil {
@@ -132,49 +171,4 @@ func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 
 	log.Printf("Cog listening on %s", cfg.Addr)
 	return http.ListenAndServe(cfg.Addr, handler)
-}
-
-func requestLogger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-
-		dump, err := httputil.DumpRequest(r, true)
-		if err != nil {
-			log.Printf("--- REQUEST (dump error: %v) %s %s", err, r.Method, r.URL)
-		} else {
-			log.Printf("--- REQUEST ---\n%s", dump)
-		}
-
-		rec := &responseRecorder{ResponseWriter: w, statusCode: 200}
-		next.ServeHTTP(rec, r)
-
-		log.Printf("--- RESPONSE --- %d %s (%s)\n%s\n",
-			rec.statusCode, r.URL, time.Since(start), rec.body.String())
-	})
-}
-
-type responseRecorder struct {
-	http.ResponseWriter
-	statusCode int
-	body       strings.Builder
-}
-
-func (r *responseRecorder) WriteHeader(code int) {
-	r.statusCode = code
-	r.ResponseWriter.WriteHeader(code)
-}
-
-func (r *responseRecorder) Write(b []byte) (int, error) {
-	r.body.Write(b)
-	return r.ResponseWriter.Write(b)
-}
-
-func (r *responseRecorder) Flush() {
-	if f, ok := r.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-func (r *responseRecorder) ReadFrom(src io.Reader) (int64, error) {
-	return io.Copy(r.ResponseWriter, src)
 }

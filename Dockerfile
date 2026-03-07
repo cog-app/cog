@@ -20,5 +20,7 @@ RUN apk add --no-cache --no-scripts \
 	libreoffice-impress \
 	font-noto
 COPY --from=build /code/cog /usr/bin/cog
+RUN cog completion bash > /etc/bash/bash_completion.d/cog 2>/dev/null || true
 EXPOSE 8580
-CMD [ "/usr/bin/cog", "--addr", ":8580", "--db", "/data/system.db", "--data-dir", "/data" ]
+ENV COG_ADDR=:8580 COG_DB=/data/system.db COG_DATA_DIR=/data
+CMD [ "/usr/bin/cog" ]

@@ -340,6 +340,7 @@ type pluginRegistrar struct {
 	navItems      []NavItem
 	widgets       []Widget
 	searchSources []SearchSourceDef
+	commands      []CommandDef
 }
 
 // --- PluginContext service methods ---
@@ -535,6 +536,21 @@ func (pr *pluginRegistrar) RegisterWidget(w Widget) {
 
 func (pr *pluginRegistrar) RegisterSearchSource(def SearchSourceDef) {
 	pr.searchSources = append(pr.searchSources, def)
+}
+
+func (pr *pluginRegistrar) RegisterCommand(def CommandDef) {
+	pr.commands = append(pr.commands, def)
+}
+
+// Commands returns all registered CLI commands, keyed by plugin ID.
+func (r *Registry) Commands() map[string][]CommandDef {
+	cmds := make(map[string][]CommandDef)
+	for id, reg := range r.registrars {
+		if len(reg.commands) > 0 {
+			cmds[id] = reg.commands
+		}
+	}
+	return cmds
 }
 
 // SearchSourceDefs returns all registered search source definitions, keyed by plugin ID.

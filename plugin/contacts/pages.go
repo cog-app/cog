@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
 // Pages holds the web UI handlers for the contacts plugin.

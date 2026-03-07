@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
 // Pages holds the web UI handlers for the bookmarks plugin.

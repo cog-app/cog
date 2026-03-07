@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
 // Pages handles the gallery web UI routes.

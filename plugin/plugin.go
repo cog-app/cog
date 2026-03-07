@@ -70,7 +70,7 @@ type Registrar interface {
 type NavItem struct {
 	Label string // display label, e.g. "Files"
 	URL   string // link target, e.g. "/apps/files"
-	Icon  string // optional CSS class
+	Icon  string // optional inline SVG markup (should use class="nav-icon")
 }
 
 // Widget is a dashboard widget registered by a plugin.
@@ -133,6 +133,14 @@ type SubjectRef struct {
 type ResourceRef struct {
 	Type string // e.g. "files:file", "calendar:event"
 	ID   string // stable plugin-defined identifier
+}
+
+// CommandDef defines a CLI command registered by a plugin.
+type CommandDef struct {
+	Name  string   // e.g. "scan"
+	Short string   // one-line description
+	Args  []string // positional arg names for usage (e.g. ["username"])
+	Run   func(ctx context.Context, args []string) error
 }
 
 // SearchSourceDef describes how a plugin's data should be indexed for search.
