@@ -1,0 +1,30 @@
+stages:
+  - test
+  - build
+  - deploy
+
+default:
+  interruptible: true
+
+test:
+  image: golang:1.26-alpine
+  stage: test
+  script:
+    - go generate ./...
+    - go test ./...
+
+build:
+  stage: build
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u $CI_REGISTRY_USER --password-stdin
+    - docker build -t "$CI_REGISTRY_IMAGE" .
+    - docker push "$CI_REGISTRY_IMAGE"
+
+trigger_deploy:
+  stage: deploy
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  trigger:
+    project: jonathan/home.duckfam.us
