@@ -799,9 +799,9 @@ func fileViewPage(pd ui.PageData, fp string, meta *FileMeta, kind string, textCo
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var40 string
-					templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs("/apps/files" + fp + "?raw=1")
+					templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(imageViewURL(fp, meta.MimeType))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 338, Col: 41}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages.templ`, Line: 338, Col: 43}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 					if templ_7745c5c3_Err != nil {

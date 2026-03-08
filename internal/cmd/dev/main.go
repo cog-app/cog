@@ -25,6 +25,7 @@ const (
 
 func main() {
 	reset := flag.Bool("reset", false, "wipe tmp/dev state before starting")
+	logRequests := flag.Bool("log", false, "instructs the service to log requests")
 	stale := flag.Bool("stale", false, "skip the build step to use the previous, stale build")
 	flag.Parse()
 
@@ -102,9 +103,11 @@ func main() {
 		"COG_ADDR="+addr,
 		"COG_DATA_DIR="+filepath.Join(devDir, "data"),
 		"COG_BASE_URL="+baseURL,
-		"COG_LOG_REQUESTS=true",
 		"COG_SEED=true",
 	)
+	if *logRequests {
+		srv.Env = append(srv.Env, "COG_LOG_REQUESTS=true")
+	}
 	srv.Stdout = teeOut
 	srv.Stderr = teeErr
 

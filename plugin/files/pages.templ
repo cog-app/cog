@@ -335,7 +335,7 @@ templ fileViewPage(pd ui.PageData, fp string, meta *FileMeta, kind string, textC
 			if kind == "image" {
 				<div style="text-align:center">
 					<img
-						src={ "/apps/files" + fp + "?raw=1" }
+						src={ imageViewURL(fp, meta.MimeType) }
 						alt={ meta.Name }
 						style="max-width:100%;max-height:80vh"
 					/>

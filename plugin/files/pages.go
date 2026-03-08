@@ -255,17 +255,25 @@ func (h *Pages) ServePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, header, err := r.FormFile("file")
-	if err != nil {
+	files := r.MultipartForm.File["file"]
+	if len(files) == 0 {
 		http.Error(w, "file required", http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
 
-	dest := path.Join(fp, header.Filename)
-	if _, err := h.plugin.Upload(u.Username, dest, file); err != nil {
-		http.Error(w, "upload failed: "+err.Error(), http.StatusInternalServerError)
-		return
+	for _, header := range files {
+		file, err := header.Open()
+		if err != nil {
+			http.Error(w, "open failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		dest := path.Join(fp, header.Filename)
+		_, uploadErr := h.plugin.Upload(u.Username, dest, file)
+		file.Close()
+		if uploadErr != nil {
+			http.Error(w, "upload failed: "+uploadErr.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	http.Redirect(w, r, "/apps/files"+fp, http.StatusSeeOther)
@@ -339,6 +347,9 @@ func fileViewKind(mimeType string) string {
 	if strings.HasPrefix(mimeType, "image/") {
 		return "image"
 	}
+	if HasPreview(mimeType) {
+		return "image"
+	}
 	if strings.HasPrefix(mimeType, "text/") {
 		return "text"
 	}
@@ -361,6 +372,15 @@ func fileViewKind(mimeType string) string {
 		return "office"
 	}
 	return "binary"
+}
+
+// imageViewURL returns the URL for displaying an image on the view page.
+// Native images use raw serving; converted formats use a large preview.
+func imageViewURL(fp, mimeType string) string {
+	if isNativeImage(mimeType) {
+		return "/apps/files" + fp + "?raw=1"
+	}
+	return "/apps/files" + fp + "?preview=1&size=1024"
 }
 
 func fileResourceType(isDir bool) string {

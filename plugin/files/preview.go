@@ -19,11 +19,47 @@ import (
 
 var (
 	libreOfficePath string
+	inkscapePath    string
+	magickPath      string
+	magickIsGM      bool // true if magickPath is GraphicsMagick (gm)
+	pythonPath      string
 	loMu            sync.Mutex
 )
 
 func init() {
 	libreOfficePath, _ = exec.LookPath("libreoffice")
+	inkscapePath, _ = exec.LookPath("inkscape")
+	pythonPath, _ = exec.LookPath("python3")
+	// Prefer ImageMagick, fall back to GraphicsMagick.
+	if p, err := exec.LookPath("magick"); err == nil {
+		magickPath = p
+	} else if p, err := exec.LookPath("convert"); err == nil {
+		magickPath = p
+	} else if p, err := exec.LookPath("gm"); err == nil {
+		magickPath = p
+		magickIsGM = true
+	}
+	// Check that Python has Pillow available for PSD support.
+	if pythonPath != "" {
+		if err := exec.Command(pythonPath, "-c", "from PIL import Image").Run(); err != nil {
+			pythonPath = ""
+		}
+	}
+}
+
+// InkscapeAvailable reports whether Inkscape is installed.
+func InkscapeAvailable() bool {
+	return inkscapePath != ""
+}
+
+// MagickAvailable reports whether ImageMagick or GraphicsMagick is installed.
+func MagickAvailable() bool {
+	return magickPath != ""
+}
+
+// PillowAvailable reports whether Python 3 with Pillow is installed.
+func PillowAvailable() bool {
+	return pythonPath != ""
 }
 
 // LibreOfficeAvailable reports whether LibreOffice is installed.
@@ -49,13 +85,66 @@ func IsOfficeDocument(mimeType string) bool {
 	return false
 }
 
-// HasPreview returns true if the MIME type supports thumbnail generation.
-func HasPreview(mimeType string) bool {
+// isNativeImage returns true if Go can decode the image directly.
+func isNativeImage(mimeType string) bool {
 	switch mimeType {
 	case "image/jpeg", "image/png", "image/gif", "image/webp":
 		return true
 	}
 	return false
+}
+
+// isInkscapeFormat returns true if Inkscape can convert the format to PNG.
+func isInkscapeFormat(mimeType string) bool {
+	switch mimeType {
+	case "image/svg+xml",           // .svg
+		"application/postscript",  // .ai, .eps
+		"image/x-eps",             // .eps (alternate)
+		"application/eps",         // .eps (alternate)
+		"application/illustrator": // .ai (alternate)
+		return true
+	}
+	return false
+}
+
+// isXCF returns true for GIMP's native format.
+func isXCF(mimeType string) bool {
+	return mimeType == "image/x-xcf"
+}
+
+// isPSD returns true for Photoshop's native format.
+func isPSD(mimeType string) bool {
+	switch mimeType {
+	case "image/vnd.adobe.photoshop", // .psd
+		"image/x-photoshop",         // .psd (alternate)
+		"image/x-psd":               // .psd (alternate)
+		return true
+	}
+	return false
+}
+
+// canConvertToPNG reports whether we have a tool to convert this MIME type.
+func canConvertToPNG(mimeType string) bool {
+	if isInkscapeFormat(mimeType) && InkscapeAvailable() {
+		return true
+	}
+	// XCF: any *Magick variant handles it.
+	if isXCF(mimeType) && MagickAvailable() {
+		return true
+	}
+	// PSD: Pillow (via Python) or full ImageMagick (not GraphicsMagick).
+	if isPSD(mimeType) && (PillowAvailable() || (MagickAvailable() && !magickIsGM)) {
+		return true
+	}
+	return false
+}
+
+// HasPreview returns true if the MIME type supports thumbnail generation.
+func HasPreview(mimeType string) bool {
+	if isNativeImage(mimeType) {
+		return true
+	}
+	return canConvertToPNG(mimeType)
 }
 
 // Preview returns a JPEG thumbnail for an image file.
@@ -87,6 +176,16 @@ func (p *Plugin) Preview(username, filePath string, size int) (*os.File, error) 
 
 	// Cache miss — generate thumbnail.
 	srcPath := filepath.Join(filesDir, filePath)
+
+	// For non-native formats, convert to PNG first.
+	if !isNativeImage(meta.MimeType) {
+		pngPath, err := p.convertToPNG(srcPath, meta.MimeType, meta.ETag)
+		if err != nil {
+			return nil, fmt.Errorf("convert to png: %w", err)
+		}
+		srcPath = pngPath
+	}
+
 	srcFile, err := os.Open(srcPath)
 	if err != nil {
 		return nil, fmt.Errorf("open source: %w", err)
@@ -134,6 +233,59 @@ func (p *Plugin) Preview(username, filePath string, size int) (*os.File, error) 
 
 	// Return the cached file.
 	return os.Open(cachePath)
+}
+
+// convertToPNG converts a non-native image format to PNG, caching the result.
+// Returns the path to the cached PNG file.
+func (p *Plugin) convertToPNG(srcPath, mimeType, etag string) (string, error) {
+	// Cache converted PNGs alongside thumbnails.
+	cacheDir := filepath.Join(filepath.Dir(srcPath), "..", "converted")
+	cachePath := filepath.Join(cacheDir, etag+".png")
+
+	// Cache hit?
+	if _, err := os.Stat(cachePath); err == nil {
+		return cachePath, nil
+	}
+
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return "", fmt.Errorf("mkdir cache: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	var cmd *exec.Cmd
+	switch {
+	case isInkscapeFormat(mimeType):
+		cmd = exec.CommandContext(ctx, inkscapePath,
+			srcPath, "--export-type=png", "--export-filename="+cachePath)
+	case (isXCF(mimeType) || isPSD(mimeType)) && MagickAvailable() && !magickIsGM:
+		// ImageMagick handles both XCF and PSD.
+		cmd = exec.CommandContext(ctx, magickPath,
+			srcPath+"[0]", "-flatten", cachePath)
+	case isXCF(mimeType) && magickIsGM:
+		// GraphicsMagick handles XCF but not PSD.
+		cmd = exec.CommandContext(ctx, magickPath,
+			"convert", srcPath+"[0]", "-flatten", cachePath)
+	case isPSD(mimeType) && PillowAvailable():
+		// Pillow handles PSD reliably.
+		script := fmt.Sprintf(
+			"from PIL import Image; Image.open(%q).convert('RGBA').save(%q)",
+			srcPath, cachePath)
+		cmd = exec.CommandContext(ctx, pythonPath, "-c", script)
+	default:
+		return "", fmt.Errorf("unsupported format: %s", mimeType)
+	}
+
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("convert %s: %w: %s", mimeType, err, out)
+	}
+
+	if _, err := os.Stat(cachePath); err != nil {
+		return "", fmt.Errorf("conversion produced no output")
+	}
+
+	return cachePath, nil
 }
 
 // PreviewPDF converts an office document to PDF via LibreOffice and caches the result.

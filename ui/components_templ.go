@@ -559,7 +559,7 @@ func Upload(action, name, accept, csrfToken, label, btnClass string) templ.Compo
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\" style=\"display:none\" onchange=\"this.form.submit()\"></label></form>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\" multiple style=\"display:none\" onchange=\"this.form.submit()\"></label></form>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

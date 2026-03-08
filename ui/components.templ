@@ -70,7 +70,7 @@ templ Upload(action, name, accept, csrfToken, label, btnClass string) {
 		<input type="hidden" name="csrf_token" value={ csrfToken }/>
 		<label class={ uploadBtnClass(btnClass) } style="cursor:pointer">
 			{ label }
-			<input type="file" name={ name } accept={ accept } style="display:none" onchange="this.form.submit()"/>
+			<input type="file" name={ name } accept={ accept } multiple style="display:none" onchange="this.form.submit()"/>
 		</label>
 	</form>
 }
