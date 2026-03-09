@@ -8,8 +8,10 @@ Cog uses a virtual filesystem abstraction inspired by `hackpadfs`. This allows s
 
 The VFS is built on the **volume/mount system**. A `volume` represents a storage backend, and a `mount` binds a volume (or subpath) to a location in a user's virtual filesystem.
 
-- Each user has a **root mount** (`/`) pointing to their default volume, created automatically during user provisioning.
-- Additional mounts can attach remote or shared storage at arbitrary paths within the user's tree.
+- Each user has a default volume created during provisioning.
+- Users can mount any volume they have access to (owned or shared) at any path in their VFS.
+- Volumes are shareable resources (`files:volume`) — admins can create system-level volumes and share them with users or groups. Users can also create their own volumes.
+- **Groups do not have mounts or a VFS.** Volumes are shared with groups via the standard sharing system; individual group members mount shared volumes in their own VFS as they see fit.
 - The `volume.Backend` interface is the filesystem abstraction. Backends are selected by the volume's URI scheme.
 
 ### 2. Backends
@@ -46,7 +48,12 @@ Metadata (permissions, tags, sharing status, custom attributes) is decoupled fro
 /var/lib/cog/
 ├── config/              # Global configuration
 ├── system/              # System-wide databases/state
-├── plugins/             # External plugin binaries
+├── plugins/             # Trusted plugin binaries
+├── app_data/            # Plugin root databases
+│   ├── rss/
+│   │   └── root.db      # RSS plugin-wide state
+│   └── calendar/
+│       └── root.db      # Calendar plugin-wide state
 └── data/                # User data root
     ├── alice/           # User 'alice' root
     │   ├── user.db      # User-scoped state (settings, auth artifacts)

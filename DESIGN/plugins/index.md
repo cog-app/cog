@@ -12,10 +12,14 @@
 
 ## Overview
 
-Cog's plugin system is designed for flexibility and performance. Plugins can be:
+Cog's plugin system is designed for flexibility and performance. Plugins fall into four trust tiers (see `concepts_and_types.md` for the full matrix):
 
-- Compiled directly into the binary (core/1st-party); these may use privileged hooks into the application.
-- Run as separate processes communicating via gRPC (external/3rd-party). See [`grpc_bridge.md`](./grpc_bridge.md).
+- **Protected**: Vital to the system, cannot be removed/disabled. In-process Go only. Examples: dashboard, files.
+- **Privileged**: In-process Go only. Can access internal APIs and register routes outside their prefix. Must be in the main repo.
+- **Trusted**: Go or gRPC. Can define routes in their prefix and render pages. 1st or 3rd party, installed instance-wide. No real security boundary against malicious plugins.
+- **External**: From a remote server. Users may add these themselves. UI renders in an iframe and is sandboxed. Routes limited to their prefix, APIs restricted by permissions.
+
+See [`grpc_bridge.md`](./grpc_bridge.md) for the gRPC protocol used by trusted out-of-process plugins.
 
 ### Package Layout
 
@@ -30,7 +34,7 @@ Cog's plugin system is designed for flexibility and performance. Plugins can be:
 
 ### Protected Pattern
 
-Privileged plugins (dashboard, files) embed `internal/plugin.Protected`. The registry auto-detects this in `Add()` and marks them as always-on. There is no `SetProtected` call.
+Protected plugins (dashboard, files) embed `internal/plugin.Protected`. The registry auto-detects this in `Add()` and marks them as always-on. There is no `SetProtected` call.
 
 ## Data Access & Queries
 
@@ -102,13 +106,14 @@ type Registrar interface {
     RegisterHook(hookName string, callback HookCallback)
     RegisterNavItem(item NavItem)
     RegisterWidget(w Widget)
+    RegisterSettingsPage(page SettingsPage)
 }
 ```
 
 ### 2. gRPC Interface (External)
 
-Used for third-party plugins or those written in other languages (if supported later). The `plugin/plugpb` package defines the wire protocol; `plugin/plugcmd` provides the plugin-side helper; `internal/plugin/grpc.go` provides the host-side adapter.
-Privileged internal plugins (for example `files`) are not gRPC-loadable.
+Used for trusted out-of-process plugins. The `plugin/plugpb` package defines the wire protocol; `plugin/plugcmd` provides the plugin-side helper; `internal/plugin/grpc.go` provides the host-side adapter.
+Protected and privileged plugins are not gRPC-loadable.
 
 See [`grpc_bridge.md`](./grpc_bridge.md) for the full protocol definition and usage guide.
 
@@ -124,6 +129,33 @@ service PluginService {
     rpc RenderWidget(RenderWidgetRequest) returns (RenderWidgetResponse);
 }
 ```
+
+## Plugin Databases
+
+Each plugin gets two levels of database storage:
+
+- **Root database** (`app_data/{id}/root.db`): Plugin-wide state shared across all users (e.g., feed poll schedules, global config). One per plugin.
+- **Per-user database** (`{user_data}/app_data/{id}/plugin.db`): User-scoped state. One per user per plugin.
+
+## Settings Pages
+
+Plugins can register one or more settings pages via `RegisterSettingsPage()`. Pages are automatically wrapped in the standard settings layout (sidebar + content area) and receive a navigation entry in the settings sidebar.
+
+```go
+type SettingsPage struct {
+    Name    string       // optional display name
+    Handler http.Handler // renders the page content
+}
+```
+
+**Navigation rules:**
+
+- The sidebar entry always includes the plugin's name as a prefix.
+- **Single page, no name**: Displays as just the plugin name (e.g., "RSS").
+- **Single page, with name**: Displays as "Plugin: Name" (e.g., "RSS: Feeds").
+- **Multiple pages**: Displayed as a nested group under the plugin name.
+  - A page with an empty name becomes the overview page shown when clicking the parent item.
+  - If no page has an empty name, the parent item is not clickable (only expands).
 
 ## Plugin Capabilities
 
@@ -142,8 +174,8 @@ Plugins request permissions in their manifest. Cog enforces these via the VFS an
 - **`DB_READ:<plugin_id> / DB_WRITE:<plugin_id>`:** The plugin is granted access to a specific other plugin's database. For example, `DB_READ:files` grants access to the file metadata database.
 - **`FILES_SANDBOX` (Default):** The plugin is granted a private directory (e.g., `app_data/{id}/`).
 - **`FS_READ:<plugin_id> / FS_WRITE:<plugin_id>`:** The plugin is granted access to the virtual filesystem exported by another plugin. `FS_READ:files` is the equivalent of accessing the user's primary files.
-- **`ROUTE_GLOBAL_BIND`:** Allows the plugin to bind routes outside of its `/apps/{id}/` prefix (e.g., `remote.php/`, `index.php/`). **Restriction:** Only granted to plugins installed at the **System/Admin level**.
-- **`PRIVILEGED_INTERNAL` (built-in only):** Host-only capability for in-process plugins. Not grantable to external plugins.
+- **`ROUTE_GLOBAL_BIND`:** Allows the plugin to bind routes outside of its `/apps/{id}/` prefix (e.g., `remote.php/`, `index.php/`). **Restriction:** Only available to privileged or protected plugins.
+- **`PRIVILEGED_INTERNAL` (built-in only):** Host-only capability for in-process privileged/protected plugins. Not grantable to trusted or external plugins.
 
 ### Files as a Plugin
 
@@ -179,5 +211,6 @@ Plugins define "Resources" that can be shared.
 
 ## Distribution
 
-- **System Plugins:** Installed in `/var/lib/cog/plugins/`. Available to all.
-- **User Plugins:** Installed in User's home directory. Only active for that user.
+- **Protected/Privileged:** Compiled into the binary. Always available.
+- **Trusted:** Installed instance-wide in `/var/lib/cog/plugins/`. Available to all users.
+- **External:** Added per-user from remote servers. Only active for that user.

@@ -18,7 +18,7 @@ For canonical terminology and shared data shape outlines, see `DESIGN/concepts_a
   - **Extensibility:** Architecture designed to easily plug in new protocol handlers.
 - **Filesystem Abstraction:**
   - Internal interface inspired by `hackpadfs`.
-  - Support for mounting directories within user directories.
+  - Support for mounting volumes at arbitrary paths within a user's VFS.
   - Backends: Local Disk, S3, Google Drive, and others.
   - **Flat Storage:** Files are stored flat on disk.
   - **Zero-Scan Import:** Administrators can add files to user data directly without requiring a metadata scan.
@@ -35,20 +35,21 @@ For canonical terminology and shared data shape outlines, see `DESIGN/concepts_a
 
 ## Plugin System
 
-- **Architecture:** Plugins can run externally over gRPC or internally via direct Go interfaces (compiled-in).
-- **Privileged Internal Plugins:** Some built-in plugins (notably `files`) are in-process only and cannot be implemented over gRPC. These plugins may use host-only extension interfaces not available to third-party plugins.
-- **Installation Levels:** User, Group, or System.
-- **Access Control:** Plugins can have isolated or full access to user SQLite data and files.
+- **Trust Tiers:** Four levels — Protected (always-on, system-vital), Privileged (Go-only, internal APIs), Trusted (Go or gRPC, instance-wide), External (remote, sandboxed iframe, user-installable). See `concepts_and_types.md`.
+- **Access Control:** Plugins can have isolated or full access to user SQLite data and files based on declared permissions.
+- **Databases:** Each plugin gets a root database (plugin-wide) and per-user databases.
 - **Capabilities:**
   - Register route handlers (APIs, Pages, Assets).
   - Define custom resources for sharing.
-- **Security:** CSRF tokens used to prevent data leakage between plugins.
-- **Standard Plugins:** Calendar, Contacts, and RSS (News) included as 1st party.
+  - Register settings pages (auto-wrapped with sidebar navigation).
+- **Security:** CSRF tokens scoped per-plugin. External plugins render in sandboxed iframes.
+- **Standard Plugins:** Calendar, Contacts, and RSS (News) included as 1st party (trusted tier).
 
 ## Sharing & Groups
 
-- **Groups:** Collections of users and other groups (arbitrarily nested).
-- **Resource Sharing:** Files and plugin-defined objects can be shared with users or groups.
+- **Groups:** Collections of users and other groups (arbitrarily nested). Groups do not have a VFS or mounts.
+- **Resource Sharing:** Files, volumes, and plugin-defined objects can be shared with users or groups.
+- **Volumes:** Shareable storage backends. Either system-level (admin-created) or user-owned. Users mount shared volumes anywhere in their own VFS.
 - **Ownership:** Resources (like directories) can own other resources (files), implying access rights.
 - **Management:** Plugins define resource keys/IDs; Cog manages the sharing logic.
 

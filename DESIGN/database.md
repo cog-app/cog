@@ -55,25 +55,24 @@ Stores admin-managed plugin enable/disable state. Plugins default to enabled if 
 - `id` (UUID)
 - `name` (Unique)
 - `description` (Text)
-- `uri` (Text, e.g. `file:///var/lib/cog/data/alice/files`)
-- `created_by` (Text, default 'system')
+- `uri` (Text, e.g. `file:///var/lib/cog/data/shared-media`)
+- `owner_user_id` (UUID FK, Nullable — NULL = system-level)
 - `created_at` (Integer)
-- `owner_id` (UUID FK, Nullable)
 - `config` (JSON text, default '{}')
 
-Volumes represent storage backends. The `uri` scheme selects the backend driver (`file://`, `webdav://`, `mem://`). The `volume.Backend` interface provides the filesystem abstraction.
+Volumes represent storage backends. The `uri` scheme selects the backend driver (`file://`, `webdav://`, `mem://`). Volumes are shareable resources (`files:volume`) — they can be shared with users or groups like any other resource. Volumes are either system-level (created by admins, `owner_user_id` is NULL) or user-owned.
 
 **Table: `mounts`**
 - `id` (UUID)
 - `user_id` (UUID FK)
-- `user_path` (Text, e.g. `/`)
+- `user_path` (Text, e.g. `/external/nas`)
 - `volume_id` (UUID FK)
 - `volume_subpath` (Text, default '')
 - `read_only` (Integer, default 0)
 - `created_at` (Integer)
 - Unique: `(user_id, user_path)`
 
-Mounts bind a volume (or subpath within it) to a location in a user's virtual filesystem. Each user has a root mount (`/`) created during provisioning.
+Mounts bind a volume (or subpath within it) to a location in a user's virtual filesystem. Users can mount any volume they have access to (owned or shared) at any path in their VFS. Each user has a default volume created during provisioning. Groups do not have mounts or a VFS.
 
 **Table: `group_membership_closure` (cache)**
 - `ancestor_group_id`
@@ -81,6 +80,10 @@ Mounts bind a volume (or subpath within it) to a location in a user's virtual fi
 - `depth`
 
 Materialized closure table rebuilt after any group membership change. Used by share queries (`CheckAccess`, `ListBySubject`) for fast transitive group permission lookups instead of recursive subqueries.
+
+## Plugin Root Databases
+
+Each plugin gets a root-level database at `app_data/{plugin_id}/root.db` for plugin-wide state shared across all users (e.g., global config, poll schedules). This is separate from the per-user plugin databases.
 
 ## User Database Schema (Per-User SQLite)
 

@@ -5,34 +5,50 @@ This document is the canonical quick-reference for Cog's core architecture conce
 ## Core Concepts
 
 - **Host:** The main Cog server process that owns auth, routing, permissions, and system/global state.
-- **Plugin:** Feature module loaded by the host. Plugins are either external (gRPC) or internal (in-process).
-- **Privileged Internal Plugin:** Built-in, in-process-only plugin with host-only extension interfaces. Example: `files`.
+- **Plugin:** Feature module loaded by the host. See Plugin Kinds below for the four trust tiers.
 - **Resource:** Shareable object identified by `(resource_type, resource_id)` within an owner's namespace.
 - **Subject:** Access target for shares. Either a user or group.
 - **Global Shares DB:** System database containing canonical share records and group membership state.
 - **User DB (`user.db`):** Per-user SQLite state for user-scoped data (settings/auth artifacts).
-- **Plugin DB (`app_data/{id}/plugin.db`):** Per-user plugin-specific storage.
-- **VFS:** Unified filesystem abstraction used by WebDAV/SFTP/SMB/FTP/S3 handlers and plugins.
+- **Plugin Root DB (`app_data/{id}/root.db`):** Plugin-wide state shared across all users.
+- **Plugin User DB (`{user_data}/app_data/{id}/plugin.db`):** Per-user plugin-specific storage.
+- **VFS:** Per-user filesystem abstraction used by WebDAV/SFTP/SMB/FTP/S3 handlers and plugins. Groups do not have a VFS.
+- **Volume:** Shareable storage backend resource (`files:volume`). Either system-level or user-owned. Users mount volumes in their VFS.
 - **Search Collector:** Async indexing pipeline that applies DB changes to per-user Bleve indexes.
 
 ## Plugin Kinds
 
-```text
-External Plugin:
-  - Process: Separate
-  - Transport: gRPC bridge
-  - Privileged host extensions: No
+Four trust tiers, from most to least privileged:
 
-Internal Plugin:
+```text
+Protected:
   - Process: In host
   - Transport: Direct Go interface
-  - Privileged host extensions: Optional
+  - Removal: Cannot be removed or disabled
+  - Notes: Vital to the system. Functionally equivalent to Privileged
+           but always-on. Examples: dashboard, files.
 
-Privileged Internal Plugin:
+Privileged:
   - Process: In host
-  - Transport: Direct Go interface only
-  - gRPC-loadable: No
-  - Example: files
+  - Transport: Direct Go interface only (not gRPC-loadable)
+  - Removal: Can be disabled by admin
+  - Notes: Go only. Can access internal APIs and register routes
+           outside their prefix. Must be defined in the main repo.
+
+Trusted:
+  - Process: In host or separate (gRPC)
+  - Transport: Go interface or gRPC bridge
+  - Removal: Can be disabled by admin
+  - Notes: Can define routes in their prefix and render pages.
+           1st or 3rd party. Must be installed instance-wide.
+           No real security boundary against malicious plugins.
+
+External:
+  - Process: Remote server
+  - Transport: HTTP API (sandboxed)
+  - Removal: Users may add/remove these themselves
+  - Notes: UI renders in an iframe and is sandboxed. Limited to
+           routes in their prefix. APIs restricted by permissions.
 ```
 
 ## Canonical Data Type Outlines

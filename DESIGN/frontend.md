@@ -52,7 +52,7 @@ Cog uses a structured routing system to balance ease of use with security (CSRF 
   - **Use Cases:** Global search results, public shares, notifications.
 - **Compatibility/Global Routes (`/remote.php/*`, `/index.php/*`, `/.well-known/*`):**
   - **Purpose:** NextCloud protocol/client compatibility.
-  - **Binding:** Host or privileged internal plugins; not the default plugin route model.
+  - **Binding:** Host or protected/privileged plugins; not the default plugin route model.
   - **CSRF:** Token-authenticated non-browser requests are exempt.
 
 ### CSRF Implementation
@@ -117,6 +117,18 @@ registrar.RegisterWidget(plugin.Widget{
 ```
 
 Widgets are sorted by priority and rendered server-side inside `ui.Card` wrappers.
+
+## Plugin Settings Pages
+
+Plugins register settings pages via `RegisterSettingsPage()`. Each page is automatically wrapped in the standard settings layout (sidebar + content area).
+
+**Sidebar navigation rules:**
+- The sidebar entry always prefixes with the plugin's name.
+- **Single page, no name**: Shows as just "Plugin Name" (e.g., "RSS").
+- **Single page, with name**: Shows as "Plugin Name: Page Name" (e.g., "RSS: Feeds").
+- **Multiple pages**: Nested group under the plugin name.
+  - A page with an empty name becomes the overview page (shown when clicking the parent).
+  - If no page has an empty name, the parent item is not clickable (only expands to show children).
 
 ## Plugin Enable/Disable
 
