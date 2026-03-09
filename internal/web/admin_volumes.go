@@ -2,8 +2,6 @@ package web
 
 import (
 	"net/http"
-
-	"git.duckfam.us/jj-software/cog/internal/auth"
 )
 
 type adminVolumeHandler struct{ handler }
@@ -38,8 +36,7 @@ func (h *adminVolumeHandler) CreateVolume(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	u := auth.UserFromContext(r.Context())
-	_, err := h.p.Volumes.Create(name, r.FormValue("description"), uri, u.Username, nil, "{}")
+	_, err := h.p.Volumes.Create(name, r.FormValue("description"), uri, nil, "{}")
 	if err != nil {
 		setFlash(w, "error", "Failed to create volume: "+err.Error())
 		http.Redirect(w, r, "/admin/volumes/new", http.StatusSeeOther)

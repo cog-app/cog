@@ -71,9 +71,10 @@ func MatchPages(query string, isAdmin bool) []PageLink {
 
 // SidebarItem is a navigation link in a page sidebar.
 type SidebarItem struct {
-	Label  string
-	URL    string
-	Active bool
+	Label    string
+	URL      string
+	Active   bool
+	Children []SidebarItem
 }
 
 // ShareDisplayItem is a share record enriched with display info for the share panel.

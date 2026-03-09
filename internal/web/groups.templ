@@ -89,10 +89,10 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 			</thead>
 			<tbody>
 				for m, err := range d.Members {
-				if err != nil {
-					<tr><td colspan="3" class="text-danger">Error loading members.</td></tr>
-					break
-				}
+					if err != nil {
+						<tr><td colspan="3" class="text-danger">Error loading members.</td></tr>
+						break
+					}
 					<tr id={ fmt.Sprintf("member-%s-%s", d.Group.ID, m.MemberID) }>
 						<td>{ m.Username }</td>
 						<td>
@@ -189,90 +189,6 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 				</table>
 			}
 		}
-		@ui.Card("Group Storage") {
-			<h4>Group Volumes</h4>
-			if len(d.GroupVolumes) > 0 {
-				<table class="table">
-					<thead>
-						<tr>
-							<th>Name</th>
-							<th>URI</th>
-							<th class="text-right">Actions</th>
-						</tr>
-					</thead>
-					<tbody>
-						for _, v := range d.GroupVolumes {
-							<tr>
-								<td>{ v.Name }</td>
-								<td><code>{ v.URI }</code></td>
-								<td class="text-right">
-									<a class="btn btn-outline btn-sm" href={ templ.SafeURL("/volumes/" + v.ID + "/browse") }>Browse</a>
-								</td>
-							</tr>
-						}
-					</tbody>
-				</table>
-			} else {
-				<p class="text-muted">No group volumes.</p>
-			}
-			<form method="post" action={ templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/volumes") } class="flex gap-1 items-center mb-2">
-				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				<input class="form-control" type="text" name="name" placeholder="Volume name" required style="max-width:200px"/>
-				<button class="btn btn-primary" type="submit">Create Volume</button>
-			</form>
-			<h4 style="margin-top:1rem">Group Mounts</h4>
-			if len(d.GroupMounts) > 0 {
-				<table class="table">
-					<thead>
-						<tr>
-							<th>Path</th>
-							<th>Volume</th>
-							<th>Subpath</th>
-							<th class="text-right">Actions</th>
-						</tr>
-					</thead>
-					<tbody>
-						for _, m := range d.GroupMounts {
-							<tr id={ "gmount-" + m.ID }>
-								<td>{ m.UserPath }</td>
-								<td>{ d.VolumeNames[m.VolumeID] }</td>
-								<td>{ m.VolumeSubpath }</td>
-								<td class="text-right">
-									<button
-										class="btn btn-danger btn-sm"
-										hx-delete={ fmt.Sprintf("%s/%s/mounts/%s", d.BasePath, d.Group.ID, m.ID) }
-										hx-target={ "#gmount-" + m.ID }
-										hx-swap="outerHTML"
-									>Remove</button>
-								</td>
-							</tr>
-						}
-					</tbody>
-				</table>
-			} else {
-				<p class="text-muted">No group mounts.</p>
-			}
-			<form method="post" action={ templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/mounts") } class="flex gap-1 items-end" style="flex-wrap:wrap">
-				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				<div>
-					<label class="form-label">Path</label>
-					<input class="form-control" type="text" name="user_path" placeholder="/shared" required style="max-width:200px"/>
-				</div>
-				<div>
-					<label class="form-label">Volume</label>
-					<select class="form-control" name="volume_id" required style="max-width:200px">
-						for _, v := range d.AccessibleVolumes {
-							<option value={ v.ID }>{ v.Name }</option>
-						}
-					</select>
-				</div>
-				<div>
-					<label class="form-label">Subpath</label>
-					<input class="form-control" type="text" name="volume_subpath" placeholder="optional" style="max-width:200px"/>
-				</div>
-				<button class="btn btn-primary" type="submit">Add Mount</button>
-			</form>
-		}
 	}
 	if d.IsAdmin {
 		@ui.Card("Danger Zone") {
@@ -312,7 +228,8 @@ templ inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, is
 			<body>
 				<div class="login-container">
 					<div class="card login-card">
-						<div class="login-title">@ui.CogIcon(28) Cog</div>
+						<div class="login-title">@ui.CogIcon(28)
+Cog</div>
 						<p style="text-align:center;margin-bottom:1rem">You've been invited to join the group <strong>{ g.Name }</strong>.</p>
 						if errMsg != "" {
 							<div class="alert alert-error">{ errMsg }</div>

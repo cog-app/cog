@@ -74,7 +74,8 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 	sessID := auth.SessionIDFromContext(r.Context())
 	csrf := auth.CSRFToken(sessID, h.p.CSRFSecret)
 
-	ui.SharePanel(resType, resID, csrf, shares, levelChoices).Render(r.Context(), w)
+	panelID := resType + ":" + resID
+	ui.SharePanel(panelID, resType, resID, csrf, shares, levelChoices).Render(r.Context(), w)
 }
 
 // CreateShareForm handles POST from the share panel form (form-encoded, HTMX).

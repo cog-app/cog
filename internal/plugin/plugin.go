@@ -40,6 +40,7 @@ type GroupInfo = cogplugin.GroupInfo
 type FilesAccess = cogplugin.FilesAccess
 type FileInfo = cogplugin.FileInfo
 type CommandDef = cogplugin.CommandDef
+type SettingsPage = cogplugin.SettingsPage
 
 // Re-export permission constants (cannot alias constants).
 const (

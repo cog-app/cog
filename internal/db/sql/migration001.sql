@@ -1,0 +1,2 @@
+-- IF COLUMN users.is_admin NOT EXIST
+ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;

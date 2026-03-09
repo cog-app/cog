@@ -47,6 +47,7 @@ type RegistryServices struct {
 type Registry struct {
 	log           *slog.Logger
 	dataDir       string
+	rootDataDir   string
 	plugins       map[string]Plugin
 	mux           *http.ServeMux
 	mountResolver MountResolver
@@ -77,16 +78,17 @@ type Registry struct {
 // csrfSecret is used for plugin-scoped CSRF token generation.
 func NewRegistry(log *slog.Logger, dataDir string, mux *http.ServeMux, sysDB *sql.DB, csrfSecret []byte) *Registry {
 	r := &Registry{
-		log:        log,
-		dataDir:    dataDir,
-		plugins:    make(map[string]Plugin),
-		mux:        mux,
-		registrars: make(map[string]*pluginRegistrar),
-		dbs:        make(map[string]*sql.DB),
-		enabled:    make(map[string]bool),
-		protected:  make(map[string]bool),
-		sysDB:      sysDB,
-		csrfSecret: csrfSecret,
+		log:         log,
+		dataDir:     dataDir,
+		rootDataDir: filepath.Join(filepath.Dir(dataDir), "app_data"),
+		plugins:     make(map[string]Plugin),
+		mux:         mux,
+		registrars:  make(map[string]*pluginRegistrar),
+		dbs:         make(map[string]*sql.DB),
+		enabled:     make(map[string]bool),
+		protected:   make(map[string]bool),
+		sysDB:       sysDB,
+		csrfSecret:  csrfSecret,
 	}
 	r.loadEnabledState()
 	return r
@@ -331,6 +333,67 @@ func (r *Registry) SetServices(s RegistryServices) {
 	r.services = s
 }
 
+// RootDB returns (or opens) a plugin-global database (not per-user).
+// Path: {rootDataDir}/{pluginID}/root.db
+func (r *Registry) RootDB(pluginID string) (*sql.DB, error) {
+	key := "__root__:" + pluginID
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if db, ok := r.dbs[key]; ok {
+		return db, nil
+	}
+
+	dir := filepath.Join(r.rootDataDir, pluginID)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return nil, fmt.Errorf("create root data dir: %w", err)
+	}
+
+	dbPath := filepath.Join(dir, "root.db")
+	rdb, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_foreign_keys=on")
+	if err != nil {
+		return nil, fmt.Errorf("open root db %s: %w", dbPath, err)
+	}
+	r.dbs[key] = rdb
+	return rdb, nil
+}
+
+// SettingsItems returns sidebar items for plugins that have settings pages.
+func (r *Registry) SettingsItems() []ui.SidebarItem {
+	var items []ui.SidebarItem
+	for _, id := range r.order {
+		if !r.IsEnabled(id) {
+			continue
+		}
+		reg := r.registrars[id]
+		if len(reg.settingsPages) == 0 {
+			continue
+		}
+		if len(reg.settingsPages) == 1 {
+			label := id
+			if reg.settingsPages[0].Name != "" {
+				label = id + ": " + reg.settingsPages[0].Name
+			}
+			items = append(items, ui.SidebarItem{
+				Label: label,
+				URL:   "/settings/plugins/" + id,
+			})
+		} else {
+			parent := ui.SidebarItem{Label: id}
+			for _, sp := range reg.settingsPages {
+				slug := strings.ToLower(strings.ReplaceAll(sp.Name, " ", "-"))
+				child := ui.SidebarItem{
+					Label: sp.Name,
+					URL:   "/settings/plugins/" + id + "/" + slug,
+				}
+				parent.Children = append(parent.Children, child)
+			}
+			items = append(items, parent)
+		}
+	}
+	return items
+}
+
 // pluginRegistrar implements PluginContext and PrivilegedContext for a specific plugin.
 type pluginRegistrar struct {
 	pluginID      string
@@ -343,6 +406,7 @@ type pluginRegistrar struct {
 	widgets       []Widget
 	searchSources []SearchSourceDef
 	commands      []CommandDef
+	settingsPages []SettingsPage
 }
 
 // --- PluginContext service methods ---
@@ -546,6 +610,29 @@ func (pr *pluginRegistrar) RegisterSearchSource(def SearchSourceDef) {
 
 func (pr *pluginRegistrar) RegisterCommand(def CommandDef) {
 	pr.commands = append(pr.commands, def)
+}
+
+func (pr *pluginRegistrar) RootDB() (*sql.DB, error) {
+	return pr.registry.RootDB(pr.pluginID)
+}
+
+func (pr *pluginRegistrar) RegisterDAVHandler(prefix string, handler http.Handler) {
+	pattern := "/remote.php/dav/" + prefix + "/"
+	wrapped := auth.RequireAuth(pr.wrap(handler))
+	pr.mux.Handle(pattern, wrapped)
+}
+
+func (pr *pluginRegistrar) RegisterSettingsPage(page SettingsPage) {
+	pr.settingsPages = append(pr.settingsPages, page)
+	slug := strings.ToLower(strings.ReplaceAll(page.Name, " ", "-"))
+	var pattern string
+	if slug == "" {
+		pattern = fmt.Sprintf("GET /settings/plugins/%s", pr.pluginID)
+	} else {
+		pattern = fmt.Sprintf("GET /settings/plugins/%s/%s", pr.pluginID, slug)
+	}
+	wrapped := auth.RequireAuthWeb(pr.wrap(page.Handler))
+	pr.mux.Handle(pattern, wrapped)
 }
 
 // Commands returns all registered CLI commands, keyed by plugin ID.

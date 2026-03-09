@@ -23,11 +23,9 @@ type Volume struct {
 	Name        string
 	Description string
 	URI         string
-	CreatedBy   string
 	CreatedAt   time.Time
-	OwnerID     *string
+	OwnerUserID *string
 	Config      string
-	OwnerType   string // "user" (default) or "group"
 }
 
 // ParsedURI represents a parsed volume URI.
@@ -78,21 +76,13 @@ func NewStore(db *sql.DB) *Store {
 	return &Store{db: db}
 }
 
-func (s *Store) Create(name, description, uri, createdBy string, ownerID *string, config string) (*Volume, error) {
-	return s.CreateWithOwnerType(name, description, uri, createdBy, ownerID, "user", config)
-}
-
-// CreateWithOwnerType creates a volume with an explicit owner type ("user" or "group").
-func (s *Store) CreateWithOwnerType(name, description, uri, createdBy string, ownerID *string, ownerType, config string) (*Volume, error) {
+func (s *Store) Create(name, description, uri string, ownerUserID *string, config string) (*Volume, error) {
 	// Validate URI.
 	if _, err := ParseURI(uri); err != nil {
 		return nil, err
 	}
 	if config == "" {
 		config = "{}"
-	}
-	if ownerType == "" {
-		ownerType = "user"
 	}
 
 	id, err := generateID()
@@ -102,8 +92,8 @@ func (s *Store) CreateWithOwnerType(name, description, uri, createdBy string, ow
 
 	now := time.Now().Unix()
 	_, err = s.db.Exec(
-		`INSERT INTO volumes (id, name, description, uri, created_by, created_at, owner_id, config, owner_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, name, description, uri, createdBy, now, ownerID, config, ownerType,
+		`INSERT INTO volumes (id, name, description, uri, created_at, owner_id, config) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, name, description, uri, now, ownerUserID, config,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert volume: %w", err)
@@ -114,11 +104,9 @@ func (s *Store) CreateWithOwnerType(name, description, uri, createdBy string, ow
 		Name:        name,
 		Description: description,
 		URI:         uri,
-		CreatedBy:   createdBy,
 		CreatedAt:   time.Unix(now, 0),
-		OwnerID:     ownerID,
+		OwnerUserID: ownerUserID,
 		Config:      config,
-		OwnerType:   ownerType,
 	}, nil
 }
 
@@ -126,8 +114,8 @@ func (s *Store) GetByID(id string) (*Volume, error) {
 	var v Volume
 	var createdAt int64
 	err := s.db.QueryRow(
-		`SELECT id, name, description, uri, created_by, created_at, owner_id, config, owner_type FROM volumes WHERE id = ?`, id,
-	).Scan(&v.ID, &v.Name, &v.Description, &v.URI, &v.CreatedBy, &createdAt, &v.OwnerID, &v.Config, &v.OwnerType)
+		`SELECT id, name, description, uri, created_at, owner_id, config FROM volumes WHERE id = ?`, id,
+	).Scan(&v.ID, &v.Name, &v.Description, &v.URI, &createdAt, &v.OwnerUserID, &v.Config)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -142,8 +130,8 @@ func (s *Store) GetByName(name string) (*Volume, error) {
 	var v Volume
 	var createdAt int64
 	err := s.db.QueryRow(
-		`SELECT id, name, description, uri, created_by, created_at, owner_id, config, owner_type FROM volumes WHERE name = ?`, name,
-	).Scan(&v.ID, &v.Name, &v.Description, &v.URI, &v.CreatedBy, &createdAt, &v.OwnerID, &v.Config, &v.OwnerType)
+		`SELECT id, name, description, uri, created_at, owner_id, config FROM volumes WHERE name = ?`, name,
+	).Scan(&v.ID, &v.Name, &v.Description, &v.URI, &createdAt, &v.OwnerUserID, &v.Config)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -157,7 +145,7 @@ func (s *Store) GetByName(name string) (*Volume, error) {
 func (s *Store) List() iter.Seq2[Volume, error] {
 	return func(yield func(Volume, error) bool) {
 		rows, err := s.db.Query(
-			`SELECT id, name, description, uri, created_by, created_at, owner_id, config, owner_type FROM volumes ORDER BY name`,
+			`SELECT id, name, description, uri, created_at, owner_id, config FROM volumes ORDER BY name`,
 		)
 		if err != nil {
 			yield(Volume{}, fmt.Errorf("list volumes: %w", err))
@@ -167,7 +155,7 @@ func (s *Store) List() iter.Seq2[Volume, error] {
 		for rows.Next() {
 			var v Volume
 			var createdAt int64
-			if err := rows.Scan(&v.ID, &v.Name, &v.Description, &v.URI, &v.CreatedBy, &createdAt, &v.OwnerID, &v.Config, &v.OwnerType); err != nil {
+			if err := rows.Scan(&v.ID, &v.Name, &v.Description, &v.URI, &createdAt, &v.OwnerUserID, &v.Config); err != nil {
 				yield(Volume{}, fmt.Errorf("scan volume: %w", err))
 				return
 			}
@@ -187,7 +175,7 @@ func (s *Store) List() iter.Seq2[Volume, error] {
 func (s *Store) ListAccessible(userID string, sharedVolumeIDs []string) iter.Seq2[Volume, error] {
 	return func(yield func(Volume, error) bool) {
 		// Build query with placeholders for shared IDs.
-		query := `SELECT id, name, description, uri, created_by, created_at, owner_id, config, owner_type
+		query := `SELECT id, name, description, uri, created_at, owner_id, config
 			FROM volumes WHERE owner_id IS NULL OR owner_id = ?`
 		args := []any{userID}
 
@@ -210,38 +198,7 @@ func (s *Store) ListAccessible(userID string, sharedVolumeIDs []string) iter.Seq
 		for rows.Next() {
 			var v Volume
 			var createdAt int64
-			if err := rows.Scan(&v.ID, &v.Name, &v.Description, &v.URI, &v.CreatedBy, &createdAt, &v.OwnerID, &v.Config, &v.OwnerType); err != nil {
-				yield(Volume{}, fmt.Errorf("scan volume: %w", err))
-				return
-			}
-			v.CreatedAt = time.Unix(createdAt, 0)
-			if !yield(v, nil) {
-				return
-			}
-		}
-		if err := rows.Err(); err != nil {
-			yield(Volume{}, err)
-		}
-	}
-}
-
-// ListByOwner returns volumes with the given owner type and owner ID.
-func (s *Store) ListByOwner(ownerType, ownerID string) iter.Seq2[Volume, error] {
-	return func(yield func(Volume, error) bool) {
-		rows, err := s.db.Query(
-			`SELECT id, name, description, uri, created_by, created_at, owner_id, config, owner_type
-			FROM volumes WHERE owner_type = ? AND owner_id = ? ORDER BY name`,
-			ownerType, ownerID,
-		)
-		if err != nil {
-			yield(Volume{}, fmt.Errorf("list volumes by owner: %w", err))
-			return
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var v Volume
-			var createdAt int64
-			if err := rows.Scan(&v.ID, &v.Name, &v.Description, &v.URI, &v.CreatedBy, &createdAt, &v.OwnerID, &v.Config, &v.OwnerType); err != nil {
+			if err := rows.Scan(&v.ID, &v.Name, &v.Description, &v.URI, &createdAt, &v.OwnerUserID, &v.Config); err != nil {
 				yield(Volume{}, fmt.Errorf("scan volume: %w", err))
 				return
 			}

@@ -1,4 +1,10 @@
-Cog Codebase Audit Report
+These tasks should be completed
+
+- Files plugin should include a list of volumes and allow browsing them directly (in addition to the VFS it does by default)
+
+# Cog Codebase Audit Report
+
+The following is a CLAUDE generated report of other issues to fix. I need to go through this and verify before we implement.
 
 1. BUGS (Fix Now)
 

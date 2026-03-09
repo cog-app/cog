@@ -267,6 +267,11 @@ func (r *capturingRegistrar) UserLookup() cogplugin.UserLookup   { return nil }
 func (r *capturingRegistrar) GroupStore() cogplugin.GroupStore   { return nil }
 func (r *capturingRegistrar) FilesAccess() cogplugin.FilesAccess { return nil }
 func (r *capturingRegistrar) Logger() *slog.Logger              { return slog.Default() }
+func (r *capturingRegistrar) RootDB() (*sql.DB, error) {
+	return nil, fmt.Errorf("RootDB not available for gRPC plugins")
+}
+func (r *capturingRegistrar) RegisterDAVHandler(prefix string, handler http.Handler) {}
+func (r *capturingRegistrar) RegisterSettingsPage(page cogplugin.SettingsPage)       {}
 
 // responseCapture is a minimal http.ResponseWriter for capturing plugin responses.
 type responseCapture struct {

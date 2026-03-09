@@ -130,7 +130,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, plugins ...pl
 		Invitations:  group.NewInvitationStore(sysDB),
 		Volumes:      volumes,
 		Mounts:       mounts,
-		Access:       &volume.Access{Volumes: volumes, Shares: shares, DB: sysDB},
+		Access:       &volume.Access{Volumes: volumes, Shares: shares},
 		Settings:     settings.NewStore(sysDB),
 		CSRFSecret:   secret,
 	}

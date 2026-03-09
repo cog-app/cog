@@ -66,7 +66,7 @@ func (h *settingsHandler) ShowStorage(w http.ResponseWriter, r *http.Request) {
 
 	// Owned volumes as iterator + has-bool.
 	ownedFilter := seq.Filter(h.p.Volumes.List(), func(v volume.Volume) bool {
-		return v.OwnerID != nil && *v.OwnerID == u.ID
+		return v.OwnerUserID != nil && *v.OwnerUserID == u.ID
 	})
 	var ownedVolumes iter.Seq2[volume.Volume, error]
 	var hasOwnedVolumes bool
@@ -75,7 +75,7 @@ func (h *settingsHandler) ShowStorage(w http.ResponseWriter, r *http.Request) {
 	hasOwnedVolumes = !errors.Is(ownedErr, seq.ErrEmpty)
 	if !hasOwnedVolumes {
 		ownedVolumes = seq.Filter(h.p.Volumes.List(), func(v volume.Volume) bool {
-			return v.OwnerID != nil && *v.OwnerID == u.ID
+			return v.OwnerUserID != nil && *v.OwnerUserID == u.ID
 		})
 	}
 
@@ -187,7 +187,7 @@ func (h *settingsHandler) CreateVolume(w http.ResponseWriter, r *http.Request) {
 	}
 	cfgJSON, _ := json.Marshal(cfg)
 
-	_, err := h.p.Volumes.Create(name, "WebDAV volume", "webdav://"+name, u.Username, &u.ID, string(cfgJSON))
+	_, err := h.p.Volumes.Create(name, "WebDAV volume", "webdav://"+name, &u.ID, string(cfgJSON))
 	if err != nil {
 		setFlash(w, "error", "Failed to create volume: "+err.Error())
 	} else {
@@ -206,7 +206,7 @@ func (h *settingsHandler) DeleteVolume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Only owner can delete their volume.
-	if vol.OwnerID == nil || *vol.OwnerID != u.ID {
+	if vol.OwnerUserID == nil || *vol.OwnerUserID != u.ID {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

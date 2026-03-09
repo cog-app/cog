@@ -21,7 +21,7 @@ func Bootstrap(dataDir string, users *user.Store, volumes *volume.Store, mounts 
 	defaultVol, err := volumes.GetByName("default")
 	if errors.Is(err, volume.ErrNotFound) {
 		uri := "file://" + absData
-		defaultVol, err = volumes.Create("default", "Default local storage", uri, "system", nil, "{}")
+		defaultVol, err = volumes.Create("default", "Default local storage", uri, nil, "{}")
 		if err != nil {
 			return fmt.Errorf("create default volume: %w", err)
 		}

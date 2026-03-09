@@ -47,6 +47,7 @@ type FileMeta struct {
 // Plugin is the files plugin. It is a privileged internal plugin
 // and cannot be loaded via gRPC.
 type Plugin struct {
+	plugin.Protected
 	ctx plugin.PluginContext
 	log *slog.Logger
 }

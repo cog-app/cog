@@ -31,6 +31,8 @@ type PluginContext interface {
 
 	// Logger returns a structured logger pre-tagged with the plugin ID.
 	Logger() *slog.Logger
+	// RootDB returns a plugin-global database (not per-user).
+	RootDB() (*sql.DB, error)
 
 	// Optional service accessors — return nil if the service is unavailable.
 	ShareStore() ShareStore

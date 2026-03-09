@@ -1,0 +1,2 @@
+-- IF COLUMN volumes.config NOT EXIST
+ALTER TABLE volumes ADD COLUMN config TEXT NOT NULL DEFAULT '{}';

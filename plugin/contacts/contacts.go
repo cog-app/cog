@@ -22,7 +22,6 @@ const PluginID = "contacts"
 
 // Plugin is the contacts plugin.
 type Plugin struct {
-	plugin.Protected
 	ctx plugin.PluginContext
 	log *slog.Logger
 }
@@ -140,9 +139,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 
 	// CardDAV endpoints
 	carddav := NewCardDAVHandler(p)
-	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
-		priv.RegisterRoute("/remote.php/dav/addressbooks/", carddav)
-	}
+	ctx.RegisterDAVHandler("addressbooks", carddav)
 
 	return nil
 }

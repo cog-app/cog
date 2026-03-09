@@ -24,7 +24,6 @@ const PluginID = "calendar"
 
 // Plugin is the calendar plugin.
 type Plugin struct {
-	plugin.Protected
 	ctx    plugin.PluginContext
 	log    *slog.Logger
 	cancel context.CancelFunc
@@ -81,10 +80,8 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 
 	// CalDAV endpoints
 	caldav := NewCalDAVHandler(p)
-	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
-		priv.RegisterRoute("/remote.php/dav/calendars/", caldav)
-		priv.RegisterRoute("/remote.php/dav/principals/", caldav)
-	}
+	ctx.RegisterDAVHandler("calendars", caldav)
+	ctx.RegisterDAVHandler("principals", caldav)
 
 	return nil
 }

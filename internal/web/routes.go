@@ -82,10 +82,6 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("DELETE /settings/groups/{id}/members/{member_id}", csrfWeb(http.HandlerFunc(groupH.RemoveMember)))
 	mux.Handle("POST /settings/groups/{id}/invites", csrfWeb(http.HandlerFunc(groupH.CreateInvite)))
 	mux.Handle("DELETE /settings/groups/{id}/invites/{invite_id}", csrfWeb(http.HandlerFunc(groupH.RevokeInvite)))
-	mux.Handle("POST /settings/groups/{id}/mounts", csrfWeb(http.HandlerFunc(groupH.CreateGroupMount)))
-	mux.Handle("DELETE /settings/groups/{id}/mounts/{mount_id}", csrfWeb(http.HandlerFunc(groupH.DeleteGroupMount)))
-	mux.Handle("POST /settings/groups/{id}/volumes", csrfWeb(http.HandlerFunc(groupH.CreateGroupVolume)))
-
 	// Invite acceptance (works for both authenticated and unauthenticated users)
 	mux.HandleFunc("GET /invite/{token}", groupH.AcceptInviteForm)
 	mux.HandleFunc("POST /invite/{token}", groupH.AcceptInvite)
@@ -117,10 +113,6 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("DELETE /admin/groups/{id}/members/{member_id}", adminMut(http.HandlerFunc(adminH.RemoveMember)))
 	mux.Handle("POST /admin/groups/{id}/invites", adminMut(http.HandlerFunc(groupH.CreateInvite)))
 	mux.Handle("DELETE /admin/groups/{id}/invites/{invite_id}", adminMut(http.HandlerFunc(groupH.RevokeInvite)))
-	mux.Handle("POST /admin/groups/{id}/mounts", adminMut(http.HandlerFunc(groupH.CreateGroupMount)))
-	mux.Handle("DELETE /admin/groups/{id}/mounts/{mount_id}", adminMut(http.HandlerFunc(groupH.DeleteGroupMount)))
-	mux.Handle("POST /admin/groups/{id}/volumes", adminMut(http.HandlerFunc(groupH.CreateGroupVolume)))
-
 	mux.Handle("GET /admin/volumes", adminAuth(http.HandlerFunc(adminVolH.ListVolumes)))
 	mux.Handle("GET /admin/volumes/new", adminAuth(http.HandlerFunc(adminVolH.NewVolumeForm)))
 	mux.Handle("POST /admin/volumes", adminMut(http.HandlerFunc(adminVolH.CreateVolume)))

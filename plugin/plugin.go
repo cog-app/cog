@@ -64,6 +64,17 @@ type Registrar interface {
 	RegisterWidget(w Widget)
 	// RegisterSearchSource declares a search source for full-text indexing.
 	RegisterSearchSource(def SearchSourceDef)
+	// RegisterDAVHandler mounts a handler under /remote.php/dav/{prefix}/.
+	// The handler receives authenticated requests with full path intact.
+	RegisterDAVHandler(prefix string, handler http.Handler)
+	// RegisterSettingsPage adds a settings page for this plugin.
+	RegisterSettingsPage(page SettingsPage)
+}
+
+// SettingsPage describes a settings page registered by a plugin.
+type SettingsPage struct {
+	Name    string       // optional display name
+	Handler http.Handler // renders page content fragment
 }
 
 // NavItem is a navigation entry registered by a plugin for the app navbar.

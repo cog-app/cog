@@ -8,31 +8,25 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/group"
-	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/user"
-	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
 // groupDetailData holds all data needed by the shared group detail template.
 type groupDetailData struct {
-	Group             *group.Group
-	Members           iter.Seq2[group.Member, error]
-	Invitations       []group.Invitation
-	GroupMounts       []mount.GroupMount
-	GroupVolumes      []volume.Volume
-	AccessibleVolumes []volume.Volume
-	VolumeNames       map[string]string
-	IsOwner           bool
-	IsAdmin           bool
-	SMTPAvailable     bool
-	SiteBaseURL       string
-	BasePath          string // "/settings/groups" or "/admin/groups"
-	Flash             string
-	FlashKind         string
-	LastInviteURL     string
+	Group         *group.Group
+	Members       iter.Seq2[group.Member, error]
+	Invitations   []group.Invitation
+	IsOwner       bool
+	IsAdmin       bool
+	SMTPAvailable bool
+	SiteBaseURL   string
+	BasePath      string // "/settings/groups" or "/admin/groups"
+	Flash         string
+	FlashKind     string
+	LastInviteURL string
 }
 
 // groupHandler handles user-facing group management.
@@ -136,7 +130,6 @@ func (h *groupHandler) buildGroupDetailData(w http.ResponseWriter, r *http.Reque
 		SMTPAvailable: h.p.EmailSender() != nil,
 		SiteBaseURL:   h.p.Config.BaseURL,
 		BasePath:      basePath,
-		VolumeNames:   make(map[string]string),
 	}
 
 	if isOwner {
@@ -144,25 +137,6 @@ func (h *groupHandler) buildGroupDetailData(w http.ResponseWriter, r *http.Reque
 		d.Invitations, err = seq.Collect(h.p.Invitations.ListByGroup(g.ID))
 		if err != nil {
 			return groupDetailData{}, err
-		}
-		d.GroupMounts, err = seq.Collect(h.p.Mounts.ListGroupMounts(g.ID))
-		if err != nil {
-			return groupDetailData{}, err
-		}
-
-		d.GroupVolumes, err = seq.Collect(h.p.Volumes.ListByOwner("group", g.ID))
-		if err != nil {
-			return groupDetailData{}, err
-		}
-
-		if h.p.Access != nil {
-			d.AccessibleVolumes, err = seq.Collect(h.p.Access.ListAccessible(u.ID))
-			if err != nil {
-				return groupDetailData{}, err
-			}
-		}
-		for _, v := range d.AccessibleVolumes {
-			d.VolumeNames[v.ID] = v.Name
 		}
 	}
 
@@ -467,73 +441,3 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/settings/groups/"+inv.GroupID, http.StatusSeeOther)
 }
 
-// CreateGroupMount handles POST /settings/groups/{id}/mounts and POST /admin/groups/{id}/mounts.
-func (h *groupHandler) CreateGroupMount(w http.ResponseWriter, r *http.Request) {
-	u := auth.UserFromContext(r.Context())
-	groupID := r.PathValue("id")
-	if !h.canManageGroup(groupID, u) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-
-	base := groupBasePath(r)
-	volumeID := r.FormValue("volume_id")
-	userPath := r.FormValue("user_path")
-	volumeSubpath := r.FormValue("volume_subpath")
-
-	if volumeID == "" || userPath == "" {
-		setFlash(w, "error", "Volume and path are required.")
-		http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
-		return
-	}
-
-	_, err := h.p.Mounts.CreateGroupMount(groupID, userPath, volumeID, volumeSubpath, false)
-	if err != nil {
-		setFlash(w, "error", "Failed to create mount: "+err.Error())
-	} else {
-		setFlash(w, "success", "Group mount added.")
-	}
-	http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
-}
-
-// DeleteGroupMount handles DELETE /settings/groups/{id}/mounts/{mount_id}.
-func (h *groupHandler) DeleteGroupMount(w http.ResponseWriter, r *http.Request) {
-	u := auth.UserFromContext(r.Context())
-	groupID := r.PathValue("id")
-	if !h.canManageGroup(groupID, u) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-
-	mountID := r.PathValue("mount_id")
-	h.p.Mounts.DeleteGroupMount(mountID)
-	w.WriteHeader(http.StatusOK)
-}
-
-// CreateGroupVolume handles POST /settings/groups/{id}/volumes and POST /admin/groups/{id}/volumes.
-func (h *groupHandler) CreateGroupVolume(w http.ResponseWriter, r *http.Request) {
-	u := auth.UserFromContext(r.Context())
-	groupID := r.PathValue("id")
-	if !h.canManageGroup(groupID, u) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-
-	base := groupBasePath(r)
-	name := r.FormValue("name")
-	if name == "" {
-		setFlash(w, "error", "Volume name is required.")
-		http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
-		return
-	}
-
-	uri := fmt.Sprintf("file://data/groups/%s/%s", groupID, name)
-	g, _ := h.p.Groups.Get(groupID)
-	_, err := h.p.Volumes.CreateWithOwnerType(name, "Group volume for "+g.Name, uri, u.Username, &groupID, "group", "{}")
-	if err != nil {
-		setFlash(w, "error", "Failed to create volume: "+err.Error())
-	} else {
-		setFlash(w, "success", "Group volume created.")
-	}
-	http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
-}

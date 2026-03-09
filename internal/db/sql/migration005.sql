@@ -1,0 +1,2 @@
+-- IF COLUMN users.avatar NOT EXIST
+ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT '';

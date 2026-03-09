@@ -1,10 +1,12 @@
 package calendar
+
 import (
 	"fmt"
+	"git.duckfam.us/jj-software/cog/ui"
 	"strconv"
 	"time"
-	"git.duckfam.us/jj-software/cog/ui"
 )
+
 templ calSidebar(calendars []Calendar, activePath string, csrfToken string) {
 	<nav class="sidebar">
 		<a href="/apps/calendar/" class={ sidebarClass(activePath, "/apps/calendar/") }>All Events</a>
@@ -27,6 +29,7 @@ templ calSidebar(calendars []Calendar, activePath string, csrfToken string) {
 		<a href="/apps/calendar/settings" class={ sidebarClass(activePath, "/apps/calendar/settings") }>Settings</a>
 	</nav>
 }
+
 templ calIndexPage(calendars []Calendar, csrfToken string) {
 	<script src="/static/vendor/fullcalendar.min.js"></script>
 	<div class="sidebar-layout">
@@ -299,6 +302,7 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 		})();
 	</script>
 }
+
 templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee) {
 	<h2 style="margin-top:0">{ ev.Summary }</h2>
 	<div class="text-muted" style="margin-bottom:1rem">
@@ -574,6 +578,7 @@ templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Cale
 		</div>
 	</form>
 }
+
 templ emFreqOption(value, label, selected string) {
 	if value == selected {
 		<option value={ value } selected>{ label }</option>
@@ -581,6 +586,7 @@ templ emFreqOption(value, label, selected string) {
 		<option value={ value }>{ label }</option>
 	}
 }
+
 templ emByDayCheckbox(prefix, day, label string, checked bool) {
 	<label style="font-size:0.85rem;font-weight:normal">
 		if checked {
@@ -590,6 +596,7 @@ templ emByDayCheckbox(prefix, day, label string, checked bool) {
 		}
 	</label>
 }
+
 func eventColorOrDefault(ev *Event, cal *Calendar) string {
 	if ev.Color != "" {
 		return ev.Color
@@ -602,6 +609,7 @@ func calDefaultColor(cal *Calendar) string {
 	}
 	return "#0082c9"
 }
+
 templ calSettingsPage(calendars []Calendar, csrfToken string) {
 	<div class="sidebar-layout">
 		@calSidebar(calendars, "/apps/calendar/settings", csrfToken)
@@ -678,6 +686,7 @@ templ calSettingsPage(calendars []Calendar, csrfToken string) {
 		</div>
 	</div>
 }
+
 func sidebarClass(activePath, itemPath string) string {
 	if activePath == itemPath {
 		return "sidebar-item active"

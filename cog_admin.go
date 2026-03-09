@@ -366,7 +366,7 @@ func volumeCmd(plugins []plugin.Plugin) *cobra.Command {
 			defer p.Close()
 
 			desc, _ := c.Flags().GetString("description")
-			v, err := p.Volumes.Create(args[0], desc, args[1], "cli", nil, "")
+			v, err := p.Volumes.Create(args[0], desc, args[1], nil, "")
 			if err != nil {
 				return err
 			}

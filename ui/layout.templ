@@ -23,7 +23,8 @@ templ Base(pd PageData) {
 		</head>
 		<body hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, pd.CSRFToken) }>
 			<nav class="navbar">
-				<a class="navbar-brand" href="/">@CogIcon(20) <span class="brand-text">Cog</span></a>
+				<a class="navbar-brand" href="/">@CogIcon(20)
+<span class="brand-text">Cog</span></a>
 				<ul class="navbar-nav">
 					for _, item := range pd.Nav {
 						<li>
@@ -204,7 +205,8 @@ templ Shell(pd PageData, body templ.Component) {
 		</head>
 		<body hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, pd.CSRFToken) }>
 			<nav class="navbar">
-				<a class="navbar-brand" href="/">@CogIcon(20) <span class="brand-text">Cog</span></a>
+				<a class="navbar-brand" href="/">@CogIcon(20)
+<span class="brand-text">Cog</span></a>
 				<ul class="navbar-nav">
 					for _, item := range pd.Nav {
 						<li>
@@ -375,7 +377,16 @@ templ SidebarPage(pd PageData, sidebar []SidebarItem) {
 		<div class="sidebar-layout">
 			<nav class="sidebar">
 				for _, item := range sidebar {
-					if item.Active {
+					if len(item.Children) > 0 {
+						<span class="sidebar-group">{ item.Label }</span>
+						for _, child := range item.Children {
+							if child.Active {
+								<a href={ templ.SafeURL(child.URL) } class="sidebar-item sidebar-child active">{ child.Label }</a>
+							} else {
+								<a href={ templ.SafeURL(child.URL) } class="sidebar-item sidebar-child">{ child.Label }</a>
+							}
+						}
+					} else if item.Active {
 						<a href={ templ.SafeURL(item.URL) } class="sidebar-item active">{ item.Label }</a>
 					} else {
 						<a href={ templ.SafeURL(item.URL) } class="sidebar-item">{ item.Label }</a>
@@ -443,8 +454,10 @@ templ LoginPage(errMsg string, csrfToken string, next string, registrationEnable
 		<body>
 			<div class="login-container">
 				<div class="card login-card">
-					<div class="login-title">@CogIcon(28)
-Cog</div>
+					<div class="login-title">
+						@CogIcon(28)
+						Cog
+					</div>
 					if errMsg != "" {
 						<div class="alert alert-error">{ errMsg }</div>
 					}
@@ -493,8 +506,10 @@ templ RegisterPage(errMsg string, next string) {
 		<body>
 			<div class="login-container">
 				<div class="card login-card">
-					<div class="login-title">@CogIcon(28)
-Cog</div>
+					<div class="login-title">
+						@CogIcon(28)
+						Cog
+					</div>
 					if errMsg != "" {
 						<div class="alert alert-error">{ errMsg }</div>
 					}

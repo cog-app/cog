@@ -21,7 +21,6 @@ const PluginID = "tasks"
 
 // Plugin is the tasks plugin.
 type Plugin struct {
-	plugin.Protected
 	ctx plugin.PluginContext
 	log *slog.Logger
 }
