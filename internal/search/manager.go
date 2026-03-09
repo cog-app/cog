@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"path/filepath"
 	"sync"
 
@@ -18,6 +18,7 @@ type userSearch struct {
 
 // Manager orchestrates system and per-user search indices.
 type Manager struct {
+	log     *slog.Logger
 	dataDir string
 
 	systemIndex     *Index
@@ -37,9 +38,10 @@ type Manager struct {
 }
 
 // NewManager creates a manager. Call SetSystemDB and Start to initialize.
-func NewManager(dataDir string) *Manager {
+func NewManager(log *slog.Logger, dataDir string) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
+		log:           log.With("component", "search"),
 		dataDir:       dataDir,
 		userIndices:   make(map[string]*userSearch),
 		pluginSources: make(map[string][]plugin.SearchSourceDef),
@@ -95,7 +97,7 @@ func (m *Manager) UserDBHook(username, pluginID string) func(op int, db, table s
 			var err error
 			us, err = m.ensureUserIndex(username)
 			if err != nil {
-				log.Printf("search: lazy open user index for %s: %v", username, err)
+				m.log.Error("lazy open user index failed", "user", username, "err", err)
 				return
 			}
 		}
@@ -121,7 +123,7 @@ func (m *Manager) Start(ctx context.Context) error {
 		return fmt.Errorf("open system search index: %w", err)
 	}
 
-	m.systemCollector = NewCollector(m.systemIndex, func() *sql.DB { return m.sysDB })
+	m.systemCollector = NewCollector(m.log, m.systemIndex, func() *sql.DB { return m.sysDB })
 	m.systemCollector.RegisterSource(UserSource{})
 	m.systemCollector.RegisterSource(GroupSource{})
 	m.systemCollector.RegisterSource(VolumeSource{})
@@ -129,7 +131,7 @@ func (m *Manager) Start(ctx context.Context) error {
 
 	// Full sync on startup.
 	if err := m.systemCollector.FullSync(); err != nil {
-		log.Printf("search: system full sync: %v", err)
+		m.log.Error("system full sync failed", "err", err)
 	}
 
 	return nil
@@ -190,7 +192,7 @@ func (m *Manager) ensureUserIndex(username string) (*userSearch, error) {
 
 	// For per-user indices, we need a dbFunc that returns the right DB.
 	// We'll register plugin sources and each one gets its own dbFunc call.
-	collector := NewCollector(idx, func() *sql.DB {
+	collector := NewCollector(m.log, idx, func() *sql.DB {
 		// Return first available plugin DB for this user.
 		// Each plugin source will use its own DB via Enrich.
 		return nil
@@ -208,7 +210,7 @@ func (m *Manager) ensureUserIndex(username string) (*userSearch, error) {
 
 	// Full sync on first open.
 	if err := collector.FullSync(); err != nil {
-		log.Printf("search: user %s full sync: %v", username, err)
+		m.log.Error("user full sync failed", "user", username, "err", err)
 	}
 
 	us.collector = collector
@@ -251,7 +253,7 @@ func (s *userPluginSource) SelfSync() ([]Document, error) {
 	for _, table := range s.inner.Tables() {
 		rows, err := db.Query(fmt.Sprintf("SELECT rowid FROM %s", table))
 		if err != nil {
-			log.Printf("search: self-sync query %s: %v", table, err)
+			slog.Error("self-sync query failed", "table", table, "err", err)
 			continue
 		}
 

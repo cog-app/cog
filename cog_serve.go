@@ -37,14 +37,14 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 
 			// Start search indexing after plugins are registered.
 			if err := p.StartSearch(context.Background()); err != nil {
-				log.Printf("Warning: search init failed: %v", err)
+				p.Log.Warn("search init failed", "err", err)
 			}
 
 			if envBool("COG_LOG_REQUESTS") {
 				handler = requestLogger(handler)
 			}
 
-			log.Printf("Cog listening on %s", cfg.Addr)
+			p.Log.Info("Cog listening", "addr", cfg.Addr)
 			return http.ListenAndServe(cfg.Addr, handler)
 		},
 	}

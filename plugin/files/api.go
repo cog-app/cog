@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 
@@ -72,7 +71,7 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	a.writeJSON(w, http.StatusOK, map[string]any{
 		"path":  path,
 		"files": files,
 	})
@@ -97,7 +96,7 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, meta)
+	a.writeJSON(w, http.StatusCreated, meta)
 }
 
 func (a *API) handleDownload(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +118,7 @@ func (a *API) handleDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
 	w.Header().Set("ETag", meta.ETag)
 	if _, err := io.Copy(w, f); err != nil {
-		log.Printf("files: download copy error: %v", err)
+		a.files.log.Error("download copy", "err", err)
 	}
 }
 
@@ -149,7 +148,7 @@ func (a *API) handleMkdir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, meta)
+	a.writeJSON(w, http.StatusCreated, meta)
 }
 
 func (a *API) handleDelete(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +189,7 @@ func (a *API) handleRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, meta)
+	a.writeJSON(w, http.StatusOK, meta)
 }
 
 func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +206,7 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, results)
+	a.writeJSON(w, http.StatusOK, results)
 }
 
 func (a *API) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +223,7 @@ func (a *API) handleInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, meta)
+	a.writeJSON(w, http.StatusOK, meta)
 }
 
 // --- Sharing handlers ---
@@ -271,7 +270,7 @@ func (a *API) handleShareCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, rec)
+	a.writeJSON(w, http.StatusCreated, rec)
 }
 
 func (a *API) handleShareList(w http.ResponseWriter, r *http.Request) {
@@ -286,7 +285,7 @@ func (a *API) handleShareList(w http.ResponseWriter, r *http.Request) {
 		records = []share.Record{}
 	}
 
-	writeJSON(w, http.StatusOK, records)
+	a.writeJSON(w, http.StatusOK, records)
 }
 
 func (a *API) handleSharesWithMe(w http.ResponseWriter, r *http.Request) {
@@ -333,7 +332,7 @@ func (a *API) handleSharesWithMe(w http.ResponseWriter, r *http.Request) {
 		enriched = append(enriched, es)
 	}
 
-	writeJSON(w, http.StatusOK, enriched)
+	a.writeJSON(w, http.StatusOK, enriched)
 }
 
 func (a *API) handleShareDelete(w http.ResponseWriter, r *http.Request) {
@@ -399,7 +398,7 @@ func (a *API) handlePublicLinkCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, rec)
+	a.writeJSON(w, http.StatusCreated, rec)
 }
 
 func (a *API) handlePublicLinkAccess(w http.ResponseWriter, r *http.Request) {
@@ -447,7 +446,7 @@ func (a *API) handlePublicLinkAccess(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{
+		a.writeJSON(w, http.StatusOK, map[string]any{
 			"file":         meta,
 			"permissions":  share.PermissionNames(rec.Permissions),
 			"download_url": fmt.Sprintf("/s/%s/download", token),
@@ -455,7 +454,7 @@ func (a *API) handlePublicLinkAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	a.writeJSON(w, http.StatusOK, map[string]any{
 		"resource_type": rec.ResourceType,
 		"resource_id":   rec.ResourceID,
 		"permissions":   share.PermissionNames(rec.Permissions),
@@ -526,7 +525,7 @@ func (a *API) handlePublicLinkDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
 	w.Header().Set("ETag", meta.ETag)
 	if _, err := io.Copy(w, f); err != nil {
-		log.Printf("files: public link download copy error: %v", err)
+		a.files.log.Error("public link download copy", "err", err)
 	}
 }
 
@@ -581,7 +580,7 @@ func (a *API) handleSharedDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
 	w.Header().Set("ETag", meta.ETag)
 	if _, err := io.Copy(w, f); err != nil {
-		log.Printf("files: shared download copy error: %v", err)
+		a.files.log.Error("shared download copy", "err", err)
 	}
 }
 
@@ -618,10 +617,10 @@ func (a *API) checkSharePassword(rec *share.Record, r *http.Request) error {
 	return share.CheckPassword(rec, password)
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
+func (a *API) writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("files: json encode error: %v", err)
+		a.files.log.Error("json encode", "err", err)
 	}
 }

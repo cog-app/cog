@@ -6,9 +6,11 @@ import (
 )
 
 // SharePanel renders the sharing UI panel that can be embedded in any plugin's settings page.
-// Load it via HTMX: hx-get="/api/shares/panel?type=calendar:calendar&id=5" hx-target="#share-panel"
-templ SharePanel(resourceType, resourceID, csrfToken string, shares []ShareDisplayItem, levels []PermissionLevelChoice) {
-	<div id="share-panel">
+// panelID scopes the element IDs so multiple panels can coexist on one page.
+// Use <cog-share resource="type" resource-id="id"> or <cog-share-button> web components
+// instead of calling this template directly.
+templ SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []ShareDisplayItem, levels []PermissionLevelChoice) {
+	<div id={ panelID }>
 		<h3 style="margin-bottom:0.75rem">Sharing</h3>
 		if len(shares) > 0 {
 			<table style="width:100%;border-collapse:collapse;margin-bottom:1rem">
@@ -42,8 +44,8 @@ templ SharePanel(resourceType, resourceID, csrfToken string, shares []ShareDispl
 									style="color:var(--color-danger)"
 									hx-delete={ fmt.Sprintf("/api/shares/%s/delete", s.ID) }
 									hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, csrfToken) }
-									hx-target="#share-panel"
-									hx-get={ fmt.Sprintf("/api/shares/panel?type=%s&id=%s", resourceType, resourceID) }
+									hx-target={ "#" + panelID }
+									hx-get={ fmt.Sprintf("/api/shares/panel?type=%s&id=%s&scope=%s", resourceType, resourceID, panelID) }
 									hx-swap="outerHTML"
 									hx-trigger="click"
 									title="Remove share"
@@ -62,13 +64,14 @@ templ SharePanel(resourceType, resourceID, csrfToken string, shares []ShareDispl
 			<summary style="cursor:pointer;font-weight:500">Share with a user</summary>
 			<form
 				hx-post="/api/shares/create"
-				hx-target="#share-panel"
+				hx-target={ "#" + panelID }
 				hx-swap="outerHTML"
 				style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:end;margin-top:0.5rem;padding:0.75rem;border:1px solid var(--color-border);border-radius:var(--radius)"
 			>
 				<input type="hidden" name="csrf_token" value={ csrfToken }/>
 				<input type="hidden" name="resource_type" value={ resourceType }/>
 				<input type="hidden" name="resource_id" value={ resourceID }/>
+				<input type="hidden" name="panel_id" value={ panelID }/>
 				<div style="flex:1;min-width:150px">
 					<label style="font-size:0.85rem;font-weight:500">User</label>
 					@Picker("/api/picker/search?type=user", "subject_id", "Search users...", false)
@@ -88,13 +91,14 @@ templ SharePanel(resourceType, resourceID, csrfToken string, shares []ShareDispl
 			<summary style="cursor:pointer;font-weight:500">Create public link</summary>
 			<form
 				hx-post="/api/shares/public-link-form"
-				hx-target="#share-panel"
+				hx-target={ "#" + panelID }
 				hx-swap="outerHTML"
 				style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:end;margin-top:0.5rem;padding:0.75rem;border:1px solid var(--color-border);border-radius:var(--radius)"
 			>
 				<input type="hidden" name="csrf_token" value={ csrfToken }/>
 				<input type="hidden" name="resource_type" value={ resourceType }/>
 				<input type="hidden" name="resource_id" value={ resourceID }/>
+				<input type="hidden" name="panel_id" value={ panelID }/>
 				<div style="min-width:120px">
 					<label style="font-size:0.85rem;font-weight:500">Permission</label>
 					<select name="permissions" class="form-control">

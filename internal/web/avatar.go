@@ -7,7 +7,6 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -147,7 +146,7 @@ func (h *avatarHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.p.Users.Update(u.ID, user.UpdateOpts{Avatar: &filename}); err != nil {
-		log.Printf("avatar: update user %s: %v", u.ID, err)
+		h.p.Log.Error("avatar update failed", "user", u.ID, "err", err)
 	}
 
 	http.Redirect(w, r, "/settings", http.StatusSeeOther)
@@ -161,7 +160,7 @@ func (h *avatarHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	empty := ""
 	if err := h.p.Users.Update(u.ID, user.UpdateOpts{Avatar: &empty}); err != nil {
-		log.Printf("avatar: update user %s: %v", u.ID, err)
+		h.p.Log.Error("avatar update failed", "user", u.ID, "err", err)
 	}
 	w.WriteHeader(http.StatusOK)
 }

@@ -7,7 +7,6 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -30,19 +29,19 @@ func (p *Plugin) Seed(username string) error {
 	}
 
 	for _, s := range seeds {
-		p := filepath.Join(filesDir, s.path)
-		if _, err := os.Stat(p); err == nil {
+		fp := filepath.Join(filesDir, s.path)
+		if _, err := os.Stat(fp); err == nil {
 			continue
 		}
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			log.Printf("seed files: mkdir %s: %v", filepath.Dir(p), err)
+		if err := os.MkdirAll(filepath.Dir(fp), 0o755); err != nil {
+			p.log.Error("seed mkdir", "path", filepath.Dir(fp), "err", err)
 			continue
 		}
-		if err := os.WriteFile(p, []byte(s.content), 0o644); err != nil {
-			log.Printf("seed files: write %s: %v", p, err)
+		if err := os.WriteFile(fp, []byte(s.content), 0o644); err != nil {
+			p.log.Error("seed write", "path", fp, "err", err)
 			continue
 		}
-		log.Printf("Seeded %s", s.path)
+		p.log.Info("seeded file", "path", s.path)
 	}
 	return nil
 }

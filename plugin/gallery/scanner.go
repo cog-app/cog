@@ -8,7 +8,6 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +25,7 @@ func isMediaMIME(mimeType string) bool {
 func (p *Plugin) scanAllUsers(ctx context.Context) {
 	entries, err := os.ReadDir(p.ctx.DataDir())
 	if err != nil {
-		log.Printf("gallery: scan dataDir: %v", err)
+		p.log.Error("scan dataDir", "err", err)
 		return
 	}
 	for _, entry := range entries {
@@ -43,7 +42,7 @@ func (p *Plugin) scanAllUsers(ctx context.Context) {
 			continue
 		}
 		if err := p.scanUser(ctx, username); err != nil {
-			log.Printf("gallery: scan user %s: %v", username, err)
+			p.log.Error("scan user", "user", username, "err", err)
 		}
 	}
 }
@@ -75,7 +74,7 @@ func (p *Plugin) scanUser(ctx context.Context, username string) error {
 
 	// Stage 3: OCR text extraction (if tesseract available)
 	if err := p.extractOCR(ctx, galleryDB, username); err != nil {
-		log.Printf("gallery: ocr for %s: %v", username, err)
+		p.log.Warn("ocr", "user", username, "err", err)
 	}
 
 	// Stage 4: Reverse geocoding
@@ -88,12 +87,12 @@ func (p *Plugin) scanUser(ctx context.Context, username string) error {
 
 	// Stage 6: Image recognition (if configured)
 	if err := p.runRecognition(ctx, galleryDB, username); err != nil {
-		log.Printf("gallery: recognition for %s: %v", username, err)
+		p.log.Warn("recognition", "user", username, "err", err)
 	}
 
 	// Stage 7: Face clustering
 	if err := clusterFaces(galleryDB); err != nil {
-		log.Printf("gallery: clustering for %s: %v", username, err)
+		p.log.Warn("clustering", "user", username, "err", err)
 	}
 
 	return nil
@@ -150,7 +149,7 @@ func (p *Plugin) discoverFiles(ctx context.Context, galleryDB, filesDB *sql.DB, 
 		if exists {
 			// File changed — delete old row (will be re-inserted with new metadata)
 			if err := DeleteMediaByFileID(galleryDB, f.ID); err != nil {
-				log.Printf("gallery: delete changed media file_id=%d: %v", f.ID, err)
+				p.log.Error("delete changed media", "file_id", f.ID, "err", err)
 				continue
 			}
 		}
@@ -164,7 +163,7 @@ func (p *Plugin) discoverFiles(ctx context.Context, galleryDB, filesDB *sql.DB, 
 			DateIndexed: now,
 		}
 		if _, err := InsertMedia(galleryDB, m); err != nil {
-			log.Printf("gallery: insert media file_id=%d path=%s: %v", f.ID, f.Path, err)
+			p.log.Error("insert media", "file_id", f.ID, "path", f.Path, "err", err)
 		}
 	}
 
@@ -172,7 +171,7 @@ func (p *Plugin) discoverFiles(ctx context.Context, galleryDB, filesDB *sql.DB, 
 	for fileID := range existing {
 		if !fileIDsSeen[fileID] {
 			if err := DeleteMediaByFileID(galleryDB, fileID); err != nil {
-				log.Printf("gallery: cleanup deleted file_id=%d: %v", fileID, err)
+				p.log.Error("cleanup deleted file", "file_id", fileID, "err", err)
 			}
 		}
 	}
@@ -212,7 +211,7 @@ func (p *Plugin) extractMetadata(ctx context.Context, db *sql.DB, username strin
 
 		m.DateIndexed = time.Now().Unix()
 		if err := UpdateMediaMetadata(db, m); err != nil {
-			log.Printf("gallery: update metadata id=%d: %v", m.ID, err)
+			p.log.Error("update metadata", "id", m.ID, "err", err)
 		}
 	}
 
@@ -253,7 +252,7 @@ func (p *Plugin) extractOCR(ctx context.Context, db *sql.DB, username string) er
 
 		text, err := tesseractOCR(srcPath)
 		if err != nil {
-			log.Printf("gallery: ocr %s: %v", m.FilePath, err)
+			p.log.Warn("ocr failed", "path", m.FilePath, "err", err)
 			// Mark as attempted so we don't retry — store a sentinel.
 			db.Exec(`UPDATE media SET ocr_text = ' ' WHERE id = ?`, m.ID)
 			continue

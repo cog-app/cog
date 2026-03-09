@@ -6,7 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"path"
 	"strconv"
@@ -28,6 +28,7 @@ type directToken struct {
 
 // WebDAVHandler implements NextCloud-compatible WebDAV for the files plugin.
 type WebDAVHandler struct {
+	Log   *slog.Logger
 	Files *files.Plugin
 
 	directMu     sync.Mutex
@@ -189,7 +190,7 @@ func (h *WebDAVHandler) handleGet(w http.ResponseWriter, r *http.Request, u *use
 		return
 	}
 	if _, err := io.Copy(w, f); err != nil {
-		log.Printf("webdav: GET copy error: %v", err)
+		h.Log.Error("GET copy error", "err", err)
 	}
 }
 
@@ -448,7 +449,7 @@ func (h *WebDAVHandler) HandleDirectServe(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Length", strconv.FormatInt(meta.Size, 10))
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
 	if _, err := io.Copy(w, f); err != nil {
-		log.Printf("webdav: direct download copy error: %v", err)
+		h.Log.Error("direct download copy error", "err", err)
 	}
 }
 

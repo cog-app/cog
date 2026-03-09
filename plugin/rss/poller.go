@@ -2,7 +2,6 @@ package rss
 
 import (
 	"context"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,7 +35,7 @@ func (p *Plugin) poll(ctx context.Context) {
 func (p *Plugin) pollAllUsers() {
 	entries, err := os.ReadDir(p.ctx.DataDir())
 	if err != nil {
-		log.Printf("rss: poll scan dataDir: %v", err)
+		p.log.Error("poll scan dataDir", "err", err)
 		return
 	}
 
@@ -61,19 +60,19 @@ func (p *Plugin) pollAllUsers() {
 func (p *Plugin) pollUser(username string, now int64) {
 	db, err := p.DB(username)
 	if err != nil {
-		log.Printf("rss: poll db for %s: %v", username, err)
+		p.log.Error("poll db", "user", username, "err", err)
 		return
 	}
 
 	feeds, err := FeedsDue(db, now)
 	if err != nil {
-		log.Printf("rss: poll feeds for %s: %v", username, err)
+		p.log.Error("poll feeds", "user", username, "err", err)
 		return
 	}
 
 	for i := range feeds {
 		if err := fetchFeed(p.client, db, &feeds[i]); err != nil {
-			log.Printf("rss: fetch %s (user %s): %v", feeds[i].URL, username, err)
+			p.log.Error("fetch feed", "url", feeds[i].URL, "user", username, "err", err)
 		}
 	}
 }
@@ -89,6 +88,6 @@ func (p *Plugin) FetchNow(username string, feedID int64) {
 		return
 	}
 	if err := fetchFeed(p.client, db, feed); err != nil {
-		log.Printf("rss: immediate fetch %s: %v", feed.URL, err)
+		p.log.Error("immediate fetch", "url", feed.URL, "err", err)
 	}
 }

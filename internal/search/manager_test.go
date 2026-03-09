@@ -2,6 +2,7 @@ package search
 
 import (
 	"database/sql"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func TestManagerSystemSearch(t *testing.T) {
 	sysDB.Exec(`INSERT INTO groups (id, name) VALUES ('g1', 'developers')`)
 
 	dataDir := t.TempDir()
-	mgr := NewManager(dataDir)
+	mgr := NewManager(slog.New(slog.NewTextHandler(t.Output(), nil)), dataDir)
 	mgr.SetSystemDB(sysDB)
 
 	ctx := t.Context()
@@ -66,7 +67,7 @@ func TestManagerSystemSearchLiveUpdates(t *testing.T) {
 	sysDB.Exec(`CREATE TABLE volumes (id TEXT PRIMARY KEY, name TEXT, description TEXT)`)
 
 	dataDir := t.TempDir()
-	mgr := NewManager(dataDir)
+	mgr := NewManager(slog.New(slog.NewTextHandler(t.Output(), nil)), dataDir)
 	mgr.SetSystemDB(sysDB)
 
 	ctx := t.Context()

@@ -5,7 +5,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -52,13 +51,13 @@ func (h *CalDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		db, err := h.plugin.DB(targetUser)
 		if err != nil {
-			log.Printf("caldav: db error for %s: %v", targetUser, err)
+			h.plugin.log.Error("db error", "user", targetUser, "err", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 		if targetUser == u.Username {
 			if err := EnsureDefaultCalendar(db); err != nil {
-				log.Printf("caldav: ensure default calendar: %v", err)
+				h.plugin.log.Warn("ensure default calendar", "err", err)
 			}
 		}
 		h.dispatch(w, r, db, u.Username, targetUser)
@@ -220,7 +219,7 @@ func (h *CalDAVHandler) calendarCollection(w http.ResponseWriter, r *http.Reques
 			}
 		}
 		if err := DeleteCalendar(db, cal.ID); err != nil {
-			log.Printf("caldav: delete calendar %d: %v", cal.ID, err)
+			h.plugin.log.Error("delete calendar", "id", cal.ID, "err", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -252,7 +251,7 @@ func (h *CalDAVHandler) mkCalendar(w http.ResponseWriter, r *http.Request, db *s
 
 	_, err := CreateCalendar(db, calUID, name, color, description)
 	if err != nil {
-		log.Printf("caldav: create calendar %s: %v", calUID, err)
+		h.plugin.log.Error("create calendar", "uid", calUID, "err", err)
 		http.Error(w, "Conflict", http.StatusConflict)
 		return
 	}
@@ -342,7 +341,7 @@ func (h *CalDAVHandler) event(w http.ResponseWriter, r *http.Request, db *sql.DB
 
 		ev, err := UpsertEvent(db, cal.ID, eventUID, icsData, fields)
 		if err != nil {
-			log.Printf("caldav: upsert event %s: %v", eventUID, err)
+			h.plugin.log.Error("upsert event", "uid", eventUID, "err", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -555,7 +554,7 @@ func (h *CalDAVHandler) handleProppatch(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if err := UpdateCalendar(db, cal.ID, name, color, description); err != nil {
-		log.Printf("caldav: update calendar %d: %v", cal.ID, err)
+		h.plugin.log.Error("update calendar", "id", cal.ID, "err", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}

@@ -13,7 +13,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -48,6 +48,7 @@ type FileMeta struct {
 // and cannot be loaded via gRPC.
 type Plugin struct {
 	ctx plugin.PluginContext
+	log *slog.Logger
 }
 
 // New creates a new files plugin instance.
@@ -59,6 +60,7 @@ func (p *Plugin) ID() string { return PluginID }
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	p.log = ctx.Logger()
 	ctx.RegisterNavItem(plugin.NavItem{Label: "Files", URL: "/apps/files", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Recent Files",
@@ -300,7 +302,7 @@ func (p *Plugin) List(username, dirPath string) ([]FileMeta, error) {
 	// Reconcile: scan disk and update metadata
 	fsPath := filepath.Join(p.ctx.UserFilesDir(username), dirPath)
 	if err := p.reconcile(db, username, dirPath, fsPath); err != nil {
-		log.Printf("files: reconcile %s/%s: %v", username, dirPath, err)
+		p.log.Error("reconcile", "user", username, "dir", dirPath, "err", err)
 	}
 
 	rows, err := db.Query(`
@@ -508,7 +510,7 @@ func (p *Plugin) reconcile(db *sql.DB, username, dirPath, fsPath string) error {
 			childPath, dirPath, entry.Name(), info.Size(),
 			info.ModTime().Unix(), mimeType, etag, isDir)
 		if err != nil {
-			log.Printf("files: reconcile insert %s: %v", childPath, err)
+			p.log.Error("reconcile insert", "path", childPath, "err", err)
 		}
 	}
 

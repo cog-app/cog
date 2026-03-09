@@ -9,6 +9,7 @@ import (
 	"embed"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -25,6 +26,7 @@ const PluginID = "rss"
 // Plugin is the RSS feed reader plugin.
 type Plugin struct {
 	ctx    plugin.PluginContext
+	log    *slog.Logger
 	cancel context.CancelFunc
 	done   chan struct{}
 	client *http.Client
@@ -52,6 +54,7 @@ func (p *Plugin) ID() string { return PluginID }
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	p.log = ctx.Logger()
 
 	ctx.RegisterNavItem(plugin.NavItem{Label: "News", URL: "/apps/rss", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle></svg>`})
 	ctx.RegisterWidget(plugin.Widget{

@@ -1,13 +1,10 @@
 package calendar
-
 import (
 	"fmt"
 	"strconv"
 	"time"
-
 	"git.duckfam.us/jj-software/cog/ui"
 )
-
 templ calSidebar(calendars []Calendar, activePath string, csrfToken string) {
 	<nav class="sidebar">
 		<a href="/apps/calendar/" class={ sidebarClass(activePath, "/apps/calendar/") }>All Events</a>
@@ -30,7 +27,6 @@ templ calSidebar(calendars []Calendar, activePath string, csrfToken string) {
 		<a href="/apps/calendar/settings" class={ sidebarClass(activePath, "/apps/calendar/settings") }>Settings</a>
 	</nav>
 }
-
 templ calIndexPage(calendars []Calendar, csrfToken string) {
 	<script src="/static/vendor/fullcalendar.min.js"></script>
 	<div class="sidebar-layout">
@@ -279,7 +275,6 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 			if (initDate) { calOpts.initialDate = initDate; }
 			var calendar = new FullCalendar.Calendar(calEl, calOpts);
 			calendar.render();
-
 			// Calendar toggle checkboxes
 			document.querySelectorAll('.cal-toggle').forEach(function(cb) {
 				cb.addEventListener('change', function() {
@@ -291,13 +286,11 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 					});
 				});
 			});
-
 			// Init create modal: sync color to first calendar's default
 			(function() {
 				var sel = document.getElementById('ce-calendar');
 				if (sel && sel.options.length) syncCalColor(sel, 'ce-color', 'ce-color-enable');
 			})();
-
 			// All-day toggle in create modal
 			document.getElementById('ce-allday').addEventListener('change', function() {
 				document.getElementById('ce-datetime-fields').style.display = this.checked ? 'none' : '';
@@ -306,7 +299,6 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 		})();
 	</script>
 }
-
 templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee) {
 	<h2 style="margin-top:0">{ ev.Summary }</h2>
 	<div class="text-muted" style="margin-bottom:1rem">
@@ -582,7 +574,6 @@ templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Cale
 		</div>
 	</form>
 }
-
 templ emFreqOption(value, label, selected string) {
 	if value == selected {
 		<option value={ value } selected>{ label }</option>
@@ -590,7 +581,6 @@ templ emFreqOption(value, label, selected string) {
 		<option value={ value }>{ label }</option>
 	}
 }
-
 templ emByDayCheckbox(prefix, day, label string, checked bool) {
 	<label style="font-size:0.85rem;font-weight:normal">
 		if checked {
@@ -600,21 +590,18 @@ templ emByDayCheckbox(prefix, day, label string, checked bool) {
 		}
 	</label>
 }
-
 func eventColorOrDefault(ev *Event, cal *Calendar) string {
 	if ev.Color != "" {
 		return ev.Color
 	}
 	return calDefaultColor(cal)
 }
-
 func calDefaultColor(cal *Calendar) string {
 	if cal != nil && cal.Color != "" {
 		return cal.Color
 	}
 	return "#0082c9"
 }
-
 templ calSettingsPage(calendars []Calendar, csrfToken string) {
 	<div class="sidebar-layout">
 		@calSidebar(calendars, "/apps/calendar/settings", csrfToken)
@@ -660,12 +647,7 @@ templ calSettingsPage(calendars []Calendar, csrfToken string) {
 									<td>{ cal.UID }</td>
 									<td>{ strconv.FormatInt(cal.CTag, 10) }</td>
 									<td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
-										<button
-											class="btn btn-outline btn-sm"
-											hx-get={ fmt.Sprintf("/api/shares/panel?type=calendar:calendar&id=%d", cal.ID) }
-											hx-target={ fmt.Sprintf("#cal-share-%d", cal.ID) }
-											hx-swap="innerHTML"
-										>Share</button>
+										<cog-share-button resource="calendar:calendar" resource-id={ strconv.FormatInt(cal.ID, 10) }>Share</cog-share-button>
 										<button
 											class="btn btn-danger btn-sm"
 											hx-delete={ fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID) }
@@ -696,14 +678,12 @@ templ calSettingsPage(calendars []Calendar, csrfToken string) {
 		</div>
 	</div>
 }
-
 func sidebarClass(activePath, itemPath string) string {
 	if activePath == itemPath {
 		return "sidebar-item active"
 	}
 	return "sidebar-item"
 }
-
 func formatEventTime(dtstart, dtend int64, isAllDay bool) string {
 	if dtstart == 0 {
 		return ""

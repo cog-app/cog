@@ -157,7 +157,7 @@ func New(p *services.Providers) http.Handler {
 	}
 
 	if fp != nil {
-		webdav := &compat.WebDAVHandler{Files: fp}
+		webdav := &compat.WebDAVHandler{Log: p.Log.With("component", "webdav"), Files: fp}
 		mux.Handle("/remote.php/dav/files/", auth.RequireAuth(webdav))
 
 		// Direct download API (NC Android app uses this instead of WebDAV GET)

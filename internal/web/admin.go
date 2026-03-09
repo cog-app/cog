@@ -2,7 +2,6 @@ package web
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"net/smtp"
 	"strconv"
@@ -63,7 +62,7 @@ func (h *adminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	if r.FormValue("is_admin") == "1" {
 		isAdmin := true
 		if err := h.p.Users.Update(u.ID, user.UpdateOpts{IsAdmin: &isAdmin}); err != nil {
-			log.Printf("admin: set admin for %s: %v", u.ID, err)
+			h.p.Log.Error("set admin failed", "user", u.ID, "err", err)
 		}
 	}
 
@@ -72,7 +71,7 @@ func (h *adminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		if defVol, err := h.p.Volumes.GetByName("default"); err == nil {
 			subpath := u.Username + "/files"
 			if _, err := h.p.Mounts.Create(u.ID, "/", defVol.ID, subpath, false); err != nil {
-				log.Printf("admin: create mount for %s: %v", u.Username, err)
+				h.p.Log.Error("create mount failed", "user", u.Username, "err", err)
 			}
 		}
 	}
@@ -141,7 +140,7 @@ func (h *adminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	// Delete mounts before user (no ON DELETE CASCADE).
 	if h.p.Mounts != nil {
 		if err := h.p.Mounts.DeleteByUser(id); err != nil {
-			log.Printf("admin: delete mounts for user %s: %v", id, err)
+			h.p.Log.Error("delete mounts failed", "user", id, "err", err)
 		}
 	}
 	if err := h.p.Users.Delete(id); err != nil {
@@ -185,7 +184,7 @@ func (h *adminHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	if ownerID != "" {
 		if err := h.p.Groups.AddMember(g.ID, ownerID, "OWNER"); err != nil {
-			log.Printf("admin: add owner %s to group %s: %v", ownerID, g.ID, err)
+			h.p.Log.Error("add owner to group failed", "owner", ownerID, "group", g.ID, "err", err)
 		}
 	}
 	http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
@@ -334,31 +333,31 @@ func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.p.Settings != nil {
 		if err := h.p.Settings.SetBool(settings.KeyPublicRegistration, pubReg); err != nil {
-			log.Printf("admin: save public_registration: %v", err)
+			h.p.Log.Error("save setting failed", "key", "public_registration", "err", err)
 		}
 		if err := h.p.Settings.SetInt(settings.KeyInviteExpiryHours, expiryHours); err != nil {
-			log.Printf("admin: save invite_expiry_hours: %v", err)
+			h.p.Log.Error("save setting failed", "key", "invite_expiry_hours", "err", err)
 		}
 
 		// Save SMTP settings.
 		if err := h.p.Settings.Set(settings.KeySMTPHost, r.FormValue("smtp_host")); err != nil {
-			log.Printf("admin: save smtp_host: %v", err)
+			h.p.Log.Error("save setting failed", "key", "smtp_host", "err", err)
 		}
 		smtpPort, err := strconv.Atoi(r.FormValue("smtp_port"))
 		if err != nil || smtpPort < 1 {
 			smtpPort = 587
 		}
 		if err := h.p.Settings.SetInt(settings.KeySMTPPort, smtpPort); err != nil {
-			log.Printf("admin: save smtp_port: %v", err)
+			h.p.Log.Error("save setting failed", "key", "smtp_port", "err", err)
 		}
 		if err := h.p.Settings.Set(settings.KeySMTPUser, r.FormValue("smtp_user")); err != nil {
-			log.Printf("admin: save smtp_user: %v", err)
+			h.p.Log.Error("save setting failed", "key", "smtp_user", "err", err)
 		}
 		if err := h.p.Settings.Set(settings.KeySMTPPass, r.FormValue("smtp_pass")); err != nil {
-			log.Printf("admin: save smtp_pass: %v", err)
+			h.p.Log.Error("save setting failed", "key", "smtp_pass", "err", err)
 		}
 		if err := h.p.Settings.Set(settings.KeySMTPFrom, r.FormValue("smtp_from")); err != nil {
-			log.Printf("admin: save smtp_from: %v", err)
+			h.p.Log.Error("save setting failed", "key", "smtp_from", "err", err)
 		}
 	}
 	setFlash(w, "success", "Settings saved.")

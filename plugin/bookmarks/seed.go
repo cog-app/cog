@@ -4,7 +4,6 @@ package bookmarks
 
 import (
 	"fmt"
-	"log"
 )
 
 var seedBookmarks = []struct {
@@ -53,10 +52,10 @@ func (p *Plugin) Seed(username string) error {
 			}
 		}
 		if _, err := CreateBookmark(db, sb.url, sb.title, sb.desc, sb.tags, folders); err != nil {
-			log.Printf("seed bookmarks: %s: %v", sb.url, err)
+			p.log.Error("seed bookmark failed", "url", sb.url, "error", err)
 		}
 	}
 
-	log.Printf("Seeded %d bookmarks for %s", len(seedBookmarks), username)
+	p.log.Info("seeded bookmarks", "count", len(seedBookmarks), "user", username)
 	return nil
 }

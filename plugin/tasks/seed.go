@@ -4,7 +4,6 @@ package tasks
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,7 +30,7 @@ func (p *Plugin) Seed(username string) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("Seeded task lists: Personal, Work")
+	p.log.Info("seeded task lists", "lists", "Personal, Work")
 
 	now := time.Now().UTC()
 	tomorrow := now.AddDate(0, 0, 1).Unix()
@@ -65,7 +64,7 @@ func (p *Plugin) Seed(username string) error {
 		uid := uuid.New().String()
 		t, err := CreateTask(db, st.listID, uid, st.parentID, st.summary, st.desc, st.priority, st.dueAt, nil)
 		if err != nil {
-			log.Printf("seed task %s: %v", st.summary, err)
+			p.log.Error("seed task failed", "summary", st.summary, "error", err)
 			continue
 		}
 		if st.status == "COMPLETED" {
@@ -74,7 +73,7 @@ func (p *Plugin) Seed(username string) error {
 		if st.summary == "Project Alpha" {
 			projectAlphaID = t.ID
 		}
-		log.Printf("Seeded task: %s", st.summary)
+		p.log.Info("seeded task", "summary", st.summary)
 	}
 
 	// Create subtasks for Project Alpha.
@@ -84,18 +83,18 @@ func (p *Plugin) Seed(username string) error {
 			uid := uuid.New().String()
 			st, err := CreateTask(db, work.ID, uid, &projectAlphaID, summary, "", 0, nil, nil)
 			if err != nil {
-				log.Printf("seed subtask %s: %v", summary, err)
+				p.log.Error("seed subtask failed", "summary", summary, "error", err)
 				continue
 			}
-			log.Printf("Seeded subtask: %s", summary)
+			p.log.Info("seeded subtask", "summary", summary)
 			// Add a nested subtask under "Implement backend".
 			if summary == "Implement backend" {
 				uid2 := uuid.New().String()
 				_, err := CreateTask(db, work.ID, uid2, &st.ID, "Set up database schema", "", 0, nil, nil)
 				if err != nil {
-					log.Printf("seed nested subtask: %v", err)
+					p.log.Error("seed nested subtask failed", "error", err)
 				} else {
-					log.Printf("Seeded nested subtask: Set up database schema")
+					p.log.Info("seeded nested subtask", "summary", "Set up database schema")
 				}
 			}
 		}

@@ -7,7 +7,6 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"log"
 	"sort"
 	"strings"
 )
@@ -42,7 +41,7 @@ func (p *Plugin) Seed(username string) error {
 	for _, path := range entries {
 		data, err := fs.ReadFile(seedFS, path)
 		if err != nil {
-			log.Printf("seed note: read %s: %v", path, err)
+			p.log.Error("seed note: read failed", "path", path, "error", err)
 			continue
 		}
 
@@ -55,13 +54,13 @@ func (p *Plugin) Seed(username string) error {
 		etag := ComputeETag(content)
 
 		if err := WriteContent(notesDir, filename, content); err != nil {
-			log.Printf("seed note %s: write: %v", title, err)
+			p.log.Error("seed note: write failed", "title", title, "error", err)
 			continue
 		}
 
 		note, err := CreateNoteMeta(db, filename, category, etag)
 		if err != nil {
-			log.Printf("seed note %s: meta: %v", title, err)
+			p.log.Error("seed note: meta failed", "title", title, "error", err)
 			continue
 		}
 
@@ -69,7 +68,7 @@ func (p *Plugin) Seed(username string) error {
 			ToggleFavorite(db, note.ID)
 		}
 
-		log.Printf("Seeded note: %s", title)
+		p.log.Info("seeded note", "title", title)
 	}
 
 	return nil

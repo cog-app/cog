@@ -10,6 +10,7 @@ import (
 	"embed"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -25,6 +26,7 @@ const PluginID = "gallery"
 // Plugin is the gallery plugin.
 type Plugin struct {
 	ctx      plugin.PluginContext
+	log      *slog.Logger
 	files    *files.Plugin
 	geocoder *Geocoder
 	cancel   context.CancelFunc
@@ -42,6 +44,7 @@ func (p *Plugin) ID() string { return PluginID }
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	p.log = ctx.Logger()
 
 	// Obtain the concrete files plugin for operations not on FilesAccess
 	// (DB, Rename, Preview, Upload).

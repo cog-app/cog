@@ -3,6 +3,7 @@ package search
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -65,7 +66,7 @@ func TestCollectorBatchFlush(t *testing.T) {
 
 	ctx := t.Context()
 
-	c := NewCollector(idx, func() *sql.DB { return db })
+	c := NewCollector(slog.New(slog.NewTextHandler(t.Output(), nil)), idx, func() *sql.DB { return db })
 	c.RegisterSource(&testSource{name: "test", tables: []string{"items"}})
 	c.Start(ctx)
 
@@ -131,7 +132,7 @@ func TestCollectorFullSync(t *testing.T) {
 	db.Exec("INSERT INTO items (name) VALUES ('two')")
 	db.Exec("INSERT INTO items (name) VALUES ('three')")
 
-	c := NewCollector(idx, func() *sql.DB { return db })
+	c := NewCollector(slog.New(slog.NewTextHandler(t.Output(), nil)), idx, func() *sql.DB { return db })
 	c.RegisterSource(&testSource{name: "test", tables: []string{"items"}})
 
 	if err := c.FullSync(); err != nil {
@@ -158,7 +159,7 @@ func TestCollectorIgnoresUnknownTables(t *testing.T) {
 
 	ctx := t.Context()
 
-	c := NewCollector(idx, func() *sql.DB { return db })
+	c := NewCollector(slog.New(slog.NewTextHandler(t.Output(), nil)), idx, func() *sql.DB { return db })
 	c.RegisterSource(&testSource{name: "test", tables: []string{"items"}})
 	c.Start(ctx)
 

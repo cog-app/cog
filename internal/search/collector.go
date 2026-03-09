@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -18,6 +18,7 @@ const (
 // Collector accumulates database changes and flushes them to a search index
 // in batches. It deduplicates changes within a batch window.
 type Collector struct {
+	log      *slog.Logger
 	ch       chan Change
 	index    *Index
 	sources  map[string]SearchSource // name -> source
@@ -30,8 +31,9 @@ type Collector struct {
 
 // NewCollector creates a new collector that writes to the given index.
 // dbFunc returns the database to pass to SearchSource.Enrich.
-func NewCollector(index *Index, dbFunc func() *sql.DB) *Collector {
+func NewCollector(log *slog.Logger, index *Index, dbFunc func() *sql.DB) *Collector {
 	return &Collector{
+		log:      log,
 		ch:       make(chan Change, chanBufSize),
 		index:    index,
 		sources:  make(map[string]SearchSource),
@@ -143,7 +145,7 @@ func (c *Collector) flush(pending map[SearchSource]map[int64]Op) {
 			var err error
 			docs, err = src.Enrich(db, enrichIDs)
 			if err != nil {
-				log.Printf("search: enrich %s: %v", src.Name(), err)
+				c.log.Error("enrich failed", "source", src.Name(), "err", err)
 				continue
 			}
 
@@ -164,7 +166,7 @@ func (c *Collector) flush(pending map[SearchSource]map[int64]Op) {
 			continue
 		}
 		if err := c.index.Batch(docs, deleteIDs); err != nil {
-			log.Printf("search: batch %s: %v", src.Name(), err)
+			c.log.Error("batch failed", "source", src.Name(), "err", err)
 		}
 	}
 }
@@ -179,19 +181,19 @@ func (c *Collector) FullSync() error {
 		if ss, ok := src.(SelfSyncer); ok {
 			docs, err := ss.SelfSync()
 			if err != nil {
-				log.Printf("search: full sync self-sync %s: %v", src.Name(), err)
+				c.log.Error("full sync self-sync failed", "source", src.Name(), "err", err)
 				continue
 			}
 			if len(docs) > 0 {
 				if err := c.index.Batch(docs, nil); err != nil {
-					log.Printf("search: full sync batch %s: %v", src.Name(), err)
+					c.log.Error("full sync batch failed", "source", src.Name(), "err", err)
 				}
 			}
 			continue
 		}
 
 		if db == nil {
-			log.Printf("search: full sync skip %s: no database", src.Name())
+			c.log.Warn("full sync skip: no database", "source", src.Name())
 			continue
 		}
 
@@ -199,7 +201,7 @@ func (c *Collector) FullSync() error {
 		for _, table := range src.Tables() {
 			rows, err := db.Query(fmt.Sprintf("SELECT rowid FROM %s", table))
 			if err != nil {
-				log.Printf("search: full sync query %s: %v", table, err)
+				c.log.Error("full sync query failed", "table", table, "err", err)
 				continue
 			}
 
@@ -222,11 +224,11 @@ func (c *Collector) FullSync() error {
 				end := min(i+batchMaxSize, len(rowIDs))
 				docs, err := src.Enrich(db, rowIDs[i:end])
 				if err != nil {
-					log.Printf("search: full sync enrich %s: %v", src.Name(), err)
+					c.log.Error("full sync enrich failed", "source", src.Name(), "err", err)
 					continue
 				}
 				if err := c.index.Batch(docs, nil); err != nil {
-					log.Printf("search: full sync batch %s: %v", src.Name(), err)
+					c.log.Error("full sync batch failed", "source", src.Name(), "err", err)
 				}
 			}
 		}

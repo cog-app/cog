@@ -5,9 +5,10 @@ package cog
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -45,16 +46,42 @@ func defaultBaseURL() string {
 
 func configFromEnv() config.Config {
 	return config.Config{
-		Addr:    envOr("COG_ADDR", ":8580"),
-		DBPath:  envOr("COG_DB", "system.db"),
-		DataDir: envOr("COG_DATA_DIR", "data"),
-		BaseURL: envOr("COG_BASE_URL", defaultBaseURL()),
+		Addr:      envOr("COG_ADDR", ":8580"),
+		DBPath:    envOr("COG_DB", "system.db"),
+		DataDir:   envOr("COG_DATA_DIR", "data"),
+		BaseURL:   envOr("COG_BASE_URL", defaultBaseURL()),
+		LogFormat: envOr("COG_LOG_FORMAT", "text"),
+		LogLevel:  envOr("COG_LOG_LEVEL", "info"),
 	}
+}
+
+// newLogger builds a *slog.Logger from config values.
+func newLogger(cfg config.Config) *slog.Logger {
+	var level slog.Level
+	switch strings.ToLower(cfg.LogLevel) {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+	opts := &slog.HandlerOptions{Level: level}
+	var handler slog.Handler
+	if strings.ToLower(cfg.LogFormat) == "json" {
+		handler = slog.NewJSONHandler(os.Stderr, opts)
+	} else {
+		handler = slog.NewTextHandler(os.Stderr, opts)
+	}
+	return slog.New(handler)
 }
 
 // openProviders creates a services.Providers from env-var config.
 func openProviders(plugins ...plugin.Plugin) (*services.Providers, error) {
-	return services.New(configFromEnv(), plugins...)
+	cfg := configFromEnv()
+	return services.New(newLogger(cfg), cfg, plugins...)
 }
 
 // Main starts a Cog server with optional additional plugins.
@@ -133,7 +160,8 @@ func buildCobraCmd(def plugin.CommandDef) *cobra.Command {
 // Run starts a Cog server with custom context, config and error handling.
 // See [Main] for using a default installation with custom plugins.
 func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
-	p, err := services.New(cfg, plugins...)
+	log := newLogger(cfg)
+	p, err := services.New(log, cfg, plugins...)
 	if err != nil {
 		return err
 	}
@@ -142,9 +170,9 @@ func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 	handler := web.New(p)
 
 	if err := p.StartSearch(ctx); err != nil {
-		log.Printf("Warning: search init failed: %v", err)
+		log.Warn("search init failed", "err", err)
 	}
 
-	log.Printf("Cog listening on %s", cfg.Addr)
+	log.Info("Cog listening", "addr", cfg.Addr)
 	return http.ListenAndServe(cfg.Addr, handler)
 }

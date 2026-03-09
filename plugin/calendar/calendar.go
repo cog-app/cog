@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ const PluginID = "calendar"
 type Plugin struct {
 	plugin.Protected
 	ctx    plugin.PluginContext
+	log    *slog.Logger
 	cancel context.CancelFunc
 	done   chan struct{}
 }
@@ -38,6 +40,7 @@ func (p *Plugin) ID() string { return PluginID }
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	p.log = ctx.Logger()
 
 	ctx.RegisterNavItem(plugin.NavItem{Label: "Calendar", URL: "/apps/calendar", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`})
 	ctx.RegisterWidget(plugin.Widget{

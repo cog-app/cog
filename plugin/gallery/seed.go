@@ -9,7 +9,6 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
-	"log"
 	"math"
 )
 
@@ -73,21 +72,21 @@ func (p *Plugin) Seed(username string) error {
 
 		var buf bytes.Buffer
 		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 85}); err != nil {
-			log.Printf("seed gallery: encode %s: %v", photo.path, err)
+			p.log.Error("seed encode", "path", photo.path, "err", err)
 			continue
 		}
 
 		if _, err := p.files.Upload(username, photo.path, &buf); err != nil {
-			log.Printf("seed gallery: upload %s: %v", photo.path, err)
+			p.log.Error("seed upload", "path", photo.path, "err", err)
 			continue
 		}
 	}
 
-	log.Printf("Seeded gallery with %d images, running initial scan...", len(seedPhotos))
+	p.log.Info("seeded gallery, running initial scan", "count", len(seedPhotos))
 
 	// Run the scanner immediately so media appears in the gallery right away.
 	if err := p.scanUser(context.Background(), username); err != nil {
-		log.Printf("seed gallery: scan: %v", err)
+		p.log.Error("seed scan", "err", err)
 	}
 
 	return nil

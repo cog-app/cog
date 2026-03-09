@@ -7,7 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -30,6 +30,7 @@ import (
 // Providers holds all runtime services and the config that created them.
 type Providers struct {
 	Config       config.Config
+	Log          *slog.Logger
 	DB           *sql.DB
 	Users        *user.Store
 	Sessions     *auth.SessionStore
@@ -48,8 +49,8 @@ type Providers struct {
 
 // New opens the system database and constructs all service providers.
 // It sets up the search manager with a hooked system DB for real-time indexing.
-func New(cfg config.Config, plugins ...plugin.Plugin) (*Providers, error) {
-	mgr := search.NewManager(cfg.DataDir)
+func New(log *slog.Logger, cfg config.Config, plugins ...plugin.Plugin) (*Providers, error) {
+	mgr := search.NewManager(log, cfg.DataDir)
 
 	// Open the system DB with update hook feeding the search collector.
 	sysDB, err := db.OpenHooked(cfg.DBPath, mgr.SystemHook())
@@ -63,7 +64,7 @@ func New(cfg config.Config, plugins ...plugin.Plugin) (*Providers, error) {
 
 	mgr.SetSystemDB(sysDB)
 
-	p := NewFromDB(cfg, sysDB, plugins...)
+	p := NewFromDB(log, cfg, sysDB, plugins...)
 	p.Search = mgr
 
 	// Wire the DB hook factory so per-user plugin DBs get update hooks.
@@ -76,7 +77,7 @@ func New(cfg config.Config, plugins ...plugin.Plugin) (*Providers, error) {
 
 // NewFromDB constructs providers from an existing database connection.
 // Useful for tests that use :memory: databases.
-func NewFromDB(cfg config.Config, sysDB *sql.DB, plugins ...plugin.Plugin) *Providers {
+func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, plugins ...plugin.Plugin) *Providers {
 	// Ensure dashboard and files plugins are always present.
 	var hasFiles, hasDash bool
 	for _, p := range plugins {
@@ -100,12 +101,12 @@ func NewFromDB(cfg config.Config, sysDB *sql.DB, plugins ...plugin.Plugin) *Prov
 
 	// Bootstrap default volume and root mounts for existing users.
 	if err := mount.Bootstrap(cfg.DataDir, users, volumes, mounts); err != nil {
-		log.Printf("mount bootstrap: %v", err)
+		log.Warn("mount bootstrap failed", "err", err)
 	}
 
 	secret := loadOrCreateSecret(sysDB)
 
-	registry := plugin.NewRegistry(cfg.DataDir, http.NewServeMux(), sysDB, secret)
+	registry := plugin.NewRegistry(log, cfg.DataDir, http.NewServeMux(), sysDB, secret)
 	for _, p := range plugins {
 		registry.Add(p)
 	}
@@ -118,6 +119,7 @@ func NewFromDB(cfg config.Config, sysDB *sql.DB, plugins ...plugin.Plugin) *Prov
 
 	return &Providers{
 		Config:       cfg,
+		Log:          log,
 		DB:           sysDB,
 		Users:        users,
 		Sessions:     auth.NewSessionStore(sysDB),

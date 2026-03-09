@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"maps"
 	"net/http"
 	"os"
@@ -45,6 +45,7 @@ type RegistryServices struct {
 // Registry manages plugin lifecycle, per-user database provisioning,
 // and HTTP route mounting.
 type Registry struct {
+	log           *slog.Logger
 	dataDir       string
 	plugins       map[string]Plugin
 	mux           *http.ServeMux
@@ -74,8 +75,9 @@ type Registry struct {
 // NewRegistry creates a new plugin registry.
 // dataDir is the root of user data (e.g. /var/lib/cog/data).
 // csrfSecret is used for plugin-scoped CSRF token generation.
-func NewRegistry(dataDir string, mux *http.ServeMux, sysDB *sql.DB, csrfSecret []byte) *Registry {
+func NewRegistry(log *slog.Logger, dataDir string, mux *http.ServeMux, sysDB *sql.DB, csrfSecret []byte) *Registry {
 	r := &Registry{
+		log:        log,
 		dataDir:    dataDir,
 		plugins:    make(map[string]Plugin),
 		mux:        mux,
@@ -128,7 +130,7 @@ func (r *Registry) Start(ctx context.Context) error {
 		if err := r.plugins[id].Start(ctx); err != nil {
 			return fmt.Errorf("start plugin %q: %w", id, err)
 		}
-		log.Printf("plugin %q started", id)
+		r.log.Info("plugin started", "plugin", id)
 	}
 	return nil
 }
@@ -138,7 +140,7 @@ func (r *Registry) Stop() {
 	for i := len(r.order) - 1; i >= 0; i-- {
 		id := r.order[i]
 		if err := r.plugins[id].Stop(); err != nil {
-			log.Printf("plugin %q stop error: %v", id, err)
+			r.log.Error("plugin stop failed", "plugin", id, "err", err)
 		}
 	}
 	r.mu.Lock()
@@ -261,7 +263,7 @@ func (r *Registry) UserFilesDir(username string) string {
 func (r *Registry) EnsureUserDirs(username string) error {
 	if r.mountResolver != nil {
 		if err := r.mountResolver.EnsureUserDirs(username); err != nil {
-			log.Printf("mount resolver EnsureUserDirs failed for %q, falling back: %v", username, err)
+			r.log.Warn("mount resolver EnsureUserDirs failed, falling back", "user", username, "err", err)
 		}
 	}
 
@@ -371,6 +373,10 @@ func (pr *pluginRegistrar) Widgets() []Widget {
 
 func (pr *pluginRegistrar) CSRFSecret() []byte {
 	return pr.csrfSecret
+}
+
+func (pr *pluginRegistrar) Logger() *slog.Logger {
+	return pr.registry.log.With("plugin", pr.pluginID)
 }
 
 func (pr *pluginRegistrar) ShareStore() ShareStore {

@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 
+	"log/slog"
+
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/internal/search"
@@ -84,10 +86,11 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 		DataDir: dataDir,
 	}
 
-	p := services.NewFromDB(cfg, sysDB, plugins...)
+	log := slog.New(slog.NewTextHandler(t.Output(), nil))
+	p := services.NewFromDB(log, cfg, sysDB, plugins...)
 
 	// Wire search manager for tests (uses temp dir, no hooks).
-	mgr := search.NewManager(dataDir)
+	mgr := search.NewManager(log, dataDir)
 	mgr.SetSystemDB(sysDB)
 	p.Search = mgr
 

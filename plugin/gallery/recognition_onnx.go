@@ -9,7 +9,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -91,7 +91,7 @@ func (b *OnnxBackend) init() {
 		// ArcFace is optional.
 		arcfacePath := filepath.Join(b.ModelsDir, arcfaceFile)
 		if err := ensureModel(arcfacePath, arcfaceURL); err != nil {
-			log.Printf("gallery: arcface model unavailable: %v", err)
+			slog.Warn("arcface model unavailable", "err", err)
 		} else {
 			b.hasArcface = true
 		}
@@ -102,7 +102,7 @@ func ensureModel(path, url string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
-	log.Printf("gallery: downloading model %s", filepath.Base(path))
+	slog.Info("downloading model", "model", filepath.Base(path))
 	resp, err := http.Get(url) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("download %s: %w", url, err)
@@ -148,7 +148,7 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 	// MobileNet classification on full image.
 	tags, err := b.classifyImage(img)
 	if err != nil {
-		log.Printf("gallery: onnx classify %s: %v", imagePath, err)
+		slog.Warn("onnx classify", "path", imagePath, "err", err)
 	} else {
 		result.Tags = tags
 	}
@@ -156,12 +156,12 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 	// Face detection via pigo, then ArcFace embeddings.
 	pigoResult, err := b.pigo.Analyze(ctx, imagePath)
 	if err != nil {
-		log.Printf("gallery: onnx face detect %s: %v", imagePath, err)
+		slog.Warn("onnx face detect", "path", imagePath, "err", err)
 	} else if b.hasArcface {
 		for _, face := range pigoResult.Faces {
 			embedding, err := b.computeFaceEmbedding(img, &face)
 			if err != nil {
-				log.Printf("gallery: onnx arcface: %v", err)
+				slog.Warn("onnx arcface", "err", err)
 				result.Faces = append(result.Faces, face)
 				continue
 			}

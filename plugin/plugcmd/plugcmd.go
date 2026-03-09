@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -265,6 +266,7 @@ func (r *capturingRegistrar) EmailSender() cogplugin.EmailSender { return nil }
 func (r *capturingRegistrar) UserLookup() cogplugin.UserLookup   { return nil }
 func (r *capturingRegistrar) GroupStore() cogplugin.GroupStore   { return nil }
 func (r *capturingRegistrar) FilesAccess() cogplugin.FilesAccess { return nil }
+func (r *capturingRegistrar) Logger() *slog.Logger              { return slog.Default() }
 
 // responseCapture is a minimal http.ResponseWriter for capturing plugin responses.
 type responseCapture struct {

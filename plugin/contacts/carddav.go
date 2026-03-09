@@ -5,7 +5,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -50,12 +49,12 @@ func (h *CardDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		db, err := h.plugin.DB(u.Username)
 		if err != nil {
-			log.Printf("carddav: db error for %s: %v", u.Username, err)
+			h.plugin.log.Error("db error", "user", u.Username, "err", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 		if err := EnsureDefaultAddressBook(db); err != nil {
-			log.Printf("carddav: ensure default address book: %v", err)
+			h.plugin.log.Warn("ensure default address book", "err", err)
 		}
 		h.dispatch(w, r, db, u.Username)
 		return
@@ -72,7 +71,7 @@ func (h *CardDAVHandler) dispatchShared(w http.ResponseWriter, r *http.Request, 
 
 	targetDB, err := h.plugin.DB(targetUser)
 	if err != nil {
-		log.Printf("carddav: shared db for %s: %v", targetUser, err)
+		h.plugin.log.Error("shared db", "user", targetUser, "err", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -252,7 +251,7 @@ func (h *CardDAVHandler) addressBookCollection(w http.ResponseWriter, r *http.Re
 		h.mkAddressBook(w, r, db, bookUID)
 	case http.MethodDelete:
 		if err := DeleteAddressBook(db, book.ID); err != nil {
-			log.Printf("carddav: delete address book %d: %v", book.ID, err)
+			h.plugin.log.Error("delete address book", "book_id", book.ID, "err", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -284,7 +283,7 @@ func (h *CardDAVHandler) mkAddressBook(w http.ResponseWriter, r *http.Request, d
 
 	_, err := CreateAddressBook(db, bookUID, name, description, color)
 	if err != nil {
-		log.Printf("carddav: create address book %s: %v", bookUID, err)
+		h.plugin.log.Error("create address book", "uid", bookUID, "err", err)
 		http.Error(w, "Conflict", http.StatusConflict)
 		return
 	}
@@ -348,7 +347,7 @@ func (h *CardDAVHandler) card(w http.ResponseWriter, r *http.Request, db *sql.DB
 
 		c, err := UpsertCard(db, book.ID, cardUID, cardURI, vcardData, fields)
 		if err != nil {
-			log.Printf("carddav: upsert card %s: %v", cardUID, err)
+			h.plugin.log.Error("upsert card", "uid", cardUID, "err", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -508,7 +507,7 @@ func (h *CardDAVHandler) handleProppatch(w http.ResponseWriter, r *http.Request,
 	}
 
 	if err := UpdateAddressBook(db, book.ID, name, description, color); err != nil {
-		log.Printf("carddav: update address book %d: %v", book.ID, err)
+		h.plugin.log.Error("update address book", "book_id", book.ID, "err", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}

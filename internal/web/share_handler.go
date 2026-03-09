@@ -3,7 +3,6 @@ package web
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -101,13 +100,14 @@ func (h *shareHandler) CreateShareForm(w http.ResponseWriter, r *http.Request) {
 
 	_, err := h.p.Shares.Create(u.ID, resType, resID, "USER", subjectID, perms)
 	if err != nil {
-		log.Printf("share create error: %v", err)
+		h.p.Log.Error("share create failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Return the refreshed panel via HTMX.
-	r.URL.RawQuery = fmt.Sprintf("type=%s&id=%s", resType, resID)
+	scope := r.FormValue("panel_id")
+	r.URL.RawQuery = fmt.Sprintf("type=%s&id=%s&scope=%s", resType, resID, scope)
 	h.SharePanel(w, r)
 }
 
@@ -133,12 +133,13 @@ func (h *shareHandler) CreatePublicLinkForm(w http.ResponseWriter, r *http.Reque
 
 	_, err := h.p.Shares.CreatePublicLink(u.ID, resType, resID, perms, nil)
 	if err != nil {
-		log.Printf("public link create error: %v", err)
+		h.p.Log.Error("public link create failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	r.URL.RawQuery = fmt.Sprintf("type=%s&id=%s", resType, resID)
+	scope := r.FormValue("panel_id")
+	r.URL.RawQuery = fmt.Sprintf("type=%s&id=%s&scope=%s", resType, resID, scope)
 	h.SharePanel(w, r)
 }
 

@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
-	"log"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
@@ -133,6 +132,6 @@ func (p *Plugin) Seed(username string) error {
 			feed.ID, guid, a.title, link, a.body, pubAt, hash)
 	}
 
-	log.Printf("Seeded RSS feed: Go Blog (seed) (3 initial + new on each poll)")
+	p.log.Info("seeded RSS feed", "name", "Go Blog (seed)", "initial", 3)
 	return nil
 }

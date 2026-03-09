@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"time"
 )
 
@@ -120,7 +119,7 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		result, err := backend.Analyze(ctx, imagePath)
 		now := time.Now().Unix()
 		if err != nil {
-			log.Printf("gallery: recognize %s: %v", m.FilePath, err)
+			p.log.Error("recognize", "path", m.FilePath, "err", err)
 			db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ? WHERE id = ?`, now, m.ID)
 			continue
 		}

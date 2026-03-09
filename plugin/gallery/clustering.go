@@ -3,7 +3,7 @@ package gallery
 import (
 	"database/sql"
 	"encoding/binary"
-	"log"
+	"log/slog"
 	"math"
 )
 
@@ -68,7 +68,7 @@ func clusterFaces(db *sql.DB) error {
 			// Create new person cluster.
 			res, err := db.Exec(`INSERT INTO people (name) VALUES ('')`)
 			if err != nil {
-				log.Printf("gallery: create person cluster: %v", err)
+				slog.Error("create person cluster", "err", err)
 				continue
 			}
 			personID, _ := res.LastInsertId()

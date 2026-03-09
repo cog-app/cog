@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
@@ -22,6 +23,7 @@ const PluginID = "tasks"
 type Plugin struct {
 	plugin.Protected
 	ctx plugin.PluginContext
+	log *slog.Logger
 }
 
 // New creates a new Tasks plugin instance.
@@ -33,6 +35,7 @@ func (p *Plugin) ID() string { return PluginID }
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	p.log = ctx.Logger()
 
 	ctx.RegisterNavItem(plugin.NavItem{Label: "Tasks", URL: "/apps/tasks", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>`})
 	ctx.RegisterWidget(plugin.Widget{

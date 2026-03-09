@@ -9,6 +9,7 @@ import (
 	"embed"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -24,6 +25,7 @@ const PluginID = "bookmarks"
 // Plugin is the bookmarks plugin.
 type Plugin struct {
 	ctx plugin.PluginContext
+	log *slog.Logger
 }
 
 // New creates a new Bookmarks plugin instance.
@@ -35,6 +37,7 @@ func (p *Plugin) ID() string { return PluginID }
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	p.log = ctx.Logger()
 
 	ctx.RegisterNavItem(plugin.NavItem{Label: "Bookmarks", URL: "/apps/bookmarks", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`})
 	ctx.RegisterWidget(plugin.Widget{

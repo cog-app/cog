@@ -19,6 +19,7 @@ templ Base(pd PageData) {
 			<link rel="stylesheet" href="/static/style.css"/>
 			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
 			<script src="/static/htmx.min.js"></script>
+			<script src="/static/cog-share.js" defer></script>
 		</head>
 		<body hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, pd.CSRFToken) }>
 			<nav class="navbar">
@@ -199,6 +200,7 @@ templ Shell(pd PageData, body templ.Component) {
 			<link rel="stylesheet" href="/static/style.css"/>
 			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
 			<script src="/static/htmx.min.js"></script>
+			<script src="/static/cog-share.js" defer></script>
 		</head>
 		<body hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, pd.CSRFToken) }>
 			<nav class="navbar">

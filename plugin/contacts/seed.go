@@ -5,7 +5,6 @@ package contacts
 import (
 	"crypto/md5"
 	"fmt"
-	"log"
 )
 
 // Seed creates sample address books and contacts for a user.
@@ -53,9 +52,9 @@ func (p *Plugin) Seed(username string) error {
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			bookID, c.uid, uri, etag, c.fn, c.email, c.tel, vc)
 		if err != nil {
-			log.Printf("seed contact %s: %v", c.uid, err)
+			p.log.Error("seed contact", "uid", c.uid, "err", err)
 		} else {
-			log.Printf("Seeded contact: %s", c.fn)
+			p.log.Info("seeded contact", "name", c.fn)
 		}
 	}
 

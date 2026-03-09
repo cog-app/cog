@@ -3,7 +3,7 @@ package gallery
 import (
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -65,7 +65,7 @@ func PreviewRename(db *sql.DB, pattern string) ([]RenamePreview, error) {
 		data := buildRenameData(m, 0)
 		var buf strings.Builder
 		if err := tmpl.Execute(&buf, data); err != nil {
-			log.Printf("gallery: rename template exec for %s: %v", m.FilePath, err)
+			slog.Warn("rename template exec", "path", m.FilePath, "err", err)
 			continue
 		}
 
@@ -76,7 +76,7 @@ func PreviewRename(db *sql.DB, pattern string) ([]RenamePreview, error) {
 
 		// Validate: path must not escape root.
 		if strings.Contains(newPath, "..") {
-			log.Printf("gallery: rename path traversal rejected: %s", newPath)
+			slog.Warn("rename path traversal rejected", "path", newPath)
 			continue
 		}
 
@@ -118,18 +118,18 @@ func (p *Plugin) ApplyRename(username string, previews []RenamePreview) error {
 
 	for _, pr := range previews {
 		if _, err := p.files.Rename(username, pr.OldPath, pr.NewPath); err != nil {
-			log.Printf("gallery: rename %s -> %s: %v", pr.OldPath, pr.NewPath, err)
+			p.log.Error("rename", "from", pr.OldPath, "to", pr.NewPath, "err", err)
 			continue
 		}
 
 		// Update gallery media path.
 		if _, err := db.Exec(`UPDATE media SET file_path = ? WHERE id = ?`, pr.NewPath, pr.MediaID); err != nil {
-			log.Printf("gallery: update media path %d: %v", pr.MediaID, err)
+			p.log.Error("update media path", "media_id", pr.MediaID, "err", err)
 		}
 
 		// Log for undo.
 		if err := LogRename(db, batchID, pr.FileID, pr.OldPath, pr.NewPath); err != nil {
-			log.Printf("gallery: log rename: %v", err)
+			p.log.Error("log rename", "err", err)
 		}
 	}
 
@@ -155,12 +155,12 @@ func (p *Plugin) UndoLastRename(username string) error {
 	for i := len(entries) - 1; i >= 0; i-- {
 		e := entries[i]
 		if _, err := p.files.Rename(username, e.NewPath, e.OldPath); err != nil {
-			log.Printf("gallery: undo rename %s -> %s: %v", e.NewPath, e.OldPath, err)
+			p.log.Error("undo rename", "from", e.NewPath, "to", e.OldPath, "err", err)
 			continue
 		}
 		// Update gallery media path.
 		if _, err := db.Exec(`UPDATE media SET file_path = ? WHERE file_id = ?`, e.OldPath, e.FileID); err != nil {
-			log.Printf("gallery: undo update media path file_id=%d: %v", e.FileID, err)
+			p.log.Error("undo update media path", "file_id", e.FileID, "err", err)
 		}
 	}
 

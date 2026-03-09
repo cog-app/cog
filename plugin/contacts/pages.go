@@ -8,7 +8,6 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -67,7 +66,7 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	for _, sb := range h.plugin.sharedBooks(u.ID) {
 		ownerDB, err := h.plugin.DB(sb.OwnerUsername)
 		if err != nil {
-			log.Printf("contacts: shared db for %s: %v", sb.OwnerUsername, err)
+			h.plugin.log.Error("shared db", "user", sb.OwnerUsername, "err", err)
 			continue
 		}
 		books = append(books, *sb.Book)

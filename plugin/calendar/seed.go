@@ -5,7 +5,6 @@ package calendar
 import (
 	"crypto/md5"
 	"fmt"
-	"log"
 	"time"
 )
 
@@ -99,9 +98,9 @@ func (p *Plugin) Seed(username string) error {
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			calID, ev.uid, etag, ev.summary, ev.loc, ev.desc, ev.start.Unix(), ev.end.Unix(), ev.allDay, icsData)
 		if err != nil {
-			log.Printf("seed calendar event %s: %v", ev.uid, err)
+			p.log.Error("seed event", "uid", ev.uid, "err", err)
 		} else {
-			log.Printf("Seeded calendar event: %s", ev.summary)
+			p.log.Info("seeded event", "summary", ev.summary)
 		}
 	}
 

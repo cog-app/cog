@@ -6,7 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -24,6 +24,7 @@ const PluginID = "contacts"
 type Plugin struct {
 	plugin.Protected
 	ctx plugin.PluginContext
+	log *slog.Logger
 }
 
 // New creates a new Contacts plugin instance.
@@ -51,7 +52,7 @@ func (p *Plugin) sharedBooks(userID string) []sharedAddressBook {
 	var result []sharedAddressBook
 	for rec, err := range shares.ListBySubject(userID) {
 		if err != nil {
-			log.Printf("contacts: list shared books: %v", err)
+			p.log.Error("list shared books", "err", err)
 			break
 		}
 		if rec.ResourceType != "contacts:address_book" {
@@ -59,13 +60,13 @@ func (p *Plugin) sharedBooks(userID string) []sharedAddressBook {
 		}
 		ownerUser, err := users.GetByID(rec.OwnerUserID)
 		if err != nil {
-			log.Printf("contacts: lookup user %s: %v", rec.OwnerUserID, err)
+			p.log.Error("lookup user", "user_id", rec.OwnerUserID, "err", err)
 			continue
 		}
 		ownerUsername := ownerUser.Username
 		ownerDB, err := p.DB(ownerUsername)
 		if err != nil {
-			log.Printf("contacts: db for %s: %v", ownerUsername, err)
+			p.log.Error("db for user", "user", ownerUsername, "err", err)
 			continue
 		}
 		book, err := GetAddressBookByUID(ownerDB, rec.ResourceID)
@@ -99,6 +100,7 @@ func (p *Plugin) ID() string { return PluginID }
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	p.log = ctx.Logger()
 
 	ctx.RegisterNavItem(plugin.NavItem{Label: "Contacts", URL: "/apps/contacts", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>`})
 	ctx.RegisterWidget(plugin.Widget{

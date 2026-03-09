@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"iter"
+	"log/slog"
 )
 
 // PluginContext is the combined registration and service interface passed to
@@ -27,6 +28,9 @@ type PluginContext interface {
 
 	// CSRFSecret returns the CSRF secret for token generation.
 	CSRFSecret() []byte
+
+	// Logger returns a structured logger pre-tagged with the plugin ID.
+	Logger() *slog.Logger
 
 	// Optional service accessors — return nil if the service is unavailable.
 	ShareStore() ShareStore

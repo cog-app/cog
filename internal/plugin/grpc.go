@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -63,7 +62,7 @@ func (g *grpcPlugin) Register(ctx cogplugin.PluginContext) error {
 		case *plugpb.RegistrationEvent_Hook:
 			registrar.RegisterHook(e.Hook.HookName, func(ctx context.Context, data any) {
 				// Hook callbacks over gRPC are fire-and-forget for now.
-				log.Printf("grpc plugin %s: hook %s fired (no-op over gRPC)", g.id, e.Hook.HookName)
+				registrar.Logger().Debug("hook fired (no-op over gRPC)", "hook", e.Hook.HookName)
 			})
 		case *plugpb.RegistrationEvent_NavItem:
 			registrar.RegisterNavItem(cogplugin.NavItem{
