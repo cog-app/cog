@@ -75,7 +75,8 @@ type Registrar interface {
 // The Handler renders a content fragment (GET); Action handles form submissions (POST).
 // Settings pages are admin-only and wrapped with the HTML shell automatically.
 type SettingsPage struct {
-	Name    string       // optional display name
+	Slug    string       // URL path segment (e.g. "recognition"); empty for the plugin's default page
+	Name    string       // display name in sidebar (e.g. "Recognition"); empty uses plugin display name
 	Handler http.Handler // GET — renders page content fragment
 	Action  http.Handler // POST — handles form submission (optional)
 }

@@ -359,6 +359,16 @@ func (r *Registry) RootDB(pluginID string) (*sql.DB, error) {
 }
 
 // SettingsItems returns sidebar items for plugins that have settings pages.
+// pluginDisplayName returns the display name for a plugin.
+// It uses the first nav item label if available, otherwise the plugin ID.
+func (r *Registry) pluginDisplayName(id string) string {
+	if reg, ok := r.registrars[id]; ok && len(reg.navItems) > 0 {
+		return reg.navItems[0].Label
+	}
+	return id
+}
+
+// SettingsItems returns sidebar items for plugins that have settings pages.
 func (r *Registry) SettingsItems() []ui.SidebarItem {
 	var items []ui.SidebarItem
 	for _, id := range r.order {
@@ -369,22 +379,31 @@ func (r *Registry) SettingsItems() []ui.SidebarItem {
 		if len(reg.settingsPages) == 0 {
 			continue
 		}
+		displayName := r.pluginDisplayName(id)
 		if len(reg.settingsPages) == 1 {
-			label := id
-			if reg.settingsPages[0].Name != "" {
-				label = id + ": " + reg.settingsPages[0].Name
+			sp := reg.settingsPages[0]
+			label := displayName
+			if sp.Name != "" {
+				label = displayName + ": " + sp.Name
+			}
+			url := "/admin/plugins/" + id
+			if sp.Slug != "" {
+				url += "/" + sp.Slug
 			}
 			items = append(items, ui.SidebarItem{
 				Label: label,
-				URL:   "/admin/plugins/" + id,
+				URL:   url,
 			})
 		} else {
-			parent := ui.SidebarItem{Label: id}
+			parent := ui.SidebarItem{Label: displayName}
 			for _, sp := range reg.settingsPages {
-				slug := strings.ToLower(strings.ReplaceAll(sp.Name, " ", "-"))
+				url := "/admin/plugins/" + id
+				if sp.Slug != "" {
+					url += "/" + sp.Slug
+				}
 				child := ui.SidebarItem{
 					Label: sp.Name,
-					URL:   "/admin/plugins/" + id + "/" + slug,
+					URL:   url,
 				}
 				parent.Children = append(parent.Children, child)
 			}
@@ -706,12 +725,11 @@ func (pr *pluginRegistrar) RegisterDAVHandler(prefix string, handler http.Handle
 
 func (pr *pluginRegistrar) RegisterSettingsPage(page SettingsPage) {
 	pr.settingsPages = append(pr.settingsPages, page)
-	slug := strings.ToLower(strings.ReplaceAll(page.Name, " ", "-"))
 	var basePath string
-	if slug == "" {
+	if page.Slug == "" {
 		basePath = fmt.Sprintf("/admin/plugins/%s", pr.pluginID)
 	} else {
-		basePath = fmt.Sprintf("/admin/plugins/%s/%s", pr.pluginID, slug)
+		basePath = fmt.Sprintf("/admin/plugins/%s/%s", pr.pluginID, page.Slug)
 	}
 	getHandler := auth.RequireAuthWeb(auth.RequireAdmin(
 		pr.injectPluginContext(pr.adminSettingsShellMiddleware(page.Handler))))
