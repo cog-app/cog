@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"encoding/base64"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -19,6 +20,15 @@ type PageData struct {
 	IsAdmin            bool
 	PluginID           string       // owning plugin; rendered as data-plugin on <main> for web components
 	PluginSettingsNav  []SidebarItem // plugin-registered admin settings items (shown below divider)
+	Favicon            string       // favicon URL; empty uses default /static/favicon.svg
+}
+
+// FaviconURL returns the favicon URL, defaulting to /static/favicon.svg.
+func (pd PageData) FaviconURL() string {
+	if pd.Favicon != "" {
+		return pd.Favicon
+	}
+	return "/static/favicon.svg"
 }
 
 // NavItem is a navigation link in the navbar.
@@ -27,6 +37,34 @@ type NavItem struct {
 	URL    string
 	Active bool
 	Icon   string
+}
+
+// IconToFavicon converts a nav icon SVG string into a data URI suitable for a favicon.
+// It adds xmlns, fill="none", and stroke color so the icon renders correctly standalone.
+func IconToFavicon(icon string) string {
+	if icon == "" {
+		return ""
+	}
+	svg := strings.ReplaceAll(icon, "currentColor", "#0070f3")
+	svg = strings.Replace(svg, `class="nav-icon"`, "", 1)
+	// Add attributes needed for standalone SVG rendering.
+	attrs := ""
+	if !strings.Contains(svg, "xmlns") {
+		attrs += `xmlns="http://www.w3.org/2000/svg" `
+	}
+	if !strings.Contains(svg, "fill=") {
+		attrs += `fill="none" `
+	}
+	if !strings.Contains(svg, "stroke=") {
+		attrs += `stroke="#0070f3" `
+	}
+	if !strings.Contains(svg, "stroke-width=") {
+		attrs += `stroke-width="2" stroke-linecap="round" stroke-linejoin="round" `
+	}
+	if attrs != "" {
+		svg = strings.Replace(svg, "<svg ", "<svg "+attrs, 1)
+	}
+	return "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString([]byte(svg))
 }
 
 // PageLink is a page/app that can appear in search results.

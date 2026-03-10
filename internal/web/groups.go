@@ -331,6 +331,24 @@ func (h *groupHandler) RevokeInvite(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// DeleteGroup handles POST /settings/groups/{id}/delete.
+func (h *groupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	groupID := r.PathValue("id")
+	if !h.canManageGroup(groupID, u) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	base := groupBasePath(r)
+	if err := h.p.Groups.Delete(groupID); err != nil {
+		setFlash(w, "error", "Failed to delete group: "+err.Error())
+		http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
+		return
+	}
+	setFlash(w, "success", "Group deleted.")
+	http.Redirect(w, r, base, http.StatusSeeOther)
+}
+
 // AcceptInviteForm handles GET /invite/{token}.
 // Works for both authenticated and unauthenticated users.
 func (h *groupHandler) AcceptInviteForm(w http.ResponseWriter, r *http.Request) {

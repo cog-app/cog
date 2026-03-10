@@ -123,12 +123,21 @@ func (p *Plugin) pageData(r *http.Request, title string) ui.PageData {
 		}
 	}
 
+	var favicon string
+	for _, item := range nav {
+		if item.Active {
+			favicon = ui.IconToFavicon(item.Icon)
+			break
+		}
+	}
+
 	return ui.PageData{
 		Title:     title,
 		User:      u,
 		CSRFToken: csrf,
 		Nav:       nav,
 		PluginID:  "dashboard",
+		Favicon:   favicon,
 	}
 }
 

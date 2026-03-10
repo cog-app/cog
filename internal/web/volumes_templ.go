@@ -55,7 +55,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(vol.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 12, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 12, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -92,7 +92,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 				var templ_7745c5c3_Var5 templ.SafeURL
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/volumes/%s/mkdir?path=%s", vol.ID, dirPath)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 16, Col: 105}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 16, Col: 105}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -105,7 +105,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 17, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 17, Col: 64}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -118,7 +118,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 				var templ_7745c5c3_Var7 templ.SafeURL
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/volumes/%s/upload?path=%s", vol.ID, dirPath)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 21, Col: 106}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 21, Col: 106}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -131,7 +131,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 22, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 22, Col: 64}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {
@@ -149,7 +149,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 					var templ_7745c5c3_Var9 templ.SafeURL
 					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/volumes/%s/browse?path=%s", vol.ID, parentDir(dirPath))))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 40, Col: 102}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 40, Col: 102}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 					if templ_7745c5c3_Err != nil {
@@ -168,7 +168,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 					var templ_7745c5c3_Var10 string
 					templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs("file-" + safeDomID(f.Path))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 48, Col: 42}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 48, Col: 42}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 					if templ_7745c5c3_Err != nil {
@@ -186,7 +186,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 						var templ_7745c5c3_Var11 templ.SafeURL
 						templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/volumes/%s/browse?path=%s", vol.ID, f.Path)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 51, Col: 91}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 51, Col: 91}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 						if templ_7745c5c3_Err != nil {
@@ -199,7 +199,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 						var templ_7745c5c3_Var12 string
 						templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(f.Name)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 51, Col: 102}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 51, Col: 102}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 						if templ_7745c5c3_Err != nil {
@@ -217,7 +217,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 						var templ_7745c5c3_Var13 templ.SafeURL
 						templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/volumes/%s/download?path=%s", vol.ID, f.Path)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 53, Col: 93}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 53, Col: 93}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 						if templ_7745c5c3_Err != nil {
@@ -230,7 +230,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 						var templ_7745c5c3_Var14 string
 						templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(f.Name)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 53, Col: 104}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 53, Col: 104}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 						if templ_7745c5c3_Err != nil {
@@ -249,7 +249,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 						var templ_7745c5c3_Var15 string
 						templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(formatSize(f.Size))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 58, Col: 29}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 58, Col: 29}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 						if templ_7745c5c3_Err != nil {
@@ -264,7 +264,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 						var templ_7745c5c3_Var16 string
 						templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(f.ModTime.Format("2006-01-02 15:04"))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 63, Col: 47}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 63, Col: 47}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 						if templ_7745c5c3_Err != nil {
@@ -278,7 +278,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 					var templ_7745c5c3_Var17 string
 					templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/volumes/%s/file?path=%s", vol.ID, f.Path))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 69, Col: 76}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 69, Col: 76}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 					if templ_7745c5c3_Err != nil {
@@ -291,7 +291,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 					var templ_7745c5c3_Var18 string
 					templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs("#file-" + safeDomID(f.Path))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 70, Col: 49}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 70, Col: 49}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 					if templ_7745c5c3_Err != nil {
@@ -304,7 +304,7 @@ func volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items 
 					var templ_7745c5c3_Var19 string
 					templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs("Delete " + f.Name + "?")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 72, Col: 46}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 72, Col: 46}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 					if templ_7745c5c3_Err != nil {
@@ -363,7 +363,7 @@ func volumeBreadcrumbs(volID string, dirPath string) templ.Component {
 		var templ_7745c5c3_Var21 templ.SafeURL
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/volumes/" + volID + "/browse"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 85, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 85, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {
@@ -381,7 +381,7 @@ func volumeBreadcrumbs(volID string, dirPath string) templ.Component {
 			var templ_7745c5c3_Var22 templ.SafeURL
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/volumes/%s/browse?path=%s", volID, seg.Path)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 88, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 88, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 			if templ_7745c5c3_Err != nil {
@@ -394,7 +394,7 @@ func volumeBreadcrumbs(volID string, dirPath string) templ.Component {
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(seg.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `volumes.templ`, Line: 88, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volumes.templ`, Line: 88, Col: 99}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {

@@ -17,7 +17,7 @@ templ Base(pd PageData) {
 			<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
 			<title>{ pd.Title } — Cog</title>
 			<link rel="stylesheet" href="/static/style.css"/>
-			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+			<link rel="icon" href={ templ.SafeURL(pd.FaviconURL()) } type="image/svg+xml"/>
 			<script src="/static/htmx.min.js"></script>
 			<script src="/static/cog-share.js" defer></script>
 		</head>
@@ -207,7 +207,7 @@ templ Shell(pd PageData, body templ.Component) {
 			<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
 			<title>{ pd.Title } — Cog</title>
 			<link rel="stylesheet" href="/static/style.css"/>
-			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+			<link rel="icon" href={ templ.SafeURL(pd.FaviconURL()) } type="image/svg+xml"/>
 			<script src="/static/htmx.min.js"></script>
 			<script src="/static/cog-share.js" defer></script>
 		</head>

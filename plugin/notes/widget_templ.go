@@ -45,7 +45,7 @@ func recentNotesWidget(notes []Note) templ.Component {
 				var templ_7745c5c3_Var2 templ.SafeURL
 				templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/notes/note/%d", n.ID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `widget.templ`, Line: 11, Col: 69}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/notes/widget.templ`, Line: 11, Col: 69}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 				if templ_7745c5c3_Err != nil {
@@ -58,7 +58,7 @@ func recentNotesWidget(notes []Note) templ.Component {
 				var templ_7745c5c3_Var3 string
 				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(n.Title())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `widget.templ`, Line: 12, Col: 16}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/notes/widget.templ`, Line: 12, Col: 16}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 				if templ_7745c5c3_Err != nil {
@@ -76,7 +76,7 @@ func recentNotesWidget(notes []Note) templ.Component {
 					var templ_7745c5c3_Var4 string
 					templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(n.Category)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `widget.templ`, Line: 15, Col: 67}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/notes/widget.templ`, Line: 15, Col: 67}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 					if templ_7745c5c3_Err != nil {

@@ -45,14 +45,23 @@ func (h *Pages) pageData(r *http.Request, title string) ui.PageData {
 	if u != nil {
 		isAdmin = u.IsAdmin
 	}
+	nav := buildNav(r.URL.Path, h.plugin.ctx.NavItems())
+	var favicon string
+	for _, item := range nav {
+		if item.Active {
+			favicon = ui.IconToFavicon(item.Icon)
+			break
+		}
+	}
 	return ui.PageData{
 		Title:       title,
 		User:        u,
 		CSRFToken:   csrf,
-		Nav:         buildNav(r.URL.Path, h.plugin.ctx.NavItems()),
+		Nav:         nav,
 		RequestPath: r.URL.Path,
 		IsAdmin:     isAdmin,
 		PluginID:    "files",
+		Favicon:     favicon,
 	}
 }
 

@@ -31,14 +31,23 @@ func pageDataWithNav(r *http.Request, title string, secret []byte, registry *plu
 	if isAdmin && registry != nil {
 		pluginSettingsNav = registry.SettingsItems()
 	}
+	nav := buildNav(r.URL.Path, registry)
+	var favicon string
+	for _, item := range nav {
+		if item.Active {
+			favicon = ui.IconToFavicon(item.Icon)
+			break
+		}
+	}
 	return ui.PageData{
 		Title:             title,
 		User:              u,
 		CSRFToken:         csrf,
-		Nav:               buildNav(r.URL.Path, registry),
+		Nav:               nav,
 		RequestPath:       r.URL.Path,
 		IsAdmin:           isAdmin,
 		PluginSettingsNav: pluginSettingsNav,
+		Favicon:           favicon,
 	}
 }
 

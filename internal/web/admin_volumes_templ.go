@@ -99,7 +99,7 @@ func adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], f
 						var templ_7745c5c3_Var5 string
 						templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(v.Name)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 31, Col: 20}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 31, Col: 20}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 						if templ_7745c5c3_Err != nil {
@@ -112,7 +112,7 @@ func adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], f
 						var templ_7745c5c3_Var6 string
 						templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(v.URI)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 32, Col: 25}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 32, Col: 25}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 						if templ_7745c5c3_Err != nil {
@@ -125,7 +125,7 @@ func adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], f
 						var templ_7745c5c3_Var7 string
 						templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(v.Description)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 33, Col: 27}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 33, Col: 27}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 						if templ_7745c5c3_Err != nil {
@@ -223,7 +223,7 @@ func adminVolumeNewPage(pd ui.PageData, errMsg string) templ.Component {
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 51, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 51, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -305,7 +305,7 @@ func adminVolumeEditPage(pd ui.PageData, v *volume.Volume, flash string, flashKi
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(v.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 64, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 64, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -344,7 +344,7 @@ func adminVolumeEditPage(pd ui.PageData, v *volume.Volume, flash string, flashKi
 				var templ_7745c5c3_Var16 templ.SafeURL
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/admin/volumes/" + v.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 69, Col: 71}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 69, Col: 71}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
@@ -357,7 +357,7 @@ func adminVolumeEditPage(pd ui.PageData, v *volume.Volume, flash string, flashKi
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 70, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 70, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
@@ -412,7 +412,7 @@ func adminVolumeEditPage(pd ui.PageData, v *volume.Volume, flash string, flashKi
 				var templ_7745c5c3_Var19 string
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs("/admin/volumes/" + v.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 82, Col: 40}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 82, Col: 40}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {

@@ -80,7 +80,7 @@ func NewRegistry(log *slog.Logger, dataDir string, mux *http.ServeMux, sysDB *sq
 	r := &Registry{
 		log:         log,
 		dataDir:     dataDir,
-		rootDataDir: filepath.Join(filepath.Dir(dataDir), "app_data"),
+		rootDataDir: filepath.Join(dataDir, "app_data"),
 		plugins:     make(map[string]Plugin),
 		mux:         mux,
 		registrars:  make(map[string]*pluginRegistrar),
@@ -569,6 +569,14 @@ func (pr *pluginRegistrar) shellMiddleware(handler http.Handler) http.Handler {
 			title = "Cog"
 		}
 
+		var favicon string
+		for _, item := range nav {
+			if item.Active {
+				favicon = ui.IconToFavicon(item.Icon)
+				break
+			}
+		}
+
 		pd := ui.PageData{
 			Title:       title,
 			User:        u,
@@ -577,6 +585,7 @@ func (pr *pluginRegistrar) shellMiddleware(handler http.Handler) http.Handler {
 			RequestPath: r.URL.Path,
 			IsAdmin:     u != nil && u.IsAdmin,
 			PluginID:    pr.pluginID,
+			Favicon:     favicon,
 		}
 
 		// Copy any content headers set by the fragment (except those we override).

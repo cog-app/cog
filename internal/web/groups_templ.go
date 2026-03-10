@@ -80,7 +80,7 @@ func settingsGroupsPage(pd ui.PageData, ownedGroups []group.Group, memberGroups 
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 17, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 17, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -294,7 +294,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(d.Group.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 52, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 52, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -337,7 +337,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				var templ_7745c5c3_Var14 templ.SafeURL
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(d.BasePath + "/" + d.Group.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 62, Col: 76}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 62, Col: 76}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -350,7 +350,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 63, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 63, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -371,7 +371,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				var templ_7745c5c3_Var16 templ.SafeURL
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(d.BasePath))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 66, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 66, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
@@ -395,7 +395,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 			var templ_7745c5c3_Var17 templ.SafeURL
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(d.BasePath))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 70, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 70, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -426,7 +426,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				var templ_7745c5c3_Var19 templ.SafeURL
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/members"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 74, Col: 89}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 74, Col: 89}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
@@ -439,7 +439,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 75, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 75, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -476,7 +476,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				var templ_7745c5c3_Var21 string
 				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("member-%s-%s", d.Group.ID, m.MemberID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 96, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 96, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 				if templ_7745c5c3_Err != nil {
@@ -489,7 +489,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				var templ_7745c5c3_Var22 string
 				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(m.Username)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 97, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 97, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 				if templ_7745c5c3_Err != nil {
@@ -507,7 +507,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 					var templ_7745c5c3_Var23 templ.SafeURL
 					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/%s/members/%s/type", d.BasePath, d.Group.ID, m.MemberID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 100, Col: 124}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 100, Col: 124}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 					if templ_7745c5c3_Err != nil {
@@ -520,7 +520,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 					var templ_7745c5c3_Var24 string
 					templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 101, Col: 68}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 101, Col: 68}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 					if templ_7745c5c3_Err != nil {
@@ -538,7 +538,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 						var templ_7745c5c3_Var25 string
 						templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(group.Owner)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 104, Col: 38}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 104, Col: 38}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 						if templ_7745c5c3_Err != nil {
@@ -551,7 +551,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 						var templ_7745c5c3_Var26 string
 						templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(group.User)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 105, Col: 37}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 105, Col: 37}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 						if templ_7745c5c3_Err != nil {
@@ -569,7 +569,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 						var templ_7745c5c3_Var27 string
 						templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(group.Owner)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 107, Col: 38}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 107, Col: 38}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 						if templ_7745c5c3_Err != nil {
@@ -582,7 +582,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 						var templ_7745c5c3_Var28 string
 						templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(group.User)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 108, Col: 37}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 108, Col: 37}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 						if templ_7745c5c3_Err != nil {
@@ -601,7 +601,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 					var templ_7745c5c3_Var29 string
 					templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(m.MemberType)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 113, Col: 22}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 113, Col: 22}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 					if templ_7745c5c3_Err != nil {
@@ -620,7 +620,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 					var templ_7745c5c3_Var30 string
 					templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 120, Col: 88}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 120, Col: 88}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 					if templ_7745c5c3_Err != nil {
@@ -633,7 +633,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 					var templ_7745c5c3_Var31 string
 					templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#member-%s-%s", d.Group.ID, m.MemberID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 121, Col: 73}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 121, Col: 73}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 					if templ_7745c5c3_Err != nil {
@@ -652,7 +652,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 					var templ_7745c5c3_Var32 string
 					templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 128, Col: 88}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 128, Col: 88}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 					if templ_7745c5c3_Err != nil {
@@ -665,7 +665,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 					var templ_7745c5c3_Var33 string
 					templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#member-%s-%s", d.Group.ID, m.MemberID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 130, Col: 73}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 130, Col: 73}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 					if templ_7745c5c3_Err != nil {
@@ -711,7 +711,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				var templ_7745c5c3_Var35 templ.SafeURL
 				templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/invites"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 142, Col: 89}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 142, Col: 89}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 				if templ_7745c5c3_Err != nil {
@@ -724,7 +724,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				var templ_7745c5c3_Var36 string
 				templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 143, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 143, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 				if templ_7745c5c3_Err != nil {
@@ -737,7 +737,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				var templ_7745c5c3_Var37 string
 				templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(emailPlaceholder(d.SMTPAvailable))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 144, Col: 105}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 144, Col: 105}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 				if templ_7745c5c3_Err != nil {
@@ -750,7 +750,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				var templ_7745c5c3_Var38 string
 				templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(group.User)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 146, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 146, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 				if templ_7745c5c3_Err != nil {
@@ -763,7 +763,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				var templ_7745c5c3_Var39 string
 				templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(group.Owner)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 147, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 147, Col: 32}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 				if templ_7745c5c3_Err != nil {
@@ -796,7 +796,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 						var templ_7745c5c3_Var40 string
 						templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs("invite-" + inv.ID)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 166, Col: 34}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 166, Col: 34}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 						if templ_7745c5c3_Err != nil {
@@ -810,7 +810,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 							var templ_7745c5c3_Var41 string
 							templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(inv.Email)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 169, Col: 21}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 169, Col: 21}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 							if templ_7745c5c3_Err != nil {
@@ -829,7 +829,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 						var templ_7745c5c3_Var42 string
 						templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(inv.MemberType)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 174, Col: 28}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 174, Col: 28}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 						if templ_7745c5c3_Err != nil {
@@ -850,7 +850,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 						var templ_7745c5c3_Var43 string
 						templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s/%s/invites/%s", d.BasePath, d.Group.ID, inv.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 181, Col: 85}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 181, Col: 85}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 						if templ_7745c5c3_Err != nil {
@@ -863,7 +863,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 						var templ_7745c5c3_Var44 string
 						templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs("#invite-" + inv.ID)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 182, Col: 41}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 182, Col: 41}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 						if templ_7745c5c3_Err != nil {
@@ -906,7 +906,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				var templ_7745c5c3_Var46 templ.SafeURL
 				templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/delete"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 196, Col: 88}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 196, Col: 88}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 				if templ_7745c5c3_Err != nil {
@@ -919,7 +919,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				var templ_7745c5c3_Var47 string
 				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 197, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 197, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 				if templ_7745c5c3_Err != nil {
@@ -997,7 +997,7 @@ func inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, isL
 					var templ_7745c5c3_Var51 string
 					templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(g.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 209, Col: 89}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 209, Col: 89}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 					if templ_7745c5c3_Err != nil {
@@ -1010,7 +1010,7 @@ func inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, isL
 					var templ_7745c5c3_Var52 templ.SafeURL
 					templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/invite/" + inv.Token))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 210, Col: 71}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 210, Col: 71}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 					if templ_7745c5c3_Err != nil {
@@ -1023,7 +1023,7 @@ func inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, isL
 					var templ_7745c5c3_Var53 string
 					templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 211, Col: 65}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 211, Col: 65}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 					if templ_7745c5c3_Err != nil {
@@ -1065,7 +1065,7 @@ func inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, isL
 			var templ_7745c5c3_Var54 string
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(g.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 235, Col: 108}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 235, Col: 108}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 			if templ_7745c5c3_Err != nil {
@@ -1083,7 +1083,7 @@ func inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, isL
 				var templ_7745c5c3_Var55 string
 				templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(errMsg)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 237, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 237, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 				if templ_7745c5c3_Err != nil {
@@ -1101,7 +1101,7 @@ func inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, isL
 			var templ_7745c5c3_Var56 templ.SafeURL
 			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/invite/" + inv.Token))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 239, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 239, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 			if templ_7745c5c3_Err != nil {
@@ -1114,7 +1114,7 @@ func inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, isL
 			var templ_7745c5c3_Var57 templ.SafeURL
 			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/login?next=/invite/" + inv.Token))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 257, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 257, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 			if templ_7745c5c3_Err != nil {
@@ -1177,7 +1177,7 @@ func groupTable(groups []group.Group, urlPrefix string) templ.Component {
 			var templ_7745c5c3_Var60 string
 			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(g.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 279, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 279, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 			if templ_7745c5c3_Err != nil {
@@ -1190,7 +1190,7 @@ func groupTable(groups []group.Group, urlPrefix string) templ.Component {
 			var templ_7745c5c3_Var61 string
 			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(g.MemberCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `groups.templ`, Line: 280, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/groups.templ`, Line: 280, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 			if templ_7745c5c3_Err != nil {

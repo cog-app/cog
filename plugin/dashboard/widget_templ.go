@@ -49,7 +49,7 @@ func groupsWidget(groups []plugin.GroupInfo) templ.Component {
 				var templ_7745c5c3_Var2 templ.SafeURL
 				templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/settings/groups/%s", g.ID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `widget.templ`, Line: 15, Col: 69}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/dashboard/widget.templ`, Line: 15, Col: 69}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 				if templ_7745c5c3_Err != nil {
@@ -62,7 +62,7 @@ func groupsWidget(groups []plugin.GroupInfo) templ.Component {
 				var templ_7745c5c3_Var3 string
 				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(g.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `widget.templ`, Line: 16, Col: 13}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/dashboard/widget.templ`, Line: 16, Col: 13}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 				if templ_7745c5c3_Err != nil {

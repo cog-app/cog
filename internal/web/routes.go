@@ -82,6 +82,7 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("DELETE /settings/groups/{id}/members/{member_id}", csrfWeb(http.HandlerFunc(groupH.RemoveMember)))
 	mux.Handle("POST /settings/groups/{id}/invites", csrfWeb(http.HandlerFunc(groupH.CreateInvite)))
 	mux.Handle("DELETE /settings/groups/{id}/invites/{invite_id}", csrfWeb(http.HandlerFunc(groupH.RevokeInvite)))
+	mux.Handle("POST /settings/groups/{id}/delete", csrfWeb(http.HandlerFunc(groupH.DeleteGroup)))
 	// Invite acceptance (works for both authenticated and unauthenticated users)
 	mux.HandleFunc("GET /invite/{token}", groupH.AcceptInviteForm)
 	mux.HandleFunc("POST /invite/{token}", groupH.AcceptInvite)

@@ -68,7 +68,7 @@ func dashboardPage(pd ui.PageData, apps []AppLink, widgets []plugin.Widget, user
 					var templ_7745c5c3_Var3 templ.SafeURL
 					templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(app.URL))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `dashboard.templ`, Line: 22, Col: 37}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/dashboard/dashboard.templ`, Line: 22, Col: 37}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 					if templ_7745c5c3_Err != nil {
@@ -89,7 +89,7 @@ func dashboardPage(pd ui.PageData, apps []AppLink, widgets []plugin.Widget, user
 					var templ_7745c5c3_Var4 string
 					templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(app.Label)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `dashboard.templ`, Line: 26, Col: 45}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/dashboard/dashboard.templ`, Line: 26, Col: 45}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 					if templ_7745c5c3_Err != nil {
@@ -117,7 +117,7 @@ func dashboardPage(pd ui.PageData, apps []AppLink, widgets []plugin.Widget, user
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("margin-top:1.5rem;display:grid;grid-template-columns:repeat(%d,1fr);gap:1rem", columns))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `dashboard.templ`, Line: 32, Col: 116}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/dashboard/dashboard.templ`, Line: 32, Col: 116}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -168,7 +168,7 @@ func dashboardPage(pd ui.PageData, apps []AppLink, widgets []plugin.Widget, user
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(pd.User.Username)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `dashboard.templ`, Line: 43, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/dashboard/dashboard.templ`, Line: 43, Col: 52}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -229,7 +229,7 @@ func dashboardEditPage(pd ui.PageData, allWidgets []plugin.Widget, layout *Layou
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `dashboard.templ`, Line: 54, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/dashboard/dashboard.templ`, Line: 54, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -268,7 +268,7 @@ func dashboardEditPage(pd ui.PageData, allWidgets []plugin.Widget, layout *Layou
 						var templ_7745c5c3_Var12 string
 						templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(n))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `dashboard.templ`, Line: 63, Col: 66}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/dashboard/dashboard.templ`, Line: 63, Col: 66}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 						if templ_7745c5c3_Err != nil {
@@ -286,7 +286,7 @@ func dashboardEditPage(pd ui.PageData, allWidgets []plugin.Widget, layout *Layou
 						var templ_7745c5c3_Var13 string
 						templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(n))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `dashboard.templ`, Line: 65, Col: 66}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/dashboard/dashboard.templ`, Line: 65, Col: 66}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 						if templ_7745c5c3_Err != nil {
@@ -300,7 +300,7 @@ func dashboardEditPage(pd ui.PageData, allWidgets []plugin.Widget, layout *Layou
 					var templ_7745c5c3_Var14 string
 					templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(n))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `dashboard.templ`, Line: 67, Col: 24}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/dashboard/dashboard.templ`, Line: 67, Col: 24}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 					if templ_7745c5c3_Err != nil {
@@ -350,7 +350,7 @@ func dashboardEditPage(pd ui.PageData, allWidgets []plugin.Widget, layout *Layou
 						var templ_7745c5c3_Var16 string
 						templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(w.Title)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `dashboard.templ`, Line: 78, Col: 66}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/dashboard/dashboard.templ`, Line: 78, Col: 66}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 						if templ_7745c5c3_Err != nil {
@@ -368,7 +368,7 @@ func dashboardEditPage(pd ui.PageData, allWidgets []plugin.Widget, layout *Layou
 						var templ_7745c5c3_Var17 string
 						templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(w.Title)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `dashboard.templ`, Line: 80, Col: 66}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/dashboard/dashboard.templ`, Line: 80, Col: 66}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 						if templ_7745c5c3_Err != nil {
@@ -386,7 +386,7 @@ func dashboardEditPage(pd ui.PageData, allWidgets []plugin.Widget, layout *Layou
 					var templ_7745c5c3_Var18 string
 					templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(w.Title)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `dashboard.templ`, Line: 82, Col: 53}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/dashboard/dashboard.templ`, Line: 82, Col: 53}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 					if templ_7745c5c3_Err != nil {
