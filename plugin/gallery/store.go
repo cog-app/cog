@@ -585,6 +585,28 @@ func MergePeopleRows(db *sql.DB, targetID, sourceID int64) error {
 	return tx.Commit()
 }
 
+// --- Recognition Stats ---
+
+// RecognitionStats holds aggregate counts for recognition status across all media.
+type RecognitionStats struct {
+	TotalImages int
+	Pending     int
+	Done        int
+	Errored     int
+}
+
+// GetRecognitionStats returns recognition state counts for images.
+func GetRecognitionStats(db *sql.DB) (RecognitionStats, error) {
+	var s RecognitionStats
+	err := db.QueryRow(`SELECT
+		COUNT(*),
+		SUM(CASE WHEN recognition_state = 0 THEN 1 ELSE 0 END),
+		SUM(CASE WHEN recognition_state = 1 THEN 1 ELSE 0 END),
+		SUM(CASE WHEN recognition_state = 2 THEN 1 ELSE 0 END)
+		FROM media WHERE mime_type LIKE 'image/%'`).Scan(&s.TotalImages, &s.Pending, &s.Done, &s.Errored)
+	return s, err
+}
+
 // --- Settings ---
 
 // GetSetting returns a setting value or the default.

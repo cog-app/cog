@@ -376,12 +376,19 @@ func (r *Registry) SettingsItems() []ui.SidebarItem {
 			continue
 		}
 		reg := r.registrars[id]
-		if len(reg.settingsPages) == 0 {
+		// Collect only pages with a GET handler (skip action-only pages).
+		var visible []SettingsPage
+		for _, sp := range reg.settingsPages {
+			if sp.Handler != nil {
+				visible = append(visible, sp)
+			}
+		}
+		if len(visible) == 0 {
 			continue
 		}
 		displayName := r.pluginDisplayName(id)
-		if len(reg.settingsPages) == 1 {
-			sp := reg.settingsPages[0]
+		if len(visible) == 1 {
+			sp := visible[0]
 			label := displayName
 			if sp.Name != "" {
 				label = displayName + ": " + sp.Name
@@ -396,7 +403,7 @@ func (r *Registry) SettingsItems() []ui.SidebarItem {
 			})
 		} else {
 			parent := ui.SidebarItem{Label: displayName}
-			for _, sp := range reg.settingsPages {
+			for _, sp := range visible {
 				url := "/admin/plugins/" + id
 				if sp.Slug != "" {
 					url += "/" + sp.Slug
@@ -731,9 +738,11 @@ func (pr *pluginRegistrar) RegisterSettingsPage(page SettingsPage) {
 	} else {
 		basePath = fmt.Sprintf("/admin/plugins/%s/%s", pr.pluginID, page.Slug)
 	}
-	getHandler := auth.RequireAuthWeb(auth.RequireAdmin(
-		pr.injectPluginContext(pr.adminSettingsShellMiddleware(page.Handler))))
-	pr.mux.Handle("GET "+basePath, pr.wrap(getHandler))
+	if page.Handler != nil {
+		getHandler := auth.RequireAuthWeb(auth.RequireAdmin(
+			pr.injectPluginContext(pr.adminSettingsShellMiddleware(page.Handler))))
+		pr.mux.Handle("GET "+basePath, pr.wrap(getHandler))
+	}
 	if page.Action != nil {
 		postHandler := auth.RequireAuthWeb(auth.RequireAdmin(
 			pr.injectPluginContext(auth.RequireCSRF(pr.csrfSecret, page.Action))))

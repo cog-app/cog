@@ -47,6 +47,11 @@ func (p *Plugin) scanAllUsers(ctx context.Context) {
 	}
 }
 
+// ScanAllUsers runs the scan pipeline for all users. Exported for manual trigger.
+func (p *Plugin) ScanAllUsers(ctx context.Context) {
+	p.scanAllUsers(ctx)
+}
+
 // ScanUser runs the scan pipeline for a single user. Exported for manual trigger.
 func (p *Plugin) ScanUser(ctx context.Context, username string) error {
 	return p.scanUser(ctx, username)

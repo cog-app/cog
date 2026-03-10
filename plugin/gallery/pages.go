@@ -420,13 +420,20 @@ func (h *Pages) SaveRecognitionSettings(w http.ResponseWriter, r *http.Request) 
 
 // SystemSettings renders the system-level gallery settings page (admin only).
 func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
-	db, err := h.plugin.SystemDB()
+	sysDB, err := h.plugin.SystemDB()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	stats := h.plugin.AggregateRecognitionStats()
 	setTitle(w, "Gallery Settings")
-	systemSettingsPage(db, h.csrfToken(r)).Render(r.Context(), w)
+	systemSettingsPage(sysDB, stats, h.csrfToken(r)).Render(r.Context(), w)
+}
+
+// TriggerSystemScan triggers a full scan of all users from the admin page.
+func (h *Pages) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
+	go h.plugin.ScanAllUsers(context.Background())
+	http.Redirect(w, r, "/admin/plugins/gallery", http.StatusSeeOther)
 }
 
 // SaveSystemSettings saves system-level gallery settings.

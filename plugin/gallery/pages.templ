@@ -428,11 +428,37 @@ templ settingsPage(db *sql.DB, total int, csrfToken string) {
 }
 
 // --- System Settings Page (admin, rendered via RegisterSettingsPage) ---
-templ systemSettingsPage(db *sql.DB, csrfToken string) {
+templ systemSettingsPage(db *sql.DB, stats RecognitionStats, csrfToken string) {
 	<h1>Gallery Settings</h1>
 	<p class="text-muted" style="margin-bottom:1rem">
 		These settings apply to all users.
 	</p>
+	@ui.Card("Status") {
+		<table style="font-size:0.9rem;margin-bottom:0.75rem">
+			<tr>
+				<td class="text-muted" style="padding-right:1rem">Total images</td>
+				<td><strong>{ strconv.Itoa(stats.TotalImages) }</strong></td>
+			</tr>
+			<tr>
+				<td class="text-muted" style="padding-right:1rem">Recognition done</td>
+				<td>{ strconv.Itoa(stats.Done) }</td>
+			</tr>
+			<tr>
+				<td class="text-muted" style="padding-right:1rem">Pending</td>
+				<td>{ strconv.Itoa(stats.Pending) }</td>
+			</tr>
+			if stats.Errored > 0 {
+				<tr>
+					<td class="text-muted" style="padding-right:1rem">Errored</td>
+					<td>{ strconv.Itoa(stats.Errored) }</td>
+				</tr>
+			}
+		</table>
+		<form method="post" action="/admin/plugins/gallery/scan">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<button type="submit" class="btn btn-primary btn-sm">Scan All Users</button>
+		</form>
+	}
 	@ui.Card("Image Recognition") {
 		<form method="post" action="/admin/plugins/gallery">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>

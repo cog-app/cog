@@ -12,6 +12,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -102,6 +105,10 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		Handler: http.HandlerFunc(pages.SystemSettings),
 		Action:  http.HandlerFunc(pages.SaveSystemSettings),
 	})
+	ctx.RegisterSettingsPage(plugin.SettingsPage{
+		Slug:   "scan",
+		Action: http.HandlerFunc(pages.TriggerSystemScan),
+	})
 	ctx.RegisterAction("POST", "rename/preview", http.HandlerFunc(pages.RenamePreview))
 	ctx.RegisterAction("POST", "rename/apply", http.HandlerFunc(pages.RenameApply))
 	ctx.RegisterAction("POST", "rename/undo", http.HandlerFunc(pages.RenameUndo))
@@ -153,6 +160,39 @@ func (p *Plugin) SystemDB() (*sql.DB, error) {
 		return nil, fmt.Errorf("create gallery_settings: %w", err)
 	}
 	return db, nil
+}
+
+// AggregateRecognitionStats sums recognition stats across all user gallery databases.
+func (p *Plugin) AggregateRecognitionStats() RecognitionStats {
+	var total RecognitionStats
+	entries, err := os.ReadDir(p.ctx.DataDir())
+	if err != nil {
+		return total
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		username := entry.Name()
+		filesDBPath := filepath.Join(p.ctx.DataDir(), username, "app_data", "files", "plugin.db")
+		if _, err := os.Stat(filesDBPath); err != nil {
+			continue
+		}
+		db, err := p.DB(username)
+		if err != nil {
+			continue
+		}
+		s, err := GetRecognitionStats(db)
+		if err != nil {
+			p.log.Warn("recognition stats", "user", username, "err", err)
+			continue
+		}
+		total.TotalImages += s.TotalImages
+		total.Pending += s.Pending
+		total.Done += s.Done
+		total.Errored += s.Errored
+	}
+	return total
 }
 
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
