@@ -85,7 +85,7 @@ func (p *Plugin) Seed(username string) error {
 	p.log.Info("seeded gallery, running initial scan", "count", len(seedPhotos))
 
 	// Run the scanner immediately so media appears in the gallery right away.
-	if err := p.scanUser(context.Background(), username); err != nil {
+	if _, err := p.scanUser(context.Background(), username); err != nil {
 		p.log.Error("seed scan", "err", err)
 	}
 

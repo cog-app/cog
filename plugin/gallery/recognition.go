@@ -37,11 +37,14 @@ type RecognitionBackend interface {
 	Available() bool
 }
 
-// getRecognitionBackend returns the configured recognition backend from system settings, or nil.
-func (p *Plugin) getRecognitionBackend(db *sql.DB) RecognitionBackend {
+// getRecognitionBackend returns the configured recognition backend from system settings.
+func (p *Plugin) getRecognitionBackend(db *sql.DB) (RecognitionBackend, error) {
 	backend := GetSetting(db, "recognition_backend", "none")
-	if backend == "none" || GetSetting(db, "recognition_enabled", "false") != "true" {
-		return nil
+	if backend == "none" {
+		return nil, nil
+	}
+	if GetSetting(db, "recognition_enabled", "false") != "true" {
+		return nil, nil
 	}
 
 	url := GetSetting(db, "recognition_url", "")
@@ -51,16 +54,18 @@ func (p *Plugin) getRecognitionBackend(db *sql.DB) RecognitionBackend {
 	switch backend {
 	case "ollama":
 		b := &OllamaBackend{URL: url, Model: model}
-		if b.Available() {
-			return b
+		if !b.Available() {
+			return nil, fmt.Errorf("ollama backend not available (url=%q, model=%q)", url, model)
 		}
+		return b, nil
 	case "openai":
 		b := &OpenAIBackend{URL: url, APIKey: apiKey, Model: model}
-		if b.Available() {
-			return b
+		if !b.Available() {
+			return nil, fmt.Errorf("openai backend not available (url=%q)", url)
 		}
+		return b, nil
 	case "pigo":
-		return &PigoBackend{}
+		return &PigoBackend{}, nil
 	case "onnx":
 		modelsDir := GetSetting(db, "onnx_models_dir", "")
 		if modelsDir == "" {
@@ -70,21 +75,25 @@ func (p *Plugin) getRecognitionBackend(db *sql.DB) RecognitionBackend {
 			ModelsDir:   modelsDir,
 			LibraryPath: GetSetting(db, "onnx_library_path", ""),
 		}
-		if b.Available() {
-			return b
+		if !b.Available() {
+			return nil, fmt.Errorf("onnx backend not available: libonnxruntime.so not found (library_path=%q)", b.LibraryPath)
 		}
+		return b, nil
+	default:
+		return nil, fmt.Errorf("unknown recognition backend: %q", backend)
 	}
-
-	return nil
 }
 
 // runRecognition processes pending media through the recognition backend.
 func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string) error {
 	sysDB, err := p.SystemDB()
 	if err != nil {
-		return nil
+		return fmt.Errorf("system db: %w", err)
 	}
-	backend := p.getRecognitionBackend(sysDB)
+	backend, err := p.getRecognitionBackend(sysDB)
+	if err != nil {
+		return fmt.Errorf("recognition backend: %w", err)
+	}
 	if backend == nil {
 		return nil
 	}

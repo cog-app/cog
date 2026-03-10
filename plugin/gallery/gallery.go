@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -26,6 +27,14 @@ var sqlFS embed.FS
 
 const PluginID = "gallery"
 
+// ScanStatus holds the current state of the background scan job.
+type ScanStatus struct {
+	Running   bool
+	LastRun   time.Time
+	LastError error // first non-nil error from the scan
+	Warnings  []string
+}
+
 // Plugin is the gallery plugin.
 type Plugin struct {
 	ctx      plugin.PluginContext
@@ -34,6 +43,9 @@ type Plugin struct {
 	geocoder *Geocoder
 	cancel   context.CancelFunc
 	done     chan struct{}
+
+	scanMu     sync.Mutex
+	scanStatus ScanStatus
 }
 
 // New creates a new Gallery plugin instance.
@@ -90,6 +102,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAPI("api/timeline", http.HandlerFunc(pages.TimelineAPI))
 	ctx.RegisterAPI("api/media/{id}", http.HandlerFunc(pages.MediaDetailAPI))
 	ctx.RegisterAPI("api/media/{id}/thumbnail", http.HandlerFunc(pages.MediaThumbnail))
+	ctx.RegisterAPI("api/scan-status", http.HandlerFunc(pages.ScanStatusPartial))
 
 	ctx.RegisterAction("POST", "albums", http.HandlerFunc(pages.CreateAlbum))
 	ctx.RegisterAction("POST", "albums/{id}/add", http.HandlerFunc(pages.AddToAlbum))
@@ -204,6 +217,29 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) e
 	return recentPhotosWidget(media).Render(ctx, w)
 }
 
+// GetScanStatus returns a snapshot of the current scan job status.
+func (p *Plugin) GetScanStatus() ScanStatus {
+	p.scanMu.Lock()
+	defer p.scanMu.Unlock()
+	return p.scanStatus
+}
+
+// runScan executes scanAllUsers with status tracking.
+func (p *Plugin) runScan(ctx context.Context) {
+	p.scanMu.Lock()
+	p.scanStatus.Running = true
+	p.scanMu.Unlock()
+
+	warnings, err := p.scanAllUsersErr(ctx)
+
+	p.scanMu.Lock()
+	p.scanStatus.Running = false
+	p.scanStatus.LastRun = time.Now()
+	p.scanStatus.LastError = err
+	p.scanStatus.Warnings = warnings
+	p.scanMu.Unlock()
+}
+
 // scanLoop is the background scanning goroutine.
 func (p *Plugin) scanLoop(ctx context.Context) {
 	defer close(p.done)
@@ -219,9 +255,9 @@ func (p *Plugin) scanLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			p.scanAllUsers(ctx)
+			p.runScan(ctx)
 		case <-ticker.C:
-			p.scanAllUsers(ctx)
+			p.runScan(ctx)
 		}
 	}
 }

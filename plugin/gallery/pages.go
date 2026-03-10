@@ -426,8 +426,16 @@ func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stats := h.plugin.AggregateRecognitionStats()
+	scanStatus := h.plugin.GetScanStatus()
 	setTitle(w, "Gallery Settings")
-	systemSettingsPage(sysDB, stats, h.csrfToken(r)).Render(r.Context(), w)
+	systemSettingsPage(sysDB, stats, scanStatus, h.csrfToken(r)).Render(r.Context(), w)
+}
+
+// ScanStatusPartial returns the scan status card as an HTMX partial.
+func (h *Pages) ScanStatusPartial(w http.ResponseWriter, r *http.Request) {
+	stats := h.plugin.AggregateRecognitionStats()
+	scan := h.plugin.GetScanStatus()
+	scanStatusCard(stats, scan, h.csrfToken(r)).Render(r.Context(), w)
 }
 
 // TriggerSystemScan triggers a full scan of all users from the admin page.

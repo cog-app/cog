@@ -12,7 +12,20 @@ RUN apk add --no-cache \
 	tesseract-ocr \
 	tesseract-ocr-data-eng \
 	ffmpeg \
-	ca-certificates
+	ca-certificates \
+	libstdc++
+# ONNX Runtime for image recognition
+ARG ONNXRUNTIME_VERSION=1.22.0
+RUN set -eux; \
+	case "$(uname -m)" in \
+		x86_64) ORT_ARCH=x64 ;; \
+		aarch64) ORT_ARCH=aarch64 ;; \
+		*) echo "unsupported arch"; exit 1 ;; \
+	esac; \
+	wget -q "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}.tgz" -O /tmp/ort.tgz && \
+	tar -xzf /tmp/ort.tgz -C /tmp && \
+	cp /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}/lib/libonnxruntime.so* /usr/lib/ && \
+	rm -rf /tmp/ort.tgz /tmp/onnxruntime-*
 # LibreOffice is on its own line to minimize the size of the layer
 RUN apk add --no-cache --no-scripts \
 	libreoffice-writer \

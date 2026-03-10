@@ -21,16 +21,15 @@ func isMediaMIME(mimeType string) bool {
 	return strings.HasPrefix(mimeType, "image/") || strings.HasPrefix(mimeType, "video/")
 }
 
-// scanAllUsers scans all user data directories for new/changed media.
-func (p *Plugin) scanAllUsers(ctx context.Context) {
+// scanAllUsersErr scans all user data directories for new/changed media.
+func (p *Plugin) scanAllUsersErr(ctx context.Context) (warnings []string, err error) {
 	entries, err := os.ReadDir(p.ctx.DataDir())
 	if err != nil {
-		p.log.Error("scan dataDir", "err", err)
-		return
+		return nil, fmt.Errorf("read data dir: %w", err)
 	}
 	for _, entry := range entries {
 		if ctx.Err() != nil {
-			return
+			return warnings, ctx.Err()
 		}
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
@@ -41,45 +40,51 @@ func (p *Plugin) scanAllUsers(ctx context.Context) {
 		if _, err := os.Stat(filesDBPath); err != nil {
 			continue
 		}
-		if err := p.scanUser(ctx, username); err != nil {
+		userWarnings, err := p.scanUser(ctx, username)
+		warnings = append(warnings, userWarnings...)
+		if err != nil {
 			p.log.Error("scan user", "user", username, "err", err)
+			warnings = append(warnings, fmt.Sprintf("%s: %v", username, err))
 		}
 	}
+	return warnings, nil
 }
 
 // ScanAllUsers runs the scan pipeline for all users. Exported for manual trigger.
 func (p *Plugin) ScanAllUsers(ctx context.Context) {
-	p.scanAllUsers(ctx)
+	p.runScan(ctx)
 }
 
 // ScanUser runs the scan pipeline for a single user. Exported for manual trigger.
 func (p *Plugin) ScanUser(ctx context.Context, username string) error {
-	return p.scanUser(ctx, username)
+	_, err := p.scanUser(ctx, username)
+	return err
 }
 
-func (p *Plugin) scanUser(ctx context.Context, username string) error {
+func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []string, err error) {
 	galleryDB, err := p.DB(username)
 	if err != nil {
-		return fmt.Errorf("gallery db: %w", err)
+		return nil, fmt.Errorf("gallery db: %w", err)
 	}
 	filesDB, err := p.files.DB(username)
 	if err != nil {
-		return fmt.Errorf("files db: %w", err)
+		return nil, fmt.Errorf("files db: %w", err)
 	}
 
 	// Stage 1: File discovery
 	if err := p.discoverFiles(ctx, galleryDB, filesDB, username); err != nil {
-		return fmt.Errorf("discover: %w", err)
+		return nil, fmt.Errorf("discover: %w", err)
 	}
 
 	// Stage 2: Metadata extraction (EXIF for images)
 	if err := p.extractMetadata(ctx, galleryDB, username); err != nil {
-		return fmt.Errorf("metadata: %w", err)
+		return nil, fmt.Errorf("metadata: %w", err)
 	}
 
 	// Stage 3: OCR text extraction (if tesseract available)
 	if err := p.extractOCR(ctx, galleryDB, username); err != nil {
 		p.log.Warn("ocr", "user", username, "err", err)
+		warnings = append(warnings, fmt.Sprintf("%s: ocr: %v", username, err))
 	}
 
 	// Stage 4: Reverse geocoding
@@ -87,20 +92,22 @@ func (p *Plugin) scanUser(ctx context.Context, username string) error {
 
 	// Stage 5: Auto-album generation
 	if err := p.generateAutoAlbums(ctx, galleryDB); err != nil {
-		return fmt.Errorf("auto-albums: %w", err)
+		return warnings, fmt.Errorf("auto-albums: %w", err)
 	}
 
 	// Stage 6: Image recognition (if configured)
 	if err := p.runRecognition(ctx, galleryDB, username); err != nil {
 		p.log.Warn("recognition", "user", username, "err", err)
+		warnings = append(warnings, fmt.Sprintf("%s: recognition: %v", username, err))
 	}
 
 	// Stage 7: Face clustering
 	if err := clusterFaces(galleryDB); err != nil {
 		p.log.Warn("clustering", "user", username, "err", err)
+		warnings = append(warnings, fmt.Sprintf("%s: clustering: %v", username, err))
 	}
 
-	return nil
+	return warnings, nil
 }
 
 // discoverFiles syncs the gallery index with the files plugin database.

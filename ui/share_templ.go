@@ -45,7 +45,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(panelID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 13, Col: 18}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 13, Col: 18}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -73,7 +73,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 					var templ_7745c5c3_Var3 string
 					templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(s.SubjectName)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 29, Col: 50}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 29, Col: 50}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 					if templ_7745c5c3_Err != nil {
@@ -91,7 +91,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 						var templ_7745c5c3_Var4 string
 						templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/s/%s", s.Token))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 33, Col: 42}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 33, Col: 42}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 						if templ_7745c5c3_Err != nil {
@@ -106,7 +106,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 					var templ_7745c5c3_Var5 string
 					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(s.SubjectName)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 37, Col: 24}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 37, Col: 24}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 					if templ_7745c5c3_Err != nil {
@@ -120,7 +120,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(s.PermLabel)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 40, Col: 47}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 40, Col: 47}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -133,7 +133,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/shares/%s/delete", s.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 45, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 45, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -146,7 +146,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, csrfToken))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 46, Col: 69}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 46, Col: 69}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {
@@ -159,7 +159,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs("#" + panelID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 47, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 47, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {
@@ -172,7 +172,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/shares/panel?type=%s&id=%s&scope=%s", resourceType, resourceID, panelID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 48, Col: 108}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 48, Col: 108}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -200,7 +200,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs("#" + panelID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 67, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 67, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -213,7 +213,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 71, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 71, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -226,7 +226,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(resourceType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 72, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 72, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -239,7 +239,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(resourceID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 73, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 73, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -252,7 +252,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(panelID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 74, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 74, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -278,7 +278,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatUint(uint64(l.Permissions), 10))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 83, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 83, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -291,7 +291,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(l.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 83, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 83, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -309,7 +309,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs("#" + panelID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 94, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 94, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -322,7 +322,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 98, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 98, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
@@ -335,7 +335,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(resourceType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 99, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 99, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
@@ -348,7 +348,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(resourceID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 100, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 100, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {
@@ -361,7 +361,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(panelID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 101, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 101, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
@@ -379,7 +379,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatUint(uint64(l.Permissions), 10))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 106, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 106, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -392,7 +392,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(l.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `share.templ`, Line: 106, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/share.templ`, Line: 106, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
