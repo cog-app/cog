@@ -97,6 +97,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "people/{id}/hide", http.HandlerFunc(pages.HidePerson))
 	ctx.RegisterAction("POST", "settings/scan", http.HandlerFunc(pages.TriggerScan))
 	ctx.RegisterAction("POST", "settings/recognition", http.HandlerFunc(pages.SaveRecognitionSettings))
+
+	ctx.RegisterSettingsPage(plugin.SettingsPage{
+		Handler: http.HandlerFunc(pages.SystemSettings),
+		Action:  http.HandlerFunc(pages.SaveSystemSettings),
+	})
 	ctx.RegisterAction("POST", "rename/preview", http.HandlerFunc(pages.RenamePreview))
 	ctx.RegisterAction("POST", "rename/apply", http.HandlerFunc(pages.RenameApply))
 	ctx.RegisterAction("POST", "rename/undo", http.HandlerFunc(pages.RenameUndo))
@@ -133,6 +138,19 @@ func (p *Plugin) DB(username string) (*sql.DB, error) {
 	}
 	if err := plugin.Migrate(db, sqlFS); err != nil {
 		return nil, fmt.Errorf("migrate gallery db for %s: %w", username, err)
+	}
+	return db, nil
+}
+
+// SystemDB returns the plugin-global database for system-level settings.
+func (p *Plugin) SystemDB() (*sql.DB, error) {
+	db, err := p.ctx.RootDB()
+	if err != nil {
+		return nil, err
+	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS gallery_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`)
+	if err != nil {
+		return nil, fmt.Errorf("create gallery_settings: %w", err)
 	}
 	return db, nil
 }

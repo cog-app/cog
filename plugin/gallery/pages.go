@@ -413,9 +413,25 @@ func (h *Pages) TriggerScan(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
 }
 
-// SaveRecognitionSettings saves recognition backend settings.
+// SaveRecognitionSettings saves recognition backend settings (legacy per-user, redirects to system settings).
 func (h *Pages) SaveRecognitionSettings(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	http.Redirect(w, r, "/admin/plugins/gallery", http.StatusSeeOther)
+}
+
+// SystemSettings renders the system-level gallery settings page (admin only).
+func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
+	db, err := h.plugin.SystemDB()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	setTitle(w, "Gallery Settings")
+	systemSettingsPage(db, h.csrfToken(r)).Render(r.Context(), w)
+}
+
+// SaveSystemSettings saves system-level gallery settings.
+func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
+	db, err := h.plugin.SystemDB()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -427,7 +443,7 @@ func (h *Pages) SaveRecognitionSettings(w http.ResponseWriter, r *http.Request) 
 	SetSetting(db, "recognition_model", r.FormValue("recognition_model"))
 	SetSetting(db, "onnx_library_path", r.FormValue("onnx_library_path"))
 	SetSetting(db, "onnx_models_dir", r.FormValue("onnx_models_dir"))
-	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/plugins/gallery", http.StatusSeeOther)
 }
 
 // RenamePreview shows a preview of the rename operation.

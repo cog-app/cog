@@ -27,13 +27,18 @@ func pageDataWithNav(r *http.Request, title string, secret []byte, registry *plu
 	if u != nil {
 		isAdmin = u.IsAdmin
 	}
+	var pluginSettingsNav []ui.SidebarItem
+	if isAdmin && registry != nil {
+		pluginSettingsNav = registry.SettingsItems()
+	}
 	return ui.PageData{
-		Title:       title,
-		User:        u,
-		CSRFToken:   csrf,
-		Nav:         buildNav(r.URL.Path, registry),
-		RequestPath: r.URL.Path,
-		IsAdmin:     isAdmin,
+		Title:             title,
+		User:              u,
+		CSRFToken:         csrf,
+		Nav:               buildNav(r.URL.Path, registry),
+		RequestPath:       r.URL.Path,
+		IsAdmin:           isAdmin,
+		PluginSettingsNav: pluginSettingsNav,
 	}
 }
 

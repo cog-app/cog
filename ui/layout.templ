@@ -387,27 +387,50 @@ templ Shell(pd PageData, body templ.Component) {
 	</html>
 }
 
+// AdminSidebarPage renders a page with the admin sidebar, a divider, and plugin settings items.
+templ AdminSidebarPage(pd PageData, coreItems []SidebarItem, pluginItems []SidebarItem) {
+	@Base(pd) {
+		<div class="sidebar-layout">
+			<nav class="sidebar">
+				@sidebarItems(coreItems)
+				if len(pluginItems) > 0 {
+					<hr class="sidebar-divider"/>
+					@sidebarItems(pluginItems)
+				}
+			</nav>
+			<div class="sidebar-content">
+				{ children... }
+			</div>
+		</div>
+	}
+}
+
+// sidebarItems renders a list of sidebar items.
+templ sidebarItems(items []SidebarItem) {
+	for _, item := range items {
+		if len(item.Children) > 0 {
+			<span class="sidebar-group">{ item.Label }</span>
+			for _, child := range item.Children {
+				if child.Active {
+					<a href={ templ.SafeURL(child.URL) } class="sidebar-item sidebar-child active">{ child.Label }</a>
+				} else {
+					<a href={ templ.SafeURL(child.URL) } class="sidebar-item sidebar-child">{ child.Label }</a>
+				}
+			}
+		} else if item.Active {
+			<a href={ templ.SafeURL(item.URL) } class="sidebar-item active">{ item.Label }</a>
+		} else {
+			<a href={ templ.SafeURL(item.URL) } class="sidebar-item">{ item.Label }</a>
+		}
+	}
+}
+
 // SidebarPage renders a page with a sidebar and main content area.
 templ SidebarPage(pd PageData, sidebar []SidebarItem) {
 	@Base(pd) {
 		<div class="sidebar-layout">
 			<nav class="sidebar">
-				for _, item := range sidebar {
-					if len(item.Children) > 0 {
-						<span class="sidebar-group">{ item.Label }</span>
-						for _, child := range item.Children {
-							if child.Active {
-								<a href={ templ.SafeURL(child.URL) } class="sidebar-item sidebar-child active">{ child.Label }</a>
-							} else {
-								<a href={ templ.SafeURL(child.URL) } class="sidebar-item sidebar-child">{ child.Label }</a>
-							}
-						}
-					} else if item.Active {
-						<a href={ templ.SafeURL(item.URL) } class="sidebar-item active">{ item.Label }</a>
-					} else {
-						<a href={ templ.SafeURL(item.URL) } class="sidebar-item">{ item.Label }</a>
-					}
-				}
+				@sidebarItems(sidebar)
 			</nav>
 			<div class="sidebar-content">
 				{ children... }

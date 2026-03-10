@@ -158,7 +158,7 @@ func adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], flash str
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.SidebarPage(pd, adminSidebar("users")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.AdminSidebarPage(pd, adminSidebar("users"), pd.PluginSettingsNav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -262,7 +262,7 @@ func adminUserNewPage(pd ui.PageData, errMsg string) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.SidebarPage(pd, adminSidebar("users")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var8), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.AdminSidebarPage(pd, adminSidebar("users"), pd.PluginSettingsNav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var8), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -502,7 +502,7 @@ func adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind str
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.SidebarPage(pd, adminSidebar("users")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var12), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.AdminSidebarPage(pd, adminSidebar("users"), pd.PluginSettingsNav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var12), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -621,7 +621,7 @@ func adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashKi
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.SidebarPage(pd, adminSidebar("groups")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var23), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.AdminSidebarPage(pd, adminSidebar("groups"), pd.PluginSettingsNav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var23), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -904,7 +904,7 @@ func adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHour
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.SidebarPage(pd, adminSidebar("settings")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var28), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.AdminSidebarPage(pd, adminSidebar("settings"), pd.PluginSettingsNav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var28), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1142,7 +1142,7 @@ func adminPluginsPage(pd ui.PageData, plugins []PluginInfo) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.SidebarPage(pd, adminSidebar("plugins")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var46), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.AdminSidebarPage(pd, adminSidebar("plugins"), pd.PluginSettingsNav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var46), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

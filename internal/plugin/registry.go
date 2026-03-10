@@ -376,7 +376,7 @@ func (r *Registry) SettingsItems() []ui.SidebarItem {
 			}
 			items = append(items, ui.SidebarItem{
 				Label: label,
-				URL:   "/settings/plugins/" + id,
+				URL:   "/admin/plugins/" + id,
 			})
 		} else {
 			parent := ui.SidebarItem{Label: id}
@@ -384,7 +384,7 @@ func (r *Registry) SettingsItems() []ui.SidebarItem {
 				slug := strings.ToLower(strings.ReplaceAll(sp.Name, " ", "-"))
 				child := ui.SidebarItem{
 					Label: sp.Name,
-					URL:   "/settings/plugins/" + id + "/" + slug,
+					URL:   "/admin/plugins/" + id + "/" + slug,
 				}
 				parent.Children = append(parent.Children, child)
 			}
@@ -565,6 +565,80 @@ func (pr *pluginRegistrar) shellMiddleware(handler http.Handler) http.Handler {
 	})
 }
 
+// adminSettingsShellMiddleware wraps a fragment handler with the HTML shell and admin sidebar.
+// Plugin settings items appear below a divider after the built-in admin items.
+func (pr *pluginRegistrar) adminSettingsShellMiddleware(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := auth.UserFromContext(r.Context())
+		csrf := cogplugin.CSRFTokenFromContext(r.Context())
+
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, r)
+
+		if rec.Code >= 300 {
+			maps.Copy(w.Header(), rec.Header())
+			w.WriteHeader(rec.Code)
+			w.Write(rec.Body.Bytes())
+			return
+		}
+
+		var nav []ui.NavItem
+		for _, item := range pr.registry.NavItems() {
+			active := r.URL.Path == item.URL || (item.URL != "/" && len(r.URL.Path) >= len(item.URL) && r.URL.Path[:len(item.URL)] == item.URL)
+			nav = append(nav, ui.NavItem{
+				Label:  item.Label,
+				URL:    item.URL,
+				Active: active,
+				Icon:   item.Icon,
+			})
+		}
+
+		title := rec.Header().Get("X-Page-Title")
+		if title == "" {
+			title = "Cog"
+		}
+
+		// Build admin sidebar: core items, divider, plugin items.
+		coreItems := []ui.SidebarItem{
+			{Label: "General", URL: "/admin/settings"},
+			{Label: "Users", URL: "/admin/users"},
+			{Label: "Groups", URL: "/admin/groups"},
+			{Label: "Volumes", URL: "/admin/volumes"},
+			{Label: "Plugins", URL: "/admin/plugins"},
+		}
+		pluginItems := pr.registry.SettingsItems()
+		for i := range coreItems {
+			if coreItems[i].URL == r.URL.Path {
+				coreItems[i].Active = true
+			}
+		}
+		for i := range pluginItems {
+			if pluginItems[i].URL == r.URL.Path {
+				pluginItems[i].Active = true
+			}
+		}
+
+		pd := ui.PageData{
+			Title:       title,
+			User:        u,
+			CSRFToken:   csrf,
+			Nav:         nav,
+			RequestPath: r.URL.Path,
+			IsAdmin:     u != nil && u.IsAdmin,
+		}
+
+		for k, v := range rec.Header() {
+			if k == "X-Page-Title" || k == "Content-Length" || k == "Content-Type" {
+				continue
+			}
+			w.Header()[k] = v
+		}
+
+		fragment := templ.Raw(rec.Body.String())
+		ui.AdminSidebarPage(pd, coreItems, pluginItems).Render(templ.WithChildren(r.Context(), fragment), w)
+	})
+}
+
 func (pr *pluginRegistrar) RegisterAPI(path string, handler http.Handler) {
 	pattern := fmt.Sprintf("GET /apps/%s/%s", pr.pluginID, path)
 	pr.mux.Handle(pattern, pr.wrap(auth.RequireAuth(pr.injectPluginContext(handler))))
@@ -635,12 +709,12 @@ func (pr *pluginRegistrar) RegisterSettingsPage(page SettingsPage) {
 	slug := strings.ToLower(strings.ReplaceAll(page.Name, " ", "-"))
 	var basePath string
 	if slug == "" {
-		basePath = fmt.Sprintf("/settings/plugins/%s", pr.pluginID)
+		basePath = fmt.Sprintf("/admin/plugins/%s", pr.pluginID)
 	} else {
-		basePath = fmt.Sprintf("/settings/plugins/%s/%s", pr.pluginID, slug)
+		basePath = fmt.Sprintf("/admin/plugins/%s/%s", pr.pluginID, slug)
 	}
 	getHandler := auth.RequireAuthWeb(auth.RequireAdmin(
-		pr.injectPluginContext(pr.shellMiddleware(page.Handler))))
+		pr.injectPluginContext(pr.adminSettingsShellMiddleware(page.Handler))))
 	pr.mux.Handle("GET "+basePath, pr.wrap(getHandler))
 	if page.Action != nil {
 		postHandler := auth.RequireAuthWeb(auth.RequireAdmin(

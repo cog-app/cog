@@ -223,7 +223,8 @@ func (p *Plugin) extractOCR(ctx context.Context, db *sql.DB, username string) er
 	if !TesseractAvailable() {
 		return nil
 	}
-	if GetSetting(db, "ocr_enabled", "true") != "true" {
+	sysDB, err := p.SystemDB()
+	if err == nil && GetSetting(sysDB, "ocr_enabled", "true") != "true" {
 		return nil
 	}
 

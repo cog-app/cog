@@ -11,13 +11,14 @@ import (
 
 // PageData carries data needed by the layout template.
 type PageData struct {
-	Title       string
-	User        *user.User
-	Nav         []NavItem
-	CSRFToken   string
-	RequestPath string // current request path for active-state highlighting
-	IsAdmin     bool
-	PluginID    string // owning plugin; rendered as data-plugin on <main> for web components
+	Title              string
+	User               *user.User
+	Nav                []NavItem
+	CSRFToken          string
+	RequestPath        string       // current request path for active-state highlighting
+	IsAdmin            bool
+	PluginID           string       // owning plugin; rendered as data-plugin on <main> for web components
+	PluginSettingsNav  []SidebarItem // plugin-registered admin settings items (shown below divider)
 }
 
 // NavItem is a navigation link in the navbar.

@@ -19,7 +19,7 @@ func adminSidebar(active string) []ui.SidebarItem {
 
 // --- Users ---
 templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], flash string, flashKind string) {
-	@ui.SidebarPage(pd, adminSidebar("users")) {
+	@ui.AdminSidebarPage(pd, adminSidebar("users"), pd.PluginSettingsNav) {
 		<div class="flex justify-between items-center" style="margin-bottom:1rem">
 			<h1>Users</h1>
 			<a class="btn btn-primary" href="/admin/users/new">New User</a>
@@ -57,7 +57,7 @@ templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], flash st
 }
 
 templ adminUserNewPage(pd ui.PageData, errMsg string) {
-	@ui.SidebarPage(pd, adminSidebar("users")) {
+	@ui.AdminSidebarPage(pd, adminSidebar("users"), pd.PluginSettingsNav) {
 		<h1 style="margin-bottom:1rem">New User</h1>
 		if errMsg != "" {
 			@ui.Alert("error", errMsg)
@@ -81,7 +81,7 @@ templ adminUserNewPage(pd ui.PageData, errMsg string) {
 }
 
 templ adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind string) {
-	@ui.SidebarPage(pd, adminSidebar("users")) {
+	@ui.AdminSidebarPage(pd, adminSidebar("users"), pd.PluginSettingsNav) {
 		<h1 style="margin-bottom:1rem">Edit User: { u.Username }</h1>
 		if flash != "" {
 			@ui.Alert(flashKind, flash)
@@ -125,7 +125,7 @@ templ adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind st
 
 // --- Groups ---
 templ adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashKind string) {
-	@ui.SidebarPage(pd, adminSidebar("groups")) {
+	@ui.AdminSidebarPage(pd, adminSidebar("groups"), pd.PluginSettingsNav) {
 		<div class="flex justify-between items-center" style="margin-bottom:1rem">
 			<h1>Groups</h1>
 		</div>
@@ -147,7 +147,7 @@ templ adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashK
 
 // --- Settings ---
 templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, smtp smtpSettingsData, env envConfigData, flash string, flashKind string) {
-	@ui.SidebarPage(pd, adminSidebar("settings")) {
+	@ui.AdminSidebarPage(pd, adminSidebar("settings"), pd.PluginSettingsNav) {
 		<h1 style="margin-bottom:1rem">System Settings</h1>
 		if flash != "" {
 			@ui.Alert(flashKind, flash)
@@ -219,7 +219,7 @@ templ smtpTestAlert(kind, title, detail string) {
 
 // --- Plugins ---
 templ adminPluginsPage(pd ui.PageData, plugins []PluginInfo) {
-	@ui.SidebarPage(pd, adminSidebar("plugins")) {
+	@ui.AdminSidebarPage(pd, adminSidebar("plugins"), pd.PluginSettingsNav) {
 		<div class="flex justify-between items-center" style="margin-bottom:1rem">
 			<h1>Plugins</h1>
 		</div>

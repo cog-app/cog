@@ -43,7 +43,7 @@ templ settingsGroupDetailPage(pd ui.PageData, gdd groupDetailData) {
 }
 
 templ adminGroupDetailPage(pd ui.PageData, gdd groupDetailData) {
-	@ui.SidebarPage(pd, adminSidebar("groups")) {
+	@ui.AdminSidebarPage(pd, adminSidebar("groups"), pd.PluginSettingsNav) {
 		@groupDetailContent(pd, gdd)
 	}
 }

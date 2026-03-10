@@ -386,7 +386,7 @@ templ videosPage(media []Media) {
 	</div>
 }
 
-// --- Settings Page ---
+// --- Settings Page (per-user) ---
 templ settingsPage(db *sql.DB, total int, csrfToken string) {
 	<div class="sidebar-layout">
 		@gallerySidebar("/apps/gallery/settings", 0)
@@ -397,85 +397,6 @@ templ settingsPage(db *sql.DB, total int, csrfToken string) {
 				<form method="post" action="/apps/gallery/settings/scan">
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
 					<button type="submit" class="btn btn-primary btn-sm">Scan Now</button>
-				</form>
-			}
-			@ui.Card("Image Recognition") {
-				<form method="post" action="/apps/gallery/settings/recognition">
-					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					<div class="form-group" style="margin-bottom:0.75rem">
-						<label>
-							<input
-								type="checkbox"
-								name="recognition_enabled"
-								value="true"
-								checked?={ GetSetting(db, "recognition_enabled", "false") == "true" }
-							/>
-							Enable image recognition
-						</label>
-					</div>
-					<div class="form-group" style="margin-bottom:0.75rem">
-						<label>Backend</label>
-						<select name="recognition_backend" class="input">
-							<option value="none" selected?={ GetSetting(db, "recognition_backend", "none") == "none" }>None</option>
-							<option value="pigo" selected?={ GetSetting(db, "recognition_backend", "none") == "pigo" }>Pigo (local face detection)</option>
-							<option value="ollama" selected?={ GetSetting(db, "recognition_backend", "none") == "ollama" }>Ollama</option>
-							<option value="openai" selected?={ GetSetting(db, "recognition_backend", "none") == "openai" }>OpenAI-compatible</option>
-							<option value="onnx" selected?={ GetSetting(db, "recognition_backend", "none") == "onnx" }>ONNX (local)</option>
-						</select>
-					</div>
-					<div class="form-group" style="margin-bottom:0.75rem">
-						<label>URL</label>
-						<input
-							type="text"
-							name="recognition_url"
-							class="input"
-							value={ GetSetting(db, "recognition_url", "") }
-							placeholder="http://localhost:11434"
-						/>
-					</div>
-					<div class="form-group" style="margin-bottom:0.75rem">
-						<label>API Key (for OpenAI)</label>
-						<input
-							type="password"
-							name="recognition_api_key"
-							class="input"
-							value={ GetSetting(db, "recognition_api_key", "") }
-							placeholder="sk-..."
-						/>
-					</div>
-					<div class="form-group" style="margin-bottom:0.75rem">
-						<label>Model</label>
-						<input
-							type="text"
-							name="recognition_model"
-							class="input"
-							value={ GetSetting(db, "recognition_model", "") }
-							placeholder="llava:13b"
-						/>
-					</div>
-					<div class="form-group" style="margin-bottom:0.75rem">
-						<label>ONNX Runtime Library Path</label>
-						<input
-							type="text"
-							name="onnx_library_path"
-							class="input"
-							value={ GetSetting(db, "onnx_library_path", "") }
-							placeholder="/usr/lib/libonnxruntime.so"
-						/>
-						<small class="text-muted">Required for ONNX backend. Leave blank to auto-detect.</small>
-					</div>
-					<div class="form-group" style="margin-bottom:0.75rem">
-						<label>ONNX Models Directory</label>
-						<input
-							type="text"
-							name="onnx_models_dir"
-							class="input"
-							value={ GetSetting(db, "onnx_models_dir", "") }
-							placeholder="(auto: data dir)"
-						/>
-						<small class="text-muted">Where to store ONNX model files. Leave blank for default.</small>
-					</div>
-					<button type="submit" class="btn btn-primary btn-sm">Save</button>
 				</form>
 			}
 			@ui.Card("File Rename") {
@@ -504,6 +425,93 @@ templ settingsPage(db *sql.DB, total int, csrfToken string) {
 			}
 		</div>
 	</div>
+}
+
+// --- System Settings Page (admin, rendered via RegisterSettingsPage) ---
+templ systemSettingsPage(db *sql.DB, csrfToken string) {
+	<h1>Gallery Settings</h1>
+	<p class="text-muted" style="margin-bottom:1rem">
+		These settings apply to all users.
+	</p>
+	@ui.Card("Image Recognition") {
+		<form method="post" action="/admin/plugins/gallery">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>
+					<input
+						type="checkbox"
+						name="recognition_enabled"
+						value="true"
+						checked?={ GetSetting(db, "recognition_enabled", "false") == "true" }
+					/>
+					Enable image recognition
+				</label>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>Backend</label>
+				<select name="recognition_backend" class="input">
+					<option value="none" selected?={ GetSetting(db, "recognition_backend", "none") == "none" }>None</option>
+					<option value="pigo" selected?={ GetSetting(db, "recognition_backend", "none") == "pigo" }>Pigo (local face detection)</option>
+					<option value="ollama" selected?={ GetSetting(db, "recognition_backend", "none") == "ollama" }>Ollama</option>
+					<option value="openai" selected?={ GetSetting(db, "recognition_backend", "none") == "openai" }>OpenAI-compatible</option>
+					<option value="onnx" selected?={ GetSetting(db, "recognition_backend", "none") == "onnx" }>ONNX (local)</option>
+				</select>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>URL</label>
+				<input
+					type="text"
+					name="recognition_url"
+					class="input"
+					value={ GetSetting(db, "recognition_url", "") }
+					placeholder="http://localhost:11434"
+				/>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>API Key (for OpenAI)</label>
+				<input
+					type="password"
+					name="recognition_api_key"
+					class="input"
+					value={ GetSetting(db, "recognition_api_key", "") }
+					placeholder="sk-..."
+				/>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>Model</label>
+				<input
+					type="text"
+					name="recognition_model"
+					class="input"
+					value={ GetSetting(db, "recognition_model", "") }
+					placeholder="llava:13b"
+				/>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>ONNX Runtime Library Path</label>
+				<input
+					type="text"
+					name="onnx_library_path"
+					class="input"
+					value={ GetSetting(db, "onnx_library_path", "") }
+					placeholder="/usr/lib/libonnxruntime.so"
+				/>
+				<small class="text-muted">Required for ONNX backend. Leave blank to auto-detect.</small>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>ONNX Models Directory</label>
+				<input
+					type="text"
+					name="onnx_models_dir"
+					class="input"
+					value={ GetSetting(db, "onnx_models_dir", "") }
+					placeholder="(auto: data dir)"
+				/>
+				<small class="text-muted">Where to store ONNX model files. Leave blank for default.</small>
+			</div>
+			<button type="submit" class="btn btn-primary btn-sm">Save</button>
+		</form>
+	}
 }
 
 // --- Rename Preview Page ---

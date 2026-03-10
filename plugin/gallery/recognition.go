@@ -37,7 +37,7 @@ type RecognitionBackend interface {
 	Available() bool
 }
 
-// getRecognitionBackend returns the configured recognition backend for a user, or nil.
+// getRecognitionBackend returns the configured recognition backend from system settings, or nil.
 func (p *Plugin) getRecognitionBackend(db *sql.DB) RecognitionBackend {
 	backend := GetSetting(db, "recognition_backend", "none")
 	if backend == "none" || GetSetting(db, "recognition_enabled", "false") != "true" {
@@ -80,7 +80,11 @@ func (p *Plugin) getRecognitionBackend(db *sql.DB) RecognitionBackend {
 
 // runRecognition processes pending media through the recognition backend.
 func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string) error {
-	backend := p.getRecognitionBackend(db)
+	sysDB, err := p.SystemDB()
+	if err != nil {
+		return nil
+	}
+	backend := p.getRecognitionBackend(sysDB)
 	if backend == nil {
 		return nil
 	}
@@ -100,11 +104,11 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 
 	filesDir := p.ctx.UserFilesDir(username)
 	tagMinConf := 0.5
-	if v := GetSetting(db, "tag_min_confidence", ""); v != "" {
+	if v := GetSetting(sysDB, "tag_min_confidence", ""); v != "" {
 		fmt.Sscanf(v, "%f", &tagMinConf)
 	}
 	faceMinConf := 0.7
-	if v := GetSetting(db, "face_min_confidence", ""); v != "" {
+	if v := GetSetting(sysDB, "face_min_confidence", ""); v != "" {
 		fmt.Sscanf(v, "%f", &faceMinConf)
 	}
 
@@ -137,7 +141,7 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		}
 
 		// Store faces.
-		if GetSetting(db, "face_detection_enabled", "true") == "true" {
+		if GetSetting(sysDB, "face_detection_enabled", "true") == "true" {
 			for _, face := range result.Faces {
 				if face.Confidence < faceMinConf {
 					continue
