@@ -72,9 +72,12 @@ type Registrar interface {
 }
 
 // SettingsPage describes a settings page registered by a plugin.
+// The Handler renders a content fragment (GET); Action handles form submissions (POST).
+// Settings pages are admin-only and wrapped with the HTML shell automatically.
 type SettingsPage struct {
 	Name    string       // optional display name
-	Handler http.Handler // renders page content fragment
+	Handler http.Handler // GET — renders page content fragment
+	Action  http.Handler // POST — handles form submission (optional)
 }
 
 // NavItem is a navigation entry registered by a plugin for the app navbar.

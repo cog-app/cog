@@ -172,8 +172,12 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	setTitle(w, "RSS Settings")
 	sb := h.buildSidebar(db, "/apps/rss/settings")
+	if r.URL.Query().Get("partial") == "sidebar" {
+		rssSidebar(sb).Render(r.Context(), w)
+		return
+	}
+	setTitle(w, "RSS Settings")
 	feeds, _ := ListFeeds(db)
 	folders, _ := ListFolders(db)
 	errMsg := r.URL.Query().Get("err")

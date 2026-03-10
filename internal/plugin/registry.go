@@ -501,8 +501,15 @@ func (pr *pluginRegistrar) injectPluginContext(handler http.Handler) http.Handle
 // shellMiddleware wraps a fragment handler with the full HTML shell.
 // It builds PageData from the request context, captures handler output,
 // and renders ui.Shell around it. Plugin context is injected by RegisterPage.
+// HTMX partial requests (HX-Request: true) skip the shell entirely.
 func (pr *pluginRegistrar) shellMiddleware(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// HTMX partials: serve the fragment directly, no shell.
+		if r.Header.Get("HX-Request") == "true" {
+			handler.ServeHTTP(w, r)
+			return
+		}
+
 		u := auth.UserFromContext(r.Context())
 		csrf := cogplugin.CSRFTokenFromContext(r.Context())
 
@@ -626,14 +633,20 @@ func (pr *pluginRegistrar) RegisterDAVHandler(prefix string, handler http.Handle
 func (pr *pluginRegistrar) RegisterSettingsPage(page SettingsPage) {
 	pr.settingsPages = append(pr.settingsPages, page)
 	slug := strings.ToLower(strings.ReplaceAll(page.Name, " ", "-"))
-	var pattern string
+	var basePath string
 	if slug == "" {
-		pattern = fmt.Sprintf("GET /settings/plugins/%s", pr.pluginID)
+		basePath = fmt.Sprintf("/settings/plugins/%s", pr.pluginID)
 	} else {
-		pattern = fmt.Sprintf("GET /settings/plugins/%s/%s", pr.pluginID, slug)
+		basePath = fmt.Sprintf("/settings/plugins/%s/%s", pr.pluginID, slug)
 	}
-	wrapped := auth.RequireAuthWeb(pr.wrap(page.Handler))
-	pr.mux.Handle(pattern, wrapped)
+	getHandler := auth.RequireAuthWeb(auth.RequireAdmin(
+		pr.injectPluginContext(pr.shellMiddleware(page.Handler))))
+	pr.mux.Handle("GET "+basePath, pr.wrap(getHandler))
+	if page.Action != nil {
+		postHandler := auth.RequireAuthWeb(auth.RequireAdmin(
+			pr.injectPluginContext(auth.RequireCSRF(pr.csrfSecret, page.Action))))
+		pr.mux.Handle("POST "+basePath, pr.wrap(postHandler))
+	}
 }
 
 // Commands returns all registered CLI commands, keyed by plugin ID.
