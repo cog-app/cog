@@ -3,6 +3,7 @@ package files
 import (
 	"fmt"
 	"git.duckfam.us/jj-software/cog/ui"
+	"strconv"
 	"time"
 )
 
@@ -317,12 +318,7 @@ templ fileViewPage(pd ui.PageData, fp string, meta *FileMeta, kind string, textC
 				<span class="text-muted">{ meta.MimeType }</span>
 				<span class="text-muted">{ formatSize(meta.Size) }</span>
 				<a href={ templ.SafeURL("/apps/files" + fp + "?dl=1") } class="btn btn-primary btn-sm">Download</a>
-				<button
-					class="btn btn-outline btn-sm"
-					hx-get={ fmt.Sprintf("/api/shares/panel?type=%s&id=%d", fileResourceType(meta.IsDir), meta.ID) }
-					hx-target="#file-share-panel"
-					hx-swap="innerHTML"
-				>Share</button>
+				<cog-share-button resource={ fileResourceType(meta.IsDir) } resource-id={ strconv.FormatInt(meta.ID, 10) }>Share</cog-share-button>
 				<button
 					class="btn btn-danger btn-sm"
 					hx-delete={ "/apps/files" + fp }
@@ -331,7 +327,6 @@ templ fileViewPage(pd ui.PageData, fp string, meta *FileMeta, kind string, textC
 					data-back={ "/apps/files" + parentDir(fp) }
 				>Delete</button>
 			</div>
-			<div id="file-share-panel"></div>
 			if kind == "image" {
 				<div style="text-align:center">
 					<img

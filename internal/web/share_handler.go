@@ -74,7 +74,10 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 	sessID := auth.SessionIDFromContext(r.Context())
 	csrf := auth.CSRFToken(sessID, h.p.CSRFSecret)
 
-	panelID := resType + ":" + resID
+	panelID := r.URL.Query().Get("scope")
+	if panelID == "" {
+		panelID = "share-panel"
+	}
 	ui.SharePanel(panelID, resType, resID, csrf, shares, levelChoices).Render(r.Context(), w)
 }
 

@@ -52,6 +52,7 @@ func (h *Pages) pageData(r *http.Request, title string) ui.PageData {
 		Nav:         buildNav(r.URL.Path, h.plugin.ctx.NavItems()),
 		RequestPath: r.URL.Path,
 		IsAdmin:     isAdmin,
+		PluginID:    "files",
 	}
 }
 
@@ -385,9 +386,9 @@ func imageViewURL(fp, mimeType string) string {
 
 func fileResourceType(isDir bool) string {
 	if isDir {
-		return "files:directory"
+		return "directory"
 	}
-	return "files:file"
+	return "file"
 }
 
 // --- Flash helpers (cookie-based one-time messages) ---

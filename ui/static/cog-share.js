@@ -1,14 +1,29 @@
-// <cog-share resource="calendar:calendar" resource-id="5"></cog-share>
+// resolveResource returns the fully-qualified resource type.
+// If the resource attribute already contains a colon it is used as-is.
+// Otherwise the plugin prefix is read from the closest ancestor with
+// a data-plugin attribute (set by the layout on <main>).
+function resolveResource(el) {
+    var raw = el.getAttribute('resource');
+    if (!raw) return '';
+    if (raw.indexOf(':') >= 0) return raw;
+    var scope = el.closest('[data-plugin]');
+    var prefix = scope ? scope.getAttribute('data-plugin') : '';
+    return prefix ? prefix + ':' + raw : raw;
+}
+
+// <cog-share resource="calendar" resource-id="5"></cog-share>
 // Renders the sharing panel inline.
+// The plugin prefix is inferred from the nearest data-plugin ancestor,
+// so plugins can write resource="calendar" instead of "calendar:calendar".
 class CogShare extends HTMLElement {
     connectedCallback() {
-        var resource = this.getAttribute('resource');
+        var resource = resolveResource(this);
         var resourceId = this.getAttribute('resource-id');
         if (!resource || !resourceId) return;
 
         var scope = 'sp-' + Math.random().toString(36).slice(2, 8);
         var el = this;
-        el.innerHTML = '<div id="' + scope + '"><p style="color:var(--color-text-muted)">Loading…</p></div>';
+        el.innerHTML = '<div id="' + scope + '"><p style="color:var(--color-text-muted)">Loading\u2026</p></div>';
 
         fetch('/api/shares/panel?type=' + encodeURIComponent(resource) + '&id=' + encodeURIComponent(resourceId) + '&scope=' + encodeURIComponent(scope))
             .then(function(r) { return r.text(); })
@@ -19,11 +34,11 @@ class CogShare extends HTMLElement {
     }
 }
 
-// <cog-share-button resource="calendar:calendar" resource-id="5">Share</cog-share-button>
+// <cog-share-button resource="calendar" resource-id="5">Share</cog-share-button>
 // Renders a button that opens a modal with the sharing panel.
 class CogShareButton extends HTMLElement {
     connectedCallback() {
-        var resource = this.getAttribute('resource');
+        var resource = resolveResource(this);
         var resourceId = this.getAttribute('resource-id');
         if (!resource || !resourceId) return;
 
@@ -47,7 +62,7 @@ class CogShareButton extends HTMLElement {
 
             var content = document.createElement('div');
             content.className = 'modal-content';
-            content.innerHTML = '<p style="color:var(--color-text-muted)">Loading…</p>';
+            content.innerHTML = '<p style="color:var(--color-text-muted)">Loading\u2026</p>';
             overlay.appendChild(content);
             document.body.appendChild(overlay);
 

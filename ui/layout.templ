@@ -23,8 +23,10 @@ templ Base(pd PageData) {
 		</head>
 		<body hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, pd.CSRFToken) }>
 			<nav class="navbar">
-				<a class="navbar-brand" href="/">@CogIcon(20)
-<span class="brand-text">Cog</span></a>
+				<a class="navbar-brand" href="/">
+					@CogIcon(20)
+					<span class="brand-text">Cog</span>
+				</a>
 				<ul class="navbar-nav">
 					for _, item := range pd.Nav {
 						<li>
@@ -73,9 +75,15 @@ templ Base(pd PageData) {
 					}
 				</div>
 			</nav>
-			<main class="content">
-				{ children... }
-			</main>
+			if pd.PluginID != "" {
+				<main class="content" data-plugin={ pd.PluginID }>
+					{ children... }
+				</main>
+			} else {
+				<main class="content">
+					{ children... }
+				</main>
+			}
 			<script>
 		// Notification polling
 		(function() {
@@ -205,8 +213,10 @@ templ Shell(pd PageData, body templ.Component) {
 		</head>
 		<body hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, pd.CSRFToken) }>
 			<nav class="navbar">
-				<a class="navbar-brand" href="/">@CogIcon(20)
-<span class="brand-text">Cog</span></a>
+				<a class="navbar-brand" href="/">
+					@CogIcon(20)
+					<span class="brand-text">Cog</span>
+				</a>
 				<ul class="navbar-nav">
 					for _, item := range pd.Nav {
 						<li>
@@ -255,9 +265,15 @@ templ Shell(pd PageData, body templ.Component) {
 					}
 				</div>
 			</nav>
-			<main class="content">
-				@body
-			</main>
+			if pd.PluginID != "" {
+				<main class="content" data-plugin={ pd.PluginID }>
+					@body
+				</main>
+			} else {
+				<main class="content">
+					@body
+				</main>
+			}
 			<script>
 		// Notification polling
 		(function() {

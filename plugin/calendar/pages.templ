@@ -152,19 +152,6 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 			</form>
 		</div>
 	</div>
-	<style>
-			.modal-overlay {
-				position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-				background: rgba(0,0,0,0.5); z-index: 1000;
-				display: flex; align-items: center; justify-content: center;
-			}
-			.modal-content {
-				background: var(--color-bg, #fff); border-radius: 8px;
-				padding: 1.5rem; max-width: 500px; width: 90%;
-				max-height: 80vh; overflow-y: auto;
-				box-shadow: 0 4px 24px rgba(0,0,0,0.2);
-			}
-		</style>
 	<script>
 		function addAttendeeRow(containerId) {
 			var container = document.getElementById(containerId);
@@ -655,11 +642,8 @@ templ calSettingsPage(calendars []Calendar, csrfToken string) {
 									<td>{ cal.UID }</td>
 									<td>{ strconv.FormatInt(cal.CTag, 10) }</td>
 									<td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
-										<cog-share-button resource="calendar:calendar" resource-id={ strconv.FormatInt(cal.ID, 10) }>Share</cog-share-button>
+										<cog-share-button resource="calendar" resource-id={ strconv.FormatInt(cal.ID, 10) }>Share</cog-share-button>
 										<button
-											class="btn btn-danger btn-sm"
-											hx-delete={ fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID) }
-											hx-target={ fmt.Sprintf("#cal-%d", cal.ID) }
 											hx-swap="outerHTML"
 											hx-confirm="Delete this calendar and all its events?"
 										>Delete</button>

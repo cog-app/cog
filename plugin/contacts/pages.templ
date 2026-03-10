@@ -160,17 +160,6 @@ templ contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken str
 		</div>
 	</div>
 	<style>
-			.modal-overlay {
-				position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-				background: rgba(0,0,0,0.5); z-index: 1000;
-				display: flex; align-items: center; justify-content: center;
-			}
-			.modal-content {
-				background: var(--color-bg, #fff); border-radius: 8px;
-				padding: 1.5rem; max-width: 500px; width: 90%;
-				max-height: 80vh; overflow-y: auto;
-				box-shadow: 0 4px 24px rgba(0,0,0,0.2);
-			}
 			.avatar-initials {
 				display: inline-flex; align-items: center; justify-content: center;
 				width: 32px; height: 32px; border-radius: 50%;
@@ -270,17 +259,6 @@ templ contactsStarredPage(books []AddressBook, cards []CardWithBook) {
 		<div class="modal-content" id="contact-modal-body"></div>
 	</div>
 	<style>
-			.modal-overlay {
-				position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-				background: rgba(0,0,0,0.5); z-index: 1000;
-				display: flex; align-items: center; justify-content: center;
-			}
-			.modal-content {
-				background: var(--color-bg, #fff); border-radius: 8px;
-				padding: 1.5rem; max-width: 500px; width: 90%;
-				max-height: 80vh; overflow-y: auto;
-				box-shadow: 0 4px 24px rgba(0,0,0,0.2);
-			}
 			.avatar-initials {
 				display: inline-flex; align-items: center; justify-content: center;
 				width: 32px; height: 32px; border-radius: 50%;
@@ -537,12 +515,7 @@ templ contactsSettingsPage(books []AddressBook, csrfToken string) {
 									<td>{ book.UID }</td>
 									<td>{ strconv.FormatInt(book.CTag, 10) }</td>
 									<td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
-										<button
-											class="btn btn-outline btn-sm"
-											hx-get={ fmt.Sprintf("/api/shares/panel?type=contacts:address_book&id=%d", book.ID) }
-											hx-target={ fmt.Sprintf("#book-share-%d", book.ID) }
-											hx-swap="innerHTML"
-										>Share</button>
+										<cog-share-button resource="address_book" resource-id={ strconv.FormatInt(book.ID, 10) }>Share</cog-share-button>
 										<button
 											class="btn btn-danger btn-sm"
 											hx-delete={ fmt.Sprintf("/apps/contacts/books/%d", book.ID) }
@@ -551,9 +524,6 @@ templ contactsSettingsPage(books []AddressBook, csrfToken string) {
 											hx-confirm="Delete this address book and all its contacts?"
 										>Delete</button>
 									</td>
-								</tr>
-								<tr>
-									<td colspan="5" id={ fmt.Sprintf("book-share-%d", book.ID) }></td>
 								</tr>
 							}
 						</tbody>

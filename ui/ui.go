@@ -17,6 +17,7 @@ type PageData struct {
 	CSRFToken   string
 	RequestPath string // current request path for active-state highlighting
 	IsAdmin     bool
+	PluginID    string // owning plugin; rendered as data-plugin on <main> for web components
 }
 
 // NavItem is a navigation link in the navbar.

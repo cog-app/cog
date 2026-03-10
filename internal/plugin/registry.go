@@ -543,6 +543,7 @@ func (pr *pluginRegistrar) shellMiddleware(handler http.Handler) http.Handler {
 			Nav:         nav,
 			RequestPath: r.URL.Path,
 			IsAdmin:     u != nil && u.IsAdmin,
+			PluginID:    pr.pluginID,
 		}
 
 		// Copy any content headers set by the fragment (except those we override).

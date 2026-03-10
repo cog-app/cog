@@ -128,6 +128,7 @@ func (p *Plugin) pageData(r *http.Request, title string) ui.PageData {
 		User:      u,
 		CSRFToken: csrf,
 		Nav:       nav,
+		PluginID:  "dashboard",
 	}
 }
 
