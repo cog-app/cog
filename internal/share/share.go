@@ -373,6 +373,24 @@ func (s *Store) CheckAccessWithHierarchy(userID, resourceType, resourceID string
 	return &AccessDecision{}, nil
 }
 
+// Update modifies a share's permissions and/or expiration.
+func (s *Store) Update(id string, permissions *uint32, expiration **int64) error {
+	now := time.Now().Unix()
+	if permissions != nil {
+		if _, err := s.db.Exec(`UPDATE shares SET permissions = ?, updated_at = ? WHERE id = ?`,
+			*permissions, now, id); err != nil {
+			return fmt.Errorf("update share permissions: %w", err)
+		}
+	}
+	if expiration != nil {
+		if _, err := s.db.Exec(`UPDATE shares SET expiration = ?, updated_at = ? WHERE id = ?`,
+			*expiration, now, id); err != nil {
+			return fmt.Errorf("update share expiration: %w", err)
+		}
+	}
+	return nil
+}
+
 func (s *Store) scanRecord(row *sql.Row) (*Record, error) {
 	var r Record
 	err := row.Scan(&r.ID, &r.OwnerUserID, &r.ResourceType, &r.ResourceID,

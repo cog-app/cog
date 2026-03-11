@@ -73,8 +73,12 @@ func (h *PreviewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fileIDStr := r.URL.Query().Get("fileId")
 	fileID, err := strconv.ParseInt(fileIDStr, 10, 64)
 	if err != nil || fileID <= 0 {
-		w.WriteHeader(http.StatusNotFound)
-		return
+		// NC clients may send hex-encoded file IDs (from oc:id in PROPFIND)
+		fileID, err = strconv.ParseInt(fileIDStr, 16, 64)
+		if err != nil || fileID <= 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 	}
 
 	meta, err := h.Files.GetByID(u.Username, fileID)

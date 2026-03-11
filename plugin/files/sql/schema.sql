@@ -7,9 +7,22 @@ CREATE TABLE IF NOT EXISTS files (
 	mtime INTEGER NOT NULL,
 	mime_type TEXT NOT NULL DEFAULT '',
 	etag TEXT NOT NULL,
-	is_dir INTEGER NOT NULL DEFAULT 0
+	is_dir INTEGER NOT NULL DEFAULT 0,
+	favorite INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
 CREATE INDEX IF NOT EXISTS idx_files_parent ON files(parent_path);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_files_path_unique ON files(path);
+
+CREATE TABLE IF NOT EXISTS comments (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+	actor_id TEXT NOT NULL,
+	message TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL,
+	verb TEXT NOT NULL DEFAULT 'comment'
+);
+
+CREATE INDEX IF NOT EXISTS idx_comments_file ON comments(file_id);

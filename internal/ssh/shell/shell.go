@@ -4,7 +4,6 @@
 package shell
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ergochat/readline"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
@@ -24,6 +24,7 @@ type Shell struct {
 	username   string
 	filesDir   string
 	pluginCmds map[string][]plugin.CommandDef
+	usernames  func() ([]string, error) // lists all usernames for completion
 	log        *slog.Logger
 	builtins   map[string]builtinFunc
 	exited     bool
@@ -31,8 +32,9 @@ type Shell struct {
 
 // New creates a shell for the given user. filesDir is the absolute path to the
 // user's files directory on the real filesystem. pluginCmds maps plugin IDs to
-// their registered CLI commands.
-func New(username, filesDir string, pluginCmds map[string][]plugin.CommandDef, log *slog.Logger) *Shell {
+// their registered CLI commands. usernames is called to list usernames for
+// tab completion of "username" arguments.
+func New(username, filesDir string, pluginCmds map[string][]plugin.CommandDef, usernames func() ([]string, error), log *slog.Logger) *Shell {
 	// Resolve symlinks so containment checks and virtual path mapping
 	// work consistently with paths returned by the interpreter.
 	if resolved, err := filepath.EvalSymlinks(filesDir); err == nil {
@@ -42,6 +44,7 @@ func New(username, filesDir string, pluginCmds map[string][]plugin.CommandDef, l
 		username:   username,
 		filesDir:   filesDir,
 		pluginCmds: pluginCmds,
+		usernames:  usernames,
 		log:        log,
 	}
 	s.initBuiltins()
@@ -93,7 +96,8 @@ func (s *Shell) Run(ctx context.Context, command string, stdin io.Reader, stdout
 	return runner.Run(ctx, prog)
 }
 
-// RunInteractive reads commands line-by-line from stdin and executes each one.
+// RunInteractive reads commands from stdin with line editing, tab completion,
+// and command history, then executes each one.
 func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
 	parser := syntax.NewParser(syntax.Variant(syntax.LangPOSIX))
 	runner, err := s.newRunner(stdin, stdout, stderr)
@@ -101,34 +105,59 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 		return err
 	}
 
-	scanner := bufio.NewScanner(stdin)
-	for {
-		fmt.Fprintf(stdout, "%s@cog:%s$ ", s.username, s.virtualPath(runner.Dir))
+	comp := &completer{
+		shell: s,
+		dir:   func() string { return runner.Dir },
+	}
 
-		if !scanner.Scan() {
-			break
+	rl, err := readline.NewFromConfig(&readline.Config{
+		Prompt:       s.prompt(runner),
+		AutoComplete: comp,
+		Stdin:        stdin,
+		Stdout:       stdout,
+		Stderr:       stderr,
+	})
+	if err != nil {
+		return err
+	}
+	defer rl.Close()
+
+	for {
+		line, err := rl.Readline()
+		if err == readline.ErrInterrupt {
+			continue
 		}
-		line := strings.TrimSpace(scanner.Text())
+		if err != nil { // io.EOF or other
+			return nil
+		}
+
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 
-		prog, err := parser.Parse(strings.NewReader(line), "")
-		if err != nil {
-			fmt.Fprintf(stderr, "parse error: %v\n", err)
+		prog, parseErr := parser.Parse(strings.NewReader(line), "")
+		if parseErr != nil {
+			fmt.Fprintf(stderr, "parse error: %v\n", parseErr)
 			continue
 		}
 
-		if err := runner.Run(ctx, prog); err != nil {
+		if runErr := runner.Run(ctx, prog); runErr != nil {
 			if s.exited {
 				return nil
 			}
 			var exit interp.ExitStatus
-			if !errors.As(err, &exit) {
-				fmt.Fprintf(stderr, "error: %v\n", err)
+			if !errors.As(runErr, &exit) {
+				fmt.Fprintf(stderr, "error: %v\n", runErr)
 			}
 		}
-	}
 
-	return scanner.Err()
+		// Update prompt — pwd may have changed.
+		rl.SetPrompt(s.prompt(runner))
+	}
+}
+
+// prompt returns the shell prompt string for the current state.
+func (s *Shell) prompt(runner *interp.Runner) string {
+	return fmt.Sprintf("%s@cog:%s$ ", s.username, s.virtualPath(runner.Dir))
 }

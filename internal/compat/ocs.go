@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
 // OCSResponse wraps data in the standard OCS envelope.
@@ -22,7 +23,7 @@ type OCSResponse struct {
 func writeOCS(w http.ResponseWriter, statusCode int, data any) {
 	resp := OCSResponse{}
 	resp.OCS.Meta.Status = "ok"
-	resp.OCS.Meta.StatusCode = 100
+	resp.OCS.Meta.StatusCode = statusCode
 	resp.OCS.Meta.Message = "OK"
 	resp.OCS.Data = data
 
@@ -59,9 +60,22 @@ func HandleCapabilities(w http.ResponseWriter, r *http.Request) {
 			},
 			"files": map[string]any{
 				"bigfilechunking": false,
+				"favorites":       true,
 			},
 			"news": map[string]any{
 				"version": "25.0.0-alpha1",
+			},
+			"files_sharing": map[string]any{
+				"api_enabled": true,
+				"public": map[string]any{
+					"enabled":     true,
+					"password":    map[string]any{"enforced": false},
+					"expire_date": map[string]any{"enabled": false},
+					"upload":      true,
+				},
+				"group_sharing":       true,
+				"resharing":           true,
+				"default_permissions": 31,
 			},
 			"notes": map[string]any{
 				"api_version": []string{"0.2", "1.3"},
@@ -96,6 +110,39 @@ func HandleWebDAVStub(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	default:
 		http.Error(w, "not implemented", http.StatusMethodNotAllowed)
+	}
+}
+
+// HandleUserByID returns info about a user by their ID.
+// Route: GET /ocs/v2.php/cloud/users/{id}
+func HandleUserByID(users *user.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := r.PathValue("id")
+		if userID == "" {
+			writeOCSError(w, http.StatusBadRequest, 400, "user id required")
+			return
+		}
+
+		// Try by ID first, then by username
+		target, err := users.GetByID(userID)
+		if err != nil {
+			target, err = users.GetByUsername(userID)
+		}
+		if err != nil {
+			writeOCSError(w, http.StatusNotFound, 404, "user not found")
+			return
+		}
+
+		displayName := target.DisplayName
+		if displayName == "" {
+			displayName = target.Username
+		}
+
+		writeOCS(w, http.StatusOK, map[string]any{
+			"id":           target.ID,
+			"display-name": displayName,
+			"email":        target.Email,
+		})
 	}
 }
 

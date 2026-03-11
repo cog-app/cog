@@ -432,6 +432,7 @@ type pluginRegistrar struct {
 	widgets       []Widget
 	searchSources []SearchSourceDef
 	commands      []CommandDef
+	adminCommands []CommandDef
 	settingsPages []SettingsPage
 }
 
@@ -729,6 +730,10 @@ func (pr *pluginRegistrar) RegisterCommand(def CommandDef) {
 	pr.commands = append(pr.commands, def)
 }
 
+func (pr *pluginRegistrar) RegisterAdminCommand(def CommandDef) {
+	pr.adminCommands = append(pr.adminCommands, def)
+}
+
 func (pr *pluginRegistrar) RootDB() (*sql.DB, error) {
 	return pr.registry.RootDB(pr.pluginID)
 }
@@ -759,8 +764,19 @@ func (pr *pluginRegistrar) RegisterSettingsPage(page SettingsPage) {
 	}
 }
 
-// Commands returns all registered CLI commands, keyed by plugin ID.
-func (r *Registry) Commands() map[string][]CommandDef {
+// AdminCommands returns admin-only CLI commands, keyed by plugin ID.
+func (r *Registry) AdminCommands() map[string][]CommandDef {
+	cmds := make(map[string][]CommandDef)
+	for id, reg := range r.registrars {
+		if len(reg.adminCommands) > 0 {
+			cmds[id] = reg.adminCommands
+		}
+	}
+	return cmds
+}
+
+// UserCommands returns user-facing shell commands, keyed by plugin ID.
+func (r *Registry) UserCommands() map[string][]CommandDef {
 	cmds := make(map[string][]CommandDef)
 	for id, reg := range r.registrars {
 		if len(reg.commands) > 0 {

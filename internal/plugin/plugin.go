@@ -94,6 +94,6 @@ type PrivilegedContext interface {
 	// PluginByID returns a registered plugin by its ID.
 	// Used by internal plugins that need direct access to other plugins.
 	PluginByID(id string) (cogplugin.Plugin, bool)
-	// RegisterCommand declares a CLI command for the plugin.
-	RegisterCommand(def cogplugin.CommandDef)
+	// RegisterAdminCommand declares an admin-only CLI command for the plugin.
+	RegisterAdminCommand(def cogplugin.CommandDef)
 }

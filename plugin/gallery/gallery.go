@@ -65,7 +65,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		if fp, found := priv.PluginByID("files"); found {
 			p.files = fp.(*files.Plugin)
 		}
-		priv.RegisterCommand(plugin.CommandDef{
+		priv.RegisterAdminCommand(plugin.CommandDef{
 			Name:  "scan",
 			Short: "scan media files for a user",
 			Args:  []string{"username"},

@@ -71,6 +71,10 @@ func (h *WebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleMove(w, r, u, filePath)
 	case "COPY":
 		h.handleCopy(w, r, u, filePath)
+	case "PROPPATCH":
+		h.handleProppatch(w, r, u, urlUserID, filePath)
+	case "REPORT":
+		h.handleReport(w, r, u, urlUserID, filePath)
 	default:
 		w.Header().Set("DAV", "1, 3, extended-mkcol")
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -474,21 +478,126 @@ type propstat struct {
 }
 
 type prop struct {
-	DisplayName   string        `xml:"D:displayname"`
-	ContentType   string        `xml:"D:getcontenttype,omitempty"`
-	ContentLength int64         `xml:"D:getcontentlength"`
-	ETag          string        `xml:"D:getetag,omitempty"`
-	LastModified  string        `xml:"D:getlastmodified,omitempty"`
-	ResourceType  *resourceType `xml:"D:resourcetype"`
-	OCId          string        `xml:"oc:id"`
-	OCFileID      string        `xml:"oc:fileid"`
-	OCPermissions string        `xml:"oc:permissions"`
-	OCSize        int64         `xml:"oc:size"`
-	NCHasPreview  bool          `xml:"nc:has-preview"`
+	DisplayName      string        `xml:"D:displayname"`
+	ContentType      string        `xml:"D:getcontenttype,omitempty"`
+	ContentLength    int64         `xml:"D:getcontentlength"`
+	ETag             string        `xml:"D:getetag,omitempty"`
+	LastModified     string        `xml:"D:getlastmodified,omitempty"`
+	ResourceType     *resourceType `xml:"D:resourcetype"`
+	OCId             string        `xml:"oc:id"`
+	OCFileID         string        `xml:"oc:fileid"`
+	OCPermissions    string        `xml:"oc:permissions"`
+	OCSize           int64         `xml:"oc:size"`
+	NCHasPreview     bool          `xml:"nc:has-preview"`
+	OCFavorite       int           `xml:"oc:favorite"`
+	OCCommentsCount  int           `xml:"oc:comments-count"`
+	OCCommentsUnread int           `xml:"oc:comments-unread"`
 }
 
 type resourceType struct {
 	Collection *struct{} `xml:"D:collection,omitempty"`
+}
+
+// --- PROPPATCH ---
+
+func (h *WebDAVHandler) handleProppatch(w http.ResponseWriter, r *http.Request, u *user.User, urlUserID, filePath string) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "read body", http.StatusBadRequest)
+		return
+	}
+
+	// Parse the PROPPATCH request to find oc:favorite
+	type proppatchSet struct {
+		Prop struct {
+			Favorite *int `xml:"favorite"`
+		} `xml:"prop"`
+	}
+	type proppatchReq struct {
+		XMLName xml.Name     `xml:"propertyupdate"`
+		Set     proppatchSet `xml:"set"`
+	}
+	var req proppatchReq
+	if err := xml.Unmarshal(body, &req); err != nil {
+		http.Error(w, "parse xml", http.StatusBadRequest)
+		return
+	}
+
+	if req.Set.Prop.Favorite != nil {
+		fav := *req.Set.Prop.Favorite != 0
+		if err := h.Files.SetFavorite(u.Username, filePath, fav); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+	}
+
+	// Return 207 Multi-Status response
+	hrefPrefix := "/remote.php/dav/files/" + urlUserID
+	href := hrefPrefix + filePath
+
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.WriteHeader(207)
+
+	io.WriteString(w, xml.Header)
+	fmt.Fprintf(w, `<d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns" xmlns:nc="http://nextcloud.org/ns">
+  <d:response>
+    <d:href>%s</d:href>
+    <d:propstat>
+      <d:prop>
+        <oc:favorite/>
+      </d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>`, href)
+}
+
+// --- REPORT ---
+
+func (h *WebDAVHandler) handleReport(w http.ResponseWriter, r *http.Request, u *user.User, urlUserID, filePath string) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "read body", http.StatusBadRequest)
+		return
+	}
+
+	// Check if this is a filter-files report for favorites
+	if !strings.Contains(string(body), "filter-files") {
+		w.WriteHeader(http.StatusNotImplemented)
+		return
+	}
+
+	favorites, err := h.Files.Favorites(u.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	hrefPrefix := "/remote.php/dav/files/" + urlUserID
+
+	var entries []propfindEntry
+	for i := range favorites {
+		f := &favorites[i]
+		href := hrefPrefix + f.Path
+		if f.IsDir && !strings.HasSuffix(href, "/") {
+			href += "/"
+		}
+		entries = append(entries, metaToEntry(href, f))
+	}
+
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.WriteHeader(207)
+
+	io.WriteString(w, xml.Header)
+	enc := xml.NewEncoder(w)
+	enc.Indent("", "  ")
+	enc.Encode(multiStatus{
+		DAV:       "DAV:",
+		OC:        "http://owncloud.org/ns",
+		NC:        "http://nextcloud.org/ns",
+		Responses: entries,
+	})
+	enc.Flush()
 }
 
 func metaToEntry(href string, meta *files.FileMeta) propfindEntry {
@@ -507,6 +616,11 @@ func metaToEntry(href string, meta *files.FileMeta) propfindEntry {
 		permissions = "RGDNVCK"
 	}
 
+	favInt := 0
+	if meta.Favorite {
+		favInt = 1
+	}
+
 	return propfindEntry{
 		Href: href,
 		Propstat: propstat{
@@ -523,6 +637,7 @@ func metaToEntry(href string, meta *files.FileMeta) propfindEntry {
 				OCPermissions: permissions,
 				OCSize:        meta.Size,
 				NCHasPreview:  files.HasPreview(meta.MimeType),
+				OCFavorite:    favInt,
 			},
 		},
 	}

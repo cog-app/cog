@@ -65,6 +65,7 @@ require (
 	github.com/cli/browser v1.3.0 // indirect
 	github.com/dlclark/regexp2 v1.7.0 // indirect
 	github.com/duckbrain/goprotoc v0.0.0-20250112085431-c9d6f3c6ef37 // indirect
+	github.com/ergochat/readline v0.1.3 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-json-experiment/json v0.0.0-20250725192818-e39067aee2d2 // indirect

@@ -46,7 +46,17 @@ func runPluginCmd(ctx context.Context, cmds []plugin.CommandDef, args []string) 
 			return runPluginCmd(ctx, cmd.Sub, args[1:])
 		}
 		if cmd.Run != nil {
-			return cmd.Run(ctx, args[1:])
+			cmdArgs := args[1:]
+			if len(cmdArgs) != len(cmd.Args) {
+				hc := interp.HandlerCtx(ctx)
+				fmt.Fprintf(hc.Stderr, "usage: %s", cmd.Name)
+				for _, a := range cmd.Args {
+					fmt.Fprintf(hc.Stderr, " <%s>", a)
+				}
+				fmt.Fprintln(hc.Stderr)
+				return interp.ExitStatus(1)
+			}
+			return cmd.Run(ctx, cmdArgs)
 		}
 	}
 

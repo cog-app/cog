@@ -37,6 +37,8 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/files/rename", auth.RequireAuth(http.HandlerFunc(a.handleRename)))
 	mux.Handle("GET /api/files/search", auth.RequireAuth(http.HandlerFunc(a.handleSearch)))
 	mux.Handle("GET /api/files/info", auth.RequireAuth(http.HandlerFunc(a.handleInfo)))
+	mux.Handle("POST /api/files/favorite", auth.RequireAuth(http.HandlerFunc(a.handleFavorite)))
+	mux.Handle("GET /api/files/favorites", auth.RequireAuth(http.HandlerFunc(a.handleFavorites)))
 
 	// Sharing operations
 	mux.Handle("POST /api/shares", auth.RequireAuth(http.HandlerFunc(a.handleShareCreate)))
@@ -224,6 +226,110 @@ func (a *API) handleInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.writeJSON(w, http.StatusOK, meta)
+}
+
+func (a *API) handleFavorite(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+
+	var req struct {
+		Path     string `json:"path"`
+		Favorite bool   `json:"favorite"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.Path == "" {
+		http.Error(w, "path required", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.files.SetFavorite(u.Username, req.Path, req.Favorite); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) handleFavorites(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+
+	files, err := a.files.Favorites(u.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if files == nil {
+		files = []FileMeta{}
+	}
+
+	a.writeJSON(w, http.StatusOK, files)
+}
+
+// --- Comment handlers ---
+
+func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	fileIDStr := r.URL.Query().Get("file_id")
+	fileID, err := strconv.ParseInt(fileIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "file_id required", http.StatusBadRequest)
+		return
+	}
+
+	comments, err := a.files.ListComments(u.Username, fileID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if comments == nil {
+		comments = []Comment{}
+	}
+
+	a.writeJSON(w, http.StatusOK, comments)
+}
+
+func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+
+	var req struct {
+		FileID  int64  `json:"file_id"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.FileID == 0 || req.Message == "" {
+		http.Error(w, "file_id and message required", http.StatusBadRequest)
+		return
+	}
+
+	comment, err := a.files.CreateComment(u.Username, req.FileID, u.Username, req.Message)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	a.writeJSON(w, http.StatusCreated, comment)
+}
+
+func (a *API) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	commentIDStr := r.PathValue("id")
+	commentID, err := strconv.ParseInt(commentIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid comment id", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.files.DeleteComment(u.Username, commentID, u.Username); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- Sharing handlers ---

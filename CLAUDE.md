@@ -31,6 +31,8 @@ Performance is important. Avoid redundant work, N+1 queries, and unnecessary rou
 
 Avoid running tools outside of the Go tool. Tools should be versioned with go.mod. Prefer `go generate` over `go tool <tool>` over anything installed in the path.
 
+WE DO NOT SWALLOW ERRORS. Errors should be handled by either wrapping and returning or logging the error.
+
 ## Architecture
 
 **Entry point**: `cmd/cog/main.go` — parses flags, builds service graph, starts HTTP server.

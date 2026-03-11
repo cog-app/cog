@@ -88,6 +88,7 @@ templ filesPage(pd ui.PageData, dirPath string, items []FileMeta) {
 								}
 							</td>
 							<td class="text-right" style="white-space:nowrap">
+								@favoriteButton(f.Path, f.Favorite)
 								<button
 									class="btn btn-outline btn-sm"
 									onclick={ renameFile(f.Path, f.Name) }
@@ -124,6 +125,32 @@ script renameFile(filePath string, currentName string) {
 	}).then(function(resp) {
 		if (resp.ok) window.location.reload();
 		else resp.text().then(function(t) { alert('Rename failed: ' + t); });
+	});
+}
+
+templ favoriteButton(filePath string, isFavorite bool) {
+	<button
+		class="btn btn-sm"
+		style={ favoriteStyle(isFavorite) }
+		onclick={ toggleFavorite(filePath, !isFavorite) }
+		title={ favoriteTitle(isFavorite) }
+	>
+		if isFavorite {
+			&#9733;
+		} else {
+			&#9734;
+		}
+	</button>
+}
+
+script toggleFavorite(filePath string, setFav bool) {
+	fetch('/api/files/favorite', {
+		method: 'POST',
+		headers: {'Content-Type': 'application/json'},
+		body: JSON.stringify({path: filePath, favorite: setFav})
+	}).then(function(resp) {
+		if (resp.ok) window.location.reload();
+		else resp.text().then(function(t) { alert('Failed: ' + t); });
 	});
 }
 
@@ -375,6 +402,51 @@ templ fileViewPage(pd ui.PageData, fp string, meta *FileMeta, kind string, textC
 				<p class="text-muted">
 					{ fmt.Sprintf("No preview available for %s.", meta.MimeType) }
 				</p>
+			}
+		}
+	}
+}
+
+templ favoritesPage(pd ui.PageData, items []FileMeta) {
+	@ui.Base(pd) {
+		<h1 style="margin-bottom:0.5rem">Favorites</h1>
+		@ui.Card("") {
+			if len(items) == 0 {
+				<p class="text-muted">No favorites yet. Star files to see them here.</p>
+			} else {
+				<table class="table">
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Path</th>
+							<th>Size</th>
+							<th>Modified</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, f := range items {
+							<tr>
+								<td>
+									<div style="display:flex;align-items:center;gap:0.5rem">
+										@fileIcon(f.MimeType, f.IsDir)
+										<a href={ templ.SafeURL("/apps/files" + f.Path) }>{ f.Name }</a>
+									</div>
+								</td>
+								<td class="text-muted">{ f.ParentPath }</td>
+								<td>
+									if !f.IsDir {
+										{ formatSize(f.Size) }
+									}
+								</td>
+								<td>
+									if f.MTime > 0 {
+										{ time.Unix(f.MTime, 0).Format("2006-01-02 15:04") }
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
 			}
 		}
 	}

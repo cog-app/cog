@@ -24,7 +24,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
-//go:embed sql/schema.sql
+//go:embed sql
 var sqlFS embed.FS
 
 const PluginID = "files"
@@ -40,6 +40,7 @@ type FileMeta struct {
 	MimeType   string
 	ETag       string
 	IsDir      bool
+	Favorite   bool
 }
 
 // Plugin is the files plugin. It is a privileged internal plugin
@@ -117,6 +118,7 @@ func (p *Plugin) registerRoutes(priv plugin.PrivilegedContext) {
 	}
 
 	// Files browser UI
+	priv.RegisterRoute("GET /apps/files/favorites", auth.RequireAuthWeb(http.HandlerFunc(pages.ServeFavorites)))
 	priv.RegisterRoute("GET /apps/files/{path...}", auth.RequireAuthWeb(http.HandlerFunc(pages.ServeGet)))
 	priv.RegisterRoute("POST /apps/files/{path...}", csrfWrap(http.HandlerFunc(pages.ServePost)))
 	priv.RegisterRoute("DELETE /apps/files/{path...}", csrfWrap(http.HandlerFunc(pages.ServeDelete)))
@@ -305,7 +307,7 @@ func (p *Plugin) List(username, dirPath string) ([]FileMeta, error) {
 	}
 
 	rows, err := db.Query(`
-		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir
+		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
 		FROM files WHERE parent_path = ?
 		ORDER BY is_dir DESC, name ASC`, dirPath)
 	if err != nil {
@@ -317,7 +319,7 @@ func (p *Plugin) List(username, dirPath string) ([]FileMeta, error) {
 	for rows.Next() {
 		var f FileMeta
 		if err := rows.Scan(&f.ID, &f.Path, &f.ParentPath, &f.Name,
-			&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir); err != nil {
+			&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir, &f.Favorite); err != nil {
 			return nil, fmt.Errorf("scan file: %w", err)
 		}
 		files = append(files, f)
@@ -504,8 +506,8 @@ func (p *Plugin) reconcile(db *sql.DB, username, dirPath, fsPath string) error {
 		}
 
 		_, err = db.Exec(`
-			INSERT OR IGNORE INTO files (path, parent_path, name, size, mtime, mime_type, etag, is_dir)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			INSERT OR IGNORE INTO files (path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
 			childPath, dirPath, entry.Name(), info.Size(),
 			info.ModTime().Unix(), mimeType, etag, isDir)
 		if err != nil {
@@ -519,10 +521,10 @@ func (p *Plugin) reconcile(db *sql.DB, username, dirPath, fsPath string) error {
 func getByID(db *sql.DB, id int64) (*FileMeta, error) {
 	var f FileMeta
 	err := db.QueryRow(`
-		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir
+		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
 		FROM files WHERE id = ?`, id).Scan(
 		&f.ID, &f.Path, &f.ParentPath, &f.Name,
-		&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir)
+		&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir, &f.Favorite)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("file not found: id %d", id)
 	}
@@ -535,10 +537,10 @@ func getByID(db *sql.DB, id int64) (*FileMeta, error) {
 func getByPath(db *sql.DB, path string) (*FileMeta, error) {
 	var f FileMeta
 	err := db.QueryRow(`
-		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir
+		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
 		FROM files WHERE path = ?`, path).Scan(
 		&f.ID, &f.Path, &f.ParentPath, &f.Name,
-		&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir)
+		&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir, &f.Favorite)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("file not found: %s", path)
 	}
@@ -580,7 +582,7 @@ func generateETag() string {
 // RecentFiles returns the most recently modified non-directory files.
 func RecentFiles(db *sql.DB, limit int) ([]FileMeta, error) {
 	rows, err := db.Query(`
-		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir
+		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
 		FROM files WHERE is_dir = 0
 		ORDER BY mtime DESC LIMIT ?`, limit)
 	if err != nil {
@@ -592,7 +594,7 @@ func RecentFiles(db *sql.DB, limit int) ([]FileMeta, error) {
 	for rows.Next() {
 		var f FileMeta
 		if err := rows.Scan(&f.ID, &f.Path, &f.ParentPath, &f.Name,
-			&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir); err != nil {
+			&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir, &f.Favorite); err != nil {
 			return nil, fmt.Errorf("scan file: %w", err)
 		}
 		files = append(files, f)
@@ -644,6 +646,76 @@ func IDString(meta *FileMeta) string {
 	return strconv.FormatInt(meta.ID, 10)
 }
 
+// SetFavorite sets or clears the favorite flag for a file.
+func (p *Plugin) SetFavorite(username, filePath string, fav bool) error {
+	filePath = normalizePath(filePath)
+	db, err := p.DB(username)
+	if err != nil {
+		return err
+	}
+	val := 0
+	if fav {
+		val = 1
+	}
+	res, err := db.Exec(`UPDATE files SET favorite = ? WHERE path = ?`, val, filePath)
+	if err != nil {
+		return fmt.Errorf("set favorite: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("file not found: %s", filePath)
+	}
+	return nil
+}
+
+// SetFavoriteByID sets or clears the favorite flag for a file by ID.
+func (p *Plugin) SetFavoriteByID(username string, id int64, fav bool) error {
+	db, err := p.DB(username)
+	if err != nil {
+		return err
+	}
+	val := 0
+	if fav {
+		val = 1
+	}
+	res, err := db.Exec(`UPDATE files SET favorite = ? WHERE id = ?`, val, id)
+	if err != nil {
+		return fmt.Errorf("set favorite: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("file not found: id %d", id)
+	}
+	return nil
+}
+
+// Favorites returns all favorited files for a user.
+func (p *Plugin) Favorites(username string) ([]FileMeta, error) {
+	db, err := p.DB(username)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(`
+		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
+		FROM files WHERE favorite = 1
+		ORDER BY is_dir DESC, name ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("favorites: %w", err)
+	}
+	defer rows.Close()
+
+	var files []FileMeta
+	for rows.Next() {
+		var f FileMeta
+		if err := rows.Scan(&f.ID, &f.Path, &f.ParentPath, &f.Name,
+			&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir, &f.Favorite); err != nil {
+			return nil, fmt.Errorf("scan file: %w", err)
+		}
+		files = append(files, f)
+	}
+	return files, rows.Err()
+}
+
 // Search returns files matching a simple name pattern.
 func (p *Plugin) Search(username, query string) ([]FileMeta, error) {
 	db, err := p.DB(username)
@@ -653,7 +725,7 @@ func (p *Plugin) Search(username, query string) ([]FileMeta, error) {
 
 	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
 	rows, err := db.Query(`
-		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir
+		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
 		FROM files WHERE name LIKE ? ESCAPE '\'
 		ORDER BY is_dir DESC, name ASC
 		LIMIT 50`, pattern)
@@ -666,7 +738,7 @@ func (p *Plugin) Search(username, query string) ([]FileMeta, error) {
 	for rows.Next() {
 		var f FileMeta
 		if err := rows.Scan(&f.ID, &f.Path, &f.ParentPath, &f.Name,
-			&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir); err != nil {
+			&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir, &f.Favorite); err != nil {
 			return nil, fmt.Errorf("scan file: %w", err)
 		}
 		results = append(results, f)

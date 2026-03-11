@@ -1,0 +1,2 @@
+-- IF COLUMN files.favorite NOT EXIST
+ALTER TABLE files ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;

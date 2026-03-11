@@ -97,7 +97,7 @@ func isNativeImage(mimeType string) bool {
 // isInkscapeFormat returns true if Inkscape can convert the format to PNG.
 func isInkscapeFormat(mimeType string) bool {
 	switch mimeType {
-	case "image/svg+xml",           // .svg
+	case "image/svg+xml", // .svg
 		"application/postscript",  // .ai, .eps
 		"image/x-eps",             // .eps (alternate)
 		"application/eps",         // .eps (alternate)
@@ -116,8 +116,8 @@ func isXCF(mimeType string) bool {
 func isPSD(mimeType string) bool {
 	switch mimeType {
 	case "image/vnd.adobe.photoshop", // .psd
-		"image/x-photoshop",         // .psd (alternate)
-		"image/x-psd":               // .psd (alternate)
+		"image/x-photoshop", // .psd (alternate)
+		"image/x-psd":       // .psd (alternate)
 		return true
 	}
 	return false

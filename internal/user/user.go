@@ -124,6 +124,24 @@ func (s *Store) Authenticate(username, password string) (*User, error) {
 }
 
 // List returns all users ordered by username.
+// Usernames returns all usernames sorted alphabetically.
+func (s *Store) Usernames() ([]string, error) {
+	rows, err := s.db.Query(`SELECT username FROM users ORDER BY username`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
 func (s *Store) List() iter.Seq2[User, error] {
 	return func(yield func(User, error) bool) {
 		rows, err := s.db.Query(

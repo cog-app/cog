@@ -53,11 +53,12 @@ func main() {
 	dbPath := filepath.Join(devDir, "system.db")
 	bin := filepath.Join(devDir, "cog")
 
-	if *shell {
+	switch {
+	case *shell:
 		runShell(bin, dbPath, devDir, *stale)
-	} else if *watch {
+	case *watch:
 		runWatch(bin, dbPath, devDir, *logRequests, *stale)
-	} else {
+	default:
 		runOnce(bin, dbPath, devDir, *logRequests, *stale)
 	}
 }

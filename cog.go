@@ -121,7 +121,7 @@ func addPluginCommands(root *cobra.Command, plugins []plugin.Plugin) {
 		return
 	}
 
-	for pluginID, cmds := range p.Plugins.Commands() {
+	for pluginID, cmds := range p.Plugins.AdminCommands() {
 		parent := &cobra.Command{
 			Use:   pluginID,
 			Short: pluginID + " plugin commands",

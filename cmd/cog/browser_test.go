@@ -32,6 +32,19 @@ func browserLogin(t testing.TB, b *webtest.Browser, user, pass string) {
 	b.Click(t, `button[type="submit"]`)
 	b.WaitNotVisible(t, "#password")
 }
+func TestBrowserMin(t *testing.T) {
+	env := cogtest.New(t, allPlugins...)
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	// Pre-create all users before subtests to avoid DB contention.
+	env.CreateUser(t, "admin", "pass")
+	b := eng.StartT(t)
+	browserLogin(t, b, "admin", "pass")
+	url := b.URL(t)
+	require.True(t, !strings.Contains(url, "/login"), "expected redirect away from /login, got %s", url)
+
+}
 
 func TestBrowserCore(t *testing.T) {
 	t.Skip("disabled while we figure out login and stuff")

@@ -69,6 +69,8 @@ type Registrar interface {
 	RegisterDAVHandler(prefix string, handler http.Handler)
 	// RegisterSettingsPage adds a settings page for this plugin.
 	RegisterSettingsPage(page SettingsPage)
+	// RegisterCommand declares a user-facing CLI command available in the shell.
+	RegisterCommand(def CommandDef)
 }
 
 // SettingsPage describes a settings page registered by a plugin.

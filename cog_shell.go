@@ -35,7 +35,7 @@ func shellCmd(plugins []plugin.Plugin) *cobra.Command {
 			}
 
 			cfg := configFromEnv()
-			sh := shell.New(username, filesDir, p.Plugins.Commands(), newLogger(cfg))
+			sh := shell.New(username, filesDir, p.Plugins.UserCommands(), p.Users.Usernames, newLogger(cfg))
 
 			if command != "" {
 				return sh.Run(c.Context(), command, os.Stdin, os.Stdout, os.Stderr)

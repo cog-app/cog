@@ -141,6 +141,8 @@ func New(p *services.Providers) http.Handler {
 	mux.HandleFunc("GET /ocs/v2.php/cloud/capabilities", compat.HandleCapabilities)
 	mux.Handle("GET /ocs/v1.php/cloud/user", auth.RequireAuth(http.HandlerFunc(compat.HandleCurrentUser)))
 	mux.Handle("GET /ocs/v2.php/cloud/user", auth.RequireAuth(http.HandlerFunc(compat.HandleCurrentUser)))
+	mux.Handle("GET /ocs/v1.php/cloud/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users)))
+	mux.Handle("GET /ocs/v2.php/cloud/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users)))
 
 	// --- WebDAV file operations (NC clients) ---
 	// Look up the files plugin from the registry for compat handlers.
@@ -163,6 +165,26 @@ func New(p *services.Providers) http.Handler {
 		// NC preview endpoint (needs auth + files plugin)
 		previewH := &compat.PreviewHandler{Files: fp}
 		mux.Handle("GET /index.php/core/preview", auth.RequireAuth(previewH))
+
+		// WebDAV comments endpoint
+		commentsH := &compat.CommentsHandler{Log: p.Log.With("component", "comments"), Files: fp}
+		mux.Handle("/remote.php/dav/comments/files/", auth.RequireAuth(commentsH))
+
+		// OCS sharing API (NC clients)
+		sharingH := &compat.SharingHandler{
+			Log:    p.Log.With("component", "sharing"),
+			Files:  fp,
+			Shares: p.Shares,
+			Users:  p.Users,
+		}
+		for _, prefix := range []string{"/ocs/v1.php", "/ocs/v2.php"} {
+			mux.Handle("GET "+prefix+"/apps/files_sharing/api/v1/shares", auth.RequireAuth(http.HandlerFunc(sharingH.HandleListShares)))
+			mux.Handle("POST "+prefix+"/apps/files_sharing/api/v1/shares", auth.RequireAuth(http.HandlerFunc(sharingH.HandleCreateShare)))
+			mux.Handle("GET "+prefix+"/apps/files_sharing/api/v1/shares/{shareId}", auth.RequireAuth(http.HandlerFunc(sharingH.HandleGetShare)))
+			mux.Handle("PUT "+prefix+"/apps/files_sharing/api/v1/shares/{shareId}", auth.RequireAuth(http.HandlerFunc(sharingH.HandleUpdateShare)))
+			mux.Handle("DELETE "+prefix+"/apps/files_sharing/api/v1/shares/{shareId}", auth.RequireAuth(http.HandlerFunc(sharingH.HandleDeleteShare)))
+			mux.Handle("GET "+prefix+"/apps/files_sharing/api/v1/sharees", auth.RequireAuth(http.HandlerFunc(sharingH.HandleSharees)))
+		}
 	}
 
 	// CalDAV/CardDAV discovery: PROPFIND on /remote.php/dav/ returns current-user-principal.

@@ -20,7 +20,7 @@ func newTestShell(t *testing.T) (*Shell, string) {
 	os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hello world\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "Documents", "notes.txt"), []byte("line1\nline2\nline3\n"), 0o644)
 
-	sh := New("testuser", dir, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	sh := New("testuser", dir, nil, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	return sh, dir
 }
 
@@ -170,7 +170,7 @@ func TestPluginCommand(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	sh := New("testuser", dir, cmds, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	sh := New("testuser", dir, cmds, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	runCmdWith(t, sh, "myplugin greet")
 
 	if !ran {
