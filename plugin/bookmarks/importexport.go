@@ -40,7 +40,7 @@ func ImportNetscapeHTML(db *sql.DB, r io.Reader) (int, error) {
 
 		var tags []string
 		if tagsMatch := tagsRe.FindStringSubmatch(attrs); tagsMatch != nil && tagsMatch[1] != "" {
-			for _, t := range strings.Split(tagsMatch[1], ",") {
+			for t := range strings.SplitSeq(tagsMatch[1], ",") {
 				t = strings.TrimSpace(t)
 				if t != "" {
 					tags = append(tags, t)

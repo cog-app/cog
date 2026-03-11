@@ -1,4 +1,4 @@
-// Dev tool for Cog. Usage: go tool dev [-reset] [-watch]
+// Dev tool for Cog. Usage: go tool dev [-reset] [-watch] [-shell]
 //
 // Builds cog with seed support, ensures a test user exists, and runs with
 // request logging and COG_SEED=true. Logs are teed to tmp/dev/cog.log.
@@ -30,6 +30,7 @@ func main() {
 	logRequests := flag.Bool("log", false, "instructs the service to log requests")
 	stale := flag.Bool("stale", false, "skip the build step to use the previous, stale build")
 	watch := flag.Bool("watch", false, "live reload via templ proxy (templ on :8580, cog on :8581)")
+	shell := flag.Bool("shell", false, "run cog shell --user admin instead of the server")
 	rebuild := flag.Int("rebuild", 0, "internal: rebuild binary and signal parent")
 	flag.Parse()
 
@@ -52,7 +53,9 @@ func main() {
 	dbPath := filepath.Join(devDir, "system.db")
 	bin := filepath.Join(devDir, "cog")
 
-	if *watch {
+	if *shell {
+		runShell(bin, dbPath, devDir, *stale)
+	} else if *watch {
 		runWatch(bin, dbPath, devDir, *logRequests, *stale)
 	} else {
 		runOnce(bin, dbPath, devDir, *logRequests, *stale)
@@ -77,6 +80,32 @@ func runRebuild(bin string, ppid int) {
 	resp, err := http.Post("http://127.0.0.1:8580/_templ/reload/events", "", nil)
 	if err == nil {
 		resp.Body.Close()
+	}
+}
+
+// runShell builds cog and runs `cog shell --user admin`.
+func runShell(bin, dbPath, devDir string, stale bool) {
+	if !stale {
+		generate()
+		build(bin)
+	}
+
+	seedUser(bin, dbPath, devDir)
+
+	cmd := exec.Command(bin, "shell", "--user", testUser)
+	cmd.Env = append(os.Environ(),
+		"COG_DB="+dbPath,
+		"COG_DATA_DIR="+filepath.Join(devDir, "data"),
+	)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			os.Exit(exit.ExitCode())
+		}
+		log.Fatal(err)
 	}
 }
 

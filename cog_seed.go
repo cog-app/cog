@@ -88,13 +88,11 @@ func runSeed(p *services.Providers) {
 		if !ok {
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := s.Seed("admin"); err != nil {
 				p.Log.Error("seed: plugin failed", "plugin", id, "err", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

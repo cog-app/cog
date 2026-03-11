@@ -327,7 +327,7 @@ func parseTags(s string) []string {
 		return nil
 	}
 	var tags []string
-	for _, t := range strings.Split(s, ",") {
+	for t := range strings.SplitSeq(s, ",") {
 		t = strings.TrimSpace(t)
 		if t != "" {
 			tags = append(tags, t)
@@ -378,7 +378,7 @@ func parseFolderIDs(s string) []int64 {
 		return nil
 	}
 	var ids []int64
-	for _, part := range strings.Split(s, ",") {
+	for part := range strings.SplitSeq(s, ",") {
 		part = strings.TrimSpace(part)
 		if v, err := strconv.ParseInt(part, 10, 64); err == nil {
 			ids = append(ids, v)

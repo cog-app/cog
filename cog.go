@@ -103,6 +103,7 @@ func Main(plugins ...plugin.Plugin) {
 	root.AddCommand(groupCmd(plugins))
 	root.AddCommand(volumeCmd(plugins))
 	root.AddCommand(settingCmd(plugins))
+	root.AddCommand(shellCmd(plugins))
 
 	// Discover and register plugin CLI commands.
 	addPluginCommands(root, plugins)
@@ -138,12 +139,13 @@ func addPluginCommands(root *cobra.Command, plugins []plugin.Plugin) {
 }
 
 func buildCobraCmd(def plugin.CommandDef) *cobra.Command {
-	use := def.Name
+	var use strings.Builder
+	use.WriteString(def.Name)
 	for _, arg := range def.Args {
-		use += " <" + arg + ">"
+		use.WriteString(" <" + arg + ">")
 	}
 	cmd := &cobra.Command{
-		Use:   use,
+		Use:   use.String(),
 		Short: def.Short,
 	}
 	if def.Run != nil {

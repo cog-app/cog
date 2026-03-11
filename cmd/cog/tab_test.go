@@ -39,11 +39,11 @@ func TestTabReuse(t *testing.T) {
 	eng := webtest.New(logged)
 	t.Cleanup(eng.Close)
 
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		env.CreateUser(t, fmt.Sprintf("user%d", i), "pass")
 	}
 
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		user := fmt.Sprintf("user%d", i)
 		t.Run(fmt.Sprintf("tab-%d", i), func(t *testing.T) {
 			b := eng.StartT(t)

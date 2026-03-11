@@ -15,6 +15,8 @@ require (
 	github.com/PuerkitoBio/goquery v1.8.0
 	github.com/a-h/templ v0.3.1001
 	github.com/blevesearch/bleve/v2 v2.5.7
+	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327
+	github.com/chromedp/chromedp v0.14.2
 	github.com/esimov/pigo v1.4.6
 	github.com/google/uuid v1.6.0
 	github.com/mattn/go-sqlite3 v1.14.24
@@ -30,6 +32,7 @@ require (
 	golang.org/x/image v0.36.0
 	google.golang.org/grpc v1.79.1
 	google.golang.org/protobuf v1.36.11
+	mvdan.cc/sh/v3 v3.13.0
 )
 
 require (
@@ -58,8 +61,6 @@ require (
 	github.com/blevesearch/zapx/v15 v15.4.2 // indirect
 	github.com/blevesearch/zapx/v16 v16.2.8 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
-	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327 // indirect
-	github.com/chromedp/chromedp v0.14.2 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/cli/browser v1.3.0 // indirect
 	github.com/dlclark/regexp2 v1.7.0 // indirect
@@ -89,7 +90,8 @@ require (
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/term v0.40.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/tools v0.41.0 // indirect
 	google.golang.org/genproto v0.0.0-20260226221140-a57be14db171 // indirect
