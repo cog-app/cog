@@ -17,7 +17,7 @@ func TestSmoke(t *testing.T) {
 	eng := webtest.New(mux)
 	t.Cleanup(eng.Close)
 
-	b := eng.StartT(t)
+	b := eng.Start(t)
 	b.Navigate(t, "/")
 
 	if got := b.Title(t); got != "Hello" {

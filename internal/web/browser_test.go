@@ -16,7 +16,7 @@ func TestBrowserLoginFlow(t *testing.T) {
 	eng := webtest.New(env)
 	t.Cleanup(eng.Close)
 
-	b := eng.StartT(t)
+	b := eng.Start(t)
 	b.Navigate(t, "/login")
 
 	// Fill in credentials and submit.
@@ -37,7 +37,7 @@ func TestBrowserLoginBadPassword(t *testing.T) {
 	eng := webtest.New(env)
 	t.Cleanup(eng.Close)
 
-	b := eng.StartT(t)
+	b := eng.Start(t)
 	b.Navigate(t, "/login")
 
 	b.Type(t, "#username", "alice")

@@ -1,31 +1,29 @@
 // Package webtest provides lightweight browser testing using Chrome DevTools Protocol.
 //
-// It wraps chromedp to drive a headless Chrome against a test HTTP server.
+// It wraps go-rod to drive a headless Chrome against a test HTTP server.
 // If Chrome is not installed, tests skip gracefully.
 package webtest
 
 import (
-	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 
-	"github.com/chromedp/cdproto/network"
-	"github.com/chromedp/chromedp"
+	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/launcher"
+	"github.com/go-rod/rod/lib/proto"
 )
 
 // Engine manages a test HTTP server and a shared Chrome process.
 type Engine struct {
 	handler http.Handler
 
-	mu        sync.Mutex
-	server    *httptest.Server
-	allocCtx  context.Context
-	allocDone context.CancelFunc
-	startErr  error
-	started   bool
+	mu       sync.Mutex
+	server   *httptest.Server
+	browser  *rod.Browser
+	startErr error
+	started  bool
 }
 
 // New creates an Engine that serves the given handler.
@@ -33,9 +31,7 @@ func New(handler http.Handler) *Engine {
 	return &Engine{handler: handler}
 }
 
-// Start launches a browser tab and returns a Browser. The Chrome process
-// and HTTP server are created lazily on the first call and reused.
-func (e *Engine) Start(ctx context.Context) (*Browser, error) {
+func (e *Engine) start() (*Browser, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -43,33 +39,31 @@ func (e *Engine) Start(ctx context.Context) (*Browser, error) {
 		return nil, err
 	}
 
-	tabCtx, tabCancel := chromedp.NewContext(e.allocCtx)
-	// Clear cookies from previous tabs so each tab starts with a clean state.
-	if err := chromedp.Run(tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
-		return network.ClearBrowserCookies().Do(ctx)
-	})); err != nil {
-		tabCancel()
-		return nil, fmt.Errorf("webtest: new tab: %w", err)
+	page, err := e.browser.Page(proto.TargetCreateTarget{URL: "about:blank"})
+	if err != nil {
+		return nil, err
 	}
-	// Navigate to about:blank to ensure the tab is alive.
-	if err := chromedp.Run(tabCtx, chromedp.Navigate("about:blank")); err != nil {
-		tabCancel()
-		return nil, fmt.Errorf("webtest: new tab: %w", err)
+
+	// Clear cookies so each tab starts with a clean session.
+	if err := e.browser.SetCookies(nil); err != nil {
+		page.Close()
+		return nil, err
 	}
 
 	return &Browser{
-		ctx:     tabCtx,
-		cancel:  tabCancel,
+		page:    page,
 		baseURL: e.server.URL,
 	}, nil
 }
 
-// StartT is like Start but uses testing helpers: it skips if Chrome is
-// unavailable and registers cleanup that screenshots on failure.
-func (e *Engine) StartT(t testing.TB) *Browser {
+// Start launches a browser tab and returns a Browser. The Chrome process
+// and HTTP server are created lazily on the first call and reused.
+// It skips if Chrome is unavailable and registers cleanup that screenshots
+// on failure.
+func (e *Engine) Start(t testing.TB) *Browser {
 	t.Helper()
 
-	b, err := e.Start(t.Context())
+	b, err := e.start()
 	if err != nil {
 		t.Skipf("webtest: %v", err)
 	}
@@ -78,7 +72,7 @@ func (e *Engine) StartT(t testing.TB) *Browser {
 		if t.Failed() {
 			b.screenshotOnFailure(t)
 		}
-		b.cancel()
+		b.page.Close()
 	})
 
 	return b
@@ -89,9 +83,9 @@ func (e *Engine) Close() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if e.allocDone != nil {
-		e.allocDone()
-		e.allocDone = nil
+	if e.browser != nil {
+		e.browser.Close()
+		e.browser = nil
 	}
 	if e.server != nil {
 		e.server.Close()
@@ -110,26 +104,24 @@ func (e *Engine) ensureStartedLocked() error {
 	// Create test server.
 	e.server = httptest.NewServer(e.handler)
 
-	// Create Chrome allocator (one headless process, shared across tabs).
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.NoSandbox,
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-
-	// Verify Chrome works by creating a test tab.
-	testCtx, testCancel := chromedp.NewContext(allocCtx)
-	err := chromedp.Run(testCtx, chromedp.Navigate("about:blank"))
-	testCancel()
-
-	if err != nil {
-		allocCancel()
+	// Find Chrome. Don't auto-download; skip if not available.
+	path, found := launcher.LookPath()
+	if !found {
 		e.server.Close()
 		e.server = nil
-		e.startErr = fmt.Errorf("chrome unavailable: %w", err)
+		e.startErr = launcher.ErrAlreadyLaunched // reuse sentinel
 		return e.startErr
 	}
 
-	e.allocCtx = allocCtx
-	e.allocDone = allocCancel
+	u := launcher.New().Bin(path).Headless(true).NoSandbox(true).MustLaunch()
+	browser := rod.New().ControlURL(u)
+	if err := browser.Connect(); err != nil {
+		e.server.Close()
+		e.server = nil
+		e.startErr = err
+		return e.startErr
+	}
+
+	e.browser = browser
 	return nil
 }

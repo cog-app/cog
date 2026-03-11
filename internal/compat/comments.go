@@ -1,6 +1,7 @@
 package compat
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -116,21 +117,51 @@ func (h *CommentsHandler) handleCreate(w http.ResponseWriter, r *http.Request, u
 		return
 	}
 
-	type commentBody struct {
-		Message string `xml:"message"`
-	}
-	var cb commentBody
-	if err := xml.Unmarshal(body, &cb); err != nil {
-		// Try plain text as fallback
-		cb.Message = strings.TrimSpace(string(body))
+	var message, actorID, verb string
+
+	// NC Android app sends JSON: {"actorId":"...","actorType":"users","verb":"comment","message":"..."}
+	ct := r.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "application/json") {
+		var jb struct {
+			Message string `json:"message"`
+			ActorID string `json:"actorId"`
+			Verb    string `json:"verb"`
+		}
+		if err := json.Unmarshal(body, &jb); err == nil {
+			message = jb.Message
+			actorID = jb.ActorID
+			verb = jb.Verb
+		}
 	}
 
-	if cb.Message == "" {
+	// Fallback: try XML, then plain text
+	if message == "" {
+		type commentBody struct {
+			Message string `xml:"message"`
+		}
+		var cb commentBody
+		if err := xml.Unmarshal(body, &cb); err == nil {
+			message = cb.Message
+		} else {
+			message = strings.TrimSpace(string(body))
+		}
+	}
+
+	if message == "" {
 		http.Error(w, "message required", http.StatusBadRequest)
 		return
 	}
 
-	comment, err := h.Files.CreateComment(username, fileID, username, cb.Message)
+	// Use authenticated username as actor; actorID from body is the user's UUID
+	// which we store for display purposes.
+	if actorID == "" {
+		actorID = username
+	}
+	if verb == "" {
+		verb = "comment"
+	}
+
+	comment, err := h.Files.CreateComment(username, fileID, actorID, message)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

@@ -176,6 +176,7 @@ func New(p *services.Providers) http.Handler {
 			Files:  fp,
 			Shares: p.Shares,
 			Users:  p.Users,
+			Groups: p.Groups,
 		}
 		for _, prefix := range []string{"/ocs/v1.php", "/ocs/v2.php"} {
 			mux.Handle("GET "+prefix+"/apps/files_sharing/api/v1/shares", auth.RequireAuth(http.HandlerFunc(sharingH.HandleListShares)))
@@ -184,6 +185,7 @@ func New(p *services.Providers) http.Handler {
 			mux.Handle("PUT "+prefix+"/apps/files_sharing/api/v1/shares/{shareId}", auth.RequireAuth(http.HandlerFunc(sharingH.HandleUpdateShare)))
 			mux.Handle("DELETE "+prefix+"/apps/files_sharing/api/v1/shares/{shareId}", auth.RequireAuth(http.HandlerFunc(sharingH.HandleDeleteShare)))
 			mux.Handle("GET "+prefix+"/apps/files_sharing/api/v1/sharees", auth.RequireAuth(http.HandlerFunc(sharingH.HandleSharees)))
+			mux.Handle("GET "+prefix+"/apps/files_sharing/api/v1/sharees_recommended", auth.RequireAuth(http.HandlerFunc(sharingH.HandleShareesRecommended)))
 		}
 	}
 
@@ -195,8 +197,9 @@ func New(p *services.Providers) http.Handler {
 	mux.HandleFunc("/remote.php/dav", compat.HandleWebDAVStub)
 	mux.HandleFunc("/remote.php/dav/", compat.HandleWebDAVStub)
 
-	// Stub routes (avatar, notifications, connectivity, etc.)
-	compat.RegisterStubs(mux)
+	// NC-compatible OCS routes (avatar, notifications, user status, etc.)
+	ncCompat := &compat.NCCompat{Users: p.Users, Files: fp, DataDir: p.Config.DataDir}
+	ncCompat.RegisterRoutes(mux)
 
 	// --- Login Flow v2 ---
 	mux.HandleFunc("POST /index.php/login/v2", loginFlow.HandleInit)

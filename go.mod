@@ -15,9 +15,9 @@ require (
 	github.com/PuerkitoBio/goquery v1.8.0
 	github.com/a-h/templ v0.3.1001
 	github.com/blevesearch/bleve/v2 v2.5.7
-	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327
-	github.com/chromedp/chromedp v0.14.2
+	github.com/ergochat/readline v0.1.3
 	github.com/esimov/pigo v1.4.6
+	github.com/go-rod/rod v0.116.2
 	github.com/google/uuid v1.6.0
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/microcosm-cc/bluemonday v1.0.27
@@ -61,17 +61,11 @@ require (
 	github.com/blevesearch/zapx/v15 v15.4.2 // indirect
 	github.com/blevesearch/zapx/v16 v16.2.8 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
-	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/cli/browser v1.3.0 // indirect
 	github.com/dlclark/regexp2 v1.7.0 // indirect
 	github.com/duckbrain/goprotoc v0.0.0-20250112085431-c9d6f3c6ef37 // indirect
-	github.com/ergochat/readline v0.1.3 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
-	github.com/go-json-experiment/json v0.0.0-20250725192818-e39067aee2d2 // indirect
-	github.com/gobwas/httphead v0.1.0 // indirect
-	github.com/gobwas/pool v0.2.1 // indirect
-	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
@@ -87,6 +81,11 @@ require (
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/natefinch/atomic v1.0.1 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
+	github.com/ysmood/fetchup v0.2.3 // indirect
+	github.com/ysmood/goob v0.4.0 // indirect
+	github.com/ysmood/got v0.40.0 // indirect
+	github.com/ysmood/gson v0.7.3 // indirect
+	github.com/ysmood/leakless v0.9.0 // indirect
 	go.etcd.io/bbolt v1.4.0 // indirect
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/net v0.49.0 // indirect

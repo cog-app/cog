@@ -6,6 +6,7 @@ package cogtest
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -69,9 +70,17 @@ type Env struct {
 func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	t.Helper()
 
-	sysDB, err := db.OpenSystem(":memory:")
+	// Use a named shared-cache in-memory DB so multiple connections share the same data.
+	// Plain ":memory:" gives each connection its own empty database, which breaks
+	// browser tests where Chrome goroutines open concurrent connections.
+	dbName := url.PathEscape(t.Name())
+	sysDB, err := sql.Open("sqlite3", "file:"+dbName+"?mode=memory&cache=shared&_journal_mode=WAL&_foreign_keys=on")
 	if err != nil {
 		t.Fatalf("cogtest: open db: %v", err)
+	}
+	if err := db.Migrate(sysDB); err != nil {
+		sysDB.Close()
+		t.Fatalf("cogtest: migrate db: %v", err)
 	}
 	t.Cleanup(func() { sysDB.Close() })
 

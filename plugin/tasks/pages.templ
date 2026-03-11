@@ -22,8 +22,8 @@ templ tasksSidebar(sb sidebarData, csrfToken string) {
 		<div class="sidebar-divider"></div>
 		<form method="post" action="/apps/tasks/list" class="flex gap-1 items-center" style="padding:0.5rem 1rem">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
-			<input class="form-control" type="text" name="name" placeholder="New list..." required style="flex:1;min-width:0"/>
-			<button class="btn btn-outline btn-sm" type="submit">+</button>
+			<input class="form-control" type="text" name="name" placeholder="New list..." required style="flex:1;min-width:0" data-testid="new-list-name"/>
+			<button class="btn btn-outline btn-sm" type="submit" data-testid="new-list-submit">+</button>
 		</form>
 	</nav>
 }
@@ -55,8 +55,8 @@ templ tasksListPage(sb sidebarData, list *TaskList, allTasks []Task, csrfToken s
 				<input type="hidden" name="csrf_token" value={ csrfToken }/>
 				<input type="hidden" name="list_id" value={ strconv.FormatInt(list.ID, 10) }/>
 				<div class="flex gap-1">
-					<input class="form-control" type="text" name="summary" placeholder="Add a task..." required style="flex:1"/>
-					<button class="btn btn-primary btn-sm" type="submit">Add</button>
+					<input class="form-control" type="text" name="summary" placeholder="Add a task..." required style="flex:1" data-testid="new-task-summary"/>
+					<button class="btn btn-primary btn-sm" type="submit" data-testid="new-task-submit">Add</button>
 				</div>
 			</form>
 			<!-- Task tree -->

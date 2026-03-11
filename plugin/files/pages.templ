@@ -15,8 +15,8 @@ templ filesPage(pd ui.PageData, dirPath string, items []FileMeta) {
 			<div class="flex gap-1 items-end mb-2" style="flex-wrap:wrap">
 				<form method="post" action={ templ.SafeURL("/apps/files" + dirPath) } class="flex gap-1 items-end">
 					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-					<input class="form-control" type="text" name="name" placeholder="New folder" required style="max-width:200px"/>
-					<button class="btn btn-outline btn-sm" type="submit">Create Folder</button>
+					<input class="form-control" type="text" name="name" placeholder="New folder" required style="max-width:200px" data-testid="new-folder-name"/>
+					<button class="btn btn-outline btn-sm" type="submit" data-testid="new-folder-submit">Create Folder</button>
 				</form>
 				@ui.Upload("/apps/files"+dirPath, "file", "", pd.CSRFToken, "Upload", "btn btn-primary btn-sm")
 				<button id="bulk-delete-btn" class="btn btn-danger btn-sm" style="display:none" onclick="bulkDelete()">Delete Selected</button>

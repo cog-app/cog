@@ -98,7 +98,7 @@ func filesPage(pd ui.PageData, dirPath string, items []FileMeta) templ.Component
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"> <input class=\"form-control\" type=\"text\" name=\"name\" placeholder=\"New folder\" required style=\"max-width:200px\"> <button class=\"btn btn-outline btn-sm\" type=\"submit\">Create Folder</button></form>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"> <input class=\"form-control\" type=\"text\" name=\"name\" placeholder=\"New folder\" required style=\"max-width:200px\" data-testid=\"new-folder-name\"> <button class=\"btn btn-outline btn-sm\" type=\"submit\" data-testid=\"new-folder-submit\">Create Folder</button></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

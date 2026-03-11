@@ -2,7 +2,11 @@ package compat
 
 import (
 	"encoding/json"
+	"encoding/xml"
+	"fmt"
 	"net/http"
+	"reflect"
+	"sort"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -20,7 +24,35 @@ type OCSResponse struct {
 	} `json:"ocs"`
 }
 
+func wantsJSON(r *http.Request) bool {
+	return r.URL.Query().Get("format") == "json"
+}
+
+func writeOCSReq(w http.ResponseWriter, r *http.Request, statusCode int, data any) {
+	if wantsJSON(r) {
+		writeOCSJSON(w, statusCode, data)
+	} else {
+		writeOCSXML(w, statusCode, "ok", statusCode, "OK", data)
+	}
+}
+
+func writeOCSErrorReq(w http.ResponseWriter, r *http.Request, statusCode int, ocsCode int, message string) {
+	if wantsJSON(r) {
+		writeOCSErrorJSON(w, statusCode, ocsCode, message)
+	} else {
+		writeOCSXML(w, statusCode, "failure", ocsCode, message, nil)
+	}
+}
+
 func writeOCS(w http.ResponseWriter, statusCode int, data any) {
+	writeOCSJSON(w, statusCode, data)
+}
+
+func writeOCSError(w http.ResponseWriter, statusCode int, ocsCode int, message string) {
+	writeOCSErrorJSON(w, statusCode, ocsCode, message)
+}
+
+func writeOCSJSON(w http.ResponseWriter, statusCode int, data any) {
 	resp := OCSResponse{}
 	resp.OCS.Meta.Status = "ok"
 	resp.OCS.Meta.StatusCode = statusCode
@@ -32,7 +64,7 @@ func writeOCS(w http.ResponseWriter, statusCode int, data any) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-func writeOCSError(w http.ResponseWriter, statusCode int, ocsCode int, message string) {
+func writeOCSErrorJSON(w http.ResponseWriter, statusCode int, ocsCode int, message string) {
 	resp := OCSResponse{}
 	resp.OCS.Meta.Status = "failure"
 	resp.OCS.Meta.StatusCode = ocsCode
@@ -42,6 +74,113 @@ func writeOCSError(w http.ResponseWriter, statusCode int, ocsCode int, message s
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(resp)
+}
+
+func writeOCSXML(w http.ResponseWriter, httpCode int, status string, statusCode int, message string, data any) {
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.WriteHeader(httpCode)
+	fmt.Fprint(w, xml.Header)
+	fmt.Fprint(w, "<ocs>\n <meta>\n")
+	fmt.Fprintf(w, "  <status>%s</status>\n", status)
+	fmt.Fprintf(w, "  <statuscode>%d</statuscode>\n", statusCode)
+	fmt.Fprintf(w, "  <message>%s</message>\n", xmlEscape(message))
+	fmt.Fprint(w, " </meta>\n <data>\n")
+	if data != nil {
+		writeOCSXMLValue(w, data, "  ")
+	}
+	fmt.Fprint(w, " </data>\n</ocs>\n")
+}
+
+func writeOCSXMLValue(w http.ResponseWriter, v any, indent string) {
+	if v == nil {
+		return
+	}
+	val := reflect.ValueOf(v)
+	switch val.Kind() {
+	case reflect.Slice:
+		for i := 0; i < val.Len(); i++ {
+			fmt.Fprintf(w, "%s<element>\n", indent)
+			writeOCSXMLValue(w, val.Index(i).Interface(), indent+" ")
+			fmt.Fprintf(w, "%s</element>\n", indent)
+		}
+	case reflect.Map:
+		keys := make([]string, 0, val.Len())
+		for _, k := range val.MapKeys() {
+			keys = append(keys, k.String())
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			mv := val.MapIndex(reflect.ValueOf(k))
+			elem := mv.Interface()
+			if elem == nil {
+				fmt.Fprintf(w, "%s<%s/>\n", indent, k)
+				continue
+			}
+			ev := reflect.ValueOf(elem)
+			if ev.Kind() == reflect.Slice || ev.Kind() == reflect.Map {
+				fmt.Fprintf(w, "%s<%s>\n", indent, k)
+				writeOCSXMLValue(w, elem, indent+" ")
+				fmt.Fprintf(w, "%s</%s>\n", indent, k)
+			} else {
+				fmt.Fprintf(w, "%s<%s>%s</%s>\n", indent, k, xmlEscape(fmt.Sprint(elem)), k)
+			}
+		}
+	case reflect.Struct:
+		writeOCSXMLStruct(w, val, indent)
+	case reflect.Pointer:
+		if val.IsNil() {
+			return
+		}
+		writeOCSXMLValue(w, val.Elem().Interface(), indent)
+	default:
+		fmt.Fprintf(w, "%s%s\n", indent, xmlEscape(fmt.Sprint(v)))
+	}
+}
+
+func writeOCSXMLStruct(w http.ResponseWriter, val reflect.Value, indent string) {
+	t := val.Type()
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		tag := field.Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		// Parse tag name (strip ",omitempty" etc.)
+		name := tag
+		if idx := len(tag); idx > 0 {
+			if comma := indexOf(tag, ','); comma >= 0 {
+				name = tag[:comma]
+			}
+		}
+		fv := val.Field(i)
+		if fv.Kind() == reflect.Pointer && fv.IsNil() {
+			fmt.Fprintf(w, "%s<%s/>\n", indent, name)
+			continue
+		}
+		iface := fv.Interface()
+		rv := reflect.ValueOf(iface)
+		if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Map || rv.Kind() == reflect.Struct {
+			fmt.Fprintf(w, "%s<%s>\n", indent, name)
+			writeOCSXMLValue(w, iface, indent+" ")
+			fmt.Fprintf(w, "%s</%s>\n", indent, name)
+		} else if rv.Kind() == reflect.Pointer {
+			fmt.Fprintf(w, "%s<%s>%s</%s>\n", indent, name, xmlEscape(fmt.Sprint(rv.Elem().Interface())), name)
+		} else {
+			fmt.Fprintf(w, "%s<%s>%s</%s>\n", indent, name, xmlEscape(fmt.Sprint(iface)), name)
+		}
+	}
+}
+
+func indexOf(s string, b byte) int {
+	for i := range len(s) {
+		if s[i] == b {
+			return i
+		}
+	}
+	return -1
 }
 
 // HandleCapabilities returns a static capabilities response.

@@ -2,7 +2,7 @@ package main_test
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"testing"
 	"time"
@@ -13,13 +13,14 @@ import (
 
 type statusLogger struct {
 	next http.Handler
+	log  *slog.Logger
 }
 
 func (h *statusLogger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rec := &statusRecorder{ResponseWriter: w, statusCode: 200}
 	h.next.ServeHTTP(rec, r)
 	if r.URL.Path == "/login" {
-		log.Printf("[%s %s] status=%d", r.Method, r.URL, rec.statusCode)
+		h.log.Info("request", "method", r.Method, "url", r.URL.String(), "status", rec.statusCode)
 	}
 }
 
@@ -35,7 +36,7 @@ func (r *statusRecorder) WriteHeader(code int) {
 
 func TestTabReuse(t *testing.T) {
 	env := cogtest.New(t, allPlugins...)
-	logged := &statusLogger{next: env}
+	logged := &statusLogger{next: env, log: slog.New(slog.NewTextHandler(t.Output(), nil))}
 	eng := webtest.New(logged)
 	t.Cleanup(eng.Close)
 
@@ -46,7 +47,7 @@ func TestTabReuse(t *testing.T) {
 	for i := range 4 {
 		user := fmt.Sprintf("user%d", i)
 		t.Run(fmt.Sprintf("tab-%d", i), func(t *testing.T) {
-			b := eng.StartT(t)
+			b := eng.Start(t)
 			b.Navigate(t, "/login")
 			b.Type(t, "#username", user)
 			b.Type(t, "#password", "pass")

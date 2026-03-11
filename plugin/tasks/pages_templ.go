@@ -117,7 +117,7 @@ func tasksSidebar(sb sidebarData, csrfToken string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"> <input class=\"form-control\" type=\"text\" name=\"name\" placeholder=\"New list...\" required style=\"flex:1;min-width:0\"> <button class=\"btn btn-outline btn-sm\" type=\"submit\">+</button></form></nav>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"> <input class=\"form-control\" type=\"text\" name=\"name\" placeholder=\"New list...\" required style=\"flex:1;min-width:0\" data-testid=\"new-list-name\"> <button class=\"btn btn-outline btn-sm\" type=\"submit\" data-testid=\"new-list-submit\">+</button></form></nav>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -282,7 +282,7 @@ func tasksListPage(sb sidebarData, list *TaskList, allTasks []Task, csrfToken st
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"><div class=\"flex gap-1\"><input class=\"form-control\" type=\"text\" name=\"summary\" placeholder=\"Add a task...\" required style=\"flex:1\"> <button class=\"btn btn-primary btn-sm\" type=\"submit\">Add</button></div></form><!-- Task tree --><div id=\"task-tree\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"><div class=\"flex gap-1\"><input class=\"form-control\" type=\"text\" name=\"summary\" placeholder=\"Add a task...\" required style=\"flex:1\" data-testid=\"new-task-summary\"> <button class=\"btn btn-primary btn-sm\" type=\"submit\" data-testid=\"new-task-submit\">Add</button></div></form><!-- Task tree --><div id=\"task-tree\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
