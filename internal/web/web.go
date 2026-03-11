@@ -11,8 +11,6 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
-//go:generate go tool templ generate -log-level warn
-
 type handler struct{ p *services.Providers }
 
 // pageDataWithNav builds a PageData with plugin nav items from the registry.

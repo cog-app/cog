@@ -3,8 +3,6 @@
 // metadata layer for user files.
 package files
 
-//go:generate go tool templ generate -log-level warn
-
 import (
 	"context"
 	"crypto/rand"

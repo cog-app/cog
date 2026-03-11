@@ -2,8 +2,6 @@
 // auto-albums, and NextCloud Memories API compatibility.
 package gallery
 
-//go:generate go tool templ generate -log-level warn
-
 import (
 	"context"
 	"database/sql"
@@ -204,6 +202,7 @@ func (p *Plugin) AggregateRecognitionStats() RecognitionStats {
 		total.Pending += s.Pending
 		total.Done += s.Done
 		total.Errored += s.Errored
+		total.Errors = append(total.Errors, s.Errors...)
 	}
 	return total
 }

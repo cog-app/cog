@@ -2,6 +2,8 @@
 // distributions with additional plugins.
 package cog
 
+//go:generate go tool templ generate -log-level warn
+
 import (
 	"context"
 	"fmt"

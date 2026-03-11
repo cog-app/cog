@@ -1,8 +1,6 @@
 // Package rss implements an RSS/Atom feed reader plugin with NextCloud News API compatibility.
 package rss
 
-//go:generate go tool templ generate -log-level warn
-
 import (
 	"context"
 	"database/sql"

@@ -1,8 +1,6 @@
 // Package notes implements a markdown notes plugin with NextCloud Notes API compatibility.
 package notes
 
-//go:generate go tool templ generate -log-level warn
-
 import (
 	"context"
 	"database/sql"

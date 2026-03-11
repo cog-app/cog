@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS media (
     city TEXT NOT NULL DEFAULT '',
     recognition_state INTEGER NOT NULL DEFAULT 0,
     recognition_at INTEGER,
+    recognition_error TEXT NOT NULL DEFAULT '',
     ocr_text TEXT NOT NULL DEFAULT ''
 );
 

@@ -8,19 +8,17 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
-//go:generate go tool templ generate -log-level warn
-
 // PageData carries data needed by the layout template.
 type PageData struct {
-	Title              string
-	User               *user.User
-	Nav                []NavItem
-	CSRFToken          string
-	RequestPath        string       // current request path for active-state highlighting
-	IsAdmin            bool
-	PluginID           string       // owning plugin; rendered as data-plugin on <main> for web components
-	PluginSettingsNav  []SidebarItem // plugin-registered admin settings items (shown below divider)
-	Favicon            string       // favicon URL; empty uses default /static/favicon.svg
+	Title             string
+	User              *user.User
+	Nav               []NavItem
+	CSRFToken         string
+	RequestPath       string // current request path for active-state highlighting
+	IsAdmin           bool
+	PluginID          string        // owning plugin; rendered as data-plugin on <main> for web components
+	PluginSettingsNav []SidebarItem // plugin-registered admin settings items (shown below divider)
+	Favicon           string        // favicon URL; empty uses default /static/favicon.svg
 }
 
 // FaviconURL returns the favicon URL, defaulting to /static/favicon.svg.

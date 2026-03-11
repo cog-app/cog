@@ -11,8 +11,6 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
-//go:generate go tool templ generate -log-level warn
-
 // Pages holds the web UI handlers for the RSS plugin.
 type Pages struct {
 	plugin *Plugin

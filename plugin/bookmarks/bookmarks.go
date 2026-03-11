@@ -1,8 +1,6 @@
 // Package bookmarks implements a bookmark management plugin with NextCloud Bookmarks API compatibility.
 package bookmarks
 
-//go:generate go tool templ generate -log-level warn
-
 import (
 	"context"
 	"database/sql"

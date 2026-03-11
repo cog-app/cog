@@ -133,7 +133,7 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		now := time.Now().Unix()
 		if err != nil {
 			p.log.Error("recognize", "path", m.FilePath, "err", err)
-			db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ? WHERE id = ?`, now, m.ID)
+			db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ?, recognition_error = ? WHERE id = ?`, now, err.Error(), m.ID)
 			continue
 		}
 

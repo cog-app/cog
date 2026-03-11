@@ -12,7 +12,6 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
-//go:generate go tool templ generate -log-level warn
 //go:generate go tool migratesql .
 
 //go:embed sql/schema.sql sql/migration*.sql

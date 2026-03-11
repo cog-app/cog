@@ -435,7 +435,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 	</p>
 	@scanStatusCard(stats, scan, csrfToken)
 	@ui.Card("Image Recognition") {
-		<form method="post" action="/admin/plugins/gallery">
+		<form method="post" action="/admin/plugins/gallery" id="recognition-form">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>
@@ -450,7 +450,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Backend</label>
-				<select name="recognition_backend" class="input">
+				<select name="recognition_backend" class="input" id="recognition-backend">
 					<option value="none" selected?={ GetSetting(db, "recognition_backend", "none") == "none" }>None</option>
 					<option value="pigo" selected?={ GetSetting(db, "recognition_backend", "none") == "pigo" }>Pigo (local face detection)</option>
 					<option value="ollama" selected?={ GetSetting(db, "recognition_backend", "none") == "ollama" }>Ollama</option>
@@ -458,7 +458,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 					<option value="onnx" selected?={ GetSetting(db, "recognition_backend", "none") == "onnx" }>ONNX (local)</option>
 				</select>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
+			<div class="form-group" style="margin-bottom:0.75rem" data-backends="ollama openai">
 				<label>URL</label>
 				<input
 					type="text"
@@ -468,8 +468,8 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 					placeholder="http://localhost:11434"
 				/>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>API Key (for OpenAI)</label>
+			<div class="form-group" style="margin-bottom:0.75rem" data-backends="openai">
+				<label>API Key</label>
 				<input
 					type="password"
 					name="recognition_api_key"
@@ -478,7 +478,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 					placeholder="sk-..."
 				/>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
+			<div class="form-group" style="margin-bottom:0.75rem" data-backends="ollama openai">
 				<label>Model</label>
 				<input
 					type="text"
@@ -488,7 +488,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 					placeholder="llava:13b"
 				/>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
+			<div class="form-group" style="margin-bottom:0.75rem" data-backends="onnx">
 				<label>ONNX Runtime Library Path</label>
 				<input
 					type="text"
@@ -499,7 +499,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 				/>
 				<small class="text-muted">Required for ONNX backend. Leave blank to auto-detect.</small>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
+			<div class="form-group" style="margin-bottom:0.75rem" data-backends="onnx">
 				<label>ONNX Models Directory</label>
 				<input
 					type="text"
@@ -512,6 +512,20 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			</div>
 			<button type="submit" class="btn btn-primary btn-sm">Save</button>
 		</form>
+		<script>
+			(function() {
+				var sel = document.getElementById('recognition-backend');
+				var form = document.getElementById('recognition-form');
+				function update() {
+					var v = sel.value;
+					form.querySelectorAll('[data-backends]').forEach(function(el) {
+						el.style.display = el.dataset.backends.split(' ').indexOf(v) >= 0 ? '' : 'none';
+					});
+				}
+				sel.addEventListener('change', update);
+				update();
+			})();
+		</script>
 	}
 }
 
@@ -573,8 +587,15 @@ templ scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) 
 				</tr>
 				if stats.Errored > 0 {
 					<tr>
-						<td class="text-muted" style="padding-right:1rem">Errored</td>
-						<td>{ strconv.Itoa(stats.Errored) }</td>
+						<td class="text-muted" style="padding-right:1rem;vertical-align:top">Errored</td>
+						<td style="color:var(--color-danger)">
+							{ strconv.Itoa(stats.Errored) }
+							if len(stats.Errors) > 0 {
+								for _, e := range stats.Errors {
+									<div style="font-size:0.85rem">{ e }</div>
+								}
+							}
+						</td>
 					</tr>
 				}
 			</table>

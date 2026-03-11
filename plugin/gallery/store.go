@@ -593,6 +593,7 @@ type RecognitionStats struct {
 	Pending     int
 	Done        int
 	Errored     int
+	Errors      []string // distinct error messages from errored images
 }
 
 // GetRecognitionStats returns recognition state counts for images.
@@ -604,7 +605,23 @@ func GetRecognitionStats(db *sql.DB) (RecognitionStats, error) {
 		SUM(CASE WHEN recognition_state = 1 THEN 1 ELSE 0 END),
 		SUM(CASE WHEN recognition_state = 2 THEN 1 ELSE 0 END)
 		FROM media WHERE mime_type LIKE 'image/%'`).Scan(&s.TotalImages, &s.Pending, &s.Done, &s.Errored)
-	return s, err
+	if err != nil {
+		return s, err
+	}
+	if s.Errored > 0 {
+		rows, err := db.Query(`SELECT DISTINCT recognition_error FROM media
+			WHERE recognition_state = 2 AND recognition_error != '' LIMIT 10`)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var msg string
+				if rows.Scan(&msg) == nil {
+					s.Errors = append(s.Errors, msg)
+				}
+			}
+		}
+	}
+	return s, nil
 }
 
 // --- Settings ---
