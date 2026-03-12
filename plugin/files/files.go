@@ -346,8 +346,14 @@ func (p *Plugin) GetByPath(username, path string) (*FileMeta, error) {
 	return getByPath(db, path)
 }
 
-// Delete removes a file or directory.
+// Delete moves a file or directory to the trash.
+// Use PermanentDelete to bypass the trash.
 func (p *Plugin) Delete(username, filePath string) error {
+	return p.Trash(username, filePath)
+}
+
+// HardDelete permanently removes a file or directory, bypassing the trash.
+func (p *Plugin) HardDelete(username, filePath string) error {
 	filePath = normalizePath(filePath)
 
 	db, err := p.DB(username)

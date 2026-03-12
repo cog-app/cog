@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS trash (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	original_path TEXT NOT NULL,
+	original_name TEXT NOT NULL,
+	size INTEGER NOT NULL DEFAULT 0,
+	mtime INTEGER NOT NULL,
+	mime_type TEXT NOT NULL DEFAULT '',
+	is_dir INTEGER NOT NULL DEFAULT 0,
+	deleted_at INTEGER NOT NULL,
+	trash_name TEXT NOT NULL UNIQUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_trash_deleted ON trash(deleted_at);

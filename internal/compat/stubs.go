@@ -52,12 +52,95 @@ func (nc *NCCompat) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /ocs/v2.php/apps/user_status/api/v1/user_status", auth.RequireAuth(http.HandlerFunc(nc.HandleUserStatus)))
 	mux.Handle("GET /ocs/v1.php/apps/user_status/api/v1/user_status", auth.RequireAuth(http.HandlerFunc(nc.HandleUserStatus)))
 
-	// Search providers (no search providers — empty list is correct)
+	// Predefined user statuses (NC Android app fetches this for the status picker)
+	handlePredefinedStatuses := func(w http.ResponseWriter, r *http.Request) {
+		writeOCSReq(w, r, http.StatusOK, []any{
+			map[string]any{"id": "meeting", "icon": "📅", "message": "In a meeting", "clearAt": nil},
+			map[string]any{"id": "commuting", "icon": "🚌", "message": "Commuting", "clearAt": nil},
+			map[string]any{"id": "remote-work", "icon": "🏡", "message": "Working remotely", "clearAt": nil},
+			map[string]any{"id": "sick-leave", "icon": "🤒", "message": "Out sick", "clearAt": nil},
+			map[string]any{"id": "vacationing", "icon": "🌴", "message": "Vacationing", "clearAt": nil},
+		})
+	}
+	mux.HandleFunc("GET /ocs/v2.php/apps/user_status/api/v1/statuses/predefined", handlePredefinedStatuses)
+	mux.HandleFunc("GET /ocs/v1.php/apps/user_status/api/v1/statuses/predefined", handlePredefinedStatuses)
+
+	// User status heartbeat (presence tracking — accept and ignore)
+	handleHeartbeat := func(w http.ResponseWriter, r *http.Request) {
+		writeOCSReq(w, r, http.StatusOK, map[string]any{
+			"userId": "", "status": "online", "icon": nil, "message": nil,
+			"messageId": nil, "messageIsPredefined": false, "clearAt": nil,
+			"statusIsUserDefined": false,
+		})
+	}
+	mux.HandleFunc("POST /ocs/v2.php/apps/user_status/api/v1/heartbeat", handleHeartbeat)
+	mux.HandleFunc("POST /ocs/v1.php/apps/user_status/api/v1/heartbeat", handleHeartbeat)
+
+	// User status set (accept PUT to current status — no-op)
+	handleSetStatus := func(w http.ResponseWriter, r *http.Request) {
+		writeOCSReq(w, r, http.StatusOK, map[string]any{
+			"userId": "", "status": "online", "icon": nil, "message": nil,
+			"messageId": nil, "messageIsPredefined": false, "clearAt": nil,
+			"statusIsUserDefined": false,
+		})
+	}
+	mux.HandleFunc("PUT /ocs/v2.php/apps/user_status/api/v1/user_status/status", handleSetStatus)
+	mux.HandleFunc("PUT /ocs/v1.php/apps/user_status/api/v1/user_status/status", handleSetStatus)
+	mux.HandleFunc("PUT /ocs/v2.php/apps/user_status/api/v1/user_status/message/predefined", handleSetStatus)
+	mux.HandleFunc("PUT /ocs/v1.php/apps/user_status/api/v1/user_status/message/predefined", handleSetStatus)
+	mux.HandleFunc("PUT /ocs/v2.php/apps/user_status/api/v1/user_status/message/custom", handleSetStatus)
+	mux.HandleFunc("PUT /ocs/v1.php/apps/user_status/api/v1/user_status/message/custom", handleSetStatus)
+	mux.HandleFunc("DELETE /ocs/v2.php/apps/user_status/api/v1/user_status/message", handleSetStatus)
+	mux.HandleFunc("DELETE /ocs/v1.php/apps/user_status/api/v1/user_status/message", handleSetStatus)
+
+	// Search providers (files search provider registered)
 	handleSearchProviders := func(w http.ResponseWriter, r *http.Request) {
-		writeOCSReq(w, r, http.StatusOK, []any{})
+		writeOCSReq(w, r, http.StatusOK, []any{
+			map[string]any{
+				"id":          "files",
+				"name":        "Files",
+				"order":       5,
+				"icon":        "",
+				"isPaginated": false,
+			},
+		})
 	}
 	mux.HandleFunc("GET /ocs/v2.php/search/providers", handleSearchProviders)
 	mux.HandleFunc("GET /ocs/v1.php/search/providers", handleSearchProviders)
+
+	// Unified search query
+	mux.Handle("GET /ocs/v2.php/search/providers/{providerId}/search", auth.RequireAuth(http.HandlerFunc(nc.HandleSearch)))
+	mux.Handle("GET /ocs/v1.php/search/providers/{providerId}/search", auth.RequireAuth(http.HandlerFunc(nc.HandleSearch)))
+
+	// Tags API (NC clients use this for file tagging)
+	handleTags := func(w http.ResponseWriter, r *http.Request) {
+		writeOCSReq(w, r, http.StatusOK, []any{})
+	}
+	mux.HandleFunc("GET /ocs/v2.php/apps/files/api/v1/tags", handleTags)
+	mux.HandleFunc("GET /ocs/v1.php/apps/files/api/v1/tags", handleTags)
+
+	// Client diagnostics (telemetry — accept and ignore)
+	handleDiag := func(w http.ResponseWriter, r *http.Request) {
+		writeOCSReq(w, r, http.StatusOK, []any{})
+	}
+	mux.HandleFunc("POST /ocs/v2.php/apps/admin_notifications/api/v1/client_diagnostic", handleDiag)
+	mux.HandleFunc("POST /ocs/v1.php/apps/admin_notifications/api/v1/client_diagnostic", handleDiag)
+
+	// Profiles / hover cards (cosmetic — return minimal info)
+	mux.Handle("GET /ocs/v2.php/apps/dav/api/v1/profiles/{userId}", auth.RequireAuth(http.HandlerFunc(nc.HandleProfile)))
+	mux.Handle("GET /ocs/v1.php/apps/dav/api/v1/profiles/{userId}", auth.RequireAuth(http.HandlerFunc(nc.HandleProfile)))
+
+	// File locking OCS endpoints (stub — accept and return success)
+	handleLock := func(w http.ResponseWriter, r *http.Request) {
+		writeOCSReq(w, r, http.StatusOK, map[string]any{})
+	}
+	handleUnlock := func(w http.ResponseWriter, r *http.Request) {
+		writeOCSReq(w, r, http.StatusOK, map[string]any{})
+	}
+	mux.HandleFunc("POST /ocs/v2.php/apps/files_lock/lock/{fileId}", handleLock)
+	mux.HandleFunc("POST /ocs/v1.php/apps/files_lock/lock/{fileId}", handleLock)
+	mux.HandleFunc("DELETE /ocs/v2.php/apps/files_lock/lock/{fileId}", handleUnlock)
+	mux.HandleFunc("DELETE /ocs/v1.php/apps/files_lock/lock/{fileId}", handleUnlock)
 
 	// Activity API — returns comment activities for files.
 	mux.Handle("GET /ocs/v2.php/apps/activity/api/v2/activity", auth.RequireAuth(http.HandlerFunc(nc.HandleActivity)))
@@ -180,12 +263,12 @@ func (nc *NCCompat) HandleActivity(w http.ResponseWriter, r *http.Request) {
 		}
 
 		activities = append(activities, map[string]any{
-			"activity_id": c.ID,
-			"app":         "comments",
-			"type":        "comments",
+			"activity_id":  c.ID,
+			"app":          "comments",
+			"type":         "comments",
 			"affecteduser": u.Username,
-			"user":        c.ActorID,
-			"subject":     fmt.Sprintf("%s commented", displayName),
+			"user":         c.ActorID,
+			"subject":      fmt.Sprintf("%s commented", displayName),
 			"subject_rich": []any{
 				"{user} commented on {file}",
 				map[string]any{
@@ -209,6 +292,8 @@ func (nc *NCCompat) HandleActivity(w http.ResponseWriter, r *http.Request) {
 			"object_name":  meta.Path,
 			"datetime":     time.Unix(c.CreatedAt, 0).UTC().Format(time.RFC3339),
 			"icon":         "",
+			"link":         "",
+			"previews":     []any{},
 		})
 	}
 
@@ -267,6 +352,103 @@ func (h *PreviewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	io.Copy(w, f)
+}
+
+// HandleSearch implements the unified search query endpoint.
+// NC Android app calls: GET /ocs/v2.php/search/providers/files/search?term=query&from=0&limit=25
+func (nc *NCCompat) HandleSearch(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	if u == nil {
+		writeOCSErrorReq(w, r, http.StatusUnauthorized, 997, "Unauthorized")
+		return
+	}
+
+	providerID := r.PathValue("providerId")
+	term := r.URL.Query().Get("term")
+
+	if providerID != "files" || nc.Files == nil || term == "" {
+		writeOCSReq(w, r, http.StatusOK, map[string]any{
+			"name":    providerID,
+			"entries": []any{},
+			"cursor":  0,
+		})
+		return
+	}
+
+	results, err := nc.Files.Search(u.Username, term)
+	if err != nil {
+		writeOCSReq(w, r, http.StatusOK, map[string]any{
+			"name":    "Files",
+			"entries": []any{},
+			"cursor":  0,
+		})
+		return
+	}
+
+	limitStr := r.URL.Query().Get("limit")
+	limit := 25
+	if n, err := strconv.Atoi(limitStr); err == nil && n > 0 {
+		limit = n
+	}
+	if len(results) > limit {
+		results = results[:limit]
+	}
+
+	entries := make([]map[string]any, 0, len(results))
+	for _, meta := range results {
+		icon := "file"
+		if meta.IsDir {
+			icon = "folder"
+		}
+		entries = append(entries, map[string]any{
+			"thumbnailUrl": "",
+			"title":        meta.Name,
+			"subline":      meta.Path,
+			"resourceUrl":  "/remote.php/dav/files/" + u.Username + meta.Path,
+			"icon":         icon,
+			"rounded":      false,
+			"attributes": map[string]any{
+				"fileId": strconv.FormatInt(meta.ID, 10),
+				"path":   meta.Path,
+			},
+		})
+	}
+
+	writeOCSReq(w, r, http.StatusOK, map[string]any{
+		"name":    "Files",
+		"entries": entries,
+		"cursor":  0,
+	})
+}
+
+// HandleProfile returns minimal profile data for hover cards.
+func (nc *NCCompat) HandleProfile(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("userId")
+
+	target, err := nc.Users.GetByID(userID)
+	if err != nil {
+		target, err = nc.Users.GetByUsername(userID)
+	}
+	if err != nil {
+		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "user not found")
+		return
+	}
+
+	displayName := target.DisplayName
+	if displayName == "" {
+		displayName = target.Username
+	}
+
+	writeOCSReq(w, r, http.StatusOK, map[string]any{
+		"userId":      target.Username,
+		"displayName": displayName,
+		"address":     "",
+		"website":     "",
+		"twitter":     "",
+		"phone":       "",
+		"email":       target.Email,
+		"actions":     []any{},
+	})
 }
 
 // --- Avatar helpers ---

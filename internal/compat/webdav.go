@@ -76,6 +76,10 @@ func (h *WebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleProppatch(w, r, u, urlUserID, filePath)
 	case "REPORT":
 		h.handleReport(w, r, u, urlUserID, filePath)
+	case "LOCK":
+		h.handleLock(w, r, u, filePath)
+	case "UNLOCK":
+		h.handleUnlock(w, r, u, filePath)
 	default:
 		w.Header().Set("DAV", "1, 3, extended-mkcol")
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -619,6 +623,35 @@ func (h *WebDAVHandler) handleReport(w http.ResponseWriter, r *http.Request, u *
 		Responses: entries,
 	})
 	enc.Flush()
+}
+
+// --- LOCK (stub) ---
+
+func (h *WebDAVHandler) handleLock(w http.ResponseWriter, r *http.Request, u *user.User, filePath string) {
+	// Stub: return a valid lock-discovery response so clients think locking succeeded.
+	token := "opaquelocktoken:stub-" + u.Username + "-" + filePath
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.Header().Set("Lock-Token", "<"+token+">")
+	w.WriteHeader(http.StatusOK)
+	io.WriteString(w, xml.Header)
+	fmt.Fprintf(w, `<D:prop xmlns:D="DAV:">
+  <D:lockdiscovery>
+    <D:activelock>
+      <D:locktype><D:write/></D:locktype>
+      <D:lockscope><D:exclusive/></D:lockscope>
+      <D:depth>0</D:depth>
+      <D:owner><D:href>%s</D:href></D:owner>
+      <D:timeout>Second-1800</D:timeout>
+      <D:locktoken><D:href>%s</D:href></D:locktoken>
+    </D:activelock>
+  </D:lockdiscovery>
+</D:prop>`, u.Username, token)
+}
+
+// --- UNLOCK (stub) ---
+
+func (h *WebDAVHandler) handleUnlock(w http.ResponseWriter, _ *http.Request, _ *user.User, _ string) {
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func metaToEntry(href string, meta *files.FileMeta, ownerID, ownerDisplayName string) propfindEntry {

@@ -143,6 +143,9 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /ocs/v2.php/cloud/user", auth.RequireAuth(http.HandlerFunc(compat.HandleCurrentUser)))
 	mux.Handle("GET /ocs/v1.php/cloud/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users)))
 	mux.Handle("GET /ocs/v2.php/cloud/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users)))
+	// Provisioning API path variant (NC Android app uses this path for user info)
+	mux.Handle("GET /ocs/v1.php/apps/provisioning_api/api/v2/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users)))
+	mux.Handle("GET /ocs/v2.php/apps/provisioning_api/api/v2/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users)))
 
 	// --- WebDAV file operations (NC clients) ---
 	// Look up the files plugin from the registry for compat handlers.
@@ -154,6 +157,21 @@ func New(p *services.Providers) http.Handler {
 	if fp != nil {
 		webdav := &compat.WebDAVHandler{Log: p.Log.With("component", "webdav"), Files: fp}
 		mux.Handle("/remote.php/dav/files/", auth.RequireAuth(webdav))
+
+		// Chunked uploads (NC v2 protocol)
+		chunked := &compat.ChunkedUploadHandler{
+			Log:     p.Log.With("component", "chunked"),
+			Files:   fp,
+			TempDir: p.Config.DataDir,
+		}
+		mux.Handle("/remote.php/dav/uploads/", auth.RequireAuth(chunked))
+
+		// Trashbin (NC Android app uses this for deleted files)
+		trashbin := &compat.TrashbinHandler{
+			Log:   p.Log.With("component", "trashbin"),
+			Files: fp,
+		}
+		mux.Handle("/remote.php/dav/trashbin/", auth.RequireAuth(trashbin))
 
 		// Direct download API (NC Android app uses this instead of WebDAV GET)
 		mux.Handle("POST /ocs/v2.php/apps/dav/api/v1/direct", auth.RequireAuth(webdav.HandleDirectDownload(p.Config.BaseURL)))

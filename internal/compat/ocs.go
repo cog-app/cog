@@ -217,8 +217,11 @@ func HandleCapabilities(w http.ResponseWriter, r *http.Request) {
 				"webdav-root": "remote.php/dav",
 			},
 			"files": map[string]any{
-				"bigfilechunking": false,
+				"bigfilechunking": true,
+				"chunking":        "1.0",
 				"favorites":       true,
+				"undelete":        true,
+				"versioning":      false,
 			},
 			"news": map[string]any{
 				"version": "25.0.0-alpha1",
