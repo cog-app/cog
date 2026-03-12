@@ -34,7 +34,6 @@ func browserLogin(t testing.TB, b *webtest.Browser, user, pass string) {
 }
 
 func TestBrowserMin(t *testing.T) {
-	t.Parallel()
 	env := cogtest.New(t, allPlugins...)
 	eng := webtest.New(env)
 	t.Cleanup(eng.Close)
@@ -47,7 +46,6 @@ func TestBrowserMin(t *testing.T) {
 }
 
 func TestBrowserCore(t *testing.T) {
-	t.Parallel()
 	env := cogtest.New(t, allPlugins...)
 	eng := webtest.New(env)
 	t.Cleanup(eng.Close)
@@ -129,7 +127,6 @@ func TestBrowserCore(t *testing.T) {
 }
 
 func TestBrowserPluginsCRUD(t *testing.T) {
-	t.Parallel()
 	env := cogtest.New(t, allPlugins...)
 	eng := webtest.New(env)
 	t.Cleanup(eng.Close)
@@ -218,7 +215,6 @@ func TestBrowserPluginsCRUD(t *testing.T) {
 }
 
 func TestBrowserPluginsNav(t *testing.T) {
-	t.Parallel()
 	env := cogtest.New(t, allPlugins...)
 	eng := webtest.New(env)
 	t.Cleanup(eng.Close)
