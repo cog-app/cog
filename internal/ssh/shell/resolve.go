@@ -10,9 +10,16 @@ import (
 // the user's files directory. It returns an error if the resolved path
 // escapes the sandbox.
 func (s *Shell) resolve(base, path string) (string, error) {
-	// Virtual absolute paths start with /; make them relative to filesDir.
 	if filepath.IsAbs(path) {
-		path = filepath.Join(s.filesDir, path)
+		// Strip /files prefix for virtual-to-real mapping.
+		clean := filepath.Clean(path)
+		if strings.HasPrefix(clean, "/files") {
+			clean = strings.TrimPrefix(clean, "/files")
+			if clean == "" {
+				clean = "/"
+			}
+		}
+		path = filepath.Join(s.filesDir, clean)
 	} else {
 		path = filepath.Join(base, path)
 	}
@@ -43,10 +50,27 @@ func (s *Shell) virtualPath(realPath string) string {
 	if err != nil {
 		return realPath
 	}
-	vp := "/" + filepath.ToSlash(rel)
-	// Clean up "/."-style paths.
-	if vp == "/." {
-		return "/"
+	vp := "/files/" + filepath.ToSlash(rel)
+	if vp == "/files/." {
+		return "/files"
 	}
 	return filepath.Clean(vp)
+}
+
+// virtualToReal maps a virtual path to a real filesystem path.
+// Returns "" for non-navigable virtual dirs (/.ssh, etc.).
+// "/" maps to the real system root — the interpreter's stat/readdir handlers
+// route through the VFS so only virtual entries (.ssh, files) are visible.
+func (s *Shell) virtualToReal(vp string) string {
+	vp = filepath.Clean(vp)
+	if vp == "/" {
+		return "/"
+	}
+	if vp == "/files" {
+		return s.filesDir
+	}
+	if strings.HasPrefix(vp, "/files/") {
+		return filepath.Join(s.filesDir, strings.TrimPrefix(vp, "/files/"))
+	}
+	return "" // not navigable (e.g. /.ssh)
 }

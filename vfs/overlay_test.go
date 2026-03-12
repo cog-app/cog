@@ -390,3 +390,156 @@ func TestOverlayFS_StatInfo(t *testing.T) {
 		t.Fatal("expected directory")
 	}
 }
+
+func TestOverlayFS_Mount(t *testing.T) {
+	mounted := newMemFS()
+	mounted.Put("/hello.txt", bytes.NewReader([]byte("mounted hello")))
+
+	ofs := vfs.NewOverlayFS(nil)
+	ofs.Mount("/files", mounted)
+
+	// Stat through mount.
+	fi, err := ofs.Stat("/files/hello.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Name != "hello.txt" {
+		t.Fatalf("expected hello.txt, got %s", fi.Name)
+	}
+
+	// Get through mount.
+	rc, err := ofs.Get("/files/hello.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := io.ReadAll(rc)
+	rc.Close()
+	if string(data) != "mounted hello" {
+		t.Fatalf("expected 'mounted hello', got %q", string(data))
+	}
+
+	// Put through mount.
+	err = ofs.Put("/files/new.txt", bytes.NewReader([]byte("new content")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := mounted.ReadFile("/new.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "new content" {
+		t.Fatalf("expected 'new content', got %q", string(got))
+	}
+}
+
+func TestOverlayFS_MountList(t *testing.T) {
+	mounted := newMemFS()
+	mounted.Put("/readme.txt", bytes.NewReader([]byte("hi")))
+
+	ofs := vfs.NewOverlayFS(nil)
+	ofs.Mount("/files", mounted)
+	ofs.Bind("/.ssh/authorized_keys", &stubHandler{content: []byte("key")})
+
+	items, err := ofs.List("/")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	names := make(map[string]bool)
+	for _, fi := range items {
+		names[fi.Name] = true
+	}
+	if !names["files"] {
+		t.Fatal("expected files in root listing")
+	}
+	if !names[".ssh"] {
+		t.Fatal("expected .ssh in root listing")
+	}
+}
+
+func TestOverlayFS_MountNilBase(t *testing.T) {
+	mounted := newMemFS()
+	mounted.Put("/data.txt", bytes.NewReader([]byte("data")))
+
+	ofs := vfs.NewOverlayFS(nil)
+	ofs.Mount("/files", mounted)
+	ofs.Bind("/.ssh/authorized_keys", &stubHandler{content: []byte("key")})
+
+	// Stat root with nil base.
+	fi, err := ofs.Stat("/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fi.IsDir {
+		t.Fatal("expected root to be a directory")
+	}
+
+	// Read from mount.
+	data, err := ofs.ReadFile("/files/data.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "data" {
+		t.Fatalf("expected 'data', got %q", string(data))
+	}
+
+	// Read bound file.
+	data, err = ofs.ReadFile("/.ssh/authorized_keys")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "key" {
+		t.Fatalf("expected 'key', got %q", string(data))
+	}
+
+	// Stat non-existent at root.
+	_, err = ofs.Stat("/nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent path with nil base")
+	}
+}
+
+func TestOverlayFS_MountPassthrough(t *testing.T) {
+	mounted := newMemFS()
+	mounted.Put("/a.txt", bytes.NewReader([]byte("aaa")))
+	mounted.Mkdir("/subdir")
+	mounted.Put("/subdir/b.txt", bytes.NewReader([]byte("bbb")))
+
+	ofs := vfs.NewOverlayFS(nil)
+	ofs.Mount("/files", mounted)
+
+	// List mount root.
+	items, err := ofs.List("/files")
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make(map[string]bool)
+	for _, fi := range items {
+		names[fi.Name] = true
+	}
+	if !names["a.txt"] {
+		t.Fatal("expected a.txt")
+	}
+	if !names["subdir"] {
+		t.Fatal("expected subdir")
+	}
+
+	// Stat mount root itself.
+	fi, err := ofs.Stat("/files")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fi.IsDir {
+		t.Fatal("expected /files to be a directory")
+	}
+
+	// Delete through mount.
+	err = ofs.Delete("/files/a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = mounted.Stat("/a.txt")
+	if err == nil {
+		t.Fatal("expected a.txt to be deleted from mounted FS")
+	}
+}

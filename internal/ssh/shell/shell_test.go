@@ -3,6 +3,7 @@ package shell
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -43,7 +44,7 @@ func TestResolveContainment(t *testing.T) {
 	sh, dir := newTestShell(t)
 
 	// Absolute virtual path should resolve within filesDir.
-	got, err := sh.resolve(dir, "/hello.txt")
+	got, err := sh.resolve(dir, "/files/hello.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,19 +62,19 @@ func TestResolveContainment(t *testing.T) {
 func TestVirtualPath(t *testing.T) {
 	sh, dir := newTestShell(t)
 
-	if vp := sh.virtualPath(dir); vp != "/" {
-		t.Fatalf("expected /, got %s", vp)
+	if vp := sh.virtualPath(dir); vp != "/files" {
+		t.Fatalf("expected /files, got %s", vp)
 	}
-	if vp := sh.virtualPath(filepath.Join(dir, "Documents")); vp != "/Documents" {
-		t.Fatalf("expected /Documents, got %s", vp)
+	if vp := sh.virtualPath(filepath.Join(dir, "Documents")); vp != "/files/Documents" {
+		t.Fatalf("expected /files/Documents, got %s", vp)
 	}
 }
 
 func TestPwd(t *testing.T) {
 	sh, _ := newTestShell(t)
 	out, _ := runCmd(t, sh, "pwd")
-	if strings.TrimSpace(out) != "/" {
-		t.Fatalf("expected /, got %q", strings.TrimSpace(out))
+	if strings.TrimSpace(out) != "/files" {
+		t.Fatalf("expected /files, got %q", strings.TrimSpace(out))
 	}
 }
 
@@ -95,7 +96,7 @@ func TestWhoami(t *testing.T) {
 
 func TestCat(t *testing.T) {
 	sh, _ := newTestShell(t)
-	out, _ := runCmd(t, sh, "cat /hello.txt")
+	out, _ := runCmd(t, sh, "cat /files/hello.txt")
 	if strings.TrimSpace(out) != "hello world" {
 		t.Fatalf("expected 'hello world', got %q", strings.TrimSpace(out))
 	}
@@ -103,7 +104,7 @@ func TestCat(t *testing.T) {
 
 func TestLs(t *testing.T) {
 	sh, _ := newTestShell(t)
-	out, _ := runCmd(t, sh, "ls /")
+	out, _ := runCmd(t, sh, "ls /files")
 	if !strings.Contains(out, "Documents") || !strings.Contains(out, "hello.txt") {
 		t.Fatalf("expected Documents and hello.txt in output, got %q", out)
 	}
@@ -111,8 +112,8 @@ func TestLs(t *testing.T) {
 
 func TestMkdirAndTouch(t *testing.T) {
 	sh, dir := newTestShell(t)
-	runCmd(t, sh, "mkdir /newdir")
-	runCmd(t, sh, "touch /newdir/file.txt")
+	runCmd(t, sh, "mkdir /files/newdir")
+	runCmd(t, sh, "touch /files/newdir/file.txt")
 
 	if _, err := os.Stat(filepath.Join(dir, "newdir", "file.txt")); err != nil {
 		t.Fatalf("expected file to exist: %v", err)
@@ -121,8 +122,8 @@ func TestMkdirAndTouch(t *testing.T) {
 
 func TestRm(t *testing.T) {
 	sh, dir := newTestShell(t)
-	runCmd(t, sh, "touch /deleteme.txt")
-	runCmd(t, sh, "rm /deleteme.txt")
+	runCmd(t, sh, "touch /files/deleteme.txt")
+	runCmd(t, sh, "rm /files/deleteme.txt")
 
 	if _, err := os.Stat(filepath.Join(dir, "deleteme.txt")); !os.IsNotExist(err) {
 		t.Fatal("expected file to be deleted")
@@ -147,12 +148,12 @@ func TestCommandNotFound(t *testing.T) {
 
 func TestHeadTail(t *testing.T) {
 	sh, _ := newTestShell(t)
-	out, _ := runCmd(t, sh, "head -n 1 /Documents/notes.txt")
+	out, _ := runCmd(t, sh, "head -n 1 /files/Documents/notes.txt")
 	if strings.TrimSpace(out) != "line1" {
 		t.Fatalf("expected 'line1', got %q", strings.TrimSpace(out))
 	}
 
-	out, _ = runCmd(t, sh, "tail -n 1 /Documents/notes.txt")
+	out, _ = runCmd(t, sh, "tail -n 1 /files/Documents/notes.txt")
 	if strings.TrimSpace(out) != "line3" {
 		t.Fatalf("expected 'line3', got %q", strings.TrimSpace(out))
 	}
@@ -191,7 +192,7 @@ func runCmdWith(t *testing.T, sh *Shell, command string) (stdout, stderr string)
 
 func TestRedirect(t *testing.T) {
 	sh, dir := newTestShell(t)
-	runCmd(t, sh, "echo hello > /output.txt")
+	runCmd(t, sh, "echo hello > /files/output.txt")
 
 	data, err := os.ReadFile(filepath.Join(dir, "output.txt"))
 	if err != nil {
@@ -204,7 +205,7 @@ func TestRedirect(t *testing.T) {
 
 func TestCp(t *testing.T) {
 	sh, dir := newTestShell(t)
-	runCmd(t, sh, "cp /hello.txt /hello_copy.txt")
+	runCmd(t, sh, "cp /files/hello.txt /files/hello_copy.txt")
 
 	data, err := os.ReadFile(filepath.Join(dir, "hello_copy.txt"))
 	if err != nil {
@@ -217,8 +218,8 @@ func TestCp(t *testing.T) {
 
 func TestMv(t *testing.T) {
 	sh, dir := newTestShell(t)
-	runCmd(t, sh, "touch /moveme.txt")
-	runCmd(t, sh, "mv /moveme.txt /moved.txt")
+	runCmd(t, sh, "touch /files/moveme.txt")
+	runCmd(t, sh, "mv /files/moveme.txt /files/moved.txt")
 
 	if _, err := os.Stat(filepath.Join(dir, "moveme.txt")); !os.IsNotExist(err) {
 		t.Fatal("expected source to be gone")
@@ -400,8 +401,12 @@ func newVFSTestShell(t *testing.T) *Shell {
 	os.WriteFile(filepath.Join(dir, "Documents", "notes.txt"), []byte("line1\nline2\nline3\n"), 0o644)
 
 	base := &testFileFS{root: dir}
-	ofs := vfs.NewOverlayFS(base)
+	ofs := vfs.NewOverlayFS(nil) // nil base — pure virtual root
+	ofs.Mount("/files", base)
 	ofs.Bind("/.ssh/authorized_keys", &stubKeyHandler{content: "ssh-ed25519 AAAA testkey\n"})
+	ofs.Bind("/dev/null", &devNullHandler{})
+	ofs.Bind("/dev/zero", &devZeroHandler{})
+	ofs.Bind("/dev/urandom", &devURandHandler{})
 
 	return New("testuser", dir, ofs, nil, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 }
@@ -422,6 +427,9 @@ func TestLsRootShowsSSH(t *testing.T) {
 	out, _ := runCmd(t, sh, "ls -a /")
 	if !strings.Contains(out, ".ssh") {
 		t.Fatalf("expected .ssh in ls -a / output, got %q", out)
+	}
+	if !strings.Contains(out, "files") {
+		t.Fatalf("expected files in ls -a / output, got %q", out)
 	}
 }
 
@@ -461,14 +469,14 @@ func TestSSHCopyIDSequence(t *testing.T) {
 
 func TestVFSPassthrough(t *testing.T) {
 	sh := newVFSTestShell(t)
-	// Regular file operations should still work through the overlay.
-	out, _ := runCmd(t, sh, "cat /hello.txt")
+	// Regular file operations should still work through the mount.
+	out, _ := runCmd(t, sh, "cat /files/hello.txt")
 	if strings.TrimSpace(out) != "hello world" {
 		t.Fatalf("expected 'hello world', got %q", strings.TrimSpace(out))
 	}
 
-	// ls should include real files.
-	out, _ = runCmd(t, sh, "ls /")
+	// ls /files should include real files.
+	out, _ = runCmd(t, sh, "ls /files")
 	if !strings.Contains(out, "hello.txt") {
 		t.Fatalf("expected hello.txt in ls output, got %q", out)
 	}
@@ -477,14 +485,182 @@ func TestVFSPassthrough(t *testing.T) {
 	}
 }
 
+func TestCdToRoot(t *testing.T) {
+	sh := newVFSTestShell(t)
+	// cd / should navigate to virtual root.
+	out, stderr := runCmd(t, sh, "cd / && pwd")
+	if stderr != "" {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(out) != "/" {
+		t.Fatalf("expected /, got %q", strings.TrimSpace(out))
+	}
+}
+
+func TestCdDotDotFromFiles(t *testing.T) {
+	sh := newVFSTestShell(t)
+	// cd .. from /files should go to /
+	out, stderr := runCmd(t, sh, "cd .. && pwd")
+	if stderr != "" {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(out) != "/" {
+		t.Fatalf("expected /, got %q", strings.TrimSpace(out))
+	}
+}
+
+func TestCdToFiles(t *testing.T) {
+	sh := newVFSTestShell(t)
+	// cd /files/Documents should work.
+	out, stderr := runCmd(t, sh, "cd /files/Documents && pwd")
+	if stderr != "" {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(out) != "/files/Documents" {
+		t.Fatalf("expected /files/Documents, got %q", strings.TrimSpace(out))
+	}
+}
+
+func TestCdRelativeFromFiles(t *testing.T) {
+	sh := newVFSTestShell(t)
+	// cd Documents (relative) from /files should work.
+	out, stderr := runCmd(t, sh, "cd Documents && pwd")
+	if stderr != "" {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(out) != "/files/Documents" {
+		t.Fatalf("expected /files/Documents, got %q", strings.TrimSpace(out))
+	}
+}
+
+func TestCdFilesFromRoot(t *testing.T) {
+	sh := newVFSTestShell(t)
+	// From /, cd files should go to /files.
+	out, stderr := runCmd(t, sh, "cd / && cd files && pwd")
+	if stderr != "" {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(out) != "/files" {
+		t.Fatalf("expected /files, got %q", strings.TrimSpace(out))
+	}
+}
+
+func TestLsFromRoot(t *testing.T) {
+	sh := newVFSTestShell(t)
+	// ls from / should show files and .ssh.
+	out, _ := runCmd(t, sh, "cd / && ls -a")
+	if !strings.Contains(out, "files") {
+		t.Fatalf("expected files in ls from root, got %q", out)
+	}
+	if !strings.Contains(out, ".ssh") {
+		t.Fatalf("expected .ssh in ls from root, got %q", out)
+	}
+}
+
 func TestVFSHeadTail(t *testing.T) {
 	sh := newVFSTestShell(t)
-	out, _ := runCmd(t, sh, "head -n 1 /Documents/notes.txt")
+	out, _ := runCmd(t, sh, "head -n 1 /files/Documents/notes.txt")
 	if strings.TrimSpace(out) != "line1" {
 		t.Fatalf("expected 'line1', got %q", strings.TrimSpace(out))
 	}
-	out, _ = runCmd(t, sh, "tail -n 1 /Documents/notes.txt")
+	out, _ = runCmd(t, sh, "tail -n 1 /files/Documents/notes.txt")
 	if strings.TrimSpace(out) != "line3" {
 		t.Fatalf("expected 'line3', got %q", strings.TrimSpace(out))
+	}
+}
+
+// --- Device file test stubs ---
+
+type devNullHandler struct{}
+
+func (h *devNullHandler) Stat() (fs.FileInfo, error) { return &devTestInfo{name: "null"}, nil }
+func (h *devNullHandler) Open(flag int, perm os.FileMode) (vfs.File, error) {
+	return &devTestFile{kind: 0}, nil
+}
+
+type devZeroHandler struct{}
+
+func (h *devZeroHandler) Stat() (fs.FileInfo, error) { return &devTestInfo{name: "zero"}, nil }
+func (h *devZeroHandler) Open(flag int, perm os.FileMode) (vfs.File, error) {
+	return &devTestFile{kind: 1}, nil
+}
+
+type devURandHandler struct{}
+
+func (h *devURandHandler) Stat() (fs.FileInfo, error) { return &devTestInfo{name: "urandom"}, nil }
+func (h *devURandHandler) Open(flag int, perm os.FileMode) (vfs.File, error) {
+	return &devTestFile{kind: 2}, nil
+}
+
+type devTestInfo struct{ name string }
+
+func (i *devTestInfo) Name() string       { return i.name }
+func (i *devTestInfo) Size() int64        { return 0 }
+func (i *devTestInfo) Mode() fs.FileMode  { return 0o666 }
+func (i *devTestInfo) ModTime() time.Time { return time.Time{} }
+func (i *devTestInfo) IsDir() bool        { return false }
+func (i *devTestInfo) Sys() any           { return nil }
+
+type devTestFile struct{ kind int } // 0=null, 1=zero, 2=urandom
+
+func (f *devTestFile) Read(p []byte) (int, error) {
+	switch f.kind {
+	case 0:
+		return 0, io.EOF
+	case 1:
+		clear(p)
+		return len(p), nil
+	case 2:
+		return rand.Read(p)
+	}
+	return 0, io.EOF
+}
+
+func (f *devTestFile) ReadAt(p []byte, _ int64) (int, error)  { return f.Read(p) }
+func (f *devTestFile) Write(p []byte) (int, error)            { return len(p), nil }
+func (f *devTestFile) WriteAt(p []byte, _ int64) (int, error) { return len(p), nil }
+func (f *devTestFile) Seek(_ int64, _ int) (int64, error)     { return 0, nil }
+func (f *devTestFile) Truncate(_ int64) error                 { return nil }
+func (f *devTestFile) Close() error                           { return nil }
+func (f *devTestFile) Stat() (fs.FileInfo, error)             { return &devTestInfo{}, nil }
+
+// --- Device file tests ---
+
+func TestRedirectToDevNull(t *testing.T) {
+	sh := newVFSTestShell(t)
+	out, stderr := runCmd(t, sh, "echo hello > /dev/null")
+	if stderr != "" {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+	if out != "" {
+		t.Fatalf("expected no output, got %q", out)
+	}
+}
+
+func TestCatDevNull(t *testing.T) {
+	sh := newVFSTestShell(t)
+	out, stderr := runCmd(t, sh, "cat /dev/null")
+	if stderr != "" {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+	if out != "" {
+		t.Fatalf("expected empty output, got %q", out)
+	}
+}
+
+func TestLsDevDir(t *testing.T) {
+	sh := newVFSTestShell(t)
+	out, stderr := runCmd(t, sh, "ls /dev")
+	if stderr != "" {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+	if !strings.Contains(out, "null") {
+		t.Fatalf("expected null in ls /dev, got %q", out)
+	}
+	if !strings.Contains(out, "zero") {
+		t.Fatalf("expected zero in ls /dev, got %q", out)
+	}
+	if !strings.Contains(out, "urandom") {
+		t.Fatalf("expected urandom in ls /dev, got %q", out)
 	}
 }

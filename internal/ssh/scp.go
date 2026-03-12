@@ -84,6 +84,12 @@ func parseSCPArgs(command string) scpArgs {
 // scpResolve maps a virtual SCP path to a sandboxed real path.
 func scpResolve(filesDir, vpath string) (string, error) {
 	cleaned := filepath.Clean("/" + vpath)
+	if strings.HasPrefix(cleaned, "/files") {
+		cleaned = strings.TrimPrefix(cleaned, "/files")
+		if cleaned == "" {
+			cleaned = "/"
+		}
+	}
 	real := filepath.Join(filesDir, cleaned)
 
 	resolved, err := filepath.EvalSymlinks(real)

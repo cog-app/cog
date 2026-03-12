@@ -18,11 +18,16 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 	filesDir := s.providers.Plugins.UserFilesDir(username)
 	userFS, _ := s.providers.Plugins.UserFS(username)
 
-	// Overlay .ssh/authorized_keys on the VFS so ssh-copy-id and
-	// cat .ssh/authorized_keys work transparently.
+	// Build a composite VFS with user files at /files and .ssh/authorized_keys
+	// at the virtual root, so ssh-copy-id and cat .ssh/authorized_keys work
+	// transparently while keeping user files in a clean namespace.
 	if userFS != nil {
-		ofs := vfs.NewOverlayFS(userFS)
+		ofs := vfs.NewOverlayFS(nil) // nil base — pure virtual root
+		ofs.Mount("/files", userFS)
 		ofs.Bind("/.ssh/authorized_keys", newAuthKeysFileHandler(s.keys, username))
+		ofs.Bind("/dev/null", newDevHandler(devNull, "null"))
+		ofs.Bind("/dev/zero", newDevHandler(devZero, "zero"))
+		ofs.Bind("/dev/urandom", newDevHandler(devURandom, "urandom"))
 		userFS = ofs
 	}
 

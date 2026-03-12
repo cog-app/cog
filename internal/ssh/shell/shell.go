@@ -96,13 +96,36 @@ func (s *Shell) toVirtualPath(base, p string) string {
 }
 
 // callHandler intercepts all commands before execution, including shell builtins.
-// We use it to replace "pwd" with our virtual-path-aware version.
+// We use it to replace "pwd" with our virtual-path-aware version and intercept
+// "cd" to map virtual paths to real filesystem paths.
 func (s *Shell) callHandler(ctx context.Context, args []string) ([]string, error) {
 	switch args[0] {
 	case "pwd":
 		hc := interp.HandlerCtx(ctx)
 		fmt.Fprintln(hc.Stdout, s.virtualPath(hc.Dir))
 		return []string{"true"}, nil
+	case "cd":
+		hc := interp.HandlerCtx(ctx)
+		target := s.cdTarget(args[1:])
+		vp := s.toVirtualPath(hc.Dir, target)
+		// Validate via VFS first — show virtual paths in errors.
+		if s.fs != nil {
+			fi, err := s.fs.Stat(vp)
+			if err != nil {
+				fmt.Fprintf(hc.Stderr, "cd: no such file or directory: %s\n", vp)
+				return []string{"false"}, nil
+			}
+			if !fi.IsDir {
+				fmt.Fprintf(hc.Stderr, "cd: not a directory: %s\n", vp)
+				return []string{"false"}, nil
+			}
+		}
+		realPath := s.virtualToReal(vp)
+		if realPath == "" {
+			fmt.Fprintf(hc.Stderr, "cd: cannot cd to %s\n", vp)
+			return []string{"false"}, nil
+		}
+		return []string{"cd", realPath}, nil
 	case "exit":
 		s.exited = true
 		return args, nil
@@ -110,6 +133,22 @@ func (s *Shell) callHandler(ctx context.Context, args []string) ([]string, error
 		return []string{"true"}, nil
 	}
 	return args, nil
+}
+
+// cdTarget extracts the target directory from cd arguments.
+// cd with no args or ~ → /files (home). cd - → /files (home).
+func (s *Shell) cdTarget(args []string) string {
+	if len(args) == 0 {
+		return "/files"
+	}
+	target := args[0]
+	if target == "~" || target == "-" {
+		return "/files"
+	}
+	if strings.HasPrefix(target, "~/") {
+		return "/files/" + strings.TrimPrefix(target, "~/")
+	}
+	return target
 }
 
 // Run parses and executes a single command string.
