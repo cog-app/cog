@@ -9,11 +9,16 @@ import (
 	"strconv"
 	"strings"
 
+	"git.duckfam.us/jj-software/cog/vfs"
+
 	gossh "golang.org/x/crypto/ssh"
 )
 
 // serveSCP handles an SCP exec request. Returns exit code.
-func (s *Server) serveSCP(channel gossh.Channel, filesDir string, command string) int {
+func (s *Server) serveSCP(channel gossh.Channel, filesDir string, userFS vfs.FS, command string) int {
+	// SCP relies heavily on os.FileInfo and direct file handles.
+	// VFS integration for SCP is deferred — it uses the filesDir fallback.
+	_ = userFS
 	// Resolve symlinks for containment.
 	if resolved, err := filepath.EvalSymlinks(filesDir); err == nil {
 		filesDir = resolved

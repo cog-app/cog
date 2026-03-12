@@ -8,6 +8,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 type webdavBackend struct {
@@ -264,6 +266,18 @@ func (b *webdavBackend) Delete(filePath string) error {
 		return fmt.Errorf("delete: status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// Compile-time interface check.
+var _ vfs.FS = (*webdavBackend)(nil)
+
+func (b *webdavBackend) ReadFile(filePath string) ([]byte, error) {
+	rc, err := b.Get(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(rc)
 }
 
 func (b *webdavBackend) Rename(oldPath, newPath string) error {

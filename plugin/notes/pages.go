@@ -32,6 +32,10 @@ func (h *Pages) notesDir(r *http.Request) string {
 	return h.plugin.NotesDir(u.Username)
 }
 
+func (h *Pages) username(r *http.Request) string {
+	return plugin.UserFromContext(r.Context()).Username
+}
+
 type viewExtras struct {
 	NeedsKaTeX   bool
 	NeedsMermaid bool
@@ -68,8 +72,7 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	nd := h.notesDir(r)
-	EnsureNotesDir(nd)
+	h.plugin.ensureNotesDirFor(h.username(r))
 
 	sb := h.buildSidebar(db, "/apps/notes/")
 	notes, _ := ListNotes(db, 200)
@@ -121,8 +124,7 @@ func (h *Pages) NoteView(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "note not found", http.StatusNotFound)
 		return
 	}
-	nd := h.notesDir(r)
-	content, _ := ReadContent(nd, note.Filename)
+	content, _ := h.plugin.readNoteContent(h.username(r), note.Filename)
 	rendered := RenderMarkdown(content)
 
 	sb := h.buildSidebar(db, "/apps/notes/note/"+r.PathValue("id"))
@@ -151,8 +153,7 @@ func (h *Pages) NoteEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "note not found", http.StatusNotFound)
 		return
 	}
-	nd := h.notesDir(r)
-	content, _ := ReadContent(nd, note.Filename)
+	content, _ := h.plugin.readNoteContent(h.username(r), note.Filename)
 
 	categories, _ := ListCategories(db)
 	sb := h.buildSidebar(db, "/apps/notes/note/"+r.PathValue("id")+"/edit")
@@ -180,8 +181,8 @@ func (h *Pages) CreateNote(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	nd := h.notesDir(r)
-	EnsureNotesDir(nd)
+	username := h.username(r)
+	h.plugin.ensureNotesDirFor(username)
 
 	title := r.FormValue("title")
 	if title == "" {
@@ -193,7 +194,7 @@ func (h *Pages) CreateNote(w http.ResponseWriter, r *http.Request) {
 	filename := FilenameFromTitle(title)
 	etag := ComputeETag(content)
 
-	if err := WriteContent(nd, filename, content); err != nil {
+	if err := h.plugin.writeNoteContent(username, filename, content); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -225,7 +226,7 @@ func (h *Pages) UpdateNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nd := h.notesDir(r)
+	username := h.username(r)
 
 	// Etag concurrency check
 	if formEtag := r.FormValue("etag"); formEtag != "" && formEtag != note.ETag {
@@ -241,7 +242,7 @@ func (h *Pages) UpdateNote(w http.ResponseWriter, r *http.Request) {
 	if title != "" {
 		newFilename := FilenameFromTitle(title)
 		if newFilename != filename {
-			if err := RenameFile(nd, filename, newFilename); err != nil {
+			if err := h.plugin.renameNoteFile(username, filename, newFilename); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -249,7 +250,7 @@ func (h *Pages) UpdateNote(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := WriteContent(nd, filename, content); err != nil {
+	if err := h.plugin.writeNoteContent(username, filename, content); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -281,8 +282,7 @@ func (h *Pages) DeleteNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nd := h.notesDir(r)
-	DeleteFile(nd, note.Filename)
+	h.plugin.deleteNoteFile(h.username(r), note.Filename)
 	DeleteNoteMeta(db, id)
 
 	w.WriteHeader(http.StatusOK)

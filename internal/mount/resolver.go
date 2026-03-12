@@ -5,6 +5,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 // Resolver bridges the mount system to the plugin registry.
@@ -67,4 +68,43 @@ func (r *Resolver) EnsureUserDirs(username string) error {
 	}
 
 	return parsed.EnsureDir(m.VolumeSubpath)
+}
+
+// UserFS builds a mount-aware VFS for the given user, loading all mounts
+// and creating backends for each.
+func (r *Resolver) UserFS(username string) (vfs.FS, error) {
+	u, err := r.users.GetByUsername(username)
+	if err != nil {
+		return nil, fmt.Errorf("resolve user %q: %w", username, err)
+	}
+
+	var entries []volume.MountEntry
+	for m, err := range r.mounts.ListByUser(u.ID) {
+		if err != nil {
+			return nil, fmt.Errorf("list mounts for %q: %w", username, err)
+		}
+
+		v, err := r.volumes.GetByID(m.VolumeID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve volume %q for mount %q: %w", m.VolumeID, m.UserPath, err)
+		}
+
+		backend, err := volume.NewBackend(v)
+		if err != nil {
+			return nil, fmt.Errorf("create backend for volume %q: %w", v.Name, err)
+		}
+
+		entries = append(entries, volume.MountEntry{
+			UserPath:      m.UserPath,
+			VolumeSubpath: m.VolumeSubpath,
+			Backend:       backend,
+			ReadOnly:      m.ReadOnly,
+		})
+	}
+
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("no mounts for user %q", username)
+	}
+
+	return volume.NewMountFS(entries), nil
 }

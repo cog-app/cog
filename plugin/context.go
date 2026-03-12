@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"iter"
 	"log/slog"
+
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 // PluginContext is the combined registration and service interface passed to
@@ -15,7 +17,8 @@ type PluginContext interface {
 
 	// PluginDB returns the per-user plugin database, auto-scoped to the current plugin ID.
 	PluginDB(username string) (*sql.DB, error)
-	// UserFilesDir returns the path to the user's files directory.
+	// UserFilesDir returns the path to the user's files directory on the local
+	// filesystem. Deprecated: prefer UserVFS for mount-aware file access.
 	UserFilesDir(username string) string
 	// EnsureUserDirs creates the standard directory structure for a user.
 	EnsureUserDirs(username string) error
@@ -33,6 +36,10 @@ type PluginContext interface {
 	Logger() *slog.Logger
 	// RootDB returns a plugin-global database (not per-user).
 	RootDB() (*sql.DB, error)
+
+	// UserVFS returns the mount-aware virtual filesystem for a user.
+	// Returns nil if VFS is not available (e.g., gRPC plugin without VFS permission).
+	UserVFS(username string) vfs.FS
 
 	// Optional service accessors — return nil if the service is unavailable.
 	ShareStore() ShareStore

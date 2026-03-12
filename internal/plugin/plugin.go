@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 // Type aliases — internal code can keep using plugin.Plugin, plugin.Registrar, etc.
@@ -41,6 +42,7 @@ type FilesAccess = cogplugin.FilesAccess
 type FileInfo = cogplugin.FileInfo
 type CommandDef = cogplugin.CommandDef
 type SettingsPage = cogplugin.SettingsPage
+type VFS = vfs.FS
 
 // Re-export permission constants (cannot alias constants).
 const (
@@ -61,10 +63,10 @@ var (
 )
 
 // Ensure function signatures stay in sync at compile time.
-var _ func(*sql.DB, fs.FS) error                      = Migrate
-var _ func(context.Context) string                     = CSRFTokenFromContext
-var _ func(context.Context) *UserInfo                  = UserFromContext
-var _ func(context.Context, string) context.Context    = WithCSRFToken
+var _ func(*sql.DB, fs.FS) error = Migrate
+var _ func(context.Context) string = CSRFTokenFromContext
+var _ func(context.Context) *UserInfo = UserFromContext
+var _ func(context.Context, string) context.Context = WithCSRFToken
 var _ func(context.Context, *UserInfo) context.Context = WithUserInfo
 
 // protectedPlugin is unexported — only embeddable from within internal/plugin.

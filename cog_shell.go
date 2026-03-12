@@ -34,9 +34,10 @@ func shellCmd(plugins []plugin.Plugin) *cobra.Command {
 				return fmt.Errorf("no files directory for user %q", username)
 			}
 
+			userFS, _ := p.Plugins.UserFS(username)
 			cfg := configFromEnv()
 			log, _ := newLogger(cfg)
-			sh := shell.New(username, filesDir, p.Plugins.UserCommands(), p.Users.Usernames, log)
+			sh := shell.New(username, filesDir, userFS, p.Plugins.UserCommands(), p.Users.Usernames, log)
 
 			if command != "" {
 				return sh.Run(c.Context(), command, os.Stdin, os.Stdout, os.Stderr)

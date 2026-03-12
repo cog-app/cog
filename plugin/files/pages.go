@@ -1,6 +1,7 @@
 package files
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -161,12 +162,12 @@ func (h *Pages) ServeGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Pages) serveDownload(w http.ResponseWriter, r *http.Request, username, fp string, meta *FileMeta) {
-	f, _, err := h.plugin.Download(username, fp)
+	rc, _, err := h.plugin.Download(username, fp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	defer f.Close()
+	defer rc.Close()
 
 	ct := meta.MimeType
 	if ct == "" {
@@ -174,23 +175,39 @@ func (h *Pages) serveDownload(w http.ResponseWriter, r *http.Request, username, 
 	}
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+meta.Name+"\"")
-	http.ServeContent(w, r, meta.Name, time.Unix(meta.MTime, 0), f)
+	serveContent(w, r, meta.Name, time.Unix(meta.MTime, 0), rc)
 }
 
 func (h *Pages) serveRaw(w http.ResponseWriter, r *http.Request, username, fp string, meta *FileMeta) {
-	f, _, err := h.plugin.Download(username, fp)
+	rc, _, err := h.plugin.Download(username, fp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	defer f.Close()
+	defer rc.Close()
 
 	ct := meta.MimeType
 	if ct == "" {
 		ct = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", ct)
-	http.ServeContent(w, r, meta.Name, time.Unix(meta.MTime, 0), f)
+	serveContent(w, r, meta.Name, time.Unix(meta.MTime, 0), rc)
+}
+
+// serveContent serves an io.ReadCloser via http.ServeContent. If the reader
+// implements io.ReadSeeker (e.g. *os.File), it is used directly; otherwise
+// the content is buffered into a bytes.ReadSeeker.
+func serveContent(w http.ResponseWriter, r *http.Request, name string, modtime time.Time, rc io.ReadCloser) {
+	if rs, ok := rc.(io.ReadSeeker); ok {
+		http.ServeContent(w, r, name, modtime, rs)
+		return
+	}
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.ServeContent(w, r, name, modtime, bytes.NewReader(data))
 }
 
 func (h *Pages) servePreview(w http.ResponseWriter, r *http.Request, username, fp string, meta *FileMeta) {

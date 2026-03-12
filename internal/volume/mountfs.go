@@ -1,0 +1,416 @@
+package volume
+
+import (
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path"
+	"sort"
+	"strings"
+	"time"
+
+	"git.duckfam.us/jj-software/cog/vfs"
+)
+
+// Compile-time interface checks.
+var (
+	_ vfs.FS         = (*MountFS)(nil)
+	_ vfs.Unwrapper  = (*MountFS)(nil)
+	_ vfs.FileOpener = (*MountFS)(nil)
+	_ vfs.AttrSetter = (*MountFS)(nil)
+	_ vfs.DirReader  = (*MountFS)(nil)
+)
+
+// MountFS routes VFS operations to backends based on mount path prefixes.
+type MountFS struct {
+	mounts []mountEntry // sorted longest-prefix first
+}
+
+type mountEntry struct {
+	userPath      string // e.g. "/" or "/cloud"
+	volumeSubpath string
+	backend       vfs.FS
+	readOnly      bool
+}
+
+// NewMountFS creates a MountFS from a set of mount entries.
+// Entries are sorted longest-prefix first for correct resolution.
+func NewMountFS(entries []MountEntry) *MountFS {
+	mounts := make([]mountEntry, len(entries))
+	for i, e := range entries {
+		mounts[i] = mountEntry{
+			userPath:      path.Clean("/" + e.UserPath),
+			volumeSubpath: e.VolumeSubpath,
+			backend:       e.Backend,
+			readOnly:      e.ReadOnly,
+		}
+	}
+	sort.Slice(mounts, func(i, j int) bool {
+		return len(mounts[i].userPath) > len(mounts[j].userPath)
+	})
+	return &MountFS{mounts: mounts}
+}
+
+// MountEntry is the public input type for NewMountFS.
+type MountEntry struct {
+	UserPath      string
+	VolumeSubpath string
+	Backend       vfs.FS
+	ReadOnly      bool
+}
+
+// resolve finds the mount matching the given path and returns the backend,
+// the subpath within the backend, and whether the mount is read-only.
+func (m *MountFS) resolve(p string) (vfs.FS, string, bool, error) {
+	p = path.Clean("/" + p)
+	for _, me := range m.mounts {
+		if p == me.userPath || strings.HasPrefix(p, me.userPath+"/") {
+			sub := strings.TrimPrefix(p, me.userPath)
+			if sub == "" {
+				sub = "/"
+			}
+			backendPath := path.Join(me.volumeSubpath, sub)
+			return me.backend, backendPath, me.readOnly, nil
+		}
+	}
+	return nil, "", false, fmt.Errorf("no mount for path: %s", p)
+}
+
+// Unwrap resolves a path to the underlying FS and the subpath within it.
+func (m *MountFS) Unwrap(p string) (vfs.FS, string, error) {
+	backend, subpath, _, err := m.resolve(p)
+	return backend, subpath, err
+}
+
+func (m *MountFS) checkWrite(p string) (vfs.FS, string, error) {
+	backend, subpath, ro, err := m.resolve(p)
+	if err != nil {
+		return nil, "", err
+	}
+	if ro {
+		return nil, "", vfs.ErrReadOnly
+	}
+	return backend, subpath, nil
+}
+
+// List returns entries in a directory, merging mount points that appear
+// within the listed directory as synthetic entries.
+func (m *MountFS) List(p string) ([]vfs.FileInfo, error) {
+	backend, subpath, _, err := m.resolve(p)
+	if err != nil {
+		return nil, err
+	}
+
+	items, err := backend.List(subpath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Rewrite paths from backend-relative to user-relative.
+	cleanP := path.Clean("/" + p)
+	for i := range items {
+		items[i].Path = path.Join(cleanP, items[i].Name)
+	}
+
+	// Merge synthetic entries for mount points that are direct children.
+	existing := make(map[string]bool)
+	for _, fi := range items {
+		existing[fi.Name] = true
+	}
+	for _, me := range m.mounts {
+		if me.userPath == "/" {
+			continue
+		}
+		parent := path.Dir(me.userPath)
+		if parent != cleanP {
+			continue
+		}
+		name := path.Base(me.userPath)
+		if existing[name] {
+			continue
+		}
+		items = append(items, vfs.FileInfo{
+			Name:  name,
+			Path:  me.userPath,
+			IsDir: true,
+		})
+	}
+
+	return items, nil
+}
+
+func (m *MountFS) Stat(p string) (*vfs.FileInfo, error) {
+	// Check if the path matches a mount point exactly — even if the backend
+	// path doesn't exist yet, the mount point itself is a valid directory.
+	cleanP := path.Clean("/" + p)
+	for _, me := range m.mounts {
+		if me.userPath == cleanP {
+			fi, err := me.backend.Stat(me.volumeSubpath)
+			if err != nil {
+				// Mount point exists but backend path may not.
+				return &vfs.FileInfo{
+					Name:  path.Base(cleanP),
+					Path:  cleanP,
+					IsDir: true,
+				}, nil
+			}
+			fi.Path = cleanP
+			fi.Name = path.Base(cleanP)
+			return fi, nil
+		}
+	}
+
+	backend, subpath, _, err := m.resolve(p)
+	if err != nil {
+		return nil, err
+	}
+	fi, err := backend.Stat(subpath)
+	if err != nil {
+		return nil, err
+	}
+	fi.Path = cleanP
+	return fi, nil
+}
+
+func (m *MountFS) Get(p string) (io.ReadCloser, error) {
+	backend, subpath, _, err := m.resolve(p)
+	if err != nil {
+		return nil, err
+	}
+	return backend.Get(subpath)
+}
+
+func (m *MountFS) Put(p string, content io.Reader) error {
+	backend, subpath, err := m.checkWrite(p)
+	if err != nil {
+		return err
+	}
+	return backend.Put(subpath, content)
+}
+
+func (m *MountFS) Mkdir(p string) error {
+	backend, subpath, err := m.checkWrite(p)
+	if err != nil {
+		return err
+	}
+	return backend.Mkdir(subpath)
+}
+
+func (m *MountFS) Delete(p string) error {
+	backend, subpath, err := m.checkWrite(p)
+	if err != nil {
+		return err
+	}
+	return backend.Delete(subpath)
+}
+
+func (m *MountFS) Rename(oldPath, newPath string) error {
+	oldBackend, oldSub, oldRO, err := m.resolve(oldPath)
+	if err != nil {
+		return err
+	}
+	newBackend, newSub, newRO, err := m.resolve(newPath)
+	if err != nil {
+		return err
+	}
+	if oldBackend != newBackend {
+		return vfs.ErrCrossMount
+	}
+	if oldRO || newRO {
+		return vfs.ErrReadOnly
+	}
+	return oldBackend.Rename(oldSub, newSub)
+}
+
+func (m *MountFS) ReadFile(p string) ([]byte, error) {
+	backend, subpath, _, err := m.resolve(p)
+	if err != nil {
+		return nil, err
+	}
+	return backend.ReadFile(subpath)
+}
+
+// --- vfs.FileOpener ---
+
+func (m *MountFS) OpenFile(p string, flag int, perm os.FileMode) (vfs.File, error) {
+	backend, subpath, ro, err := m.resolve(p)
+	if err != nil {
+		return nil, err
+	}
+	if ro && (flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC|os.O_APPEND)) != 0 {
+		return nil, vfs.ErrReadOnly
+	}
+	if opener, ok := backend.(vfs.FileOpener); ok {
+		return opener.OpenFile(subpath, flag, perm)
+	}
+	return nil, fmt.Errorf("backend does not support OpenFile")
+}
+
+// --- vfs.AttrSetter ---
+
+func (m *MountFS) Chmod(p string, mode os.FileMode) error {
+	backend, subpath, err := m.checkWrite(p)
+	if err != nil {
+		return err
+	}
+	if setter, ok := backend.(vfs.AttrSetter); ok {
+		return setter.Chmod(subpath, mode)
+	}
+	return fmt.Errorf("backend does not support Chmod")
+}
+
+func (m *MountFS) Chtimes(p string, atime, mtime time.Time) error {
+	backend, subpath, err := m.checkWrite(p)
+	if err != nil {
+		return err
+	}
+	if setter, ok := backend.(vfs.AttrSetter); ok {
+		return setter.Chtimes(subpath, atime, mtime)
+	}
+	return fmt.Errorf("backend does not support Chtimes")
+}
+
+func (m *MountFS) Truncate(p string, size int64) error {
+	backend, subpath, err := m.checkWrite(p)
+	if err != nil {
+		return err
+	}
+	if setter, ok := backend.(vfs.AttrSetter); ok {
+		return setter.Truncate(subpath, size)
+	}
+	return fmt.Errorf("backend does not support Truncate")
+}
+
+func (m *MountFS) Link(oldname, newname string) error {
+	oldBackend, oldSub, oldRO, err := m.resolve(oldname)
+	if err != nil {
+		return err
+	}
+	newBackend, newSub, newRO, err := m.resolve(newname)
+	if err != nil {
+		return err
+	}
+	if oldBackend != newBackend {
+		return vfs.ErrCrossMount
+	}
+	if oldRO || newRO {
+		return vfs.ErrReadOnly
+	}
+	if setter, ok := oldBackend.(vfs.AttrSetter); ok {
+		return setter.Link(oldSub, newSub)
+	}
+	return fmt.Errorf("backend does not support Link")
+}
+
+// --- vfs.DirReader ---
+
+func (m *MountFS) StatInfo(p string) (fs.FileInfo, error) {
+	backend, subpath, _, err := m.resolve(p)
+	if err != nil {
+		return nil, err
+	}
+	if dr, ok := backend.(vfs.DirReader); ok {
+		return dr.StatInfo(subpath)
+	}
+	// Fallback: use Stat and synthesize an fs.FileInfo.
+	fi, err := backend.Stat(subpath)
+	if err != nil {
+		return nil, err
+	}
+	return &syntheticFileInfo{fi: fi}, nil
+}
+
+func (m *MountFS) LstatInfo(p string) (fs.FileInfo, error) {
+	backend, subpath, _, err := m.resolve(p)
+	if err != nil {
+		return nil, err
+	}
+	if dr, ok := backend.(vfs.DirReader); ok {
+		return dr.LstatInfo(subpath)
+	}
+	fi, err := backend.Stat(subpath)
+	if err != nil {
+		return nil, err
+	}
+	return &syntheticFileInfo{fi: fi}, nil
+}
+
+func (m *MountFS) ReadDirEntries(p string) ([]fs.DirEntry, error) {
+	backend, subpath, _, err := m.resolve(p)
+	if err != nil {
+		return nil, err
+	}
+	if dr, ok := backend.(vfs.DirReader); ok {
+		entries, err := dr.ReadDirEntries(subpath)
+		if err != nil {
+			return nil, err
+		}
+		// Merge mount points.
+		return m.mergeDirEntries(p, entries), nil
+	}
+	// Fallback: use List and synthesize DirEntry.
+	items, err := backend.List(subpath)
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]fs.DirEntry, len(items))
+	for i := range items {
+		entries[i] = &syntheticDirEntry{fi: &items[i]}
+	}
+	return m.mergeDirEntries(p, entries), nil
+}
+
+// mergeDirEntries adds synthetic entries for mount points within p.
+func (m *MountFS) mergeDirEntries(p string, entries []fs.DirEntry) []fs.DirEntry {
+	cleanP := path.Clean("/" + p)
+	existing := make(map[string]bool)
+	for _, e := range entries {
+		existing[e.Name()] = true
+	}
+	for _, me := range m.mounts {
+		if me.userPath == "/" {
+			continue
+		}
+		parent := path.Dir(me.userPath)
+		if parent != cleanP {
+			continue
+		}
+		name := path.Base(me.userPath)
+		if existing[name] {
+			continue
+		}
+		entries = append(entries, &syntheticDirEntry{
+			fi: &vfs.FileInfo{Name: name, Path: me.userPath, IsDir: true},
+		})
+	}
+	return entries
+}
+
+// syntheticFileInfo wraps vfs.FileInfo to implement fs.FileInfo.
+type syntheticFileInfo struct {
+	fi *vfs.FileInfo
+}
+
+func (s *syntheticFileInfo) Name() string       { return s.fi.Name }
+func (s *syntheticFileInfo) Size() int64        { return s.fi.Size }
+func (s *syntheticFileInfo) ModTime() time.Time { return s.fi.ModTime }
+func (s *syntheticFileInfo) IsDir() bool        { return s.fi.IsDir }
+func (s *syntheticFileInfo) Sys() any           { return nil }
+
+func (s *syntheticFileInfo) Mode() fs.FileMode {
+	if s.fi.IsDir {
+		return fs.ModeDir | 0755
+	}
+	return 0644
+}
+
+// syntheticDirEntry wraps vfs.FileInfo to implement fs.DirEntry.
+type syntheticDirEntry struct {
+	fi *vfs.FileInfo
+}
+
+func (s *syntheticDirEntry) Name() string               { return s.fi.Name }
+func (s *syntheticDirEntry) IsDir() bool                { return s.fi.IsDir }
+func (s *syntheticDirEntry) Type() fs.FileMode          { return (&syntheticFileInfo{fi: s.fi}).Mode().Type() }
+func (s *syntheticDirEntry) Info() (fs.FileInfo, error) { return &syntheticFileInfo{fi: s.fi}, nil }

@@ -155,9 +155,9 @@ type ResourceRef struct {
 // CommandDef defines a CLI command registered by a plugin.
 // Leaf commands have Run set; group commands have Sub set instead.
 type CommandDef struct {
-	Name  string       // e.g. "scan"
-	Short string       // one-line description
-	Args  []string     // positional arg names for usage (e.g. ["username"])
+	Name  string   // e.g. "scan"
+	Short string   // one-line description
+	Args  []string // positional arg names for usage (e.g. ["username"])
 	Run   func(ctx context.Context, args []string) error
 	Sub   []CommandDef // sub-commands (mutually exclusive with Run)
 }

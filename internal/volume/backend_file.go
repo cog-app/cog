@@ -3,10 +3,23 @@ package volume
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"mime"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"git.duckfam.us/jj-software/cog/vfs"
+)
+
+// Compile-time interface checks.
+var (
+	_ vfs.FS          = (*fileBackend)(nil)
+	_ vfs.FileOpener  = (*fileBackend)(nil)
+	_ vfs.AttrSetter  = (*fileBackend)(nil)
+	_ vfs.DirReader   = (*fileBackend)(nil)
+	_ vfs.LocalRooter = (*fileBackend)(nil)
 )
 
 type fileBackend struct {
@@ -16,6 +29,9 @@ type fileBackend struct {
 func newFileBackend(root string) *fileBackend {
 	return &fileBackend{root: root}
 }
+
+// LocalRoot returns the root directory on the local filesystem.
+func (b *fileBackend) LocalRoot() string { return b.root }
 
 func (b *fileBackend) resolve(path string) (string, error) {
 	cleaned := filepath.Clean("/" + path)
@@ -27,7 +43,7 @@ func (b *fileBackend) resolve(path string) (string, error) {
 	return full, nil
 }
 
-func (b *fileBackend) List(path string) ([]FileInfo, error) {
+func (b *fileBackend) List(path string) ([]vfs.FileInfo, error) {
 	full, err := b.resolve(path)
 	if err != nil {
 		return nil, err
@@ -36,14 +52,14 @@ func (b *fileBackend) List(path string) ([]FileInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list directory: %w", err)
 	}
-	var items []FileInfo
+	var items []vfs.FileInfo
 	for _, e := range entries {
 		info, err := e.Info()
 		if err != nil {
 			continue
 		}
 		relPath := filepath.Join(path, e.Name())
-		fi := FileInfo{
+		fi := vfs.FileInfo{
 			Name:    e.Name(),
 			Path:    relPath,
 			Size:    info.Size(),
@@ -58,7 +74,7 @@ func (b *fileBackend) List(path string) ([]FileInfo, error) {
 	return items, nil
 }
 
-func (b *fileBackend) Stat(path string) (*FileInfo, error) {
+func (b *fileBackend) Stat(path string) (*vfs.FileInfo, error) {
 	full, err := b.resolve(path)
 	if err != nil {
 		return nil, err
@@ -67,7 +83,7 @@ func (b *fileBackend) Stat(path string) (*FileInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("stat: %w", err)
 	}
-	fi := &FileInfo{
+	fi := &vfs.FileInfo{
 		Name:    info.Name(),
 		Path:    path,
 		Size:    info.Size(),
@@ -133,4 +149,86 @@ func (b *fileBackend) Rename(oldPath, newPath string) error {
 		return err
 	}
 	return os.Rename(oldFull, newFull)
+}
+
+func (b *fileBackend) ReadFile(path string) ([]byte, error) {
+	full, err := b.resolve(path)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(full)
+}
+
+// --- vfs.FileOpener ---
+
+func (b *fileBackend) OpenFile(path string, flag int, perm os.FileMode) (vfs.File, error) {
+	full, err := b.resolve(path)
+	if err != nil {
+		return nil, err
+	}
+	return os.OpenFile(full, flag, perm)
+}
+
+// --- vfs.AttrSetter ---
+
+func (b *fileBackend) Chmod(path string, mode os.FileMode) error {
+	full, err := b.resolve(path)
+	if err != nil {
+		return err
+	}
+	return os.Chmod(full, mode)
+}
+
+func (b *fileBackend) Chtimes(path string, atime, mtime time.Time) error {
+	full, err := b.resolve(path)
+	if err != nil {
+		return err
+	}
+	return os.Chtimes(full, atime, mtime)
+}
+
+func (b *fileBackend) Truncate(path string, size int64) error {
+	full, err := b.resolve(path)
+	if err != nil {
+		return err
+	}
+	return os.Truncate(full, size)
+}
+
+func (b *fileBackend) Link(oldname, newname string) error {
+	oldFull, err := b.resolve(oldname)
+	if err != nil {
+		return err
+	}
+	newFull, err := b.resolve(newname)
+	if err != nil {
+		return err
+	}
+	return os.Link(oldFull, newFull)
+}
+
+// --- vfs.DirReader ---
+
+func (b *fileBackend) StatInfo(path string) (fs.FileInfo, error) {
+	full, err := b.resolve(path)
+	if err != nil {
+		return nil, err
+	}
+	return os.Stat(full)
+}
+
+func (b *fileBackend) LstatInfo(path string) (fs.FileInfo, error) {
+	full, err := b.resolve(path)
+	if err != nil {
+		return nil, err
+	}
+	return os.Lstat(full)
+}
+
+func (b *fileBackend) ReadDirEntries(path string) ([]fs.DirEntry, error) {
+	full, err := b.resolve(path)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadDir(full)
 }

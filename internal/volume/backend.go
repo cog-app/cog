@@ -2,33 +2,20 @@ package volume
 
 import (
 	"fmt"
-	"io"
-	"time"
+
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
-// FileInfo describes a file or directory in a volume.
-type FileInfo struct {
-	Name     string
-	Path     string
-	Size     int64
-	ModTime  time.Time
-	IsDir    bool
-	MimeType string
-}
+// Backend is an alias for vfs.FS. Existing code that references
+// volume.Backend continues to compile.
+type Backend = vfs.FS
 
-// Backend provides filesystem-like operations on a volume.
-type Backend interface {
-	List(path string) ([]FileInfo, error)
-	Stat(path string) (*FileInfo, error)
-	Get(path string) (io.ReadCloser, error)
-	Put(path string, content io.Reader) error
-	Mkdir(path string) error
-	Delete(path string) error
-	Rename(oldPath, newPath string) error
-}
+// FileInfo is an alias for vfs.FileInfo. Existing code that references
+// volume.FileInfo continues to compile.
+type FileInfo = vfs.FileInfo
 
-// NewBackend creates a Backend for the given volume.
-func NewBackend(vol *Volume) (Backend, error) {
+// NewBackend creates a vfs.FS for the given volume.
+func NewBackend(vol *Volume) (vfs.FS, error) {
 	parsed, err := ParseURI(vol.URI)
 	if err != nil {
 		return nil, err

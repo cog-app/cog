@@ -13,8 +13,25 @@ import (
 	"strings"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/vfs"
+
 	_ "golang.org/x/image/webp"
 )
+
+// resolveLocalPath resolves a user's file path to a local filesystem path.
+// It tries VFS Unwrap + LocalRooter first, then falls back to UserFilesDir.
+func (p *Plugin) resolveLocalPath(username, filePath string) string {
+	if fs := p.ctx.UserVFS(username); fs != nil {
+		if u, ok := fs.(vfs.Unwrapper); ok {
+			if backend, subpath, err := u.Unwrap("/" + filePath); err == nil {
+				if lr, ok := backend.(vfs.LocalRooter); ok {
+					return filepath.Join(lr.LocalRoot(), subpath)
+				}
+			}
+		}
+	}
+	return filepath.Join(p.ctx.UserFilesDir(username), filePath)
+}
 
 // isMediaMIME reports whether the MIME type is a supported image or video type.
 func isMediaMIME(mimeType string) bool {
@@ -205,15 +222,13 @@ func (p *Plugin) extractMetadata(ctx context.Context, db *sql.DB, username strin
 		return err
 	}
 
-	filesDir := p.ctx.UserFilesDir(username)
-
 	for i := range items {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
 		m := &items[i]
-		srcPath := filepath.Join(filesDir, m.FilePath)
+		srcPath := p.resolveLocalPath(username, m.FilePath)
 
 		if m.IsVideo() {
 			extractVideoMetadata(srcPath, m)
@@ -253,15 +268,13 @@ func (p *Plugin) extractOCR(ctx context.Context, db *sql.DB, username string) er
 		return err
 	}
 
-	filesDir := p.ctx.UserFilesDir(username)
-
 	for i := range items {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
 		m := &items[i]
-		srcPath := filepath.Join(filesDir, m.FilePath)
+		srcPath := p.resolveLocalPath(username, m.FilePath)
 
 		text, err := tesseractOCR(srcPath)
 		if err != nil {
@@ -451,8 +464,7 @@ func (p *Plugin) videoThumbnail(username string, m *Media, size int) (*os.File, 
 		return nil, fmt.Errorf("ffmpeg not available")
 	}
 
-	filesDir := p.ctx.UserFilesDir(username)
-	srcPath := filepath.Join(filesDir, m.FilePath)
+	srcPath := p.resolveLocalPath(username, m.FilePath)
 
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return nil, err

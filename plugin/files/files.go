@@ -22,6 +22,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 //go:embed sql
@@ -86,11 +87,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 			if !isTextMIME(cols["mime_type"]) {
 				return ""
 			}
-			path := cols["path"]
-			if path == "" {
+			fpath := cols["path"]
+			if fpath == "" {
 				return ""
 			}
-			fsPath := filepath.Join(filesDir, path)
+			fsPath := filepath.Join(filesDir, fpath)
 			info, err := os.Stat(fsPath)
 			if err != nil || info.Size() > 1<<20 { // skip >1MB
 				return ""
@@ -136,6 +137,11 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) e
 func (p *Plugin) Start(ctx context.Context) error { return nil }
 func (p *Plugin) Stop() error                     { return nil }
 
+// userFS returns the mount-aware VFS for the given user.
+func (p *Plugin) userFS(username string) vfs.FS {
+	return p.ctx.UserVFS(username)
+}
+
 // DB returns the files plugin database for a user, running migrations if needed.
 func (p *Plugin) DB(username string) (*sql.DB, error) {
 	db, err := p.ctx.PluginDB(username)
@@ -170,10 +176,16 @@ func (p *Plugin) CreateDir(username, dirPath string) (*FileMeta, error) {
 	parentPath := filepath.Dir(dirPath)
 	name := filepath.Base(dirPath)
 
-	// Create on disk
-	fsPath := filepath.Join(p.ctx.UserFilesDir(username), dirPath)
-	if err := os.MkdirAll(fsPath, 0755); err != nil {
-		return nil, fmt.Errorf("mkdir: %w", err)
+	// Create on disk via VFS.
+	if fs := p.userFS(username); fs != nil {
+		if err := fs.Mkdir(dirPath); err != nil {
+			return nil, fmt.Errorf("mkdir: %w", err)
+		}
+	} else {
+		fsPath := filepath.Join(p.ctx.UserFilesDir(username), dirPath)
+		if err := os.MkdirAll(fsPath, 0755); err != nil {
+			return nil, fmt.Errorf("mkdir: %w", err)
+		}
 	}
 
 	db, err := p.DB(username)
@@ -210,26 +222,34 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 	parentPath := filepath.Dir(filePath)
 	name := filepath.Base(filePath)
 
-	// Ensure parent dir exists on disk
-	fsDir := filepath.Join(p.ctx.UserFilesDir(username), parentPath)
-	if err := os.MkdirAll(fsDir, 0755); err != nil {
-		return nil, fmt.Errorf("mkdir parent: %w", err)
+	// Write to disk via VFS, counting bytes.
+	counter := &countingReader{r: content}
+	if fs := p.userFS(username); fs != nil {
+		if err := fs.Mkdir(parentPath); err != nil {
+			return nil, fmt.Errorf("mkdir parent: %w", err)
+		}
+		if err := fs.Put(filePath, counter); err != nil {
+			return nil, fmt.Errorf("write file: %w", err)
+		}
+	} else {
+		fsDir := filepath.Join(p.ctx.UserFilesDir(username), parentPath)
+		if err := os.MkdirAll(fsDir, 0755); err != nil {
+			return nil, fmt.Errorf("mkdir parent: %w", err)
+		}
+		fsPath := filepath.Join(p.ctx.UserFilesDir(username), filePath)
+		f, err := os.Create(fsPath)
+		if err != nil {
+			return nil, fmt.Errorf("create file: %w", err)
+		}
+		_, err = io.Copy(f, counter)
+		if closeErr := f.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			return nil, fmt.Errorf("write file: %w", err)
+		}
 	}
-
-	// Write to disk
-	fsPath := filepath.Join(p.ctx.UserFilesDir(username), filePath)
-	f, err := os.Create(fsPath)
-	if err != nil {
-		return nil, fmt.Errorf("create file: %w", err)
-	}
-
-	size, err := io.Copy(f, content)
-	if closeErr := f.Close(); closeErr != nil && err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return nil, fmt.Errorf("write file: %w", err)
-	}
+	size := counter.n
 
 	db, err := p.DB(username)
 	if err != nil {
@@ -267,8 +287,9 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 	}, nil
 }
 
-// Download opens a file for reading.
-func (p *Plugin) Download(username, filePath string) (*os.File, *FileMeta, error) {
+// Download opens a file for reading. The returned io.ReadCloser must be closed
+// by the caller. For local backends the underlying value is an *os.File.
+func (p *Plugin) Download(username, filePath string) (io.ReadCloser, *FileMeta, error) {
 	filePath = normalizePath(filePath)
 
 	db, err := p.DB(username)
@@ -281,12 +302,19 @@ func (p *Plugin) Download(username, filePath string) (*os.File, *FileMeta, error
 		return nil, nil, err
 	}
 
+	if fs := p.userFS(username); fs != nil {
+		rc, err := fs.Get(filePath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("open file: %w", err)
+		}
+		return rc, meta, nil
+	}
+
 	fsPath := filepath.Join(p.ctx.UserFilesDir(username), filePath)
 	f, err := os.Open(fsPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open file: %w", err)
 	}
-
 	return f, meta, nil
 }
 
@@ -300,9 +328,8 @@ func (p *Plugin) List(username, dirPath string) ([]FileMeta, error) {
 		return nil, err
 	}
 
-	// Reconcile: scan disk and update metadata
-	fsPath := filepath.Join(p.ctx.UserFilesDir(username), dirPath)
-	if err := p.reconcile(db, username, dirPath, fsPath); err != nil {
+	// Reconcile: scan disk and update metadata.
+	if err := p.reconcile(db, username, dirPath); err != nil {
 		p.log.Error("reconcile", "user", username, "dir", dirPath, "err", err)
 	}
 
@@ -366,21 +393,31 @@ func (p *Plugin) HardDelete(username, filePath string) error {
 		return err
 	}
 
-	// Remove from disk
-	fsPath := filepath.Join(p.ctx.UserFilesDir(username), filePath)
-	if meta.IsDir {
-		if err := os.RemoveAll(fsPath); err != nil {
-			return fmt.Errorf("remove dir: %w", err)
+	// Remove from disk via VFS.
+	if fs := p.userFS(username); fs != nil {
+		if err := fs.Delete(filePath); err != nil {
+			return fmt.Errorf("remove: %w", err)
 		}
-		// Remove all children from metadata
+	} else {
+		fsPath := filepath.Join(p.ctx.UserFilesDir(username), filePath)
+		if meta.IsDir {
+			if err := os.RemoveAll(fsPath); err != nil {
+				return fmt.Errorf("remove dir: %w", err)
+			}
+		} else {
+			if err := os.Remove(fsPath); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("remove file: %w", err)
+			}
+		}
+	}
+
+	// Remove metadata.
+	if meta.IsDir {
 		if _, err := db.Exec(`DELETE FROM files WHERE path LIKE ? OR path = ?`,
 			filePath+"/%", filePath); err != nil {
 			return fmt.Errorf("delete dir metadata: %w", err)
 		}
 	} else {
-		if err := os.Remove(fsPath); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove file: %w", err)
-		}
 		if _, err := db.Exec(`DELETE FROM files WHERE path = ?`, filePath); err != nil {
 			return fmt.Errorf("delete file metadata: %w", err)
 		}
@@ -398,16 +435,24 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 		return nil, err
 	}
 
-	oldFsPath := filepath.Join(p.ctx.UserFilesDir(username), oldPath)
-	newFsPath := filepath.Join(p.ctx.UserFilesDir(username), newPath)
-
-	// Ensure parent of new path exists
-	if err := os.MkdirAll(filepath.Dir(newFsPath), 0755); err != nil {
-		return nil, fmt.Errorf("mkdir new parent: %w", err)
-	}
-
-	if err := os.Rename(oldFsPath, newFsPath); err != nil {
-		return nil, fmt.Errorf("rename: %w", err)
+	// Rename on disk via VFS.
+	if fs := p.userFS(username); fs != nil {
+		newParentDir := filepath.Dir(newPath)
+		if err := fs.Mkdir(newParentDir); err != nil {
+			return nil, fmt.Errorf("mkdir new parent: %w", err)
+		}
+		if err := fs.Rename(oldPath, newPath); err != nil {
+			return nil, fmt.Errorf("rename: %w", err)
+		}
+	} else {
+		oldFsPath := filepath.Join(p.ctx.UserFilesDir(username), oldPath)
+		newFsPath := filepath.Join(p.ctx.UserFilesDir(username), newPath)
+		if err := os.MkdirAll(filepath.Dir(newFsPath), 0755); err != nil {
+			return nil, fmt.Errorf("mkdir new parent: %w", err)
+		}
+		if err := os.Rename(oldFsPath, newFsPath); err != nil {
+			return nil, fmt.Errorf("rename: %w", err)
+		}
 	}
 
 	newParent := filepath.Dir(newPath)
@@ -464,16 +509,40 @@ func (p *Plugin) ParentID(username string, fileID int64) (string, error) {
 }
 
 // reconcile performs lazy synchronization between disk and metadata.
-func (p *Plugin) reconcile(db *sql.DB, username, dirPath, fsPath string) error {
-	entries, err := os.ReadDir(fsPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+func (p *Plugin) reconcile(db *sql.DB, username, dirPath string) error {
+	// List entries via VFS or direct filesystem.
+	var vfsEntries []vfs.FileInfo
+	if fs := p.userFS(username); fs != nil {
+		var err error
+		vfsEntries, err = fs.List(dirPath)
+		if err != nil {
+			return nil // directory may not exist yet
 		}
-		return err
+	} else {
+		fsPath := filepath.Join(p.ctx.UserFilesDir(username), dirPath)
+		osEntries, err := os.ReadDir(fsPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		for _, e := range osEntries {
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			vfsEntries = append(vfsEntries, vfs.FileInfo{
+				Name:    e.Name(),
+				Path:    filepath.Join(dirPath, e.Name()),
+				Size:    info.Size(),
+				ModTime: info.ModTime(),
+				IsDir:   e.IsDir(),
+			})
+		}
 	}
 
-	// Build set of known paths from metadata
+	// Build set of known paths from metadata.
 	rows, err := db.Query(`SELECT path FROM files WHERE parent_path = ?`, dirPath)
 	if err != nil {
 		return err
@@ -482,40 +551,35 @@ func (p *Plugin) reconcile(db *sql.DB, username, dirPath, fsPath string) error {
 
 	known := make(map[string]bool)
 	for rows.Next() {
-		var path string
-		if err := rows.Scan(&path); err != nil {
+		var p string
+		if err := rows.Scan(&p); err != nil {
 			return err
 		}
-		known[path] = true
+		known[p] = true
 	}
 
-	// Add new entries found on disk
-	for _, entry := range entries {
-		childPath := filepath.Join(dirPath, entry.Name())
+	// Add new entries found on disk.
+	for _, fi := range vfsEntries {
+		childPath := filepath.Join(dirPath, fi.Name)
 		if known[childPath] {
-			continue
-		}
-
-		info, err := entry.Info()
-		if err != nil {
 			continue
 		}
 
 		etag := generateETag()
 		isDir := 0
-		if entry.IsDir() {
+		if fi.IsDir {
 			isDir = 1
 		}
 		mimeType := ""
-		if !entry.IsDir() {
-			mimeType = detectMimeType(entry.Name())
+		if !fi.IsDir {
+			mimeType = detectMimeType(fi.Name)
 		}
 
 		_, err = db.Exec(`
 			INSERT OR IGNORE INTO files (path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			childPath, dirPath, entry.Name(), info.Size(),
-			info.ModTime().Unix(), mimeType, etag, isDir)
+			childPath, dirPath, fi.Name, fi.Size,
+			fi.ModTime.Unix(), mimeType, etag, isDir)
 		if err != nil {
 			p.log.Error("reconcile insert", "path", childPath, "err", err)
 		}
@@ -624,6 +688,18 @@ func formatSize(b int64) string {
 	default:
 		return fmt.Sprintf("%d B", b)
 	}
+}
+
+// countingReader wraps an io.Reader and counts bytes read.
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
 }
 
 // isTextMIME returns true for MIME types whose content should be indexed.

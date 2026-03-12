@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
 // CardDAVHandler implements CardDAV for the contacts plugin.

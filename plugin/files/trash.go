@@ -43,7 +43,8 @@ func (p *Plugin) Trash(username, filePath string) error {
 	now := time.Now().Unix()
 	trashName := meta.Name + ".d" + strconv.FormatInt(now, 10) + "." + strconv.FormatInt(meta.ID, 10)
 
-	// Move file on disk to trash directory
+	// Move file on disk to trash directory.
+	// Trash is always a local directory; VFS rename would fail across mounts.
 	trashDir := p.trashDir(username)
 	if err := os.MkdirAll(trashDir, 0755); err != nil {
 		return fmt.Errorf("create trash dir: %w", err)

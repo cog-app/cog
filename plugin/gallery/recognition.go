@@ -111,7 +111,6 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		return err
 	}
 
-	filesDir := p.ctx.UserFilesDir(username)
 	tagMinConf := 0.5
 	if v := GetSetting(sysDB, "tag_min_confidence", ""); v != "" {
 		fmt.Sscanf(v, "%f", &tagMinConf)
@@ -127,7 +126,7 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		}
 
 		m := &items[i]
-		imagePath := filesDir + "/" + m.FilePath
+		imagePath := p.resolveLocalPath(username, m.FilePath)
 
 		result, err := backend.Analyze(ctx, imagePath)
 		now := time.Now().Unix()

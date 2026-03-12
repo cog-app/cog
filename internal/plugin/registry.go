@@ -18,6 +18,7 @@ import (
 	"github.com/a-h/templ"
 
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/vfs"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/db"
@@ -31,6 +32,7 @@ var openHooked = db.OpenHooked
 type MountResolver interface {
 	UserFilesDir(username string) (string, error)
 	EnsureUserDirs(username string) error
+	UserFS(username string) (vfs.FS, error)
 }
 
 // RegistryServices holds optional services that are wired into plugin contexts.
@@ -284,6 +286,24 @@ func (r *Registry) EnsureUserDirs(username string) error {
 	return nil
 }
 
+// UserVFS returns a mount-aware VFS for the given user, or nil on error.
+func (r *Registry) UserVFS(username string) vfs.FS {
+	if r.mountResolver != nil {
+		if fs, err := r.mountResolver.UserFS(username); err == nil {
+			return fs
+		}
+	}
+	return nil
+}
+
+// UserFS returns a mount-aware VFS for the given user.
+func (r *Registry) UserFS(username string) (vfs.FS, error) {
+	if r.mountResolver != nil {
+		return r.mountResolver.UserFS(username)
+	}
+	return nil, fmt.Errorf("no mount resolver configured")
+}
+
 // ResourceDefByType looks up a resource definition by its full type string
 // (e.g., "calendar:calendar", "contacts:address_book").
 // Returns the def and true if found, zero value and false otherwise.
@@ -488,6 +508,10 @@ func (pr *pluginRegistrar) GroupStore() GroupStore {
 
 func (pr *pluginRegistrar) FilesAccess() FilesAccess {
 	return pr.registry.services.FilesAccess
+}
+
+func (pr *pluginRegistrar) UserVFS(username string) vfs.FS {
+	return pr.registry.UserVFS(username)
 }
 
 // wrap applies RequirePluginEnabled middleware to a handler.

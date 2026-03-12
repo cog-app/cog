@@ -27,8 +27,7 @@ func (p *Plugin) Seed(username string) error {
 		return nil
 	}
 
-	notesDir := p.NotesDir(username)
-	if err := EnsureNotesDir(notesDir); err != nil {
+	if err := p.ensureNotesDirFor(username); err != nil {
 		return fmt.Errorf("seed notes: ensure dir: %w", err)
 	}
 
@@ -53,7 +52,7 @@ func (p *Plugin) Seed(username string) error {
 		filename := FilenameFromTitle(title)
 		etag := ComputeETag(content)
 
-		if err := WriteContent(notesDir, filename, content); err != nil {
+		if err := p.writeNoteContent(username, filename, content); err != nil {
 			p.log.Error("seed note: write failed", "title", title, "error", err)
 			continue
 		}

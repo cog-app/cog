@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/ssh/shell"
+	"git.duckfam.us/jj-software/cog/vfs"
 
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -15,6 +16,7 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 	defer channel.Close()
 
 	filesDir := s.providers.Plugins.UserFilesDir(username)
+	userFS, _ := s.providers.Plugins.UserFS(username)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -52,7 +54,7 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 				req.Reply(name == "sftp", nil)
 			}
 			if name == "sftp" {
-				s.serveSFTP(channel, filesDir)
+				s.serveSFTP(channel, filesDir, userFS)
 			}
 			return
 
@@ -64,11 +66,11 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 			var exitCode int
 			switch {
 			case strings.HasPrefix(command, "scp "):
-				exitCode = s.serveSCP(channel, filesDir, command)
+				exitCode = s.serveSCP(channel, filesDir, userFS, command)
 			case strings.HasPrefix(command, "rsync "):
 				exitCode = s.serveRsync(channel, filesDir, command)
 			default:
-				exitCode = s.execShell(ctx, channel, username, filesDir, command, hasPTY, termWidth, termHeight)
+				exitCode = s.execShell(ctx, channel, username, filesDir, userFS, command, hasPTY, termWidth, termHeight)
 			}
 			sendExitStatus(channel, exitCode)
 			return
@@ -77,7 +79,7 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 			if req.WantReply {
 				req.Reply(true, nil)
 			}
-			exitCode := s.interactiveShell(ctx, channel, username, filesDir, hasPTY, termWidth, termHeight)
+			exitCode := s.interactiveShell(ctx, channel, username, filesDir, userFS, hasPTY, termWidth, termHeight)
 			sendExitStatus(channel, exitCode)
 			return
 
@@ -89,8 +91,8 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 	}
 }
 
-func (s *Server) execShell(ctx context.Context, channel gossh.Channel, username, filesDir, command string, hasPTY bool, termWidth, termHeight int) int {
-	sh := shell.New(username, filesDir, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.log)
+func (s *Server) execShell(ctx context.Context, channel gossh.Channel, username, filesDir string, userFS vfs.FS, command string, hasPTY bool, termWidth, termHeight int) int {
+	sh := shell.New(username, filesDir, userFS, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.log)
 	if hasPTY {
 		sh.SetSSHMode(termWidth, termHeight)
 	}
@@ -101,8 +103,8 @@ func (s *Server) execShell(ctx context.Context, channel gossh.Channel, username,
 	return 0
 }
 
-func (s *Server) interactiveShell(ctx context.Context, channel gossh.Channel, username, filesDir string, hasPTY bool, termWidth, termHeight int) int {
-	sh := shell.New(username, filesDir, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.log)
+func (s *Server) interactiveShell(ctx context.Context, channel gossh.Channel, username, filesDir string, userFS vfs.FS, hasPTY bool, termWidth, termHeight int) int {
+	sh := shell.New(username, filesDir, userFS, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.log)
 	if hasPTY {
 		sh.SetSSHMode(termWidth, termHeight)
 	}

@@ -20,6 +20,7 @@ import (
 
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/plugpb"
+	"git.duckfam.us/jj-software/cog/vfs"
 	"google.golang.org/grpc"
 )
 
@@ -266,7 +267,8 @@ func (r *capturingRegistrar) EmailSender() cogplugin.EmailSender { return nil }
 func (r *capturingRegistrar) UserLookup() cogplugin.UserLookup   { return nil }
 func (r *capturingRegistrar) GroupStore() cogplugin.GroupStore   { return nil }
 func (r *capturingRegistrar) FilesAccess() cogplugin.FilesAccess { return nil }
-func (r *capturingRegistrar) Logger() *slog.Logger              { return slog.Default() }
+func (r *capturingRegistrar) UserVFS(username string) vfs.FS     { return nil }
+func (r *capturingRegistrar) Logger() *slog.Logger               { return slog.Default() }
 func (r *capturingRegistrar) RootDB() (*sql.DB, error) {
 	return nil, fmt.Errorf("RootDB not available for gRPC plugins")
 }

@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 //go:generate go tool migratesql .
@@ -97,6 +99,60 @@ func (p *Plugin) DB(username string) (*sql.DB, error) {
 // NotesDir returns the path to the user's Notes directory on disk.
 func (p *Plugin) NotesDir(username string) string {
 	return filepath.Join(p.ctx.UserFilesDir(username), "Notes")
+}
+
+// userFS returns the VFS for a user, or nil if unavailable.
+func (p *Plugin) userFS(username string) vfs.FS {
+	return p.ctx.UserVFS(username)
+}
+
+// notesPath returns the VFS path for a notes file.
+func notesPath(filename string) string {
+	return "/Notes/" + filename
+}
+
+// ensureNotesDirFor ensures the Notes directory exists for a user.
+func (p *Plugin) ensureNotesDirFor(username string) error {
+	if fs := p.userFS(username); fs != nil {
+		return fs.Mkdir("/Notes")
+	}
+	return EnsureNotesDir(p.NotesDir(username))
+}
+
+// readNoteContent reads a note file's content for a user.
+func (p *Plugin) readNoteContent(username, filename string) (string, error) {
+	if fs := p.userFS(username); fs != nil {
+		data, err := fs.ReadFile(notesPath(filename))
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}
+	return ReadContent(p.NotesDir(username), filename)
+}
+
+// writeNoteContent writes content to a note file for a user.
+func (p *Plugin) writeNoteContent(username, filename, content string) error {
+	if fs := p.userFS(username); fs != nil {
+		return fs.Put(notesPath(filename), strings.NewReader(content))
+	}
+	return WriteContent(p.NotesDir(username), filename, content)
+}
+
+// deleteNoteFile deletes a note file for a user.
+func (p *Plugin) deleteNoteFile(username, filename string) error {
+	if fs := p.userFS(username); fs != nil {
+		return fs.Delete(notesPath(filename))
+	}
+	return DeleteFile(p.NotesDir(username), filename)
+}
+
+// renameNoteFile renames a note file for a user.
+func (p *Plugin) renameNoteFile(username, oldName, newName string) error {
+	if fs := p.userFS(username); fs != nil {
+		return fs.Rename(notesPath(oldName), notesPath(newName))
+	}
+	return RenameFile(p.NotesDir(username), oldName, newName)
 }
 
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
