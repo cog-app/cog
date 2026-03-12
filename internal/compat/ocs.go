@@ -122,7 +122,7 @@ func writeOCSXMLValue(w http.ResponseWriter, v any, indent string) {
 				writeOCSXMLValue(w, elem, indent+" ")
 				fmt.Fprintf(w, "%s</%s>\n", indent, k)
 			} else {
-				fmt.Fprintf(w, "%s<%s>%s</%s>\n", indent, k, xmlEscape(fmt.Sprint(elem)), k)
+				fmt.Fprintf(w, "%s<%s>%s</%s>\n", indent, k, xmlEscape(formatXMLScalar(elem)), k)
 			}
 		}
 	case reflect.Struct:
@@ -133,7 +133,7 @@ func writeOCSXMLValue(w http.ResponseWriter, v any, indent string) {
 		}
 		writeOCSXMLValue(w, val.Elem().Interface(), indent)
 	default:
-		fmt.Fprintf(w, "%s%s\n", indent, xmlEscape(fmt.Sprint(v)))
+		fmt.Fprintf(w, "%s%s\n", indent, xmlEscape(formatXMLScalar(v)))
 	}
 }
 
@@ -148,16 +148,22 @@ func writeOCSXMLStruct(w http.ResponseWriter, val reflect.Value, indent string) 
 		if tag == "" || tag == "-" {
 			continue
 		}
-		// Parse tag name (strip ",omitempty" etc.)
+		// Parse tag name and options (strip ",omitempty" etc.)
 		name := tag
-		if idx := len(tag); idx > 0 {
-			if comma := indexOf(tag, ','); comma >= 0 {
-				name = tag[:comma]
-			}
+		omitempty := false
+		if comma := indexOf(tag, ','); comma >= 0 {
+			name = tag[:comma]
+			omitempty = tag[comma:] == ",omitempty"
 		}
 		fv := val.Field(i)
 		if fv.Kind() == reflect.Pointer && fv.IsNil() {
+			if omitempty {
+				continue
+			}
 			fmt.Fprintf(w, "%s<%s/>\n", indent, name)
+			continue
+		}
+		if omitempty && fv.IsZero() {
 			continue
 		}
 		iface := fv.Interface()
@@ -169,9 +175,21 @@ func writeOCSXMLStruct(w http.ResponseWriter, val reflect.Value, indent string) 
 		} else if rv.Kind() == reflect.Pointer {
 			fmt.Fprintf(w, "%s<%s>%s</%s>\n", indent, name, xmlEscape(fmt.Sprint(rv.Elem().Interface())), name)
 		} else {
-			fmt.Fprintf(w, "%s<%s>%s</%s>\n", indent, name, xmlEscape(fmt.Sprint(iface)), name)
+			fmt.Fprintf(w, "%s<%s>%s</%s>\n", indent, name, xmlEscape(formatXMLScalar(iface)), name)
 		}
 	}
+}
+
+// formatXMLScalar formats a scalar value for XML output.
+// Bools become "1"/"0" (NC convention), everything else uses fmt.Sprint.
+func formatXMLScalar(v any) string {
+	if b, ok := v.(bool); ok {
+		if b {
+			return "1"
+		}
+		return "0"
+	}
+	return fmt.Sprint(v)
 }
 
 func indexOf(s string, b byte) int {
@@ -185,7 +203,7 @@ func indexOf(s string, b byte) int {
 
 // HandleCapabilities returns a static capabilities response.
 func HandleCapabilities(w http.ResponseWriter, r *http.Request) {
-	writeOCS(w, http.StatusOK, map[string]any{
+	writeOCSReq(w, r, http.StatusOK, map[string]any{
 		"version": map[string]any{
 			"major":   31,
 			"minor":   0,
@@ -193,6 +211,7 @@ func HandleCapabilities(w http.ResponseWriter, r *http.Request) {
 			"string":  "31.0.0",
 			"edition": "",
 		},
+		"pollinterval": 30,
 		"capabilities": map[string]any{
 			"core": map[string]any{
 				"webdav-root": "remote.php/dav",
@@ -227,14 +246,31 @@ func HandleCapabilities(w http.ResponseWriter, r *http.Request) {
 func HandleCurrentUser(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u == nil {
-		writeOCSError(w, http.StatusUnauthorized, 997, "Unauthorized")
+		writeOCSErrorReq(w, r, http.StatusUnauthorized, 997, "Unauthorized")
 		return
 	}
 
-	writeOCS(w, http.StatusOK, map[string]any{
-		"id":           u.ID,
-		"display-name": u.Username,
-		"email":        "",
+	displayName := u.DisplayName
+	if displayName == "" {
+		displayName = u.Username
+	}
+
+	writeOCSReq(w, r, http.StatusOK, map[string]any{
+		"id":           u.Username,
+		"display-name": displayName,
+		"displayname":  displayName,
+		"email":        u.Email,
+		"phone":        "",
+		"address":      "",
+		"language":     "en",
+		"groups":       []string{},
+		"quota": map[string]any{
+			"free":     -3,
+			"used":     0,
+			"total":    -3,
+			"relative": 0,
+			"quota":    -3,
+		},
 	})
 }
 
@@ -258,7 +294,7 @@ func HandleUserByID(users *user.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := r.PathValue("id")
 		if userID == "" {
-			writeOCSError(w, http.StatusBadRequest, 400, "user id required")
+			writeOCSErrorReq(w, r, http.StatusBadRequest, 400, "user id required")
 			return
 		}
 
@@ -268,7 +304,7 @@ func HandleUserByID(users *user.Store) http.HandlerFunc {
 			target, err = users.GetByUsername(userID)
 		}
 		if err != nil {
-			writeOCSError(w, http.StatusNotFound, 404, "user not found")
+			writeOCSErrorReq(w, r, http.StatusNotFound, 404, "user not found")
 			return
 		}
 
@@ -277,9 +313,10 @@ func HandleUserByID(users *user.Store) http.HandlerFunc {
 			displayName = target.Username
 		}
 
-		writeOCS(w, http.StatusOK, map[string]any{
-			"id":           target.ID,
+		writeOCSReq(w, r, http.StatusOK, map[string]any{
+			"id":           target.Username,
 			"display-name": displayName,
+			"displayname":  displayName,
 			"email":        target.Email,
 		})
 	}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
@@ -19,6 +20,7 @@ import (
 type CommentsHandler struct {
 	Log   *slog.Logger
 	Files *files.Plugin
+	Users *user.Store
 }
 
 func (h *CommentsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -86,6 +88,15 @@ func (h *CommentsHandler) handlePropfind(w http.ResponseWriter, username string,
 	io.WriteString(w, xml.Header)
 	io.WriteString(w, `<d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">`)
 	for _, c := range comments {
+		displayName := c.ActorID
+		if h.Users != nil {
+			if u, err := h.Users.GetByUsername(c.ActorID); err == nil {
+				displayName = u.DisplayName
+				if displayName == "" {
+					displayName = u.Username
+				}
+			}
+		}
 		fmt.Fprintf(w, `
   <d:response>
     <d:href>/remote.php/dav/comments/files/%d/%d</d:href>
@@ -93,6 +104,7 @@ func (h *CommentsHandler) handlePropfind(w http.ResponseWriter, username string,
       <d:prop>
         <oc:id>%d</oc:id>
         <oc:actorId>%s</oc:actorId>
+        <oc:actorDisplayName>%s</oc:actorDisplayName>
         <oc:actorType>users</oc:actorType>
         <oc:message>%s</oc:message>
         <oc:creationDateTime>%s</oc:creationDateTime>
@@ -103,6 +115,7 @@ func (h *CommentsHandler) handlePropfind(w http.ResponseWriter, username string,
   </d:response>`,
 			fileID, c.ID, c.ID,
 			xmlEscape(c.ActorID),
+			xmlEscape(displayName),
 			xmlEscape(c.Message),
 			time.Unix(c.CreatedAt, 0).UTC().Format(time.RFC3339),
 			xmlEscape(c.Verb))
@@ -152,11 +165,9 @@ func (h *CommentsHandler) handleCreate(w http.ResponseWriter, r *http.Request, u
 		return
 	}
 
-	// Use authenticated username as actor; actorID from body is the user's UUID
-	// which we store for display purposes.
-	if actorID == "" {
-		actorID = username
-	}
+	// Always use the authenticated username as actor, not the UUID from the
+	// NC Android app body — the username can be resolved to a display name.
+	actorID = username
 	if verb == "" {
 		verb = "comment"
 	}

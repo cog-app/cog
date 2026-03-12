@@ -21,12 +21,12 @@ func TestSMTPSettingsPersist(t *testing.T) {
 
 	// Save SMTP settings via POST.
 	env.PostForm(t, "/admin/settings", url.Values{
-		"csrf_token":         {token},
-		"smtp_host":          {"smtp.example.com"},
-		"smtp_port":          {"465"},
-		"smtp_user":          {"testuser"},
-		"smtp_pass":          {"secret"},
-		"smtp_from":          {"noreply@example.com"},
+		"csrf_token":          {token},
+		"smtp_host":           {"smtp.example.com"},
+		"smtp_port":           {"465"},
+		"smtp_user":           {"testuser"},
+		"smtp_pass":           {"secret"},
+		"smtp_from":           {"noreply@example.com"},
 		"invite_expiry_hours": {"72"},
 	}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
 

@@ -167,7 +167,7 @@ func New(p *services.Providers) http.Handler {
 		mux.Handle("GET /index.php/core/preview", auth.RequireAuth(previewH))
 
 		// WebDAV comments endpoint
-		commentsH := &compat.CommentsHandler{Log: p.Log.With("component", "comments"), Files: fp}
+		commentsH := &compat.CommentsHandler{Log: p.Log.With("component", "comments"), Files: fp, Users: p.Users}
 		mux.Handle("/remote.php/dav/comments/files/", auth.RequireAuth(commentsH))
 
 		// OCS sharing API (NC clients)

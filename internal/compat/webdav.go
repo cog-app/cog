@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -94,6 +95,13 @@ func (h *WebDAVHandler) extractPath(urlPath string) (urlUserID string, filePath 
 	}
 	// Split into user_id and file path
 	if uid, fp, ok := strings.Cut(rest, "/"); ok {
+		// Unescape percent-encoded characters (e.g. %20 → space).
+		// r.URL.Path is already decoded, but the Destination header in
+		// MOVE/COPY is a raw URL that may contain percent-encoding.
+		decoded, err := url.PathUnescape(fp)
+		if err == nil {
+			fp = decoded
+		}
 		return uid, path.Clean("/" + fp)
 	}
 	return rest, "/"
@@ -116,12 +124,17 @@ func (h *WebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, u
 
 	hrefPrefix := "/remote.php/dav/files/" + urlUserID
 
+	displayName := u.DisplayName
+	if displayName == "" {
+		displayName = u.Username
+	}
+
 	var entries []propfindEntry
 	href := hrefPrefix + filePath
 	if rootMeta.IsDir && !strings.HasSuffix(href, "/") {
 		href += "/"
 	}
-	entries = append(entries, metaToEntry(href, rootMeta))
+	entries = append(entries, metaToEntry(href, rootMeta, u.Username, displayName))
 
 	// If depth=1 and target is a directory, list children
 	if depth == "1" && rootMeta.IsDir {
@@ -133,7 +146,7 @@ func (h *WebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, u
 				if child.IsDir && !strings.HasSuffix(childHref, "/") {
 					childHref += "/"
 				}
-				entries = append(entries, metaToEntry(childHref, child))
+				entries = append(entries, metaToEntry(childHref, child, u.Username, displayName))
 			}
 		}
 	}
@@ -478,20 +491,24 @@ type propstat struct {
 }
 
 type prop struct {
-	DisplayName      string        `xml:"D:displayname"`
-	ContentType      string        `xml:"D:getcontenttype,omitempty"`
-	ContentLength    int64         `xml:"D:getcontentlength"`
-	ETag             string        `xml:"D:getetag,omitempty"`
-	LastModified     string        `xml:"D:getlastmodified,omitempty"`
-	ResourceType     *resourceType `xml:"D:resourcetype"`
-	OCId             string        `xml:"oc:id"`
-	OCFileID         string        `xml:"oc:fileid"`
-	OCPermissions    string        `xml:"oc:permissions"`
-	OCSize           int64         `xml:"oc:size"`
-	NCHasPreview     bool          `xml:"nc:has-preview"`
-	OCFavorite       int           `xml:"oc:favorite"`
-	OCCommentsCount  int           `xml:"oc:comments-count"`
-	OCCommentsUnread int           `xml:"oc:comments-unread"`
+	DisplayName        string        `xml:"D:displayname"`
+	ContentType        string        `xml:"D:getcontenttype,omitempty"`
+	ContentLength      int64         `xml:"D:getcontentlength"`
+	ETag               string        `xml:"D:getetag,omitempty"`
+	LastModified       string        `xml:"D:getlastmodified,omitempty"`
+	ResourceType       *resourceType `xml:"D:resourcetype"`
+	OCId               string        `xml:"oc:id"`
+	OCFileID           string        `xml:"oc:fileid"`
+	OCPermissions      string        `xml:"oc:permissions"`
+	OCSize             int64         `xml:"oc:size"`
+	NCHasPreview       bool          `xml:"nc:has-preview"`
+	OCFavorite         int           `xml:"oc:favorite"`
+	OCCommentsCount    int           `xml:"oc:comments-count"`
+	OCCommentsUnread   int           `xml:"oc:comments-unread"`
+	NCMountType        string        `xml:"nc:mount-type"`
+	OCOwnerID          string        `xml:"oc:owner-id"`
+	OCOwnerDisplayName string        `xml:"oc:owner-display-name"`
+	NCSharees          *struct{}     `xml:"nc:sharees"`
 }
 
 type resourceType struct {
@@ -574,6 +591,10 @@ func (h *WebDAVHandler) handleReport(w http.ResponseWriter, r *http.Request, u *
 	}
 
 	hrefPrefix := "/remote.php/dav/files/" + urlUserID
+	displayName := u.DisplayName
+	if displayName == "" {
+		displayName = u.Username
+	}
 
 	var entries []propfindEntry
 	for i := range favorites {
@@ -582,7 +603,7 @@ func (h *WebDAVHandler) handleReport(w http.ResponseWriter, r *http.Request, u *
 		if f.IsDir && !strings.HasSuffix(href, "/") {
 			href += "/"
 		}
-		entries = append(entries, metaToEntry(href, f))
+		entries = append(entries, metaToEntry(href, f, u.Username, displayName))
 	}
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
@@ -600,7 +621,7 @@ func (h *WebDAVHandler) handleReport(w http.ResponseWriter, r *http.Request, u *
 	enc.Flush()
 }
 
-func metaToEntry(href string, meta *files.FileMeta) propfindEntry {
+func metaToEntry(href string, meta *files.FileMeta, ownerID, ownerDisplayName string) propfindEntry {
 	var rt resourceType
 	if meta.IsDir {
 		rt.Collection = &struct{}{}
@@ -626,18 +647,22 @@ func metaToEntry(href string, meta *files.FileMeta) propfindEntry {
 		Propstat: propstat{
 			Status: "HTTP/1.1 200 OK",
 			Prop: prop{
-				DisplayName:   name,
-				ContentType:   meta.MimeType,
-				ContentLength: meta.Size,
-				ETag:          `"` + meta.ETag + `"`,
-				LastModified:  time.Unix(meta.MTime, 0).UTC().Format(http.TimeFormat),
-				ResourceType:  &rt,
-				OCId:          fmt.Sprintf("%08d", meta.ID),
-				OCFileID:      strconv.FormatInt(meta.ID, 10),
-				OCPermissions: permissions,
-				OCSize:        meta.Size,
-				NCHasPreview:  files.HasPreview(meta.MimeType),
-				OCFavorite:    favInt,
+				DisplayName:        name,
+				ContentType:        meta.MimeType,
+				ContentLength:      meta.Size,
+				ETag:               `"` + meta.ETag + `"`,
+				LastModified:       time.Unix(meta.MTime, 0).UTC().Format(http.TimeFormat),
+				ResourceType:       &rt,
+				OCId:               fmt.Sprintf("%08d", meta.ID),
+				OCFileID:           strconv.FormatInt(meta.ID, 10),
+				OCPermissions:      permissions,
+				OCSize:             meta.Size,
+				NCHasPreview:       files.HasPreview(meta.MimeType),
+				OCFavorite:         favInt,
+				NCMountType:        "",
+				OCOwnerID:          ownerID,
+				OCOwnerDisplayName: ownerDisplayName,
+				NCSharees:          &struct{}{},
 			},
 		},
 	}

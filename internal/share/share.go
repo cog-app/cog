@@ -421,6 +421,40 @@ func generateToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
+// NCIDFor returns the NC-compatible integer ID for a share, creating one if needed.
+func (s *Store) NCIDFor(shareID string) (int64, error) {
+	var ncID int64
+	err := s.db.QueryRow(`SELECT nc_id FROM share_nc_ids WHERE share_id = ?`, shareID).Scan(&ncID)
+	if err == nil {
+		return ncID, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("lookup nc id: %w", err)
+	}
+	res, err := s.db.Exec(`INSERT INTO share_nc_ids (share_id) VALUES (?)`, shareID)
+	if err != nil {
+		return 0, fmt.Errorf("create nc id: %w", err)
+	}
+	ncID, err = res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("get nc id: %w", err)
+	}
+	return ncID, nil
+}
+
+// ShareIDFromNC looks up the internal share ID from an NC integer ID.
+func (s *Store) ShareIDFromNC(ncID int64) (string, error) {
+	var shareID string
+	err := s.db.QueryRow(`SELECT share_id FROM share_nc_ids WHERE nc_id = ?`, ncID).Scan(&shareID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("lookup share id from nc id: %w", err)
+	}
+	return shareID, nil
+}
+
 // PermissionNames returns human-readable names for a permission bitmask.
 func PermissionNames(perms uint32) []string {
 	var names []string

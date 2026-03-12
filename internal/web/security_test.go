@@ -61,7 +61,7 @@ func TestBasicAuthWorks(t *testing.T) {
 	}
 	env.Get(t, "/ocs/v2.php/cloud/user?format=json", alice.Auth).
 		Status(200).JSON(&resp)
-	require.Equal(t, alice.ID, resp.OCS.Data.ID)
+	require.Equal(t, "alice", resp.OCS.Data.ID)
 }
 
 // --- App Passwords ---
@@ -81,7 +81,7 @@ func TestAppPasswordBasicAuth(t *testing.T) {
 	env.Get(t, "/ocs/v2.php/cloud/user?format=json",
 		cogtest.BasicAuth("alice", plaintext)).
 		Status(200).JSON(&resp)
-	require.Equal(t, alice.ID, resp.OCS.Data.ID)
+	require.Equal(t, "alice", resp.OCS.Data.ID)
 }
 
 func TestAppPasswordBearerAuth(t *testing.T) {
@@ -99,7 +99,7 @@ func TestAppPasswordBearerAuth(t *testing.T) {
 	env.Get(t, "/ocs/v2.php/cloud/user?format=json",
 		cogtest.Auth("Bearer "+plaintext)).
 		Status(200).JSON(&resp)
-	require.Equal(t, alice.ID, resp.OCS.Data.ID)
+	require.Equal(t, "alice", resp.OCS.Data.ID)
 }
 
 func TestInvalidAppPasswordFails(t *testing.T) {

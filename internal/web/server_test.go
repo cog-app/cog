@@ -82,7 +82,7 @@ func TestNCLoginFlow(t *testing.T) {
 	}
 	env.Get(t, "/ocs/v2.php/cloud/user?format=json", appAuth).
 		Status(200).JSON(&ocsResp)
-	require.Equal(t, admin.ID, ocsResp.OCS.Data.ID)
+	require.Equal(t, "admin", ocsResp.OCS.Data.ID)
 	require.Equal(t, "admin", ocsResp.OCS.Data.DisplayName)
 
 	// Step 9: HEAD /remote.php/dav/files/{user_id}/ — file root presence

@@ -1,6 +1,7 @@
 package compat
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -26,7 +27,7 @@ type SharingHandler struct {
 
 // ocsShare is the NC-compatible share response format.
 type ocsShare struct {
-	ID                   string  `json:"id"`
+	ID                   int64   `json:"id"`
 	ShareType            int     `json:"share_type"`
 	UIDOwner             string  `json:"uid_owner"`
 	DisplayNameOwner     string  `json:"displayname_owner"`
@@ -116,14 +117,19 @@ func subjectToShareType(subject string) int {
 	}
 }
 
-func (h *SharingHandler) shareToOCS(rec *share.Record, ownerUser *user.User) *ocsShare {
+func (h *SharingHandler) shareToOCS(rec *share.Record, ownerUser *user.User) (*ocsShare, error) {
+	ncID, err := h.Shares.NCIDFor(rec.ID)
+	if err != nil {
+		return nil, fmt.Errorf("nc id for share %s: %w", rec.ID, err)
+	}
+
 	displayOwner := ownerUser.DisplayName
 	if displayOwner == "" {
 		displayOwner = ownerUser.Username
 	}
 
 	ocs := &ocsShare{
-		ID:                   rec.ID,
+		ID:                   ncID,
 		ShareType:            subjectToShareType(rec.SubjectType),
 		UIDOwner:             ownerUser.Username,
 		DisplayNameOwner:     displayOwner,
@@ -140,6 +146,7 @@ func (h *SharingHandler) shareToOCS(rec *share.Record, ownerUser *user.User) *oc
 	if rec.SubjectType == "PUBLIC" && rec.Token != nil {
 		ocs.Token = rec.Token
 		ocs.URL = "/s/" + *rec.Token
+		ocs.ShareWithDisplayname = "(Shared link)"
 	}
 
 	if rec.SubjectType != "PUBLIC" {
@@ -182,14 +189,25 @@ func (h *SharingHandler) shareToOCS(rec *share.Record, ownerUser *user.User) *oc
 		}
 	}
 
-	return ocs
+	return ocs, nil
+}
+
+// resolveShareID converts a path value to an internal share ID.
+// It accepts either an NC integer ID or a raw internal share ID string.
+func (h *SharingHandler) resolveShareID(pathVal string) (string, error) {
+	ncID, err := strconv.ParseInt(pathVal, 10, 64)
+	if err == nil {
+		return h.Shares.ShareIDFromNC(ncID)
+	}
+	// Fall back to treating it as an internal share ID.
+	return pathVal, nil
 }
 
 // HandleListShares handles GET .../shares
 func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u == nil {
-		writeOCSErrorReq(w, r,http.StatusUnauthorized, 997, "Unauthorized")
+		writeOCSErrorReq(w, r, http.StatusUnauthorized, 997, "Unauthorized")
 		return
 	}
 
@@ -201,7 +219,7 @@ func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request
 	if sharedWithMe {
 		records, err := seq.Collect(h.Shares.ListBySubject(u.ID))
 		if err != nil {
-			writeOCSErrorReq(w, r,http.StatusInternalServerError, 500, err.Error())
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
 			return
 		}
 		for _, rec := range records {
@@ -209,16 +227,23 @@ func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request
 			if err != nil {
 				continue
 			}
-			result = append(result, h.shareToOCS(&rec, owner))
+			ocs, err := h.shareToOCS(&rec, owner)
+			if err != nil {
+				continue
+			}
+			result = append(result, ocs)
 		}
 	} else {
 		records, err := seq.Collect(h.Shares.ListByOwner(u.ID))
 		if err != nil {
-			writeOCSErrorReq(w, r,http.StatusInternalServerError, 500, err.Error())
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
 			return
 		}
 		for _, rec := range records {
-			ocs := h.shareToOCS(&rec, u)
+			ocs, err := h.shareToOCS(&rec, u)
+			if err != nil {
+				continue
+			}
 			// Filter by path if specified
 			if pathFilter != "" && ocs.Path != pathFilter {
 				continue
@@ -230,14 +255,14 @@ func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request
 	if result == nil {
 		result = []*ocsShare{}
 	}
-	writeOCSReq(w, r,http.StatusOK, result)
+	writeOCSReq(w, r, http.StatusOK, result)
 }
 
 // HandleCreateShare handles POST .../shares
 func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u == nil {
-		writeOCSErrorReq(w, r,http.StatusUnauthorized, 997, "Unauthorized")
+		writeOCSErrorReq(w, r, http.StatusUnauthorized, 997, "Unauthorized")
 		return
 	}
 
@@ -249,7 +274,7 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 	expireDateStr := r.FormValue("expireDate")
 
 	if path == "" {
-		writeOCSErrorReq(w, r,http.StatusBadRequest, 400, "path required")
+		writeOCSErrorReq(w, r, http.StatusBadRequest, 400, "path required")
 		return
 	}
 
@@ -263,7 +288,7 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 	// Look up the file
 	meta, err := h.Files.GetByPath(u.Username, path)
 	if err != nil {
-		writeOCSErrorReq(w, r,http.StatusNotFound, 404, "file not found")
+		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "file not found")
 		return
 	}
 
@@ -290,7 +315,7 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 		// Look up the target user by username
 		targetUser, lookupErr := h.Users.GetByUsername(shareWith)
 		if lookupErr != nil {
-			writeOCSErrorReq(w, r,http.StatusNotFound, 404, "share target not found")
+			writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share target not found")
 			return
 		}
 		rec, err = h.Shares.Create(
@@ -299,54 +324,74 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err != nil {
-		writeOCSErrorReq(w, r,http.StatusInternalServerError, 500, err.Error())
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
 		return
 	}
 
-	writeOCSReq(w, r,http.StatusOK, h.shareToOCS(rec, u))
+	ocs, err := h.shareToOCS(rec, u)
+	if err != nil {
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+		return
+	}
+	writeOCSReq(w, r, http.StatusOK, ocs)
 }
 
 // HandleGetShare handles GET .../shares/{shareId}
 func (h *SharingHandler) HandleGetShare(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u == nil {
-		writeOCSErrorReq(w, r,http.StatusUnauthorized, 997, "Unauthorized")
+		writeOCSErrorReq(w, r, http.StatusUnauthorized, 997, "Unauthorized")
 		return
 	}
 
-	shareID := r.PathValue("shareId")
+	shareID, err := h.resolveShareID(r.PathValue("shareId"))
+	if err != nil {
+		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share not found")
+		return
+	}
+
 	rec, err := h.Shares.Get(shareID)
 	if err != nil {
-		writeOCSErrorReq(w, r,http.StatusNotFound, 404, "share not found")
+		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share not found")
 		return
 	}
 
 	owner, err := h.Users.GetByID(rec.OwnerUserID)
 	if err != nil {
-		writeOCSErrorReq(w, r,http.StatusInternalServerError, 500, "owner not found")
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "owner not found")
 		return
 	}
 
-	writeOCSReq(w, r,http.StatusOK, h.shareToOCS(rec, owner))
+	ocs, err := h.shareToOCS(rec, owner)
+	if err != nil {
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+		return
+	}
+	writeOCSReq(w, r, http.StatusOK, ocs)
 }
 
 // HandleUpdateShare handles PUT .../shares/{shareId}
 func (h *SharingHandler) HandleUpdateShare(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u == nil {
-		writeOCSErrorReq(w, r,http.StatusUnauthorized, 997, "Unauthorized")
+		writeOCSErrorReq(w, r, http.StatusUnauthorized, 997, "Unauthorized")
 		return
 	}
 
-	shareID := r.PathValue("shareId")
+	shareID, err := h.resolveShareID(r.PathValue("shareId"))
+	if err != nil {
+		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share not found")
+		return
+	}
+
 	rec, err := h.Shares.Get(shareID)
 	if err != nil {
-		writeOCSErrorReq(w, r,http.StatusNotFound, 404, "share not found")
+		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share not found")
 		return
 	}
 
 	if rec.OwnerUserID != u.ID {
-		writeOCSErrorReq(w, r,http.StatusForbidden, 403, "not your share")
+		writeOCSErrorReq(w, r, http.StatusForbidden, 403, "not your share")
 		return
 	}
 
@@ -378,14 +423,14 @@ func (h *SharingHandler) HandleUpdateShare(w http.ResponseWriter, r *http.Reques
 
 	if permsPtr != nil || expPtr != nil {
 		if err := h.Shares.Update(shareID, permsPtr, expPtr); err != nil {
-			writeOCSErrorReq(w, r,http.StatusInternalServerError, 500, err.Error())
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
 			return
 		}
 	}
 
 	if password != "" {
 		if err := h.Shares.SetPassword(shareID, password); err != nil {
-			writeOCSErrorReq(w, r,http.StatusInternalServerError, 500, err.Error())
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
 			return
 		}
 	}
@@ -393,42 +438,52 @@ func (h *SharingHandler) HandleUpdateShare(w http.ResponseWriter, r *http.Reques
 	// Re-fetch
 	rec, _ = h.Shares.Get(shareID)
 	owner, _ := h.Users.GetByID(rec.OwnerUserID)
-	writeOCSReq(w, r,http.StatusOK, h.shareToOCS(rec, owner))
+	ocs, ocsErr := h.shareToOCS(rec, owner)
+	if ocsErr != nil {
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, ocsErr.Error())
+		return
+	}
+	writeOCSReq(w, r, http.StatusOK, ocs)
 }
 
 // HandleDeleteShare handles DELETE .../shares/{shareId}
 func (h *SharingHandler) HandleDeleteShare(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u == nil {
-		writeOCSErrorReq(w, r,http.StatusUnauthorized, 997, "Unauthorized")
+		writeOCSErrorReq(w, r, http.StatusUnauthorized, 997, "Unauthorized")
 		return
 	}
 
-	shareID := r.PathValue("shareId")
+	shareID, err := h.resolveShareID(r.PathValue("shareId"))
+	if err != nil {
+		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share not found")
+		return
+	}
+
 	rec, err := h.Shares.Get(shareID)
 	if err != nil {
-		writeOCSErrorReq(w, r,http.StatusNotFound, 404, "share not found")
+		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share not found")
 		return
 	}
 
 	if rec.OwnerUserID != u.ID {
-		writeOCSErrorReq(w, r,http.StatusForbidden, 403, "not your share")
+		writeOCSErrorReq(w, r, http.StatusForbidden, 403, "not your share")
 		return
 	}
 
 	if err := h.Shares.Delete(shareID); err != nil {
-		writeOCSErrorReq(w, r,http.StatusInternalServerError, 500, err.Error())
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
 		return
 	}
 
-	writeOCSReq(w, r,http.StatusOK, []any{})
+	writeOCSReq(w, r, http.StatusOK, []any{})
 }
 
 // HandleSharees handles GET .../sharees — user/group search for share autocomplete
 func (h *SharingHandler) HandleSharees(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u == nil {
-		writeOCSErrorReq(w, r,http.StatusUnauthorized, 997, "Unauthorized")
+		writeOCSErrorReq(w, r, http.StatusUnauthorized, 997, "Unauthorized")
 		return
 	}
 
@@ -517,7 +572,7 @@ func (h *SharingHandler) HandleSharees(w http.ResponseWriter, r *http.Request) {
 		groups = []map[string]any{}
 	}
 
-	writeOCSReq(w, r,http.StatusOK, map[string]any{
+	writeOCSReq(w, r, http.StatusOK, map[string]any{
 		"exact": map[string]any{
 			"users":         exactUsers,
 			"groups":        exactGroups,
@@ -535,7 +590,7 @@ func (h *SharingHandler) HandleSharees(w http.ResponseWriter, r *http.Request) {
 		"circles":       []any{},
 		"rooms":         []any{},
 		"lookup":        []any{},
-		"lookupEnabled":  false,
+		"lookupEnabled": false,
 	})
 }
 
@@ -543,7 +598,7 @@ func (h *SharingHandler) HandleSharees(w http.ResponseWriter, r *http.Request) {
 func (h *SharingHandler) HandleShareesRecommended(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u == nil {
-		writeOCSErrorReq(w, r,http.StatusUnauthorized, 997, "Unauthorized")
+		writeOCSErrorReq(w, r, http.StatusUnauthorized, 997, "Unauthorized")
 		return
 	}
 
@@ -631,7 +686,7 @@ func (h *SharingHandler) HandleShareesRecommended(w http.ResponseWriter, r *http
 		groupEntries = []map[string]any{}
 	}
 
-	writeOCSReq(w, r,http.StatusOK, map[string]any{
+	writeOCSReq(w, r, http.StatusOK, map[string]any{
 		"exact": map[string]any{
 			"users":         userEntries,
 			"groups":        groupEntries,
@@ -649,6 +704,6 @@ func (h *SharingHandler) HandleShareesRecommended(w http.ResponseWriter, r *http
 		"circles":       []any{},
 		"rooms":         []any{},
 		"lookup":        []any{},
-		"lookupEnabled":  false,
+		"lookupEnabled": false,
 	})
 }

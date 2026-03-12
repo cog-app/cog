@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -35,14 +36,14 @@ func (nc *NCCompat) RegisterRoutes(mux *http.ServeMux) {
 
 	// Notifications (no notification system yet — empty list is correct)
 	handleNotifications := func(w http.ResponseWriter, r *http.Request) {
-		writeOCS(w, http.StatusOK, []any{})
+		writeOCSReq(w, r, http.StatusOK, []any{})
 	}
 	mux.HandleFunc("GET /ocs/v2.php/apps/notifications/api/v2/notifications", handleNotifications)
 	mux.HandleFunc("GET /ocs/v1.php/apps/notifications/api/v2/notifications", handleNotifications)
 
 	// Recommendations (no recommendation engine — empty list is correct)
 	handleRecommendations := func(w http.ResponseWriter, r *http.Request) {
-		writeOCS(w, http.StatusOK, []any{})
+		writeOCSReq(w, r, http.StatusOK, []any{})
 	}
 	mux.HandleFunc("GET /ocs/v2.php/apps/recommendations/api/v1/recommendations", handleRecommendations)
 	mux.HandleFunc("GET /ocs/v1.php/apps/recommendations/api/v1/recommendations", handleRecommendations)
@@ -50,6 +51,19 @@ func (nc *NCCompat) RegisterRoutes(mux *http.ServeMux) {
 	// User status (returns authenticated user's status)
 	mux.Handle("GET /ocs/v2.php/apps/user_status/api/v1/user_status", auth.RequireAuth(http.HandlerFunc(nc.HandleUserStatus)))
 	mux.Handle("GET /ocs/v1.php/apps/user_status/api/v1/user_status", auth.RequireAuth(http.HandlerFunc(nc.HandleUserStatus)))
+
+	// Search providers (no search providers — empty list is correct)
+	handleSearchProviders := func(w http.ResponseWriter, r *http.Request) {
+		writeOCSReq(w, r, http.StatusOK, []any{})
+	}
+	mux.HandleFunc("GET /ocs/v2.php/search/providers", handleSearchProviders)
+	mux.HandleFunc("GET /ocs/v1.php/search/providers", handleSearchProviders)
+
+	// Activity API — returns comment activities for files.
+	mux.Handle("GET /ocs/v2.php/apps/activity/api/v2/activity", auth.RequireAuth(http.HandlerFunc(nc.HandleActivity)))
+	mux.Handle("GET /ocs/v1.php/apps/activity/api/v2/activity", auth.RequireAuth(http.HandlerFunc(nc.HandleActivity)))
+	mux.Handle("GET /ocs/v2.php/apps/activity/api/v2/activity/filter", auth.RequireAuth(http.HandlerFunc(nc.HandleActivity)))
+	mux.Handle("GET /ocs/v1.php/apps/activity/api/v2/activity/filter", auth.RequireAuth(http.HandlerFunc(nc.HandleActivity)))
 
 	// .well-known discovery redirects
 	wellKnownDAV := func(w http.ResponseWriter, r *http.Request) {
@@ -101,11 +115,11 @@ func (nc *NCCompat) HandleAvatar(w http.ResponseWriter, r *http.Request) {
 func (nc *NCCompat) HandleUserStatus(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u == nil {
-		writeOCSError(w, http.StatusUnauthorized, 997, "Unauthorized")
+		writeOCSErrorReq(w, r, http.StatusUnauthorized, 997, "Unauthorized")
 		return
 	}
 
-	writeOCS(w, http.StatusOK, map[string]any{
+	writeOCSReq(w, r, http.StatusOK, map[string]any{
 		"userId":              u.Username,
 		"message":             nil,
 		"messageId":           nil,
@@ -115,6 +129,90 @@ func (nc *NCCompat) HandleUserStatus(w http.ResponseWriter, r *http.Request) {
 		"status":              "online",
 		"statusIsUserDefined": false,
 	})
+}
+
+// HandleActivity returns activities (primarily comments) for files.
+// NC Android app calls: GET /ocs/v2.php/apps/activity/api/v2/activity/filter?object_type=files&object_id={id}&format=json
+func (nc *NCCompat) HandleActivity(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	if u == nil {
+		writeOCSErrorReq(w, r, http.StatusUnauthorized, 997, "Unauthorized")
+		return
+	}
+
+	// If no files plugin or not a file-scoped request, return empty.
+	objectType := r.URL.Query().Get("object_type")
+	objectIDStr := r.URL.Query().Get("object_id")
+	if nc.Files == nil || objectType != "files" || objectIDStr == "" {
+		writeOCSReq(w, r, http.StatusOK, []any{})
+		return
+	}
+
+	fileID, err := strconv.ParseInt(objectIDStr, 10, 64)
+	if err != nil {
+		writeOCSReq(w, r, http.StatusOK, []any{})
+		return
+	}
+
+	// Look up file name for the activity.
+	meta, err := nc.Files.GetByID(u.Username, fileID)
+	if err != nil {
+		writeOCSReq(w, r, http.StatusOK, []any{})
+		return
+	}
+
+	comments, err := nc.Files.ListComments(u.Username, fileID)
+	if err != nil {
+		writeOCSReq(w, r, http.StatusOK, []any{})
+		return
+	}
+
+	activities := make([]map[string]any, 0, len(comments))
+	for _, c := range comments {
+		displayName := c.ActorID
+		if nc.Users != nil {
+			if usr, err := nc.Users.GetByUsername(c.ActorID); err == nil {
+				displayName = usr.DisplayName
+				if displayName == "" {
+					displayName = usr.Username
+				}
+			}
+		}
+
+		activities = append(activities, map[string]any{
+			"activity_id": c.ID,
+			"app":         "comments",
+			"type":        "comments",
+			"affecteduser": u.Username,
+			"user":        c.ActorID,
+			"subject":     fmt.Sprintf("%s commented", displayName),
+			"subject_rich": []any{
+				"{user} commented on {file}",
+				map[string]any{
+					"user": map[string]any{
+						"type": "user",
+						"id":   c.ActorID,
+						"name": displayName,
+					},
+					"file": map[string]any{
+						"type": "file",
+						"id":   strconv.FormatInt(fileID, 10),
+						"name": meta.Name,
+						"path": meta.Path,
+					},
+				},
+			},
+			"message":      c.Message,
+			"message_rich": []any{c.Message, map[string]any{}},
+			"object_type":  "files",
+			"object_id":    fileID,
+			"object_name":  meta.Path,
+			"datetime":     time.Unix(c.CreatedAt, 0).UTC().Format(time.RFC3339),
+			"icon":         "",
+		})
+	}
+
+	writeOCSReq(w, r, http.StatusOK, activities)
 }
 
 // PreviewHandler serves NextCloud-compatible preview thumbnails.
