@@ -250,12 +250,13 @@ func (s *Store) ListBySubject(subjectID string) iter.Seq2[Record, error] {
 				s.subject_type, s.subject_id, s.permissions, s.token, s.password_hash,
 				s.expiration, s.created_at, s.updated_at
 			FROM shares s
-			WHERE (s.subject_type = 'USER' AND s.subject_id = ?)
+			WHERE ((s.subject_type = 'USER' AND s.subject_id = ?)
 			   OR (s.subject_type = 'GROUP' AND s.subject_id IN (
 					SELECT ancestor_group_id FROM group_membership_closure
 					WHERE descendant_user_id = ?
-				))
-			ORDER BY s.created_at DESC`, subjectID, subjectID)
+				)))
+			  AND (s.expiration IS NULL OR s.expiration > ?)
+			ORDER BY s.created_at DESC`, subjectID, subjectID, time.Now().Unix())
 		if err != nil {
 			yield(Record{}, fmt.Errorf("list shares by subject: %w", err))
 			return

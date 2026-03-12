@@ -117,11 +117,16 @@ func (s *Store) Update(id, name string) error {
 }
 
 func (s *Store) Delete(id string) error {
-	// Remove members first.
-	if _, err := s.db.Exec(`DELETE FROM group_members WHERE group_id = ?`, id); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM group_members WHERE group_id = ?`, id); err != nil {
 		return fmt.Errorf("delete group members: %w", err)
 	}
-	res, err := s.db.Exec(`DELETE FROM groups WHERE id = ?`, id)
+	res, err := tx.Exec(`DELETE FROM groups WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete group: %w", err)
 	}
@@ -129,23 +134,40 @@ func (s *Store) Delete(id string) error {
 	if n == 0 {
 		return ErrNotFound
 	}
-	return s.RebuildClosure()
+	if err := rebuildClosureTx(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) AddMember(groupID, memberID string, memberType MemberType) error {
-	_, err := s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(
 		`INSERT OR IGNORE INTO group_members (group_id, member_id, member_type) VALUES (?, ?, ?)`,
 		groupID, memberID, memberType,
-	)
-	if err != nil {
+	); err != nil {
+		return fmt.Errorf("add member: %w", err)
+	}
+	if err := rebuildClosureTx(tx); err != nil {
 		return err
 	}
-	return s.RebuildClosure()
+	return tx.Commit()
 }
 
 // UpdateMemberType changes the member_type for an existing group member.
 func (s *Store) UpdateMemberType(groupID, memberID string, memberType MemberType) error {
-	res, err := s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(
 		`UPDATE group_members SET member_type = ? WHERE group_id = ? AND member_id = ?`,
 		memberType, groupID, memberID,
 	)
@@ -156,18 +178,29 @@ func (s *Store) UpdateMemberType(groupID, memberID string, memberType MemberType
 	if n == 0 {
 		return ErrNotFound
 	}
-	return s.RebuildClosure()
+	if err := rebuildClosureTx(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) RemoveMember(groupID, memberID string) error {
-	_, err := s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(
 		`DELETE FROM group_members WHERE group_id = ? AND member_id = ?`,
 		groupID, memberID,
-	)
-	if err != nil {
+	); err != nil {
+		return fmt.Errorf("remove member: %w", err)
+	}
+	if err := rebuildClosureTx(tx); err != nil {
 		return err
 	}
-	return s.RebuildClosure()
+	return tx.Commit()
 }
 
 func (s *Store) ListMembers(groupID string) iter.Seq2[Member, error] {
@@ -281,13 +314,29 @@ func (s *Store) IsOwnerMember(groupID, userID string) (bool, error) {
 // RebuildClosure recomputes the group_membership_closure table.
 // All members are user IDs (OWNER or USER type), so no recursive walk needed.
 func (s *Store) RebuildClosure() error {
-	_, err := s.db.Exec(`
-		DELETE FROM group_membership_closure;
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	if err := rebuildClosureTx(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
+// rebuildClosureTx recomputes the closure table within an existing transaction.
+func rebuildClosureTx(tx *sql.Tx) error {
+	if _, err := tx.Exec(`DELETE FROM group_membership_closure`); err != nil {
+		return fmt.Errorf("clear closure: %w", err)
+	}
+	if _, err := tx.Exec(`
 		INSERT INTO group_membership_closure (ancestor_group_id, descendant_user_id, depth)
 		SELECT group_id, member_id, 0 FROM group_members
-	`)
-	return err
+	`); err != nil {
+		return fmt.Errorf("rebuild closure: %w", err)
+	}
+	return nil
 }
 
 func generateID() (string, error) {

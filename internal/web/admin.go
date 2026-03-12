@@ -6,6 +6,7 @@ import (
 	"net/smtp"
 	"strconv"
 
+	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -176,14 +177,18 @@ func (h *adminHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ownerID := r.FormValue("owner_id")
-	g, err := h.p.Groups.Create(name, nil, nil)
+	var ownerPtr *string
+	if ownerID != "" {
+		ownerPtr = &ownerID
+	}
+	g, err := h.p.Groups.Create(name, nil, ownerPtr)
 	if err != nil {
 		setFlash(w, "error", "Failed to create group: "+err.Error())
 		http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
 		return
 	}
 	if ownerID != "" {
-		if err := h.p.Groups.AddMember(g.ID, ownerID, "OWNER"); err != nil {
+		if err := h.p.Groups.AddMember(g.ID, ownerID, group.Owner); err != nil {
 			h.p.Log.Error("add owner to group failed", "owner", ownerID, "group", g.ID, "err", err)
 		}
 	}

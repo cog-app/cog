@@ -11,6 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	cogssh "git.duckfam.us/jj-software/cog/internal/ssh"
+	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
@@ -42,6 +44,21 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 
 			if envBool("COG_LOG_REQUESTS") {
 				handler = requestLogger(handler)
+			}
+
+			// Start SSH server if enabled.
+			if cfg.SSHEnabled {
+				ks := keys.NewStore(p.Plugins, p.Users)
+				sshSrv, err := cogssh.New(cfg, p, ks, p.Log)
+				if err != nil {
+					return err
+				}
+				defer sshSrv.Close()
+				go func() {
+					if err := sshSrv.ListenAndServe(); err != nil {
+						p.Log.Error("ssh server error", "err", err)
+					}
+				}()
 			}
 
 			p.Log.Info("Cog listening", "addr", cfg.Addr)

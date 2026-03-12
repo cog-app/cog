@@ -168,7 +168,7 @@ func (h *groupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	g, err := h.p.Groups.Create(name, nil, nil)
+	g, err := h.p.Groups.Create(name, nil, &u.ID)
 	if err != nil {
 		setFlash(w, "error", "Failed to create group: "+err.Error())
 		http.Redirect(w, r, "/settings/groups", http.StatusSeeOther)
@@ -176,7 +176,7 @@ func (h *groupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add creator as an owner member.
-	if err := h.p.Groups.AddMember(g.ID, u.ID, "OWNER"); err != nil {
+	if err := h.p.Groups.AddMember(g.ID, u.ID, group.Owner); err != nil {
 		setFlash(w, "error", "Group created but failed to add owner: "+err.Error())
 		http.Redirect(w, r, "/settings/groups", http.StatusSeeOther)
 		return
@@ -243,7 +243,10 @@ func (h *groupHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.p.Groups.RemoveMember(groupID, memberID)
+	if err := h.p.Groups.RemoveMember(groupID, memberID); err != nil {
+		http.Error(w, "Failed to remove member: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -327,7 +330,10 @@ func (h *groupHandler) RevokeInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	inviteID := r.PathValue("invite_id")
-	h.p.Invitations.Delete(inviteID)
+	if err := h.p.Invitations.Delete(inviteID); err != nil {
+		http.Error(w, "Failed to revoke invite: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -402,8 +408,15 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid CSRF token", http.StatusForbidden)
 			return
 		}
-		h.p.Groups.AddMember(inv.GroupID, u.ID, inv.MemberType)
-		h.p.Invitations.Delete(inv.ID)
+		if err := h.p.Groups.AddMember(inv.GroupID, u.ID, inv.MemberType); err != nil {
+			setFlash(w, "error", "Failed to join group: "+err.Error())
+			http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
+			return
+		}
+		if err := h.p.Invitations.Delete(inv.ID); err != nil {
+			// Group joined but invite cleanup failed — non-fatal.
+			_ = err
+		}
 		http.Redirect(w, r, "/settings/groups/"+inv.GroupID, http.StatusSeeOther)
 		return
 	}
@@ -435,13 +448,23 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	if h.p.Volumes != nil && h.p.Mounts != nil {
 		if defVol, err := h.p.Volumes.GetByName("default"); err == nil {
 			subpath := newUser.Username + "/files"
-			h.p.Mounts.Create(newUser.ID, "/", defVol.ID, subpath, false)
+			if _, err := h.p.Mounts.Create(newUser.ID, "/", defVol.ID, subpath, false); err != nil {
+				setFlash(w, "error", "Account created but mount setup failed: "+err.Error())
+				http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
+				return
+			}
 		}
 	}
 
 	// Add to group and delete invite.
-	h.p.Groups.AddMember(inv.GroupID, newUser.ID, inv.MemberType)
-	h.p.Invitations.Delete(inv.ID)
+	if err := h.p.Groups.AddMember(inv.GroupID, newUser.ID, inv.MemberType); err != nil {
+		setFlash(w, "error", "Account created but failed to join group: "+err.Error())
+		http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
+		return
+	}
+	if err := h.p.Invitations.Delete(inv.ID); err != nil {
+		_ = err // Non-fatal: group joined but invite cleanup failed.
+	}
 
 	// Create session and log in.
 	sess, err := h.p.Sessions.Create(newUser.ID)

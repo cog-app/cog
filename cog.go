@@ -16,6 +16,8 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/services"
+	cogssh "git.duckfam.us/jj-software/cog/internal/ssh"
+	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
@@ -38,6 +40,14 @@ func envBool(key string) bool {
 	return v == "true" || v == "1" || v == "yes"
 }
 
+func envBoolDefault(key string, defaultVal bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return defaultVal
+	}
+	return v == "true" || v == "1" || v == "yes"
+}
+
 func defaultBaseURL() string {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -54,6 +64,10 @@ func configFromEnv() config.Config {
 		BaseURL:   envOr("COG_BASE_URL", defaultBaseURL()),
 		LogFormat: envOr("COG_LOG_FORMAT", "text"),
 		LogLevel:  envOr("COG_LOG_LEVEL", "info"),
+
+		SSHAddr:        envOr("COG_SSH_ADDR", ":2222"),
+		SSHEnabled:     envBoolDefault("COG_SSH_ENABLED", true),
+		SSHHostKeyPath: os.Getenv("COG_SSH_HOST_KEY"),
 	}
 }
 
@@ -175,6 +189,21 @@ func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 
 	if err := p.StartSearch(ctx); err != nil {
 		log.Warn("search init failed", "err", err)
+	}
+
+	// Start SSH server if enabled.
+	if cfg.SSHEnabled {
+		ks := keys.NewStore(p.Plugins, p.Users)
+		sshSrv, err := cogssh.New(cfg, p, ks, log)
+		if err != nil {
+			return err
+		}
+		defer sshSrv.Close()
+		go func() {
+			if err := sshSrv.ListenAndServe(); err != nil {
+				log.Error("ssh server error", "err", err)
+			}
+		}()
 	}
 
 	log.Info("Cog listening", "addr", cfg.Addr)
