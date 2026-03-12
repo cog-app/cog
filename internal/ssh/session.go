@@ -17,6 +17,15 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 
 	filesDir := s.providers.Plugins.UserFilesDir(username)
 	userFS, _ := s.providers.Plugins.UserFS(username)
+
+	// Overlay .ssh/authorized_keys on the VFS so ssh-copy-id and
+	// cat .ssh/authorized_keys work transparently.
+	if userFS != nil {
+		ofs := vfs.NewOverlayFS(userFS)
+		ofs.Bind("/.ssh/authorized_keys", newAuthKeysFileHandler(s.keys, username))
+		userFS = ofs
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

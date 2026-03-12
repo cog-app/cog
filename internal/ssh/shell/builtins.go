@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+
+	"git.duckfam.us/jj-software/cog/vfs"
 
 	"mvdan.cc/sh/v3/interp"
 )
@@ -20,6 +23,7 @@ type builtinFunc func(ctx context.Context, args []string) error
 
 func (s *Shell) initBuiltins() {
 	s.builtins = map[string]builtinFunc{
+		"sh":     s.cmdSh,
 		"ls":     s.cmdLs,
 		"cd":     s.cmdCd,
 		"pwd":    s.cmdPwd,
@@ -38,7 +42,22 @@ func (s *Shell) initBuiltins() {
 		"clear":  s.cmdClear,
 		"true":   s.cmdTrue,
 		"false":  s.cmdFalse,
+		"uname": func(ctx context.Context, args []string) error {
+			hc := interp.HandlerCtx(ctx)
+			_, err := io.WriteString(hc.Stdout, "Cog\n")
+			return err
+		},
+		"dirname": func(ctx context.Context, args []string) error {
+			hc := interp.HandlerCtx(ctx)
+			_, err := io.WriteString(hc.Stdout, path.Dir(args[0]))
+			return err
+		},
 	}
+}
+
+func (s *Shell) cmdSh(ctx context.Context, args []string) error {
+	hc := interp.HandlerCtx(ctx)
+	return s.Run(ctx, args[1], hc.Stdin, hc.Stdout, hc.Stderr)
 }
 
 func (s *Shell) cmdLs(ctx context.Context, args []string) error {
@@ -66,6 +85,36 @@ func (s *Shell) cmdLs(ctx context.Context, args []string) error {
 	}
 
 	for _, p := range paths {
+		if s.fs != nil {
+			if dr, ok := s.fs.(vfs.DirReader); ok {
+				vp := s.toVirtualPath(hc.Dir, p)
+				entries, err := dr.ReadDirEntries(vp)
+				if err != nil {
+					fmt.Fprintf(hc.Stderr, "ls: %v\n", err)
+					return exitErr(1)
+				}
+				if len(paths) > 1 {
+					fmt.Fprintf(hc.Stdout, "%s:\n", vp)
+				}
+				for _, e := range entries {
+					if !showAll && strings.HasPrefix(e.Name(), ".") {
+						continue
+					}
+					if showLong {
+						info, err := e.Info()
+						if err != nil {
+							continue
+						}
+						fmt.Fprintf(hc.Stdout, "%s %8d %s %s\n",
+							info.Mode(), info.Size(), info.ModTime().Format("Jan _2 15:04"), e.Name())
+					} else {
+						fmt.Fprintln(hc.Stdout, e.Name())
+					}
+				}
+				continue
+			}
+		}
+
 		resolved, err := s.resolve(hc.Dir, p)
 		if err != nil {
 			fmt.Fprintf(hc.Stderr, "ls: %v\n", err)
@@ -108,6 +157,16 @@ func (s *Shell) cmdCd(ctx context.Context, args []string) error {
 		target = args[0]
 	}
 
+	if s.fs != nil {
+		vp := s.toVirtualPath(hc.Dir, target)
+		fi, err := s.fs.Stat(vp)
+		if err != nil || !fi.IsDir {
+			fmt.Fprintf(hc.Stderr, "cd: not a directory: %s\n", target)
+			return exitErr(1)
+		}
+		return nil
+	}
+
 	resolved, err := s.resolve(hc.Dir, target)
 	if err != nil {
 		fmt.Fprintf(hc.Stderr, "cd: %v\n", err)
@@ -120,8 +179,6 @@ func (s *Shell) cmdCd(ctx context.Context, args []string) error {
 		return exitErr(1)
 	}
 
-	// The interpreter tracks Dir via the StatHandler's cd validation.
-	// We just need to succeed here; the interpreter updates Dir.
 	return nil
 }
 
@@ -134,12 +191,26 @@ func (s *Shell) cmdPwd(ctx context.Context, args []string) error {
 func (s *Shell) cmdCat(ctx context.Context, args []string) error {
 	hc := interp.HandlerCtx(ctx)
 	if len(args) == 0 {
-		// Read from stdin.
 		_, err := io.Copy(hc.Stdout, hc.Stdin)
 		return err
 	}
 
 	for _, name := range args {
+		if s.fs != nil {
+			vp := s.toVirtualPath(hc.Dir, name)
+			rc, err := s.fs.Get(vp)
+			if err != nil {
+				fmt.Fprintf(hc.Stderr, "cat: %s: %v\n", name, err)
+				return exitErr(1)
+			}
+			_, err = io.Copy(hc.Stdout, rc)
+			rc.Close()
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
 		resolved, err := s.resolve(hc.Dir, name)
 		if err != nil {
 			fmt.Fprintf(hc.Stderr, "cat: %v\n", err)
@@ -218,6 +289,22 @@ func (s *Shell) headTail(ctx context.Context, args []string, isHead bool) error 
 	}
 
 	for _, name := range files {
+		if s.fs != nil {
+			vp := s.toVirtualPath(hc.Dir, name)
+			rc, err := s.fs.Get(vp)
+			if err != nil {
+				fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
+				return exitErr(1)
+			}
+			lines, err := readLines(rc)
+			rc.Close()
+			if err != nil {
+				return err
+			}
+			printLines(lines)
+			continue
+		}
+
 		resolved, err := s.resolve(hc.Dir, name)
 		if err != nil {
 			fmt.Fprintf(hc.Stderr, "%v\n", err)
@@ -245,6 +332,26 @@ func (s *Shell) cmdCp(ctx context.Context, args []string) error {
 		return exitErr(1)
 	}
 
+	if s.fs != nil {
+		srcVP := s.toVirtualPath(hc.Dir, args[0])
+		dstVP := s.toVirtualPath(hc.Dir, args[1])
+		// If dst is an existing directory, copy into it.
+		if fi, err := s.fs.Stat(dstVP); err == nil && fi.IsDir {
+			dstVP = filepath.Join(dstVP, filepath.Base(srcVP))
+		}
+		rc, err := s.fs.Get(srcVP)
+		if err != nil {
+			fmt.Fprintf(hc.Stderr, "cp: %v\n", err)
+			return exitErr(1)
+		}
+		defer rc.Close()
+		if err := s.fs.Put(dstVP, rc); err != nil {
+			fmt.Fprintf(hc.Stderr, "cp: %v\n", err)
+			return exitErr(1)
+		}
+		return nil
+	}
+
 	src, err := s.resolve(hc.Dir, args[0])
 	if err != nil {
 		fmt.Fprintf(hc.Stderr, "cp: %v\n", err)
@@ -256,7 +363,6 @@ func (s *Shell) cmdCp(ctx context.Context, args []string) error {
 		return exitErr(1)
 	}
 
-	// If dst is an existing directory, copy into it.
 	if info, err := os.Stat(dst); err == nil && info.IsDir() {
 		dst = filepath.Join(dst, filepath.Base(src))
 	}
@@ -287,6 +393,19 @@ func (s *Shell) cmdMv(ctx context.Context, args []string) error {
 	if len(args) < 2 {
 		fmt.Fprintln(hc.Stderr, "mv: missing operand")
 		return exitErr(1)
+	}
+
+	if s.fs != nil {
+		srcVP := s.toVirtualPath(hc.Dir, args[0])
+		dstVP := s.toVirtualPath(hc.Dir, args[1])
+		if fi, err := s.fs.Stat(dstVP); err == nil && fi.IsDir {
+			dstVP = filepath.Join(dstVP, filepath.Base(srcVP))
+		}
+		if err := s.fs.Rename(srcVP, dstVP); err != nil {
+			fmt.Fprintf(hc.Stderr, "mv: %v\n", err)
+			return exitErr(1)
+		}
+		return nil
 	}
 
 	src, err := s.resolve(hc.Dir, args[0])
@@ -331,12 +450,24 @@ func (s *Shell) cmdRm(ctx context.Context, args []string) error {
 	}
 
 	for _, t := range targets {
+		if s.fs != nil {
+			vp := s.toVirtualPath(hc.Dir, t)
+			if vp == "/" {
+				fmt.Fprintln(hc.Stderr, "rm: cannot remove root directory")
+				return exitErr(1)
+			}
+			if err := s.fs.Delete(vp); err != nil {
+				fmt.Fprintf(hc.Stderr, "rm: %v\n", err)
+				return exitErr(1)
+			}
+			continue
+		}
+
 		resolved, err := s.resolve(hc.Dir, t)
 		if err != nil {
 			fmt.Fprintf(hc.Stderr, "rm: %v\n", err)
 			return exitErr(1)
 		}
-		// Don't allow removing the root files dir itself.
 		if resolved == s.filesDir {
 			fmt.Fprintln(hc.Stderr, "rm: cannot remove root directory")
 			return exitErr(1)
@@ -373,6 +504,15 @@ func (s *Shell) cmdMkdir(ctx context.Context, args []string) error {
 	}
 
 	for _, d := range dirs {
+		if s.fs != nil {
+			vp := s.toVirtualPath(hc.Dir, d)
+			if err := s.fs.Mkdir(vp); err != nil {
+				fmt.Fprintf(hc.Stderr, "mkdir: %v\n", err)
+				return exitErr(1)
+			}
+			continue
+		}
+
 		resolved, err := s.resolve(hc.Dir, d)
 		if err != nil {
 			fmt.Fprintf(hc.Stderr, "mkdir: %v\n", err)
@@ -399,6 +539,19 @@ func (s *Shell) cmdTouch(ctx context.Context, args []string) error {
 	}
 
 	for _, name := range args {
+		if s.fs != nil {
+			if opener, ok := s.fs.(vfs.FileOpener); ok {
+				vp := s.toVirtualPath(hc.Dir, name)
+				f, err := opener.OpenFile(vp, os.O_CREATE|os.O_WRONLY, 0o644)
+				if err != nil {
+					fmt.Fprintf(hc.Stderr, "touch: %v\n", err)
+					return exitErr(1)
+				}
+				f.Close()
+				continue
+			}
+		}
+
 		resolved, err := s.resolve(hc.Dir, name)
 		if err != nil {
 			fmt.Fprintf(hc.Stderr, "touch: %v\n", err)

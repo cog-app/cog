@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 // completer implements readline.AutoCompleter for the shell.
@@ -172,12 +173,41 @@ func (c *completer) completePath(partial string) ([][]rune, int) {
 		searchDir = resolved
 	}
 
+	var candidates []string
+	if c.shell.fs != nil {
+		if dr, ok := c.shell.fs.(vfs.DirReader); ok {
+			vp := c.shell.toVirtualPath(dir, dirPart)
+			if dirPart == "" {
+				vp = c.shell.virtualPath(dir)
+			}
+			entries, err := dr.ReadDirEntries(vp)
+			if err != nil {
+				return nil, 0
+			}
+			for _, e := range entries {
+				name := e.Name()
+				if strings.HasPrefix(name, ".") && !strings.HasPrefix(prefixPart, ".") {
+					continue
+				}
+				if !strings.HasPrefix(name, prefixPart) {
+					continue
+				}
+				display := dirPart + name
+				if e.IsDir() {
+					display += "/"
+				}
+				candidates = append(candidates, display)
+			}
+			sort.Strings(candidates)
+			return toRuneSuffix(candidates, len(partial))
+		}
+	}
+
 	entries, err := os.ReadDir(searchDir)
 	if err != nil {
 		return nil, 0
 	}
 
-	var candidates []string
 	for _, e := range entries {
 		name := e.Name()
 		if strings.HasPrefix(name, ".") && !strings.HasPrefix(prefixPart, ".") {

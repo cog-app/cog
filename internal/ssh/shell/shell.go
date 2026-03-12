@@ -86,6 +86,15 @@ func (s *Shell) newRunner(stdin io.Reader, stdout, stderr io.Writer) (*interp.Ru
 	)
 }
 
+// toVirtualPath converts a relative or absolute shell path to a clean virtual
+// (VFS) absolute path. base is the real filesystem directory from the interpreter.
+func (s *Shell) toVirtualPath(base, p string) string {
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p)
+	}
+	return filepath.Clean(filepath.Join(s.virtualPath(base), p))
+}
+
 // callHandler intercepts all commands before execution, including shell builtins.
 // We use it to replace "pwd" with our virtual-path-aware version.
 func (s *Shell) callHandler(ctx context.Context, args []string) ([]string, error) {
@@ -97,6 +106,8 @@ func (s *Shell) callHandler(ctx context.Context, args []string) ([]string, error
 	case "exit":
 		s.exited = true
 		return args, nil
+	case "umask":
+		return []string{"true"}, nil
 	}
 	return args, nil
 }
