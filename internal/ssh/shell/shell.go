@@ -4,13 +4,16 @@
 package shell
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"github.com/ergochat/readline"
 	"mvdan.cc/sh/v3/interp"
@@ -28,6 +31,18 @@ type Shell struct {
 	log        *slog.Logger
 	builtins   map[string]builtinFunc
 	exited     bool
+	termWidth  int  // terminal width for SSH pty sessions (0 = unknown)
+	termHeight int  // terminal height for SSH pty sessions (0 = unknown)
+	sshMode    bool // true when running over an SSH channel
+}
+
+// SetSSHMode configures the shell for use over an SSH channel with a pty.
+// When set, readline uses no-op raw mode functions (the SSH client handles
+// raw mode) and output translates \n to \r\n for proper terminal display.
+func (s *Shell) SetSSHMode(width, height int) {
+	s.sshMode = true
+	s.termWidth = width
+	s.termHeight = height
 }
 
 // New creates a shell for the given user. filesDir is the absolute path to the
@@ -71,11 +86,14 @@ func (s *Shell) newRunner(stdin io.Reader, stdout, stderr io.Writer) (*interp.Ru
 // callHandler intercepts all commands before execution, including shell builtins.
 // We use it to replace "pwd" with our virtual-path-aware version.
 func (s *Shell) callHandler(ctx context.Context, args []string) ([]string, error) {
-	if args[0] == "pwd" {
+	switch args[0] {
+	case "pwd":
 		hc := interp.HandlerCtx(ctx)
 		fmt.Fprintln(hc.Stdout, s.virtualPath(hc.Dir))
-		// Replace with "true" so the interpreter's built-in pwd doesn't also run.
 		return []string{"true"}, nil
+	case "exit":
+		s.exited = true
+		return args, nil
 	}
 	return args, nil
 }
@@ -100,9 +118,40 @@ func (s *Shell) Run(ctx context.Context, command string, stdin io.Reader, stdout
 // and command history, then executes each one.
 func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
 	parser := syntax.NewParser(syntax.Variant(syntax.LangPOSIX))
-	runner, err := s.newRunner(stdin, stdout, stderr)
+
+	// In SSH mode, wrap writers to translate \n → \r\n for proper pty display.
+	shellStdout, shellStderr := stdout, stderr
+	if s.sshMode {
+		shellStdout = &crlfWriter{w: stdout}
+		shellStderr = &crlfWriter{w: stderr}
+	}
+
+	// In SSH mode, we need to prevent the shell interpreter from eagerly
+	// consuming stdin (it spawns a background goroutine for non-*os.File
+	// readers). We give the runner an os.Pipe for stdin and use a mux to
+	// route SSH channel input to either readline or the runner depending
+	// on which is currently active. The mux also handles injecting
+	// synthetic CPR responses for readline's DSR cursor queries.
+	shellStdin := io.Reader(stdin)
+	rlStdin := io.Reader(stdin)
+	rlStdout := io.Writer(shellStdout)
+	var mux *sshStdinMux
+	if s.sshMode {
+		mux = newSSHStdinMux(stdin)
+		rlStdin = mux
+		rlStdout = &dsrInterceptWriter{w: shellStdout, mux: mux}
+		// Give the runner an *os.File stdin (os.Pipe) to avoid the
+		// eager-copy goroutine. The mux will forward data to the pipe
+		// when a command is running that reads stdin.
+		shellStdin = mux.runnerStdin()
+	}
+
+	runner, err := s.newRunner(shellStdin, shellStdout, shellStderr)
 	if err != nil {
 		return err
+	}
+	if mux != nil {
+		defer mux.closeRunnerStdin()
 	}
 
 	comp := &completer{
@@ -110,13 +159,30 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 		dir:   func() string { return runner.Dir },
 	}
 
-	rl, err := readline.NewFromConfig(&readline.Config{
+	rlCfg := &readline.Config{
 		Prompt:       s.prompt(runner),
 		AutoComplete: comp,
-		Stdin:        stdin,
-		Stdout:       stdout,
-		Stderr:       stderr,
-	})
+		Stdin:        rlStdin,
+		Stdout:       rlStdout,
+		Stderr:       shellStderr,
+	}
+
+	if s.sshMode {
+		w, h := s.termWidth, s.termHeight
+		if w == 0 {
+			w = 80
+		}
+		if h == 0 {
+			h = 24
+		}
+		rlCfg.FuncIsTerminal = func() bool { return true }
+		rlCfg.FuncMakeRaw = func() error { return nil }
+		rlCfg.FuncExitRaw = func() error { return nil }
+		rlCfg.FuncGetSize = func() (int, int) { return w, h }
+		rlCfg.FuncOnWidthChanged = func(func()) {}
+	}
+
+	rl, err := readline.NewFromConfig(rlCfg)
 	if err != nil {
 		return err
 	}
@@ -138,17 +204,25 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 
 		prog, parseErr := parser.Parse(strings.NewReader(line), "")
 		if parseErr != nil {
-			fmt.Fprintf(stderr, "parse error: %v\n", parseErr)
+			fmt.Fprintf(shellStderr, "parse error: %v\n", parseErr)
 			continue
 		}
 
-		if runErr := runner.Run(ctx, prog); runErr != nil {
-			if s.exited {
-				return nil
-			}
+		// While the command runs, route stdin to the runner's pipe.
+		if mux != nil {
+			mux.setRunnerActive(true)
+		}
+		runErr := runner.Run(ctx, prog)
+		if mux != nil {
+			mux.setRunnerActive(false)
+		}
+		if s.exited {
+			return nil
+		}
+		if runErr != nil {
 			var exit interp.ExitStatus
 			if !errors.As(runErr, &exit) {
-				fmt.Fprintf(stderr, "error: %v\n", runErr)
+				fmt.Fprintf(shellStderr, "error: %v\n", runErr)
 			}
 		}
 
@@ -160,4 +234,135 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 // prompt returns the shell prompt string for the current state.
 func (s *Shell) prompt(runner *interp.Runner) string {
 	return fmt.Sprintf("%s@cog:%s$ ", s.username, s.virtualPath(runner.Dir))
+}
+
+// crlfWriter wraps a writer and translates bare \n to \r\n for terminal display.
+// This is needed for SSH pty sessions where the terminal is in raw mode.
+type crlfWriter struct {
+	w io.Writer
+}
+
+func (c *crlfWriter) Write(p []byte) (int, error) {
+	// Replace \n with \r\n, but don't double up \r\n that's already correct.
+	replaced := bytes.ReplaceAll(p, []byte("\r\n"), []byte("\x00\n"))
+	replaced = bytes.ReplaceAll(replaced, []byte("\n"), []byte("\r\n"))
+	replaced = bytes.ReplaceAll(replaced, []byte("\x00\n"), []byte("\r\n"))
+	_, err := c.w.Write(replaced)
+	// Return original length so callers don't get confused.
+	return len(p), err
+}
+
+// dsrInterceptWriter wraps a writer and intercepts DSR cursor position queries
+// (\x1b[6n). Instead of forwarding them to the remote terminal (which would
+// require a round-trip through the SSH channel and cause hangs), it writes an
+// immediate synthetic CPR response into the sshStdinMux for readline to consume.
+type dsrInterceptWriter struct {
+	w   io.Writer
+	mux *sshStdinMux
+}
+
+func (d *dsrInterceptWriter) Write(p []byte) (int, error) {
+	origLen := len(p)
+	dsr := []byte("\x1b[6n")
+	if bytes.Contains(p, dsr) {
+		// Inject synthetic CPR response into readline's stdin.
+		d.mux.Inject([]byte("\x1b[1;1R"))
+		// Remove the DSR query from the output — don't send to client.
+		p = bytes.ReplaceAll(p, dsr, nil)
+		if len(p) == 0 {
+			return origLen, nil
+		}
+	}
+	_, err := d.w.Write(p)
+	return origLen, err
+}
+
+// sshStdinMux multiplexes real SSH channel input between readline and the
+// shell interpreter's runner. A background goroutine reads from the real stdin
+// and dispatches data to either readline (via the Read method) or the runner's
+// stdin pipe (when a command is actively running). Injected data (synthetic
+// CPR responses) is always delivered to readline via the Read method.
+type sshStdinMux struct {
+	dataCh chan []byte
+	errCh  chan error
+	buf    []byte // leftover from previous read
+
+	// Runner stdin pipe — the runner gets the read end (*os.File)
+	// so the shell interpreter doesn't spawn an eager-copy goroutine.
+	runnerR *os.File
+	runnerW *os.File
+
+	runnerActive atomic.Bool
+}
+
+func newSSHStdinMux(real io.Reader) *sshStdinMux {
+	r, w, _ := os.Pipe()
+	m := &sshStdinMux{
+		dataCh:  make(chan []byte, 16),
+		errCh:   make(chan error, 1),
+		runnerR: r,
+		runnerW: w,
+	}
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := real.Read(buf)
+			if n > 0 {
+				chunk := make([]byte, n)
+				copy(chunk, buf[:n])
+				if m.runnerActive.Load() {
+					m.runnerW.Write(chunk)
+				} else {
+					m.dataCh <- chunk
+				}
+			}
+			if err != nil {
+				m.errCh <- err
+				return
+			}
+		}
+	}()
+	return m
+}
+
+// runnerStdin returns the *os.File for the runner's stdin.
+func (m *sshStdinMux) runnerStdin() *os.File { return m.runnerR }
+
+// closeRunnerStdin closes both ends of the runner's stdin pipe.
+func (m *sshStdinMux) closeRunnerStdin() {
+	m.runnerW.Close()
+	m.runnerR.Close()
+}
+
+// setRunnerActive switches whether stdin data goes to the runner or readline.
+func (m *sshStdinMux) setRunnerActive(active bool) {
+	m.runnerActive.Store(active)
+}
+
+// Inject adds data to the readline stream (used for synthetic CPR responses).
+func (m *sshStdinMux) Inject(data []byte) {
+	m.dataCh <- data
+}
+
+// Read returns data for readline. Blocks until data is available from
+// the real stdin (when runner is not active) or from injected CPR responses.
+func (m *sshStdinMux) Read(p []byte) (int, error) {
+	// Return buffered data first.
+	if len(m.buf) > 0 {
+		n := copy(p, m.buf)
+		m.buf = m.buf[n:]
+		return n, nil
+	}
+
+	// Block waiting for data from either real stdin or injected.
+	select {
+	case data := <-m.dataCh:
+		n := copy(p, data)
+		if n < len(data) {
+			m.buf = data[n:]
+		}
+		return n, nil
+	case err := <-m.errCh:
+		return 0, err
+	}
 }

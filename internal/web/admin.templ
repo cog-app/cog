@@ -1,10 +1,14 @@
 package web
 
 import (
+	"fmt"
 	"git.duckfam.us/jj-software/cog/internal/group"
+	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/ui"
 	"iter"
+	"log/slog"
+	"strings"
 )
 
 func adminSidebar(active string) []ui.SidebarItem {
@@ -14,6 +18,7 @@ func adminSidebar(active string) []ui.SidebarItem {
 		{Label: "Groups", URL: "/admin/groups", Active: active == "groups"},
 		{Label: "Volumes", URL: "/admin/volumes", Active: active == "volumes"},
 		{Label: "Plugins", URL: "/admin/plugins", Active: active == "plugins"},
+		{Label: "Logs", URL: "/admin/logs", Active: active == "logs"},
 	}
 }
 
@@ -215,6 +220,60 @@ templ smtpTestAlert(kind, title, detail string) {
 		<strong>{ title }</strong>
 		<p style="margin:0.25rem 0 0;font-size:0.85rem">{ detail }</p>
 	</div>
+}
+
+// --- Logs ---
+
+func logLevelBadgeClass(level slog.Level) string {
+	switch {
+	case level >= slog.LevelError:
+		return "badge badge-danger"
+	case level >= slog.LevelWarn:
+		return "badge badge-warn"
+	case level >= slog.LevelInfo:
+		return "badge badge-admin"
+	default:
+		return "badge"
+	}
+}
+
+func logLevelLabel(level slog.Level) string {
+	return strings.ToUpper(level.String())
+}
+
+templ adminLogsPage(pd ui.PageData, entries []logbuf.Entry) {
+	@ui.AdminSidebarPage(pd, adminSidebar("logs"), pd.PluginSettingsNav) {
+		<div class="flex justify-between items-center" style="margin-bottom:1rem">
+			<h1>Server Logs</h1>
+			<span class="text-muted" style="font-size:0.85rem">{ fmt.Sprintf("%d entries", len(entries)) }</span>
+		</div>
+		@ui.Card("") {
+			<div style="max-height:600px;overflow-y:auto">
+				<table class="table" style="font-size:0.85rem">
+					<thead>
+						<tr>
+							<th style="width:8rem">Time</th>
+							<th style="width:5rem">Level</th>
+							<th>Message</th>
+						</tr>
+					</thead>
+					<tbody hx-get="/admin/logs/entries" hx-trigger="every 3s" hx-swap="innerHTML">
+						@logEntriesPartial(entries)
+					</tbody>
+				</table>
+			</div>
+		}
+	}
+}
+
+templ logEntriesPartial(entries []logbuf.Entry) {
+	for i := len(entries) - 1; i >= 0; i-- {
+		<tr>
+			<td><code>{ entries[i].Time.Format("15:04:05.000") }</code></td>
+			<td><span class={ logLevelBadgeClass(entries[i].Level) }>{ logLevelLabel(entries[i].Level) }</span></td>
+			<td><code style="white-space:pre-wrap">{ entries[i].Message }</code></td>
+		</tr>
+	}
 }
 
 // --- Plugins ---

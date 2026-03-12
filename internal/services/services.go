@@ -13,6 +13,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/email"
 	"git.duckfam.us/jj-software/cog/internal/group"
 
@@ -44,6 +45,7 @@ type Providers struct {
 	Access       *volume.Access
 	Settings     *settings.Store
 	Search       *search.Manager
+	LogBuffer    *logbuf.Buffer
 	CSRFSecret   []byte
 }
 

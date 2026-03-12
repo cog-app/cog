@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/group"
+	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -241,6 +242,25 @@ func (h *adminHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// --- Logs ---
+
+func (h *adminHandler) ShowLogs(w http.ResponseWriter, r *http.Request) {
+	pd := pageDataWithNav(r, "Logs", h.p.CSRFSecret, h.p.Plugins)
+	var entries []logbuf.Entry
+	if h.p.LogBuffer != nil {
+		entries = h.p.LogBuffer.Entries()
+	}
+	adminLogsPage(pd, entries).Render(r.Context(), w)
+}
+
+func (h *adminHandler) LogEntries(w http.ResponseWriter, r *http.Request) {
+	var entries []logbuf.Entry
+	if h.p.LogBuffer != nil {
+		entries = h.p.LogBuffer.Entries()
+	}
+	logEntriesPartial(entries).Render(r.Context(), w)
 }
 
 // --- Plugins ---

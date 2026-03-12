@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.duckfam.us/jj-software/cog/internal/config"
+	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	cogssh "git.duckfam.us/jj-software/cog/internal/ssh"
 	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
@@ -71,8 +72,9 @@ func configFromEnv() config.Config {
 	}
 }
 
-// newLogger builds a *slog.Logger from config values.
-func newLogger(cfg config.Config) *slog.Logger {
+// newLogger builds a *slog.Logger from config values and a ring buffer
+// that captures all log output for the admin UI.
+func newLogger(cfg config.Config) (*slog.Logger, *logbuf.Buffer) {
 	var level slog.Level
 	switch strings.ToLower(cfg.LogLevel) {
 	case "debug":
@@ -91,13 +93,20 @@ func newLogger(cfg config.Config) *slog.Logger {
 	} else {
 		handler = slog.NewTextHandler(os.Stderr, opts)
 	}
-	return slog.New(handler)
+	buf := logbuf.New(logbuf.DefaultCapacity)
+	return slog.New(logbuf.NewTeeHandler(handler, buf)), buf
 }
 
 // openProviders creates a services.Providers from env-var config.
 func openProviders(plugins ...plugin.Plugin) (*services.Providers, error) {
 	cfg := configFromEnv()
-	return services.New(newLogger(cfg), cfg, plugins...)
+	log, buf := newLogger(cfg)
+	p, err := services.New(log, cfg, plugins...)
+	if err != nil {
+		return nil, err
+	}
+	p.LogBuffer = buf
+	return p, nil
 }
 
 // Main starts a Cog server with optional additional plugins.
@@ -178,11 +187,12 @@ func buildCobraCmd(def plugin.CommandDef) *cobra.Command {
 // Run starts a Cog server with custom context, config and error handling.
 // See [Main] for using a default installation with custom plugins.
 func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
-	log := newLogger(cfg)
+	log, buf := newLogger(cfg)
 	p, err := services.New(log, cfg, plugins...)
 	if err != nil {
 		return err
 	}
+	p.LogBuffer = buf
 	defer p.Close()
 
 	handler := web.New(p)

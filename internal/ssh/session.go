@@ -19,14 +19,14 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 	defer cancel()
 
 	var termWidth, termHeight int
+	var hasPTY bool
 
 	for req := range requests {
 		s.log.Debug("handling request", "type", req.Type)
 		switch req.Type {
 		case "pty-req":
 			termWidth, termHeight = parsePtyReq(req.Payload)
-			_ = termWidth
-			_ = termHeight
+			hasPTY = true
 			if req.WantReply {
 				req.Reply(true, nil)
 			}
@@ -36,8 +36,6 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 				termWidth = int(binary.BigEndian.Uint32(req.Payload))
 				termHeight = int(binary.BigEndian.Uint32(req.Payload[4:]))
 			}
-			_ = termWidth
-			_ = termHeight
 			if req.WantReply {
 				req.Reply(true, nil)
 			}
@@ -70,7 +68,7 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 			case strings.HasPrefix(command, "rsync "):
 				exitCode = s.serveRsync(channel, filesDir, command)
 			default:
-				exitCode = s.execShell(ctx, channel, username, filesDir, command)
+				exitCode = s.execShell(ctx, channel, username, filesDir, command, hasPTY, termWidth, termHeight)
 			}
 			sendExitStatus(channel, exitCode)
 			return
@@ -79,7 +77,7 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 			if req.WantReply {
 				req.Reply(true, nil)
 			}
-			exitCode := s.interactiveShell(ctx, channel, username, filesDir)
+			exitCode := s.interactiveShell(ctx, channel, username, filesDir, hasPTY, termWidth, termHeight)
 			sendExitStatus(channel, exitCode)
 			return
 
@@ -91,8 +89,11 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 	}
 }
 
-func (s *Server) execShell(ctx context.Context, channel gossh.Channel, username, filesDir, command string) int {
+func (s *Server) execShell(ctx context.Context, channel gossh.Channel, username, filesDir, command string, hasPTY bool, termWidth, termHeight int) int {
 	sh := shell.New(username, filesDir, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.log)
+	if hasPTY {
+		sh.SetSSHMode(termWidth, termHeight)
+	}
 	if err := sh.Run(ctx, command, channel, channel, channel.Stderr()); err != nil {
 		s.log.Debug("exec error", "user", username, "cmd", command, "err", err)
 		return 1
@@ -100,8 +101,11 @@ func (s *Server) execShell(ctx context.Context, channel gossh.Channel, username,
 	return 0
 }
 
-func (s *Server) interactiveShell(ctx context.Context, channel gossh.Channel, username, filesDir string) int {
+func (s *Server) interactiveShell(ctx context.Context, channel gossh.Channel, username, filesDir string, hasPTY bool, termWidth, termHeight int) int {
 	sh := shell.New(username, filesDir, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.log)
+	if hasPTY {
+		sh.SetSSHMode(termWidth, termHeight)
+	}
 	if err := sh.RunInteractive(ctx, channel, channel, channel.Stderr()); err != nil {
 		s.log.Debug("shell error", "user", username, "err", err)
 		return 1
