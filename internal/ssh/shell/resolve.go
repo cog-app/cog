@@ -58,9 +58,11 @@ func (s *Shell) virtualPath(realPath string) string {
 }
 
 // virtualToReal maps a virtual path to a real filesystem path.
-// Returns "" for non-navigable virtual dirs (/.ssh, etc.).
 // "/" maps to the real system root — the interpreter's stat/readdir handlers
 // route through the VFS so only virtual entries (.ssh, files) are visible.
+// For virtual-only directories (/dev, /.ssh), the virtual path itself is
+// returned when a VFS is present — the interpreter's handlers route all
+// stat/readdir/open calls through the VFS so no real path is needed.
 func (s *Shell) virtualToReal(vp string) string {
 	vp = filepath.Clean(vp)
 	if vp == "/" {
@@ -72,5 +74,12 @@ func (s *Shell) virtualToReal(vp string) string {
 	if strings.HasPrefix(vp, "/files/") {
 		return filepath.Join(s.filesDir, strings.TrimPrefix(vp, "/files/"))
 	}
-	return "" // not navigable (e.g. /.ssh)
+	// Virtual-only directories: when VFS is present, return the virtual path
+	// itself. The interpreter sets r.Dir to it, and stat/readdir/open handlers
+	// route through VFS via interpreterToVirtualPath (which passes non-filesDir
+	// paths through unchanged).
+	if s.fs != nil {
+		return vp
+	}
+	return ""
 }

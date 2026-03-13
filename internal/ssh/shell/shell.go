@@ -31,7 +31,7 @@ type Shell struct {
 	pluginCmds map[string][]plugin.CommandDef
 	usernames  func() ([]string, error) // lists all usernames for completion
 	log        *slog.Logger
-	builtins   map[string]builtinFunc
+	runner     *interp.Runner // current interpreter runner (set after newRunner)
 	exited     bool
 	termWidth  int  // terminal width for SSH pty sessions (0 = unknown)
 	termHeight int  // terminal height for SSH pty sessions (0 = unknown)
@@ -57,7 +57,7 @@ func New(username, filesDir string, userFS vfs.FS, pluginCmds map[string][]plugi
 	if resolved, err := filepath.EvalSymlinks(filesDir); err == nil {
 		filesDir = resolved
 	}
-	s := &Shell{
+	return &Shell{
 		username:   username,
 		filesDir:   filesDir,
 		fs:         userFS,
@@ -65,15 +65,12 @@ func New(username, filesDir string, userFS vfs.FS, pluginCmds map[string][]plugi
 		usernames:  usernames,
 		log:        log,
 	}
-	s.initBuiltins()
-	return s
 }
 
 // newRunner creates an interp.Runner configured with sandboxed handlers.
 func (s *Shell) newRunner(stdin io.Reader, stdout, stderr io.Writer) (*interp.Runner, error) {
-	return interp.New(
+	r, err := interp.New(
 		interp.StdIO(stdin, stdout, stderr),
-		// CallHandler intercepts shell builtins (pwd) to display virtual paths.
 		interp.CallHandler(s.callHandler),
 		interp.ExecHandlers(func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 			return s.execHandler
@@ -84,6 +81,11 @@ func (s *Shell) newRunner(stdin io.Reader, stdout, stderr io.Writer) (*interp.Ru
 		interp.Env(s.environ()),
 		interp.Dir(s.filesDir),
 	)
+	if err != nil {
+		return nil, err
+	}
+	s.runner = r
+	return r, nil
 }
 
 // toVirtualPath converts a relative or absolute shell path to a clean virtual
@@ -96,59 +98,21 @@ func (s *Shell) toVirtualPath(base, p string) string {
 }
 
 // callHandler intercepts all commands before execution, including shell builtins.
-// We use it to replace "pwd" with our virtual-path-aware version and intercept
-// "cd" to map virtual paths to real filesystem paths.
+// We rename cd/pwd/exit so the interpreter's native builtins don't fire —
+// they reach execHandler → cobra commands registered as _cd/_pwd/_exit instead.
 func (s *Shell) callHandler(ctx context.Context, args []string) ([]string, error) {
 	switch args[0] {
-	case "pwd":
-		hc := interp.HandlerCtx(ctx)
-		fmt.Fprintln(hc.Stdout, s.virtualPath(hc.Dir))
-		return []string{"true"}, nil
-	case "cd":
-		hc := interp.HandlerCtx(ctx)
-		target := s.cdTarget(args[1:])
-		vp := s.toVirtualPath(hc.Dir, target)
-		// Validate via VFS first — show virtual paths in errors.
-		if s.fs != nil {
-			fi, err := s.fs.Stat(vp)
-			if err != nil {
-				fmt.Fprintf(hc.Stderr, "cd: no such file or directory: %s\n", vp)
-				return []string{"false"}, nil
-			}
-			if !fi.IsDir {
-				fmt.Fprintf(hc.Stderr, "cd: not a directory: %s\n", vp)
-				return []string{"false"}, nil
-			}
-		}
-		realPath := s.virtualToReal(vp)
-		if realPath == "" {
-			fmt.Fprintf(hc.Stderr, "cd: cannot cd to %s\n", vp)
-			return []string{"false"}, nil
-		}
-		return []string{"cd", realPath}, nil
-	case "exit":
-		s.exited = true
+	case "cd", "pwd", "exit":
+		args[0] = "_" + args[0]
+		return args, nil
+	case "help":
+		// Rename to reach cobra's help command via execHandler.
+		args[0] = "_help"
 		return args, nil
 	case "umask":
 		return []string{"true"}, nil
 	}
 	return args, nil
-}
-
-// cdTarget extracts the target directory from cd arguments.
-// cd with no args or ~ → /files (home). cd - → /files (home).
-func (s *Shell) cdTarget(args []string) string {
-	if len(args) == 0 {
-		return "/files"
-	}
-	target := args[0]
-	if target == "~" || target == "-" {
-		return "/files"
-	}
-	if strings.HasPrefix(target, "~/") {
-		return "/files/" + strings.TrimPrefix(target, "~/")
-	}
-	return target
 }
 
 // Run parses and executes a single command string.

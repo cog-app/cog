@@ -31,7 +31,15 @@ func TestCompleteCommandEmpty(t *testing.T) {
 	if length != 0 {
 		t.Fatalf("expected length 0, got %d", length)
 	}
-	total := len(sh.builtins) + len(sh.pluginCmds)
+	// Completions include all visible commands + cobra's auto-generated "help".
+	root := sh.newRootCmd()
+	visible := 0
+	for _, cmd := range root.Commands() {
+		if !cmd.Hidden {
+			visible++
+		}
+	}
+	total := visible + 1 // +1 for cobra's "help" command
 	if len(candidates) != total {
 		t.Fatalf("expected %d candidates, got %d", total, len(candidates))
 	}
@@ -213,6 +221,26 @@ func TestArgLengthExceeded(t *testing.T) {
 	candidates, _ := c.Do(line, len(line))
 	if len(candidates) != 0 {
 		t.Fatalf("expected 0 candidates, got %v", runeSliceStrings(candidates))
+	}
+}
+
+func TestCompleteFlagNames(t *testing.T) {
+	sh, dir := newTestShell(t)
+	c := &completer{shell: sh, dir: func() string { return dir }}
+
+	// "ls -" should complete flag names.
+	line := []rune("ls -")
+	candidates, length := c.Do(line, len(line))
+	if length != 1 { // the "-" is the partial
+		t.Fatalf("expected length 1, got %d", length)
+	}
+	names := runeSliceStrings(candidates)
+	found := map[string]bool{}
+	for _, n := range names {
+		found[n] = true
+	}
+	if !found["a "] && !found["-all "] {
+		t.Fatalf("expected -a or --all in %v", names)
 	}
 }
 

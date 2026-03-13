@@ -65,14 +65,20 @@ type MountEntry struct {
 func (m *MountFS) resolve(p string) (vfs.FS, string, bool, error) {
 	p = path.Clean("/" + p)
 	for _, me := range m.mounts {
-		if p == me.userPath || strings.HasPrefix(p, me.userPath+"/") {
-			sub := strings.TrimPrefix(p, me.userPath)
-			if sub == "" {
-				sub = "/"
-			}
-			backendPath := path.Join(me.volumeSubpath, sub)
-			return me.backend, backendPath, me.readOnly, nil
+		var sub string
+		switch {
+		case p == me.userPath:
+			sub = "/"
+		case me.userPath == "/":
+			// Root mount matches all paths; sub retains the leading slash.
+			sub = p
+		case strings.HasPrefix(p, me.userPath+"/"):
+			sub = strings.TrimPrefix(p, me.userPath)
+		default:
+			continue
 		}
+		backendPath := path.Join(me.volumeSubpath, sub)
+		return me.backend, backendPath, me.readOnly, nil
 	}
 	return nil, "", false, fmt.Errorf("no mount for path: %s", p)
 }

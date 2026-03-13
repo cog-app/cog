@@ -648,6 +648,56 @@ func TestCatDevNull(t *testing.T) {
 	}
 }
 
+func TestCdDevDir(t *testing.T) {
+	sh := newVFSTestShell(t)
+	out, stderr := runCmd(t, sh, "cd /dev && pwd")
+	if stderr != "" {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+	if strings.TrimSpace(out) != "/dev" {
+		t.Fatalf("expected /dev, got %q", strings.TrimSpace(out))
+	}
+}
+
+func TestTree(t *testing.T) {
+	sh := newVFSTestShell(t)
+	out, stderr := runCmd(t, sh, "tree /files")
+	if stderr != "" {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+	if !strings.Contains(out, "Documents") {
+		t.Fatalf("expected Documents in tree output, got %q", out)
+	}
+	if !strings.Contains(out, "hello.txt") {
+		t.Fatalf("expected hello.txt in tree output, got %q", out)
+	}
+	if !strings.Contains(out, "notes.txt") {
+		t.Fatalf("expected notes.txt in tree output, got %q", out)
+	}
+	// Verify tree connectors are present.
+	if !strings.Contains(out, "├── ") && !strings.Contains(out, "└── ") {
+		t.Fatalf("expected tree connectors in output, got %q", out)
+	}
+	// Verify summary line.
+	if !strings.Contains(out, "directories") || !strings.Contains(out, "files") {
+		t.Fatalf("expected summary line, got %q", out)
+	}
+}
+
+func TestTreeNoVFS(t *testing.T) {
+	sh, _ := newTestShell(t)
+	out, stderr := runCmd(t, sh, "tree")
+	if stderr != "" {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+	if !strings.Contains(out, "Documents") {
+		t.Fatalf("expected Documents in tree output, got %q", out)
+	}
+	if !strings.Contains(out, "hello.txt") {
+		t.Fatalf("expected hello.txt in tree output, got %q", out)
+	}
+}
+
 func TestLsDevDir(t *testing.T) {
 	sh := newVFSTestShell(t)
 	out, stderr := runCmd(t, sh, "ls /dev")
@@ -662,5 +712,59 @@ func TestLsDevDir(t *testing.T) {
 	}
 	if !strings.Contains(out, "urandom") {
 		t.Fatalf("expected urandom in ls /dev, got %q", out)
+	}
+}
+
+func TestHelpCommand(t *testing.T) {
+	sh, _ := newTestShell(t)
+	out, _ := runCmd(t, sh, "help")
+	if !strings.Contains(out, "ls") {
+		t.Fatalf("expected ls in help output, got %q", out)
+	}
+	if !strings.Contains(out, "cd") {
+		t.Fatalf("expected cd in help output, got %q", out)
+	}
+}
+
+func TestHelpSubcommand(t *testing.T) {
+	sh, _ := newTestShell(t)
+	out, _ := runCmd(t, sh, "help ls")
+	if !strings.Contains(out, "-a") {
+		t.Fatalf("expected -a flag in help ls output, got %q", out)
+	}
+	if !strings.Contains(out, "-l") {
+		t.Fatalf("expected -l flag in help ls output, got %q", out)
+	}
+}
+
+func TestLsHelp(t *testing.T) {
+	sh, _ := newTestShell(t)
+	out, _ := runCmd(t, sh, "ls --help")
+	if !strings.Contains(out, "-a") {
+		t.Fatalf("expected -a flag in ls --help output, got %q", out)
+	}
+}
+
+func TestFlagParsing(t *testing.T) {
+	sh, _ := newTestShell(t)
+
+	// ls -al should work.
+	out, _ := runCmd(t, sh, "ls -a -l /files")
+	if !strings.Contains(out, "hello.txt") {
+		t.Fatalf("expected hello.txt in ls -al output, got %q", out)
+	}
+
+	// rm -rf should parse flags.
+	runCmd(t, sh, "mkdir /files/tmpdir")
+	runCmd(t, sh, "touch /files/tmpdir/file.txt")
+	_, stderr := runCmd(t, sh, "rm -r -f /files/tmpdir")
+	if stderr != "" {
+		t.Fatalf("rm -rf should succeed, stderr: %s", stderr)
+	}
+
+	// head -n 1 should parse line count.
+	out, _ = runCmd(t, sh, "head -n 1 /files/Documents/notes.txt")
+	if strings.TrimSpace(out) != "line1" {
+		t.Fatalf("expected 'line1', got %q", strings.TrimSpace(out))
 	}
 }
