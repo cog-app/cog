@@ -259,7 +259,7 @@ func (s *Shell) prompt(runner *interp.Runner) string {
 	if s.color {
 		return ansiBoldGreen + user + ansiReset + ":" + ansiBoldBlue + dir + ansiReset + "$ "
 	}
-	return user + ":" + dir + "$ "
+	return user + ":" + dir + " $ "
 }
 
 // crlfWriter wraps a writer and translates bare \n to \r\n for terminal display.
