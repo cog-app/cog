@@ -18,6 +18,9 @@ import (
 var ErrNotFound = errors.New("volume not found")
 var ErrInUse = errors.New("volume is referenced by mounts")
 
+// DefaultVolumeName is the well-known name of the system default volume.
+const DefaultVolumeName = "default"
+
 type Volume struct {
 	ID          string
 	Name        string
@@ -27,6 +30,9 @@ type Volume struct {
 	OwnerUserID *string
 	Config      string
 }
+
+// IsDefault returns true if this is the system default volume.
+func (v *Volume) IsDefault() bool { return v.Name == DefaultVolumeName }
 
 // ParsedURI represents a parsed volume URI.
 type ParsedURI struct {

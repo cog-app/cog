@@ -85,7 +85,7 @@ func (h *adminVolumeHandler) EditVolumeForm(w http.ResponseWriter, r *http.Reque
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminVolumeEditPage(pd, v, shares, defaultPermissionLevels(), quotas, flashMsg, flashKind).Render(r.Context(), w)
+	adminVolumeEditPage(pd, v, v.IsDefault(), shares, defaultPermissionLevels(), quotas, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 func (h *adminVolumeHandler) UpdateVolume(w http.ResponseWriter, r *http.Request) {
@@ -109,6 +109,15 @@ func (h *adminVolumeHandler) UpdateVolume(w http.ResponseWriter, r *http.Request
 
 func (h *adminVolumeHandler) DeleteVolume(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	v, err := h.p.Volumes.GetByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if v.IsDefault() {
+		http.Error(w, "cannot delete the default volume", http.StatusBadRequest)
+		return
+	}
 	if err := h.p.Volumes.Delete(id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

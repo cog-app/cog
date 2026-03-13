@@ -30,7 +30,12 @@ templ adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], 
 					for v, err := range volumes {
 						if err == nil {
 							<tr style="cursor:pointer" onclick={ goTo("/admin/volumes/" + v.ID) }>
-								<td>{ v.Name }</td>
+								<td>
+									{ v.Name }
+									if v.IsDefault() {
+										<span title="Default system volume">&#9733;</span>
+									}
+								</td>
 								<td><code>{ v.URI }</code></td>
 								<td>{ v.Description }</td>
 							</tr>
@@ -61,9 +66,14 @@ templ adminVolumeNewPage(pd ui.PageData, errMsg string) {
 	}
 }
 
-templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, shares []ui.ShareDisplayItem, levels []plugin.PermissionLevel, quotas []quotaDisplayItem, flash string, flashKind string) {
+templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, isDefault bool, shares []ui.ShareDisplayItem, levels []plugin.PermissionLevel, quotas []quotaDisplayItem, flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, adminSidebar("volumes"), pd.PluginSettingsNav) {
-		<h1 style="margin-bottom:1rem">Edit Volume: { v.Name }</h1>
+		<h1 style="margin-bottom:1rem">
+			Edit Volume: { v.Name }
+			if isDefault {
+				<span title="Default system volume">&#9733;</span>
+			}
+		</h1>
 		if flash != "" {
 			@ui.Alert(flashKind, flash)
 		}
@@ -83,14 +93,16 @@ templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, shares []ui.ShareDis
 		@ui.Card("Quotas") {
 			@adminQuotaPanel(v.ID, pd.CSRFToken, quotas)
 		}
-		@ui.Card("Danger Zone") {
-			<p class="text-muted" style="margin-bottom:0.5rem">Deleting a volume cannot be undone.</p>
-			<button
-				class="btn btn-danger"
-				hx-delete={ "/admin/volumes/" + v.ID }
-				hx-confirm="Delete this volume? This cannot be undone."
-				hx-on::after-request="window.location='/admin/volumes'"
-			>Delete Volume</button>
+		if !isDefault {
+			@ui.Card("Danger Zone") {
+				<p class="text-muted" style="margin-bottom:0.5rem">Deleting a volume cannot be undone.</p>
+				<button
+					class="btn btn-danger"
+					hx-delete={ "/admin/volumes/" + v.ID }
+					hx-confirm="Delete this volume? This cannot be undone."
+					hx-on::after-request="window.location='/admin/volumes'"
+				>Delete Volume</button>
+			}
 		}
 	}
 }
