@@ -2,6 +2,7 @@ package files
 
 import (
 	"fmt"
+	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 	"strconv"
 	"time"
@@ -9,7 +10,11 @@ import (
 
 templ filesPage(pd ui.PageData, dirPath string, items []FileMeta) {
 	@ui.Base(pd) {
-		<h1 style="margin-bottom:0.5rem">Files</h1>
+		<div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem">
+			<h1 style="margin:0">Files</h1>
+			<a href="/apps/files/favorites" class="btn btn-outline btn-sm">Favorites</a>
+			<a href="/apps/files/volumes" class="btn btn-outline btn-sm">Volumes</a>
+		</div>
 		@filesBreadcrumbs(dirPath)
 		@ui.Card("") {
 			<div class="flex gap-1 items-end mb-2" style="flex-wrap:wrap">
@@ -405,6 +410,56 @@ templ fileViewPage(pd ui.PageData, fp string, meta *FileMeta, kind string, textC
 			}
 		}
 	}
+}
+
+templ volumesPage(pd ui.PageData, volumes []plugin.VolumeInfo) {
+	@ui.Base(pd) {
+		<h1 style="margin-bottom:0.5rem">Volumes</h1>
+		<p style="margin-bottom:1rem"><a href="/apps/files/">Back to Files</a></p>
+		@ui.Card("") {
+			if len(volumes) == 0 {
+				<p class="text-muted">No volumes available.</p>
+			} else {
+				<table class="table">
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Description</th>
+							<th>Type</th>
+							<th>Actions</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, v := range volumes {
+							<tr>
+								<td>
+									<div style="display:flex;align-items:center;gap:0.5rem">
+										@volumeIcon()
+										{ v.Name }
+									</div>
+								</td>
+								<td class="text-muted">{ v.Description }</td>
+								<td class="text-muted">{ v.Scheme }</td>
+								<td>
+									if v.Scheme != "mem" {
+										<a href={ templ.SafeURL("/volumes/" + v.ID + "/browse") } class="btn btn-outline btn-sm">Browse</a>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		}
+	}
+}
+
+templ volumeIcon() {
+	<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+		<ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+		<path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+		<path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+	</svg>
 }
 
 templ favoritesPage(pd ui.PageData, items []FileMeta) {

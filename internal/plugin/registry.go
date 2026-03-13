@@ -49,6 +49,7 @@ type RegistryServices struct {
 	GroupStore   GroupStore
 	FilesAccess  FilesAccess
 	QuotaChecker QuotaChecker
+	VolumeAccess VolumeAccess
 }
 
 // Registry manages plugin lifecycle, per-user database provisioning,
@@ -515,6 +516,10 @@ func (pr *pluginRegistrar) GroupStore() GroupStore {
 
 func (pr *pluginRegistrar) FilesAccess() FilesAccess {
 	return pr.registry.services.FilesAccess
+}
+
+func (pr *pluginRegistrar) VolumeAccess() VolumeAccess {
+	return pr.registry.services.VolumeAccess
 }
 
 func (pr *pluginRegistrar) QuotaCheck(username string, additionalBytes int64) error {

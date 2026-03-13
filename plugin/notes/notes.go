@@ -58,6 +58,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 			return StripMarkdown(string(data))
 		},
 	})
+	ctx.RegisterResource(plugin.ResourceDef{
+		Type:     "note",
+		Table:    "notes",
+		IDColumn: "id",
+	})
 
 	// Web UI routes
 	pages := NewPages(p)

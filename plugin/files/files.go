@@ -120,6 +120,7 @@ func (p *Plugin) registerRoutes(priv plugin.PrivilegedContext) {
 
 	// Files browser UI
 	priv.RegisterRoute("GET /apps/files/favorites", auth.RequireAuthWeb(http.HandlerFunc(pages.ServeFavorites)))
+	priv.RegisterRoute("GET /apps/files/volumes", auth.RequireAuthWeb(http.HandlerFunc(pages.ServeVolumes)))
 	priv.RegisterRoute("GET /apps/files/{path...}", auth.RequireAuthWeb(http.HandlerFunc(pages.ServeGet)))
 	priv.RegisterRoute("POST /apps/files/{path...}", csrfWrap(http.HandlerFunc(pages.ServePost)))
 	priv.RegisterRoute("DELETE /apps/files/{path...}", csrfWrap(http.HandlerFunc(pages.ServeDelete)))

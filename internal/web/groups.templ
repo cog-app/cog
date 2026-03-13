@@ -251,6 +251,7 @@ templ inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, is
 						}
 						<form method="post" action={ templ.SafeURL("/invite/" + inv.Token) }>
 							<input type="hidden" name="action" value="register"/>
+							<input type="hidden" name="invite_token" value={ inv.Token }/>
 							<div class="form-group">
 								<label for="username">Username</label>
 								<input class="form-control" type="text" id="username" name="username" required autofocus/>

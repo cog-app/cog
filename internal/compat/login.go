@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
@@ -27,12 +28,13 @@ type loginFlowEntry struct {
 
 // LoginFlowHandler implements NextCloud Login Flow v2.
 type LoginFlowHandler struct {
-	mu       sync.Mutex
-	pending  map[string]*loginFlowEntry // keyed by poll token
-	Users    *user.Store
-	AppPWs   *auth.AppPasswordStore
-	Sessions *auth.SessionStore
-	BaseURL  string
+	mu          sync.Mutex
+	pending     map[string]*loginFlowEntry // keyed by poll token
+	Users       *user.Store
+	AppPWs      *auth.AppPasswordStore
+	Sessions    *auth.SessionStore
+	BaseURL     string
+	RateLimiter *ratelimit.Limiter
 }
 
 func NewLoginFlowHandler(users *user.Store, appPWs *auth.AppPasswordStore, sessions *auth.SessionStore, baseURL string) *LoginFlowHandler {
@@ -148,10 +150,26 @@ func (h *LoginFlowHandler) processGrant(w http.ResponseWriter, r *http.Request, 
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
+	// Rate limit by client IP.
+	if h.RateLimiter != nil {
+		ip := ratelimit.ClientIP(r)
+		if h.RateLimiter.IsLimited(ip) {
+			h.renderGrantPage(w, loginToken, "Too many failed attempts. Please try again later.")
+			return
+		}
+	}
+
 	u, err := h.Users.Authenticate(username, password)
 	if err != nil {
+		if h.RateLimiter != nil {
+			h.RateLimiter.RecordFailure(ratelimit.ClientIP(r))
+		}
 		h.renderGrantPage(w, loginToken, "Invalid username or password")
 		return
+	}
+
+	if h.RateLimiter != nil {
+		h.RateLimiter.Reset(ratelimit.ClientIP(r))
 	}
 
 	// Find the pending flow by login token

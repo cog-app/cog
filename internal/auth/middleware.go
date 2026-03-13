@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
@@ -32,6 +33,7 @@ type Middleware struct {
 	Users        *user.Store
 	Sessions     *SessionStore
 	AppPasswords *AppPasswordStore
+	RateLimiter  *ratelimit.Limiter
 }
 
 func (m *Middleware) Wrap(next http.Handler) http.Handler {
@@ -73,17 +75,33 @@ func (m *Middleware) authenticate(r *http.Request) (*user.User, string) {
 		}
 	}
 
+	// Rate-limit credential-based auth by client IP.
+	ip := ratelimit.ClientIP(r)
+	if m.RateLimiter != nil && m.RateLimiter.IsLimited(ip) {
+		return nil, ""
+	}
+
 	// 2. Basic Auth
 	if username, password, ok := r.BasicAuth(); ok {
 		// Try user password first
 		if u, err := m.Users.Authenticate(username, password); err == nil {
+			if m.RateLimiter != nil {
+				m.RateLimiter.Reset(ip)
+			}
 			return u, ""
 		}
 		// Try app password with username as a hint
 		if userID, err := m.AppPasswords.Validate(password); err == nil {
 			if u, err := m.Users.GetByID(userID); err == nil {
+				if m.RateLimiter != nil {
+					m.RateLimiter.Reset(ip)
+				}
 				return u, ""
 			}
+		}
+		// Basic auth failed — record failure.
+		if m.RateLimiter != nil {
+			m.RateLimiter.RecordFailure(ip)
 		}
 	}
 
@@ -92,8 +110,15 @@ func (m *Middleware) authenticate(r *http.Request) (*user.User, string) {
 		token := strings.TrimPrefix(auth, "Bearer ")
 		if userID, err := m.AppPasswords.Validate(token); err == nil {
 			if u, err := m.Users.GetByID(userID); err == nil {
+				if m.RateLimiter != nil {
+					m.RateLimiter.Reset(ip)
+				}
 				return u, ""
 			}
+		}
+		// Bearer auth failed — record failure.
+		if m.RateLimiter != nil {
+			m.RateLimiter.RecordFailure(ip)
 		}
 	}
 

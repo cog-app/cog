@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -48,11 +49,29 @@ func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	next := r.FormValue("next")
 
+	// Rate limit by client IP.
+	if h.p.RateLimiter != nil {
+		ip := ratelimit.ClientIP(r)
+		if h.p.RateLimiter.IsLimited(ip) {
+			setFlash(w, "error", "Too many failed login attempts. Please try again later.")
+			http.Redirect(w, r, loginRedirect("/login", next), http.StatusSeeOther)
+			return
+		}
+	}
+
 	u, err := h.p.Users.Authenticate(username, password)
 	if err != nil {
+		if h.p.RateLimiter != nil {
+			h.p.RateLimiter.RecordFailure(ratelimit.ClientIP(r))
+		}
 		setFlash(w, "error", "Invalid username or password.")
 		http.Redirect(w, r, loginRedirect("/login", next), http.StatusSeeOther)
 		return
+	}
+
+	// Clear rate limit on success.
+	if h.p.RateLimiter != nil {
+		h.p.RateLimiter.Reset(ratelimit.ClientIP(r))
 	}
 
 	sess, err := h.p.Sessions.Create(u.ID)
@@ -107,6 +126,16 @@ func (h *loginHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	if h.p.Settings == nil || !h.p.Settings.GetBool(settings.KeyPublicRegistration) {
 		http.NotFound(w, r)
 		return
+	}
+
+	// Rate limit registration by client IP.
+	if h.p.RateLimiter != nil {
+		ip := ratelimit.ClientIP(r)
+		if h.p.RateLimiter.IsLimited(ip) {
+			setFlash(w, "error", "Too many attempts. Please try again later.")
+			http.Redirect(w, r, "/register", http.StatusSeeOther)
+			return
+		}
 	}
 
 	username := r.FormValue("username")

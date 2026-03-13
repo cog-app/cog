@@ -258,15 +258,16 @@ func (r *capturingRegistrar) UserFilesDir(username string) string { return "" }
 func (r *capturingRegistrar) EnsureUserDirs(username string) error {
 	return fmt.Errorf("EnsureUserDirs not available for gRPC plugins")
 }
-func (r *capturingRegistrar) DataDir() string                    { return "" }
-func (r *capturingRegistrar) NavItems() []cogplugin.NavItem      { return nil }
-func (r *capturingRegistrar) Widgets() []cogplugin.Widget        { return nil }
-func (r *capturingRegistrar) CSRFSecret() []byte                 { return nil }
-func (r *capturingRegistrar) ShareStore() cogplugin.ShareStore   { return nil }
-func (r *capturingRegistrar) EmailSender() cogplugin.EmailSender { return nil }
-func (r *capturingRegistrar) UserLookup() cogplugin.UserLookup   { return nil }
-func (r *capturingRegistrar) GroupStore() cogplugin.GroupStore   { return nil }
-func (r *capturingRegistrar) FilesAccess() cogplugin.FilesAccess { return nil }
+func (r *capturingRegistrar) DataDir() string                      { return "" }
+func (r *capturingRegistrar) NavItems() []cogplugin.NavItem        { return nil }
+func (r *capturingRegistrar) Widgets() []cogplugin.Widget          { return nil }
+func (r *capturingRegistrar) CSRFSecret() []byte                   { return nil }
+func (r *capturingRegistrar) ShareStore() cogplugin.ShareStore     { return nil }
+func (r *capturingRegistrar) EmailSender() cogplugin.EmailSender   { return nil }
+func (r *capturingRegistrar) UserLookup() cogplugin.UserLookup     { return nil }
+func (r *capturingRegistrar) GroupStore() cogplugin.GroupStore     { return nil }
+func (r *capturingRegistrar) FilesAccess() cogplugin.FilesAccess   { return nil }
+func (r *capturingRegistrar) VolumeAccess() cogplugin.VolumeAccess { return nil }
 func (r *capturingRegistrar) QuotaCheck(username string, additionalBytes int64) error {
 	return nil
 }

@@ -85,6 +85,8 @@ func runRebuild(bin string, ppid int) {
 }
 
 // runShell builds cog and runs `cog shell --user admin`.
+// We use syscall.Exec to replace this process so the shell gets direct
+// terminal access (readline needs the real tty, not a pipe).
 func runShell(bin, dbPath, devDir string, stale bool) {
 	if !stale {
 		generate()
@@ -93,20 +95,18 @@ func runShell(bin, dbPath, devDir string, stale bool) {
 
 	seedUser(bin, dbPath, devDir)
 
-	cmd := exec.Command(bin, "shell", "--user", testUser)
-	cmd.Env = append(os.Environ(),
+	absBin, err := filepath.Abs(bin)
+	if err != nil {
+		log.Fatalf("abs path: %v", err)
+	}
+
+	env := append(os.Environ(),
 		"COG_DB="+dbPath,
 		"COG_DATA_DIR="+filepath.Join(devDir, "data"),
 	)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
-		if exit, ok := err.(*exec.ExitError); ok {
-			os.Exit(exit.ExitCode())
-		}
-		log.Fatal(err)
+	if err := syscall.Exec(absBin, []string{absBin, "shell", "--user", testUser}, env); err != nil {
+		log.Fatalf("exec: %v", err)
 	}
 }
 

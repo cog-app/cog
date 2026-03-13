@@ -85,6 +85,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		PrimaryTable: "media",
 		EnrichSQL:    "SELECT rowid, file_path, place_name, camera_model, ocr_text FROM media WHERE rowid IN (?)",
 	})
+	ctx.RegisterResource(plugin.ResourceDef{
+		Type:     "album",
+		Table:    "albums",
+		IDColumn: "id",
+	})
 
 	pages := NewPages(p)
 	ctx.RegisterPage("{$}", http.HandlerFunc(pages.Timeline))

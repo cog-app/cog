@@ -147,12 +147,12 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 		shellStderr = &crlfWriter{w: stderr}
 	}
 
-	// In SSH mode, we need to prevent the shell interpreter from eagerly
-	// consuming stdin (it spawns a background goroutine for non-*os.File
-	// readers). We give the runner an os.Pipe for stdin and use a mux to
-	// route SSH channel input to either readline or the runner depending
-	// on which is currently active. The mux also handles injecting
+	// Set up stdin routing. In SSH mode we use a mux to prevent the
+	// shell interpreter from eagerly consuming stdin (it spawns a
+	// background goroutine for non-*os.File readers) and to inject
 	// synthetic CPR responses for readline's DSR cursor queries.
+	// In non-SSH mode, stdin is a real terminal (*os.File) so no mux
+	// is needed — readline and the runner can share it directly.
 	shellStdin := io.Reader(stdin)
 	rlStdin := io.Reader(stdin)
 	rlStdout := io.Writer(shellStdout)
@@ -161,9 +161,6 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 		mux = newSSHStdinMux(stdin)
 		rlStdin = mux
 		rlStdout = &dsrInterceptWriter{w: shellStdout, mux: mux}
-		// Give the runner an *os.File stdin (os.Pipe) to avoid the
-		// eager-copy goroutine. The mux will forward data to the pipe
-		// when a command is running that reads stdin.
 		shellStdin = mux.runnerStdin()
 	}
 

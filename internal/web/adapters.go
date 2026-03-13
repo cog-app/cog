@@ -9,6 +9,7 @@ import (
 	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
@@ -146,8 +147,34 @@ func (a *groupStoreAdapter) ListGroupsForUser(userID string) iter.Seq2[plugin.Gr
 	}
 }
 
+// volumeAccessAdapter adapts *volume.Access to plugin.VolumeAccess.
+type volumeAccessAdapter struct {
+	access *volume.Access
+}
+
+func (a *volumeAccessAdapter) ListAccessible(userID string) ([]plugin.VolumeInfo, error) {
+	var result []plugin.VolumeInfo
+	for v, err := range a.access.ListAccessible(userID) {
+		if err != nil {
+			return nil, err
+		}
+		scheme := ""
+		if parsed, err := volume.ParseURI(v.URI); err == nil {
+			scheme = parsed.Scheme
+		}
+		result = append(result, plugin.VolumeInfo{
+			ID:          v.ID,
+			Name:        v.Name,
+			Description: v.Description,
+			Scheme:      scheme,
+			IsSystem:    v.OwnerUserID == nil,
+		})
+	}
+	return result, nil
+}
+
 // buildRegistryServices constructs the adapter layer from internal services.
-func buildRegistryServices(shares *share.Store, emailFunc func() *email.Sender, users *user.Store, groups *group.Store, qc internalplugin.QuotaChecker) internalplugin.RegistryServices {
+func buildRegistryServices(shares *share.Store, emailFunc func() *email.Sender, users *user.Store, groups *group.Store, qc internalplugin.QuotaChecker, access *volume.Access) internalplugin.RegistryServices {
 	var ss plugin.ShareStore
 	if shares != nil {
 		ss = &shareStoreAdapter{shares}
@@ -164,11 +191,16 @@ func buildRegistryServices(shares *share.Store, emailFunc func() *email.Sender, 
 	if groups != nil {
 		gs = &groupStoreAdapter{groups}
 	}
+	var va plugin.VolumeAccess
+	if access != nil {
+		va = &volumeAccessAdapter{access}
+	}
 	return internalplugin.RegistryServices{
 		ShareStore:   ss,
 		EmailSender:  es,
 		UserLookup:   ul,
 		GroupStore:   gs,
 		QuotaChecker: qc,
+		VolumeAccess: va,
 	}
 }

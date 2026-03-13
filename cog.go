@@ -157,8 +157,15 @@ func addPluginCommands(root *cobra.Command, plugins []plugin.Plugin) {
 
 	// Keep providers alive for the duration of the process so plugin
 	// command Run callbacks can use their captured plugin context.
-	// Clean up when the root command's context is done or on exit.
-	cobra.OnFinalize(func() { p.Close() })
+	// Clean up when this root command finishes (not globally — OnFinalize
+	// fires for ALL cobra.Execute calls including shell tab-completion).
+	prev := root.PersistentPostRun
+	root.PersistentPostRun = func(cmd *cobra.Command, args []string) {
+		if prev != nil {
+			prev(cmd, args)
+		}
+		p.Close()
+	}
 }
 
 func buildCobraCmd(def plugin.CommandDef) *cobra.Command {

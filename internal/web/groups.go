@@ -427,6 +427,12 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Unauthenticated user — register and accept.
+	// Verify the invite token was submitted as a form field (CSRF protection).
+	if r.FormValue("invite_token") != token {
+		http.Error(w, "Invalid request", http.StatusForbidden)
+		return
+	}
+
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	confirm := r.FormValue("confirm")

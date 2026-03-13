@@ -22,9 +22,11 @@ func New(p *services.Providers) http.Handler {
 		Users:        p.Users,
 		Sessions:     p.Sessions,
 		AppPasswords: p.AppPasswords,
+		RateLimiter:  p.RateLimiter,
 	}
 
 	loginFlow := compat.NewLoginFlowHandler(p.Users, p.AppPasswords, p.Sessions, p.Config.BaseURL)
+	loginFlow.RateLimiter = p.RateLimiter
 
 	// Use the plugin registry's mux so plugin-registered routes share the same router.
 	mux := p.Plugins.Mux()
@@ -41,7 +43,7 @@ func New(p *services.Providers) http.Handler {
 	qc := buildQuotaChecker(p, fp)
 
 	// --- Wire optional services for plugins ---
-	p.Plugins.SetServices(buildRegistryServices(p.Shares, p.EmailSender, p.Users, p.Groups, qc))
+	p.Plugins.SetServices(buildRegistryServices(p.Shares, p.EmailSender, p.Users, p.Groups, qc, p.Access))
 
 	// --- Web UI handlers ---
 	h := handler{p}

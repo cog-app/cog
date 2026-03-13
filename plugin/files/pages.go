@@ -66,6 +66,26 @@ func (h *Pages) pageData(r *http.Request, title string) ui.PageData {
 	}
 }
 
+// ServeVolumes shows accessible storage volumes.
+func (h *Pages) ServeVolumes(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+
+	va := h.plugin.ctx.VolumeAccess()
+	if va == nil {
+		http.Error(w, "volumes not available", http.StatusInternalServerError)
+		return
+	}
+
+	volumes, err := va.ListAccessible(u.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	pd := h.pageData(r, "Volumes")
+	volumesPage(pd, volumes).Render(r.Context(), w)
+}
+
 // ServeFavorites shows all favorited files.
 func (h *Pages) ServeFavorites(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())

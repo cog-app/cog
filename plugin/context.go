@@ -56,6 +56,7 @@ type PluginContext interface {
 	UserLookup() UserLookup
 	GroupStore() GroupStore
 	FilesAccess() FilesAccess
+	VolumeAccess() VolumeAccess
 }
 
 // UserInfo is a public version of the internal user type.
@@ -128,6 +129,20 @@ type GroupStore interface {
 type FilesAccess interface {
 	List(username, dirPath string) ([]FileInfo, error)
 	UserFilesDir(username string) string
+}
+
+// VolumeInfo describes a storage volume accessible to a user.
+type VolumeInfo struct {
+	ID          string
+	Name        string
+	Description string
+	Scheme      string // "file", "mem", "webdav"
+	IsSystem    bool   // true if no owner (accessible to all)
+}
+
+// VolumeAccess provides volume listing for plugins.
+type VolumeAccess interface {
+	ListAccessible(userID string) ([]VolumeInfo, error)
 }
 
 // FileInfo is basic file metadata exposed to plugins.
