@@ -115,6 +115,12 @@ func (s *Shell) callHandler(ctx context.Context, args []string) ([]string, error
 		return args, nil
 	case "umask":
 		return []string{"true"}, nil
+	case "command":
+		// "command ls ..." → strip "command" prefix, run the rest directly.
+		if len(args) > 1 {
+			return args[1:], nil
+		}
+		return []string{"true"}, nil
 	}
 	return args, nil
 }

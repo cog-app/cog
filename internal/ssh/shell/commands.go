@@ -134,7 +134,7 @@ func getHC(cmd *cobra.Command) (stdout, stderr io.Writer, stdin io.Reader, dir s
 }
 
 func (s *Shell) newLsCmd() *cobra.Command {
-	var showAll, showLong bool
+	var showAll, showLong, dirOnly, classify, onePerLine, deref bool
 	cmd := &cobra.Command{
 		Use:               "ls [path...]",
 		Short:             "List directory contents",
@@ -145,15 +145,22 @@ func (s *Shell) newLsCmd() *cobra.Command {
 				args = []string{"."}
 			}
 
+			formatName := func(name string, isDir bool) string {
+				if classify && isDir {
+					return s.lsName(name, isDir) + "/"
+				}
+				return s.lsName(name, isDir)
+			}
+
 			printEntry := func(w io.Writer, name string, isDir bool, info os.FileInfo) {
 				if showLong {
 					fmt.Fprintf(w, "%s %8s %s %s\n",
 						s.colorize(ansiYellow, info.Mode().String()),
 						s.colorize(ansiGreen, fmt.Sprintf("%d", info.Size())),
 						info.ModTime().Format("Jan _2 15:04"),
-						s.lsName(name, isDir))
+						formatName(name, isDir))
 				} else {
-					fmt.Fprintln(w, s.lsName(name, isDir))
+					fmt.Fprintln(w, formatName(name, isDir))
 				}
 			}
 
@@ -161,10 +168,25 @@ func (s *Shell) newLsCmd() *cobra.Command {
 				if s.fs != nil {
 					if dr, ok := s.fs.(vfs.DirReader); ok {
 						vp := s.toVirtualPath(dir, p)
+						if dirOnly {
+							info, err := dr.StatInfo(vp)
+							if err != nil {
+								s.errorf(stderr, "ls: %v\n", err)
+								return exitErr(1)
+							}
+							printEntry(stdout, filepath.Base(vp), info.IsDir(), info)
+							continue
+						}
 						entries, err := dr.ReadDirEntries(vp)
 						if err != nil {
-							s.errorf(stderr, "ls: %v\n", err)
-							return exitErr(1)
+							// Not a directory — stat as a file.
+							info, serr := dr.StatInfo(vp)
+							if serr != nil {
+								s.errorf(stderr, "ls: %v\n", err)
+								return exitErr(1)
+							}
+							printEntry(stdout, filepath.Base(vp), info.IsDir(), info)
+							continue
 						}
 						if len(args) > 1 {
 							fmt.Fprintf(stdout, "%s:\n", vp)
@@ -190,6 +212,15 @@ func (s *Shell) newLsCmd() *cobra.Command {
 				if err != nil {
 					s.errorf(stderr, "ls: %v\n", err)
 					return exitErr(1)
+				}
+				if dirOnly {
+					info, err := os.Stat(resolved)
+					if err != nil {
+						s.errorf(stderr, "ls: %v\n", err)
+						return exitErr(1)
+					}
+					printEntry(stdout, filepath.Base(resolved), info.IsDir(), info)
+					continue
 				}
 				entries, err := os.ReadDir(resolved)
 				if err != nil {
@@ -219,6 +250,10 @@ func (s *Shell) newLsCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&showAll, "all", "a", false, "Show hidden files")
 	cmd.Flags().BoolVarP(&showLong, "long", "l", false, "Long format")
+	cmd.Flags().BoolVarP(&dirOnly, "directory", "d", false, "List directories themselves, not their contents")
+	cmd.Flags().BoolVarP(&classify, "classify", "F", false, "Append / to directories")
+	cmd.Flags().BoolVarP(&onePerLine, "one", "1", false, "One entry per line")
+	cmd.Flags().BoolVarP(&deref, "dereference", "L", false, "Follow symbolic links")
 	return cmd
 }
 
