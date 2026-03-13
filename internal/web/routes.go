@@ -6,6 +6,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/compat"
+	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/plugin/calendar"
 	filesPlugin "git.duckfam.us/jj-software/cog/plugin/files"
@@ -30,8 +31,15 @@ func New(p *services.Providers) http.Handler {
 	staticSub, _ := fs.Sub(ui.StaticFS, "static")
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
 
+	// Build quota checker for plugins.
+	var fp *filesPlugin.Plugin
+	if plug, ok := p.Plugins.Plugin("files"); ok {
+		fp, _ = plug.(*filesPlugin.Plugin)
+	}
+	qc := buildQuotaChecker(p, fp)
+
 	// --- Wire optional services for plugins ---
-	p.Plugins.SetServices(buildRegistryServices(p.Shares, p.EmailSender, p.Users, p.Groups))
+	p.Plugins.SetServices(buildRegistryServices(p.Shares, p.EmailSender, p.Users, p.Groups, qc))
 
 	// --- Web UI handlers ---
 	h := handler{p}
@@ -120,6 +128,8 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /admin/volumes/{id}", adminAuth(http.HandlerFunc(adminVolH.EditVolumeForm)))
 	mux.Handle("POST /admin/volumes/{id}", adminMut(http.HandlerFunc(adminVolH.UpdateVolume)))
 	mux.Handle("DELETE /admin/volumes/{id}", adminMut(http.HandlerFunc(adminVolH.DeleteVolume)))
+	mux.Handle("POST /admin/volumes/{id}/quotas", adminMut(http.HandlerFunc(adminVolH.SetQuota)))
+	mux.Handle("DELETE /admin/volumes/{id}/quotas/{quota_id}", adminMut(http.HandlerFunc(adminVolH.DeleteQuota)))
 
 	mux.Handle("GET /admin/settings", adminAuth(http.HandlerFunc(adminH.ShowSettings)))
 	mux.Handle("POST /admin/settings", adminMut(http.HandlerFunc(adminH.UpdateSettings)))
@@ -142,8 +152,9 @@ func New(p *services.Providers) http.Handler {
 	mux.HandleFunc("GET /status.php", compat.HandleStatus)
 	mux.HandleFunc("GET /ocs/v1.php/cloud/capabilities", compat.HandleCapabilities)
 	mux.HandleFunc("GET /ocs/v2.php/cloud/capabilities", compat.HandleCapabilities)
-	mux.Handle("GET /ocs/v1.php/cloud/user", auth.RequireAuth(http.HandlerFunc(compat.HandleCurrentUser)))
-	mux.Handle("GET /ocs/v2.php/cloud/user", auth.RequireAuth(http.HandlerFunc(compat.HandleCurrentUser)))
+	ocsQuotaFn := buildOCSQuotaFunc(p, fp)
+	mux.Handle("GET /ocs/v1.php/cloud/user", auth.RequireAuth(compat.HandleCurrentUser(ocsQuotaFn)))
+	mux.Handle("GET /ocs/v2.php/cloud/user", auth.RequireAuth(compat.HandleCurrentUser(ocsQuotaFn)))
 	mux.Handle("GET /ocs/v1.php/cloud/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users)))
 	mux.Handle("GET /ocs/v2.php/cloud/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users)))
 	// Provisioning API path variant (NC Android app uses this path for user info)
@@ -151,12 +162,6 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /ocs/v2.php/apps/provisioning_api/api/v2/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users)))
 
 	// --- WebDAV file operations (NC clients) ---
-	// Look up the files plugin from the registry for compat handlers.
-	var fp *filesPlugin.Plugin
-	if plug, ok := p.Plugins.Plugin("files"); ok {
-		fp, _ = plug.(*filesPlugin.Plugin)
-	}
-
 	if fp != nil {
 		webdav := &compat.WebDAVHandler{Log: p.Log.With("component", "webdav"), Files: fp}
 		mux.Handle("/remote.php/dav/files/", auth.RequireAuth(webdav))
@@ -228,8 +233,13 @@ func New(p *services.Providers) http.Handler {
 	mux.HandleFunc("GET /index.php/login/v2/grant", loginFlow.HandleGrant)
 	mux.HandleFunc("POST /index.php/login/v2/grant", loginFlow.HandleGrant)
 
-	// --- Share UI (generic, HTMX) ---
+	// --- Admin share management (for system volumes) ---
 	shareH := shareHandler{h}
+	mux.Handle("GET /admin/shares/panel", adminAuth(http.HandlerFunc(shareH.SharePanelAdmin)))
+	mux.Handle("POST /admin/shares/create", adminMut(http.HandlerFunc(shareH.CreateShareAdmin)))
+	mux.Handle("DELETE /admin/shares/{id}", adminMut(http.HandlerFunc(shareH.DeleteShareAdmin)))
+
+	// --- Share UI (generic, HTMX) ---
 	mux.Handle("GET /api/shares/panel", auth.RequireAuth(http.HandlerFunc(shareH.SharePanel)))
 	mux.Handle("POST /api/shares/create", csrfWeb(http.HandlerFunc(shareH.CreateShareForm)))
 	mux.Handle("POST /api/shares/public-link-form", csrfWeb(http.HandlerFunc(shareH.CreatePublicLinkForm)))
@@ -250,4 +260,70 @@ func New(p *services.Providers) http.Handler {
 	}
 
 	return authMW.Wrap(mux)
+}
+
+// buildOCSQuotaFunc creates a QuotaFunc for the OCS API.
+func buildOCSQuotaFunc(p *services.Providers, fp *filesPlugin.Plugin) compat.QuotaFunc {
+	if fp == nil || p.Quotas == nil || p.Mounts == nil {
+		return nil
+	}
+	return func(username string) (used, total int64) {
+		used, _ = fp.Usage(username)
+		u, err := p.Users.GetByUsername(username)
+		if err != nil {
+			return used, -1
+		}
+		m, err := p.Mounts.GetUserRoot(u.ID)
+		if err != nil {
+			return used, -1
+		}
+		var groupIDs []string
+		for g, gErr := range p.Groups.ListGroupsForUser(u.ID) {
+			if gErr != nil {
+				break
+			}
+			groupIDs = append(groupIDs, g.ID)
+		}
+		total = p.Quotas.EffectiveQuota(u.ID, m.VolumeID, groupIDs)
+		return used, total
+	}
+}
+
+// buildQuotaChecker creates a QuotaChecker wired to the services layer.
+func buildQuotaChecker(p *services.Providers, fp *filesPlugin.Plugin) *quota.Checker {
+	if fp == nil || p.Quotas == nil || p.Mounts == nil {
+		return nil
+	}
+	return &quota.Checker{
+		Quotas: p.Quotas,
+		Usage:  fp.Usage,
+		RootVolume: func(username string) (string, error) {
+			u, err := p.Users.GetByUsername(username)
+			if err != nil {
+				return "", err
+			}
+			m, err := p.Mounts.GetUserRoot(u.ID)
+			if err != nil {
+				return "", err
+			}
+			return m.VolumeID, nil
+		},
+		GroupIDs: func(userID string) ([]string, error) {
+			var ids []string
+			for g, err := range p.Groups.ListGroupsForUser(userID) {
+				if err != nil {
+					return nil, err
+				}
+				ids = append(ids, g.ID)
+			}
+			return ids, nil
+		},
+		UserIDFromName: func(username string) (string, error) {
+			u, err := p.Users.GetByUsername(username)
+			if err != nil {
+				return "", err
+			}
+			return u.ID, nil
+		},
+	}
 }

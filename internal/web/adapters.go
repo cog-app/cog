@@ -147,7 +147,7 @@ func (a *groupStoreAdapter) ListGroupsForUser(userID string) iter.Seq2[plugin.Gr
 }
 
 // buildRegistryServices constructs the adapter layer from internal services.
-func buildRegistryServices(shares *share.Store, emailFunc func() *email.Sender, users *user.Store, groups *group.Store) internalplugin.RegistryServices {
+func buildRegistryServices(shares *share.Store, emailFunc func() *email.Sender, users *user.Store, groups *group.Store, qc internalplugin.QuotaChecker) internalplugin.RegistryServices {
 	var ss plugin.ShareStore
 	if shares != nil {
 		ss = &shareStoreAdapter{shares}
@@ -165,9 +165,10 @@ func buildRegistryServices(shares *share.Store, emailFunc func() *email.Sender, 
 		gs = &groupStoreAdapter{groups}
 	}
 	return internalplugin.RegistryServices{
-		ShareStore:  ss,
-		EmailSender: es,
-		UserLookup:  ul,
-		GroupStore:  gs,
+		ShareStore:   ss,
+		EmailSender:  es,
+		UserLookup:   ul,
+		GroupStore:   gs,
+		QuotaChecker: qc,
 	}
 }

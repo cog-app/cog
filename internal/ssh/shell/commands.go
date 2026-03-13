@@ -7,11 +7,11 @@ import (
 	"io"
 	"os"
 	"path"
-	"text/template"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/interp"

@@ -19,7 +19,7 @@ type Entry struct {
 
 // Buffer is a fixed-size ring buffer of log entries.
 type Buffer struct {
-	mu    sync.Mutex
+	mu      sync.Mutex
 	entries []Entry
 	head    int
 	count   int

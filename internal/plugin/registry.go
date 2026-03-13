@@ -35,13 +35,20 @@ type MountResolver interface {
 	UserFS(username string) (vfs.FS, error)
 }
 
+// QuotaChecker checks storage quotas for users.
+type QuotaChecker interface {
+	// QuotaCheck returns nil if the user has sufficient quota, or plugin.ErrQuotaExceeded.
+	QuotaCheck(username string, additionalBytes int64) error
+}
+
 // RegistryServices holds optional services that are wired into plugin contexts.
 type RegistryServices struct {
-	ShareStore  ShareStore
-	EmailSender EmailSender
-	UserLookup  UserLookup
-	GroupStore  GroupStore
-	FilesAccess FilesAccess
+	ShareStore   ShareStore
+	EmailSender  EmailSender
+	UserLookup   UserLookup
+	GroupStore   GroupStore
+	FilesAccess  FilesAccess
+	QuotaChecker QuotaChecker
 }
 
 // Registry manages plugin lifecycle, per-user database provisioning,
@@ -508,6 +515,13 @@ func (pr *pluginRegistrar) GroupStore() GroupStore {
 
 func (pr *pluginRegistrar) FilesAccess() FilesAccess {
 	return pr.registry.services.FilesAccess
+}
+
+func (pr *pluginRegistrar) QuotaCheck(username string, additionalBytes int64) error {
+	if pr.registry.services.QuotaChecker == nil {
+		return nil
+	}
+	return pr.registry.services.QuotaChecker.QuotaCheck(username, additionalBytes)
 }
 
 func (pr *pluginRegistrar) UserVFS(username string) vfs.FS {

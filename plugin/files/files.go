@@ -222,6 +222,13 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 	parentPath := filepath.Dir(filePath)
 	name := filepath.Base(filePath)
 
+	// Pre-check quota if content length is known.
+	if lr, ok := content.(*io.LimitedReader); ok {
+		if err := p.ctx.QuotaCheck(username, lr.N); err != nil {
+			return nil, err
+		}
+	}
+
 	// Write to disk via VFS, counting bytes.
 	counter := &countingReader{r: content}
 	if fs := p.userFS(username); fs != nil {
@@ -796,6 +803,20 @@ func (p *Plugin) Favorites(username string) ([]FileMeta, error) {
 		files = append(files, f)
 	}
 	return files, rows.Err()
+}
+
+// Usage returns the total bytes used by non-directory files for a user.
+func (p *Plugin) Usage(username string) (int64, error) {
+	db, err := p.DB(username)
+	if err != nil {
+		return 0, err
+	}
+	var used int64
+	err = db.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM files WHERE is_dir = 0`).Scan(&used)
+	if err != nil {
+		return 0, fmt.Errorf("usage query: %w", err)
+	}
+	return used, nil
 }
 
 // Search returns files matching a simple name pattern.

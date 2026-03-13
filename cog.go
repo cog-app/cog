@@ -66,7 +66,7 @@ func configFromEnv() config.Config {
 		LogFormat: envOr("COG_LOG_FORMAT", "text"),
 		LogLevel:  envOr("COG_LOG_LEVEL", "info"),
 
-		SSHAddr:        envOr("COG_SSH_ADDR", ":2222"),
+		SSHAddr:        envOr("COG_SSH_ADDR", ":8522"),
 		SSHEnabled:     envBoolDefault("COG_SSH_ENABLED", true),
 		SSHHostKeyPath: os.Getenv("COG_SSH_HOST_KEY"),
 	}

@@ -33,6 +33,8 @@ Avoid running tools outside of the Go tool. Tools should be versioned with go.mo
 
 WE DO NOT SWALLOW ERRORS. Errors should be handled by either wrapping and returning or logging the error.
 
+\*.tmpl files use tabs.
+
 ## Architecture
 
 **Entry point**: `cmd/cog/main.go` — parses flags, builds service graph, starts HTTP server.

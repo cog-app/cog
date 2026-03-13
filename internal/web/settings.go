@@ -8,9 +8,11 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/mount"
+	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -79,12 +81,60 @@ func (h *settingsHandler) ShowStorage(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// Compute usage and quota for the user's root volume.
+	var usageInfo storageUsageInfo
+	if fp := h.filesPlugin(); fp != nil {
+		used, err := fp.Usage(u.Username)
+		if err == nil {
+			usageInfo.Used = used
+			usageInfo.UsedLabel = quota.FormatBytes(used)
+		}
+	}
+	if h.p.Mounts != nil {
+		if rootMount, err := h.p.Mounts.GetUserRoot(u.ID); err == nil {
+			var groupIDs []string
+			for g, err := range h.p.Groups.ListGroupsForUser(u.ID) {
+				if err != nil {
+					break
+				}
+				groupIDs = append(groupIDs, g.ID)
+			}
+			usageInfo.Quota = h.p.Quotas.EffectiveQuota(u.ID, rootMount.VolumeID, groupIDs)
+			if usageInfo.Quota > 0 {
+				usageInfo.QuotaLabel = quota.FormatBytes(usageInfo.Quota)
+				usageInfo.Percent = int(usageInfo.Used * 100 / usageInfo.Quota)
+				if usageInfo.Percent > 100 {
+					usageInfo.Percent = 100
+				}
+			}
+		}
+	}
+
 	flash := getFlash(w, r)
 	var flashMsg, flashKind string
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	settingsStoragePage(pd, flashMsg, flashKind, mounts, volumes, volumeNames, ownedVolumes, hasOwnedVolumes).Render(r.Context(), w)
+	settingsStoragePage(pd, flashMsg, flashKind, mounts, volumes, volumeNames, ownedVolumes, hasOwnedVolumes, usageInfo).Render(r.Context(), w)
+}
+
+// storageUsageInfo holds storage usage and quota for display.
+type storageUsageInfo struct {
+	Used       int64
+	UsedLabel  string
+	Quota      int64  // -1 = unlimited
+	QuotaLabel string // empty if unlimited
+	Percent    int    // 0-100, only meaningful when Quota > 0
+}
+
+// filesPlugin returns the files plugin from the registry.
+func (h *settingsHandler) filesPlugin() *files.Plugin {
+	if plug, ok := h.p.Plugins.Plugin("files"); ok {
+		if fp, ok := plug.(*files.Plugin); ok {
+			return fp
+		}
+	}
+	return nil
 }
 
 func (h *settingsHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {

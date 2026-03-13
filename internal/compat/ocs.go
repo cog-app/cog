@@ -245,36 +245,65 @@ func HandleCapabilities(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// QuotaFunc returns (used, quota) for a username. quota=-1 means unlimited.
+type QuotaFunc func(username string) (used, quota int64)
+
 // HandleCurrentUser returns info about the authenticated user.
-func HandleCurrentUser(w http.ResponseWriter, r *http.Request) {
-	u := auth.UserFromContext(r.Context())
-	if u == nil {
-		writeOCSErrorReq(w, r, http.StatusUnauthorized, 997, "Unauthorized")
-		return
-	}
+// If quotaFn is non-nil, real quota data is returned; otherwise hardcoded unlimited.
+func HandleCurrentUser(quotaFn QuotaFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u := auth.UserFromContext(r.Context())
+		if u == nil {
+			writeOCSErrorReq(w, r, http.StatusUnauthorized, 997, "Unauthorized")
+			return
+		}
 
-	displayName := u.DisplayName
-	if displayName == "" {
-		displayName = u.Username
-	}
+		displayName := u.DisplayName
+		if displayName == "" {
+			displayName = u.Username
+		}
 
-	writeOCSReq(w, r, http.StatusOK, map[string]any{
-		"id":           u.Username,
-		"display-name": displayName,
-		"displayname":  displayName,
-		"email":        u.Email,
-		"phone":        "",
-		"address":      "",
-		"language":     "en",
-		"groups":       []string{},
-		"quota": map[string]any{
-			"free":     -3,
-			"used":     0,
-			"total":    -3,
-			"relative": 0,
-			"quota":    -3,
-		},
-	})
+		var used, total, free int64
+		var relative float64
+		var quotaVal int64 = -3
+
+		if quotaFn != nil {
+			used, total = quotaFn(u.Username)
+			if total < 0 {
+				// unlimited
+				free = -3
+				total = -3
+				quotaVal = -3
+			} else {
+				free = total - used
+				if free < 0 {
+					free = 0
+				}
+				quotaVal = total
+				if total > 0 {
+					relative = float64(used) * 100.0 / float64(total)
+				}
+			}
+		}
+
+		writeOCSReq(w, r, http.StatusOK, map[string]any{
+			"id":           u.Username,
+			"display-name": displayName,
+			"displayname":  displayName,
+			"email":        u.Email,
+			"phone":        "",
+			"address":      "",
+			"language":     "en",
+			"groups":       []string{},
+			"quota": map[string]any{
+				"free":     free,
+				"used":     used,
+				"total":    total,
+				"relative": relative,
+				"quota":    quotaVal,
+			},
+		})
+	}
 }
 
 // HandleWebDAVStub responds to WebDAV presence checks (HEAD/PROPFIND/OPTIONS on /remote.php/dav).

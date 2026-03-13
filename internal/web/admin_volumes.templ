@@ -1,9 +1,11 @@
 package web
 
 import (
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/ui"
 	"iter"
+	"strconv"
 )
 
 templ adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], flash string, flashKind string) {
@@ -59,7 +61,7 @@ templ adminVolumeNewPage(pd ui.PageData, errMsg string) {
 	}
 }
 
-templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, flash string, flashKind string) {
+templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, shares []ui.ShareDisplayItem, levels []plugin.PermissionLevel, quotas []quotaDisplayItem, flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, adminSidebar("volumes"), pd.PluginSettingsNav) {
 		<h1 style="margin-bottom:1rem">Edit Volume: { v.Name }</h1>
 		if flash != "" {
@@ -75,6 +77,12 @@ templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, flash string, flashK
 				<a class="btn btn-outline" href="/admin/volumes" style="margin-left:0.5rem">Back</a>
 			</form>
 		}
+		@ui.Card("Sharing") {
+			@adminSharePanel(v.ID, pd.CSRFToken, shares, levels)
+		}
+		@ui.Card("Quotas") {
+			@adminQuotaPanel(v.ID, pd.CSRFToken, quotas)
+		}
 		@ui.Card("Danger Zone") {
 			<p class="text-muted" style="margin-bottom:0.5rem">Deleting a volume cannot be undone.</p>
 			<button
@@ -85,4 +93,138 @@ templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, flash string, flashK
 			>Delete Volume</button>
 		}
 	}
+}
+
+templ adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, levels []plugin.PermissionLevel) {
+	<div id="vol-share-panel">
+		if len(shares) > 0 {
+			<table class="table" style="margin-bottom:1rem">
+				<thead>
+					<tr>
+						<th>Shared with</th>
+						<th>Permissions</th>
+						<th class="text-right"></th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, s := range shares {
+						<tr id={ "share-" + s.ID }>
+							<td>{ s.SubjectName } <span class="text-muted">({ s.SubjectType })</span></td>
+							<td>{ s.PermLabel }</td>
+							<td class="text-right">
+								<button
+									class="btn btn-danger btn-sm"
+									hx-delete={ "/admin/shares/" + s.ID }
+									hx-target={ "#share-" + s.ID }
+									hx-swap="outerHTML"
+									hx-confirm="Remove this share?"
+								>Remove</button>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		} else {
+			<p class="text-muted" style="margin-bottom:1rem">No shares yet.</p>
+		}
+		<h4>Share with User</h4>
+		<form
+			method="post"
+			action="/admin/shares/create"
+			hx-post="/admin/shares/create"
+			hx-target="#vol-share-panel"
+			hx-swap="outerHTML"
+		>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="resource_type" value="files:volume"/>
+			<input type="hidden" name="resource_id" value={ volumeID }/>
+			<input type="hidden" name="panel_id" value="vol-share-panel"/>
+			<div class="flex gap-1 items-end" style="flex-wrap:wrap">
+				<div>
+					<label class="form-label">User</label>
+					<input class="form-control" type="text" name="subject_id" placeholder="User ID" required style="max-width:200px"/>
+				</div>
+				<div>
+					<label class="form-label">Permissions</label>
+					<select class="form-control" name="permissions" style="max-width:200px">
+						for _, l := range levels {
+							<option value={ permStr(l.Permissions) }>{ l.Label }</option>
+						}
+					</select>
+				</div>
+				<button class="btn btn-primary" type="submit">Share</button>
+			</div>
+		</form>
+	</div>
+}
+
+templ adminQuotaPanel(volumeID, csrfToken string, quotas []quotaDisplayItem) {
+	<div id="vol-quota-panel">
+		if len(quotas) > 0 {
+			<table class="table" style="margin-bottom:1rem">
+				<thead>
+					<tr>
+						<th>Subject</th>
+						<th>Type</th>
+						<th>Limit</th>
+						<th class="text-right"></th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, q := range quotas {
+						<tr id={ "quota-" + q.ID }>
+							<td>{ q.SubjectName }</td>
+							<td>{ q.SubjectType }</td>
+							<td>{ q.QuotaLabel }</td>
+							<td class="text-right">
+								<button
+									class="btn btn-danger btn-sm"
+									hx-delete={ "/admin/volumes/" + volumeID + "/quotas/" + q.ID }
+									hx-target={ "#quota-" + q.ID }
+									hx-swap="outerHTML"
+									hx-confirm="Remove this quota?"
+								>Remove</button>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		} else {
+			<p class="text-muted" style="margin-bottom:1rem">No quotas set (unlimited).</p>
+		}
+		<h4>Set Quota</h4>
+		<form method="post" action={ templ.SafeURL("/admin/volumes/" + volumeID + "/quotas") }>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<div class="flex gap-1 items-end" style="flex-wrap:wrap">
+				<div>
+					<label class="form-label">Type</label>
+					<select class="form-control" name="subject_type" style="max-width:150px">
+						<option value="DEFAULT">Default</option>
+						<option value="USER">User</option>
+						<option value="GROUP">Group</option>
+					</select>
+				</div>
+				<div>
+					<label class="form-label">Subject ID</label>
+					<input class="form-control" type="text" name="subject_id" placeholder="User/Group ID (blank for default)" style="max-width:200px"/>
+				</div>
+				<div>
+					<label class="form-label">Amount</label>
+					<input class="form-control" type="number" name="amount" min="1" required style="max-width:100px"/>
+				</div>
+				<div>
+					<label class="form-label">Unit</label>
+					<select class="form-control" name="unit" style="max-width:100px">
+						<option value="GB">GB</option>
+						<option value="MB">MB</option>
+					</select>
+				</div>
+				<button class="btn btn-primary" type="submit">Set Quota</button>
+			</div>
+		</form>
+	</div>
+}
+
+func permStr(p uint32) string {
+	return strconv.FormatUint(uint64(p), 10)
 }

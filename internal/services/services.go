@@ -13,12 +13,13 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
-	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/email"
 	"git.duckfam.us/jj-software/cog/internal/group"
+	"git.duckfam.us/jj-software/cog/internal/logbuf"
 
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/share"
@@ -43,6 +44,7 @@ type Providers struct {
 	Volumes      *volume.Store
 	Mounts       *mount.Store
 	Access       *volume.Access
+	Quotas       *quota.Store
 	Settings     *settings.Store
 	Search       *search.Manager
 	LogBuffer    *logbuf.Buffer
@@ -118,6 +120,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, plugins ...pl
 	registry.SetMountResolver(resolver)
 
 	shares := share.NewStore(sysDB)
+	quotas := quota.NewStore(sysDB)
 
 	return &Providers{
 		Config:       cfg,
@@ -133,6 +136,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, plugins ...pl
 		Volumes:      volumes,
 		Mounts:       mounts,
 		Access:       &volume.Access{Volumes: volumes, Shares: shares},
+		Quotas:       quotas,
 		Settings:     settings.NewStore(sysDB),
 		CSRFSecret:   secret,
 	}

@@ -2,6 +2,13 @@ package web
 
 import (
 	"net/http"
+	"strconv"
+
+	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/quota"
+	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/ui"
 )
 
 type adminVolumeHandler struct{ handler }
@@ -54,12 +61,31 @@ func (h *adminVolumeHandler) EditVolumeForm(w http.ResponseWriter, r *http.Reque
 		http.NotFound(w, r)
 		return
 	}
+
+	// Load shares for the volume.
+	shares := buildVolumeShares(h, v.ID)
+
+	// Load quotas for the volume.
+	var quotas []quotaDisplayItem
+	for q, err := range h.p.Quotas.ListByVolume(v.ID) {
+		if err != nil {
+			break
+		}
+		quotas = append(quotas, quotaDisplayItem{
+			ID:          q.ID,
+			SubjectType: q.SubjectType,
+			SubjectName: resolveSubjectName(h, q.SubjectType, q.SubjectID),
+			QuotaBytes:  q.QuotaBytes,
+			QuotaLabel:  quota.FormatBytes(q.QuotaBytes),
+		})
+	}
+
 	flash := getFlash(w, r)
 	var flashMsg, flashKind string
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminVolumeEditPage(pd, v, flashMsg, flashKind).Render(r.Context(), w)
+	adminVolumeEditPage(pd, v, shares, defaultPermissionLevels(), quotas, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 func (h *adminVolumeHandler) UpdateVolume(w http.ResponseWriter, r *http.Request) {
@@ -88,4 +114,220 @@ func (h *adminVolumeHandler) DeleteVolume(w http.ResponseWriter, r *http.Request
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// SetQuota handles POST /admin/volumes/{id}/quotas.
+func (h *adminVolumeHandler) SetQuota(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := h.p.Volumes.GetByID(id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	subjectType := r.FormValue("subject_type")
+	subjectID := r.FormValue("subject_id")
+	amountStr := r.FormValue("amount")
+	unit := r.FormValue("unit")
+
+	amount, err := strconv.ParseInt(amountStr, 10, 64)
+	if err != nil || amount <= 0 {
+		setFlash(w, "error", "Invalid quota amount.")
+		http.Redirect(w, r, "/admin/volumes/"+id, http.StatusSeeOther)
+		return
+	}
+
+	switch unit {
+	case "GB":
+		amount *= 1024 * 1024 * 1024
+	case "MB":
+		amount *= 1024 * 1024
+	default:
+		setFlash(w, "error", "Invalid unit.")
+		http.Redirect(w, r, "/admin/volumes/"+id, http.StatusSeeOther)
+		return
+	}
+
+	if subjectType == "DEFAULT" {
+		subjectID = ""
+	}
+
+	if err := h.p.Quotas.Set(id, subjectType, subjectID, amount); err != nil {
+		setFlash(w, "error", "Failed to set quota: "+err.Error())
+	} else {
+		setFlash(w, "success", "Quota set.")
+	}
+	http.Redirect(w, r, "/admin/volumes/"+id, http.StatusSeeOther)
+}
+
+// DeleteQuota handles DELETE /admin/volumes/{id}/quotas/{quota_id}.
+func (h *adminVolumeHandler) DeleteQuota(w http.ResponseWriter, r *http.Request) {
+	quotaID := r.PathValue("quota_id")
+	if err := h.p.Quotas.Delete(quotaID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// quotaDisplayItem holds rendered quota info for templates.
+type quotaDisplayItem struct {
+	ID          string
+	SubjectType string
+	SubjectName string
+	QuotaBytes  int64
+	QuotaLabel  string
+}
+
+// buildVolumeShares loads shares for a volume, building UI display items.
+// Admin mode: shows ALL shares for the resource, not filtered by owner.
+func buildVolumeShares(h *adminVolumeHandler, volumeID string) []ui.ShareDisplayItem {
+	var shares []ui.ShareDisplayItem
+	for rec, err := range h.p.Shares.ListByResource(volume.ShareResourceType, volumeID) {
+		if err != nil {
+			break
+		}
+		sd := ui.ShareDisplayItem{
+			ID:          rec.ID,
+			SubjectType: rec.SubjectType,
+			PermLabel:   permissionLabel(rec.Permissions, defaultPermissionLevels()),
+		}
+		sd.SubjectName = resolveSubjectName(h, rec.SubjectType, rec.SubjectID)
+		shares = append(shares, sd)
+	}
+	return shares
+}
+
+func resolveSubjectName(h *adminVolumeHandler, subjectType, subjectID string) string {
+	switch subjectType {
+	case "USER":
+		if su, err := h.p.Users.GetByID(subjectID); err == nil {
+			if su.DisplayName != "" {
+				return su.DisplayName
+			}
+			return su.Username
+		}
+		return subjectID
+	case "GROUP":
+		return subjectID
+	case "DEFAULT":
+		return "Default"
+	case "PUBLIC":
+		return "Public link"
+	}
+	return subjectID
+}
+
+// SharePanelAdmin serves the HTMX share panel for admin volume editing.
+// Unlike the regular SharePanel, this shows ALL shares regardless of owner.
+func (h *shareHandler) SharePanelAdmin(w http.ResponseWriter, r *http.Request) {
+	resType := r.URL.Query().Get("type")
+	resID := r.URL.Query().Get("id")
+	if resType == "" || resID == "" {
+		http.Error(w, "type and id required", http.StatusBadRequest)
+		return
+	}
+
+	levels := defaultPermissionLevels()
+	if def, ok := h.p.Plugins.ResourceDefByType(resType); ok && len(def.PermissionLevels) > 0 {
+		var levelChoices []ui.PermissionLevelChoice
+		for _, l := range def.PermissionLevels {
+			levelChoices = append(levelChoices, ui.PermissionLevelChoice{Label: l.Label, Permissions: l.Permissions})
+		}
+		levels = def.PermissionLevels
+		_ = levelChoices
+	}
+
+	var levelChoices []ui.PermissionLevelChoice
+	for _, l := range levels {
+		levelChoices = append(levelChoices, ui.PermissionLevelChoice{Label: l.Label, Permissions: l.Permissions})
+	}
+
+	// Admin mode: show ALL shares, not filtered by owner.
+	var shares []ui.ShareDisplayItem
+	for rec, err := range h.p.Shares.ListByResource(resType, resID) {
+		if err != nil {
+			break
+		}
+		sd := ui.ShareDisplayItem{
+			ID:          rec.ID,
+			SubjectType: rec.SubjectType,
+			PermLabel:   permissionLabel(rec.Permissions, levels),
+		}
+		switch rec.SubjectType {
+		case "USER":
+			if su, err := h.p.Users.GetByID(rec.SubjectID); err == nil {
+				sd.SubjectName = su.DisplayName
+				if sd.SubjectName == "" {
+					sd.SubjectName = su.Username
+				}
+			}
+		case "GROUP":
+			sd.SubjectName = rec.SubjectID
+		case "PUBLIC":
+			sd.SubjectName = "Public link"
+			if rec.Token != nil {
+				sd.Token = *rec.Token
+			}
+		}
+		shares = append(shares, sd)
+	}
+
+	sessID := auth.SessionIDFromContext(r.Context())
+	csrf := auth.CSRFToken(sessID, h.p.CSRFSecret)
+
+	panelID := r.URL.Query().Get("scope")
+	if panelID == "" {
+		panelID = "share-panel"
+	}
+	ui.SharePanel(panelID, resType, resID, csrf, shares, levelChoices).Render(r.Context(), w)
+}
+
+// CreateShareAdmin handles POST from admin share panel. Uses a system admin as owner.
+func (h *shareHandler) CreateShareAdmin(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+
+	resType := r.FormValue("resource_type")
+	resID := r.FormValue("resource_id")
+	subjectID := r.FormValue("subject_id")
+	permStr := r.FormValue("permissions")
+
+	if resType == "" || resID == "" || subjectID == "" {
+		http.Error(w, "missing fields", http.StatusBadRequest)
+		return
+	}
+
+	var perms uint32 = plugin.PermRead
+	if permStr != "" {
+		if v, err := strconv.ParseUint(permStr, 10, 32); err == nil && v > 0 {
+			perms = uint32(v)
+		}
+	}
+
+	_, err := h.p.Shares.Create(u.ID, resType, resID, "USER", subjectID, perms)
+	if err != nil {
+		h.p.Log.Error("admin share create failed", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	scope := r.FormValue("panel_id")
+	r.URL.RawQuery = "type=" + resType + "&id=" + resID + "&scope=" + scope + "&mode=admin"
+	h.SharePanelAdmin(w, r)
+}
+
+// DeleteShareAdmin handles DELETE from admin share panel (no ownership check).
+func (h *shareHandler) DeleteShareAdmin(w http.ResponseWriter, r *http.Request) {
+	shareID := r.PathValue("id")
+	if _, err := h.p.Shares.Get(shareID); err != nil {
+		http.Error(w, "share not found", http.StatusNotFound)
+		return
+	}
+
+	if err := h.p.Shares.Delete(shareID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(""))
 }

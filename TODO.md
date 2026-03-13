@@ -1,6 +1,8 @@
 These tasks should be completed
 
 - Files plugin should include a list of volumes and allow browsing them directly (in addition to the VFS it does by default)
+- Shell
+  - shell subcommand should behave like an ssh session with the vfs mounted at /files
 
 # Cog Codebase Audit Report
 
@@ -16,39 +18,25 @@ B8: Missing CSRF on unauthenticated invite registration — **LOW RISK**: the in
 
 Critical — Not Implemented
 
-┌────────────────────────────────────────────┬─────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Feature │ Design Doc │ Status │
-├────────────────────────────────────────────┼─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ File access protocols (SFTP, SMB, FTP, S3) │ DESIGN/file_protocols.md │ No code. Only WebDAV exists. │
-├────────────────────────────────────────────┼─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Plugin capability/permission system │ DESIGN/plugins/index.md §Access Control │ DB_SANDBOX, DB_READ, FS_READ, ROUTE_GLOBAL_BIND — none implemented │
-├────────────────────────────────────────────┼─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ SQL Proxy / custom SQLite functions │ DESIGN/plugins/index.md §Data Access │ read_file(), head_file(), file_exists(), file_size() — not implemented │
-├────────────────────────────────────────────┼─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Shared resource search propagation │ DESIGN/search.md §4 │ No SearchPropagationJob. Search only indexes owner's data. │
-├────────────────────────────────────────────┼─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Group nesting │ DESIGN/sharing.md │ group_members.member_type only allows USER/OWNER (no GROUP). RebuildClosure() is flat (depth=0 only). │
-└────────────────────────────────────────────┴─────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────┘
+| Feature                                    | Design Doc                              | Status                                                                                                |
+| ------------------------------------------ | --------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| File access protocols (SFTP, SMB, FTP, S3) | DESIGN/file_protocols.md                | No code. Only WebDAV exists.                                                                          |
+| Plugin capability/permission system        | DESIGN/plugins/index.md §Access Control | DB_SANDBOX, DB_READ, FS_READ, ROUTE_GLOBAL_BIND — none implemented                                    |
+| SQL Proxy / custom SQLite functions        | DESIGN/plugins/index.md §Data Access    | read_file(), head_file(), file_exists(), file_size() — not implemented                                |
+| Shared resource search propagation         | DESIGN/search.md §4                     | No SearchPropagationJob. Search only indexes owner's data.                                            |
+| Group nesting                              | DESIGN/sharing.md                       | group_members.member_type only allows USER/OWNER (no GROUP). RebuildClosure() is flat (depth=0 only). |
 
 Moderate — Partially Implemented
 
-┌───────────────────────────────────────────────┬─────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Feature │ Design Doc │ Gap │
-├───────────────────────────────────────────────┼─────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Resource registration for Gallery, Notes, RSS │ Plugin design docs │ These 3 plugins don't register resources — sharing won't work for them │
-├───────────────────────────────────────────────┼─────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Versioning │ DESIGN/compatibility_api.md │ /remote.php/dav/versions/ — not implemented │
-├───────────────────────────────────────────────┼─────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ mem:// backend │ DESIGN/storage.md │ Declared in URI scheme routing but returns error: "mem:// volumes do not support browsing" │
-├───────────────────────────────────────────────┼─────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Rate limiting / account lockout │ Security best practice │ No rate limiting on login or auth endpoints │
-├───────────────────────────────────────────────┼─────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ App password management UI │ DESIGN/frontend.md │ Can create but can't list or revoke app passwords │
-├───────────────────────────────────────────────┼─────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Audit logging │ DESIGN/file_protocols.md §4 │ "All file modifications are logged centrally" — not implemented │
-├───────────────────────────────────────────────┼─────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Session invalidation on password change │ Security best practice │ Existing sessions remain valid after password reset │
-└───────────────────────────────────────────────┴─────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+| Feature                                       | Design Doc                  | Gap                                                                                        |
+| --------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------ |
+| Resource registration for Gallery, Notes, RSS | Plugin design docs          | These 3 plugins don't register resources — sharing won't work for them                     |
+| Versioning                                    | DESIGN/compatibility_api.md | /remote.php/dav/versions/ — not implemented                                                |
+| mem:// backend                                | DESIGN/storage.md           | Declared in URI scheme routing but returns error: "mem:// volumes do not support browsing" |
+| Rate limiting / account lockout               | Security best practice      | No rate limiting on login or auth endpoints                                                |
+| App password management UI                    | DESIGN/frontend.md          | Can create but can't list or revoke app passwords                                          |
+| Audit logging                                 | DESIGN/file_protocols.md §4 | "All file modifications are logged centrally" — not implemented                            |
+| Session invalidation on password change       | Security best practice      | Existing sessions remain valid after password reset                                        |
 
 ---
 
@@ -56,19 +44,13 @@ Moderate — Partially Implemented
 
 Only 5 of ~30 packages have tests:
 
-┌─────────────────┬──────────────────────────────────────────────────────────────┐
-│ Has Tests │ No Tests │
-├─────────────────┼──────────────────────────────────────────────────────────────┤
-│ internal/search │ internal/share — CheckAccess, expiration, passwords untested │
-├─────────────────┼──────────────────────────────────────────────────────────────┤
-│ internal/web │ internal/group — RebuildClosure, member ops untested │
-├─────────────────┼──────────────────────────────────────────────────────────────┤
-│ plugin │ internal/auth — auth chain, CSRF untested │
-├─────────────────┼──────────────────────────────────────────────────────────────┤
-│ plugin/calendar │ internal/volume — volume/mount ops untested │
-├─────────────────┼──────────────────────────────────────────────────────────────┤
-│ plugin/contacts │ plugin/files, plugin/rss, plugin/gallery, plugin/notes │
-└─────────────────┴──────────────────────────────────────────────────────────────┘
+| Has Tests       | No Tests                                                     |
+| --------------- | ------------------------------------------------------------ |
+| internal/search | internal/share — CheckAccess, expiration, passwords untested |
+| internal/web    | internal/group — RebuildClosure, member ops untested         |
+| plugin          | internal/auth — auth chain, CSRF untested                    |
+| plugin/calendar | internal/volume — volume/mount ops untested                  |
+| plugin/contacts | plugin/files, plugin/rss, plugin/gallery, plugin/notes       |
 
 ---
 

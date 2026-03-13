@@ -3,11 +3,15 @@ package plugin
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"iter"
 	"log/slog"
 
 	"git.duckfam.us/jj-software/cog/vfs"
 )
+
+// ErrQuotaExceeded is returned when a file upload would exceed the user's quota.
+var ErrQuotaExceeded = errors.New("quota exceeded")
 
 // PluginContext is the combined registration and service interface passed to
 // Plugin.Register(). It embeds Registrar for route/resource/hook registration
@@ -40,6 +44,11 @@ type PluginContext interface {
 	// UserVFS returns the mount-aware virtual filesystem for a user.
 	// Returns nil if VFS is not available (e.g., gRPC plugin without VFS permission).
 	UserVFS(username string) vfs.FS
+
+	// QuotaCheck checks if a user has enough quota for additionalBytes.
+	// Returns nil if within quota or quotas are not configured.
+	// Returns ErrQuotaExceeded if the upload would exceed the user's quota.
+	QuotaCheck(username string, additionalBytes int64) error
 
 	// Optional service accessors — return nil if the service is unavailable.
 	ShareStore() ShareStore
