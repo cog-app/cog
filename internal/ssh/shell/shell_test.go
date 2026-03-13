@@ -25,7 +25,7 @@ func newTestShell(t *testing.T) (*Shell, string) {
 	os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hello world\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "Documents", "notes.txt"), []byte("line1\nline2\nline3\n"), 0o644)
 
-	sh := New("testuser", dir, nil, nil, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	sh := New("testuser", dir, nil, nil, nil, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	return sh, dir
 }
 
@@ -175,7 +175,7 @@ func TestPluginCommand(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	sh := New("testuser", dir, nil, cmds, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	sh := New("testuser", dir, nil, cmds, nil, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	runCmdWith(t, sh, "myplugin greet")
 
 	if !ran {
@@ -408,7 +408,7 @@ func newVFSTestShell(t *testing.T) *Shell {
 	ofs.Bind("/dev/zero", &devZeroHandler{})
 	ofs.Bind("/dev/urandom", &devURandHandler{})
 
-	return New("testuser", dir, ofs, nil, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	return New("testuser", dir, ofs, nil, nil, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 }
 
 func TestCatAuthorizedKeys(t *testing.T) {

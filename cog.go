@@ -129,7 +129,11 @@ func Main(plugins ...plugin.Plugin) {
 	root.AddCommand(shellCmd(plugins))
 
 	// Discover and register plugin CLI commands.
-	addPluginCommands(root, plugins)
+	// Close providers after Execute — not via OnFinalize or PersistentPostRun
+	// which interfere with shell tab-completion and subcommand lifecycle.
+	if pluginProviders := addPluginCommands(root, plugins); pluginProviders != nil {
+		defer pluginProviders.DB.Close()
+	}
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
@@ -138,10 +142,10 @@ func Main(plugins ...plugin.Plugin) {
 
 // addPluginCommands registers plugin CLI commands by initializing services
 // (lightweight — no web server) and querying the registry for registered commands.
-func addPluginCommands(root *cobra.Command, plugins []plugin.Plugin) {
+func addPluginCommands(root *cobra.Command, plugins []plugin.Plugin) *services.Providers {
 	p, err := openProviders(plugins...)
 	if err != nil {
-		return
+		return nil
 	}
 
 	for pluginID, cmds := range p.Plugins.AdminCommands() {
@@ -155,17 +159,11 @@ func addPluginCommands(root *cobra.Command, plugins []plugin.Plugin) {
 		root.AddCommand(parent)
 	}
 
-	// Keep providers alive for the duration of the process so plugin
-	// command Run callbacks can use their captured plugin context.
-	// Clean up when this root command finishes (not globally — OnFinalize
-	// fires for ALL cobra.Execute calls including shell tab-completion).
-	prev := root.PersistentPostRun
-	root.PersistentPostRun = func(cmd *cobra.Command, args []string) {
-		if prev != nil {
-			prev(cmd, args)
-		}
-		p.Close()
-	}
+	// Return the providers so the caller can close them after Execute().
+	// We avoid cobra.OnFinalize (fires globally, breaks shell tab-complete)
+	// and PersistentPostRun (runs on every subcommand including shell, and
+	// the search propagator was never started so Stop() would hang).
+	return p
 }
 
 func buildCobraCmd(def plugin.CommandDef) *cobra.Command {

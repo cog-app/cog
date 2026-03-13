@@ -3,6 +3,7 @@ package search
 import (
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 )
 
 // ShareRecord is a minimal representation of a share for propagation purposes,
@@ -19,10 +20,11 @@ type ShareRecord struct {
 // Propagator indexes shared resources into recipients' search indices.
 // It runs asynchronously, processing events from a bounded channel.
 type Propagator struct {
-	log  *slog.Logger
-	mgr  *Manager
-	ch   chan propagateEvent
-	done chan struct{}
+	log     *slog.Logger
+	mgr     *Manager
+	ch      chan propagateEvent
+	done    chan struct{}
+	started atomic.Bool
 
 	// Function callbacks to avoid import cycles.
 	// ResolveRecipientUsernames expands a share into target usernames.
@@ -48,11 +50,16 @@ func NewPropagator(log *slog.Logger, mgr *Manager) *Propagator {
 
 // Start begins the background worker goroutine.
 func (p *Propagator) Start() {
+	p.started.Store(true)
 	go p.run()
 }
 
 // Stop closes the channel and waits for the worker to drain.
+// It is safe to call even if Start was never called.
 func (p *Propagator) Stop() {
+	if !p.started.Load() {
+		return
+	}
 	close(p.ch)
 	<-p.done
 }

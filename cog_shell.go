@@ -8,6 +8,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/ssh/shell"
 	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 func shellCmd(plugins []plugin.Plugin) *cobra.Command {
@@ -35,9 +36,17 @@ func shellCmd(plugins []plugin.Plugin) *cobra.Command {
 			}
 
 			userFS, _ := p.Plugins.UserFS(username)
+			// Wrap in OverlayFS to mount user files at /files, matching
+			// the SSH session setup. The shell's virtual path system
+			// expects /files as the root prefix.
+			if userFS != nil {
+				ofs := vfs.NewOverlayFS(nil)
+				ofs.Mount("/files", userFS)
+				userFS = ofs
+			}
 			cfg := configFromEnv()
 			log, _ := newLogger(cfg)
-			sh := shell.New(username, filesDir, userFS, p.Plugins.UserCommands(), p.Users.Usernames, log)
+			sh := shell.New(username, filesDir, userFS, p.Plugins.UserCommands(), p.Users.Usernames, p.Search, log)
 
 			if command != "" {
 				return sh.Run(c.Context(), command, os.Stdin, os.Stdout, os.Stderr)

@@ -19,6 +19,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
+	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/vfs"
 )
@@ -30,6 +31,7 @@ type Shell struct {
 	fs         vfs.FS // mount-aware VFS; may be nil
 	pluginCmds map[string][]plugin.CommandDef
 	usernames  func() ([]string, error) // lists all usernames for completion
+	search     *search.Manager          // may be nil
 	log        *slog.Logger
 	runner     *interp.Runner // current interpreter runner (set after newRunner)
 	exited     bool
@@ -52,7 +54,7 @@ func (s *Shell) SetSSHMode(width, height int) {
 // user's files directory on the real filesystem. pluginCmds maps plugin IDs to
 // their registered CLI commands. usernames is called to list usernames for
 // tab completion of "username" arguments.
-func New(username, filesDir string, userFS vfs.FS, pluginCmds map[string][]plugin.CommandDef, usernames func() ([]string, error), log *slog.Logger) *Shell {
+func New(username, filesDir string, userFS vfs.FS, pluginCmds map[string][]plugin.CommandDef, usernames func() ([]string, error), searchMgr *search.Manager, log *slog.Logger) *Shell {
 	// Resolve symlinks so containment checks and virtual path mapping
 	// work consistently with paths returned by the interpreter.
 	if resolved, err := filepath.EvalSymlinks(filesDir); err == nil {
@@ -64,6 +66,7 @@ func New(username, filesDir string, userFS vfs.FS, pluginCmds map[string][]plugi
 		fs:         userFS,
 		pluginCmds: pluginCmds,
 		usernames:  usernames,
+		search:     searchMgr,
 		log:        log,
 	}
 }

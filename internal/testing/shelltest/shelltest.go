@@ -16,6 +16,7 @@ import (
 
 	"github.com/charmbracelet/x/vt"
 
+	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/ssh/shell"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/plugin"
@@ -39,6 +40,7 @@ type config struct {
 	userFS        vfs.FS
 	pluginCmds    map[string][]plugin.CommandDef
 	usernames     func() ([]string, error)
+	search        *search.Manager
 	timeout       time.Duration
 }
 
@@ -68,6 +70,11 @@ func WithUserFS(fs vfs.FS) Option {
 // WithUsernames sets the username completion function.
 func WithUsernames(fn func() ([]string, error)) Option {
 	return func(c *config) { c.usernames = fn }
+}
+
+// WithSearch sets the search manager.
+func WithSearch(m *search.Manager) Option {
+	return func(c *config) { c.search = m }
 }
 
 // New creates a Terminal with a standalone shell backed by a temp directory.
@@ -109,6 +116,7 @@ func NewFromEnv(t testing.TB, env *cogtest.Env, user *cogtest.User, opts ...Opti
 		userFS:     userFS,
 		pluginCmds: env.Providers.Plugins.UserCommands(),
 		usernames:  env.Providers.Users.Usernames,
+		search:     env.Providers.Search,
 		timeout:    5 * time.Second,
 	}
 	for _, o := range opts {
@@ -124,7 +132,7 @@ func start(t testing.TB, cfg config) *Terminal {
 	em := vt.NewSafeEmulator(cfg.width, cfg.height)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	sh := shell.New(cfg.username, cfg.filesDir, cfg.userFS, cfg.pluginCmds, cfg.usernames, log)
+	sh := shell.New(cfg.username, cfg.filesDir, cfg.userFS, cfg.pluginCmds, cfg.usernames, cfg.search, log)
 	sh.SetSSHMode(cfg.width, cfg.height)
 
 	// Pipes connecting the VT emulator to the shell:

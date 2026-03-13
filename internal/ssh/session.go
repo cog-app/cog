@@ -106,7 +106,7 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 }
 
 func (s *Server) execShell(ctx context.Context, channel gossh.Channel, username, filesDir string, userFS vfs.FS, command string, hasPTY bool, termWidth, termHeight int) int {
-	sh := shell.New(username, filesDir, userFS, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.log)
+	sh := shell.New(username, filesDir, userFS, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.providers.Search, s.log)
 	if hasPTY {
 		sh.SetSSHMode(termWidth, termHeight)
 	}
@@ -118,7 +118,7 @@ func (s *Server) execShell(ctx context.Context, channel gossh.Channel, username,
 }
 
 func (s *Server) interactiveShell(ctx context.Context, channel gossh.Channel, username, filesDir string, userFS vfs.FS, hasPTY bool, termWidth, termHeight int) int {
-	sh := shell.New(username, filesDir, userFS, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.log)
+	sh := shell.New(username, filesDir, userFS, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.providers.Search, s.log)
 	if hasPTY {
 		sh.SetSSHMode(termWidth, termHeight)
 	}

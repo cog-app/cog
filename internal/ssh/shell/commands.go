@@ -76,6 +76,7 @@ func (s *Shell) newRootCmd() *cobra.Command {
 		s.newCdCmd(),
 		s.newPwdCmd(),
 		s.newExitCmd(),
+		s.newSearchCmd(),
 	)
 
 	// _help is the renamed "help" (via callHandler) since the interpreter
@@ -1039,6 +1040,44 @@ func (s *Shell) buildPluginCmd(def plugin.CommandDef) *cobra.Command {
 	}
 
 	return cmd
+}
+
+func (s *Shell) newSearchCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "search <query>",
+		Short: "Search your files",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			stdout, stderr, _, _ := getHC(cmd)
+			if s.search == nil {
+				fmt.Fprintln(stderr, "search not available")
+				return exitErr(1)
+			}
+			query := strings.Join(args, " ")
+			result, err := s.search.SearchUser(s.username, query, 20, 0)
+			if err != nil {
+				s.errorf(stderr, "search: %v\n", err)
+				return exitErr(1)
+			}
+			if len(result.Hits) == 0 {
+				fmt.Fprintln(stdout, "no results")
+				return nil
+			}
+			for _, hit := range result.Hits {
+				name, _ := hit.Fields["name"].(string)
+				subtext, _ := hit.Fields["subtext"].(string)
+				if name == "" {
+					name = hit.ID
+				}
+				line := fmt.Sprintf("[%s] %s", hit.Source, name)
+				if subtext != "" {
+					line += " — " + subtext
+				}
+				fmt.Fprintln(stdout, line)
+			}
+			return nil
+		},
+	}
 }
 
 // completeUsernames returns username completions.
