@@ -76,6 +76,52 @@ func New(log *slog.Logger, cfg config.Config, plugins ...plugin.Plugin) (*Provid
 	mgr.SetUserDBFunc(p.Plugins.PluginDB)
 	mgr.SetFilesDirFunc(p.Plugins.UserFilesDir)
 
+	// Wire search propagator for shared resource indexing.
+	prop := search.NewPropagator(log, mgr)
+	prop.LookupUsername = func(userID string) (string, error) {
+		u, err := p.Users.GetByID(userID)
+		if err != nil {
+			return "", err
+		}
+		return u.Username, nil
+	}
+	prop.ResolveRecipientUsernames = func(rec *search.ShareRecord) []string {
+		switch rec.SubjectType {
+		case "USER":
+			u, err := p.Users.GetByID(rec.SubjectID)
+			if err != nil {
+				return nil
+			}
+			return []string{u.Username}
+		case "GROUP":
+			userIDs, err := p.Groups.ListClosureUserIDs(rec.SubjectID)
+			if err != nil {
+				return nil
+			}
+			var names []string
+			for _, id := range userIDs {
+				u, err := p.Users.GetByID(id)
+				if err != nil {
+					continue
+				}
+				names = append(names, u.Username)
+			}
+			return names
+		case "INSTANCE":
+			var names []string
+			for u, err := range p.Users.List() {
+				if err != nil {
+					break
+				}
+				names = append(names, u.Username)
+			}
+			return names
+		default:
+			return nil
+		}
+	}
+	mgr.Propagator = prop
+
 	return p, nil
 }
 

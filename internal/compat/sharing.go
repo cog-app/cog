@@ -18,11 +18,13 @@ import (
 
 // SharingHandler implements the OCS files_sharing API.
 type SharingHandler struct {
-	Log    *slog.Logger
-	Files  *files.Plugin
-	Shares *share.Store
-	Users  *user.Store
-	Groups *group.Store
+	Log           *slog.Logger
+	Files         *files.Plugin
+	Shares        *share.Store
+	Users         *user.Store
+	Groups        *group.Store
+	OnShareCreate func(rec *share.Record)
+	OnShareDelete func(rec *share.Record)
 }
 
 // ocsShare is the NC-compatible share response format.
@@ -98,6 +100,8 @@ func shareTypeToSubject(shareType int) string {
 		return "GROUP"
 	case 3:
 		return "PUBLIC"
+	case 7:
+		return "INSTANCE"
 	default:
 		return "USER"
 	}
@@ -112,6 +116,8 @@ func subjectToShareType(subject string) int {
 		return 1
 	case "PUBLIC":
 		return 3
+	case "INSTANCE":
+		return 7
 	default:
 		return 0
 	}
@@ -149,7 +155,12 @@ func (h *SharingHandler) shareToOCS(rec *share.Record, ownerUser *user.User) (*o
 		ocs.ShareWithDisplayname = "(Shared link)"
 	}
 
-	if rec.SubjectType != "PUBLIC" {
+	if rec.SubjectType == "INSTANCE" {
+		ocs.ShareWith = ""
+		ocs.ShareWithDisplayname = "Everyone"
+	}
+
+	if rec.SubjectType != "PUBLIC" && rec.SubjectType != "INSTANCE" {
 		ocs.ShareWith = rec.SubjectID
 		// Try to look up display name and username
 		if target, err := h.Users.GetByID(rec.SubjectID); err == nil {
@@ -307,11 +318,16 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 	var rec *share.Record
 	subjectType := shareTypeToSubject(shareType)
 
-	if subjectType == "PUBLIC" {
+	switch subjectType {
+	case "PUBLIC":
 		rec, err = h.Shares.CreatePublicLinkWithPassword(
 			u.ID, resourceType, resourceID, cogPerms, expiration, password,
 		)
-	} else {
+	case "INSTANCE":
+		rec, err = h.Shares.Create(
+			u.ID, resourceType, resourceID, "INSTANCE", "", cogPerms,
+		)
+	default:
 		// Look up the target user by username
 		targetUser, lookupErr := h.Users.GetByUsername(shareWith)
 		if lookupErr != nil {
@@ -326,6 +342,10 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
 		return
+	}
+
+	if h.OnShareCreate != nil {
+		h.OnShareCreate(rec)
 	}
 
 	ocs, err := h.shareToOCS(rec, u)
@@ -469,6 +489,10 @@ func (h *SharingHandler) HandleDeleteShare(w http.ResponseWriter, r *http.Reques
 	if rec.OwnerUserID != u.ID {
 		writeOCSErrorReq(w, r, http.StatusForbidden, 403, "not your share")
 		return
+	}
+
+	if h.OnShareDelete != nil {
+		h.OnShareDelete(rec)
 	}
 
 	if err := h.Shares.Delete(shareID); err != nil {

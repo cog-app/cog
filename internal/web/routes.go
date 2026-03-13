@@ -7,7 +7,9 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/compat"
 	"git.duckfam.us/jj-software/cog/internal/quota"
+	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
+	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/plugin/calendar"
 	filesPlugin "git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/ui"
@@ -77,6 +79,8 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("DELETE /settings/mounts/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteMount)))
 	mux.Handle("POST /settings/volumes", csrfWeb(http.HandlerFunc(settingsH.CreateVolume)))
 	mux.Handle("DELETE /settings/volumes/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteVolume)))
+	mux.Handle("POST /settings/app-passwords", csrfWeb(http.HandlerFunc(settingsH.CreateAppPassword)))
+	mux.Handle("DELETE /settings/app-passwords/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteAppPassword)))
 	mux.Handle("POST /settings/avatar", csrfWeb(http.HandlerFunc(avatarH.Upload)))
 	mux.Handle("DELETE /settings/avatar", csrfWeb(http.HandlerFunc(avatarH.Delete)))
 
@@ -203,6 +207,23 @@ func New(p *services.Providers) http.Handler {
 			Shares: p.Shares,
 			Users:  p.Users,
 			Groups: p.Groups,
+		}
+		if p.Search != nil && p.Search.Propagator != nil {
+			prop := p.Search.Propagator
+			sharingH.OnShareCreate = func(rec *share.Record) {
+				prop.OnShareCreate(&search.ShareRecord{
+					ID: rec.ID, OwnerUserID: rec.OwnerUserID,
+					ResourceType: rec.ResourceType, ResourceID: rec.ResourceID,
+					SubjectType: rec.SubjectType, SubjectID: rec.SubjectID,
+				})
+			}
+			sharingH.OnShareDelete = func(rec *share.Record) {
+				prop.OnShareDelete(&search.ShareRecord{
+					ID: rec.ID, OwnerUserID: rec.OwnerUserID,
+					ResourceType: rec.ResourceType, ResourceID: rec.ResourceID,
+					SubjectType: rec.SubjectType, SubjectID: rec.SubjectID,
+				})
+			}
 		}
 		for _, prefix := range []string{"/ocs/v1.php", "/ocs/v2.php"} {
 			mux.Handle("GET "+prefix+"/apps/files_sharing/api/v1/shares", auth.RequireAuth(http.HandlerFunc(sharingH.HandleListShares)))

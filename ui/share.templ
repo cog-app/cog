@@ -87,6 +87,31 @@ templ SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []S
 				<button type="submit" class="btn btn-primary btn-sm">Share</button>
 			</form>
 		</details>
+		<details style="margin-bottom:0.75rem">
+			<summary style="cursor:pointer;font-weight:500">Share with everyone</summary>
+			<form
+				hx-post="/api/shares/create"
+				hx-target={ "#" + panelID }
+				hx-swap="outerHTML"
+				style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:end;margin-top:0.5rem;padding:0.75rem;border:1px solid var(--color-border);border-radius:var(--radius)"
+			>
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<input type="hidden" name="resource_type" value={ resourceType }/>
+				<input type="hidden" name="resource_id" value={ resourceID }/>
+				<input type="hidden" name="panel_id" value={ panelID }/>
+				<input type="hidden" name="subject_type" value="INSTANCE"/>
+				<input type="hidden" name="subject_id" value=""/>
+				<div style="min-width:120px">
+					<label style="font-size:0.85rem;font-weight:500">Permission</label>
+					<select name="permissions" class="form-control">
+						for _, l := range levels {
+							<option value={ strconv.FormatUint(uint64(l.Permissions), 10) }>{ l.Label }</option>
+						}
+					</select>
+				</div>
+				<button type="submit" class="btn btn-primary btn-sm">Share with Everyone</button>
+			</form>
+		</details>
 		<details>
 			<summary style="cursor:pointer;font-weight:500">Create public link</summary>
 			<form

@@ -87,6 +87,26 @@ func (i *Index) Search(query string, limit, offset int) (*Result, error) {
 	}, nil
 }
 
+// GetDocument retrieves a document by ID from the index.
+func (i *Index) GetDocument(id string) (*Document, error) {
+	doc, err := i.idx.Document(id)
+	if err != nil {
+		return nil, fmt.Errorf("get document %s: %w", id, err)
+	}
+	if doc == nil {
+		return nil, fmt.Errorf("document %s not found", id)
+	}
+	// Re-index via search to get stored fields.
+	q := bleve.NewDocIDQuery([]string{id})
+	req := bleve.NewSearchRequestOptions(q, 1, 0, false)
+	req.Fields = []string{"name", "subtext", "content", "source"}
+	resp, err := i.idx.Search(req)
+	if err != nil || resp.Total == 0 {
+		return nil, fmt.Errorf("document %s not searchable", id)
+	}
+	return &Document{ID: id, Fields: resp.Hits[0].Fields}, nil
+}
+
 // Delete removes the index files from disk after closing.
 func Delete(path string) error {
 	return os.RemoveAll(path)

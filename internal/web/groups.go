@@ -225,7 +225,12 @@ func (h *groupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.p.Groups.AddMember(groupID, memberID, group.User); err != nil {
+	memberType := group.MemberType(r.FormValue("member_type"))
+	if memberType != group.GroupMember {
+		memberType = group.User
+	}
+
+	if err := h.p.Groups.AddMember(groupID, memberID, memberType); err != nil {
 		setFlash(w, "error", "Failed to add member: "+err.Error())
 	}
 	http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)

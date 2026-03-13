@@ -35,6 +35,9 @@ type Manager struct {
 	filesDirFunc func(username string) string
 	ctx          context.Context
 	cancel       context.CancelFunc
+
+	// Propagator handles indexing shared resources into recipients' indices.
+	Propagator *Propagator
 }
 
 // NewManager creates a manager. Call SetSystemDB and Start to initialize.
@@ -134,11 +137,18 @@ func (m *Manager) Start(ctx context.Context) error {
 		m.log.Error("system full sync failed", "err", err)
 	}
 
+	if m.Propagator != nil {
+		m.Propagator.Start()
+	}
+
 	return nil
 }
 
 // Stop stops all collectors and closes all indices.
 func (m *Manager) Stop() {
+	if m.Propagator != nil {
+		m.Propagator.Stop()
+	}
 	m.cancel()
 
 	if m.systemCollector != nil {
@@ -171,6 +181,24 @@ func (m *Manager) SearchUser(username, query string, limit, offset int) (*Result
 		return nil, err
 	}
 	return us.index.Search(query, limit, offset)
+}
+
+// IndexSharedDocument indexes a document into a user's search index.
+func (m *Manager) IndexSharedDocument(username string, doc Document) error {
+	us, err := m.ensureUserIndex(username)
+	if err != nil {
+		return err
+	}
+	return us.index.Batch([]Document{doc}, nil)
+}
+
+// DeleteSharedDocument removes a document from a user's search index.
+func (m *Manager) DeleteSharedDocument(username, docID string) error {
+	us, err := m.ensureUserIndex(username)
+	if err != nil {
+		return err
+	}
+	return us.index.Batch(nil, []string{docID})
 }
 
 func (m *Manager) ensureUserIndex(username string) (*userSearch, error) {

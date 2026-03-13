@@ -110,6 +110,40 @@ func TestInvalidAppPasswordFails(t *testing.T) {
 		cogtest.BasicAuth("alice", "not-a-real-app-password")).Status(401)
 }
 
+func TestCreateAppPasswordHTTP(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	cookie, token := sessionAndCSRF(t, env, alice.ID)
+
+	resp := env.PostForm(t, "/settings/app-passwords",
+		url.Values{"name": {"test-app"}, "csrf_token": {token}},
+		cookie, cogtest.StopRedirect)
+	require.Equal(t, http.StatusSeeOther, resp.StatusCode)
+
+	// Verify password was created.
+	passwords, err := env.Providers.AppPasswords.ListByUser(alice.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(passwords))
+	require.Equal(t, "test-app", passwords[0].Name)
+}
+
+func TestDeleteAppPasswordHTTP(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	cookie, token := sessionAndCSRF(t, env, alice.ID)
+
+	_, ap, err := env.Providers.AppPasswords.Create(alice.ID, "to-delete")
+	require.NoError(t, err)
+
+	env.Delete(t, "/settings/app-passwords/"+ap.ID,
+		cookie, cogtest.Header("X-CSRF-Token", token)).Status(200)
+
+	// Verify it's gone.
+	passwords, err := env.Providers.AppPasswords.ListByUser(alice.ID)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(passwords))
+}
+
 // --- Session Auth ---
 
 func TestSessionCookieAuth(t *testing.T) {

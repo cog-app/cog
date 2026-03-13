@@ -62,6 +62,43 @@ func (s *AppPasswordStore) Create(userID, name string) (plaintext string, ap *Ap
 	}, nil
 }
 
+// ListByUser returns all app passwords for a user, ordered by creation time descending.
+func (s *AppPasswordStore) ListByUser(userID string) ([]AppPassword, error) {
+	rows, err := s.db.Query(
+		`SELECT id, user_id, name, token_hash, created_at FROM app_passwords WHERE user_id = ? ORDER BY created_at DESC`,
+		userID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list app passwords: %w", err)
+	}
+	defer rows.Close()
+
+	var results []AppPassword
+	for rows.Next() {
+		var ap AppPassword
+		var ts int64
+		if err := rows.Scan(&ap.ID, &ap.UserID, &ap.Name, &ap.TokenHash, &ts); err != nil {
+			return nil, fmt.Errorf("scan app password: %w", err)
+		}
+		ap.CreatedAt = time.Unix(ts, 0)
+		results = append(results, ap)
+	}
+	return results, rows.Err()
+}
+
+// Delete removes an app password by ID, scoped to a user.
+func (s *AppPasswordStore) Delete(id, userID string) error {
+	res, err := s.db.Exec(`DELETE FROM app_passwords WHERE id = ? AND user_id = ?`, id, userID)
+	if err != nil {
+		return fmt.Errorf("delete app password: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("app password not found")
+	}
+	return nil
+}
+
 // Validate checks a plaintext token against all app passwords and returns the
 // owning user ID if valid. It iterates all candidates to prevent timing leaks.
 func (s *AppPasswordStore) Validate(token string) (userID string, err error) {

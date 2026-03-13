@@ -34,13 +34,51 @@ func (h *settingsHandler) ShowProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *settingsHandler) ShowSecurity(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
 	pd := pageDataWithNav(r, "Security", h.p.CSRFSecret, h.p.Plugins)
+
+	appPasswords, err := h.p.AppPasswords.ListByUser(u.ID)
+	if err != nil {
+		h.p.Log.Error("list app passwords", "err", err)
+	}
+
 	flash := getFlash(w, r)
 	var flashMsg, flashKind string
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	settingsSecurityPage(pd, flashMsg, flashKind).Render(r.Context(), w)
+	settingsSecurityPage(pd, flashMsg, flashKind, appPasswords).Render(r.Context(), w)
+}
+
+func (h *settingsHandler) CreateAppPassword(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	name := r.FormValue("name")
+	if name == "" {
+		setFlash(w, "error", "App password name is required.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+
+	plaintext, _, err := h.p.AppPasswords.Create(u.ID, name)
+	if err != nil {
+		setFlash(w, "error", "Failed to create app password: "+err.Error())
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+
+	setFlash(w, "success", "token:"+plaintext)
+	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+}
+
+func (h *settingsHandler) DeleteAppPassword(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	id := r.PathValue("id")
+
+	if err := h.p.AppPasswords.Delete(id, u.ID); err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *settingsHandler) ShowStorage(w http.ResponseWriter, r *http.Request) {

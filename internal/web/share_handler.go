@@ -9,6 +9,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -67,6 +68,8 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 			if rec.Token != nil {
 				sd.Token = *rec.Token
 			}
+		case "INSTANCE":
+			sd.SubjectName = "Everyone"
 		}
 		shares = append(shares, sd)
 	}
@@ -87,10 +90,15 @@ func (h *shareHandler) CreateShareForm(w http.ResponseWriter, r *http.Request) {
 
 	resType := r.FormValue("resource_type")
 	resID := r.FormValue("resource_id")
+	subjectType := r.FormValue("subject_type")
 	subjectID := r.FormValue("subject_id")
 	permStr := r.FormValue("permissions")
 
-	if resType == "" || resID == "" || subjectID == "" {
+	if subjectType == "" {
+		subjectType = "USER"
+	}
+
+	if resType == "" || resID == "" || (subjectType != "INSTANCE" && subjectID == "") {
 		http.Error(w, "missing fields", http.StatusBadRequest)
 		return
 	}
@@ -102,12 +110,14 @@ func (h *shareHandler) CreateShareForm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, err := h.p.Shares.Create(u.ID, resType, resID, "USER", subjectID, perms)
+	rec, err := h.p.Shares.Create(u.ID, resType, resID, subjectType, subjectID, perms)
 	if err != nil {
 		h.p.Log.Error("share create failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	h.propagateShareCreate(rec)
 
 	// Return the refreshed panel via HTMX.
 	scope := r.FormValue("panel_id")
@@ -135,12 +145,13 @@ func (h *shareHandler) CreatePublicLinkForm(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	_, err := h.p.Shares.CreatePublicLink(u.ID, resType, resID, perms, nil)
+	rec, err := h.p.Shares.CreatePublicLink(u.ID, resType, resID, perms, nil)
 	if err != nil {
 		h.p.Log.Error("public link create failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	_ = rec // public links don't propagate to specific users
 
 	scope := r.FormValue("panel_id")
 	r.URL.RawQuery = fmt.Sprintf("type=%s&id=%s&scope=%s", resType, resID, scope)
@@ -161,6 +172,8 @@ func (h *shareHandler) DeleteShareHTMX(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not your share", http.StatusForbidden)
 		return
 	}
+
+	h.propagateShareDelete(rec)
 
 	if err := h.p.Shares.Delete(shareID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -264,6 +277,34 @@ func (h *shareHandler) PickerSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ui.PickerResults(items).Render(r.Context(), w)
+}
+
+func (h *shareHandler) propagateShareCreate(rec *share.Record) {
+	if h.p.Search == nil || h.p.Search.Propagator == nil || rec == nil {
+		return
+	}
+	h.p.Search.Propagator.OnShareCreate(&search.ShareRecord{
+		ID:           rec.ID,
+		OwnerUserID:  rec.OwnerUserID,
+		ResourceType: rec.ResourceType,
+		ResourceID:   rec.ResourceID,
+		SubjectType:  rec.SubjectType,
+		SubjectID:    rec.SubjectID,
+	})
+}
+
+func (h *shareHandler) propagateShareDelete(rec *share.Record) {
+	if h.p.Search == nil || h.p.Search.Propagator == nil || rec == nil {
+		return
+	}
+	h.p.Search.Propagator.OnShareDelete(&search.ShareRecord{
+		ID:           rec.ID,
+		OwnerUserID:  rec.OwnerUserID,
+		ResourceType: rec.ResourceType,
+		ResourceID:   rec.ResourceID,
+		SubjectType:  rec.SubjectType,
+		SubjectID:    rec.SubjectID,
+	})
 }
 
 func defaultPermissionLevels() []plugin.PermissionLevel {

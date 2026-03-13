@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS groups (
 CREATE TABLE IF NOT EXISTS group_members (
 	group_id TEXT NOT NULL REFERENCES groups(id),
 	member_id TEXT NOT NULL,
-	member_type TEXT NOT NULL CHECK(member_type IN ('USER', 'OWNER')),
+	member_type TEXT NOT NULL CHECK(member_type IN ('USER', 'OWNER', 'GROUP')),
 	PRIMARY KEY (group_id, member_id)
 );
 CREATE INDEX IF NOT EXISTS idx_group_members_member ON group_members(member_id);
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS shares (
 	owner_user_id TEXT NOT NULL REFERENCES users(id),
 	resource_type TEXT NOT NULL,
 	resource_id TEXT NOT NULL,
-	subject_type TEXT NOT NULL CHECK(subject_type IN ('USER', 'GROUP', 'PUBLIC')),
+	subject_type TEXT NOT NULL CHECK(subject_type IN ('USER', 'GROUP', 'PUBLIC', 'INSTANCE')),
 	subject_id TEXT NOT NULL DEFAULT '',
 	permissions INTEGER NOT NULL DEFAULT 1,
 	token TEXT,

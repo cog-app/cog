@@ -222,6 +222,8 @@ func resolveSubjectName(h *adminVolumeHandler, subjectType, subjectID string) st
 		return "Default"
 	case "PUBLIC":
 		return "Public link"
+	case "INSTANCE":
+		return "Everyone"
 	}
 	return subjectID
 }
@@ -277,6 +279,8 @@ func (h *shareHandler) SharePanelAdmin(w http.ResponseWriter, r *http.Request) {
 			if rec.Token != nil {
 				sd.Token = *rec.Token
 			}
+		case "INSTANCE":
+			sd.SubjectName = "Everyone"
 		}
 		shares = append(shares, sd)
 	}
@@ -312,12 +316,14 @@ func (h *shareHandler) CreateShareAdmin(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	_, err := h.p.Shares.Create(u.ID, resType, resID, "USER", subjectID, perms)
+	rec, err := h.p.Shares.Create(u.ID, resType, resID, "USER", subjectID, perms)
 	if err != nil {
 		h.p.Log.Error("admin share create failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	h.propagateShareCreate(rec)
 
 	scope := r.FormValue("panel_id")
 	r.URL.RawQuery = "type=" + resType + "&id=" + resID + "&scope=" + scope + "&mode=admin"
@@ -327,10 +333,13 @@ func (h *shareHandler) CreateShareAdmin(w http.ResponseWriter, r *http.Request) 
 // DeleteShareAdmin handles DELETE from admin share panel (no ownership check).
 func (h *shareHandler) DeleteShareAdmin(w http.ResponseWriter, r *http.Request) {
 	shareID := r.PathValue("id")
-	if _, err := h.p.Shares.Get(shareID); err != nil {
+	rec, err := h.p.Shares.Get(shareID)
+	if err != nil {
 		http.Error(w, "share not found", http.StatusNotFound)
 		return
 	}
+
+	h.propagateShareDelete(rec)
 
 	if err := h.p.Shares.Delete(shareID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

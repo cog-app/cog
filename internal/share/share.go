@@ -14,6 +14,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const SubjectInstance = "INSTANCE"
+
 var ErrNotFound = errors.New("share not found")
 var ErrAccessDenied = errors.New("access denied")
 var ErrPasswordRequired = errors.New("password required")
@@ -254,7 +256,8 @@ func (s *Store) ListBySubject(subjectID string) iter.Seq2[Record, error] {
 			   OR (s.subject_type = 'GROUP' AND s.subject_id IN (
 					SELECT ancestor_group_id FROM group_membership_closure
 					WHERE descendant_user_id = ?
-				)))
+				))
+			   OR (s.subject_type = 'INSTANCE'))
 			  AND (s.expiration IS NULL OR s.expiration > ?)
 			ORDER BY s.created_at DESC`, subjectID, subjectID, time.Now().Unix())
 		if err != nil {
@@ -318,7 +321,7 @@ func (s *Store) ListByResource(resourceType, resourceID string) iter.Seq2[Record
 func (s *Store) CheckAccess(userID, resourceType, resourceID string) (*AccessDecision, error) {
 	decision := &AccessDecision{}
 
-	// Check direct shares (user + groups)
+	// Check direct shares (user + groups + instance)
 	rows, err := s.db.Query(`
 		SELECT s.id, s.permissions, s.owner_user_id
 		FROM shares s
@@ -329,6 +332,7 @@ func (s *Store) CheckAccess(userID, resourceType, resourceID string) (*AccessDec
 				SELECT ancestor_group_id FROM group_membership_closure
 				WHERE descendant_user_id = ?
 			))
+			OR (s.subject_type = 'INSTANCE')
 		  )
 		  AND (s.expiration IS NULL OR s.expiration > ?)`,
 		resourceType, resourceID, userID, userID, time.Now().Unix())

@@ -78,6 +78,17 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 				</div>
 				<button class="btn btn-primary" type="submit">Add Member</button>
 			</form>
+			<details style="margin-bottom:0.75rem">
+				<summary style="cursor:pointer;font-weight:500">Add group member</summary>
+				<form method="post" action={ templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/members") } class="flex gap-1 items-center" style="margin-top:0.5rem">
+					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+					<input type="hidden" name="member_type" value="GROUP"/>
+					<div style="min-width:250px">
+						@ui.Picker("/api/picker/search?type=group", "member_id", "Search groups...", false)
+					</div>
+					<button class="btn btn-primary" type="submit">Add Group</button>
+				</form>
+			</details>
 		}
 		<table class="table mb-0">
 			<thead>
@@ -96,7 +107,9 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 					<tr id={ fmt.Sprintf("member-%s-%s", d.Group.ID, m.MemberID) }>
 						<td>{ m.Username }</td>
 						<td>
-							if d.IsOwner {
+							if m.MemberType == group.GroupMember {
+								<span style="font-size:0.85rem;color:var(--color-text-muted)">Group</span>
+							} else if d.IsOwner {
 								<form method="post" action={ templ.SafeURL(fmt.Sprintf("%s/%s/members/%s/type", d.BasePath, d.Group.ID, m.MemberID)) } style="display:inline">
 									<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 									<select class="form-control" name="member_type" style="display:inline-block;width:auto;padding:0.2rem 0.4rem;font-size:0.85rem" onchange="this.form.submit()">

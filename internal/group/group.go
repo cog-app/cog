@@ -30,13 +30,14 @@ type Member struct {
 type MemberType string
 
 const (
-	Owner MemberType = "OWNER"
-	User  MemberType = "USER"
+	Owner       MemberType = "OWNER"
+	User        MemberType = "USER"
+	GroupMember MemberType = "GROUP"
 )
 
 func (t MemberType) IsValid() bool {
 	switch t {
-	case Owner, User:
+	case Owner, User, GroupMember:
 		return true
 	default:
 		return false
@@ -140,12 +141,24 @@ func (s *Store) Delete(id string) error {
 	return tx.Commit()
 }
 
+var ErrCyclicMembership = errors.New("adding this group would create a cycle")
+
 func (s *Store) AddMember(groupID, memberID string, memberType MemberType) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+
+	// Cycle detection for GROUP members: check if groupID is already a descendant
+	// of memberID (the candidate child group), which would create a cycle.
+	if memberType == GroupMember {
+		if isCyclic, err := isCyclicMembershipTx(tx, groupID, memberID); err != nil {
+			return fmt.Errorf("cycle check: %w", err)
+		} else if isCyclic {
+			return ErrCyclicMembership
+		}
+	}
 
 	if _, err := tx.Exec(
 		`INSERT OR IGNORE INTO group_members (group_id, member_id, member_type) VALUES (?, ?, ?)`,
@@ -157,6 +170,60 @@ func (s *Store) AddMember(groupID, memberID string, memberType MemberType) error
 		return err
 	}
 	return tx.Commit()
+}
+
+// isCyclicMembershipTx checks if parentGroupID already appears as a descendant
+// of candidateChildGroupID via the closure table, or if they are the same group.
+func isCyclicMembershipTx(tx *sql.Tx, parentGroupID, candidateChildGroupID string) (bool, error) {
+	if parentGroupID == candidateChildGroupID {
+		return true, nil
+	}
+	// Check if parentGroupID is already reachable from candidateChildGroupID.
+	var exists int
+	err := tx.QueryRow(
+		`SELECT 1 FROM group_membership_closure WHERE ancestor_group_id = ? AND descendant_user_id IN (
+			SELECT member_id FROM group_members WHERE group_id = ? AND member_type = 'GROUP'
+		)`, candidateChildGroupID, parentGroupID,
+	).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Also do a recursive walk through GROUP members since the closure table
+		// only tracks user descendants. Walk the group_members graph directly.
+		return isGroupDescendant(tx, candidateChildGroupID, parentGroupID, make(map[string]bool)), nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// isGroupDescendant returns true if target appears as a GROUP-type descendant of start.
+func isGroupDescendant(tx *sql.Tx, start, target string, visited map[string]bool) bool {
+	if start == target {
+		return true
+	}
+	if visited[start] {
+		return false
+	}
+	visited[start] = true
+
+	rows, err := tx.Query(
+		`SELECT member_id FROM group_members WHERE group_id = ? AND member_type = 'GROUP'`, start,
+	)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var childID string
+		if err := rows.Scan(&childID); err != nil {
+			continue
+		}
+		if isGroupDescendant(tx, childID, target, visited) {
+			return true
+		}
+	}
+	return false
 }
 
 // UpdateMemberType changes the member_type for an existing group member.
@@ -206,9 +273,12 @@ func (s *Store) RemoveMember(groupID, memberID string) error {
 func (s *Store) ListMembers(groupID string) iter.Seq2[Member, error] {
 	return func(yield func(Member, error) bool) {
 		rows, err := s.db.Query(
-			`SELECT gm.group_id, gm.member_id, gm.member_type, COALESCE(u.username, '')
+			`SELECT gm.group_id, gm.member_id, gm.member_type,
+				CASE WHEN gm.member_type = 'GROUP' THEN COALESCE(g.name, gm.member_id)
+				     ELSE COALESCE(u.username, '') END
 			FROM group_members gm
-			LEFT JOIN users u ON u.id = gm.member_id
+			LEFT JOIN users u ON u.id = gm.member_id AND gm.member_type != 'GROUP'
+			LEFT JOIN groups g ON g.id = gm.member_id AND gm.member_type = 'GROUP'
 			WHERE gm.group_id = ?
 			ORDER BY gm.member_type, gm.member_id`,
 			groupID,
@@ -326,17 +396,66 @@ func (s *Store) RebuildClosure() error {
 }
 
 // rebuildClosureTx recomputes the closure table within an existing transaction.
+// Handles recursive group nesting via fixed-point expansion.
 func rebuildClosureTx(tx *sql.Tx) error {
 	if _, err := tx.Exec(`DELETE FROM group_membership_closure`); err != nil {
 		return fmt.Errorf("clear closure: %w", err)
 	}
+
+	// Step 1: Insert direct user/owner members at depth 0.
 	if _, err := tx.Exec(`
 		INSERT INTO group_membership_closure (ancestor_group_id, descendant_user_id, depth)
 		SELECT group_id, member_id, 0 FROM group_members
+		WHERE member_type IN ('USER', 'OWNER')
 	`); err != nil {
-		return fmt.Errorf("rebuild closure: %w", err)
+		return fmt.Errorf("rebuild closure direct: %w", err)
+	}
+
+	// Step 2: Fixed-point loop — for each GROUP-type member, copy child group's
+	// closure rows into parent group at depth+1. Repeat until no new rows.
+	for depth := 1; depth < 100; depth++ {
+		res, err := tx.Exec(`
+			INSERT OR IGNORE INTO group_membership_closure (ancestor_group_id, descendant_user_id, depth)
+			SELECT gm.group_id, gmc.descendant_user_id, ?
+			FROM group_members gm
+			JOIN group_membership_closure gmc ON gmc.ancestor_group_id = gm.member_id
+			WHERE gm.member_type = 'GROUP'
+			  AND NOT EXISTS (
+				SELECT 1 FROM group_membership_closure c
+				WHERE c.ancestor_group_id = gm.group_id AND c.descendant_user_id = gmc.descendant_user_id
+			  )
+		`, depth)
+		if err != nil {
+			return fmt.Errorf("rebuild closure depth %d: %w", depth, err)
+		}
+		n, _ := res.RowsAffected()
+		if n == 0 {
+			break
+		}
 	}
 	return nil
+}
+
+// ListClosureUserIDs returns all descendant user IDs for a group from the closure table.
+func (s *Store) ListClosureUserIDs(groupID string) ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT descendant_user_id FROM group_membership_closure WHERE ancestor_group_id = ?`,
+		groupID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list closure user IDs: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan closure user ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func generateID() (string, error) {
