@@ -143,13 +143,26 @@ func (s *Shell) newLsCmd() *cobra.Command {
 			if len(args) == 0 {
 				args = []string{"."}
 			}
+
+			printEntry := func(w io.Writer, name string, isDir bool, info os.FileInfo) {
+				if showLong {
+					fmt.Fprintf(w, "%s %8s %s %s\n",
+						s.colorize(ansiYellow, info.Mode().String()),
+						s.colorize(ansiGreen, fmt.Sprintf("%d", info.Size())),
+						info.ModTime().Format("Jan _2 15:04"),
+						s.lsName(name, isDir))
+				} else {
+					fmt.Fprintln(w, s.lsName(name, isDir))
+				}
+			}
+
 			for _, p := range args {
 				if s.fs != nil {
 					if dr, ok := s.fs.(vfs.DirReader); ok {
 						vp := s.toVirtualPath(dir, p)
 						entries, err := dr.ReadDirEntries(vp)
 						if err != nil {
-							fmt.Fprintf(stderr, "ls: %v\n", err)
+							s.errorf(stderr, "ls: %v\n", err)
 							return exitErr(1)
 						}
 						if len(args) > 1 {
@@ -164,10 +177,9 @@ func (s *Shell) newLsCmd() *cobra.Command {
 								if err != nil {
 									continue
 								}
-								fmt.Fprintf(stdout, "%s %8d %s %s\n",
-									info.Mode(), info.Size(), info.ModTime().Format("Jan _2 15:04"), e.Name())
+								printEntry(stdout, e.Name(), e.IsDir(), info)
 							} else {
-								fmt.Fprintln(stdout, e.Name())
+								printEntry(stdout, e.Name(), e.IsDir(), nil)
 							}
 						}
 						continue
@@ -175,12 +187,12 @@ func (s *Shell) newLsCmd() *cobra.Command {
 				}
 				resolved, err := s.resolve(dir, p)
 				if err != nil {
-					fmt.Fprintf(stderr, "ls: %v\n", err)
+					s.errorf(stderr, "ls: %v\n", err)
 					return exitErr(1)
 				}
 				entries, err := os.ReadDir(resolved)
 				if err != nil {
-					fmt.Fprintf(stderr, "ls: %v\n", err)
+					s.errorf(stderr, "ls: %v\n", err)
 					return exitErr(1)
 				}
 				if len(args) > 1 {
@@ -195,10 +207,9 @@ func (s *Shell) newLsCmd() *cobra.Command {
 						if err != nil {
 							continue
 						}
-						fmt.Fprintf(stdout, "%s %8d %s %s\n",
-							info.Mode(), info.Size(), info.ModTime().Format("Jan _2 15:04"), e.Name())
+						printEntry(stdout, e.Name(), e.IsDir(), info)
 					} else {
-						fmt.Fprintln(stdout, e.Name())
+						printEntry(stdout, e.Name(), e.IsDir(), nil)
 					}
 				}
 			}
@@ -226,7 +237,7 @@ func (s *Shell) newCatCmd() *cobra.Command {
 					vp := s.toVirtualPath(dir, name)
 					rc, err := s.fs.Get(vp)
 					if err != nil {
-						fmt.Fprintf(stderr, "cat: %s: %v\n", name, err)
+						s.errorf(stderr, "cat: %s: %v\n", name, err)
 						return exitErr(1)
 					}
 					_, err = io.Copy(stdout, rc)
@@ -238,12 +249,12 @@ func (s *Shell) newCatCmd() *cobra.Command {
 				}
 				resolved, err := s.resolve(dir, name)
 				if err != nil {
-					fmt.Fprintf(stderr, "cat: %v\n", err)
+					s.errorf(stderr, "cat: %v\n", err)
 					return exitErr(1)
 				}
 				f, err := os.Open(resolved)
 				if err != nil {
-					fmt.Fprintf(stderr, "cat: %s: %v\n", name, err)
+					s.errorf(stderr, "cat: %s: %v\n", name, err)
 					return exitErr(1)
 				}
 				_, err = io.Copy(stdout, f)
@@ -273,24 +284,24 @@ func (s *Shell) newCpCmd() *cobra.Command {
 				}
 				rc, err := s.fs.Get(srcVP)
 				if err != nil {
-					fmt.Fprintf(stderr, "cp: %v\n", err)
+					s.errorf(stderr, "cp: %v\n", err)
 					return exitErr(1)
 				}
 				defer rc.Close()
 				if err := s.fs.Put(dstVP, rc); err != nil {
-					fmt.Fprintf(stderr, "cp: %v\n", err)
+					s.errorf(stderr, "cp: %v\n", err)
 					return exitErr(1)
 				}
 				return nil
 			}
 			src, err := s.resolve(dir, args[0])
 			if err != nil {
-				fmt.Fprintf(stderr, "cp: %v\n", err)
+				s.errorf(stderr, "cp: %v\n", err)
 				return exitErr(1)
 			}
 			dst, err := s.resolve(dir, args[1])
 			if err != nil {
-				fmt.Fprintf(stderr, "cp: %v\n", err)
+				s.errorf(stderr, "cp: %v\n", err)
 				return exitErr(1)
 			}
 			if info, err := os.Stat(dst); err == nil && info.IsDir() {
@@ -298,18 +309,18 @@ func (s *Shell) newCpCmd() *cobra.Command {
 			}
 			in, err := os.Open(src)
 			if err != nil {
-				fmt.Fprintf(stderr, "cp: %v\n", err)
+				s.errorf(stderr, "cp: %v\n", err)
 				return exitErr(1)
 			}
 			defer in.Close()
 			out, err := os.Create(dst)
 			if err != nil {
-				fmt.Fprintf(stderr, "cp: %v\n", err)
+				s.errorf(stderr, "cp: %v\n", err)
 				return exitErr(1)
 			}
 			defer out.Close()
 			if _, err := io.Copy(out, in); err != nil {
-				fmt.Fprintf(stderr, "cp: %v\n", err)
+				s.errorf(stderr, "cp: %v\n", err)
 				return exitErr(1)
 			}
 			return nil
@@ -332,26 +343,26 @@ func (s *Shell) newMvCmd() *cobra.Command {
 					dstVP = filepath.Join(dstVP, filepath.Base(srcVP))
 				}
 				if err := s.fs.Rename(srcVP, dstVP); err != nil {
-					fmt.Fprintf(stderr, "mv: %v\n", err)
+					s.errorf(stderr, "mv: %v\n", err)
 					return exitErr(1)
 				}
 				return nil
 			}
 			src, err := s.resolve(dir, args[0])
 			if err != nil {
-				fmt.Fprintf(stderr, "mv: %v\n", err)
+				s.errorf(stderr, "mv: %v\n", err)
 				return exitErr(1)
 			}
 			dst, err := s.resolve(dir, args[1])
 			if err != nil {
-				fmt.Fprintf(stderr, "mv: %v\n", err)
+				s.errorf(stderr, "mv: %v\n", err)
 				return exitErr(1)
 			}
 			if info, err := os.Stat(dst); err == nil && info.IsDir() {
 				dst = filepath.Join(dst, filepath.Base(src))
 			}
 			if err := os.Rename(src, dst); err != nil {
-				fmt.Fprintf(stderr, "mv: %v\n", err)
+				s.errorf(stderr, "mv: %v\n", err)
 				return exitErr(1)
 			}
 			return nil
@@ -372,12 +383,12 @@ func (s *Shell) newRmCmd() *cobra.Command {
 				if s.fs != nil {
 					vp := s.toVirtualPath(dir, t)
 					if vp == "/" {
-						fmt.Fprintln(stderr, "rm: cannot remove root directory")
+						s.errorf(stderr, "rm: cannot remove root directory\n")
 						return exitErr(1)
 					}
 					if err := s.fs.Delete(vp); err != nil {
 						if !force {
-							fmt.Fprintf(stderr, "rm: %v\n", err)
+							s.errorf(stderr, "rm: %v\n", err)
 							return exitErr(1)
 						}
 					}
@@ -385,11 +396,11 @@ func (s *Shell) newRmCmd() *cobra.Command {
 				}
 				resolved, err := s.resolve(dir, t)
 				if err != nil {
-					fmt.Fprintf(stderr, "rm: %v\n", err)
+					s.errorf(stderr, "rm: %v\n", err)
 					return exitErr(1)
 				}
 				if resolved == s.filesDir {
-					fmt.Fprintln(stderr, "rm: cannot remove root directory")
+					s.errorf(stderr, "rm: cannot remove root directory\n")
 					return exitErr(1)
 				}
 				if recursive {
@@ -399,7 +410,7 @@ func (s *Shell) newRmCmd() *cobra.Command {
 				}
 				if err != nil {
 					if !force {
-						fmt.Fprintf(stderr, "rm: %v\n", err)
+						s.errorf(stderr, "rm: %v\n", err)
 						return exitErr(1)
 					}
 				}
@@ -425,14 +436,14 @@ func (s *Shell) newMkdirCmd() *cobra.Command {
 				if s.fs != nil {
 					vp := s.toVirtualPath(dir, d)
 					if err := s.fs.Mkdir(vp); err != nil {
-						fmt.Fprintf(stderr, "mkdir: %v\n", err)
+						s.errorf(stderr, "mkdir: %v\n", err)
 						return exitErr(1)
 					}
 					continue
 				}
 				resolved, err := s.resolve(dir, d)
 				if err != nil {
-					fmt.Fprintf(stderr, "mkdir: %v\n", err)
+					s.errorf(stderr, "mkdir: %v\n", err)
 					return exitErr(1)
 				}
 				if parents {
@@ -441,7 +452,7 @@ func (s *Shell) newMkdirCmd() *cobra.Command {
 					err = os.Mkdir(resolved, 0o755)
 				}
 				if err != nil {
-					fmt.Fprintf(stderr, "mkdir: %v\n", err)
+					s.errorf(stderr, "mkdir: %v\n", err)
 					return exitErr(1)
 				}
 			}
@@ -466,7 +477,7 @@ func (s *Shell) newTouchCmd() *cobra.Command {
 						vp := s.toVirtualPath(dir, name)
 						f, err := opener.OpenFile(vp, os.O_CREATE|os.O_WRONLY, 0o644)
 						if err != nil {
-							fmt.Fprintf(stderr, "touch: %v\n", err)
+							s.errorf(stderr, "touch: %v\n", err)
 							return exitErr(1)
 						}
 						f.Close()
@@ -475,12 +486,12 @@ func (s *Shell) newTouchCmd() *cobra.Command {
 				}
 				resolved, err := s.resolve(dir, name)
 				if err != nil {
-					fmt.Fprintf(stderr, "touch: %v\n", err)
+					s.errorf(stderr, "touch: %v\n", err)
 					return exitErr(1)
 				}
 				f, err := os.OpenFile(resolved, os.O_CREATE|os.O_WRONLY, 0o644)
 				if err != nil {
-					fmt.Fprintf(stderr, "touch: %v\n", err)
+					s.errorf(stderr, "touch: %v\n", err)
 					return exitErr(1)
 				}
 				f.Close()
@@ -560,7 +571,7 @@ func (s *Shell) headTailRun(cmd *cobra.Command, args []string, n int, isHead boo
 			vp := s.toVirtualPath(dir, name)
 			rc, err := s.fs.Get(vp)
 			if err != nil {
-				fmt.Fprintf(stderr, "%s: %v\n", name, err)
+				s.errorf(stderr, "%s: %v\n", name, err)
 				return exitErr(1)
 			}
 			lines, err := readLines(rc)
@@ -573,12 +584,12 @@ func (s *Shell) headTailRun(cmd *cobra.Command, args []string, n int, isHead boo
 		}
 		resolved, err := s.resolve(dir, name)
 		if err != nil {
-			fmt.Fprintf(stderr, "%v\n", err)
+			s.errorf(stderr, "%v\n", err)
 			return exitErr(1)
 		}
 		f, err := os.Open(resolved)
 		if err != nil {
-			fmt.Fprintf(stderr, "%s: %v\n", name, err)
+			s.errorf(stderr, "%s: %v\n", name, err)
 			return exitErr(1)
 		}
 		lines, err := readLines(f)
@@ -612,7 +623,8 @@ func (s *Shell) newTreeCmd() *cobra.Command {
 				dirs += d
 				files += f
 			}
-			fmt.Fprintf(stdout, "\n%d directories, %d files\n", dirs, files)
+			summary := fmt.Sprintf("\n%d directories, %d files\n", dirs, files)
+			fmt.Fprint(stdout, s.colorize(ansiGreen, summary))
 			return nil
 		},
 	}
@@ -665,7 +677,11 @@ func (s *Shell) treeWalk(stdout, stderr io.Writer, dir, prefix string, showAll b
 			connector = "└── "
 			childPrefix = "    "
 		}
-		fmt.Fprintf(stdout, "%s%s%s\n", prefix, connector, name)
+		displayName := name
+		if isDir[i] {
+			displayName = s.colorize(ansiBoldBlue, name)
+		}
+		fmt.Fprintf(stdout, "%s%s%s\n", prefix, s.colorize(ansiDim, connector), displayName)
 		if isDir[i] {
 			dirs++
 			d, f := s.treeWalk(stdout, stderr, path.Join(dir, name), prefix+childPrefix, showAll)
@@ -811,17 +827,17 @@ func (s *Shell) newCdCmd() *cobra.Command {
 			if s.fs != nil {
 				fi, err := s.fs.Stat(vp)
 				if err != nil {
-					fmt.Fprintf(stderr, "cd: no such file or directory: %s\n", vp)
+					s.errorf(stderr, "cd: no such file or directory: %s\n", vp)
 					return exitErr(1)
 				}
 				if !fi.IsDir {
-					fmt.Fprintf(stderr, "cd: not a directory: %s\n", vp)
+					s.errorf(stderr, "cd: not a directory: %s\n", vp)
 					return exitErr(1)
 				}
 			}
 			realPath := s.virtualToReal(vp)
 			if realPath == "" {
-				fmt.Fprintf(stderr, "cd: cannot cd to %s\n", vp)
+				s.errorf(stderr, "cd: cannot cd to %s\n", vp)
 				return exitErr(1)
 			}
 			s.runner.Dir = realPath

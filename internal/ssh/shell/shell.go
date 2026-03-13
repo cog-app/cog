@@ -36,6 +36,7 @@ type Shell struct {
 	termWidth  int  // terminal width for SSH pty sessions (0 = unknown)
 	termHeight int  // terminal height for SSH pty sessions (0 = unknown)
 	sshMode    bool // true when running over an SSH channel
+	color      bool // true during RunInteractive for ANSI color output
 }
 
 // SetSSHMode configures the shell for use over an SSH channel with a pty.
@@ -134,6 +135,9 @@ func (s *Shell) Run(ctx context.Context, command string, stdin io.Reader, stdout
 // RunInteractive reads commands from stdin with line editing, tab completion,
 // and command history, then executes each one.
 func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
+	s.color = true
+	defer func() { s.color = false }()
+
 	parser := syntax.NewParser(syntax.Variant(syntax.LangPOSIX))
 
 	// In SSH mode, wrap writers to translate \n → \r\n for proper pty display.
@@ -221,7 +225,7 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 
 		prog, parseErr := parser.Parse(strings.NewReader(line), "")
 		if parseErr != nil {
-			fmt.Fprintf(shellStderr, "parse error: %v\n", parseErr)
+			s.errorf(shellStderr, "parse error: %v\n", parseErr)
 			continue
 		}
 
@@ -239,7 +243,7 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 		if runErr != nil {
 			var exit interp.ExitStatus
 			if !errors.As(runErr, &exit) {
-				fmt.Fprintf(shellStderr, "error: %v\n", runErr)
+				s.errorf(shellStderr, "error: %v\n", runErr)
 			}
 		}
 
@@ -250,7 +254,12 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 
 // prompt returns the shell prompt string for the current state.
 func (s *Shell) prompt(runner *interp.Runner) string {
-	return fmt.Sprintf("%s@cog:%s$ ", s.username, s.virtualPath(runner.Dir))
+	user := s.username + "@cog"
+	dir := s.virtualPath(runner.Dir)
+	if s.color {
+		return ansiBoldGreen + user + ansiReset + ":" + ansiBoldBlue + dir + ansiReset + "$ "
+	}
+	return user + ":" + dir + "$ "
 }
 
 // crlfWriter wraps a writer and translates bare \n to \r\n for terminal display.
