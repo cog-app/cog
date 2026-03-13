@@ -9,6 +9,7 @@
 - [`contacts`](./contacts.md): CardDAV contacts plugin.
 - [`rss`](./rss.md): News/RSS ingestion and compatibility plugin.
 - [`notes`](./notes.md): Notes and tagging plugin.
+- [`recipes`](./recipes.md): Recipe book with URL import and NextCloud Cookbook compatibility.
 
 ## Overview
 

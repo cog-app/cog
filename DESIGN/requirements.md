@@ -14,7 +14,7 @@ For canonical terminology and shared data shape outlines, see `DESIGN/concepts_a
   - **Samba (SMB):** For native OS network drive mapping.
   - **FTP / FTPS:** Legacy compatibility.
   - **S3 API:** Allows Cog to act as an S3-compatible storage provider.
-  - **Full Text Search:** Pluggable indexing (Bleve/SQLite FTS) per-user, enabling global search across files and plugin resources.
+  - **Full Text Search:** Pluggable indexing (Bleve) per-user, enabling global search across files and plugin resources.
   - **Extensibility:** Architecture designed to easily plug in new protocol handlers.
 - **Filesystem Abstraction:**
   - Internal interface inspired by `hackpadfs`.
