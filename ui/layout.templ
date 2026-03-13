@@ -48,6 +48,21 @@ templ Base(pd PageData) {
 						</li>
 					}
 				</ul>
+				<div class="navbar-apps-dropdown dropdown" tabindex="0">
+					<button class="apps-toggle" type="button">
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>
+					</button>
+					<div class="dropdown-menu apps-menu">
+						for _, item := range pd.Nav {
+							<a href={ templ.SafeURL(item.URL) } class={ dropdownActive(pd.RequestPath, item.URL) }>
+								if item.Icon != "" {
+									@templ.Raw(item.Icon)
+								}
+								{ item.Label }
+							</a>
+						}
+					</div>
+				</div>
 				if pd.User != nil {
 					<div class="navbar-search">
 						<input
@@ -238,6 +253,21 @@ templ Shell(pd PageData, body templ.Component) {
 						</li>
 					}
 				</ul>
+				<div class="navbar-apps-dropdown dropdown" tabindex="0">
+					<button class="apps-toggle" type="button">
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>
+					</button>
+					<div class="dropdown-menu apps-menu">
+						for _, item := range pd.Nav {
+							<a href={ templ.SafeURL(item.URL) } class={ dropdownActive(pd.RequestPath, item.URL) }>
+								if item.Icon != "" {
+									@templ.Raw(item.Icon)
+								}
+								{ item.Label }
+							</a>
+						}
+					</div>
+				</div>
 				if pd.User != nil {
 					<div class="navbar-search">
 						<input

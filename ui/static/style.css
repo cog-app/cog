@@ -746,6 +746,53 @@ a:hover {
   border-left: 3px solid var(--color-primary);
 }
 
+/* Apps dropdown — hidden by default, shown at smallest breakpoint */
+.navbar-apps-dropdown {
+  display: none;
+}
+
+.apps-toggle {
+  padding: 0.4rem;
+  border: none;
+  background: none;
+}
+
+.apps-toggle:hover {
+  background: var(--color-bg);
+  border-radius: var(--radius);
+}
+
+.apps-menu {
+  min-width: 180px;
+  left: 0;
+  right: auto;
+}
+
+.apps-menu a {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.apps-menu .nav-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Stage 1: Labels below icons */
+@media (max-width: 1200px) {
+  .navbar-nav a {
+    flex-direction: column;
+    gap: 0.15rem;
+    font-size: 0.7rem;
+    padding: 0.35rem 0.4rem;
+  }
+  .nav-label {
+    font-size: 0.65rem;
+  }
+}
+
+/* Stage 2: Icons only */
 @media (max-width: 768px) {
   .sidebar-layout {
     flex-direction: column;
@@ -757,7 +804,6 @@ a:hover {
     overflow-x: auto;
   }
 
-  /* Navbar: hide labels, show only icons */
   .navbar {
     padding: 0 0.5rem;
   }
@@ -769,6 +815,7 @@ a:hover {
     gap: 0;
   }
   .navbar-nav a {
+    flex-direction: row;
     padding: 0.5rem;
   }
   .nav-label {
@@ -786,7 +833,14 @@ a:hover {
   }
 }
 
-@media (max-width: 480px) {
+/* Stage 3: Apps dropdown replaces nav */
+@media (max-width: 540px) {
+  .navbar-nav {
+    display: none;
+  }
+  .navbar-apps-dropdown {
+    display: inline-block;
+  }
   .navbar-search {
     display: none;
   }
