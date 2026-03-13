@@ -1,0 +1,20 @@
+package recipes
+
+import "fmt"
+
+templ recentRecipesWidget(recipes []Recipe) {
+	if len(recipes) == 0 {
+		<p class="text-muted">No recipes yet.</p>
+	} else {
+		for _, r := range recipes {
+			<div style="padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+				<a href={ templ.SafeURL(fmt.Sprintf("/apps/recipes/recipe/%d", r.ID)) } style="font-weight:500">
+					{ r.Name }
+				</a>
+				if r.Category != "" {
+					<div class="text-muted" style="font-size:0.85rem">{ r.Category }</div>
+				}
+			</div>
+		}
+	}
+}

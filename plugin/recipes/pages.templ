@@ -1,0 +1,450 @@
+package recipes
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"git.duckfam.us/jj-software/cog/ui"
+)
+
+templ recipesSidebar(sb sidebarData) {
+	<nav class="sidebar" id="recipes-sidebar">
+		<a href="/apps/recipes/" class={ sidebarClass(sb.ActivePath, "/apps/recipes/") }>
+			All Recipes
+			if sb.RecipeCount > 0 {
+				<span class="badge">{ strconv.Itoa(sb.RecipeCount) }</span>
+			}
+		</a>
+		if len(sb.Categories) > 0 {
+			<div class="sidebar-divider"></div>
+			<div style="padding:0.25rem 1rem;font-size:0.75rem;text-transform:uppercase;color:var(--color-text-muted);font-weight:600">Categories</div>
+			for _, cat := range sb.Categories {
+				<a
+					href={ templ.SafeURL("/apps/recipes/category/" + cat.Name) }
+					class={ sidebarClass(sb.ActivePath, "/apps/recipes/category/"+cat.Name) }
+					style="padding-left:1.5rem;font-size:0.9rem"
+				>
+					{ cat.Name }
+					<span class="badge">{ strconv.Itoa(cat.Count) }</span>
+				</a>
+			}
+		}
+		if len(sb.Keywords) > 0 {
+			<div class="sidebar-divider"></div>
+			<div style="padding:0.25rem 1rem;font-size:0.75rem;text-transform:uppercase;color:var(--color-text-muted);font-weight:600">Tags</div>
+			for _, kw := range sb.Keywords {
+				<a
+					href={ templ.SafeURL("/apps/recipes/keyword/" + kw.Keyword) }
+					class={ sidebarClass(sb.ActivePath, "/apps/recipes/keyword/"+kw.Keyword) }
+					style="padding-left:1.5rem;font-size:0.9rem"
+				>
+					{ kw.Keyword }
+					<span class="badge">{ strconv.Itoa(kw.Count) }</span>
+				</a>
+			}
+		}
+		<div class="sidebar-divider"></div>
+		<a href="/apps/recipes/new" class={ sidebarClass(sb.ActivePath, "/apps/recipes/new") }>
+			+ New Recipe
+		</a>
+		<a href="/apps/recipes/import" class={ sidebarClass(sb.ActivePath, "/apps/recipes/import") }>
+			+ Import from URL
+		</a>
+	</nav>
+}
+
+templ recipesIndexPage(sb sidebarData, recipes []Recipe, csrfToken string) {
+	<div class="sidebar-layout">
+		@recipesSidebar(sb)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+				<h1 style="margin:0">All Recipes</h1>
+				<div class="flex gap-1">
+					<a href="/apps/recipes/import" class="btn btn-outline btn-sm">Import</a>
+					<a href="/apps/recipes/new" class="btn btn-primary btn-sm">New Recipe</a>
+				</div>
+			</div>
+			if len(recipes) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No recipes yet. Create one or import from a URL!</p>
+				}
+			} else {
+				@recipeList(recipes, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ recipesCategoryPage(sb sidebarData, category string, recipes []Recipe, csrfToken string) {
+	<div class="sidebar-layout">
+		@recipesSidebar(sb)
+		<div class="sidebar-content">
+			<h1>{ category }</h1>
+			if len(recipes) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No recipes in this category.</p>
+				}
+			} else {
+				@recipeList(recipes, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ recipesKeywordPage(sb sidebarData, keyword string, recipes []Recipe, csrfToken string) {
+	<div class="sidebar-layout">
+		@recipesSidebar(sb)
+		<div class="sidebar-content">
+			<h1>{ keyword }</h1>
+			if len(recipes) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No recipes with this tag.</p>
+				}
+			} else {
+				@recipeList(recipes, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ recipeViewPage(sb sidebarData, recipe *Recipe, ingredients []Ingredient, instructions []Instruction, keywords []string, csrfToken string) {
+	<div class="sidebar-layout">
+		@recipesSidebar(sb)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+				<h1 style="margin:0">{ recipe.Name }</h1>
+				<div class="flex gap-1">
+					<a href={ templ.SafeURL(fmt.Sprintf("/apps/recipes/recipe/%d/edit", recipe.ID)) } class="btn btn-outline btn-sm">Edit</a>
+					<button
+						class="btn btn-danger btn-sm"
+						hx-delete={ fmt.Sprintf("/apps/recipes/recipes/%d", recipe.ID) }
+						hx-confirm="Delete this recipe?"
+						hx-target="closest .sidebar-layout"
+						hx-swap="innerHTML"
+					>Delete</button>
+				</div>
+			</div>
+			if recipe.Category != "" || len(keywords) > 0 {
+				<div class="mb-2 flex gap-1" style="flex-wrap:wrap">
+					if recipe.Category != "" {
+						<a href={ templ.SafeURL("/apps/recipes/category/" + recipe.Category) } class="badge">{ recipe.Category }</a>
+					}
+					for _, kw := range keywords {
+						<a href={ templ.SafeURL("/apps/recipes/keyword/" + kw) } class="badge" style="background:var(--color-primary-bg);color:var(--color-primary)">{ kw }</a>
+					}
+				</div>
+			}
+			<div class="flex gap-2 mb-2 text-muted" style="font-size:0.85rem">
+				if recipe.PrepTime != "" {
+					<span>Prep: { formatDuration(recipe.PrepTime) }</span>
+				}
+				if recipe.CookTime != "" {
+					<span>Cook: { formatDuration(recipe.CookTime) }</span>
+				}
+				if recipe.TotalTime != "" {
+					<span>Total: { formatDuration(recipe.TotalTime) }</span>
+				}
+				if recipe.RecipeYield != "" {
+					<span>Yield: { recipe.RecipeYield }</span>
+				}
+				if recipe.Calories != "" {
+					<span>{ recipe.Calories }</span>
+				}
+			</div>
+			if recipe.Description != "" {
+				<p class="mb-2">{ recipe.Description }</p>
+			}
+			if recipe.SourceURL != "" {
+				<div class="mb-2 text-muted" style="font-size:0.85rem">
+					Source: <a href={ templ.SafeURL(recipe.SourceURL) } target="_blank" rel="noopener">{ truncateURL(recipe.SourceURL) }</a>
+				</div>
+			}
+			if len(ingredients) > 0 {
+				@ui.Card("Ingredients") {
+					<ul style="margin:0;padding-left:1.25rem">
+						for _, ing := range ingredients {
+							<li style="padding:0.15rem 0">{ ing.Text }</li>
+						}
+					</ul>
+				}
+			}
+			if len(instructions) > 0 {
+				@ui.Card("Instructions") {
+					<ol style="margin:0;padding-left:1.25rem">
+						for _, step := range instructions {
+							<li style="padding:0.25rem 0">{ step.Text }</li>
+						}
+					</ol>
+				}
+			}
+		</div>
+	</div>
+}
+
+templ recipeEditPage(sb sidebarData, recipe *Recipe, ingredients []Ingredient, instructions []Instruction, keywords []string, categories []CategoryCount, csrfToken string) {
+	<div class="sidebar-layout">
+		@recipesSidebar(sb)
+		<div class="sidebar-content">
+			<h1>Edit: { recipe.Name }</h1>
+			@ui.Card("") {
+				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/recipes/recipes/%d", recipe.ID)) }>
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<div class="form-group">
+						<label for="name">Name</label>
+						<input class="form-control" type="text" id="name" name="name" value={ recipe.Name } required/>
+					</div>
+					<div class="form-group">
+						<label for="description">Description</label>
+						<textarea class="form-control" id="description" name="description" rows="3">{ recipe.Description }</textarea>
+					</div>
+					<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+						<div class="form-group">
+							<label for="category">Category</label>
+							<input class="form-control" type="text" id="category" name="category" value={ recipe.Category } list="categories" placeholder="e.g. Main Course"/>
+							<datalist id="categories">
+								for _, cat := range categories {
+									<option value={ cat.Name }></option>
+								}
+							</datalist>
+						</div>
+						<div class="form-group">
+							<label for="cuisine">Cuisine</label>
+							<input class="form-control" type="text" id="cuisine" name="cuisine" value={ recipe.Cuisine } placeholder="e.g. Italian"/>
+						</div>
+					</div>
+					<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:1rem">
+						<div class="form-group">
+							<label for="prep_time">Prep Time</label>
+							<input class="form-control" type="text" id="prep_time" name="prep_time" value={ recipe.PrepTime } placeholder="PT15M"/>
+						</div>
+						<div class="form-group">
+							<label for="cook_time">Cook Time</label>
+							<input class="form-control" type="text" id="cook_time" name="cook_time" value={ recipe.CookTime } placeholder="PT30M"/>
+						</div>
+						<div class="form-group">
+							<label for="total_time">Total Time</label>
+							<input class="form-control" type="text" id="total_time" name="total_time" value={ recipe.TotalTime } placeholder="PT45M"/>
+						</div>
+						<div class="form-group">
+							<label for="recipe_yield">Yield</label>
+							<input class="form-control" type="text" id="recipe_yield" name="recipe_yield" value={ recipe.RecipeYield } placeholder="4 servings"/>
+						</div>
+					</div>
+					<div class="form-group">
+						<label for="keywords">Tags (comma-separated)</label>
+						<input class="form-control" type="text" id="keywords" name="keywords" value={ joinKeywords(keywords) } placeholder="dinner, kid friendly, quick"/>
+					</div>
+					<div class="form-group">
+						<label for="ingredients">Ingredients (one per line)</label>
+						<textarea class="form-control" id="ingredients" name="ingredients" rows="10" style="font-family:monospace">{ joinIngredients(ingredients) }</textarea>
+					</div>
+					<div class="form-group">
+						<label for="instructions">Instructions (one step per line)</label>
+						<textarea class="form-control" id="instructions" name="instructions" rows="10" style="font-family:monospace">{ joinInstructions(instructions) }</textarea>
+					</div>
+					<div class="flex gap-1">
+						<button class="btn btn-primary" type="submit">Save</button>
+						<a href={ templ.SafeURL(fmt.Sprintf("/apps/recipes/recipe/%d", recipe.ID)) } class="btn btn-outline">Cancel</a>
+					</div>
+				</form>
+			}
+		</div>
+	</div>
+}
+
+templ recipeNewPage(sb sidebarData, categories []CategoryCount, csrfToken string) {
+	<div class="sidebar-layout">
+		@recipesSidebar(sb)
+		<div class="sidebar-content">
+			<h1>New Recipe</h1>
+			@ui.Card("") {
+				<form method="post" action="/apps/recipes/recipes">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<div class="form-group">
+						<label for="name">Name</label>
+						<input class="form-control" type="text" id="name" name="name" placeholder="Chicken Tikka Masala" required/>
+					</div>
+					<div class="form-group">
+						<label for="description">Description</label>
+						<textarea class="form-control" id="description" name="description" rows="3" placeholder="A brief description of the recipe"></textarea>
+					</div>
+					<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+						<div class="form-group">
+							<label for="category">Category</label>
+							<input class="form-control" type="text" id="category" name="category" list="categories" placeholder="e.g. Main Course"/>
+							<datalist id="categories">
+								for _, cat := range categories {
+									<option value={ cat.Name }></option>
+								}
+							</datalist>
+						</div>
+						<div class="form-group">
+							<label for="cuisine">Cuisine</label>
+							<input class="form-control" type="text" id="cuisine" name="cuisine" placeholder="e.g. Italian"/>
+						</div>
+					</div>
+					<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:1rem">
+						<div class="form-group">
+							<label for="prep_time">Prep Time</label>
+							<input class="form-control" type="text" id="prep_time" name="prep_time" placeholder="PT15M"/>
+						</div>
+						<div class="form-group">
+							<label for="cook_time">Cook Time</label>
+							<input class="form-control" type="text" id="cook_time" name="cook_time" placeholder="PT30M"/>
+						</div>
+						<div class="form-group">
+							<label for="total_time">Total Time</label>
+							<input class="form-control" type="text" id="total_time" name="total_time" placeholder="PT45M"/>
+						</div>
+						<div class="form-group">
+							<label for="recipe_yield">Yield</label>
+							<input class="form-control" type="text" id="recipe_yield" name="recipe_yield" placeholder="4 servings"/>
+						</div>
+					</div>
+					<div class="form-group">
+						<label for="keywords">Tags (comma-separated)</label>
+						<input class="form-control" type="text" id="keywords" name="keywords" placeholder="dinner, kid friendly, quick"/>
+					</div>
+					<div class="form-group">
+						<label for="ingredients">Ingredients (one per line)</label>
+						<textarea class="form-control" id="ingredients" name="ingredients" rows="10" style="font-family:monospace" placeholder="2 cups flour&#10;1 cup sugar&#10;3 eggs"></textarea>
+					</div>
+					<div class="form-group">
+						<label for="instructions">Instructions (one step per line)</label>
+						<textarea class="form-control" id="instructions" name="instructions" rows="10" style="font-family:monospace" placeholder="Preheat oven to 350°F&#10;Mix dry ingredients&#10;Add wet ingredients"></textarea>
+					</div>
+					<div class="flex gap-1">
+						<button class="btn btn-primary" type="submit">Create</button>
+						<a href="/apps/recipes/" class="btn btn-outline">Cancel</a>
+					</div>
+				</form>
+			}
+		</div>
+	</div>
+}
+
+templ recipeImportPage(sb sidebarData, csrfToken string) {
+	<div class="sidebar-layout">
+		@recipesSidebar(sb)
+		<div class="sidebar-content">
+			<h1>Import Recipe from URL</h1>
+			@ui.Card("") {
+				<p class="text-muted mb-2">
+					Paste a URL from a recipe website. The recipe will be automatically extracted
+					from the page's structured data (schema.org Recipe).
+				</p>
+				<form method="post" action="/apps/recipes/recipes/import-url">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<div class="form-group">
+						<label for="url">Recipe URL</label>
+						<input class="form-control" type="url" id="url" name="url" placeholder="https://www.allrecipes.com/recipe/..." required/>
+					</div>
+					<div class="flex gap-1">
+						<button class="btn btn-primary" type="submit">Import</button>
+						<a href="/apps/recipes/" class="btn btn-outline">Cancel</a>
+					</div>
+				</form>
+			}
+		</div>
+	</div>
+}
+
+templ recipeList(recipes []Recipe, csrfToken string) {
+	<div id="recipe-list">
+		for _, recipe := range recipes {
+			@recipeRow(&recipe, csrfToken)
+		}
+	</div>
+}
+
+templ recipeRow(recipe *Recipe, csrfToken string) {
+	<div id={ fmt.Sprintf("recipe-%d", recipe.ID) } style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0);display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
+		<div style="min-width:0;flex:1">
+			<div class="flex items-center gap-1" style="flex-wrap:wrap">
+				<a href={ templ.SafeURL(fmt.Sprintf("/apps/recipes/recipe/%d", recipe.ID)) } style="font-weight:500">
+					{ recipe.Name }
+				</a>
+				if recipe.Category != "" {
+					<span class="badge" style="font-size:0.75rem">{ recipe.Category }</span>
+				}
+			</div>
+			<div class="text-muted" style="font-size:0.85rem">
+				if recipe.TotalTime != "" {
+					<span>{ formatDuration(recipe.TotalTime) }</span>
+					if recipe.RecipeYield != "" {
+						<span>· </span>
+					}
+				}
+				if recipe.RecipeYield != "" {
+					<span>{ recipe.RecipeYield }</span>
+				}
+				if recipe.TotalTime == "" && recipe.RecipeYield == "" {
+					{ formatUnixTime(recipe.UpdatedAt) }
+				}
+			</div>
+		</div>
+		<div class="flex gap-1" style="flex-shrink:0">
+			<button
+				class="btn btn-danger btn-sm"
+				hx-delete={ fmt.Sprintf("/apps/recipes/recipes/%d", recipe.ID) }
+				hx-target={ fmt.Sprintf("#recipe-%d", recipe.ID) }
+				hx-swap="outerHTML"
+				hx-confirm="Delete this recipe?"
+			>&#10005;</button>
+		</div>
+	</div>
+}
+
+func sidebarClass(activePath, itemPath string) string {
+	if activePath == itemPath {
+		return "sidebar-item active"
+	}
+	return "sidebar-item"
+}
+
+func formatUnixTime(unix int64) string {
+	if unix == 0 {
+		return ""
+	}
+	t := time.Unix(unix, 0)
+	now := time.Now()
+	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
+		return t.Format("15:04")
+	}
+	if t.Year() == now.Year() {
+		return t.Format("Jan 2")
+	}
+	return t.Format("2006-01-02")
+}
+
+func truncateURL(u string) string {
+	u = strings.TrimPrefix(u, "https://")
+	u = strings.TrimPrefix(u, "http://")
+	u = strings.TrimPrefix(u, "www.")
+	if len(u) > 60 {
+		return u[:57] + "..."
+	}
+	return u
+}
+
+func joinKeywords(keywords []string) string {
+	return strings.Join(keywords, ", ")
+}
+
+func joinIngredients(ingredients []Ingredient) string {
+	var parts []string
+	for _, i := range ingredients {
+		parts = append(parts, i.Text)
+	}
+	return strings.Join(parts, "\n")
+}
+
+func joinInstructions(instructions []Instruction) string {
+	var parts []string
+	for _, i := range instructions {
+		parts = append(parts, i.Text)
+	}
+	return strings.Join(parts, "\n")
+}
