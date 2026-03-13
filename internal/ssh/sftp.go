@@ -42,7 +42,11 @@ func (s *Server) serveSFTP(channel gossh.Channel, filesDir string, userFS vfs.FS
 		}
 	}
 
-	srv := sftp.NewRequestServer(channel, h)
+	var opts []sftp.RequestServerOption
+	if userFS != nil {
+		opts = append(opts, sftp.WithStartDirectory("/files"))
+	}
+	srv := sftp.NewRequestServer(channel, h, opts...)
 	if err := srv.Serve(); err != nil {
 		if !errors.Is(err, io.EOF) {
 			s.log.Debug("sftp session ended", "err", err)

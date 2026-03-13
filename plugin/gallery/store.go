@@ -601,9 +601,9 @@ func GetRecognitionStats(db *sql.DB) (RecognitionStats, error) {
 	var s RecognitionStats
 	err := db.QueryRow(`SELECT
 		COUNT(*),
-		SUM(CASE WHEN recognition_state = 0 THEN 1 ELSE 0 END),
-		SUM(CASE WHEN recognition_state = 1 THEN 1 ELSE 0 END),
-		SUM(CASE WHEN recognition_state = 2 THEN 1 ELSE 0 END)
+		COALESCE(SUM(CASE WHEN recognition_state = 0 THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN recognition_state = 1 THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN recognition_state = 2 THEN 1 ELSE 0 END), 0)
 		FROM media WHERE mime_type LIKE 'image/%'`).Scan(&s.TotalImages, &s.Pending, &s.Done, &s.Errored)
 	if err != nil {
 		return s, err
