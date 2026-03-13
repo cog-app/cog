@@ -677,20 +677,8 @@ func (pr *pluginRegistrar) adminSettingsShellMiddleware(handler http.Handler) ht
 			title = "Cog"
 		}
 
-		// Build admin sidebar: core items, divider, plugin items.
-		coreItems := []ui.SidebarItem{
-			{Label: "General", URL: "/admin/settings"},
-			{Label: "Users", URL: "/admin/users"},
-			{Label: "Groups", URL: "/admin/groups"},
-			{Label: "Volumes", URL: "/admin/volumes"},
-			{Label: "Plugins", URL: "/admin/plugins"},
-		}
+		// Mark plugin settings nav items active based on current URL.
 		pluginItems := pr.registry.SettingsItems()
-		for i := range coreItems {
-			if coreItems[i].URL == r.URL.Path {
-				coreItems[i].Active = true
-			}
-		}
 		for i := range pluginItems {
 			if pluginItems[i].URL == r.URL.Path {
 				pluginItems[i].Active = true
@@ -698,12 +686,13 @@ func (pr *pluginRegistrar) adminSettingsShellMiddleware(handler http.Handler) ht
 		}
 
 		pd := ui.PageData{
-			Title:       title,
-			User:        u,
-			CSRFToken:   csrf,
-			Nav:         nav,
-			RequestPath: r.URL.Path,
-			IsAdmin:     u != nil && u.IsAdmin,
+			Title:             title,
+			User:              u,
+			CSRFToken:         csrf,
+			Nav:               nav,
+			RequestPath:       r.URL.Path,
+			IsAdmin:           u != nil && u.IsAdmin,
+			PluginSettingsNav: pluginItems,
 		}
 
 		for k, v := range rec.Header() {
@@ -714,7 +703,7 @@ func (pr *pluginRegistrar) adminSettingsShellMiddleware(handler http.Handler) ht
 		}
 
 		fragment := templ.Raw(rec.Body.String())
-		ui.AdminSidebarPage(pd, coreItems, pluginItems).Render(templ.WithChildren(r.Context(), fragment), w)
+		ui.AdminSidebarPage(pd, "").Render(templ.WithChildren(r.Context(), fragment), w)
 	})
 }
 

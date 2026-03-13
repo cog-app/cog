@@ -9,7 +9,7 @@ import (
 )
 
 templ adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], flash string, flashKind string) {
-	@ui.AdminSidebarPage(pd, adminSidebar("volumes"), pd.PluginSettingsNav) {
+	@ui.AdminSidebarPage(pd, "volumes") {
 		<div class="flex justify-between items-center" style="margin-bottom:1rem">
 			<h1>Volumes</h1>
 			<a class="btn btn-primary" href="/admin/volumes/new">New Volume</a>
@@ -48,7 +48,7 @@ templ adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], 
 }
 
 templ adminVolumeNewPage(pd ui.PageData, errMsg string) {
-	@ui.AdminSidebarPage(pd, adminSidebar("volumes"), pd.PluginSettingsNav) {
+	@ui.AdminSidebarPage(pd, "volumes") {
 		<h1 style="margin-bottom:1rem">New Volume</h1>
 		if errMsg != "" {
 			@ui.Alert("error", errMsg)
@@ -67,7 +67,7 @@ templ adminVolumeNewPage(pd ui.PageData, errMsg string) {
 }
 
 templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, isDefault bool, shares []ui.ShareDisplayItem, levels []plugin.PermissionLevel, quotas []quotaDisplayItem, flash string, flashKind string) {
-	@ui.AdminSidebarPage(pd, adminSidebar("volumes"), pd.PluginSettingsNav) {
+	@ui.AdminSidebarPage(pd, "volumes") {
 		<h1 style="margin-bottom:1rem">
 			Edit Volume: { v.Name }
 			if isDefault {

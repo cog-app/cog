@@ -388,20 +388,31 @@ templ Shell(pd PageData, body templ.Component) {
 }
 
 // AdminSidebarPage renders a page with the admin sidebar, a divider, and plugin settings items.
-templ AdminSidebarPage(pd PageData, coreItems []SidebarItem, pluginItems []SidebarItem) {
+templ AdminSidebarPage(pd PageData, active string) {
 	@Base(pd) {
 		<div class="sidebar-layout">
 			<nav class="sidebar">
-				@sidebarItems(coreItems)
-				if len(pluginItems) > 0 {
+				@sidebarItems(adminSidebarItems(active))
+				if len(pd.PluginSettingsNav) > 0 {
 					<hr class="sidebar-divider"/>
-					@sidebarItems(pluginItems)
+					@sidebarItems(pd.PluginSettingsNav)
 				}
 			</nav>
 			<div class="sidebar-content">
 				{ children... }
 			</div>
 		</div>
+	}
+}
+
+func adminSidebarItems(active string) []SidebarItem {
+	return []SidebarItem{
+		{Label: "General", URL: "/admin/settings", Active: active == "settings"},
+		{Label: "Users", URL: "/admin/users", Active: active == "users"},
+		{Label: "Groups", URL: "/admin/groups", Active: active == "groups"},
+		{Label: "Volumes", URL: "/admin/volumes", Active: active == "volumes"},
+		{Label: "Plugins", URL: "/admin/plugins", Active: active == "plugins"},
+		{Label: "Logs", URL: "/admin/logs", Active: active == "logs"},
 	}
 }
 
