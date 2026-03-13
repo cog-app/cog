@@ -40,10 +40,13 @@ func isMediaMIME(mimeType string) bool {
 
 // scanAllUsersErr scans all user data directories for new/changed media.
 func (p *Plugin) scanAllUsersErr(ctx context.Context) (warnings []string, err error) {
-	entries, err := os.ReadDir(p.ctx.DataDir())
+	dataDir := p.ctx.DataDir()
+	entries, err := os.ReadDir(dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("read data dir: %w", err)
 	}
+
+	var scanned int
 	for _, entry := range entries {
 		if ctx.Err() != nil {
 			return warnings, ctx.Err()
@@ -53,16 +56,23 @@ func (p *Plugin) scanAllUsersErr(ctx context.Context) (warnings []string, err er
 		}
 		username := entry.Name()
 		// Only scan users that have a files plugin DB.
-		filesDBPath := filepath.Join(p.ctx.DataDir(), username, "app_data", "files", "plugin.db")
+		filesDBPath := filepath.Join(dataDir, username, "app_data", "files", "plugin.db")
 		if _, err := os.Stat(filesDBPath); err != nil {
+			p.log.Debug("skip user (no files db)", "user", username)
 			continue
 		}
+		p.log.Info("scanning user", "user", username)
 		userWarnings, err := p.scanUser(ctx, username)
 		warnings = append(warnings, userWarnings...)
 		if err != nil {
 			p.log.Error("scan user", "user", username, "err", err)
 			warnings = append(warnings, fmt.Sprintf("%s: %v", username, err))
 		}
+		scanned++
+	}
+
+	if scanned == 0 {
+		p.log.Warn("no users with files found to scan", "data_dir", dataDir)
 	}
 	return warnings, nil
 }

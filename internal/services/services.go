@@ -51,6 +51,7 @@ type Providers struct {
 	LogBuffer    *logbuf.Buffer
 	RateLimiter  *ratelimit.Limiter
 	CSRFSecret   []byte
+	StartedAt    time.Time
 }
 
 // New opens the system database and constructs all service providers.
@@ -188,6 +189,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, plugins ...pl
 		Settings:     settings.NewStore(sysDB),
 		RateLimiter:  ratelimit.New(10, 15*time.Minute),
 		CSRFSecret:   secret,
+		StartedAt:    time.Now(),
 	}
 }
 

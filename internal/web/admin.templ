@@ -9,8 +9,8 @@ import (
 	"iter"
 	"log/slog"
 	"strings"
+	"time"
 )
-
 
 // --- Users ---
 templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], flash string, flashKind string) {
@@ -141,11 +141,22 @@ templ adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashK
 }
 
 // --- Settings ---
-templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, smtp smtpSettingsData, env envConfigData, flash string, flashKind string) {
+templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, smtp smtpSettingsData, env envConfigData, status statusData, flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, "settings") {
 		<h1 style="margin-bottom:1rem">System Settings</h1>
 		if flash != "" {
 			@ui.Alert(flashKind, flash)
+		}
+		@ui.Card("Status") {
+			<table class="table">
+				<tbody>
+					<tr><td style="font-weight:600;width:10rem">Instance Uptime</td><td>{ status.InstanceUptime }</td></tr>
+					<tr><td style="font-weight:600">Server Uptime</td><td>{ status.ServerUptime }</td></tr>
+					if status.CommitHash != "" {
+						<tr><td style="font-weight:600">Build</td><td><code>{ status.CommitHash }</code> ({ status.CommitDate.Format(time.RFC3339) })</td></tr>
+					}
+				</tbody>
+			</table>
 		}
 		@ui.Card("Environment") {
 			<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">Server configuration from environment variables (read-only).</p>

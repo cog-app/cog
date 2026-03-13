@@ -10,11 +10,11 @@ The following is a CLAUDE generated report of other issues to fix. I need to go 
 
 Critical — Not Implemented
 
-| Feature                               | Design Doc                              | Status                                                                 |
-| ------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------- |
-| File access protocols ( SMB, FTP, S3) | DESIGN/file_protocols.md                | No code. Only WebDAV exists.                                           |
-| Plugin capability/permission system   | DESIGN/plugins/index.md §Access Control | DB_SANDBOX, DB_READ, FS_READ, ROUTE_GLOBAL_BIND — none implemented     |
-| SQL Proxy / custom SQLite functions   | DESIGN/plugins/index.md §Data Access    | read_file(), head_file(), file_exists(), file_size() — not implemented |
+| Feature                              | Design Doc                              | Status                                                                 |
+| ------------------------------------ | --------------------------------------- | ---------------------------------------------------------------------- |
+| File access protocols (SMB, FTP, S3) | DESIGN/file_protocols.md                | No code. Only WebDAV exists.                                           |
+| Plugin capability/permission system  | DESIGN/plugins/index.md §Access Control | DB_SANDBOX, DB_READ, FS_READ, ROUTE_GLOBAL_BIND — none implemented     |
+| SQL Proxy / custom SQLite functions  | DESIGN/plugins/index.md §Data Access    | read_file(), head_file(), file_exists(), file_size() — not implemented |
 
 Moderate — Partially Implemented
 

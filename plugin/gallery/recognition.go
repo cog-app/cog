@@ -98,6 +98,8 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		return nil
 	}
 
+	p.log.Info("recognition started", "user", username, "backend", backend.Name())
+
 	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media
 		WHERE recognition_state = 0 AND mime_type LIKE 'image/%'
 		LIMIT 50`)
@@ -110,6 +112,12 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 	if err != nil {
 		return err
 	}
+
+	if len(items) == 0 {
+		p.log.Debug("recognition: no pending images", "user", username)
+		return nil
+	}
+	p.log.Info("recognition processing", "user", username, "count", len(items))
 
 	tagMinConf := 0.5
 	if v := GetSetting(sysDB, "tag_min_confidence", ""); v != "" {
@@ -132,7 +140,9 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		now := time.Now().Unix()
 		if err != nil {
 			p.log.Error("recognize", "path", m.FilePath, "err", err)
-			db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ?, recognition_error = ? WHERE id = ?`, now, err.Error(), m.ID)
+			if _, uerr := db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ?, recognition_error = ? WHERE id = ?`, now, err.Error(), m.ID); uerr != nil {
+				p.log.Error("update recognition error", "id", m.ID, "err", uerr)
+			}
 			continue
 		}
 

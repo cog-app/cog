@@ -4,7 +4,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/smtp"
+	"os"
+	"runtime/debug"
 	"strconv"
+	"strings"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
@@ -317,6 +321,48 @@ type envConfigData struct {
 	DataDir string
 }
 
+// statusData holds runtime status information for the admin settings page.
+type statusData struct {
+	InstanceUptime time.Duration
+	ServerUptime   time.Duration
+	CommitHash     string
+	CommitDate     time.Time
+}
+
+func buildStatusData(startedAt time.Time) statusData {
+	sd := statusData{
+		InstanceUptime: time.Since(startedAt),
+		ServerUptime:   readServerUptime(),
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range info.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				sd.CommitHash = s.Value
+				if len(sd.CommitHash) > 10 {
+					sd.CommitHash = sd.CommitHash[:10]
+				}
+			case "vcs.time":
+				sd.CommitDate, _ = time.Parse(time.RFC3339, s.Value)
+			}
+		}
+	}
+	return sd
+}
+
+func readServerUptime() time.Duration {
+	data, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return 0
+	}
+	field, _, _ := strings.Cut(string(data), " ")
+	secs, err := strconv.ParseFloat(field, 64)
+	if err != nil {
+		return 0
+	}
+	return time.Duration(secs * float64(time.Second))
+}
+
 func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 	pd := pageDataWithNav(r, "Settings", h.p.CSRFSecret, h.p.Plugins)
 	pubReg := h.p.Settings != nil && h.p.Settings.GetBool(settings.KeyPublicRegistration)
@@ -341,12 +387,14 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 		DataDir: h.p.Config.DataDir,
 	}
 
+	status := buildStatusData(h.p.StartedAt)
+
 	flash := getFlash(w, r)
 	var flashMsg, flashKind string
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), smtp, env, flashMsg, flashKind).Render(r.Context(), w)
+	adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), smtp, env, status, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {

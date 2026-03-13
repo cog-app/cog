@@ -234,7 +234,10 @@ func (p *Plugin) runScan(ctx context.Context) {
 	p.scanStatus.Running = true
 	p.scanMu.Unlock()
 
+	p.log.Info("background scan started")
+	start := time.Now()
 	warnings, err := p.scanAllUsersErr(ctx)
+	elapsed := time.Since(start)
 
 	p.scanMu.Lock()
 	p.scanStatus.Running = false
@@ -242,6 +245,12 @@ func (p *Plugin) runScan(ctx context.Context) {
 	p.scanStatus.LastError = err
 	p.scanStatus.Warnings = warnings
 	p.scanMu.Unlock()
+
+	if err != nil {
+		p.log.Error("background scan failed", "elapsed", elapsed, "err", err)
+	} else {
+		p.log.Info("background scan complete", "elapsed", elapsed, "warnings", len(warnings))
+	}
 }
 
 // scanLoop is the background scanning goroutine.
