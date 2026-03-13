@@ -19,19 +19,6 @@ func NewPages(p *Plugin) *Pages {
 	return &Pages{plugin: p}
 }
 
-func (h *Pages) csrfToken(r *http.Request) string {
-	return plugin.CSRFTokenFromContext(r.Context())
-}
-
-func (h *Pages) userDB(r *http.Request) (*sql.DB, error) {
-	u := plugin.UserFromContext(r.Context())
-	return h.plugin.DB(u.Username)
-}
-
-func (h *Pages) username(r *http.Request) string {
-	return plugin.UserFromContext(r.Context()).Username
-}
-
 type sidebarData struct {
 	RecipeCount int
 	Categories  []CategoryCount
@@ -51,27 +38,22 @@ func (h *Pages) buildSidebar(db *sql.DB, activePath string) sidebarData {
 	}
 }
 
-// setTitle sets the page title for the shell middleware.
-func setTitle(w http.ResponseWriter, title string) {
-	w.Header().Set("X-Page-Title", title)
-}
-
 // Index shows all recipes.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	sb := h.buildSidebar(db, "/apps/recipes/")
 	recipes, _ := ListRecipes(db, 200)
-	setTitle(w, "Recipes")
-	recipesIndexPage(sb, recipes, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "Recipes")
+	recipesIndexPage(sb, recipes, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // CategoryView shows recipes filtered by category.
 func (h *Pages) CategoryView(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -79,13 +61,13 @@ func (h *Pages) CategoryView(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	sb := h.buildSidebar(db, "/apps/recipes/category/"+name)
 	recipes, _ := RecipesByCategory(db, name, 200)
-	setTitle(w, name)
-	recipesCategoryPage(sb, name, recipes, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, name)
+	recipesCategoryPage(sb, name, recipes, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // KeywordView shows recipes filtered by keyword tag.
 func (h *Pages) KeywordView(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -93,13 +75,13 @@ func (h *Pages) KeywordView(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	sb := h.buildSidebar(db, "/apps/recipes/keyword/"+name)
 	recipes, _ := RecipesByKeyword(db, name, 200)
-	setTitle(w, name)
-	recipesKeywordPage(sb, name, recipes, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, name)
+	recipesKeywordPage(sb, name, recipes, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // RecipeView shows a single recipe.
 func (h *Pages) RecipeView(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -119,13 +101,13 @@ func (h *Pages) RecipeView(w http.ResponseWriter, r *http.Request) {
 	keywords, _ := GetKeywords(db, id)
 
 	sb := h.buildSidebar(db, "/apps/recipes/recipe/"+r.PathValue("id"))
-	setTitle(w, recipe.Name)
-	recipeViewPage(sb, recipe, ingredients, instructions, keywords, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, recipe.Name)
+	recipeViewPage(sb, recipe, ingredients, instructions, keywords, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // RecipeEdit shows the edit form for a recipe.
 func (h *Pages) RecipeEdit(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -146,38 +128,38 @@ func (h *Pages) RecipeEdit(w http.ResponseWriter, r *http.Request) {
 	cats, _ := ListCategories(db)
 
 	sb := h.buildSidebar(db, "/apps/recipes/recipe/"+r.PathValue("id")+"/edit")
-	setTitle(w, "Edit: "+recipe.Name)
-	recipeEditPage(sb, recipe, ingredients, instructions, keywords, cats, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "Edit: "+recipe.Name)
+	recipeEditPage(sb, recipe, ingredients, instructions, keywords, cats, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // NewRecipe shows the create form.
 func (h *Pages) NewRecipe(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	cats, _ := ListCategories(db)
 	sb := h.buildSidebar(db, "/apps/recipes/new")
-	setTitle(w, "New Recipe")
-	recipeNewPage(sb, cats, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "New Recipe")
+	recipeNewPage(sb, cats, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // ImportPage shows the import from URL form.
 func (h *Pages) ImportPage(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	sb := h.buildSidebar(db, "/apps/recipes/import")
-	setTitle(w, "Import Recipe")
-	recipeImportPage(sb, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "Import Recipe")
+	recipeImportPage(sb, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // CreateRecipe handles POST to create a new recipe.
 func (h *Pages) CreateRecipe(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -218,7 +200,7 @@ func (h *Pages) CreateRecipe(w http.ResponseWriter, r *http.Request) {
 
 // UpdateRecipe handles POST to update an existing recipe.
 func (h *Pages) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -267,7 +249,7 @@ func (h *Pages) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 
 // DeleteRecipe handles DELETE to remove a recipe.
 func (h *Pages) DeleteRecipe(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -283,7 +265,7 @@ func (h *Pages) DeleteRecipe(w http.ResponseWriter, r *http.Request) {
 
 // ImportFromURL handles POST to import a recipe from a URL.
 func (h *Pages) ImportFromURL(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -294,7 +276,7 @@ func (h *Pages) ImportFromURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.plugin.FetchAndImport(db, h.username(r), rawURL)
+	result, err := h.plugin.FetchAndImport(db, plugin.Username(r), rawURL)
 	if err != nil {
 		http.Error(w, "Import failed: "+err.Error(), http.StatusBadRequest)
 		return

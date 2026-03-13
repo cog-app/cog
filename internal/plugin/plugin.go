@@ -62,6 +62,14 @@ var (
 	UserFromContext      = cogplugin.UserFromContext
 	WithCSRFToken        = cogplugin.WithCSRFToken
 	WithUserInfo         = cogplugin.WithUserInfo
+	WithPluginDB         = cogplugin.WithPluginDB
+	CSRFToken            = cogplugin.CSRFToken
+	UserDB               = cogplugin.UserDB
+	SetTitle             = cogplugin.SetTitle
+	Username             = cogplugin.Username
+	WriteJSON            = cogplugin.WriteJSON
+	PathID               = cogplugin.PathID
+	PathIDSuffix         = cogplugin.PathIDSuffix
 )
 
 // Ensure function signatures stay in sync at compile time.

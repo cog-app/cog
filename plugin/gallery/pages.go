@@ -2,7 +2,6 @@ package gallery
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -21,26 +20,9 @@ func NewPages(p *Plugin) *Pages {
 	return &Pages{plugin: p}
 }
 
-func (h *Pages) userDB(r *http.Request) (*sql.DB, error) {
-	u := plugin.UserFromContext(r.Context())
-	return h.plugin.DB(u.Username)
-}
-
-func (h *Pages) csrfToken(r *http.Request) string {
-	return plugin.CSRFTokenFromContext(r.Context())
-}
-
-func setTitle(w http.ResponseWriter, title string) {
-	w.Header().Set("X-Page-Title", title)
-}
-
-func (h *Pages) username(r *http.Request) string {
-	return plugin.UserFromContext(r.Context()).Username
-}
-
 // Timeline renders the main photo timeline view.
 func (h *Pages) Timeline(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -48,25 +30,25 @@ func (h *Pages) Timeline(w http.ResponseWriter, r *http.Request) {
 	days, _ := TimelineDays(db)
 	media, _ := RecentMedia(db, 100)
 	total, _ := MediaCount(db)
-	setTitle(w, "Gallery")
+	plugin.SetTitle(w, "Gallery")
 	timelinePage(r.URL.Path, days, media, total).Render(r.Context(), w)
 }
 
 // Albums renders the album list view.
 func (h *Pages) Albums(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	albums, _ := ListAlbums(db, -1)
-	setTitle(w, "Albums")
+	plugin.SetTitle(w, "Albums")
 	albumsPage(r.URL.Path, albums).Render(r.Context(), w)
 }
 
 // AlbumView renders a single album.
 func (h *Pages) AlbumView(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -82,13 +64,13 @@ func (h *Pages) AlbumView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	media, _ := AlbumMedia(db, id, 200, 0)
-	setTitle(w, album.Name)
-	albumViewPage(r.URL.Path, album, media, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, album.Name)
+	albumViewPage(r.URL.Path, album, media, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // PhotoView renders the detail view for a single photo.
 func (h *Pages) PhotoView(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -104,25 +86,25 @@ func (h *Pages) PhotoView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tags, _ := TagsForMedia(db, id)
-	setTitle(w, m.FileName())
+	plugin.SetTitle(w, m.FileName())
 	photoViewPage(r.URL.Path, m, tags).Render(r.Context(), w)
 }
 
 // People renders the people/faces view.
 func (h *Pages) People(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	people, _ := ListPeople(db)
-	setTitle(w, "People")
+	plugin.SetTitle(w, "People")
 	peoplePage(r.URL.Path, people).Render(r.Context(), w)
 }
 
 // PersonView renders media for a specific person.
 func (h *Pages) PersonView(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -138,51 +120,51 @@ func (h *Pages) PersonView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	media, _ := MediaByPerson(db, id, 200, 0)
-	setTitle(w, person.DisplayName())
-	personViewPage(r.URL.Path, person, media, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, person.DisplayName())
+	personViewPage(r.URL.Path, person, media, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // Tags renders the tag browser.
 func (h *Pages) Tags(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	tags, _ := ListTags(db)
-	setTitle(w, "Tags")
+	plugin.SetTitle(w, "Tags")
 	tagsPage(r.URL.Path, tags).Render(r.Context(), w)
 }
 
 // Videos renders the video-only timeline.
 func (h *Pages) Videos(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	media, _ := VideoMedia(db, 100, 0)
-	setTitle(w, "Videos")
+	plugin.SetTitle(w, "Videos")
 	videosPage(media).Render(r.Context(), w)
 }
 
 // Settings renders the gallery settings page.
 func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	total, _ := MediaCount(db)
-	setTitle(w, "Gallery Settings")
-	settingsPage(db, total, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "Gallery Settings")
+	settingsPage(db, total, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // --- API handlers ---
 
 // TimelineAPI returns JSON timeline data for virtual scrolling.
 func (h *Pages) TimelineAPI(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -192,12 +174,12 @@ func (h *Pages) TimelineAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, days)
+	plugin.WriteJSON(w, http.StatusOK, days)
 }
 
 // MediaDetailAPI returns full media detail as JSON.
 func (h *Pages) MediaDetailAPI(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -212,12 +194,12 @@ func (h *Pages) MediaDetailAPI(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	writeJSON(w, m)
+	plugin.WriteJSON(w, http.StatusOK, m)
 }
 
 // MediaThumbnail serves a thumbnail for a media item.
 func (h *Pages) MediaThumbnail(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -240,7 +222,7 @@ func (h *Pages) MediaThumbnail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	username := h.username(r)
+	username := plugin.Username(r)
 	f, err := h.plugin.PreviewPath(username, m, size)
 	if err != nil {
 		http.Error(w, "thumbnail unavailable", http.StatusNotFound)
@@ -257,7 +239,7 @@ func (h *Pages) MediaThumbnail(w http.ResponseWriter, r *http.Request) {
 
 // CreateAlbum creates a new manual album.
 func (h *Pages) CreateAlbum(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -277,7 +259,7 @@ func (h *Pages) CreateAlbum(w http.ResponseWriter, r *http.Request) {
 
 // AddToAlbum adds a media item to an album.
 func (h *Pages) AddToAlbum(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -301,7 +283,7 @@ func (h *Pages) AddToAlbum(w http.ResponseWriter, r *http.Request) {
 
 // RemoveFromAlbum removes a media item from an album.
 func (h *Pages) RemoveFromAlbum(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -325,7 +307,7 @@ func (h *Pages) RemoveFromAlbum(w http.ResponseWriter, r *http.Request) {
 
 // DeleteAlbum deletes an album.
 func (h *Pages) DeleteAlbum(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -344,7 +326,7 @@ func (h *Pages) DeleteAlbum(w http.ResponseWriter, r *http.Request) {
 
 // NamePerson names a recognized person.
 func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -364,7 +346,7 @@ func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
 
 // MergePeople merges two people.
 func (h *Pages) MergePeople(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -388,7 +370,7 @@ func (h *Pages) MergePeople(w http.ResponseWriter, r *http.Request) {
 
 // HidePerson hides a person from the people view.
 func (h *Pages) HidePerson(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -407,7 +389,7 @@ func (h *Pages) HidePerson(w http.ResponseWriter, r *http.Request) {
 
 // TriggerScan manually triggers a media scan.
 func (h *Pages) TriggerScan(w http.ResponseWriter, r *http.Request) {
-	username := h.username(r)
+	username := plugin.Username(r)
 	// Use a detached context — the request context is cancelled when the redirect completes.
 	go h.plugin.ScanUser(context.Background(), username)
 	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
@@ -427,15 +409,15 @@ func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	stats := h.plugin.AggregateRecognitionStats()
 	scanStatus := h.plugin.GetScanStatus()
-	setTitle(w, "Gallery Settings")
-	systemSettingsPage(sysDB, stats, scanStatus, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "Gallery Settings")
+	systemSettingsPage(sysDB, stats, scanStatus, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // ScanStatusPartial returns the scan status card as an HTMX partial.
 func (h *Pages) ScanStatusPartial(w http.ResponseWriter, r *http.Request) {
 	stats := h.plugin.AggregateRecognitionStats()
 	scan := h.plugin.GetScanStatus()
-	scanStatusCard(stats, scan, h.csrfToken(r)).Render(r.Context(), w)
+	scanStatusCard(stats, scan, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // TriggerSystemScan triggers a full scan of all users from the admin page.
@@ -463,7 +445,7 @@ func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 
 // RenamePreview shows a preview of the rename operation.
 func (h *Pages) RenamePreview(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -478,13 +460,13 @@ func (h *Pages) RenamePreview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	setTitle(w, "Rename Preview")
-	renamePreviewPage(pattern, previews, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "Rename Preview")
+	renamePreviewPage(pattern, previews, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // RenameApply executes the rename operation.
 func (h *Pages) RenameApply(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -495,7 +477,7 @@ func (h *Pages) RenameApply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	username := h.username(r)
+	username := plugin.Username(r)
 	if err := h.plugin.ApplyRename(username, previews); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -505,7 +487,7 @@ func (h *Pages) RenameApply(w http.ResponseWriter, r *http.Request) {
 
 // RenameUndo reverses the most recent rename batch.
 func (h *Pages) RenameUndo(w http.ResponseWriter, r *http.Request) {
-	username := h.username(r)
+	username := plugin.Username(r)
 	if err := h.plugin.UndoLastRename(username); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

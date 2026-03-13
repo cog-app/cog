@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"sort"
@@ -61,7 +62,9 @@ func writeOCSJSON(w http.ResponseWriter, statusCode int, data any) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		slog.Error("ocs json encode", "err", err)
+	}
 }
 
 func writeOCSErrorJSON(w http.ResponseWriter, statusCode int, ocsCode int, message string) {
@@ -73,7 +76,9 @@ func writeOCSErrorJSON(w http.ResponseWriter, statusCode int, ocsCode int, messa
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		slog.Error("ocs json encode", "err", err)
+	}
 }
 
 func writeOCSXML(w http.ResponseWriter, httpCode int, status string, statusCode int, message string, data any) {
@@ -357,7 +362,7 @@ func HandleUserByID(users *user.Store) http.HandlerFunc {
 // HandleStatus returns the server status.
 func HandleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"installed":       true,
 		"maintenance":     false,
 		"needsDbUpgrade":  false,
@@ -366,5 +371,7 @@ func HandleStatus(w http.ResponseWriter, r *http.Request) {
 		"edition":         "",
 		"productname":     "Cog",
 		"extendedSupport": false,
-	})
+	}); err != nil {
+		slog.Error("status json encode", "err", err)
+	}
 }

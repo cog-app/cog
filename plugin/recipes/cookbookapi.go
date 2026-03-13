@@ -70,7 +70,7 @@ func (a *CookbookAPI) ListRecipes(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []recipeListItem{}
 	}
-	writeJSON(w, items)
+	plugin.WriteJSON(w, http.StatusOK, items)
 }
 
 // GetRecipe returns the full recipe JSON-LD.
@@ -104,7 +104,7 @@ func (a *CookbookAPI) GetRecipe(w http.ResponseWriter, r *http.Request) {
 	keywords, _ := GetKeywords(db, id)
 
 	ld := buildJSONLD(recipe, ingredients, instructions, keywords)
-	writeJSON(w, ld)
+	plugin.WriteJSON(w, http.StatusOK, ld)
 }
 
 // GetRecipeImage serves the recipe image.
@@ -143,7 +143,7 @@ func (a *CookbookAPI) ListCategories(w http.ResponseWriter, r *http.Request) {
 	if cats == nil {
 		cats = []CategoryCount{}
 	}
-	writeJSON(w, cats)
+	plugin.WriteJSON(w, http.StatusOK, cats)
 }
 
 // ListKeywords returns all keywords with counts.
@@ -161,7 +161,7 @@ func (a *CookbookAPI) ListKeywords(w http.ResponseWriter, r *http.Request) {
 	if kws == nil {
 		kws = []KeywordCount{}
 	}
-	writeJSON(w, kws)
+	plugin.WriteJSON(w, http.StatusOK, kws)
 }
 
 // CreateRecipe creates a recipe from a JSON-LD body.
@@ -190,7 +190,7 @@ func (a *CookbookAPI) CreateRecipe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, map[string]int64{"id": id})
+	plugin.WriteJSON(w, http.StatusOK, map[string]int64{"id": id})
 }
 
 // UpdateRecipe updates a recipe from a JSON-LD body.
@@ -243,7 +243,7 @@ func (a *CookbookAPI) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 	SetInstructions(db, id, parsed.Instructions)
 	SetKeywords(db, id, parsed.Keywords)
 
-	writeJSON(w, map[string]string{"status": "ok"})
+	plugin.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // DeleteRecipe deletes a recipe.
@@ -259,7 +259,7 @@ func (a *CookbookAPI) DeleteRecipe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	DeleteRecipe(db, id)
-	writeJSON(w, map[string]string{"status": "ok"})
+	plugin.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // ImportFromURL imports a recipe from a URL (API endpoint).
@@ -288,12 +288,7 @@ func (a *CookbookAPI) ImportFromURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, map[string]int64{"id": result.RecipeID})
-}
-
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
+	plugin.WriteJSON(w, http.StatusOK, map[string]int64{"id": result.RecipeID})
 }
 
 func formatUnixISO(unix int64) string {

@@ -98,7 +98,11 @@ func (g *grpcPlugin) Stop() error {
 // proxyHandler returns an http.Handler that forwards requests to the plugin via gRPC.
 func (g *grpcPlugin) proxyHandler(routeKey string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("plugin %s: read body: %v", g.id, err), http.StatusBadGateway)
+			return
+		}
 		headers := make(map[string]*plugpb.HeaderValues, len(r.Header))
 		for k, v := range r.Header {
 			headers[k] = &plugpb.HeaderValues{Values: v}
@@ -130,7 +134,11 @@ func (g *grpcPlugin) proxyHandler(routeKey string) http.Handler {
 // resourceProxyHandler returns a ResourceHandler that proxies to the plugin.
 func (g *grpcPlugin) resourceProxyHandler(routeKey string) cogplugin.ResourceHandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, resourceID string) {
-		body, _ := io.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("plugin %s: read body: %v", g.id, err), http.StatusBadGateway)
+			return
+		}
 		headers := make(map[string]*plugpb.HeaderValues, len(r.Header))
 		for k, v := range r.Header {
 			headers[k] = &plugpb.HeaderValues{Values: v}

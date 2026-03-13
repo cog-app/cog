@@ -19,15 +19,6 @@ func NewPages(p *Plugin) *Pages {
 	return &Pages{plugin: p}
 }
 
-func (h *Pages) csrfToken(r *http.Request) string {
-	return plugin.CSRFTokenFromContext(r.Context())
-}
-
-func (h *Pages) userDB(r *http.Request) (*sql.DB, error) {
-	u := plugin.UserFromContext(r.Context())
-	return h.plugin.DB(u.Username)
-}
-
 type sidebarData struct {
 	Folders      []Folder
 	Tags         []string
@@ -50,13 +41,9 @@ func (h *Pages) buildSidebar(db *sql.DB, activePath string, activeFolder int64, 
 	}
 }
 
-func setTitle(w http.ResponseWriter, title string) {
-	w.Header().Set("X-Page-Title", title)
-}
-
 // Index shows all bookmarks.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -64,13 +51,13 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("q")
 	bms, _, _ := ListBookmarks(db, nil, nil, search, "lastmodified", 0, 100)
 	sb := h.buildSidebar(db, "/apps/bookmarks/", 0, "")
-	setTitle(w, "Bookmarks")
-	bookmarksIndexPage(sb, bms, search, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "Bookmarks")
+	bookmarksIndexPage(sb, bms, search, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // FolderView shows bookmarks in a folder.
 func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -87,25 +74,25 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 	}
 	bms, _, _ := ListBookmarks(db, &id, nil, "", "lastmodified", 0, 200)
 	sb := h.buildSidebar(db, "/apps/bookmarks/folder/"+r.PathValue("id"), id, "")
-	setTitle(w, folder.Title)
-	bookmarksFolderPage(sb, folder, bms, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, folder.Title)
+	bookmarksFolderPage(sb, folder, bms, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // TagsView shows the tag cloud.
 func (h *Pages) TagsView(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	sb := h.buildSidebar(db, "/apps/bookmarks/tags", 0, "")
-	setTitle(w, "Tags")
-	bookmarksTagsPage(sb, sb.Tags, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "Tags")
+	bookmarksTagsPage(sb, sb.Tags, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // TagView shows bookmarks for a specific tag.
 func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -113,13 +100,13 @@ func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
 	tag := r.PathValue("tag")
 	bms, _, _ := ListBookmarks(db, nil, []string{tag}, "", "lastmodified", 0, 200)
 	sb := h.buildSidebar(db, "/apps/bookmarks/tag/"+tag, 0, tag)
-	setTitle(w, "Tag: "+tag)
-	bookmarksTagPage(sb, tag, bms, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "Tag: "+tag)
+	bookmarksTagPage(sb, tag, bms, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // BookmarkView shows a single bookmark detail.
 func (h *Pages) BookmarkView(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -136,13 +123,13 @@ func (h *Pages) BookmarkView(w http.ResponseWriter, r *http.Request) {
 	}
 	folders, _ := ListFolders(db)
 	sb := h.buildSidebar(db, "", 0, "")
-	setTitle(w, bm.Title)
-	bookmarkDetailPage(sb, bm, folders, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, bm.Title)
+	bookmarkDetailPage(sb, bm, folders, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // BookmarkEdit shows the edit form.
 func (h *Pages) BookmarkEdit(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -159,26 +146,26 @@ func (h *Pages) BookmarkEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	folders, _ := ListFolders(db)
 	sb := h.buildSidebar(db, "", 0, "")
-	setTitle(w, "Edit: "+bm.Title)
-	bookmarkEditPage(sb, bm, folders, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "Edit: "+bm.Title)
+	bookmarkEditPage(sb, bm, folders, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // NewBookmark shows the create form.
 func (h *Pages) NewBookmark(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	folders, _ := ListFolders(db)
 	sb := h.buildSidebar(db, "/apps/bookmarks/new", 0, "")
-	setTitle(w, "New Bookmark")
-	bookmarkNewPage(sb, folders, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "New Bookmark")
+	bookmarkNewPage(sb, folders, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // CreateBookmark handles POST to create a new bookmark.
 func (h *Pages) CreateBookmark(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -207,7 +194,7 @@ func (h *Pages) CreateBookmark(w http.ResponseWriter, r *http.Request) {
 
 // UpdateBookmark handles POST to update an existing bookmark.
 func (h *Pages) UpdateBookmark(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -232,7 +219,7 @@ func (h *Pages) UpdateBookmark(w http.ResponseWriter, r *http.Request) {
 
 // DeleteBookmark handles DELETE to remove a bookmark.
 func (h *Pages) DeleteBookmark(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -248,7 +235,7 @@ func (h *Pages) DeleteBookmark(w http.ResponseWriter, r *http.Request) {
 
 // RecordClick handles POST to increment click count.
 func (h *Pages) RecordClick(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -269,7 +256,7 @@ func (h *Pages) RecordClick(w http.ResponseWriter, r *http.Request) {
 
 // CreateFolder handles POST to create a folder.
 func (h *Pages) CreateFolder(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -291,7 +278,7 @@ func (h *Pages) CreateFolder(w http.ResponseWriter, r *http.Request) {
 
 // UpdateFolder handles POST to update a folder.
 func (h *Pages) UpdateFolder(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -308,7 +295,7 @@ func (h *Pages) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 
 // DeleteFolder handles DELETE to remove a folder.
 func (h *Pages) DeleteFolder(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -338,7 +325,7 @@ func parseTags(s string) []string {
 
 // ImportBookmarks handles POST to import bookmarks from Netscape HTML format.
 func (h *Pages) ImportBookmarks(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -362,7 +349,7 @@ func (h *Pages) ImportBookmarks(w http.ResponseWriter, r *http.Request) {
 
 // ExportBookmarks handles GET to export bookmarks as Netscape HTML format.
 func (h *Pages) ExportBookmarks(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

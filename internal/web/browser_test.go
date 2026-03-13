@@ -28,6 +28,8 @@ func TestBrowserLoginFlow(t *testing.T) {
 	b.WaitNotVisible(t, "#password")
 	url := b.URL(t)
 	require.True(t, !strings.Contains(url, "/login"), "expected redirect away from /login, got %s", url)
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 }
 
 func TestBrowserLoginBadPassword(t *testing.T) {
@@ -48,4 +50,6 @@ func TestBrowserLoginBadPassword(t *testing.T) {
 	b.WaitVisible(t, "#username")
 	url := b.URL(t)
 	require.True(t, strings.Contains(url, "/login"), "expected to stay on /login, got %s", url)
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 }

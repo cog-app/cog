@@ -38,15 +38,6 @@ func (h *Pages) wrap(fn http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(fn)
 }
 
-func (h *Pages) csrfToken(r *http.Request) string {
-	return plugin.CSRFTokenFromContext(r.Context())
-}
-
-func (h *Pages) userDB(r *http.Request) (*sql.DB, error) {
-	u := plugin.UserFromContext(r.Context())
-	return h.plugin.DB(u.Username)
-}
-
 type sidebarData struct {
 	Lists      []TaskList
 	ActiveList int64
@@ -60,13 +51,9 @@ func (h *Pages) buildSidebar(db *sql.DB, activeListID int64) sidebarData {
 	}
 }
 
-func setTitle(w http.ResponseWriter, title string) {
-	w.Header().Set("X-Page-Title", title)
-}
-
 // Index redirects to the first list or shows an empty state.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -78,14 +65,14 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/apps/tasks/list/"+strconv.FormatInt(lists[0].ID, 10), http.StatusSeeOther)
 		return
 	}
-	setTitle(w, "Tasks")
+	plugin.SetTitle(w, "Tasks")
 	sb := h.buildSidebar(db, 0)
-	tasksIndexPage(sb, h.csrfToken(r)).Render(r.Context(), w)
+	tasksIndexPage(sb, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // ListView shows tasks for a specific list.
 func (h *Pages) ListView(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -108,13 +95,13 @@ func (h *Pages) ListView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sb := h.buildSidebar(db, listID)
-	setTitle(w, list.Name)
-	tasksListPage(sb, list, allTasks, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, list.Name)
+	tasksListPage(sb, list, allTasks, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // TaskDetail shows a single task edit form.
 func (h *Pages) TaskDetail(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -133,13 +120,13 @@ func (h *Pages) TaskDetail(w http.ResponseWriter, r *http.Request) {
 	allTasks, _ := ListTasks(db, task.ListID)
 
 	sb := h.buildSidebar(db, task.ListID)
-	setTitle(w, task.Summary)
-	taskDetailPage(sb, task, lists, allTasks, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, task.Summary)
+	taskDetailPage(sb, task, lists, allTasks, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // CreateTask handles POST to create a new task.
 func (h *Pages) CreateTask(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -188,7 +175,7 @@ func (h *Pages) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTask handles POST to update a task.
 func (h *Pages) UpdateTask(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -236,7 +223,7 @@ func (h *Pages) UpdateTask(w http.ResponseWriter, r *http.Request) {
 
 // ToggleTask handles POST to toggle task completion (HTMX partial).
 func (h *Pages) ToggleTask(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -254,12 +241,12 @@ func (h *Pages) ToggleTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	allTasks, _ := ListTasks(db, task.ListID)
-	taskItem(task, allTasks, 0, h.csrfToken(r)).Render(r.Context(), w)
+	taskItem(task, allTasks, 0, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // DeleteTask handles DELETE (HTMX).
 func (h *Pages) DeleteTask(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -278,7 +265,7 @@ func (h *Pages) DeleteTask(w http.ResponseWriter, r *http.Request) {
 
 // Reorder handles POST JSON for drag-and-drop reordering.
 func (h *Pages) Reorder(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -303,7 +290,7 @@ func (h *Pages) Reorder(w http.ResponseWriter, r *http.Request) {
 
 // CreateList handles POST to create a new task list.
 func (h *Pages) CreateList(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -327,7 +314,7 @@ func (h *Pages) CreateList(w http.ResponseWriter, r *http.Request) {
 
 // UpdateList handles POST to update a task list.
 func (h *Pages) UpdateList(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -350,7 +337,7 @@ func (h *Pages) UpdateList(w http.ResponseWriter, r *http.Request) {
 
 // DeleteList handles DELETE for a task list.
 func (h *Pages) DeleteList(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -370,7 +357,7 @@ func (h *Pages) DeleteList(w http.ResponseWriter, r *http.Request) {
 
 // ListSettings shows the settings page for a list.
 func (h *Pages) ListSettings(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -386,6 +373,6 @@ func (h *Pages) ListSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sb := h.buildSidebar(db, listID)
-	setTitle(w, list.Name+" Settings")
-	taskListSettingsPage(sb, list, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, list.Name+" Settings")
+	taskListSettingsPage(sb, list, plugin.CSRFToken(r)).Render(r.Context(), w)
 }

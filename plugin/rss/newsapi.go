@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
 // NewsAPI implements the NextCloud News API v1-2 endpoints.
@@ -23,13 +24,13 @@ func NewNewsAPI(p *Plugin) *NewsAPI {
 func (a *NewsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u == nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		plugin.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
 
 	db, err := a.plugin.DB(u.Username)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -54,10 +55,10 @@ func (a *NewsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "POST" && path == "/folders":
 		a.createFolder(w, r, db)
 	case r.Method == "PUT" && strings.HasPrefix(path, "/folders/"):
-		id := pathID(path, "/folders/")
+		id := plugin.PathID(path, "/folders/")
 		a.renameFolder(w, r, db, id)
 	case r.Method == "DELETE" && strings.HasPrefix(path, "/folders/"):
-		id := pathID(path, "/folders/")
+		id := plugin.PathID(path, "/folders/")
 		a.deleteFolder(w, db, id)
 	// Feeds
 	case r.Method == "GET" && path == "/feeds":
@@ -65,16 +66,16 @@ func (a *NewsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "POST" && path == "/feeds":
 		a.createFeed(w, r, db, u.Username)
 	case r.Method == "DELETE" && strings.HasPrefix(path, "/feeds/"):
-		id := pathID(path, "/feeds/")
+		id := plugin.PathID(path, "/feeds/")
 		a.deleteFeed(w, db, id)
 	case r.Method == "PUT" && strings.HasSuffix(path, "/move") && strings.HasPrefix(path, "/feeds/"):
-		id := pathIDSuffix(path, "/feeds/", "/move")
+		id := plugin.PathIDSuffix(path, "/feeds/", "/move")
 		a.moveFeed(w, r, db, id)
 	case r.Method == "PUT" && strings.HasSuffix(path, "/rename") && strings.HasPrefix(path, "/feeds/"):
-		id := pathIDSuffix(path, "/feeds/", "/rename")
+		id := plugin.PathIDSuffix(path, "/feeds/", "/rename")
 		a.renameFeed(w, r, db, id)
 	case r.Method == "PUT" && strings.HasSuffix(path, "/read") && strings.HasPrefix(path, "/feeds/"):
-		id := pathIDSuffix(path, "/feeds/", "/read")
+		id := plugin.PathIDSuffix(path, "/feeds/", "/read")
 		a.markFeedRead(w, r, db, id)
 	// Items
 	case r.Method == "GET" && path == "/items":
@@ -82,16 +83,16 @@ func (a *NewsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "GET" && path == "/items/updated":
 		a.getUpdatedItems(w, r, db)
 	case r.Method == "PUT" && strings.HasSuffix(path, "/read") && strings.HasPrefix(path, "/items/"):
-		id := pathIDSuffix(path, "/items/", "/read")
+		id := plugin.PathIDSuffix(path, "/items/", "/read")
 		a.setItemRead(w, db, id, true)
 	case r.Method == "PUT" && strings.HasSuffix(path, "/unread") && strings.HasPrefix(path, "/items/"):
-		id := pathIDSuffix(path, "/items/", "/unread")
+		id := plugin.PathIDSuffix(path, "/items/", "/unread")
 		a.setItemRead(w, db, id, false)
 	case r.Method == "PUT" && strings.HasSuffix(path, "/star") && strings.HasPrefix(path, "/items/"):
-		id := pathIDSuffix(path, "/items/", "/star")
+		id := plugin.PathIDSuffix(path, "/items/", "/star")
 		a.setItemStarred(w, db, id, true)
 	case r.Method == "PUT" && strings.HasSuffix(path, "/unstar") && strings.HasPrefix(path, "/items/"):
-		id := pathIDSuffix(path, "/items/", "/unstar")
+		id := plugin.PathIDSuffix(path, "/items/", "/unstar")
 		a.setItemStarred(w, db, id, false)
 	// Bulk operations
 	case r.Method == "PUT" && path == "/items/read/multiple":
@@ -103,12 +104,12 @@ func (a *NewsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "PUT" && path == "/items/unstar/multiple":
 		a.bulkStar(w, r, db, false)
 	default:
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		plugin.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 	}
 }
 
 func (a *NewsAPI) version(w http.ResponseWriter) {
-	writeJSON(w, http.StatusOK, map[string]any{
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"apiLevels": []string{"v1-2"},
 	})
 }
@@ -118,10 +119,10 @@ func (a *NewsAPI) version(w http.ResponseWriter) {
 func (a *NewsAPI) listFolders(w http.ResponseWriter, db *sql.DB) {
 	folders, err := ListFolders(db)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"folders": foldersToAPI(folders)})
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{"folders": foldersToAPI(folders)})
 }
 
 func (a *NewsAPI) createFolder(w http.ResponseWriter, r *http.Request, db *sql.DB) {
@@ -129,15 +130,15 @@ func (a *NewsAPI) createFolder(w http.ResponseWriter, r *http.Request, db *sql.D
 		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
+		plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
 		return
 	}
 	folder, err := CreateFolder(db, body.Name)
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"folders": []any{folderToAPI(folder)}})
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{"folders": []any{folderToAPI(folder)}})
 }
 
 func (a *NewsAPI) renameFolder(w http.ResponseWriter, r *http.Request, db *sql.DB, id int64) {
@@ -145,11 +146,11 @@ func (a *NewsAPI) renameFolder(w http.ResponseWriter, r *http.Request, db *sql.D
 		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
+		plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
 		return
 	}
 	if err := RenameFolder(db, id, body.Name); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -157,7 +158,7 @@ func (a *NewsAPI) renameFolder(w http.ResponseWriter, r *http.Request, db *sql.D
 
 func (a *NewsAPI) deleteFolder(w http.ResponseWriter, db *sql.DB, id int64) {
 	if err := DeleteFolder(db, id); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -168,11 +169,11 @@ func (a *NewsAPI) deleteFolder(w http.ResponseWriter, db *sql.DB, id int64) {
 func (a *NewsAPI) listFeeds(w http.ResponseWriter, db *sql.DB) {
 	feeds, err := ListFeeds(db)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	starredCount, _ := StarredCount(db)
-	writeJSON(w, http.StatusOK, map[string]any{
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"feeds":        feedsToAPI(feeds),
 		"starredCount": starredCount,
 	})
@@ -184,12 +185,12 @@ func (a *NewsAPI) createFeed(w http.ResponseWriter, r *http.Request, db *sql.DB,
 		FolderID *int64 `json:"folderId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.URL == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url required"})
+		plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "url required"})
 		return
 	}
 	resolvedURL, err := ResolveURL(a.plugin.client, body.URL)
 	if err != nil {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -199,16 +200,16 @@ func (a *NewsAPI) createFeed(w http.ResponseWriter, r *http.Request, db *sql.DB,
 	}
 	feed, err := CreateFeed(db, resolvedURL, folderID)
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
 	go a.plugin.FetchNow(username, feed.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"feeds": []any{feedToAPI(feed)}})
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{"feeds": []any{feedToAPI(feed)}})
 }
 
 func (a *NewsAPI) deleteFeed(w http.ResponseWriter, db *sql.DB, id int64) {
 	if err := DeleteFeed(db, id); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -219,7 +220,7 @@ func (a *NewsAPI) moveFeed(w http.ResponseWriter, r *http.Request, db *sql.DB, i
 		FolderID *int64 `json:"folderId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	var folderID sql.NullInt64
@@ -227,7 +228,7 @@ func (a *NewsAPI) moveFeed(w http.ResponseWriter, r *http.Request, db *sql.DB, i
 		folderID = sql.NullInt64{Int64: *body.FolderID, Valid: true}
 	}
 	if err := MoveFeed(db, id, folderID); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -238,11 +239,11 @@ func (a *NewsAPI) renameFeed(w http.ResponseWriter, r *http.Request, db *sql.DB,
 		Title string `json:"feedTitle"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Title == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "feedTitle required"})
+		plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "feedTitle required"})
 		return
 	}
 	if err := RenameFeed(db, id, body.Title); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -253,17 +254,17 @@ func (a *NewsAPI) markFeedRead(w http.ResponseWriter, r *http.Request, db *sql.D
 		NewestItemID int64 `json:"newestItemId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if body.NewestItemID > 0 {
 		if err := MarkFeedReadBefore(db, id, body.NewestItemID); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
 	} else {
 		if err := MarkFeedRead(db, id); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
 	}
@@ -281,10 +282,10 @@ func (a *NewsAPI) getItems(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 	items, err := AllItems(db, batchSize, offset, typ, id, getRead)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": itemsToAPI(items)})
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{"items": itemsToAPI(items)})
 }
 
 func (a *NewsAPI) getUpdatedItems(w http.ResponseWriter, r *http.Request, db *sql.DB) {
@@ -294,15 +295,15 @@ func (a *NewsAPI) getUpdatedItems(w http.ResponseWriter, r *http.Request, db *sq
 
 	items, err := UpdatedItems(db, lastModified, typ, id)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": itemsToAPI(items)})
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{"items": itemsToAPI(items)})
 }
 
 func (a *NewsAPI) setItemRead(w http.ResponseWriter, db *sql.DB, id int64, read bool) {
 	if err := SetItemRead(db, id, read); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -310,7 +311,7 @@ func (a *NewsAPI) setItemRead(w http.ResponseWriter, db *sql.DB, id int64, read 
 
 func (a *NewsAPI) setItemStarred(w http.ResponseWriter, db *sql.DB, id int64, starred bool) {
 	if err := SetItemStarred(db, id, starred); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -321,7 +322,7 @@ func (a *NewsAPI) bulkRead(w http.ResponseWriter, r *http.Request, db *sql.DB, r
 		Items []int64 `json:"items"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	var err error
@@ -331,7 +332,7 @@ func (a *NewsAPI) bulkRead(w http.ResponseWriter, r *http.Request, db *sql.DB, r
 		err = MarkItemsUnread(db, body.Items)
 	}
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -342,7 +343,7 @@ func (a *NewsAPI) bulkStar(w http.ResponseWriter, r *http.Request, db *sql.DB, s
 		Items []int64 `json:"items"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	var err error
@@ -352,7 +353,7 @@ func (a *NewsAPI) bulkStar(w http.ResponseWriter, r *http.Request, db *sql.DB, s
 		err = UnstarItems(db, body.Items)
 	}
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -436,29 +437,6 @@ func itemsToAPI(items []ItemWithFeed) []map[string]any {
 }
 
 // --- Helpers ---
-
-func writeJSON(w http.ResponseWriter, code int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(data)
-}
-
-func pathID(path, prefix string) int64 {
-	s := strings.TrimPrefix(path, prefix)
-	// Remove trailing path segments.
-	if i := strings.Index(s, "/"); i >= 0 {
-		s = s[:i]
-	}
-	id, _ := strconv.ParseInt(s, 10, 64)
-	return id
-}
-
-func pathIDSuffix(path, prefix, suffix string) int64 {
-	s := strings.TrimPrefix(path, prefix)
-	s = strings.TrimSuffix(s, suffix)
-	id, _ := strconv.ParseInt(s, 10, 64)
-	return id
-}
 
 func queryInt(r *http.Request, key string, def int) int {
 	s := r.URL.Query().Get(key)

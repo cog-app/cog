@@ -18,22 +18,9 @@ func NewPages(p *Plugin) *Pages {
 	return &Pages{plugin: p}
 }
 
-func (h *Pages) csrfToken(r *http.Request) string {
-	return plugin.CSRFTokenFromContext(r.Context())
-}
-
-func (h *Pages) userDB(r *http.Request) (*sql.DB, error) {
-	u := plugin.UserFromContext(r.Context())
-	return h.plugin.DB(u.Username)
-}
-
 func (h *Pages) notesDir(r *http.Request) string {
 	u := plugin.UserFromContext(r.Context())
 	return h.plugin.NotesDir(u.Username)
-}
-
-func (h *Pages) username(r *http.Request) string {
-	return plugin.UserFromContext(r.Context()).Username
 }
 
 type viewExtras struct {
@@ -60,29 +47,24 @@ func (h *Pages) buildSidebar(db *sql.DB, activePath string) sidebarData {
 	}
 }
 
-// setTitle sets the page title for the shell middleware.
-func setTitle(w http.ResponseWriter, title string) {
-	w.Header().Set("X-Page-Title", title)
-}
-
 // Index shows all notes.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	h.plugin.ensureNotesDirFor(h.username(r))
+	h.plugin.ensureNotesDirFor(plugin.Username(r))
 
 	sb := h.buildSidebar(db, "/apps/notes/")
 	notes, _ := ListNotes(db, 200)
-	setTitle(w, "Notes")
-	notesIndexPage(sb, notes, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "Notes")
+	notesIndexPage(sb, notes, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // CategoryView shows notes filtered by category.
 func (h *Pages) CategoryView(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -90,26 +72,26 @@ func (h *Pages) CategoryView(w http.ResponseWriter, r *http.Request) {
 	category := r.PathValue("path")
 	sb := h.buildSidebar(db, "/apps/notes/category/"+category)
 	notes, _ := NotesByCategory(db, category, 200)
-	setTitle(w, category)
-	notesCategoryPage(sb, category, notes, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, category)
+	notesCategoryPage(sb, category, notes, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // Starred shows favorite notes.
 func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	sb := h.buildSidebar(db, "/apps/notes/starred")
 	notes, _ := StarredNotes(db, 200)
-	setTitle(w, "Starred Notes")
-	notesStarredPage(sb, notes, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "Starred Notes")
+	notesStarredPage(sb, notes, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // NoteView shows a single note rendered as HTML.
 func (h *Pages) NoteView(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -124,7 +106,7 @@ func (h *Pages) NoteView(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "note not found", http.StatusNotFound)
 		return
 	}
-	content, _ := h.plugin.readNoteContent(h.username(r), note.Filename)
+	content, _ := h.plugin.readNoteContent(plugin.Username(r), note.Filename)
 	rendered := RenderMarkdown(content)
 
 	sb := h.buildSidebar(db, "/apps/notes/note/"+r.PathValue("id"))
@@ -132,13 +114,13 @@ func (h *Pages) NoteView(w http.ResponseWriter, r *http.Request) {
 		NeedsKaTeX:   NeedsKaTeX(content),
 		NeedsMermaid: NeedsMermaid(content),
 	}
-	setTitle(w, note.Title())
-	noteViewPage(sb, note, rendered, h.csrfToken(r), extras).Render(r.Context(), w)
+	plugin.SetTitle(w, note.Title())
+	noteViewPage(sb, note, rendered, plugin.CSRFToken(r), extras).Render(r.Context(), w)
 }
 
 // NoteEdit shows the edit form for a note.
 func (h *Pages) NoteEdit(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -153,35 +135,35 @@ func (h *Pages) NoteEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "note not found", http.StatusNotFound)
 		return
 	}
-	content, _ := h.plugin.readNoteContent(h.username(r), note.Filename)
+	content, _ := h.plugin.readNoteContent(plugin.Username(r), note.Filename)
 
 	categories, _ := ListCategories(db)
 	sb := h.buildSidebar(db, "/apps/notes/note/"+r.PathValue("id")+"/edit")
-	setTitle(w, "Edit: "+note.Title())
-	noteEditPage(sb, note, content, categories, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "Edit: "+note.Title())
+	noteEditPage(sb, note, content, categories, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // NewNote shows the create form.
 func (h *Pages) NewNote(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	categories, _ := ListCategories(db)
 	sb := h.buildSidebar(db, "/apps/notes/new")
-	setTitle(w, "New Note")
-	noteNewPage(sb, categories, h.csrfToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, "New Note")
+	noteNewPage(sb, categories, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // CreateNote handles POST to create a new note.
 func (h *Pages) CreateNote(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	username := h.username(r)
+	username := plugin.Username(r)
 	h.plugin.ensureNotesDirFor(username)
 
 	title := r.FormValue("title")
@@ -210,7 +192,7 @@ func (h *Pages) CreateNote(w http.ResponseWriter, r *http.Request) {
 
 // UpdateNote handles POST to update an existing note.
 func (h *Pages) UpdateNote(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -226,7 +208,7 @@ func (h *Pages) UpdateNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username := h.username(r)
+	username := plugin.Username(r)
 
 	// Etag concurrency check
 	if formEtag := r.FormValue("etag"); formEtag != "" && formEtag != note.ETag {
@@ -266,7 +248,7 @@ func (h *Pages) UpdateNote(w http.ResponseWriter, r *http.Request) {
 
 // DeleteNote handles DELETE to remove a note.
 func (h *Pages) DeleteNote(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -282,7 +264,7 @@ func (h *Pages) DeleteNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.plugin.deleteNoteFile(h.username(r), note.Filename)
+	h.plugin.deleteNoteFile(plugin.Username(r), note.Filename)
 	DeleteNoteMeta(db, id)
 
 	w.WriteHeader(http.StatusOK)
@@ -290,7 +272,7 @@ func (h *Pages) DeleteNote(w http.ResponseWriter, r *http.Request) {
 
 // ToggleStar handles POST to toggle favorite state of a note.
 func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -310,5 +292,5 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	_ = noteRow(note, h.csrfToken(r)).Render(r.Context(), w)
+	_ = noteRow(note, plugin.CSRFToken(r)).Render(r.Context(), w)
 }

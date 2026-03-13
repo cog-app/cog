@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -75,13 +76,15 @@ func (h *LoginFlowHandler) HandleInit(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"poll": map[string]any{
 			"token":    pollToken,
 			"endpoint": h.BaseURL + "/index.php/login/v2/poll",
 		},
 		"login": h.BaseURL + "/index.php/login/v2/grant?token=" + loginToken,
-	})
+	}); err != nil {
+		slog.Error("login flow json encode", "err", err)
+	}
 }
 
 // HandlePoll handles POST /index.php/login/v2/poll
@@ -120,11 +123,13 @@ func (h *LoginFlowHandler) HandlePoll(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"server":      h.BaseURL,
 		"loginName":   entry.LoginName,
 		"appPassword": entry.AppPassword,
-	})
+	}); err != nil {
+		slog.Error("login poll json encode", "err", err)
+	}
 }
 
 // HandleGrant handles GET and POST /index.php/login/v2/grant

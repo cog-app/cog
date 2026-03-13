@@ -167,7 +167,11 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 	rlStdout := io.Writer(shellStdout)
 	var mux *sshStdinMux
 	if s.sshMode {
-		mux = newSSHStdinMux(stdin)
+		var err error
+		mux, err = newSSHStdinMux(stdin)
+		if err != nil {
+			return err
+		}
 		rlStdin = mux
 		rlStdout = &dsrInterceptWriter{w: shellStdout, mux: mux}
 		shellStdin = mux.runnerStdin()
@@ -327,8 +331,11 @@ type sshStdinMux struct {
 	runnerActive atomic.Bool
 }
 
-func newSSHStdinMux(real io.Reader) *sshStdinMux {
-	r, w, _ := os.Pipe()
+func newSSHStdinMux(real io.Reader) (*sshStdinMux, error) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("create stdin mux pipe: %w", err)
+	}
 	m := &sshStdinMux{
 		dataCh:  make(chan []byte, 16),
 		errCh:   make(chan error, 1),
@@ -343,7 +350,9 @@ func newSSHStdinMux(real io.Reader) *sshStdinMux {
 				chunk := make([]byte, n)
 				copy(chunk, buf[:n])
 				if m.runnerActive.Load() {
-					m.runnerW.Write(chunk)
+					if _, werr := m.runnerW.Write(chunk); werr != nil {
+						slog.Error("ssh stdin mux write", "err", werr)
+					}
 				} else {
 					m.dataCh <- chunk
 				}
@@ -354,7 +363,7 @@ func newSSHStdinMux(real io.Reader) *sshStdinMux {
 			}
 		}
 	}()
-	return m
+	return m, nil
 }
 
 // runnerStdin returns the *os.File for the runner's stdin.

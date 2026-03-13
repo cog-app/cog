@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
 // MemoriesAPI handles NextCloud Memories-compatible API endpoints.
@@ -67,7 +68,7 @@ func (a *MemoriesAPI) handleDays(w http.ResponseWriter, r *http.Request) {
 	for i, d := range days {
 		result[i] = dayResp{DayID: d.DayID, Count: d.Count}
 	}
-	writeJSON(w, result)
+	plugin.WriteJSON(w, http.StatusOK, result)
 }
 
 func (a *MemoriesAPI) handleDay(w http.ResponseWriter, r *http.Request, dayIDStr string) {
@@ -110,7 +111,7 @@ func (a *MemoriesAPI) handleDay(w http.ResponseWriter, r *http.Request, dayIDStr
 			DayID:    formatDayID(ts),
 		}
 	}
-	writeJSON(w, result)
+	plugin.WriteJSON(w, http.StatusOK, result)
 }
 
 func (a *MemoriesAPI) handleAlbums(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +135,7 @@ func (a *MemoriesAPI) handleAlbums(w http.ResponseWriter, r *http.Request) {
 	for i, a := range albums {
 		result[i] = albumResp{ID: a.ID, Name: a.Name, Count: a.MediaCount}
 	}
-	writeJSON(w, result)
+	plugin.WriteJSON(w, http.StatusOK, result)
 }
 
 func (a *MemoriesAPI) handleAlbum(w http.ResponseWriter, r *http.Request, idStr string) {
@@ -154,7 +155,7 @@ func (a *MemoriesAPI) handleAlbum(w http.ResponseWriter, r *http.Request, idStr 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, media)
+	plugin.WriteJSON(w, http.StatusOK, media)
 }
 
 func (a *MemoriesAPI) handleTags(w http.ResponseWriter, r *http.Request) {
@@ -177,7 +178,7 @@ func (a *MemoriesAPI) handleTags(w http.ResponseWriter, r *http.Request) {
 	for i, t := range tags {
 		result[i] = tagResp{Name: t.Name, Count: t.Count}
 	}
-	writeJSON(w, result)
+	plugin.WriteJSON(w, http.StatusOK, result)
 }
 
 func (a *MemoriesAPI) handleFaces(w http.ResponseWriter, r *http.Request) {
@@ -200,7 +201,7 @@ func (a *MemoriesAPI) handleFaces(w http.ResponseWriter, r *http.Request) {
 	for i, p := range people {
 		result[i] = faceResp{Name: p.DisplayName(), Count: p.FaceCount}
 	}
-	writeJSON(w, result)
+	plugin.WriteJSON(w, http.StatusOK, result)
 }
 
 func (a *MemoriesAPI) handlePlaces(w http.ResponseWriter, r *http.Request) {
@@ -231,7 +232,7 @@ func (a *MemoriesAPI) handlePlaces(w http.ResponseWriter, r *http.Request) {
 		}
 		result = append(result, p)
 	}
-	writeJSON(w, result)
+	plugin.WriteJSON(w, http.StatusOK, result)
 }
 
 func (a *MemoriesAPI) handleImageInfo(w http.ResponseWriter, r *http.Request, idStr string) {
@@ -251,7 +252,7 @@ func (a *MemoriesAPI) handleImageInfo(w http.ResponseWriter, r *http.Request, id
 		http.NotFound(w, r)
 		return
 	}
-	writeJSON(w, m)
+	plugin.WriteJSON(w, http.StatusOK, m)
 }
 
 func (a *MemoriesAPI) handleImagePreview(w http.ResponseWriter, r *http.Request, idStr string) {

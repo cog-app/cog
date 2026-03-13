@@ -1,7 +1,6 @@
 package calendar
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -24,49 +23,35 @@ func NewPages(p *Plugin) *Pages {
 	return &Pages{plugin: p}
 }
 
-func (h *Pages) csrfToken(r *http.Request) string {
-	return plugin.CSRFTokenFromContext(r.Context())
-}
-
-// setTitle sets the page title for the shell middleware.
-func setTitle(w http.ResponseWriter, title string) {
-	w.Header().Set("X-Page-Title", title)
-}
-
-func (h *Pages) userDB(r *http.Request) (*sql.DB, error) {
-	u := plugin.UserFromContext(r.Context())
-	return h.plugin.DB(u.Username)
-}
-
 // Index shows the FullCalendar UI.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	EnsureDefaultCalendar(db)
 
-	setTitle(w, "Calendar")
+	plugin.SetTitle(w, "Calendar")
 	calendars, _ := ListCalendars(db)
-	calIndexPage(calendars, h.csrfToken(r)).Render(r.Context(), w)
+	calIndexPage(calendars, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // Settings shows calendar management.
 func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	setTitle(w, "Calendar Settings")
+	plugin.SetTitle(w, "Calendar Settings")
 	calendars, _ := ListCalendars(db)
-	calSettingsPage(calendars, h.csrfToken(r)).Render(r.Context(), w)
+	calSettingsPage(calendars, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // EventsJSON returns events as JSON for FullCalendar.
 func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -184,7 +169,7 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 
 // EventDetail returns an event detail partial for the modal.
 func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -203,12 +188,12 @@ func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
 	calendars, _ := ListCalendars(db)
 	attendees, _ := ListAttendees(db, ev.ID)
 
-	calEventModal(h.csrfToken(r), ev, cal, calendars, attendees).Render(r.Context(), w)
+	calEventModal(plugin.CSRFToken(r), ev, cal, calendars, attendees).Render(r.Context(), w)
 }
 
 // UpdateEvent handles POST to update an existing event.
 func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -294,7 +279,7 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 
 // CreateEvent handles POST to create a new event.
 func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -364,7 +349,7 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 
 // DeleteEvent handles DELETE to remove an event (HTMX).
 func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -401,7 +386,7 @@ func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 
 // CreateCalendar handles POST to create a new calendar.
 func (h *Pages) CreateCalendar(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -648,7 +633,7 @@ func (h *Pages) sendInvitations(method string, ev *Event, summary, description, 
 
 // RespondToInvite handles POST to accept/decline an event invitation.
 func (h *Pages) RespondToInvite(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -703,7 +688,7 @@ func expandRRule(ev EventWithCalendar, rangeStart, rangeEnd time.Time) []EventWi
 
 // DeleteCalendarHandler handles DELETE to remove a calendar (HTMX).
 func (h *Pages) DeleteCalendarHandler(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -720,7 +705,7 @@ func (h *Pages) DeleteCalendarHandler(w http.ResponseWriter, r *http.Request) {
 // Notifications returns due (unfired) reminder notifications as JSON.
 // GET /apps/calendar/notifications
 func (h *Pages) Notifications(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

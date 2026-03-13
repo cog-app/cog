@@ -50,6 +50,8 @@ func (e *Engine) start() (*Browser, error) {
 		return nil, err
 	}
 
+	page.MustSetViewport(1280, 720, 0, false)
+
 	return &Browser{
 		page:    page,
 		baseURL: e.server.URL,

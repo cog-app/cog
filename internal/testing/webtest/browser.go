@@ -1,15 +1,44 @@
 package webtest
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
+)
+
+// SnapshotOption configures a Snapshot call.
+type SnapshotOption func(*snapshotConfig)
+
+type snapshotConfig struct {
+	suffix string
+	width  int
+	height int
+}
+
+// Mobile captures at 375×812 (iPhone) and appends "_mobile" to the filename.
+func Mobile(cfg *snapshotConfig) {
+	cfg.suffix = "mobile"
+	cfg.width = 375
+	cfg.height = 812
+}
+
+var (
+	// SnapshotColorTolerance is the max per-channel RGBA delta before a pixel counts as different.
+	// Set high enough to ignore sub-pixel antialiasing and shadow rendering differences.
+	SnapshotColorTolerance uint8 = 10
+	// SnapshotPixelTolerance is the max fraction of pixels that may differ before failing.
+	SnapshotPixelTolerance float64 = 0.005
 )
 
 // Browser controls a single browser tab.
@@ -325,6 +354,159 @@ func (b *Browser) Screenshot(t testing.TB, path string) {
 	if err := os.WriteFile(path, buf, 0o644); err != nil {
 		t.Fatalf("webtest: write screenshot: %v", err)
 	}
+}
+
+// Login navigates to /login, fills in credentials, and submits.
+func (b *Browser) Login(t testing.TB, user, pass string) {
+	t.Helper()
+	b.Navigate(t, "/login")
+	b.Type(t, "#username", user)
+	b.Type(t, "#password", pass)
+	b.Click(t, `button[type="submit"]`)
+	b.WaitNotVisible(t, "#password")
+}
+
+// Snapshot captures a full-page screenshot and compares it against a golden
+// file at testdata/snapshots/<TestName>[_suffix].png relative to the caller's
+// source directory. If the golden file does not exist or WEBTEST_UPDATE=1 is
+// set, the screenshot is written as the new baseline. Otherwise the two images
+// are compared pixel-by-pixel and the test fails on mismatch.
+func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
+	t.Helper()
+
+	cfg := snapshotConfig{}
+	for _, o := range opts {
+		o(&cfg)
+	}
+
+	// Temporarily resize viewport if the option requests it.
+	if cfg.width > 0 && cfg.height > 0 {
+		b.page.MustSetViewport(cfg.width, cfg.height, 0, false)
+		defer b.page.MustSetViewport(1280, 720, 0, false)
+	}
+
+	// Wait for the page to settle before capturing.
+	_ = b.tp().WaitStable(300 * time.Millisecond)
+
+	buf, err := b.page.Screenshot(true, nil)
+	if err != nil {
+		t.Fatalf("webtest: snapshot screenshot: %v", err)
+	}
+
+	_, file, _, ok := runtime.Caller(1)
+	if !ok {
+		t.Fatal("webtest: snapshot: cannot determine caller")
+	}
+	dir := filepath.Join(filepath.Dir(file), "testdata", "snapshots")
+	name := strings.NewReplacer("/", "_", "\\", "_", " ", "_").Replace(t.Name())
+	if cfg.suffix != "" {
+		name += "_" + cfg.suffix
+	}
+	goldenPath := filepath.Join(dir, name+".png")
+
+	// Update mode: write and return.
+	if os.Getenv("WEBTEST_UPDATE") == "1" || !fileExists(goldenPath) {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("webtest: snapshot mkdir: %v", err)
+		}
+		if err := os.WriteFile(goldenPath, buf, 0o644); err != nil {
+			t.Fatalf("webtest: snapshot write golden: %v", err)
+		}
+		return
+	}
+
+	// Compare mode.
+	golden, err := os.ReadFile(goldenPath)
+	if err != nil {
+		t.Fatalf("webtest: snapshot read golden: %v", err)
+	}
+
+	if err := compareSnapshots(t, golden, buf, goldenPath); err != nil {
+		actualPath := strings.TrimSuffix(goldenPath, ".png") + ".actual.png"
+		if writeErr := os.WriteFile(actualPath, buf, 0o644); writeErr != nil {
+			t.Logf("webtest: failed to write actual: %v", writeErr)
+		}
+		t.Errorf("webtest: snapshot mismatch for %s: %v\n  actual: %s", filepath.Base(goldenPath), err, actualPath)
+	}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func compareSnapshots(t testing.TB, goldenBytes, actualBytes []byte, goldenPath string) error {
+	t.Helper()
+
+	goldenImg, err := png.Decode(bytes.NewReader(goldenBytes))
+	if err != nil {
+		return fmt.Errorf("decode golden: %w", err)
+	}
+	actualImg, err := png.Decode(bytes.NewReader(actualBytes))
+	if err != nil {
+		return fmt.Errorf("decode actual: %w", err)
+	}
+
+	gb := goldenImg.Bounds()
+	ab := actualImg.Bounds()
+	if gb.Dx() != ab.Dx() || gb.Dy() != ab.Dy() {
+		return fmt.Errorf("dimensions differ: golden %dx%d, actual %dx%d", gb.Dx(), gb.Dy(), ab.Dx(), ab.Dy())
+	}
+
+	totalPixels := gb.Dx() * gb.Dy()
+	diffCount := 0
+	diffImg := image.NewRGBA(gb)
+
+	for y := gb.Min.Y; y < gb.Max.Y; y++ {
+		for x := gb.Min.X; x < gb.Max.X; x++ {
+			gr, gg, gbl, ga := goldenImg.At(x, y).RGBA()
+			ar, ag, abl, aa := actualImg.At(x, y).RGBA()
+
+			if channelDiff(gr, ar) > SnapshotColorTolerance ||
+				channelDiff(gg, ag) > SnapshotColorTolerance ||
+				channelDiff(gbl, abl) > SnapshotColorTolerance ||
+				channelDiff(ga, aa) > SnapshotColorTolerance {
+				diffCount++
+				diffImg.Set(x, y, color.RGBA{R: 255, A: 255})
+			} else {
+				// Dim copy of golden pixel.
+				diffImg.Set(x, y, color.RGBA{
+					R: uint8(gr >> 8 * 77 / 255),
+					G: uint8(gg >> 8 * 77 / 255),
+					B: uint8(gbl >> 8 * 77 / 255),
+					A: 255,
+				})
+			}
+		}
+	}
+
+	ratio := float64(diffCount) / float64(totalPixels)
+	if ratio > SnapshotPixelTolerance {
+		// Write diff image.
+		diffPath := strings.TrimSuffix(goldenPath, ".png") + ".diff.png"
+		var diffBuf bytes.Buffer
+		if err := png.Encode(&diffBuf, diffImg); err == nil {
+			_ = os.WriteFile(diffPath, diffBuf.Bytes(), 0o644)
+			t.Logf("webtest: diff image saved to %s", diffPath)
+		}
+		return fmt.Errorf("%.2f%% pixels differ (threshold %.2f%%)", ratio*100, SnapshotPixelTolerance*100)
+	}
+	return nil
+}
+
+func channelDiff(a, b uint32) uint8 {
+	a8, b8 := uint8(a>>8), uint8(b>>8)
+	if a8 > b8 {
+		return a8 - b8
+	}
+	return b8 - a8
+}
+
+// AcceptConfirms overrides window.confirm to always return true.
+// This is needed for hx-confirm delete buttons.
+func (b *Browser) AcceptConfirms(t testing.TB) {
+	t.Helper()
+	b.Eval(t, `() => { window.confirm = () => true }`)
 }
 
 // screenshotOnFailure saves a screenshot when a test fails.

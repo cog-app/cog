@@ -73,7 +73,7 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.writeJSON(w, http.StatusOK, map[string]any{
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"path":  path,
 		"files": files,
 	})
@@ -98,7 +98,7 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.writeJSON(w, http.StatusCreated, meta)
+	plugin.WriteJSON(w, http.StatusCreated, meta)
 }
 
 func (a *API) handleDownload(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +150,7 @@ func (a *API) handleMkdir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.writeJSON(w, http.StatusCreated, meta)
+	plugin.WriteJSON(w, http.StatusCreated, meta)
 }
 
 func (a *API) handleDelete(w http.ResponseWriter, r *http.Request) {
@@ -191,7 +191,7 @@ func (a *API) handleRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.writeJSON(w, http.StatusOK, meta)
+	plugin.WriteJSON(w, http.StatusOK, meta)
 }
 
 func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -208,7 +208,7 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.writeJSON(w, http.StatusOK, results)
+	plugin.WriteJSON(w, http.StatusOK, results)
 }
 
 func (a *API) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -225,7 +225,7 @@ func (a *API) handleInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.writeJSON(w, http.StatusOK, meta)
+	plugin.WriteJSON(w, http.StatusOK, meta)
 }
 
 func (a *API) handleFavorite(w http.ResponseWriter, r *http.Request) {
@@ -264,7 +264,7 @@ func (a *API) handleFavorites(w http.ResponseWriter, r *http.Request) {
 		files = []FileMeta{}
 	}
 
-	a.writeJSON(w, http.StatusOK, files)
+	plugin.WriteJSON(w, http.StatusOK, files)
 }
 
 // --- Comment handlers ---
@@ -287,7 +287,7 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 		comments = []Comment{}
 	}
 
-	a.writeJSON(w, http.StatusOK, comments)
+	plugin.WriteJSON(w, http.StatusOK, comments)
 }
 
 func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
@@ -312,7 +312,7 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.writeJSON(w, http.StatusCreated, comment)
+	plugin.WriteJSON(w, http.StatusCreated, comment)
 }
 
 func (a *API) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
@@ -376,7 +376,7 @@ func (a *API) handleShareCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.writeJSON(w, http.StatusCreated, rec)
+	plugin.WriteJSON(w, http.StatusCreated, rec)
 }
 
 func (a *API) handleShareList(w http.ResponseWriter, r *http.Request) {
@@ -391,7 +391,7 @@ func (a *API) handleShareList(w http.ResponseWriter, r *http.Request) {
 		records = []share.Record{}
 	}
 
-	a.writeJSON(w, http.StatusOK, records)
+	plugin.WriteJSON(w, http.StatusOK, records)
 }
 
 func (a *API) handleSharesWithMe(w http.ResponseWriter, r *http.Request) {
@@ -438,7 +438,7 @@ func (a *API) handleSharesWithMe(w http.ResponseWriter, r *http.Request) {
 		enriched = append(enriched, es)
 	}
 
-	a.writeJSON(w, http.StatusOK, enriched)
+	plugin.WriteJSON(w, http.StatusOK, enriched)
 }
 
 func (a *API) handleShareDelete(w http.ResponseWriter, r *http.Request) {
@@ -504,7 +504,7 @@ func (a *API) handlePublicLinkCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.writeJSON(w, http.StatusCreated, rec)
+	plugin.WriteJSON(w, http.StatusCreated, rec)
 }
 
 func (a *API) handlePublicLinkAccess(w http.ResponseWriter, r *http.Request) {
@@ -552,7 +552,7 @@ func (a *API) handlePublicLinkAccess(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		a.writeJSON(w, http.StatusOK, map[string]any{
+		plugin.WriteJSON(w, http.StatusOK, map[string]any{
 			"file":         meta,
 			"permissions":  share.PermissionNames(rec.Permissions),
 			"download_url": fmt.Sprintf("/s/%s/download", token),
@@ -560,7 +560,7 @@ func (a *API) handlePublicLinkAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.writeJSON(w, http.StatusOK, map[string]any{
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"resource_type": rec.ResourceType,
 		"resource_id":   rec.ResourceID,
 		"permissions":   share.PermissionNames(rec.Permissions),
@@ -721,12 +721,4 @@ func (a *API) checkSharePassword(rec *share.Record, r *http.Request) error {
 	// Fall back to query parameter.
 	password := r.URL.Query().Get("password")
 	return share.CheckPassword(rec, password)
-}
-
-func (a *API) writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		a.files.log.Error("json encode", "err", err)
-	}
 }

@@ -128,6 +128,10 @@ func (h *ChunkedUploadHandler) handlePut(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "invalid chunk name", http.StatusBadRequest)
 		return
 	}
+	if chunk != filepath.Base(chunk) {
+		http.Error(w, "invalid chunk name", http.StatusBadRequest)
+		return
+	}
 
 	chunkPath := filepath.Join(sess.Dir, chunk)
 	f, err := os.Create(chunkPath)

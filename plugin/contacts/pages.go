@@ -28,30 +28,17 @@ func NewPages(p *Plugin) *Pages {
 	return &Pages{plugin: p}
 }
 
-func (h *Pages) csrfToken(r *http.Request) string {
-	return plugin.CSRFTokenFromContext(r.Context())
-}
-
-func setTitle(w http.ResponseWriter, title string) {
-	w.Header().Set("X-Page-Title", title)
-}
-
-func (h *Pages) userDB(r *http.Request) (*sql.DB, error) {
-	u := plugin.UserFromContext(r.Context())
-	return h.plugin.DB(u.Username)
-}
-
 // Index shows all contacts, including contacts from shared address books.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	u := plugin.UserFromContext(r.Context())
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	EnsureDefaultAddressBook(db)
 
-	setTitle(w, "Contacts")
+	plugin.SetTitle(w, "Contacts")
 	books, _ := ListAddressBooks(db)
 
 	var cards []CardWithBook
@@ -86,17 +73,17 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		cards = append(cards, sharedCards...)
 	}
 
-	contactsIndexPage(books, cards, h.csrfToken(r)).Render(r.Context(), w)
+	contactsIndexPage(books, cards, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // Starred shows starred contacts.
 func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	setTitle(w, "Starred Contacts")
+	plugin.SetTitle(w, "Starred Contacts")
 	books, _ := ListAddressBooks(db)
 	cards, _ := StarredContacts(db, 500)
 	contactsStarredPage(books, cards).Render(r.Context(), w)
@@ -104,14 +91,14 @@ func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
 
 // Settings shows address book management.
 func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	setTitle(w, "Contacts Settings")
+	plugin.SetTitle(w, "Contacts Settings")
 	books, _ := ListAddressBooks(db)
-	contactsSettingsPage(books, h.csrfToken(r)).Render(r.Context(), w)
+	contactsSettingsPage(books, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // ContactDetail returns a contact detail partial for the modal.
@@ -124,7 +111,7 @@ func (h *Pages) ContactDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try the user's own DB first.
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -142,7 +129,7 @@ func (h *Pages) ContactDetail(w http.ResponseWriter, r *http.Request) {
 	book, _ := GetAddressBook(db, c.AddressBookID)
 	books, _ := ListAddressBooks(db)
 
-	contactDetailModal(c, book, books, h.csrfToken(r)).Render(r.Context(), w)
+	contactDetailModal(c, book, books, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // findSharedCard searches shared address books for a card by ID.
@@ -248,7 +235,7 @@ func (h *Pages) UpdateContact(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find the card in own DB or shared.
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -312,7 +299,7 @@ func (h *Pages) DeleteContact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -338,7 +325,7 @@ func (h *Pages) DeleteContact(w http.ResponseWriter, r *http.Request) {
 
 // CreateAddressBookHandler handles POST to create a new address book.
 func (h *Pages) CreateAddressBookHandler(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -357,7 +344,7 @@ func (h *Pages) CreateAddressBookHandler(w http.ResponseWriter, r *http.Request)
 
 // DeleteAddressBookHandler handles DELETE to remove an address book (HTMX).
 func (h *Pages) DeleteAddressBookHandler(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -380,7 +367,7 @@ func (h *Pages) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -459,7 +446,7 @@ func (h *Pages) ServePhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -494,7 +481,7 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

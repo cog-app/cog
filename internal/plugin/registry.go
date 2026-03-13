@@ -556,6 +556,9 @@ func (pr *pluginRegistrar) injectPluginContext(handler http.Handler) http.Handle
 		}
 
 		ctx := cogplugin.WithCSRFToken(r.Context(), csrf)
+		ctx = cogplugin.WithPluginDB(ctx, func(username string) (*sql.DB, error) {
+			return pr.registry.PluginDB(username, pr.pluginID)
+		})
 		if u != nil {
 			ctx = cogplugin.WithUserInfo(ctx, &cogplugin.UserInfo{
 				ID:          u.ID,
@@ -855,10 +858,12 @@ func (r *Registry) SetEnabled(pluginID string, enabled bool) {
 	}
 	r.enabled[pluginID] = enabled
 	if r.sysDB != nil {
-		r.sysDB.Exec(
+		if _, err := r.sysDB.Exec(
 			`INSERT INTO plugin_settings (plugin_id, enabled) VALUES (?, ?) ON CONFLICT(plugin_id) DO UPDATE SET enabled = ?`,
 			pluginID, boolToInt(enabled), boolToInt(enabled),
-		)
+		); err != nil {
+			r.log.Error("persist plugin enabled state", "plugin", pluginID, "enabled", enabled, "err", err)
+		}
 	}
 }
 

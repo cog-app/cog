@@ -21,20 +21,6 @@ func NewPages(p *Plugin) *Pages {
 	return &Pages{plugin: p}
 }
 
-func (h *Pages) csrfToken(r *http.Request) string {
-	return plugin.CSRFTokenFromContext(r.Context())
-}
-
-func (h *Pages) userDB(r *http.Request) (*sql.DB, error) {
-	u := plugin.UserFromContext(r.Context())
-	return h.plugin.DB(u.Username)
-}
-
-// setTitle sets the page title for the shell middleware.
-func setTitle(w http.ResponseWriter, title string) {
-	w.Header().Set("X-Page-Title", title)
-}
-
 type sidebarData struct {
 	Folders      []Folder
 	Feeds        []Feed
@@ -75,7 +61,7 @@ func (h *Pages) buildSidebar(db *sql.DB, activePath string) sidebarData {
 
 // Index shows unread items across all feeds.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -85,14 +71,14 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		rssSidebar(sb).Render(r.Context(), w)
 		return
 	}
-	setTitle(w, "News")
+	plugin.SetTitle(w, "News")
 	items, _ := UnreadItems(db, 200)
-	rssIndexPage(sb, items, h.csrfToken(r)).Render(r.Context(), w)
+	rssIndexPage(sb, items, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // Feed shows items for a single feed.
 func (h *Pages) Feed(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -113,14 +99,14 @@ func (h *Pages) Feed(w http.ResponseWriter, r *http.Request) {
 		rssSidebar(sb).Render(r.Context(), w)
 		return
 	}
-	setTitle(w, feed.Title)
+	plugin.SetTitle(w, feed.Title)
 	items, _ := FeedItems(db, id, 200)
-	rssFeedPage(sb, feed, items, h.csrfToken(r)).Render(r.Context(), w)
+	rssFeedPage(sb, feed, items, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // Starred shows starred items.
 func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -130,14 +116,14 @@ func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
 		rssSidebar(sb).Render(r.Context(), w)
 		return
 	}
-	setTitle(w, "Starred")
+	plugin.SetTitle(w, "Starred")
 	items, _ := StarredItems(db, 200)
-	rssStarredPage(sb, items, h.csrfToken(r)).Render(r.Context(), w)
+	rssStarredPage(sb, items, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // FolderView shows items for all feeds in a folder.
 func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -158,14 +144,14 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 		rssSidebar(sb).Render(r.Context(), w)
 		return
 	}
-	setTitle(w, folder.Name)
+	plugin.SetTitle(w, folder.Name)
 	items, _ := FolderItems(db, id, 200)
-	rssFolderPage(sb, folder, items, h.csrfToken(r)).Render(r.Context(), w)
+	rssFolderPage(sb, folder, items, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // Settings shows feed/folder management.
 func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -175,16 +161,16 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 		rssSidebar(sb).Render(r.Context(), w)
 		return
 	}
-	setTitle(w, "RSS Settings")
+	plugin.SetTitle(w, "RSS Settings")
 	feeds, _ := ListFeeds(db)
 	folders, _ := ListFolders(db)
 	errMsg := r.URL.Query().Get("err")
-	rssSettingsPage(sb, feeds, folders, errMsg, h.csrfToken(r)).Render(r.Context(), w)
+	rssSettingsPage(sb, feeds, folders, errMsg, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // AddFeed handles POST to create a new feed subscription.
 func (h *Pages) AddFeed(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -223,7 +209,7 @@ func (h *Pages) AddFeed(w http.ResponseWriter, r *http.Request) {
 
 // DeleteFeed handles DELETE to remove a feed.
 func (h *Pages) DeleteFeed(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -254,7 +240,7 @@ func (h *Pages) RefreshFeed(w http.ResponseWriter, r *http.Request) {
 
 // MarkFeedRead handles POST to mark all items in a feed as read.
 func (h *Pages) MarkFeedRead(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -273,7 +259,7 @@ func (h *Pages) MarkFeedRead(w http.ResponseWriter, r *http.Request) {
 
 // AddFolder handles POST to create a new folder.
 func (h *Pages) AddFolder(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -290,7 +276,7 @@ func (h *Pages) AddFolder(w http.ResponseWriter, r *http.Request) {
 
 // DeleteFolder handles DELETE to remove a folder.
 func (h *Pages) DeleteFolder(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -309,7 +295,7 @@ func (h *Pages) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 
 // ToggleRead handles POST to toggle read state of an item.
 func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -335,12 +321,12 @@ func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
 		feedTitle = feed.Title
 	}
 	iwf := ItemWithFeed{Item: *item, FeedTitle: feedTitle}
-	_ = rssItemRow(iwf, h.csrfToken(r)).Render(r.Context(), w)
+	_ = rssItemRow(iwf, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // ToggleStar handles POST to toggle star state of an item.
 func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -365,12 +351,12 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 		feedTitle = feed.Title
 	}
 	iwf := ItemWithFeed{Item: *item, FeedTitle: feedTitle}
-	_ = rssItemRow(iwf, h.csrfToken(r)).Render(r.Context(), w)
+	_ = rssItemRow(iwf, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // MarkRead handles POST to mark an item as read (non-toggle).
 func (h *Pages) MarkRead(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -386,7 +372,7 @@ func (h *Pages) MarkRead(w http.ResponseWriter, r *http.Request) {
 
 // MarkAllRead handles POST to mark all items as read.
 func (h *Pages) MarkAllRead(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -400,7 +386,7 @@ func (h *Pages) MarkAllRead(w http.ResponseWriter, r *http.Request) {
 
 // ImportOPML handles POST to import feeds from an OPML file.
 func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -443,7 +429,7 @@ func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
 
 // SetAutoReadPattern handles POST to set the auto-read regex pattern for a feed.
 func (h *Pages) SetAutoReadPattern(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -463,7 +449,7 @@ func (h *Pages) SetAutoReadPattern(w http.ResponseWriter, r *http.Request) {
 
 // ExportOPML handles GET to export feeds as OPML.
 func (h *Pages) ExportOPML(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

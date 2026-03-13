@@ -24,15 +24,6 @@ var allPlugins = []plugin.Plugin{
 	notes.New(), rss.New(), gallery.New(), bookmarks.New(), tasks.New(),
 }
 
-func browserLogin(t testing.TB, b *webtest.Browser, user, pass string) {
-	t.Helper()
-	b.Navigate(t, "/login")
-	b.Type(t, "#username", user)
-	b.Type(t, "#password", pass)
-	b.Click(t, `button[type="submit"]`)
-	b.WaitNotVisible(t, "#password")
-}
-
 func TestBrowserMin(t *testing.T) {
 	env := cogtest.New(t, allPlugins...)
 	eng := webtest.New(env)
@@ -40,9 +31,11 @@ func TestBrowserMin(t *testing.T) {
 
 	env.CreateUser(t, "admin", "pass")
 	b := eng.Start(t)
-	browserLogin(t, b, "admin", "pass")
+	b.Login(t, "admin", "pass")
 	url := b.URL(t)
 	require.True(t, !strings.Contains(url, "/login"), "expected redirect away from /login, got %s", url)
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 }
 
 func TestBrowserCore(t *testing.T) {
@@ -60,9 +53,11 @@ func TestBrowserCore(t *testing.T) {
 
 	t.Run("Login/Success", func(t *testing.T) {
 		b := eng.Start(t)
-		browserLogin(t, b, "login-ok", "pass")
+		b.Login(t, "login-ok", "pass")
 		url := b.URL(t)
 		require.True(t, !strings.Contains(url, "/login"), "expected redirect away from /login, got %s", url)
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
 	})
 
 	t.Run("Login/BadPassword", func(t *testing.T) {
@@ -74,48 +69,56 @@ func TestBrowserCore(t *testing.T) {
 		b.WaitVisible(t, "#username")
 		url := b.URL(t)
 		require.True(t, strings.Contains(url, "/login"), "expected to stay on /login, got %s", url)
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
 	})
 
 	t.Run("Dashboard", func(t *testing.T) {
 		b := eng.Start(t)
-		browserLogin(t, b, "dash", "pass")
+		b.Login(t, "dash", "pass")
 		b.WaitVisible(t, ".app-grid")
 		count := b.Count(t, ".app-card")
 		require.True(t, count >= 8, "expected at least 8 app cards, got %d", count)
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
 	})
 
 	t.Run("Navigation", func(t *testing.T) {
 		b := eng.Start(t)
-		browserLogin(t, b, "nav", "pass")
+		b.Login(t, "nav", "pass")
 		b.WaitVisible(t, ".navbar-nav")
 		count := b.Count(t, ".navbar-nav a")
 		require.True(t, count >= 1, "expected nav links, got %d", count)
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
 	})
 
 	t.Run("UserDropdown", func(t *testing.T) {
 		b := eng.Start(t)
-		browserLogin(t, b, "dropdown", "pass")
+		b.Login(t, "dropdown", "pass")
 		b.WaitVisible(t, ".dropdown-toggle")
-		// Verify the dropdown menu has links. Query the DOM directly
-		// since the CSS dropdown toggle isn't reliably testable.
 		n := b.Eval(t, `document.querySelectorAll('.dropdown-menu a').length`)
 		count, _ := n.(float64)
 		require.True(t, count >= 3, "expected at least 3 dropdown links, got %v", n)
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
 	})
 
 	t.Run("Settings/Profile", func(t *testing.T) {
 		b := eng.Start(t)
-		browserLogin(t, b, "profile", "pass")
+		b.Login(t, "profile", "pass")
 		b.Navigate(t, "/settings/profile")
 		b.WaitVisible(t, `input[name="display_name"]`)
 		b.Type(t, `input[name="display_name"]`, "Test User")
 		b.Click(t, `main button[type="submit"]`)
 		b.WaitVisible(t, `input[name="display_name"]`)
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
 	})
 
 	t.Run("Settings/Password", func(t *testing.T) {
 		b := eng.Start(t)
-		browserLogin(t, b, "security", "pass")
+		b.Login(t, "security", "pass")
 		b.Navigate(t, "/settings/security")
 		b.WaitVisible(t, `input[name="current_password"]`)
 		b.Type(t, `input[name="current_password"]`, "pass")
@@ -123,159 +126,7 @@ func TestBrowserCore(t *testing.T) {
 		b.Type(t, `input[name="confirm_password"]`, "newpass123")
 		b.Click(t, `main button[type="submit"]`)
 		b.WaitVisible(t, `input[name="current_password"]`)
-	})
-}
-
-func TestBrowserPluginsCRUD(t *testing.T) {
-	env := cogtest.New(t, allPlugins...)
-	eng := webtest.New(env)
-	t.Cleanup(eng.Close)
-
-	env.CreateUser(t, "notes-empty", "pass")
-	env.CreateUser(t, "notes-create", "pass")
-	env.CreateUser(t, "bm-empty", "pass")
-	env.CreateUser(t, "bm-create", "pass")
-	env.CreateUser(t, "tasks-create", "pass")
-	env.CreateUser(t, "tasks-toggle", "pass")
-	env.CreateUser(t, "contacts-create", "pass")
-
-	t.Run("Notes/EmptyState", func(t *testing.T) {
-		b := eng.Start(t)
-		browserLogin(t, b, "notes-empty", "pass")
-		b.Navigate(t, "/apps/notes/")
-		b.WaitText(t, "No notes yet")
-	})
-
-	t.Run("Notes/Create", func(t *testing.T) {
-		b := eng.Start(t)
-		browserLogin(t, b, "notes-create", "pass")
-		b.Navigate(t, "/apps/notes/new")
-		b.WaitVisible(t, "#title")
-		b.Type(t, "#title", "My Test Note")
-		b.Type(t, "#content", "Hello from browser test")
-		b.Click(t, `main button[type="submit"]`)
-		// POST redirects to the note detail view, not the list.
-		b.WaitText(t, "My Test Note")
-	})
-
-	t.Run("Bookmarks/EmptyState", func(t *testing.T) {
-		b := eng.Start(t)
-		browserLogin(t, b, "bm-empty", "pass")
-		b.Navigate(t, "/apps/bookmarks/")
-		b.WaitText(t, "No bookmarks yet")
-	})
-
-	t.Run("Bookmarks/Create", func(t *testing.T) {
-		b := eng.Start(t)
-		browserLogin(t, b, "bm-create", "pass")
-		b.Navigate(t, "/apps/bookmarks/new")
-		b.WaitVisible(t, "#url")
-		b.Type(t, "#url", "https://example.com")
-		b.Type(t, "#title", "Example Site")
-		b.Type(t, "#tags", "test,browser")
-		b.Click(t, `main button[type="submit"]`)
-		// POST redirects to the bookmark detail view, not the list.
-		b.WaitText(t, "Example Site")
-	})
-
-	t.Run("Tasks/CreateListAndTask", func(t *testing.T) {
-		b := eng.Start(t)
-		browserLogin(t, b, "tasks-create", "pass")
-		b.Navigate(t, "/apps/tasks/")
-		b.Type(t, `[data-testid="new-list-name"]`, "My List")
-		b.Click(t, `[data-testid="new-list-submit"]`)
-		b.Type(t, `[data-testid="new-task-summary"]`, "First task")
-		b.Click(t, `[data-testid="new-task-submit"]`)
-		b.WaitVisible(t, `#task-tree .task-item input[type="checkbox"]`)
-	})
-
-	t.Run("Tasks/ToggleComplete", func(t *testing.T) {
-		b := eng.Start(t)
-		browserLogin(t, b, "tasks-toggle", "pass")
-		b.Navigate(t, "/apps/tasks/")
-		b.Type(t, `[data-testid="new-list-name"]`, "Toggle List")
-		b.Click(t, `[data-testid="new-list-submit"]`)
-		b.Type(t, `[data-testid="new-task-summary"]`, "Toggle me")
-		b.Click(t, `[data-testid="new-task-submit"]`)
-		b.Click(t, `#task-tree .task-item input[type="checkbox"]`)
-		b.WaitVisible(t, ".task-item.completed")
-	})
-
-	t.Run("Contacts/Create", func(t *testing.T) {
-		b := eng.Start(t)
-		browserLogin(t, b, "contacts-create", "pass")
-		b.Navigate(t, "/apps/contacts/")
-		b.WaitText(t, "No contacts yet")
-		// Open the new contact modal via JS onclick handler.
-		b.Eval(t, `document.getElementById('create-contact-modal').style.display='flex'`)
-		b.Type(t, "#cc-fn", "Alice Smith")
-		b.Click(t, `#create-contact-modal button[type="submit"]`)
-		b.WaitText(t, "Alice Smith")
-	})
-}
-
-func TestBrowserPluginsNav(t *testing.T) {
-	env := cogtest.New(t, allPlugins...)
-	eng := webtest.New(env)
-	t.Cleanup(eng.Close)
-
-	env.CreateUser(t, "cal", "pass")
-	env.CreateUser(t, "rss-settings", "pass")
-	env.CreateUser(t, "rss-empty", "pass")
-	env.CreateUser(t, "gallery", "pass")
-	env.CreateUser(t, "gallery-settings", "pass")
-	env.CreateUser(t, "files", "pass")
-	env.CreateUser(t, "files-folder", "pass")
-
-	t.Run("Calendar/PageLoads", func(t *testing.T) {
-		b := eng.Start(t)
-		browserLogin(t, b, "cal", "pass")
-		b.Navigate(t, "/apps/calendar/")
-		b.WaitVisible(t, "#calendar")
-	})
-
-	t.Run("RSS/Settings", func(t *testing.T) {
-		b := eng.Start(t)
-		browserLogin(t, b, "rss-settings", "pass")
-		b.Navigate(t, "/apps/rss/settings")
-		b.WaitVisible(t, "#url")
-	})
-
-	t.Run("RSS/EmptyState", func(t *testing.T) {
-		b := eng.Start(t)
-		browserLogin(t, b, "rss-empty", "pass")
-		b.Navigate(t, "/apps/rss/")
-		b.WaitVisible(t, "#rss-sidebar")
-	})
-
-	t.Run("Gallery/PageLoads", func(t *testing.T) {
-		b := eng.Start(t)
-		browserLogin(t, b, "gallery", "pass")
-		b.Navigate(t, "/apps/gallery/")
-		b.WaitText(t, "Timeline")
-	})
-
-	t.Run("Gallery/Settings", func(t *testing.T) {
-		b := eng.Start(t)
-		browserLogin(t, b, "gallery-settings", "pass")
-		b.Navigate(t, "/apps/gallery/settings")
-		b.WaitText(t, "Gallery Settings")
-	})
-
-	t.Run("Files/PageLoads", func(t *testing.T) {
-		b := eng.Start(t)
-		browserLogin(t, b, "files", "pass")
-		b.Navigate(t, "/apps/files/")
-		b.WaitVisible(t, "#files-table")
-	})
-
-	t.Run("Files/CreateFolder", func(t *testing.T) {
-		b := eng.Start(t)
-		browserLogin(t, b, "files-folder", "pass")
-		b.Navigate(t, "/apps/files/")
-		b.Type(t, `[data-testid="new-folder-name"]`, "Test Folder")
-		b.Click(t, `[data-testid="new-folder-submit"]`)
-		b.WaitVisible(t, "#files-table")
-		b.WaitText(t, "Test Folder")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
 	})
 }
