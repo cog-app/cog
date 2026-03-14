@@ -126,6 +126,13 @@ func ensureModel(path, url string) error {
 	return os.Rename(tmp, path)
 }
 
+// InitErr returns any initialization error, triggering init if needed.
+// Callers can check this before entering a loop to avoid per-image errors.
+func (b *OnnxBackend) InitErr() error {
+	b.init()
+	return b.initErr
+}
+
 func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*RecognitionResult, error) {
 	b.init()
 	if b.initErr != nil {
