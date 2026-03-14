@@ -127,6 +127,7 @@ func Main(plugins ...plugin.Plugin) {
 	root.AddCommand(volumeCmd(plugins))
 	root.AddCommand(settingCmd(plugins))
 	root.AddCommand(shellCmd(plugins))
+	root.AddCommand(doctorCmd(plugins))
 
 	// Discover and register plugin CLI commands.
 	// Close providers after Execute — not via OnFinalize or PersistentPostRun

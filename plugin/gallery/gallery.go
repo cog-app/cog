@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -210,6 +211,34 @@ func (p *Plugin) AggregateRecognitionStats() RecognitionStats {
 		total.Errors = append(total.Errors, s.Errors...)
 	}
 	return total
+}
+
+// DoctorChecks implements plugin.Doctor, checking external dependencies.
+func (p *Plugin) DoctorChecks(ctx context.Context) []plugin.CheckResult {
+	var results []plugin.CheckResult
+
+	// Check CLI tools.
+	for _, name := range []string{"tesseract", "ffmpeg", "ffprobe"} {
+		r := plugin.CheckResult{Name: name, Status: plugin.CheckOK}
+		if _, err := exec.LookPath(name); err != nil {
+			r.Status = plugin.CheckWarn
+			r.Message = name + " not found in PATH"
+		}
+		results = append(results, r)
+	}
+
+	// Check ONNX runtime — only verify the shared library is present.
+	// We skip InitErr() because it downloads models and initializes the
+	// full runtime, which is too heavy for a dependency check.
+	r := plugin.CheckResult{Name: "onnxruntime", Status: plugin.CheckOK}
+	b := &OnnxBackend{}
+	if !b.Available() {
+		r.Status = plugin.CheckWarn
+		r.Message = "libonnxruntime.so not found; local image recognition disabled"
+	}
+	results = append(results, r)
+
+	return results
 }
 
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {

@@ -162,6 +162,28 @@ type CommandDef struct {
 	Sub   []CommandDef // sub-commands (mutually exclusive with Run)
 }
 
+// CheckStatus indicates the outcome of a doctor check.
+type CheckStatus int
+
+const (
+	CheckOK    CheckStatus = iota // everything is fine
+	CheckWarn                     // feature degraded but not broken
+	CheckError                    // something is broken
+)
+
+// CheckResult is a single diagnostic check performed by a plugin.
+type CheckResult struct {
+	Name    string
+	Status  CheckStatus
+	Message string // empty for OK
+}
+
+// Doctor is an optional interface plugins implement to contribute
+// dependency checks to the `cog doctor` command.
+type Doctor interface {
+	DoctorChecks(ctx context.Context) []CheckResult
+}
+
 // SearchSourceDef describes how a plugin's data should be indexed for search.
 type SearchSourceDef struct {
 	// PrimaryTable is the SQLite table name watched via update hook.
