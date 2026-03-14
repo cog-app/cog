@@ -207,6 +207,10 @@ func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 		log.Warn("search init failed", "err", err)
 	}
 
+	if err := p.Plugins.Start(ctx); err != nil {
+		return fmt.Errorf("start plugins: %w", err)
+	}
+
 	// Start SSH server if enabled.
 	if cfg.SSHEnabled {
 		ks := keys.NewStore(p.Plugins, p.Users)

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/ratelimit"
@@ -126,11 +127,21 @@ func (m *Middleware) authenticate(r *http.Request) (*user.User, string) {
 }
 
 // RequireAuth wraps a handler and returns 401 if no user is authenticated.
+// Browser requests are redirected to /login; HTMX requests get HX-Redirect;
+// programmatic clients (with Authorization header) get 401 + WWW-Authenticate.
 func RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if UserFromContext(r.Context()) == nil {
-			w.Header().Set("WWW-Authenticate", `Basic realm="Cog"`)
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			switch {
+			case r.Header.Get("HX-Request") != "":
+				w.Header().Set("HX-Redirect", loginURL(r))
+				w.WriteHeader(http.StatusUnauthorized)
+			case isBrowserNavigation(r):
+				http.Redirect(w, r, loginURL(r), http.StatusSeeOther)
+			default:
+				w.Header().Set("WWW-Authenticate", `Basic realm="Cog"`)
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			}
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -141,11 +152,23 @@ func RequireAuth(next http.Handler) http.Handler {
 func RequireAuthWeb(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if UserFromContext(r.Context()) == nil {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			http.Redirect(w, r, loginURL(r), http.StatusSeeOther)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// loginURL returns "/login?next=<current_url>" for the given request.
+func loginURL(r *http.Request) string {
+	return "/login?next=" + url.QueryEscape(r.URL.RequestURI())
+}
+
+// isBrowserNavigation returns true if the request looks like a browser page
+// navigation (as opposed to an API call from a programmatic client).
+func isBrowserNavigation(r *http.Request) bool {
+	accept := r.Header.Get("Accept")
+	return strings.Contains(accept, "text/html")
 }
 
 // RequireAdmin wraps a handler and returns 403 if the user is not an admin.

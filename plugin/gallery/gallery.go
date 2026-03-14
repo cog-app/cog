@@ -100,6 +100,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterPage("people", http.HandlerFunc(pages.People))
 	ctx.RegisterPage("person/{id}", http.HandlerFunc(pages.PersonView))
 	ctx.RegisterPage("tags", http.HandlerFunc(pages.Tags))
+	ctx.RegisterPage("tag/{name}", http.HandlerFunc(pages.TagView))
 	ctx.RegisterPage("videos", http.HandlerFunc(pages.Videos))
 	ctx.RegisterPage("settings", http.HandlerFunc(pages.Settings))
 

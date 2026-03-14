@@ -136,6 +136,19 @@ func (h *Pages) Tags(w http.ResponseWriter, r *http.Request) {
 	tagsPage(r.URL.Path, tags).Render(r.Context(), w)
 }
 
+// TagView renders media for a specific tag.
+func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	name := r.PathValue("name")
+	media, _ := MediaByTag(db, name, 200, 0)
+	plugin.SetTitle(w, "Tag: "+name)
+	tagViewPage(r.URL.Path, name, media).Render(r.Context(), w)
+}
+
 // Videos renders the video-only timeline.
 func (h *Pages) Videos(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)

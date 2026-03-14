@@ -358,12 +358,29 @@ templ tagsPage(activePath string, tags []Tag) {
 			} else {
 				<div style="display:flex;flex-wrap:wrap;gap:8px">
 					for _, t := range tags {
-						<span class="badge" style="font-size:0.9rem;padding:6px 12px">
+						<a href={ templ.SafeURL("/apps/gallery/tag/" + t.Name) } class="badge" style="font-size:0.9rem;padding:6px 12px;text-decoration:none">
 							{ t.Name }
 							<span class="text-muted" style="margin-left:4px">{ strconv.Itoa(t.Count) }</span>
-						</span>
+						</a>
 					}
 				</div>
+			}
+		</div>
+	</div>
+}
+
+// --- Tag View Page ---
+templ tagViewPage(activePath string, name string, media []Media) {
+	<div class="sidebar-layout">
+		@gallerySidebar(activePath, 0)
+		<div class="sidebar-content">
+			<h1>Tag: { name }</h1>
+			if len(media) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No photos with this tag.</p>
+				}
+			} else {
+				@photoGrid(media)
 			}
 		</div>
 	</div>

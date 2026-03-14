@@ -1,15 +1,7 @@
-FROM golang:1.26-trixie AS build
-RUN apt-get update && apt-get install -y --no-install-recommends git gcc libc6-dev && rm -rf /var/lib/apt/lists/*
-RUN git config --global --add safe.directory '*'
+ARG DEPS_BASE
+ARG BUILD_BASE
 
-WORKDIR /code
-COPY go.mod go.sum .
-RUN go mod download # cache mod downloads
-
-COPY . .
-RUN CGO_ENABLED=1 go build ./cmd/cog
-
-FROM debian:trixie-slim
+FROM ${DEPS_BASE:-debian:trixie-slim} AS dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	tesseract-ocr \
 	tesseract-ocr-eng \
@@ -38,6 +30,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	libreoffice-impress \
 	fonts-noto-core \
 	&& rm -rf /var/lib/apt/lists/*
+
+FROM ${BUILD_BASE:-golang:1.26-trixie} AS build_dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends git gcc libc6-dev && rm -rf /var/lib/apt/lists/*
+RUN git config --global --add safe.directory '*'
+
+WORKDIR /code
+COPY go.mod go.sum .
+RUN go mod download # cache mod downloads
+
+FROM build_dependencies AS build
+COPY . .
+RUN CGO_ENABLED=1 go build ./cmd/cog
+
+FROM dependencies AS publish
 COPY --from=build /code/cog /usr/bin/cog
 RUN mkdir -p /etc/bash_completion.d && cog completion bash > /etc/bash_completion.d/cog 2>/dev/null || true
 RUN cog doctor

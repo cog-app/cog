@@ -70,7 +70,7 @@ func (b *OnnxBackend) init() {
 
 		ort.SetSharedLibraryPath(b.LibraryPath)
 		if err := ort.InitializeEnvironment(); err != nil {
-			if err.Error() != "The ONNX runtime environment has already been initialized" {
+			if err.Error() != "The onnxruntime has already been initialized" {
 				b.initErr = fmt.Errorf("init onnxruntime: %w", err)
 				return
 			}
