@@ -126,6 +126,10 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		Slug:   "scan",
 		Action: http.HandlerFunc(pages.TriggerSystemScan),
 	})
+	ctx.RegisterSettingsPage(plugin.SettingsPage{
+		Slug:   "purge-recognitions",
+		Action: http.HandlerFunc(pages.PurgeRecognitions),
+	})
 	ctx.RegisterAction("POST", "rename/preview", http.HandlerFunc(pages.RenamePreview))
 	ctx.RegisterAction("POST", "rename/apply", http.HandlerFunc(pages.RenameApply))
 	ctx.RegisterAction("POST", "rename/undo", http.HandlerFunc(pages.RenameUndo))
@@ -239,6 +243,34 @@ func (p *Plugin) DoctorChecks(ctx context.Context) []plugin.CheckResult {
 	results = append(results, r)
 
 	return results
+}
+
+// PurgeAllRecognitions resets recognition state across all user databases.
+func (p *Plugin) PurgeAllRecognitions() error {
+	entries, err := os.ReadDir(p.ctx.DataDir())
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		username := entry.Name()
+		filesDBPath := filepath.Join(p.ctx.DataDir(), username, "app_data", "files", "plugin.db")
+		if _, err := os.Stat(filesDBPath); err != nil {
+			continue
+		}
+		db, err := p.DB(username)
+		if err != nil {
+			p.log.Warn("purge: open db", "user", username, "err", err)
+			continue
+		}
+		if err := PurgeRecognitions(db); err != nil {
+			return fmt.Errorf("purge %s: %w", username, err)
+		}
+		p.log.Info("purged recognitions", "user", username)
+	}
+	return nil
 }
 
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {

@@ -599,16 +599,26 @@ templ scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) 
 					</tr>
 				}
 			</table>
-			<form method="post" action="/admin/plugins/gallery/scan">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<button type="submit" class="btn btn-primary btn-sm" disabled?={ scan.Running }>
-					if scan.Running {
-						Scanning...
-					} else {
-						Scan All Users
-					}
-				</button>
-			</form>
+			<div style="display:flex;gap:0.5rem">
+				<form method="post" action="/admin/plugins/gallery/scan">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<button type="submit" class="btn btn-primary btn-sm" disabled?={ scan.Running }>
+						if scan.Running {
+							Scanning...
+						} else {
+							Scan All Users
+						}
+					</button>
+				</form>
+				if stats.Done > 0 || stats.Errored > 0 {
+					<form method="post" action="/admin/plugins/gallery/purge-recognitions" onsubmit="return confirm('Purge all recognition data? Tags, faces, and people will be deleted and images re-queued for recognition.')">
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<button type="submit" class="btn btn-danger btn-sm" disabled?={ scan.Running }>
+							Purge Recognitions
+						</button>
+					</form>
+				}
+			</div>
 		}
 	</div>
 }

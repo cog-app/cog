@@ -426,6 +426,15 @@ func (h *Pages) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/plugins/gallery", http.StatusSeeOther)
 }
 
+// PurgeRecognitions purges all recognition data and resets state for all users.
+func (h *Pages) PurgeRecognitions(w http.ResponseWriter, r *http.Request) {
+	if err := h.plugin.PurgeAllRecognitions(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin/plugins/gallery", http.StatusSeeOther)
+}
+
 // SaveSystemSettings saves system-level gallery settings.
 func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 	db, err := h.plugin.SystemDB()

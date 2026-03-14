@@ -624,6 +624,18 @@ func GetRecognitionStats(db *sql.DB) (RecognitionStats, error) {
 	return s, nil
 }
 
+// PurgeRecognitions resets all recognition state and deletes derived data
+// (tags, faces, people) so recognition can be re-run from scratch.
+func PurgeRecognitions(db *sql.DB) error {
+	_, err := db.Exec(`DELETE FROM media_tags;
+		DELETE FROM faces;
+		DELETE FROM people;
+		DELETE FROM tags;
+		UPDATE media SET recognition_state = 0, recognition_at = NULL, recognition_error = ''
+			WHERE mime_type LIKE 'image/%'`)
+	return err
+}
+
 // --- Settings ---
 
 // GetSetting returns a setting value or the default.
