@@ -1,4 +1,4 @@
-FROM golang:1.26-bookworm AS build
+FROM golang:1.26-trixie AS build
 RUN apt-get update && apt-get install -y --no-install-recommends git gcc libc6-dev && rm -rf /var/lib/apt/lists/*
 RUN git config --global --add safe.directory '*'
 
@@ -7,7 +7,7 @@ WORKDIR /code
 RUN CGO_ENABLED=1 go generate ./...
 RUN CGO_ENABLED=1 go build ./cmd/cog
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	tesseract-ocr \
 	tesseract-ocr-eng \
