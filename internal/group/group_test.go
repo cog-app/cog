@@ -249,6 +249,65 @@ func TestNestedGroupShareAccess(t *testing.T) {
 	require.True(t, decision.Allowed)
 }
 
+func TestMemberTypeIsValid(t *testing.T) {
+	if !group.Owner.IsValid() {
+		t.Fatal("OWNER should be valid")
+	}
+	if !group.User.IsValid() {
+		t.Fatal("USER should be valid")
+	}
+	if !group.GroupMember.IsValid() {
+		t.Fatal("GROUP should be valid")
+	}
+	if group.MemberType("INVALID").IsValid() {
+		t.Fatal("INVALID should not be valid")
+	}
+}
+
+func TestUpdateGroup(t *testing.T) {
+	env := cogtest.New(t)
+	owner := env.CreateUser(t, "owner", "pass")
+
+	grp, err := env.Providers.Groups.Create("old-name", nil, &owner.ID)
+	require.NoError(t, err)
+
+	require.NoError(t, env.Providers.Groups.Update(grp.ID, "new-name"))
+
+	got, err := env.Providers.Groups.Get(grp.ID)
+	require.NoError(t, err)
+	require.Equal(t, "new-name", got.Name)
+}
+
+func TestUpdateGroupNotFound(t *testing.T) {
+	env := cogtest.New(t)
+
+	err := env.Providers.Groups.Update("nonexistent", "whatever")
+	require.Error(t, err)
+	require.Equal(t, group.ErrNotFound, err)
+}
+
+func TestListOwnedByUser(t *testing.T) {
+	env := cogtest.New(t)
+	owner := env.CreateUser(t, "owner", "pass")
+
+	grpA, err := env.Providers.Groups.Create("alpha", nil, &owner.ID)
+	require.NoError(t, err)
+	grpB, err := env.Providers.Groups.Create("beta", nil, &owner.ID)
+	require.NoError(t, err)
+
+	// owner is OWNER of A, regular USER of B.
+	require.NoError(t, env.Providers.Groups.AddMember(grpA.ID, owner.ID, group.Owner))
+	require.NoError(t, env.Providers.Groups.AddMember(grpB.ID, owner.ID, group.User))
+
+	var owned []group.Group
+	for g, err := range env.Providers.Groups.ListOwnedByUser(owner.ID) {
+		require.NoError(t, err)
+		owned = append(owned, g)
+	}
+	require.Equal(t, 1, len(owned))
+	require.Equal(t, grpA.ID, owned[0].ID)
+}
+
 func TestRebuildClosure(t *testing.T) {
 	env := cogtest.New(t)
 	owner := env.CreateUser(t, "owner", "pass")

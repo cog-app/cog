@@ -80,6 +80,28 @@ func TestListByGroupFiltersExpired(t *testing.T) {
 	require.Equal(t, 1, len(invitations))
 }
 
+func TestInvitationDelete(t *testing.T) {
+	env := cogtest.New(t)
+	owner := env.CreateUser(t, "owner", "pass")
+	grp, err := env.Providers.Groups.Create("devs", nil, &owner.ID)
+	require.NoError(t, err)
+
+	inv, err := env.Providers.Invitations.Create(grp.ID, "del@example.com", owner.ID, 24, group.User)
+	require.NoError(t, err)
+
+	require.NoError(t, env.Providers.Invitations.Delete(inv.ID))
+
+	// Should be gone.
+	_, err = env.Providers.Invitations.GetByToken(inv.Token)
+	require.Error(t, err)
+	require.Equal(t, group.ErrNotFound, err)
+
+	// Double delete returns not found.
+	err = env.Providers.Invitations.Delete(inv.ID)
+	require.Error(t, err)
+	require.Equal(t, group.ErrNotFound, err)
+}
+
 func TestDeleteExpired(t *testing.T) {
 	env := cogtest.New(t)
 	owner := env.CreateUser(t, "owner", "pass")

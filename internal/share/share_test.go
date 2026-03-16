@@ -269,3 +269,60 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, decision.Allowed)
 }
+
+func TestCheckAccessWithHierarchy(t *testing.T) {
+	env := cogtest.New(t)
+	owner := env.CreateUser(t, "owner", "pass")
+	target := env.CreateUser(t, "target", "pass")
+
+	// Share parent resource.
+	_, err := env.Providers.Shares.Create(owner.ID, "files:file", "parent-dir", "USER", target.ID, plugin.PermRead)
+	require.NoError(t, err)
+
+	// parentLookup: child -> parent-dir, parent-dir -> ""
+	parentLookup := func(resourceID string) (string, error) {
+		if resourceID == "child-file" {
+			return "parent-dir", nil
+		}
+		return "", nil
+	}
+
+	// Child inherits access from parent.
+	decision, err := env.Providers.Shares.CheckAccessWithHierarchy(target.ID, "files:file", "child-file", parentLookup)
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+
+	// Unshared user gets denied.
+	other := env.CreateUser(t, "other", "pass")
+	decision, err = env.Providers.Shares.CheckAccessWithHierarchy(other.ID, "files:file", "child-file", parentLookup)
+	require.NoError(t, err)
+	require.False(t, decision.Allowed)
+}
+
+func TestNCIDRoundtrip(t *testing.T) {
+	env := cogtest.New(t)
+	owner := env.CreateUser(t, "owner", "pass")
+
+	rec, err := env.Providers.Shares.Create(owner.ID, "files:file", "res1", "USER", "target1", plugin.PermRead)
+	require.NoError(t, err)
+
+	// First call creates the NC ID.
+	ncID, err := env.Providers.Shares.NCIDFor(rec.ID)
+	require.NoError(t, err)
+	require.True(t, ncID > 0)
+
+	// Second call returns the same ID.
+	ncID2, err := env.Providers.Shares.NCIDFor(rec.ID)
+	require.NoError(t, err)
+	require.Equal(t, ncID, ncID2)
+
+	// Reverse lookup.
+	shareID, err := env.Providers.Shares.ShareIDFromNC(ncID)
+	require.NoError(t, err)
+	require.Equal(t, rec.ID, shareID)
+
+	// Not found.
+	_, err = env.Providers.Shares.ShareIDFromNC(999999)
+	require.Error(t, err)
+	require.Equal(t, share.ErrNotFound, err)
+}

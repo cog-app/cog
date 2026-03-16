@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 )
@@ -110,5 +112,55 @@ func TestValidateCSRFFor(t *testing.T) {
 	// Wrong plugin should fail.
 	if ValidateCSRFFor(r, "sess1", "wrongplugin", secret) {
 		t.Fatal("expected wrong plugin CSRF token to fail")
+	}
+}
+
+func TestRequireCSRFFor(t *testing.T) {
+	secret := []byte("test-secret")
+	sessID := "test-session-id"
+	pluginID := "myplugin"
+
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := RequireCSRFFor(pluginID, secret, ok)
+
+	// Inject session ID into context.
+	withSession := func(r *http.Request) *http.Request {
+		ctx := context.WithValue(r.Context(), sessionContextKey, sessID)
+		return r.WithContext(ctx)
+	}
+
+	// GET should pass through without CSRF.
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, withSession(httptest.NewRequest("GET", "/", nil)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	// POST without token should be rejected.
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, withSession(httptest.NewRequest("POST", "/", nil)))
+	if rec.Code == http.StatusOK {
+		t.Fatal("POST without CSRF token should be rejected")
+	}
+
+	// POST with valid token should pass.
+	token := CSRFTokenFor(sessID, pluginID, secret)
+	req := httptest.NewRequest("POST", "/", nil)
+	req.Header.Set("X-CSRF-Token", token)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, withSession(req))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST with valid CSRF = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	// POST with wrong token should be rejected.
+	req = httptest.NewRequest("POST", "/", nil)
+	req.Header.Set("X-CSRF-Token", "wrong-token")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, withSession(req))
+	if rec.Code == http.StatusOK {
+		t.Fatal("POST with wrong CSRF token should be rejected")
 	}
 }
