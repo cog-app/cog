@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 )
 
 // RecognizedTag is a tag produced by image recognition.
@@ -145,7 +144,7 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		imagePath := p.resolveLocalPath(username, m.FilePath)
 
 		result, err := backend.Analyze(ctx, imagePath)
-		now := time.Now().Unix()
+		now := p.ctx.Now().Unix()
 		if err != nil {
 			p.log.Error("recognize", "path", m.FilePath, "err", err)
 			if _, uerr := db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ?, recognition_error = ? WHERE id = ?`, now, err.Error(), m.ID); uerr != nil {

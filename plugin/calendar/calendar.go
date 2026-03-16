@@ -105,7 +105,7 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) e
 	if err != nil {
 		return nil
 	}
-	events, _ := UpcomingEvents(db, time.Now().Unix(), 5)
+	events, _ := UpcomingEvents(db, p.ctx.Now().Unix(), 5)
 	return eventsWidget(events).Render(ctx, w)
 }
 

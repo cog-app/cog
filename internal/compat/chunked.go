@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 )
@@ -27,6 +28,7 @@ type ChunkedUploadHandler struct {
 	Log     *slog.Logger
 	Files   *files.Plugin
 	TempDir string // base temp directory for chunks
+	Clock   clock.Clock
 
 	mu       sync.Mutex
 	sessions map[string]*uploadSession
@@ -99,7 +101,7 @@ func (h *ChunkedUploadHandler) handleMkcol(w http.ResponseWriter, u *user.User, 
 	}
 	// Evict stale sessions (older than 24h)
 	for k, s := range h.sessions {
-		if time.Since(s.CreatedAt) > 24*time.Hour {
+		if h.Clock().Sub(s.CreatedAt) > 24*time.Hour {
 			os.RemoveAll(s.Dir)
 			delete(h.sessions, k)
 		}
@@ -107,7 +109,7 @@ func (h *ChunkedUploadHandler) handleMkcol(w http.ResponseWriter, u *user.User, 
 	h.sessions[sessionKey] = &uploadSession{
 		Username:  u.Username,
 		Dir:       dir,
-		CreatedAt: time.Now(),
+		CreatedAt: h.Clock(),
 	}
 	h.mu.Unlock()
 

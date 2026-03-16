@@ -26,7 +26,7 @@ func (p *Plugin) Seed(username string) error {
 	db.Exec(`INSERT INTO calendars (uid, name, color) VALUES ('work', 'Work', '#e64a19')`)
 
 	// Find start of current week (Monday).
-	now := time.Now().UTC()
+	now := p.ctx.Now().UTC()
 	weekday := now.Weekday()
 	if weekday == time.Sunday {
 		weekday = 7

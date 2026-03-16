@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/internal/email"
@@ -51,6 +52,7 @@ type Providers struct {
 	LogBuffer    *logbuf.Buffer
 	RateLimiter  *ratelimit.Limiter
 	CSRFSecret   []byte
+	Clock        clock.Clock
 	StartedAt    time.Time
 }
 
@@ -71,7 +73,7 @@ func New(log *slog.Logger, cfg config.Config, plugins ...plugin.Plugin) (*Provid
 
 	mgr.SetSystemDB(sysDB)
 
-	p := NewFromDB(log, cfg, sysDB, plugins...)
+	p := NewFromDB(log, cfg, sysDB, clock.System(), plugins...)
 	p.Search = mgr
 
 	// Wire the DB hook factory so per-user plugin DBs get update hooks.
@@ -130,7 +132,7 @@ func New(log *slog.Logger, cfg config.Config, plugins ...plugin.Plugin) (*Provid
 
 // NewFromDB constructs providers from an existing database connection.
 // Useful for tests that use :memory: databases.
-func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, plugins ...plugin.Plugin) *Providers {
+func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock, plugins ...plugin.Plugin) *Providers {
 	// Ensure dashboard and files plugins are always present.
 	var hasFiles, hasDash bool
 	for _, p := range plugins {
@@ -148,9 +150,9 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, plugins ...pl
 		plugins = append(plugins, files.New())
 	}
 
-	users := user.NewStore(sysDB)
+	users := user.NewStore(sysDB, c)
 	volumes := volume.NewStore(sysDB)
-	mounts := mount.NewStore(sysDB)
+	mounts := mount.NewStore(sysDB, c)
 
 	// Bootstrap default volume and root mounts for existing users.
 	if err := mount.Bootstrap(cfg.DataDir, users, volumes, mounts); err != nil {
@@ -159,7 +161,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, plugins ...pl
 
 	secret := loadOrCreateSecret(sysDB)
 
-	registry := plugin.NewRegistry(log, cfg.DataDir, http.NewServeMux(), sysDB, secret)
+	registry := plugin.NewRegistry(log, cfg.DataDir, http.NewServeMux(), sysDB, secret, c)
 	for _, p := range plugins {
 		registry.Add(p)
 	}
@@ -168,28 +170,29 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, plugins ...pl
 	resolver := mount.NewResolver(users, mounts, volumes)
 	registry.SetMountResolver(resolver)
 
-	shares := share.NewStore(sysDB)
-	quotas := quota.NewStore(sysDB)
+	shares := share.NewStore(sysDB, c)
+	quotas := quota.NewStore(sysDB, c)
 
 	return &Providers{
 		Config:       cfg,
 		Log:          log,
 		DB:           sysDB,
 		Users:        users,
-		Sessions:     auth.NewSessionStore(sysDB),
-		AppPasswords: auth.NewAppPasswordStore(sysDB),
+		Sessions:     auth.NewSessionStore(sysDB, c),
+		AppPasswords: auth.NewAppPasswordStore(sysDB, c),
 		Plugins:      registry,
 		Shares:       shares,
 		Groups:       group.NewStore(sysDB),
-		Invitations:  group.NewInvitationStore(sysDB),
+		Invitations:  group.NewInvitationStore(sysDB, c),
 		Volumes:      volumes,
 		Mounts:       mounts,
 		Access:       &volume.Access{Volumes: volumes, Shares: shares},
 		Quotas:       quotas,
 		Settings:     settings.NewStore(sysDB),
-		RateLimiter:  ratelimit.New(10, 15*time.Minute),
+		RateLimiter:  ratelimit.New(10, 15*time.Minute, c),
 		CSRFSecret:   secret,
-		StartedAt:    time.Now(),
+		Clock:        c,
+		StartedAt:    c(),
 	}
 }
 

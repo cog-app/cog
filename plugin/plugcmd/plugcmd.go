@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"sync"
+	"time"
 
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/plugpb"
@@ -273,6 +274,7 @@ func (r *capturingRegistrar) QuotaCheck(username string, additionalBytes int64) 
 }
 func (r *capturingRegistrar) UserVFS(username string) vfs.FS { return nil }
 func (r *capturingRegistrar) Logger() *slog.Logger           { return slog.Default() }
+func (r *capturingRegistrar) Now() time.Time                 { return time.Now() }
 func (r *capturingRegistrar) RootDB() (*sql.DB, error) {
 	return nil, fmt.Errorf("RootDB not available for gRPC plugins")
 }

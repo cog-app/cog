@@ -167,7 +167,7 @@ func (p *Plugin) EnsureRootDir(username string) error {
 	_, err = db.Exec(`
 		INSERT OR IGNORE INTO files (path, parent_path, name, mtime, etag, is_dir)
 		VALUES ('/', '', '/', ?, ?, 1)`,
-		time.Now().Unix(), generateETag())
+		p.ctx.Now().Unix(), generateETag())
 	return err
 }
 
@@ -194,7 +194,7 @@ func (p *Plugin) CreateDir(username, dirPath string) (*FileMeta, error) {
 		return nil, err
 	}
 
-	now := time.Now().Unix()
+	now := p.ctx.Now().Unix()
 	etag := generateETag()
 
 	res, err := db.Exec(`
@@ -264,7 +264,7 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 		return nil, err
 	}
 
-	now := time.Now().Unix()
+	now := p.ctx.Now().Unix()
 	etag := generateETag()
 	mimeType := detectMimeType(name)
 
@@ -465,7 +465,7 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 
 	newParent := filepath.Dir(newPath)
 	newName := filepath.Base(newPath)
-	now := time.Now().Unix()
+	now := p.ctx.Now().Unix()
 	etag := generateETag()
 
 	_, err = db.Exec(`

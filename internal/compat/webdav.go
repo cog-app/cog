@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 )
@@ -31,6 +32,7 @@ type directToken struct {
 type WebDAVHandler struct {
 	Log   *slog.Logger
 	Files *files.Plugin
+	Clock clock.Clock
 
 	directMu     sync.Mutex
 	directTokens map[string]directToken
@@ -423,14 +425,14 @@ func (h *WebDAVHandler) createDirectToken(username, filePath string) string {
 	}
 	// Evict expired tokens (older than 10 minutes)
 	for k, v := range h.directTokens {
-		if time.Since(v.Created) > 10*time.Minute {
+		if h.Clock().Sub(v.Created) > 10*time.Minute {
 			delete(h.directTokens, k)
 		}
 	}
 	h.directTokens[token] = directToken{
 		Username: username,
 		FilePath: filePath,
-		Created:  time.Now(),
+		Created:  h.Clock(),
 	}
 	return token
 }
@@ -451,7 +453,7 @@ func (h *WebDAVHandler) HandleDirectServe(w http.ResponseWriter, r *http.Request
 	}
 	h.directMu.Unlock()
 
-	if !ok || time.Since(dt.Created) > 10*time.Minute {
+	if !ok || h.Clock().Sub(dt.Created) > 10*time.Minute {
 		http.Error(w, "invalid or expired token", http.StatusNotFound)
 		return
 	}

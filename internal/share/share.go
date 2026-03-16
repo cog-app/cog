@@ -8,8 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -47,12 +47,13 @@ type AccessDecision struct {
 
 // Store provides CRUD operations on the global shares table.
 type Store struct {
-	db *sql.DB
+	db    *sql.DB
+	clock clock.Clock
 }
 
 // NewStore creates a new share store backed by the system database.
-func NewStore(db *sql.DB) *Store {
-	return &Store{db: db}
+func NewStore(db *sql.DB, c clock.Clock) *Store {
+	return &Store{db: db, clock: c}
 }
 
 // Create inserts a new share record. Returns the created record.
@@ -61,7 +62,7 @@ func (s *Store) Create(ownerUserID, resourceType, resourceID, subjectType, subje
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now().Unix()
+	now := s.clock().Unix()
 
 	_, err = s.db.Exec(`
 		INSERT INTO shares (id, owner_user_id, resource_type, resource_id,
@@ -97,7 +98,7 @@ func (s *Store) CreatePublicLink(ownerUserID, resourceType, resourceID string, p
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now().Unix()
+	now := s.clock().Unix()
 
 	_, err = s.db.Exec(`
 		INSERT INTO shares (id, owner_user_id, resource_type, resource_id,
@@ -145,7 +146,7 @@ func (s *Store) SetPassword(shareID, password string) error {
 		return fmt.Errorf("hash password: %w", err)
 	}
 	res, err := s.db.Exec(`UPDATE shares SET password_hash = ?, updated_at = ? WHERE id = ?`,
-		string(hash), time.Now().Unix(), shareID)
+		string(hash), s.clock().Unix(), shareID)
 	if err != nil {
 		return fmt.Errorf("set share password: %w", err)
 	}
@@ -193,7 +194,7 @@ func (s *Store) GetByToken(token string) (*Record, error) {
 		return nil, err
 	}
 	// Check expiration
-	if rec.Expiration != nil && *rec.Expiration < time.Now().Unix() {
+	if rec.Expiration != nil && *rec.Expiration < s.clock().Unix() {
 		return nil, ErrNotFound
 	}
 	return rec, nil
@@ -259,7 +260,7 @@ func (s *Store) ListBySubject(subjectID string) iter.Seq2[Record, error] {
 				))
 			   OR (s.subject_type = 'INSTANCE'))
 			  AND (s.expiration IS NULL OR s.expiration > ?)
-			ORDER BY s.created_at DESC`, subjectID, subjectID, time.Now().Unix())
+			ORDER BY s.created_at DESC`, subjectID, subjectID, s.clock().Unix())
 		if err != nil {
 			yield(Record{}, fmt.Errorf("list shares by subject: %w", err))
 			return
@@ -335,7 +336,7 @@ func (s *Store) CheckAccess(userID, resourceType, resourceID string) (*AccessDec
 			OR (s.subject_type = 'INSTANCE')
 		  )
 		  AND (s.expiration IS NULL OR s.expiration > ?)`,
-		resourceType, resourceID, userID, userID, time.Now().Unix())
+		resourceType, resourceID, userID, userID, s.clock().Unix())
 	if err != nil {
 		return nil, fmt.Errorf("check access: %w", err)
 	}
@@ -380,7 +381,7 @@ func (s *Store) CheckAccessWithHierarchy(userID, resourceType, resourceID string
 
 // Update modifies a share's permissions and/or expiration.
 func (s *Store) Update(id string, permissions *uint32, expiration **int64) error {
-	now := time.Now().Unix()
+	now := s.clock().Unix()
 	if permissions != nil {
 		if _, err := s.db.Exec(`UPDATE shares SET permissions = ?, updated_at = ? WHERE id = ?`,
 			*permissions, now, id); err != nil {

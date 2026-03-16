@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"time"
 )
 
 // Comment represents a user comment on a file.
@@ -52,7 +51,7 @@ func (p *Plugin) CreateComment(username string, fileID int64, actorID, message s
 		return nil, err
 	}
 
-	now := time.Now().Unix()
+	now := p.ctx.Now().Unix()
 	res, err := db.Exec(`
 		INSERT INTO comments (file_id, actor_id, message, created_at, updated_at, verb)
 		VALUES (?, ?, ?, ?, ?, 'comment')`,
@@ -80,7 +79,7 @@ func (p *Plugin) UpdateComment(username string, commentID int64, actorID, messag
 		return err
 	}
 
-	now := time.Now().Unix()
+	now := p.ctx.Now().Unix()
 	res, err := db.Exec(`
 		UPDATE comments SET message = ?, updated_at = ?
 		WHERE id = ? AND actor_id = ?`,

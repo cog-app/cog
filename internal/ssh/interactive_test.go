@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/internal/services"
@@ -35,13 +36,13 @@ func TestSSHInteractiveShell(t *testing.T) {
 	}
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	p := services.NewFromDB(log, cfg, sysDB)
+	p := services.NewFromDB(log, cfg, sysDB, clock.System())
 	require.NoError(t, p.Plugins.Start(context.Background()))
 	_, err = p.Users.Create("testuser", "testpass")
 	require.NoError(t, err)
 	require.NoError(t, p.Plugins.EnsureUserDirs("testuser"))
 
-	ks := keys.NewStore(p.Plugins, p.Users)
+	ks := keys.NewStore(p.Plugins, p.Users, clock.System())
 	sshSrv, err := New(cfg, p, ks, log)
 	require.NoError(t, err)
 

@@ -7,7 +7,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"iter"
-	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/clock"
 )
 
 // Quota represents a storage quota for a volume.
@@ -23,17 +24,18 @@ type Quota struct {
 
 // Store provides CRUD operations for volume quotas.
 type Store struct {
-	db *sql.DB
+	db    *sql.DB
+	clock clock.Clock
 }
 
 // NewStore creates a new quota store.
-func NewStore(db *sql.DB) *Store {
-	return &Store{db: db}
+func NewStore(db *sql.DB, c clock.Clock) *Store {
+	return &Store{db: db, clock: c}
 }
 
 // Set upserts a quota for a volume/subject combination.
 func (s *Store) Set(volumeID, subjectType, subjectID string, quotaBytes int64) error {
-	now := time.Now().Unix()
+	now := s.clock().Unix()
 	id := generateID()
 	_, err := s.db.Exec(`
 		INSERT INTO volume_quotas (id, volume_id, subject_type, subject_id, quota_bytes, created_at, updated_at)

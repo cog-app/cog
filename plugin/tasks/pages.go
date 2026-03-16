@@ -209,7 +209,7 @@ func (h *Pages) UpdateTask(w http.ResponseWriter, r *http.Request) {
 
 	var completedAt *int64
 	if status == "COMPLETED" {
-		now := time.Now().Unix()
+		now := h.plugin.ctx.Now().Unix()
 		completedAt = &now
 	}
 

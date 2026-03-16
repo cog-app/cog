@@ -27,6 +27,7 @@ func New(p *services.Providers) http.Handler {
 
 	loginFlow := compat.NewLoginFlowHandler(p.Users, p.AppPasswords, p.Sessions, p.Config.BaseURL)
 	loginFlow.RateLimiter = p.RateLimiter
+	loginFlow.Clock = p.Clock
 
 	// Use the plugin registry's mux so plugin-registered routes share the same router.
 	mux := p.Plugins.Mux()
@@ -169,7 +170,7 @@ func New(p *services.Providers) http.Handler {
 
 	// --- WebDAV file operations (NC clients) ---
 	if fp != nil {
-		webdav := &compat.WebDAVHandler{Log: p.Log.With("component", "webdav"), Files: fp}
+		webdav := &compat.WebDAVHandler{Log: p.Log.With("component", "webdav"), Files: fp, Clock: p.Clock}
 		mux.Handle("/remote.php/dav/files/", auth.RequireAuth(webdav))
 
 		// Chunked uploads (NC v2 protocol)
@@ -177,6 +178,7 @@ func New(p *services.Providers) http.Handler {
 			Log:     p.Log.With("component", "chunked"),
 			Files:   fp,
 			TempDir: p.Config.DataDir,
+			Clock:   p.Clock,
 		}
 		mux.Handle("/remote.php/dav/uploads/", auth.RequireAuth(chunked))
 

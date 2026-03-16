@@ -16,9 +16,11 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"log/slog"
 
+	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/internal/search"
@@ -62,6 +64,7 @@ var StopRedirect HTTPOpt = func(o *reqOpts) { o.stopRedirect = true }
 type Env struct {
 	Providers *services.Providers
 	Client    *http.Client
+	Clock     *clock.TestClock
 	http.Handler
 }
 
@@ -96,7 +99,8 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	}
 
 	log := slog.New(slog.NewTextHandler(t.Output(), nil))
-	p := services.NewFromDB(log, cfg, sysDB, plugins...)
+	tc := clock.NewTest(time.Now())
+	p := services.NewFromDB(log, cfg, sysDB, tc.Clock(), plugins...)
 
 	// Wire search manager for tests (uses temp dir, no hooks).
 	mgr := search.NewManager(log, dataDir)
@@ -115,6 +119,7 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	return &Env{
 		Providers: p,
 		Client:    ts.Client(),
+		Clock:     tc,
 		Handler:   handler,
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/clock"
 )
 
 // Limiter tracks failed authentication attempts per key (IP or username)
@@ -12,6 +14,7 @@ import (
 type Limiter struct {
 	mu       sync.Mutex
 	attempts map[string][]time.Time
+	clock    clock.Clock
 
 	// MaxAttempts is the number of failed attempts allowed in Window.
 	MaxAttempts int
@@ -20,9 +23,10 @@ type Limiter struct {
 }
 
 // New creates a rate limiter with the given threshold and window.
-func New(maxAttempts int, window time.Duration) *Limiter {
+func New(maxAttempts int, window time.Duration, c clock.Clock) *Limiter {
 	l := &Limiter{
 		attempts:    make(map[string][]time.Time),
+		clock:       c,
 		MaxAttempts: maxAttempts,
 		Window:      window,
 	}
@@ -34,14 +38,14 @@ func New(maxAttempts int, window time.Duration) *Limiter {
 func (l *Limiter) RecordFailure(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.attempts[key] = append(l.attempts[key], time.Now())
+	l.attempts[key] = append(l.attempts[key], l.clock())
 }
 
 // IsLimited returns true if the key has exceeded the rate limit.
 func (l *Limiter) IsLimited(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	cutoff := time.Now().Add(-l.Window)
+	cutoff := l.clock().Add(-l.Window)
 	attempts := l.attempts[key]
 
 	// Trim old entries.
@@ -70,7 +74,7 @@ func (l *Limiter) cleanup() {
 	defer ticker.Stop()
 	for range ticker.C {
 		l.mu.Lock()
-		cutoff := time.Now().Add(-l.Window)
+		cutoff := l.clock().Add(-l.Window)
 		for key, attempts := range l.attempts {
 			start := 0
 			for start < len(attempts) && attempts[start].Before(cutoff) {

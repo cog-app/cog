@@ -64,10 +64,10 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 	start, _ := time.Parse(time.RFC3339, startStr)
 	end, _ := time.Parse(time.RFC3339, endStr)
 	if start.IsZero() {
-		start = time.Now().AddDate(0, -1, 0)
+		start = h.plugin.ctx.Now().AddDate(0, -1, 0)
 	}
 	if end.IsZero() {
-		end = time.Now().AddDate(0, 2, 0)
+		end = h.plugin.ctx.Now().AddDate(0, 2, 0)
 	}
 
 	u := plugin.UserFromContext(r.Context())
@@ -307,7 +307,7 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	eventColor := r.FormValue("color")
-	uid := fmt.Sprintf("%d-%s", time.Now().UnixNano(), summary)
+	uid := fmt.Sprintf("%d-%s", h.plugin.ctx.Now().UnixNano(), summary)
 	rrule := buildRRule(r)
 	if rrule != "" {
 		if _, err := rrulelib.StrToRRule(rrule); err != nil {

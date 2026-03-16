@@ -119,7 +119,7 @@ func (p *Plugin) Seed(username string) error {
 
 	// Insert a few initial articles so seed data is immediately visible.
 	picked := rand.Perm(len(seedArticles))[:3]
-	now := time.Now()
+	now := p.ctx.Now()
 	for i, idx := range picked {
 		a := seedArticles[idx]
 		slug := strings.ReplaceAll(strings.ToLower(a.title), " ", "-")

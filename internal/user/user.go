@@ -9,6 +9,7 @@ import (
 	"iter"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/clock"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -46,11 +47,12 @@ type UpdateOpts struct {
 }
 
 type Store struct {
-	db *sql.DB
+	db    *sql.DB
+	clock clock.Clock
 }
 
-func NewStore(db *sql.DB) *Store {
-	return &Store{db: db}
+func NewStore(db *sql.DB, c clock.Clock) *Store {
+	return &Store{db: db, clock: c}
 }
 
 func (s *Store) Create(username, password string) (*User, error) {
@@ -64,7 +66,7 @@ func (s *Store) Create(username, password string) (*User, error) {
 		return nil, err
 	}
 
-	now := time.Now().Unix()
+	now := s.clock().Unix()
 	homeMount := fmt.Sprintf("local://data/%s", username)
 
 	// Auto-admin: first user becomes admin.
@@ -196,7 +198,7 @@ func (s *Store) Update(id string, opts UpdateOpts) error {
 		}
 	}
 	if opts.Avatar != nil {
-		now := time.Now().Unix()
+		now := s.clock().Unix()
 		if _, err := s.db.Exec(`UPDATE users SET avatar = ?, avatar_updated_at = ? WHERE id = ?`, *opts.Avatar, now, id); err != nil {
 			return fmt.Errorf("update avatar: %w", err)
 		}

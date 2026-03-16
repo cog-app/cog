@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
@@ -172,7 +171,7 @@ func (h *Pages) CreateContact(w http.ResponseWriter, r *http.Request) {
 	emails := parseTypedValues(r, "email_type", "email_value")
 	phones := parseTypedValues(r, "phone_type", "phone_value")
 
-	uid := fmt.Sprintf("%d-%s", time.Now().UnixNano(), fn)
+	uid := fmt.Sprintf("%d-%s", h.plugin.ctx.Now().UnixNano(), fn)
 	uri := uid + ".vcf"
 
 	fields := VCardFields{

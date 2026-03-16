@@ -794,20 +794,130 @@ a:hover {
   height: 16px;
 }
 
-/* Stage 1: Labels below icons */
-@media (max-width: 1200px) {
-  .navbar-nav a {
-    flex-direction: column;
-    gap: 0.15rem;
-    font-size: 0.7rem;
-    padding: 0.35rem 0.4rem;
-  }
-  .nav-label {
-    font-size: 0.65rem;
-  }
+/* Navbar collapse stages — driven by JS based on item count + available width */
+
+/* Stage 1: Labels below icons (compact) */
+.navbar--compact .navbar-nav a {
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.7rem;
+  padding: 0.35rem 0.4rem;
+}
+.navbar--compact .nav-label {
+  font-size: 0.65rem;
 }
 
 /* Stage 2: Icons only */
+.navbar.navbar--icon-only {
+  padding: 0 0.5rem;
+}
+.navbar--icon-only .navbar-brand {
+  margin-right: 0.5rem;
+  font-size: 1rem;
+}
+.navbar--icon-only .navbar-nav {
+  gap: 0;
+}
+.navbar--icon-only .navbar-nav a {
+  flex-direction: row;
+  padding: 0.5rem;
+}
+.navbar--icon-only .nav-label {
+  display: none;
+}
+.navbar--icon-only .navbar-search {
+  max-width: 140px;
+  margin: 0 0.25rem;
+}
+.navbar--icon-only .dropdown-username {
+  display: none;
+}
+.navbar--icon-only .dropdown-caret {
+  display: none;
+}
+
+/* Stage 3: Apps dropdown replaces nav */
+.navbar--collapsed .navbar-nav {
+  display: none;
+}
+.navbar--collapsed .navbar-apps-dropdown {
+  display: inline-block;
+}
+.navbar--collapsed .navbar-search {
+  display: none;
+}
+.navbar--collapsed .brand-text {
+  display: none;
+}
+.navbar--collapsed .dropdown-username {
+  display: none;
+}
+.navbar--collapsed .dropdown-caret {
+  display: none;
+}
+
+/* Guarantee icon-only at tablet sizes regardless of JS timing */
+@media (max-width: 768px) {
+  .navbar {
+    padding: 0 0.5rem;
+  }
+  .navbar-brand {
+    margin-right: 0.5rem;
+    font-size: 1rem;
+  }
+  .navbar-nav {
+    gap: 0;
+  }
+  .navbar-nav a {
+    flex-direction: row;
+    padding: 0.5rem;
+  }
+  .nav-label {
+    display: none;
+  }
+  .navbar-search {
+    max-width: 140px;
+    margin: 0 0.25rem;
+  }
+  .dropdown-username {
+    display: none;
+  }
+  .dropdown-caret {
+    display: none;
+  }
+}
+
+/* Guarantee at least icon-only at phone sizes regardless of JS timing.
+   JS upgrades to collapsed when there are too many items to fit as icons. */
+@media (max-width: 480px) {
+  .navbar {
+    padding: 0 0.5rem;
+  }
+  .navbar-nav {
+    gap: 0;
+  }
+  .navbar-nav a {
+    flex-direction: row;
+    padding: 0.5rem;
+  }
+  .nav-label {
+    display: none;
+  }
+  .navbar-search {
+    display: none;
+  }
+  .brand-text {
+    display: none;
+  }
+  .dropdown-username {
+    display: none;
+  }
+  .dropdown-caret {
+    display: none;
+  }
+}
+
+/* Non-navbar mobile layout — still viewport-based */
 @media (max-width: 768px) {
   .sidebar-layout {
     flex-direction: column;
@@ -868,50 +978,6 @@ a:hover {
 
   /* Hide less-important columns */
   .hide-mobile {
-    display: none;
-  }
-
-  .navbar {
-    padding: 0 0.5rem;
-  }
-  .navbar-brand {
-    margin-right: 0.5rem;
-    font-size: 1rem;
-  }
-  .navbar-nav {
-    gap: 0;
-  }
-  .navbar-nav a {
-    flex-direction: row;
-    padding: 0.5rem;
-  }
-  .nav-label {
-    display: none;
-  }
-  .navbar-search {
-    max-width: 140px;
-    margin: 0 0.25rem;
-  }
-  .dropdown-username {
-    display: none;
-  }
-  .dropdown-caret {
-    display: none;
-  }
-}
-
-/* Stage 3: Apps dropdown replaces nav */
-@media (max-width: 540px) {
-  .navbar-nav {
-    display: none;
-  }
-  .navbar-apps-dropdown {
-    display: inline-block;
-  }
-  .navbar-search {
-    display: none;
-  }
-  .brand-text {
     display: none;
   }
 }

@@ -7,7 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/clock"
 )
 
 // Invitation represents a pending group invite.
@@ -24,12 +25,13 @@ type Invitation struct {
 
 // InvitationStore provides CRUD for group invitations.
 type InvitationStore struct {
-	db *sql.DB
+	db    *sql.DB
+	clock clock.Clock
 }
 
 // NewInvitationStore creates a new invitation store.
-func NewInvitationStore(db *sql.DB) *InvitationStore {
-	return &InvitationStore{db: db}
+func NewInvitationStore(db *sql.DB, c clock.Clock) *InvitationStore {
+	return &InvitationStore{db: db, clock: c}
 }
 
 // Create generates a new invitation with the given expiry (in hours) and a 24-byte random token.
@@ -50,7 +52,7 @@ func (s *InvitationStore) Create(groupID, email, invitedBy string, expiryHours i
 		return nil, err
 	}
 
-	now := time.Now().Unix()
+	now := s.clock().Unix()
 	expiresAt := now + int64(expiryHours)*60*60
 
 	_, err = s.db.Exec(
@@ -79,7 +81,7 @@ func (s *InvitationStore) GetByToken(token string) (*Invitation, error) {
 	err := s.db.QueryRow(
 		`SELECT id, group_id, email, token, invited_by, member_type, created_at, expires_at
 		FROM group_invitations WHERE token = ? AND expires_at > ?`,
-		token, time.Now().Unix(),
+		token, s.clock().Unix(),
 	).Scan(&inv.ID, &inv.GroupID, &inv.Email, &inv.Token, &inv.InvitedBy, &inv.MemberType, &inv.CreatedAt, &inv.ExpiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -97,7 +99,7 @@ func (s *InvitationStore) ListByGroup(groupID string) iter.Seq2[Invitation, erro
 			`SELECT id, group_id, email, token, invited_by, member_type, created_at, expires_at
 			FROM group_invitations WHERE group_id = ? AND expires_at > ?
 			ORDER BY created_at DESC`,
-			groupID, time.Now().Unix(),
+			groupID, s.clock().Unix(),
 		)
 		if err != nil {
 			yield(Invitation{}, fmt.Errorf("list invitations: %w", err))
@@ -135,7 +137,7 @@ func (s *InvitationStore) Delete(id string) error {
 
 // DeleteExpired removes all expired invitations.
 func (s *InvitationStore) DeleteExpired() error {
-	_, err := s.db.Exec(`DELETE FROM group_invitations WHERE expires_at <= ?`, time.Now().Unix())
+	_, err := s.db.Exec(`DELETE FROM group_invitations WHERE expires_at <= ?`, s.clock().Unix())
 	return err
 }
 

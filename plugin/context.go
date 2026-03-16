@@ -6,6 +6,7 @@ import (
 	"errors"
 	"iter"
 	"log/slog"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/vfs"
 )
@@ -38,6 +39,8 @@ type PluginContext interface {
 
 	// Logger returns a structured logger pre-tagged with the plugin ID.
 	Logger() *slog.Logger
+	// Now returns the current time from the virtual clock.
+	Now() time.Time
 	// RootDB returns a plugin-global database (not per-user).
 	RootDB() (*sql.DB, error)
 

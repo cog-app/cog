@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 )
 
 // TrashItem represents a trashed file or directory.
@@ -40,7 +39,7 @@ func (p *Plugin) Trash(username, filePath string) error {
 		return err
 	}
 
-	now := time.Now().Unix()
+	now := p.ctx.Now().Unix()
 	trashName := meta.Name + ".d" + strconv.FormatInt(now, 10) + "." + strconv.FormatInt(meta.ID, 10)
 
 	// Move file on disk to trash directory.

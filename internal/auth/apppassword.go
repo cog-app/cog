@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/clock"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -19,11 +20,12 @@ type AppPassword struct {
 }
 
 type AppPasswordStore struct {
-	db *sql.DB
+	db    *sql.DB
+	clock clock.Clock
 }
 
-func NewAppPasswordStore(db *sql.DB) *AppPasswordStore {
-	return &AppPasswordStore{db: db}
+func NewAppPasswordStore(db *sql.DB, c clock.Clock) *AppPasswordStore {
+	return &AppPasswordStore{db: db, clock: c}
 }
 
 // Create generates a new app password and returns the plaintext token.
@@ -44,7 +46,7 @@ func (s *AppPasswordStore) Create(userID, name string) (plaintext string, ap *Ap
 		return "", nil, err
 	}
 
-	now := time.Now()
+	now := s.clock()
 	_, err = s.db.Exec(
 		`INSERT INTO app_passwords (id, user_id, name, token_hash, created_at) VALUES (?, ?, ?, ?, ?)`,
 		id, userID, name, string(hash), now.Unix(),

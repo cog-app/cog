@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/clock"
 )
 
 const SessionCookieName = "cog_session"
@@ -20,11 +22,12 @@ type Session struct {
 }
 
 type SessionStore struct {
-	db *sql.DB
+	db    *sql.DB
+	clock clock.Clock
 }
 
-func NewSessionStore(db *sql.DB) *SessionStore {
-	return &SessionStore{db: db}
+func NewSessionStore(db *sql.DB, c clock.Clock) *SessionStore {
+	return &SessionStore{db: db, clock: c}
 }
 
 func (s *SessionStore) Create(userID string) (*Session, error) {
@@ -33,7 +36,7 @@ func (s *SessionStore) Create(userID string) (*Session, error) {
 		return nil, err
 	}
 
-	now := time.Now()
+	now := s.clock()
 	expires := now.Add(sessionDuration)
 
 	_, err = s.db.Exec(
@@ -57,7 +60,7 @@ func (s *SessionStore) Validate(token string) (*Session, error) {
 	var createdAt, expiresAt int64
 	err := s.db.QueryRow(
 		`SELECT id, user_id, created_at, expires_at FROM sessions WHERE id = ? AND expires_at > ?`,
-		token, time.Now().Unix(),
+		token, s.clock().Unix(),
 	).Scan(&sess.ID, &sess.UserID, &createdAt, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

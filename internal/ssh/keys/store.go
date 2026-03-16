@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/clock"
 	"github.com/google/uuid"
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -33,11 +34,12 @@ type UsernameProvider interface {
 type Store struct {
 	dbProvider DBProvider
 	usernames  UsernameProvider
+	clock      clock.Clock
 }
 
 // NewStore creates a new SSH key store.
-func NewStore(dbp DBProvider, up UsernameProvider) *Store {
-	return &Store{dbProvider: dbp, usernames: up}
+func NewStore(dbp DBProvider, up UsernameProvider, c clock.Clock) *Store {
+	return &Store{dbProvider: dbp, usernames: up, clock: c}
 }
 
 // migrateFingerprint adds the fingerprint column if missing and backfills it.
@@ -104,7 +106,7 @@ func (s *Store) Add(username, name, authorizedKeyLine string) (*SSHKey, error) {
 		Name:        name,
 		PublicKey:   authorizedKeyLine,
 		Fingerprint: fp,
-		CreatedAt:   time.Now(),
+		CreatedAt:   s.clock(),
 	}
 
 	_, err = db.Exec(

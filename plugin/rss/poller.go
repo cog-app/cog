@@ -39,7 +39,7 @@ func (p *Plugin) pollAllUsers() {
 		return
 	}
 
-	now := time.Now().Unix()
+	now := p.ctx.Now().Unix()
 
 	for _, entry := range entries {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {

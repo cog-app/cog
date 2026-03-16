@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"git.duckfam.us/jj-software/cog/vfs"
 
@@ -176,7 +175,7 @@ func (p *Plugin) discoverFiles(ctx context.Context, galleryDB, filesDB *sql.DB, 
 		return err
 	}
 
-	now := time.Now().Unix()
+	now := p.ctx.Now().Unix()
 	fileIDsSeen := make(map[int64]bool, len(fileEntries))
 
 	for _, f := range fileEntries {
@@ -252,7 +251,7 @@ func (p *Plugin) extractMetadata(ctx context.Context, db *sql.DB, username strin
 			extractImageMetadata(srcPath, m)
 		}
 
-		m.DateIndexed = time.Now().Unix()
+		m.DateIndexed = p.ctx.Now().Unix()
 		if err := UpdateMediaMetadata(db, m); err != nil {
 			p.log.Error("update metadata", "id", m.ID, "err", err)
 		}

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"iter"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/clock"
 )
 
 var ErrNotFound = errors.New("mount not found")
@@ -24,11 +26,12 @@ type Mount struct {
 }
 
 type Store struct {
-	db *sql.DB
+	db    *sql.DB
+	clock clock.Clock
 }
 
-func NewStore(db *sql.DB) *Store {
-	return &Store{db: db}
+func NewStore(db *sql.DB, c clock.Clock) *Store {
+	return &Store{db: db, clock: c}
 }
 
 func (s *Store) Create(userID, userPath, volumeID, volumeSubpath string, readOnly bool) (*Mount, error) {
@@ -37,7 +40,7 @@ func (s *Store) Create(userID, userPath, volumeID, volumeSubpath string, readOnl
 		return nil, err
 	}
 
-	now := time.Now().Unix()
+	now := s.clock().Unix()
 	ro := 0
 	if readOnly {
 		ro = 1

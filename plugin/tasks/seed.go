@@ -4,7 +4,6 @@ package tasks
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -32,7 +31,7 @@ func (p *Plugin) Seed(username string) error {
 	}
 	p.log.Info("seeded task lists", "lists", "Personal, Work")
 
-	now := time.Now().UTC()
+	now := p.ctx.Now().UTC()
 	tomorrow := now.AddDate(0, 0, 1).Unix()
 	nextWeek := now.AddDate(0, 0, 7).Unix()
 	yesterday := now.AddDate(0, 0, -1).Unix()

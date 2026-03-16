@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
@@ -36,6 +37,7 @@ type LoginFlowHandler struct {
 	Sessions    *auth.SessionStore
 	BaseURL     string
 	RateLimiter *ratelimit.Limiter
+	Clock       clock.Clock
 }
 
 func NewLoginFlowHandler(users *user.Store, appPWs *auth.AppPasswordStore, sessions *auth.SessionStore, baseURL string) *LoginFlowHandler {
@@ -71,7 +73,7 @@ func (h *LoginFlowHandler) HandleInit(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	h.pending[pollToken] = &loginFlowEntry{
 		Token:     loginToken,
-		CreatedAt: time.Now(),
+		CreatedAt: h.Clock(),
 	}
 	h.mu.Unlock()
 
@@ -103,7 +105,7 @@ func (h *LoginFlowHandler) HandlePoll(w http.ResponseWriter, r *http.Request) {
 
 	h.mu.Lock()
 	entry, ok := h.pending[token]
-	if !ok || time.Since(entry.CreatedAt) > loginFlowExpiry {
+	if !ok || h.Clock().Sub(entry.CreatedAt) > loginFlowExpiry {
 		if ok {
 			delete(h.pending, token)
 		}
@@ -195,7 +197,7 @@ func (h *LoginFlowHandler) processGrant(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// Create an app password for this login flow
-	appPW, _, err := h.AppPWs.Create(u.ID, fmt.Sprintf("Login Flow (%s)", time.Now().Format("2006-01-02 15:04")))
+	appPW, _, err := h.AppPWs.Create(u.ID, fmt.Sprintf("Login Flow (%s)", h.Clock().Format("2006-01-02 15:04")))
 	if err != nil {
 		h.mu.Unlock()
 		http.Error(w, "Failed to create app password", http.StatusInternalServerError)
@@ -239,7 +241,7 @@ func (h *LoginFlowHandler) Cleanup() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for token, entry := range h.pending {
-		if time.Since(entry.CreatedAt) > loginFlowExpiry {
+		if h.Clock().Sub(entry.CreatedAt) > loginFlowExpiry {
 			delete(h.pending, token)
 		}
 	}

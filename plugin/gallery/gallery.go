@@ -297,13 +297,13 @@ func (p *Plugin) runScan(ctx context.Context) {
 	p.scanMu.Unlock()
 
 	p.log.Info("background scan started")
-	start := time.Now()
+	start := p.ctx.Now()
 	warnings, err := p.scanAllUsersErr(ctx)
 	elapsed := time.Since(start)
 
 	p.scanMu.Lock()
 	p.scanStatus.Running = false
-	p.scanStatus.LastRun = time.Now()
+	p.scanStatus.LastRun = p.ctx.Now()
 	p.scanStatus.LastError = err
 	p.scanStatus.Warnings = warnings
 	p.scanMu.Unlock()

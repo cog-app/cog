@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"net/http/httptest"
 
@@ -21,6 +22,7 @@ import (
 	"git.duckfam.us/jj-software/cog/vfs"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/ui"
 	_ "github.com/mattn/go-sqlite3"
@@ -75,6 +77,7 @@ type Registry struct {
 	protected  map[string]bool // plugins that cannot be disabled
 	sysDB      *sql.DB         // system database for persisting plugin settings
 	csrfSecret []byte          // CSRF secret for plugin-scoped tokens
+	clock      clock.Clock     // virtual clock for testability
 
 	// dbHookFactory creates update hooks for per-user plugin databases.
 	dbHookFactory func(username, pluginID string) func(int, string, string, int64)
@@ -86,7 +89,7 @@ type Registry struct {
 // NewRegistry creates a new plugin registry.
 // dataDir is the root of user data (e.g. /var/lib/cog/data).
 // csrfSecret is used for plugin-scoped CSRF token generation.
-func NewRegistry(log *slog.Logger, dataDir string, mux *http.ServeMux, sysDB *sql.DB, csrfSecret []byte) *Registry {
+func NewRegistry(log *slog.Logger, dataDir string, mux *http.ServeMux, sysDB *sql.DB, csrfSecret []byte, c clock.Clock) *Registry {
 	r := &Registry{
 		log:         log,
 		dataDir:     dataDir,
@@ -99,6 +102,7 @@ func NewRegistry(log *slog.Logger, dataDir string, mux *http.ServeMux, sysDB *sq
 		protected:   make(map[string]bool),
 		sysDB:       sysDB,
 		csrfSecret:  csrfSecret,
+		clock:       c,
 	}
 	r.loadEnabledState()
 	return r
@@ -496,6 +500,10 @@ func (pr *pluginRegistrar) CSRFSecret() []byte {
 
 func (pr *pluginRegistrar) Logger() *slog.Logger {
 	return pr.registry.log.With("plugin", pr.pluginID)
+}
+
+func (pr *pluginRegistrar) Now() time.Time {
+	return pr.registry.clock()
 }
 
 func (pr *pluginRegistrar) ShareStore() ShareStore {
