@@ -47,9 +47,9 @@ templ contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken str
 							<tr>
 								<th></th>
 								<th>Name</th>
-								<th>Email</th>
-								<th>Phone</th>
-								<th>Org</th>
+								<th class="hide-mobile">Email</th>
+								<th class="hide-mobile">Phone</th>
+								<th class="hide-mobile">Org</th>
 								<th>Book</th>
 							</tr>
 						</thead>
@@ -68,9 +68,9 @@ templ contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken str
 										}
 									</td>
 									<td style="font-weight:500">{ c.FN }</td>
-									<td>{ c.Email }</td>
-									<td>{ c.Tel }</td>
-									<td>{ c.Org }</td>
+									<td class="hide-mobile">{ c.Email }</td>
+									<td class="hide-mobile">{ c.Tel }</td>
+									<td class="hide-mobile">{ c.Org }</td>
 									<td>
 										<span style={ fmt.Sprintf("display:inline-block;width:8px;height:8px;border-radius:50%%;background:%s;vertical-align:middle;margin-right:4px", c.BookColor) }></span>
 										{ c.BookName }
@@ -218,9 +218,9 @@ templ contactsStarredPage(books []AddressBook, cards []CardWithBook) {
 							<tr>
 								<th></th>
 								<th>Name</th>
-								<th>Email</th>
-								<th>Phone</th>
-								<th>Org</th>
+								<th class="hide-mobile">Email</th>
+								<th class="hide-mobile">Phone</th>
+								<th class="hide-mobile">Org</th>
 								<th>Book</th>
 							</tr>
 						</thead>
@@ -239,9 +239,9 @@ templ contactsStarredPage(books []AddressBook, cards []CardWithBook) {
 										}
 									</td>
 									<td style="font-weight:500">{ c.FN }</td>
-									<td>{ c.Email }</td>
-									<td>{ c.Tel }</td>
-									<td>{ c.Org }</td>
+									<td class="hide-mobile">{ c.Email }</td>
+									<td class="hide-mobile">{ c.Tel }</td>
+									<td class="hide-mobile">{ c.Org }</td>
 									<td>
 										<span style={ fmt.Sprintf("display:inline-block;width:8px;height:8px;border-radius:50%%;background:%s;vertical-align:middle;margin-right:4px", c.BookColor) }></span>
 										{ c.BookName }

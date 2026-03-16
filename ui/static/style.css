@@ -817,6 +817,58 @@ a:hover {
     width: 100%;
     flex-direction: row;
     overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sidebar::-webkit-scrollbar {
+    display: none;
+  }
+  .sidebar-content {
+    overflow-x: auto;
+  }
+
+  .content {
+    padding: 0 0.75rem;
+    margin: 1rem auto;
+  }
+
+  /* Compact dashboard app grid */
+  .app-grid {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+    gap: 0.5rem;
+    padding-bottom: 0.25rem;
+  }
+  .app-grid::-webkit-scrollbar {
+    display: none;
+  }
+  .app-grid .app-card {
+    flex-shrink: 0;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+  }
+  .app-grid .app-card > div:first-child {
+    margin-bottom: 0;
+  }
+  .app-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* Force widget grid to single column */
+  [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Hide less-important columns */
+  .hide-mobile {
+    display: none;
   }
 
   .navbar {
