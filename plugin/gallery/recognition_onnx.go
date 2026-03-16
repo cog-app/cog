@@ -70,7 +70,7 @@ func (b *OnnxBackend) init() {
 
 		ort.SetSharedLibraryPath(b.LibraryPath)
 		if err := ort.InitializeEnvironment(); err != nil {
-			if err.Error() != "The ONNX runtime environment has already been initialized" {
+			if err.Error() != "The onnxruntime has already been initialized" {
 				b.initErr = fmt.Errorf("init onnxruntime: %w", err)
 				return
 			}
@@ -124,6 +124,13 @@ func ensureModel(path, url string) error {
 	}
 	f.Close()
 	return os.Rename(tmp, path)
+}
+
+// InitErr returns any initialization error, triggering init if needed.
+// Callers can check this before entering a loop to avoid per-image errors.
+func (b *OnnxBackend) InitErr() error {
+	b.init()
+	return b.initErr
 }
 
 func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*RecognitionResult, error) {

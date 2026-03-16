@@ -127,6 +127,7 @@ func Main(plugins ...plugin.Plugin) {
 	root.AddCommand(volumeCmd(plugins))
 	root.AddCommand(settingCmd(plugins))
 	root.AddCommand(shellCmd(plugins))
+	root.AddCommand(doctorCmd(plugins))
 
 	// Discover and register plugin CLI commands.
 	// Close providers after Execute — not via OnFinalize or PersistentPostRun
@@ -204,6 +205,10 @@ func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 
 	if err := p.StartSearch(ctx); err != nil {
 		log.Warn("search init failed", "err", err)
+	}
+
+	if err := p.Plugins.Start(ctx); err != nil {
+		return fmt.Errorf("start plugins: %w", err)
 	}
 
 	// Start SSH server if enabled.

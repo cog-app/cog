@@ -100,6 +100,14 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 
 	p.log.Info("recognition started", "user", username, "backend", backend.Name())
 
+	// Eagerly check for init errors so we don't poison every image row
+	// with the same error when the runtime can't load.
+	if ic, ok := backend.(interface{ InitErr() error }); ok {
+		if err := ic.InitErr(); err != nil {
+			return fmt.Errorf("recognition backend init: %w", err)
+		}
+	}
+
 	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media
 		WHERE recognition_state = 0 AND mime_type LIKE 'image/%'
 		LIMIT 50`)

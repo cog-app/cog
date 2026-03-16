@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -99,6 +100,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterPage("people", http.HandlerFunc(pages.People))
 	ctx.RegisterPage("person/{id}", http.HandlerFunc(pages.PersonView))
 	ctx.RegisterPage("tags", http.HandlerFunc(pages.Tags))
+	ctx.RegisterPage("tag/{name}", http.HandlerFunc(pages.TagView))
 	ctx.RegisterPage("videos", http.HandlerFunc(pages.Videos))
 	ctx.RegisterPage("settings", http.HandlerFunc(pages.Settings))
 
@@ -124,6 +126,10 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterSettingsPage(plugin.SettingsPage{
 		Slug:   "scan",
 		Action: http.HandlerFunc(pages.TriggerSystemScan),
+	})
+	ctx.RegisterSettingsPage(plugin.SettingsPage{
+		Slug:   "purge-recognitions",
+		Action: http.HandlerFunc(pages.PurgeRecognitions),
 	})
 	ctx.RegisterAction("POST", "rename/preview", http.HandlerFunc(pages.RenamePreview))
 	ctx.RegisterAction("POST", "rename/apply", http.HandlerFunc(pages.RenameApply))
@@ -210,6 +216,62 @@ func (p *Plugin) AggregateRecognitionStats() RecognitionStats {
 		total.Errors = append(total.Errors, s.Errors...)
 	}
 	return total
+}
+
+// DoctorChecks implements plugin.Doctor, checking external dependencies.
+func (p *Plugin) DoctorChecks(ctx context.Context) []plugin.CheckResult {
+	var results []plugin.CheckResult
+
+	// Check CLI tools.
+	for _, name := range []string{"tesseract", "ffmpeg", "ffprobe"} {
+		r := plugin.CheckResult{Name: name, Status: plugin.CheckOK}
+		if _, err := exec.LookPath(name); err != nil {
+			r.Status = plugin.CheckWarn
+			r.Message = name + " not found in PATH"
+		}
+		results = append(results, r)
+	}
+
+	// Check ONNX runtime — only verify the shared library is present.
+	// We skip InitErr() because it downloads models and initializes the
+	// full runtime, which is too heavy for a dependency check.
+	r := plugin.CheckResult{Name: "onnxruntime", Status: plugin.CheckOK}
+	b := &OnnxBackend{}
+	if !b.Available() {
+		r.Status = plugin.CheckWarn
+		r.Message = "libonnxruntime.so not found; local image recognition disabled"
+	}
+	results = append(results, r)
+
+	return results
+}
+
+// PurgeAllRecognitions resets recognition state across all user databases.
+func (p *Plugin) PurgeAllRecognitions() error {
+	entries, err := os.ReadDir(p.ctx.DataDir())
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		username := entry.Name()
+		filesDBPath := filepath.Join(p.ctx.DataDir(), username, "app_data", "files", "plugin.db")
+		if _, err := os.Stat(filesDBPath); err != nil {
+			continue
+		}
+		db, err := p.DB(username)
+		if err != nil {
+			p.log.Warn("purge: open db", "user", username, "err", err)
+			continue
+		}
+		if err := PurgeRecognitions(db); err != nil {
+			return fmt.Errorf("purge %s: %w", username, err)
+		}
+		p.log.Info("purged recognitions", "user", username)
+	}
+	return nil
 }
 
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {

@@ -98,6 +98,11 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 		return nil, fmt.Errorf("files db: %w", err)
 	}
 
+	// Clean up orphaned recognition data from before CASCADE was added.
+	if err := CleanOrphans(galleryDB); err != nil {
+		p.log.Warn("clean orphans", "user", username, "err", err)
+	}
+
 	// Stage 1: File discovery
 	if err := p.discoverFiles(ctx, galleryDB, filesDB, username); err != nil {
 		return nil, fmt.Errorf("discover: %w", err)
@@ -186,11 +191,12 @@ func (p *Plugin) discoverFiles(ctx context.Context, galleryDB, filesDB *sql.DB, 
 		}
 
 		if exists {
-			// File changed — delete old row (will be re-inserted with new metadata)
-			if err := DeleteMediaByFileID(galleryDB, f.ID); err != nil {
-				p.log.Error("delete changed media", "file_id", f.ID, "err", err)
-				continue
+			// File changed — update in-place to preserve row ID and associated
+			// faces/media_tags/album_media. Resets metadata + recognition state.
+			if err := ResetMediaByFileID(galleryDB, f.ID, f.Path, f.ETag, f.MimeType, now); err != nil {
+				p.log.Error("reset changed media", "file_id", f.ID, "err", err)
 			}
+			continue
 		}
 
 		// Insert new media row with minimal info; metadata extraction happens in stage 2.

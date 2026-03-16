@@ -42,6 +42,11 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 				p.Log.Warn("search init failed", "err", err)
 			}
 
+			// Start plugin background tasks (scan loops, etc.).
+			if err := p.Plugins.Start(context.Background()); err != nil {
+				return err
+			}
+
 			if envBool("COG_LOG_REQUESTS") {
 				handler = requestLogger(handler)
 			}

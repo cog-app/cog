@@ -512,14 +512,29 @@ a:hover {
   font-weight: 500;
 }
 
-.badge-warn {
-  color: #e73c;
-  background: #ffe273;
-}
-
 .badge-admin {
   background: #e3f2fd;
   color: #1565c0;
+}
+
+.badge-danger {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.badge-warn {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.badge-overdue {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.badge-due-soon {
+  background: #fff3cd;
+  color: #856404;
 }
 
 /* Avatars */

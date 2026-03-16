@@ -287,9 +287,37 @@ func UpdateMediaMetadata(db *sql.DB, m *Media) error {
 	return err
 }
 
+// ResetMediaByFileID updates a changed file's media row in-place, preserving
+// the row ID (and thus all associated faces/media_tags/album_media).
+// It resets metadata and recognition state so both get re-extracted.
+func ResetMediaByFileID(db *sql.DB, fileID int64, path, etag, mime string, dateIndexed int64) error {
+	_, err := db.Exec(`UPDATE media SET
+		file_path = ?, file_etag = ?, mime_type = ?, date_indexed = ?,
+		width = 0, height = 0, orientation = 0,
+		date_taken = NULL, latitude = NULL, longitude = NULL, altitude = NULL,
+		camera_make = '', camera_model = '', lens_model = '',
+		focal_length = NULL, f_number = NULL, exposure_time = '',
+		iso = NULL, flash = NULL, duration_ms = NULL, video_codec = '', audio_codec = '',
+		place_name = '', country = '', region = '', city = '',
+		recognition_state = 0, recognition_at = NULL, ocr_text = ''
+		WHERE file_id = ?`, path, etag, mime, dateIndexed, fileID)
+	return err
+}
+
 // DeleteMediaByFileID deletes a media row by its files plugin file_id.
 func DeleteMediaByFileID(db *sql.DB, fileID int64) error {
 	_, err := db.Exec(`DELETE FROM media WHERE file_id = ?`, fileID)
+	return err
+}
+
+// CleanOrphans removes recognition data that references non-existent media rows.
+// This fixes databases where CASCADE constraints were missing when rows were created.
+func CleanOrphans(db *sql.DB) error {
+	_, err := db.Exec(`
+		DELETE FROM media_tags WHERE media_id NOT IN (SELECT id FROM media);
+		DELETE FROM faces WHERE media_id NOT IN (SELECT id FROM media);
+		DELETE FROM people WHERE id NOT IN (SELECT DISTINCT person_id FROM faces WHERE person_id IS NOT NULL);
+		DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM media_tags)`)
 	return err
 }
 
@@ -434,8 +462,10 @@ func SetAlbumCover(db *sql.DB, albumID, mediaID int64) error {
 // ListTags returns all tags with their media counts.
 func ListTags(db *sql.DB) ([]Tag, error) {
 	rows, err := db.Query(`SELECT t.id, t.name, t.tag_type,
-		(SELECT COUNT(*) FROM media_tags mt WHERE mt.tag_id = t.id) AS count
-		FROM tags t ORDER BY count DESC`)
+		(SELECT COUNT(*) FROM media_tags mt JOIN media m ON m.id = mt.media_id WHERE mt.tag_id = t.id) AS count
+		FROM tags t
+		HAVING count > 0
+		ORDER BY count DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -514,8 +544,9 @@ func TagsForMedia(db *sql.DB, mediaID int64) ([]Tag, error) {
 // ListPeople returns all visible people with face counts.
 func ListPeople(db *sql.DB) ([]Person, error) {
 	rows, err := db.Query(`SELECT p.id, p.name, p.representative_face_id, p.visible, p.created_at,
-		(SELECT COUNT(*) FROM faces f WHERE f.person_id = p.id) AS face_count
+		(SELECT COUNT(*) FROM faces f JOIN media m ON m.id = f.media_id WHERE f.person_id = p.id) AS face_count
 		FROM people p WHERE p.visible = 1
+		HAVING face_count > 0
 		ORDER BY face_count DESC`)
 	if err != nil {
 		return nil, err
@@ -537,7 +568,7 @@ func ListPeople(db *sql.DB) ([]Person, error) {
 func GetPerson(db *sql.DB, id int64) (*Person, error) {
 	var p Person
 	err := db.QueryRow(`SELECT p.id, p.name, p.representative_face_id, p.visible, p.created_at,
-		(SELECT COUNT(*) FROM faces f WHERE f.person_id = p.id) AS face_count
+		(SELECT COUNT(*) FROM faces f JOIN media m ON m.id = f.media_id WHERE f.person_id = p.id) AS face_count
 		FROM people p WHERE p.id = ?`, id).Scan(
 		&p.ID, &p.Name, &p.RepresentativeFaceID, &p.Visible, &p.CreatedAt, &p.FaceCount)
 	return &p, err
@@ -622,6 +653,18 @@ func GetRecognitionStats(db *sql.DB) (RecognitionStats, error) {
 		}
 	}
 	return s, nil
+}
+
+// PurgeRecognitions resets all recognition state and deletes derived data
+// (tags, faces, people) so recognition can be re-run from scratch.
+func PurgeRecognitions(db *sql.DB) error {
+	_, err := db.Exec(`DELETE FROM media_tags;
+		DELETE FROM faces;
+		DELETE FROM people;
+		DELETE FROM tags;
+		UPDATE media SET recognition_state = 0, recognition_at = NULL, recognition_error = ''
+			WHERE mime_type LIKE 'image/%'`)
+	return err
 }
 
 // --- Settings ---

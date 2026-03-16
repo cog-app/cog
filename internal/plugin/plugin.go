@@ -44,6 +44,9 @@ type VolumeAccess = cogplugin.VolumeAccess
 type VolumeInfo = cogplugin.VolumeInfo
 type CommandDef = cogplugin.CommandDef
 type SettingsPage = cogplugin.SettingsPage
+type CheckStatus = cogplugin.CheckStatus
+type CheckResult = cogplugin.CheckResult
+type Doctor = cogplugin.Doctor
 type VFS = vfs.FS
 
 // Re-export permission constants (cannot alias constants).
@@ -53,6 +56,12 @@ const (
 	PermReshare  = cogplugin.PermReshare
 	PermFreeBusy = cogplugin.PermFreeBusy
 	PermSchedule = cogplugin.PermSchedule
+)
+
+const (
+	CheckOK    = cogplugin.CheckOK
+	CheckWarn  = cogplugin.CheckWarn
+	CheckError = cogplugin.CheckError
 )
 
 // Re-export functions from the public plugin package.

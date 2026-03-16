@@ -358,12 +358,29 @@ templ tagsPage(activePath string, tags []Tag) {
 			} else {
 				<div style="display:flex;flex-wrap:wrap;gap:8px">
 					for _, t := range tags {
-						<span class="badge" style="font-size:0.9rem;padding:6px 12px">
+						<a href={ templ.SafeURL("/apps/gallery/tag/" + t.Name) } class="badge" style="font-size:0.9rem;padding:6px 12px;text-decoration:none">
 							{ t.Name }
 							<span class="text-muted" style="margin-left:4px">{ strconv.Itoa(t.Count) }</span>
-						</span>
+						</a>
 					}
 				</div>
+			}
+		</div>
+	</div>
+}
+
+// --- Tag View Page ---
+templ tagViewPage(activePath string, name string, media []Media) {
+	<div class="sidebar-layout">
+		@gallerySidebar(activePath, 0)
+		<div class="sidebar-content">
+			<h1>Tag: { name }</h1>
+			if len(media) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No photos with this tag.</p>
+				}
+			} else {
+				@photoGrid(media)
 			}
 		</div>
 	</div>
@@ -599,16 +616,26 @@ templ scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) 
 					</tr>
 				}
 			</table>
-			<form method="post" action="/admin/plugins/gallery/scan">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<button type="submit" class="btn btn-primary btn-sm" disabled?={ scan.Running }>
-					if scan.Running {
-						Scanning...
-					} else {
-						Scan All Users
-					}
-				</button>
-			</form>
+			<div style="display:flex;gap:0.5rem">
+				<form method="post" action="/admin/plugins/gallery/scan">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<button type="submit" class="btn btn-primary btn-sm" disabled?={ scan.Running }>
+						if scan.Running {
+							Scanning...
+						} else {
+							Scan All Users
+						}
+					</button>
+				</form>
+				if stats.Done > 0 || stats.Errored > 0 {
+					<form method="post" action="/admin/plugins/gallery/purge-recognitions" onsubmit="return confirm('Purge all recognition data? Tags, faces, and people will be deleted and images re-queued for recognition.')">
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<button type="submit" class="btn btn-danger btn-sm" disabled?={ scan.Running }>
+							Purge Recognitions
+						</button>
+					</form>
+				}
+			</div>
 		}
 	</div>
 }

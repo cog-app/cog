@@ -821,6 +821,17 @@ func (r *Registry) UserCommands() map[string][]CommandDef {
 	return cmds
 }
 
+// DoctorChecks runs doctor checks on all plugins that implement the Doctor interface.
+func (r *Registry) DoctorChecks(ctx context.Context) map[string][]CheckResult {
+	results := make(map[string][]CheckResult)
+	for _, id := range r.order {
+		if d, ok := r.plugins[id].(Doctor); ok {
+			results[id] = d.DoctorChecks(ctx)
+		}
+	}
+	return results
+}
+
 // SearchSourceDefs returns all registered search source definitions, keyed by plugin ID.
 func (r *Registry) SearchSourceDefs() map[string][]SearchSourceDef {
 	defs := make(map[string][]SearchSourceDef)

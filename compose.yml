@@ -1,0 +1,18 @@
+services:
+  app:
+    build:
+      context: .
+      target: build_dependencies
+      args:
+        DEPS_BASE: golang:1.26-trixie
+        BUILD_BASE: dependencies
+    command: [go, tool, dev]
+    working_dir: /code
+    ports:
+      - 8580:8580
+      - 8522:8522
+    volumes:
+      - /data
+      - .:/code
+      - /code/tmp
+      - /go
