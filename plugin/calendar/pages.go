@@ -245,7 +245,7 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 
 	// Parse attendees from form
 	attendeeFields := parseAttendeeForm(r)
-	icsData := GenerateICSFull(ev.UID, summary, description, location, dtstart, dtend, isAllDay, rrule, nil, attendeeFields)
+	icsData := GenerateICSFull(ev.UID, summary, description, location, dtstart, dtend, isAllDay, rrule, nil, attendeeFields, h.plugin.ctx.Now())
 	fields := VEventFields{
 		UID: ev.UID, Summary: summary, Description: description, Location: location,
 		DTStart: dtstart, DTEnd: dtend, IsAllDay: isAllDay, Color: eventColor, RRule: rrule,
@@ -318,7 +318,7 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 
 	// Parse attendees from form
 	attendeeFields := parseAttendeeForm(r)
-	icsData := GenerateICSFull(uid, summary, description, location, dtstart, dtend, isAllDay, rrule, nil, attendeeFields)
+	icsData := GenerateICSFull(uid, summary, description, location, dtstart, dtend, isAllDay, rrule, nil, attendeeFields, h.plugin.ctx.Now())
 	fields := VEventFields{
 		UID: uid, Summary: summary, Description: description, Location: location,
 		DTStart: dtstart, DTEnd: dtend, IsAllDay: isAllDay, Color: eventColor, RRule: rrule,
@@ -588,7 +588,7 @@ func (h *Pages) sendInvitations(method string, ev *Event, summary, description, 
 	if emailSender == nil || len(attendees) == 0 {
 		return
 	}
-	icsData := GenerateICSInvite(method, ev.UID, summary, description, location, dtstart, dtend, isAllDay, attendees)
+	icsData := GenerateICSInvite(method, ev.UID, summary, description, location, dtstart, dtend, isAllDay, attendees, h.plugin.ctx.Now())
 
 	var subject string
 	switch method {
@@ -711,7 +711,7 @@ func (h *Pages) Notifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	notifications, err := DueNotifications(db)
+	notifications, err := DueNotifications(db, h.plugin.ctx.Now().Unix())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

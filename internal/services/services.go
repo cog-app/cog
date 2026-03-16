@@ -151,7 +151,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	}
 
 	users := user.NewStore(sysDB, c)
-	volumes := volume.NewStore(sysDB)
+	volumes := volume.NewStore(sysDB, c)
 	mounts := mount.NewStore(sysDB, c)
 
 	// Bootstrap default volume and root mounts for existing users.

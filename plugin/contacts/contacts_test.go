@@ -1,6 +1,7 @@
 package contacts_test
 
 import (
+	"time"
 	"fmt"
 	"testing"
 
@@ -37,7 +38,7 @@ func TestContactsCreateAndView(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, len(books) > 0)
 
-	vcard := contacts.GenerateVCard("test-uid-1", "Jane Doe", "jane@example.com", "+1234567890")
+	vcard := contacts.GenerateVCard("test-uid-1", "Jane Doe", "jane@example.com", "+1234567890", time.Now())
 	fields, err := contacts.ParseVCard(vcard)
 	require.NoError(t, err)
 	card, err := contacts.UpsertCard(db, books[0].ID, "test-uid-1", "test-uid-1.vcf", vcard, fields)
@@ -88,7 +89,7 @@ func TestContactsStar(t *testing.T) {
 	contacts.EnsureDefaultAddressBook(db)
 	books, _ := contacts.ListAddressBooks(db)
 
-	vcard := contacts.GenerateVCard("star-uid", "Bob Star", "bob@example.com", "")
+	vcard := contacts.GenerateVCard("star-uid", "Bob Star", "bob@example.com", "", time.Now())
 	fields, err := contacts.ParseVCard(vcard)
 	require.NoError(t, err)
 	card, err := contacts.UpsertCard(db, books[0].ID, "star-uid", "star-uid.vcf", vcard, fields)

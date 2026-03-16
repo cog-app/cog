@@ -239,8 +239,8 @@ func EnsureNotifications(db *sql.DB, eventID int64, dtstart int64, icsData strin
 }
 
 // DueNotifications returns unfired notifications that are due (trigger_at <= now).
-func DueNotifications(db *sql.DB) ([]Notification, error) {
-	now := time.Now().Unix()
+func DueNotifications(db *sql.DB, now int64) ([]Notification, error) {
+	
 	rows, err := db.Query(`
 		SELECT id, event_id, trigger_at FROM notifications
 		WHERE fired = 0 AND trigger_at <= ?

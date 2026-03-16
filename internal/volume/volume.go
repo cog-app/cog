@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/clock"
 )
 
 var ErrNotFound = errors.New("volume not found")
@@ -75,11 +77,12 @@ func (p *ParsedURI) EnsureDir(subpath string) error {
 }
 
 type Store struct {
-	db *sql.DB
+	db    *sql.DB
+	clock clock.Clock
 }
 
-func NewStore(db *sql.DB) *Store {
-	return &Store{db: db}
+func NewStore(db *sql.DB, c clock.Clock) *Store {
+	return &Store{db: db, clock: c}
 }
 
 func (s *Store) Create(name, description, uri string, ownerUserID *string, config string) (*Volume, error) {
@@ -96,7 +99,7 @@ func (s *Store) Create(name, description, uri string, ownerUserID *string, confi
 		return nil, err
 	}
 
-	now := time.Now().Unix()
+	now := s.clock().Unix()
 	_, err = s.db.Exec(
 		`INSERT INTO volumes (id, name, description, uri, created_at, owner_id, config) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		id, name, description, uri, now, ownerUserID, config,

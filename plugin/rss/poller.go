@@ -71,7 +71,7 @@ func (p *Plugin) pollUser(username string, now int64) {
 	}
 
 	for i := range feeds {
-		if err := fetchFeed(p.client, db, &feeds[i]); err != nil {
+		if err := fetchFeed(p.client, db, &feeds[i], p.ctx.Now); err != nil {
 			p.log.Error("fetch feed", "url", feeds[i].URL, "user", username, "err", err)
 		}
 	}
@@ -87,7 +87,7 @@ func (p *Plugin) FetchNow(username string, feedID int64) {
 	if err != nil {
 		return
 	}
-	if err := fetchFeed(p.client, db, feed); err != nil {
+	if err := fetchFeed(p.client, db, feed, p.ctx.Now); err != nil {
 		p.log.Error("immediate fetch", "url", feed.URL, "err", err)
 	}
 }

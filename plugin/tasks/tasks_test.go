@@ -1,6 +1,7 @@
 package tasks_test
 
 import (
+	"time"
 	"strconv"
 	"strings"
 	"testing"
@@ -68,20 +69,20 @@ func TestCreateTaskAndToggle(t *testing.T) {
 	list, err := tasks.CreateTaskList(db, "list1", "My List", "")
 	require.NoError(t, err)
 
-	task, err := tasks.CreateTask(db, list.ID, "task-uid-1", nil, "Buy milk", "From store", 1, nil, nil)
+	task, err := tasks.CreateTask(db, list.ID, "task-uid-1", nil, "Buy milk", "From store", 1, nil, nil, time.Now())
 	require.NoError(t, err)
 	require.Equal(t, "Buy milk", task.Summary)
 	require.Equal(t, "NEEDS-ACTION", task.Status)
 	require.Equal(t, 1, task.Priority)
 
 	// Toggle to completed.
-	toggled, err := tasks.ToggleTask(db, task.ID)
+	toggled, err := tasks.ToggleTask(db, task.ID, time.Now())
 	require.NoError(t, err)
 	require.Equal(t, "COMPLETED", toggled.Status)
 	require.Equal(t, 100, toggled.PercentComplete)
 
 	// Toggle back.
-	toggled2, err := tasks.ToggleTask(db, task.ID)
+	toggled2, err := tasks.ToggleTask(db, task.ID, time.Now())
 	require.NoError(t, err)
 	require.Equal(t, "NEEDS-ACTION", toggled2.Status)
 	require.Equal(t, 0, toggled2.PercentComplete)
@@ -95,7 +96,7 @@ func TestDeleteTask(t *testing.T) {
 	list, err := tasks.CreateTaskList(db, "list1", "List", "")
 	require.NoError(t, err)
 
-	task, err := tasks.CreateTask(db, list.ID, "del-uid", nil, "Delete me", "", 0, nil, nil)
+	task, err := tasks.CreateTask(db, list.ID, "del-uid", nil, "Delete me", "", 0, nil, nil, time.Now())
 	require.NoError(t, err)
 
 	require.NoError(t, tasks.DeleteTask(db, task.ID))
@@ -111,19 +112,19 @@ func TestHierarchy_CreateAndCascadeDelete(t *testing.T) {
 	list, err := tasks.CreateTaskList(db, "list1", "List", "")
 	require.NoError(t, err)
 
-	parent, err := tasks.CreateTask(db, list.ID, "parent-uid", nil, "Parent Task", "", 0, nil, nil)
+	parent, err := tasks.CreateTask(db, list.ID, "parent-uid", nil, "Parent Task", "", 0, nil, nil, time.Now())
 	require.NoError(t, err)
 
-	child1, err := tasks.CreateTask(db, list.ID, "child1-uid", &parent.ID, "Child 1", "", 0, nil, nil)
+	child1, err := tasks.CreateTask(db, list.ID, "child1-uid", &parent.ID, "Child 1", "", 0, nil, nil, time.Now())
 	require.NoError(t, err)
 	require.True(t, child1.ParentID != nil)
 	require.Equal(t, parent.ID, *child1.ParentID)
 
-	_, err = tasks.CreateTask(db, list.ID, "child2-uid", &parent.ID, "Child 2", "", 0, nil, nil)
+	_, err = tasks.CreateTask(db, list.ID, "child2-uid", &parent.ID, "Child 2", "", 0, nil, nil, time.Now())
 	require.NoError(t, err)
 
 	// Grandchild under child1.
-	_, err = tasks.CreateTask(db, list.ID, "grandchild-uid", &child1.ID, "Grandchild", "", 0, nil, nil)
+	_, err = tasks.CreateTask(db, list.ID, "grandchild-uid", &child1.ID, "Grandchild", "", 0, nil, nil, time.Now())
 	require.NoError(t, err)
 
 	allTasks, err := tasks.ListTasks(db, list.ID)
@@ -155,11 +156,11 @@ func TestReorderTasks(t *testing.T) {
 	list, err := tasks.CreateTaskList(db, "list1", "List", "")
 	require.NoError(t, err)
 
-	t1, err := tasks.CreateTask(db, list.ID, "t1", nil, "First", "", 0, nil, nil)
+	t1, err := tasks.CreateTask(db, list.ID, "t1", nil, "First", "", 0, nil, nil, time.Now())
 	require.NoError(t, err)
-	t2, err := tasks.CreateTask(db, list.ID, "t2", nil, "Second", "", 0, nil, nil)
+	t2, err := tasks.CreateTask(db, list.ID, "t2", nil, "Second", "", 0, nil, nil, time.Now())
 	require.NoError(t, err)
-	t3, err := tasks.CreateTask(db, list.ID, "t3", nil, "Third", "", 0, nil, nil)
+	t3, err := tasks.CreateTask(db, list.ID, "t3", nil, "Third", "", 0, nil, nil, time.Now())
 	require.NoError(t, err)
 
 	// Reverse order.
@@ -181,9 +182,9 @@ func TestReparentTask(t *testing.T) {
 	list, err := tasks.CreateTaskList(db, "list1", "List", "")
 	require.NoError(t, err)
 
-	parent, err := tasks.CreateTask(db, list.ID, "p1", nil, "Parent", "", 0, nil, nil)
+	parent, err := tasks.CreateTask(db, list.ID, "p1", nil, "Parent", "", 0, nil, nil, time.Now())
 	require.NoError(t, err)
-	child, err := tasks.CreateTask(db, list.ID, "c1", nil, "Child", "", 0, nil, nil)
+	child, err := tasks.CreateTask(db, list.ID, "c1", nil, "Child", "", 0, nil, nil, time.Now())
 	require.NoError(t, err)
 
 	require.NoError(t, tasks.ReparentTask(db, child.ID, &parent.ID, 0))
@@ -206,7 +207,7 @@ func TestVTodoRoundTrip(t *testing.T) {
 		Status:          "IN-PROCESS",
 	}
 
-	ics := tasks.GenerateVTodoICS("todo-123", fields)
+	ics := tasks.GenerateVTodoICS("todo-123", fields, time.Now())
 	require.True(t, strings.Contains(ics, "UID:todo-123"))
 	require.True(t, strings.Contains(ics, "SUMMARY:Test Task"))
 	require.True(t, strings.Contains(ics, "PRIORITY:5"))
@@ -260,7 +261,7 @@ func TestTasksTaskDetailPage(t *testing.T) {
 
 	list, err := tasks.CreateTaskList(db, "detail-list", "Detail", "")
 	require.NoError(t, err)
-	task, err := tasks.CreateTask(db, list.ID, "detail-uid", nil, "Detail Task", "A description", 5, nil, nil)
+	task, err := tasks.CreateTask(db, list.ID, "detail-uid", nil, "Detail Task", "A description", 5, nil, nil, time.Now())
 	require.NoError(t, err)
 
 	env.Get(t, "/apps/tasks/task/"+itoa(task.ID), alice.Auth).
@@ -289,11 +290,11 @@ func TestUpcomingTasks(t *testing.T) {
 
 	// Task with a due date.
 	due := int64(9999999999)
-	_, err = tasks.CreateTask(db, list.ID, "due-uid", nil, "Due Task", "", 0, &due, nil)
+	_, err = tasks.CreateTask(db, list.ID, "due-uid", nil, "Due Task", "", 0, &due, nil, time.Now())
 	require.NoError(t, err)
 
 	// Task without a due date — should not appear.
-	_, err = tasks.CreateTask(db, list.ID, "nodue-uid", nil, "No Due", "", 0, nil, nil)
+	_, err = tasks.CreateTask(db, list.ID, "nodue-uid", nil, "No Due", "", 0, nil, nil, time.Now())
 	require.NoError(t, err)
 
 	upcoming, err := tasks.UpcomingTasks(db, 10)

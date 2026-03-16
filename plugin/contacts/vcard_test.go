@@ -1,6 +1,7 @@
 package contacts
 
 import (
+	"time"
 	"strings"
 	"testing"
 )
@@ -70,7 +71,7 @@ func TestParseVCardUnfold(t *testing.T) {
 }
 
 func TestGenerateVCard(t *testing.T) {
-	vcard := GenerateVCard("test-uid", "Alice Smith", "alice@example.com", "+1234567890")
+	vcard := GenerateVCard("test-uid", "Alice Smith", "alice@example.com", "+1234567890", time.Now())
 
 	if !strings.Contains(vcard, "UID:test-uid") {
 		t.Error("missing UID")

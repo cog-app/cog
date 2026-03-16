@@ -164,7 +164,7 @@ func (h *Pages) CreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	uid := uuid.New().String()
-	_, err = CreateTask(db, listID, uid, parentID, summary, description, priority, dueAt, startAt)
+	_, err = CreateTask(db, listID, uid, parentID, summary, description, priority, dueAt, startAt, h.plugin.ctx.Now())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -213,7 +213,7 @@ func (h *Pages) UpdateTask(w http.ResponseWriter, r *http.Request) {
 		completedAt = &now
 	}
 
-	if err := UpdateTask(db, taskID, summary, description, priority, status, percentComplete, dueAt, startAt, completedAt, listID, parentID); err != nil {
+	if err := UpdateTask(db, taskID, summary, description, priority, status, percentComplete, dueAt, startAt, completedAt, listID, parentID, h.plugin.ctx.Now()); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -234,7 +234,7 @@ func (h *Pages) ToggleTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := ToggleTask(db, taskID)
+	task, err := ToggleTask(db, taskID, h.plugin.ctx.Now())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

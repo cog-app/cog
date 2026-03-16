@@ -204,12 +204,12 @@ func escapeICS(s string) string {
 }
 
 // GenerateICS produces a minimal iCalendar blob for a single VEVENT.
-func GenerateICS(uid, summary, description, location string, dtstart, dtend time.Time, isAllDay bool) string {
-	return GenerateICSFull(uid, summary, description, location, dtstart, dtend, isAllDay, "", nil, nil)
+func GenerateICS(uid, summary, description, location string, dtstart, dtend time.Time, isAllDay bool, now time.Time) string {
+	return GenerateICSFull(uid, summary, description, location, dtstart, dtend, isAllDay, "", nil, nil, now)
 }
 
 // GenerateICSFull produces an iCalendar blob with optional RRULE, VALARM, and ATTENDEE.
-func GenerateICSFull(uid, summary, description, location string, dtstart, dtend time.Time, isAllDay bool, rrule string, alarms []VAlarm, attendees []AttendeeField) string {
+func GenerateICSFull(uid, summary, description, location string, dtstart, dtend time.Time, isAllDay bool, rrule string, alarms []VAlarm, attendees []AttendeeField, now time.Time) string {
 	var b strings.Builder
 	b.WriteString("BEGIN:VCALENDAR\r\n")
 	b.WriteString("VERSION:2.0\r\n")
@@ -248,7 +248,7 @@ func GenerateICSFull(uid, summary, description, location string, dtstart, dtend 
 		fmt.Fprintf(&b, "%s:mailto:%s\r\n", params, att.Email)
 	}
 
-	fmt.Fprintf(&b, "DTSTAMP:%s\r\n", time.Now().UTC().Format("20060102T150405Z"))
+	fmt.Fprintf(&b, "DTSTAMP:%s\r\n", now.UTC().Format("20060102T150405Z"))
 
 	for _, alarm := range alarms {
 		b.WriteString("BEGIN:VALARM\r\n")
@@ -266,7 +266,7 @@ func GenerateICSFull(uid, summary, description, location string, dtstart, dtend 
 }
 
 // GenerateICSInvite produces an iCalendar blob with METHOD for email invitations.
-func GenerateICSInvite(method, uid, summary, description, location string, dtstart, dtend time.Time, isAllDay bool, attendees []AttendeeField) string {
+func GenerateICSInvite(method, uid, summary, description, location string, dtstart, dtend time.Time, isAllDay bool, attendees []AttendeeField, now time.Time) string {
 	var b strings.Builder
 	b.WriteString("BEGIN:VCALENDAR\r\n")
 	b.WriteString("VERSION:2.0\r\n")
@@ -301,7 +301,7 @@ func GenerateICSInvite(method, uid, summary, description, location string, dtsta
 		fmt.Fprintf(&b, "%s:mailto:%s\r\n", params, att.Email)
 	}
 
-	fmt.Fprintf(&b, "DTSTAMP:%s\r\n", time.Now().UTC().Format("20060102T150405Z"))
+	fmt.Fprintf(&b, "DTSTAMP:%s\r\n", now.UTC().Format("20060102T150405Z"))
 	b.WriteString("END:VEVENT\r\n")
 	b.WriteString("END:VCALENDAR\r\n")
 	return b.String()

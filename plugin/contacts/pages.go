@@ -191,7 +191,7 @@ func (h *Pages) CreateContact(w http.ResponseWriter, r *http.Request) {
 	}
 	fields.MarshalJSONFields()
 
-	vcardData := GenerateVCardFull(fields)
+	vcardData := GenerateVCardFull(fields, h.plugin.ctx.Now())
 	UpsertCard(targetDB, bookID, uid, uri, vcardData, fields)
 	http.Redirect(w, r, "/apps/contacts/", http.StatusSeeOther)
 }
@@ -284,7 +284,7 @@ func (h *Pages) UpdateContact(w http.ResponseWriter, r *http.Request) {
 	}
 	fields.MarshalJSONFields()
 
-	vcardData := GenerateVCardFull(fields)
+	vcardData := GenerateVCardFull(fields, h.plugin.ctx.Now())
 	UpsertCard(db, bookID, c.UID, c.URI, vcardData, fields)
 	http.Redirect(w, r, "/apps/contacts/", http.StatusSeeOther)
 }

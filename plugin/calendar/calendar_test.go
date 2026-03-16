@@ -50,7 +50,7 @@ func TestCalendarEventsJSON_WithEvent(t *testing.T) {
 	dtend := now.Add(2 * time.Hour)
 
 	ics := calendar.GenerateICS("test-uid-1", "Team Meeting", "Weekly sync", "Room 42",
-		dtstart, dtend, false)
+		dtstart, dtend, false, time.Now())
 	fields, err := calendar.ParseVEvent(ics)
 	require.NoError(t, err)
 	_, err = calendar.UpsertEvent(db, cals[0].ID, "test-uid-1", ics, fields)

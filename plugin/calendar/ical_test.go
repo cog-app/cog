@@ -97,7 +97,7 @@ func TestGenerateICS(t *testing.T) {
 	start := time.Date(2026, 3, 15, 14, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 3, 15, 15, 0, 0, 0, time.UTC)
 
-	ics := GenerateICS("test-uid", "Meeting", "Notes", "Room 1", start, end, false)
+	ics := GenerateICS("test-uid", "Meeting", "Notes", "Room 1", start, end, false, time.Now())
 
 	if !strings.Contains(ics, "UID:test-uid") {
 		t.Error("missing UID")
@@ -126,7 +126,7 @@ func TestGenerateICSAllDay(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
 
-	ics := GenerateICS("allday-uid", "Holiday", "", "", start, end, true)
+	ics := GenerateICS("allday-uid", "Holiday", "", "", start, end, true, time.Now())
 
 	if !strings.Contains(ics, "DTSTART;VALUE=DATE:20260101") {
 		t.Error("missing all-day DTSTART")
@@ -182,7 +182,7 @@ func TestGenerateICSFull(t *testing.T) {
 	end := time.Date(2026, 3, 15, 15, 0, 0, 0, time.UTC)
 	alarms := []VAlarm{{Action: "DISPLAY", Trigger: "-PT10M"}}
 
-	ics := GenerateICSFull("full-uid", "Meeting", "", "", start, end, false, "FREQ=WEEKLY", alarms, nil)
+	ics := GenerateICSFull("full-uid", "Meeting", "", "", start, end, false, "FREQ=WEEKLY", alarms, nil, time.Now())
 
 	if !strings.Contains(ics, "RRULE:FREQ=WEEKLY") {
 		t.Error("missing RRULE")

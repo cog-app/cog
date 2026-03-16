@@ -293,7 +293,7 @@ func (h *CalDAVHandler) event(w http.ResponseWriter, r *http.Request, db *sql.DB
 		w.Header().Set("ETag", `"`+ev.ETag+`"`)
 		if targetUser != username && sharePerms&plugin.PermRead == 0 && sharePerms&plugin.PermFreeBusy != 0 {
 			// Free/Busy only: return a stripped-down ICS with only timing info.
-			ics := GenerateICSFull(ev.UID, "Busy", "", "", time.Unix(ev.DTStart, 0).UTC(), time.Unix(ev.DTEnd, 0).UTC(), ev.IsAllDay, "", nil, nil)
+			ics := GenerateICSFull(ev.UID, "Busy", "", "", time.Unix(ev.DTStart, 0).UTC(), time.Unix(ev.DTEnd, 0).UTC(), ev.IsAllDay, "", nil, nil, h.plugin.ctx.Now())
 			io.WriteString(w, ics)
 		} else {
 			io.WriteString(w, ev.ICSData)

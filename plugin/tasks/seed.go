@@ -61,13 +61,13 @@ func (p *Plugin) Seed(username string) error {
 	var projectAlphaID int64
 	for _, st := range tasks {
 		uid := uuid.New().String()
-		t, err := CreateTask(db, st.listID, uid, st.parentID, st.summary, st.desc, st.priority, st.dueAt, nil)
+		t, err := CreateTask(db, st.listID, uid, st.parentID, st.summary, st.desc, st.priority, st.dueAt, nil, p.ctx.Now())
 		if err != nil {
 			p.log.Error("seed task failed", "summary", st.summary, "error", err)
 			continue
 		}
 		if st.status == "COMPLETED" {
-			ToggleTask(db, t.ID)
+			ToggleTask(db, t.ID, p.ctx.Now())
 		}
 		if st.summary == "Project Alpha" {
 			projectAlphaID = t.ID
@@ -80,7 +80,7 @@ func (p *Plugin) Seed(username string) error {
 		subtasks := []string{"Design mockups", "Implement backend", "Write tests"}
 		for _, summary := range subtasks {
 			uid := uuid.New().String()
-			st, err := CreateTask(db, work.ID, uid, &projectAlphaID, summary, "", 0, nil, nil)
+			st, err := CreateTask(db, work.ID, uid, &projectAlphaID, summary, "", 0, nil, nil, p.ctx.Now())
 			if err != nil {
 				p.log.Error("seed subtask failed", "summary", summary, "error", err)
 				continue
@@ -89,7 +89,7 @@ func (p *Plugin) Seed(username string) error {
 			// Add a nested subtask under "Implement backend".
 			if summary == "Implement backend" {
 				uid2 := uuid.New().String()
-				_, err := CreateTask(db, work.ID, uid2, &st.ID, "Set up database schema", "", 0, nil, nil)
+				_, err := CreateTask(db, work.ID, uid2, &st.ID, "Set up database schema", "", 0, nil, nil, p.ctx.Now())
 				if err != nil {
 					p.log.Error("seed nested subtask failed", "error", err)
 				} else {

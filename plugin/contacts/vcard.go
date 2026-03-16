@@ -210,7 +210,7 @@ func escapeVCard(s string) string {
 }
 
 // GenerateVCard produces a minimal vCard 3.0 blob (backward-compatible wrapper).
-func GenerateVCard(uid, fn, email, tel string) string {
+func GenerateVCard(uid, fn, email, tel string, now time.Time) string {
 	f := VCardFields{UID: uid, FN: fn, Email: email, Tel: tel}
 	if email != "" {
 		f.Emails = []TypedValue{{Type: "INTERNET", Value: email}}
@@ -218,11 +218,11 @@ func GenerateVCard(uid, fn, email, tel string) string {
 	if tel != "" {
 		f.Phones = []TypedValue{{Type: "CELL", Value: tel}}
 	}
-	return GenerateVCardFull(f)
+	return GenerateVCardFull(f, now)
 }
 
 // GenerateVCardFull produces a vCard 3.0 blob with all supported fields.
-func GenerateVCardFull(fields VCardFields) string {
+func GenerateVCardFull(fields VCardFields, now time.Time) string {
 	var b strings.Builder
 	b.WriteString("BEGIN:VCARD\r\n")
 	b.WriteString("VERSION:3.0\r\n")
@@ -266,7 +266,7 @@ func GenerateVCardFull(fields VCardFields) string {
 			escapeVCard(a.Street), escapeVCard(a.City),
 			escapeVCard(a.State), escapeVCard(a.Zip), escapeVCard(a.Country))
 	}
-	fmt.Fprintf(&b, "REV:%s\r\n", time.Now().UTC().Format("20060102T150405Z"))
+	fmt.Fprintf(&b, "REV:%s\r\n", now.UTC().Format("20060102T150405Z"))
 	b.WriteString("END:VCARD\r\n")
 	return b.String()
 }

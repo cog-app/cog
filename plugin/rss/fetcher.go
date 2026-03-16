@@ -134,9 +134,9 @@ func ResolveURL(client *http.Client, rawURL string) (string, error) {
 }
 
 // fetchFeed fetches and processes a single feed, upserting items into the DB.
-func fetchFeed(client *http.Client, db *sql.DB, feed *Feed) error {
+func fetchFeed(client *http.Client, db *sql.DB, feed *Feed, clock func() time.Time) error {
 	if err := validateFeedURL(feed.URL); err != nil {
-		return recordError(db, feed, err)
+		return recordError(db, feed, err, clock)
 	}
 	req, err := http.NewRequest("GET", feed.URL, nil)
 	if err != nil {
@@ -152,11 +152,11 @@ func fetchFeed(client *http.Client, db *sql.DB, feed *Feed) error {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return recordError(db, feed, err)
+		return recordError(db, feed, err, clock)
 	}
 	defer resp.Body.Close()
 
-	now := time.Now().Unix()
+	now := clock().Unix()
 
 	if resp.StatusCode == http.StatusNotModified {
 		_, err := db.Exec(`UPDATE feeds SET last_checked_at = ?, last_success_at = ?,
@@ -166,19 +166,19 @@ func fetchFeed(client *http.Client, db *sql.DB, feed *Feed) error {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return recordError(db, feed, fmt.Errorf("HTTP %d", resp.StatusCode))
+		return recordError(db, feed, fmt.Errorf("HTTP %d", resp.StatusCode), clock)
 	}
 
 	// Limit body to 10MB.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 	if err != nil {
-		return recordError(db, feed, err)
+		return recordError(db, feed, err, clock)
 	}
 
 	parser := gofeed.NewParser()
 	parsed, err := parser.ParseString(string(body))
 	if err != nil {
-		return recordError(db, feed, err)
+		return recordError(db, feed, err, clock)
 	}
 
 	// Update feed metadata.
@@ -286,8 +286,8 @@ func autoMarkReadByRegex(db *sql.DB, feedID int64, re *regexp.Regexp) {
 	}
 }
 
-func recordError(db *sql.DB, feed *Feed, fetchErr error) error {
-	now := time.Now().Unix()
+func recordError(db *sql.DB, feed *Feed, fetchErr error, clock func() time.Time) error {
+	now := clock().Unix()
 	newCount := feed.ErrorCount + 1
 	// Exponential backoff: min(1800 * 2^count, 86400)
 	backoff := int64(1800)

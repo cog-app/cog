@@ -88,7 +88,7 @@ func ParseVTodo(icsData string) (VTodoFields, error) {
 }
 
 // GenerateVTodoICS produces a VCALENDAR wrapping a VTODO.
-func GenerateVTodoICS(uid string, fields VTodoFields) string {
+func GenerateVTodoICS(uid string, fields VTodoFields, now time.Time) string {
 	if uid == "" {
 		uid = fields.UID
 	}
@@ -127,7 +127,7 @@ func GenerateVTodoICS(uid string, fields VTodoFields) string {
 		fmt.Fprintf(&b, "RELATED-TO:%s\r\n", fields.RelatedTo)
 	}
 
-	fmt.Fprintf(&b, "DTSTAMP:%s\r\n", time.Now().UTC().Format("20060102T150405Z"))
+	fmt.Fprintf(&b, "DTSTAMP:%s\r\n", now.UTC().Format("20060102T150405Z"))
 	b.WriteString("END:VTODO\r\n")
 	b.WriteString("END:VCALENDAR\r\n")
 	return b.String()

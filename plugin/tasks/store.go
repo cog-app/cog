@@ -3,6 +3,7 @@ package tasks
 import (
 	"crypto/md5"
 	"database/sql"
+	"time"
 	"fmt"
 )
 
@@ -176,7 +177,7 @@ func GetTaskByUID(db *sql.DB, listID int64, uid string) (*Task, error) {
 	return scanTask(db.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE list_id = ? AND uid = ?`, listID, uid))
 }
 
-func CreateTask(db *sql.DB, listID int64, uid string, parentID *int64, summary, description string, priority int, dueAt, startAt *int64) (*Task, error) {
+func CreateTask(db *sql.DB, listID int64, uid string, parentID *int64, summary, description string, priority int, dueAt, startAt *int64, now time.Time) (*Task, error) {
 	// Get next sort_order for this parent.
 	var maxSort int
 	db.QueryRow(`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE list_id = ? AND parent_id IS ?`, listID, parentID).Scan(&maxSort)
@@ -186,7 +187,7 @@ func CreateTask(db *sql.DB, listID int64, uid string, parentID *int64, summary, 
 		Summary: summary, Description: description,
 		Priority: priority,
 		Status:   "NEEDS-ACTION",
-	})
+	}, now)
 	etag := fmt.Sprintf("%x", md5.Sum([]byte(icsData)))
 
 	res, err := db.Exec(`INSERT INTO tasks (list_id, uid, etag, parent_id, summary, description, priority, due_at, start_at, sort_order, ics_data)
@@ -202,11 +203,11 @@ func CreateTask(db *sql.DB, listID int64, uid string, parentID *int64, summary, 
 	return GetTask(db, id)
 }
 
-func UpdateTask(db *sql.DB, id int64, summary, description string, priority int, status string, percentComplete int, dueAt, startAt, completedAt *int64, listID int64, parentID *int64) error {
+func UpdateTask(db *sql.DB, id int64, summary, description string, priority int, status string, percentComplete int, dueAt, startAt, completedAt *int64, listID int64, parentID *int64, now time.Time) error {
 	icsData := GenerateVTodoICS("", VTodoFields{
 		Summary: summary, Description: description,
 		Priority: priority, Status: status, PercentComplete: percentComplete,
-	})
+	}, now)
 	etag := fmt.Sprintf("%x", md5.Sum([]byte(icsData)))
 
 	// Get the current task to find the uid for ICS regeneration and the list for ctag bump.
@@ -218,7 +219,7 @@ func UpdateTask(db *sql.DB, id int64, summary, description string, priority int,
 	icsData = GenerateVTodoICS(old.UID, VTodoFields{
 		UID: old.UID, Summary: summary, Description: description,
 		Priority: priority, Status: status, PercentComplete: percentComplete,
-	})
+	}, now)
 	etag = fmt.Sprintf("%x", md5.Sum([]byte(icsData)))
 
 	_, err = db.Exec(`UPDATE tasks SET summary = ?, description = ?, priority = ?, status = ?,
@@ -262,7 +263,7 @@ func DeleteTask(db *sql.DB, id int64) error {
 }
 
 // ToggleTask flips a task between COMPLETED and NEEDS-ACTION.
-func ToggleTask(db *sql.DB, id int64) (*Task, error) {
+func ToggleTask(db *sql.DB, id int64, now time.Time) (*Task, error) {
 	task, err := GetTask(db, id)
 	if err != nil {
 		return nil, err
@@ -284,7 +285,7 @@ func ToggleTask(db *sql.DB, id int64) (*Task, error) {
 	icsData := GenerateVTodoICS(task.UID, VTodoFields{
 		UID: task.UID, Summary: task.Summary, Description: task.Description,
 		Priority: task.Priority, Status: newStatus, PercentComplete: percentComplete,
-	})
+	}, now)
 	etag := fmt.Sprintf("%x", md5.Sum([]byte(icsData)))
 
 	_, err = db.Exec(`UPDATE tasks SET status = ?, completed_at = ?, percent_complete = ?,
