@@ -945,13 +945,9 @@ a:hover {
   /* Compact dashboard app grid */
   .app-grid {
     display: flex;
-    overflow-x: auto;
-    scrollbar-width: none;
+    flex-wrap: wrap;
     gap: 0.5rem;
     padding-bottom: 0.25rem;
-  }
-  .app-grid::-webkit-scrollbar {
-    display: none;
   }
   .app-grid .app-card {
     flex-shrink: 0;

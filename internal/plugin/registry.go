@@ -25,10 +25,8 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/ui"
-	_ "github.com/mattn/go-sqlite3"
+	sqlite3 "github.com/mattn/go-sqlite3"
 )
-
-var openHooked = db.OpenHooked
 
 // MountResolver resolves user file paths via the mount system.
 type MountResolver interface {
@@ -81,6 +79,9 @@ type Registry struct {
 
 	// dbHookFactory creates update hooks for per-user plugin databases.
 	dbHookFactory func(username, pluginID string) func(int, string, string, int64)
+
+	// connectHooks are applied to every new SQLite connection (e.g. clock override).
+	connectHooks []db.ConnectHook
 
 	// Optional services available to plugins.
 	services RegistryServices
@@ -183,20 +184,9 @@ func (r *Registry) PluginDB(username, pluginID string) (*sql.DB, error) {
 	}
 
 	dbPath := filepath.Join(dir, "plugin.db")
-	var pdb *sql.DB
-	if r.dbHookFactory != nil {
-		hook := r.dbHookFactory(username, pluginID)
-		var err error
-		pdb, err = openHooked(dbPath, hook)
-		if err != nil {
-			return nil, fmt.Errorf("open hooked plugin db %s: %w", dbPath, err)
-		}
-	} else {
-		var err error
-		pdb, err = sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_foreign_keys=on")
-		if err != nil {
-			return nil, fmt.Errorf("open plugin db %s: %w", dbPath, err)
-		}
+	pdb, err := r.openDB(dbPath, username, pluginID)
+	if err != nil {
+		return nil, fmt.Errorf("open plugin db %s: %w", dbPath, err)
 	}
 	r.dbs[key] = pdb
 	return pdb, nil
@@ -220,7 +210,7 @@ func (r *Registry) UserDB(username string) (*sql.DB, error) {
 	}
 
 	dbPath := filepath.Join(dir, "user.db")
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_foreign_keys=on")
+	db, err := r.openDB(dbPath, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("open user db %s: %w", dbPath, err)
 	}
@@ -252,10 +242,34 @@ func migrateUserDB(db *sql.DB) error {
 	return err
 }
 
+// openDB opens a SQLite database, composing connect hooks (clock override etc.)
+// with the optional update hook from dbHookFactory.
+func (r *Registry) openDB(path, username, pluginID string) (*sql.DB, error) {
+	var hooks []db.ConnectHook
+	hooks = append(hooks, r.connectHooks...)
+	if r.dbHookFactory != nil && username != "" {
+		hook := r.dbHookFactory(username, pluginID)
+		hooks = append(hooks, func(conn *sqlite3.SQLiteConn) error {
+			conn.RegisterUpdateHook(hook)
+			return nil
+		})
+	}
+	if len(hooks) > 0 {
+		return db.OpenWithHooks(path, hooks...)
+	}
+	return sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=on")
+}
+
 // SetDBHookFactory sets a factory function for creating SQLite update hooks
 // on per-user plugin databases.
 func (r *Registry) SetDBHookFactory(f func(username, pluginID string) func(int, string, string, int64)) {
 	r.dbHookFactory = f
+}
+
+// SetConnectHooks sets hooks applied to every new SQLite connection opened
+// by the registry (e.g. clock override for tests).
+func (r *Registry) SetConnectHooks(hooks ...db.ConnectHook) {
+	r.connectHooks = hooks
 }
 
 // SetMountResolver sets an optional mount resolver for path resolution.
@@ -382,7 +396,7 @@ func (r *Registry) RootDB(pluginID string) (*sql.DB, error) {
 	}
 
 	dbPath := filepath.Join(dir, "root.db")
-	rdb, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_foreign_keys=on")
+	rdb, err := r.openDB(dbPath, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("open root db %s: %w", dbPath, err)
 	}

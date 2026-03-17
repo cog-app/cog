@@ -85,7 +85,7 @@ func TestGetByTokenExpired(t *testing.T) {
 	env := cogtest.New(t)
 	owner := env.CreateUser(t, "owner", "pass")
 
-	past := time.Now().Add(-1 * time.Hour).Unix()
+	past := env.Clock.Now().Add(-1 * time.Hour).Unix()
 	rec, err := env.Providers.Shares.CreatePublicLink(owner.ID, "files:file", "res1", plugin.PermRead, &past)
 	require.NoError(t, err)
 
@@ -139,7 +139,7 @@ func TestCheckAccessExpired(t *testing.T) {
 	owner := env.CreateUser(t, "owner", "pass")
 	target := env.CreateUser(t, "target", "pass")
 
-	past := time.Now().Add(-1 * time.Hour).Unix()
+	past := env.Clock.Now().Add(-1 * time.Hour).Unix()
 	rec, err := env.Providers.Shares.Create(owner.ID, "files:file", "res1", "USER", target.ID, plugin.PermRead)
 	require.NoError(t, err)
 

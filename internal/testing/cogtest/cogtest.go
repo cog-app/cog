@@ -6,7 +6,6 @@ package cogtest
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -77,7 +76,9 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	// Plain ":memory:" gives each connection its own empty database, which breaks
 	// browser tests where Chrome goroutines open concurrent connections.
 	dbName := url.PathEscape(t.Name())
-	sysDB, err := sql.Open("sqlite3", "file:"+dbName+"?mode=memory&cache=shared&_journal_mode=WAL&_foreign_keys=on")
+	tc := clock.NewTest(time.Date(2026, time.March, 14, 6, 0, 0, 0, time.Local))
+	clockHook := db.ClockHook(func() int64 { return tc.Now().Unix() })
+	sysDB, err := db.OpenWithHooks("file:"+dbName+"?mode=memory&cache=shared", clockHook)
 	if err != nil {
 		t.Fatalf("cogtest: open db: %v", err)
 	}
@@ -99,8 +100,10 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	}
 
 	log := slog.New(slog.NewTextHandler(t.Output(), nil))
-	tc := clock.NewTest(time.Now())
 	p := services.NewFromDB(log, cfg, sysDB, tc.Clock(), plugins...)
+
+	// Override unixepoch() in all per-user plugin DBs too.
+	p.Plugins.SetConnectHooks(clockHook)
 
 	// Wire search manager for tests (uses temp dir, no hooks).
 	mgr := search.NewManager(log, dataDir)
