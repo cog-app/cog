@@ -67,6 +67,9 @@ type Env struct {
 	http.Handler
 }
 
+// Now returns the current virtual time from the test clock.
+func (e *Env) Now() time.Time { return e.Clock.Now() }
+
 // New creates a fresh test environment with an in-memory DB and temp data dir.
 // The returned Client routes requests through the server handler directly.
 func New(t testing.TB, plugins ...plugin.Plugin) *Env {

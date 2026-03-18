@@ -5,10 +5,12 @@
 package webtest
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
@@ -17,7 +19,8 @@ import (
 
 // Engine manages a test HTTP server and a shared Chrome process.
 type Engine struct {
-	handler http.Handler
+	handler      http.Handler
+	dateOverride string // ISO date injected as JS Date override
 
 	mu       sync.Mutex
 	server   *httptest.Server
@@ -27,8 +30,15 @@ type Engine struct {
 }
 
 // New creates an Engine that serves the given handler.
+// If the handler implements a Now() time.Time method (e.g. cogtest.Env),
+// the browser's Date object is monkey-patched to return that time.
 func New(handler http.Handler) *Engine {
-	return &Engine{handler: handler}
+	e := &Engine{handler: handler}
+	type clock interface{ Now() time.Time }
+	if c, ok := handler.(clock); ok {
+		e.dateOverride = c.Now().Format(time.RFC3339)
+	}
+	return e
 }
 
 func (e *Engine) start() (*Browser, error) {
@@ -51,6 +61,26 @@ func (e *Engine) start() (*Browser, error) {
 	}
 
 	page.MustSetViewport(1280, 720, 0, false)
+
+	if e.dateOverride != "" {
+		js := fmt.Sprintf(`(() => {
+			const __cogFixedNow = new Date(%q).getTime();
+			const __OrigDate = Date;
+			function CogDate(...args) {
+				if (args.length === 0) return new __OrigDate(__cogFixedNow);
+				return new __OrigDate(...args);
+			}
+			CogDate.prototype = __OrigDate.prototype;
+			CogDate.now = () => __cogFixedNow;
+			CogDate.parse = __OrigDate.parse;
+			CogDate.UTC = __OrigDate.UTC;
+			Date = CogDate;
+		})()`, e.dateOverride)
+		if _, err := page.EvalOnNewDocument(js); err != nil {
+			page.Close()
+			return nil, err
+		}
+	}
 
 	return &Browser{
 		page:    page,
