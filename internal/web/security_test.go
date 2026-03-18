@@ -349,3 +349,29 @@ func TestPublicEndpoints(t *testing.T) {
 	env.Get(t, "/ocs/v2.php/cloud/capabilities?format=json").Status(200)
 	env.Get(t, "/index.php/204").Status(204)
 }
+
+func TestNonAdminCannotAccessAdminVolumes(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass") // first user = admin
+	bob := env.CreateUser(t, "bob", "pass")
+
+	env.Get(t, "/admin/volumes", bob.Auth).Status(403)
+}
+
+func TestNonAdminCannotMutateAdminRoutes(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+	bob := env.CreateUser(t, "bob", "pass")
+	cookie, token := sessionAndCSRF(t, env, bob.ID)
+
+	env.PostForm(t, "/admin/users", url.Values{
+		"csrf_token": {token},
+		"username":   {"evil"},
+		"password":   {"evil"},
+	}, cookie).Status(403)
+
+	env.PostForm(t, "/admin/groups", url.Values{
+		"csrf_token": {token},
+		"name":       {"evil-group"},
+	}, cookie).Status(403)
+}

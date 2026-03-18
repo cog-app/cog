@@ -393,3 +393,141 @@ func TestAdminCreateGroup(t *testing.T) {
 	}
 	require.True(t, found)
 }
+
+// --- Group Member Type ---
+
+func TestGroupUpdateMemberType(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	bob := env.CreateUser(t, "bob", "pass")
+	cookie, token := sessionAndCSRF(t, env, alice.ID)
+
+	grp, err := env.Providers.Groups.Create("team", nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, alice.ID, group.Owner))
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, bob.ID, group.User))
+
+	env.PostForm(t, "/settings/groups/"+grp.ID+"/members/"+bob.ID+"/type", url.Values{
+		"csrf_token":  {token},
+		"member_type": {"OWNER"},
+	}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+
+	// Verify bob is now OWNER.
+	for m, err := range env.Providers.Groups.ListMembers(grp.ID) {
+		require.NoError(t, err)
+		if m.MemberID == bob.ID {
+			require.Equal(t, group.Owner, m.MemberType)
+		}
+	}
+}
+
+// --- Invite Accept ---
+
+func TestAcceptInviteFormAuthenticated(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	bob := env.CreateUser(t, "bob", "pass")
+	cookie, _ := sessionAndCSRF(t, env, bob.ID)
+
+	grp, err := env.Providers.Groups.Create("team", nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, alice.ID, group.Owner))
+
+	inv, err := env.Providers.Invitations.Create(grp.ID, "bob@example.com", alice.ID, 24, group.User)
+	require.NoError(t, err)
+
+	env.Get(t, "/invite/"+inv.Token, cookie).Status(200)
+}
+
+func TestAcceptInviteFormUnauthenticated(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+
+	grp, err := env.Providers.Groups.Create("team", nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, alice.ID, group.Owner))
+
+	inv, err := env.Providers.Invitations.Create(grp.ID, "new@example.com", alice.ID, 24, group.User)
+	require.NoError(t, err)
+
+	env.Get(t, "/invite/"+inv.Token).Status(200)
+}
+
+func TestAcceptInviteAuthenticated(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	bob := env.CreateUser(t, "bob", "pass")
+	cookie, token := sessionAndCSRF(t, env, bob.ID)
+
+	grp, err := env.Providers.Groups.Create("team", nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, alice.ID, group.Owner))
+
+	inv, err := env.Providers.Invitations.Create(grp.ID, "bob@example.com", alice.ID, 24, group.User)
+	require.NoError(t, err)
+
+	env.PostForm(t, "/invite/"+inv.Token, url.Values{
+		"csrf_token": {token},
+	}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+
+	// Bob should now be a member.
+	got, err := env.Providers.Groups.Get(grp.ID)
+	require.NoError(t, err)
+	require.Equal(t, 2, got.MemberCount) // alice + bob
+}
+
+func TestAcceptInviteUnauthenticated(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+
+	grp, err := env.Providers.Groups.Create("team", nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, alice.ID, group.Owner))
+
+	inv, err := env.Providers.Invitations.Create(grp.ID, "new@example.com", alice.ID, 24, group.User)
+	require.NoError(t, err)
+
+	env.PostForm(t, "/invite/"+inv.Token, url.Values{
+		"invite_token": {inv.Token},
+		"username":     {"newuser"},
+		"password":     {"secret"},
+		"confirm":      {"secret"},
+	}, cogtest.StopRedirect).Status(http.StatusSeeOther)
+
+	// New user should exist and be a member.
+	_, err = env.Providers.Users.GetByUsername("newuser")
+	require.NoError(t, err)
+	got, err := env.Providers.Groups.Get(grp.ID)
+	require.NoError(t, err)
+	require.Equal(t, 2, got.MemberCount) // alice + newuser
+}
+
+func TestAcceptInviteExpired(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+
+	grp, err := env.Providers.Groups.Create("team", nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, alice.ID, group.Owner))
+
+	inv, err := env.Providers.Invitations.Create(grp.ID, "x@example.com", alice.ID, 24, group.User)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Invitations.Delete(inv.ID))
+
+	env.Get(t, "/invite/"+inv.Token).Status(404)
+}
+
+// --- Admin Search ---
+
+func TestSearchSystemAdmin(t *testing.T) {
+	env := cogtest.New(t)
+	admin := env.CreateUser(t, "admin", "pass")
+	env.Get(t, "/api/admin/search?q=test", admin.Auth).Status(200)
+}
+
+func TestSearchSystemNonAdmin(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass") // first user = admin
+	bob := env.CreateUser(t, "bob", "pass")
+	env.Get(t, "/api/admin/search?q=test", bob.Auth).Status(403)
+}

@@ -1,9 +1,12 @@
 package web_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/internal/testing/webtest"
@@ -52,4 +55,446 @@ func TestBrowserLoginBadPassword(t *testing.T) {
 	require.True(t, strings.Contains(url, "/login"), "expected to stay on /login, got %s", url)
 	b.Snapshot(t)
 	b.Snapshot(t, webtest.Mobile)
+}
+
+// --- Admin User CRUD ---
+
+func TestBrowserAdminCreateUser(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+
+	// Navigate to new user form.
+	b.Navigate(t, "/admin/users/new")
+	b.WaitVisible(t, `input[name="username"]`)
+
+	// Fill in form and submit.
+	b.Type(t, "#username", "newuser")
+	b.Type(t, "#password", "newpass")
+	b.Click(t, `.btn.btn-primary`)
+
+	// Should redirect to users list showing the new user.
+	b.WaitText(t, "newuser")
+	b.Snapshot(t)
+
+	// Verify user was created.
+	_, err := env.Providers.Users.GetByUsername("newuser")
+	require.NoError(t, err)
+}
+
+func TestBrowserAdminEditUser(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+	target := env.CreateUser(t, "target", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+
+	// Navigate to edit user form.
+	b.Navigate(t, "/admin/users/"+target.ID)
+	b.WaitVisible(t, `input[name="display_name"]`)
+
+	// Update display name.
+	b.Type(t, `input[name="display_name"]`, "Target User")
+	b.Click(t, `form[action*="/admin/users/"] button[type="submit"]`)
+
+	// Should see success flash.
+	b.WaitText(t, "User updated")
+	b.Snapshot(t)
+
+	u, err := env.Providers.Users.GetByID(target.ID)
+	require.NoError(t, err)
+	require.Equal(t, "Target User", u.DisplayName)
+}
+
+func TestBrowserAdminResetPassword(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+	target := env.CreateUser(t, "target", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+
+	b.Navigate(t, "/admin/users/"+target.ID)
+	b.WaitVisible(t, `input[name="new_password"]`)
+
+	b.Type(t, `input[name="new_password"]`, "changed123")
+	b.Click(t, `form[action*="/password"] button[type="submit"]`)
+
+	b.WaitText(t, "Password reset")
+
+	_, err := env.Providers.Users.Authenticate("target", "changed123")
+	require.NoError(t, err)
+}
+
+// --- Admin Groups ---
+
+func TestBrowserAdminCreateGroup(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+
+	b.Navigate(t, "/admin/groups")
+	b.WaitVisible(t, `input[name="name"]`)
+
+	b.Type(t, `input[name="name"]`, "browser-group")
+	b.Submit(t, `input[name="name"]`)
+
+	b.WaitText(t, "browser-group")
+	b.Snapshot(t)
+}
+
+// --- Admin Volumes ---
+
+func TestBrowserAdminCreateVolume(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+
+	b.Navigate(t, "/admin/volumes/new")
+	b.WaitVisible(t, `input[name="name"]`)
+
+	dir := t.TempDir()
+	b.Type(t, `input[name="name"]`, "testvol")
+	b.Type(t, `input[name="uri"]`, "file://"+dir)
+	b.Submit(t, `input[name="uri"]`)
+
+	// Should redirect to volumes list.
+	b.WaitText(t, "testvol")
+	b.Snapshot(t)
+
+	_, err := env.Providers.Volumes.GetByName("testvol")
+	require.NoError(t, err)
+}
+
+func TestBrowserAdminEditVolume(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	dir := t.TempDir()
+	v, err := env.Providers.Volumes.Create("editme", "old desc", "file://"+dir, nil, "{}")
+	require.NoError(t, err)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+
+	b.Navigate(t, "/admin/volumes/"+v.ID)
+	b.WaitVisible(t, `input[name="name"]`)
+
+	b.Type(t, `input[name="name"]`, "renamed")
+	b.Type(t, `input[name="description"]`, "new desc")
+	b.Click(t, `form[action*="/admin/volumes/"] button[type="submit"]`)
+
+	b.WaitText(t, "Volume updated")
+
+	got, err := env.Providers.Volumes.GetByID(v.ID)
+	require.NoError(t, err)
+	require.Equal(t, "renamed", got.Name)
+}
+
+// --- Admin Settings ---
+
+func TestBrowserAdminSettings(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+
+	b.Navigate(t, "/admin/settings")
+	b.WaitVisible(t, `input[name="smtp_host"]`)
+
+	b.Type(t, `input[name="smtp_host"]`, "mail.example.com")
+	b.Type(t, `input[name="smtp_port"]`, "465")
+	b.Type(t, `input[name="smtp_from"]`, "noreply@example.com")
+	b.Click(t, `form[action="/admin/settings"] button[type="submit"]`)
+
+	b.WaitText(t, "Settings saved")
+	b.Snapshot(t)
+}
+
+func TestBrowserAdminLogs(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+
+	b.Navigate(t, "/admin/logs")
+	b.WaitText(t, "Server Logs")
+	b.Snapshot(t)
+}
+
+func TestBrowserAdminPlugins(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+
+	b.Navigate(t, "/admin/plugins")
+	b.WaitText(t, "files")
+	b.Snapshot(t)
+}
+
+// --- Settings Profile ---
+
+func TestBrowserSettingsProfile(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "alice", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "pass")
+
+	b.Navigate(t, "/settings/profile")
+	b.WaitVisible(t, `input[name="display_name"]`)
+
+	b.Type(t, `input[name="display_name"]`, "Alice Wonder")
+	b.Type(t, `input[name="email"]`, "alice@example.com")
+	b.Click(t, `form[action="/settings/profile"] button[type="submit"]`)
+
+	b.WaitText(t, "Profile updated")
+	b.Snapshot(t)
+
+	u, err := env.Providers.Users.GetByUsername("alice")
+	require.NoError(t, err)
+	require.Equal(t, "Alice Wonder", u.DisplayName)
+}
+
+// --- Settings Security ---
+
+func TestBrowserSettingsChangePassword(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "alice", "oldpass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "oldpass")
+
+	b.Navigate(t, "/settings/security")
+	b.WaitVisible(t, `#current_password`)
+
+	b.Type(t, "#current_password", "oldpass")
+	b.Type(t, "#new_password", "newpass")
+	b.Type(t, "#confirm_password", "newpass")
+	b.Click(t, `form[action="/settings/password"] button[type="submit"]`)
+
+	b.WaitText(t, "Password changed")
+
+	_, err := env.Providers.Users.Authenticate("alice", "newpass")
+	require.NoError(t, err)
+}
+
+func TestBrowserSettingsCreateAppPassword(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "pass")
+
+	b.Navigate(t, "/settings/security")
+	b.WaitVisible(t, `form[action="/settings/app-passwords"] input[name="name"]`)
+
+	b.Type(t, `form[action="/settings/app-passwords"] input[name="name"]`, "my-app")
+	b.Click(t, `form[action="/settings/app-passwords"] button[type="submit"]`)
+
+	// Should show the created token.
+	b.WaitVisible(t, ".alert-success")
+	b.Snapshot(t)
+
+	passwords, err := env.Providers.AppPasswords.ListByUser(alice.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(passwords))
+	require.Equal(t, "my-app", passwords[0].Name)
+}
+
+// --- Settings Storage ---
+
+func TestBrowserSettingsStorage(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "alice", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "pass")
+
+	b.Navigate(t, "/settings/storage")
+	b.WaitVisible(t, `input[name="user_path"]`)
+	b.Snapshot(t)
+}
+
+// --- Groups ---
+
+func TestBrowserCreateGroup(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "alice", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "pass")
+
+	b.Navigate(t, "/settings/groups")
+	b.WaitVisible(t, `input[name="name"]`)
+
+	b.Type(t, `input[name="name"]`, "my-team")
+	b.Click(t, `form[action="/settings/groups"] button[type="submit"]`)
+
+	b.WaitText(t, "my-team")
+	b.Snapshot(t)
+}
+
+func TestBrowserGroupDetail(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	env.CreateUser(t, "bob", "pass")
+
+	grp, err := env.Providers.Groups.Create("team", nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, alice.ID, group.Owner))
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "pass")
+
+	b.Navigate(t, "/settings/groups/"+grp.ID)
+	b.WaitText(t, "team")
+	b.WaitText(t, "alice")
+	b.Snapshot(t)
+}
+
+// --- Volume Browser ---
+
+func TestBrowserVolumeBrowse(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+
+	vol, err := env.Providers.Volumes.GetByName("default")
+	require.NoError(t, err)
+
+	// Create some files in the volume.
+	dir := strings.TrimPrefix(vol.URI, "file://")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "docs"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hi"), 0o644))
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+
+	b.Navigate(t, "/volumes/"+vol.ID+"/browse")
+	b.WaitText(t, "docs")
+	b.WaitText(t, "hello.txt")
+	b.Snapshot(t)
+}
+
+func TestBrowserVolumeMkdir(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+
+	vol, err := env.Providers.Volumes.GetByName("default")
+	require.NoError(t, err)
+	dir := strings.TrimPrefix(vol.URI, "file://")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+
+	b.Navigate(t, "/volumes/"+vol.ID+"/browse")
+	b.WaitVisible(t, `input[name="name"]`)
+
+	b.Type(t, `input[name="name"]`, "newdir")
+	b.Click(t, `form[action*="/mkdir"] button[type="submit"]`)
+
+	b.WaitText(t, "newdir")
+
+	info, err := os.Stat(filepath.Join(dir, "newdir"))
+	require.NoError(t, err)
+	require.True(t, info.IsDir())
+}
+
+// --- Invite Flow ---
+
+func TestBrowserAcceptInvite(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+
+	grp, err := env.Providers.Groups.Create("cool-team", nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, alice.ID, group.Owner))
+
+	inv, err := env.Providers.Invitations.Create(grp.ID, "bob@example.com", alice.ID, 24, group.User)
+	require.NoError(t, err)
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	// Unauthenticated user registers via invite.
+	b := eng.Start(t)
+	b.Navigate(t, "/invite/"+inv.Token)
+	b.WaitVisible(t, `#username`)
+
+	b.Type(t, "#username", "bob")
+	b.Type(t, "#password", "secret")
+	b.Type(t, "#confirm", "secret")
+	b.Click(t, `button[type="submit"]`)
+
+	// Should end up on group page as new member.
+	b.WaitText(t, "cool-team")
+	b.Snapshot(t)
+
+	_, err = env.Providers.Users.GetByUsername("bob")
+	require.NoError(t, err)
+	got, err := env.Providers.Groups.Get(grp.ID)
+	require.NoError(t, err)
+	require.Equal(t, 2, got.MemberCount)
 }
