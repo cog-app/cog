@@ -69,6 +69,31 @@ templ photoGrid(media []Media) {
 	</div>
 }
 
+func faceTitle(f Face) string {
+	if f.Name != "" {
+		return f.Name
+	}
+	return "Unknown"
+}
+
+func faceBoxStyle(f Face) string {
+	return fmt.Sprintf(
+		"position:absolute;left:%.2f%%;top:%.2f%%;width:%.2f%%;height:%.2f%%;border:2px solid rgba(255,255,255,0.5);border-radius:2px;pointer-events:auto;transition:border-color 0.15s",
+		f.X*100, f.Y*100, f.W*100, f.H*100,
+	)
+}
+
+func overlayBoxStyle(o FaceOverlay) string {
+	border := "2px solid rgba(255,255,255,0.3)"
+	if o.IsCurrentPerson {
+		border = "2px solid rgba(59,130,246,0.8)"
+	}
+	return fmt.Sprintf(
+		"position:absolute;left:%s;top:%s;width:%s;height:%s;border:%s;border-radius:2px;pointer-events:none",
+		o.Left, o.Top, o.Width, o.Height, border,
+	)
+}
+
 func formatDuration(ms *int64) string {
 	if ms == nil {
 		return ""
@@ -174,7 +199,7 @@ templ albumViewPage(activePath string, album *Album, media []Media, csrfToken st
 }
 
 // --- Photo View Page ---
-templ photoViewPage(activePath string, m *Media, tags []Tag) {
+templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face) {
 	<div class="sidebar-layout">
 		@gallerySidebar(activePath, 0)
 		<div class="sidebar-content">
@@ -185,11 +210,27 @@ templ photoViewPage(activePath string, m *Media, tags []Tag) {
 							<source src={ fmt.Sprintf("/api/files/download?path=%s", m.FilePath) } type={ m.MimeType }/>
 						</video>
 					} else {
-						<img
-							src={ fmt.Sprintf("/apps/gallery/api/media/%d/thumbnail?size=1024", m.ID) }
-							alt={ m.FileName() }
-							style="max-width:100%;border-radius:4px"
-						/>
+						<div style={ fmt.Sprintf("position:relative;max-width:100%%;aspect-ratio:%d/%d", m.Width, m.Height) }>
+							<img
+								src={ fmt.Sprintf("/apps/gallery/api/media/%d/thumbnail?size=1024", m.ID) }
+								alt={ m.FileName() }
+								style="width:100%;height:100%;border-radius:4px;display:block"
+							/>
+							for _, f := range faces {
+								if f.PersonID != nil {
+									<a
+										href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)) }
+										title={ faceTitle(f) }
+										style={ faceBoxStyle(f) }
+									></a>
+								} else {
+									<div
+										title={ faceTitle(f) }
+										style={ faceBoxStyle(f) }
+									></div>
+								}
+							}
+						</div>
 					}
 				</div>
 				<div>
@@ -274,6 +315,21 @@ templ photoViewPage(activePath string, m *Media, tags []Tag) {
 							</div>
 						}
 					}
+					if len(faces) > 0 {
+						@ui.Card("Faces") {
+							<div style="display:flex;flex-wrap:wrap;gap:4px">
+								for _, f := range faces {
+									if f.PersonID != nil {
+										<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)) } class="badge" style="text-decoration:none">
+											{ faceTitle(f) }
+										</a>
+									} else {
+										<span class="badge">Unknown</span>
+									}
+								}
+							</div>
+						}
+					}
 					if strings.TrimSpace(m.OCRText) != "" {
 						@ui.Card("Text (OCR)") {
 							<pre style="white-space:pre-wrap;font-size:0.85rem;margin:0">{ strings.TrimSpace(m.OCRText) }</pre>
@@ -316,7 +372,7 @@ templ peoplePage(activePath string, people []Person) {
 }
 
 // --- Person View Page ---
-templ personViewPage(activePath string, person *Person, media []Media, csrfToken string) {
+templ personViewPage(activePath string, person *Person, media []Media, overlays map[int64][]FaceOverlay, csrfToken string) {
 	<div class="sidebar-layout">
 		@gallerySidebar(activePath, 0)
 		<div class="sidebar-content">
@@ -339,9 +395,40 @@ templ personViewPage(activePath string, person *Person, media []Media, csrfToken
 					<p class="text-muted">No photos of this person.</p>
 				}
 			} else {
-				@photoGrid(media)
+				@personPhotoGrid(media, overlays)
 			}
 		</div>
+	</div>
+}
+
+templ personPhotoGrid(media []Media, overlays map[int64][]FaceOverlay) {
+	<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px">
+		for _, m := range media {
+			<a
+				href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/photo/%d", m.ID)) }
+				style="aspect-ratio:1;overflow:hidden;border-radius:4px;position:relative"
+			>
+				<img
+					src={ fmt.Sprintf("/apps/gallery/api/media/%d/thumbnail?size=256", m.ID) }
+					alt={ m.FileName() }
+					style="width:100%;height:100%;object-fit:cover"
+					loading="lazy"
+				/>
+				for _, o := range overlays[m.ID] {
+					if o.Visible {
+						<div
+							title={ o.Name }
+							style={ overlayBoxStyle(o) }
+						></div>
+					}
+				}
+				if m.IsVideo() {
+					<span style="position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,0.6);color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75rem">
+						{ formatDuration(m.DurationMs) }
+					</span>
+				}
+			</a>
+		}
 	</div>
 }
 
@@ -526,6 +613,19 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 					placeholder="(auto: data dir)"
 				/>
 				<small class="text-muted">Where to store ONNX model files. Leave blank for default.</small>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem" data-backends="pigo onnx">
+				<label>Face Cluster Threshold</label>
+				<input
+					type="number"
+					name="cluster_threshold"
+					class="input"
+					value={ GetSetting(db, "cluster_threshold", "0.35") }
+					step="0.01"
+					min="0.1"
+					max="1.0"
+				/>
+				<small class="text-muted">Cosine distance threshold for face clustering (lower = stricter). Default: 0.35</small>
 			</div>
 			<button type="submit" class="btn btn-primary btn-sm">Save</button>
 		</form>

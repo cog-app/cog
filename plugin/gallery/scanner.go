@@ -133,7 +133,8 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	}
 
 	// Stage 7: Face clustering
-	if err := clusterFaces(galleryDB); err != nil {
+	sysDB, _ := p.SystemDB()
+	if err := clusterFaces(galleryDB, sysDB); err != nil {
 		p.log.Warn("clustering", "user", username, "err", err)
 		warnings = append(warnings, fmt.Sprintf("%s: clustering: %v", username, err))
 	}

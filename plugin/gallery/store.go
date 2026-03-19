@@ -539,6 +539,69 @@ func TagsForMedia(db *sql.DB, mediaID int64) ([]Tag, error) {
 	return tags, rows.Err()
 }
 
+// --- Faces ---
+
+// Face represents a detected face with optional person info for display.
+type Face struct {
+	ID       int64
+	MediaID  int64
+	PersonID *int64
+	Name     string  // person name, "" if unnamed
+	X, Y     float64 // normalized bounding box (0..1)
+	W, H     float64
+}
+
+// FacesForMedia returns all faces detected in a media item.
+func FacesForMedia(db *sql.DB, mediaID int64) ([]Face, error) {
+	rows, err := db.Query(`SELECT f.id, f.media_id, f.person_id, COALESCE(p.name, ''), f.x, f.y, f.w, f.h
+		FROM faces f LEFT JOIN people p ON p.id = f.person_id
+		WHERE f.media_id = ?
+		ORDER BY f.id`, mediaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var faces []Face
+	for rows.Next() {
+		var f Face
+		if err := rows.Scan(&f.ID, &f.MediaID, &f.PersonID, &f.Name, &f.X, &f.Y, &f.W, &f.H); err != nil {
+			return nil, err
+		}
+		faces = append(faces, f)
+	}
+	return faces, rows.Err()
+}
+
+// FacesForMediaBatch returns faces for multiple media items, keyed by media ID.
+func FacesForMediaBatch(db *sql.DB, mediaIDs []int64) (map[int64][]Face, error) {
+	if len(mediaIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(mediaIDs))
+	args := make([]any, len(mediaIDs))
+	for i, id := range mediaIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	rows, err := db.Query(`SELECT f.id, f.media_id, f.person_id, COALESCE(p.name, ''), f.x, f.y, f.w, f.h
+		FROM faces f LEFT JOIN people p ON p.id = f.person_id
+		WHERE f.media_id IN (`+strings.Join(placeholders, ",")+`)
+		ORDER BY f.id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[int64][]Face)
+	for rows.Next() {
+		var f Face
+		if err := rows.Scan(&f.ID, &f.MediaID, &f.PersonID, &f.Name, &f.X, &f.Y, &f.W, &f.H); err != nil {
+			return nil, err
+		}
+		result[f.MediaID] = append(result[f.MediaID], f)
+	}
+	return result, rows.Err()
+}
+
 // --- People ---
 
 // ListPeople returns all visible people with face counts.

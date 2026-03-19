@@ -157,8 +157,11 @@ func TestGalleryPeopleAndTags(t *testing.T) {
 	// Verify tag detail page shows linked media.
 	env.Get(t, "/apps/gallery/tag/groom", alice.Auth).Status(200).Contains("/apps/gallery/photo/")
 
-	// Verify person detail page shows linked media.
-	env.Get(t, "/apps/gallery/person/1", alice.Auth).Status(200).Contains("/apps/gallery/photo/")
+	// Verify person detail page shows linked media and face overlays.
+	env.Get(t, "/apps/gallery/person/1", alice.Auth).Status(200).Contains("/apps/gallery/photo/").Contains("position:absolute")
+
+	// Verify photo detail page shows faces sidebar.
+	env.Get(t, "/apps/gallery/photo/1", alice.Auth).Status(200).Contains("Faces")
 }
 
 func TestGalleryAlbumsPage(t *testing.T) {

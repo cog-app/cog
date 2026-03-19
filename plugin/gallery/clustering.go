@@ -5,14 +5,23 @@ import (
 	"encoding/binary"
 	"log/slog"
 	"math"
+	"strconv"
 )
 
 const (
-	defaultClusterThreshold = 0.6 // cosine distance threshold for face clustering
+	defaultClusterThreshold = 0.35 // cosine distance threshold for face clustering
 )
 
 // clusterFaces assigns unassigned faces to existing people or creates new clusters.
-func clusterFaces(db *sql.DB) error {
+// If sysDB is non-nil, the threshold is read from system settings.
+func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
+	threshold := defaultClusterThreshold
+	if sysDB != nil {
+		if v, err := strconv.ParseFloat(GetSetting(sysDB, "cluster_threshold", "0.35"), 64); err == nil && v > 0 {
+			threshold = v
+		}
+	}
+
 	// Load all existing people centroids.
 	centroids, err := loadPersonCentroids(db)
 	if err != nil {
@@ -50,7 +59,7 @@ func clusterFaces(db *sql.DB) error {
 
 	for _, face := range faces {
 		bestPersonID := int64(0)
-		bestDist := defaultClusterThreshold
+		bestDist := threshold
 
 		// Compare against existing centroids.
 		for personID, centroid := range centroids {

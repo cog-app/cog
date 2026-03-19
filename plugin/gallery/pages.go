@@ -86,8 +86,9 @@ func (h *Pages) PhotoView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tags, _ := TagsForMedia(db, id)
+	faces, _ := FacesForMedia(db, id)
 	plugin.SetTitle(w, m.FileName())
-	photoViewPage(r.URL.Path, m, tags).Render(r.Context(), w)
+	photoViewPage(r.URL.Path, m, tags, faces).Render(r.Context(), w)
 }
 
 // People renders the people/faces view.
@@ -120,8 +121,23 @@ func (h *Pages) PersonView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	media, _ := MediaByPerson(db, id, 200, 0)
+	mediaIDs := make([]int64, len(media))
+	for i := range media {
+		mediaIDs[i] = media[i].ID
+	}
+	facesMap, _ := FacesForMediaBatch(db, mediaIDs)
+	overlays := make(map[int64][]FaceOverlay)
+	for _, m := range media {
+		for _, f := range facesMap[m.ID] {
+			if m.IsVideo() || m.Width == 0 || m.Height == 0 {
+				continue
+			}
+			o := TransformFaceForCover(f, m.Width, m.Height, id)
+			overlays[m.ID] = append(overlays[m.ID], o)
+		}
+	}
 	plugin.SetTitle(w, person.DisplayName())
-	personViewPage(r.URL.Path, person, media, plugin.CSRFToken(r)).Render(r.Context(), w)
+	personViewPage(r.URL.Path, person, media, overlays, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // Tags renders the tag browser.
@@ -462,6 +478,9 @@ func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 	SetSetting(db, "recognition_model", r.FormValue("recognition_model"))
 	SetSetting(db, "onnx_library_path", r.FormValue("onnx_library_path"))
 	SetSetting(db, "onnx_models_dir", r.FormValue("onnx_models_dir"))
+	if v := r.FormValue("cluster_threshold"); v != "" {
+		SetSetting(db, "cluster_threshold", v)
+	}
 	http.Redirect(w, r, "/admin/plugins/gallery", http.StatusSeeOther)
 }
 
