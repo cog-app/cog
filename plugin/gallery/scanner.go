@@ -226,7 +226,7 @@ func (p *Plugin) discoverFiles(ctx context.Context, galleryDB, filesDB *sql.DB, 
 // extractMetadata reads EXIF data from images that haven't been processed yet.
 func (p *Plugin) extractMetadata(ctx context.Context, db *sql.DB, username string) error {
 	// Find media that needs metadata extraction (width == 0 means unprocessed).
-	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media WHERE width = 0 AND height = 0`)
+	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m WHERE m.width = 0 AND m.height = 0`)
 	if err != nil {
 		return err
 	}
@@ -270,8 +270,8 @@ func (p *Plugin) extractOCR(ctx context.Context, db *sql.DB, username string) er
 		return nil
 	}
 
-	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media
-		WHERE ocr_text = '' AND mime_type LIKE 'image/%' AND width > 0
+	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m
+		WHERE m.ocr_text = '' AND m.mime_type LIKE 'image/%' AND m.width > 0
 		LIMIT 50`)
 	if err != nil {
 		return err

@@ -153,6 +153,12 @@ func TestGalleryPeopleAndTags(t *testing.T) {
 	// Check pages render with content.
 	env.Get(t, "/apps/gallery/tags", alice.Auth).Status(200).Contains("groom")
 	env.Get(t, "/apps/gallery/people", alice.Auth).Status(200).Contains("2 photos")
+
+	// Verify tag detail page shows linked media.
+	env.Get(t, "/apps/gallery/tag/groom", alice.Auth).Status(200).Contains("/apps/gallery/photo/")
+
+	// Verify person detail page shows linked media.
+	env.Get(t, "/apps/gallery/person/1", alice.Auth).Status(200).Contains("/apps/gallery/photo/")
 }
 
 func TestGalleryAlbumsPage(t *testing.T) {

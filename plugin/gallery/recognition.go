@@ -107,8 +107,8 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		}
 	}
 
-	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media
-		WHERE recognition_state = 0 AND mime_type LIKE 'image/%'
+	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m
+		WHERE m.recognition_state = 0 AND m.mime_type LIKE 'image/%'
 		LIMIT 50`)
 	if err != nil {
 		return err

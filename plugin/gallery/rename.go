@@ -45,7 +45,7 @@ func PreviewRename(db *sql.DB, pattern string) ([]RenamePreview, error) {
 		return nil, fmt.Errorf("invalid rename pattern: %w", err)
 	}
 
-	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media ORDER BY COALESCE(date_taken, date_indexed)`)
+	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m ORDER BY COALESCE(m.date_taken, m.date_indexed)`)
 	if err != nil {
 		return nil, err
 	}

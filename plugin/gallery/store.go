@@ -134,11 +134,11 @@ func (d *TimelineDay) Date() time.Time {
 	return time.Unix(d.DayID*86400, 0).UTC()
 }
 
-var mediaCols = `id, file_id, file_path, file_etag, mime_type, width, height, orientation,
-	date_taken, date_indexed, latitude, longitude, altitude,
-	camera_make, camera_model, lens_model, focal_length, f_number, exposure_time,
-	iso, flash, duration_ms, video_codec, audio_codec,
-	place_name, country, region, city, recognition_state, recognition_at, ocr_text`
+var mediaCols = `m.id, m.file_id, m.file_path, m.file_etag, m.mime_type, m.width, m.height, m.orientation,
+	m.date_taken, m.date_indexed, m.latitude, m.longitude, m.altitude,
+	m.camera_make, m.camera_model, m.lens_model, m.focal_length, m.f_number, m.exposure_time,
+	m.iso, m.flash, m.duration_ms, m.video_codec, m.audio_codec,
+	m.place_name, m.country, m.region, m.city, m.recognition_state, m.recognition_at, m.ocr_text`
 
 func scanMedia(row interface{ Scan(...any) error }) (*Media, error) {
 	var m Media
@@ -168,20 +168,20 @@ func scanMediaRows(rows *sql.Rows) ([]Media, error) {
 
 // GetMedia returns a single media item by ID.
 func GetMedia(db *sql.DB, id int64) (*Media, error) {
-	row := db.QueryRow(`SELECT `+mediaCols+` FROM media WHERE id = ?`, id)
+	row := db.QueryRow(`SELECT `+mediaCols+` FROM media m WHERE m.id = ?`, id)
 	return scanMedia(row)
 }
 
 // GetMediaByFileID returns a media item by its files plugin file_id.
 func GetMediaByFileID(db *sql.DB, fileID int64) (*Media, error) {
-	row := db.QueryRow(`SELECT `+mediaCols+` FROM media WHERE file_id = ?`, fileID)
+	row := db.QueryRow(`SELECT `+mediaCols+` FROM media m WHERE m.file_id = ?`, fileID)
 	return scanMedia(row)
 }
 
 // RecentMedia returns the most recent media items by date_taken.
 func RecentMedia(db *sql.DB, limit int) ([]Media, error) {
-	rows, err := db.Query(`SELECT `+mediaCols+` FROM media
-		ORDER BY COALESCE(date_taken, date_indexed) DESC LIMIT ?`, limit)
+	rows, err := db.Query(`SELECT `+mediaCols+` FROM media m
+		ORDER BY COALESCE(m.date_taken, m.date_indexed) DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -193,9 +193,9 @@ func RecentMedia(db *sql.DB, limit int) ([]Media, error) {
 func TimelineMedia(db *sql.DB, dayID int64, limit, offset int) ([]Media, error) {
 	start := dayID * 86400
 	end := start + 86400
-	rows, err := db.Query(`SELECT `+mediaCols+` FROM media
-		WHERE COALESCE(date_taken, date_indexed) >= ? AND COALESCE(date_taken, date_indexed) < ?
-		ORDER BY COALESCE(date_taken, date_indexed) DESC LIMIT ? OFFSET ?`,
+	rows, err := db.Query(`SELECT `+mediaCols+` FROM media m
+		WHERE COALESCE(m.date_taken, m.date_indexed) >= ? AND COALESCE(m.date_taken, m.date_indexed) < ?
+		ORDER BY COALESCE(m.date_taken, m.date_indexed) DESC LIMIT ? OFFSET ?`,
 		start, end, limit, offset)
 	if err != nil {
 		return nil, err
@@ -234,9 +234,9 @@ func MediaCount(db *sql.DB) (int, error) {
 
 // VideoMedia returns all video media items.
 func VideoMedia(db *sql.DB, limit, offset int) ([]Media, error) {
-	rows, err := db.Query(`SELECT `+mediaCols+` FROM media
-		WHERE mime_type LIKE 'video/%'
-		ORDER BY COALESCE(date_taken, date_indexed) DESC LIMIT ? OFFSET ?`, limit, offset)
+	rows, err := db.Query(`SELECT `+mediaCols+` FROM media m
+		WHERE m.mime_type LIKE 'video/%'
+		ORDER BY COALESCE(m.date_taken, m.date_indexed) DESC LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		return nil, err
 	}
