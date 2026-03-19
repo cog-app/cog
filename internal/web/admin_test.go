@@ -4,12 +4,14 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
+	"git.duckfam.us/jj-software/cog/internal/web"
 )
 
 func TestSMTPSettingsPersist(t *testing.T) {
@@ -198,4 +200,25 @@ func TestAdminToggleProtectedPlugin(t *testing.T) {
 	env.PostForm(t, "/admin/plugins/files/toggle", url.Values{
 		"csrf_token": {token},
 	}, cookie).Status(400)
+}
+
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		d    time.Duration
+		want string
+	}{
+		{time.Hour, "1h"},
+		{time.Minute + 30*time.Second, "1m 30s"},
+		{24 * time.Hour, "1d"},
+		{365 * 24 * time.Hour, "1y"},
+		{365*24*time.Hour + time.Hour, "1y 1h"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.d.String(), func(t *testing.T) {
+			got := web.FormatDuration(tt.d)
+			if got != tt.want {
+				t.Errorf("FormatDuration() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

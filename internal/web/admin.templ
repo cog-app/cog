@@ -150,8 +150,8 @@ templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHou
 		@ui.Card("Status") {
 			<table class="table">
 				<tbody>
-					<tr><td style="font-weight:600;width:10rem">Instance Uptime</td><td>{ status.InstanceUptime }</td></tr>
-					<tr><td style="font-weight:600">Server Uptime</td><td>{ status.ServerUptime }</td></tr>
+					<tr><td style="font-weight:600;width:10rem">Instance Uptime</td><td>{ FormatDuration(status.InstanceUptime) }</td></tr>
+					<tr><td style="font-weight:600">Server Uptime</td><td>{ FormatDuration(status.ServerUptime) }</td></tr>
 					if status.CommitHash != "" {
 						<tr><td style="font-weight:600">Build</td><td><code>{ status.CommitHash }</code> ({ status.CommitDate.Format(time.RFC3339) })</td></tr>
 					}

@@ -363,6 +363,30 @@ func readServerUptime() time.Duration {
 	return time.Duration(secs * float64(time.Second))
 }
 
+func FormatDuration(d time.Duration) string {
+	secs := int64(d.Seconds())
+	if secs == 0 {
+		return "0s"
+	}
+	var b strings.Builder
+	for _, u := range [...][2]int64{
+		{'y', 365 * 24 * 3600},
+		{'d', 24 * 3600},
+		{'h', 3600},
+		{'m', 60},
+		{'s', 1},
+	} {
+		if v := secs / u[1]; v > 0 {
+			if b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			fmt.Fprintf(&b, "%d%c", v, rune(u[0]))
+			secs %= u[1]
+		}
+	}
+	return b.String()
+}
+
 func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 	pd := pageDataWithNav(r, "Settings", h.p.CSRFSecret, h.p.Plugins)
 	pubReg := h.p.Settings != nil && h.p.Settings.GetBool(settings.KeyPublicRegistration)
