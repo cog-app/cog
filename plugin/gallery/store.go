@@ -461,11 +461,11 @@ func SetAlbumCover(db *sql.DB, albumID, mediaID int64) error {
 
 // ListTags returns all tags with their media counts.
 func ListTags(db *sql.DB) ([]Tag, error) {
-	rows, err := db.Query(`SELECT t.id, t.name, t.tag_type,
-		(SELECT COUNT(*) FROM media_tags mt JOIN media m ON m.id = mt.media_id WHERE mt.tag_id = t.id) AS count
+	rows, err := db.Query(`SELECT id, name, tag_type, cnt FROM (
+		SELECT t.id, t.name, t.tag_type,
+			(SELECT COUNT(*) FROM media_tags mt JOIN media m ON m.id = mt.media_id WHERE mt.tag_id = t.id) AS cnt
 		FROM tags t
-		HAVING count > 0
-		ORDER BY count DESC`)
+	) WHERE cnt > 0 ORDER BY cnt DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -543,11 +543,11 @@ func TagsForMedia(db *sql.DB, mediaID int64) ([]Tag, error) {
 
 // ListPeople returns all visible people with face counts.
 func ListPeople(db *sql.DB) ([]Person, error) {
-	rows, err := db.Query(`SELECT p.id, p.name, p.representative_face_id, p.visible, p.created_at,
-		(SELECT COUNT(*) FROM faces f JOIN media m ON m.id = f.media_id WHERE f.person_id = p.id) AS face_count
+	rows, err := db.Query(`SELECT id, name, representative_face_id, visible, created_at, face_count FROM (
+		SELECT p.id, p.name, p.representative_face_id, p.visible, p.created_at,
+			(SELECT COUNT(*) FROM faces f JOIN media m ON m.id = f.media_id WHERE f.person_id = p.id) AS face_count
 		FROM people p WHERE p.visible = 1
-		HAVING face_count > 0
-		ORDER BY face_count DESC`)
+	) WHERE face_count > 0 ORDER BY face_count DESC`)
 	if err != nil {
 		return nil, err
 	}
