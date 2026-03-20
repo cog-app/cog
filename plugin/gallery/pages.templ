@@ -462,7 +462,7 @@ templ personNameForm(person *Person, csrfToken string) {
 				name="name"
 				value={ person.Name }
 				placeholder="Name this person"
-				class="picker-input input-sm person-name-input"
+				class="form-control search-input person-name-input"
 				autocomplete="off"
 				hx-get={ fmt.Sprintf("/apps/gallery/api/people/search?exclude=%d", person.ID) }
 				hx-trigger="input changed delay:200ms"
