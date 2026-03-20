@@ -112,7 +112,8 @@ type Person struct {
 	RepresentativeFaceID *int64
 	Visible              bool
 	CreatedAt            int64
-	FaceCount            int // populated by list queries
+	FaceCount            int    // populated by list queries
+	BestFaceID           *int64 // face with largest crop area, populated by list queries
 }
 
 // DisplayName returns the person's name or "Unknown" if unnamed.
@@ -602,13 +603,63 @@ func FacesForMediaBatch(db *sql.DB, mediaIDs []int64) (map[int64][]Face, error) 
 	return result, rows.Err()
 }
 
+// FaceWithMedia holds a face and the dimensions of its source media.
+type FaceWithMedia struct {
+	Face
+	MediaWidth  int
+	MediaHeight int
+}
+
+// GetFaceWithMedia returns a face by ID with its source media dimensions.
+func GetFaceWithMedia(db *sql.DB, faceID int64) (*FaceWithMedia, error) {
+	var f FaceWithMedia
+	err := db.QueryRow(`SELECT f.id, f.media_id, f.person_id, COALESCE(p.name, ''), f.x, f.y, f.w, f.h,
+		m.width, m.height
+		FROM faces f JOIN media m ON m.id = f.media_id
+		LEFT JOIN people p ON p.id = f.person_id
+		WHERE f.id = ?`, faceID).Scan(
+		&f.ID, &f.MediaID, &f.PersonID, &f.Name, &f.X, &f.Y, &f.W, &f.H,
+		&f.MediaWidth, &f.MediaHeight)
+	if err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+// FacesByPerson returns all faces for a person, ordered by crop area (largest first).
+func FacesByPerson(db *sql.DB, personID int64, limit, offset int) ([]FaceWithMedia, error) {
+	rows, err := db.Query(`SELECT f.id, f.media_id, f.person_id, COALESCE(p.name, ''), f.x, f.y, f.w, f.h,
+		m.width, m.height
+		FROM faces f JOIN media m ON m.id = f.media_id
+		LEFT JOIN people p ON p.id = f.person_id
+		WHERE f.person_id = ?
+		ORDER BY f.w * m.width * f.h * m.height DESC
+		LIMIT ? OFFSET ?`, personID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var faces []FaceWithMedia
+	for rows.Next() {
+		var f FaceWithMedia
+		if err := rows.Scan(&f.ID, &f.MediaID, &f.PersonID, &f.Name, &f.X, &f.Y, &f.W, &f.H,
+			&f.MediaWidth, &f.MediaHeight); err != nil {
+			return nil, err
+		}
+		faces = append(faces, f)
+	}
+	return faces, rows.Err()
+}
+
 // --- People ---
 
-// ListPeople returns all visible people with face counts.
+// ListPeople returns all visible people with face counts and best face ID.
 func ListPeople(db *sql.DB) ([]Person, error) {
-	rows, err := db.Query(`SELECT id, name, representative_face_id, visible, created_at, face_count FROM (
+	rows, err := db.Query(`SELECT id, name, representative_face_id, visible, created_at, face_count, best_face_id FROM (
 		SELECT p.id, p.name, p.representative_face_id, p.visible, p.created_at,
-			(SELECT COUNT(*) FROM faces f JOIN media m ON m.id = f.media_id WHERE f.person_id = p.id) AS face_count
+			(SELECT COUNT(*) FROM faces f JOIN media m ON m.id = f.media_id WHERE f.person_id = p.id) AS face_count,
+			(SELECT f.id FROM faces f JOIN media m ON m.id = f.media_id
+				WHERE f.person_id = p.id ORDER BY f.w * m.width * f.h * m.height DESC LIMIT 1) AS best_face_id
 		FROM people p WHERE p.visible = 1
 	) WHERE face_count > 0 ORDER BY face_count DESC`)
 	if err != nil {
@@ -619,7 +670,7 @@ func ListPeople(db *sql.DB) ([]Person, error) {
 	for rows.Next() {
 		var person Person
 		if err := rows.Scan(&person.ID, &person.Name, &person.RepresentativeFaceID,
-			&person.Visible, &person.CreatedAt, &person.FaceCount); err != nil {
+			&person.Visible, &person.CreatedAt, &person.FaceCount, &person.BestFaceID); err != nil {
 			return nil, err
 		}
 		people = append(people, person)

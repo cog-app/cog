@@ -1,8 +1,11 @@
 package gallery
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"net/http"
 	"strconv"
 	"time"
@@ -103,7 +106,7 @@ func (h *Pages) People(w http.ResponseWriter, r *http.Request) {
 	peoplePage(r.URL.Path, people).Render(r.Context(), w)
 }
 
-// PersonView renders media for a specific person.
+// PersonView renders faces for a specific person.
 func (h *Pages) PersonView(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
@@ -120,24 +123,9 @@ func (h *Pages) PersonView(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	media, _ := MediaByPerson(db, id, 200, 0)
-	mediaIDs := make([]int64, len(media))
-	for i := range media {
-		mediaIDs[i] = media[i].ID
-	}
-	facesMap, _ := FacesForMediaBatch(db, mediaIDs)
-	overlays := make(map[int64][]FaceOverlay)
-	for _, m := range media {
-		for _, f := range facesMap[m.ID] {
-			if m.IsVideo() || m.Width == 0 || m.Height == 0 {
-				continue
-			}
-			o := TransformFaceForCover(f, m.Width, m.Height, id)
-			overlays[m.ID] = append(overlays[m.ID], o)
-		}
-	}
+	faces, _ := FacesByPerson(db, id, 200, 0)
 	plugin.SetTitle(w, person.DisplayName())
-	personViewPage(r.URL.Path, person, media, overlays, plugin.CSRFToken(r)).Render(r.Context(), w)
+	personViewPage(r.URL.Path, person, faces, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // Tags renders the tag browser.
@@ -262,6 +250,73 @@ func (h *Pages) MediaThumbnail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	http.ServeContent(w, r, "thumbnail.jpg", time.Time{}, f)
+}
+
+// FaceThumbnail serves a cropped face thumbnail from the source media thumbnail.
+func (h *Pages) FaceThumbnail(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	faceID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	face, err := GetFaceWithMedia(db, faceID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	m, err := GetMedia(db, face.MediaID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	username := plugin.Username(r)
+	thumbFile, err := h.plugin.PreviewPath(username, m, 1024)
+	if err != nil {
+		http.Error(w, "thumbnail unavailable", http.StatusNotFound)
+		return
+	}
+	defer thumbFile.Close()
+
+	img, _, err := image.Decode(thumbFile)
+	if err != nil {
+		http.Error(w, "decode error", http.StatusInternalServerError)
+		return
+	}
+
+	// Scale normalized face coords to thumbnail pixel coords with padding.
+	bounds := img.Bounds()
+	imgW := float64(bounds.Dx())
+	imgH := float64(bounds.Dy())
+	fx := face.X * imgW
+	fy := face.Y * imgH
+	fw := face.W * imgW
+	fh := face.H * imgH
+
+	// Add 20% padding.
+	padW := fw * 0.2
+	padH := fh * 0.2
+	x0 := int(max(fx-padW, 0))
+	y0 := int(max(fy-padH, 0))
+	x1 := int(min(fx+fw+padW, imgW))
+	y1 := int(min(fy+fh+padH, imgH))
+
+	cropped := cropImage(img, image.Rect(bounds.Min.X+x0, bounds.Min.Y+y0, bounds.Min.X+x1, bounds.Min.Y+y1))
+
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, cropped, &jpeg.Options{Quality: 85}); err != nil {
+		http.Error(w, "encode error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	http.ServeContent(w, r, "face.jpg", time.Time{}, bytes.NewReader(buf.Bytes()))
 }
 
 // --- Action handlers ---

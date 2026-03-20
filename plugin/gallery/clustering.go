@@ -90,41 +90,48 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 	return nil
 }
 
-// loadPersonCentroids computes the mean embedding across all faces for each person.
+// loadPersonCentroids computes the weighted mean embedding across all faces for
+// each person. Faces from larger crops (more pixels) are weighted more heavily
+// since they produce higher-quality embeddings.
 func loadPersonCentroids(db *sql.DB) (map[int64][]float32, error) {
-	rows, err := db.Query(`SELECT f.person_id, f.embedding FROM faces f
+	rows, err := db.Query(`SELECT f.person_id, f.embedding, f.w * m.width * f.h * m.height
+		FROM faces f JOIN media m ON m.id = f.media_id
 		WHERE f.person_id IS NOT NULL AND f.embedding IS NOT NULL`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	// Accumulate sum and count per person.
+	// Accumulate weighted sum per person.
 	type accumulator struct {
-		sum   []float64
-		count int
+		sum         []float64
+		totalWeight float64
 	}
 	accum := make(map[int64]*accumulator)
 
 	for rows.Next() {
 		var personID int64
 		var blob []byte
-		if err := rows.Scan(&personID, &blob); err != nil {
+		var cropArea float64
+		if err := rows.Scan(&personID, &blob, &cropArea); err != nil {
 			continue
 		}
 		emb := bytesToFloat32Slice(blob)
 		if len(emb) == 0 {
 			continue
 		}
+		// Use sqrt of crop area (i.e. linear face size) as weight so that
+		// very large faces don't completely dominate.
+		weight := math.Sqrt(math.Max(cropArea, 1))
 		a, ok := accum[personID]
 		if !ok {
 			a = &accumulator{sum: make([]float64, len(emb))}
 			accum[personID] = a
 		}
 		for i, v := range emb {
-			a.sum[i] += float64(v)
+			a.sum[i] += float64(v) * weight
 		}
-		a.count++
+		a.totalWeight += weight
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -134,7 +141,7 @@ func loadPersonCentroids(db *sql.DB) (map[int64][]float32, error) {
 	for personID, a := range accum {
 		centroid := make([]float32, len(a.sum))
 		for i, v := range a.sum {
-			centroid[i] = float32(v / float64(a.count))
+			centroid[i] = float32(v / a.totalWeight)
 		}
 		l2normalize(centroid)
 		centroids[personID] = centroid

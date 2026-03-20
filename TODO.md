@@ -8,7 +8,7 @@ These tasks should be completed by Claude. Remove them from the list as they're 
     - Configurable distance in admin area
     - New section in Gallery that lists the duplicate photos, can click to view duplicates
     - From the duplicates view, can select the keep one or unmark one as duplicate
-    - Pre-selects the keep image based on the highest resolution and oldest if there's a tie
+    - Pre-selects the keep image based on the highest resolution and oldest if there's a tie.
     - Includes a button to delete the non-keep duplicates
 - [ ] Multifactor authentication
   - [ ] TOTP tokens
