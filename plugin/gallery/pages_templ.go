@@ -1911,7 +1911,7 @@ func personFaceGrid(personID int64, faces []FaceWithMedia, csrfToken string) tem
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, "\"> <button type=\"submit\" class=\"btn btn-sm\" style=\"padding:2px 6px;font-size:0.75rem;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:3px;cursor:pointer\" title=\"Remove from this person\">×</button></form></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, "\"> <button type=\"submit\" class=\"btn btn-sm\" style=\"min-width:44px;min-height:44px;padding:0;font-size:1.25rem;line-height:1;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:6px;cursor:pointer\" title=\"Remove from this person\">×</button></form></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
