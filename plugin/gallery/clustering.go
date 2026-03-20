@@ -90,17 +90,22 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 	return nil
 }
 
-// loadPersonCentroids loads the representative face embedding for each person.
+// loadPersonCentroids computes the mean embedding across all faces for each person.
 func loadPersonCentroids(db *sql.DB) (map[int64][]float32, error) {
-	rows, err := db.Query(`SELECT p.id, f.embedding FROM people p
-		JOIN faces f ON f.id = p.representative_face_id
-		WHERE f.embedding IS NOT NULL`)
+	rows, err := db.Query(`SELECT f.person_id, f.embedding FROM faces f
+		WHERE f.person_id IS NOT NULL AND f.embedding IS NOT NULL`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	centroids := make(map[int64][]float32)
+	// Accumulate sum and count per person.
+	type accumulator struct {
+		sum   []float64
+		count int
+	}
+	accum := make(map[int64]*accumulator)
+
 	for rows.Next() {
 		var personID int64
 		var blob []byte
@@ -108,11 +113,33 @@ func loadPersonCentroids(db *sql.DB) (map[int64][]float32, error) {
 			continue
 		}
 		emb := bytesToFloat32Slice(blob)
-		if len(emb) > 0 {
-			centroids[personID] = emb
+		if len(emb) == 0 {
+			continue
 		}
+		a, ok := accum[personID]
+		if !ok {
+			a = &accumulator{sum: make([]float64, len(emb))}
+			accum[personID] = a
+		}
+		for i, v := range emb {
+			a.sum[i] += float64(v)
+		}
+		a.count++
 	}
-	return centroids, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	centroids := make(map[int64][]float32, len(accum))
+	for personID, a := range accum {
+		centroid := make([]float32, len(a.sum))
+		for i, v := range a.sum {
+			centroid[i] = float32(v / float64(a.count))
+		}
+		l2normalize(centroid)
+		centroids[personID] = centroid
+	}
+	return centroids, nil
 }
 
 // cosineDistance computes the cosine distance between two vectors (1 - cosine similarity).

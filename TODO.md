@@ -1,5 +1,15 @@
-These tasks should be completed.
+These tasks should be completed by Claude. Remove them from the list as they're completed.
 
+- [ ] Gallery
+  - [ ] Allow seeing and editing detected people/tags.
+  - [ ] Find duplicate photos and allow bulk delete operations
+    - Configurable algorthim/tool in the admin area
+    - Display fingerprint in photo view
+    - Configurable distance in admin area
+    - New section in Gallery that lists the duplicate photos, can click to view duplicates
+    - From the duplicates view, can select the keep one or unmark one as duplicate
+    - Pre-selects the keep image based on the highest resolution and oldest if there's a tie
+    - Includes a button to delete the non-keep duplicates
 - [ ] Multifactor authentication
   - [ ] TOTP tokens
   - [ ] OAuth

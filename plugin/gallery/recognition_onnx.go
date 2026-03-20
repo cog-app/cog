@@ -24,10 +24,13 @@ import (
 // Model download URLs.
 const (
 	mobilenetURL = "https://github.com/onnx/models/raw/main/validated/vision/classification/mobilenet/model/mobilenetv2-12-int8.onnx"
-	arcfaceURL   = "https://github.com/onnx/models/raw/main/validated/vision/body_analysis/arcface/model/arcfaceresnet100-11-int8.onnx"
+	arcfaceURL   = "https://github.com/onnx/models/raw/main/validated/vision/body_analysis/arcface/model/arcfaceresnet100-8.onnx"
 
 	mobilenetFile = "mobilenetv2-12-int8.onnx"
-	arcfaceFile   = "arcfaceresnet100-11-int8.onnx"
+	arcfaceFile   = "arcfaceresnet100-8.onnx"
+
+	// Old int8 model file name, used to detect model change and warn user.
+	arcfaceOldFile = "arcfaceresnet100-11-int8.onnx"
 )
 
 // OnnxBackend uses pigo for face detection, ArcFace ONNX for face embeddings,
@@ -94,6 +97,11 @@ func (b *OnnxBackend) init() {
 			slog.Warn("arcface model unavailable", "err", err)
 		} else {
 			b.hasArcface = true
+			// Warn if old int8 model exists — embeddings are incompatible.
+			oldPath := filepath.Join(b.ModelsDir, arcfaceOldFile)
+			if _, err := os.Stat(oldPath); err == nil {
+				slog.Warn("arcface model upgraded from int8 to float32; existing face embeddings are incompatible — purge recognitions and re-scan for best results")
+			}
 		}
 	})
 }
@@ -327,27 +335,75 @@ func preprocessImage(img image.Image, targetW, targetH int) []float32 {
 	return tensor
 }
 
-// resizeImage performs nearest-neighbor resize.
+// resizeImage performs bilinear interpolation resize.
 func resizeImage(img image.Image, w, h int) image.Image {
 	bounds := img.Bounds()
-	srcW := bounds.Dx()
-	srcH := bounds.Dy()
+	srcW := float64(bounds.Dx())
+	srcH := float64(bounds.Dy())
 
 	dst := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := range h {
 		for x := range w {
-			sx := int(float64(x) * float64(srcW) / float64(w))
-			sy := int(float64(y) * float64(srcH) / float64(h))
-			if sx >= srcW {
-				sx = srcW - 1
-			}
-			if sy >= srcH {
-				sy = srcH - 1
-			}
-			dst.Set(x, y, img.At(bounds.Min.X+sx, bounds.Min.Y+sy))
+			// Map to source coordinates (center of pixel).
+			sx := (float64(x)+0.5)*srcW/float64(w) - 0.5
+			sy := (float64(y)+0.5)*srcH/float64(h) - 0.5
+			dst.Set(x, y, bilinearSample(img, sx, sy, bounds))
 		}
 	}
 	return dst
+}
+
+// bilinearSample interpolates between 4 surrounding pixels at fractional source coordinates.
+func bilinearSample(img image.Image, sx, sy float64, bounds image.Rectangle) color.Color {
+	x0 := int(math.Floor(sx))
+	y0 := int(math.Floor(sy))
+	x1 := x0 + 1
+	y1 := y0 + 1
+
+	// Fractional parts.
+	xf := sx - float64(x0)
+	yf := sy - float64(y0)
+
+	// Clamp to image bounds.
+	clampX := func(x int) int {
+		if x < 0 {
+			return 0
+		}
+		if x >= bounds.Dx() {
+			return bounds.Dx() - 1
+		}
+		return x
+	}
+	clampY := func(y int) int {
+		if y < 0 {
+			return 0
+		}
+		if y >= bounds.Dy() {
+			return bounds.Dy() - 1
+		}
+		return y
+	}
+
+	// Sample 4 corners.
+	r00, g00, b00, a00 := img.At(bounds.Min.X+clampX(x0), bounds.Min.Y+clampY(y0)).RGBA()
+	r10, g10, b10, a10 := img.At(bounds.Min.X+clampX(x1), bounds.Min.Y+clampY(y0)).RGBA()
+	r01, g01, b01, a01 := img.At(bounds.Min.X+clampX(x0), bounds.Min.Y+clampY(y1)).RGBA()
+	r11, g11, b11, a11 := img.At(bounds.Min.X+clampX(x1), bounds.Min.Y+clampY(y1)).RGBA()
+
+	// Bilinear interpolation.
+	lerp := func(v00, v10, v01, v11 uint32) uint8 {
+		top := float64(v00)*(1-xf) + float64(v10)*xf
+		bot := float64(v01)*(1-xf) + float64(v11)*xf
+		v := top*(1-yf) + bot*yf
+		return uint8(v / 256)
+	}
+
+	return color.RGBA{
+		R: lerp(r00, r10, r01, r11),
+		G: lerp(g00, g10, g01, g11),
+		B: lerp(b00, b10, b01, b11),
+		A: lerp(a00, a10, a01, a11),
+	}
 }
 
 // cropImage extracts a sub-region from an image.
