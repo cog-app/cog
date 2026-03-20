@@ -199,7 +199,7 @@ templ albumViewPage(activePath string, album *Album, media []Media, csrfToken st
 }
 
 // --- Photo View Page ---
-templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face) {
+templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face, csrfToken string) {
 	<div class="sidebar-layout">
 		@gallerySidebar(activePath, 0)
 		<div class="sidebar-content">
@@ -306,28 +306,67 @@ templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face) {
 							}
 						</table>
 					}
-					if len(tags) > 0 {
-						@ui.Card("Tags") {
-							<div style="display:flex;flex-wrap:wrap;gap:4px">
-								for _, t := range tags {
-									<span class="badge">{ t.Name }</span>
-								}
-							</div>
-						}
+					@ui.Card("Tags") {
+						<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:0.5rem">
+							for _, t := range tags {
+								<form
+									method="post"
+									action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/remove-tag", m.ID)) }
+									style="display:inline"
+								>
+									<input type="hidden" name="csrf_token" value={ csrfToken }/>
+									<input type="hidden" name="tag_id" value={ strconv.FormatInt(t.ID, 10) }/>
+									<button type="submit" class="badge" style="cursor:pointer;border:none;background:var(--color-bg-secondary)" title="Remove tag">
+										{ t.Name } ×
+									</button>
+								</form>
+							}
+						</div>
+						<form
+							method="post"
+							action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/tags", m.ID)) }
+							style="display:flex;gap:4px"
+						>
+							<input type="hidden" name="csrf_token" value={ csrfToken }/>
+							<input type="text" name="tag_name" placeholder="Add tag..." class="input input-sm" style="flex:1"/>
+							<button type="submit" class="btn btn-sm">Add</button>
+						</form>
 					}
-					if len(faces) > 0 {
-						@ui.Card("Faces") {
+					@ui.Card("Faces") {
+						if len(faces) > 0 {
 							<div style="display:flex;flex-wrap:wrap;gap:4px">
 								for _, f := range faces {
-									if f.PersonID != nil {
-										<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)) } class="badge" style="text-decoration:none">
-											{ faceTitle(f) }
-										</a>
-									} else {
-										<span class="badge">Unknown</span>
-									}
+									<div style="display:flex;align-items:center;gap:2px">
+										if f.PersonID != nil {
+											<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)) } class="badge" style="text-decoration:none">
+												{ faceTitle(f) }
+											</a>
+										} else {
+											<form
+												method="post"
+												action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/faces/%d/new-person", f.ID)) }
+												style="display:inline"
+											>
+												<input type="hidden" name="csrf_token" value={ csrfToken }/>
+												<button type="submit" class="badge" style="cursor:pointer;border:none;background:var(--color-bg-secondary)" title="Create person from this face">
+													Unknown +
+												</button>
+											</form>
+										}
+										<form
+											method="post"
+											action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/delete-face", m.ID)) }
+											style="display:inline"
+										>
+											<input type="hidden" name="csrf_token" value={ csrfToken }/>
+											<input type="hidden" name="face_id" value={ strconv.FormatInt(f.ID, 10) }/>
+											<button type="submit" class="btn btn-sm" style="padding:0 4px;font-size:0.7rem;line-height:1" title="Delete face">×</button>
+										</form>
+									</div>
 								}
 							</div>
+						} else {
+							<p class="text-muted" style="margin:0;font-size:0.85rem">No faces detected.</p>
 						}
 					}
 					if strings.TrimSpace(m.OCRText) != "" {
@@ -387,14 +426,14 @@ templ personViewPage(activePath string, person *Person, faces []FaceWithMedia, c
 			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
 				<h1 style="margin:0">{ person.DisplayName() }</h1>
 				<div class="flex gap-1">
+					@personNameForm(person, csrfToken)
 					<form
 						method="post"
-						action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/name", person.ID)) }
-						style="display:flex;gap:4px"
+						action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/hide", person.ID)) }
+						style="display:inline"
 					>
 						<input type="hidden" name="csrf_token" value={ csrfToken }/>
-						<input type="text" name="name" value={ person.Name } placeholder="Name this person" class="input input-sm"/>
-						<button type="submit" class="btn btn-primary btn-sm">Save</button>
+						<button type="submit" class="btn btn-sm" title="Hide this person">Hide</button>
 					</form>
 				</div>
 			</div>
@@ -403,26 +442,125 @@ templ personViewPage(activePath string, person *Person, faces []FaceWithMedia, c
 					<p class="text-muted">No photos of this person.</p>
 				}
 			} else {
-				@personFaceGrid(faces)
+				@personFaceGrid(person.ID, faces, csrfToken)
 			}
 		</div>
 	</div>
 }
 
-templ personFaceGrid(faces []FaceWithMedia) {
+templ personNameForm(person *Person, csrfToken string) {
+	<form
+		method="post"
+		action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/name", person.ID)) }
+		style="display:flex;gap:4px;position:relative"
+	>
+		<input type="hidden" name="csrf_token" value={ csrfToken }/>
+		<input type="hidden" name="merge_into" value="" class="merge-target"/>
+		<div style="position:relative;flex:1">
+			<input
+				type="text"
+				name="name"
+				value={ person.Name }
+				placeholder="Name this person"
+				class="input input-sm person-name-input"
+				autocomplete="off"
+				hx-get={ fmt.Sprintf("/apps/gallery/api/people/search?exclude=%d", person.ID) }
+				hx-trigger="input changed delay:200ms"
+				hx-target="next .person-search-results"
+			/>
+			<div class="person-search-results" style="position:absolute;top:100%;left:0;right:0;z-index:10;background:var(--color-bg);border:1px solid var(--color-border);border-radius:4px;display:none;max-height:200px;overflow-y:auto"></div>
+		</div>
+		<button type="submit" class="btn btn-primary btn-sm">Save</button>
+		<script>
+		(function() {
+			var form = document.currentScript.parentElement;
+			var input = form.querySelector('.person-name-input');
+			var results = form.querySelector('.person-search-results');
+			var mergeField = form.querySelector('.merge-target');
+
+			// Show results when they have content.
+			var observer = new MutationObserver(function() {
+				results.style.display = results.children.length ? 'block' : 'none';
+			});
+			observer.observe(results, { childList: true });
+
+			// Close when clicking outside.
+			document.addEventListener('click', function(e) {
+				if (!form.contains(e.target)) {
+					results.style.display = 'none';
+					results.innerHTML = '';
+				}
+			});
+
+			// Handle result click — merge into selected person.
+			results.addEventListener('click', function(e) {
+				var opt = e.target.closest('.picker-option');
+				if (!opt) return;
+				mergeField.value = opt.dataset.id;
+				input.value = opt.dataset.name;
+				results.innerHTML = '';
+				results.style.display = 'none';
+			});
+
+			// Clear merge target when user edits name manually.
+			input.addEventListener('input', function() {
+				mergeField.value = '';
+			});
+
+			// Keyboard navigation.
+			input.addEventListener('keydown', function(e) {
+				var opts = results.querySelectorAll('.picker-option');
+				if (!opts.length) return;
+				var cur = results.querySelector('.picker-option.active');
+				var idx = cur ? Array.prototype.indexOf.call(opts, cur) : -1;
+				if (e.key === 'ArrowDown') {
+					e.preventDefault();
+					if (cur) cur.classList.remove('active');
+					idx = (idx + 1) % opts.length;
+					opts[idx].classList.add('active');
+				} else if (e.key === 'ArrowUp') {
+					e.preventDefault();
+					if (cur) cur.classList.remove('active');
+					idx = idx <= 0 ? opts.length - 1 : idx - 1;
+					opts[idx].classList.add('active');
+				} else if (e.key === 'Enter' && cur) {
+					e.preventDefault();
+					cur.click();
+				} else if (e.key === 'Escape') {
+					results.innerHTML = '';
+					results.style.display = 'none';
+				}
+			});
+		})();
+		</script>
+	</form>
+}
+
+templ personFaceGrid(personID int64, faces []FaceWithMedia, csrfToken string) {
 	<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px">
 		for _, f := range faces {
-			<a
-				href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/photo/%d", f.MediaID)) }
-				style="aspect-ratio:1;overflow:hidden;border-radius:4px"
-			>
-				<img
-					src={ fmt.Sprintf("/apps/gallery/api/face/%d/thumbnail", f.ID) }
-					alt=""
-					style="width:100%;height:100%;object-fit:cover"
-					loading="lazy"
-				/>
-			</a>
+			<div style="position:relative">
+				<a
+					href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/photo/%d", f.MediaID)) }
+					style="display:block;aspect-ratio:1;overflow:hidden;border-radius:4px"
+				>
+					<img
+						src={ fmt.Sprintf("/apps/gallery/api/face/%d/thumbnail", f.ID) }
+						alt=""
+						style="width:100%;height:100%;object-fit:cover"
+						loading="lazy"
+					/>
+				</a>
+				<form
+					method="post"
+					action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/remove-face", personID)) }
+					style="position:absolute;top:4px;right:4px"
+				>
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<input type="hidden" name="face_id" value={ strconv.FormatInt(f.ID, 10) }/>
+					<button type="submit" class="btn btn-sm" style="padding:2px 6px;font-size:0.75rem;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:3px;cursor:pointer" title="Remove from this person">×</button>
+				</form>
+			</div>
 		}
 	</div>
 }

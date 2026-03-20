@@ -109,6 +109,8 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAPI("api/media/{id}/thumbnail", http.HandlerFunc(pages.MediaThumbnail))
 	ctx.RegisterAPI("api/face/{id}/thumbnail", http.HandlerFunc(pages.FaceThumbnail))
 	ctx.RegisterAPI("api/scan-status", http.HandlerFunc(pages.ScanStatusPartial))
+	ctx.RegisterAPI("api/tags/search", http.HandlerFunc(pages.SearchTagsAPI))
+	ctx.RegisterAPI("api/people/search", http.HandlerFunc(pages.SearchPeopleAPI))
 
 	ctx.RegisterAction("POST", "albums", http.HandlerFunc(pages.CreateAlbum))
 	ctx.RegisterAction("POST", "albums/{id}/add", http.HandlerFunc(pages.AddToAlbum))
@@ -117,6 +119,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "people/{id}/name", http.HandlerFunc(pages.NamePerson))
 	ctx.RegisterAction("POST", "people/{id}/merge", http.HandlerFunc(pages.MergePeople))
 	ctx.RegisterAction("POST", "people/{id}/hide", http.HandlerFunc(pages.HidePerson))
+	ctx.RegisterAction("POST", "people/{id}/remove-face", http.HandlerFunc(pages.RemoveFaceFromPerson))
+	ctx.RegisterAction("POST", "media/{id}/tags", http.HandlerFunc(pages.AddMediaTagAction))
+	ctx.RegisterAction("POST", "media/{id}/remove-tag", http.HandlerFunc(pages.RemoveMediaTagAction))
+	ctx.RegisterAction("POST", "media/{id}/delete-face", http.HandlerFunc(pages.DeleteFaceAction))
+	ctx.RegisterAction("POST", "faces/{id}/new-person", http.HandlerFunc(pages.CreatePersonFromFaceAction))
 	ctx.RegisterAction("POST", "settings/scan", http.HandlerFunc(pages.TriggerScan))
 	ctx.RegisterAction("POST", "settings/recognition", http.HandlerFunc(pages.SaveRecognitionSettings))
 

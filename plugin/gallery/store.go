@@ -540,6 +540,32 @@ func TagsForMedia(db *sql.DB, mediaID int64) ([]Tag, error) {
 	return tags, rows.Err()
 }
 
+// RemoveMediaTag removes a tag from a media item.
+func RemoveMediaTag(db *sql.DB, mediaID, tagID int64) error {
+	_, err := db.Exec(`DELETE FROM media_tags WHERE media_id = ? AND tag_id = ?`, mediaID, tagID)
+	return err
+}
+
+// SearchTags returns tags matching a query string.
+func SearchTags(db *sql.DB, query string, limit int) ([]Tag, error) {
+	rows, err := db.Query(`SELECT id, name, tag_type, 0 FROM tags
+		WHERE name LIKE '%' || ? || '%'
+		ORDER BY name LIMIT ?`, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tags []Tag
+	for rows.Next() {
+		var t Tag
+		if err := rows.Scan(&t.ID, &t.Name, &t.TagType, &t.Count); err != nil {
+			return nil, err
+		}
+		tags = append(tags, t)
+	}
+	return tags, rows.Err()
+}
+
 // --- Faces ---
 
 // Face represents a detected face with optional person info for display.
@@ -651,7 +677,62 @@ func FacesByPerson(db *sql.DB, personID int64, limit, offset int) ([]FaceWithMed
 	return faces, rows.Err()
 }
 
+// UnassignFace removes a face from its person (sets person_id to NULL).
+func UnassignFace(db *sql.DB, faceID int64) error {
+	_, err := db.Exec(`UPDATE faces SET person_id = NULL WHERE id = ?`, faceID)
+	return err
+}
+
+// DeleteFace removes a face record entirely.
+func DeleteFace(db *sql.DB, faceID int64) error {
+	_, err := db.Exec(`DELETE FROM faces WHERE id = ?`, faceID)
+	return err
+}
+
+// CreatePersonFromFace creates a new unnamed person and assigns the given face to it.
+func CreatePersonFromFace(db *sql.DB, faceID int64) (int64, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`INSERT INTO people (name) VALUES ('')`)
+	if err != nil {
+		return 0, err
+	}
+	personID, _ := res.LastInsertId()
+	if _, err := tx.Exec(`UPDATE faces SET person_id = ? WHERE id = ?`, personID, faceID); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(`UPDATE people SET representative_face_id = ? WHERE id = ?`, faceID, personID); err != nil {
+		return 0, err
+	}
+	return personID, tx.Commit()
+}
+
 // --- People ---
+
+// SearchPeople returns people matching a query string, ordered by face count.
+func SearchPeople(db *sql.DB, query string, excludeID int64, limit int) ([]Person, error) {
+	rows, err := db.Query(`SELECT p.id, p.name,
+		(SELECT COUNT(*) FROM faces f WHERE f.person_id = p.id) AS face_count
+		FROM people p
+		WHERE p.name LIKE '%' || ? || '%' AND p.id != ? AND p.visible = 1
+		ORDER BY face_count DESC LIMIT ?`, query, excludeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var people []Person
+	for rows.Next() {
+		var p Person
+		if err := rows.Scan(&p.ID, &p.Name, &p.FaceCount); err != nil {
+			return nil, err
+		}
+		people = append(people, p)
+	}
+	return people, rows.Err()
+}
 
 // ListPeople returns all visible people with face counts and best face ID.
 func ListPeople(db *sql.DB) ([]Person, error) {

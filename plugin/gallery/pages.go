@@ -8,9 +8,11 @@ import (
 	"image/jpeg"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/ui"
 )
 
 // Pages handles the gallery web UI routes.
@@ -91,7 +93,7 @@ func (h *Pages) PhotoView(w http.ResponseWriter, r *http.Request) {
 	tags, _ := TagsForMedia(db, id)
 	faces, _ := FacesForMedia(db, id)
 	plugin.SetTitle(w, m.FileName())
-	photoViewPage(r.URL.Path, m, tags, faces).Render(r.Context(), w)
+	photoViewPage(r.URL.Path, m, tags, faces, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // People renders the people/faces view.
@@ -420,6 +422,20 @@ func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// If merge_into is set, merge this person into the target.
+	if mergeInto := r.FormValue("merge_into"); mergeInto != "" {
+		targetID, err := strconv.ParseInt(mergeInto, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid merge target", http.StatusBadRequest)
+			return
+		}
+		if err := MergePeopleRows(db, targetID, id); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", targetID), http.StatusSeeOther)
+		return
+	}
 	name := r.FormValue("name")
 	if err := NamePersonRow(db, id, name); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -469,6 +485,164 @@ func (h *Pages) HidePerson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/apps/gallery/people", http.StatusSeeOther)
+}
+
+// RemoveFaceFromPerson unassigns a face from its person.
+func (h *Pages) RemoveFaceFromPerson(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	personID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	faceID, err := strconv.ParseInt(r.FormValue("face_id"), 10, 64)
+	if err != nil {
+		http.Error(w, "face_id required", http.StatusBadRequest)
+		return
+	}
+	if err := UnassignFace(db, faceID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", personID), http.StatusSeeOther)
+}
+
+// AddMediaTagAction adds a tag to a media item.
+func (h *Pages) AddMediaTagAction(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	mediaID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	tagName := strings.TrimSpace(r.FormValue("tag_name"))
+	if tagName == "" {
+		http.Redirect(w, r, fmt.Sprintf("/apps/gallery/photo/%d", mediaID), http.StatusSeeOther)
+		return
+	}
+	tagID, err := UpsertTag(db, tagName, 0)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := AddMediaTag(db, mediaID, tagID, 1.0); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/photo/%d", mediaID), http.StatusSeeOther)
+}
+
+// RemoveMediaTagAction removes a tag from a media item.
+func (h *Pages) RemoveMediaTagAction(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	mediaID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	tagID, err := strconv.ParseInt(r.FormValue("tag_id"), 10, 64)
+	if err != nil {
+		http.Error(w, "tag_id required", http.StatusBadRequest)
+		return
+	}
+	if err := RemoveMediaTag(db, mediaID, tagID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/photo/%d", mediaID), http.StatusSeeOther)
+}
+
+// DeleteFaceAction deletes a face detection from a media item.
+func (h *Pages) DeleteFaceAction(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	mediaID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	faceID, err := strconv.ParseInt(r.FormValue("face_id"), 10, 64)
+	if err != nil {
+		http.Error(w, "face_id required", http.StatusBadRequest)
+		return
+	}
+	if err := DeleteFace(db, faceID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/photo/%d", mediaID), http.StatusSeeOther)
+}
+
+// CreatePersonFromFaceAction creates a new person from a face and redirects to the new person.
+func (h *Pages) CreatePersonFromFaceAction(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	faceID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	personID, err := CreatePersonFromFace(db, faceID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", personID), http.StatusSeeOther)
+}
+
+// SearchTagsAPI returns tag search results as picker options.
+func (h *Pages) SearchTagsAPI(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	q := r.URL.Query().Get("q")
+	tags, _ := SearchTags(db, q, 10)
+	items := make([]ui.PickerItem, len(tags))
+	for i, t := range tags {
+		items[i] = ui.PickerItem{ID: t.Name, Name: t.Name}
+	}
+	ui.PickerResults(items).Render(r.Context(), w)
+}
+
+// SearchPeopleAPI returns people search results as picker options.
+func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	q := r.URL.Query().Get("q")
+	excludeID, _ := strconv.ParseInt(r.URL.Query().Get("exclude"), 10, 64)
+	people, _ := SearchPeople(db, q, excludeID, 10)
+	items := make([]ui.PickerItem, len(people))
+	for i, p := range people {
+		items[i] = ui.PickerItem{
+			ID:   strconv.FormatInt(p.ID, 10),
+			Name: p.DisplayName(),
+			Sub:  fmt.Sprintf("%d faces", p.FaceCount),
+		}
+	}
+	ui.PickerResults(items).Render(r.Context(), w)
 }
 
 // TriggerScan manually triggers a media scan.
