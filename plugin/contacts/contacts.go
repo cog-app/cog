@@ -14,7 +14,7 @@ import (
 
 //go:generate go tool migratesql .
 
-//go:embed sql/schema.sql sql/migration*.sql
+//go:embed sql
 var sqlFS embed.FS
 
 const PluginID = "contacts"

@@ -15,7 +15,7 @@ import (
 
 //go:generate go tool migratesql .
 
-//go:embed sql/schema.sql
+//go:embed sql
 var sqlFS embed.FS
 
 const PluginID = "bookmarks"

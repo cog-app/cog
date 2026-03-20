@@ -9,7 +9,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-//go:embed sql/schema.sql sql/migration*.sql
+//go:embed sql
 var sqlFS embed.FS
 
 // OpenSystem opens the system SQLite database and runs migrations.

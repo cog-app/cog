@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-//go:embed seed/*.md
+//go:embed seed
 var seedFS embed.FS
 
 // Seed creates sample notes for a user demonstrating advanced markdown features.

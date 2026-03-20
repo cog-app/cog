@@ -15,7 +15,7 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
-//go:embed sql/schema.sql
+//go:embed sql
 var sqlFS embed.FS
 
 const PluginID = "dashboard"

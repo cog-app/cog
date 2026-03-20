@@ -21,7 +21,7 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
-//go:embed sql/*
+//go:embed sql
 var sqlFS embed.FS
 
 const PluginID = "gallery"
