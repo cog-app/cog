@@ -452,44 +452,37 @@ templ personNameForm(person *Person, csrfToken string) {
 	<form
 		method="post"
 		action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/name", person.ID)) }
-		style="display:flex;gap:4px;position:relative"
+		style="display:flex;gap:4px"
 	>
 		<input type="hidden" name="csrf_token" value={ csrfToken }/>
 		<input type="hidden" name="merge_into" value="" class="merge-target"/>
-		<div style="position:relative;flex:1">
+		<div class="picker" style="flex:1">
 			<input
 				type="text"
 				name="name"
 				value={ person.Name }
 				placeholder="Name this person"
-				class="input input-sm person-name-input"
+				class="picker-input input-sm person-name-input"
 				autocomplete="off"
 				hx-get={ fmt.Sprintf("/apps/gallery/api/people/search?exclude=%d", person.ID) }
 				hx-trigger="input changed delay:200ms"
-				hx-target="next .person-search-results"
+				hx-target="next .picker-results"
+				hx-include="this"
+				hx-params="name"
 			/>
-			<div class="person-search-results" style="position:absolute;top:100%;left:0;right:0;z-index:10;background:var(--color-bg);border:1px solid var(--color-border);border-radius:4px;display:none;max-height:200px;overflow-y:auto"></div>
+			<div class="picker-results"></div>
 		</div>
 		<button type="submit" class="btn btn-primary btn-sm">Save</button>
 		<script>
 		(function() {
 			var form = document.currentScript.parentElement;
 			var input = form.querySelector('.person-name-input');
-			var results = form.querySelector('.person-search-results');
+			var results = form.querySelector('.picker-results');
 			var mergeField = form.querySelector('.merge-target');
-
-			// Show results when they have content.
-			var observer = new MutationObserver(function() {
-				results.style.display = results.children.length ? 'block' : 'none';
-			});
-			observer.observe(results, { childList: true });
 
 			// Close when clicking outside.
 			document.addEventListener('click', function(e) {
-				if (!form.contains(e.target)) {
-					results.style.display = 'none';
-					results.innerHTML = '';
-				}
+				if (!form.contains(e.target)) results.innerHTML = '';
 			});
 
 			// Handle result click — merge into selected person.
@@ -499,7 +492,6 @@ templ personNameForm(person *Person, csrfToken string) {
 				mergeField.value = opt.dataset.id;
 				input.value = opt.dataset.name;
 				results.innerHTML = '';
-				results.style.display = 'none';
 			});
 
 			// Clear merge target when user edits name manually.
@@ -528,7 +520,6 @@ templ personNameForm(person *Person, csrfToken string) {
 					cur.click();
 				} else if (e.key === 'Escape') {
 					results.innerHTML = '';
-					results.style.display = 'none';
 				}
 			});
 		})();

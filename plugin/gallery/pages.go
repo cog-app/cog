@@ -631,7 +631,10 @@ func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	q := r.URL.Query().Get("q")
+	q := r.URL.Query().Get("name")
+	if q == "" {
+		q = r.URL.Query().Get("q")
+	}
 	excludeID, _ := strconv.ParseInt(r.URL.Query().Get("exclude"), 10, 64)
 	people, _ := SearchPeople(db, q, excludeID, 10)
 	items := make([]ui.PickerItem, len(people))
