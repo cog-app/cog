@@ -27,3 +27,5 @@ These tasks should be completed by Claude. Remove them from the list as they're 
   - [ ] Allow users to install external plugins for themselves
   - [ ] SQLite methods for read_file(), head_file(), file_exists(), file_size()
 - [ ] Audit log activities to table and expose it via WebDAV
+- [ ] Plugin: Deck
+- [ ] Plugin: NextPod
