@@ -1,9 +1,8 @@
 These tasks should be completed by Claude. Remove them from the list as they're completed.
 
 - [ ] Gallery
-  - [ ] Allow seeing and editing detected people/tags.
   - [ ] Find duplicate photos and allow bulk delete operations
-    - Configurable algorthim/tool in the admin area
+    - Configurable algorithm/tool in the admin area
     - Display fingerprint in photo view
     - Configurable distance in admin area
     - New section in Gallery that lists the duplicate photos, can click to view duplicates
@@ -17,6 +16,7 @@ These tasks should be completed by Claude. Remove them from the list as they're 
   - [ ] Session invalidation on password change
 - [ ] Admin
   - [ ] Move email to own settings section and allow configuring Go templates with the layout.
+  - [ ] Create common component for creating/editing a volume to use for admin area and user's volume; make inputs appear based on connection type.
 - [ ] File versioning (git-controlled directories?)
 - [ ] Backup plugin with Restic REST API
 - [ ] Plugin installation and permissions
@@ -26,6 +26,7 @@ These tasks should be completed by Claude. Remove them from the list as they're 
   - [ ] Allow admins to install trusted plugins
   - [ ] Allow users to install external plugins for themselves
   - [ ] SQLite methods for read_file(), head_file(), file_exists(), file_size()
+- [ ] Federate sharing (with NextCloud and Cog)
 - [ ] Audit log activities to table and expose it via WebDAV
 - [ ] Plugin: Deck
 - [ ] Plugin: NextPod

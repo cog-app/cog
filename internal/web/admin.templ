@@ -26,6 +26,7 @@ templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], flash st
 			<table class="table">
 				<thead>
 					<tr>
+						<th style="width:2.5rem"></th>
 						<th>Username</th>
 						<th>Display Name</th>
 						<th>Role</th>
@@ -35,6 +36,7 @@ templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], flash st
 					for u, err := range users {
 						if err == nil {
 							<tr style="cursor:pointer" onclick={ goTo("/admin/users/" + u.ID) }>
+								<td><img src={ u.AvatarURL() } alt="" style="width:2rem;height:2rem;border-radius:50%;vertical-align:middle"/></td>
 								<td>{ u.Username }</td>
 								<td>{ u.DisplayName }</td>
 								<td>
@@ -82,6 +84,9 @@ templ adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind st
 			@ui.Alert(flashKind, flash)
 		}
 		@ui.Card("Profile") {
+			<div style="margin-bottom:1rem">
+				<img src={ u.AvatarURL() } alt="" style="width:4rem;height:4rem;border-radius:50%"/>
+			</div>
 			<form method="post" action={ templ.SafeURL("/admin/users/" + u.ID) }>
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 				@ui.FormField("Display Name", "display_name", "text", u.DisplayName, "")
