@@ -1,7 +1,6 @@
 package web
 
 import (
-	"encoding/json"
 	"errors"
 	"iter"
 	"net/http"
@@ -254,28 +253,20 @@ func (h *settingsHandler) CreateMount(w http.ResponseWriter, r *http.Request) {
 func (h *settingsHandler) CreateVolume(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	name := r.FormValue("name")
-	remoteURL := r.FormValue("remote_url")
-	authType := r.FormValue("auth_type")
-	username := r.FormValue("webdav_username")
-	password := r.FormValue("webdav_password")
-	token := r.FormValue("webdav_token")
-
-	if name == "" || remoteURL == "" {
-		setFlash(w, "error", "Name and remote URL are required.")
+	if name == "" {
+		setFlash(w, "error", "Name is required.")
 		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
 		return
 	}
 
-	cfg := volume.WebDAVConfig{
-		URL:      remoteURL,
-		AuthType: authType,
-		Username: username,
-		Password: password,
-		Token:    token,
+	uri, config, err := buildVolumeURIAndConfig(r)
+	if err != nil {
+		setFlash(w, "error", err.Error())
+		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
+		return
 	}
-	cfgJSON, _ := json.Marshal(cfg)
 
-	_, err := h.p.Volumes.Create(name, "WebDAV volume", "webdav://"+name, &u.ID, string(cfgJSON))
+	_, err = h.p.Volumes.Create(name, "", uri, &u.ID, config)
 	if err != nil {
 		setFlash(w, "error", "Failed to create volume: "+err.Error())
 	} else {

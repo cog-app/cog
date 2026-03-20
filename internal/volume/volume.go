@@ -36,6 +36,24 @@ type Volume struct {
 // IsDefault returns true if this is the system default volume.
 func (v *Volume) IsDefault() bool { return v.Name == DefaultVolumeName }
 
+// Scheme returns the URI scheme ("file", "webdav", "mem") or "" on parse error.
+func (v *Volume) Scheme() string {
+	p, err := ParseURI(v.URI)
+	if err != nil {
+		return ""
+	}
+	return p.Scheme
+}
+
+// URIPath returns the path portion of the URI (host+path) or "" on parse error.
+func (v *Volume) URIPath() string {
+	p, err := ParseURI(v.URI)
+	if err != nil {
+		return ""
+	}
+	return p.Path
+}
+
 // ParsedURI represents a parsed volume URI.
 type ParsedURI struct {
 	Scheme string // "file", "mem", "webdav"
@@ -222,13 +240,16 @@ func (s *Store) ListAccessible(userID string, sharedVolumeIDs []string) iter.Seq
 	}
 }
 
-func (s *Store) Update(id, name, description, uri string) error {
+func (s *Store) Update(id, name, description, uri, config string) error {
 	if _, err := ParseURI(uri); err != nil {
 		return err
 	}
+	if config == "" {
+		config = "{}"
+	}
 	res, err := s.db.Exec(
-		`UPDATE volumes SET name = ?, description = ?, uri = ? WHERE id = ?`,
-		name, description, uri, id,
+		`UPDATE volumes SET name = ?, description = ?, uri = ?, config = ? WHERE id = ?`,
+		name, description, uri, config, id,
 	)
 	if err != nil {
 		return fmt.Errorf("update volume: %w", err)

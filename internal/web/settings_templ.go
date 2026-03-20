@@ -919,48 +919,17 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, " <h4 style=\"margin-top:1rem\">Add WebDAV Volume</h4><form method=\"post\" action=\"/settings/volumes\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, " <h4 style=\"margin-top:1rem\">Add WebDAV Volume</h4>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var45 string
-				templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 249, Col: 63}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = ui.FormField("Name", "name", "text", "", "Unique volume name").Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = ui.FormField("Remote URL", "remote_url", "text", "", "https://nc.example.com/remote.php/dav/files/user").Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "<div class=\"form-group\"><label class=\"form-label\">Auth Type</label> <select class=\"form-control\" name=\"auth_type\" style=\"max-width:200px\"><option value=\"basic\">Basic</option> <option value=\"bearer\">Bearer Token</option></select></div>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = ui.FormField("Username", "webdav_username", "text", "", "For Basic auth").Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = ui.FormField("Password", "webdav_password", "password", "", "For Basic auth").Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = ui.FormField("Token", "webdav_token", "text", "", "For Bearer auth").Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<button class=\"btn btn-primary\" type=\"submit\">Create Volume</button></form>")
+				templ_7745c5c3_Err = volumeForm(volumeFormData{
+					Action:           "/settings/volumes",
+					CSRFToken:        pd.CSRFToken,
+					ConnType:         "webdav",
+					SubmitLabel:      "Create Volume",
+					ShowTypeSelector: false,
+				}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

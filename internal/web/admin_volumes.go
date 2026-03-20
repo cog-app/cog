@@ -1,8 +1,13 @@
 package web
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -35,15 +40,20 @@ func (h *adminVolumeHandler) NewVolumeForm(w http.ResponseWriter, r *http.Reques
 
 func (h *adminVolumeHandler) CreateVolume(w http.ResponseWriter, r *http.Request) {
 	name := r.FormValue("name")
-	uri := r.FormValue("uri")
-
-	if name == "" || uri == "" {
-		setFlash(w, "error", "Name and URI are required.")
+	if name == "" {
+		setFlash(w, "error", "Name is required.")
 		http.Redirect(w, r, "/admin/volumes/new", http.StatusSeeOther)
 		return
 	}
 
-	_, err := h.p.Volumes.Create(name, r.FormValue("description"), uri, nil, "{}")
+	uri, config, err := buildVolumeURIAndConfig(r)
+	if err != nil {
+		setFlash(w, "error", err.Error())
+		http.Redirect(w, r, "/admin/volumes/new", http.StatusSeeOther)
+		return
+	}
+
+	_, err = h.p.Volumes.Create(name, r.FormValue("description"), uri, nil, config)
 	if err != nil {
 		setFlash(w, "error", "Failed to create volume: "+err.Error())
 		http.Redirect(w, r, "/admin/volumes/new", http.StatusSeeOther)
@@ -60,6 +70,25 @@ func (h *adminVolumeHandler) EditVolumeForm(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		http.NotFound(w, r)
 		return
+	}
+
+	// Build form data from existing volume.
+	fd := volumeFormData{
+		Action:           "/admin/volumes/" + v.ID,
+		CSRFToken:        pd.CSRFToken,
+		Name:             v.Name,
+		Description:      v.Description,
+		ConnType:         v.Scheme(),
+		SubmitLabel:      "Save",
+		ShowTypeSelector: true,
+		CancelURL:        "/admin/volumes",
+	}
+	if fd.ConnType == "file" {
+		fd.FilePath = v.URIPath()
+	} else if fd.ConnType == "webdav" {
+		if cfg, err := volume.ParseWebDAVConfig(v.Config); err == nil {
+			fd.WebDAV = *cfg
+		}
 	}
 
 	// Load shares for the volume.
@@ -85,7 +114,7 @@ func (h *adminVolumeHandler) EditVolumeForm(w http.ResponseWriter, r *http.Reque
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminVolumeEditPage(pd, v, v.IsDefault(), shares, defaultPermissionLevels(), quotas, flashMsg, flashKind).Render(r.Context(), w)
+	adminVolumeEditPage(pd, v, fd, v.IsDefault(), shares, defaultPermissionLevels(), quotas, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 func (h *adminVolumeHandler) UpdateVolume(w http.ResponseWriter, r *http.Request) {
@@ -97,9 +126,15 @@ func (h *adminVolumeHandler) UpdateVolume(w http.ResponseWriter, r *http.Request
 
 	name := r.FormValue("name")
 	description := r.FormValue("description")
-	uri := r.FormValue("uri")
 
-	if err := h.p.Volumes.Update(id, name, description, uri); err != nil {
+	uri, config, err := buildVolumeURIAndConfig(r)
+	if err != nil {
+		setFlash(w, "error", err.Error())
+		http.Redirect(w, r, "/admin/volumes/"+id, http.StatusSeeOther)
+		return
+	}
+
+	if err := h.p.Volumes.Update(id, name, description, uri, config); err != nil {
 		setFlash(w, "error", "Failed to update: "+err.Error())
 	} else {
 		setFlash(w, "success", "Volume updated.")
@@ -176,6 +211,98 @@ func (h *adminVolumeHandler) DeleteQuota(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// DirSuggest handles GET /api/admin/dir-suggest?q=/some/path and returns
+// directory completions as picker-style HTML results.
+func (h *adminVolumeHandler) DirSuggest(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("file_path")
+	if q == "" {
+		q = "/"
+	}
+
+	// Determine parent directory and prefix to filter by.
+	dir := q
+	prefix := ""
+	info, err := os.Stat(q)
+	if err != nil || !info.IsDir() {
+		// q is a partial path — list parent and filter by basename prefix.
+		dir = filepath.Dir(q)
+		prefix = filepath.Base(q)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		w.WriteHeader(200)
+		ui.PickerResults(nil).Render(r.Context(), w)
+		return
+	}
+
+	var items []ui.PickerItem
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasPrefix(name, ".") && !strings.HasPrefix(prefix, ".") {
+			continue
+		}
+		if prefix != "" && !strings.HasPrefix(strings.ToLower(name), strings.ToLower(prefix)) {
+			continue
+		}
+		full := filepath.Join(dir, name)
+		items = append(items, ui.PickerItem{
+			ID:   full,
+			Name: full,
+			Sub:  "directory",
+		})
+		if len(items) >= 20 {
+			break
+		}
+	}
+	ui.PickerResults(items).Render(r.Context(), w)
+}
+
+// buildVolumeURIAndConfig parses form fields for connection type and returns the URI and config JSON.
+func buildVolumeURIAndConfig(r *http.Request) (uri, config string, err error) {
+	connType := r.FormValue("conn_type")
+	switch connType {
+	case "file":
+		path := r.FormValue("file_path")
+		if path == "" {
+			return "", "", fmt.Errorf("Path is required for local filesystem volumes.")
+		}
+		if !filepath.IsAbs(path) {
+			return "", "", fmt.Errorf("Path must be absolute (e.g. /mnt/data).")
+		}
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			return "", "", fmt.Errorf("Path does not exist: %s", path)
+		}
+		if !info.IsDir() {
+			return "", "", fmt.Errorf("Path is not a directory: %s", path)
+		}
+		return "file://" + path, "{}", nil
+	case "webdav":
+		remoteURL := r.FormValue("remote_url")
+		if remoteURL == "" {
+			return "", "", fmt.Errorf("Remote URL is required for WebDAV volumes.")
+		}
+		name := r.FormValue("name")
+		cfg := volume.WebDAVConfig{
+			URL:      remoteURL,
+			AuthType: r.FormValue("auth_type"),
+			Username: r.FormValue("webdav_username"),
+			Password: r.FormValue("webdav_password"),
+			Token:    r.FormValue("webdav_token"),
+		}
+		cfgJSON, _ := json.Marshal(cfg)
+		return "webdav://" + name, string(cfgJSON), nil
+	case "mem":
+		return "mem://", "{}", nil
+	default:
+		return "", "", fmt.Errorf("Unknown connection type: %s", connType)
+	}
 }
 
 // quotaDisplayItem holds rendered quota info for templates.

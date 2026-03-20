@@ -110,6 +110,7 @@ func TestSettingsCreateUserVolume(t *testing.T) {
 	env.PostForm(t, "/settings/volumes", url.Values{
 		"csrf_token": {token},
 		"name":       {"my-remote"},
+		"conn_type":  {"webdav"},
 		"remote_url": {"https://dav.example.com/files/"},
 		"auth_type":  {"basic"},
 	}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)

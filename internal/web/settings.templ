@@ -245,22 +245,13 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 				<p class="text-muted">No user-owned volumes.</p>
 			}
 			<h4 style="margin-top:1rem">Add WebDAV Volume</h4>
-			<form method="post" action="/settings/volumes">
-				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				@ui.FormField("Name", "name", "text", "", "Unique volume name")
-				@ui.FormField("Remote URL", "remote_url", "text", "", "https://nc.example.com/remote.php/dav/files/user")
-				<div class="form-group">
-					<label class="form-label">Auth Type</label>
-					<select class="form-control" name="auth_type" style="max-width:200px">
-						<option value="basic">Basic</option>
-						<option value="bearer">Bearer Token</option>
-					</select>
-				</div>
-				@ui.FormField("Username", "webdav_username", "text", "", "For Basic auth")
-				@ui.FormField("Password", "webdav_password", "password", "", "For Basic auth")
-				@ui.FormField("Token", "webdav_token", "text", "", "For Bearer auth")
-				<button class="btn btn-primary" type="submit">Create Volume</button>
-			</form>
+			@volumeForm(volumeFormData{
+				Action:           "/settings/volumes",
+				CSRFToken:        pd.CSRFToken,
+				ConnType:         "webdav",
+				SubmitLabel:      "Create Volume",
+				ShowTypeSelector: false,
+			})
 		}
 	}
 }

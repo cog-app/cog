@@ -177,8 +177,8 @@ func TestBrowserAdminCreateVolume(t *testing.T) {
 
 	dir := t.TempDir()
 	b.Type(t, `input[name="name"]`, "testvol")
-	b.Type(t, `input[name="uri"]`, "file://"+dir)
-	b.Submit(t, `input[name="uri"]`)
+	b.Type(t, `input[name="file_path"]`, dir)
+	b.Submit(t, `input[name="file_path"]`)
 
 	// Should redirect to volumes list.
 	b.WaitText(t, "testvol")

@@ -137,6 +137,7 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("DELETE /admin/volumes/{id}", adminMut(http.HandlerFunc(adminVolH.DeleteVolume)))
 	mux.Handle("POST /admin/volumes/{id}/quotas", adminMut(http.HandlerFunc(adminVolH.SetQuota)))
 	mux.Handle("DELETE /admin/volumes/{id}/quotas/{quota_id}", adminMut(http.HandlerFunc(adminVolH.DeleteQuota)))
+	mux.Handle("GET /api/admin/dir-suggest", adminAuth(http.HandlerFunc(adminVolH.DirSuggest)))
 
 	mux.Handle("GET /admin/settings", adminAuth(http.HandlerFunc(adminH.ShowSettings)))
 	mux.Handle("POST /admin/settings", adminMut(http.HandlerFunc(adminH.UpdateSettings)))

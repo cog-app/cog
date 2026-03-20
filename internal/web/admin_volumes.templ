@@ -54,19 +54,19 @@ templ adminVolumeNewPage(pd ui.PageData, errMsg string) {
 			@ui.Alert("error", errMsg)
 		}
 		@ui.Card("") {
-			<form method="post" action="/admin/volumes">
-				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				@ui.FormField("Name", "name", "text", "", "Unique volume name")
-				@ui.FormField("URI", "uri", "text", "", "e.g. file:///mnt/data")
-				@ui.FormField("Description", "description", "text", "", "Optional description")
-				<button class="btn btn-primary" type="submit">Create Volume</button>
-				<a class="btn btn-outline" href="/admin/volumes" style="margin-left:0.5rem">Cancel</a>
-			</form>
+			@volumeForm(volumeFormData{
+				Action:           "/admin/volumes",
+				CSRFToken:        pd.CSRFToken,
+				ConnType:         "file",
+				SubmitLabel:      "Create Volume",
+				ShowTypeSelector: true,
+				CancelURL:        "/admin/volumes",
+			})
 		}
 	}
 }
 
-templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, isDefault bool, shares []ui.ShareDisplayItem, levels []plugin.PermissionLevel, quotas []quotaDisplayItem, flash string, flashKind string) {
+templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, fd volumeFormData, isDefault bool, shares []ui.ShareDisplayItem, levels []plugin.PermissionLevel, quotas []quotaDisplayItem, flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, "volumes") {
 		<h1 style="margin-bottom:1rem">
 			Edit Volume: { v.Name }
@@ -78,14 +78,7 @@ templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, isDefault bool, shar
 			@ui.Alert(flashKind, flash)
 		}
 		@ui.Card("") {
-			<form method="post" action={ templ.SafeURL("/admin/volumes/" + v.ID) }>
-				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				@ui.FormField("Name", "name", "text", v.Name, "")
-				@ui.FormField("URI", "uri", "text", v.URI, "")
-				@ui.FormField("Description", "description", "text", v.Description, "")
-				<button class="btn btn-primary" type="submit">Save</button>
-				<a class="btn btn-outline" href="/admin/volumes" style="margin-left:0.5rem">Back</a>
-			</form>
+			@volumeForm(fd)
 		}
 		@ui.Card("Sharing") {
 			@adminSharePanel(v.ID, pd.CSRFToken, shares, levels)

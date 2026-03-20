@@ -1,6 +1,12 @@
 These tasks should be completed by Claude. Remove them from the list as they're completed.
 
 - [ ] Gallery
+  - [ ] Show spinner when waiting on generating a thumbnail
+  - [ ] Pre-generate thumbnails during scan
+  - [ ] Show scan status on user's screen
+  - [ ] Allow clicking on the main picture to see a full-sized, zoomable version
+  - [ ] Hide the face boxes until hover on the image
+  - [ ] In the list of faces, show the face preview instead of just the names
   - [ ] Find duplicate photos and allow bulk delete operations
     - Configurable algorithm/tool in the admin area
     - Display fingerprint in photo view
@@ -9,6 +15,7 @@ These tasks should be completed by Claude. Remove them from the list as they're 
     - From the duplicates view, can select the keep one or unmark one as duplicate
     - Pre-selects the keep image based on the highest resolution and oldest if there's a tie.
     - Includes a button to delete the non-keep duplicates
+- [ ] Move testing snapshots to git-lfs
 - [ ] Multifactor authentication
   - [ ] TOTP tokens
   - [ ] OAuth
@@ -17,7 +24,12 @@ These tasks should be completed by Claude. Remove them from the list as they're 
 - [ ] Admin
   - [ ] Move email to own settings section and allow configuring Go templates with the layout.
   - [ ] Create common component for creating/editing a volume to use for admin area and user's volume; make inputs appear based on connection type.
-- [ ] File versioning (git-controlled directories?)
+- [ ] Handle zip/tar files
+  - Allow browsing the contents like a regular folder (updates for zip)
+  - Allow extracting contents
+- [ ] File versioning
+  - git-tracked files/directories
+  - all files are ignored by default, unless tracking is enabled
 - [ ] Backup plugin with Restic REST API
 - [ ] Plugin installation and permissions
   - [ ] Enforce DB_SANDBOX, DB_READ, FS_READ, ROUTE_GLOBAL_BIND, etc
@@ -27,6 +39,7 @@ These tasks should be completed by Claude. Remove them from the list as they're 
   - [ ] Allow users to install external plugins for themselves
   - [ ] SQLite methods for read_file(), head_file(), file_exists(), file_size()
 - [ ] Federate sharing (with NextCloud and Cog)
+- [ ] Allow import from NextCloud via API (for individual user) / Database (for instance)
 - [ ] Audit log activities to table and expose it via WebDAV
 - [ ] Plugin: Deck
 - [ ] Plugin: NextPod
