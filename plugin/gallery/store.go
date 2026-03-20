@@ -677,12 +677,6 @@ func FacesByPerson(db *sql.DB, personID int64, limit, offset int) ([]FaceWithMed
 	return faces, rows.Err()
 }
 
-// UnassignFace removes a face from its person (sets person_id to NULL).
-func UnassignFace(db *sql.DB, faceID int64) error {
-	_, err := db.Exec(`UPDATE faces SET person_id = NULL WHERE id = ?`, faceID)
-	return err
-}
-
 // DeleteFace removes a face record entirely.
 func DeleteFace(db *sql.DB, faceID int64) error {
 	_, err := db.Exec(`DELETE FROM faces WHERE id = ?`, faceID)

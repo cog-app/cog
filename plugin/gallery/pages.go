@@ -487,7 +487,7 @@ func (h *Pages) HidePerson(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/apps/gallery/people", http.StatusSeeOther)
 }
 
-// RemoveFaceFromPerson unassigns a face from its person.
+// RemoveFaceFromPerson moves a face to a new person so it can be merged elsewhere.
 func (h *Pages) RemoveFaceFromPerson(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
@@ -504,7 +504,7 @@ func (h *Pages) RemoveFaceFromPerson(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "face_id required", http.StatusBadRequest)
 		return
 	}
-	if err := UnassignFace(db, faceID); err != nil {
+	if _, err := CreatePersonFromFace(db, faceID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
