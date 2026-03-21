@@ -30,31 +30,39 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 	}
 
 	// Load recent face embeddings per person for chain matching (bridge effect).
-	// This helps match aging faces that don't match the centroid but do match
-	// recent photos of the same person.
 	recentFaces, err := loadRecentFaces(db, 5)
 	if err != nil {
 		return err
 	}
 
-	// Get unassigned faces with embeddings.
-	rows, err := db.Query(`SELECT id, media_id, embedding FROM faces
-		WHERE person_id IS NULL AND embedding IS NOT NULL`)
+	// Load inferred birth years for age-based disambiguation.
+	birthYears, err := loadPersonBirthYears(db)
+	if err != nil {
+		return err
+	}
+
+	// Get unassigned faces with embeddings, age estimates, and photo dates.
+	rows, err := db.Query(`SELECT f.id, f.media_id, f.embedding, f.estimated_age,
+		COALESCE(m.date_taken, m.date_indexed)
+		FROM faces f JOIN media m ON m.id = f.media_id
+		WHERE f.person_id IS NULL AND f.embedding IS NOT NULL`)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
 	type unassignedFace struct {
-		id        int64
-		mediaID   int64
-		embedding []float32
+		id           int64
+		mediaID      int64
+		embedding    []float32
+		estimatedAge float64
+		photoDate    int64
 	}
 	var faces []unassignedFace
 	for rows.Next() {
 		var f unassignedFace
 		var blob []byte
-		if err := rows.Scan(&f.id, &f.mediaID, &blob); err != nil {
+		if err := rows.Scan(&f.id, &f.mediaID, &blob, &f.estimatedAge, &f.photoDate); err != nil {
 			continue
 		}
 		f.embedding = bytesToFloat32Slice(blob)
@@ -70,9 +78,10 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 		bestPersonID := int64(0)
 		bestDist := threshold
 
-		// Compare against existing centroids.
+		// Compare against existing centroids with age penalty.
 		for personID, centroid := range centroids {
 			dist := cosineDistance(face.embedding, centroid)
+			dist += agePenalty(face.estimatedAge, face.photoDate, birthYears[personID])
 			if dist < bestDist {
 				bestDist = dist
 				bestPersonID = personID
@@ -80,11 +89,11 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 		}
 
 		// Chain matching: if centroid didn't match, try recent faces.
-		// This bridges the gap for aging faces.
 		if bestPersonID == 0 {
 			for personID, recent := range recentFaces {
 				for _, emb := range recent {
 					dist := cosineDistance(face.embedding, emb)
+					dist += agePenalty(face.estimatedAge, face.photoDate, birthYears[personID])
 					if dist < bestDist {
 						bestDist = dist
 						bestPersonID = personID
@@ -236,6 +245,48 @@ func loadRecentFaces(db *sql.DB, k int) (map[int64][][]float32, error) {
 		}
 	}
 	return result, rows.Err()
+}
+
+// loadPersonBirthYears infers a birth year for each person by averaging
+// (photo_year - estimated_age) across all their faces with age estimates.
+func loadPersonBirthYears(db *sql.DB) (map[int64]float64, error) {
+	rows, err := db.Query(`SELECT f.person_id,
+		AVG(CAST(COALESCE(m.date_taken, m.date_indexed) AS REAL) / 31557600.0 + 1970 - f.estimated_age)
+		FROM faces f JOIN media m ON m.id = f.media_id
+		WHERE f.person_id IS NOT NULL AND f.estimated_age >= 0
+		GROUP BY f.person_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64]float64)
+	for rows.Next() {
+		var personID int64
+		var birthYear float64
+		if err := rows.Scan(&personID, &birthYear); err != nil {
+			continue
+		}
+		result[personID] = birthYear
+	}
+	return result, rows.Err()
+}
+
+// agePenalty computes a distance penalty when the face's estimated age doesn't match
+// the person's expected age at the photo's date. Returns 0 when age data is unavailable
+// or the mismatch is within tolerance.
+func agePenalty(estimatedAge float64, photoDate int64, birthYear float64) float64 {
+	if estimatedAge < 0 || birthYear == 0 {
+		return 0
+	}
+	photoYear := float64(photoDate)/31557600.0 + 1970
+	expectedAge := photoYear - birthYear
+	ageError := math.Abs(estimatedAge - expectedAge)
+	// 5-year tolerance for estimation noise, then 0.02 penalty per year beyond that.
+	if ageError <= 5 {
+		return 0
+	}
+	return (ageError - 5) * 0.02
 }
 
 // cosineDistance computes the cosine distance between two vectors (1 - cosine similarity).

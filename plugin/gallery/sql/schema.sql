@@ -96,7 +96,8 @@ CREATE TABLE IF NOT EXISTS faces (
     w REAL NOT NULL,
     h REAL NOT NULL,
     embedding BLOB,
-    confidence REAL NOT NULL DEFAULT 0.0
+    confidence REAL NOT NULL DEFAULT 0.0,
+    estimated_age REAL NOT NULL DEFAULT -1
 );
 
 CREATE INDEX IF NOT EXISTS idx_faces_media ON faces(media_id);

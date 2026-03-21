@@ -25,11 +25,13 @@ import (
 const (
 	mobilenetURL = "https://github.com/onnx/models/raw/main/validated/vision/classification/mobilenet/model/mobilenetv2-12-int8.onnx"
 	arcfaceURL   = "https://github.com/onnx/models/raw/main/validated/vision/body_analysis/arcface/model/arcfaceresnet100-8.onnx"
-	scrfdURL     = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/det_10g.onnx"
+	scrfdURL      = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/det_10g.onnx"
+	genderageURL  = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/genderage.onnx"
 
-	mobilenetFile = "mobilenetv2-12-int8.onnx"
-	arcfaceFile   = "arcfaceresnet100-8.onnx"
-	scrfdFile     = "det_10g.onnx"
+	mobilenetFile  = "mobilenetv2-12-int8.onnx"
+	arcfaceFile    = "arcfaceresnet100-8.onnx"
+	scrfdFile      = "det_10g.onnx"
+	genderageFile  = "genderage.onnx"
 
 	// Old int8 model file name, used to detect model change and warn user.
 	arcfaceOldFile = "arcfaceresnet100-11-int8.onnx"
@@ -65,8 +67,9 @@ type OnnxBackend struct {
 	once       sync.Once
 	initErr    error
 	pigo       *PigoBackend
-	hasArcface bool
-	hasSCRFD   bool
+	hasArcface   bool
+	hasSCRFD     bool
+	hasGenderage bool
 }
 
 func (b *OnnxBackend) Name() string { return "ONNX (local)" }
@@ -134,6 +137,14 @@ func (b *OnnxBackend) init() {
 			slog.Warn("scrfd model unavailable, using pigo fallback", "err", err)
 		} else {
 			b.hasSCRFD = true
+		}
+
+		// Genderage model for age estimation (helps disambiguate similar-looking siblings).
+		genderagePath := filepath.Join(b.ModelsDir, genderageFile)
+		if err := ensureModel(genderagePath, genderageURL); err != nil {
+			slog.Warn("genderage model unavailable, age estimation disabled", "err", err)
+		} else {
+			b.hasGenderage = true
 		}
 	})
 }
@@ -220,15 +231,33 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 		}
 	}
 
-	// Compute ArcFace embeddings for detected faces.
-	if b.hasArcface {
-		for i := range detectedFaces {
-			embedding, err := b.computeFaceEmbedding(img, &detectedFaces[i])
+	// Compute embeddings and age estimates for detected faces.
+	for i := range detectedFaces {
+		face := &detectedFaces[i]
+		face.EstimatedAge = -1
+
+		// Compute alignment once (used by both ArcFace and genderage).
+		var aligned image.Image
+		if len(face.Landmarks) == 5 {
+			aligned = alignFace(img, face.Landmarks)
+		}
+
+		if b.hasArcface {
+			embedding, err := b.computeFaceEmbedding(aligned, img, face)
 			if err != nil {
 				slog.Warn("onnx arcface", "err", err)
-				continue
+			} else {
+				face.Embedding = embedding
 			}
-			detectedFaces[i].Embedding = embedding
+		}
+
+		if b.hasGenderage && aligned != nil {
+			age, err := b.estimateAge(aligned)
+			if err != nil {
+				slog.Warn("onnx genderage", "err", err)
+			} else {
+				face.EstimatedAge = age
+			}
 		}
 	}
 	result.Faces = detectedFaces
@@ -299,14 +328,12 @@ func (b *OnnxBackend) classifyImage(img image.Image) ([]RecognizedTag, error) {
 }
 
 // computeFaceEmbedding produces a 512-dim ArcFace embedding for a detected face.
-// When landmarks are available (SCRFD), the face is aligned via similarity transform
-// for significantly better embedding quality. Otherwise falls back to crop+resize.
-func (b *OnnxBackend) computeFaceEmbedding(img image.Image, face *DetectedFace) ([]float32, error) {
+// If aligned is non-nil (pre-computed from landmarks), it's used directly.
+// Otherwise falls back to crop+resize from the full image.
+func (b *OnnxBackend) computeFaceEmbedding(aligned, img image.Image, face *DetectedFace) ([]float32, error) {
 	var data []float32
 
-	if len(face.Landmarks) == 5 {
-		// Aligned path: warp face to canonical 112×112 using landmarks.
-		aligned := alignFace(img, face.Landmarks)
+	if aligned != nil {
 		data = preprocessImage(aligned, 112, 112)
 	} else {
 		// Fallback: crop and resize (Pigo path, no landmarks).
@@ -513,6 +540,44 @@ func l2normalize(v []float32) {
 	for i := range v {
 		v[i] /= norm
 	}
+}
+
+// --- Age estimation ---
+
+// estimateAge runs the genderage model on a 112×112 aligned face and returns estimated age.
+// The model expects 96×96 input, so the aligned face is resized.
+func (b *OnnxBackend) estimateAge(aligned image.Image) (float64, error) {
+	data := preprocessImage(aligned, 96, 96)
+
+	inputTensor, err := ort.NewTensor(ort.NewShape(1, 3, 96, 96), data)
+	if err != nil {
+		return -1, fmt.Errorf("create age input tensor: %w", err)
+	}
+	defer inputTensor.Destroy()
+
+	outputTensor, err := ort.NewEmptyTensor[float32](ort.NewShape(1, 3))
+	if err != nil {
+		return -1, fmt.Errorf("create age output tensor: %w", err)
+	}
+	defer outputTensor.Destroy()
+
+	session, err := ort.NewAdvancedSession(
+		filepath.Join(b.ModelsDir, genderageFile),
+		[]string{"data"}, []string{"fc1"},
+		[]ort.Value{inputTensor}, []ort.Value{outputTensor}, nil)
+	if err != nil {
+		return -1, fmt.Errorf("create genderage session: %w", err)
+	}
+	defer session.Destroy()
+
+	if err := session.Run(); err != nil {
+		return -1, fmt.Errorf("run genderage: %w", err)
+	}
+
+	output := outputTensor.GetData()
+	// output[0] = female logit, output[1] = male logit, output[2] = age/100
+	age := float64(output[2]) * 100
+	return age, nil
 }
 
 // --- SCRFD face detection ---
