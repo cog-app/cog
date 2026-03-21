@@ -117,6 +117,11 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 		p.log.Warn("thumbnails", "user", username, "err", err)
 	}
 
+	// Stage 2.6: Quality scoring (Laplacian sharpness).
+	if err := p.computeQualityScores(ctx, galleryDB, username); err != nil {
+		p.log.Warn("quality scores", "user", username, "err", err)
+	}
+
 	// Stage 2.75: Fingerprint computation for duplicate detection.
 	if err := p.computeFingerprints(ctx, galleryDB, username); err != nil {
 		p.log.Warn("fingerprints", "user", username, "err", err)
@@ -509,6 +514,41 @@ func (p *Plugin) preGenerateThumbnails(ctx context.Context, db *sql.DB, username
 	}
 	if generated > 0 {
 		p.log.Info("thumbnails done", "user", username, "generated", generated)
+	}
+	return nil
+}
+
+// computeQualityScores calculates Laplacian sharpness scores for unscored images.
+func (p *Plugin) computeQualityScores(ctx context.Context, db *sql.DB, username string) error {
+	rows, err := db.Query(`SELECT `+mediaCols+` FROM media m
+		WHERE m.quality_score = -1 AND m.mime_type LIKE 'image/%' AND m.width > 0
+		LIMIT 100`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	items, err := scanMediaRows(rows)
+	if err != nil {
+		return err
+	}
+
+	for i := range items {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		m := &items[i]
+		f, err := p.PreviewPath(username, m, 256)
+		if err != nil {
+			continue
+		}
+		img, _, err := image.Decode(f)
+		f.Close()
+		if err != nil {
+			continue
+		}
+		score := laplacianVariance(img)
+		UpdateQualityScore(db, m.ID, score)
 	}
 	return nil
 }

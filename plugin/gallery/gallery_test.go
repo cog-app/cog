@@ -56,7 +56,8 @@ func TestGalleryTimelineWithMedia(t *testing.T) {
 		recognition_at INTEGER,
 		recognition_error TEXT NOT NULL DEFAULT '',
 		ocr_text TEXT NOT NULL DEFAULT '',
-		fingerprint TEXT NOT NULL DEFAULT ''
+		fingerprint TEXT NOT NULL DEFAULT '',
+		quality_score REAL NOT NULL DEFAULT -1
 	)`)
 	require.NoError(t, err)
 
@@ -106,12 +107,12 @@ func TestGalleryPeopleAndTags(t *testing.T) {
 		country TEXT NOT NULL DEFAULT '', region TEXT NOT NULL DEFAULT '',
 		city TEXT NOT NULL DEFAULT '', recognition_state INTEGER NOT NULL DEFAULT 0,
 		recognition_at INTEGER, recognition_error TEXT NOT NULL DEFAULT '',
-		ocr_text TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL DEFAULT ''
+		ocr_text TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL DEFAULT '', quality_score REAL NOT NULL DEFAULT -1
 	);
 	CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, tag_type INTEGER NOT NULL DEFAULT 0);
 	CREATE TABLE IF NOT EXISTS media_tags (media_id INTEGER NOT NULL, tag_id INTEGER NOT NULL, confidence REAL NOT NULL DEFAULT 1.0, PRIMARY KEY (media_id, tag_id));
 	CREATE TABLE IF NOT EXISTS people (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL DEFAULT '', representative_face_id INTEGER, visible INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL DEFAULT 0);
-	CREATE TABLE IF NOT EXISTS faces (id INTEGER PRIMARY KEY AUTOINCREMENT, media_id INTEGER NOT NULL, person_id INTEGER, x REAL NOT NULL, y REAL NOT NULL, w REAL NOT NULL, h REAL NOT NULL, embedding BLOB, confidence REAL NOT NULL DEFAULT 0.0);
+	CREATE TABLE IF NOT EXISTS faces (id INTEGER PRIMARY KEY AUTOINCREMENT, media_id INTEGER NOT NULL, person_id INTEGER, x REAL NOT NULL, y REAL NOT NULL, w REAL NOT NULL, h REAL NOT NULL, embedding BLOB, confidence REAL NOT NULL DEFAULT 0.0, estimated_age REAL NOT NULL DEFAULT -1);
 	CREATE TABLE IF NOT EXISTS gallery_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS rename_log (id INTEGER PRIMARY KEY AUTOINCREMENT, batch_id INTEGER NOT NULL, file_id INTEGER NOT NULL, old_path TEXT NOT NULL, new_path TEXT NOT NULL, renamed_at INTEGER NOT NULL DEFAULT 0)`)
 	require.NoError(t, err)

@@ -300,6 +300,17 @@ func (p *Plugin) computeFingerprints(ctx context.Context, db *sql.DB, username s
 // --- Duplicate detection ---
 
 // detectDuplicates groups media with similar fingerprints.
+// fpEntry holds media fingerprint data for duplicate detection.
+type fpEntry struct {
+	ID           int64
+	Fingerprint  string
+	Width        int
+	Height       int
+	DateTaken    *int64
+	DateIndexed  int64
+	QualityScore float64
+}
+
 func (p *Plugin) detectDuplicates(db *sql.DB) error {
 	sysDB, err := p.SystemDB()
 	if err != nil {
@@ -317,16 +328,7 @@ func (p *Plugin) detectDuplicates(db *sql.DB) error {
 	}
 
 	// Load all valid fingerprints.
-	type fpEntry struct {
-		ID          int64
-		Fingerprint string
-		Width       int
-		Height      int
-		DateTaken   *int64
-		DateIndexed int64
-	}
-
-	rows, err := db.Query(`SELECT id, fingerprint, width, height, date_taken, date_indexed
+	rows, err := db.Query(`SELECT id, fingerprint, width, height, date_taken, date_indexed, quality_score
 		FROM media WHERE fingerprint != '' AND fingerprint != '-'`)
 	if err != nil {
 		return err
@@ -336,7 +338,7 @@ func (p *Plugin) detectDuplicates(db *sql.DB) error {
 	var entries []fpEntry
 	for rows.Next() {
 		var e fpEntry
-		if err := rows.Scan(&e.ID, &e.Fingerprint, &e.Width, &e.Height, &e.DateTaken, &e.DateIndexed); err != nil {
+		if err := rows.Scan(&e.ID, &e.Fingerprint, &e.Width, &e.Height, &e.DateTaken, &e.DateIndexed, &e.QualityScore); err != nil {
 			return err
 		}
 		entries = append(entries, e)
@@ -417,27 +419,11 @@ func (p *Plugin) detectDuplicates(db *sql.DB) error {
 			continue
 		}
 
-		// Select keep: highest resolution, oldest date as tiebreaker.
+		// Select keep: highest quality, then resolution, then oldest date.
 		keepIdx := members[0]
 		for _, idx := range members[1:] {
-			e := entries[idx]
-			k := entries[keepIdx]
-			ePixels := e.Width * e.Height
-			kPixels := k.Width * k.Height
-			if ePixels > kPixels {
+			if betterKeep(entries[idx], entries[keepIdx]) {
 				keepIdx = idx
-			} else if ePixels == kPixels {
-				eDate := e.DateIndexed
-				if e.DateTaken != nil {
-					eDate = *e.DateTaken
-				}
-				kDate := k.DateIndexed
-				if k.DateTaken != nil {
-					kDate = *k.DateTaken
-				}
-				if eDate < kDate {
-					keepIdx = idx
-				}
 			}
 		}
 
@@ -459,4 +445,69 @@ func (p *Plugin) detectDuplicates(db *sql.DB) error {
 	}
 
 	return nil
+}
+
+// betterKeep returns true if candidate is a better keep choice than current.
+// Prefers: highest quality score → highest resolution → oldest date.
+func betterKeep(candidate, current fpEntry) bool {
+	// Quality score: higher is better, -1 means unscored (worst).
+	cq, kq := candidate.QualityScore, current.QualityScore
+	if cq != kq {
+		return cq > kq
+	}
+	// Resolution tiebreaker.
+	cPx := candidate.Width * candidate.Height
+	kPx := current.Width * current.Height
+	if cPx != kPx {
+		return cPx > kPx
+	}
+	// Oldest date tiebreaker.
+	cDate := candidate.DateIndexed
+	if candidate.DateTaken != nil {
+		cDate = *candidate.DateTaken
+	}
+	kDate := current.DateIndexed
+	if current.DateTaken != nil {
+		kDate = *current.DateTaken
+	}
+	return cDate < kDate
+}
+
+// laplacianVariance computes the variance of the Laplacian-filtered image,
+// a measure of sharpness. Higher values indicate sharper images.
+func laplacianVariance(img image.Image) float64 {
+	bounds := img.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+	if w < 3 || h < 3 {
+		return 0
+	}
+
+	// Apply Laplacian kernel [[0,1,0],[1,-4,1],[0,1,0]] on grayscale.
+	var sum, sumSq float64
+	n := float64((w - 2) * (h - 2))
+	for y := 1; y < h-1; y++ {
+		for x := 1; x < w-1; x++ {
+			c := gray(img, bounds.Min.X+x, bounds.Min.Y+y)
+			u := gray(img, bounds.Min.X+x, bounds.Min.Y+y-1)
+			d := gray(img, bounds.Min.X+x, bounds.Min.Y+y+1)
+			l := gray(img, bounds.Min.X+x-1, bounds.Min.Y+y)
+			r := gray(img, bounds.Min.X+x+1, bounds.Min.Y+y)
+			lap := u + d + l + r - 4*c
+			sum += lap
+			sumSq += lap * lap
+		}
+	}
+	mean := sum / n
+	return sumSq/n - mean*mean
+}
+
+func gray(img image.Image, x, y int) float64 {
+	r, g, b, _ := img.At(x, y).RGBA()
+	return (0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)) / 65535.0
+}
+
+// UpdateQualityScore sets the quality score for a media item.
+func UpdateQualityScore(db *sql.DB, mediaID int64, score float64) error {
+	_, err := db.Exec(`UPDATE media SET quality_score = ? WHERE id = ?`, score, mediaID)
+	return err
 }

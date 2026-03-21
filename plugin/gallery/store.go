@@ -51,6 +51,7 @@ type Media struct {
 	RecognitionAt    *int64
 	OCRText          string
 	Fingerprint      string
+	QualityScore     float64
 }
 
 // IsVideo reports whether this media item is a video.
@@ -141,7 +142,7 @@ var mediaCols = `m.id, m.file_id, m.file_path, m.file_etag, m.mime_type, m.width
 	m.camera_make, m.camera_model, m.lens_model, m.focal_length, m.f_number, m.exposure_time,
 	m.iso, m.flash, m.duration_ms, m.video_codec, m.audio_codec,
 	m.place_name, m.country, m.region, m.city, m.recognition_state, m.recognition_at, m.ocr_text,
-	m.fingerprint`
+	m.fingerprint, m.quality_score`
 
 func scanMedia(row interface{ Scan(...any) error }) (*Media, error) {
 	var m Media
@@ -152,7 +153,7 @@ func scanMedia(row interface{ Scan(...any) error }) (*Media, error) {
 		&m.CameraMake, &m.CameraModel, &m.LensModel, &m.FocalLength, &m.FNumber, &m.ExposureTime,
 		&m.ISO, &m.Flash, &m.DurationMs, &m.VideoCodec, &m.AudioCodec,
 		&m.PlaceName, &m.Country, &m.Region, &m.City, &m.RecognitionState, &m.RecognitionAt,
-		&m.OCRText, &m.Fingerprint,
+		&m.OCRText, &m.Fingerprint, &m.QualityScore,
 	)
 	return &m, err
 }
