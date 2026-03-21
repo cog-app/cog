@@ -891,8 +891,8 @@ func (s *Shell) cdTarget(args []string) string {
 	if target == "~" || target == "-" {
 		return "/files"
 	}
-	if strings.HasPrefix(target, "~/") {
-		return "/files/" + strings.TrimPrefix(target, "~/")
+	if after, ok := strings.CutPrefix(target, "~/"); ok {
+		return "/files/" + after
 	}
 	return target
 }
@@ -1043,13 +1043,14 @@ func (s *Shell) buildPluginCmd(def plugin.CommandDef) *cobra.Command {
 		return cmd
 	}
 
-	use := def.Name
+	var use strings.Builder
+	use.WriteString(def.Name)
 	for _, a := range def.Args {
-		use += " <" + a + ">"
+		use.WriteString(" <" + a + ">")
 	}
 
 	cmd := &cobra.Command{
-		Use:   use,
+		Use:   use.String(),
 		Short: def.Short,
 		Args:  cobra.ExactArgs(len(def.Args)),
 		RunE: func(cmd *cobra.Command, args []string) error {

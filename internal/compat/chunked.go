@@ -173,8 +173,8 @@ func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request
 
 	// Extract the file path from the Destination URL
 	destPath := dest
-	if idx := strings.Index(dest, "/remote.php/dav/files/"); idx >= 0 {
-		rest := dest[idx+len("/remote.php/dav/files/"):]
+	if _, after, ok := strings.Cut(dest, "/remote.php/dav/files/"); ok {
+		rest := after
 		if _, fp, ok := strings.Cut(rest, "/"); ok {
 			destPath = "/" + fp
 		} else {

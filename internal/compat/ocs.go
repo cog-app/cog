@@ -280,10 +280,7 @@ func HandleCurrentUser(quotaFn QuotaFunc) http.HandlerFunc {
 				total = -3
 				quotaVal = -3
 			} else {
-				free = total - used
-				if free < 0 {
-					free = 0
-				}
+				free = max(total-used, 0)
 				quotaVal = total
 				if total > 0 {
 					relative = float64(used) * 100.0 / float64(total)

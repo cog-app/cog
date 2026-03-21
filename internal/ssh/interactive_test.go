@@ -96,17 +96,17 @@ func TestSSHInteractiveShell(t *testing.T) {
 	// collectUntil reads output chunks until the predicate matches or timeout.
 	collectUntil := func(pred func(string) bool, timeout time.Duration, label string) string {
 		t.Helper()
-		var total string
+		var total strings.Builder
 		deadline := time.After(timeout)
 		for {
 			select {
 			case chunk := <-output:
-				total += chunk
-				if pred(total) {
-					return total
+				total.WriteString(chunk)
+				if pred(total.String()) {
+					return total.String()
 				}
 			case <-deadline:
-				t.Fatalf("Timed out waiting for %s; got: %q", label, total)
+				t.Fatalf("Timed out waiting for %s; got: %q", label, total.String())
 			}
 		}
 	}

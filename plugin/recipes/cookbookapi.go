@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
@@ -52,17 +53,17 @@ func (a *CookbookAPI) ListRecipes(w http.ResponseWriter, r *http.Request) {
 	var items []recipeListItem
 	for _, recipe := range recipes {
 		kws, _ := GetKeywords(db, recipe.ID)
-		kwStr := ""
+		var kwStr strings.Builder
 		for i, kw := range kws {
 			if i > 0 {
-				kwStr += ","
+				kwStr.WriteString(",")
 			}
-			kwStr += kw
+			kwStr.WriteString(kw)
 		}
 		items = append(items, recipeListItem{
 			RecipeID:     recipe.ID,
 			Name:         recipe.Name,
-			Keywords:     kwStr,
+			Keywords:     kwStr.String(),
 			DateCreated:  formatUnixISO(recipe.CreatedAt),
 			DateModified: formatUnixISO(recipe.UpdatedAt),
 		})
@@ -350,14 +351,14 @@ func buildJSONLD(recipe *Recipe, ingredients []Ingredient, instructions []Instru
 	}
 
 	if len(keywords) > 0 {
-		kwStr := ""
+		var kwStr strings.Builder
 		for i, kw := range keywords {
 			if i > 0 {
-				kwStr += ", "
+				kwStr.WriteString(", ")
 			}
-			kwStr += kw
+			kwStr.WriteString(kw)
 		}
-		ld["keywords"] = kwStr
+		ld["keywords"] = kwStr.String()
 	}
 
 	if recipe.Calories != "" {

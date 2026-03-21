@@ -139,10 +139,7 @@ func (h *settingsHandler) ShowStorage(w http.ResponseWriter, r *http.Request) {
 			usageInfo.Quota = h.p.Quotas.EffectiveQuota(u.ID, rootMount.VolumeID, groupIDs)
 			if usageInfo.Quota > 0 {
 				usageInfo.QuotaLabel = quota.FormatBytes(usageInfo.Quota)
-				usageInfo.Percent = int(usageInfo.Used * 100 / usageInfo.Quota)
-				if usageInfo.Percent > 100 {
-					usageInfo.Percent = 100
-				}
+				usageInfo.Percent = min(int(usageInfo.Used*100/usageInfo.Quota), 100)
 			}
 		}
 	}

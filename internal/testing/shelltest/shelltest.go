@@ -155,9 +155,7 @@ func start(t testing.TB, cfg config) *Terminal {
 
 	// Copy goroutine: VT emulator Read() -> shell stdin
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		defer stdinW.Close()
 		buf := make([]byte, 4096)
 		for {
@@ -171,12 +169,10 @@ func start(t testing.TB, cfg config) *Terminal {
 				return
 			}
 		}
-	}()
+	})
 
 	// Copy goroutine: shell stdout -> VT emulator Write()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		buf := make([]byte, 4096)
 		for {
 			n, err := stdoutR.Read(buf)
@@ -187,7 +183,7 @@ func start(t testing.TB, cfg config) *Terminal {
 				return
 			}
 		}
-	}()
+	})
 
 	// Shell goroutine
 	go func() {

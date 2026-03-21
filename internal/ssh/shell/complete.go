@@ -47,8 +47,8 @@ func (c *completer) Do(line []rune, pos int) ([][]rune, int) {
 
 	// Strip tab-separated descriptions.
 	for i, l := range lines {
-		if idx := strings.Index(l, "\t"); idx >= 0 {
-			lines[i] = l[:idx]
+		if before, _, ok := strings.Cut(l, "\t"); ok {
+			lines[i] = before
 		}
 	}
 

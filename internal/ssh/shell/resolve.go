@@ -13,8 +13,8 @@ func (s *Shell) resolve(base, path string) (string, error) {
 	if filepath.IsAbs(path) {
 		// Strip /files prefix for virtual-to-real mapping.
 		clean := filepath.Clean(path)
-		if strings.HasPrefix(clean, "/files") {
-			clean = strings.TrimPrefix(clean, "/files")
+		if after, ok := strings.CutPrefix(clean, "/files"); ok {
+			clean = after
 			if clean == "" {
 				clean = "/"
 			}
@@ -71,8 +71,8 @@ func (s *Shell) virtualToReal(vp string) string {
 	if vp == "/files" {
 		return s.filesDir
 	}
-	if strings.HasPrefix(vp, "/files/") {
-		return filepath.Join(s.filesDir, strings.TrimPrefix(vp, "/files/"))
+	if after, ok := strings.CutPrefix(vp, "/files/"); ok {
+		return filepath.Join(s.filesDir, after)
 	}
 	// Virtual-only directories: when VFS is present, return the virtual path
 	// itself. The interpreter sets r.Dir to it, and stat/readdir/open handlers

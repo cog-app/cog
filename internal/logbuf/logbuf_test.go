@@ -44,13 +44,11 @@ func TestConcurrentWrites(t *testing.T) {
 	var wg sync.WaitGroup
 	now := time.Now()
 	for range 10 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 50 {
 				b.Add(Entry{Time: now, Level: slog.LevelInfo, Message: "x"})
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
