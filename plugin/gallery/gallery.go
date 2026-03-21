@@ -17,9 +17,16 @@ import (
 	"sync"
 	"time"
 
+	"syscall"
+
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 )
+
+// setNice sets the niceness (priority) of a process. Errors are ignored.
+func setNice(pid, niceness int) {
+	syscall.Setpriority(syscall.PRIO_PROCESS, pid, niceness)
+}
 
 //go:embed sql
 var sqlFS embed.FS
@@ -44,7 +51,7 @@ type Plugin struct {
 	done     chan struct{}
 
 	scanMu     sync.Mutex
-	scanStatus ScanStatus
+	scanClient *ScanClient // RPC client to scan worker subprocess
 }
 
 // New creates a new Gallery plugin instance.
@@ -68,10 +75,20 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		}
 		priv.RegisterAdminCommand(plugin.CommandDef{
 			Name:  "scan",
-			Short: "scan media files for a user",
-			Args:  []string{"username"},
-			Run: func(cmdCtx context.Context, args []string) error {
-				return p.ScanUser(cmdCtx, args[0])
+			Short: "scan media files",
+			Sub: []plugin.CommandDef{
+				{
+					Name: "user", Short: "scan a specific user", Args: []string{"username"},
+					Run: func(cmdCtx context.Context, args []string) error {
+						return p.ScanUser(cmdCtx, args[0])
+					},
+				},
+				{
+					Name: "worker", Short: "run scan loop as background worker (launched by server)",
+					Run: func(cmdCtx context.Context, args []string) error {
+						return p.runScanWorker(cmdCtx)
+					},
+				},
 			},
 		})
 	}
@@ -162,7 +179,8 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 func (p *Plugin) Start(ctx context.Context) error {
 	ctx, p.cancel = context.WithCancel(ctx)
 	p.done = make(chan struct{})
-	go p.scanLoop(ctx)
+	go p.manageScanWorker(ctx)
+	go p.scanTimer(ctx)
 	return nil
 }
 
@@ -301,53 +319,116 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) e
 // GetScanStatus returns a snapshot of the current scan job status.
 func (p *Plugin) GetScanStatus() ScanStatus {
 	p.scanMu.Lock()
-	defer p.scanMu.Unlock()
-	return p.scanStatus
+	client := p.scanClient
+	p.scanMu.Unlock()
+	if client == nil {
+		return ScanStatus{}
+	}
+	status, err := client.GetStatus()
+	if err != nil {
+		return ScanStatus{}
+	}
+	return status
 }
 
-// runScan executes scanAllUsers with status tracking.
-func (p *Plugin) runScan(ctx context.Context) {
+// requestScan asks the scan worker to scan a user (or "*" for all users).
+func (p *Plugin) requestScan(username string) {
 	p.scanMu.Lock()
-	p.scanStatus.Running = true
+	client := p.scanClient
 	p.scanMu.Unlock()
-
-	p.log.Info("background scan started")
-	start := p.ctx.Now()
-	warnings, err := p.scanAllUsersErr(ctx)
-	elapsed := time.Since(start)
-
-	p.scanMu.Lock()
-	p.scanStatus.Running = false
-	p.scanStatus.LastRun = p.ctx.Now()
-	p.scanStatus.LastError = err
-	p.scanStatus.Warnings = warnings
-	p.scanMu.Unlock()
-
-	if err != nil {
-		p.log.Error("background scan failed", "elapsed", elapsed, "err", err)
+	if client == nil {
+		return
+	}
+	if username == "*" {
+		client.ScanAllUsers()
 	} else {
-		p.log.Info("background scan complete", "elapsed", elapsed, "warnings", len(warnings))
+		client.ScanUser(username)
 	}
 }
 
-// scanLoop is the background scanning goroutine.
-func (p *Plugin) scanLoop(ctx context.Context) {
+// manageScanWorker spawns and supervises the scan worker subprocess.
+func (p *Plugin) manageScanWorker(ctx context.Context) {
 	defer close(p.done)
 
-	timer := time.NewTimer(10 * time.Second)
-	defer timer.Stop()
+	exePath, err := os.Executable()
+	if err != nil {
+		p.log.Error("cannot find executable for scan worker", "err", err)
+		return
+	}
+
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		cmd := exec.CommandContext(ctx, exePath, "gallery", "scan", "worker")
+		cmd.Env = append(os.Environ(), "GOMEMLIMIT=512MiB")
+		cmd.Stderr = os.Stderr
+
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			p.log.Error("scan worker stdin pipe", "err", err)
+			break
+		}
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			p.log.Error("scan worker stdout pipe", "err", err)
+			break
+		}
+
+		if err := cmd.Start(); err != nil {
+			p.log.Error("start scan worker", "err", err)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(30 * time.Second):
+				continue
+			}
+		}
+
+		p.log.Info("scan worker started", "pid", cmd.Process.Pid)
+		setNice(cmd.Process.Pid, 10)
+
+		// Create RPC client over the subprocess pipes.
+		client := newScanClient(readWriteCloser{stdout, stdin})
+		p.scanMu.Lock()
+		p.scanClient = client
+		p.scanMu.Unlock()
+
+		// Wait for subprocess to exit.
+		err = cmd.Wait()
+
+		p.scanMu.Lock()
+		p.scanClient = nil
+		p.scanMu.Unlock()
+		client.Close()
+
+		if ctx.Err() != nil {
+			return
+		}
+		p.log.Warn("scan worker exited, restarting in 10s", "err", err)
+		time.Sleep(10 * time.Second)
+	}
+}
+
+// scanTimer triggers periodic scans via the RPC client.
+func (p *Plugin) scanTimer(ctx context.Context) {
+	// Initial delay.
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(10 * time.Second):
+	}
+	p.requestScan("*")
 
 	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-timer.C:
-			p.runScan(ctx)
 		case <-ticker.C:
-			p.runScan(ctx)
+			p.requestScan("*")
 		}
 	}
 }

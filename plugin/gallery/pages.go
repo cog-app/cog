@@ -2,7 +2,6 @@ package gallery
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -651,11 +650,10 @@ func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 	ui.PickerResults(items).Render(r.Context(), w)
 }
 
-// TriggerScan manually triggers a media scan.
+// TriggerScan manually triggers a media scan via the scan worker subprocess.
 func (h *Pages) TriggerScan(w http.ResponseWriter, r *http.Request) {
 	username := plugin.Username(r)
-	// Use a detached context — the request context is cancelled when the redirect completes.
-	go h.plugin.ScanUser(context.Background(), username)
+	go h.plugin.requestScan(username)
 	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
 }
 
@@ -692,7 +690,7 @@ func (h *Pages) UserScanStatusPartial(w http.ResponseWriter, r *http.Request) {
 
 // TriggerSystemScan triggers a full scan of all users from the admin page.
 func (h *Pages) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
-	go h.plugin.ScanAllUsers(context.Background())
+	go h.plugin.requestScan("*")
 	http.Redirect(w, r, "/admin/plugins/gallery", http.StatusSeeOther)
 }
 

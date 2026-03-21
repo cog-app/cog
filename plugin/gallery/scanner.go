@@ -76,9 +76,10 @@ func (p *Plugin) scanAllUsersErr(ctx context.Context) (warnings []string, err er
 	return warnings, nil
 }
 
-// ScanAllUsers runs the scan pipeline for all users. Exported for manual trigger.
-func (p *Plugin) ScanAllUsers(ctx context.Context) {
-	p.runScan(ctx)
+// ScanAllUsers runs the scan pipeline for all users.
+func (p *Plugin) ScanAllUsers(ctx context.Context) error {
+	_, err := p.scanAllUsersErr(ctx)
+	return err
 }
 
 // ScanUser runs the scan pipeline for a single user. Exported for manual trigger.
