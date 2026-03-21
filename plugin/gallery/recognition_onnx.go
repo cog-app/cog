@@ -58,6 +58,29 @@ var arcfaceTargetLandmarks = [5][2]float64{
 	{70.7299, 92.2041}, // right mouth corner
 }
 
+// cachedSession holds a reusable ONNX session with pre-allocated tensors.
+// Data is copied into the input tensor's backing slice before each Run().
+type cachedSession struct {
+	session *ort.AdvancedSession
+	input   *ort.Tensor[float32]
+	outputs []*ort.Tensor[float32]
+}
+
+func (s *cachedSession) destroy() {
+	if s == nil {
+		return
+	}
+	if s.session != nil {
+		s.session.Destroy()
+	}
+	if s.input != nil {
+		s.input.Destroy()
+	}
+	for _, o := range s.outputs {
+		o.Destroy()
+	}
+}
+
 // OnnxBackend uses pigo for face detection, ArcFace ONNX for face embeddings,
 // and MobileNetV2 ONNX for image classification tags.
 type OnnxBackend struct {
@@ -70,6 +93,12 @@ type OnnxBackend struct {
 	hasArcface   bool
 	hasSCRFD     bool
 	hasGenderage bool
+
+	// Cached sessions for performance — avoid creating per-call.
+	mobilenetSession  *cachedSession
+	arcfaceSession    *cachedSession
+	genderageSession  *cachedSession
+	scrfdSession      *cachedSession
 }
 
 func (b *OnnxBackend) Name() string { return "ONNX (local)" }
@@ -146,6 +175,60 @@ func (b *OnnxBackend) init() {
 		} else {
 			b.hasGenderage = true
 		}
+
+		// Create cached sessions for all available models.
+		var err error
+		b.mobilenetSession, err = newCachedSession(mobilenetPath,
+			[]string{"input"}, []string{"output"},
+			ort.NewShape(1, 3, 224, 224),
+			[]ort.Shape{ort.NewShape(1, 1000)})
+		if err != nil {
+			b.initErr = fmt.Errorf("mobilenet session: %w", err)
+			return
+		}
+
+		if b.hasArcface {
+			b.arcfaceSession, err = newCachedSession(arcfacePath,
+				[]string{"data"}, []string{"fc1"},
+				ort.NewShape(1, 3, 112, 112),
+				[]ort.Shape{ort.NewShape(1, 512)})
+			if err != nil {
+				b.initErr = fmt.Errorf("arcface session: %w", err)
+				return
+			}
+		}
+
+		if b.hasGenderage {
+			b.genderageSession, err = newCachedSession(genderagePath,
+				[]string{"data"}, []string{"fc1"},
+				ort.NewShape(1, 3, 96, 96),
+				[]ort.Shape{ort.NewShape(1, 3)})
+			if err != nil {
+				b.initErr = fmt.Errorf("genderage session: %w", err)
+				return
+			}
+		}
+
+		if b.hasSCRFD {
+			var gs [3]int64
+			for i, stride := range scrfdStrides {
+				g := int64(scrfdInputSize / stride)
+				gs[i] = g * g * scrfdNumAnchors
+			}
+			outShapes := []ort.Shape{
+				ort.NewShape(gs[0], 1), ort.NewShape(gs[1], 1), ort.NewShape(gs[2], 1),
+				ort.NewShape(gs[0], 4), ort.NewShape(gs[1], 4), ort.NewShape(gs[2], 4),
+				ort.NewShape(gs[0], 10), ort.NewShape(gs[1], 10), ort.NewShape(gs[2], 10),
+			}
+			b.scrfdSession, err = newCachedSession(scrfdPath,
+				[]string{"input.1"}, scrfdOutputNames,
+				ort.NewShape(1, 3, scrfdInputSize, scrfdInputSize),
+				outShapes)
+			if err != nil {
+				b.initErr = fmt.Errorf("scrfd session: %w", err)
+				return
+			}
+		}
 	})
 }
 
@@ -175,6 +258,41 @@ func ensureModel(path, url string) error {
 	}
 	f.Close()
 	return os.Rename(tmp, path)
+}
+
+// newCachedSession creates a reusable ONNX session with pre-allocated tensors.
+func newCachedSession(modelPath string, inputNames, outputNames []string, inputShape ort.Shape, outputShapes []ort.Shape) (*cachedSession, error) {
+	input, err := ort.NewEmptyTensor[float32](inputShape)
+	if err != nil {
+		return nil, fmt.Errorf("create input tensor: %w", err)
+	}
+
+	outputs := make([]*ort.Tensor[float32], len(outputShapes))
+	outputValues := make([]ort.Value, len(outputShapes))
+	for i, shape := range outputShapes {
+		outputs[i], err = ort.NewEmptyTensor[float32](shape)
+		if err != nil {
+			input.Destroy()
+			for j := range i {
+				outputs[j].Destroy()
+			}
+			return nil, fmt.Errorf("create output tensor %d: %w", i, err)
+		}
+		outputValues[i] = outputs[i]
+	}
+
+	session, err := ort.NewAdvancedSession(modelPath,
+		inputNames, outputNames,
+		[]ort.Value{input}, outputValues, nil)
+	if err != nil {
+		input.Destroy()
+		for _, o := range outputs {
+			o.Destroy()
+		}
+		return nil, fmt.Errorf("create session: %w", err)
+	}
+
+	return &cachedSession{session: session, input: input, outputs: outputs}, nil
 }
 
 // InitErr returns any initialization error, triggering init if needed.
@@ -232,9 +350,17 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 	}
 
 	// Compute embeddings and age estimates for detected faces.
+	bounds := img.Bounds()
 	for i := range detectedFaces {
 		face := &detectedFaces[i]
 		face.EstimatedAge = -1
+
+		// Skip tiny faces — upscaling produces garbage embeddings.
+		facePixW := int(face.W * float64(bounds.Dx()))
+		facePixH := int(face.H * float64(bounds.Dy()))
+		if facePixW < 32 || facePixH < 32 {
+			continue
+		}
 
 		// Compute alignment once (used by both ArcFace and genderage).
 		var aligned image.Image
@@ -267,34 +393,15 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 
 // classifyImage runs MobileNetV2 on the image and returns top-5 tags.
 func (b *OnnxBackend) classifyImage(img image.Image) ([]RecognizedTag, error) {
-	data := preprocessImage(img, 224, 224)
+	s := b.mobilenetSession
+	data := preprocessImageNet(img, 224, 224)
+	copy(s.input.GetData(), data)
 
-	inputTensor, err := ort.NewTensor(ort.NewShape(1, 3, 224, 224), data)
-	if err != nil {
-		return nil, fmt.Errorf("create input tensor: %w", err)
-	}
-	defer inputTensor.Destroy()
-
-	outputTensor, err := ort.NewEmptyTensor[float32](ort.NewShape(1, 1000))
-	if err != nil {
-		return nil, fmt.Errorf("create output tensor: %w", err)
-	}
-	defer outputTensor.Destroy()
-
-	session, err := ort.NewAdvancedSession(
-		filepath.Join(b.ModelsDir, mobilenetFile),
-		[]string{"input"}, []string{"output"},
-		[]ort.Value{inputTensor}, []ort.Value{outputTensor}, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create session: %w", err)
-	}
-	defer session.Destroy()
-
-	if err := session.Run(); err != nil {
+	if err := s.session.Run(); err != nil {
 		return nil, fmt.Errorf("run mobilenet: %w", err)
 	}
 
-	output := outputTensor.GetData()
+	output := s.outputs[0].GetData()
 	probs := softmax(output)
 
 	type indexedProb struct {
@@ -334,7 +441,7 @@ func (b *OnnxBackend) computeFaceEmbedding(aligned, img image.Image, face *Detec
 	var data []float32
 
 	if aligned != nil {
-		data = preprocessImage(aligned, 112, 112)
+		data = preprocessInsightFace(aligned, 112, 112)
 	} else {
 		// Fallback: crop and resize (Pigo path, no landmarks).
 		bounds := img.Bounds()
@@ -353,40 +460,22 @@ func (b *OnnxBackend) computeFaceEmbedding(aligned, img image.Image, face *Detec
 		w = min(bounds.Dx()-x, w+2*padW)
 		h = min(bounds.Dy()-y, h+2*padH)
 
-		if w < 10 || h < 10 {
+		if w < 32 || h < 32 {
 			return nil, fmt.Errorf("face crop too small: %dx%d", w, h)
 		}
 
 		faceCrop := cropImage(img, image.Rect(x, y, x+w, y+h))
-		data = preprocessImage(faceCrop, 112, 112)
+		data = preprocessInsightFace(faceCrop, 112, 112)
 	}
 
-	inputTensor, err := ort.NewTensor(ort.NewShape(1, 3, 112, 112), data)
-	if err != nil {
-		return nil, fmt.Errorf("create face tensor: %w", err)
-	}
-	defer inputTensor.Destroy()
+	s := b.arcfaceSession
+	copy(s.input.GetData(), data)
 
-	outputTensor, err := ort.NewEmptyTensor[float32](ort.NewShape(1, 512))
-	if err != nil {
-		return nil, fmt.Errorf("create face output tensor: %w", err)
-	}
-	defer outputTensor.Destroy()
-
-	session, err := ort.NewAdvancedSession(
-		filepath.Join(b.ModelsDir, arcfaceFile),
-		[]string{"data"}, []string{"fc1"},
-		[]ort.Value{inputTensor}, []ort.Value{outputTensor}, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create arcface session: %w", err)
-	}
-	defer session.Destroy()
-
-	if err := session.Run(); err != nil {
+	if err := s.session.Run(); err != nil {
 		return nil, fmt.Errorf("run arcface: %w", err)
 	}
 
-	output := outputTensor.GetData()
+	output := s.outputs[0].GetData()
 	embedding := make([]float32, len(output))
 	copy(embedding, output)
 	l2normalize(embedding)
@@ -394,9 +483,10 @@ func (b *OnnxBackend) computeFaceEmbedding(aligned, img image.Image, face *Detec
 	return embedding, nil
 }
 
-// preprocessImage resizes an image to targetW x targetH and converts to CHW float32 tensor
+// preprocessImageNet resizes an image and converts to CHW float32 tensor
 // with ImageNet normalization (mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225]).
-func preprocessImage(img image.Image, targetW, targetH int) []float32 {
+// Used for MobileNet classification only.
+func preprocessImageNet(img image.Image, targetW, targetH int) []float32 {
 	resized := resizeImage(img, targetW, targetH)
 
 	tensor := make([]float32, 3*targetH*targetW)
@@ -413,6 +503,24 @@ func preprocessImage(img image.Image, targetW, targetH int) []float32 {
 			tensor[0*targetH*targetW+y*targetW+x] = (rf - mean[0]) / std[0]
 			tensor[1*targetH*targetW+y*targetW+x] = (gf - mean[1]) / std[1]
 			tensor[2*targetH*targetW+y*targetW+x] = (bf - mean[2]) / std[2]
+		}
+	}
+	return tensor
+}
+
+// preprocessInsightFace resizes an image and converts to CHW float32 tensor
+// with InsightFace normalization: (pixel - 127.5) / 128.0.
+// Used for ArcFace, genderage, and SCRFD models.
+func preprocessInsightFace(img image.Image, targetW, targetH int) []float32 {
+	resized := resizeImage(img, targetW, targetH)
+
+	tensor := make([]float32, 3*targetH*targetW)
+	for y := range targetH {
+		for x := range targetW {
+			r, g, b, _ := resized.At(x, y).RGBA()
+			tensor[0*targetH*targetW+y*targetW+x] = (float32(r)/256.0 - 127.5) / 128.0
+			tensor[1*targetH*targetW+y*targetW+x] = (float32(g)/256.0 - 127.5) / 128.0
+			tensor[2*targetH*targetW+y*targetW+x] = (float32(b)/256.0 - 127.5) / 128.0
 		}
 	}
 	return tensor
@@ -547,36 +655,20 @@ func l2normalize(v []float32) {
 // estimateAge runs the genderage model on a 112×112 aligned face and returns estimated age.
 // The model expects 96×96 input, so the aligned face is resized.
 func (b *OnnxBackend) estimateAge(aligned image.Image) (float64, error) {
-	data := preprocessImage(aligned, 96, 96)
+	s := b.genderageSession
+	data := preprocessInsightFace(aligned, 96, 96)
+	copy(s.input.GetData(), data)
 
-	inputTensor, err := ort.NewTensor(ort.NewShape(1, 3, 96, 96), data)
-	if err != nil {
-		return -1, fmt.Errorf("create age input tensor: %w", err)
-	}
-	defer inputTensor.Destroy()
-
-	outputTensor, err := ort.NewEmptyTensor[float32](ort.NewShape(1, 3))
-	if err != nil {
-		return -1, fmt.Errorf("create age output tensor: %w", err)
-	}
-	defer outputTensor.Destroy()
-
-	session, err := ort.NewAdvancedSession(
-		filepath.Join(b.ModelsDir, genderageFile),
-		[]string{"data"}, []string{"fc1"},
-		[]ort.Value{inputTensor}, []ort.Value{outputTensor}, nil)
-	if err != nil {
-		return -1, fmt.Errorf("create genderage session: %w", err)
-	}
-	defer session.Destroy()
-
-	if err := session.Run(); err != nil {
+	if err := s.session.Run(); err != nil {
 		return -1, fmt.Errorf("run genderage: %w", err)
 	}
 
-	output := outputTensor.GetData()
+	output := s.outputs[0].GetData()
 	// output[0] = female logit, output[1] = male logit, output[2] = age/100
 	age := float64(output[2]) * 100
+	if age < 0 || age > 120 {
+		return -1, nil
+	}
 	return age, nil
 }
 
@@ -591,63 +683,12 @@ func (b *OnnxBackend) detectFacesSCRFD(img image.Image) ([]DetectedFace, error) 
 	// Letterbox to 640×640.
 	letterboxed, scale, padX, padY := letterboxImage(img, scrfdInputSize, scrfdInputSize)
 
-	// Preprocess: (pixel - 127.5) / 128.0, CHW layout.
+	// Preprocess and copy into cached session input.
+	s := b.scrfdSession
 	data := preprocessSCRFD(letterboxed)
+	copy(s.input.GetData(), data)
 
-	inputTensor, err := ort.NewTensor(ort.NewShape(1, 3, scrfdInputSize, scrfdInputSize), data)
-	if err != nil {
-		return nil, fmt.Errorf("scrfd input tensor: %w", err)
-	}
-	defer inputTensor.Destroy()
-
-	// Compute anchor counts per stride.
-	var anchorCounts [3]int64
-	for i, stride := range scrfdStrides {
-		gs := int64(scrfdInputSize / stride)
-		anchorCounts[i] = gs * gs * scrfdNumAnchors
-	}
-
-	// Create 9 output tensors: 3 scores, 3 boxes, 3 keypoints.
-	type tensorGroup struct {
-		scores, boxes, kps *ort.Tensor[float32]
-	}
-	var groups [3]tensorGroup
-	var allOutputs []ort.Value
-	for i := range 3 {
-		var err error
-		groups[i].scores, err = ort.NewEmptyTensor[float32](ort.NewShape(anchorCounts[i], 1))
-		if err != nil {
-			return nil, fmt.Errorf("scrfd score tensor %d: %w", i, err)
-		}
-		defer groups[i].scores.Destroy()
-		groups[i].boxes, err = ort.NewEmptyTensor[float32](ort.NewShape(anchorCounts[i], 4))
-		if err != nil {
-			return nil, fmt.Errorf("scrfd box tensor %d: %w", i, err)
-		}
-		defer groups[i].boxes.Destroy()
-		groups[i].kps, err = ort.NewEmptyTensor[float32](ort.NewShape(anchorCounts[i], 10))
-		if err != nil {
-			return nil, fmt.Errorf("scrfd kps tensor %d: %w", i, err)
-		}
-		defer groups[i].kps.Destroy()
-	}
-	// Output order: scores[0..2], boxes[3..5], kps[6..8].
-	allOutputs = []ort.Value{
-		groups[0].scores, groups[1].scores, groups[2].scores,
-		groups[0].boxes, groups[1].boxes, groups[2].boxes,
-		groups[0].kps, groups[1].kps, groups[2].kps,
-	}
-
-	session, err := ort.NewAdvancedSession(
-		filepath.Join(b.ModelsDir, scrfdFile),
-		[]string{"input.1"}, scrfdOutputNames,
-		[]ort.Value{inputTensor}, allOutputs, nil)
-	if err != nil {
-		return nil, fmt.Errorf("scrfd session: %w", err)
-	}
-	defer session.Destroy()
-
-	if err := session.Run(); err != nil {
+	if err := s.session.Run(); err != nil {
 		return nil, fmt.Errorf("run scrfd: %w", err)
 	}
 
@@ -656,9 +697,10 @@ func (b *OnnxBackend) detectFacesSCRFD(img image.Image) ([]DetectedFace, error) 
 
 	for si, stride := range scrfdStrides {
 		gs := scrfdInputSize / stride
-		scoreData := groups[si].scores.GetData()
-		boxData := groups[si].boxes.GetData()
-		kpsData := groups[si].kps.GetData()
+		// Outputs are ordered: scores[0..2], boxes[3..5], kps[6..8].
+		scoreData := s.outputs[si].GetData()
+		boxData := s.outputs[si+3].GetData()
+		kpsData := s.outputs[si+6].GetData()
 
 		for y := range gs {
 			for x := range gs {

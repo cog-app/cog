@@ -572,17 +572,18 @@ func SearchTags(db *sql.DB, query string, limit int) ([]Tag, error) {
 
 // Face represents a detected face with optional person info for display.
 type Face struct {
-	ID       int64
-	MediaID  int64
-	PersonID *int64
-	Name     string  // person name, "" if unnamed
-	X, Y     float64 // normalized bounding box (0..1)
-	W, H     float64
+	ID           int64
+	MediaID      int64
+	PersonID     *int64
+	Name         string  // person name, "" if unnamed
+	X, Y         float64 // normalized bounding box (0..1)
+	W, H         float64
+	EstimatedAge float64 // -1 if not estimated
 }
 
 // FacesForMedia returns all faces detected in a media item.
 func FacesForMedia(db *sql.DB, mediaID int64) ([]Face, error) {
-	rows, err := db.Query(`SELECT f.id, f.media_id, f.person_id, COALESCE(p.name, ''), f.x, f.y, f.w, f.h
+	rows, err := db.Query(`SELECT f.id, f.media_id, f.person_id, COALESCE(p.name, ''), f.x, f.y, f.w, f.h, f.estimated_age
 		FROM faces f LEFT JOIN people p ON p.id = f.person_id
 		WHERE f.media_id = ?
 		ORDER BY f.id`, mediaID)
@@ -593,7 +594,7 @@ func FacesForMedia(db *sql.DB, mediaID int64) ([]Face, error) {
 	var faces []Face
 	for rows.Next() {
 		var f Face
-		if err := rows.Scan(&f.ID, &f.MediaID, &f.PersonID, &f.Name, &f.X, &f.Y, &f.W, &f.H); err != nil {
+		if err := rows.Scan(&f.ID, &f.MediaID, &f.PersonID, &f.Name, &f.X, &f.Y, &f.W, &f.H, &f.EstimatedAge); err != nil {
 			return nil, err
 		}
 		faces = append(faces, f)
@@ -612,7 +613,7 @@ func FacesForMediaBatch(db *sql.DB, mediaIDs []int64) (map[int64][]Face, error) 
 		placeholders[i] = "?"
 		args[i] = id
 	}
-	rows, err := db.Query(`SELECT f.id, f.media_id, f.person_id, COALESCE(p.name, ''), f.x, f.y, f.w, f.h
+	rows, err := db.Query(`SELECT f.id, f.media_id, f.person_id, COALESCE(p.name, ''), f.x, f.y, f.w, f.h, f.estimated_age
 		FROM faces f LEFT JOIN people p ON p.id = f.person_id
 		WHERE f.media_id IN (`+strings.Join(placeholders, ",")+`)
 		ORDER BY f.id`, args...)
@@ -623,7 +624,7 @@ func FacesForMediaBatch(db *sql.DB, mediaIDs []int64) (map[int64][]Face, error) 
 	result := make(map[int64][]Face)
 	for rows.Next() {
 		var f Face
-		if err := rows.Scan(&f.ID, &f.MediaID, &f.PersonID, &f.Name, &f.X, &f.Y, &f.W, &f.H); err != nil {
+		if err := rows.Scan(&f.ID, &f.MediaID, &f.PersonID, &f.Name, &f.X, &f.Y, &f.W, &f.H, &f.EstimatedAge); err != nil {
 			return nil, err
 		}
 		result[f.MediaID] = append(result[f.MediaID], f)

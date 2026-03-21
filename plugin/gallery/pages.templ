@@ -95,10 +95,14 @@ templ photoGrid(media []Media) {
 }
 
 func faceTitle(f Face) string {
+	name := "Unknown"
 	if f.Name != "" {
-		return f.Name
+		name = f.Name
 	}
-	return "Unknown"
+	if f.EstimatedAge >= 0 {
+		return fmt.Sprintf("%s (age ~%d)", name, int(f.EstimatedAge+0.5))
+	}
+	return name
 }
 
 func faceBoxStyle(f Face) string {
