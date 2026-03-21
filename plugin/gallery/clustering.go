@@ -121,18 +121,22 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 
 	// Faces without embeddings (e.g. Pigo-only, no ArcFace) can't be clustered.
 	// Create a separate person for each so the user can merge manually.
+	var noEmbFaceIDs []int64
 	noEmbRows, err := db.Query(`SELECT id FROM faces
 		WHERE person_id IS NULL AND embedding IS NULL`)
 	if err != nil {
 		return err
 	}
-	defer noEmbRows.Close()
-
 	for noEmbRows.Next() {
 		var faceID int64
 		if err := noEmbRows.Scan(&faceID); err != nil {
 			continue
 		}
+		noEmbFaceIDs = append(noEmbFaceIDs, faceID)
+	}
+	noEmbRows.Close()
+
+	for _, faceID := range noEmbFaceIDs {
 		res, err := db.Exec(`INSERT INTO people (name) VALUES ('')`)
 		if err != nil {
 			slog.Error("create person for embeddingless face", "err", err)
