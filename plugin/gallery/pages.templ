@@ -31,11 +31,35 @@ templ gallerySidebar(activePath string, total int) {
 		<a href="/apps/gallery/videos" class={ sidebarClass(activePath, "/apps/gallery/videos") }>
 			Videos
 		</a>
+		<a href="/apps/gallery/duplicates" class={ sidebarClass(activePath, "/apps/gallery/duplicates") }>
+			Duplicates
+		</a>
 		<div class="sidebar-divider"></div>
 		<a href="/apps/gallery/settings" class={ sidebarClass(activePath, "/apps/gallery/settings") }>
 			Settings
 		</a>
+		<div
+			hx-get="/apps/gallery/api/user-scan-status"
+			hx-trigger="load, every 5s"
+			hx-swap="innerHTML"
+		></div>
 	</nav>
+}
+
+templ userScanBanner(scan ScanStatus) {
+	if scan.Running {
+		<div class="scan-banner">
+			<span class="spinner-sm"></span>
+			Scanning...
+		</div>
+	}
+}
+
+func duplicateCardStyle(isKeep bool) string {
+	if isKeep {
+		return "border:2px solid var(--color-success)"
+	}
+	return ""
 }
 
 func sidebarClass(activePath, itemPath string) string {
@@ -51,12 +75,13 @@ templ photoGrid(media []Media) {
 		for _, m := range media {
 			<a
 				href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/photo/%d", m.ID)) }
-				style="aspect-ratio:1;overflow:hidden;border-radius:4px;position:relative"
+				class="thumb-loading"
+				style="aspect-ratio:1;overflow:hidden;border-radius:4px;position:relative;display:block"
 			>
 				<img
 					src={ fmt.Sprintf("/apps/gallery/api/media/%d/thumbnail?size=256", m.ID) }
 					alt={ m.FileName() }
-					style="width:100%;height:100%;object-fit:cover"
+					style="width:100%;height:100%;object-fit:cover;position:relative"
 					loading="lazy"
 				/>
 				if m.IsVideo() {
@@ -78,7 +103,7 @@ func faceTitle(f Face) string {
 
 func faceBoxStyle(f Face) string {
 	return fmt.Sprintf(
-		"position:absolute;left:%.2f%%;top:%.2f%%;width:%.2f%%;height:%.2f%%;border:2px solid rgba(255,255,255,0.5);border-radius:2px;pointer-events:auto;transition:border-color 0.15s",
+		"position:absolute;left:%.2f%%;top:%.2f%%;width:%.2f%%;height:%.2f%%",
 		f.X*100, f.Y*100, f.W*100, f.H*100,
 	)
 }
@@ -210,27 +235,69 @@ templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face, csrfT
 							<source src={ fmt.Sprintf("/api/files/download?path=%s", m.FilePath) } type={ m.MimeType }/>
 						</video>
 					} else {
-						<div style={ fmt.Sprintf("position:relative;max-width:100%%;aspect-ratio:%d/%d", m.Width, m.Height) }>
+						<div class="face-container" style={ fmt.Sprintf("position:relative;max-width:100%%;aspect-ratio:%d/%d", m.Width, m.Height) }>
 							<img
 								src={ fmt.Sprintf("/apps/gallery/api/media/%d/thumbnail?size=1024", m.ID) }
 								alt={ m.FileName() }
-								style="width:100%;height:100%;border-radius:4px;display:block"
+								style="width:100%;height:100%;border-radius:4px;display:block;cursor:zoom-in"
+								data-full-src={ fmt.Sprintf("/api/files/download?path=%s", m.FilePath) }
+								onclick="openLightbox(this)"
 							/>
 							for _, f := range faces {
 								if f.PersonID != nil {
 									<a
 										href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)) }
+										class="face-box"
 										title={ faceTitle(f) }
 										style={ faceBoxStyle(f) }
 									></a>
 								} else {
 									<div
+										class="face-box"
 										title={ faceTitle(f) }
 										style={ faceBoxStyle(f) }
 									></div>
 								}
 							}
 						</div>
+						<script>
+						function openLightbox(img) {
+							var src = img.getAttribute('data-full-src');
+							var overlay = document.createElement('div');
+							overlay.className = 'lightbox';
+							var lbImg = document.createElement('img');
+							lbImg.src = src;
+							lbImg.alt = '';
+							var closeBtn = document.createElement('button');
+							closeBtn.className = 'lightbox-close';
+							closeBtn.setAttribute('aria-label', 'Close');
+							closeBtn.innerHTML = '&times;';
+							overlay.appendChild(closeBtn);
+							overlay.appendChild(lbImg);
+
+							function closeLightbox() {
+								overlay.remove();
+								document.removeEventListener('keydown', keyHandler);
+							}
+
+							lbImg.addEventListener('click', function(e) {
+								e.stopPropagation();
+								overlay.classList.toggle('lightbox-full');
+							});
+
+							overlay.addEventListener('click', function(e) {
+								if (e.target === overlay || e.target === closeBtn) {
+									closeLightbox();
+								}
+							});
+
+							function keyHandler(e) {
+								if (e.key === 'Escape') closeLightbox();
+							}
+							document.addEventListener('keydown', keyHandler);
+							document.body.appendChild(overlay);
+						}
+						</script>
 					}
 				</div>
 				<div>
@@ -304,6 +371,12 @@ templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face, csrfT
 									</tr>
 								}
 							}
+							if m.Fingerprint != "" && m.Fingerprint != "-" {
+								<tr>
+									<td class="text-muted">Fingerprint</td>
+									<td><code style="font-size:0.75rem">{ m.Fingerprint }</code></td>
+								</tr>
+							}
 						</table>
 					}
 					@ui.Card("Tags") {
@@ -334,21 +407,26 @@ templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face, csrfT
 					}
 					@ui.Card("Faces") {
 						if len(faces) > 0 {
-							<div style="display:flex;flex-wrap:wrap;gap:4px">
+							<div style="display:flex;flex-direction:column;gap:6px">
 								for _, f := range faces {
-									<div style="display:flex;align-items:center;gap:2px">
+									<div style="display:flex;align-items:center;gap:8px">
+										<img
+											src={ fmt.Sprintf("/apps/gallery/api/face/%d/thumbnail", f.ID) }
+											alt={ faceTitle(f) }
+											style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0"
+										/>
 										if f.PersonID != nil {
-											<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)) } class="badge" style="text-decoration:none">
+											<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)) } style="text-decoration:none;font-size:0.85rem;flex:1;min-width:0">
 												{ faceTitle(f) }
 											</a>
 										} else {
 											<form
 												method="post"
 												action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/faces/%d/new-person", f.ID)) }
-												style="display:inline"
+												style="display:inline;flex:1;min-width:0"
 											>
 												<input type="hidden" name="csrf_token" value={ csrfToken }/>
-												<button type="submit" class="badge" style="cursor:pointer;border:none;background:var(--color-bg-secondary)" title="Create person from this face">
+												<button type="submit" class="badge" style="cursor:pointer;border:none;background:var(--color-bg);font-size:0.85rem" title="Create person from this face">
 													Unknown +
 												</button>
 											</form>
@@ -356,7 +434,7 @@ templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face, csrfT
 										<form
 											method="post"
 											action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/delete-face", m.ID)) }
-											style="display:inline"
+											style="display:inline;flex-shrink:0"
 										>
 											<input type="hidden" name="csrf_token" value={ csrfToken }/>
 											<input type="hidden" name="face_id" value={ strconv.FormatInt(f.ID, 10) }/>
@@ -399,12 +477,14 @@ templ peoplePage(activePath string, people []Person) {
 							style="text-decoration:none;text-align:center;padding:0.5rem"
 						>
 							if p.BestFaceID != nil {
-								<img
-									src={ fmt.Sprintf("/apps/gallery/api/face/%d/thumbnail", *p.BestFaceID) }
-									alt={ p.DisplayName() }
-									style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:50%;margin-bottom:0.5rem"
-									loading="lazy"
-								/>
+								<div class="thumb-loading" style="width:100%;aspect-ratio:1;border-radius:50%;overflow:hidden;margin-bottom:0.5rem">
+									<img
+										src={ fmt.Sprintf("/apps/gallery/api/face/%d/thumbnail", *p.BestFaceID) }
+										alt={ p.DisplayName() }
+										style="width:100%;height:100%;object-fit:cover;position:relative"
+										loading="lazy"
+									/>
+								</div>
 							}
 							<div style="font-weight:600">{ p.DisplayName() }</div>
 							<div class="text-muted" style="font-size:0.85rem">
@@ -533,12 +613,13 @@ templ personFaceGrid(personID int64, faces []FaceWithMedia, csrfToken string) {
 			<div style="position:relative">
 				<a
 					href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/photo/%d", f.MediaID)) }
+					class="thumb-loading"
 					style="display:block;aspect-ratio:1;overflow:hidden;border-radius:4px"
 				>
 					<img
 						src={ fmt.Sprintf("/apps/gallery/api/face/%d/thumbnail", f.ID) }
 						alt=""
-						style="width:100%;height:100%;object-fit:cover"
+						style="width:100%;height:100%;object-fit:cover;position:relative"
 						loading="lazy"
 					/>
 				</a>
@@ -610,6 +691,121 @@ templ videosPage(media []Media) {
 			} else {
 				@photoGrid(media)
 			}
+		</div>
+	</div>
+}
+
+// --- Duplicates Page ---
+templ duplicatesPage(activePath string, groups []DuplicateGroup) {
+	<div class="sidebar-layout">
+		@gallerySidebar(activePath, 0)
+		<div class="sidebar-content">
+			<h1>
+				Duplicates
+				if len(groups) > 0 {
+					<span class="badge">{ strconv.Itoa(len(groups)) } groups</span>
+				}
+			</h1>
+			if len(groups) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No duplicate photos detected.</p>
+				}
+			} else {
+				<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+					for _, g := range groups {
+						<a
+							href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d", g.ID)) }
+							class="card"
+							style="text-decoration:none;padding:0;overflow:hidden"
+						>
+							<div class="thumb-loading" style="aspect-ratio:1;overflow:hidden">
+								<img
+									src={ fmt.Sprintf("/apps/gallery/api/media/%d/thumbnail?size=256", g.CoverMediaID) }
+									alt=""
+									style="width:100%;height:100%;object-fit:cover;position:relative"
+									loading="lazy"
+								/>
+							</div>
+							<div style="padding:0.5rem;text-align:center">
+								<span class="text-muted" style="font-size:0.85rem">{ strconv.Itoa(g.MemberCount) } duplicates</span>
+							</div>
+						</a>
+					}
+				</div>
+			}
+		</div>
+	</div>
+}
+
+// --- Duplicate Group View Page ---
+templ duplicateGroupViewPage(activePath string, groupID int64, members []DuplicateMember, csrfToken string) {
+	<div class="sidebar-layout">
+		@gallerySidebar(activePath, 0)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+				<h1 style="margin:0">
+					<a href="/apps/gallery/duplicates" style="text-decoration:none">&larr;</a>
+					Duplicate Group
+				</h1>
+				<form
+					method="post"
+					action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete", groupID)) }
+					style="display:inline"
+					onsubmit="return confirm('Delete non-keep files? They will be moved to trash.')"
+				>
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<button type="submit" class="btn btn-danger btn-sm">Delete Non-Keep</button>
+				</form>
+			</div>
+			<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
+				for _, m := range members {
+					<div class="card" style={ duplicateCardStyle(m.IsKeep) }>
+						<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/photo/%d", m.Media.ID)) } style="display:block;margin:-1.5rem -1.5rem 0.75rem;overflow:hidden;border-radius:6px 6px 0 0">
+							<div class="thumb-loading" style="aspect-ratio:1">
+								<img
+									src={ fmt.Sprintf("/apps/gallery/api/media/%d/thumbnail?size=256", m.Media.ID) }
+									alt={ m.Media.FileName() }
+									style="width:100%;height:100%;object-fit:cover;position:relative"
+									loading="lazy"
+								/>
+							</div>
+						</a>
+						if m.IsKeep {
+							<div style="margin-bottom:0.5rem"><span class="badge" style="background:var(--color-success);color:#fff">Keep</span></div>
+						}
+						<table style="font-size:0.8rem;width:100%;margin-bottom:0.5rem">
+							<tr>
+								<td class="text-muted">Size</td>
+								<td>{ strconv.Itoa(m.Media.Width) }×{ strconv.Itoa(m.Media.Height) }</td>
+							</tr>
+							<tr>
+								<td class="text-muted">Path</td>
+								<td style="word-break:break-all">{ m.Media.FileName() }</td>
+							</tr>
+							if m.Distance > 0 {
+								<tr>
+									<td class="text-muted">Distance</td>
+									<td>{ fmt.Sprintf("%.0f", m.Distance) }</td>
+								</tr>
+							}
+						</table>
+						<div style="display:flex;gap:4px">
+							if !m.IsKeep {
+								<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/keep", groupID)) } style="display:inline">
+									<input type="hidden" name="csrf_token" value={ csrfToken }/>
+									<input type="hidden" name="media_id" value={ strconv.FormatInt(m.Media.ID, 10) }/>
+									<button type="submit" class="btn btn-sm">Set as Keep</button>
+								</form>
+							}
+							<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/unmark", groupID)) } style="display:inline">
+								<input type="hidden" name="csrf_token" value={ csrfToken }/>
+								<input type="hidden" name="media_id" value={ strconv.FormatInt(m.Media.ID, 10) }/>
+								<button type="submit" class="btn btn-sm">Not a Duplicate</button>
+							</form>
+						</div>
+					</div>
+				}
+			</div>
 		</div>
 	</div>
 }
@@ -767,6 +963,45 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 				update();
 			})();
 		</script>
+	}
+	@ui.Card("Duplicate Detection") {
+		<form method="post" action="/admin/plugins/gallery" id="duplicate-form">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>
+					<input
+						type="checkbox"
+						name="duplicate_detection_enabled"
+						value="true"
+						checked?={ GetSetting(db, "duplicate_detection_enabled", "true") == "true" }
+					/>
+					Enable duplicate detection
+				</label>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>Algorithm</label>
+				<select name="duplicate_algorithm" class="input" id="duplicate-algorithm">
+					<option value="difference" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "difference" }>Difference Hash</option>
+					<option value="average" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "average" }>Average Hash</option>
+					<option value="phash" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "phash" }>Perceptual Hash (pHash)</option>
+					<option value="median" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "median" }>Median Hash</option>
+					<option value="blockmean" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "blockmean" }>Block Mean Hash</option>
+				</select>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>Distance Threshold</label>
+				<input
+					type="number"
+					name="duplicate_distance"
+					class="input"
+					value={ GetSetting(db, "duplicate_distance", "5") }
+					min="0"
+					max="64"
+				/>
+				<small class="text-muted">Maximum Hamming distance to consider images duplicates (lower = stricter). Default: 5</small>
+			</div>
+			<button type="submit" class="btn btn-primary btn-sm">Save</button>
+		</form>
 	}
 }
 

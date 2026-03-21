@@ -55,7 +55,8 @@ func TestGalleryTimelineWithMedia(t *testing.T) {
 		recognition_state INTEGER NOT NULL DEFAULT 0,
 		recognition_at INTEGER,
 		recognition_error TEXT NOT NULL DEFAULT '',
-		ocr_text TEXT NOT NULL DEFAULT ''
+		ocr_text TEXT NOT NULL DEFAULT '',
+		fingerprint TEXT NOT NULL DEFAULT ''
 	)`)
 	require.NoError(t, err)
 
@@ -105,7 +106,7 @@ func TestGalleryPeopleAndTags(t *testing.T) {
 		country TEXT NOT NULL DEFAULT '', region TEXT NOT NULL DEFAULT '',
 		city TEXT NOT NULL DEFAULT '', recognition_state INTEGER NOT NULL DEFAULT 0,
 		recognition_at INTEGER, recognition_error TEXT NOT NULL DEFAULT '',
-		ocr_text TEXT NOT NULL DEFAULT ''
+		ocr_text TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL DEFAULT ''
 	);
 	CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, tag_type INTEGER NOT NULL DEFAULT 0);
 	CREATE TABLE IF NOT EXISTS media_tags (media_id INTEGER NOT NULL, tag_id INTEGER NOT NULL, confidence REAL NOT NULL DEFAULT 1.0, PRIMARY KEY (media_id, tag_id));

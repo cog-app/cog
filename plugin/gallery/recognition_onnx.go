@@ -25,13 +25,36 @@ import (
 const (
 	mobilenetURL = "https://github.com/onnx/models/raw/main/validated/vision/classification/mobilenet/model/mobilenetv2-12-int8.onnx"
 	arcfaceURL   = "https://github.com/onnx/models/raw/main/validated/vision/body_analysis/arcface/model/arcfaceresnet100-8.onnx"
+	scrfdURL     = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/det_10g.onnx"
 
 	mobilenetFile = "mobilenetv2-12-int8.onnx"
 	arcfaceFile   = "arcfaceresnet100-8.onnx"
+	scrfdFile     = "det_10g.onnx"
 
 	// Old int8 model file name, used to detect model change and warn user.
 	arcfaceOldFile = "arcfaceresnet100-11-int8.onnx"
+
+	scrfdInputSize      = 640
+	scrfdScoreThreshold = 0.5
+	scrfdNMSThreshold   = 0.4
+	scrfdNumAnchors     = 2
 )
+
+// SCRFD output tensor names (from model inspection, in graph order).
+// 3 score tensors, 3 box tensors, 3 keypoint tensors — one per stride (8, 16, 32).
+var (
+	scrfdOutputNames = []string{"448", "471", "494", "451", "474", "497", "454", "477", "500"}
+	scrfdStrides     = [3]int{8, 16, 32}
+)
+
+// ArcFace standard target landmarks for 112×112 aligned face input.
+var arcfaceTargetLandmarks = [5][2]float64{
+	{38.2946, 51.6963}, // left eye
+	{73.5318, 51.5014}, // right eye
+	{56.0252, 71.7366}, // nose
+	{41.5493, 92.3655}, // left mouth corner
+	{70.7299, 92.2041}, // right mouth corner
+}
 
 // OnnxBackend uses pigo for face detection, ArcFace ONNX for face embeddings,
 // and MobileNetV2 ONNX for image classification tags.
@@ -43,6 +66,7 @@ type OnnxBackend struct {
 	initErr    error
 	pigo       *PigoBackend
 	hasArcface bool
+	hasSCRFD   bool
 }
 
 func (b *OnnxBackend) Name() string { return "ONNX (local)" }
@@ -102,6 +126,14 @@ func (b *OnnxBackend) init() {
 			if _, err := os.Stat(oldPath); err == nil {
 				slog.Warn("arcface model upgraded from int8 to float32; existing face embeddings are incompatible — purge recognitions and re-scan for best results")
 			}
+		}
+
+		// SCRFD face detection is optional — falls back to Pigo.
+		scrfdPath := filepath.Join(b.ModelsDir, scrfdFile)
+		if err := ensureModel(scrfdPath, scrfdURL); err != nil {
+			slog.Warn("scrfd model unavailable, using pigo fallback", "err", err)
+		} else {
+			b.hasSCRFD = true
 		}
 	})
 }
@@ -168,24 +200,38 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 		result.Tags = tags
 	}
 
-	// Face detection via pigo, then ArcFace embeddings.
-	pigoResult, err := b.pigo.Analyze(ctx, imagePath)
-	if err != nil {
-		slog.Warn("onnx face detect", "path", imagePath, "err", err)
-	} else if b.hasArcface {
-		for _, face := range pigoResult.Faces {
-			embedding, err := b.computeFaceEmbedding(img, &face)
+	// Face detection: SCRFD (if available) or Pigo fallback.
+	var detectedFaces []DetectedFace
+	if b.hasSCRFD {
+		faces, err := b.detectFacesSCRFD(img)
+		if err != nil {
+			slog.Warn("scrfd detect", "path", imagePath, "err", err)
+		} else {
+			detectedFaces = faces
+		}
+	}
+	if detectedFaces == nil {
+		// Pigo fallback.
+		pigoResult, err := b.pigo.Analyze(ctx, imagePath)
+		if err != nil {
+			slog.Warn("pigo face detect", "path", imagePath, "err", err)
+		} else {
+			detectedFaces = pigoResult.Faces
+		}
+	}
+
+	// Compute ArcFace embeddings for detected faces.
+	if b.hasArcface {
+		for i := range detectedFaces {
+			embedding, err := b.computeFaceEmbedding(img, &detectedFaces[i])
 			if err != nil {
 				slog.Warn("onnx arcface", "err", err)
-				result.Faces = append(result.Faces, face)
 				continue
 			}
-			face.Embedding = embedding
-			result.Faces = append(result.Faces, face)
+			detectedFaces[i].Embedding = embedding
 		}
-	} else {
-		result.Faces = pigoResult.Faces
 	}
+	result.Faces = detectedFaces
 
 	return result, nil
 }
@@ -252,31 +298,41 @@ func (b *OnnxBackend) classifyImage(img image.Image) ([]RecognizedTag, error) {
 	return tags, nil
 }
 
-// computeFaceEmbedding crops a face from the image and runs ArcFace to get an embedding.
+// computeFaceEmbedding produces a 512-dim ArcFace embedding for a detected face.
+// When landmarks are available (SCRFD), the face is aligned via similarity transform
+// for significantly better embedding quality. Otherwise falls back to crop+resize.
 func (b *OnnxBackend) computeFaceEmbedding(img image.Image, face *DetectedFace) ([]float32, error) {
-	bounds := img.Bounds()
-	imgW := float64(bounds.Dx())
-	imgH := float64(bounds.Dy())
+	var data []float32
 
-	x := int(face.X * imgW)
-	y := int(face.Y * imgH)
-	w := int(face.W * imgW)
-	h := int(face.H * imgH)
+	if len(face.Landmarks) == 5 {
+		// Aligned path: warp face to canonical 112×112 using landmarks.
+		aligned := alignFace(img, face.Landmarks)
+		data = preprocessImage(aligned, 112, 112)
+	} else {
+		// Fallback: crop and resize (Pigo path, no landmarks).
+		bounds := img.Bounds()
+		imgW := float64(bounds.Dx())
+		imgH := float64(bounds.Dy())
 
-	// Add 20% padding for better face crop.
-	padW := w / 5
-	padH := h / 5
-	x = max(0, x-padW)
-	y = max(0, y-padH)
-	w = min(bounds.Dx()-x, w+2*padW)
-	h = min(bounds.Dy()-y, h+2*padH)
+		x := int(face.X * imgW)
+		y := int(face.Y * imgH)
+		w := int(face.W * imgW)
+		h := int(face.H * imgH)
 
-	if w < 10 || h < 10 {
-		return nil, fmt.Errorf("face crop too small: %dx%d", w, h)
+		padW := w / 5
+		padH := h / 5
+		x = max(0, x-padW)
+		y = max(0, y-padH)
+		w = min(bounds.Dx()-x, w+2*padW)
+		h = min(bounds.Dy()-y, h+2*padH)
+
+		if w < 10 || h < 10 {
+			return nil, fmt.Errorf("face crop too small: %dx%d", w, h)
+		}
+
+		faceCrop := cropImage(img, image.Rect(x, y, x+w, y+h))
+		data = preprocessImage(faceCrop, 112, 112)
 	}
-
-	faceCrop := cropImage(img, image.Rect(x, y, x+w, y+h))
-	data := preprocessImage(faceCrop, 112, 112)
 
 	inputTensor, err := ort.NewTensor(ort.NewShape(1, 3, 112, 112), data)
 	if err != nil {
@@ -457,4 +513,379 @@ func l2normalize(v []float32) {
 	for i := range v {
 		v[i] /= norm
 	}
+}
+
+// --- SCRFD face detection ---
+
+// detectFacesSCRFD runs SCRFD on the image and returns detected faces with landmarks.
+func (b *OnnxBackend) detectFacesSCRFD(img image.Image) ([]DetectedFace, error) {
+	bounds := img.Bounds()
+	imgW := float64(bounds.Dx())
+	imgH := float64(bounds.Dy())
+
+	// Letterbox to 640×640.
+	letterboxed, scale, padX, padY := letterboxImage(img, scrfdInputSize, scrfdInputSize)
+
+	// Preprocess: (pixel - 127.5) / 128.0, CHW layout.
+	data := preprocessSCRFD(letterboxed)
+
+	inputTensor, err := ort.NewTensor(ort.NewShape(1, 3, scrfdInputSize, scrfdInputSize), data)
+	if err != nil {
+		return nil, fmt.Errorf("scrfd input tensor: %w", err)
+	}
+	defer inputTensor.Destroy()
+
+	// Compute anchor counts per stride.
+	var anchorCounts [3]int64
+	for i, stride := range scrfdStrides {
+		gs := int64(scrfdInputSize / stride)
+		anchorCounts[i] = gs * gs * scrfdNumAnchors
+	}
+
+	// Create 9 output tensors: 3 scores, 3 boxes, 3 keypoints.
+	type tensorGroup struct {
+		scores, boxes, kps *ort.Tensor[float32]
+	}
+	var groups [3]tensorGroup
+	var allOutputs []ort.Value
+	for i := range 3 {
+		var err error
+		groups[i].scores, err = ort.NewEmptyTensor[float32](ort.NewShape(anchorCounts[i], 1))
+		if err != nil {
+			return nil, fmt.Errorf("scrfd score tensor %d: %w", i, err)
+		}
+		defer groups[i].scores.Destroy()
+		groups[i].boxes, err = ort.NewEmptyTensor[float32](ort.NewShape(anchorCounts[i], 4))
+		if err != nil {
+			return nil, fmt.Errorf("scrfd box tensor %d: %w", i, err)
+		}
+		defer groups[i].boxes.Destroy()
+		groups[i].kps, err = ort.NewEmptyTensor[float32](ort.NewShape(anchorCounts[i], 10))
+		if err != nil {
+			return nil, fmt.Errorf("scrfd kps tensor %d: %w", i, err)
+		}
+		defer groups[i].kps.Destroy()
+	}
+	// Output order: scores[0..2], boxes[3..5], kps[6..8].
+	allOutputs = []ort.Value{
+		groups[0].scores, groups[1].scores, groups[2].scores,
+		groups[0].boxes, groups[1].boxes, groups[2].boxes,
+		groups[0].kps, groups[1].kps, groups[2].kps,
+	}
+
+	session, err := ort.NewAdvancedSession(
+		filepath.Join(b.ModelsDir, scrfdFile),
+		[]string{"input.1"}, scrfdOutputNames,
+		[]ort.Value{inputTensor}, allOutputs, nil)
+	if err != nil {
+		return nil, fmt.Errorf("scrfd session: %w", err)
+	}
+	defer session.Destroy()
+
+	if err := session.Run(); err != nil {
+		return nil, fmt.Errorf("run scrfd: %w", err)
+	}
+
+	// Decode detections from all strides.
+	var dets []scrfdDetection
+
+	for si, stride := range scrfdStrides {
+		gs := scrfdInputSize / stride
+		scoreData := groups[si].scores.GetData()
+		boxData := groups[si].boxes.GetData()
+		kpsData := groups[si].kps.GetData()
+
+		for y := range gs {
+			for x := range gs {
+				for a := range scrfdNumAnchors {
+					idx := (y*gs+x)*scrfdNumAnchors + a
+					score := float64(scoreData[idx])
+					if score < scrfdScoreThreshold {
+						continue
+					}
+
+					cx := float64(x*stride) + float64(stride)/2
+					cy := float64(y*stride) + float64(stride)/2
+					sf := float64(stride)
+
+					d := scrfdDetection{score: score}
+					d.x1 = cx - float64(boxData[idx*4])*sf
+					d.y1 = cy - float64(boxData[idx*4+1])*sf
+					d.x2 = cx + float64(boxData[idx*4+2])*sf
+					d.y2 = cy + float64(boxData[idx*4+3])*sf
+
+					for k := range 5 {
+						d.landmarks[k] = [2]float64{
+							cx + float64(kpsData[idx*10+k*2])*sf,
+							cy + float64(kpsData[idx*10+k*2+1])*sf,
+						}
+					}
+					dets = append(dets, d)
+				}
+			}
+		}
+	}
+
+	// NMS.
+	kept := nms(dets, scrfdNMSThreshold)
+
+	// Convert to DetectedFace with normalized coordinates.
+	var faces []DetectedFace
+	for _, i := range kept {
+		d := dets[i]
+		// Map from letterbox coords to original image coords.
+		x1 := (d.x1 - padX) / scale
+		y1 := (d.y1 - padY) / scale
+		x2 := (d.x2 - padX) / scale
+		y2 := (d.y2 - padY) / scale
+
+		face := DetectedFace{
+			X:          x1 / imgW,
+			Y:          y1 / imgH,
+			W:          (x2 - x1) / imgW,
+			H:          (y2 - y1) / imgH,
+			Confidence: d.score,
+		}
+
+		landmarks := make([][2]float64, 5)
+		for k := range 5 {
+			landmarks[k] = [2]float64{
+				((d.landmarks[k][0] - padX) / scale) / imgW,
+				((d.landmarks[k][1] - padY) / scale) / imgH,
+			}
+		}
+		face.Landmarks = landmarks
+		faces = append(faces, face)
+	}
+	return faces, nil
+}
+
+// preprocessSCRFD converts an image to SCRFD's expected format: (pixel-127.5)/128.0, CHW.
+func preprocessSCRFD(img image.Image) []float32 {
+	bounds := img.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+	tensor := make([]float32, 3*h*w)
+	for y := range h {
+		for x := range w {
+			r, g, b, _ := img.At(bounds.Min.X+x, bounds.Min.Y+y).RGBA()
+			tensor[0*h*w+y*w+x] = (float32(r)/256.0 - 127.5) / 128.0
+			tensor[1*h*w+y*w+x] = (float32(g)/256.0 - 127.5) / 128.0
+			tensor[2*h*w+y*w+x] = (float32(b)/256.0 - 127.5) / 128.0
+		}
+	}
+	return tensor
+}
+
+// letterboxImage resizes an image to fit within targetW×targetH, preserving aspect ratio,
+// and zero-pads to the exact target size. Returns the padded image and mapping parameters.
+func letterboxImage(img image.Image, targetW, targetH int) (image.Image, float64, float64, float64) {
+	bounds := img.Bounds()
+	srcW := float64(bounds.Dx())
+	srcH := float64(bounds.Dy())
+
+	scale := math.Min(float64(targetW)/srcW, float64(targetH)/srcH)
+	newW := int(srcW * scale)
+	newH := int(srcH * scale)
+	padX := float64(targetW-newW) / 2
+	padY := float64(targetH-newH) / 2
+
+	resized := resizeImage(img, newW, newH)
+
+	dst := image.NewRGBA(image.Rect(0, 0, targetW, targetH))
+	// Zero-fill (black) is the default for NewRGBA.
+	ox := int(padX)
+	oy := int(padY)
+	for y := range newH {
+		for x := range newW {
+			dst.Set(ox+x, oy+y, resized.At(x, y))
+		}
+	}
+	return dst, scale, padX, padY
+}
+
+// scrfdDetection holds a raw SCRFD detection before NMS.
+type scrfdDetection struct {
+	x1, y1, x2, y2 float64
+	score           float64
+	landmarks       [5][2]float64
+}
+
+// nms performs greedy non-maximum suppression on SCRFD detections.
+func nms(dets []scrfdDetection, iouThreshold float64) []int {
+	if len(dets) == 0 {
+		return nil
+	}
+
+	// Sort by score descending.
+	indices := make([]int, len(dets))
+	for i := range indices {
+		indices[i] = i
+	}
+	sort.Slice(indices, func(i, j int) bool {
+		return dets[indices[i]].score > dets[indices[j]].score
+	})
+
+	suppressed := make([]bool, len(dets))
+	var kept []int
+	for _, i := range indices {
+		if suppressed[i] {
+			continue
+		}
+		kept = append(kept, i)
+		for _, j := range indices {
+			if suppressed[j] || i == j {
+				continue
+			}
+			if iou(dets[i], dets[j]) > iouThreshold {
+				suppressed[j] = true
+			}
+		}
+	}
+	return kept
+}
+
+func iou(a, b scrfdDetection) float64 {
+	x1 := math.Max(a.x1, b.x1)
+	y1 := math.Max(a.y1, b.y1)
+	x2 := math.Min(a.x2, b.x2)
+	y2 := math.Min(a.y2, b.y2)
+	inter := math.Max(0, x2-x1) * math.Max(0, y2-y1)
+	areaA := (a.x2 - a.x1) * (a.y2 - a.y1)
+	areaB := (b.x2 - b.x1) * (b.y2 - b.y1)
+	union := areaA + areaB - inter
+	if union <= 0 {
+		return 0
+	}
+	return inter / union
+}
+
+// --- Face alignment ---
+
+// alignFace warps a face from the full image to a canonical 112×112 aligned crop
+// using the 5 facial landmarks detected by SCRFD.
+func alignFace(img image.Image, landmarks [][2]float64) image.Image {
+	bounds := img.Bounds()
+	imgW := float64(bounds.Dx())
+	imgH := float64(bounds.Dy())
+
+	// Convert normalized landmarks to pixel coordinates.
+	src := make([][2]float64, 5)
+	for i, lm := range landmarks {
+		src[i] = [2]float64{lm[0] * imgW, lm[1] * imgH}
+	}
+
+	// Compute similarity transform from source → ArcFace target landmarks.
+	M := estimateSimilarityTransform(src[:], arcfaceTargetLandmarks[:])
+
+	// Warp image to produce aligned 112×112 face.
+	return warpAffine(img, M, 112, 112)
+}
+
+// estimateSimilarityTransform computes a 2×3 affine matrix for a similarity transform
+// (rotation + uniform scale + translation) mapping src points to dst points.
+func estimateSimilarityTransform(src, dst [][2]float64) [2][3]float64 {
+	n := len(src)
+	// Solve for [a, b, tx, ty] where:
+	//   dst_x = a*src_x - b*src_y + tx
+	//   dst_y = b*src_x + a*src_y + ty
+	// Using normal equations: (A^T A) x = A^T b.
+	var ata [4][4]float64
+	var atb [4]float64
+
+	for i := range n {
+		sx, sy := src[i][0], src[i][1]
+		dx, dy := dst[i][0], dst[i][1]
+		row1 := [4]float64{sx, -sy, 1, 0}
+		row2 := [4]float64{sy, sx, 0, 1}
+		for j := range 4 {
+			for k := range 4 {
+				ata[j][k] += row1[j]*row1[k] + row2[j]*row2[k]
+			}
+			atb[j] += row1[j]*dx + row2[j]*dy
+		}
+	}
+
+	x := solve4x4(ata, atb)
+	return [2][3]float64{
+		{x[0], -x[1], x[2]},
+		{x[1], x[0], x[3]},
+	}
+}
+
+// solve4x4 solves a 4×4 linear system Ax = b using Gaussian elimination with partial pivoting.
+func solve4x4(A [4][4]float64, b [4]float64) [4]float64 {
+	// Augmented matrix.
+	var m [4][5]float64
+	for i := range 4 {
+		for j := range 4 {
+			m[i][j] = A[i][j]
+		}
+		m[i][4] = b[i]
+	}
+
+	// Forward elimination with partial pivoting.
+	for col := range 4 {
+		// Find pivot.
+		maxRow := col
+		for row := col + 1; row < 4; row++ {
+			if math.Abs(m[row][col]) > math.Abs(m[maxRow][col]) {
+				maxRow = row
+			}
+		}
+		m[col], m[maxRow] = m[maxRow], m[col]
+
+		pivot := m[col][col]
+		if math.Abs(pivot) < 1e-12 {
+			continue
+		}
+		for row := col + 1; row < 4; row++ {
+			factor := m[row][col] / pivot
+			for j := col; j < 5; j++ {
+				m[row][j] -= factor * m[col][j]
+			}
+		}
+	}
+
+	// Back substitution.
+	var x [4]float64
+	for i := 3; i >= 0; i-- {
+		x[i] = m[i][4]
+		for j := i + 1; j < 4; j++ {
+			x[i] -= m[i][j] * x[j]
+		}
+		if math.Abs(m[i][i]) > 1e-12 {
+			x[i] /= m[i][i]
+		}
+	}
+	return x
+}
+
+// warpAffine applies an affine transform M (mapping src→dst) to produce an output image.
+// Uses bilinear interpolation via the inverse transform.
+func warpAffine(img image.Image, M [2][3]float64, outW, outH int) image.Image {
+	// Invert the 2×3 similarity transform.
+	// For M = [[a, -b, tx], [b, a, ty]], det = a² + b²
+	a, b := M[0][0], M[1][0]
+	tx, ty := M[0][2], M[1][2]
+	det := a*a + b*b
+	if det < 1e-12 {
+		return image.NewRGBA(image.Rect(0, 0, outW, outH))
+	}
+	// Inverse: [[a/det, b/det, -(a*tx+b*ty)/det], [-b/det, a/det, (b*tx-a*ty)/det]]
+	invA := a / det
+	invB := b / det
+	invTx := -(a*tx + b*ty) / det
+	invTy := (b*tx - a*ty) / det
+
+	bounds := img.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, outW, outH))
+	for y := range outH {
+		for x := range outW {
+			fx, fy := float64(x)+0.5, float64(y)+0.5
+			sx := invA*fx + invB*fy + invTx
+			sy := -invB*fx + invA*fy + invTy
+			dst.Set(x, y, bilinearSample(img, sx-0.5, sy-0.5, bounds))
+		}
+	}
+	return dst
 }

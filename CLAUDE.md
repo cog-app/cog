@@ -33,7 +33,7 @@ Avoid running tools outside of the Go tool. Tools should be versioned with go.mo
 
 WE DO NOT SWALLOW ERRORS. Errors should be handled by either wrapping and returning or logging the error.
 
-\*.tmpl files use tabs.
+\*.tmpl files use tabs. The read tool will show them as spaces, but they're all tabs.
 
 ## Architecture
 

@@ -102,6 +102,8 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterPage("tags", http.HandlerFunc(pages.Tags))
 	ctx.RegisterPage("tag/{name}", http.HandlerFunc(pages.TagView))
 	ctx.RegisterPage("videos", http.HandlerFunc(pages.Videos))
+	ctx.RegisterPage("duplicates", http.HandlerFunc(pages.Duplicates))
+	ctx.RegisterPage("duplicates/{id}", http.HandlerFunc(pages.DuplicateGroupView))
 	ctx.RegisterPage("settings", http.HandlerFunc(pages.Settings))
 
 	ctx.RegisterAPI("api/timeline", http.HandlerFunc(pages.TimelineAPI))
@@ -109,6 +111,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAPI("api/media/{id}/thumbnail", http.HandlerFunc(pages.MediaThumbnail))
 	ctx.RegisterAPI("api/face/{id}/thumbnail", http.HandlerFunc(pages.FaceThumbnail))
 	ctx.RegisterAPI("api/scan-status", http.HandlerFunc(pages.ScanStatusPartial))
+	ctx.RegisterAPI("api/user-scan-status", http.HandlerFunc(pages.UserScanStatusPartial))
 	ctx.RegisterAPI("api/tags/search", http.HandlerFunc(pages.SearchTagsAPI))
 	ctx.RegisterAPI("api/people/search", http.HandlerFunc(pages.SearchPeopleAPI))
 
@@ -139,6 +142,10 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		Slug:   "purge-recognitions",
 		Action: http.HandlerFunc(pages.PurgeRecognitions),
 	})
+	ctx.RegisterAction("POST", "duplicates/{id}/keep", http.HandlerFunc(pages.SetDuplicateKeep))
+	ctx.RegisterAction("POST", "duplicates/{id}/unmark", http.HandlerFunc(pages.UnmarkDuplicate))
+	ctx.RegisterAction("POST", "duplicates/{id}/delete", http.HandlerFunc(pages.DeleteNonKeepDuplicates))
+	ctx.RegisterAction("POST", "duplicates/delete-all", http.HandlerFunc(pages.DeleteAllNonKeep))
 	ctx.RegisterAction("POST", "rename/preview", http.HandlerFunc(pages.RenamePreview))
 	ctx.RegisterAction("POST", "rename/apply", http.HandlerFunc(pages.RenameApply))
 	ctx.RegisterAction("POST", "rename/undo", http.HandlerFunc(pages.RenameUndo))

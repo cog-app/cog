@@ -681,6 +681,12 @@ func (h *Pages) ScanStatusPartial(w http.ResponseWriter, r *http.Request) {
 	scanStatusCard(stats, scan, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
+// UserScanStatusPartial returns a small scan-running banner for the gallery sidebar.
+func (h *Pages) UserScanStatusPartial(w http.ResponseWriter, r *http.Request) {
+	scan := h.plugin.GetScanStatus()
+	userScanBanner(scan).Render(r.Context(), w)
+}
+
 // TriggerSystemScan triggers a full scan of all users from the admin page.
 func (h *Pages) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
 	go h.plugin.ScanAllUsers(context.Background())
@@ -713,7 +719,167 @@ func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 	if v := r.FormValue("cluster_threshold"); v != "" {
 		SetSetting(db, "cluster_threshold", v)
 	}
+	SetSetting(db, "duplicate_detection_enabled", r.FormValue("duplicate_detection_enabled"))
+	if v := r.FormValue("duplicate_algorithm"); v != "" {
+		SetSetting(db, "duplicate_algorithm", v)
+	}
+	if v := r.FormValue("duplicate_distance"); v != "" {
+		SetSetting(db, "duplicate_distance", v)
+	}
 	http.Redirect(w, r, "/admin/plugins/gallery", http.StatusSeeOther)
+}
+
+// --- Duplicate handlers ---
+
+// Duplicates renders the duplicate groups list.
+func (h *Pages) Duplicates(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	groups, _ := ListDuplicateGroups(db)
+	plugin.SetTitle(w, "Duplicates")
+	duplicatesPage(r.URL.Path, groups).Render(r.Context(), w)
+}
+
+// DuplicateGroupView renders a single duplicate group.
+func (h *Pages) DuplicateGroupView(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	members, err := DuplicateGroupMembers(db, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	plugin.SetTitle(w, "Duplicate Group")
+	duplicateGroupViewPage(r.URL.Path, id, members, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// SetDuplicateKeep sets the keep item in a duplicate group.
+func (h *Pages) SetDuplicateKeep(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	mediaID, err := strconv.ParseInt(r.FormValue("media_id"), 10, 64)
+	if err != nil {
+		http.Error(w, "media_id required", http.StatusBadRequest)
+		return
+	}
+	if err := SetKeepMember(db, groupID, mediaID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/duplicates/%d", groupID), http.StatusSeeOther)
+}
+
+// UnmarkDuplicate removes a member from a duplicate group.
+func (h *Pages) UnmarkDuplicate(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	mediaID, err := strconv.ParseInt(r.FormValue("media_id"), 10, 64)
+	if err != nil {
+		http.Error(w, "media_id required", http.StatusBadRequest)
+		return
+	}
+	if err := RemoveDuplicateMember(db, groupID, mediaID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Delete group if fewer than 2 members remain.
+	count, _ := DuplicateGroupMemberCount(db, groupID)
+	if count < 2 {
+		DeleteDuplicateGroup(db, groupID)
+		http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/duplicates/%d", groupID), http.StatusSeeOther)
+}
+
+// DeleteNonKeepDuplicates deletes non-keep files in a duplicate group.
+func (h *Pages) DeleteNonKeepDuplicates(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	username := plugin.Username(r)
+	members, err := DuplicateGroupMembers(db, groupID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, m := range members {
+		if m.IsKeep {
+			continue
+		}
+		if err := h.plugin.files.Delete(username, m.Media.FilePath); err != nil {
+			h.plugin.log.Warn("delete duplicate", "path", m.Media.FilePath, "err", err)
+		}
+		DeleteMediaByFileID(db, m.Media.FileID)
+	}
+	DeleteDuplicateGroup(db, groupID)
+	http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
+}
+
+// DeleteAllNonKeep deletes non-keep files across all duplicate groups.
+func (h *Pages) DeleteAllNonKeep(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	username := plugin.Username(r)
+	groups, err := ListDuplicateGroups(db)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, g := range groups {
+		members, err := DuplicateGroupMembers(db, g.ID)
+		if err != nil {
+			continue
+		}
+		for _, m := range members {
+			if m.IsKeep {
+				continue
+			}
+			if err := h.plugin.files.Delete(username, m.Media.FilePath); err != nil {
+				h.plugin.log.Warn("delete duplicate", "path", m.Media.FilePath, "err", err)
+			}
+			DeleteMediaByFileID(db, m.Media.FileID)
+		}
+		DeleteDuplicateGroup(db, g.ID)
+	}
+	http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
 }
 
 // RenamePreview shows a preview of the rename operation.

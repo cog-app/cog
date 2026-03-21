@@ -112,6 +112,17 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 		return nil, fmt.Errorf("metadata: %w", err)
 	}
 
+	// Stage 2.5: Pre-generate thumbnails for grid view.
+	if err := p.preGenerateThumbnails(ctx, galleryDB, username); err != nil {
+		p.log.Warn("thumbnails", "user", username, "err", err)
+	}
+
+	// Stage 2.75: Fingerprint computation for duplicate detection.
+	if err := p.computeFingerprints(ctx, galleryDB, username); err != nil {
+		p.log.Warn("fingerprints", "user", username, "err", err)
+		warnings = append(warnings, fmt.Sprintf("%s: fingerprints: %v", username, err))
+	}
+
 	// Stage 3: OCR text extraction (if tesseract available)
 	if err := p.extractOCR(ctx, galleryDB, username); err != nil {
 		p.log.Warn("ocr", "user", username, "err", err)
@@ -137,6 +148,12 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	if err := clusterFaces(galleryDB, sysDB); err != nil {
 		p.log.Warn("clustering", "user", username, "err", err)
 		warnings = append(warnings, fmt.Sprintf("%s: clustering: %v", username, err))
+	}
+
+	// Stage 8: Duplicate detection
+	if err := p.detectDuplicates(galleryDB); err != nil {
+		p.log.Warn("duplicates", "user", username, "err", err)
+		warnings = append(warnings, fmt.Sprintf("%s: duplicates: %v", username, err))
 	}
 
 	return warnings, nil
@@ -455,6 +472,44 @@ func (p *Plugin) generateAutoAlbums(ctx context.Context, db *sql.DB) error {
 		}
 	}
 
+	return nil
+}
+
+// preGenerateThumbnails generates 256px thumbnails for all media that don't have one cached yet.
+func (p *Plugin) preGenerateThumbnails(ctx context.Context, db *sql.DB, username string) error {
+	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m WHERE m.width > 0`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	items, err := scanMediaRows(rows)
+	if err != nil {
+		return err
+	}
+
+	var generated int
+	for i := range items {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		m := &items[i]
+		if m.IsVideo() && !FFmpegAvailable() {
+			continue
+		}
+		f, err := p.PreviewPath(username, m, 256)
+		if err != nil {
+			continue
+		}
+		f.Close()
+		generated++
+		if generated%100 == 0 {
+			p.log.Info("thumbnails", "user", username, "generated", generated)
+		}
+	}
+	if generated > 0 {
+		p.log.Info("thumbnails done", "user", username, "generated", generated)
+	}
 	return nil
 }
 

@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS media (
     recognition_state INTEGER NOT NULL DEFAULT 0,
     recognition_at INTEGER,
     recognition_error TEXT NOT NULL DEFAULT '',
-    ocr_text TEXT NOT NULL DEFAULT ''
+    ocr_text TEXT NOT NULL DEFAULT '',
+    fingerprint TEXT NOT NULL DEFAULT ''
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_media_file_id ON media(file_id);
@@ -39,6 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_media_date_taken ON media(date_taken DESC);
 CREATE INDEX IF NOT EXISTS idx_media_place ON media(country, city);
 CREATE INDEX IF NOT EXISTS idx_media_camera ON media(camera_make, camera_model);
 CREATE INDEX IF NOT EXISTS idx_media_recognition ON media(recognition_state);
+CREATE INDEX IF NOT EXISTS idx_media_fingerprint ON media(fingerprint);
 
 CREATE TABLE IF NOT EXISTS albums (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,3 +118,18 @@ CREATE TABLE IF NOT EXISTS rename_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rename_log_batch ON rename_log(batch_id);
+
+CREATE TABLE IF NOT EXISTS duplicate_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TABLE IF NOT EXISTS duplicate_members (
+    group_id INTEGER NOT NULL REFERENCES duplicate_groups(id) ON DELETE CASCADE,
+    media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    is_keep INTEGER NOT NULL DEFAULT 0,
+    distance REAL NOT NULL DEFAULT 0.0,
+    PRIMARY KEY (group_id, media_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_duplicate_members_media ON duplicate_members(media_id);

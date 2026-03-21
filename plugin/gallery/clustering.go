@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"strconv"
+	"time"
 )
 
 const (
@@ -24,6 +25,14 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 
 	// Load all existing people centroids.
 	centroids, err := loadPersonCentroids(db)
+	if err != nil {
+		return err
+	}
+
+	// Load recent face embeddings per person for chain matching (bridge effect).
+	// This helps match aging faces that don't match the centroid but do match
+	// recent photos of the same person.
+	recentFaces, err := loadRecentFaces(db, 5)
 	if err != nil {
 		return err
 	}
@@ -67,6 +76,20 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 			if dist < bestDist {
 				bestDist = dist
 				bestPersonID = personID
+			}
+		}
+
+		// Chain matching: if centroid didn't match, try recent faces.
+		// This bridges the gap for aging faces.
+		if bestPersonID == 0 {
+			for personID, recent := range recentFaces {
+				for _, emb := range recent {
+					dist := cosineDistance(face.embedding, emb)
+					if dist < bestDist {
+						bestDist = dist
+						bestPersonID = personID
+					}
+				}
 			}
 		}
 
@@ -114,11 +137,18 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 	return nil
 }
 
+// recencyHalfLife controls how quickly older photos lose weight in centroid
+// computation. Photos from this many seconds ago contribute half as much as
+// today's photos. 5 years handles children aging gracefully.
+const recencyHalfLife = 5 * 365.25 * 24 * 3600 // seconds
+
 // loadPersonCentroids computes the weighted mean embedding across all faces for
-// each person. Faces from larger crops (more pixels) are weighted more heavily
-// since they produce higher-quality embeddings.
+// each person. Weights combine crop quality (larger faces are better) and
+// recency (newer photos are weighted higher to track aging faces).
 func loadPersonCentroids(db *sql.DB) (map[int64][]float32, error) {
-	rows, err := db.Query(`SELECT f.person_id, f.embedding, f.w * m.width * f.h * m.height
+	now := float64(time.Now().Unix())
+	rows, err := db.Query(`SELECT f.person_id, f.embedding, f.w * m.width * f.h * m.height,
+		COALESCE(m.date_taken, m.date_indexed)
 		FROM faces f JOIN media m ON m.id = f.media_id
 		WHERE f.person_id IS NOT NULL AND f.embedding IS NOT NULL`)
 	if err != nil {
@@ -137,16 +167,21 @@ func loadPersonCentroids(db *sql.DB) (map[int64][]float32, error) {
 		var personID int64
 		var blob []byte
 		var cropArea float64
-		if err := rows.Scan(&personID, &blob, &cropArea); err != nil {
+		var dateTaken int64
+		if err := rows.Scan(&personID, &blob, &cropArea, &dateTaken); err != nil {
 			continue
 		}
 		emb := bytesToFloat32Slice(blob)
 		if len(emb) == 0 {
 			continue
 		}
-		// Use sqrt of crop area (i.e. linear face size) as weight so that
-		// very large faces don't completely dominate.
-		weight := math.Sqrt(math.Max(cropArea, 1))
+		// Combine crop quality with recency. Recency uses half-life decay
+		// so the centroid tracks the person's current appearance.
+		qualityWeight := math.Sqrt(math.Max(cropArea, 1))
+		age := now - float64(dateTaken)
+		recency := math.Max(math.Exp2(-age/recencyHalfLife), 0.1)
+		weight := qualityWeight * recency
+
 		a, ok := accum[personID]
 		if !ok {
 			a = &accumulator{sum: make([]float64, len(emb))}
@@ -171,6 +206,36 @@ func loadPersonCentroids(db *sql.DB) (map[int64][]float32, error) {
 		centroids[personID] = centroid
 	}
 	return centroids, nil
+}
+
+// loadRecentFaces returns the K most recent face embeddings per person,
+// used for chain matching to handle aging faces.
+func loadRecentFaces(db *sql.DB, k int) (map[int64][][]float32, error) {
+	// Use a window function to rank faces by date per person, then take top K.
+	rows, err := db.Query(`SELECT person_id, embedding FROM (
+		SELECT f.person_id, f.embedding,
+			ROW_NUMBER() OVER (PARTITION BY f.person_id ORDER BY COALESCE(m.date_taken, m.date_indexed) DESC) AS rn
+		FROM faces f JOIN media m ON m.id = f.media_id
+		WHERE f.person_id IS NOT NULL AND f.embedding IS NOT NULL
+	) WHERE rn <= ?`, k)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64][][]float32)
+	for rows.Next() {
+		var personID int64
+		var blob []byte
+		if err := rows.Scan(&personID, &blob); err != nil {
+			continue
+		}
+		emb := bytesToFloat32Slice(blob)
+		if len(emb) > 0 {
+			result[personID] = append(result[personID], emb)
+		}
+	}
+	return result, rows.Err()
 }
 
 // cosineDistance computes the cosine distance between two vectors (1 - cosine similarity).
