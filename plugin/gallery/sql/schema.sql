@@ -40,7 +40,6 @@ CREATE INDEX IF NOT EXISTS idx_media_date_taken ON media(date_taken DESC);
 CREATE INDEX IF NOT EXISTS idx_media_place ON media(country, city);
 CREATE INDEX IF NOT EXISTS idx_media_camera ON media(camera_make, camera_model);
 CREATE INDEX IF NOT EXISTS idx_media_recognition ON media(recognition_state);
-CREATE INDEX IF NOT EXISTS idx_media_fingerprint ON media(fingerprint);
 
 CREATE TABLE IF NOT EXISTS albums (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
