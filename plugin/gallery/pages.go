@@ -644,6 +644,9 @@ func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 			Name: p.DisplayName(),
 			Sub:  fmt.Sprintf("%d faces", p.FaceCount),
 		}
+		if p.BestFaceID != nil {
+			items[i].AvatarURL = fmt.Sprintf("/apps/gallery/api/face/%d/thumbnail", *p.BestFaceID)
+		}
 	}
 	ui.PickerResults(items).Render(r.Context(), w)
 }

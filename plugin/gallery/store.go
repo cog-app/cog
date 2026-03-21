@@ -711,7 +711,9 @@ func CreatePersonFromFace(db *sql.DB, faceID int64) (int64, error) {
 // SearchPeople returns people matching a query string, ordered by face count.
 func SearchPeople(db *sql.DB, query string, excludeID int64, limit int) ([]Person, error) {
 	rows, err := db.Query(`SELECT p.id, p.name,
-		(SELECT COUNT(*) FROM faces f WHERE f.person_id = p.id) AS face_count
+		(SELECT COUNT(*) FROM faces f WHERE f.person_id = p.id) AS face_count,
+		(SELECT f.id FROM faces f JOIN media m ON m.id = f.media_id
+			WHERE f.person_id = p.id ORDER BY f.w * m.width * f.h * m.height DESC LIMIT 1) AS best_face_id
 		FROM people p
 		WHERE p.name LIKE '%' || ? || '%' AND p.id != ? AND p.visible = 1
 		ORDER BY face_count DESC LIMIT ?`, query, excludeID, limit)
@@ -722,7 +724,7 @@ func SearchPeople(db *sql.DB, query string, excludeID int64, limit int) ([]Perso
 	var people []Person
 	for rows.Next() {
 		var p Person
-		if err := rows.Scan(&p.ID, &p.Name, &p.FaceCount); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.FaceCount, &p.BestFaceID); err != nil {
 			return nil, err
 		}
 		people = append(people, p)
