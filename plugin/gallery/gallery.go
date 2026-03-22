@@ -131,6 +131,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAPI("api/user-scan-status", http.HandlerFunc(pages.UserScanStatusPartial))
 	ctx.RegisterAPI("api/tags/search", http.HandlerFunc(pages.SearchTagsAPI))
 	ctx.RegisterAPI("api/people/search", http.HandlerFunc(pages.SearchPeopleAPI))
+	ctx.RegisterAPI("api/worker/pprof/{profile...}", http.HandlerFunc(p.workerPprof))
 
 	ctx.RegisterAction("POST", "albums", http.HandlerFunc(pages.CreateAlbum))
 	ctx.RegisterAction("POST", "albums/{id}/add", http.HandlerFunc(pages.AddToAlbum))
@@ -305,6 +306,92 @@ func (p *Plugin) PurgeAllRecognitions() error {
 		p.log.Info("purged recognitions", "user", username)
 	}
 	return nil
+}
+
+// workerPprof proxies pprof profile requests to the scan worker subprocess.
+// Supports: heap, goroutine, allocs, block, mutex, threadcreate, profile (CPU).
+func (p *Plugin) workerPprof(w http.ResponseWriter, r *http.Request) {
+	p.scanMu.Lock()
+	client := p.scanClient
+	p.scanMu.Unlock()
+	if client == nil {
+		http.Error(w, "scan worker not running", http.StatusServiceUnavailable)
+		return
+	}
+
+	name := r.PathValue("profile")
+
+	// Index page: show memstats and links to profiles.
+	if name == "" {
+		stats, err := client.MemStats()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		base := "/apps/gallery/api/worker/pprof"
+		fmt.Fprintf(w, `<html><head><title>Worker pprof</title></head><body>
+<h1>Gallery Scan Worker</h1>
+<table>
+<tr><td>Heap In-Use</td><td>%s</td></tr>
+<tr><td>Heap Alloc</td><td>%s</td></tr>
+<tr><td>Heap Sys</td><td>%s</td></tr>
+<tr><td>Total Sys</td><td>%s</td></tr>
+<tr><td>GC Cycles</td><td>%d</td></tr>
+<tr><td>Goroutines</td><td>%d</td></tr>
+</table>
+<h2>Profiles</h2>
+<ul>
+<li><a href="%s/heap?debug=1">heap</a></li>
+<li><a href="%s/allocs?debug=1">allocs</a></li>
+<li><a href="%s/goroutine?debug=1">goroutine</a></li>
+<li><a href="%s/block?debug=1">block</a></li>
+<li><a href="%s/mutex?debug=1">mutex</a></li>
+<li><a href="%s/threadcreate?debug=1">threadcreate</a></li>
+<li><a href="%s/profile?seconds=10">profile (CPU, 10s)</a></li>
+</ul>
+</body></html>`,
+			formatBytes(stats.HeapInuse), formatBytes(stats.HeapAlloc),
+			formatBytes(stats.HeapSys), formatBytes(stats.Sys),
+			stats.NumGC, stats.Goroutines,
+			base, base, base, base, base, base, base)
+		return
+	}
+
+	debug := 1
+	if d := r.URL.Query().Get("debug"); d != "" {
+		fmt.Sscanf(d, "%d", &debug)
+	}
+	seconds := 0
+	if s := r.URL.Query().Get("seconds"); s != "" {
+		fmt.Sscanf(s, "%d", &seconds)
+	}
+
+	data, err := client.Profile(name, debug, seconds)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if debug > 0 && name != "profile" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	} else {
+		w.Header().Set("Content-Type", "application/octet-stream")
+	}
+	w.Write(data)
+}
+
+func formatBytes(b uint64) string {
+	switch {
+	case b >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(b)/(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(b)/(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(b)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }
 
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {

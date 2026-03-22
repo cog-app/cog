@@ -1,11 +1,14 @@
 package gallery
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net/rpc"
 	"os"
+	"runtime"
+	"runtime/pprof"
 	"sync"
 	"time"
 )
@@ -110,6 +113,69 @@ func (s *ScanRPC) GetStatus(args *ScanStatusArgs, result *ScanStatusResult) erro
 	return nil
 }
 
+// ProfileArgs specifies which pprof profile to retrieve.
+type ProfileArgs struct {
+	Name     string // "heap", "goroutine", "allocs", "block", "mutex", "threadcreate"
+	Debug    int
+	Seconds  int // for "profile" (CPU), 0 = use default 30s
+}
+
+// ProfileResult holds the raw pprof output.
+type ProfileResult struct {
+	Data []byte
+}
+
+func (s *ScanRPC) Profile(args *ProfileArgs, result *ProfileResult) error {
+	var buf bytes.Buffer
+
+	if args.Name == "profile" {
+		// CPU profile: collect for N seconds.
+		dur := time.Duration(args.Seconds) * time.Second
+		if dur <= 0 {
+			dur = 30 * time.Second
+		}
+		if err := pprof.StartCPUProfile(&buf); err != nil {
+			return fmt.Errorf("start cpu profile: %w", err)
+		}
+		time.Sleep(dur)
+		pprof.StopCPUProfile()
+		result.Data = buf.Bytes()
+		return nil
+	}
+
+	p := pprof.Lookup(args.Name)
+	if p == nil {
+		return fmt.Errorf("unknown profile: %s", args.Name)
+	}
+	if err := p.WriteTo(&buf, args.Debug); err != nil {
+		return err
+	}
+	result.Data = buf.Bytes()
+	return nil
+}
+
+// MemStatsResult holds runtime memory statistics from the worker.
+type MemStatsResult struct {
+	HeapInuse  uint64
+	HeapSys    uint64
+	HeapAlloc  uint64
+	Sys        uint64
+	NumGC      uint32
+	Goroutines int
+}
+
+func (s *ScanRPC) MemStats(_ *struct{}, result *MemStatsResult) error {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	result.HeapInuse = m.HeapInuse
+	result.HeapSys = m.HeapSys
+	result.HeapAlloc = m.HeapAlloc
+	result.Sys = m.Sys
+	result.NumGC = m.NumGC
+	result.Goroutines = runtime.NumGoroutine()
+	return nil
+}
+
 // runScanWorker starts the RPC server on stdin/stdout.
 // Called when the subprocess is launched via `cog gallery scan worker`.
 func (p *Plugin) runScanWorker(ctx context.Context) error {
@@ -164,6 +230,26 @@ func (c *ScanClient) GetStatus() (ScanStatus, error) {
 		s.LastError = fmt.Errorf("%s", result.LastError)
 	}
 	return s, nil
+}
+
+func (c *ScanClient) Profile(name string, debug, seconds int) ([]byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var result ProfileResult
+	if err := c.client.Call("ScanRPC.Profile", &ProfileArgs{Name: name, Debug: debug, Seconds: seconds}, &result); err != nil {
+		return nil, err
+	}
+	return result.Data, nil
+}
+
+func (c *ScanClient) MemStats() (*MemStatsResult, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var result MemStatsResult
+	if err := c.client.Call("ScanRPC.MemStats", &struct{}{}, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 func (c *ScanClient) Close() error {
