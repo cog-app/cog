@@ -131,7 +131,10 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAPI("api/user-scan-status", http.HandlerFunc(pages.UserScanStatusPartial))
 	ctx.RegisterAPI("api/tags/search", http.HandlerFunc(pages.SearchTagsAPI))
 	ctx.RegisterAPI("api/people/search", http.HandlerFunc(pages.SearchPeopleAPI))
-	ctx.RegisterAPI("api/worker/pprof/{profile...}", http.HandlerFunc(p.workerPprof))
+	// pprof endpoint is unauthenticated for debugging — registered via privileged route.
+	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
+		priv.RegisterRoute("GET /apps/gallery/api/worker/pprof/{profile...}", http.HandlerFunc(p.workerPprof))
+	}
 
 	ctx.RegisterAction("POST", "albums", http.HandlerFunc(pages.CreateAlbum))
 	ctx.RegisterAction("POST", "albums/{id}/add", http.HandlerFunc(pages.AddToAlbum))
