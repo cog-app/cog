@@ -290,7 +290,7 @@ func (p *Plugin) extractOCR(ctx context.Context, db *sql.DB, username string) er
 		return nil
 	}
 	sysDB, err := p.SystemDB()
-	if err == nil && GetSetting(sysDB, "ocr_enabled", "true") != "true" {
+	if err == nil && !SettingOCREnabled.MustGet(sysDB) {
 		return nil
 	}
 

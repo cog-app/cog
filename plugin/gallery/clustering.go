@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"log/slog"
 	"math"
-	"strconv"
 	"time"
 )
 
@@ -18,9 +17,7 @@ const (
 func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 	threshold := defaultClusterThreshold
 	if sysDB != nil {
-		if v, err := strconv.ParseFloat(GetSetting(sysDB, "cluster_threshold", "0.35"), 64); err == nil && v > 0 {
-			threshold = v
-		}
+		threshold = SettingClusterThreshold.MustGet(sysDB)
 	}
 
 	// Load all existing people centroids.

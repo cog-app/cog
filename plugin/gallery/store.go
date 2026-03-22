@@ -2,7 +2,9 @@ package gallery
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -884,6 +886,147 @@ func SetSetting(db *sql.DB, key, value string) error {
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
 	return err
 }
+
+// --- Typed Settings ---
+
+// setting is a typed wrapper around gallery_settings key/value pairs.
+// It centralizes defaults and parsing so callers don't duplicate conversion logic.
+type setting[T any] struct {
+	key          string
+	defaultValue T
+	parse        func(s string) (T, error)
+	stringify    func(v T) string
+}
+
+func (s *setting[T]) Get(db *sql.DB) (T, error) {
+	var zero T
+	var value string
+	err := db.QueryRow(`SELECT value FROM gallery_settings WHERE key = ?`, s.key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return s.defaultValue, nil
+	}
+	if err != nil {
+		return zero, err
+	}
+	if value == "" {
+		return s.defaultValue, nil
+	}
+	return s.parse(value)
+}
+
+func (s *setting[T]) Set(db *sql.DB, value T) error {
+	str := fmt.Sprint(value)
+	if s.stringify != nil {
+		str = s.stringify(value)
+	}
+	_, err := db.Exec(`INSERT INTO gallery_settings (key, value) VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, s.key, str)
+	return err
+}
+
+// MustGet is like Get but returns the default on error.
+func (s *setting[T]) MustGet(db *sql.DB) T {
+	v, err := s.Get(db)
+	if err != nil {
+		return s.defaultValue
+	}
+	return v
+}
+
+func boolSetting(key string, defaultValue bool) setting[bool] {
+	return setting[bool]{
+		key: key, defaultValue: defaultValue,
+		parse: func(s string) (bool, error) { return s == "true", nil },
+		stringify: func(v bool) string {
+			if v {
+				return "true"
+			}
+			return ""
+		},
+	}
+}
+
+func floatSetting(key string, defaultValue float64) setting[float64] {
+	return setting[float64]{
+		key: key, defaultValue: defaultValue,
+		parse:     func(s string) (float64, error) { return strconv.ParseFloat(s, 64) },
+		stringify: func(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) },
+	}
+}
+
+func intSetting(key string, defaultValue int) setting[int] {
+	return setting[int]{
+		key: key, defaultValue: defaultValue,
+		parse:     strconv.Atoi,
+		stringify: strconv.Itoa,
+	}
+}
+
+func stringSetting[T ~string](key string, defaultValue T) setting[T] {
+	return setting[T]{
+		key: key, defaultValue: defaultValue,
+		parse:     func(s string) (T, error) { return T(s), nil },
+		stringify: func(v T) string { return string(v) },
+	}
+}
+
+// Enum types.
+
+// RecognitionBackendType identifies which recognition backend to use.
+type RecognitionBackendType string
+
+const (
+	BackendNone   RecognitionBackendType = "none"
+	BackendPigo   RecognitionBackendType = "pigo"
+	BackendOllama RecognitionBackendType = "ollama"
+	BackendOpenAI RecognitionBackendType = "openai"
+	BackendOnnx   RecognitionBackendType = "onnx"
+)
+
+// DuplicateAlgorithm identifies which perceptual hash algorithm to use.
+type DuplicateAlgorithm string
+
+const (
+	AlgoDifference DuplicateAlgorithm = "difference"
+	AlgoAverage    DuplicateAlgorithm = "average"
+	AlgoPHash      DuplicateAlgorithm = "phash"
+	AlgoMedian     DuplicateAlgorithm = "median"
+	AlgoBlockMean  DuplicateAlgorithm = "blockmean"
+)
+
+// All gallery settings.
+var (
+	// Recognition
+	SettingRecognitionEnabled = boolSetting("recognition_enabled", false)
+	SettingRecognitionBackend = stringSetting("recognition_backend", BackendNone)
+	SettingRecognitionURL     = stringSetting("recognition_url", "")
+	SettingRecognitionAPIKey  = stringSetting("recognition_api_key", "")
+	SettingRecognitionModel   = stringSetting("recognition_model", "")
+	SettingOnnxLibraryPath    = stringSetting("onnx_library_path", "")
+	SettingOnnxModelsDir      = stringSetting("onnx_models_dir", "")
+
+	// Detection tuning
+	SettingClusterThreshold     = floatSetting("cluster_threshold", 0.35)
+	SettingTagMinConfidence     = floatSetting("tag_min_confidence", 0.5)
+	SettingFaceMinConfidence    = floatSetting("face_min_confidence", 0.7)
+	SettingFaceDetectionEnabled = boolSetting("face_detection_enabled", true)
+	SettingOCREnabled           = boolSetting("ocr_enabled", true)
+
+	// Duplicates
+	SettingDuplicateDetectionEnabled = boolSetting("duplicate_detection_enabled", true)
+	SettingDuplicateAlgorithm        = stringSetting("duplicate_algorithm", AlgoDifference)
+	SettingDuplicateDistance         = intSetting("duplicate_distance", 5)
+	SettingDuplicateAlgorithmUsed    = stringSetting("duplicate_algorithm_used", "")
+
+	// Scan status (internal)
+	SettingScanRunning   = boolSetting("scan_running", false)
+	SettingScanLastRun   = intSetting("scan_last_run", 0)
+	SettingScanLastError = stringSetting("scan_last_error", "")
+
+	// File rename
+	SettingRenamePattern = stringSetting("rename_pattern",
+		"{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}")
+)
 
 // --- Rename Log ---
 

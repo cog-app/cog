@@ -10,7 +10,6 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -125,13 +124,9 @@ func (s *ScanRPC) persistStatus() {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.status.Running {
-		SetSetting(db, "scan_running", "true")
-	} else {
-		SetSetting(db, "scan_running", "false")
-	}
-	SetSetting(db, "scan_last_run", strconv.FormatInt(s.status.LastRun.Unix(), 10))
-	SetSetting(db, "scan_last_error", s.status.LastError)
+	SettingScanRunning.Set(db, s.status.Running)
+	SettingScanLastRun.Set(db, int(s.status.LastRun.Unix()))
+	SettingScanLastError.Set(db, s.status.LastError)
 }
 
 func (s *ScanRPC) GetStatus(args *ScanStatusArgs, result *ScanStatusResult) error {
@@ -209,7 +204,7 @@ func (s *ScanRPC) MemStats(_ *struct{}, result *MemStatsResult) error {
 func (p *Plugin) runScanWorker(ctx context.Context) error {
 	// Clear stale "running" flag from a previous crashed worker.
 	if db, err := p.SystemDB(); err == nil {
-		SetSetting(db, "scan_running", "false")
+		SettingScanRunning.Set(db, false)
 	}
 
 	svc := &ScanRPC{plugin: p, ctx: ctx}

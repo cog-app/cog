@@ -40,41 +40,41 @@ type RecognitionBackend interface {
 
 // getRecognitionBackend returns the configured recognition backend from system settings.
 func (p *Plugin) getRecognitionBackend(db *sql.DB) (RecognitionBackend, error) {
-	backend := GetSetting(db, "recognition_backend", "none")
-	if backend == "none" {
+	backend := SettingRecognitionBackend.MustGet(db)
+	if backend == BackendNone {
 		return nil, nil
 	}
-	if GetSetting(db, "recognition_enabled", "false") != "true" {
+	if !SettingRecognitionEnabled.MustGet(db) {
 		return nil, nil
 	}
 
-	url := GetSetting(db, "recognition_url", "")
-	apiKey := GetSetting(db, "recognition_api_key", "")
-	model := GetSetting(db, "recognition_model", "")
+	url := SettingRecognitionURL.MustGet(db)
+	apiKey := SettingRecognitionAPIKey.MustGet(db)
+	model := SettingRecognitionModel.MustGet(db)
 
 	switch backend {
-	case "ollama":
+	case BackendOllama:
 		b := &OllamaBackend{URL: url, Model: model}
 		if !b.Available() {
 			return nil, fmt.Errorf("ollama backend not available (url=%q, model=%q)", url, model)
 		}
 		return b, nil
-	case "openai":
+	case BackendOpenAI:
 		b := &OpenAIBackend{URL: url, APIKey: apiKey, Model: model}
 		if !b.Available() {
 			return nil, fmt.Errorf("openai backend not available (url=%q)", url)
 		}
 		return b, nil
-	case "pigo":
+	case BackendPigo:
 		return &PigoBackend{}, nil
-	case "onnx":
-		modelsDir := GetSetting(db, "onnx_models_dir", "")
+	case BackendOnnx:
+		modelsDir := SettingOnnxModelsDir.MustGet(db)
 		if modelsDir == "" {
 			modelsDir = p.ctx.DataDir() + "/onnx_models"
 		}
 		b := &OnnxBackend{
 			ModelsDir:   modelsDir,
-			LibraryPath: GetSetting(db, "onnx_library_path", ""),
+			LibraryPath: SettingOnnxLibraryPath.MustGet(db),
 		}
 		if !b.Available() {
 			return nil, fmt.Errorf("onnx backend not available: libonnxruntime.so not found (library_path=%q)", b.LibraryPath)
@@ -128,14 +128,8 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 	}
 	p.log.Info("recognition processing", "user", username, "count", len(items))
 
-	tagMinConf := 0.5
-	if v := GetSetting(sysDB, "tag_min_confidence", ""); v != "" {
-		fmt.Sscanf(v, "%f", &tagMinConf)
-	}
-	faceMinConf := 0.7
-	if v := GetSetting(sysDB, "face_min_confidence", ""); v != "" {
-		fmt.Sscanf(v, "%f", &faceMinConf)
-	}
+	tagMinConf := SettingTagMinConfidence.MustGet(sysDB)
+	faceMinConf := SettingFaceMinConfidence.MustGet(sysDB)
 
 	for i := range items {
 		if ctx.Err() != nil {
@@ -168,7 +162,7 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		}
 
 		// Store faces.
-		if GetSetting(sysDB, "face_detection_enabled", "true") == "true" {
+		if SettingFaceDetectionEnabled.MustGet(sysDB) {
 			for _, face := range result.Faces {
 				if face.Confidence < faceMinConf {
 					continue

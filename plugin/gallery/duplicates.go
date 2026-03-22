@@ -10,7 +10,6 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"os"
-	"strconv"
 
 	"github.com/ajdnik/imghash"
 	"github.com/ajdnik/imghash/hashtype"
@@ -25,21 +24,21 @@ type binaryHasher interface {
 }
 
 // getHasher returns a binary hasher for the given algorithm name.
-func getHasher(algorithm string) (binaryHasher, error) {
+func getHasher(algorithm DuplicateAlgorithm) (binaryHasher, error) {
 	switch algorithm {
-	case "average":
+	case AlgoAverage:
 		h := imghash.NewAverage()
 		return &h, nil
-	case "difference", "":
+	case AlgoDifference, "":
 		h := imghash.NewDifference()
 		return &h, nil
-	case "phash":
+	case AlgoPHash:
 		h := imghash.NewPHash()
 		return &h, nil
-	case "median":
+	case AlgoMedian:
 		h := imghash.NewMedian()
 		return &h, nil
-	case "blockmean":
+	case AlgoBlockMean:
 		h := imghash.NewBlockMean()
 		return &h, nil
 	default:
@@ -217,21 +216,21 @@ func (p *Plugin) computeFingerprints(ctx context.Context, db *sql.DB, username s
 	if err != nil {
 		return fmt.Errorf("system db: %w", err)
 	}
-	if GetSetting(sysDB, "duplicate_detection_enabled", "true") != "true" {
+	if !SettingDuplicateDetectionEnabled.MustGet(sysDB) {
 		return nil
 	}
 
-	algorithm := GetSetting(sysDB, "duplicate_algorithm", "difference")
+	algorithm := SettingDuplicateAlgorithm.MustGet(sysDB)
 
 	// Check if algorithm changed — invalidate old fingerprints.
-	lastAlgo := GetSetting(db, "duplicate_algorithm_used", "")
-	if lastAlgo != "" && lastAlgo != algorithm {
+	lastAlgo := SettingDuplicateAlgorithmUsed.MustGet(db)
+	if lastAlgo != "" && lastAlgo != string(algorithm) {
 		p.log.Info("duplicate algorithm changed, clearing fingerprints", "old", lastAlgo, "new", algorithm)
 		if err := ClearAllFingerprints(db); err != nil {
 			return fmt.Errorf("clear fingerprints: %w", err)
 		}
 	}
-	SetSetting(db, "duplicate_algorithm_used", algorithm)
+	SettingDuplicateAlgorithmUsed.Set(db, string(algorithm))
 
 	hasher, err := getHasher(algorithm)
 	if err != nil {
@@ -316,16 +315,11 @@ func (p *Plugin) detectDuplicates(db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("system db: %w", err)
 	}
-	if GetSetting(sysDB, "duplicate_detection_enabled", "true") != "true" {
+	if !SettingDuplicateDetectionEnabled.MustGet(sysDB) {
 		return nil
 	}
 
-	maxDist := 5
-	if v := GetSetting(sysDB, "duplicate_distance", "5"); v != "" {
-		if d, err := strconv.Atoi(v); err == nil {
-			maxDist = d
-		}
-	}
+	maxDist := SettingDuplicateDistance.MustGet(sysDB)
 
 	// Load all valid fingerprints.
 	rows, err := db.Query(`SELECT id, fingerprint, width, height, date_taken, date_indexed, quality_score
