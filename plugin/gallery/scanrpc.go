@@ -60,21 +60,12 @@ func (s *ScanRPC) ScanUser(args *ScanUserArgs, result *ScanResult) error {
 	s.status.Running = true
 	s.mu.Unlock()
 
-	warnings, err := s.plugin.scanUser(s.ctx, args.Username)
-
-	s.mu.Lock()
-	s.status.Running = false
-	s.status.LastRun = time.Now()
-	s.status.Warnings = warnings
-	if err != nil {
-		s.status.LastError = err.Error()
-		result.Error = err.Error()
-	} else {
-		s.status.LastError = ""
-	}
-	s.mu.Unlock()
-
-	result.Warnings = warnings
+	// Run scan in a goroutine so it doesn't block the RPC connection.
+	// net/rpc.ServeConn is single-threaded — if we block here, GetStatus
+	// can't be served until the scan finishes.
+	go s.runScan(func() ([]string, error) {
+		return s.plugin.scanUser(s.ctx, args.Username)
+	})
 	return nil
 }
 
@@ -88,7 +79,14 @@ func (s *ScanRPC) ScanAllUsers(args *ScanAllArgs, result *ScanResult) error {
 	s.status.Running = true
 	s.mu.Unlock()
 
-	warnings, err := s.plugin.scanAllUsersErr(s.ctx)
+	go s.runScan(func() ([]string, error) {
+		return s.plugin.scanAllUsersErr(s.ctx)
+	})
+	return nil
+}
+
+func (s *ScanRPC) runScan(fn func() ([]string, error)) {
+	warnings, err := fn()
 
 	s.mu.Lock()
 	s.status.Running = false
@@ -96,14 +94,10 @@ func (s *ScanRPC) ScanAllUsers(args *ScanAllArgs, result *ScanResult) error {
 	s.status.Warnings = warnings
 	if err != nil {
 		s.status.LastError = err.Error()
-		result.Error = err.Error()
 	} else {
 		s.status.LastError = ""
 	}
 	s.mu.Unlock()
-
-	result.Warnings = warnings
-	return nil
 }
 
 func (s *ScanRPC) GetStatus(args *ScanStatusArgs, result *ScanStatusResult) error {
