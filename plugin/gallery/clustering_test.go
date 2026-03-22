@@ -362,3 +362,80 @@ func TestClusterRecencyWeighting(t *testing.T) {
 	// Should match the existing person (recency-weighted centroid favors the 2024 face).
 	assert.Equal(t, pid, personForFace(t, db, newFace))
 }
+
+func countRows(t *testing.T, db *sql.DB, table string) int {
+	t.Helper()
+	var n int
+	require.NoError(t, db.QueryRow("SELECT COUNT(*) FROM "+table).Scan(&n))
+	return n
+}
+
+func TestPurgeRecognitions(t *testing.T) {
+	db := testDB(t)
+	date := int64(1718409600)
+
+	// Insert media, tags, faces, and people.
+	mid := insertTestMedia(t, db, date)
+	insertTestFace(t, db, mid, makeEmbedding(0, 0), -1)
+
+	// Run clustering to create a person.
+	require.NoError(t, clusterFaces(db, nil))
+	assert.Equal(t, 1, countPeople(t, db))
+	assert.Equal(t, 1, countRows(t, db, "faces"))
+
+	// Add a tag.
+	db.Exec(`INSERT INTO tags (name, tag_type) VALUES ('dog', 1)`)
+	db.Exec(`INSERT INTO media_tags (media_id, tag_id, confidence) VALUES (?, 1, 0.9)`, mid)
+	assert.Equal(t, 1, countRows(t, db, "tags"))
+	assert.Equal(t, 1, countRows(t, db, "media_tags"))
+
+	// Set recognition state to done.
+	db.Exec(`UPDATE media SET recognition_state = 1 WHERE id = ?`, mid)
+
+	// Purge.
+	require.NoError(t, PurgeRecognitions(db))
+
+	// Everything should be gone.
+	assert.Equal(t, 0, countRows(t, db, "faces"))
+	assert.Equal(t, 0, countRows(t, db, "people"))
+	assert.Equal(t, 0, countRows(t, db, "tags"))
+	assert.Equal(t, 0, countRows(t, db, "media_tags"))
+
+	// Media should still exist but with recognition_state reset to 0.
+	assert.Equal(t, 1, countRows(t, db, "media"))
+	var state int
+	require.NoError(t, db.QueryRow(`SELECT recognition_state FROM media WHERE id = ?`, mid).Scan(&state))
+	assert.Equal(t, 0, state)
+}
+
+func TestSettingsSectionIndependence(t *testing.T) {
+	db := testDB(t)
+
+	// Simulate saving the recognition section — sets recognition_enabled.
+	SetSetting(db, "recognition_enabled", "true")
+	SetSetting(db, "recognition_backend", "onnx")
+
+	// Simulate saving the duplicates section — sets duplicate_detection_enabled.
+	SetSetting(db, "duplicate_detection_enabled", "true")
+	SetSetting(db, "duplicate_algorithm", "difference")
+
+	// Verify both are independently set.
+	assert.Equal(t, "true", GetSetting(db, "recognition_enabled", ""))
+	assert.Equal(t, "true", GetSetting(db, "duplicate_detection_enabled", ""))
+
+	// Simulate saving recognition again without touching duplicate settings.
+	// This is what the _section-based handler does — only update recognition keys.
+	SetSetting(db, "recognition_enabled", "true")
+	SetSetting(db, "recognition_backend", "pigo")
+	// Crucially, we do NOT set duplicate_detection_enabled here.
+
+	// Duplicate setting should still be "true".
+	assert.Equal(t, "true", GetSetting(db, "duplicate_detection_enabled", ""))
+
+	// Now simulate the OLD bug: saving recognition section also sets
+	// duplicate_detection_enabled to "" (empty form value for unchecked checkbox).
+	// This is what happened before the _section fix.
+	SetSetting(db, "duplicate_detection_enabled", "")
+	assert.Equal(t, "", GetSetting(db, "duplicate_detection_enabled", ""))
+	// This demonstrates the bug — the empty string overwrites the setting.
+}

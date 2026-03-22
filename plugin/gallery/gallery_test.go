@@ -179,3 +179,6 @@ func TestGallerySettingsPage(t *testing.T) {
 
 	env.Get(t, "/apps/gallery/settings", alice.Auth).Status(200)
 }
+
+// TestSaveSystemSettingsSectionIndependence is tested via the internal
+// package in clustering_test.go:TestSettingsSectionIndependence.

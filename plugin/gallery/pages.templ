@@ -865,6 +865,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 	@ui.Card("Image Recognition") {
 		<form method="post" action="/admin/plugins/gallery" id="recognition-form">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="_section" value="recognition"/>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>
 					<input
@@ -971,6 +972,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 	@ui.Card("Duplicate Detection") {
 		<form method="post" action="/admin/plugins/gallery" id="duplicate-form">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="_section" value="duplicates"/>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>
 					<input

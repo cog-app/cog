@@ -710,23 +710,32 @@ func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	SetSetting(db, "recognition_enabled", r.FormValue("recognition_enabled"))
-	SetSetting(db, "recognition_backend", r.FormValue("recognition_backend"))
-	SetSetting(db, "recognition_url", r.FormValue("recognition_url"))
-	SetSetting(db, "recognition_api_key", r.FormValue("recognition_api_key"))
-	SetSetting(db, "recognition_model", r.FormValue("recognition_model"))
-	SetSetting(db, "onnx_library_path", r.FormValue("onnx_library_path"))
-	SetSetting(db, "onnx_models_dir", r.FormValue("onnx_models_dir"))
-	if v := r.FormValue("cluster_threshold"); v != "" {
-		SetSetting(db, "cluster_threshold", v)
+
+	// Each settings card is a separate form with a _section hidden field.
+	// Only save settings for the submitted section to avoid overwriting
+	// checkbox values from the other form (unchecked checkboxes are absent).
+	switch r.FormValue("_section") {
+	case "recognition":
+		SetSetting(db, "recognition_enabled", r.FormValue("recognition_enabled"))
+		SetSetting(db, "recognition_backend", r.FormValue("recognition_backend"))
+		SetSetting(db, "recognition_url", r.FormValue("recognition_url"))
+		SetSetting(db, "recognition_api_key", r.FormValue("recognition_api_key"))
+		SetSetting(db, "recognition_model", r.FormValue("recognition_model"))
+		SetSetting(db, "onnx_library_path", r.FormValue("onnx_library_path"))
+		SetSetting(db, "onnx_models_dir", r.FormValue("onnx_models_dir"))
+		if v := r.FormValue("cluster_threshold"); v != "" {
+			SetSetting(db, "cluster_threshold", v)
+		}
+	case "duplicates":
+		SetSetting(db, "duplicate_detection_enabled", r.FormValue("duplicate_detection_enabled"))
+		if v := r.FormValue("duplicate_algorithm"); v != "" {
+			SetSetting(db, "duplicate_algorithm", v)
+		}
+		if v := r.FormValue("duplicate_distance"); v != "" {
+			SetSetting(db, "duplicate_distance", v)
+		}
 	}
-	SetSetting(db, "duplicate_detection_enabled", r.FormValue("duplicate_detection_enabled"))
-	if v := r.FormValue("duplicate_algorithm"); v != "" {
-		SetSetting(db, "duplicate_algorithm", v)
-	}
-	if v := r.FormValue("duplicate_distance"); v != "" {
-		SetSetting(db, "duplicate_distance", v)
-	}
+
 	http.Redirect(w, r, "/admin/plugins/gallery", http.StatusSeeOther)
 }
 
