@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -404,18 +405,36 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) e
 }
 
 // GetScanStatus returns a snapshot of the current scan job status.
+// Tries RPC first, falls back to DB-persisted status if the worker is unavailable.
 func (p *Plugin) GetScanStatus() ScanStatus {
 	p.scanMu.Lock()
 	client := p.scanClient
 	p.scanMu.Unlock()
-	if client == nil {
-		return ScanStatus{}
+	if client != nil {
+		if status, err := client.GetStatus(); err == nil {
+			return status
+		}
 	}
-	status, err := client.GetStatus()
+	// Fall back to DB-persisted status.
+	return p.loadScanStatusFromDB()
+}
+
+func (p *Plugin) loadScanStatusFromDB() ScanStatus {
+	db, err := p.SystemDB()
 	if err != nil {
 		return ScanStatus{}
 	}
-	return status
+	var s ScanStatus
+	s.Running = GetSetting(db, "scan_running", "false") == "true"
+	if ts := GetSetting(db, "scan_last_run", ""); ts != "" {
+		if t, err := strconv.ParseInt(ts, 10, 64); err == nil {
+			s.LastRun = time.Unix(t, 0)
+		}
+	}
+	if e := GetSetting(db, "scan_last_error", ""); e != "" {
+		s.LastError = fmt.Errorf("%s", e)
+	}
+	return s
 }
 
 // requestScan asks the scan worker to scan a user (or "*" for all users).

@@ -1092,10 +1092,10 @@ templ scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) 
 						}
 					</button>
 				</form>
-				if stats.Done > 0 || stats.Errored > 0 {
+				if (stats.Done > 0 || stats.Errored > 0) && !scan.Running {
 					<form method="post" action="/admin/plugins/gallery/purge-recognitions" onsubmit="return confirm('Purge all recognition data? Tags, faces, and people will be deleted and images re-queued for recognition.')">
 						<input type="hidden" name="csrf_token" value={ csrfToken }/>
-						<button type="submit" class="btn btn-danger btn-sm" disabled?={ scan.Running }>
+						<button type="submit" class="btn btn-danger btn-sm">
 							Purge Recognitions
 						</button>
 					</form>

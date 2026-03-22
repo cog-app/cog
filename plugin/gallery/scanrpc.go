@@ -5,10 +5,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/rpc"
 	"os"
 	"runtime"
 	"runtime/pprof"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -57,12 +59,9 @@ func (s *ScanRPC) ScanUser(args *ScanUserArgs, result *ScanResult) error {
 		result.Error = "scan already running"
 		return nil
 	}
-	s.status.Running = true
 	s.mu.Unlock()
+	s.startScan()
 
-	// Run scan in a goroutine so it doesn't block the RPC connection.
-	// net/rpc.ServeConn is single-threaded — if we block here, GetStatus
-	// can't be served until the scan finishes.
 	go s.runScan(func() ([]string, error) {
 		return s.plugin.scanUser(s.ctx, args.Username)
 	})
@@ -76,8 +75,8 @@ func (s *ScanRPC) ScanAllUsers(args *ScanAllArgs, result *ScanResult) error {
 		result.Error = "scan already running"
 		return nil
 	}
-	s.status.Running = true
 	s.mu.Unlock()
+	s.startScan()
 
 	go s.runScan(func() ([]string, error) {
 		return s.plugin.scanAllUsersErr(s.ctx)
@@ -86,8 +85,17 @@ func (s *ScanRPC) ScanAllUsers(args *ScanAllArgs, result *ScanResult) error {
 }
 
 func (s *ScanRPC) runScan(fn func() ([]string, error)) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("scan panicked", "panic", r)
+			s.finishScan(nil, fmt.Errorf("panic: %v", r))
+		}
+	}()
 	warnings, err := fn()
+	s.finishScan(warnings, err)
+}
 
+func (s *ScanRPC) finishScan(warnings []string, err error) {
 	s.mu.Lock()
 	s.status.Running = false
 	s.status.LastRun = time.Now()
@@ -98,6 +106,32 @@ func (s *ScanRPC) runScan(fn func() ([]string, error)) {
 		s.status.LastError = ""
 	}
 	s.mu.Unlock()
+
+	// Persist to DB so status survives restarts.
+	s.persistStatus()
+}
+
+func (s *ScanRPC) startScan() {
+	s.mu.Lock()
+	s.status.Running = true
+	s.mu.Unlock()
+	s.persistStatus()
+}
+
+func (s *ScanRPC) persistStatus() {
+	db, err := s.plugin.SystemDB()
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.status.Running {
+		SetSetting(db, "scan_running", "true")
+	} else {
+		SetSetting(db, "scan_running", "false")
+	}
+	SetSetting(db, "scan_last_run", strconv.FormatInt(s.status.LastRun.Unix(), 10))
+	SetSetting(db, "scan_last_error", s.status.LastError)
 }
 
 func (s *ScanRPC) GetStatus(args *ScanStatusArgs, result *ScanStatusResult) error {
@@ -173,6 +207,11 @@ func (s *ScanRPC) MemStats(_ *struct{}, result *MemStatsResult) error {
 // runScanWorker starts the RPC server on stdin/stdout.
 // Called when the subprocess is launched via `cog gallery scan worker`.
 func (p *Plugin) runScanWorker(ctx context.Context) error {
+	// Clear stale "running" flag from a previous crashed worker.
+	if db, err := p.SystemDB(); err == nil {
+		SetSetting(db, "scan_running", "false")
+	}
+
 	svc := &ScanRPC{plugin: p, ctx: ctx}
 	server := rpc.NewServer()
 	if err := server.Register(svc); err != nil {
