@@ -3,6 +3,7 @@ package web
 import (
 	"io/fs"
 	"net/http"
+	"net/http/pprof"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/compat"
@@ -31,6 +32,13 @@ func New(p *services.Providers) http.Handler {
 
 	// Use the plugin registry's mux so plugin-registered routes share the same router.
 	mux := p.Plugins.Mux()
+
+	// --- Debug endpoints ---
+	mux.HandleFunc("GET /debug/pprof/", pprof.Index)
+	mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("GET /debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
 
 	// --- Static assets ---
 	staticSub, _ := fs.Sub(ui.StaticFS, "static")
