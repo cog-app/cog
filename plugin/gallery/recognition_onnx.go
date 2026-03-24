@@ -176,59 +176,6 @@ func (b *OnnxBackend) init() {
 			b.hasGenderage = true
 		}
 
-		// Create cached sessions for all available models.
-		var err error
-		b.mobilenetSession, err = newCachedSession(mobilenetPath,
-			[]string{"input"}, []string{"output"},
-			ort.NewShape(1, 3, 224, 224),
-			[]ort.Shape{ort.NewShape(1, 1000)})
-		if err != nil {
-			b.initErr = fmt.Errorf("mobilenet session: %w", err)
-			return
-		}
-
-		if b.hasArcface {
-			b.arcfaceSession, err = newCachedSession(arcfacePath,
-				[]string{"data"}, []string{"fc1"},
-				ort.NewShape(1, 3, 112, 112),
-				[]ort.Shape{ort.NewShape(1, 512)})
-			if err != nil {
-				b.initErr = fmt.Errorf("arcface session: %w", err)
-				return
-			}
-		}
-
-		if b.hasGenderage {
-			b.genderageSession, err = newCachedSession(genderagePath,
-				[]string{"data"}, []string{"fc1"},
-				ort.NewShape(1, 3, 96, 96),
-				[]ort.Shape{ort.NewShape(1, 3)})
-			if err != nil {
-				b.initErr = fmt.Errorf("genderage session: %w", err)
-				return
-			}
-		}
-
-		if b.hasSCRFD {
-			var gs [3]int64
-			for i, stride := range scrfdStrides {
-				g := int64(scrfdInputSize / stride)
-				gs[i] = g * g * scrfdNumAnchors
-			}
-			outShapes := []ort.Shape{
-				ort.NewShape(gs[0], 1), ort.NewShape(gs[1], 1), ort.NewShape(gs[2], 1),
-				ort.NewShape(gs[0], 4), ort.NewShape(gs[1], 4), ort.NewShape(gs[2], 4),
-				ort.NewShape(gs[0], 10), ort.NewShape(gs[1], 10), ort.NewShape(gs[2], 10),
-			}
-			b.scrfdSession, err = newCachedSession(scrfdPath,
-				[]string{"input.1"}, scrfdOutputNames,
-				ort.NewShape(1, 3, scrfdInputSize, scrfdInputSize),
-				outShapes)
-			if err != nil {
-				b.initErr = fmt.Errorf("scrfd session: %w", err)
-				return
-			}
-		}
 	})
 }
 
@@ -295,6 +242,83 @@ func newCachedSession(modelPath string, inputNames, outputNames []string, inputS
 	return &cachedSession{session: session, input: input, outputs: outputs}, nil
 }
 
+// ensureSessions creates ONNX sessions on demand. Sessions are heavyweight
+// (ONNX runtime allocates execution graphs and workspace buffers via C/malloc)
+// so they are created when needed and released after the scan batch with Release().
+func (b *OnnxBackend) ensureSessions() error {
+	if b.mobilenetSession != nil {
+		return nil // already created
+	}
+
+	var err error
+	b.mobilenetSession, err = newCachedSession(
+		filepath.Join(b.ModelsDir, mobilenetFile),
+		[]string{"input"}, []string{"output"},
+		ort.NewShape(1, 3, 224, 224),
+		[]ort.Shape{ort.NewShape(1, 1000)})
+	if err != nil {
+		return fmt.Errorf("mobilenet session: %w", err)
+	}
+
+	if b.hasArcface {
+		b.arcfaceSession, err = newCachedSession(
+			filepath.Join(b.ModelsDir, arcfaceFile),
+			[]string{"data"}, []string{"fc1"},
+			ort.NewShape(1, 3, 112, 112),
+			[]ort.Shape{ort.NewShape(1, 512)})
+		if err != nil {
+			return fmt.Errorf("arcface session: %w", err)
+		}
+	}
+
+	if b.hasGenderage {
+		b.genderageSession, err = newCachedSession(
+			filepath.Join(b.ModelsDir, genderageFile),
+			[]string{"data"}, []string{"fc1"},
+			ort.NewShape(1, 3, 96, 96),
+			[]ort.Shape{ort.NewShape(1, 3)})
+		if err != nil {
+			return fmt.Errorf("genderage session: %w", err)
+		}
+	}
+
+	if b.hasSCRFD {
+		var gs [3]int64
+		for i, stride := range scrfdStrides {
+			g := int64(scrfdInputSize / stride)
+			gs[i] = g * g * scrfdNumAnchors
+		}
+		outShapes := []ort.Shape{
+			ort.NewShape(gs[0], 1), ort.NewShape(gs[1], 1), ort.NewShape(gs[2], 1),
+			ort.NewShape(gs[0], 4), ort.NewShape(gs[1], 4), ort.NewShape(gs[2], 4),
+			ort.NewShape(gs[0], 10), ort.NewShape(gs[1], 10), ort.NewShape(gs[2], 10),
+		}
+		b.scrfdSession, err = newCachedSession(
+			filepath.Join(b.ModelsDir, scrfdFile),
+			[]string{"input.1"}, scrfdOutputNames,
+			ort.NewShape(1, 3, scrfdInputSize, scrfdInputSize),
+			outShapes)
+		if err != nil {
+			return fmt.Errorf("scrfd session: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// Release frees ONNX runtime sessions and their C-allocated memory.
+// Call after a scan batch completes to reclaim the ~GB of model workspace memory.
+func (b *OnnxBackend) Release() {
+	b.mobilenetSession.destroy()
+	b.mobilenetSession = nil
+	b.arcfaceSession.destroy()
+	b.arcfaceSession = nil
+	b.genderageSession.destroy()
+	b.genderageSession = nil
+	b.scrfdSession.destroy()
+	b.scrfdSession = nil
+}
+
 // InitErr returns any initialization error, triggering init if needed.
 // Callers can check this before entering a loop to avoid per-image errors.
 func (b *OnnxBackend) InitErr() error {
@@ -306,6 +330,9 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 	b.init()
 	if b.initErr != nil {
 		return nil, b.initErr
+	}
+	if err := b.ensureSessions(); err != nil {
+		return nil, err
 	}
 
 	f, err := os.Open(imagePath)

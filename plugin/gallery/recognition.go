@@ -109,6 +109,12 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		}
 	}
 
+	// Release ONNX sessions after this recognition pass to free C-allocated
+	// model workspace memory (~GBs). Sessions are re-created on next Analyze().
+	if rc, ok := backend.(interface{ Release() }); ok {
+		defer rc.Release()
+	}
+
 	tagMinConf := SettingTagMinConfidence.MustGet(sysDB)
 	faceMinConf := SettingFaceMinConfidence.MustGet(sysDB)
 	faceEnabled := SettingFaceDetectionEnabled.MustGet(sysDB)
