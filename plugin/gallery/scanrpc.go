@@ -202,6 +202,8 @@ func (s *ScanRPC) MemStats(_ *struct{}, result *MemStatsResult) error {
 // runScanWorker starts the RPC server on stdin/stdout.
 // Called when the subprocess is launched via `cog gallery scan worker`.
 func (p *Plugin) runScanWorker(ctx context.Context) error {
+	p.isWorker = true
+
 	// Clear stale "running" flag from a previous crashed worker.
 	if db, err := p.SystemDB(); err == nil {
 		SettingScanRunning.Set(db, false)

@@ -52,6 +52,7 @@ type Plugin struct {
 
 	scanMu     sync.Mutex
 	scanClient *ScanClient // RPC client to scan worker subprocess
+	isWorker   bool        // true when running as scan worker subprocess
 }
 
 // New creates a new Gallery plugin instance.
@@ -203,6 +204,22 @@ func (p *Plugin) DB(username string) (*sql.DB, error) {
 		return nil, err
 	}
 	if err := plugin.Migrate(db, sqlFS); err != nil {
+		return nil, fmt.Errorf("migrate gallery db for %s: %w", username, err)
+	}
+	return db, nil
+}
+
+// directDB opens the gallery database directly, bypassing the plugin registry's
+// search hooks that cause Bleve/bbolt file lock contention. Used by the scan
+// worker subprocess which runs in a separate process from the server.
+func (p *Plugin) directDB(username string) (*sql.DB, error) {
+	path := filepath.Join(p.ctx.DataDir(), username, "app_data", PluginID, "plugin.db")
+	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=on")
+	if err != nil {
+		return nil, err
+	}
+	if err := plugin.Migrate(db, sqlFS); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("migrate gallery db for %s: %w", username, err)
 	}
 	return db, nil

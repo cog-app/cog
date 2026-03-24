@@ -89,11 +89,24 @@ func (p *Plugin) ScanUser(ctx context.Context, username string) error {
 }
 
 func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []string, err error) {
-	galleryDB, err := p.DB(username)
+	var galleryDB *sql.DB
+	if p.isWorker {
+		// Worker subprocess: open DB directly to avoid search hook → Bleve flock contention.
+		galleryDB, err = p.directDB(username)
+	} else {
+		galleryDB, err = p.DB(username)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("gallery db: %w", err)
 	}
-	filesDB, err := p.files.DB(username)
+	var filesDB *sql.DB
+	if p.isWorker {
+		// Worker: open files DB directly (read-only for scan, avoids search hooks).
+		filesPath := filepath.Join(p.ctx.DataDir(), username, "app_data", "files", "plugin.db")
+		filesDB, err = sql.Open("sqlite3", filesPath+"?_journal_mode=WAL&_foreign_keys=on&mode=ro")
+	} else {
+		filesDB, err = p.files.DB(username)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("files db: %w", err)
 	}
