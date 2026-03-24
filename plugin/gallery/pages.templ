@@ -879,7 +879,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 					<option value="openai" selected?={ GetSetting(db, "tag_backend", "none") == "openai" }>OpenAI-compatible</option>
 				</select>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
+			<div class="form-group" style="margin-bottom:0.75rem" id="tag-model-group">
 				<label>ONNX Tag Model</label>
 				<select name="tag_model" class="input">
 					<option value="joytag" selected?={ GetSetting(db, "tag_model", "joytag") == "joytag" }>JoyTag (multi-label, photos)</option>
@@ -894,6 +894,15 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 				<small class="text-muted">Tags below this confidence are discarded. Default: 0.5</small>
 			</div>
 			<button type="submit" class="btn btn-primary btn-sm">Save</button>
+			<script>
+			(function() {
+				var sel = document.querySelector('select[name="tag_backend"]');
+				var group = document.getElementById('tag-model-group');
+				function update() { group.style.display = sel.value === 'onnx' ? '' : 'none'; }
+				sel.addEventListener('change', update);
+				update();
+			})();
+			</script>
 		</form>
 	}
 	@ui.Card("Face Detection") {
