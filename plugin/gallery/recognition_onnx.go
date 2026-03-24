@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 
 	ort "github.com/yalue/onnxruntime_go"
@@ -24,11 +25,19 @@ import (
 // Model download URLs.
 const (
 	mobilenetURL = "https://github.com/onnx/models/raw/main/validated/vision/classification/mobilenet/model/mobilenetv2-12-int8.onnx"
+	joytagURL    = "https://huggingface.co/fancyfeast/joytag/resolve/main/model.onnx"
+	joytagTagsURL = "https://huggingface.co/fancyfeast/joytag/resolve/main/top_tags.txt"
+	wd14URL      = "https://huggingface.co/SmilingWolf/wd-convnext-tagger-v3/resolve/main/model.onnx"
+	wd14TagsURL  = "https://huggingface.co/SmilingWolf/wd-convnext-tagger-v3/resolve/main/selected_tags.csv"
 	arcfaceURL   = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/w600k_r50.onnx"
 	scrfdURL     = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/det_10g.onnx"
 	genderageURL = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/genderage.onnx"
 
 	mobilenetFile = "mobilenetv2-12-int8.onnx"
+	joytagFile    = "joytag.onnx"
+	joytagTagsFile = "joytag_tags.txt"
+	wd14File      = "wd14.onnx"
+	wd14TagsFile  = "wd14_tags.csv"
 	arcfaceFile   = "w600k_r50.onnx"
 	scrfdFile     = "det_10g.onnx"
 	genderageFile = "genderage.onnx"
@@ -84,8 +93,9 @@ func (s *cachedSession) destroy() {
 // OnnxBackend uses pigo for face detection, ArcFace ONNX for face embeddings,
 // and MobileNetV2 ONNX for image classification tags.
 type OnnxBackend struct {
-	ModelsDir   string // directory to store/load ONNX model files
-	LibraryPath string // path to libonnxruntime.so
+	ModelsDir   string   // directory to store/load ONNX model files
+	LibraryPath string   // path to libonnxruntime.so
+	TagModel    TagModel // which tag model to use (mobilenet/joytag/wd14)
 
 	once         sync.Once
 	initErr      error
@@ -95,13 +105,67 @@ type OnnxBackend struct {
 	hasGenderage bool
 
 	// Cached sessions for performance — avoid creating per-call.
-	mobilenetSession *cachedSession
+	tagSession   *cachedSession // MobileNet, JoyTag, or WD14 depending on TagModel
+	tagLabels    []string       // label list for the active tag model
 	arcfaceSession   *cachedSession
 	genderageSession *cachedSession
 	scrfdSession     *cachedSession
 }
 
 func (b *OnnxBackend) Name() string { return "ONNX (local)" }
+
+// initTagModel downloads the selected tag model and its label list.
+func (b *OnnxBackend) initTagModel() error {
+	switch b.TagModel {
+	case TagModelJoyTag:
+		if err := ensureModel(filepath.Join(b.ModelsDir, joytagFile), joytagURL); err != nil {
+			return err
+		}
+		tagsPath := filepath.Join(b.ModelsDir, joytagTagsFile)
+		if err := ensureModel(tagsPath, joytagTagsURL); err != nil {
+			return err
+		}
+		data, err := os.ReadFile(tagsPath)
+		if err != nil {
+			return fmt.Errorf("read joytag tags: %w", err)
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				b.tagLabels = append(b.tagLabels, strings.ReplaceAll(line, "_", " "))
+			}
+		}
+	case TagModelWD14:
+		if err := ensureModel(filepath.Join(b.ModelsDir, wd14File), wd14URL); err != nil {
+			return err
+		}
+		tagsPath := filepath.Join(b.ModelsDir, wd14TagsFile)
+		if err := ensureModel(tagsPath, wd14TagsURL); err != nil {
+			return err
+		}
+		data, err := os.ReadFile(tagsPath)
+		if err != nil {
+			return fmt.Errorf("read wd14 tags: %w", err)
+		}
+		// CSV format: tag_id,name,category,count
+		for i, line := range strings.Split(string(data), "\n") {
+			if i == 0 || strings.TrimSpace(line) == "" {
+				continue // skip header
+			}
+			fields := strings.SplitN(line, ",", 3)
+			if len(fields) >= 2 {
+				b.tagLabels = append(b.tagLabels, strings.ReplaceAll(fields[1], "_", " "))
+			}
+		}
+	default: // MobileNet — labels are built into imagenetLabels
+		if err := ensureModel(filepath.Join(b.ModelsDir, mobilenetFile), mobilenetURL); err != nil {
+			return err
+		}
+		b.tagLabels = imagenetLabels[:]
+	}
+	slog.Info("tag model initialized", "model", b.TagModel, "labels", len(b.tagLabels))
+	return nil
+}
 
 func (b *OnnxBackend) Available() bool {
 	if b.LibraryPath == "" {
@@ -140,10 +204,9 @@ func (b *OnnxBackend) init() {
 			return
 		}
 
-		// Ensure MobileNet is downloaded.
-		mobilenetPath := filepath.Join(b.ModelsDir, mobilenetFile)
-		if err := ensureModel(mobilenetPath, mobilenetURL); err != nil {
-			b.initErr = fmt.Errorf("mobilenet model: %w", err)
+		// Download and init the selected tag model.
+		if err := b.initTagModel(); err != nil {
+			b.initErr = fmt.Errorf("tag model: %w", err)
 			return
 		}
 
@@ -248,18 +311,33 @@ func newCachedSession(modelPath string, inputNames, outputNames []string, inputS
 // (ONNX runtime allocates execution graphs and workspace buffers via C/malloc)
 // so they are created when needed and released after the scan batch with Release().
 func (b *OnnxBackend) ensureSessions() error {
-	if b.mobilenetSession != nil {
+	if b.tagSession != nil {
 		return nil // already created
 	}
 
 	var err error
-	b.mobilenetSession, err = newCachedSession(
-		filepath.Join(b.ModelsDir, mobilenetFile),
-		[]string{"input"}, []string{"output"},
-		ort.NewShape(1, 3, 224, 224),
-		[]ort.Shape{ort.NewShape(1, 1000)})
+	switch b.TagModel {
+	case TagModelJoyTag:
+		b.tagSession, err = newCachedSession(
+			filepath.Join(b.ModelsDir, joytagFile),
+			[]string{"input"}, []string{"output"},
+			ort.NewShape(1, 3, 448, 448),
+			[]ort.Shape{ort.NewShape(1, int64(len(b.tagLabels)))})
+	case TagModelWD14:
+		b.tagSession, err = newCachedSession(
+			filepath.Join(b.ModelsDir, wd14File),
+			[]string{"input"}, []string{"output"},
+			ort.NewShape(1, 448, 448, 3), // NHWC format
+			[]ort.Shape{ort.NewShape(1, int64(len(b.tagLabels)))})
+	default: // MobileNet
+		b.tagSession, err = newCachedSession(
+			filepath.Join(b.ModelsDir, mobilenetFile),
+			[]string{"input"}, []string{"output"},
+			ort.NewShape(1, 3, 224, 224),
+			[]ort.Shape{ort.NewShape(1, 1000)})
+	}
 	if err != nil {
-		return fmt.Errorf("mobilenet session: %w", err)
+		return fmt.Errorf("tag session (%s): %w", b.TagModel, err)
 	}
 
 	if b.hasArcface {
@@ -303,8 +381,8 @@ func (b *OnnxBackend) ensureSessions() error {
 // Release frees ONNX runtime sessions and their C-allocated memory.
 // Call after a scan batch completes to reclaim the ~GB of model workspace memory.
 func (b *OnnxBackend) Release() {
-	b.mobilenetSession.destroy()
-	b.mobilenetSession = nil
+	b.tagSession.destroy()
+	b.tagSession = nil
 	b.arcfaceSession.destroy()
 	b.arcfaceSession = nil
 	// genderageSession uses per-call sessions (not cached), no cleanup needed.
@@ -415,17 +493,37 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 
 // classifyImage runs MobileNetV2 on the image and returns top-5 tags.
 func (b *OnnxBackend) classifyImage(img image.Image) ([]RecognizedTag, error) {
-	s := b.mobilenetSession
-	data := preprocessImageNet(img, 224, 224)
-	copy(s.input.GetData(), data)
+	s := b.tagSession
+
+	// Preprocess based on model type.
+	switch b.TagModel {
+	case TagModelJoyTag:
+		data := preprocessRaw01(img, 448, 448) // JoyTag: 0-1 range, NCHW
+		copy(s.input.GetData(), data)
+	case TagModelWD14:
+		data := preprocessRaw01NHWC(img, 448, 448) // WD14: 0-1 range, NHWC
+		copy(s.input.GetData(), data)
+	default: // MobileNet
+		data := preprocessImageNet(img, 224, 224)
+		copy(s.input.GetData(), data)
+	}
 
 	if err := s.session.Run(); err != nil {
-		return nil, fmt.Errorf("run mobilenet: %w", err)
+		return nil, fmt.Errorf("run tag model (%s): %w", b.TagModel, err)
 	}
 
 	output := s.outputs[0].GetData()
-	probs := softmax(output)
 
+	// MobileNet uses softmax (single-label), JoyTag/WD14 use sigmoid (multi-label).
+	if b.TagModel == TagModelMobileNet || b.TagModel == "" {
+		return b.classifyMobileNet(output), nil
+	}
+	return b.classifyMultiLabel(output), nil
+}
+
+// classifyMobileNet processes softmax output from MobileNet (single best class).
+func (b *OnnxBackend) classifyMobileNet(output []float32) []RecognizedTag {
+	probs := softmax(output)
 	type indexedProb struct {
 		index int
 		prob  float32
@@ -437,15 +535,14 @@ func (b *OnnxBackend) classifyImage(img image.Image) ([]RecognizedTag, error) {
 	sort.Slice(indexed, func(i, j int) bool {
 		return indexed[i].prob > indexed[j].prob
 	})
-
 	var tags []RecognizedTag
 	for i := 0; i < 5 && i < len(indexed); i++ {
 		if indexed[i].prob < 0.05 {
 			break
 		}
 		label := "unknown"
-		if indexed[i].index < len(imagenetLabels) {
-			label = imagenetLabels[indexed[i].index]
+		if indexed[i].index < len(b.tagLabels) {
+			label = b.tagLabels[indexed[i].index]
 		}
 		tags = append(tags, RecognizedTag{
 			Name:       label,
@@ -453,7 +550,71 @@ func (b *OnnxBackend) classifyImage(img image.Image) ([]RecognizedTag, error) {
 			Type:       1,
 		})
 	}
-	return tags, nil
+	return tags
+}
+
+// classifyMultiLabel processes sigmoid output from JoyTag/WD14 (multiple tags).
+func (b *OnnxBackend) classifyMultiLabel(output []float32) []RecognizedTag {
+	// Apply sigmoid.
+	probs := make([]float32, len(output))
+	for i, v := range output {
+		probs[i] = float32(1.0 / (1.0 + math.Exp(-float64(v))))
+	}
+
+	type indexedProb struct {
+		index int
+		prob  float32
+	}
+	var candidates []indexedProb
+	for i, p := range probs {
+		if p > 0.3 && i < len(b.tagLabels) { // pre-filter
+			candidates = append(candidates, indexedProb{i, p})
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].prob > candidates[j].prob
+	})
+
+	var tags []RecognizedTag
+	for i := 0; i < 20 && i < len(candidates); i++ {
+		tags = append(tags, RecognizedTag{
+			Name:       b.tagLabels[candidates[i].index],
+			Confidence: float64(candidates[i].prob),
+			Type:       1,
+		})
+	}
+	return tags
+}
+
+// preprocessRaw01 resizes to CHW float32 tensor with values in 0-1 range.
+func preprocessRaw01(img image.Image, targetW, targetH int) []float32 {
+	resized := resizeImage(img, targetW, targetH)
+	tensor := make([]float32, 3*targetH*targetW)
+	for y := range targetH {
+		for x := range targetW {
+			r, g, b, _ := resized.At(x, y).RGBA()
+			tensor[0*targetH*targetW+y*targetW+x] = float32(r) / 65535.0
+			tensor[1*targetH*targetW+y*targetW+x] = float32(g) / 65535.0
+			tensor[2*targetH*targetW+y*targetW+x] = float32(b) / 65535.0
+		}
+	}
+	return tensor
+}
+
+// preprocessRaw01NHWC resizes to NHWC float32 tensor with values in 0-1 range.
+func preprocessRaw01NHWC(img image.Image, targetW, targetH int) []float32 {
+	resized := resizeImage(img, targetW, targetH)
+	tensor := make([]float32, targetH*targetW*3)
+	for y := range targetH {
+		for x := range targetW {
+			r, g, b, _ := resized.At(x, y).RGBA()
+			idx := (y*targetW + x) * 3
+			tensor[idx] = float32(r) / 65535.0
+			tensor[idx+1] = float32(g) / 65535.0
+			tensor[idx+2] = float32(b) / 65535.0
+		}
+	}
+	return tensor
 }
 
 // computeFaceEmbedding produces a 512-dim ArcFace embedding for a detected face.

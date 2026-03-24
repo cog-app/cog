@@ -880,6 +880,15 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 				</select>
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>ONNX Tag Model</label>
+				<select name="tag_model" class="input">
+					<option value="joytag" selected?={ GetSetting(db, "tag_model", "joytag") == "joytag" }>JoyTag (multi-label, photos)</option>
+					<option value="wd14" selected?={ GetSetting(db, "tag_model", "joytag") == "wd14" }>WD14 (multi-label, general)</option>
+					<option value="mobilenet" selected?={ GetSetting(db, "tag_model", "joytag") == "mobilenet" }>MobileNet (ImageNet, legacy)</option>
+				</select>
+				<small class="text-muted">Only used when backend is ONNX.</small>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Minimum Confidence</label>
 				<input type="number" name="tag_min_confidence" class="input" value={ GetSetting(db, "tag_min_confidence", "0.5") } step="0.05" min="0" max="1"/>
 				<small class="text-muted">Tags below this confidence are discarded. Default: 0.5</small>

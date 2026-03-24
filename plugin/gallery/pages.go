@@ -717,6 +717,9 @@ func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.FormValue("_section") {
 	case "tags":
 		SetSetting(db, "tag_backend", r.FormValue("tag_backend"))
+		if v := r.FormValue("tag_model"); v != "" {
+			SetSetting(db, "tag_model", v)
+		}
 		if v := r.FormValue("tag_min_confidence"); v != "" {
 			SetSetting(db, "tag_min_confidence", v)
 		}

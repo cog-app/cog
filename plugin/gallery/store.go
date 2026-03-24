@@ -1013,6 +1013,15 @@ const (
 	BackendOnnx   RecognitionBackendType = "onnx"
 )
 
+// TagModel identifies which ONNX model to use for image tagging.
+type TagModel string
+
+const (
+	TagModelMobileNet TagModel = "mobilenet" // ImageNet 1000-class (legacy)
+	TagModelJoyTag    TagModel = "joytag"    // Multi-label, 5813 tags, 448×448
+	TagModelWD14      TagModel = "wd14"      // Multi-label, 10861 tags, 448×448 NHWC
+)
+
 // DuplicateAlgorithm identifies which perceptual hash algorithm to use.
 type DuplicateAlgorithm string
 
@@ -1028,6 +1037,7 @@ const (
 var (
 	// Tag classification — independent backend
 	SettingTagBackend       = stringSetting("tag_backend", BackendNone)
+	SettingTagModel         = stringSetting("tag_model", TagModelJoyTag)
 	SettingTagMinConfidence = floatSetting("tag_min_confidence", 0.5)
 
 	// Face detection — independent backend

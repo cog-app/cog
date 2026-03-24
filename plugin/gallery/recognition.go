@@ -70,6 +70,7 @@ func (p *Plugin) resolveBackend(db *sql.DB, backendType RecognitionBackendType) 
 		b := &OnnxBackend{
 			ModelsDir:   modelsDir,
 			LibraryPath: SettingOnnxLibraryPath.MustGet(db),
+			TagModel:    SettingTagModel.MustGet(db),
 		}
 		if !b.Available() {
 			return nil, fmt.Errorf("onnx backend not available: libonnxruntime.so not found (library_path=%q)", b.LibraryPath)
