@@ -548,7 +548,7 @@ func (p *Plugin) preGenerateThumbnails(ctx context.Context, db *sql.DB, username
 
 // computeQualityScores calculates Laplacian sharpness scores for unscored images.
 func (p *Plugin) computeQualityScores(ctx context.Context, db *sql.DB, username string) error {
-	rows, err := db.Query(`SELECT `+mediaCols+` FROM media m
+	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m
 		WHERE m.quality_score = -1 AND m.mime_type LIKE 'image/%' AND m.width > 0
 		LIMIT 100`)
 	if err != nil {

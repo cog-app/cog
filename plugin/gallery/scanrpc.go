@@ -154,9 +154,9 @@ func (s *ScanRPC) ReleaseMemory(_ *struct{}, _ *struct{}) error {
 
 // ProfileArgs specifies which pprof profile to retrieve.
 type ProfileArgs struct {
-	Name     string // "heap", "goroutine", "allocs", "block", "mutex", "threadcreate"
-	Debug    int
-	Seconds  int // for "profile" (CPU), 0 = use default 30s
+	Name    string // "heap", "goroutine", "allocs", "block", "mutex", "threadcreate"
+	Debug   int
+	Seconds int // for "profile" (CPU), 0 = use default 30s
 }
 
 // ProfileResult holds the raw pprof output.

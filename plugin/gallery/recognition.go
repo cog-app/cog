@@ -15,7 +15,7 @@ type RecognizedTag struct {
 
 // DetectedFace is a face detected in an image.
 type DetectedFace struct {
-	X, Y, W, H  float64      // normalized bounding box 0.0-1.0
+	X, Y, W, H   float64      // normalized bounding box 0.0-1.0
 	Landmarks    [][2]float64 // 5 facial landmarks [(x,y)...], normalized 0-1; nil if unavailable
 	Embedding    []float32    // face embedding vector
 	EstimatedAge float64      // estimated age in years, -1 if not available

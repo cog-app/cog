@@ -25,13 +25,13 @@ import (
 const (
 	mobilenetURL = "https://github.com/onnx/models/raw/main/validated/vision/classification/mobilenet/model/mobilenetv2-12-int8.onnx"
 	arcfaceURL   = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/w600k_r50.onnx"
-	scrfdURL      = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/det_10g.onnx"
-	genderageURL  = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/genderage.onnx"
+	scrfdURL     = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/det_10g.onnx"
+	genderageURL = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/genderage.onnx"
 
-	mobilenetFile  = "mobilenetv2-12-int8.onnx"
-	arcfaceFile    = "w600k_r50.onnx"
-	scrfdFile      = "det_10g.onnx"
-	genderageFile  = "genderage.onnx"
+	mobilenetFile = "mobilenetv2-12-int8.onnx"
+	arcfaceFile   = "w600k_r50.onnx"
+	scrfdFile     = "det_10g.onnx"
+	genderageFile = "genderage.onnx"
 
 	scrfdInputSize      = 640
 	scrfdScoreThreshold = 0.5
@@ -87,18 +87,18 @@ type OnnxBackend struct {
 	ModelsDir   string // directory to store/load ONNX model files
 	LibraryPath string // path to libonnxruntime.so
 
-	once       sync.Once
-	initErr    error
-	pigo       *PigoBackend
+	once         sync.Once
+	initErr      error
+	pigo         *PigoBackend
 	hasArcface   bool
 	hasSCRFD     bool
 	hasGenderage bool
 
 	// Cached sessions for performance — avoid creating per-call.
-	mobilenetSession  *cachedSession
-	arcfaceSession    *cachedSession
-	genderageSession  *cachedSession
-	scrfdSession      *cachedSession
+	mobilenetSession *cachedSession
+	arcfaceSession   *cachedSession
+	genderageSession *cachedSession
+	scrfdSession     *cachedSession
 }
 
 func (b *OnnxBackend) Name() string { return "ONNX (local)" }
@@ -895,8 +895,8 @@ func letterboxImage(img image.Image, targetW, targetH int) (image.Image, float64
 // scrfdDetection holds a raw SCRFD detection before NMS.
 type scrfdDetection struct {
 	x1, y1, x2, y2 float64
-	score           float64
-	landmarks       [5][2]float64
+	score          float64
+	landmarks      [5][2]float64
 }
 
 // nms performs greedy non-maximum suppression on SCRFD detections.

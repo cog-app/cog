@@ -1031,12 +1031,12 @@ var (
 	SettingTagMinConfidence = floatSetting("tag_min_confidence", 0.5)
 
 	// Face detection — independent backend
-	SettingFaceBackend      = stringSetting("face_backend", BackendNone)
+	SettingFaceBackend       = stringSetting("face_backend", BackendNone)
 	SettingFaceMinConfidence = floatSetting("face_min_confidence", 0.7)
 	SettingClusterThreshold  = floatSetting("cluster_threshold", 0.35)
 
 	// Shared backend configuration (used by both tag + face when ONNX/Ollama/OpenAI)
-	SettingRecognitionURL   = stringSetting("recognition_url", "")
+	SettingRecognitionURL    = stringSetting("recognition_url", "")
 	SettingRecognitionAPIKey = stringSetting("recognition_api_key", "")
 	SettingRecognitionModel  = stringSetting("recognition_model", "")
 	SettingOnnxLibraryPath   = stringSetting("onnx_library_path", "")
@@ -1068,8 +1068,8 @@ var (
 		"{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}")
 
 	// Legacy aliases — read during migration from old settings
-	SettingRecognitionEnabled = boolSetting("recognition_enabled", false)
-	SettingRecognitionBackend = stringSetting("recognition_backend", BackendNone)
+	SettingRecognitionEnabled   = boolSetting("recognition_enabled", false)
+	SettingRecognitionBackend   = stringSetting("recognition_backend", BackendNone)
 	SettingFaceDetectionEnabled = boolSetting("face_detection_enabled", true)
 )
 
