@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"iter"
 	"strconv"
 	"strings"
 	"time"
@@ -170,6 +171,34 @@ func scanMediaRows(rows *sql.Rows) ([]Media, error) {
 		result = append(result, *m)
 	}
 	return result, rows.Err()
+}
+
+// pendingRecognition returns an iterator over media items pending recognition.
+func pendingRecognition(db *sql.DB) iter.Seq2[Media, error] {
+	return func(yield func(Media, error) bool) {
+		rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m
+			WHERE m.recognition_state = 0 AND m.mime_type LIKE 'image/%'`)
+		if err != nil {
+			yield(Media{}, err)
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			m, err := scanMedia(rows)
+			if err != nil {
+				if !yield(Media{}, err) {
+					return
+				}
+				continue
+			}
+			if !yield(*m, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(Media{}, err)
+		}
+	}
 }
 
 // GetMedia returns a single media item by ID.

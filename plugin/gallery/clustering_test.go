@@ -2,6 +2,7 @@ package gallery
 
 import (
 	"database/sql"
+	"fmt"
 	"math"
 	"math/rand/v2"
 	"testing"
@@ -91,9 +92,9 @@ func TestFloat32Roundtrip(t *testing.T) {
 
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:?_foreign_keys=on")
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared&_foreign_keys=on", t.Name())
+	db, err := sql.Open("sqlite3", dsn)
 	require.NoError(t, err)
-	db.SetMaxOpenConns(1) // single connection ensures all ops see the same in-memory DB
 	t.Cleanup(func() { db.Close() })
 	require.NoError(t, migrate.Migrate(db, sqlFS))
 	return db

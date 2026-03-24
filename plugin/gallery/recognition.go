@@ -109,47 +109,28 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		}
 	}
 
-	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m
-		WHERE m.recognition_state = 0 AND m.mime_type LIKE 'image/%'
-		LIMIT 50`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	items, err := scanMediaRows(rows)
-	if err != nil {
-		return err
-	}
-
-	if len(items) == 0 {
-		p.log.Debug("recognition: no pending images", "user", username)
-		return nil
-	}
-	p.log.Info("recognition processing", "user", username, "count", len(items))
-
 	tagMinConf := SettingTagMinConfidence.MustGet(sysDB)
 	faceMinConf := SettingFaceMinConfidence.MustGet(sysDB)
+	faceEnabled := SettingFaceDetectionEnabled.MustGet(sysDB)
 
-	for i := range items {
+	var processed int
+	for m, err := range pendingRecognition(db) {
+		if err != nil {
+			return err
+		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
-		m := &items[i]
 		imagePath := p.resolveLocalPath(username, m.FilePath)
-
-		result, err := backend.Analyze(ctx, imagePath)
+		result, analyzeErr := backend.Analyze(ctx, imagePath)
 		now := p.ctx.Now().Unix()
-		if err != nil {
-			p.log.Error("recognize", "path", m.FilePath, "err", err)
-			if _, uerr := db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ?, recognition_error = ? WHERE id = ?`, now, err.Error(), m.ID); uerr != nil {
-				p.log.Error("update recognition error", "id", m.ID, "err", uerr)
-			}
+		if analyzeErr != nil {
+			p.log.Error("recognize", "path", m.FilePath, "err", analyzeErr)
+			db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ?, recognition_error = ? WHERE id = ?`, now, analyzeErr.Error(), m.ID)
 			continue
 		}
 
-		// Store tags.
 		for _, tag := range result.Tags {
 			if tag.Confidence < tagMinConf {
 				continue
@@ -161,8 +142,7 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 			AddMediaTag(db, m.ID, tagID, tag.Confidence)
 		}
 
-		// Store faces.
-		if SettingFaceDetectionEnabled.MustGet(sysDB) {
+		if faceEnabled {
 			for _, face := range result.Faces {
 				if face.Confidence < faceMinConf {
 					continue
@@ -172,8 +152,14 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		}
 
 		db.Exec(`UPDATE media SET recognition_state = 1, recognition_at = ? WHERE id = ?`, now, m.ID)
+		processed++
+		if processed%50 == 0 {
+			p.log.Info("recognition progress", "user", username, "processed", processed)
+		}
 	}
-
+	if processed > 0 {
+		p.log.Info("recognition complete", "user", username, "processed", processed)
+	}
 	return nil
 }
 

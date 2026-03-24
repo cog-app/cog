@@ -3,6 +3,7 @@
 package gallery
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"embed"
@@ -401,6 +402,29 @@ func (p *Plugin) workerPprof(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
+// logPipe implements io.Writer and forwards each line to a slog.Logger.
+// Used to capture subprocess stderr into the server's log buffer.
+type logPipe struct {
+	logger *slog.Logger
+	buf    []byte
+}
+
+func (lp *logPipe) Write(p []byte) (int, error) {
+	lp.buf = append(lp.buf, p...)
+	for {
+		i := bytes.IndexByte(lp.buf, '\n')
+		if i < 0 {
+			break
+		}
+		line := string(lp.buf[:i])
+		lp.buf = lp.buf[i+1:]
+		if line != "" {
+			lp.logger.Info(line, "source", "scan-worker")
+		}
+	}
+	return len(p), nil
+}
+
 func formatBytes(b uint64) string {
 	switch {
 	case b >= 1<<30:
@@ -470,7 +494,8 @@ func (p *Plugin) manageScanWorker(ctx context.Context) {
 
 		cmd := exec.CommandContext(ctx, exePath, "gallery", "scan", "worker")
 		cmd.Env = append(os.Environ(), "GOMEMLIMIT=512MiB")
-		cmd.Stderr = os.Stderr
+		// Pipe worker stderr through the server's logger so logs appear in the GUI.
+		cmd.Stderr = &logPipe{logger: p.log}
 
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
