@@ -253,6 +253,14 @@ templ adminLogsPage(pd ui.PageData, entries []logbuf.Entry) {
 			<h1>Server Logs</h1>
 			<span class="text-muted" style="font-size:0.85rem">{ fmt.Sprintf("%d entries", len(entries)) }</span>
 		</div>
+		<div id="log-filters" class="flex items-center gap-1" style="margin-bottom:0.75rem;flex-wrap:wrap">
+			<label class="form-check"><input type="checkbox" name="level" value="DEBUG" checked/> DEBUG</label>
+			<label class="form-check"><input type="checkbox" name="level" value="INFO" checked/> INFO</label>
+			<label class="form-check"><input type="checkbox" name="level" value="WARN" checked/> WARN</label>
+			<label class="form-check"><input type="checkbox" name="level" value="ERROR" checked/> ERROR</label>
+			<input type="text" name="regex" class="form-control" placeholder="Filter (regex)..." style="max-width:16rem;font-size:0.85rem"/>
+			<button type="button" class="btn btn-outline btn-sm" hx-get="/admin/logs/entries" hx-include="#log-filters" hx-target="#log-tbody" hx-swap="innerHTML">Refresh</button>
+		</div>
 		@ui.Card("") {
 			<div style="max-height:600px;overflow-y:auto">
 				<table class="table" style="font-size:0.85rem">
@@ -263,7 +271,7 @@ templ adminLogsPage(pd ui.PageData, entries []logbuf.Entry) {
 							<th>Message</th>
 						</tr>
 					</thead>
-					<tbody hx-get="/admin/logs/entries" hx-trigger="every 3s" hx-swap="innerHTML">
+					<tbody id="log-tbody">
 						@logEntriesPartial(entries)
 					</tbody>
 				</table>

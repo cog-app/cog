@@ -2,9 +2,11 @@ package web
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/smtp"
 	"os"
+	"regexp"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -264,7 +266,47 @@ func (h *adminHandler) LogEntries(w http.ResponseWriter, r *http.Request) {
 	if h.p.LogBuffer != nil {
 		entries = h.p.LogBuffer.Entries()
 	}
+	entries = filterLogEntries(entries, r)
 	logEntriesPartial(entries).Render(r.Context(), w)
+}
+
+func filterLogEntries(entries []logbuf.Entry, r *http.Request) []logbuf.Entry {
+	levels := r.URL.Query()["level"]
+	levelSet := make(map[slog.Level]bool, len(levels))
+	for _, l := range levels {
+		switch strings.ToUpper(l) {
+		case "DEBUG":
+			levelSet[slog.LevelDebug] = true
+		case "INFO":
+			levelSet[slog.LevelInfo] = true
+		case "WARN":
+			levelSet[slog.LevelWarn] = true
+		case "ERROR":
+			levelSet[slog.LevelError] = true
+		}
+	}
+
+	regexStr := r.URL.Query().Get("regex")
+	var re *regexp.Regexp
+	if regexStr != "" {
+		re, _ = regexp.Compile(regexStr)
+	}
+
+	if len(levelSet) == 0 && re == nil {
+		return entries
+	}
+
+	filtered := make([]logbuf.Entry, 0, len(entries))
+	for i := range entries {
+		if len(levelSet) > 0 && !levelSet[entries[i].Level] {
+			continue
+		}
+		if re != nil && !re.MatchString(entries[i].Message) {
+			continue
+		}
+		filtered = append(filtered, entries[i])
+	}
+	return filtered
 }
 
 // --- Plugins ---
