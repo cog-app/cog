@@ -136,6 +136,22 @@ func (s *ScanRPC) GetStatus(args *ScanStatusArgs, result *ScanStatusResult) erro
 	return nil
 }
 
+// ReleaseMemory frees ONNX sessions and triggers GC. Called by the parent's
+// memory watchdog when the worker's RSS exceeds the configured limit.
+func (s *ScanRPC) ReleaseMemory(_ *struct{}, _ *struct{}) error {
+	s.plugin.activeBackendsMu.Lock()
+	backends := s.plugin.activeBackends
+	s.plugin.activeBackendsMu.Unlock()
+	for _, b := range backends {
+		if rc, ok := b.(interface{ Release() }); ok {
+			slog.Info("releasing ONNX sessions due to memory pressure")
+			rc.Release()
+		}
+	}
+	runtime.GC()
+	return nil
+}
+
 // ProfileArgs specifies which pprof profile to retrieve.
 type ProfileArgs struct {
 	Name     string // "heap", "goroutine", "allocs", "block", "mutex", "threadcreate"
@@ -270,6 +286,12 @@ func (c *ScanClient) Profile(name string, debug, seconds int) ([]byte, error) {
 		return nil, err
 	}
 	return result.Data, nil
+}
+
+func (c *ScanClient) ReleaseMemory() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.client.Call("ScanRPC.ReleaseMemory", &struct{}{}, &struct{}{})
 }
 
 func (c *ScanClient) MemStats() (*MemStatsResult, error) {

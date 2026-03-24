@@ -1054,6 +1054,9 @@ var (
 	SettingPreviewGenerationEnabled = boolSetting("preview_generation_enabled", true)
 	SettingQualityScoringEnabled    = boolSetting("quality_scoring_enabled", true)
 
+	// Worker resource limits
+	SettingWorkerMaxRSS = intSetting("worker_max_rss_mb", 2048)
+
 	// Scan status (internal)
 	SettingScanRunning   = boolSetting("scan_running", false)
 	SettingScanLastRun   = intSetting("scan_last_run", 0)

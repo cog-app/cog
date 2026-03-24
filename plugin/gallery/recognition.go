@@ -126,15 +126,28 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		}
 	}
 
+	// Register active backends so ReleaseMemory RPC can reach them under memory pressure.
 	// Release sessions after this pass to free C-allocated memory.
+	var backends []RecognitionBackend
 	for _, b := range []RecognitionBackend{tagBackend, faceBackend} {
 		if b == nil {
 			continue
 		}
-		if rc, ok := b.(interface{ Release() }); ok {
-			defer rc.Release()
-		}
+		backends = append(backends, b)
 	}
+	p.activeBackendsMu.Lock()
+	p.activeBackends = backends
+	p.activeBackendsMu.Unlock()
+	defer func() {
+		for _, b := range backends {
+			if rc, ok := b.(interface{ Release() }); ok {
+				rc.Release()
+			}
+		}
+		p.activeBackendsMu.Lock()
+		p.activeBackends = nil
+		p.activeBackendsMu.Unlock()
+	}()
 
 	p.log.Info("recognition started", "user", username,
 		"tag_backend", tagBackendType, "face_backend", faceBackendType)

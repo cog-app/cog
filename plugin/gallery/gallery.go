@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +55,12 @@ type Plugin struct {
 	scanMu     sync.Mutex
 	scanClient *ScanClient // RPC client to scan worker subprocess
 	isWorker   bool        // true when running as scan worker subprocess
+	workerPID  int         // PID of scan worker subprocess (for RSS monitoring)
+
+	// activeBackends holds recognition backends during a scan so
+	// ReleaseMemory can free ONNX sessions under memory pressure.
+	activeBackendsMu sync.Mutex
+	activeBackends   []RecognitionBackend
 }
 
 // New creates a new Gallery plugin instance.
@@ -342,22 +349,41 @@ func (p *Plugin) workerPprof(w http.ResponseWriter, r *http.Request) {
 
 	name := r.PathValue("profile")
 
-	// Index page: show memstats and links to profiles.
+	// Index page: show RSS, scan status, memstats, and links to profiles.
 	if name == "" {
 		stats, err := client.MemStats()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		status, _ := client.GetStatus()
+
+		p.scanMu.Lock()
+		pid := p.workerPID
+		p.scanMu.Unlock()
+		rss := readRSS(pid)
+
+		scanState := "Idle"
+		if status.Running {
+			scanState = "Running"
+		}
+		lastRun := "never"
+		if !status.LastRun.IsZero() {
+			lastRun = time.Since(status.LastRun).Truncate(time.Second).String() + " ago"
+		}
+
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		base := "/apps/gallery/api/worker/pprof"
-		fmt.Fprintf(w, `<html><head><title>Worker pprof</title></head><body>
-<h1>Gallery Scan Worker</h1>
+		fmt.Fprintf(w, `<html><head><title>Worker pprof</title><meta http-equiv="refresh" content="5"></head><body>
+<h1>Gallery Scan Worker (PID %d)</h1>
 <table>
+<tr><td><b>Status</b></td><td><b>%s</b></td></tr>
+<tr><td>Last Scan</td><td>%s</td></tr>
+<tr><td><b>Process RSS</b></td><td><b>%s</b></td></tr>
 <tr><td>Heap In-Use</td><td>%s</td></tr>
 <tr><td>Heap Alloc</td><td>%s</td></tr>
 <tr><td>Heap Sys</td><td>%s</td></tr>
-<tr><td>Total Sys</td><td>%s</td></tr>
+<tr><td>Total Sys (Go)</td><td>%s</td></tr>
 <tr><td>GC Cycles</td><td>%d</td></tr>
 <tr><td>Goroutines</td><td>%d</td></tr>
 </table>
@@ -372,6 +398,7 @@ func (p *Plugin) workerPprof(w http.ResponseWriter, r *http.Request) {
 <li><a href="%s/profile?seconds=10">profile (CPU, 10s)</a></li>
 </ul>
 </body></html>`,
+			pid, scanState, lastRun, formatBytes(rss),
 			formatBytes(stats.HeapInuse), formatBytes(stats.HeapAlloc),
 			formatBytes(stats.HeapSys), formatBytes(stats.Sys),
 			stats.NumGC, stats.Goroutines,
@@ -518,20 +545,28 @@ func (p *Plugin) manageScanWorker(ctx context.Context) {
 			}
 		}
 
-		p.log.Info("scan worker started", "pid", cmd.Process.Pid)
-		setNice(cmd.Process.Pid, 10)
+		pid := cmd.Process.Pid
+		p.log.Info("scan worker started", "pid", pid)
+		setNice(pid, 10)
 
 		// Create RPC client over the subprocess pipes.
 		client := newScanClient(readWriteCloser{stdout, stdin})
 		p.scanMu.Lock()
 		p.scanClient = client
+		p.workerPID = pid
 		p.scanMu.Unlock()
+
+		// Start RSS watchdog.
+		watchdogDone := make(chan struct{})
+		go p.rssWatchdog(ctx, pid, client, watchdogDone)
 
 		// Wait for subprocess to exit.
 		err = cmd.Wait()
+		close(watchdogDone)
 
 		p.scanMu.Lock()
 		p.scanClient = nil
+		p.workerPID = 0
 		p.scanMu.Unlock()
 		client.Close()
 
@@ -563,4 +598,59 @@ func (p *Plugin) scanTimer(ctx context.Context) {
 			p.requestScan("*")
 		}
 	}
+}
+
+// rssWatchdog monitors the worker's RSS and triggers memory release or kill.
+func (p *Plugin) rssWatchdog(ctx context.Context, pid int, client *ScanClient, done <-chan struct{}) {
+	sysDB, _ := p.SystemDB()
+	maxMB := uint64(2048)
+	if sysDB != nil {
+		maxMB = uint64(SettingWorkerMaxRSS.MustGet(sysDB))
+	}
+	maxBytes := maxMB * 1024 * 1024
+
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		case <-ticker.C:
+			rss := readRSS(pid)
+			if rss == 0 || rss <= maxBytes {
+				continue
+			}
+			p.log.Warn("scan worker RSS exceeds limit",
+				"rss", formatBytes(rss), "limit", formatBytes(maxBytes))
+			client.ReleaseMemory()
+
+			// Give it time to free memory.
+			time.Sleep(15 * time.Second)
+
+			rss = readRSS(pid)
+			if rss > maxBytes {
+				p.log.Error("scan worker memory still high after release, killing",
+					"rss", formatBytes(rss))
+				syscall.Kill(pid, syscall.SIGKILL)
+				return
+			}
+			p.log.Info("scan worker memory recovered", "rss", formatBytes(rss))
+		}
+	}
+}
+
+// readRSS returns the resident set size of a process in bytes.
+func readRSS(pid int) uint64 {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/statm", pid))
+	if err != nil {
+		return 0
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 2 {
+		return 0
+	}
+	pages, _ := strconv.ParseUint(fields[1], 10, 64)
+	return pages * uint64(os.Getpagesize())
 }
