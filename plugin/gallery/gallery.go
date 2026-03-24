@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -430,7 +431,9 @@ func (p *Plugin) workerPprof(w http.ResponseWriter, r *http.Request) {
 }
 
 // logPipe implements io.Writer and forwards each line to a slog.Logger.
-// Used to capture subprocess stderr into the server's log buffer.
+// The subprocess is launched with COG_LOG_FORMAT=json so each line is a JSON
+// object with "level", "msg", and "source" fields. Lines that fail to parse
+// are logged as-is at INFO level.
 type logPipe struct {
 	logger *slog.Logger
 	buf    []byte
@@ -443,11 +446,36 @@ func (lp *logPipe) Write(p []byte) (int, error) {
 		if i < 0 {
 			break
 		}
-		line := string(lp.buf[:i])
+		line := lp.buf[:i]
 		lp.buf = lp.buf[i+1:]
-		if line != "" {
-			lp.logger.Info(line, "source", "scan-worker")
+		if len(line) == 0 {
+			continue
 		}
+		var rec struct {
+			Level  string `json:"level"`
+			Msg    string `json:"msg"`
+			Source string `json:"source"`
+		}
+		if json.Unmarshal(line, &rec) != nil || rec.Msg == "" {
+			lp.logger.Info(string(line), "source", "scan-worker")
+			continue
+		}
+		var level slog.Level
+		switch rec.Level {
+		case "DEBUG":
+			level = slog.LevelDebug
+		case "WARN":
+			level = slog.LevelWarn
+		case "ERROR":
+			level = slog.LevelError
+		default:
+			level = slog.LevelInfo
+		}
+		attrs := []any{"source", "scan-worker"}
+		if rec.Source != "" {
+			attrs = append(attrs, "subsource", rec.Source)
+		}
+		lp.logger.Log(context.Background(), level, rec.Msg, attrs...)
 	}
 	return len(p), nil
 }
@@ -520,7 +548,7 @@ func (p *Plugin) manageScanWorker(ctx context.Context) {
 		}
 
 		cmd := exec.CommandContext(ctx, exePath, "gallery", "scan", "worker")
-		cmd.Env = append(os.Environ(), "GOMEMLIMIT=512MiB")
+		cmd.Env = append(os.Environ(), "GOMEMLIMIT=512MiB", "COG_LOG_FORMAT=json")
 		// Pipe worker stderr through the server's logger so logs appear in the GUI.
 		cmd.Stderr = &logPipe{logger: p.log}
 
