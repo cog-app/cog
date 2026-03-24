@@ -715,14 +715,16 @@ func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 	// Only save settings for the submitted section to avoid overwriting
 	// checkbox values from the other form (unchecked checkboxes are absent).
 	switch r.FormValue("_section") {
-	case "recognition":
-		SetSetting(db, "recognition_enabled", r.FormValue("recognition_enabled"))
-		SetSetting(db, "recognition_backend", r.FormValue("recognition_backend"))
-		SetSetting(db, "recognition_url", r.FormValue("recognition_url"))
-		SetSetting(db, "recognition_api_key", r.FormValue("recognition_api_key"))
-		SetSetting(db, "recognition_model", r.FormValue("recognition_model"))
-		SetSetting(db, "onnx_library_path", r.FormValue("onnx_library_path"))
-		SetSetting(db, "onnx_models_dir", r.FormValue("onnx_models_dir"))
+	case "tags":
+		SetSetting(db, "tag_backend", r.FormValue("tag_backend"))
+		if v := r.FormValue("tag_min_confidence"); v != "" {
+			SetSetting(db, "tag_min_confidence", v)
+		}
+	case "faces":
+		SetSetting(db, "face_backend", r.FormValue("face_backend"))
+		if v := r.FormValue("face_min_confidence"); v != "" {
+			SetSetting(db, "face_min_confidence", v)
+		}
 		if v := r.FormValue("cluster_threshold"); v != "" {
 			SetSetting(db, "cluster_threshold", v)
 		}
@@ -734,6 +736,17 @@ func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 		if v := r.FormValue("duplicate_distance"); v != "" {
 			SetSetting(db, "duplicate_distance", v)
 		}
+	case "ocr":
+		SetSetting(db, "ocr_enabled", r.FormValue("ocr_enabled"))
+	case "processing":
+		SetSetting(db, "preview_generation_enabled", r.FormValue("preview_generation_enabled"))
+		SetSetting(db, "quality_scoring_enabled", r.FormValue("quality_scoring_enabled"))
+	case "backend":
+		SetSetting(db, "onnx_library_path", r.FormValue("onnx_library_path"))
+		SetSetting(db, "onnx_models_dir", r.FormValue("onnx_models_dir"))
+		SetSetting(db, "recognition_url", r.FormValue("recognition_url"))
+		SetSetting(db, "recognition_api_key", r.FormValue("recognition_api_key"))
+		SetSetting(db, "recognition_model", r.FormValue("recognition_model"))
 	}
 
 	http.Redirect(w, r, "/admin/plugins/gallery", http.StatusSeeOther)

@@ -1025,36 +1025,48 @@ const (
 
 // All gallery settings.
 var (
-	// Recognition
-	SettingRecognitionEnabled = boolSetting("recognition_enabled", false)
-	SettingRecognitionBackend = stringSetting("recognition_backend", BackendNone)
-	SettingRecognitionURL     = stringSetting("recognition_url", "")
-	SettingRecognitionAPIKey  = stringSetting("recognition_api_key", "")
-	SettingRecognitionModel   = stringSetting("recognition_model", "")
-	SettingOnnxLibraryPath    = stringSetting("onnx_library_path", "")
-	SettingOnnxModelsDir      = stringSetting("onnx_models_dir", "")
+	// Tag classification — independent backend
+	SettingTagBackend       = stringSetting("tag_backend", BackendNone)
+	SettingTagMinConfidence = floatSetting("tag_min_confidence", 0.5)
 
-	// Detection tuning
-	SettingClusterThreshold     = floatSetting("cluster_threshold", 0.35)
-	SettingTagMinConfidence     = floatSetting("tag_min_confidence", 0.5)
-	SettingFaceMinConfidence    = floatSetting("face_min_confidence", 0.7)
-	SettingFaceDetectionEnabled = boolSetting("face_detection_enabled", true)
-	SettingOCREnabled           = boolSetting("ocr_enabled", true)
+	// Face detection — independent backend
+	SettingFaceBackend      = stringSetting("face_backend", BackendNone)
+	SettingFaceMinConfidence = floatSetting("face_min_confidence", 0.7)
+	SettingClusterThreshold  = floatSetting("cluster_threshold", 0.35)
+
+	// Shared backend configuration (used by both tag + face when ONNX/Ollama/OpenAI)
+	SettingRecognitionURL   = stringSetting("recognition_url", "")
+	SettingRecognitionAPIKey = stringSetting("recognition_api_key", "")
+	SettingRecognitionModel  = stringSetting("recognition_model", "")
+	SettingOnnxLibraryPath   = stringSetting("onnx_library_path", "")
+	SettingOnnxModelsDir     = stringSetting("onnx_models_dir", "")
+
+	// OCR
+	SettingOCREnabled = boolSetting("ocr_enabled", true)
 
 	// Duplicates
 	SettingDuplicateDetectionEnabled = boolSetting("duplicate_detection_enabled", true)
 	SettingDuplicateAlgorithm        = stringSetting("duplicate_algorithm", AlgoDifference)
 	SettingDuplicateDistance         = intSetting("duplicate_distance", 5)
-	SettingDuplicateAlgorithmUsed    = stringSetting("duplicate_algorithm_used", "")
+	SettingDuplicateAlgorithmUsed    = stringSetting[string]("duplicate_algorithm_used", "")
+
+	// Processing
+	SettingPreviewGenerationEnabled = boolSetting("preview_generation_enabled", true)
+	SettingQualityScoringEnabled    = boolSetting("quality_scoring_enabled", true)
 
 	// Scan status (internal)
 	SettingScanRunning   = boolSetting("scan_running", false)
 	SettingScanLastRun   = intSetting("scan_last_run", 0)
-	SettingScanLastError = stringSetting("scan_last_error", "")
+	SettingScanLastError = stringSetting[string]("scan_last_error", "")
 
 	// File rename
-	SettingRenamePattern = stringSetting("rename_pattern",
+	SettingRenamePattern = stringSetting[string]("rename_pattern",
 		"{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}")
+
+	// Legacy aliases — read during migration from old settings
+	SettingRecognitionEnabled = boolSetting("recognition_enabled", false)
+	SettingRecognitionBackend = stringSetting("recognition_backend", BackendNone)
+	SettingFaceDetectionEnabled = boolSetting("face_detection_enabled", true)
 )
 
 // --- Rename Log ---

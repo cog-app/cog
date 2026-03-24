@@ -134,14 +134,21 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 		return nil, fmt.Errorf("metadata: %w", err)
 	}
 
+	// Load system settings for feature gating.
+	sysDB, _ := p.SystemDB()
+
 	// Stage 2.5: Pre-generate thumbnails for grid view.
-	if err := p.preGenerateThumbnails(ctx, galleryDB, username); err != nil {
-		p.log.Warn("thumbnails", "user", username, "err", err)
+	if sysDB == nil || SettingPreviewGenerationEnabled.MustGet(sysDB) {
+		if err := p.preGenerateThumbnails(ctx, galleryDB, username); err != nil {
+			p.log.Warn("thumbnails", "user", username, "err", err)
+		}
 	}
 
 	// Stage 2.6: Quality scoring (Laplacian sharpness).
-	if err := p.computeQualityScores(ctx, galleryDB, username); err != nil {
-		p.log.Warn("quality scores", "user", username, "err", err)
+	if sysDB == nil || SettingQualityScoringEnabled.MustGet(sysDB) {
+		if err := p.computeQualityScores(ctx, galleryDB, username); err != nil {
+			p.log.Warn("quality scores", "user", username, "err", err)
+		}
 	}
 
 	// Stage 2.75: Fingerprint computation for duplicate detection.
@@ -171,7 +178,6 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	}
 
 	// Stage 7: Face clustering
-	sysDB, _ := p.SystemDB()
 	if err := clusterFaces(galleryDB, sysDB); err != nil {
 		p.log.Warn("clustering", "user", username, "err", err)
 		warnings = append(warnings, fmt.Sprintf("%s: clustering: %v", username, err))

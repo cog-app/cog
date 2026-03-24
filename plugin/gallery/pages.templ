@@ -862,131 +862,65 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 		These settings apply to all users.
 	</p>
 	@scanStatusCard(stats, scan, csrfToken)
-	@ui.Card("Image Recognition") {
-		<form method="post" action="/admin/plugins/gallery" id="recognition-form">
+	@ui.Card("Tag Classification") {
+		<form method="post" action="/admin/plugins/gallery">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
-			<input type="hidden" name="_section" value="recognition"/>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>
-					<input
-						type="checkbox"
-						name="recognition_enabled"
-						value="true"
-						checked?={ GetSetting(db, "recognition_enabled", "false") == "true" }
-					/>
-					Enable image recognition
-				</label>
-			</div>
+			<input type="hidden" name="_section" value="tags"/>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Backend</label>
-				<select name="recognition_backend" class="input" id="recognition-backend">
-					<option value="none" selected?={ GetSetting(db, "recognition_backend", "none") == "none" }>None</option>
-					<option value="pigo" selected?={ GetSetting(db, "recognition_backend", "none") == "pigo" }>Pigo (local face detection)</option>
-					<option value="ollama" selected?={ GetSetting(db, "recognition_backend", "none") == "ollama" }>Ollama</option>
-					<option value="openai" selected?={ GetSetting(db, "recognition_backend", "none") == "openai" }>OpenAI-compatible</option>
-					<option value="onnx" selected?={ GetSetting(db, "recognition_backend", "none") == "onnx" }>ONNX (local)</option>
+				<select name="tag_backend" class="input">
+					<option value="none" selected?={ GetSetting(db, "tag_backend", "none") == "none" }>None (disabled)</option>
+					<option value="onnx" selected?={ GetSetting(db, "tag_backend", "none") == "onnx" }>ONNX (local)</option>
+					<option value="ollama" selected?={ GetSetting(db, "tag_backend", "none") == "ollama" }>Ollama</option>
+					<option value="openai" selected?={ GetSetting(db, "tag_backend", "none") == "openai" }>OpenAI-compatible</option>
 				</select>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem" data-backends="ollama openai">
-				<label>URL</label>
-				<input
-					type="text"
-					name="recognition_url"
-					class="input"
-					value={ GetSetting(db, "recognition_url", "") }
-					placeholder="http://localhost:11434"
-				/>
-			</div>
-			<div class="form-group" style="margin-bottom:0.75rem" data-backends="openai">
-				<label>API Key</label>
-				<input
-					type="password"
-					name="recognition_api_key"
-					class="input"
-					value={ GetSetting(db, "recognition_api_key", "") }
-					placeholder="sk-..."
-				/>
-			</div>
-			<div class="form-group" style="margin-bottom:0.75rem" data-backends="ollama openai">
-				<label>Model</label>
-				<input
-					type="text"
-					name="recognition_model"
-					class="input"
-					value={ GetSetting(db, "recognition_model", "") }
-					placeholder="llava:13b"
-				/>
-			</div>
-			<div class="form-group" style="margin-bottom:0.75rem" data-backends="onnx">
-				<label>ONNX Runtime Library Path</label>
-				<input
-					type="text"
-					name="onnx_library_path"
-					class="input"
-					value={ GetSetting(db, "onnx_library_path", "") }
-					placeholder="/usr/lib/libonnxruntime.so"
-				/>
-				<small class="text-muted">Required for ONNX backend. Leave blank to auto-detect.</small>
-			</div>
-			<div class="form-group" style="margin-bottom:0.75rem" data-backends="onnx">
-				<label>ONNX Models Directory</label>
-				<input
-					type="text"
-					name="onnx_models_dir"
-					class="input"
-					value={ GetSetting(db, "onnx_models_dir", "") }
-					placeholder="(auto: data dir)"
-				/>
-				<small class="text-muted">Where to store ONNX model files. Leave blank for default.</small>
-			</div>
-			<div class="form-group" style="margin-bottom:0.75rem" data-backends="pigo onnx">
-				<label>Face Cluster Threshold</label>
-				<input
-					type="number"
-					name="cluster_threshold"
-					class="input"
-					value={ GetSetting(db, "cluster_threshold", "0.35") }
-					step="0.01"
-					min="0.01"
-					max="1.0"
-				/>
-				<small class="text-muted">Cosine distance threshold for face clustering (lower = stricter). Default: 0.35</small>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>Minimum Confidence</label>
+				<input type="number" name="tag_min_confidence" class="input" value={ GetSetting(db, "tag_min_confidence", "0.5") } step="0.05" min="0" max="1"/>
+				<small class="text-muted">Tags below this confidence are discarded. Default: 0.5</small>
 			</div>
 			<button type="submit" class="btn btn-primary btn-sm">Save</button>
 		</form>
-		<script>
-			(function() {
-				var sel = document.getElementById('recognition-backend');
-				var form = document.getElementById('recognition-form');
-				function update() {
-					var v = sel.value;
-					form.querySelectorAll('[data-backends]').forEach(function(el) {
-						el.style.display = el.dataset.backends.split(' ').indexOf(v) >= 0 ? '' : 'none';
-					});
-				}
-				sel.addEventListener('change', update);
-				update();
-			})();
-		</script>
+	}
+	@ui.Card("Face Detection") {
+		<form method="post" action="/admin/plugins/gallery">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="_section" value="faces"/>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>Backend</label>
+				<select name="face_backend" class="input">
+					<option value="none" selected?={ GetSetting(db, "face_backend", "none") == "none" }>None (disabled)</option>
+					<option value="onnx" selected?={ GetSetting(db, "face_backend", "none") == "onnx" }>ONNX (SCRFD + ArcFace)</option>
+					<option value="pigo" selected?={ GetSetting(db, "face_backend", "none") == "pigo" }>Pigo (detection only, no embeddings)</option>
+				</select>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>Minimum Confidence</label>
+				<input type="number" name="face_min_confidence" class="input" value={ GetSetting(db, "face_min_confidence", "0.7") } step="0.05" min="0" max="1"/>
+				<small class="text-muted">Faces below this confidence are discarded. Default: 0.7</small>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>Cluster Threshold</label>
+				<input type="number" name="cluster_threshold" class="input" value={ GetSetting(db, "cluster_threshold", "0.35") } step="0.01" min="0.01" max="1.0"/>
+				<small class="text-muted">Cosine distance threshold for grouping faces into people (lower = stricter). Default: 0.35</small>
+			</div>
+			<button type="submit" class="btn btn-primary btn-sm">Save</button>
+		</form>
 	}
 	@ui.Card("Duplicate Detection") {
-		<form method="post" action="/admin/plugins/gallery" id="duplicate-form">
+		<form method="post" action="/admin/plugins/gallery">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			<input type="hidden" name="_section" value="duplicates"/>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>
-					<input
-						type="checkbox"
-						name="duplicate_detection_enabled"
-						value="true"
-						checked?={ GetSetting(db, "duplicate_detection_enabled", "true") == "true" }
-					/>
+					<input type="checkbox" name="duplicate_detection_enabled" value="true" checked?={ GetSetting(db, "duplicate_detection_enabled", "true") == "true" }/>
 					Enable duplicate detection
 				</label>
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Algorithm</label>
-				<select name="duplicate_algorithm" class="input" id="duplicate-algorithm">
+				<select name="duplicate_algorithm" class="input">
 					<option value="difference" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "difference" }>Difference Hash</option>
 					<option value="average" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "average" }>Average Hash</option>
 					<option value="phash" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "phash" }>Perceptual Hash (pHash)</option>
@@ -996,15 +930,70 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Distance Threshold</label>
-				<input
-					type="number"
-					name="duplicate_distance"
-					class="input"
-					value={ GetSetting(db, "duplicate_distance", "5") }
-					min="0"
-					max="64"
-				/>
+				<input type="number" name="duplicate_distance" class="input" value={ GetSetting(db, "duplicate_distance", "5") } min="0" max="64"/>
 				<small class="text-muted">Maximum Hamming distance to consider images duplicates (lower = stricter). Default: 5</small>
+			</div>
+			<button type="submit" class="btn btn-primary btn-sm">Save</button>
+		</form>
+	}
+	@ui.Card("OCR") {
+		<form method="post" action="/admin/plugins/gallery">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="_section" value="ocr"/>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>
+					<input type="checkbox" name="ocr_enabled" value="true" checked?={ GetSetting(db, "ocr_enabled", "true") == "true" }/>
+					Enable OCR text extraction
+				</label>
+				<small class="text-muted">Requires tesseract to be installed on the system.</small>
+			</div>
+			<button type="submit" class="btn btn-primary btn-sm">Save</button>
+		</form>
+	}
+	@ui.Card("Processing") {
+		<form method="post" action="/admin/plugins/gallery">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="_section" value="processing"/>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>
+					<input type="checkbox" name="preview_generation_enabled" value="true" checked?={ GetSetting(db, "preview_generation_enabled", "true") == "true" }/>
+					Pre-generate thumbnails during scan
+				</label>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>
+					<input type="checkbox" name="quality_scoring_enabled" value="true" checked?={ GetSetting(db, "quality_scoring_enabled", "true") == "true" }/>
+					Compute image quality scores (sharpness)
+				</label>
+			</div>
+			<button type="submit" class="btn btn-primary btn-sm">Save</button>
+		</form>
+	}
+	@ui.Card("Backend Configuration") {
+		<form method="post" action="/admin/plugins/gallery">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="_section" value="backend"/>
+			<p class="text-muted" style="margin-bottom:0.75rem;font-size:0.85rem">Shared connection settings for tag classification and face detection backends.</p>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>ONNX Runtime Library Path</label>
+				<input type="text" name="onnx_library_path" class="input" value={ GetSetting(db, "onnx_library_path", "") } placeholder="/usr/lib/libonnxruntime.so"/>
+				<small class="text-muted">Leave blank to auto-detect.</small>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>ONNX Models Directory</label>
+				<input type="text" name="onnx_models_dir" class="input" value={ GetSetting(db, "onnx_models_dir", "") } placeholder="(auto: data dir)"/>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>Ollama / OpenAI URL</label>
+				<input type="text" name="recognition_url" class="input" value={ GetSetting(db, "recognition_url", "") } placeholder="http://localhost:11434"/>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>API Key</label>
+				<input type="password" name="recognition_api_key" class="input" value={ GetSetting(db, "recognition_api_key", "") } placeholder="sk-..."/>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>Model</label>
+				<input type="text" name="recognition_model" class="input" value={ GetSetting(db, "recognition_model", "") } placeholder="llava:13b"/>
 			</div>
 			<button type="submit" class="btn btn-primary btn-sm">Save</button>
 		</form>

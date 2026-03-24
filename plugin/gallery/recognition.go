@@ -38,21 +38,16 @@ type RecognitionBackend interface {
 	Available() bool
 }
 
-// getRecognitionBackend returns the configured recognition backend from system settings.
-func (p *Plugin) getRecognitionBackend(db *sql.DB) (RecognitionBackend, error) {
-	backend := SettingRecognitionBackend.MustGet(db)
-	if backend == BackendNone {
+// resolveBackend creates a RecognitionBackend for the given backend type.
+func (p *Plugin) resolveBackend(db *sql.DB, backendType RecognitionBackendType) (RecognitionBackend, error) {
+	if backendType == BackendNone {
 		return nil, nil
 	}
-	if !SettingRecognitionEnabled.MustGet(db) {
-		return nil, nil
-	}
-
 	url := SettingRecognitionURL.MustGet(db)
 	apiKey := SettingRecognitionAPIKey.MustGet(db)
 	model := SettingRecognitionModel.MustGet(db)
 
-	switch backend {
+	switch backendType {
 	case BackendOllama:
 		b := &OllamaBackend{URL: url, Model: model}
 		if !b.Available() {
@@ -81,43 +76,72 @@ func (p *Plugin) getRecognitionBackend(db *sql.DB) (RecognitionBackend, error) {
 		}
 		return b, nil
 	default:
-		return nil, fmt.Errorf("unknown recognition backend: %q", backend)
+		return nil, fmt.Errorf("unknown recognition backend: %q", backendType)
 	}
 }
 
-// runRecognition processes pending media through the recognition backend.
+// runRecognition processes pending media through tag and face backends.
+// Each feature has its own backend setting; if both use the same backend type,
+// Analyze is called once and results are split.
 func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string) error {
 	sysDB, err := p.SystemDB()
 	if err != nil {
 		return fmt.Errorf("system db: %w", err)
 	}
-	backend, err := p.getRecognitionBackend(sysDB)
-	if err != nil {
-		return fmt.Errorf("recognition backend: %w", err)
-	}
-	if backend == nil {
+
+	tagBackendType := SettingTagBackend.MustGet(sysDB)
+	faceBackendType := SettingFaceBackend.MustGet(sysDB)
+	if tagBackendType == BackendNone && faceBackendType == BackendNone {
 		return nil
 	}
 
-	p.log.Info("recognition started", "user", username, "backend", backend.Name())
-
-	// Eagerly check for init errors so we don't poison every image row
-	// with the same error when the runtime can't load.
-	if ic, ok := backend.(interface{ InitErr() error }); ok {
-		if err := ic.InitErr(); err != nil {
-			return fmt.Errorf("recognition backend init: %w", err)
+	// Resolve backends. If both use the same type, share the instance.
+	var tagBackend, faceBackend RecognitionBackend
+	if tagBackendType != BackendNone {
+		tagBackend, err = p.resolveBackend(sysDB, tagBackendType)
+		if err != nil {
+			return fmt.Errorf("tag backend: %w", err)
+		}
+	}
+	if faceBackendType != BackendNone {
+		if faceBackendType == tagBackendType && tagBackend != nil {
+			faceBackend = tagBackend // share instance
+		} else {
+			faceBackend, err = p.resolveBackend(sysDB, faceBackendType)
+			if err != nil {
+				return fmt.Errorf("face backend: %w", err)
+			}
 		}
 	}
 
-	// Release ONNX sessions after this recognition pass to free C-allocated
-	// model workspace memory (~GBs). Sessions are re-created on next Analyze().
-	if rc, ok := backend.(interface{ Release() }); ok {
-		defer rc.Release()
+	// Eagerly check for init errors.
+	for _, b := range []RecognitionBackend{tagBackend, faceBackend} {
+		if b == nil {
+			continue
+		}
+		if ic, ok := b.(interface{ InitErr() error }); ok {
+			if err := ic.InitErr(); err != nil {
+				return fmt.Errorf("recognition backend init: %w", err)
+			}
+		}
 	}
+
+	// Release sessions after this pass to free C-allocated memory.
+	for _, b := range []RecognitionBackend{tagBackend, faceBackend} {
+		if b == nil {
+			continue
+		}
+		if rc, ok := b.(interface{ Release() }); ok {
+			defer rc.Release()
+		}
+	}
+
+	p.log.Info("recognition started", "user", username,
+		"tag_backend", tagBackendType, "face_backend", faceBackendType)
 
 	tagMinConf := SettingTagMinConfidence.MustGet(sysDB)
 	faceMinConf := SettingFaceMinConfidence.MustGet(sysDB)
-	faceEnabled := SettingFaceDetectionEnabled.MustGet(sysDB)
+	shared := tagBackend != nil && tagBackend == faceBackend
 
 	var processed int
 	for m, err := range pendingRecognition(db) {
@@ -129,31 +153,41 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		}
 
 		imagePath := p.resolveLocalPath(username, m.FilePath)
-		result, analyzeErr := backend.Analyze(ctx, imagePath)
 		now := p.ctx.Now().Unix()
-		if analyzeErr != nil {
-			p.log.Error("recognize", "path", m.FilePath, "err", analyzeErr)
-			db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ?, recognition_error = ? WHERE id = ?`, now, analyzeErr.Error(), m.ID)
-			continue
-		}
 
-		for _, tag := range result.Tags {
-			if tag.Confidence < tagMinConf {
+		if shared {
+			// Both features share a backend — call Analyze once.
+			result, analyzeErr := tagBackend.Analyze(ctx, imagePath)
+			if analyzeErr != nil {
+				p.log.Error("recognize", "path", m.FilePath, "err", analyzeErr)
+				db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ?, recognition_error = ? WHERE id = ?`, now, analyzeErr.Error(), m.ID)
 				continue
 			}
-			tagID, err := UpsertTag(db, tag.Name, tag.Type)
-			if err != nil {
-				continue
-			}
-			AddMediaTag(db, m.ID, tagID, tag.Confidence)
-		}
-
-		if faceEnabled {
-			for _, face := range result.Faces {
-				if face.Confidence < faceMinConf {
-					continue
+			storeTags(db, m.ID, result.Tags, tagMinConf)
+			storeFaces(db, m.ID, result.Faces, faceMinConf)
+		} else {
+			// Different backends — call each independently.
+			var anyErr error
+			if tagBackend != nil {
+				result, err := tagBackend.Analyze(ctx, imagePath)
+				if err != nil {
+					anyErr = err
+				} else {
+					storeTags(db, m.ID, result.Tags, tagMinConf)
 				}
-				storeFace(db, m.ID, &face)
+			}
+			if faceBackend != nil {
+				result, err := faceBackend.Analyze(ctx, imagePath)
+				if err != nil {
+					anyErr = err
+				} else {
+					storeFaces(db, m.ID, result.Faces, faceMinConf)
+				}
+			}
+			if anyErr != nil {
+				p.log.Error("recognize", "path", m.FilePath, "err", anyErr)
+				db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ?, recognition_error = ? WHERE id = ?`, now, anyErr.Error(), m.ID)
+				continue
 			}
 		}
 
@@ -167,6 +201,28 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		p.log.Info("recognition complete", "user", username, "processed", processed)
 	}
 	return nil
+}
+
+func storeTags(db *sql.DB, mediaID int64, tags []RecognizedTag, minConf float64) {
+	for _, tag := range tags {
+		if tag.Confidence < minConf {
+			continue
+		}
+		tagID, err := UpsertTag(db, tag.Name, tag.Type)
+		if err != nil {
+			continue
+		}
+		AddMediaTag(db, mediaID, tagID, tag.Confidence)
+	}
+}
+
+func storeFaces(db *sql.DB, mediaID int64, faces []DetectedFace, minConf float64) {
+	for i := range faces {
+		if faces[i].Confidence < minConf {
+			continue
+		}
+		storeFace(db, mediaID, &faces[i])
+	}
 }
 
 // storeFace inserts a detected face into the database.
