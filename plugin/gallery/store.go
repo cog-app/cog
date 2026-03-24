@@ -1033,7 +1033,8 @@ var (
 	// Face detection — independent backend
 	SettingFaceBackend       = stringSetting("face_backend", BackendNone)
 	SettingFaceMinConfidence = floatSetting("face_min_confidence", 0.7)
-	SettingClusterThreshold  = floatSetting("cluster_threshold", 0.35)
+	SettingClusterThreshold = floatSetting("cluster_threshold", 0.35)
+	SettingAgePenaltyWeight = floatSetting("age_penalty_weight", 0.0) // 0 = disabled, 0.02 = moderate
 
 	// Shared backend configuration (used by both tag + face when ONNX/Ollama/OpenAI)
 	SettingRecognitionURL    = stringSetting("recognition_url", "")

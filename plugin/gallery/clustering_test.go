@@ -58,22 +58,25 @@ func TestAgePenalty(t *testing.T) {
 	// Unix timestamp for 2024-06-15.
 	date2024 := int64(1718409600)
 
+	w := 0.02 // default weight
+
 	t.Run("no age data", func(t *testing.T) {
-		assert.Equal(t, 0.0, agePenalty(-1, date2024, 2019))
-		assert.Equal(t, 0.0, agePenalty(5, date2024, 0))
+		assert.Equal(t, 0.0, agePenalty(-1, date2024, 2019, w))
+		assert.Equal(t, 0.0, agePenalty(5, date2024, 0, w))
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		assert.Equal(t, 0.0, agePenalty(15, date2024, 2019, 0))
 	})
 
 	t.Run("within tolerance", func(t *testing.T) {
-		// Person born 2019, photo 2024, estimated age 5 → expected 5, error 0.
-		assert.Equal(t, 0.0, agePenalty(5, date2024, 2019))
-		// 3 years off → still within 5-year tolerance.
-		assert.Equal(t, 0.0, agePenalty(8, date2024, 2019))
+		assert.Equal(t, 0.0, agePenalty(5, date2024, 2019, w))
+		assert.Equal(t, 0.0, agePenalty(8, date2024, 2019, w))
 	})
 
 	t.Run("beyond tolerance", func(t *testing.T) {
-		// Person born 2019, photo 2024 → expected age 5.
-		// Estimated age 15 → error 10, penalty = (10-5)*0.02 = 0.10.
-		p := agePenalty(15, date2024, 2019)
+		// Error 10, penalty = (10-5)*0.02 = 0.10.
+		p := agePenalty(15, date2024, 2019, w)
 		assert.True(t, math.Abs(p-0.10) < 0.01, "expected ~0.10, got %f", p)
 	})
 }
@@ -234,7 +237,9 @@ func TestClusterSiblingAgeDisambiguation(t *testing.T) {
 	mid2 := insertTestMedia(t, db, date)
 	insertTestFace(t, db, mid2, embB, 30)
 
-	require.NoError(t, clusterFaces(db, nil))
+	// Enable age penalty for this test.
+	SettingAgePenaltyWeight.Set(db, 0.02)
+	require.NoError(t, clusterFaces(db, db))
 
 	// Should create a new person, not merge into child 1.
 	assert.Equal(t, 2, countPeople(t, db))

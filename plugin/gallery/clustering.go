@@ -16,8 +16,10 @@ const (
 // If sysDB is non-nil, the threshold is read from system settings.
 func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 	threshold := defaultClusterThreshold
+	agePenaltyWeight := 0.0
 	if sysDB != nil {
 		threshold = SettingClusterThreshold.MustGet(sysDB)
+		agePenaltyWeight = SettingAgePenaltyWeight.MustGet(sysDB)
 	}
 
 	// Load all existing people centroids.
@@ -78,7 +80,7 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 		// Compare against existing centroids with age penalty.
 		for personID, centroid := range centroids {
 			dist := cosineDistance(face.embedding, centroid)
-			dist += agePenalty(face.estimatedAge, face.photoDate, birthYears[personID])
+			dist += agePenalty(face.estimatedAge, face.photoDate, birthYears[personID], agePenaltyWeight)
 			if dist < bestDist {
 				bestDist = dist
 				bestPersonID = personID
@@ -90,7 +92,7 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 			for personID, recent := range recentFaces {
 				for _, emb := range recent {
 					dist := cosineDistance(face.embedding, emb)
-					dist += agePenalty(face.estimatedAge, face.photoDate, birthYears[personID])
+					dist += agePenalty(face.estimatedAge, face.photoDate, birthYears[personID], agePenaltyWeight)
 					if dist < bestDist {
 						bestDist = dist
 						bestPersonID = personID
@@ -274,20 +276,20 @@ func loadPersonBirthYears(db *sql.DB) (map[int64]float64, error) {
 }
 
 // agePenalty computes a distance penalty when the face's estimated age doesn't match
-// the person's expected age at the photo's date. Returns 0 when age data is unavailable
-// or the mismatch is within tolerance.
-func agePenalty(estimatedAge float64, photoDate int64, birthYear float64) float64 {
-	if estimatedAge < 0 || birthYear == 0 {
+// the person's expected age at the photo's date. Returns 0 when age data is unavailable,
+// the mismatch is within tolerance, or the penalty weight is 0 (disabled).
+func agePenalty(estimatedAge float64, photoDate int64, birthYear float64, weight float64) float64 {
+	if weight <= 0 || estimatedAge < 0 || birthYear == 0 {
 		return 0
 	}
 	photoYear := float64(photoDate)/31557600.0 + 1970
 	expectedAge := photoYear - birthYear
 	ageError := math.Abs(estimatedAge - expectedAge)
-	// 5-year tolerance for estimation noise, then 0.02 penalty per year beyond that.
+	// 5-year tolerance for estimation noise, then weight penalty per year beyond that.
 	if ageError <= 5 {
 		return 0
 	}
-	return (ageError - 5) * 0.02
+	return (ageError - 5) * weight
 }
 
 // cosineDistance computes the cosine distance between two vectors (1 - cosine similarity).

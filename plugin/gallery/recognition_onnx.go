@@ -6,7 +6,7 @@ import (
 	"image"
 	"image/color"
 	_ "image/gif"
-	"image/jpeg"
+	_ "image/jpeg"
 	_ "image/png"
 	"io"
 	"log/slog"
@@ -385,21 +385,7 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 		// Compute alignment once (used by both ArcFace and genderage).
 		var aligned image.Image
 		if len(face.Landmarks) == 5 {
-			if i == 0 {
-				imgBounds := img.Bounds()
-				slog.Debug("face alignment debug",
-					"imgW", imgBounds.Dx(), "imgH", imgBounds.Dy(),
-					"faceBox", fmt.Sprintf("(%.3f,%.3f,%.3f,%.3f)", face.X, face.Y, face.W, face.H),
-					"lm0", fmt.Sprintf("(%.4f,%.4f)", face.Landmarks[0][0], face.Landmarks[0][1]),
-					"lm1", fmt.Sprintf("(%.4f,%.4f)", face.Landmarks[1][0], face.Landmarks[1][1]),
-					"lm2", fmt.Sprintf("(%.4f,%.4f)", face.Landmarks[2][0], face.Landmarks[2][1]),
-				)
-			}
 			aligned = alignFace(img, face.Landmarks)
-			// Debug: save first aligned face for visual inspection.
-			if i == 0 {
-				debugSaveImage(aligned, filepath.Join(b.ModelsDir, "debug_aligned.jpg"))
-			}
 		}
 
 		if b.hasArcface {
@@ -411,7 +397,9 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 			}
 		}
 
-		if b.hasGenderage && aligned != nil {
+		// Age estimation needs a reasonably sized face crop — small faces
+		// upscaled to 96×96 produce garbage age estimates.
+		if b.hasGenderage && aligned != nil && facePixW >= 64 && facePixH >= 64 {
 			age, err := b.estimateAge(aligned)
 			if err != nil {
 				slog.Warn("onnx genderage", "err", err)
@@ -701,17 +689,6 @@ func l2normalize(v []float32) {
 	}
 }
 
-func debugSaveImage(img image.Image, path string) {
-	f, err := os.Create(path)
-	if err != nil {
-		slog.Warn("debug save image", "err", err)
-		return
-	}
-	defer f.Close()
-	jpeg.Encode(f, img, &jpeg.Options{Quality: 90})
-	slog.Debug("saved debug image", "path", path)
-}
-
 // --- Age estimation ---
 
 // estimateAge runs the genderage model on a 112×112 aligned face and returns estimated age.
@@ -745,7 +722,6 @@ func (b *OnnxBackend) estimateAge(aligned image.Image) (float64, error) {
 	}
 
 	output := outputTensor.GetData()
-	slog.Debug("genderage raw output", "female", output[0], "male", output[1], "age_raw", output[2])
 	// output[0] = female logit, output[1] = male logit, output[2] = age/100
 	age := float64(output[2]) * 100
 	if age < 0 || age > 120 {
