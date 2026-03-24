@@ -104,10 +104,11 @@ func (a *Album) AlbumTypeName() string {
 
 // Tag represents a media tag.
 type Tag struct {
-	ID      int64
-	Name    string
-	TagType int
-	Count   int // populated by list queries
+	ID         int64
+	Name       string
+	TagType    int
+	Count      int     // populated by list queries
+	Confidence float64 // recognition confidence 0-1, populated by TagsForMedia
 }
 
 // Person represents a recognized person.
@@ -565,8 +566,7 @@ func TagsForMedia(db *sql.DB, mediaID int64) ([]Tag, error) {
 	var tags []Tag
 	for rows.Next() {
 		var t Tag
-		var confidence float64
-		if err := rows.Scan(&t.ID, &t.Name, &t.TagType, &confidence); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.TagType, &t.Confidence); err != nil {
 			return nil, err
 		}
 		tags = append(tags, t)
@@ -611,11 +611,12 @@ type Face struct {
 	X, Y         float64 // normalized bounding box (0..1)
 	W, H         float64
 	EstimatedAge float64 // -1 if not estimated
+	Confidence   float64 // detection confidence 0-1
 }
 
 // FacesForMedia returns all faces detected in a media item.
 func FacesForMedia(db *sql.DB, mediaID int64) ([]Face, error) {
-	rows, err := db.Query(`SELECT f.id, f.media_id, f.person_id, COALESCE(p.name, ''), f.x, f.y, f.w, f.h, f.estimated_age
+	rows, err := db.Query(`SELECT f.id, f.media_id, f.person_id, COALESCE(p.name, ''), f.x, f.y, f.w, f.h, f.estimated_age, f.confidence
 		FROM faces f LEFT JOIN people p ON p.id = f.person_id
 		WHERE f.media_id = ?
 		ORDER BY f.id`, mediaID)
@@ -626,7 +627,7 @@ func FacesForMedia(db *sql.DB, mediaID int64) ([]Face, error) {
 	var faces []Face
 	for rows.Next() {
 		var f Face
-		if err := rows.Scan(&f.ID, &f.MediaID, &f.PersonID, &f.Name, &f.X, &f.Y, &f.W, &f.H, &f.EstimatedAge); err != nil {
+		if err := rows.Scan(&f.ID, &f.MediaID, &f.PersonID, &f.Name, &f.X, &f.Y, &f.W, &f.H, &f.EstimatedAge, &f.Confidence); err != nil {
 			return nil, err
 		}
 		faces = append(faces, f)
@@ -645,7 +646,7 @@ func FacesForMediaBatch(db *sql.DB, mediaIDs []int64) (map[int64][]Face, error) 
 		placeholders[i] = "?"
 		args[i] = id
 	}
-	rows, err := db.Query(`SELECT f.id, f.media_id, f.person_id, COALESCE(p.name, ''), f.x, f.y, f.w, f.h, f.estimated_age
+	rows, err := db.Query(`SELECT f.id, f.media_id, f.person_id, COALESCE(p.name, ''), f.x, f.y, f.w, f.h, f.estimated_age, f.confidence
 		FROM faces f LEFT JOIN people p ON p.id = f.person_id
 		WHERE f.media_id IN (`+strings.Join(placeholders, ",")+`)
 		ORDER BY f.id`, args...)
@@ -656,7 +657,7 @@ func FacesForMediaBatch(db *sql.DB, mediaIDs []int64) (map[int64][]Face, error) 
 	result := make(map[int64][]Face)
 	for rows.Next() {
 		var f Face
-		if err := rows.Scan(&f.ID, &f.MediaID, &f.PersonID, &f.Name, &f.X, &f.Y, &f.W, &f.H, &f.EstimatedAge); err != nil {
+		if err := rows.Scan(&f.ID, &f.MediaID, &f.PersonID, &f.Name, &f.X, &f.Y, &f.W, &f.H, &f.EstimatedAge, &f.Confidence); err != nil {
 			return nil, err
 		}
 		result[f.MediaID] = append(result[f.MediaID], f)

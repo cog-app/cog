@@ -560,6 +560,23 @@ func preprocessInsightFace(img image.Image, targetW, targetH int) []float32 {
 	return tensor
 }
 
+// preprocessRaw resizes an image and converts to CHW float32 tensor
+// with raw 0-255 pixel values (no normalization). Used for the genderage model.
+func preprocessRaw(img image.Image, targetW, targetH int) []float32 {
+	resized := resizeImage(img, targetW, targetH)
+
+	tensor := make([]float32, 3*targetH*targetW)
+	for y := range targetH {
+		for x := range targetW {
+			r, g, b, _ := resized.At(x, y).RGBA()
+			tensor[0*targetH*targetW+y*targetW+x] = float32(r) / 256.0
+			tensor[1*targetH*targetW+y*targetW+x] = float32(g) / 256.0
+			tensor[2*targetH*targetW+y*targetW+x] = float32(b) / 256.0
+		}
+	}
+	return tensor
+}
+
 // resizeImage performs bilinear interpolation resize.
 func resizeImage(img image.Image, w, h int) image.Image {
 	bounds := img.Bounds()
@@ -698,12 +715,9 @@ func debugSaveImage(img image.Image, path string) {
 // --- Age estimation ---
 
 // estimateAge runs the genderage model on a 112×112 aligned face and returns estimated age.
-// The model expects 96×96 input, so the aligned face is resized.
+// The model expects 96×96 input with raw 0-255 pixel values (NOT normalized).
 func (b *OnnxBackend) estimateAge(aligned image.Image) (float64, error) {
-	// Use fresh tensors rather than cached session — the genderage model
-	// needs its own input data per call, and cached sessions may not update
-	// the C-side tensor data reliably on all platforms.
-	data := preprocessInsightFace(aligned, 96, 96)
+	data := preprocessRaw(aligned, 96, 96)
 
 	inputTensor, err := ort.NewTensor(ort.NewShape(1, 3, 96, 96), data)
 	if err != nil {

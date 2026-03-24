@@ -99,10 +99,14 @@ func faceTitle(f Face) string {
 	if f.Name != "" {
 		name = f.Name
 	}
+	parts := name
 	if f.EstimatedAge >= 0 {
-		return fmt.Sprintf("%s (age ~%d)", name, int(f.EstimatedAge+0.5))
+		parts += fmt.Sprintf(", age ~%d", int(f.EstimatedAge+0.5))
 	}
-	return name
+	if f.Confidence > 0 {
+		parts += fmt.Sprintf(", %.0f%%", f.Confidence*100)
+	}
+	return parts
 }
 
 func faceBoxStyle(f Face) string {
@@ -393,7 +397,7 @@ templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face, csrfT
 								>
 									<input type="hidden" name="csrf_token" value={ csrfToken }/>
 									<input type="hidden" name="tag_id" value={ strconv.FormatInt(t.ID, 10) }/>
-									<button type="submit" class="badge" style="cursor:pointer;border:none;background:var(--color-bg-secondary)" title="Remove tag">
+									<button type="submit" class="badge" style="cursor:pointer;border:none;background:var(--color-bg-secondary)" title={ fmt.Sprintf("%.0f%% confidence", t.Confidence*100) }>
 										{ t.Name } ×
 									</button>
 								</form>
