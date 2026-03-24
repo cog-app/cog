@@ -6,7 +6,7 @@ import (
 	"image"
 	"image/color"
 	_ "image/gif"
-	_ "image/jpeg"
+	"image/jpeg"
 	_ "image/png"
 	"io"
 	"log/slog"
@@ -383,7 +383,21 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 		// Compute alignment once (used by both ArcFace and genderage).
 		var aligned image.Image
 		if len(face.Landmarks) == 5 {
+			if i == 0 {
+				imgBounds := img.Bounds()
+				slog.Debug("face alignment debug",
+					"imgW", imgBounds.Dx(), "imgH", imgBounds.Dy(),
+					"faceBox", fmt.Sprintf("(%.3f,%.3f,%.3f,%.3f)", face.X, face.Y, face.W, face.H),
+					"lm0", fmt.Sprintf("(%.4f,%.4f)", face.Landmarks[0][0], face.Landmarks[0][1]),
+					"lm1", fmt.Sprintf("(%.4f,%.4f)", face.Landmarks[1][0], face.Landmarks[1][1]),
+					"lm2", fmt.Sprintf("(%.4f,%.4f)", face.Landmarks[2][0], face.Landmarks[2][1]),
+				)
+			}
 			aligned = alignFace(img, face.Landmarks)
+			// Debug: save first aligned face for visual inspection.
+			if i == 0 {
+				debugSaveImage(aligned, filepath.Join(b.ModelsDir, "debug_aligned.jpg"))
+			}
 		}
 
 		if b.hasArcface {
@@ -668,6 +682,17 @@ func l2normalize(v []float32) {
 	}
 }
 
+func debugSaveImage(img image.Image, path string) {
+	f, err := os.Create(path)
+	if err != nil {
+		slog.Warn("debug save image", "err", err)
+		return
+	}
+	defer f.Close()
+	jpeg.Encode(f, img, &jpeg.Options{Quality: 90})
+	slog.Debug("saved debug image", "path", path)
+}
+
 // --- Age estimation ---
 
 // estimateAge runs the genderage model on a 112×112 aligned face and returns estimated age.
@@ -924,6 +949,13 @@ func alignFace(img image.Image, landmarks [][2]float64) image.Image {
 
 	// Compute similarity transform from source → ArcFace target landmarks.
 	M := estimateSimilarityTransform(src[:], arcfaceTargetLandmarks[:])
+
+	slog.Debug("align transform",
+		"src0", fmt.Sprintf("(%.1f,%.1f)", src[0][0], src[0][1]),
+		"src1", fmt.Sprintf("(%.1f,%.1f)", src[1][0], src[1][1]),
+		"M", fmt.Sprintf("[[%.6f,%.6f,%.1f],[%.6f,%.6f,%.1f]]",
+			M[0][0], M[0][1], M[0][2], M[1][0], M[1][1], M[1][2]),
+	)
 
 	// Warp image to produce aligned 112×112 face.
 	return warpAffine(img, M, 112, 112)
