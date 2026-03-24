@@ -271,16 +271,8 @@ func (b *OnnxBackend) ensureSessions() error {
 		}
 	}
 
-	if b.hasGenderage {
-		b.genderageSession, err = newCachedSession(
-			filepath.Join(b.ModelsDir, genderageFile),
-			[]string{"data"}, []string{"fc1"},
-			ort.NewShape(1, 3, 96, 96),
-			[]ort.Shape{ort.NewShape(1, 3)})
-		if err != nil {
-			return fmt.Errorf("genderage session: %w", err)
-		}
-	}
+	// Genderage uses per-call sessions (not cached) because the cached
+	// session pattern may not reliably update the C-side tensor data.
 
 	if b.hasSCRFD {
 		var gs [3]int64
@@ -313,8 +305,7 @@ func (b *OnnxBackend) Release() {
 	b.mobilenetSession = nil
 	b.arcfaceSession.destroy()
 	b.arcfaceSession = nil
-	b.genderageSession.destroy()
-	b.genderageSession = nil
+	// genderageSession uses per-call sessions (not cached), no cleanup needed.
 	b.scrfdSession.destroy()
 	b.scrfdSession = nil
 }
@@ -682,15 +673,38 @@ func l2normalize(v []float32) {
 // estimateAge runs the genderage model on a 112×112 aligned face and returns estimated age.
 // The model expects 96×96 input, so the aligned face is resized.
 func (b *OnnxBackend) estimateAge(aligned image.Image) (float64, error) {
-	s := b.genderageSession
+	// Use fresh tensors rather than cached session — the genderage model
+	// needs its own input data per call, and cached sessions may not update
+	// the C-side tensor data reliably on all platforms.
 	data := preprocessInsightFace(aligned, 96, 96)
-	copy(s.input.GetData(), data)
 
-	if err := s.session.Run(); err != nil {
+	inputTensor, err := ort.NewTensor(ort.NewShape(1, 3, 96, 96), data)
+	if err != nil {
+		return -1, fmt.Errorf("create age input tensor: %w", err)
+	}
+	defer inputTensor.Destroy()
+
+	outputTensor, err := ort.NewEmptyTensor[float32](ort.NewShape(1, 3))
+	if err != nil {
+		return -1, fmt.Errorf("create age output tensor: %w", err)
+	}
+	defer outputTensor.Destroy()
+
+	session, err := ort.NewAdvancedSession(
+		filepath.Join(b.ModelsDir, genderageFile),
+		[]string{"data"}, []string{"fc1"},
+		[]ort.Value{inputTensor}, []ort.Value{outputTensor}, nil)
+	if err != nil {
+		return -1, fmt.Errorf("create genderage session: %w", err)
+	}
+	defer session.Destroy()
+
+	if err := session.Run(); err != nil {
 		return -1, fmt.Errorf("run genderage: %w", err)
 	}
 
-	output := s.outputs[0].GetData()
+	output := outputTensor.GetData()
+	slog.Debug("genderage raw output", "female", output[0], "male", output[1], "age_raw", output[2])
 	// output[0] = female logit, output[1] = male logit, output[2] = age/100
 	age := float64(output[2]) * 100
 	if age < 0 || age > 120 {
