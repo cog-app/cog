@@ -24,17 +24,14 @@ import (
 // Model download URLs.
 const (
 	mobilenetURL = "https://github.com/onnx/models/raw/main/validated/vision/classification/mobilenet/model/mobilenetv2-12-int8.onnx"
-	arcfaceURL   = "https://github.com/onnx/models/raw/main/validated/vision/body_analysis/arcface/model/arcfaceresnet100-8.onnx"
+	arcfaceURL   = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/w600k_r50.onnx"
 	scrfdURL      = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/det_10g.onnx"
 	genderageURL  = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/genderage.onnx"
 
 	mobilenetFile  = "mobilenetv2-12-int8.onnx"
-	arcfaceFile    = "arcfaceresnet100-8.onnx"
+	arcfaceFile    = "w600k_r50.onnx"
 	scrfdFile      = "det_10g.onnx"
 	genderageFile  = "genderage.onnx"
-
-	// Old int8 model file name, used to detect model change and warn user.
-	arcfaceOldFile = "arcfaceresnet100-11-int8.onnx"
 
 	scrfdInputSize      = 640
 	scrfdScoreThreshold = 0.5
@@ -48,6 +45,9 @@ var (
 	scrfdOutputNames = []string{"448", "471", "494", "451", "474", "497", "454", "477", "500"}
 	scrfdStrides     = [3]int{8, 16, 32}
 )
+
+// Old ArcFace model files to clean up on init.
+var arcfaceOldFiles = []string{"arcfaceresnet100-11-int8.onnx", "arcfaceresnet100-8.onnx"}
 
 // ArcFace standard target landmarks for 112×112 aligned face input.
 var arcfaceTargetLandmarks = [5][2]float64{
@@ -153,10 +153,12 @@ func (b *OnnxBackend) init() {
 			slog.Warn("arcface model unavailable", "err", err)
 		} else {
 			b.hasArcface = true
-			// Clean up old int8 model file if present.
-			oldPath := filepath.Join(b.ModelsDir, arcfaceOldFile)
-			if err := os.Remove(oldPath); err == nil {
-				slog.Info("removed old int8 arcface model", "path", oldPath)
+			// Clean up old model files.
+			for _, old := range arcfaceOldFiles {
+				oldPath := filepath.Join(b.ModelsDir, old)
+				if err := os.Remove(oldPath); err == nil {
+					slog.Info("removed old arcface model", "path", oldPath)
+				}
 			}
 		}
 
@@ -263,7 +265,7 @@ func (b *OnnxBackend) ensureSessions() error {
 	if b.hasArcface {
 		b.arcfaceSession, err = newCachedSession(
 			filepath.Join(b.ModelsDir, arcfaceFile),
-			[]string{"data"}, []string{"fc1"},
+			[]string{"input.1"}, []string{"683"},
 			ort.NewShape(1, 3, 112, 112),
 			[]ort.Shape{ort.NewShape(1, 512)})
 		if err != nil {
