@@ -3,6 +3,7 @@ package logbuf
 
 import (
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 )
@@ -14,6 +15,7 @@ const DefaultCapacity = 1000
 type Entry struct {
 	Time    time.Time
 	Level   slog.Level
+	Source  string // plugin or component name (from "plugin" slog attr)
 	Message string // formatted line from slog.TextHandler
 }
 
@@ -61,4 +63,23 @@ func (b *Buffer) Len() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.count
+}
+
+// Sources returns sorted distinct source names from all buffered entries.
+func (b *Buffer) Sources() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	seen := make(map[string]struct{})
+	for i := range b.count {
+		if s := b.entries[i].Source; s != "" {
+			seen[s] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
 }

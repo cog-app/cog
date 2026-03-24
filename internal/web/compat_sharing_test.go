@@ -119,7 +119,9 @@ func TestOCSShareGetByID(t *testing.T) {
 
 	var created struct {
 		OCS struct {
-			Data struct{ ID int64 `json:"id"` } `json:"data"`
+			Data struct {
+				ID int64 `json:"id"`
+			} `json:"data"`
 		} `json:"ocs"`
 	}
 	ocsPost(t, env, sharingPrefix+"/shares", url.Values{
@@ -190,7 +192,9 @@ func TestOCSShareUpdateForbidden(t *testing.T) {
 
 	var created struct {
 		OCS struct {
-			Data struct{ ID int64 `json:"id"` } `json:"data"`
+			Data struct {
+				ID int64 `json:"id"`
+			} `json:"data"`
 		} `json:"ocs"`
 	}
 	ocsPost(t, env, sharingPrefix+"/shares", url.Values{
@@ -214,7 +218,9 @@ func TestOCSShareDelete(t *testing.T) {
 
 	var created struct {
 		OCS struct {
-			Data struct{ ID int64 `json:"id"` } `json:"data"`
+			Data struct {
+				ID int64 `json:"id"`
+			} `json:"data"`
 		} `json:"ocs"`
 	}
 	ocsPost(t, env, sharingPrefix+"/shares", url.Values{
@@ -240,7 +246,9 @@ func TestOCSShareDeleteForbidden(t *testing.T) {
 
 	var created struct {
 		OCS struct {
-			Data struct{ ID int64 `json:"id"` } `json:"data"`
+			Data struct {
+				ID int64 `json:"id"`
+			} `json:"data"`
 		} `json:"ocs"`
 	}
 	ocsPost(t, env, sharingPrefix+"/shares", url.Values{

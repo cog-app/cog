@@ -255,10 +255,12 @@ func (h *adminHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 func (h *adminHandler) ShowLogs(w http.ResponseWriter, r *http.Request) {
 	pd := pageDataWithNav(r, "Logs", h.p.CSRFSecret, h.p.Plugins)
 	var entries []logbuf.Entry
+	var sources []string
 	if h.p.LogBuffer != nil {
 		entries = h.p.LogBuffer.Entries()
+		sources = h.p.LogBuffer.Sources()
 	}
-	adminLogsPage(pd, entries).Render(r.Context(), w)
+	adminLogsPage(pd, entries, sources).Render(r.Context(), w)
 }
 
 func (h *adminHandler) LogEntries(w http.ResponseWriter, r *http.Request) {
@@ -286,19 +288,32 @@ func filterLogEntries(entries []logbuf.Entry, r *http.Request) []logbuf.Entry {
 		}
 	}
 
+	sources := r.URL.Query()["source"]
+	sourceSet := make(map[string]bool, len(sources))
+	for _, s := range sources {
+		if s == "server" {
+			sourceSet[""] = true // "server" matches entries with no plugin source
+		} else {
+			sourceSet[s] = true
+		}
+	}
+
 	regexStr := r.URL.Query().Get("regex")
 	var re *regexp.Regexp
 	if regexStr != "" {
 		re, _ = regexp.Compile(regexStr)
 	}
 
-	if len(levelSet) == 0 && re == nil {
+	if len(levelSet) == 0 && len(sourceSet) == 0 && re == nil {
 		return entries
 	}
 
 	filtered := make([]logbuf.Entry, 0, len(entries))
 	for i := range entries {
 		if len(levelSet) > 0 && !levelSet[entries[i].Level] {
+			continue
+		}
+		if len(sourceSet) > 0 && !sourceSet[entries[i].Source] {
 			continue
 		}
 		if re != nil && !re.MatchString(entries[i].Message) {

@@ -12,8 +12,9 @@ type TeeHandler struct {
 	inner slog.Handler
 	buf   *Buffer
 	// attrs and group state for formatting
-	attrs []slog.Attr
-	group string
+	attrs  []slog.Attr
+	group  string
+	source string // cached "plugin" attr value from WithAttrs
 }
 
 // NewTeeHandler wraps inner so that every handled record is also captured in buf.
@@ -42,28 +43,49 @@ func (h *TeeHandler) Handle(ctx context.Context, r slog.Record) error {
 	}
 	_ = fh.Handle(ctx, r)
 
+	// Extract source from pre-attached attrs or record attrs.
+	source := h.source
+	if source == "" {
+		r.Attrs(func(a slog.Attr) bool {
+			if a.Key == "plugin" || a.Key == "source" {
+				source = a.Value.String()
+				return false
+			}
+			return true
+		})
+	}
+
 	h.buf.Add(Entry{
 		Time:    r.Time,
 		Level:   r.Level,
+		Source:  source,
 		Message: b.String(),
 	})
 	return err
 }
 
 func (h *TeeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	source := h.source
+	for _, a := range attrs {
+		if a.Key == "plugin" || a.Key == "source" {
+			source = a.Value.String()
+		}
+	}
 	return &TeeHandler{
-		inner: h.inner.WithAttrs(attrs),
-		buf:   h.buf,
-		attrs: append(h.attrs[:len(h.attrs):len(h.attrs)], attrs...),
-		group: h.group,
+		inner:  h.inner.WithAttrs(attrs),
+		buf:    h.buf,
+		attrs:  append(h.attrs[:len(h.attrs):len(h.attrs)], attrs...),
+		group:  h.group,
+		source: source,
 	}
 }
 
 func (h *TeeHandler) WithGroup(name string) slog.Handler {
 	return &TeeHandler{
-		inner: h.inner.WithGroup(name),
-		buf:   h.buf,
-		attrs: h.attrs,
-		group: name,
+		inner:  h.inner.WithGroup(name),
+		buf:    h.buf,
+		attrs:  h.attrs,
+		group:  name,
+		source: h.source,
 	}
 }

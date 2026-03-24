@@ -8,6 +8,7 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 	"iter"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -247,17 +248,33 @@ func logLevelLabel(level slog.Level) string {
 	return strings.ToUpper(level.String())
 }
 
-templ adminLogsPage(pd ui.PageData, entries []logbuf.Entry) {
+func sourceSelectSize(sources []string) string {
+	n := len(sources) + 1 // +1 for "server"
+	if n > 6 {
+		n = 6
+	}
+	return strconv.Itoa(n)
+}
+
+templ adminLogsPage(pd ui.PageData, entries []logbuf.Entry, sources []string) {
 	@ui.AdminSidebarPage(pd, "logs") {
 		<div class="flex justify-between items-center" style="margin-bottom:1rem">
 			<h1>Server Logs</h1>
 			<span class="text-muted" style="font-size:0.85rem">{ fmt.Sprintf("%d entries", len(entries)) }</span>
 		</div>
 		<div id="log-filters" class="flex items-center gap-1" style="margin-bottom:0.75rem;flex-wrap:wrap">
-			<label class="form-check"><input type="checkbox" name="level" value="DEBUG" checked/> DEBUG</label>
-			<label class="form-check"><input type="checkbox" name="level" value="INFO" checked/> INFO</label>
-			<label class="form-check"><input type="checkbox" name="level" value="WARN" checked/> WARN</label>
-			<label class="form-check"><input type="checkbox" name="level" value="ERROR" checked/> ERROR</label>
+			<select name="level" multiple class="form-control" size="4" style="font-size:0.85rem;width:auto">
+				<option value="DEBUG" selected>DEBUG</option>
+				<option value="INFO" selected>INFO</option>
+				<option value="WARN" selected>WARN</option>
+				<option value="ERROR" selected>ERROR</option>
+			</select>
+			<select name="source" multiple class="form-control" style="font-size:0.85rem;width:auto" size={ sourceSelectSize(sources) }>
+				<option value="server" selected>server</option>
+				for _, s := range sources {
+					<option value={ s } selected>{ s }</option>
+				}
+			</select>
 			<input type="text" name="regex" class="form-control" placeholder="Filter (regex)..." style="max-width:16rem;font-size:0.85rem"/>
 			<button type="button" class="btn btn-outline btn-sm" hx-get="/admin/logs/entries" hx-include="#log-filters" hx-target="#log-tbody" hx-swap="innerHTML">Refresh</button>
 		</div>
