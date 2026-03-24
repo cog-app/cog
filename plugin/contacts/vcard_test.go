@@ -1,9 +1,9 @@
 package contacts
 
 import (
-	"time"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseVCard(t *testing.T) {

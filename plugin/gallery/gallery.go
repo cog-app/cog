@@ -23,6 +23,7 @@ import (
 	"syscall"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/plugin/contacts"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
@@ -49,6 +50,7 @@ type Plugin struct {
 	ctx      plugin.PluginContext
 	log      *slog.Logger
 	files    *files.Plugin
+	contacts *contacts.Plugin
 	geocoder *Geocoder
 	cancel   context.CancelFunc
 	done     chan struct{}
@@ -82,6 +84,9 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		if fp, found := priv.PluginByID("files"); found {
 			p.files = fp.(*files.Plugin)
+		}
+		if cp, found := priv.PluginByID("contacts"); found {
+			p.contacts = cp.(*contacts.Plugin)
 		}
 		priv.RegisterAdminCommand(plugin.CommandDef{
 			Name:  "scan",
@@ -204,6 +209,20 @@ func (p *Plugin) Stop() error {
 		<-p.done
 	}
 	return nil
+}
+
+// contactsDB returns the contacts plugin database for a user, or nil if the
+// contacts plugin is not installed or the database cannot be opened.
+func (p *Plugin) contactsDB(username string) *sql.DB {
+	if p.contacts == nil {
+		return nil
+	}
+	db, err := p.contacts.DB(username)
+	if err != nil {
+		p.log.Error("contacts db", "user", username, "err", err)
+		return nil
+	}
+	return db
 }
 
 // DB returns the gallery plugin database for a user, running migrations if needed.

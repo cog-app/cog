@@ -544,6 +544,7 @@ templ personNameForm(person *Person, csrfToken string) {
 	>
 		<input type="hidden" name="csrf_token" value={ csrfToken }/>
 		<input type="hidden" name="merge_into" value="" class="merge-target"/>
+		<input type="hidden" name="contact_uid" value="" class="contact-target"/>
 		<div class="picker" style="flex:1">
 			<input
 				type="text"
@@ -567,24 +568,33 @@ templ personNameForm(person *Person, csrfToken string) {
 			var input = form.querySelector('.person-name-input');
 			var results = form.querySelector('.picker-results');
 			var mergeField = form.querySelector('.merge-target');
+			var contactField = form.querySelector('.contact-target');
 
 			// Close when clicking outside.
 			document.addEventListener('click', function(e) {
 				if (!form.contains(e.target)) results.innerHTML = '';
 			});
 
-			// Handle result click — merge into selected person.
+			// Handle result click — merge into person or link to contact.
 			results.addEventListener('click', function(e) {
 				var opt = e.target.closest('.picker-option');
 				if (!opt) return;
-				mergeField.value = opt.dataset.id;
+				var id = opt.dataset.id;
+				if (id.indexOf('contact:') === 0) {
+					contactField.value = id.substring(8);
+					mergeField.value = '';
+				} else {
+					mergeField.value = id;
+					contactField.value = '';
+				}
 				input.value = opt.dataset.name;
 				results.innerHTML = '';
 			});
 
-			// Clear merge target when user edits name manually.
+			// Clear merge/contact targets when user edits name manually.
 			input.addEventListener('input', function() {
 				mergeField.value = '';
+				contactField.value = '';
 			});
 
 			// Keyboard navigation.

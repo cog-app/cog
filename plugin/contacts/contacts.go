@@ -5,9 +5,13 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
@@ -150,6 +154,62 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) e
 	}
 	cards, _ := StarredContacts(db, 5)
 	return starredContactsWidget(cards).Render(ctx, w)
+}
+
+// CreateCardByName creates a minimal contact card with just a name in the user's
+// default address book. Returns the vCard UID of the created contact.
+func (p *Plugin) CreateCardByName(username, name string) (string, error) {
+	db, err := p.DB(username)
+	if err != nil {
+		return "", err
+	}
+	if err := EnsureDefaultAddressBook(db); err != nil {
+		return "", fmt.Errorf("ensure default address book: %w", err)
+	}
+	books, err := ListAddressBooks(db)
+	if err != nil || len(books) == 0 {
+		return "", fmt.Errorf("no address book available")
+	}
+	bookID := books[0].ID
+
+	now := p.ctx.Now()
+	uid := fmt.Sprintf("%d-%s", now.UnixNano(), name)
+	uri := uid + ".vcf"
+	fields := VCardFields{UID: uid, FN: name}
+	fields.MarshalJSONFields()
+	vcardData := GenerateVCardFull(fields, now)
+	if _, err := UpsertCard(db, bookID, uid, uri, vcardData, fields); err != nil {
+		return "", fmt.Errorf("create contact card: %w", err)
+	}
+	return uid, nil
+}
+
+// SetPhoto saves an image as a contact's photo. The contact is identified by
+// vCard UID. Does nothing if the card is not found.
+func (p *Plugin) SetPhoto(username, cardUID string, img image.Image) error {
+	db, err := p.DB(username)
+	if err != nil {
+		return err
+	}
+	card, err := FindCardByUID(db, cardUID)
+	if err != nil {
+		return fmt.Errorf("find card %s: %w", cardUID, err)
+	}
+	photoDir := filepath.Join(p.ctx.DataDir(), "contacts", username, "photos")
+	if err := os.MkdirAll(photoDir, 0755); err != nil {
+		return fmt.Errorf("create photo dir: %w", err)
+	}
+	photoPath := filepath.Join(photoDir, card.UID+".jpg")
+	f, err := os.Create(photoPath)
+	if err != nil {
+		return fmt.Errorf("create photo file: %w", err)
+	}
+	defer f.Close()
+	if err := jpeg.Encode(f, img, &jpeg.Options{Quality: 85}); err != nil {
+		return fmt.Errorf("encode photo: %w", err)
+	}
+	_, err = db.Exec(`UPDATE cards SET photo_path = ? WHERE id = ?`, photoPath, card.ID)
+	return err
 }
 
 func (p *Plugin) Start(ctx context.Context) error { return nil }

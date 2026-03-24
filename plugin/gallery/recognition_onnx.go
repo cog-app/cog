@@ -24,23 +24,23 @@ import (
 
 // Model download URLs.
 const (
-	mobilenetURL = "https://github.com/onnx/models/raw/main/validated/vision/classification/mobilenet/model/mobilenetv2-12-int8.onnx"
-	joytagURL    = "https://huggingface.co/fancyfeast/joytag/resolve/main/model.onnx"
+	mobilenetURL  = "https://github.com/onnx/models/raw/main/validated/vision/classification/mobilenet/model/mobilenetv2-12-int8.onnx"
+	joytagURL     = "https://huggingface.co/fancyfeast/joytag/resolve/main/model.onnx"
 	joytagTagsURL = "https://huggingface.co/fancyfeast/joytag/resolve/main/top_tags.txt"
-	wd14URL      = "https://huggingface.co/SmilingWolf/wd-convnext-tagger-v3/resolve/main/model.onnx"
-	wd14TagsURL  = "https://huggingface.co/SmilingWolf/wd-convnext-tagger-v3/resolve/main/selected_tags.csv"
-	arcfaceURL   = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/w600k_r50.onnx"
-	scrfdURL     = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/det_10g.onnx"
-	genderageURL = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/genderage.onnx"
+	wd14URL       = "https://huggingface.co/SmilingWolf/wd-convnext-tagger-v3/resolve/main/model.onnx"
+	wd14TagsURL   = "https://huggingface.co/SmilingWolf/wd-convnext-tagger-v3/resolve/main/selected_tags.csv"
+	arcfaceURL    = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/w600k_r50.onnx"
+	scrfdURL      = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/det_10g.onnx"
+	genderageURL  = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/genderage.onnx"
 
-	mobilenetFile = "mobilenetv2-12-int8.onnx"
-	joytagFile    = "joytag.onnx"
+	mobilenetFile  = "mobilenetv2-12-int8.onnx"
+	joytagFile     = "joytag.onnx"
 	joytagTagsFile = "joytag_tags.txt"
-	wd14File      = "wd14.onnx"
-	wd14TagsFile  = "wd14_tags.csv"
-	arcfaceFile   = "w600k_r50.onnx"
-	scrfdFile     = "det_10g.onnx"
-	genderageFile = "genderage.onnx"
+	wd14File       = "wd14.onnx"
+	wd14TagsFile   = "wd14_tags.csv"
+	arcfaceFile    = "w600k_r50.onnx"
+	scrfdFile      = "det_10g.onnx"
+	genderageFile  = "genderage.onnx"
 
 	scrfdInputSize      = 640
 	scrfdScoreThreshold = 0.5
@@ -105,8 +105,8 @@ type OnnxBackend struct {
 	hasGenderage bool
 
 	// Cached sessions for performance — avoid creating per-call.
-	tagSession   *cachedSession // MobileNet, JoyTag, or WD14 depending on TagModel
-	tagLabels    []string       // label list for the active tag model
+	tagSession       *cachedSession // MobileNet, JoyTag, or WD14 depending on TagModel
+	tagLabels        []string       // label list for the active tag model
 	arcfaceSession   *cachedSession
 	genderageSession *cachedSession
 	scrfdSession     *cachedSession
@@ -129,7 +129,7 @@ func (b *OnnxBackend) initTagModel() error {
 		if err != nil {
 			return fmt.Errorf("read joytag tags: %w", err)
 		}
-		for _, line := range strings.Split(string(data), "\n") {
+		for line := range strings.SplitSeq(string(data), "\n") {
 			line = strings.TrimSpace(line)
 			if line != "" {
 				b.tagLabels = append(b.tagLabels, strings.ReplaceAll(line, "_", " "))

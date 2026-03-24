@@ -1,9 +1,9 @@
 package contacts_test
 
 import (
-	"time"
 	"fmt"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"

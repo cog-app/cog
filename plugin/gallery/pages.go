@@ -2,6 +2,7 @@ package gallery
 
 import (
 	"bytes"
+	"database/sql"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/plugin/contacts"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
@@ -290,24 +292,7 @@ func (h *Pages) FaceThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Scale normalized face coords to thumbnail pixel coords with padding.
-	bounds := img.Bounds()
-	imgW := float64(bounds.Dx())
-	imgH := float64(bounds.Dy())
-	fx := face.X * imgW
-	fy := face.Y * imgH
-	fw := face.W * imgW
-	fh := face.H * imgH
-
-	// Add 20% padding.
-	padW := fw * 0.2
-	padH := fh * 0.2
-	x0 := int(max(fx-padW, 0))
-	y0 := int(max(fy-padH, 0))
-	x1 := int(min(fx+fw+padW, imgW))
-	y1 := int(min(fy+fh+padH, imgH))
-
-	cropped := cropImage(img, image.Rect(bounds.Min.X+x0, bounds.Min.Y+y0, bounds.Min.X+x1, bounds.Min.Y+y1))
+	cropped := cropFace(img, &face.Face)
 
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, cropped, &jpeg.Options{Quality: 85}); err != nil {
@@ -435,10 +420,44 @@ func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", targetID), http.StatusSeeOther)
 		return
 	}
+
+	username := plugin.Username(r)
+
+	// If contact_uid is set, link this person to an existing contact.
+	if contactUID := r.FormValue("contact_uid"); contactUID != "" && h.plugin.contacts != nil {
+		cdb := h.plugin.contactsDB(username)
+		if cdb == nil {
+			http.Error(w, "contacts unavailable", http.StatusInternalServerError)
+			return
+		}
+		card, err := contacts.FindCardByUID(cdb, contactUID)
+		if err != nil {
+			http.Error(w, "contact not found", http.StatusNotFound)
+			return
+		}
+		if err := LinkPersonToContact(db, id, contactUID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := NamePersonRow(db, id, card.FN); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if card.PhotoPath == "" {
+			h.setContactPhotoFromFace(username, contactUID, db, id)
+		}
+		http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", id), http.StatusSeeOther)
+		return
+	}
+
+	// Plain name set — also link/create a contact if the contacts plugin is available.
 	name := r.FormValue("name")
 	if err := NamePersonRow(db, id, name); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if name != "" && h.plugin.contacts != nil {
+		h.linkOrCreateContact(username, db, id, name)
 	}
 	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", id), http.StatusSeeOther)
 }
@@ -465,6 +484,97 @@ func (h *Pages) MergePeople(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", targetID), http.StatusSeeOther)
+}
+
+// linkOrCreateContact links a gallery person to an existing contact by exact name match,
+// or creates a new contact if none exists. Errors are logged but not fatal.
+func (h *Pages) linkOrCreateContact(username string, galleryDB *sql.DB, personID int64, name string) {
+	cdb := h.plugin.contactsDB(username)
+	if cdb == nil {
+		return
+	}
+	// Search for an exact name match.
+	cards, err := contacts.SearchCards(cdb, name, 10)
+	if err != nil {
+		h.plugin.log.Error("search contacts", "err", err)
+		return
+	}
+	for _, card := range cards {
+		if !strings.EqualFold(card.FN, name) {
+			continue
+		}
+		// Found an exact match — link to it.
+		if err := LinkPersonToContact(galleryDB, personID, card.UID); err != nil {
+			h.plugin.log.Error("link person to contact", "err", err)
+		}
+		if card.PhotoPath == "" {
+			h.setContactPhotoFromFace(username, card.UID, galleryDB, personID)
+		}
+		return
+	}
+	// No exact match — create a new contact.
+	uid, err := h.plugin.contacts.CreateCardByName(username, name)
+	if err != nil {
+		h.plugin.log.Error("create contact from person", "err", err)
+		return
+	}
+	if err := LinkPersonToContact(galleryDB, personID, uid); err != nil {
+		h.plugin.log.Error("link person to new contact", "err", err)
+	}
+	h.setContactPhotoFromFace(username, uid, galleryDB, personID)
+}
+
+// setContactPhotoFromFace sets a contact's photo from the person's best face thumbnail.
+// Errors are logged but not fatal.
+func (h *Pages) setContactPhotoFromFace(username, contactUID string, galleryDB *sql.DB, personID int64) {
+	if h.plugin.contacts == nil {
+		return
+	}
+	person, err := GetPerson(galleryDB, personID)
+	if err != nil || person.BestFaceID == nil {
+		return
+	}
+	face, err := GetFaceWithMedia(galleryDB, *person.BestFaceID)
+	if err != nil {
+		return
+	}
+	m, err := GetMedia(galleryDB, face.MediaID)
+	if err != nil {
+		return
+	}
+	thumbFile, err := h.plugin.PreviewPath(username, m, 1024)
+	if err != nil {
+		return
+	}
+	defer thumbFile.Close()
+	img, _, err := image.Decode(thumbFile)
+	if err != nil {
+		return
+	}
+	cropped := cropFace(img, &face.Face)
+	if err := h.plugin.contacts.SetPhoto(username, contactUID, cropped); err != nil {
+		h.plugin.log.Error("set contact photo from face", "err", err)
+	}
+}
+
+// cropFace crops a face region from an image with padding.
+func cropFace(img image.Image, face *Face) image.Image {
+	bounds := img.Bounds()
+	imgW := float64(bounds.Dx())
+	imgH := float64(bounds.Dy())
+	fx := face.X * imgW
+	fy := face.Y * imgH
+	fw := face.W * imgW
+	fh := face.H * imgH
+
+	padW := fw * 0.2
+	padH := fh * 0.2
+	x0 := int(max(fx-padW, 0))
+	y0 := int(max(fy-padH, 0))
+	x1 := int(min(fx+fw+padW, imgW))
+	y1 := int(min(fy+fh+padH, imgH))
+
+	return cropImage(img, image.Rect(bounds.Min.X+x0, bounds.Min.Y+y0, bounds.Min.X+x1, bounds.Min.Y+y1))
 }
 
 // HidePerson hides a person from the people view.
@@ -624,6 +734,7 @@ func (h *Pages) SearchTagsAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 // SearchPeopleAPI returns people search results as picker options.
+// Results include both gallery people and contacts (if the contacts plugin is installed).
 func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
@@ -647,6 +758,28 @@ func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 			items[i].AvatarURL = fmt.Sprintf("/apps/gallery/api/face/%d/thumbnail", *p.BestFaceID)
 		}
 	}
+
+	// Include matching contacts if the contacts plugin is available.
+	username := plugin.Username(r)
+	if cdb := h.plugin.contactsDB(username); cdb != nil {
+		cards, _ := contacts.SearchCards(cdb, q, 5)
+		for _, card := range cards {
+			// Skip contacts already linked to a gallery person.
+			if _, err := PersonByContactUID(db, card.UID); err == nil {
+				continue
+			}
+			item := ui.PickerItem{
+				ID:   "contact:" + card.UID,
+				Name: card.FN,
+				Sub:  "Contact",
+			}
+			if card.PhotoPath != "" {
+				item.AvatarURL = fmt.Sprintf("/apps/contacts/api/photos/%d", card.ID)
+			}
+			items = append(items, item)
+		}
+	}
+
 	ui.PickerResults(items).Render(r.Context(), w)
 }
 

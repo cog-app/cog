@@ -118,6 +118,7 @@ type Person struct {
 	RepresentativeFaceID *int64
 	Visible              bool
 	CreatedAt            int64
+	ContactUID           string // vCard UID of linked contact, empty if unlinked
 	FaceCount            int    // populated by list queries
 	BestFaceID           *int64 // face with largest crop area, populated by list queries
 }
@@ -744,7 +745,7 @@ func CreatePersonFromFace(db *sql.DB, faceID int64) (int64, error) {
 
 // SearchPeople returns people matching a query string, ordered by face count.
 func SearchPeople(db *sql.DB, query string, excludeID int64, limit int) ([]Person, error) {
-	rows, err := db.Query(`SELECT p.id, p.name,
+	rows, err := db.Query(`SELECT p.id, p.name, p.contact_uid,
 		(SELECT COUNT(*) FROM faces f WHERE f.person_id = p.id) AS face_count,
 		(SELECT f.id FROM faces f JOIN media m ON m.id = f.media_id
 			WHERE f.person_id = p.id ORDER BY f.w * m.width * f.h * m.height DESC LIMIT 1) AS best_face_id
@@ -758,7 +759,7 @@ func SearchPeople(db *sql.DB, query string, excludeID int64, limit int) ([]Perso
 	var people []Person
 	for rows.Next() {
 		var p Person
-		if err := rows.Scan(&p.ID, &p.Name, &p.FaceCount, &p.BestFaceID); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.ContactUID, &p.FaceCount, &p.BestFaceID); err != nil {
 			return nil, err
 		}
 		people = append(people, p)
@@ -768,8 +769,8 @@ func SearchPeople(db *sql.DB, query string, excludeID int64, limit int) ([]Perso
 
 // ListPeople returns all visible people with face counts and best face ID.
 func ListPeople(db *sql.DB) ([]Person, error) {
-	rows, err := db.Query(`SELECT id, name, representative_face_id, visible, created_at, face_count, best_face_id FROM (
-		SELECT p.id, p.name, p.representative_face_id, p.visible, p.created_at,
+	rows, err := db.Query(`SELECT id, name, representative_face_id, visible, created_at, contact_uid, face_count, best_face_id FROM (
+		SELECT p.id, p.name, p.representative_face_id, p.visible, p.created_at, p.contact_uid,
 			(SELECT COUNT(*) FROM faces f JOIN media m ON m.id = f.media_id WHERE f.person_id = p.id) AS face_count,
 			(SELECT f.id FROM faces f JOIN media m ON m.id = f.media_id
 				WHERE f.person_id = p.id ORDER BY f.w * m.width * f.h * m.height DESC LIMIT 1) AS best_face_id
@@ -783,7 +784,7 @@ func ListPeople(db *sql.DB) ([]Person, error) {
 	for rows.Next() {
 		var person Person
 		if err := rows.Scan(&person.ID, &person.Name, &person.RepresentativeFaceID,
-			&person.Visible, &person.CreatedAt, &person.FaceCount, &person.BestFaceID); err != nil {
+			&person.Visible, &person.CreatedAt, &person.ContactUID, &person.FaceCount, &person.BestFaceID); err != nil {
 			return nil, err
 		}
 		people = append(people, person)
@@ -794,10 +795,12 @@ func ListPeople(db *sql.DB) ([]Person, error) {
 // GetPerson returns a single person by ID.
 func GetPerson(db *sql.DB, id int64) (*Person, error) {
 	var p Person
-	err := db.QueryRow(`SELECT p.id, p.name, p.representative_face_id, p.visible, p.created_at,
-		(SELECT COUNT(*) FROM faces f JOIN media m ON m.id = f.media_id WHERE f.person_id = p.id) AS face_count
+	err := db.QueryRow(`SELECT p.id, p.name, p.representative_face_id, p.visible, p.created_at, p.contact_uid,
+		(SELECT COUNT(*) FROM faces f JOIN media m ON m.id = f.media_id WHERE f.person_id = p.id) AS face_count,
+		(SELECT f.id FROM faces f JOIN media m ON m.id = f.media_id
+			WHERE f.person_id = p.id ORDER BY f.w * m.width * f.h * m.height DESC LIMIT 1) AS best_face_id
 		FROM people p WHERE p.id = ?`, id).Scan(
-		&p.ID, &p.Name, &p.RepresentativeFaceID, &p.Visible, &p.CreatedAt, &p.FaceCount)
+		&p.ID, &p.Name, &p.RepresentativeFaceID, &p.Visible, &p.CreatedAt, &p.ContactUID, &p.FaceCount, &p.BestFaceID)
 	return &p, err
 }
 
@@ -819,6 +822,23 @@ func MediaByPerson(db *sql.DB, personID int64, limit, offset int) ([]Media, erro
 func NamePersonRow(db *sql.DB, id int64, name string) error {
 	_, err := db.Exec(`UPDATE people SET name = ? WHERE id = ?`, name, id)
 	return err
+}
+
+// LinkPersonToContact sets the contact_uid on a person, linking them to a contact.
+func LinkPersonToContact(db *sql.DB, personID int64, contactUID string) error {
+	_, err := db.Exec(`UPDATE people SET contact_uid = ? WHERE id = ?`, contactUID, personID)
+	return err
+}
+
+// PersonByContactUID returns the visible person linked to a contact UID, or sql.ErrNoRows.
+func PersonByContactUID(db *sql.DB, contactUID string) (*Person, error) {
+	var p Person
+	err := db.QueryRow(`SELECT id, name, contact_uid FROM people WHERE contact_uid = ? AND visible = 1 LIMIT 1`,
+		contactUID).Scan(&p.ID, &p.Name, &p.ContactUID)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
 }
 
 // HidePersonRow toggles a person's visibility.
@@ -1043,8 +1063,8 @@ var (
 	// Face detection — independent backend
 	SettingFaceBackend       = stringSetting("face_backend", BackendNone)
 	SettingFaceMinConfidence = floatSetting("face_min_confidence", 0.7)
-	SettingClusterThreshold = floatSetting("cluster_threshold", 0.35)
-	SettingAgePenaltyWeight = floatSetting("age_penalty_weight", 0.0) // 0 = disabled, 0.02 = moderate
+	SettingClusterThreshold  = floatSetting("cluster_threshold", 0.35)
+	SettingAgePenaltyWeight  = floatSetting("age_penalty_weight", 0.0) // 0 = disabled, 0.02 = moderate
 
 	// Shared backend configuration (used by both tag + face when ONNX/Ollama/OpenAI)
 	SettingRecognitionURL    = stringSetting("recognition_url", "")

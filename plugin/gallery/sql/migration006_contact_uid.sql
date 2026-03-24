@@ -1,0 +1,1 @@
+ALTER TABLE people ADD COLUMN contact_uid TEXT NOT NULL DEFAULT '';
