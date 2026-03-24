@@ -153,10 +153,10 @@ func (b *OnnxBackend) init() {
 			slog.Warn("arcface model unavailable", "err", err)
 		} else {
 			b.hasArcface = true
-			// Warn if old int8 model exists — embeddings are incompatible.
+			// Clean up old int8 model file if present.
 			oldPath := filepath.Join(b.ModelsDir, arcfaceOldFile)
-			if _, err := os.Stat(oldPath); err == nil {
-				slog.Warn("arcface model upgraded from int8 to float32; existing face embeddings are incompatible — purge recognitions and re-scan for best results")
+			if err := os.Remove(oldPath); err == nil {
+				slog.Info("removed old int8 arcface model", "path", oldPath)
 			}
 		}
 
