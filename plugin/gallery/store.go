@@ -1038,7 +1038,7 @@ var (
 	// Tag classification — independent backend
 	SettingTagBackend       = stringSetting("tag_backend", BackendNone)
 	SettingTagModel         = stringSetting("tag_model", TagModelJoyTag)
-	SettingTagMinConfidence = floatSetting("tag_min_confidence", 0.5)
+	SettingTagMinConfidence = floatSetting("tag_min_confidence", 0.35)
 
 	// Face detection — independent backend
 	SettingFaceBackend       = stringSetting("face_backend", BackendNone)
