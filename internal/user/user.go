@@ -27,6 +27,7 @@ type User struct {
 	Avatar          string
 	Email           string
 	AvatarUpdatedAt int64
+	MFAMethod       string // "", "totp", "email", "webauthn"
 }
 
 // AvatarURL returns the avatar URL with a cache-busting version parameter.
@@ -99,13 +100,13 @@ func (s *Store) Create(username, password string) (*User, error) {
 
 func (s *Store) GetByUsername(username string) (*User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at FROM users WHERE username = ?`, username,
+		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method FROM users WHERE username = ?`, username,
 	))
 }
 
 func (s *Store) GetByID(id string) (*User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at FROM users WHERE id = ?`, id,
+		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method FROM users WHERE id = ?`, id,
 	))
 }
 
@@ -147,7 +148,7 @@ func (s *Store) Usernames() ([]string, error) {
 func (s *Store) List() iter.Seq2[User, error] {
 	return func(yield func(User, error) bool) {
 		rows, err := s.db.Query(
-			`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at FROM users ORDER BY username`,
+			`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method FROM users ORDER BY username`,
 		)
 		if err != nil {
 			yield(User{}, fmt.Errorf("list users: %w", err))
@@ -158,7 +159,7 @@ func (s *Store) List() iter.Seq2[User, error] {
 			var u User
 			var createdAt int64
 			var isAdmin int
-			if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar, &u.Email, &u.AvatarUpdatedAt); err != nil {
+			if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar, &u.Email, &u.AvatarUpdatedAt, &u.MFAMethod); err != nil {
 				yield(User{}, fmt.Errorf("scan user: %w", err))
 				return
 			}
@@ -221,6 +222,12 @@ func (s *Store) UpdatePassword(id, newPassword string) error {
 	return err
 }
 
+// SetMFAMethod updates the user's MFA method.
+func (s *Store) SetMFAMethod(id, method string) (string, error) {
+	_, err := s.db.Exec(`UPDATE users SET mfa_method = ? WHERE id = ?`, method, id)
+	return method, err
+}
+
 // Delete removes a user and their sessions and app passwords.
 func (s *Store) Delete(id string) error {
 	// No ON DELETE CASCADE in schema, so delete manually.
@@ -248,7 +255,7 @@ func (s *Store) scanUser(row *sql.Row) (*User, error) {
 	var u User
 	var createdAt int64
 	var isAdmin int
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar, &u.Email, &u.AvatarUpdatedAt)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar, &u.Email, &u.AvatarUpdatedAt, &u.MFAMethod)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

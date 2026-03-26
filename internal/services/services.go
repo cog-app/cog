@@ -33,27 +33,32 @@ import (
 
 // Providers holds all runtime services and the config that created them.
 type Providers struct {
-	Config       config.Config
-	Log          *slog.Logger
-	DB           *sql.DB
-	Users        *user.Store
-	Sessions     *auth.SessionStore
-	AppPasswords *auth.AppPasswordStore
-	Plugins      *plugin.Registry
-	Shares       *share.Store
-	Groups       *group.Store
-	Invitations  *group.InvitationStore
-	Volumes      *volume.Store
-	Mounts       *mount.Store
-	Access       *volume.Access
-	Quotas       *quota.Store
-	Settings     *settings.Store
-	Search       *search.Manager
-	LogBuffer    *logbuf.Buffer
-	RateLimiter  *ratelimit.Limiter
-	CSRFSecret   []byte
-	Clock        clock.Clock
-	StartedAt    time.Time
+	Config         config.Config
+	Log            *slog.Logger
+	DB             *sql.DB
+	Users          *user.Store
+	Sessions       *auth.SessionStore
+	AppPasswords   *auth.AppPasswordStore
+	Plugins        *plugin.Registry
+	Shares         *share.Store
+	Groups         *group.Store
+	Invitations    *group.InvitationStore
+	Volumes        *volume.Store
+	Mounts         *mount.Store
+	Access         *volume.Access
+	Quotas         *quota.Store
+	Settings       *settings.Store
+	Search         *search.Manager
+	LogBuffer      *logbuf.Buffer
+	TOTP           *auth.TOTPStore
+	MFAPending     *auth.MFAPendingStore
+	EmailOTP       *auth.EmailOTPStore
+	WebAuthn       *auth.WebAuthnStore
+	PasswordResets *auth.PasswordResetStore
+	RateLimiter    *ratelimit.Limiter
+	CSRFSecret     []byte
+	Clock          clock.Clock
+	StartedAt      time.Time
 }
 
 // New opens the system database and constructs all service providers.
@@ -174,25 +179,30 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	quotas := quota.NewStore(sysDB, c)
 
 	return &Providers{
-		Config:       cfg,
-		Log:          log,
-		DB:           sysDB,
-		Users:        users,
-		Sessions:     auth.NewSessionStore(sysDB, c),
-		AppPasswords: auth.NewAppPasswordStore(sysDB, c),
-		Plugins:      registry,
-		Shares:       shares,
-		Groups:       group.NewStore(sysDB),
-		Invitations:  group.NewInvitationStore(sysDB, c),
-		Volumes:      volumes,
-		Mounts:       mounts,
-		Access:       &volume.Access{Volumes: volumes, Shares: shares},
-		Quotas:       quotas,
-		Settings:     settings.NewStore(sysDB),
-		RateLimiter:  ratelimit.New(10, 15*time.Minute, c),
-		CSRFSecret:   secret,
-		Clock:        c,
-		StartedAt:    c(),
+		Config:         cfg,
+		Log:            log,
+		DB:             sysDB,
+		Users:          users,
+		Sessions:       auth.NewSessionStore(sysDB, c),
+		AppPasswords:   auth.NewAppPasswordStore(sysDB, c),
+		Plugins:        registry,
+		Shares:         shares,
+		Groups:         group.NewStore(sysDB),
+		Invitations:    group.NewInvitationStore(sysDB, c),
+		Volumes:        volumes,
+		Mounts:         mounts,
+		Access:         &volume.Access{Volumes: volumes, Shares: shares},
+		Quotas:         quotas,
+		Settings:       settings.NewStore(sysDB),
+		TOTP:           auth.NewTOTPStore(sysDB, secret),
+		MFAPending:     auth.NewMFAPendingStore(sysDB, c),
+		EmailOTP:       auth.NewEmailOTPStore(sysDB, c),
+		PasswordResets: auth.NewPasswordResetStore(sysDB, c),
+		WebAuthn:       newWebAuthnStore(sysDB, c, cfg.BaseURL, log),
+		RateLimiter:    ratelimit.New(10, 15*time.Minute, c),
+		CSRFSecret:     secret,
+		Clock:          c,
+		StartedAt:      c(),
 	}
 }
 
@@ -224,6 +234,20 @@ func (p *Providers) Close() error {
 	}
 	p.Plugins.Stop()
 	return p.DB.Close()
+}
+
+// newWebAuthnStore creates a WebAuthn store, returning nil on error
+// (e.g., when BaseURL is not a valid URL in test environments).
+func newWebAuthnStore(db *sql.DB, c clock.Clock, baseURL string, log *slog.Logger) *auth.WebAuthnStore {
+	if baseURL == "" {
+		return nil
+	}
+	wa, err := auth.NewWebAuthnStore(db, c, baseURL)
+	if err != nil {
+		log.Warn("webauthn init failed (passkeys disabled)", "err", err)
+		return nil
+	}
+	return wa
 }
 
 const secretSettingKey = "csrf_secret"

@@ -147,7 +147,7 @@ templ adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashK
 }
 
 // --- Settings ---
-templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, smtp smtpSettingsData, env envConfigData, status statusData, flash string, flashKind string) {
+templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, smtp smtpSettingsData, env envConfigData, status statusData, flash string, flashKind string, mfaRequired string) {
 	@ui.AdminSidebarPage(pd, "settings") {
 		<h1 style="margin-bottom:1rem">System Settings</h1>
 		if flash != "" {
@@ -215,6 +215,29 @@ templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHou
 					style="margin-top:0.75rem"
 				>Test Connection</button>
 				<div id="smtp-test-result"></div>
+			}
+			@ui.Card("Security") {
+				<div class="form-group">
+					<label class="form-label" for="mfa_required">Require Multi-Factor Authentication</label>
+					<select class="form-control" id="mfa_required" name="mfa_required" style="max-width:250px">
+						if mfaRequired == "" {
+							<option value="" selected>Disabled</option>
+						} else {
+							<option value="">Disabled</option>
+						}
+						if mfaRequired == "admins" {
+							<option value="admins" selected>Admin users only</option>
+						} else {
+							<option value="admins">Admin users only</option>
+						}
+						if mfaRequired == "all" {
+							<option value="all" selected>All users</option>
+						} else {
+							<option value="all">All users</option>
+						}
+					</select>
+					<p class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">When enabled, users without MFA will be redirected to set it up on login.</p>
+				</div>
 			}
 			<button class="btn btn-primary" type="submit">Save Settings</button>
 		</form>

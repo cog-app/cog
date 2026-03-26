@@ -626,6 +626,206 @@ templ LoginPage(errMsg string, csrfToken string, next string, registrationEnable
 	</html>
 }
 
+// MFAPage renders the standalone MFA verification page.
+// mfaMethod is "totp", "email", or "webauthn".
+templ MFAPage(errMsg string, next string, mfaMethod string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+			<title>Verify Identity — Cog</title>
+			<link rel="stylesheet" href="/static/style.css"/>
+			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+		</head>
+		<body>
+			<div class="login-container">
+				<div class="card login-card">
+					<div class="login-title">
+						@CogIcon(28)
+						Cog
+					</div>
+					if mfaMethod == "webauthn" {
+						<p style="text-align:center;margin-bottom:1rem;color:var(--color-text-muted)">Use your passkey to verify your identity.</p>
+						if errMsg != "" {
+							<div class="alert alert-error">{ errMsg }</div>
+						}
+						<div id="webauthn-status" style="text-align:center;padding:1rem">
+							<button id="webauthn-btn" class="btn btn-primary" type="button" style="width:100%" onclick="startWebAuthnLogin()">Verify with Passkey</button>
+						</div>
+						<script>
+						async function startWebAuthnLogin() {
+							var btn = document.getElementById("webauthn-btn");
+							var status = document.getElementById("webauthn-status");
+							btn.disabled = true;
+							btn.textContent = "Waiting for passkey...";
+							try {
+								var beginResp = await fetch("/login/mfa/webauthn/begin", {method:"POST"});
+								if (!beginResp.ok) throw new Error("Failed to start");
+								var options = await beginResp.json();
+								options.publicKey.challenge = base64urlToBuffer(options.publicKey.challenge);
+								if (options.publicKey.allowCredentials) {
+									options.publicKey.allowCredentials = options.publicKey.allowCredentials.map(function(c) {
+										c.id = base64urlToBuffer(c.id); return c;
+									});
+								}
+								var assertion = await navigator.credentials.get(options);
+								var body = JSON.stringify({
+									id: assertion.id,
+									rawId: bufferToBase64url(assertion.rawId),
+									type: assertion.type,
+									response: {
+										authenticatorData: bufferToBase64url(assertion.response.authenticatorData),
+										clientDataJSON: bufferToBase64url(assertion.response.clientDataJSON),
+										signature: bufferToBase64url(assertion.response.signature),
+										userHandle: assertion.response.userHandle ? bufferToBase64url(assertion.response.userHandle) : ""
+									}
+								});
+								var finishResp = await fetch("/login/mfa/webauthn/finish", {
+									method: "POST",
+									headers: {"Content-Type":"application/json"},
+									body: body
+								});
+								if (!finishResp.ok) throw new Error("Verification failed");
+								var result = await finishResp.json();
+								window.location.href = result.redirect || "/";
+							} catch(e) {
+								status.innerHTML = '<div class="alert alert-error">' + (e.message || "Passkey verification failed") + '</div>';
+								status.innerHTML += '<button class="btn btn-primary" type="button" style="width:100%;margin-top:0.5rem" onclick="startWebAuthnLogin()">Try Again</button>';
+							}
+						}
+						function base64urlToBuffer(b) {
+							var s = b.replace(/-/g,"+").replace(/_/g,"/");
+							while (s.length%4) s+="=";
+							var raw = atob(s);
+							var arr = new Uint8Array(raw.length);
+							for (var i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
+							return arr.buffer;
+						}
+						function bufferToBase64url(buf) {
+							var arr = new Uint8Array(buf);
+							var s = "";
+							for (var i=0;i<arr.length;i++) s+=String.fromCharCode(arr[i]);
+							return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
+						}
+						startWebAuthnLogin();
+						</script>
+					} else {
+						if mfaMethod == "email" {
+							<p style="text-align:center;margin-bottom:1rem;color:var(--color-text-muted)">A verification code has been sent to your email.</p>
+						} else {
+							<p style="text-align:center;margin-bottom:1rem;color:var(--color-text-muted)">Enter your authentication code to continue.</p>
+						}
+						if errMsg != "" {
+							<div class="alert alert-error">{ errMsg }</div>
+						}
+						<form method="post" action="/login/mfa">
+							if next != "" {
+								<input type="hidden" name="next" value={ next }/>
+							}
+							<div class="form-group">
+								<label for="code">Authentication Code</label>
+								<input class="form-control" type="text" id="code" name="code" placeholder="6-digit code or backup code" required autofocus autocomplete="one-time-code" inputmode="numeric" pattern="[a-zA-Z0-9]{6,8}"/>
+							</div>
+							<button class="btn btn-primary" type="submit" style="width:100%;margin-top:0.5rem">Verify</button>
+						</form>
+						if mfaMethod == "totp" {
+							<p style="text-align:center;margin-top:1rem;font-size:0.875rem;color:var(--color-text-muted)">
+								Lost your authenticator? Use a backup code.
+							</p>
+						}
+					}
+				</div>
+			</div>
+		</body>
+	</html>
+}
+
+// ForgotPasswordPage renders the forgot password form.
+templ ForgotPasswordPage(errMsg string, successMsg string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+			<title>Forgot Password — Cog</title>
+			<link rel="stylesheet" href="/static/style.css"/>
+			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+		</head>
+		<body>
+			<div class="login-container">
+				<div class="card login-card">
+					<div class="login-title">
+						@CogIcon(28)
+						Cog
+					</div>
+					if successMsg != "" {
+						<div class="alert alert-success">{ successMsg }</div>
+					}
+					if errMsg != "" {
+						<div class="alert alert-error">{ errMsg }</div>
+					}
+					if successMsg == "" {
+						<p style="margin-bottom:1rem;color:var(--color-text-muted)">Enter your username or email to receive a password reset link.</p>
+						<form method="post" action="/forgot-password">
+							<div class="form-group">
+								<label for="identifier">Username or Email</label>
+								<input class="form-control" type="text" id="identifier" name="identifier" required autofocus/>
+							</div>
+							<button class="btn btn-primary" type="submit" style="width:100%;margin-top:0.5rem">Send Reset Link</button>
+						</form>
+					}
+					<p style="text-align:center;margin-top:1rem">
+						<a href="/login">Back to login</a>
+					</p>
+				</div>
+			</div>
+		</body>
+	</html>
+}
+
+// ResetPasswordPage renders the password reset form.
+templ ResetPasswordPage(errMsg string, token string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+			<title>Reset Password — Cog</title>
+			<link rel="stylesheet" href="/static/style.css"/>
+			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+		</head>
+		<body>
+			<div class="login-container">
+				<div class="card login-card">
+					<div class="login-title">
+						@CogIcon(28)
+						Cog
+					</div>
+					if errMsg != "" {
+						<div class="alert alert-error">{ errMsg }</div>
+					}
+					<form method="post" action="/reset-password">
+						<input type="hidden" name="token" value={ token }/>
+						<div class="form-group">
+							<label for="password">New Password</label>
+							<input class="form-control" type="password" id="password" name="password" required autofocus/>
+						</div>
+						<div class="form-group">
+							<label for="confirm">Confirm Password</label>
+							<input class="form-control" type="password" id="confirm" name="confirm" required/>
+						</div>
+						<button class="btn btn-primary" type="submit" style="width:100%;margin-top:0.5rem">Reset Password</button>
+					</form>
+					<p style="text-align:center;margin-top:1rem">
+						<a href="/login">Back to login</a>
+					</p>
+				</div>
+			</div>
+		</body>
+	</html>
+}
+
 // RegisterPage renders the standalone registration page.
 templ RegisterPage(errMsg string, next string) {
 	<!DOCTYPE html>

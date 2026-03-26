@@ -1,7 +1,12 @@
 package web
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"image/png"
+	"io"
 	"iter"
 	"net/http"
 
@@ -41,12 +46,23 @@ func (h *settingsHandler) ShowSecurity(w http.ResponseWriter, r *http.Request) {
 		h.p.Log.Error("list app passwords", "err", err)
 	}
 
+	var backupCodeCount int
+	if u.MFAMethod == "totp" {
+		backupCodeCount, _ = h.p.TOTP.BackupCodeCount(u.ID)
+	}
+
 	flash := getFlash(w, r)
 	var flashMsg, flashKind string
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	settingsSecurityPage(pd, flashMsg, flashKind, appPasswords).Render(r.Context(), w)
+	smtpConfigured := h.p.EmailSender() != nil
+	var webauthnCreds []auth.WebAuthnCredential
+	webauthnAvailable := h.p.WebAuthn != nil
+	if webauthnAvailable {
+		webauthnCreds, _ = h.p.WebAuthn.ListCredentials(u.ID)
+	}
+	settingsSecurityPage(pd, flashMsg, flashKind, appPasswords, u.MFAMethod, backupCodeCount, smtpConfigured, webauthnAvailable, webauthnCreds).Render(r.Context(), w)
 }
 
 func (h *settingsHandler) CreateAppPassword(w http.ResponseWriter, r *http.Request) {
@@ -213,6 +229,12 @@ func (h *settingsHandler) UpdatePassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Invalidate all other sessions for this user.
+	sessID := auth.SessionIDFromContext(r.Context())
+	if err := h.p.Sessions.DeleteAllExcept(u.ID, sessID); err != nil {
+		h.p.Log.Error("delete sessions after password change", "err", err)
+	}
+
 	setFlash(w, "success", "Password changed.")
 	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 }
@@ -317,5 +339,249 @@ func (h *settingsHandler) DeleteMount(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// SetupTOTP begins TOTP enrollment: generates a key and redirects to the
+// security page where the QR code and verification form will be displayed.
+func (h *settingsHandler) SetupTOTP(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+
+	key, err := h.p.TOTP.BeginSetup(u.ID, u.Username, "Cog")
+	if err != nil {
+		setFlash(w, "error", "Failed to set up TOTP: "+err.Error())
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+
+	// Encode QR code as data URI.
+	img, err := key.Image(200, 200)
+	if err != nil {
+		setFlash(w, "error", "Failed to generate QR code.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		setFlash(w, "error", "Failed to encode QR code.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+	dataURI := "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
+
+	// Store the data URI and secret in a flash for the security page to display.
+	setFlash(w, "totp_setup", dataURI+"|"+key.Secret())
+	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+}
+
+// ConfirmTOTP verifies the TOTP code and enables MFA.
+func (h *settingsHandler) ConfirmTOTP(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	code := r.FormValue("code")
+
+	backupCodes, err := h.p.TOTP.ConfirmSetup(u.ID, code)
+	if err != nil {
+		setFlash(w, "error", "Invalid code. Please try again.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+
+	// Store backup codes in flash for one-time display.
+	msg := "totp_enabled:"
+	for i, code := range backupCodes {
+		if i > 0 {
+			msg += ","
+		}
+		msg += code
+	}
+	setFlash(w, "success", msg)
+	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+}
+
+// DisableTOTP removes MFA after verifying the current password.
+func (h *settingsHandler) DisableTOTP(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	password := r.FormValue("password")
+
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
+		setFlash(w, "error", "Current password is incorrect.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+
+	if err := h.p.TOTP.Disable(u.ID); err != nil {
+		setFlash(w, "error", "Failed to disable TOTP.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+
+	setFlash(w, "success", "Two-factor authentication disabled.")
+	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+}
+
+// EnableEmailOTP enables email-based OTP as the user's MFA method.
+func (h *settingsHandler) EnableEmailOTP(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+
+	if u.Email == "" {
+		setFlash(w, "error", "You must set an email address in your profile before enabling email OTP.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+
+	if sender := h.p.EmailSender(); sender == nil {
+		setFlash(w, "error", "Email is not configured on this server.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+
+	_, err := h.p.Users.SetMFAMethod(u.ID, "email")
+	if err != nil {
+		setFlash(w, "error", "Failed to enable email OTP.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+
+	setFlash(w, "success", "Email OTP enabled. A code will be sent to your email at each login.")
+	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+}
+
+// DisableEmailOTP disables email OTP after verifying the current password.
+func (h *settingsHandler) DisableEmailOTP(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	password := r.FormValue("password")
+
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
+		setFlash(w, "error", "Current password is incorrect.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+
+	if _, err := h.p.Users.SetMFAMethod(u.ID, ""); err != nil {
+		setFlash(w, "error", "Failed to disable email OTP.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+
+	setFlash(w, "success", "Email OTP disabled.")
+	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+}
+
+// RegenerateBackupCodes creates new backup codes after password verification.
+func (h *settingsHandler) RegenerateBackupCodes(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	password := r.FormValue("password")
+
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
+		setFlash(w, "error", "Current password is incorrect.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+
+	backupCodes, err := h.p.TOTP.RegenerateBackupCodes(u.ID)
+	if err != nil {
+		setFlash(w, "error", "Failed to regenerate backup codes.")
+		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		return
+	}
+
+	msg := "totp_enabled:"
+	for i, code := range backupCodes {
+		if i > 0 {
+			msg += ","
+		}
+		msg += code
+	}
+	setFlash(w, "success", msg)
+	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+}
+
+// BeginWebAuthnRegistration starts a WebAuthn credential registration.
+func (h *settingsHandler) BeginWebAuthnRegistration(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	if h.p.WebAuthn == nil {
+		http.Error(w, "WebAuthn not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	displayName := u.DisplayName
+	if displayName == "" {
+		displayName = u.Username
+	}
+
+	data, err := h.p.WebAuthn.BeginRegistration(u.ID, u.Username, displayName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data)
+}
+
+// FinishWebAuthnRegistration completes a WebAuthn credential registration.
+func (h *settingsHandler) FinishWebAuthnRegistration(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	if h.p.WebAuthn == nil {
+		http.Error(w, "WebAuthn not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
+	if err != nil {
+		http.Error(w, "read body", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Name       string          `json:"name"`
+		Credential json.RawMessage `json:"credential"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		req.Name = "Passkey"
+	}
+
+	displayName := u.DisplayName
+	if displayName == "" {
+		displayName = u.Username
+	}
+
+	if err := h.p.WebAuthn.FinishRegistration(u.ID, u.Username, displayName, req.Name, req.Credential); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if u.MFAMethod == "" {
+		h.p.Users.SetMFAMethod(u.ID, "webauthn")
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"ok":true}`))
+}
+
+// DeleteWebAuthnCredential removes a WebAuthn credential.
+func (h *settingsHandler) DeleteWebAuthnCredential(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	id := r.PathValue("id")
+
+	if h.p.WebAuthn == nil {
+		http.Error(w, "WebAuthn not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	if err := h.p.WebAuthn.DeleteCredential(id, u.ID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	count, _ := h.p.WebAuthn.CredentialCount(u.ID)
+	if count == 0 && u.MFAMethod == "webauthn" {
+		h.p.Users.SetMFAMethod(u.ID, "")
+	}
+
 	w.WriteHeader(http.StatusOK)
 }

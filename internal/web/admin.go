@@ -139,6 +139,12 @@ func (h *adminHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 		return
 	}
+
+	// Invalidate all sessions for the target user.
+	if err := h.p.Sessions.DeleteAllForUser(id); err != nil {
+		h.p.Log.Error("delete sessions after admin password reset", "err", err)
+	}
+
 	setFlash(w, "success", "Password reset.")
 	http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 }
@@ -461,6 +467,11 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 		smtp.From, _ = h.p.Settings.Get(settings.KeySMTPFrom)
 	}
 
+	var mfaRequired string
+	if h.p.Settings != nil {
+		mfaRequired, _ = h.p.Settings.Get(settings.KeyMFARequired)
+	}
+
 	env := envConfigData{
 		Addr:    h.p.Config.Addr,
 		DBPath:  h.p.Config.DBPath,
@@ -475,7 +486,7 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), smtp, env, status, flashMsg, flashKind).Render(r.Context(), w)
+	adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), smtp, env, status, flashMsg, flashKind, mfaRequired).Render(r.Context(), w)
 }
 
 func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -512,6 +523,15 @@ func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := h.p.Settings.Set(settings.KeySMTPFrom, r.FormValue("smtp_from")); err != nil {
 			h.p.Log.Error("save setting failed", "key", "smtp_from", "err", err)
+		}
+
+		// Save MFA enforcement setting.
+		mfaRequired := r.FormValue("mfa_required")
+		if mfaRequired != "all" && mfaRequired != "admins" {
+			mfaRequired = ""
+		}
+		if err := h.p.Settings.Set(settings.KeyMFARequired, mfaRequired); err != nil {
+			h.p.Log.Error("save setting failed", "key", "mfa_required", "err", err)
 		}
 	}
 	setFlash(w, "success", "Settings saved.")

@@ -19,8 +19,8 @@ type TestClock struct {
 }
 
 func NewTest(now time.Time) *TestClock { return &TestClock{now: now} }
-func (c *TestClock) Now() time.Time   { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
-func (c *TestClock) Set(t time.Time)  { c.mu.Lock(); defer c.mu.Unlock(); c.now = t }
+func (c *TestClock) Now() time.Time    { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
+func (c *TestClock) Set(t time.Time)   { c.mu.Lock(); defer c.mu.Unlock(); c.now = t }
 func (c *TestClock) Advance(d time.Duration) time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -70,6 +70,14 @@ func New(p *services.Providers) http.Handler {
 	mux.HandleFunc("POST /logout", loginH.HandleLogout)
 	mux.HandleFunc("GET /register", loginH.ShowRegister)
 	mux.HandleFunc("POST /register", loginH.HandleRegister)
+	mux.HandleFunc("GET /login/mfa", loginH.ShowMFA)
+	mux.HandleFunc("POST /login/mfa", loginH.HandleMFA)
+	mux.HandleFunc("POST /login/mfa/webauthn/begin", loginH.BeginWebAuthnLogin)
+	mux.HandleFunc("POST /login/mfa/webauthn/finish", loginH.FinishWebAuthnLogin)
+	mux.HandleFunc("GET /forgot-password", loginH.ShowForgotPassword)
+	mux.HandleFunc("POST /forgot-password", loginH.HandleForgotPassword)
+	mux.HandleFunc("GET /reset-password", loginH.ShowResetPassword)
+	mux.HandleFunc("POST /reset-password", loginH.HandleResetPassword)
 
 	// Avatar
 	mux.Handle("GET /avatar/{id}", http.HandlerFunc(avatarH.Serve))
@@ -90,6 +98,15 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("DELETE /settings/mounts/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteMount)))
 	mux.Handle("POST /settings/volumes", csrfWeb(http.HandlerFunc(settingsH.CreateVolume)))
 	mux.Handle("DELETE /settings/volumes/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteVolume)))
+	mux.Handle("POST /settings/totp/setup", csrfWeb(http.HandlerFunc(settingsH.SetupTOTP)))
+	mux.Handle("POST /settings/totp/confirm", csrfWeb(http.HandlerFunc(settingsH.ConfirmTOTP)))
+	mux.Handle("POST /settings/totp/disable", csrfWeb(http.HandlerFunc(settingsH.DisableTOTP)))
+	mux.Handle("POST /settings/totp/backup-codes", csrfWeb(http.HandlerFunc(settingsH.RegenerateBackupCodes)))
+	mux.Handle("POST /settings/email-otp/enable", csrfWeb(http.HandlerFunc(settingsH.EnableEmailOTP)))
+	mux.Handle("POST /settings/email-otp/disable", csrfWeb(http.HandlerFunc(settingsH.DisableEmailOTP)))
+	mux.Handle("POST /settings/webauthn/register/begin", csrfWeb(http.HandlerFunc(settingsH.BeginWebAuthnRegistration)))
+	mux.Handle("POST /settings/webauthn/register/finish", csrfWeb(http.HandlerFunc(settingsH.FinishWebAuthnRegistration)))
+	mux.Handle("DELETE /settings/webauthn/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteWebAuthnCredential)))
 	mux.Handle("POST /settings/app-passwords", csrfWeb(http.HandlerFunc(settingsH.CreateAppPassword)))
 	mux.Handle("DELETE /settings/app-passwords/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteAppPassword)))
 	mux.Handle("POST /settings/avatar", csrfWeb(http.HandlerFunc(avatarH.Upload)))
@@ -293,7 +310,7 @@ func New(p *services.Providers) http.Handler {
 		filesAPI.RegisterRoutes(mux)
 	}
 
-	return authMW.Wrap(mux)
+	return authMW.Wrap(mfaEnforcement(p)(mux))
 }
 
 // buildOCSQuotaFunc creates a QuotaFunc for the OCS API.

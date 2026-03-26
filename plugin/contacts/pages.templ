@@ -68,11 +68,12 @@ templ contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken str
 										}
 									</td>
 									<td style="font-weight:500">
-									{ c.FN }
-									if c.IsStarred {
-										<span class="btn-star active" style="cursor:default">@ui.StarIcon()</span>
-									}
-								</td>
+										{ c.FN }
+										if c.IsStarred {
+											<span class="btn-star active" style="cursor:default">@ui.StarIcon()
+</span>
+										}
+									</td>
 									<td class="hide-mobile">{ c.Email }</td>
 									<td class="hide-mobile">{ c.Tel }</td>
 									<td class="hide-mobile">{ c.Org }</td>
@@ -244,11 +245,12 @@ templ contactsStarredPage(books []AddressBook, cards []CardWithBook) {
 										}
 									</td>
 									<td style="font-weight:500">
-									{ c.FN }
-									if c.IsStarred {
-										<span class="btn-star active" style="cursor:default">@ui.StarIcon()</span>
-									}
-								</td>
+										{ c.FN }
+										if c.IsStarred {
+											<span class="btn-star active" style="cursor:default">@ui.StarIcon()
+</span>
+										}
+									</td>
 									<td class="hide-mobile">{ c.Email }</td>
 									<td class="hide-mobile">{ c.Tel }</td>
 									<td class="hide-mobile">{ c.Org }</td>
@@ -556,7 +558,6 @@ func sidebarClass(activePath, itemPath string) string {
 	}
 	return "sidebar-item"
 }
-
 
 func contactColor(c *Card, book *AddressBook) string {
 	if book != nil && book.Color != "" {

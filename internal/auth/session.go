@@ -78,6 +78,18 @@ func (s *SessionStore) Delete(token string) error {
 	return err
 }
 
+// DeleteAllExcept removes all sessions for a user except the given session.
+func (s *SessionStore) DeleteAllExcept(userID, exceptSessionID string) error {
+	_, err := s.db.Exec(`DELETE FROM sessions WHERE user_id = ? AND id != ?`, userID, exceptSessionID)
+	return err
+}
+
+// DeleteAllForUser removes all sessions for a user.
+func (s *SessionStore) DeleteAllForUser(userID string) error {
+	_, err := s.db.Exec(`DELETE FROM sessions WHERE user_id = ?`, userID)
+	return err
+}
+
 func generateToken(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {

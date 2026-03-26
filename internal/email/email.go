@@ -127,3 +127,43 @@ func (s *Sender) Send(to []string, subject, body string, attachments ...Attachme
 
 	return smtp.SendMail(addr, auth, s.From, to, buf.Bytes())
 }
+
+// SendPasswordReset sends a password reset link to the given email address.
+func (s *Sender) SendPasswordReset(toEmail, resetURL string) error {
+	subject := "Reset your Cog password"
+	body := fmt.Sprintf(
+		"A password reset was requested for your Cog account.\n\nClick the link below to set a new password:\n%s\n\nThis link expires in 1 hour. If you didn't request this, you can safely ignore this email.\n",
+		resetURL,
+	)
+
+	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s",
+		s.From, toEmail, subject, body)
+
+	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
+	var auth smtp.Auth
+	if s.User != "" {
+		auth = smtp.PlainAuth("", s.User, s.Pass, s.Host)
+	}
+
+	return smtp.SendMail(addr, auth, s.From, []string{toEmail}, []byte(msg))
+}
+
+// SendOTP sends a one-time authentication code to the given email address.
+func (s *Sender) SendOTP(toEmail, code string) error {
+	subject := "Your Cog verification code"
+	body := fmt.Sprintf(
+		"Your Cog verification code is:\n\n    %s\n\nThis code expires in 10 minutes. If you didn't request this, you can safely ignore this email.\n",
+		code,
+	)
+
+	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s",
+		s.From, toEmail, subject, body)
+
+	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
+	var auth smtp.Auth
+	if s.User != "" {
+		auth = smtp.PlainAuth("", s.User, s.Pass, s.Host)
+	}
+
+	return smtp.SendMail(addr, auth, s.From, []string{toEmail}, []byte(msg))
+}

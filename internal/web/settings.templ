@@ -7,6 +7,7 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 	"iter"
 	"strconv"
+	"strings"
 )
 
 func settingsSidebar(active string) []ui.SidebarItem {
@@ -51,16 +52,27 @@ templ settingsProfilePage(pd ui.PageData, flash string, flashKind string) {
 	}
 }
 
-templ settingsSecurityPage(pd ui.PageData, flash string, flashKind string, appPasswords []auth.AppPassword) {
+templ settingsSecurityPage(pd ui.PageData, flash string, flashKind string, appPasswords []auth.AppPassword, mfaMethod string, backupCodeCount int, smtpConfigured bool, webauthnAvailable bool, webauthnCreds []auth.WebAuthnCredential) {
 	@ui.SidebarPage(pd, settingsSidebar("security")) {
 		<h1 style="margin-bottom:1rem">Security</h1>
 		if flash != "" {
 			if flashKind == "success" && len(flash) > 6 && flash[:6] == "token:" {
 				@ui.Alert("success", "App password created. Copy this token now — it will not be shown again:")
 				<pre style="background:var(--color-bg-alt);padding:1rem;border-radius:var(--radius);margin-bottom:1rem;word-break:break-all">{ flash[6:] }</pre>
-			} else {
+			} else if flashKind == "success" && strings.HasPrefix(flash, "totp_enabled:") {
+				@ui.Alert("success", "Two-factor authentication enabled. Save these backup codes — they will not be shown again:")
+				<div style="background:var(--color-bg-alt);padding:1rem;border-radius:var(--radius);margin-bottom:1rem;font-family:monospace">
+					for _, code := range strings.Split(flash[len("totp_enabled:"):], ",") {
+						<div>{ code }</div>
+					}
+				</div>
+			} else if flashKind != "totp_setup" {
 				@ui.Alert(flashKind, flash)
 			}
+		}
+		@settingsTOTPCard(pd, flash, flashKind, mfaMethod, backupCodeCount, smtpConfigured)
+		if webauthnAvailable {
+			@settingsWebAuthnCard(pd, mfaMethod, webauthnCreds)
 		}
 		@ui.Card("Change Password") {
 			<form method="post" action="/settings/password">
@@ -253,6 +265,172 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 				ShowTypeSelector: false,
 			})
 		}
+	}
+}
+
+templ settingsTOTPCard(pd ui.PageData, flash string, flashKind string, mfaMethod string, backupCodeCount int, smtpConfigured bool) {
+	@ui.Card("Two-Factor Authentication") {
+		if mfaMethod == "totp" {
+			<p style="margin-bottom:0.75rem">
+				<span style="color:var(--color-success);font-weight:600">Enabled</span> — TOTP authenticator app.
+				<span class="text-muted">{ strconv.Itoa(backupCodeCount) } backup codes remaining.</span>
+			</p>
+			<div class="flex gap-1" style="flex-wrap:wrap">
+				<form method="post" action="/settings/totp/disable" style="display:inline">
+					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+					<input class="form-control" type="password" name="password" placeholder="Current password" required style="max-width:200px;display:inline-block"/>
+					<button class="btn btn-danger btn-sm" type="submit">Disable TOTP</button>
+				</form>
+				<form method="post" action="/settings/totp/backup-codes" style="display:inline">
+					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+					<input class="form-control" type="password" name="password" placeholder="Current password" required style="max-width:200px;display:inline-block"/>
+					<button class="btn btn-outline btn-sm" type="submit">Regenerate Backup Codes</button>
+				</form>
+			</div>
+		} else if mfaMethod == "email" {
+			<p style="margin-bottom:0.75rem">
+				<span style="color:var(--color-success);font-weight:600">Enabled</span> — Email verification code.
+				<span class="text-muted">A code will be sent to your email at each login.</span>
+			</p>
+			<form method="post" action="/settings/email-otp/disable">
+				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+				<input class="form-control" type="password" name="password" placeholder="Current password" required style="max-width:200px;display:inline-block"/>
+				<button class="btn btn-danger btn-sm" type="submit">Disable Email OTP</button>
+			</form>
+		} else if flashKind == "totp_setup" {
+			<p style="margin-bottom:0.75rem">Scan this QR code with your authenticator app, then enter the 6-digit code to confirm.</p>
+			if pipeIdx := strings.Index(flash, "|"); pipeIdx > 0 {
+				<div style="text-align:center;margin-bottom:1rem">
+					<img src={ flash[:pipeIdx] } alt="TOTP QR Code" style="max-width:200px"/>
+				</div>
+				<p class="text-muted" style="margin-bottom:0.75rem;font-size:0.875rem">
+					Or enter this secret manually: <code>{ flash[pipeIdx+1:] }</code>
+				</p>
+			}
+			<form method="post" action="/settings/totp/confirm">
+				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+				<div class="flex gap-1 items-center">
+					<input class="form-control" type="text" name="code" placeholder="6-digit code" required autocomplete="one-time-code" inputmode="numeric" style="max-width:200px"/>
+					<button class="btn btn-primary" type="submit">Verify &amp; Enable</button>
+				</div>
+			</form>
+		} else {
+			<p class="text-muted" style="margin-bottom:0.75rem">Add an extra layer of security to your account.</p>
+			<div class="flex gap-1" style="flex-wrap:wrap">
+				<form method="post" action="/settings/totp/setup">
+					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+					<button class="btn btn-primary" type="submit">Enable TOTP</button>
+				</form>
+				if smtpConfigured && pd.User.Email != "" {
+					<form method="post" action="/settings/email-otp/enable">
+						<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+						<button class="btn btn-outline" type="submit">Enable Email OTP</button>
+					</form>
+				}
+			</div>
+			if smtpConfigured && pd.User.Email == "" {
+				<p class="text-muted" style="margin-top:0.5rem;font-size:0.875rem">Set an email address in your profile to enable email OTP.</p>
+			}
+		}
+	}
+}
+
+templ settingsWebAuthnCard(pd ui.PageData, mfaMethod string, creds []auth.WebAuthnCredential) {
+	@ui.Card("Passkeys") {
+		if len(creds) > 0 {
+			<table class="table" style="margin-bottom:1rem">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Created</th>
+						<th class="text-right">Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, c := range creds {
+						<tr id={ "webauthn-" + c.ID }>
+							<td>{ c.Name }</td>
+							<td>{ c.CreatedAt.Format("2006-01-02") }</td>
+							<td class="text-right">
+								<button
+									class="btn btn-danger btn-sm"
+									hx-delete={ "/settings/webauthn/" + c.ID }
+									hx-target={ "#webauthn-" + c.ID }
+									hx-swap="outerHTML"
+									hx-confirm="Remove this passkey?"
+								>Remove</button>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		} else {
+			<p class="text-muted" style="margin-bottom:0.75rem">No passkeys registered.</p>
+		}
+		<h4>Register Passkey</h4>
+		<div class="flex gap-1 items-center">
+			<input class="form-control" type="text" id="webauthn-name" placeholder="Passkey name" style="max-width:200px"/>
+			<button class="btn btn-primary" type="button" id="webauthn-register-btn" onclick="registerPasskey()">Register</button>
+		</div>
+		<div id="webauthn-register-status" style="margin-top:0.5rem"></div>
+		<script>
+		async function registerPasskey() {
+			var nameEl = document.getElementById("webauthn-name");
+			var status = document.getElementById("webauthn-register-status");
+			var btn = document.getElementById("webauthn-register-btn");
+			var name = nameEl.value || "Passkey";
+			btn.disabled = true;
+			status.innerHTML = '<span class="text-muted">Waiting for passkey...</span>';
+			try {
+				var csrf = document.querySelector('body').getAttribute('hx-headers');
+				var csrfToken = JSON.parse(csrf)['X-CSRF-Token'];
+				var headers = {"Content-Type":"application/json","X-CSRF-Token":csrfToken};
+				var beginResp = await fetch("/settings/webauthn/register/begin",{method:"POST",headers:headers});
+				if (!beginResp.ok) throw new Error(await beginResp.text());
+				var options = await beginResp.json();
+				options.publicKey.challenge = base64urlToBuffer(options.publicKey.challenge);
+				options.publicKey.user.id = base64urlToBuffer(options.publicKey.user.id);
+				if (options.publicKey.excludeCredentials) {
+					options.publicKey.excludeCredentials = options.publicKey.excludeCredentials.map(function(c){
+						c.id = base64urlToBuffer(c.id); return c;
+					});
+				}
+				var cred = await navigator.credentials.create(options);
+				var body = JSON.stringify({
+					name: name,
+					credential: {
+						id: cred.id,
+						rawId: bufferToBase64url(cred.rawId),
+						type: cred.type,
+						response: {
+							attestationObject: bufferToBase64url(cred.response.attestationObject),
+							clientDataJSON: bufferToBase64url(cred.response.clientDataJSON)
+						}
+					}
+				});
+				var finishResp = await fetch("/settings/webauthn/register/finish",{method:"POST",headers:headers,body:body});
+				if (!finishResp.ok) throw new Error(await finishResp.text());
+				window.location.reload();
+			} catch(e) {
+				status.innerHTML = '<span style="color:var(--color-danger)">' + (e.message || "Registration failed") + '</span>';
+				btn.disabled = false;
+			}
+		}
+		function base64urlToBuffer(b) {
+			var s = b.replace(/-/g,"+").replace(/_/g,"/");
+			while (s.length%4) s+="=";
+			var raw = atob(s);
+			var arr = new Uint8Array(raw.length);
+			for (var i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
+			return arr.buffer;
+		}
+		function bufferToBase64url(buf) {
+			var arr = new Uint8Array(buf);
+			var s = "";
+			for (var i=0;i<arr.length;i++) s+=String.fromCharCode(arr[i]);
+			return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
+		}
+		</script>
 	}
 }
 

@@ -161,7 +161,7 @@ func (p *Plugin) folderIcon(username, folderPath string) string {
 	}
 	return ""
 }
-func (p *Plugin) Stop() error                     { return nil }
+func (p *Plugin) Stop() error { return nil }
 
 // userFS returns the mount-aware VFS for the given user.
 func (p *Plugin) userFS(username string) vfs.FS {

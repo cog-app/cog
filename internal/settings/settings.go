@@ -10,6 +10,9 @@ const KeyPublicRegistration = "public_registration"
 const KeyInviteExpiryHours = "invite_expiry_hours"
 const DefaultInviteExpiryHours = 72
 
+// MFA enforcement: "" (disabled), "all" (all users), "admins" (admin users only).
+const KeyMFARequired = "mfa_required"
+
 // SMTP setting keys.
 const (
 	KeySMTPHost = "smtp_host"

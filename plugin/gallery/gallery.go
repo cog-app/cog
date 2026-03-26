@@ -734,4 +734,3 @@ func (p *Plugin) FolderIcon(username, folderPath string) (string, bool) {
 	}
 	return "", false
 }
-
