@@ -19,6 +19,10 @@ type Attachment struct {
 	Data        []byte
 }
 
+// SendHook intercepts outgoing email. When set on a Sender, it is called
+// instead of smtp.SendMail. Used by tests and dev tools to capture emails.
+type SendHook func(to []string, msg []byte)
+
 // Sender sends emails via SMTP.
 type Sender struct {
 	Host string
@@ -26,6 +30,7 @@ type Sender struct {
 	User string
 	Pass string
 	From string
+	Hook SendHook // if set, called instead of smtp.SendMail
 }
 
 // NewFromSettings creates a Sender from the settings store. Returns nil if SMTP is not configured.
@@ -49,24 +54,28 @@ func NewFromSettings(s *settings.Store) *Sender {
 	}
 }
 
-// SendGroupInvite sends a group invitation email.
-func (s *Sender) SendGroupInvite(toEmail, groupName, inviterName, inviteURL string) error {
-	subject := fmt.Sprintf("You've been invited to join %q on Cog", groupName)
-	body := fmt.Sprintf(
-		"Hi,\n\n%s has invited you to join the group %q on Cog.\n\nClick the link below to accept the invitation:\n%s\n\nThis invitation expires in 7 days.\n",
-		inviterName, groupName, inviteURL,
-	)
-
-	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s",
-		s.From, toEmail, subject, body)
-
+// sendRaw sends a raw message via SMTP, or calls Hook if set.
+func (s *Sender) sendRaw(to []string, msg []byte) error {
+	if s.Hook != nil {
+		s.Hook(to, msg)
+		return nil
+	}
 	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
 	var auth smtp.Auth
 	if s.User != "" {
 		auth = smtp.PlainAuth("", s.User, s.Pass, s.Host)
 	}
+	return smtp.SendMail(addr, auth, s.From, to, msg)
+}
 
-	return smtp.SendMail(addr, auth, s.From, []string{toEmail}, []byte(msg))
+// SendGroupInvite sends a group invitation email using templates.
+func (s *Sender) SendGroupInvite(ss *settings.Store, data EmailData) error {
+	htmlBody, textBody, err := Render(ss, "group_invite", data)
+	if err != nil {
+		return fmt.Errorf("render group_invite: %w", err)
+	}
+	subject := fmt.Sprintf("You've been invited to join %q", data.GroupName)
+	return s.sendRaw([]string{data.User.Email}, buildMultipartAlternative(s.From, data.User.Email, subject, textBody, htmlBody))
 }
 
 // Send sends an email with optional attachments. The body is plain text.
@@ -119,51 +128,51 @@ func (s *Sender) Send(to []string, subject, body string, attachments ...Attachme
 		w.Close()
 	}
 
-	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
-	var auth smtp.Auth
-	if s.User != "" {
-		auth = smtp.PlainAuth("", s.User, s.Pass, s.Host)
-	}
-
-	return smtp.SendMail(addr, auth, s.From, to, buf.Bytes())
+	return s.sendRaw(to, buf.Bytes())
 }
 
-// SendPasswordReset sends a password reset link to the given email address.
-func (s *Sender) SendPasswordReset(toEmail, resetURL string) error {
-	subject := "Reset your Cog password"
-	body := fmt.Sprintf(
-		"A password reset was requested for your Cog account.\n\nClick the link below to set a new password:\n%s\n\nThis link expires in 1 hour. If you didn't request this, you can safely ignore this email.\n",
-		resetURL,
-	)
-
-	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s",
-		s.From, toEmail, subject, body)
-
-	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
-	var auth smtp.Auth
-	if s.User != "" {
-		auth = smtp.PlainAuth("", s.User, s.Pass, s.Host)
+// SendPasswordReset sends a password reset email using templates.
+func (s *Sender) SendPasswordReset(ss *settings.Store, data EmailData) error {
+	htmlBody, textBody, err := Render(ss, "password_reset", data)
+	if err != nil {
+		return fmt.Errorf("render password_reset: %w", err)
 	}
-
-	return smtp.SendMail(addr, auth, s.From, []string{toEmail}, []byte(msg))
+	return s.sendRaw([]string{data.User.Email}, buildMultipartAlternative(s.From, data.User.Email, "Reset your password", textBody, htmlBody))
 }
 
-// SendOTP sends a one-time authentication code to the given email address.
-func (s *Sender) SendOTP(toEmail, code string) error {
-	subject := "Your Cog verification code"
-	body := fmt.Sprintf(
-		"Your Cog verification code is:\n\n    %s\n\nThis code expires in 10 minutes. If you didn't request this, you can safely ignore this email.\n",
-		code,
-	)
-
-	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s",
-		s.From, toEmail, subject, body)
-
-	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
-	var auth smtp.Auth
-	if s.User != "" {
-		auth = smtp.PlainAuth("", s.User, s.Pass, s.Host)
+// SendOTP sends a one-time authentication code using templates.
+func (s *Sender) SendOTP(ss *settings.Store, data EmailData) error {
+	htmlBody, textBody, err := Render(ss, "otp", data)
+	if err != nil {
+		return fmt.Errorf("render otp: %w", err)
 	}
+	return s.sendRaw([]string{data.User.Email}, buildMultipartAlternative(s.From, data.User.Email, "Your verification code", textBody, htmlBody))
+}
 
-	return smtp.SendMail(addr, auth, s.From, []string{toEmail}, []byte(msg))
+// buildMultipartAlternative constructs a MIME multipart/alternative message
+// with text/plain and text/html parts.
+func buildMultipartAlternative(from, to, subject, textBody, htmlBody string) []byte {
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+
+	textHeader := make(textproto.MIMEHeader)
+	textHeader.Set("Content-Type", "text/plain; charset=utf-8")
+	tw, _ := w.CreatePart(textHeader)
+	tw.Write([]byte(textBody))
+
+	htmlHeader := make(textproto.MIMEHeader)
+	htmlHeader.Set("Content-Type", "text/html; charset=utf-8")
+	hw, _ := w.CreatePart(htmlHeader)
+	hw.Write([]byte(htmlBody))
+
+	w.Close()
+
+	var msg bytes.Buffer
+	fmt.Fprintf(&msg, "From: %s\r\n", from)
+	fmt.Fprintf(&msg, "To: %s\r\n", to)
+	fmt.Fprintf(&msg, "Subject: %s\r\n", subject)
+	fmt.Fprintf(&msg, "MIME-Version: 1.0\r\n")
+	fmt.Fprintf(&msg, "Content-Type: multipart/alternative; boundary=%q\r\n\r\n", w.Boundary())
+	msg.Write(body.Bytes())
+	return msg.Bytes()
 }

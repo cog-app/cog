@@ -8,12 +8,23 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/email"
 	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/settings"
+	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
 type loginHandler struct{ handler }
+
+func userInfo(u *user.User, baseURL string) email.UserInfo {
+	return email.UserInfo{
+		Username:    u.Username,
+		DisplayName: u.DisplayName,
+		Email:       u.Email,
+		AvatarURL:   baseURL + "/avatar/" + u.ID,
+	}
+}
 
 // safeNext validates a next-redirect parameter to prevent open redirects.
 func safeNext(next string) string {
@@ -39,11 +50,11 @@ func (h *loginHandler) ShowLogin(w http.ResponseWriter, r *http.Request) {
 	next := r.URL.Query().Get("next")
 	regEnabled := h.p.Settings != nil && h.p.Settings.GetBool(settings.KeyPublicRegistration)
 	flash := getFlash(w, r)
-	var errMsg string
+	var flashMsg, flashKind string
 	if flash != nil {
-		errMsg = flash.Message
+		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	ui.LoginPage(errMsg, "", next, regEnabled).Render(r.Context(), w)
+	ui.LoginPage(flashMsg, flashKind, next, regEnabled).Render(r.Context(), w)
 }
 
 func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +109,12 @@ func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 				code, err := h.p.EmailOTP.Create(u.ID)
 				if err != nil {
 					h.p.Log.Error("create email otp", "err", err)
-				} else if err := sender.SendOTP(u.Email, code); err != nil {
+				} else if err := sender.SendOTP(h.p.Settings, email.EmailData{
+					BaseURL:      h.p.Config.BaseURL,
+					InstanceName: "Cog",
+					User:         userInfo(u, h.p.Config.BaseURL),
+					Code:         code,
+				}); err != nil {
 					h.p.Log.Error("send email otp", "err", err)
 				}
 			}
@@ -378,7 +394,12 @@ func (h *loginHandler) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	}
 
 	resetURL := h.p.Config.BaseURL + "/reset-password?token=" + token
-	if err := sender.SendPasswordReset(u.Email, resetURL); err != nil {
+	if err := sender.SendPasswordReset(h.p.Settings, email.EmailData{
+		BaseURL:      h.p.Config.BaseURL,
+		InstanceName: "Cog",
+		User:         userInfo(u, h.p.Config.BaseURL),
+		ResetURL:     resetURL,
+	}); err != nil {
 		h.p.Log.Error("send password reset email", "err", err)
 	}
 }

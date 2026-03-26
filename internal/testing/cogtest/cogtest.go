@@ -22,8 +22,10 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/internal/maildev"
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
+	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/plugin"
@@ -64,6 +66,7 @@ type Env struct {
 	Providers *services.Providers
 	Client    *http.Client
 	Clock     *clock.TestClock
+	Mailbox   *maildev.Mailbox // captured emails sent during tests
 	http.Handler
 }
 
@@ -113,6 +116,13 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	mgr.SetSystemDB(sysDB)
 	p.Search = mgr
 
+	// Set up email capture via hook (no real SMTP needed).
+	mbox := maildev.New()
+	p.Settings.Set(settings.KeySMTPHost, "localhost")
+	p.Settings.SetInt(settings.KeySMTPPort, 25)
+	p.Settings.Set(settings.KeySMTPFrom, "test@localhost")
+	p.EmailHook = mbox.CaptureHook()
+
 	handler := web.New(p)
 
 	// Start search after plugins are registered.
@@ -126,6 +136,7 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 		Providers: p,
 		Client:    ts.Client(),
 		Clock:     tc,
+		Mailbox:   mbox,
 		Handler:   handler,
 	}
 }

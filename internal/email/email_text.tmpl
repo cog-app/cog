@@ -1,0 +1,23 @@
+{{define "layout"}}{{content}}
+--
+Sent by {{.InstanceName}} ({{.BaseURL}})
+{{end}}
+
+{{define "group_invite"}}{{.Inviter.DisplayName}} has invited you to join "{{.GroupName}}".
+
+Accept the invitation: {{.InviteURL}}
+
+This invitation expires in 7 days.
+{{end}}
+
+{{define "password_reset"}}A password reset was requested for your account ({{.User.Username}}).
+
+Reset your password: {{.ResetURL}}
+
+This link expires in 1 hour. If you didn't request this, you can safely ignore this email.
+{{end}}
+
+{{define "otp"}}Your verification code is: {{.Code}}
+
+This code expires in 10 minutes. If you didn't request this, you can safely ignore this email.
+{{end}}

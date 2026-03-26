@@ -22,15 +22,14 @@ func TestSMTPSettingsPersist(t *testing.T) {
 	cookie := cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID)
 	token := auth.CSRFToken(sess.ID, env.Providers.CSRFSecret)
 
-	// Save SMTP settings via POST.
-	env.PostForm(t, "/admin/settings", url.Values{
-		"csrf_token":          {token},
-		"smtp_host":           {"smtp.example.com"},
-		"smtp_port":           {"465"},
-		"smtp_user":           {"testuser"},
-		"smtp_pass":           {"secret"},
-		"smtp_from":           {"noreply@example.com"},
-		"invite_expiry_hours": {"72"},
+	// Save SMTP settings via POST (now on the email page).
+	env.PostForm(t, "/admin/email", url.Values{
+		"csrf_token": {token},
+		"smtp_host":  {"smtp.example.com"},
+		"smtp_port":  {"465"},
+		"smtp_user":  {"testuser"},
+		"smtp_pass":  {"secret"},
+		"smtp_from":  {"noreply@example.com"},
 	}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
 
 	// Verify settings were persisted to the DB.
@@ -45,8 +44,8 @@ func TestSMTPSettingsPersist(t *testing.T) {
 	from, _ := s.Get(settings.KeySMTPFrom)
 	require.Equal(t, "noreply@example.com", from)
 
-	// Verify the GET page renders the saved values.
-	body := env.Get(t, "/admin/settings", cookie).Status(200).ReadBody()
+	// Verify the GET email page renders the saved values.
+	body := env.Get(t, "/admin/email", cookie).Status(200).ReadBody()
 	require.Contains(t, body, "smtp.example.com")
 	require.Contains(t, body, "465")
 	require.Contains(t, body, "testuser")

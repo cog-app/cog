@@ -492,6 +492,7 @@ templ AdminSidebarPage(pd PageData, active string) {
 func adminSidebarItems(active string) []SidebarItem {
 	return []SidebarItem{
 		{Label: "General", URL: "/admin/settings", Active: active == "settings"},
+		{Label: "Email", URL: "/admin/email", Active: active == "email"},
 		{Label: "Users", URL: "/admin/users", Active: active == "users"},
 		{Label: "Groups", URL: "/admin/groups", Active: active == "groups"},
 		{Label: "Volumes", URL: "/admin/volumes", Active: active == "volumes"},
@@ -575,7 +576,7 @@ templ UserDropdown(pd PageData) {
 var defaultUsername, defaultPassword string
 
 // LoginPage renders the standalone login page (no navbar).
-templ LoginPage(errMsg string, csrfToken string, next string, registrationEnabled bool) {
+templ LoginPage(flashMsg string, flashKind string, next string, registrationEnabled bool) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
@@ -592,11 +593,14 @@ templ LoginPage(errMsg string, csrfToken string, next string, registrationEnable
 						@CogIcon(28)
 						Cog
 					</div>
-					if errMsg != "" {
-						<div class="alert alert-error">{ errMsg }</div>
+					if flashMsg != "" {
+						if flashKind == "" {
+							@Alert("error", flashMsg)
+						} else {
+							@Alert(flashKind, flashMsg)
+						}
 					}
 					<form method="post" action="/login">
-						<input type="hidden" name="csrf_token" value={ csrfToken }/>
 						if next != "" {
 							<input type="hidden" name="next" value={ next }/>
 						}
@@ -609,6 +613,9 @@ templ LoginPage(errMsg string, csrfToken string, next string, registrationEnable
 							<input class="form-control" type="password" id="password" name="password" value={ defaultPassword } required/>
 						</div>
 						<button class="btn btn-primary" type="submit" style="width:100%;margin-top:0.5rem">Log in</button>
+						<div style="text-align:right;margin-top:0.5rem">
+							<a href="/forgot-password" style="font-size:0.875rem">Forgot password?</a>
+						</div>
 					</form>
 					if registrationEnabled {
 						<p style="text-align:center;margin-top:1rem">

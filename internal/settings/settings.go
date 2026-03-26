@@ -13,6 +13,13 @@ const DefaultInviteExpiryHours = 72
 // MFA enforcement: "" (disabled), "all" (all users), "admins" (admin users only).
 const KeyMFARequired = "mfa_required"
 
+// Email template override keys. Each stores a Go template string that is
+// parsed on top of the embedded defaults, replacing matching {{define}} blocks.
+const (
+	KeyEmailOverrideHTML = "email_override_html"
+	KeyEmailOverrideText = "email_override_text"
+)
+
 // SMTP setting keys.
 const (
 	KeySMTPHost = "smtp_host"

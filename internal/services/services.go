@@ -55,6 +55,7 @@ type Providers struct {
 	EmailOTP       *auth.EmailOTPStore
 	WebAuthn       *auth.WebAuthnStore
 	PasswordResets *auth.PasswordResetStore
+	EmailHook      email.SendHook // if set, all email goes through this instead of SMTP
 	RateLimiter    *ratelimit.Limiter
 	CSRFSecret     []byte
 	Clock          clock.Clock
@@ -224,7 +225,11 @@ func (p *Providers) StartSearch(ctx context.Context) error {
 // EmailSender returns an *email.Sender built from the current SMTP settings
 // in the database. Returns nil if SMTP is not configured.
 func (p *Providers) EmailSender() *email.Sender {
-	return email.NewFromSettings(p.Settings)
+	s := email.NewFromSettings(p.Settings)
+	if s != nil && p.EmailHook != nil {
+		s.Hook = p.EmailHook
+	}
+	return s
 }
 
 // Close releases resources held by the providers.

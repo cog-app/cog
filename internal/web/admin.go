@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/email"
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/seq"
@@ -458,15 +459,6 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 		expiryHours = h.p.Settings.GetInt(settings.KeyInviteExpiryHours, settings.DefaultInviteExpiryHours)
 	}
 
-	var smtp smtpSettingsData
-	if h.p.Settings != nil {
-		smtp.Host, _ = h.p.Settings.Get(settings.KeySMTPHost)
-		smtp.Port = strconv.Itoa(h.p.Settings.GetInt(settings.KeySMTPPort, 587))
-		smtp.User, _ = h.p.Settings.Get(settings.KeySMTPUser)
-		smtp.Pass, _ = h.p.Settings.Get(settings.KeySMTPPass)
-		smtp.From, _ = h.p.Settings.Get(settings.KeySMTPFrom)
-	}
-
 	var mfaRequired string
 	if h.p.Settings != nil {
 		mfaRequired, _ = h.p.Settings.Get(settings.KeyMFARequired)
@@ -486,7 +478,7 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), smtp, env, status, flashMsg, flashKind, mfaRequired).Render(r.Context(), w)
+	adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), env, status, flashMsg, flashKind, mfaRequired).Render(r.Context(), w)
 }
 
 func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -504,6 +496,46 @@ func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			h.p.Log.Error("save setting failed", "key", "invite_expiry_hours", "err", err)
 		}
 
+		// Save MFA enforcement setting.
+		mfaRequired := r.FormValue("mfa_required")
+		if mfaRequired != "all" && mfaRequired != "admins" {
+			mfaRequired = ""
+		}
+		if err := h.p.Settings.Set(settings.KeyMFARequired, mfaRequired); err != nil {
+			h.p.Log.Error("save setting failed", "key", "mfa_required", "err", err)
+		}
+	}
+	setFlash(w, "success", "Settings saved.")
+	http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
+}
+
+// --- Email Settings ---
+
+func (h *adminHandler) ShowEmail(w http.ResponseWriter, r *http.Request) {
+	pd := pageDataWithNav(r, "Email", h.p.CSRFSecret, h.p.Plugins)
+
+	var smtpData smtpSettingsData
+	var overrideHTML, overrideText string
+	if h.p.Settings != nil {
+		smtpData.Host, _ = h.p.Settings.Get(settings.KeySMTPHost)
+		smtpData.Port = strconv.Itoa(h.p.Settings.GetInt(settings.KeySMTPPort, 587))
+		smtpData.User, _ = h.p.Settings.Get(settings.KeySMTPUser)
+		smtpData.Pass, _ = h.p.Settings.Get(settings.KeySMTPPass)
+		smtpData.From, _ = h.p.Settings.Get(settings.KeySMTPFrom)
+		overrideHTML, _ = h.p.Settings.Get(settings.KeyEmailOverrideHTML)
+		overrideText, _ = h.p.Settings.Get(settings.KeyEmailOverrideText)
+	}
+
+	flash := getFlash(w, r)
+	var flashMsg, flashKind string
+	if flash != nil {
+		flashMsg, flashKind = flash.Message, flash.Kind
+	}
+	adminEmailPage(pd, smtpData, overrideHTML, overrideText, email.DefaultHTML(), email.DefaultText(), flashMsg, flashKind).Render(r.Context(), w)
+}
+
+func (h *adminHandler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
+	if h.p.Settings != nil {
 		// Save SMTP settings.
 		if err := h.p.Settings.Set(settings.KeySMTPHost, r.FormValue("smtp_host")); err != nil {
 			h.p.Log.Error("save setting failed", "key", "smtp_host", "err", err)
@@ -525,17 +557,59 @@ func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			h.p.Log.Error("save setting failed", "key", "smtp_from", "err", err)
 		}
 
-		// Save MFA enforcement setting.
-		mfaRequired := r.FormValue("mfa_required")
-		if mfaRequired != "all" && mfaRequired != "admins" {
-			mfaRequired = ""
+		// Save template overrides — validate by parsing first.
+		htmlOverride := r.FormValue("override_html")
+		textOverride := r.FormValue("override_text")
+
+		if htmlOverride != "" {
+			if _, err := email.ValidateHTMLOverride(htmlOverride); err != nil {
+				setFlash(w, "error", "Invalid HTML template: "+err.Error())
+				http.Redirect(w, r, "/admin/email", http.StatusSeeOther)
+				return
+			}
 		}
-		if err := h.p.Settings.Set(settings.KeyMFARequired, mfaRequired); err != nil {
-			h.p.Log.Error("save setting failed", "key", "mfa_required", "err", err)
+		if textOverride != "" {
+			if _, err := email.ValidateTextOverride(textOverride); err != nil {
+				setFlash(w, "error", "Invalid text template: "+err.Error())
+				http.Redirect(w, r, "/admin/email", http.StatusSeeOther)
+				return
+			}
 		}
+
+		h.p.Settings.Set(settings.KeyEmailOverrideHTML, htmlOverride)
+		h.p.Settings.Set(settings.KeyEmailOverrideText, textOverride)
 	}
-	setFlash(w, "success", "Settings saved.")
-	http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
+	setFlash(w, "success", "Email settings saved.")
+	http.Redirect(w, r, "/admin/email", http.StatusSeeOther)
+}
+
+func (h *adminHandler) PreviewEmail(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	data := email.SampleData(name, h.p.Config.BaseURL)
+	format := r.URL.Query().Get("format")
+
+	// POST: use overrides from the request body (live preview before saving).
+	// GET: use saved overrides from the DB.
+	var htmlBody, textBody string
+	var err error
+	if r.Method == "POST" {
+		htmlBody, textBody, err = email.RenderWithOverrides(name, data, r.FormValue("override_html"), r.FormValue("override_text"))
+	} else {
+		htmlBody, textBody, err = email.Render(h.p.Settings, name, data)
+	}
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:sans-serif;padding:1rem;color:#c00;}</style></head><body><strong>Template error:</strong> %s</body></html>`, err.Error())
+		return
+	}
+
+	if format == "text" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:monospace;padding:1rem;white-space:pre-wrap;}</style></head><body>%s</body></html>`, textBody)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(htmlBody))
 }
 
 func (h *adminHandler) TestSMTP(w http.ResponseWriter, r *http.Request) {

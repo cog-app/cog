@@ -147,7 +147,7 @@ templ adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashK
 }
 
 // --- Settings ---
-templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, smtp smtpSettingsData, env envConfigData, status statusData, flash string, flashKind string, mfaRequired string) {
+templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, env envConfigData, status statusData, flash string, flashKind string, mfaRequired string) {
 	@ui.AdminSidebarPage(pd, "settings") {
 		<h1 style="margin-bottom:1rem">System Settings</h1>
 		if flash != "" {
@@ -195,27 +195,6 @@ templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHou
 					<p class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">How long group invitation links remain valid. Default: 72 hours.</p>
 				</div>
 			}
-			@ui.Card("Email (SMTP)") {
-				<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">Configure SMTP for sending invitation and notification emails.</p>
-				@ui.FormField("SMTP Host", "smtp_host", "text", smtp.Host, "smtp.example.com")
-				<div class="form-group">
-					<label for="smtp_port">SMTP Port</label>
-					<input class="form-control" type="number" id="smtp_port" name="smtp_port" value={ smtp.Port } min="1" max="65535" style="max-width:200px"/>
-				</div>
-				@ui.FormField("SMTP Username", "smtp_user", "text", smtp.User, "")
-				@ui.FormField("SMTP Password", "smtp_pass", "password", smtp.Pass, "")
-				@ui.FormField("From Address", "smtp_from", "email", smtp.From, "noreply@example.com")
-				<button
-					class="btn btn-outline btn-sm"
-					type="button"
-					hx-post="/admin/settings/test-smtp"
-					hx-target="#smtp-test-result"
-					hx-swap="innerHTML"
-					hx-headers={ "{\"X-CSRF-Token\":\"" + pd.CSRFToken + "\"}" }
-					style="margin-top:0.75rem"
-				>Test Connection</button>
-				<div id="smtp-test-result"></div>
-			}
 			@ui.Card("Security") {
 				<div class="form-group">
 					<label class="form-label" for="mfa_required">Require Multi-Factor Authentication</label>
@@ -241,6 +220,137 @@ templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHou
 			}
 			<button class="btn btn-primary" type="submit">Save Settings</button>
 		</form>
+	}
+}
+
+// --- Email ---
+
+templ adminEmailPage(pd ui.PageData, smtp smtpSettingsData, overrideHTML string, overrideText string, defaultHTML string, defaultText string, flash string, flashKind string) {
+	@ui.AdminSidebarPage(pd, "email") {
+		<h1 style="margin-bottom:1rem">Email Settings</h1>
+		if flash != "" {
+			@ui.Alert(flashKind, flash)
+		}
+		<form method="post" action="/admin/email">
+			<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+			@ui.Card("SMTP Configuration") {
+				<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">Configure SMTP for sending invitation and notification emails.</p>
+				@ui.FormField("SMTP Host", "smtp_host", "text", smtp.Host, "smtp.example.com")
+				<div class="form-group">
+					<label for="smtp_port">SMTP Port</label>
+					<input class="form-control" type="number" id="smtp_port" name="smtp_port" value={ smtp.Port } min="1" max="65535" style="max-width:200px"/>
+				</div>
+				@ui.FormField("SMTP Username", "smtp_user", "text", smtp.User, "")
+				@ui.FormField("SMTP Password", "smtp_pass", "password", smtp.Pass, "")
+				@ui.FormField("From Address", "smtp_from", "email", smtp.From, "noreply@example.com")
+				<button
+					class="btn btn-outline btn-sm"
+					type="button"
+					hx-post="/admin/email/test-smtp"
+					hx-target="#smtp-test-result"
+					hx-swap="innerHTML"
+					hx-headers={ "{\"X-CSRF-Token\":\"" + pd.CSRFToken + "\"}" }
+					style="margin-top:0.75rem"
+				>Test Connection</button>
+				<div id="smtp-test-result"></div>
+			}
+			@ui.Card("HTML Template Override") {
+				<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">
+					Override the default HTML email templates using Go <code>html/template</code> syntax. Define blocks to replace: <code>layout</code>, <code>group_invite</code>, <code>password_reset</code>, <code>otp</code>. The layout uses <code>{"{{content}}"}</code> to render the email body.
+				</p>
+				<details style="margin-bottom:0.75rem">
+					<summary class="text-muted" style="cursor:pointer;font-size:0.85rem">View default HTML template</summary>
+					<pre style="background:var(--color-bg-alt);padding:0.75rem;border-radius:4px;font-size:0.8rem;margin-top:0.5rem;max-height:300px;overflow:auto">{ defaultHTML }</pre>
+				</details>
+				<textarea class="form-control" id="override-html" name="override_html" rows="10" placeholder="Leave empty to use defaults" style="font-family:monospace;font-size:0.85rem" oninput="schedulePreview()">{ overrideHTML }</textarea>
+				<details style="margin-top:0.75rem">
+					<summary style="cursor:pointer;font-size:0.85rem;font-weight:600">Preview</summary>
+					<div style="margin-top:0.5rem">
+						<div class="flex gap-1" style="margin-bottom:0.5rem">
+							<button class="btn btn-outline btn-sm" type="button" onclick="showHTMLPreview('group_invite')">Group Invite</button>
+							<button class="btn btn-outline btn-sm" type="button" onclick="showHTMLPreview('password_reset')">Password Reset</button>
+							<button class="btn btn-outline btn-sm" type="button" onclick="showHTMLPreview('otp')">OTP Code</button>
+						</div>
+						<iframe id="preview-html" style="width:100%;height:400px;border:1px solid var(--color-border);border-radius:4px;background:#fff"></iframe>
+					</div>
+				</details>
+			}
+			@ui.Card("Text Template Override") {
+				<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">
+					Override the default plain-text email templates using Go <code>text/template</code> syntax. Same block names as HTML.
+				</p>
+				<details style="margin-bottom:0.75rem">
+					<summary class="text-muted" style="cursor:pointer;font-size:0.85rem">View default text template</summary>
+					<pre style="background:var(--color-bg-alt);padding:0.75rem;border-radius:4px;font-size:0.8rem;margin-top:0.5rem;max-height:300px;overflow:auto">{ defaultText }</pre>
+				</details>
+				<textarea class="form-control" id="override-text" name="override_text" rows="8" placeholder="Leave empty to use defaults" style="font-family:monospace;font-size:0.85rem" oninput="schedulePreview()">{ overrideText }</textarea>
+				<details style="margin-top:0.75rem">
+					<summary style="cursor:pointer;font-size:0.85rem;font-weight:600">Preview</summary>
+					<div style="margin-top:0.5rem">
+						<div class="flex gap-1" style="margin-bottom:0.5rem">
+							<button class="btn btn-outline btn-sm" type="button" onclick="showTextPreview('group_invite')">Group Invite</button>
+							<button class="btn btn-outline btn-sm" type="button" onclick="showTextPreview('password_reset')">Password Reset</button>
+							<button class="btn btn-outline btn-sm" type="button" onclick="showTextPreview('otp')">OTP Code</button>
+						</div>
+						<iframe id="preview-text" style="width:100%;height:300px;border:1px solid var(--color-border);border-radius:4px;background:#fff"></iframe>
+					</div>
+				</details>
+			}
+			<button class="btn btn-primary" type="submit">Save Email Settings</button>
+		</form>
+		<script>
+		var htmlPreviewName = 'password_reset';
+		var textPreviewName = 'password_reset';
+		var previewTimer = null;
+		var csrfToken = document.querySelector('input[name=csrf_token]').value;
+
+		function schedulePreview() {
+			clearTimeout(previewTimer);
+			previewTimer = setTimeout(refreshAllPreviews, 400);
+		}
+
+		function refreshAllPreviews() {
+			refreshPreview('preview-html', htmlPreviewName, 'html');
+			refreshPreview('preview-text', textPreviewName, 'text');
+		}
+
+		function showHTMLPreview(name) {
+			htmlPreviewName = name;
+			refreshPreview('preview-html', name, 'html');
+		}
+
+		function showTextPreview(name) {
+			textPreviewName = name;
+			refreshPreview('preview-text', name, 'text');
+		}
+
+		function refreshPreview(frameId, name, format) {
+			var frame = document.getElementById(frameId);
+			if (!frame || !frame.offsetParent) return; // skip if details is closed
+			var url = '/admin/email/preview/' + name;
+			if (format === 'text') url += '?format=text';
+			var body = new URLSearchParams();
+			body.set('csrf_token', csrfToken);
+			body.set('override_html', document.getElementById('override-html').value);
+			body.set('override_text', document.getElementById('override-text').value);
+			fetch(url, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body.toString()})
+				.then(function(r) { return r.text(); })
+				.then(function(html) { frame.srcdoc = html; });
+		}
+
+		// Load initial preview when a details element is opened.
+		document.querySelectorAll('details').forEach(function(d) {
+			d.addEventListener('toggle', function() {
+				if (d.open) {
+					var frame = d.querySelector('iframe');
+					if (frame && !frame.srcdoc) {
+						if (frame.id === 'preview-html') refreshPreview('preview-html', htmlPreviewName, 'html');
+						if (frame.id === 'preview-text') refreshPreview('preview-text', textPreviewName, 'text');
+					}
+				}
+			});
+		});
+		</script>
 	}
 }
 

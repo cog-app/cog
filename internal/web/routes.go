@@ -166,7 +166,12 @@ func New(p *services.Providers) http.Handler {
 
 	mux.Handle("GET /admin/settings", adminAuth(http.HandlerFunc(adminH.ShowSettings)))
 	mux.Handle("POST /admin/settings", adminMut(http.HandlerFunc(adminH.UpdateSettings)))
-	mux.Handle("POST /admin/settings/test-smtp", adminMut(http.HandlerFunc(adminH.TestSMTP)))
+
+	mux.Handle("GET /admin/email", adminAuth(http.HandlerFunc(adminH.ShowEmail)))
+	mux.Handle("POST /admin/email", adminMut(http.HandlerFunc(adminH.UpdateEmail)))
+	mux.Handle("POST /admin/email/test-smtp", adminMut(http.HandlerFunc(adminH.TestSMTP)))
+	mux.Handle("GET /admin/email/preview/{name}", adminAuth(http.HandlerFunc(adminH.PreviewEmail)))
+	mux.Handle("POST /admin/email/preview/{name}", adminMut(http.HandlerFunc(adminH.PreviewEmail)))
 
 	mux.Handle("GET /admin/plugins", adminAuth(http.HandlerFunc(adminH.ListPlugins)))
 	mux.Handle("POST /admin/plugins/{id}/toggle", adminMut(http.HandlerFunc(adminH.TogglePlugin)))

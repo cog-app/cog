@@ -6,6 +6,7 @@
 package main
 
 import (
+	"database/sql"
 	"flag"
 	"fmt"
 	"io"
@@ -16,6 +17,10 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+
+	"git.duckfam.us/jj-software/cog/internal/maildev"
+	"git.duckfam.us/jj-software/cog/internal/settings"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const (
@@ -119,6 +124,9 @@ func runOnce(bin, dbPath, devDir string, logRequests, stale bool) {
 
 	seedUser(bin, dbPath, devDir)
 
+	mail := startMaildev(dbPath)
+	defer mail.Close()
+
 	teeOut, teeErr, cleanup := openLog(devDir)
 	defer cleanup()
 
@@ -151,6 +159,9 @@ func runWatch(bin, dbPath, devDir string, logRequests, stale bool) {
 	}
 
 	seedUser(bin, dbPath, devDir)
+
+	mail := startMaildev(dbPath)
+	defer mail.Close()
 
 	teeOut, teeErr, cleanup := openLog(devDir)
 	defer cleanup()
@@ -232,6 +243,44 @@ func runWatch(bin, dbPath, devDir string, logRequests, stale bool) {
 	}
 }
 
+const (
+	mailSMTPAddr = ":2525"
+	mailHTTPAddr = ":8025"
+)
+
+// startMaildev launches the dev email server and pre-configures SMTP settings
+// in the Cog database so EmailSender() returns a working sender.
+func startMaildev(dbPath string) *maildev.Server {
+	srv := maildev.NewServer(mailSMTPAddr, mailHTTPAddr)
+	if err := srv.Start(); err != nil {
+		log.Fatalf("maildev: %v", err)
+	}
+	log.Printf("Mail UI: http://localhost%s", mailHTTPAddr)
+	log.Printf("Mail SMTP: localhost%s", mailSMTPAddr)
+
+	// Pre-configure SMTP settings in the database.
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		log.Fatalf("maildev: open db: %v", err)
+	}
+	store := settings.NewStore(db)
+	store.Set(settings.KeySMTPHost, "localhost")
+	store.SetInt(settings.KeySMTPPort, 2525)
+	store.Set(settings.KeySMTPFrom, "cog@localhost")
+	// Clear auth — maildev doesn't require it.
+	store.Set(settings.KeySMTPUser, "")
+	store.Set(settings.KeySMTPPass, "")
+
+	// Set admin email so email features (password reset, OTP) work out of the box.
+	if _, err := db.Exec(`UPDATE users SET email = ? WHERE username = ?`, "admin@localhost", testUser); err != nil {
+		log.Printf("maildev: set admin email: %v", err)
+	}
+
+	db.Close()
+
+	return srv
+}
+
 func generate() {
 	log.Println("Generate code...")
 	cmd := exec.Command("go", "generate", "./...")
@@ -283,8 +332,7 @@ func openLog(devDir string) (io.Writer, io.Writer, func()) {
 }
 
 func startServer(bin, dbPath, devDir, addr string, logRequests bool, teeOut, teeErr io.Writer) *exec.Cmd {
-	hostname, _ := os.Hostname()
-	baseURL := fmt.Sprintf("http://%s%s", hostname, addr)
+	baseURL := fmt.Sprintf("http://localhost%s", addr)
 	log.Printf("Starting cog on %s (base-url %s)", addr, baseURL)
 
 	srv := exec.Command(bin, "serve")

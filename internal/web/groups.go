@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/email"
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/settings"
@@ -310,11 +311,14 @@ func (h *groupHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 	// Send email if configured and email provided.
 	if sender := h.p.EmailSender(); sender != nil && inviteEmail != "" {
 		g, _ := h.p.Groups.Get(groupID)
-		inviterName := u.DisplayName
-		if inviterName == "" {
-			inviterName = u.Username
-		}
-		if err := sender.SendGroupInvite(inviteEmail, g.Name, inviterName, inviteURL); err != nil {
+		if err := sender.SendGroupInvite(h.p.Settings, email.EmailData{
+			BaseURL:      h.p.Config.BaseURL,
+			InstanceName: "Cog",
+			User:         email.UserInfo{Email: inviteEmail},
+			GroupName:    g.Name,
+			Inviter:      userInfo(u, h.p.Config.BaseURL),
+			InviteURL:    inviteURL,
+		}); err != nil {
 			setFlash(w, "error", "Invite created but email failed: "+err.Error())
 			http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
 			return

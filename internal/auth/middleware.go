@@ -137,8 +137,10 @@ func RequireAuth(next http.Handler) http.Handler {
 				w.Header().Set("HX-Redirect", loginURL(r))
 				w.WriteHeader(http.StatusUnauthorized)
 			case isBrowserNavigation(r):
+				// Browser page navigation — redirect to login form.
 				http.Redirect(w, r, loginURL(r), http.StatusSeeOther)
 			default:
+				// API/programmatic client — 401 with Basic challenge.
 				w.Header().Set("WWW-Authenticate", `Basic realm="Cog"`)
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			}
@@ -165,10 +167,13 @@ func loginURL(r *http.Request) string {
 }
 
 // isBrowserNavigation returns true if the request looks like a browser page
-// navigation (as opposed to an API call from a programmatic client).
+// navigation. Requests with an Authorization header are always considered
+// programmatic, even if they accept HTML.
 func isBrowserNavigation(r *http.Request) bool {
-	accept := r.Header.Get("Accept")
-	return strings.Contains(accept, "text/html")
+	if r.Header.Get("Authorization") != "" {
+		return false
+	}
+	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
 // RequireAdmin wraps a handler and returns 403 if the user is not an admin.
