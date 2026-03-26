@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"iter"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -371,6 +372,17 @@ func (r *Registry) FireHook(ctx context.Context, hookName string, data any) {
 func (r *Registry) Plugin(id string) (Plugin, bool) {
 	p, ok := r.plugins[id]
 	return p, ok
+}
+
+// Plugins returns all registered plugins.
+func (r *Registry) Plugins() iter.Seq[Plugin] {
+	return func(yield func(Plugin) bool) {
+		for _, id := range r.order {
+			if !yield(r.plugins[id]) {
+				return
+			}
+		}
+	}
 }
 
 // SetServices sets optional services available to plugins via PluginContext.
@@ -749,6 +761,10 @@ func (pr *pluginRegistrar) RegisterRoute(pattern string, handler http.Handler) {
 
 func (pr *pluginRegistrar) PluginByID(id string) (Plugin, bool) {
 	return pr.registry.Plugin(id)
+}
+
+func (pr *pluginRegistrar) Plugins() iter.Seq[Plugin] {
+	return pr.registry.Plugins()
 }
 
 func (pr *pluginRegistrar) RegisterResource(def ResourceDef) {

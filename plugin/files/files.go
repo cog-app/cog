@@ -22,6 +22,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/vfs"
 )
 
@@ -48,8 +49,10 @@ type FileMeta struct {
 // and cannot be loaded via gRPC.
 type Plugin struct {
 	plugin.Protected
-	ctx plugin.PluginContext
-	log *slog.Logger
+	ctx           plugin.PluginContext
+	log           *slog.Logger
+	priv          plugin.PrivilegedContext
+	iconProviders []cogplugin.FolderIconProvider
 }
 
 // New creates a new files plugin instance.
@@ -105,6 +108,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	})
 
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
+		p.priv = priv
 		p.registerRoutes(priv)
 	}
 
@@ -135,7 +139,28 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) e
 	return recentFilesWidget(files).Render(ctx, w)
 }
 
-func (p *Plugin) Start(ctx context.Context) error { return nil }
+func (p *Plugin) Start(ctx context.Context) error {
+	// Collect folder icon providers from all registered plugins.
+	// Done in Start() because all plugins have registered by this point.
+	if p.priv != nil {
+		for pl := range p.priv.Plugins() {
+			if fp, ok := pl.(cogplugin.FolderIconProvider); ok {
+				p.iconProviders = append(p.iconProviders, fp)
+			}
+		}
+	}
+	return nil
+}
+
+// folderIcon returns a custom SVG icon for a folder, or empty string for default.
+func (p *Plugin) folderIcon(username, folderPath string) string {
+	for _, provider := range p.iconProviders {
+		if icon, ok := provider.FolderIcon(username, folderPath); ok {
+			return icon
+		}
+	}
+	return ""
+}
 func (p *Plugin) Stop() error                     { return nil }
 
 // userFS returns the mount-aware VFS for the given user.

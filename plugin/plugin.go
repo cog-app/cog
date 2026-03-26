@@ -184,6 +184,15 @@ type Doctor interface {
 	DoctorChecks(ctx context.Context) []CheckResult
 }
 
+// FolderIconProvider is an optional interface that plugins implement to provide
+// custom folder icons in the file browser. The files plugin discovers providers
+// among registered plugins and queries them at render time per user.
+type FolderIconProvider interface {
+	// FolderIcon returns inline SVG markup for a folder, or ok=false to use the default.
+	// folderPath is relative to the user's root (e.g., "Photos", "Notes").
+	FolderIcon(username, folderPath string) (icon string, ok bool)
+}
+
 // SearchSourceDef describes how a plugin's data should be indexed for search.
 type SearchSourceDef struct {
 	// PrimaryTable is the SQLite table name watched via update hook.

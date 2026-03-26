@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"io/fs"
+	"iter"
 	"net/http"
 
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
@@ -117,4 +118,6 @@ type PrivilegedContext interface {
 	PluginByID(id string) (cogplugin.Plugin, bool)
 	// RegisterAdminCommand declares an admin-only CLI command for the plugin.
 	RegisterAdminCommand(def cogplugin.CommandDef)
+	// Plugins returns all registered plugins for cross-plugin discovery.
+	Plugins() iter.Seq[cogplugin.Plugin]
 }

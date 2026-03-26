@@ -101,8 +101,9 @@ func (h *Pages) ServeFavorites(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	iconMap := h.buildIconMap(u.Username, files)
 	pd := h.pageData(r, "Favorites")
-	favoritesPage(pd, files).Render(r.Context(), w)
+	favoritesPage(pd, files, iconMap).Render(r.Context(), w)
 }
 
 // ServeGet handles GET requests:
@@ -133,8 +134,9 @@ func (h *Pages) ServeGet(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		iconMap := h.buildIconMap(u.Username, items)
 		pd := h.pageData(r, "Files")
-		filesPage(pd, fp, items).Render(r.Context(), w)
+		filesPage(pd, fp, items, iconMap).Render(r.Context(), w)
 		return
 	}
 
@@ -375,6 +377,19 @@ func buildNav(currentPath string, items []plugin.NavItem) []ui.NavItem {
 		}
 	}
 	return nav
+}
+
+// buildIconMap resolves custom folder icons for directory entries.
+func (h *Pages) buildIconMap(username string, items []FileMeta) map[string]string {
+	m := map[string]string{}
+	for _, f := range items {
+		if f.IsDir {
+			if icon := h.plugin.folderIcon(username, strings.TrimPrefix(f.Path, "/")); icon != "" {
+				m[f.Path] = icon
+			}
+		}
+	}
+	return m
 }
 
 // isImageFile returns true if the MIME type is a previewable image.

@@ -706,3 +706,28 @@ func readRSS(pid int) uint64 {
 	pages, _ := strconv.ParseUint(fields[1], 10, 64)
 	return pages * uint64(os.Getpagesize())
 }
+
+// FolderIcon implements plugin.FolderIconProvider. It returns a photo-folder
+// icon for directories that match the user's configured scan folder patterns.
+func (p *Plugin) FolderIcon(username, folderPath string) (string, bool) {
+	db, err := p.DB(username)
+	if err != nil {
+		return "", false
+	}
+	patterns := ParseScanFolders(db)
+	path := folderPath
+	if !strings.HasSuffix(path, "/") {
+		path += "/"
+	}
+	for _, pat := range patterns {
+		if !strings.HasSuffix(pat, "/") {
+			continue // only match folder patterns
+		}
+		if path == pat || strings.HasPrefix(path, pat) {
+			return photoFolderIcon, true
+		}
+	}
+	return "", false
+}
+
+const photoFolderIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><circle cx="12" cy="14" r="3"></circle></svg>`
