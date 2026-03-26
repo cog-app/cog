@@ -28,9 +28,9 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
      showgrid="false"
-     inkscape:zoom="55.666667"
-     inkscape:cx="9"
-     inkscape:cy="9"
+     inkscape:zoom="49.408945"
+     inkscape:cx="8.1260589"
+     inkscape:cy="9.7755578"
      inkscape:window-width="1920"
      inkscape:window-height="1255"
      inkscape:window-x="0"
@@ -40,24 +40,15 @@
   <path
      d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
      id="path1" />
-  <rect
-     x="6"
-     y="9.1796408"
-     width="12"
-     height="9"
-     rx="1"
-     ry="1"
-     stroke-width="1.5"
-     id="rect1" />
   <circle
-     cx="9"
-     cy="12.179641"
-     r="1"
-     stroke-width="1.5"
-     id="circle1" />
+     cx="7.7755213"
+     cy="11.027363"
+     stroke-width="2.42387"
+     id="circle1"
+     r="1.615911" />
   <polyline
      points="18 18 14.5 14 8 20"
      stroke-width="1.5"
      id="polyline1"
-     transform="translate(0,-1.8203593)" />
+     transform="matrix(1.26868,0,0,1.26868,-1.2776152,-5.0729759)" />
 </svg>
