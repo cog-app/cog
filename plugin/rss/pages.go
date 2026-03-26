@@ -2,6 +2,7 @@ package rss
 
 import (
 	"database/sql"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/ui"
 )
 
 // Pages holds the web UI handlers for the RSS plugin.
@@ -345,13 +347,7 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	feed, _ := GetFeed(db, item.FeedID)
-	feedTitle := ""
-	if feed != nil {
-		feedTitle = feed.Title
-	}
-	iwf := ItemWithFeed{Item: *item, FeedTitle: feedTitle}
-	_ = rssItemRow(iwf, plugin.CSRFToken(r)).Render(r.Context(), w)
+	ui.Star(item.IsStarred, fmt.Sprintf("/apps/rss/items/%d/star", item.ID)).Render(r.Context(), w)
 }
 
 // MarkRead handles POST to mark an item as read (non-toggle).

@@ -556,23 +556,8 @@ func parentDir(p string) string {
 	return parent
 }
 
-func favoriteStyle(isFav bool) string {
-	if isFav {
-		return "color:gold;border:none;background:none;cursor:pointer;font-size:1.2rem;padding:0 0.25rem"
-	}
-	return "color:var(--color-text-muted,#999);border:none;background:none;cursor:pointer;font-size:1.2rem;padding:0 0.25rem"
-}
-
-func favoriteTitle(isFav bool) string {
-	if isFav {
-		return "Remove from favorites"
-	}
-	return "Add to favorites"
-}
-
-func favJSON(path string, fav bool) string {
-	b, _ := json.Marshal(map[string]any{"path": path, "favorite": fav})
-	return string(b)
+func starClass(active bool) string {
+	return ui.StarClass(active)
 }
 
 func safeDomID(p string) string {

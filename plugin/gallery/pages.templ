@@ -11,12 +11,18 @@ import (
 )
 
 // --- Gallery Sidebar ---
-templ gallerySidebar(activePath string, total int) {
+templ gallerySidebar(activePath string, total int, starredCount int) {
 	<nav class="sidebar" id="gallery-sidebar">
 		<a href="/apps/gallery/" class={ sidebarClass(activePath, "/apps/gallery/") }>
 			Timeline
 			if total > 0 {
 				<span class="badge">{ strconv.Itoa(total) }</span>
+			}
+		</a>
+		<a href="/apps/gallery/starred" class={ sidebarClass(activePath, "/apps/gallery/starred") }>
+			Starred
+			if starredCount > 0 {
+				<span class="badge">{ strconv.Itoa(starredCount) }</span>
 			}
 		</a>
 		<a href="/apps/gallery/albums" class={ sidebarClass(activePath, "/apps/gallery/albums") }>
@@ -68,6 +74,7 @@ func sidebarClass(activePath, itemPath string) string {
 	}
 	return "sidebar-item"
 }
+
 
 // --- Photo Grid ---
 templ photoGrid(media []Media) {
@@ -141,7 +148,7 @@ func formatDuration(ms *int64) string {
 // --- Timeline Page ---
 templ timelinePage(activePath string, days []TimelineDay, media []Media, total int) {
 	<div class="sidebar-layout">
-		@gallerySidebar(activePath, total)
+		@gallerySidebar(activePath, total, 0)
 		<div class="sidebar-content">
 			<h1>Timeline</h1>
 			if len(media) == 0 {
@@ -158,7 +165,7 @@ templ timelinePage(activePath string, days []TimelineDay, media []Media, total i
 // --- Albums Page ---
 templ albumsPage(activePath string, albums []Album) {
 	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0)
+		@gallerySidebar(activePath, 0, 0)
 		<div class="sidebar-content">
 			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
 				<h1 style="margin:0">Albums</h1>
@@ -195,7 +202,7 @@ templ albumsPage(activePath string, albums []Album) {
 // --- Album View Page ---
 templ albumViewPage(activePath string, album *Album, media []Media, csrfToken string) {
 	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0)
+		@gallerySidebar(activePath, 0, 0)
 		<div class="sidebar-content">
 			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
 				<h1 style="margin:0">{ album.Name }</h1>
@@ -232,10 +239,14 @@ templ albumViewPage(activePath string, album *Album, media []Media, csrfToken st
 }
 
 // --- Photo View Page ---
-templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face, csrfToken string) {
+templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face, csrfToken string, isFavorite bool) {
 	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0)
+		@gallerySidebar(activePath, 0, 0)
 		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2">
+				<h1 style="margin:0">{ m.FileName() }</h1>
+				@ui.Star(isFavorite, fmt.Sprintf("/apps/gallery/media/%d/star", m.ID))
+			</div>
 			<div style="display:grid;grid-template-columns:1fr 300px;gap:1rem">
 				<div>
 					if m.IsVideo() {
@@ -469,7 +480,7 @@ templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face, csrfT
 // --- People Page ---
 templ peoplePage(activePath string, people []Person) {
 	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0)
+		@gallerySidebar(activePath, 0, 0)
 		<div class="sidebar-content">
 			<h1>People</h1>
 			if len(people) == 0 {
@@ -509,7 +520,7 @@ templ peoplePage(activePath string, people []Person) {
 // --- Person View Page ---
 templ personViewPage(activePath string, person *Person, faces []FaceWithMedia, csrfToken string) {
 	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0)
+		@gallerySidebar(activePath, 0, 0)
 		<div class="sidebar-content">
 			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
 				<h1 style="margin:0">{ person.DisplayName() }</h1>
@@ -658,7 +669,7 @@ templ personFaceGrid(personID int64, faces []FaceWithMedia, csrfToken string) {
 // --- Tags Page ---
 templ tagsPage(activePath string, tags []Tag) {
 	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0)
+		@gallerySidebar(activePath, 0, 0)
 		<div class="sidebar-content">
 			<h1>Tags</h1>
 			if len(tags) == 0 {
@@ -682,7 +693,7 @@ templ tagsPage(activePath string, tags []Tag) {
 // --- Tag View Page ---
 templ tagViewPage(activePath string, name string, media []Media) {
 	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0)
+		@gallerySidebar(activePath, 0, 0)
 		<div class="sidebar-content">
 			<h1>Tag: { name }</h1>
 			if len(media) == 0 {
@@ -699,7 +710,7 @@ templ tagViewPage(activePath string, name string, media []Media) {
 // --- Videos Page ---
 templ videosPage(media []Media) {
 	<div class="sidebar-layout">
-		@gallerySidebar("/apps/gallery/videos", 0)
+		@gallerySidebar("/apps/gallery/videos", 0, 0)
 		<div class="sidebar-content">
 			<h1>Videos</h1>
 			if len(media) == 0 {
@@ -713,10 +724,27 @@ templ videosPage(media []Media) {
 	</div>
 }
 
+// --- Starred Page ---
+templ starredPage(media []Media, starredCount int) {
+	<div class="sidebar-layout">
+		@gallerySidebar("/apps/gallery/starred", 0, starredCount)
+		<div class="sidebar-content">
+			<h1>Starred</h1>
+			if len(media) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No starred photos. Star a photo to see it here.</p>
+				}
+			} else {
+				@photoGrid(media)
+			}
+		</div>
+	</div>
+}
+
 // --- Duplicates Page ---
 templ duplicatesPage(activePath string, groups []DuplicateGroup) {
 	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0)
+		@gallerySidebar(activePath, 0, 0)
 		<div class="sidebar-content">
 			<h1>
 				Duplicates
@@ -758,7 +786,7 @@ templ duplicatesPage(activePath string, groups []DuplicateGroup) {
 // --- Duplicate Group View Page ---
 templ duplicateGroupViewPage(activePath string, groupID int64, members []DuplicateMember, csrfToken string) {
 	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0)
+		@gallerySidebar(activePath, 0, 0)
 		<div class="sidebar-content">
 			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
 				<h1 style="margin:0">
@@ -860,7 +888,7 @@ templ duplicateGroupViewPage(activePath string, groupID int64, members []Duplica
 // --- Settings Page (per-user) ---
 templ settingsPage(db *sql.DB, total int, csrfToken string) {
 	<div class="sidebar-layout">
-		@gallerySidebar("/apps/gallery/settings", 0)
+		@gallerySidebar("/apps/gallery/settings", 0, 0)
 		<div class="sidebar-content">
 			<h1>Gallery Settings</h1>
 			@ui.Card("Status") {
@@ -1192,7 +1220,7 @@ templ scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) 
 // --- Rename Preview Page ---
 templ renamePreviewPage(pattern string, previews []RenamePreview, csrfToken string) {
 	<div class="sidebar-layout">
-		@gallerySidebar("/apps/gallery/settings", 0)
+		@gallerySidebar("/apps/gallery/settings", 0, 0)
 		<div class="sidebar-content">
 			<h1>Rename Preview</h1>
 			<p>Pattern: <code>{ pattern }</code></p>

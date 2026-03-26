@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/vfs"
 )
 
@@ -29,8 +30,9 @@ const PluginID = "notes"
 
 // Plugin is the notes plugin.
 type Plugin struct {
-	ctx plugin.PluginContext
-	log *slog.Logger
+	ctx   plugin.PluginContext
+	log   *slog.Logger
+	files *files.Plugin
 }
 
 // New creates a new Notes plugin instance.
@@ -80,10 +82,13 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("DELETE", "notes/{id}", http.HandlerFunc(pages.DeleteNote))
 	ctx.RegisterAction("POST", "notes/{id}/star", http.HandlerFunc(pages.ToggleStar))
 
-	// NextCloud Notes API compatibility
+	// NextCloud Notes API compatibility + cross-plugin access
 	notesAPI := NewNotesAPI(p)
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		priv.RegisterRoute("/index.php/apps/notes/api/", notesAPI)
+		if fp, found := priv.PluginByID("files"); found {
+			p.files = fp.(*files.Plugin)
+		}
 	}
 
 	return nil

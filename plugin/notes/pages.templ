@@ -105,7 +105,10 @@ templ noteViewPage(sb sidebarData, note *Note, renderedHTML string, csrfToken st
 		@notesSidebar(sb)
 		<div class="sidebar-content">
 			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-				<h1 style="margin:0">{ note.Title() }</h1>
+				<div class="flex items-center gap-1">
+					<h1 style="margin:0">{ note.Title() }</h1>
+					@ui.Star(note.Favorite, fmt.Sprintf("/apps/notes/notes/%d/star", note.ID))
+				</div>
 				<div class="flex gap-1">
 					<a href={ templ.SafeURL(fmt.Sprintf("/apps/notes/note/%d/edit", note.ID)) } class="btn btn-outline btn-sm">Edit</a>
 					<button
@@ -271,19 +274,7 @@ templ noteRow(note *Note, csrfToken string) {
 			</div>
 		</div>
 		<div class="flex gap-1" style="flex-shrink:0">
-			<button
-				class={ starBtnClass(note.Favorite) }
-				hx-post={ fmt.Sprintf("/apps/notes/notes/%d/star", note.ID) }
-				hx-target={ fmt.Sprintf("#note-%d", note.ID) }
-				hx-swap="outerHTML"
-				title="Toggle star"
-			>
-				if note.Favorite {
-					&#9733;
-				} else {
-					&#9734;
-				}
-			</button>
+			@ui.Star(note.Favorite, fmt.Sprintf("/apps/notes/notes/%d/star", note.ID))
 			<button
 				class="btn btn-danger btn-sm"
 				hx-delete={ fmt.Sprintf("/apps/notes/notes/%d", note.ID) }
@@ -302,12 +293,6 @@ func sidebarClass(activePath, itemPath string) string {
 	return "sidebar-item"
 }
 
-func starBtnClass(isFavorite bool) string {
-	if isFavorite {
-		return "btn btn-sm"
-	}
-	return "btn btn-outline btn-sm"
-}
 
 func formatTime(unix int64) string {
 	if unix == 0 {

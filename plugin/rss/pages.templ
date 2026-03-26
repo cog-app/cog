@@ -277,19 +277,7 @@ templ rssItemRow(item ItemWithFeed, csrfToken string) {
 						title="Open article"
 					>&#8599;</a>
 				}
-				<button
-					class={ starBtnClass(item.IsStarred) }
-					hx-post={ fmt.Sprintf("/apps/rss/items/%d/star", item.ID) }
-					hx-target={ fmt.Sprintf("#item-%d", item.ID) }
-					hx-swap="outerHTML"
-					title="Toggle star"
-				>
-					if item.IsStarred {
-						&#9733;
-					} else {
-						&#9734;
-					}
-				</button>
+				@ui.Star(item.IsStarred, fmt.Sprintf("/apps/rss/items/%d/star", item.ID))
 				<button
 					class="btn btn-outline btn-sm"
 					hx-post={ fmt.Sprintf("/apps/rss/items/%d/read", item.ID) }
@@ -561,12 +549,6 @@ func itemRowClass(isRead bool) string {
 	return "rss-item"
 }
 
-func starBtnClass(isStarred bool) string {
-	if isStarred {
-		return "btn btn-sm"
-	}
-	return "btn btn-outline btn-sm"
-}
 
 func itemPreviewImage(html string) string {
 	// Simple regex-free extraction of first img src from HTML content

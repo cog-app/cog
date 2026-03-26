@@ -135,16 +135,11 @@ script renameFile(filePath string, currentName string) {
 
 templ favoriteButton(filePath string, isFavorite bool) {
 	<button
-		class="btn btn-sm"
-		style={ favoriteStyle(isFavorite) }
+		class={ starClass(isFavorite) }
 		onclick={ toggleFavorite(filePath, !isFavorite) }
-		title={ favoriteTitle(isFavorite) }
+		title="Toggle favorite"
 	>
-		if isFavorite {
-			&#9733;
-		} else {
-			&#9734;
-		}
+		@ui.StarIcon()
 	</button>
 }
 

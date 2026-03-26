@@ -348,6 +348,62 @@ func DeleteMediaByFileID(db *sql.DB, fileID int64) error {
 	return err
 }
 
+// StarredFileIDs returns file IDs that are marked as favorites in the files plugin DB.
+func StarredFileIDs(filesDB *sql.DB) ([]int64, error) {
+	rows, err := filesDB.Query(`SELECT id FROM files WHERE favorite = 1 AND is_dir = 0`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// StarredMedia returns gallery media matching the given starred file IDs.
+func StarredMedia(db *sql.DB, fileIDs []int64) ([]Media, error) {
+	if len(fileIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.Repeat("?,", len(fileIDs))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(fileIDs))
+	for i, id := range fileIDs {
+		args[i] = id
+	}
+	rows, err := db.Query(`SELECT `+mediaCols+` FROM media m
+		WHERE m.file_id IN (`+placeholders+`)
+		ORDER BY COALESCE(m.date_taken, m.date_indexed) DESC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanMediaRows(rows)
+}
+
+// StarredMediaCount returns the count of starred media items.
+func StarredMediaCount(filesDB, galleryDB *sql.DB) int {
+	fileIDs, err := StarredFileIDs(filesDB)
+	if err != nil || len(fileIDs) == 0 {
+		return 0
+	}
+	placeholders := strings.Repeat("?,", len(fileIDs))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(fileIDs))
+	for i, id := range fileIDs {
+		args[i] = id
+	}
+	var count int
+	galleryDB.QueryRow(`SELECT COUNT(*) FROM media WHERE file_id IN (`+placeholders+`)`, args...).Scan(&count)
+	return count
+}
+
 // CleanOrphans removes recognition data that references non-existent media rows.
 // This fixes databases where CASCADE constraints were missing when rows were created.
 func CleanOrphans(db *sql.DB) error {

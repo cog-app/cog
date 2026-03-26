@@ -67,7 +67,12 @@ templ contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken str
 											<span class="avatar-initials" style={ fmt.Sprintf("background:%s", c.BookColor) }>{ contactInitials(c.FN) }</span>
 										}
 									</td>
-									<td style="font-weight:500">{ c.FN }</td>
+									<td style="font-weight:500">
+									{ c.FN }
+									if c.IsStarred {
+										<span class="btn-star active" style="cursor:default">@ui.StarIcon()</span>
+									}
+								</td>
 									<td class="hide-mobile">{ c.Email }</td>
 									<td class="hide-mobile">{ c.Tel }</td>
 									<td class="hide-mobile">{ c.Org }</td>
@@ -238,7 +243,12 @@ templ contactsStarredPage(books []AddressBook, cards []CardWithBook) {
 											<span class="avatar-initials" style={ fmt.Sprintf("background:%s", c.BookColor) }>{ contactInitials(c.FN) }</span>
 										}
 									</td>
-									<td style="font-weight:500">{ c.FN }</td>
+									<td style="font-weight:500">
+									{ c.FN }
+									if c.IsStarred {
+										<span class="btn-star active" style="cursor:default">@ui.StarIcon()</span>
+									}
+								</td>
 									<td class="hide-mobile">{ c.Email }</td>
 									<td class="hide-mobile">{ c.Tel }</td>
 									<td class="hide-mobile">{ c.Org }</td>
@@ -289,11 +299,7 @@ templ contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTo
 	}
 	<div class="flex items-center gap-1" style="margin-bottom:0.5rem">
 		<h2 style="margin:0">{ c.FN }</h2>
-		if c.IsStarred {
-			<button class="btn btn-outline btn-sm" hx-post={ fmt.Sprintf("/apps/contacts/contacts/%d/star", c.ID) } hx-swap="outerHTML" title="Toggle star">★</button>
-		} else {
-			<button class="btn btn-outline btn-sm" hx-post={ fmt.Sprintf("/apps/contacts/contacts/%d/star", c.ID) } hx-swap="outerHTML" title="Toggle star">☆</button>
-		}
+		@ui.Star(c.IsStarred, fmt.Sprintf("/apps/contacts/contacts/%d/star", c.ID))
 	</div>
 	<!-- Display all emails -->
 	for _, e := range ParseEmailsJSON(c.EmailsJSON) {
@@ -550,6 +556,7 @@ func sidebarClass(activePath, itemPath string) string {
 	}
 	return "sidebar-item"
 }
+
 
 func contactColor(c *Card, book *AddressBook) string {
 	if book != nil && book.Color != "" {

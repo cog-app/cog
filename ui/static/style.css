@@ -371,6 +371,27 @@ a:hover {
   font-size: 0.8rem;
 }
 
+.btn-star {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0 0.15rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+.btn-star svg {
+  fill: none;
+  stroke: var(--color-text-muted);
+}
+.btn-star.active svg {
+  fill: gold;
+  stroke: gold;
+}
+.btn-star.active:hover svg {
+  opacity: 0.8;
+}
+
 /* Tables */
 .table {
   width: 100%;

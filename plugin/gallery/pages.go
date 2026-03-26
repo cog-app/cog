@@ -94,8 +94,17 @@ func (h *Pages) PhotoView(w http.ResponseWriter, r *http.Request) {
 	}
 	tags, _ := TagsForMedia(db, id)
 	faces, _ := FacesForMedia(db, id)
+	isFavorite := false
+	if h.plugin.files != nil {
+		username := plugin.Username(r)
+		if filesDB, err := h.plugin.files.DB(username); err == nil {
+			var fav int
+			filesDB.QueryRow(`SELECT favorite FROM files WHERE id = ?`, m.FileID).Scan(&fav)
+			isFavorite = fav == 1
+		}
+	}
 	plugin.SetTitle(w, m.FileName())
-	photoViewPage(r.URL.Path, m, tags, faces, plugin.CSRFToken(r)).Render(r.Context(), w)
+	photoViewPage(r.URL.Path, m, tags, faces, plugin.CSRFToken(r), isFavorite).Render(r.Context(), w)
 }
 
 // People renders the people/faces view.
@@ -975,6 +984,64 @@ func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- Duplicate handlers ---
+
+// Starred renders the starred photos page.
+func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	username := plugin.Username(r)
+	var media []Media
+	starredCount := 0
+	if h.plugin.files != nil {
+		if filesDB, err := h.plugin.files.DB(username); err == nil {
+			fileIDs, _ := StarredFileIDs(filesDB)
+			media, _ = StarredMedia(db, fileIDs)
+			starredCount = len(media)
+		}
+	}
+	plugin.SetTitle(w, "Starred")
+	starredPage(media, starredCount).Render(r.Context(), w)
+}
+
+// TogglePhotoStar toggles the favorite state of a photo in the files plugin.
+func (h *Pages) TogglePhotoStar(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	m, err := GetMedia(db, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if h.plugin.files == nil {
+		http.Error(w, "files plugin unavailable", http.StatusInternalServerError)
+		return
+	}
+	username := plugin.Username(r)
+	filesDB, err := h.plugin.files.DB(username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Read current state and toggle.
+	var fav int
+	filesDB.QueryRow(`SELECT favorite FROM files WHERE id = ?`, m.FileID).Scan(&fav)
+	newFav := fav != 1
+	h.plugin.files.SetFavorite(username, m.FilePath, newFav)
+
+	// Return updated star button.
+	ui.Star(newFav, fmt.Sprintf("/apps/gallery/media/%d/star", id)).Render(r.Context(), w)
+}
 
 // Duplicates renders the duplicate groups list.
 func (h *Pages) Duplicates(w http.ResponseWriter, r *http.Request) {

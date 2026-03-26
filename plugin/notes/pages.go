@@ -2,10 +2,12 @@ package notes
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/ui"
 )
 
 // Pages holds the web UI handlers for the notes plugin.
@@ -292,5 +294,12 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	_ = noteRow(note, plugin.CSRFToken(r)).Render(r.Context(), w)
+
+	// Sync favorite to files plugin.
+	if h.plugin.files != nil {
+		username := plugin.Username(r)
+		h.plugin.files.SetFavorite(username, "/Notes/"+note.Filename, note.Favorite)
+	}
+
+	ui.Star(note.Favorite, fmt.Sprintf("/apps/notes/notes/%d/star", note.ID)).Render(r.Context(), w)
 }

@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/ui"
 )
 
 // Pages holds the web UI handlers for the contacts plugin.
@@ -495,12 +496,8 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// Return updated star button HTML for HTMX swap.
-	icon := "☆"
-	if newStarred {
-		icon = "★"
-	}
-	fmt.Fprintf(w, `<button class="btn btn-outline btn-sm" hx-post="/apps/contacts/contacts/%d/star" hx-swap="outerHTML" title="Toggle star">%s</button>`, id, icon)
+	// Return updated star button for HTMX swap.
+	ui.Star(newStarred, fmt.Sprintf("/apps/contacts/contacts/%d/star", id)).Render(r.Context(), w)
 }
 
 // parseTypedValues extracts paired type/value form arrays into a slice of TypedValue.
