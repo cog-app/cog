@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/jpeg"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -790,6 +791,91 @@ func (h *Pages) TriggerScan(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
 }
 
+// SaveScanFolders saves the per-user scan folders setting.
+func (h *Pages) SaveScanFolders(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	folders := r.FormValue("folders")
+	// Validate at least one non-empty line.
+	hasLine := false
+	for _, line := range strings.Split(folders, "\n") {
+		if strings.TrimSpace(line) != "" {
+			hasLine = true
+			break
+		}
+	}
+	if !hasLine {
+		http.Error(w, "At least one folder pattern is required", http.StatusBadRequest)
+		return
+	}
+	if err := SettingScanFolders.Set(db, folders); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
+}
+
+// ScanFoldersPreview returns an HTMX partial showing which folders match the given patterns.
+func (h *Pages) ScanFoldersPreview(w http.ResponseWriter, r *http.Request) {
+	username := plugin.Username(r)
+	filesDB, err := h.plugin.files.DB(username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Parse patterns from the posted textarea.
+	raw := r.FormValue("folders")
+	var patterns []string
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			patterns = append(patterns, line)
+		}
+	}
+	if len(patterns) == 0 {
+		patterns = []string{"Photos/"}
+	}
+
+	// Query all media file paths from files DB.
+	rows, err := filesDB.Query(`SELECT path FROM files
+		WHERE is_dir = 0 AND (mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')`)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	folderSet := map[string]int{}
+	total := 0
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			continue
+		}
+		if matchScanFolders(p, patterns) {
+			total++
+			// Extract top-level folder.
+			dir := p
+			if idx := strings.Index(p, "/"); idx >= 0 {
+				dir = p[:idx+1]
+			}
+			folderSet[dir]++
+		}
+	}
+
+	var folders []string
+	for f, count := range folderSet {
+		folders = append(folders, fmt.Sprintf("%s (%d files)", f, count))
+	}
+	sort.Strings(folders)
+
+	scanFoldersPreview(folders, total).Render(r.Context(), w)
+}
+
 // SaveRecognitionSettings saves recognition backend settings (legacy per-user, redirects to system settings).
 func (h *Pages) SaveRecognitionSettings(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/plugins/gallery", http.StatusSeeOther)
@@ -1037,6 +1123,90 @@ func (h *Pages) DeleteAllNonKeep(w http.ResponseWriter, r *http.Request) {
 			DeleteMediaByFileID(db, m.Media.FileID)
 		}
 		DeleteDuplicateGroup(db, g.ID)
+	}
+	http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
+}
+
+// DeleteDuplicateMember deletes a single member from a duplicate group.
+func (h *Pages) DeleteDuplicateMember(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	mediaID, err := strconv.ParseInt(r.FormValue("media_id"), 10, 64)
+	if err != nil {
+		http.Error(w, "media_id required", http.StatusBadRequest)
+		return
+	}
+	username := plugin.Username(r)
+	m, err := GetMedia(db, mediaID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := h.plugin.files.Delete(username, m.FilePath); err != nil {
+		h.plugin.log.Warn("delete duplicate member", "path", m.FilePath, "err", err)
+	}
+	DeleteMediaByFileID(db, m.FileID)
+	RemoveDuplicateMember(db, groupID, mediaID)
+	count, _ := DuplicateGroupMemberCount(db, groupID)
+	if count < 2 {
+		DeleteDuplicateGroup(db, groupID)
+		http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/duplicates/%d", groupID), http.StatusSeeOther)
+}
+
+// DeleteAllDuplicates deletes all files in a duplicate group, including the keep.
+func (h *Pages) DeleteAllDuplicates(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	username := plugin.Username(r)
+	members, err := DuplicateGroupMembers(db, groupID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, m := range members {
+		if err := h.plugin.files.Delete(username, m.Media.FilePath); err != nil {
+			h.plugin.log.Warn("delete duplicate", "path", m.Media.FilePath, "err", err)
+		}
+		DeleteMediaByFileID(db, m.Media.FileID)
+	}
+	DeleteDuplicateGroup(db, groupID)
+	http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
+}
+
+// DismissDuplicateGroup removes a group from the duplicates list without deleting files.
+func (h *Pages) DismissDuplicateGroup(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := DeleteDuplicateGroup(db, groupID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
 }

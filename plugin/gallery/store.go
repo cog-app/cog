@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -1098,11 +1099,66 @@ var (
 	SettingRenamePattern = stringSetting[string]("rename_pattern",
 		"{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}")
 
+	// Scan folders (per-user)
+	SettingScanFolders = stringSetting[string]("scan_folders", "Photos/")
+
 	// Legacy aliases — read during migration from old settings
 	SettingRecognitionEnabled   = boolSetting("recognition_enabled", false)
 	SettingRecognitionBackend   = stringSetting("recognition_backend", BackendNone)
 	SettingFaceDetectionEnabled = boolSetting("face_detection_enabled", true)
 )
+
+// --- Scan Folder Matching ---
+
+// ParseScanFolders parses the newline-delimited scan folders setting into patterns.
+// A bare folder name like "Photos/" is treated as a prefix match on "Photos/".
+// Patterns with glob characters use path.Match per path segment.
+func ParseScanFolders(db *sql.DB) []string {
+	raw := SettingScanFolders.MustGet(db)
+	var patterns []string
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			patterns = append(patterns, line)
+		}
+	}
+	if len(patterns) == 0 {
+		return []string{"Photos/"}
+	}
+	return patterns
+}
+
+// matchScanFolders checks if a file path matches any configured scan folder pattern.
+// Patterns ending in "/" are prefix matches. Others use path.Match against each
+// path segment up to the pattern depth.
+func matchScanFolders(filePath string, patterns []string) bool {
+	for _, p := range patterns {
+		if strings.HasSuffix(p, "/") {
+			// Prefix match: "Photos/" matches "Photos/foo.jpg", "Photos/sub/bar.jpg"
+			if strings.HasPrefix(filePath, p) {
+				return true
+			}
+			continue
+		}
+		// Glob match: match the pattern against the file path.
+		// path.Match only works per-segment, so for patterns like "Photos/*.jpg"
+		// we match against the same depth of the file path.
+		if matched, _ := path.Match(p, filePath); matched {
+			return true
+		}
+		// Also try matching just the portion of the path up to the pattern depth.
+		// e.g., pattern "Photos/*.jpg" against "Photos/foo.jpg"
+		patternDepth := strings.Count(p, "/")
+		parts := strings.SplitN(filePath, "/", patternDepth+2)
+		if len(parts) > patternDepth+1 {
+			truncated := strings.Join(parts[:patternDepth+1], "/")
+			if matched, _ := path.Match(p, truncated); matched {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // --- Rename Log ---
 

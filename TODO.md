@@ -15,6 +15,18 @@ These tasks should be completed by Claude in priority order. Check them off the 
     - From the duplicates view, can select the keep one or unmark one as duplicate
     - Pre-selects the keep image based on the highest resolution and oldest if there's a tie.
     - Includes a button to delete the non-keep duplicates
+  - [ ] Settings: Allow setting a list of folders to keep photos in. Only scan those folders; default to `Photos/`
+  - [ ] Files Plugin: Create interface that plugins may implement to set folder icons for specially handled folders
+    - Gallery sets special folder icons for photo scanning folders (folder icon with a photo icon inside)
+    - Notes sets `Notes/` to a special notes folder icon (folder icon with a notes inside)
+- [ ] Create common component for favorites star; Some use a button, some use a button. Some have yellow star, some have text color. Make them all a button with a yellow star when filled. This could just be a CSS class.
+  - Files
+  - Contacts (add to list and replace in modal)
+  - Notes
+    - Currently stars on the MD files and the notes DB entries are distinct. Make them the same.
+    - The note view doesn't have a star button.
+  - News
+  - Gallery (add starring feature, use the files stars rather than a new column)
 - [ ] Move testing snapshots to git-lfs
 - [ ] News
   - [ ] Don't mark read until you move off of the article. That fixes the gray out while trying to read and accidental reads.
@@ -45,52 +57,3 @@ These tasks should be completed by Claude in priority order. Check them off the 
 - [ ] Audit log activities to table and expose it via WebDAV
 - [ ] Plugin: Deck
 - [ ] Plugin: NextPod
-
----
-
-Building a family photo app in Go with offline, high-quality face recognition is a great challenge. Since you are okay with slower processing in exchange for accuracy on commodity hardware, you should move away from older methods like Haar Cascades and instead use Deep Feature Embeddings via ONNX Runtime.
-
-For the "best quality" requirement, specifically regarding children aging, the current gold standard is ArcFace (Additive Angular Margin Loss).
-
-1. The Recommended Tech Stack
-   To keep this in Go while maintaining elite accuracy, use the following combination:
-
-Inference Engine: onnxruntime-go (Microsoft's official C-wrapper for Go). This allows you to run state-of-the-art models without a heavy Python dependency.
-
-Recognition Model: ArcFace (InsightFace buffalo_l or w600k_r50). These models generate a 512-dimension vector (embedding) for every face.
-+1
-
-Detection Model: SCRFD. It is significantly more accurate and faster than older models like MTCNN, especially for small faces or varied angles in family photos.
-
-Database: A simple vector store (like milvus-proto or even a local FAISS index via CGO) to store and compare these 512-D vectors.
-
-2. Handling "Aging Up" in Children
-   No single model can perfectly match a 2-year-old to their 15-year-old self in a single jump because cranial growth is non-linear. To solve this in a "Family App" context, you should use Template Updating (Continuous Enrollment):
-
-The Cluster Strategy: Instead of matching a new photo against one "Reference Image," you match it against a cluster of images for that person.
-
-The "Bridge" Effect: As you add photos over time (e.g., every 6 months), the app uses the most recent high-confidence matches to "bridge" the gap. Even if a 10-year-old doesn't match their 2-year-old self, they will match their 9-year-old self, who in turn matches the 8-year-old self, and so on.
-
-Manual Refinement: When the recognition confidence drops below a certain threshold (e.g., 0.4 cosine similarity), the app should prompt the user: "Is this still [Child Name]?" Once confirmed, that new embedding becomes the new "anchor" for that age.
-
-3. Implementation Workflow in Go
-   Face Detection: Use an ONNX version of SCRFD to find faces and 5 facial landmarks (eyes, nose, mouth corners).
-
-Alignment: Use the landmarks to "warp" the face so the eyes are level and centered. This is the most critical step for quality.
-
-Embedding: Pass the aligned face (112×112 pixels) through the ArcFace model. It will output a []float32 of size 512.
-
-Comparison: Use Cosine Similarity to compare the new vector against your database of known family members.
-
-Similarity=
-∥A∥∥B∥
-A⋅B
-​
-
-4. Comparison of Go Libraries
-   Library Accuracy Complexity Best For...
-   onnxruntime-go Highest High (needs CGO) The "Gold Standard" approach you are looking for.
-   go-face High Medium Based on dlib. Very accurate but harder to customize for specific "age-invariant" models.
-   pigo Low Low (Pure Go) Fast face detection only; not recommended for high-quality recognition.
-   Next Steps
-   Would you like me to provide a Go code snippet for calculating the cosine similarity between two face vectors, or perhaps a guide on where to find the pre-trained ArcFace ONNX models?

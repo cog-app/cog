@@ -220,6 +220,16 @@ func (p *Plugin) discoverFiles(ctx context.Context, galleryDB, filesDB *sql.DB, 
 		return err
 	}
 
+	// Filter by configured scan folders.
+	patterns := ParseScanFolders(galleryDB)
+	var filtered []fileEntry
+	for _, f := range fileEntries {
+		if matchScanFolders(f.Path, patterns) {
+			filtered = append(filtered, f)
+		}
+	}
+	fileEntries = filtered
+
 	// Get existing indexed media.
 	existing, err := AllMediaFileIDs(galleryDB)
 	if err != nil {

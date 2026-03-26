@@ -164,6 +164,8 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "media/{id}/delete-face", http.HandlerFunc(pages.DeleteFaceAction))
 	ctx.RegisterAction("POST", "faces/{id}/new-person", http.HandlerFunc(pages.CreatePersonFromFaceAction))
 	ctx.RegisterAction("POST", "settings/scan", http.HandlerFunc(pages.TriggerScan))
+	ctx.RegisterAction("POST", "settings/folders", http.HandlerFunc(pages.SaveScanFolders))
+	ctx.RegisterAPI("api/scan-folders-preview", http.HandlerFunc(pages.ScanFoldersPreview))
 	ctx.RegisterAction("POST", "settings/recognition", http.HandlerFunc(pages.SaveRecognitionSettings))
 
 	ctx.RegisterSettingsPage(plugin.SettingsPage{
@@ -182,6 +184,9 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "duplicates/{id}/unmark", http.HandlerFunc(pages.UnmarkDuplicate))
 	ctx.RegisterAction("POST", "duplicates/{id}/delete", http.HandlerFunc(pages.DeleteNonKeepDuplicates))
 	ctx.RegisterAction("POST", "duplicates/delete-all", http.HandlerFunc(pages.DeleteAllNonKeep))
+	ctx.RegisterAction("POST", "duplicates/{id}/delete-member", http.HandlerFunc(pages.DeleteDuplicateMember))
+	ctx.RegisterAction("POST", "duplicates/{id}/delete-all", http.HandlerFunc(pages.DeleteAllDuplicates))
+	ctx.RegisterAction("POST", "duplicates/{id}/dismiss", http.HandlerFunc(pages.DismissDuplicateGroup))
 	ctx.RegisterAction("POST", "rename/preview", http.HandlerFunc(pages.RenamePreview))
 	ctx.RegisterAction("POST", "rename/apply", http.HandlerFunc(pages.RenameApply))
 	ctx.RegisterAction("POST", "rename/undo", http.HandlerFunc(pages.RenameUndo))
