@@ -124,7 +124,7 @@ func TestBrowserCore(t *testing.T) {
 		b.Type(t, `input[name="current_password"]`, "pass")
 		b.Type(t, `input[name="new_password"]`, "newpass123")
 		b.Type(t, `input[name="confirm_password"]`, "newpass123")
-		b.Click(t, `main button[type="submit"]`)
+		b.Click(t, `form[action="/settings/password"] button[type="submit"]`)
 		b.WaitVisible(t, `input[name="current_password"]`)
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)

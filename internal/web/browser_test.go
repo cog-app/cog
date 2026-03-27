@@ -228,15 +228,15 @@ func TestBrowserAdminSettings(t *testing.T) {
 	b := eng.Start(t)
 	b.Login(t, "admin", "pass")
 
-	b.Navigate(t, "/admin/settings")
+	b.Navigate(t, "/admin/email")
 	b.WaitVisible(t, `input[name="smtp_host"]`)
 
 	b.Type(t, `input[name="smtp_host"]`, "mail.example.com")
 	b.Type(t, `input[name="smtp_port"]`, "465")
 	b.Type(t, `input[name="smtp_from"]`, "noreply@example.com")
-	b.Click(t, `form[action="/admin/settings"] button[type="submit"]`)
+	b.Click(t, `form[action="/admin/email"] button[type="submit"]`)
 
-	b.WaitText(t, "Settings saved")
+	b.WaitText(t, "Email settings saved")
 	b.Snapshot(t)
 }
 

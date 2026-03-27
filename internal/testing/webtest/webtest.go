@@ -17,16 +17,63 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
-// Engine manages a test HTTP server and a shared Chrome process.
+// sharedBrowser is a process-wide Chrome instance reused by all Engines.
+// This avoids launching dozens of Chrome processes when go test ./...
+// runs multiple packages concurrently.
+var sharedBrowser struct {
+	once    sync.Once
+	browser *rod.Browser
+	err     error
+
+	mu       sync.Mutex
+	refCount int
+}
+
+func acquireBrowser() (*rod.Browser, error) {
+	sharedBrowser.once.Do(func() {
+		path, found := launcher.LookPath()
+		if !found {
+			sharedBrowser.err = launcher.ErrAlreadyLaunched
+			return
+		}
+		u := launcher.New().Bin(path).Headless(true).NoSandbox(true).MustLaunch()
+		b := rod.New().ControlURL(u)
+		if err := b.Connect(); err != nil {
+			sharedBrowser.err = err
+			return
+		}
+		sharedBrowser.browser = b
+	})
+	if sharedBrowser.err != nil {
+		return nil, sharedBrowser.err
+	}
+	sharedBrowser.mu.Lock()
+	sharedBrowser.refCount++
+	sharedBrowser.mu.Unlock()
+	return sharedBrowser.browser, nil
+}
+
+func releaseBrowser() {
+	sharedBrowser.mu.Lock()
+	sharedBrowser.refCount--
+	last := sharedBrowser.refCount == 0
+	sharedBrowser.mu.Unlock()
+
+	if last && sharedBrowser.browser != nil {
+		sharedBrowser.browser.Close()
+	}
+}
+
+// Engine manages a test HTTP server and opens tabs on the shared Chrome process.
 type Engine struct {
 	handler      http.Handler
 	dateOverride string // ISO date injected as JS Date override
 
-	mu       sync.Mutex
-	server   *httptest.Server
-	browser  *rod.Browser
-	startErr error
-	started  bool
+	mu      sync.Mutex
+	server  *httptest.Server
+	browser *rod.Browser
+	started bool
+	err     error
 }
 
 // New creates an Engine that serves the given handler.
@@ -55,9 +102,11 @@ func (e *Engine) start() (*Browser, error) {
 	}
 
 	// Clear cookies so each tab starts with a clean session.
-	if err := e.browser.SetCookies(nil); err != nil {
-		page.Close()
-		return nil, err
+	// Scoped to this page's browser context via CDP.
+	cookies, err := proto.NetworkGetAllCookies{}.Call(page)
+	if err == nil && len(cookies.Cookies) > 0 {
+		var params proto.NetworkClearBrowserCookies
+		params.Call(page)
 	}
 
 	page.MustSetViewport(1280, 720, 0, false)
@@ -110,13 +159,13 @@ func (e *Engine) Start(t testing.TB) *Browser {
 	return b
 }
 
-// Close shuts down the Chrome process and test server.
+// Close shuts down the test server and releases the shared Chrome reference.
 func (e *Engine) Close() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	if e.browser != nil {
-		e.browser.Close()
+		releaseBrowser()
 		e.browser = nil
 	}
 	if e.server != nil {
@@ -125,33 +174,22 @@ func (e *Engine) Close() {
 	}
 }
 
-// ensureStartedLocked initializes the server and Chrome allocator.
+// ensureStartedLocked initializes the server and acquires the shared Chrome.
 // Must be called with e.mu held.
 func (e *Engine) ensureStartedLocked() error {
 	if e.started {
-		return e.startErr
+		return e.err
 	}
 	e.started = true
 
-	// Create test server.
 	e.server = httptest.NewServer(e.handler)
 
-	// Find Chrome. Don't auto-download; skip if not available.
-	path, found := launcher.LookPath()
-	if !found {
+	browser, err := acquireBrowser()
+	if err != nil {
 		e.server.Close()
 		e.server = nil
-		e.startErr = launcher.ErrAlreadyLaunched // reuse sentinel
-		return e.startErr
-	}
-
-	u := launcher.New().Bin(path).Headless(true).NoSandbox(true).MustLaunch()
-	browser := rod.New().ControlURL(u)
-	if err := browser.Connect(); err != nil {
-		e.server.Close()
-		e.server = nil
-		e.startErr = err
-		return e.startErr
+		e.err = err
+		return err
 	}
 
 	e.browser = browser
