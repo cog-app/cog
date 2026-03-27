@@ -1,13 +1,5 @@
 These tasks should be completed by Claude in priority order. Check them off the list as they're completed.
 
-- [ ] Multifactor authentication
-  - [ ] TOTP tokens
-  - [ ] OAuth
-  - [ ] Email password resets
-  - [ ] Session invalidation on password change
-- Email Overhaul
-  - [ ] Move email to own settings section and allow configuring Go templates with the layout. Include a preview of the template of the rendered email with sample data.
-  - [ ] Add an email server to go tool dev and use the CLI to configure it by default.
 - [ ] Handle zip/tar files
   - Allow browsing the contents like a regular folder (updates for zip)
   - Allow extracting contents

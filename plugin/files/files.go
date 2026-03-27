@@ -4,6 +4,9 @@
 package files
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -829,6 +832,155 @@ func (p *Plugin) Favorites(username string) ([]FileMeta, error) {
 		files = append(files, f)
 	}
 	return files, rows.Err()
+}
+
+// ExtractArchive extracts all entries from an archive into destDir.
+// Returns the count of extracted entries.
+func (p *Plugin) ExtractArchive(username, archivePath, destDir string) (int, error) {
+	archivePath = normalizePath(archivePath)
+	destDir = normalizePath(destDir)
+
+	meta, err := p.GetByPath(username, archivePath)
+	if err != nil {
+		return 0, err
+	}
+	if !isArchiveFile(meta) {
+		return 0, fmt.Errorf("not an archive: %s", archivePath)
+	}
+
+	format := ArchiveFormat(meta.Name)
+
+	rc, _, err := p.Download(username, archivePath)
+	if err != nil {
+		return 0, fmt.Errorf("open archive: %w", err)
+	}
+	defer rc.Close()
+
+	var ar archiveReader
+	if f, ok := rc.(*os.File); ok {
+		ar = f
+	} else {
+		// Buffer for non-seekable readers.
+		data, err := io.ReadAll(rc)
+		if err != nil {
+			return 0, fmt.Errorf("read archive: %w", err)
+		}
+		ar = bytes.NewReader(data)
+	}
+
+	size := meta.Size
+
+	// List all entries at all levels by iterating the archive directly.
+	switch format {
+	case "zip":
+		return p.extractZip(username, ar, size, destDir)
+	case "tar", "tar.gz", "tar.bz2":
+		if _, err := ar.Seek(0, io.SeekStart); err != nil {
+			return 0, fmt.Errorf("seek: %w", err)
+		}
+		return p.extractTar(username, ar, format, destDir)
+	default:
+		return 0, fmt.Errorf("unsupported format: %s", format)
+	}
+}
+
+func (p *Plugin) extractZip(username string, ar archiveReader, size int64, destDir string) (int, error) {
+	zr, err := zip.NewReader(ar, size)
+	if err != nil {
+		return 0, fmt.Errorf("open zip: %w", err)
+	}
+
+	count := 0
+	for _, zf := range zr.File {
+		entryPath := cleanInternalPath(zf.Name)
+		if entryPath == "" || !isSafePath(entryPath) {
+			continue
+		}
+		if zf.FileInfo().Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+
+		dest := filepath.Join(destDir, entryPath)
+		if strings.HasSuffix(zf.Name, "/") || zf.FileInfo().IsDir() {
+			if _, err := p.CreateDir(username, dest); err != nil {
+				p.log.Error("extract mkdir", "path", dest, "err", err)
+			}
+			count++
+			continue
+		}
+
+		// Ensure parent directory exists.
+		parentDir := filepath.Dir(dest)
+		if parentDir != destDir {
+			if _, err := p.CreateDir(username, parentDir); err != nil {
+				// Ignore — may already exist.
+			}
+		}
+
+		rc, err := zf.Open()
+		if err != nil {
+			p.log.Error("extract open", "entry", entryPath, "err", err)
+			continue
+		}
+		_, err = p.Upload(username, dest, rc)
+		rc.Close()
+		if err != nil {
+			p.log.Error("extract upload", "path", dest, "err", err)
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
+func (p *Plugin) extractTar(username string, r io.ReadSeeker, format, destDir string) (int, error) {
+	tr, err := wrapTarReader(r, format)
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return count, fmt.Errorf("read tar: %w", err)
+		}
+
+		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeDir {
+			continue
+		}
+
+		entryPath := cleanInternalPath(hdr.Name)
+		if entryPath == "" || !isSafePath(entryPath) {
+			continue
+		}
+
+		dest := filepath.Join(destDir, entryPath)
+		if hdr.Typeflag == tar.TypeDir {
+			if _, err := p.CreateDir(username, dest); err != nil {
+				p.log.Error("extract mkdir", "path", dest, "err", err)
+			}
+			count++
+			continue
+		}
+
+		parentDir := filepath.Dir(dest)
+		if parentDir != destDir {
+			if _, err := p.CreateDir(username, parentDir); err != nil {
+				// Ignore — may already exist.
+			}
+		}
+
+		if _, err := p.Upload(username, dest, tr); err != nil {
+			p.log.Error("extract upload", "path", dest, "err", err)
+			continue
+		}
+		count++
+	}
+	return count, nil
 }
 
 // Usage returns the total bytes used by non-directory files for a user.

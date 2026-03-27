@@ -3,9 +3,11 @@ package files
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -123,6 +125,12 @@ func (h *Pages) ServeGet(w http.ResponseWriter, r *http.Request) {
 
 	meta, err := h.plugin.GetByPath(u.Username, fp)
 	if err != nil {
+		// Path not found — try archive boundary detection.
+		archiveMeta, archivePath, innerPath := h.resolveArchivePath(u.Username, fp)
+		if archiveMeta != nil {
+			h.serveArchiveContent(w, r, u.Username, archiveMeta, archivePath, innerPath)
+			return
+		}
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -161,6 +169,12 @@ func (h *Pages) ServeGet(w http.ResponseWriter, r *http.Request) {
 	// ?pdfpreview=1 → serve office document converted to PDF.
 	if r.URL.Query().Get("pdfpreview") == "1" {
 		h.serveDocumentPreview(w, r, u.Username, fp, meta)
+		return
+	}
+
+	// Archive file → show archive listing.
+	if isArchiveFile(meta) {
+		h.serveArchiveListing(w, r, u.Username, meta, fp, "")
 		return
 	}
 
@@ -288,10 +302,237 @@ func (h *Pages) readText(username, fp string) (string, error) {
 	return string(b), nil
 }
 
-// ServePost handles POST — upload file, create directory, or save text content.
+// --- Archive handlers ---
+
+// resolveArchivePath walks up the path looking for an archive file boundary.
+// Returns the archive metadata, archive path, and inner path (or nil if not found).
+func (h *Pages) resolveArchivePath(username, fullPath string) (*FileMeta, string, string) {
+	parts := splitPath(fullPath)
+	for i := 1; i <= len(parts); i++ {
+		candidate := "/" + path.Join(parts[:i]...)
+		meta, err := h.plugin.GetByPath(username, candidate)
+		if err != nil {
+			continue
+		}
+		if !meta.IsDir && isArchiveFile(meta) && i < len(parts) {
+			innerPath := path.Join(parts[i:]...)
+			return meta, candidate, innerPath
+		}
+	}
+	return nil, "", ""
+}
+
+// openArchiveSeeker returns a seekable+readable handle to an archive file.
+func (h *Pages) openArchiveSeeker(username, archivePath string, meta *FileMeta) (archiveReader, io.Closer, error) {
+	rc, _, err := h.plugin.Download(username, archivePath)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Local files are *os.File which implements both io.ReadSeeker and io.ReaderAt.
+	if f, ok := rc.(*os.File); ok {
+		return f, f, nil
+	}
+	// Non-local: buffer into memory (with size limit).
+	const maxBufferSize = 500 << 20 // 500MB
+	if meta.Size > maxBufferSize {
+		rc.Close()
+		return nil, nil, fmt.Errorf("archive too large for non-local backend (%s)", formatSize(meta.Size))
+	}
+	data, err := io.ReadAll(rc)
+	rc.Close()
+	if err != nil {
+		return nil, nil, err
+	}
+	return bytes.NewReader(data), io.NopCloser(nil), nil
+}
+
+// serveArchiveListing lists entries at innerPath within the archive and renders the template.
+func (h *Pages) serveArchiveListing(w http.ResponseWriter, r *http.Request, username string, meta *FileMeta, archivePath, innerPath string) {
+	ar, closer, err := h.openArchiveSeeker(username, archivePath, meta)
+	if err != nil {
+		http.Error(w, "open archive: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer closer.Close()
+
+	format := ArchiveFormat(meta.Name)
+	entries, err := ListArchive(ar, meta.Size, format, innerPath)
+	if err != nil {
+		http.Error(w, "list archive: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var flashMsg, flashKind string
+	if flash := getFlash(w, r); flash != nil {
+		flashMsg, flashKind = flash.Message, flash.Kind
+	}
+
+	pd := h.pageData(r, meta.Name)
+	archivePage(pd, archivePath, innerPath, meta, entries, flashMsg, flashKind).Render(r.Context(), w)
+}
+
+// serveArchiveContent handles requests for paths inside an archive.
+func (h *Pages) serveArchiveContent(w http.ResponseWriter, r *http.Request, username string, meta *FileMeta, archivePath, innerPath string) {
+	q := r.URL.Query()
+
+	// ?dl=1 or ?raw=1 → serve file content from archive.
+	if q.Get("dl") == "1" || q.Get("raw") == "1" {
+		h.serveArchiveFileStream(w, r, username, meta, archivePath, innerPath, q.Get("dl") == "1")
+		return
+	}
+
+	// Determine if innerPath is a directory or file within the archive.
+	ar, closer, err := h.openArchiveSeeker(username, archivePath, meta)
+	if err != nil {
+		http.Error(w, "open archive: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer closer.Close()
+
+	format := ArchiveFormat(meta.Name)
+
+	// Check if it's a directory (has children).
+	if isArchiveEntryDir(ar, meta.Size, format, innerPath) {
+		// Reset reader position for listing.
+		if _, err := ar.Seek(0, io.SeekStart); err != nil {
+			http.Error(w, "seek: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		entries, err := ListArchive(ar, meta.Size, format, innerPath)
+		if err != nil {
+			http.Error(w, "list archive: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		pd := h.pageData(r, meta.Name)
+		archivePage(pd, archivePath, innerPath, meta, entries, "", "").Render(r.Context(), w)
+		return
+	}
+
+	// It's a file — show view page.
+	if _, err := ar.Seek(0, io.SeekStart); err != nil {
+		http.Error(w, "seek: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	rc, entry, err := ReadArchiveFile(ar, meta.Size, format, innerPath)
+	if err != nil {
+		http.Error(w, "not found in archive", http.StatusNotFound)
+		return
+	}
+
+	kind := archiveViewKind(entry.MimeType)
+	var textContent string
+	if kind == "text" {
+		limited := io.LimitReader(rc, 1<<20)
+		b, err := io.ReadAll(limited)
+		rc.Close()
+		if err == nil {
+			textContent = string(b)
+		}
+	} else {
+		rc.Close()
+	}
+
+	pd := h.pageData(r, entry.Name)
+	archiveEntryViewPage(pd, archivePath, entry, kind, textContent).Render(r.Context(), w)
+}
+
+// serveArchiveFileStream extracts and streams a single file from an archive.
+func (h *Pages) serveArchiveFileStream(w http.ResponseWriter, r *http.Request, username string, meta *FileMeta, archivePath, innerPath string, download bool) {
+	ar, closer, err := h.openArchiveSeeker(username, archivePath, meta)
+	if err != nil {
+		http.Error(w, "open archive: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer closer.Close()
+
+	format := ArchiveFormat(meta.Name)
+	rc, entry, err := ReadArchiveFile(ar, meta.Size, format, innerPath)
+	if err != nil {
+		http.Error(w, "not found in archive", http.StatusNotFound)
+		return
+	}
+	defer rc.Close()
+
+	ct := entry.MimeType
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", ct)
+	if download {
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+entry.Name+"\"")
+	}
+	// Buffer for range request support.
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.ServeContent(w, r, entry.Name, time.Unix(entry.MTime, 0), bytes.NewReader(data))
+}
+
+// handleExtract extracts an archive to the filesystem.
+func (h *Pages) handleExtract(w http.ResponseWriter, r *http.Request, username, fp string) {
+	meta, err := h.plugin.GetByPath(username, fp)
+	if err != nil {
+		setFlash(w, "error", "File not found.")
+		http.Redirect(w, r, "/apps/files"+parentDir(fp), http.StatusSeeOther)
+		return
+	}
+	if !isArchiveFile(meta) {
+		setFlash(w, "error", "Not an archive file.")
+		http.Redirect(w, r, "/apps/files"+fp, http.StatusSeeOther)
+		return
+	}
+
+	destDir := ExtractDestination(fp)
+	count, err := h.plugin.ExtractArchive(username, fp, destDir)
+	if err != nil {
+		setFlash(w, "error", "Extract failed: "+err.Error())
+		http.Redirect(w, r, "/apps/files"+fp, http.StatusSeeOther)
+		return
+	}
+
+	setFlash(w, "success", fmt.Sprintf("Extracted %d items to %s", count, path.Base(destDir)))
+	http.Redirect(w, r, "/apps/files"+destDir, http.StatusSeeOther)
+}
+
+// archiveViewKind categorizes a MIME type for the archive entry view page.
+// Simpler than fileViewKind — no office/preview support inside archives.
+func archiveViewKind(mimeType string) string {
+	if strings.HasPrefix(mimeType, "image/") {
+		return "image"
+	}
+	if strings.HasPrefix(mimeType, "text/") {
+		return "text"
+	}
+	switch mimeType {
+	case "application/json", "application/xml", "application/javascript",
+		"application/x-yaml", "application/toml", "application/x-sh",
+		"application/sql", "application/x-httpd-php":
+		return "text"
+	}
+	if strings.HasPrefix(mimeType, "video/") {
+		return "video"
+	}
+	if strings.HasPrefix(mimeType, "audio/") {
+		return "audio"
+	}
+	if mimeType == "application/pdf" {
+		return "pdf"
+	}
+	return "binary"
+}
+
+// ServePost handles POST — upload file, create directory, save text content, or extract archive.
 func (h *Pages) ServePost(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	fp := filePath(r)
+
+	// ?extract=1 → extract archive.
+	if r.URL.Query().Get("extract") == "1" {
+		h.handleExtract(w, r, u.Username, fp)
+		return
+	}
 
 	// ?save=1 → save text content.
 	if r.URL.Query().Get("save") == "1" {
@@ -419,6 +660,9 @@ func fileIconName(mimeType string, isDir bool) string {
 		"application/x-yaml", "application/toml", "application/x-sh",
 		"application/sql", "application/x-httpd-php":
 		return "text"
+	}
+	if isArchiveMIME(mimeType) {
+		return "archive"
 	}
 	return "file"
 }
@@ -558,6 +802,39 @@ func parentDir(p string) string {
 
 func starClass(active bool) string {
 	return ui.StarClass(active)
+}
+
+// archiveInnerSegments returns breadcrumb segments for paths inside an archive.
+func archiveInnerSegments(archivePath, innerPath string) []breadcrumbSeg {
+	if innerPath == "" {
+		return nil
+	}
+	parts := splitPath(innerPath)
+	var segs []breadcrumbSeg
+	for i, p := range parts {
+		segs = append(segs, breadcrumbSeg{
+			Name: p,
+			Path: path.Join(parts[:i+1]...),
+		})
+	}
+	return segs
+}
+
+// archiveParentURL returns the URL for navigating up one level inside an archive.
+func archiveParentURL(archivePath, innerPath string) string {
+	if innerPath == "" {
+		return "/apps/files" + parentDir(archivePath)
+	}
+	parent := path.Dir(innerPath)
+	if parent == "." || parent == "/" {
+		return "/apps/files" + archivePath
+	}
+	return "/apps/files" + archivePath + "/" + parent
+}
+
+// archiveBaseName returns the filename of the archive for breadcrumbs.
+func archiveBaseName(archivePath string) string {
+	return path.Base(archivePath)
 }
 
 func safeDomID(p string) string {

@@ -70,8 +70,9 @@ templ contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken str
 									<td style="font-weight:500">
 										{ c.FN }
 										if c.IsStarred {
-											<span class="btn-star active" style="cursor:default">@ui.StarIcon()
-</span>
+											<span class="btn-star active" style="cursor:default">
+												@ui.StarIcon()
+											</span>
 										}
 									</td>
 									<td class="hide-mobile">{ c.Email }</td>
@@ -247,8 +248,9 @@ templ contactsStarredPage(books []AddressBook, cards []CardWithBook) {
 									<td style="font-weight:500">
 										{ c.FN }
 										if c.IsStarred {
-											<span class="btn-star active" style="cursor:default">@ui.StarIcon()
-</span>
+											<span class="btn-star active" style="cursor:default">
+												@ui.StarIcon()
+											</span>
 										}
 									</td>
 									<td class="hide-mobile">{ c.Email }</td>

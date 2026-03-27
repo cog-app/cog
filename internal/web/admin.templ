@@ -224,7 +224,6 @@ templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHou
 }
 
 // --- Email ---
-
 templ adminEmailPage(pd ui.PageData, smtp smtpSettingsData, overrideHTML string, overrideText string, defaultHTML string, defaultText string, flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, "email") {
 		<h1 style="margin-bottom:1rem">Email Settings</h1>
@@ -256,7 +255,7 @@ templ adminEmailPage(pd ui.PageData, smtp smtpSettingsData, overrideHTML string,
 			}
 			@ui.Card("HTML Template Override") {
 				<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">
-					Override the default HTML email templates using Go <code>html/template</code> syntax. Define blocks to replace: <code>layout</code>, <code>group_invite</code>, <code>password_reset</code>, <code>otp</code>. The layout uses <code>{"{{content}}"}</code> to render the email body.
+					Override the default HTML email templates using Go <code>html/template</code> syntax. Define blocks to replace: <code>layout</code>, <code>group_invite</code>, <code>password_reset</code>, <code>otp</code>. The layout uses <code>{ "{{content}}" }</code> to render the email body.
 				</p>
 				<details style="margin-bottom:0.75rem">
 					<summary class="text-muted" style="cursor:pointer;font-size:0.85rem">View default HTML template</summary>

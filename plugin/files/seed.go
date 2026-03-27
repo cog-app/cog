@@ -3,7 +3,10 @@
 package files
 
 import (
+	"archive/tar"
+	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"image"
 	"image/color"
 	"image/png"
@@ -11,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Seed creates sample files and directories for a user.
@@ -25,6 +29,8 @@ func (p *Plugin) Seed(username string) error {
 		{"Photos/readme.txt", "Drop images here.\n"},
 		{"Photos/pattern.png", string(generatePatternPNG())},
 		{"Projects/hello.go", "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello from Cog!\")\n}\n"},
+		{"Archives/sample.zip", string(generateSeedZip())},
+		{"Archives/project.tar.gz", string(generateSeedTarGz())},
 	}
 
 	if fs := p.userFS(username); fs != nil {
@@ -63,6 +69,62 @@ func (p *Plugin) Seed(username string) error {
 		}
 	}
 	return nil
+}
+
+func generateSeedZip() []byte {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+
+	files := map[string]string{
+		"readme.txt":       "This is a sample ZIP archive.\n",
+		"src/main.go":      "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello from archive!\")\n}\n",
+		"src/util.go":      "package main\n\nfunc add(a, b int) int { return a + b }\n",
+		"docs/guide.md":    "# Guide\n\nThis is documentation inside an archive.\n",
+		"docs/config.json": `{"name": "sample", "version": "1.0"}` + "\n",
+		"data/numbers.csv": "id,value\n1,100\n2,200\n3,300\n",
+	}
+
+	for name, content := range files {
+		fh := &zip.FileHeader{
+			Name:     name,
+			Method:   zip.Deflate,
+			Modified: time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC),
+		}
+		w, err := zw.CreateHeader(fh)
+		if err != nil {
+			continue
+		}
+		w.Write([]byte(content))
+	}
+	zw.Close()
+	return buf.Bytes()
+}
+
+func generateSeedTarGz() []byte {
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+
+	files := map[string]string{
+		"README.md":       "# Project\n\nSample tar.gz archive for testing.\n",
+		"Makefile":        "build:\n\tgo build ./...\n\ntest:\n\tgo test ./...\n",
+		"cmd/main.go":     "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"tar.gz project\")\n}\n",
+		"internal/lib.go": "package internal\n\nfunc Version() string { return \"0.1.0\" }\n",
+	}
+
+	mtime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	for name, content := range files {
+		tw.WriteHeader(&tar.Header{
+			Name:    name,
+			Size:    int64(len(content)),
+			Mode:    0644,
+			ModTime: mtime,
+		})
+		tw.Write([]byte(content))
+	}
+	tw.Close()
+	gw.Close()
+	return buf.Bytes()
 }
 
 func generatePatternPNG() []byte {
