@@ -86,6 +86,11 @@ type Registry struct {
 
 	// Optional services available to plugins.
 	services RegistryServices
+
+	// discovered tracks process plugins found in PATH that are disabled.
+	// Maps plugin ID → binary path. Only populated for disabled plugins
+	// (enabled ones are loaded via LoadExternal and appear in plugins map).
+	discovered map[string]string
 }
 
 // NewRegistry creates a new plugin registry.
@@ -106,6 +111,7 @@ func NewRegistry(log *slog.Logger, dataDir string, mux *http.ServeMux, sysDB *sq
 		csrfSecret:  csrfSecret,
 		clock:       c,
 	}
+	r.discovered = make(map[string]string)
 	r.loadEnabledState()
 	return r
 }
@@ -916,9 +922,28 @@ func (r *Registry) SetEnabled(pluginID string, enabled bool) {
 	}
 }
 
-// PluginIDs returns all registered plugin IDs in registration order.
+// PluginIDs returns all registered plugin IDs in registration order,
+// followed by discovered-but-disabled process plugin IDs.
 func (r *Registry) PluginIDs() []string {
-	return r.order
+	ids := append([]string(nil), r.order...)
+	for id := range r.discovered {
+		// Only add if not already in order (disabled plugins aren't loaded).
+		if _, loaded := r.plugins[id]; !loaded {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// IsDiscovered returns true if the plugin was discovered as a process plugin
+// from PATH (whether loaded or not).
+func (r *Registry) IsDiscovered(pluginID string) bool {
+	if _, ok := r.discovered[pluginID]; ok {
+		return true
+	}
+	// Also check loaded plugins that came from discovery.
+	// We track this via the discovered map at discovery time.
+	return false
 }
 
 func (r *Registry) loadEnabledState() {
@@ -935,6 +960,65 @@ func (r *Registry) loadEnabledState() {
 		var enabled int
 		if rows.Scan(&id, &enabled) == nil {
 			r.enabled[id] = enabled != 0
+		}
+	}
+}
+
+// DiscoverProcessPlugins scans PATH for executables matching "cog-plugin-*",
+// loads enabled ones via LoadExternalTrusted, and records disabled ones for
+// display in the admin UI.
+func (r *Registry) DiscoverProcessPlugins() {
+	pathEnv := os.Getenv("PATH")
+	if pathEnv == "" {
+		return
+	}
+
+	seen := make(map[string]bool) // avoid duplicates from multiple PATH entries
+	for _, dir := range filepath.SplitList(pathEnv) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if !strings.HasPrefix(name, "cog-plugin-") {
+				continue
+			}
+			pluginID := strings.TrimPrefix(name, "cog-plugin-")
+			if pluginID == "" || seen[pluginID] {
+				continue
+			}
+			seen[pluginID] = true
+
+			// Skip if a built-in plugin already has this ID.
+			if _, exists := r.plugins[pluginID]; exists {
+				continue
+			}
+
+			binaryPath := filepath.Join(dir, name)
+
+			// Check if the binary is executable.
+			info, err := entry.Info()
+			if err != nil || info.Mode()&0o111 == 0 {
+				continue
+			}
+
+			if !r.IsEnabled(pluginID) {
+				r.discovered[pluginID] = binaryPath
+				r.log.Info("discovered process plugin (disabled)", "plugin", pluginID, "path", binaryPath)
+				continue
+			}
+
+			r.log.Info("loading process plugin", "plugin", pluginID, "path", binaryPath)
+			if err := r.LoadExternalTrusted(binaryPath); err != nil {
+				r.log.Error("failed to load process plugin", "plugin", pluginID, "path", binaryPath, "err", err)
+				continue
+			}
+			// Track that this loaded plugin came from discovery.
+			r.discovered[pluginID] = binaryPath
 		}
 	}
 }

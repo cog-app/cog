@@ -3,6 +3,7 @@ package plugin
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
@@ -226,6 +227,74 @@ func (r *Registry) LoadExternal(binaryPath string) error {
 	client := plugpb.NewPluginServiceClient(conn)
 
 	// Get the plugin ID.
+	idResp, err := client.GetID(context.Background(), &plugpb.Empty{})
+	if err != nil {
+		conn.Close()
+		cmd.Process.Kill()
+		cmd.Wait()
+		os.RemoveAll(tmpDir)
+		return fmt.Errorf("grpc GetID: %w", err)
+	}
+
+	gp := &grpcPlugin{
+		id:     idResp.Id,
+		conn:   conn,
+		client: client,
+		cmd:    cmd,
+	}
+
+	return r.Add(gp)
+}
+
+// LoadExternalTrusted launches a trusted process plugin with full DB/filesystem
+// access. Trust is conveyed via environment variables that the plugin SDK reads.
+func (r *Registry) LoadExternalTrusted(binaryPath string) error {
+	tmpDir, err := os.MkdirTemp("", "cog-plugin-*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	socketPath := filepath.Join(tmpDir, "plugin.sock")
+
+	absDataDir, err := filepath.Abs(r.dataDir)
+	if err != nil {
+		os.RemoveAll(tmpDir)
+		return fmt.Errorf("abs data dir: %w", err)
+	}
+
+	cmd := exec.Command(binaryPath)
+	cmd.Env = append(os.Environ(),
+		"COG_PLUGIN_SOCKET="+socketPath,
+		"COG_TRUSTED=1",
+		"COG_DATA_DIR="+absDataDir,
+		"COG_CSRF_SECRET="+base64.StdEncoding.EncodeToString(r.csrfSecret),
+	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		os.RemoveAll(tmpDir)
+		return fmt.Errorf("start plugin %s: %w", binaryPath, err)
+	}
+
+	if err := waitForSocket(socketPath); err != nil {
+		cmd.Process.Kill()
+		cmd.Wait()
+		os.RemoveAll(tmpDir)
+		return fmt.Errorf("plugin socket not ready: %w", err)
+	}
+
+	conn, err := grpc.NewClient(
+		"unix://"+socketPath,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		cmd.Process.Kill()
+		cmd.Wait()
+		os.RemoveAll(tmpDir)
+		return fmt.Errorf("grpc connect: %w", err)
+	}
+
+	client := plugpb.NewPluginServiceClient(conn)
+
 	idResp, err := client.GetID(context.Background(), &plugpb.Empty{})
 	if err != nil {
 		conn.Close()

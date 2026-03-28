@@ -363,6 +363,9 @@ func (h *adminHandler) TogglePlugin(w http.ResponseWriter, r *http.Request) {
 	}
 	enabled := !h.p.Plugins.IsEnabled(id)
 	h.p.Plugins.SetEnabled(id, enabled)
+	if h.p.Plugins.IsDiscovered(id) {
+		setFlash(w, "info", "Restart required to apply changes to process plugins.")
+	}
 	http.Redirect(w, r, "/admin/plugins", http.StatusSeeOther)
 }
 

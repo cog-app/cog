@@ -69,10 +69,18 @@ func (s *pluginServer) Register(_ *plugpb.Empty, stream grpc.ServerStreamingServ
 	s.hooks = make(map[string][]cogplugin.HookCallback)
 	s.mu.Unlock()
 
-	reg := &capturingRegistrar{
+	base := &capturingRegistrar{
 		pluginID: s.plugin.ID(),
 		stream:   stream,
 		server:   s,
+	}
+
+	// Use trusted registrar if trust env vars are set.
+	var reg cogplugin.PluginContext
+	if tr := newTrustedRegistrar(base); tr != nil {
+		reg = tr
+	} else {
+		reg = base
 	}
 
 	return s.plugin.Register(reg)

@@ -172,6 +172,9 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		registry.Add(p)
 	}
 
+	// Discover and load process plugins from PATH.
+	registry.DiscoverProcessPlugins()
+
 	// Wire mount resolver into plugin registry.
 	resolver := mount.NewResolver(users, mounts, volumes)
 	registry.SetMountResolver(resolver)
