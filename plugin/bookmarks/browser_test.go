@@ -110,4 +110,37 @@ func TestBrowser(t *testing.T) {
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
+
+	t.Run("FolderView", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "folder", "pass")
+		// The CreateFolder test already created "My Folder" — navigate to it.
+		b.Navigate(t, "/apps/bookmarks/")
+		b.WaitText(t, "My Folder")
+		b.Click(t, `a[href*="/apps/bookmarks/folder/"]`)
+		b.WaitVisible(t, ".sidebar-content")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("TagView", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "tags", "pass")
+		// The TagsPage test already created "testtag" — navigate to it.
+		b.Navigate(t, "/apps/bookmarks/tag/testtag")
+		b.WaitText(t, "testtag")
+		b.WaitText(t, "Tagged BM")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("ExportPage", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "tags", "pass")
+		// The export is a direct download — just verify the bookmarks index has content.
+		b.Navigate(t, "/apps/bookmarks/")
+		b.WaitText(t, "Tagged BM")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
 }

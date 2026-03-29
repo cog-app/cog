@@ -57,4 +57,31 @@ func TestBrowser(t *testing.T) {
 		b.WaitText(t, "Videos")
 		b.Snapshot(t)
 	})
+
+	t.Run("PeoplePage", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "page", "pass")
+		b.Navigate(t, "/apps/gallery/people")
+		b.WaitVisible(t, "main")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("TagsPage", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "page", "pass")
+		b.Navigate(t, "/apps/gallery/tags")
+		b.WaitVisible(t, "main")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("DuplicatesPage", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "page", "pass")
+		b.Navigate(t, "/apps/gallery/duplicates")
+		b.WaitVisible(t, "main")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
 }

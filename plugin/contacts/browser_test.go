@@ -18,6 +18,8 @@ func TestBrowser(t *testing.T) {
 	env.CreateUser(t, "delete", "pass")
 	env.CreateUser(t, "settings", "pass")
 	env.CreateUser(t, "edit", "pass")
+	env.CreateUser(t, "starred", "pass")
+	env.CreateUser(t, "newbook", "pass")
 
 	t.Run("EmptyState", func(t *testing.T) {
 		b := eng.Start(t)
@@ -82,6 +84,27 @@ func TestBrowser(t *testing.T) {
 		// Open detail modal.
 		b.ClickText(t, "Edit Target")
 		b.WaitVisible(t, `#contact-modal`)
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("StarredPage", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "starred", "pass")
+		b.Navigate(t, "/apps/contacts/starred")
+		b.WaitVisible(t, "main")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("CreateAddressBook", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "newbook", "pass")
+		b.Navigate(t, "/apps/contacts/settings")
+		b.WaitVisible(t, `input[name="name"]`)
+		b.Type(t, `input[name="name"]`, "Work Contacts")
+		b.Click(t, `form[action="/apps/contacts/books"] button[type="submit"]`)
+		b.WaitText(t, "Work Contacts")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})

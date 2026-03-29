@@ -19,6 +19,7 @@ func TestBrowser(t *testing.T) {
 	env.CreateUser(t, "star", "pass")
 	env.CreateUser(t, "delete", "pass")
 	env.CreateUser(t, "starred", "pass")
+	env.CreateUser(t, "category", "pass")
 
 	t.Run("EmptyState", func(t *testing.T) {
 		b := eng.Start(t)
@@ -93,6 +94,23 @@ func TestBrowser(t *testing.T) {
 		b.AcceptConfirms(t)
 		b.Click(t, `[hx-delete]`)
 		b.WaitNotVisible(t, `[hx-delete]`)
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("CategoryView", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "category", "pass")
+		b.Navigate(t, "/apps/notes/new")
+		b.WaitVisible(t, "#title")
+		b.Type(t, "#title", "Work Note")
+		b.Type(t, "#content", "Important work stuff")
+		b.Type(t, "#category", "Work")
+		b.Click(t, `main button[type="submit"]`)
+		b.WaitText(t, "Work Note")
+		// Navigate to the category page via sidebar.
+		b.Navigate(t, "/apps/notes/category/Work")
+		b.WaitText(t, "Work Note")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})

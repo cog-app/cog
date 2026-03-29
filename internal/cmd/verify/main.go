@@ -1,19 +1,23 @@
-// Verify tool for Cog. Usage: go tool verify [-cover-only] [-continue]
+// Verify tool for Cog. Usage: go tool verify [-cover-only] [-continue] [-snapshots]
 //
 // Runs code quality checks in sequence: generate, fmt, fix, vet, and tests
 // with cross-package coverage. Reports uncovered handler functions at the end.
+// Generates an HTML snapshot gallery at tmp/snapshots.html.
 //
 // Use -cover-only to skip generate/fmt/vet and jump straight to tests.
 // Use -continue to keep going after a step fails.
+// Use -snapshots to only regenerate the snapshot gallery without running tests.
 package main
 
 import (
 	"bufio"
 	"flag"
 	"fmt"
+	"html"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -21,10 +25,17 @@ import (
 func main() {
 	coverOnly := flag.Bool("cover-only", false, "skip generate/fmt/vet, run tests with coverage only")
 	cont := flag.Bool("continue", false, "continue on failure instead of stopping")
+	snapshotsOnly := flag.Bool("snapshots", false, "only regenerate the snapshot gallery")
 	flag.Parse()
 
-	coverProfile := filepath.Join("tmp", "coverage.out")
 	os.MkdirAll("tmp", 0o755)
+
+	if *snapshotsOnly {
+		generateGallery()
+		return
+	}
+
+	coverProfile := filepath.Join("tmp", "coverage.out")
 
 	failed := false
 	run := func(name string, args ...string) bool {
@@ -76,11 +87,185 @@ func main() {
 		reportCoverage(coverProfile)
 	}
 
+	generateGallery()
+
 	if failed {
 		fmt.Println("\n\033[1;31mVerification failed.\033[0m")
 		os.Exit(1)
 	}
 	fmt.Println("\n\033[1;32mAll checks passed.\033[0m")
+}
+
+// snapshot pairs a desktop screenshot with its optional mobile variant.
+type snapshot struct {
+	Name    string // test name derived from filename
+	Desktop string // relative path to desktop PNG
+	Mobile  string // relative path to mobile PNG (empty if none)
+}
+
+// generateGallery walks the repo for testdata/snapshots/ dirs and writes tmp/snapshots.html.
+func generateGallery() {
+	fmt.Printf("\n\033[1;34m▶ Snapshot gallery\033[0m\n")
+
+	// pkg path → snapshots
+	groups := map[string][]snapshot{}
+	var pkgOrder []string
+
+	filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		// Skip hidden dirs and tmp (but not the root ".").
+		base := filepath.Base(path)
+		if info.IsDir() && path != "." && (strings.HasPrefix(base, ".") || base == "tmp" || base == "vendor" || base == "node_modules") {
+			return filepath.SkipDir
+		}
+		if !info.IsDir() {
+			return nil
+		}
+		if filepath.Base(path) != "snapshots" {
+			return nil
+		}
+		// Expect parent to be testdata.
+		if filepath.Base(filepath.Dir(path)) != "testdata" {
+			return nil
+		}
+
+		// Package path is two levels up from testdata/snapshots.
+		pkg := filepath.Dir(filepath.Dir(path))
+
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return nil
+		}
+
+		// Collect all .png files, index mobile variants.
+		mobileSet := map[string]bool{}
+		var desktopFiles []string
+		for _, e := range entries {
+			name := e.Name()
+			if !strings.HasSuffix(name, ".png") {
+				continue
+			}
+			// Skip failure artifacts.
+			if strings.Contains(name, ".actual.") || strings.Contains(name, ".diff.") {
+				continue
+			}
+			if strings.HasSuffix(name, "_mobile.png") {
+				mobileSet[name] = true
+			} else {
+				desktopFiles = append(desktopFiles, name)
+			}
+		}
+
+		sort.Strings(desktopFiles)
+		var snaps []snapshot
+		for _, f := range desktopFiles {
+			testName := strings.TrimSuffix(f, ".png")
+			mobileFile := testName + "_mobile.png"
+			s := snapshot{
+				Name:    testName,
+				Desktop: filepath.Join(path, f),
+			}
+			if mobileSet[mobileFile] {
+				s.Mobile = filepath.Join(path, mobileFile)
+			}
+			snaps = append(snaps, s)
+		}
+
+		if len(snaps) > 0 {
+			groups[pkg] = snaps
+			pkgOrder = append(pkgOrder, pkg)
+		}
+		return nil
+	})
+
+	sort.Strings(pkgOrder)
+
+	totalSnaps := 0
+	for _, snaps := range groups {
+		totalSnaps += len(snaps)
+	}
+
+	outPath := filepath.Join("tmp", "snapshots.html")
+	f, err := os.Create(outPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  create %s: %v\n", outPath, err)
+		return
+	}
+	defer f.Close()
+
+	// Write HTML.
+	fmt.Fprintf(f, `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cog — Snapshot Gallery</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#f5f5f5;color:#222;padding:2rem}
+h1{margin-bottom:0.25rem}
+.summary{color:#666;margin-bottom:2rem;font-size:0.9rem}
+details{margin-bottom:1.5rem;background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1)}
+summary{cursor:pointer;padding:1rem 1.25rem;font-size:1.1rem;font-weight:600;user-select:none;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:'▸ ';color:#999}
+details[open]>summary::before{content:'▾ '}
+summary .count{color:#999;font-weight:400;font-size:0.85rem;margin-left:0.5rem}
+.grid{display:grid;gap:1.5rem;padding:1rem 1.25rem;grid-template-columns:repeat(auto-fill,minmax(500px,1fr))}
+.snap{border:1px solid #e0e0e0;border-radius:6px;overflow:hidden}
+.snap-title{padding:0.5rem 0.75rem;background:#fafafa;border-bottom:1px solid #e0e0e0;font-size:0.8rem;font-family:monospace;color:#555}
+.snap-pair{display:flex;gap:0}
+.snap-pair img{display:block}
+.snap-desktop{flex:1;min-width:0}
+.snap-mobile{flex:0 0 auto;border-left:1px solid #e0e0e0}
+.snap-desktop img,.snap-mobile img{width:100%%;height:auto}
+.label{text-align:center;font-size:0.7rem;color:#999;padding:2px 0;background:#fafafa;border-top:1px solid #eee}
+</style>
+</head>
+<body>
+<h1>Snapshot Gallery</h1>
+<p class="summary">%d snapshots across %d packages — generated %s</p>
+`, totalSnaps, len(pkgOrder), time.Now().Format("2006-01-02 15:04:05"))
+
+	for _, pkg := range pkgOrder {
+		snaps := groups[pkg]
+		fmt.Fprintf(f, `<details open>
+<summary>%s<span class="count">(%d)</span></summary>
+<div class="grid">
+`, html.EscapeString(pkg), len(snaps))
+
+		for _, s := range snaps {
+			// Paths relative to tmp/ where the HTML lives.
+			desktopRel, _ := filepath.Rel("tmp", s.Desktop)
+			fmt.Fprintf(f, `<div class="snap">
+<div class="snap-title">%s</div>
+<div class="snap-pair">
+<div class="snap-desktop"><a href="%s"><img src="%s" loading="lazy" alt="%s"></a><div class="label">desktop</div></div>
+`, html.EscapeString(s.Name), html.EscapeString(desktopRel), html.EscapeString(desktopRel), html.EscapeString(s.Name))
+
+			if s.Mobile != "" {
+				mobileRel, _ := filepath.Rel("tmp", s.Mobile)
+				fmt.Fprintf(f, `<div class="snap-mobile"><a href="%s"><img src="%s" loading="lazy" alt="%s mobile"></a><div class="label">mobile</div></div>
+`, html.EscapeString(mobileRel), html.EscapeString(mobileRel), html.EscapeString(s.Name))
+			}
+
+			fmt.Fprintf(f, `</div>
+</div>
+`)
+		}
+
+		fmt.Fprintf(f, `</div>
+</details>
+`)
+	}
+
+	fmt.Fprintf(f, `</body>
+</html>
+`)
+
+	fmt.Printf("  wrote %s (%d snapshots, %d packages)\n", outPath, totalSnaps, len(pkgOrder))
 }
 
 func reportCoverage(profile string) {
