@@ -6,6 +6,7 @@ tool (
 	git.duckfam.us/jj-software/cog/internal/cmd/dev
 	git.duckfam.us/jj-software/cog/internal/cmd/docs
 	git.duckfam.us/jj-software/cog/internal/cmd/migratesql
+	git.duckfam.us/jj-software/cog/internal/cmd/verify
 	github.com/a-h/templ/cmd/templ
 	github.com/duckbrain/goprotoc
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc

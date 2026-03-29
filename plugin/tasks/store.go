@@ -3,8 +3,8 @@ package tasks
 import (
 	"crypto/md5"
 	"database/sql"
-	"time"
 	"fmt"
+	"time"
 )
 
 // TaskList is a container for tasks (shareable resource).

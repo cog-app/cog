@@ -53,7 +53,7 @@ func New(p *services.Providers) http.Handler {
 	qc := buildQuotaChecker(p, fp)
 
 	// --- Wire optional services for plugins ---
-	p.Plugins.SetServices(buildRegistryServices(p.Shares, p.EmailSender, p.Users, p.Groups, qc, p.Access))
+	p.Plugins.SetServices(buildRegistryServices(p.Shares, p.EmailSender, p.Users, p.Groups, qc, p.Access, p.Activities))
 
 	// --- Web UI handlers ---
 	h := handler{p}
@@ -245,6 +245,7 @@ func New(p *services.Providers) http.Handler {
 			Groups:     p.Groups,
 			Federation: p.Federation,
 			FedClient:  p.FedClient,
+			Activities: p.Activities,
 			BaseURL:    p.Config.BaseURL,
 		}
 		if p.Search != nil && p.Search.Propagator != nil {
@@ -284,7 +285,7 @@ func New(p *services.Providers) http.Handler {
 	mux.HandleFunc("/remote.php/dav/", compat.HandleWebDAVStub)
 
 	// NC-compatible OCS routes (avatar, notifications, user status, etc.)
-	ncCompat := &compat.NCCompat{Users: p.Users, Files: fp, DataDir: p.Config.DataDir}
+	ncCompat := &compat.NCCompat{Users: p.Users, Files: fp, Activities: p.Activities, DataDir: p.Config.DataDir}
 	ncCompat.RegisterRoutes(mux)
 
 	// --- OCM Federation ---

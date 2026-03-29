@@ -60,6 +60,7 @@ type PluginContext interface {
 	GroupStore() GroupStore
 	FilesAccess() FilesAccess
 	VolumeAccess() VolumeAccess
+	ActivityLog() ActivityLogger
 }
 
 // UserInfo is a public version of the internal user type.

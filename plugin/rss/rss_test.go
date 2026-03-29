@@ -179,6 +179,211 @@ func TestNewsAPI_StarItem(t *testing.T) {
 	require.Equal(t, true, itemsResp.Items[0]["starred"])
 }
 
+func TestNewsAPI_CreateFeedBadURL(t *testing.T) {
+	env := cogtest.New(t, rss.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	// The createFeed handler rejects URLs that resolve to private IPs.
+	doReq(t, env, "POST", newsAPI+"/feeds", map[string]any{
+		"url": "http://127.0.0.1:9999/feed.xml",
+	}, alice.Auth).Status(422)
+
+	// Missing URL returns 400.
+	doReq(t, env, "POST", newsAPI+"/feeds", map[string]any{}, alice.Auth).Status(400)
+}
+
+func TestNewsAPI_FeedWithFolder(t *testing.T) {
+	env := cogtest.New(t, rss.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("rss")
+	rp := plug.(*rss.Plugin)
+	db, err := rp.DB(alice.Username)
+	require.NoError(t, err)
+
+	// Create folder and feed in the folder.
+	folder, err := rss.CreateFolder(db, "News")
+	require.NoError(t, err)
+	_, err = rss.CreateFeed(db, "https://example.com/feed.xml", sql.NullInt64{Int64: folder.ID, Valid: true})
+	require.NoError(t, err)
+
+	// Verify the feed is in the folder via API.
+	var listResp struct {
+		Feeds []map[string]any `json:"feeds"`
+	}
+	env.Get(t, newsAPI+"/feeds", alice.Auth).Status(200).JSON(&listResp)
+	require.Equal(t, 1, len(listResp.Feeds))
+	require.Equal(t, folder.ID, int64(listResp.Feeds[0]["folderId"].(float64)))
+}
+
+func TestNewsAPI_MoveFeed(t *testing.T) {
+	env := cogtest.New(t, rss.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("rss")
+	rp := plug.(*rss.Plugin)
+	db, err := rp.DB(alice.Username)
+	require.NoError(t, err)
+
+	feed, err := rss.CreateFeed(db, "https://example.com/feed.xml", sql.NullInt64{})
+	require.NoError(t, err)
+
+	// Create a folder.
+	var folderResp struct {
+		Folders []map[string]any `json:"folders"`
+	}
+	doReq(t, env, "POST", newsAPI+"/folders", map[string]any{
+		"name": "Tech",
+	}, alice.Auth).Status(200).JSON(&folderResp)
+	folderID := int64(folderResp.Folders[0]["id"].(float64))
+
+	// Move feed to the folder.
+	doReq(t, env, "PUT", newsAPI+"/feeds/"+fmtID(float64(feed.ID))+"/move", map[string]any{
+		"folderId": folderID,
+	}, alice.Auth).Status(200)
+
+	// Verify via list.
+	var listResp struct {
+		Feeds []map[string]any `json:"feeds"`
+	}
+	env.Get(t, newsAPI+"/feeds", alice.Auth).Status(200).JSON(&listResp)
+	require.Equal(t, 1, len(listResp.Feeds))
+	require.Equal(t, folderID, int64(listResp.Feeds[0]["folderId"].(float64)))
+}
+
+func TestNewsAPI_RenameFeed(t *testing.T) {
+	env := cogtest.New(t, rss.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("rss")
+	rp := plug.(*rss.Plugin)
+	db, err := rp.DB(alice.Username)
+	require.NoError(t, err)
+
+	feed, err := rss.CreateFeed(db, "https://example.com/feed.xml", sql.NullInt64{})
+	require.NoError(t, err)
+
+	doReq(t, env, "PUT", newsAPI+"/feeds/"+fmtID(float64(feed.ID))+"/rename", map[string]any{
+		"feedTitle": "My Renamed Feed",
+	}, alice.Auth).Status(200)
+
+	// Verify.
+	var listResp struct {
+		Feeds []map[string]any `json:"feeds"`
+	}
+	env.Get(t, newsAPI+"/feeds", alice.Auth).Status(200).JSON(&listResp)
+	require.Equal(t, 1, len(listResp.Feeds))
+	require.Equal(t, "My Renamed Feed", listResp.Feeds[0]["title"])
+}
+
+func TestNewsAPI_MarkFeedRead(t *testing.T) {
+	env := cogtest.New(t, rss.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("rss")
+	rp := plug.(*rss.Plugin)
+	db, err := rp.DB(alice.Username)
+	require.NoError(t, err)
+
+	feed, err := rss.CreateFeed(db, "https://example.com/feed.xml", sql.NullInt64{})
+	require.NoError(t, err)
+
+	// Insert unread items.
+	for _, title := range []string{"A", "B", "C"} {
+		_, err := db.Exec(`INSERT INTO items (feed_id, guid, title, url, content_html) VALUES (?, ?, ?, ?, ?)`,
+			feed.ID, "guid-"+title, title, "https://example.com/"+title, "<p>"+title+"</p>")
+		require.NoError(t, err)
+	}
+
+	// Mark all items in feed as read.
+	doReq(t, env, "PUT", newsAPI+"/feeds/"+fmtID(float64(feed.ID))+"/read", map[string]any{}, alice.Auth).Status(200)
+
+	// All items should now be read.
+	var itemsResp struct {
+		Items []map[string]any `json:"items"`
+	}
+	env.Get(t, newsAPI+"/items?batchSize=50&getRead=true", alice.Auth).
+		Status(200).JSON(&itemsResp)
+	for _, item := range itemsResp.Items {
+		require.Equal(t, false, item["unread"])
+	}
+}
+
+func TestNewsAPI_UpdatedItems(t *testing.T) {
+	env := cogtest.New(t, rss.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("rss")
+	rp := plug.(*rss.Plugin)
+	db, err := rp.DB(alice.Username)
+	require.NoError(t, err)
+
+	feed, err := rss.CreateFeed(db, "https://example.com/feed.xml", sql.NullInt64{})
+	require.NoError(t, err)
+
+	// Insert an item with a known fetched_at.
+	_, err = db.Exec(`INSERT INTO items (feed_id, guid, title, url, content_html, fetched_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		feed.ID, "guid-updated", "Updated Item", "https://example.com/updated", "<p>updated</p>", 1000)
+	require.NoError(t, err)
+
+	// Query with lastModified=999 should return the item.
+	var resp struct {
+		Items []map[string]any `json:"items"`
+	}
+	env.Get(t, newsAPI+"/items/updated?lastModified=999&type=3", alice.Auth).
+		Status(200).JSON(&resp)
+	require.Equal(t, 1, len(resp.Items))
+	require.Equal(t, "Updated Item", resp.Items[0]["title"])
+
+	// Query with lastModified=1001 should return nothing.
+	env.Get(t, newsAPI+"/items/updated?lastModified=1001&type=3", alice.Auth).
+		Status(200).JSON(&resp)
+	require.Equal(t, 0, len(resp.Items))
+}
+
+func TestNewsAPI_BulkRead(t *testing.T) {
+	env := cogtest.New(t, rss.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("rss")
+	rp := plug.(*rss.Plugin)
+	db, err := rp.DB(alice.Username)
+	require.NoError(t, err)
+
+	feed, err := rss.CreateFeed(db, "https://example.com/feed.xml", sql.NullInt64{})
+	require.NoError(t, err)
+
+	// Insert items.
+	var itemIDs []int64
+	for _, title := range []string{"X", "Y", "Z"} {
+		res, err := db.Exec(`INSERT INTO items (feed_id, guid, title, url, content_html) VALUES (?, ?, ?, ?, ?)`,
+			feed.ID, "guid-"+title, title, "https://example.com/"+title, "<p>"+title+"</p>")
+		require.NoError(t, err)
+		id, _ := res.LastInsertId()
+		itemIDs = append(itemIDs, id)
+	}
+
+	// Bulk mark first two as read.
+	doReq(t, env, "PUT", newsAPI+"/items/read/multiple", map[string]any{
+		"items": []int64{itemIDs[0], itemIDs[1]},
+	}, alice.Auth).Status(200)
+
+	// Verify.
+	var itemsResp struct {
+		Items []map[string]any `json:"items"`
+	}
+	env.Get(t, newsAPI+"/items?batchSize=50&getRead=true", alice.Auth).
+		Status(200).JSON(&itemsResp)
+
+	readCount := 0
+	for _, item := range itemsResp.Items {
+		if !item["unread"].(bool) {
+			readCount++
+		}
+	}
+	require.Equal(t, 2, readCount)
+}
+
 func TestRSSPage(t *testing.T) {
 	env := cogtest.New(t, rss.New())
 	alice := env.CreateUser(t, "alice", "pass")

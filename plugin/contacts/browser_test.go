@@ -16,6 +16,8 @@ func TestBrowser(t *testing.T) {
 	env.CreateUser(t, "empty", "pass")
 	env.CreateUser(t, "create", "pass")
 	env.CreateUser(t, "delete", "pass")
+	env.CreateUser(t, "settings", "pass")
+	env.CreateUser(t, "edit", "pass")
 
 	t.Run("EmptyState", func(t *testing.T) {
 		b := eng.Start(t)
@@ -54,6 +56,32 @@ func TestBrowser(t *testing.T) {
 		b.AcceptConfirms(t)
 		b.Click(t, `#contact-modal [hx-delete]`)
 		b.WaitNotVisible(t, `#contact-modal [hx-delete]`)
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("SettingsPage", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "settings", "pass")
+		b.Navigate(t, "/apps/contacts/settings")
+		b.WaitText(t, "Contacts")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("EditContact", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "edit", "pass")
+		b.Navigate(t, "/apps/contacts/")
+		b.WaitText(t, "No contacts yet")
+		// Create a contact first.
+		b.Eval(t, `document.getElementById('create-contact-modal').style.display='flex'`)
+		b.Type(t, "#cc-fn", "Edit Target")
+		b.Click(t, `#create-contact-modal button[type="submit"]`)
+		b.WaitText(t, "Edit Target")
+		// Open detail modal.
+		b.ClickText(t, "Edit Target")
+		b.WaitVisible(t, `#contact-modal`)
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})

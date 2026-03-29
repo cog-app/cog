@@ -224,4 +224,3 @@ func renderAll(pages []page, nav []navSection, outDir string) error {
 	}
 	return nil
 }
-

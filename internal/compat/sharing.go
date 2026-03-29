@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/activity"
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/group"
@@ -27,6 +28,7 @@ type SharingHandler struct {
 	Groups        *group.Store
 	Federation    *federation.Store
 	FedClient     *federation.Client
+	Activities    *activity.Store
 	BaseURL       string
 	OnShareCreate func(rec *share.Record)
 	OnShareDelete func(rec *share.Record)
@@ -359,6 +361,7 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 	if h.OnShareCreate != nil {
 		h.OnShareCreate(rec)
 	}
+	h.logShareActivity(u, rec, "share_created", "shared")
 
 	ocs, err := h.shareToOCS(rec, u)
 	if err != nil {
@@ -366,6 +369,14 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeOCSReq(w, r, http.StatusOK, ocs)
+}
+
+func (h *SharingHandler) logShareActivity(u *user.User, rec *share.Record, typ, verb string) {
+	if h.Activities == nil {
+		return
+	}
+	subject := fmt.Sprintf("%s %s %s", u.DisplayName, verb, rec.ResourceType)
+	h.Activities.Log(u.Username, u.Username, "sharing", typ, subject, rec.ResourceType, rec.ResourceID, "")
 }
 
 // createFederatedShare handles outbound federated sharing (shareType=6).
@@ -597,6 +608,7 @@ func (h *SharingHandler) HandleDeleteShare(w http.ResponseWriter, r *http.Reques
 	if h.OnShareDelete != nil {
 		h.OnShareDelete(rec)
 	}
+	h.logShareActivity(u, rec, "share_deleted", "unshared")
 
 	if err := h.Shares.Delete(shareID); err != nil {
 		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())

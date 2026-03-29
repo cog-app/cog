@@ -131,3 +131,45 @@ func TestNCLoginFlowBadPassword(t *testing.T) {
 	env.PostForm(t, "/index.php/login/v2/poll", url.Values{"token": {initResp.Poll.Token}}).
 		Status(404)
 }
+
+func TestOCSSearchProviders(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+
+	var ocsResp struct {
+		OCS struct {
+			Meta struct{ Status string } `json:"meta"`
+			Data []struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"data"`
+		} `json:"ocs"`
+	}
+	env.Get(t, "/ocs/v2.php/search/providers?format=json", alice.Auth).
+		Status(200).JSON(&ocsResp)
+
+	require.Equal(t, "ok", ocsResp.OCS.Meta.Status)
+	require.Equal(t, 1, len(ocsResp.OCS.Data))
+	require.Equal(t, "files", ocsResp.OCS.Data[0].ID)
+}
+
+func TestOCSProfile(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+
+	var ocsResp struct {
+		OCS struct {
+			Meta struct{ Status string } `json:"meta"`
+			Data struct {
+				UserID      string `json:"userId"`
+				DisplayName string `json:"displayName"`
+			} `json:"data"`
+		} `json:"ocs"`
+	}
+	env.Get(t, "/ocs/v2.php/apps/dav/api/v1/profiles/alice?format=json", alice.Auth).
+		Status(200).JSON(&ocsResp)
+
+	require.Equal(t, "ok", ocsResp.OCS.Meta.Status)
+	require.Equal(t, "alice", ocsResp.OCS.Data.UserID)
+	require.Equal(t, "alice", ocsResp.OCS.Data.DisplayName)
+}

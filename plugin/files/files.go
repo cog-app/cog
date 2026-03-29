@@ -234,6 +234,7 @@ func (p *Plugin) CreateDir(username, dirPath string) (*FileMeta, error) {
 	}
 
 	id, _ := res.LastInsertId()
+	p.logActivity(username, "file_created", username+" created folder "+name, strconv.FormatInt(id, 10), dirPath)
 	return &FileMeta{
 		ID:         id,
 		Path:       dirPath,
@@ -311,6 +312,7 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 	}
 
 	id, _ := res.LastInsertId()
+	p.logActivity(username, "file_created", username+" uploaded "+name, strconv.FormatInt(id, 10), filePath)
 	return &FileMeta{
 		ID:         id,
 		Path:       filePath,
@@ -321,6 +323,12 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 		MimeType:   mimeType,
 		ETag:       etag,
 	}, nil
+}
+
+func (p *Plugin) logActivity(username, typ, subject, objectID, objectName string) {
+	if al := p.ctx.ActivityLog(); al != nil {
+		al.Log(username, username, "files", typ, subject, "files", objectID, objectName)
+	}
 }
 
 // Download opens a file for reading. The returned io.ReadCloser must be closed
@@ -458,6 +466,7 @@ func (p *Plugin) HardDelete(username, filePath string) error {
 			return fmt.Errorf("delete file metadata: %w", err)
 		}
 	}
+	p.logActivity(username, "file_deleted", username+" deleted "+filepath.Base(filePath), strconv.FormatInt(meta.ID, 10), filePath)
 	return nil
 }
 
@@ -517,6 +526,7 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 		return nil, fmt.Errorf("update children metadata: %w", err)
 	}
 
+	p.logActivity(username, "file_changed", username+" renamed "+filepath.Base(oldPath)+" to "+newName, "", newPath)
 	return p.GetByPath(username, newPath)
 }
 

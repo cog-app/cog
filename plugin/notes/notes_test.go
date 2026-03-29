@@ -125,6 +125,37 @@ func TestNotesAPI_Settings(t *testing.T) {
 	require.Equal(t, ".md", settings["fileSuffix"])
 }
 
+func TestNotesAPI_PutSettings(t *testing.T) {
+	env := cogtest.New(t, notes.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	var settings map[string]any
+	req := cogtest.NewRequest(t, "PUT", env.Providers.Config.BaseURL+"/index.php/apps/notes/api/v1/settings",
+		jsonReader(map[string]any{"notesPath": "MyNotes", "fileSuffix": ".txt"}))
+	req.Header.Set("Content-Type", "application/json")
+	env.Do(t, req, alice.Auth).Status(200).JSON(&settings)
+
+	// The server ignores custom values and always returns defaults.
+	require.Equal(t, "Notes", settings["notesPath"])
+	require.Equal(t, ".md", settings["fileSuffix"])
+}
+
+func TestNotesCategoryPage(t *testing.T) {
+	env := cogtest.New(t, notes.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	// Create a note with a category via API so the DB is migrated.
+	env.PostJSON(t, notesAPI, map[string]any{
+		"title":    "Work Note",
+		"content":  "work stuff",
+		"category": "work",
+	}, alice.Auth).Status(200)
+
+	// GET the category page.
+	env.Get(t, "/apps/notes/category/work", alice.Auth).
+		Status(200).Contains("work")
+}
+
 func TestNotesPage(t *testing.T) {
 	env := cogtest.New(t, notes.New())
 	alice := env.CreateUser(t, "alice", "pass")

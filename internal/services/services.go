@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/activity"
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/config"
@@ -56,6 +57,7 @@ type Providers struct {
 	EmailOTP       *auth.EmailOTPStore
 	WebAuthn       *auth.WebAuthnStore
 	PasswordResets *auth.PasswordResetStore
+	Activities     *activity.Store
 	Federation     *federation.Store
 	FedClient      *federation.Client
 	EmailHook      email.SendHook // if set, all email goes through this instead of SMTP
@@ -184,6 +186,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 
 	shares := share.NewStore(sysDB, c)
 	quotas := quota.NewStore(sysDB, c)
+	activities := activity.NewStore(sysDB, c)
 	fedStore := federation.NewStore(sysDB, c)
 	fedClient := federation.NewClient(cfg.BaseURL)
 
@@ -209,6 +212,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		PasswordResets: auth.NewPasswordResetStore(sysDB, c),
 		WebAuthn:       newWebAuthnStore(sysDB, c, cfg.BaseURL, log),
 		RateLimiter:    ratelimit.New(10, 15*time.Minute, c),
+		Activities:     activities,
 		Federation:     fedStore,
 		FedClient:      fedClient,
 		CSRFSecret:     secret,

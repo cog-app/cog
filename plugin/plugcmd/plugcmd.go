@@ -289,6 +289,7 @@ func (r *capturingRegistrar) RootDB() (*sql.DB, error) {
 func (r *capturingRegistrar) RegisterDAVHandler(prefix string, handler http.Handler) {}
 func (r *capturingRegistrar) RegisterSettingsPage(page cogplugin.SettingsPage)       {}
 func (r *capturingRegistrar) RegisterCommand(def cogplugin.CommandDef)               {}
+func (r *capturingRegistrar) ActivityLog() cogplugin.ActivityLogger                  { return nil }
 
 // responseCapture is a minimal http.ResponseWriter for capturing plugin responses.
 type responseCapture struct {

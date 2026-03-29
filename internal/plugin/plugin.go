@@ -48,6 +48,7 @@ type SettingsPage = cogplugin.SettingsPage
 type CheckStatus = cogplugin.CheckStatus
 type CheckResult = cogplugin.CheckResult
 type Doctor = cogplugin.Doctor
+type ActivityLogger = cogplugin.ActivityLogger
 type VFS = vfs.FS
 
 // Re-export permission constants (cannot alias constants).

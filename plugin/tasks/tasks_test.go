@@ -1,11 +1,14 @@
 package tasks_test
 
 import (
-	"time"
+	"encoding/json"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/tasks"
@@ -302,4 +305,106 @@ func TestUpcomingTasks(t *testing.T) {
 	require.Equal(t, 1, len(upcoming))
 	require.Equal(t, "Due Task", upcoming[0].Summary)
 	require.Equal(t, "Upcoming", upcoming[0].ListName)
+}
+
+// --- HTTP endpoint tests ---
+
+func sessionAuth(t testing.TB, env *cogtest.Env, u *cogtest.User) (cookie, csrf cogtest.HTTPOpt) {
+	t.Helper()
+	sess, err := env.Providers.Sessions.Create(u.ID)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	token := auth.CSRFToken(sess.ID, env.Providers.CSRFSecret)
+	cookie = cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID)
+	csrf = cogtest.Header("X-CSRF-Token", token)
+	return cookie, csrf
+}
+
+func TestTasksUpdateTask(t *testing.T) {
+	env, tp, alice := setupDB(t)
+	db, err := tp.DB(alice.Username)
+	require.NoError(t, err)
+
+	list, err := tasks.CreateTaskList(db, "update-list", "Update List", "")
+	require.NoError(t, err)
+
+	task, err := tasks.CreateTask(db, list.ID, "update-uid", nil, "Original", "old desc", 1, nil, nil, time.Now())
+	require.NoError(t, err)
+
+	cookie, csrf := sessionAuth(t, env, alice)
+
+	// POST to update the task.
+	env.PostForm(t, "/apps/tasks/task/"+itoa(task.ID), url.Values{
+		"summary":     {"Updated Summary"},
+		"description": {"new desc"},
+		"priority":    {"5"},
+		"status":      {"IN-PROCESS"},
+		"list_id":     {itoa(list.ID)},
+	}, cookie, csrf, cogtest.StopRedirect).Status(303)
+
+	// Verify the update.
+	updated, err := tasks.GetTask(db, task.ID)
+	require.NoError(t, err)
+	require.Equal(t, "Updated Summary", updated.Summary)
+	require.Equal(t, "new desc", updated.Description)
+	require.Equal(t, 5, updated.Priority)
+	require.Equal(t, "IN-PROCESS", updated.Status)
+}
+
+func TestTasksReorder(t *testing.T) {
+	env, tp, alice := setupDB(t)
+	db, err := tp.DB(alice.Username)
+	require.NoError(t, err)
+
+	list, err := tasks.CreateTaskList(db, "reorder-list", "Reorder", "")
+	require.NoError(t, err)
+
+	t1, err := tasks.CreateTask(db, list.ID, "r1", nil, "First", "", 0, nil, nil, time.Now())
+	require.NoError(t, err)
+	t2, err := tasks.CreateTask(db, list.ID, "r2", nil, "Second", "", 0, nil, nil, time.Now())
+	require.NoError(t, err)
+	t3, err := tasks.CreateTask(db, list.ID, "r3", nil, "Third", "", 0, nil, nil, time.Now())
+	require.NoError(t, err)
+
+	cookie, csrf := sessionAuth(t, env, alice)
+
+	// POST JSON to reorder endpoint — reverse order.
+	body, _ := json.Marshal(map[string]any{
+		"list_id":  list.ID,
+		"task_ids": []int64{t3.ID, t2.ID, t1.ID},
+	})
+	req := cogtest.NewRequest(t, "POST", env.Providers.Config.BaseURL+"/apps/tasks/reorder", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	env.Do(t, req, cookie, csrf).Status(200)
+
+	// Verify reorder.
+	reordered, err := tasks.ListTasks(db, list.ID)
+	require.NoError(t, err)
+	require.Equal(t, 3, len(reordered))
+	require.Equal(t, "Third", reordered[0].Summary)
+	require.Equal(t, "Second", reordered[1].Summary)
+	require.Equal(t, "First", reordered[2].Summary)
+}
+
+func TestTasksUpdateList(t *testing.T) {
+	env, tp, alice := setupDB(t)
+	db, err := tp.DB(alice.Username)
+	require.NoError(t, err)
+
+	list, err := tasks.CreateTaskList(db, "rename-list", "Old Name", "#000000")
+	require.NoError(t, err)
+
+	cookie, csrf := sessionAuth(t, env, alice)
+
+	env.PostForm(t, "/apps/tasks/list/"+itoa(list.ID), url.Values{
+		"name":  {"New Name"},
+		"color": {"#ff0000"},
+	}, cookie, csrf, cogtest.StopRedirect).Status(303)
+
+	// Verify.
+	updated, err := tasks.GetTaskList(db, list.ID)
+	require.NoError(t, err)
+	require.Equal(t, "New Name", updated.Name)
+	require.Equal(t, "#ff0000", updated.Color)
 }

@@ -1,21 +1,25 @@
 These tasks should be completed by Claude in priority order. Check them off the list as they're completed.
 
-- [ ] Handle zip/tar files
+- [-] Handle zip/tar files
   - Allow browsing the contents like a regular folder (updates for zip)
   - Allow extracting contents
 - [ ] File versioning
   - git-tracked files/directories
   - all files are ignored by default, unless tracking is enabled
 - [ ] Backup plugin with Restic REST API
-- [ ] Plugin installation and permissions
-  - [ ] Enforce DB_SANDBOX, DB_READ, FS_READ, ROUTE_GLOBAL_BIND, etc
-  - [ ] Audit and minimize plugin API
-  - [ ] Enable trusted protobuf plugins
-  - [ ] Allow admins to install trusted plugins
-  - [ ] Allow users to install external plugins for themselves
+- [-] Plugin installation and permissions
+  - [-] Enforce DB_SANDBOX, DB_READ, FS_READ, ROUTE_GLOBAL_BIND, etc
+  - [-] Audit and minimize plugin API
+  - [-] Enable trusted protobuf plugins
+  - [-] Allow admins to install trusted plugins
+  - [-] Allow users to install external plugins for themselves
   - [ ] SQLite methods for read_file(), head_file(), file_exists(), file_size()
-- [ ] Federate sharing (with NextCloud and Cog)
+- [-] Federate sharing (with NextCloud and Cog)
 - [ ] Allow import from NextCloud via API (for individual user) / Database (for instance)
-- [ ] Audit log activities to table and expose it via WebDAV
+- [-] Audit log activities to table and expose it via WebDAV
 - [ ] Plugin: Deck
 - [ ] Plugin: NextPod
+- [ ] Plugin: Map
+  - Shows gallery locations
+  - Shows contacts
+  - Works with PhoneTrack app

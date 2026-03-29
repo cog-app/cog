@@ -185,6 +185,126 @@ func TestBookmarksAPI_ClickCount(t *testing.T) {
 	require.Equal(t, 2, int(resp.Bookmarks[0]["clickcount"].(float64)))
 }
 
+func TestBookmarksAPI_GetFolder(t *testing.T) {
+	env := cogtest.New(t, bookmarks.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	// Create a folder.
+	var created struct {
+		Item map[string]any `json:"item"`
+	}
+	doReq(t, env, "POST", bmAPI+"/folder", map[string]any{
+		"title": "Reading List",
+	}, alice.Auth).Status(200).JSON(&created)
+	id := itoa(int64(created.Item["id"].(float64)))
+
+	// Get it back by ID.
+	var got struct {
+		Item map[string]any `json:"item"`
+	}
+	env.Get(t, bmAPI+"/folder/"+id, alice.Auth).Status(200).JSON(&got)
+	require.Equal(t, "Reading List", got.Item["title"])
+}
+
+func TestBookmarksAPI_UpdateFolder(t *testing.T) {
+	env := cogtest.New(t, bookmarks.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	var created struct {
+		Item map[string]any `json:"item"`
+	}
+	doReq(t, env, "POST", bmAPI+"/folder", map[string]any{
+		"title": "Old Name",
+	}, alice.Auth).Status(200).JSON(&created)
+	id := itoa(int64(created.Item["id"].(float64)))
+
+	// Update the folder title.
+	var updated struct {
+		Item map[string]any `json:"item"`
+	}
+	doReq(t, env, "PUT", bmAPI+"/folder/"+id, map[string]any{
+		"title": "New Name",
+	}, alice.Auth).Status(200).JSON(&updated)
+	require.Equal(t, "New Name", updated.Item["title"])
+}
+
+func TestBookmarksAPI_RenameTag(t *testing.T) {
+	env := cogtest.New(t, bookmarks.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	// Create a bookmark with a tag.
+	doReq(t, env, "POST", bmAPI+"/bookmark", map[string]any{
+		"url": "https://example.com", "title": "Tagged", "tags": []string{"oldtag"},
+	}, alice.Auth).Status(200)
+
+	// Rename the tag.
+	doReq(t, env, "PUT", bmAPI+"/tag", map[string]any{
+		"old": "oldtag", "new": "newtag",
+	}, alice.Auth).Status(200)
+
+	// Verify the old tag is gone and new tag exists.
+	var tags []string
+	env.Get(t, bmAPI+"/tag", alice.Auth).Status(200).JSON(&tags)
+	require.Equal(t, 1, len(tags))
+	require.Equal(t, "newtag", tags[0])
+}
+
+func TestBookmarksAPI_DeleteTag(t *testing.T) {
+	env := cogtest.New(t, bookmarks.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	doReq(t, env, "POST", bmAPI+"/bookmark", map[string]any{
+		"url": "https://example.com", "title": "Tagged", "tags": []string{"removeme", "keepme"},
+	}, alice.Auth).Status(200)
+
+	// Delete one tag.
+	doReq(t, env, "DELETE", bmAPI+"/tag", map[string]any{
+		"old": "removeme",
+	}, alice.Auth).Status(200)
+
+	var tags []string
+	env.Get(t, bmAPI+"/tag", alice.Auth).Status(200).JSON(&tags)
+	require.Equal(t, 1, len(tags))
+	require.Equal(t, "keepme", tags[0])
+}
+
+func TestBookmarksImportExport(t *testing.T) {
+	env := cogtest.New(t, bookmarks.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	// Import bookmarks via store function to test the parsing and the export endpoint.
+	plug, _ := env.Providers.Plugins.Plugin("bookmarks")
+	bp := plug.(*bookmarks.Plugin)
+	db, err := bp.DB(alice.Username)
+	require.NoError(t, err)
+
+	html := `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<TITLE>Bookmarks</TITLE>
+<H1>Bookmarks</H1>
+<DL><p>
+    <DT><A HREF="https://go.dev" TAGS="go,lang">Go Website</A>
+    <DT><A HREF="https://rust-lang.org" TAGS="rust">Rust Website</A>
+</DL><p>`
+
+	count, err := bookmarks.ImportNetscapeHTML(db, strings.NewReader(html))
+	require.NoError(t, err)
+	require.Equal(t, 2, count)
+
+	// Verify via API.
+	var listResp struct {
+		Bookmarks []map[string]any `json:"bookmarks"`
+	}
+	env.Get(t, bmAPI+"/bookmark?limit=50", alice.Auth).Status(200).JSON(&listResp)
+	require.Equal(t, 2, len(listResp.Bookmarks))
+
+	// Export and verify the HTML contains the bookmarks.
+	resp := env.Get(t, "/apps/bookmarks/export", alice.Auth).Status(200)
+	body := resp.ReadBody()
+	require.True(t, strings.Contains(body, "https://go.dev"))
+	require.True(t, strings.Contains(body, "https://rust-lang.org"))
+	require.True(t, strings.Contains(body, "Go Website"))
+}
+
 func TestBookmarksPage(t *testing.T) {
 	env := cogtest.New(t, bookmarks.New())
 	alice := env.CreateUser(t, "alice", "pass")

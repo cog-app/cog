@@ -1,0 +1,447 @@
+package contacts_test
+
+import (
+	"io"
+	"strings"
+	"testing"
+
+	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
+	"git.duckfam.us/jj-software/cog/internal/testing/require"
+	"git.duckfam.us/jj-software/cog/plugin/contacts"
+)
+
+func carddavReq(t testing.TB, env *cogtest.Env, method, path, body string, opts ...cogtest.HTTPOpt) *cogtest.Response {
+	t.Helper()
+	var r io.Reader
+	if body != "" {
+		r = strings.NewReader(body)
+	}
+	req := cogtest.NewRequest(t, method, env.Providers.Config.BaseURL+path, r)
+	return env.Do(t, req, opts...)
+}
+
+func TestCardDAV_AddressBookHome(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	// Ensure DB is migrated and default address book exists.
+	plug, _ := env.Providers.Plugins.Plugin("contacts")
+	cp := plug.(*contacts.Plugin)
+	_, err := cp.DB(alice.Username)
+	require.NoError(t, err)
+
+	// PROPFIND on address book home with Depth: 1 should list address books.
+	resp := carddavReq(t, env, "PROPFIND",
+		"/remote.php/dav/addressbooks/"+alice.Username+"/", "",
+		alice.Auth, cogtest.Header("Depth", "1"))
+	resp.Status(207)
+	body := resp.ReadBody()
+	require.Contains(t, body, "D:multistatus")
+	require.Contains(t, body, "addressbook")
+	require.Contains(t, body, "Contacts") // default address book name
+
+	// Depth: 0 should return only the home collection.
+	resp = carddavReq(t, env, "PROPFIND",
+		"/remote.php/dav/addressbooks/"+alice.Username+"/", "",
+		alice.Auth, cogtest.Header("Depth", "0"))
+	resp.Status(207)
+	body = resp.ReadBody()
+	require.Contains(t, body, "D:multistatus")
+	require.Contains(t, body, alice.Username)
+}
+
+func TestCardDAV_PutGetDeleteCard(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("contacts")
+	cp := plug.(*contacts.Plugin)
+	_, err := cp.DB(alice.Username)
+	require.NoError(t, err)
+
+	bookUID := "contacts"
+	cardUID := "test-card-1"
+	cardURI := cardUID + ".vcf"
+	vcf := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:" + cardUID + "\r\nFN:Alice Wonderland\r\nEMAIL;TYPE=INTERNET:alice@example.com\r\nTEL;TYPE=CELL:+15551234567\r\nREV:20260314T060000Z\r\nEND:VCARD\r\n"
+
+	basePath := "/remote.php/dav/addressbooks/" + alice.Username + "/" + bookUID + "/"
+
+	// PUT a new contact.
+	resp := carddavReq(t, env, "PUT", basePath+cardURI, vcf,
+		alice.Auth, cogtest.Header("Content-Type", "text/vcard; charset=utf-8"))
+	resp.Status(201)
+	etag := resp.Header.Get("ETag")
+	require.True(t, etag != "")
+
+	// GET the contact back.
+	resp = carddavReq(t, env, "GET", basePath+cardURI, "",
+		alice.Auth)
+	resp.Status(200)
+	body := resp.ReadBody()
+	require.Contains(t, body, "Alice Wonderland")
+	require.Contains(t, body, "alice@example.com")
+	require.Contains(t, body, "+15551234567")
+	require.Equal(t, "text/vcard; charset=utf-8", resp.Header.Get("Content-Type"))
+
+	// PROPFIND on the card.
+	resp = carddavReq(t, env, "PROPFIND", basePath+cardURI, "",
+		alice.Auth, cogtest.Header("Depth", "0"))
+	resp.Status(207)
+	body = resp.ReadBody()
+	require.Contains(t, body, "D:multistatus")
+	require.Contains(t, body, cardURI)
+
+	// DELETE the contact.
+	resp = carddavReq(t, env, "DELETE", basePath+cardURI, "",
+		alice.Auth)
+	resp.Status(204)
+
+	// GET after delete should return 404.
+	resp = carddavReq(t, env, "GET", basePath+cardURI, "",
+		alice.Auth)
+	resp.Status(404)
+}
+
+func TestCardDAV_PutIfNoneMatch(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("contacts")
+	cp := plug.(*contacts.Plugin)
+	_, err := cp.DB(alice.Username)
+	require.NoError(t, err)
+
+	basePath := "/remote.php/dav/addressbooks/" + alice.Username + "/contacts/"
+	cardUID := "ifnone-card"
+	cardURI := cardUID + ".vcf"
+	vcf := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:" + cardUID + "\r\nFN:Test Person\r\nREV:20260314T060000Z\r\nEND:VCARD\r\n"
+
+	// First PUT should succeed.
+	resp := carddavReq(t, env, "PUT", basePath+cardURI, vcf,
+		alice.Auth, cogtest.Header("If-None-Match", "*"))
+	resp.Status(201)
+
+	// Second PUT with If-None-Match: * should fail (card already exists).
+	resp = carddavReq(t, env, "PUT", basePath+cardURI, vcf,
+		alice.Auth, cogtest.Header("If-None-Match", "*"))
+	resp.Status(412)
+}
+
+func TestCardDAV_ReportMultiget(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("contacts")
+	cp := plug.(*contacts.Plugin)
+	_, err := cp.DB(alice.Username)
+	require.NoError(t, err)
+
+	basePath := "/remote.php/dav/addressbooks/" + alice.Username + "/contacts/"
+
+	// Create two contacts.
+	for _, name := range []string{"card-a", "card-b"} {
+		vcf := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:" + name + "\r\nFN:" + name + "\r\nREV:20260314T060000Z\r\nEND:VCARD\r\n"
+		carddavReq(t, env, "PUT", basePath+name+".vcf", vcf,
+			alice.Auth).Status(201)
+	}
+
+	// REPORT addressbook-multiget requesting both cards.
+	reportXML := `<?xml version="1.0" encoding="UTF-8"?>
+<CR:addressbook-multiget xmlns:D="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
+  <D:prop>
+    <D:getetag/>
+    <CR:address-data/>
+  </D:prop>
+  <D:href>` + basePath + `card-a.vcf</D:href>
+  <D:href>` + basePath + `card-b.vcf</D:href>
+</CR:addressbook-multiget>`
+
+	resp := carddavReq(t, env, "REPORT", basePath, reportXML,
+		alice.Auth, cogtest.Header("Content-Type", "application/xml"))
+	resp.Status(207)
+	body := resp.ReadBody()
+	require.Contains(t, body, "card-a")
+	require.Contains(t, body, "card-b")
+	require.Contains(t, body, "D:multistatus")
+
+	// Request a non-existent card in multiget — should get 404 status for that href.
+	reportXML2 := `<?xml version="1.0" encoding="UTF-8"?>
+<CR:addressbook-multiget xmlns:D="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
+  <D:prop>
+    <D:getetag/>
+    <CR:address-data/>
+  </D:prop>
+  <D:href>` + basePath + `nonexistent.vcf</D:href>
+</CR:addressbook-multiget>`
+
+	resp = carddavReq(t, env, "REPORT", basePath, reportXML2,
+		alice.Auth, cogtest.Header("Content-Type", "application/xml"))
+	resp.Status(207)
+	body = resp.ReadBody()
+	require.Contains(t, body, "404")
+}
+
+func TestCardDAV_ReportQuery(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("contacts")
+	cp := plug.(*contacts.Plugin)
+	_, err := cp.DB(alice.Username)
+	require.NoError(t, err)
+
+	basePath := "/remote.php/dav/addressbooks/" + alice.Username + "/contacts/"
+
+	vcf := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:query-card\r\nFN:Query Person\r\nREV:20260314T060000Z\r\nEND:VCARD\r\n"
+	carddavReq(t, env, "PUT", basePath+"query-card.vcf", vcf, alice.Auth).Status(201)
+
+	reportXML := `<?xml version="1.0" encoding="UTF-8"?>
+<CR:addressbook-query xmlns:D="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
+  <D:prop>
+    <D:getetag/>
+    <CR:address-data/>
+  </D:prop>
+</CR:addressbook-query>`
+
+	resp := carddavReq(t, env, "REPORT", basePath, reportXML,
+		alice.Auth, cogtest.Header("Content-Type", "application/xml"))
+	resp.Status(207)
+	body := resp.ReadBody()
+	require.Contains(t, body, "Query Person")
+}
+
+func TestCardDAV_SyncCollection(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("contacts")
+	cp := plug.(*contacts.Plugin)
+	_, err := cp.DB(alice.Username)
+	require.NoError(t, err)
+
+	basePath := "/remote.php/dav/addressbooks/" + alice.Username + "/contacts/"
+
+	// Initial sync (empty token) should return all cards.
+	syncXML := `<?xml version="1.0" encoding="UTF-8"?>
+<D:sync-collection xmlns:D="DAV:">
+  <D:sync-token/>
+  <D:prop>
+    <D:getetag/>
+  </D:prop>
+</D:sync-collection>`
+
+	resp := carddavReq(t, env, "REPORT", basePath, syncXML,
+		alice.Auth, cogtest.Header("Content-Type", "application/xml"))
+	resp.Status(207)
+	body := resp.ReadBody()
+	require.Contains(t, body, "sync-token")
+
+	// Add a contact and sync again with a token.
+	vcf := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:sync-card\r\nFN:Sync Person\r\nREV:20260314T060000Z\r\nEND:VCARD\r\n"
+	carddavReq(t, env, "PUT", basePath+"sync-card.vcf", vcf, alice.Auth).Status(201)
+
+	// Sync with token "0" should return the new card.
+	syncXML2 := `<?xml version="1.0" encoding="UTF-8"?>
+<D:sync-collection xmlns:D="DAV:">
+  <D:sync-token>http://cog/ns/sync/0</D:sync-token>
+  <D:prop>
+    <D:getetag/>
+  </D:prop>
+</D:sync-collection>`
+
+	resp = carddavReq(t, env, "REPORT", basePath, syncXML2,
+		alice.Auth, cogtest.Header("Content-Type", "application/xml"))
+	resp.Status(207)
+	body = resp.ReadBody()
+	require.Contains(t, body, "sync-card")
+	require.Contains(t, body, "sync-token")
+}
+
+func TestCardDAV_SyncCollectionDeletedCards(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("contacts")
+	cp := plug.(*contacts.Plugin)
+	_, err := cp.DB(alice.Username)
+	require.NoError(t, err)
+
+	basePath := "/remote.php/dav/addressbooks/" + alice.Username + "/contacts/"
+
+	// Create a card, then delete it.
+	vcf := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:del-sync-card\r\nFN:Delete Me\r\nREV:20260314T060000Z\r\nEND:VCARD\r\n"
+	carddavReq(t, env, "PUT", basePath+"del-sync-card.vcf", vcf, alice.Auth).Status(201)
+
+	// Record token before deletion (token should be 1 after the PUT bumped it).
+	syncXMLBefore := `<?xml version="1.0" encoding="UTF-8"?>
+<D:sync-collection xmlns:D="DAV:">
+  <D:sync-token/>
+  <D:prop><D:getetag/></D:prop>
+</D:sync-collection>`
+	resp := carddavReq(t, env, "REPORT", basePath, syncXMLBefore,
+		alice.Auth, cogtest.Header("Content-Type", "application/xml"))
+	resp.Status(207)
+
+	// Delete the card.
+	carddavReq(t, env, "DELETE", basePath+"del-sync-card.vcf", "", alice.Auth).Status(204)
+
+	// Sync with token 1 should show deleted card as 404.
+	syncXMLAfter := `<?xml version="1.0" encoding="UTF-8"?>
+<D:sync-collection xmlns:D="DAV:">
+  <D:sync-token>http://cog/ns/sync/1</D:sync-token>
+  <D:prop><D:getetag/></D:prop>
+</D:sync-collection>`
+	resp = carddavReq(t, env, "REPORT", basePath, syncXMLAfter,
+		alice.Auth, cogtest.Header("Content-Type", "application/xml"))
+	resp.Status(207)
+	body := resp.ReadBody()
+	require.Contains(t, body, "del-sync-card")
+	require.Contains(t, body, "404")
+}
+
+func TestCardDAV_MKCOL(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("contacts")
+	cp := plug.(*contacts.Plugin)
+	_, err := cp.DB(alice.Username)
+	require.NoError(t, err)
+
+	// Create a new address book via MKCOL.
+	mkcolXML := `<?xml version="1.0" encoding="UTF-8"?>
+<D:mkcol xmlns:D="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
+  <D:set>
+    <D:prop>
+      <D:displayname>Work Contacts</D:displayname>
+    </D:prop>
+  </D:set>
+</D:mkcol>`
+
+	resp := carddavReq(t, env, "MKCOL",
+		"/remote.php/dav/addressbooks/"+alice.Username+"/work-contacts/", mkcolXML,
+		alice.Auth, cogtest.Header("Content-Type", "application/xml"))
+	resp.Status(201)
+
+	// PROPFIND home should now show the new book.
+	resp = carddavReq(t, env, "PROPFIND",
+		"/remote.php/dav/addressbooks/"+alice.Username+"/", "",
+		alice.Auth, cogtest.Header("Depth", "1"))
+	resp.Status(207)
+	body := resp.ReadBody()
+	require.Contains(t, body, "work-contacts")
+}
+
+func TestCardDAV_PROPPATCH(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("contacts")
+	cp := plug.(*contacts.Plugin)
+	_, err := cp.DB(alice.Username)
+	require.NoError(t, err)
+
+	basePath := "/remote.php/dav/addressbooks/" + alice.Username + "/contacts/"
+
+	// PROPPATCH to rename the default address book.
+	proppatchXML := `<?xml version="1.0" encoding="UTF-8"?>
+<D:propertyupdate xmlns:D="DAV:" xmlns:ICAL="http://apple.com/ns/ical/">
+  <D:set>
+    <D:prop>
+      <D:displayname>My Contacts</D:displayname>
+      <ICAL:addressbook-color>#ff0000</ICAL:addressbook-color>
+    </D:prop>
+  </D:set>
+</D:propertyupdate>`
+
+	resp := carddavReq(t, env, "PROPPATCH", basePath, proppatchXML,
+		alice.Auth, cogtest.Header("Content-Type", "application/xml"))
+	resp.Status(207)
+	body := resp.ReadBody()
+	require.Contains(t, body, "D:displayname")
+	require.Contains(t, body, "200 OK")
+}
+
+func TestCardDAV_DeleteAddressBook(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("contacts")
+	cp := plug.(*contacts.Plugin)
+	db, err := cp.DB(alice.Username)
+	require.NoError(t, err)
+
+	// Create a second address book to delete.
+	_, err = contacts.CreateAddressBook(db, "deleteme", "Delete Me", "", "#000")
+	require.NoError(t, err)
+
+	resp := carddavReq(t, env, "DELETE",
+		"/remote.php/dav/addressbooks/"+alice.Username+"/deleteme/", "",
+		alice.Auth)
+	resp.Status(204)
+
+	// PROPFIND should no longer list it.
+	resp = carddavReq(t, env, "PROPFIND",
+		"/remote.php/dav/addressbooks/"+alice.Username+"/", "",
+		alice.Auth, cogtest.Header("Depth", "1"))
+	resp.Status(207)
+	body := resp.ReadBody()
+	require.NotContains(t, body, "deleteme")
+}
+
+func TestCardDAV_Options(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("contacts")
+	cp := plug.(*contacts.Plugin)
+	_, err := cp.DB(alice.Username)
+	require.NoError(t, err)
+
+	// OPTIONS on address book home.
+	resp := carddavReq(t, env, "OPTIONS",
+		"/remote.php/dav/addressbooks/"+alice.Username+"/", "",
+		alice.Auth)
+	resp.Status(200)
+	require.Contains(t, resp.Header.Get("DAV"), "addressbook")
+
+	// OPTIONS on a specific address book.
+	resp = carddavReq(t, env, "OPTIONS",
+		"/remote.php/dav/addressbooks/"+alice.Username+"/contacts/", "",
+		alice.Auth)
+	resp.Status(200)
+}
+
+func TestCardDAV_CollectionPROPFINDWithCards(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	plug, _ := env.Providers.Plugins.Plugin("contacts")
+	cp := plug.(*contacts.Plugin)
+	_, err := cp.DB(alice.Username)
+	require.NoError(t, err)
+
+	basePath := "/remote.php/dav/addressbooks/" + alice.Username + "/contacts/"
+
+	// Add a contact.
+	vcf := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:pfcard\r\nFN:Propfind Card\r\nREV:20260314T060000Z\r\nEND:VCARD\r\n"
+	carddavReq(t, env, "PUT", basePath+"pfcard.vcf", vcf, alice.Auth).Status(201)
+
+	// PROPFIND Depth:1 on the book should list the book and the card.
+	resp := carddavReq(t, env, "PROPFIND", basePath, "",
+		alice.Auth, cogtest.Header("Depth", "1"))
+	resp.Status(207)
+	body := resp.ReadBody()
+	require.Contains(t, body, "pfcard.vcf")
+	require.Contains(t, body, "D:getetag")
+}
+
+func TestCardDAV_Unauthorized(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	env.CreateUser(t, "alice", "pass")
+
+	// Request without auth should get 401.
+	resp := carddavReq(t, env, "PROPFIND",
+		"/remote.php/dav/addressbooks/alice/", "")
+	resp.Status(401)
+}

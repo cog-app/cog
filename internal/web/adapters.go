@@ -174,7 +174,7 @@ func (a *volumeAccessAdapter) ListAccessible(userID string) ([]plugin.VolumeInfo
 }
 
 // buildRegistryServices constructs the adapter layer from internal services.
-func buildRegistryServices(shares *share.Store, emailFunc func() *email.Sender, users *user.Store, groups *group.Store, qc internalplugin.QuotaChecker, access *volume.Access) internalplugin.RegistryServices {
+func buildRegistryServices(shares *share.Store, emailFunc func() *email.Sender, users *user.Store, groups *group.Store, qc internalplugin.QuotaChecker, access *volume.Access, activityLog internalplugin.ActivityLogger) internalplugin.RegistryServices {
 	var ss plugin.ShareStore
 	if shares != nil {
 		ss = &shareStoreAdapter{shares}
@@ -202,5 +202,6 @@ func buildRegistryServices(shares *share.Store, emailFunc func() *email.Sender, 
 		GroupStore:   gs,
 		QuotaChecker: qc,
 		VolumeAccess: va,
+		ActivityLog:  activityLog,
 	}
 }

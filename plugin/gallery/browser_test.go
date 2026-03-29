@@ -33,4 +33,28 @@ func TestBrowser(t *testing.T) {
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
+
+	t.Run("AlbumsPage", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "page", "pass")
+		b.Navigate(t, "/apps/gallery/albums")
+		b.WaitText(t, "Albums")
+		b.Snapshot(t)
+	})
+
+	t.Run("StarredPage", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "page", "pass")
+		b.Navigate(t, "/apps/gallery/starred")
+		b.WaitText(t, "Starred")
+		b.Snapshot(t)
+	})
+
+	t.Run("VideosPage", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "page", "pass")
+		b.Navigate(t, "/apps/gallery/videos")
+		b.WaitText(t, "Videos")
+		b.Snapshot(t)
+	})
 }

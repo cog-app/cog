@@ -184,4 +184,3 @@ func (p *Plugin) FolderIcon(_, folderPath string) (string, bool) {
 	}
 	return "", false
 }
-

@@ -193,6 +193,14 @@ type FolderIconProvider interface {
 	FolderIcon(username, folderPath string) (icon string, ok bool)
 }
 
+// ActivityLogger allows plugins to write entries to the centralized activity log.
+type ActivityLogger interface {
+	// Log records an activity for the given user.
+	// userID is the affected user, actorID is who performed the action.
+	// app identifies the plugin (e.g., "files"), typ is the event type (e.g., "file_created").
+	Log(userID, actorID, app, typ, subject, objectType, objectID, objectName string) error
+}
+
 // SearchSourceDef describes how a plugin's data should be indexed for search.
 type SearchSourceDef struct {
 	// PrimaryTable is the SQLite table name watched via update hook.

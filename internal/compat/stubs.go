@@ -2,6 +2,7 @@ package compat
 
 import (
 	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"git.duckfam.us/jj-software/cog/internal/activity"
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/plugin/files"
@@ -19,9 +21,10 @@ import (
 
 // NCCompat holds dependencies for NextCloud-compatible OCS/API endpoints.
 type NCCompat struct {
-	Users   *user.Store
-	Files   *files.Plugin
-	DataDir string
+	Users      *user.Store
+	Files      *files.Plugin
+	Activities *activity.Store
+	DataDir    string
 }
 
 // RegisterRoutes registers all NextCloud-compatible OCS and helper routes.
@@ -214,7 +217,7 @@ func (nc *NCCompat) HandleUserStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleActivity returns activities (primarily comments) for files.
+// HandleActivity returns activities from the centralized audit log.
 // NC Android app calls: GET /ocs/v2.php/apps/activity/api/v2/activity/filter?object_type=files&object_id={id}&format=json
 func (nc *NCCompat) HandleActivity(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
@@ -223,74 +226,62 @@ func (nc *NCCompat) HandleActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If no files plugin or not a file-scoped request, return empty.
 	objectType := r.URL.Query().Get("object_type")
 	objectIDStr := r.URL.Query().Get("object_id")
-	if nc.Files == nil || objectType != "files" || objectIDStr == "" {
-		writeOCSReq(w, r, http.StatusOK, []any{})
-		return
+	sinceStr := r.URL.Query().Get("since")
+	limitStr := r.URL.Query().Get("limit")
+
+	limit := 50
+	if n, err := strconv.Atoi(limitStr); err == nil && n > 0 {
+		limit = n
 	}
 
-	fileID, err := strconv.ParseInt(objectIDStr, 10, 64)
+	var entries []activity.Activity
+	var err error
+
+	if nc.Activities != nil {
+		if objectType != "" && objectIDStr != "" {
+			entries, err = nc.Activities.ListByObject(objectType, objectIDStr, limit)
+		} else if sinceStr != "" {
+			sinceID, _ := strconv.ParseInt(sinceStr, 10, 64)
+			entries, err = nc.Activities.ListSince(u.Username, sinceID, limit)
+		} else {
+			entries, err = nc.Activities.List(u.Username, limit, 0)
+		}
+	}
 	if err != nil {
 		writeOCSReq(w, r, http.StatusOK, []any{})
 		return
 	}
 
-	// Look up file name for the activity.
-	meta, err := nc.Files.GetByID(u.Username, fileID)
-	if err != nil {
-		writeOCSReq(w, r, http.StatusOK, []any{})
-		return
-	}
-
-	comments, err := nc.Files.ListComments(u.Username, fileID)
-	if err != nil {
-		writeOCSReq(w, r, http.StatusOK, []any{})
-		return
-	}
-
-	activities := make([]map[string]any, 0, len(comments))
-	for _, c := range comments {
-		displayName := c.ActorID
-		if nc.Users != nil {
-			if usr, err := nc.Users.GetByUsername(c.ActorID); err == nil {
-				displayName = usr.DisplayName
-				if displayName == "" {
-					displayName = usr.Username
-				}
+	activities := make([]map[string]any, 0, len(entries))
+	for _, a := range entries {
+		// Build subject_rich from template + params if available.
+		var subjectRich []any
+		if a.SubjectTemplate != "" {
+			var params map[string]any
+			if json.Unmarshal([]byte(a.SubjectParams), &params) == nil {
+				subjectRich = []any{a.SubjectTemplate, params}
 			}
+		}
+		if subjectRich == nil {
+			subjectRich = []any{a.Subject, map[string]any{}}
 		}
 
 		activities = append(activities, map[string]any{
-			"activity_id":  c.ID,
-			"app":          "comments",
-			"type":         "comments",
+			"activity_id":  a.ID,
+			"app":          a.App,
+			"type":         a.Type,
 			"affecteduser": u.Username,
-			"user":         c.ActorID,
-			"subject":      fmt.Sprintf("%s commented", displayName),
-			"subject_rich": []any{
-				"{user} commented on {file}",
-				map[string]any{
-					"user": map[string]any{
-						"type": "user",
-						"id":   c.ActorID,
-						"name": displayName,
-					},
-					"file": map[string]any{
-						"type": "file",
-						"id":   strconv.FormatInt(fileID, 10),
-						"name": meta.Name,
-						"path": meta.Path,
-					},
-				},
-			},
-			"message":      c.Message,
-			"message_rich": []any{c.Message, map[string]any{}},
-			"object_type":  "files",
-			"object_id":    fileID,
-			"object_name":  meta.Path,
-			"datetime":     time.Unix(c.CreatedAt, 0).UTC().Format(time.RFC3339),
+			"user":         a.ActorID,
+			"subject":      a.Subject,
+			"subject_rich": subjectRich,
+			"message":      "",
+			"message_rich": []any{"", map[string]any{}},
+			"object_type":  a.ObjectType,
+			"object_id":    a.ObjectID,
+			"object_name":  a.ObjectName,
+			"datetime":     time.Unix(a.CreatedAt, 0).UTC().Format(time.RFC3339),
 			"icon":         "",
 			"link":         "",
 			"previews":     []any{},

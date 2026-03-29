@@ -25,6 +25,11 @@ go test -run TestNCLoginFlow ./internal/web
 
 # Run tests in a specific package
 go test ./internal/web
+
+# Run all verifications (generate, fmt, vet, tests with cross-package coverage)
+go tool verify
+go tool verify -cover-only   # skip generate/fmt/vet, just tests + coverage
+go tool verify -continue     # don't stop on first failure
 ```
 
 Performance is important. Avoid redundant work, N+1 queries, and unnecessary round-trips. Use strong-types when easily available.

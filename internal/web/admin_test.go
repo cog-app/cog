@@ -201,6 +201,58 @@ func TestAdminToggleProtectedPlugin(t *testing.T) {
 	}, cookie).Status(400)
 }
 
+func TestAdminShowSettings(t *testing.T) {
+	env := cogtest.New(t)
+	admin := env.CreateUser(t, "admin", "pass")
+	cookie, _ := sessionAndCSRF(t, env, admin.ID)
+	env.Get(t, "/admin/settings", cookie).Status(200)
+}
+
+func TestAdminUpdateSettings(t *testing.T) {
+	env := cogtest.New(t)
+	admin := env.CreateUser(t, "admin", "pass")
+	cookie, token := sessionAndCSRF(t, env, admin.ID)
+
+	env.PostForm(t, "/admin/settings", url.Values{
+		"csrf_token":          {token},
+		"public_registration": {"1"},
+		"invite_expiry_hours": {"48"},
+		"mfa_required":        {"admins"},
+	}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+
+	// Verify settings were saved.
+	val, _ := env.Providers.Settings.Get(settings.KeyPublicRegistration)
+	require.Equal(t, "true", val)
+	require.Equal(t, 48, env.Providers.Settings.GetInt(settings.KeyInviteExpiryHours, 0))
+	mfa, _ := env.Providers.Settings.Get(settings.KeyMFARequired)
+	require.Equal(t, "admins", mfa)
+}
+
+func TestAdminShowEmail(t *testing.T) {
+	env := cogtest.New(t)
+	admin := env.CreateUser(t, "admin", "pass")
+	cookie, _ := sessionAndCSRF(t, env, admin.ID)
+	env.Get(t, "/admin/email", cookie).Status(200)
+}
+
+func TestAdminPreviewEmail(t *testing.T) {
+	env := cogtest.New(t)
+	admin := env.CreateUser(t, "admin", "pass")
+	cookie, _ := sessionAndCSRF(t, env, admin.ID)
+	env.Get(t, "/admin/email/preview/password-reset", cookie).Status(200)
+}
+
+func TestAdminTestSMTP(t *testing.T) {
+	env := cogtest.New(t)
+	admin := env.CreateUser(t, "admin", "pass")
+	cookie, token := sessionAndCSRF(t, env, admin.ID)
+
+	// Without SMTP configured, returns an HTMX partial with error.
+	env.PostForm(t, "/admin/email/test-smtp", url.Values{
+		"csrf_token": {token},
+	}, cookie).Status(200).Contains("Connection failed")
+}
+
 func TestFormatDuration(t *testing.T) {
 	tests := []struct {
 		d    time.Duration
