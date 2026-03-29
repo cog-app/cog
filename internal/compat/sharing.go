@@ -1,6 +1,7 @@
 package compat
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/share"
@@ -23,6 +25,9 @@ type SharingHandler struct {
 	Shares        *share.Store
 	Users         *user.Store
 	Groups        *group.Store
+	Federation    *federation.Store
+	FedClient     *federation.Client
+	BaseURL       string
 	OnShareCreate func(rec *share.Record)
 	OnShareDelete func(rec *share.Record)
 }
@@ -100,6 +105,8 @@ func shareTypeToSubject(shareType int) string {
 		return "GROUP"
 	case 3:
 		return "PUBLIC"
+	case 6:
+		return "FEDERATED"
 	case 7:
 		return "INSTANCE"
 	default:
@@ -116,6 +123,8 @@ func subjectToShareType(subject string) int {
 		return 1
 	case "PUBLIC":
 		return 3
+	case "FEDERATED":
+		return 6
 	case "INSTANCE":
 		return 7
 	default:
@@ -319,6 +328,9 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 	subjectType := shareTypeToSubject(shareType)
 
 	switch subjectType {
+	case "FEDERATED":
+		h.createFederatedShare(w, r, u, shareWith, path, meta, resourceType, resourceID, cogPerms)
+		return
 	case "PUBLIC":
 		rec, err = h.Shares.CreatePublicLinkWithPassword(
 			u.ID, resourceType, resourceID, cogPerms, expiration, password,
@@ -353,6 +365,97 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
 		return
 	}
+	writeOCSReq(w, r, http.StatusOK, ocs)
+}
+
+// createFederatedShare handles outbound federated sharing (shareType=6).
+func (h *SharingHandler) createFederatedShare(w http.ResponseWriter, r *http.Request, u *user.User, shareWith, filePath string, meta *files.FileMeta, resourceType, resourceID string, cogPerms uint32) {
+	// Parse user@host from shareWith.
+	at := strings.LastIndex(shareWith, "@")
+	if at <= 0 {
+		writeOCSErrorReq(w, r, http.StatusBadRequest, 400, "federated share requires user@host format")
+		return
+	}
+	remoteUser := shareWith[:at]
+	remoteHost := shareWith[at+1:]
+
+	if h.Federation == nil || h.FedClient == nil {
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "federation not configured")
+		return
+	}
+
+	// Create a public-link share with a token (reuse existing token mechanism).
+	rec, err := h.Shares.CreatePublicLink(u.ID, resourceType, resourceID, cogPerms, nil)
+	if err != nil {
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "create share: "+err.Error())
+		return
+	}
+
+	// Create the outbound federated share record.
+	fs := &federation.FederatedShare{
+		Direction:    "outbound",
+		State:        "pending",
+		ShareID:      &rec.ID,
+		RemoteHost:   remoteHost,
+		RemoteUser:   remoteUser,
+		LocalUserID:  u.ID,
+		Token:        *rec.Token,
+		ResourceName: meta.Name,
+		ResourceType: "file",
+		OwnerName:    u.DisplayName,
+		OwnerHost:    h.BaseURL,
+		Permissions:  cogPerms,
+	}
+	if err := h.Federation.Create(fs); err != nil {
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "create federation record: "+err.Error())
+		return
+	}
+
+	// Send the OCM share to the remote server.
+	ocmShare := &federation.OCMShare{
+		ShareWith:         remoteUser,
+		Name:              meta.Name,
+		ProviderID:        fs.ID,
+		Owner:             u.Username + "@" + h.BaseURL,
+		OwnerDisplayName:  u.DisplayName,
+		Sender:            u.Username + "@" + h.BaseURL,
+		SenderDisplayName: u.DisplayName,
+		ShareType:         "user",
+		ResourceType:      "file",
+		Protocol: federation.OCMProtocol{
+			Name: "webdav",
+			Options: federation.OCMProtocolOptions{
+				SharedSecret: *rec.Token,
+				Permissions:  fmt.Sprintf("%d", cogToNCPerms(cogPerms)),
+				WebDAVURL:    h.BaseURL + "/public.php/webdav/",
+			},
+		},
+	}
+
+	remoteID, err := h.FedClient.SendShare(context.Background(), remoteHost, ocmShare)
+	if err != nil {
+		h.Log.Error("send federated share", "remote", remoteHost, "err", err)
+		// Clean up: remove the local records.
+		h.Shares.Delete(rec.ID)
+		h.Federation.Remove(fs.ID)
+		writeOCSErrorReq(w, r, http.StatusBadGateway, 502, "remote server rejected share: "+err.Error())
+		return
+	}
+	h.Federation.SetRemoteID(fs.ID, remoteID)
+
+	if h.OnShareCreate != nil {
+		h.OnShareCreate(rec)
+	}
+
+	ocs, err := h.shareToOCS(rec, u)
+	if err != nil {
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+		return
+	}
+	// Override share_type to 6 (FEDERATED) and share_with to the remote user.
+	ocs.ShareType = 6
+	ocs.ShareWith = shareWith
+	ocs.ShareWithDisplayname = remoteUser
 	writeOCSReq(w, r, http.StatusOK, ocs)
 }
 
@@ -596,11 +699,31 @@ func (h *SharingHandler) HandleSharees(w http.ResponseWriter, r *http.Request) {
 		groups = []map[string]any{}
 	}
 
+	// If search contains @, offer it as a federated share candidate.
+	var remotes []map[string]any
+	var exactRemotes []map[string]any
+	if strings.Contains(search, "@") {
+		entry := map[string]any{
+			"label": search,
+			"value": map[string]any{
+				"shareType": 6,
+				"shareWith": search,
+			},
+		}
+		exactRemotes = append(exactRemotes, entry)
+	}
+	if remotes == nil {
+		remotes = []map[string]any{}
+	}
+	if exactRemotes == nil {
+		exactRemotes = []map[string]any{}
+	}
+
 	writeOCSReq(w, r, http.StatusOK, map[string]any{
 		"exact": map[string]any{
 			"users":         exactUsers,
 			"groups":        exactGroups,
-			"remotes":       []any{},
+			"remotes":       exactRemotes,
 			"remote_groups": []any{},
 			"emails":        []any{},
 			"circles":       []any{},
@@ -608,7 +731,7 @@ func (h *SharingHandler) HandleSharees(w http.ResponseWriter, r *http.Request) {
 		},
 		"users":         users,
 		"groups":        groups,
-		"remotes":       []any{},
+		"remotes":       remotes,
 		"remote_groups": []any{},
 		"emails":        []any{},
 		"circles":       []any{},

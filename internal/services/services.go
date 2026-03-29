@@ -16,6 +16,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/internal/email"
+	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/mount"
@@ -55,6 +56,8 @@ type Providers struct {
 	EmailOTP       *auth.EmailOTPStore
 	WebAuthn       *auth.WebAuthnStore
 	PasswordResets *auth.PasswordResetStore
+	Federation     *federation.Store
+	FedClient      *federation.Client
 	EmailHook      email.SendHook // if set, all email goes through this instead of SMTP
 	RateLimiter    *ratelimit.Limiter
 	CSRFSecret     []byte
@@ -181,6 +184,8 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 
 	shares := share.NewStore(sysDB, c)
 	quotas := quota.NewStore(sysDB, c)
+	fedStore := federation.NewStore(sysDB, c)
+	fedClient := federation.NewClient(cfg.BaseURL)
 
 	return &Providers{
 		Config:         cfg,
@@ -204,6 +209,8 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		PasswordResets: auth.NewPasswordResetStore(sysDB, c),
 		WebAuthn:       newWebAuthnStore(sysDB, c, cfg.BaseURL, log),
 		RateLimiter:    ratelimit.New(10, 15*time.Minute, c),
+		Federation:     fedStore,
+		FedClient:      fedClient,
 		CSRFSecret:     secret,
 		Clock:          c,
 		StartedAt:      c(),

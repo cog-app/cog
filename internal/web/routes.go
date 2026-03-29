@@ -7,6 +7,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/compat"
+	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
@@ -237,11 +238,14 @@ func New(p *services.Providers) http.Handler {
 
 		// OCS sharing API (NC clients)
 		sharingH := &compat.SharingHandler{
-			Log:    p.Log.With("component", "sharing"),
-			Files:  fp,
-			Shares: p.Shares,
-			Users:  p.Users,
-			Groups: p.Groups,
+			Log:        p.Log.With("component", "sharing"),
+			Files:      fp,
+			Shares:     p.Shares,
+			Users:      p.Users,
+			Groups:     p.Groups,
+			Federation: p.Federation,
+			FedClient:  p.FedClient,
+			BaseURL:    p.Config.BaseURL,
 		}
 		if p.Search != nil && p.Search.Propagator != nil {
 			prop := p.Search.Propagator
@@ -283,6 +287,47 @@ func New(p *services.Providers) http.Handler {
 	ncCompat := &compat.NCCompat{Users: p.Users, Files: fp, DataDir: p.Config.DataDir}
 	ncCompat.RegisterRoutes(mux)
 
+	// --- OCM Federation ---
+	ocmH := &federation.OCMHandler{
+		Log:     p.Log.With("component", "ocm"),
+		Store:   p.Federation,
+		Users:   p.Users,
+		BaseURL: p.Config.BaseURL,
+	}
+	mux.HandleFunc("GET /.well-known/ocm-provider", ocmH.HandleOCMProvider)
+	mux.HandleFunc("POST /ocm/shares", ocmH.HandleReceiveShare)
+	mux.HandleFunc("POST /ocm/notifications", ocmH.HandleNotification)
+
+	// OCS remote_shares API (NC-compatible federation endpoints).
+	ocsRemoteH := &federation.OCSHandler{
+		Log:           p.Log.With("component", "fed-ocs"),
+		Store:         p.Federation,
+		Users:         p.Users,
+		Client:        p.FedClient,
+		WriteOCS:      compat.WriteOCSReq,
+		WriteOCSError: compat.WriteOCSErrorReq,
+	}
+	for _, prefix := range []string{"/ocs/v1.php", "/ocs/v2.php"} {
+		base := prefix + "/apps/files_sharing/api/v1"
+		mux.Handle("GET "+base+"/remote_shares", auth.RequireAuth(http.HandlerFunc(ocsRemoteH.HandleListRemoteShares)))
+		mux.Handle("GET "+base+"/remote_shares/pending", auth.RequireAuth(http.HandlerFunc(ocsRemoteH.HandleListPendingShares)))
+		mux.Handle("POST "+base+"/remote_shares/pending/{id}", auth.RequireAuth(http.HandlerFunc(ocsRemoteH.HandleAcceptShare)))
+		mux.Handle("DELETE "+base+"/remote_shares/pending/{id}", auth.RequireAuth(http.HandlerFunc(ocsRemoteH.HandleDeclineShare)))
+		mux.Handle("GET "+base+"/remote_shares/{id}", auth.RequireAuth(http.HandlerFunc(ocsRemoteH.HandleListRemoteShares)))
+		mux.Handle("DELETE "+base+"/remote_shares/{id}", auth.RequireAuth(http.HandlerFunc(ocsRemoteH.HandleRemoveShare)))
+	}
+
+	// Federation token-based WebDAV (remote servers access our shared files).
+	fedWebDAV := &federation.TokenWebDAVHandler{
+		Log:     p.Log.With("component", "fed-webdav"),
+		Store:   p.Federation,
+		Shares:  p.Shares,
+		Users:   p.Users,
+		Files:   fp,
+		DataDir: p.Config.DataDir,
+	}
+	mux.Handle("/public.php/webdav/", fedWebDAV)
+
 	// --- Login Flow v2 ---
 	mux.HandleFunc("POST /index.php/login/v2", loginFlow.HandleInit)
 	mux.HandleFunc("POST /index.php/login/v2/poll", loginFlow.HandlePoll)
@@ -299,6 +344,7 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /api/shares/panel", auth.RequireAuth(http.HandlerFunc(shareH.SharePanel)))
 	mux.Handle("POST /api/shares/create", csrfWeb(http.HandlerFunc(shareH.CreateShareForm)))
 	mux.Handle("POST /api/shares/public-link-form", csrfWeb(http.HandlerFunc(shareH.CreatePublicLinkForm)))
+	mux.Handle("POST /api/shares/federated", csrfWeb(http.HandlerFunc(shareH.CreateFederatedShareForm)))
 	mux.Handle("DELETE /api/shares/{id}/delete", csrfWeb(http.HandlerFunc(shareH.DeleteShareHTMX)))
 	mux.Handle("GET /api/users/search", auth.RequireAuth(http.HandlerFunc(shareH.UserSearch)))
 	mux.Handle("GET /api/picker/search", auth.RequireAuth(http.HandlerFunc(shareH.PickerSearch)))

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/share"
@@ -277,6 +278,106 @@ func (h *shareHandler) PickerSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ui.PickerResults(items).Render(r.Context(), w)
+}
+
+// CreateFederatedShareForm handles POST from the share panel federated share form (HTMX).
+func (h *shareHandler) CreateFederatedShareForm(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+
+	resType := r.FormValue("resource_type")
+	resID := r.FormValue("resource_id")
+	shareWith := r.FormValue("share_with")
+	permStr := r.FormValue("permissions")
+
+	if resType == "" || resID == "" || shareWith == "" || !strings.Contains(shareWith, "@") {
+		http.Error(w, "missing fields or invalid remote user format", http.StatusBadRequest)
+		return
+	}
+
+	var perms uint32 = plugin.PermRead
+	if permStr != "" {
+		if v, err := strconv.ParseUint(permStr, 10, 32); err == nil && v > 0 {
+			perms = uint32(v)
+		}
+	}
+
+	at := strings.LastIndex(shareWith, "@")
+	remoteUser := shareWith[:at]
+	remoteHost := shareWith[at+1:]
+
+	if h.p.Federation == nil || h.p.FedClient == nil {
+		http.Error(w, "federation not configured", http.StatusInternalServerError)
+		return
+	}
+
+	// Create a public-link share with token for the resource.
+	rec, err := h.p.Shares.CreatePublicLink(u.ID, resType, resID, perms, nil)
+	if err != nil {
+		h.p.Log.Error("create share for federation", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resourceName := resID
+
+	// Create outbound federated share record.
+	fs := &federation.FederatedShare{
+		Direction:    "outbound",
+		State:        "pending",
+		ShareID:      &rec.ID,
+		RemoteHost:   remoteHost,
+		RemoteUser:   remoteUser,
+		LocalUserID:  u.ID,
+		Token:        *rec.Token,
+		ResourceName: resourceName,
+		ResourceType: "file",
+		OwnerName:    u.DisplayName,
+		OwnerHost:    h.p.Config.BaseURL,
+		Permissions:  perms,
+	}
+	if err := h.p.Federation.Create(fs); err != nil {
+		h.p.Log.Error("create federation record", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Send OCM share to remote.
+	ocmShare := &federation.OCMShare{
+		ShareWith:         remoteUser,
+		Name:              resourceName,
+		ProviderID:        fs.ID,
+		Owner:             u.Username + "@" + h.p.Config.BaseURL,
+		OwnerDisplayName:  u.DisplayName,
+		Sender:            u.Username + "@" + h.p.Config.BaseURL,
+		SenderDisplayName: u.DisplayName,
+		ShareType:         "user",
+		ResourceType:      "file",
+		Protocol: federation.OCMProtocol{
+			Name: "webdav",
+			Options: federation.OCMProtocolOptions{
+				SharedSecret: *rec.Token,
+				WebDAVURL:    h.p.Config.BaseURL + "/public.php/webdav/",
+			},
+		},
+	}
+
+	remoteID, err := h.p.FedClient.SendShare(r.Context(), remoteHost, ocmShare)
+	if err != nil {
+		h.p.Log.Error("send federated share", "remote", remoteHost, "err", err)
+		// Clean up.
+		h.p.Shares.Delete(rec.ID)
+		h.p.Federation.Remove(fs.ID)
+		http.Error(w, "Remote server rejected: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	h.p.Federation.SetRemoteID(fs.ID, remoteID)
+
+	h.propagateShareCreate(rec)
+
+	// Return refreshed panel.
+	scope := r.FormValue("panel_id")
+	r.URL.RawQuery = fmt.Sprintf("type=%s&id=%s&scope=%s", resType, resID, scope)
+	h.SharePanel(w, r)
 }
 
 func (h *shareHandler) propagateShareCreate(rec *share.Record) {

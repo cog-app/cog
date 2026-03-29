@@ -258,6 +258,12 @@ func (e *Env) PostText(t testing.TB, path string, data string, opts ...HTTPOpt) 
 	return e.doReq(t, "POST", path, strings.NewReader(string(data)), opts)
 }
 
+// Put performs a PUT request with a body.
+func (e *Env) Put(t testing.TB, path string, body io.Reader, opts ...HTTPOpt) *Response {
+	t.Helper()
+	return e.doReq(t, "PUT", path, body, opts)
+}
+
 // Delete performs a DELETE request.
 func (e *Env) Delete(t testing.TB, path string, opts ...HTTPOpt) *Response {
 	t.Helper()

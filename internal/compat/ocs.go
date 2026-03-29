@@ -29,6 +29,16 @@ func wantsJSON(r *http.Request) bool {
 	return r.URL.Query().Get("format") == "json"
 }
 
+// WriteOCSReq writes an OCS-formatted response, choosing JSON or XML based on the request.
+func WriteOCSReq(w http.ResponseWriter, r *http.Request, statusCode int, data any) {
+	writeOCSReq(w, r, statusCode, data)
+}
+
+// WriteOCSErrorReq writes an OCS error response.
+func WriteOCSErrorReq(w http.ResponseWriter, r *http.Request, httpStatus, ocsCode int, message string) {
+	writeOCSErrorReq(w, r, httpStatus, ocsCode, message)
+}
+
 func writeOCSReq(w http.ResponseWriter, r *http.Request, statusCode int, data any) {
 	if wantsJSON(r) {
 		writeOCSJSON(w, statusCode, data)
@@ -242,6 +252,10 @@ func HandleCapabilities(w http.ResponseWriter, r *http.Request) {
 				"group_sharing":       true,
 				"resharing":           true,
 				"default_permissions": 31,
+				"federation": map[string]any{
+					"outgoing": true,
+					"incoming": true,
+				},
 			},
 			"notes": map[string]any{
 				"api_version": []string{"0.2", "1.3"},
