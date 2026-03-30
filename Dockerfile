@@ -42,9 +42,11 @@ RUN go mod download # cache mod downloads
 FROM build_dependencies AS build
 COPY . .
 RUN CGO_ENABLED=1 go build ./cmd/cog
+RUN CGO_ENABLED=1 go build -o cog-plugin-recipes ./cmd/cog-plugin-recipes
 
 FROM dependencies AS publish
 COPY --from=build /code/cog /usr/bin/cog
+COPY --from=build /code/cog-plugin-recipes /usr/bin/cog-plugin-recipes
 RUN mkdir -p /etc/bash_completion.d && cog completion bash > /etc/bash_completion.d/cog 2>/dev/null || true
 RUN cog doctor
 EXPOSE 8580

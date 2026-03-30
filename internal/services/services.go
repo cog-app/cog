@@ -244,7 +244,7 @@ func (p *Providers) SeedPlugins(username string) error {
 		}
 		wg.Go(func() {
 			if err := s.Seed("admin"); err != nil {
-				errs[i] = fmt.Errorf("seed: plugin failed id=%v: %w", err)
+				errs[i] = fmt.Errorf("seed: plugin failed id=%v: %w", id, err)
 			}
 		})
 	}

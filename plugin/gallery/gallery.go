@@ -24,7 +24,6 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
-
 //go:embed sql
 var sqlFS embed.FS
 
@@ -669,7 +668,6 @@ func (p *Plugin) scanTimer(ctx context.Context) {
 		}
 	}
 }
-
 
 // FolderIcon implements plugin.FolderIconProvider. It returns a photo-folder
 // icon for directories that match the user's configured scan folder patterns.

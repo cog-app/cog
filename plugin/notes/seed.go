@@ -82,15 +82,15 @@ func parseFrontmatter(data []byte) (title, category string, favorite bool, conte
 	}
 
 	rest := body[len(sep)+1:]
-	end := strings.Index(rest, "\n"+sep+"\n")
-	if end < 0 {
+	before, after, ok := strings.Cut(rest, "\n"+sep+"\n")
+	if !ok {
 		return "", "", false, body
 	}
 
-	fm := rest[:end]
-	content = strings.TrimLeft(rest[end+len("\n"+sep+"\n"):], "\n")
+	fm := before
+	content = strings.TrimLeft(after, "\n")
 
-	for _, line := range bytes.Split([]byte(fm), []byte("\n")) {
+	for line := range bytes.SplitSeq([]byte(fm), []byte("\n")) {
 		key, val, ok := strings.Cut(string(line), ":")
 		if !ok {
 			continue

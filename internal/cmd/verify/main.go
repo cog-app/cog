@@ -231,7 +231,7 @@ summary .count{color:#999;font-weight:400;font-size:0.85rem;margin-left:0.5rem}
 
 	for _, pkg := range pkgOrder {
 		snaps := groups[pkg]
-		fmt.Fprintf(f, `<details open>
+		fmt.Fprintf(f, `<details>
 <summary>%s<span class="count">(%d)</span></summary>
 <div class="grid">
 `, html.EscapeString(pkg), len(snaps))

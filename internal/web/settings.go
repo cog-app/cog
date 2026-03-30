@@ -9,6 +9,7 @@ import (
 	"io"
 	"iter"
 	"net/http"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/mount"
@@ -387,14 +388,15 @@ func (h *settingsHandler) ConfirmTOTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Store backup codes in flash for one-time display.
-	msg := "totp_enabled:"
+	var msg strings.Builder
+	msg.WriteString("totp_enabled:")
 	for i, code := range backupCodes {
 		if i > 0 {
-			msg += ","
+			msg.WriteString(",")
 		}
-		msg += code
+		msg.WriteString(code)
 	}
-	setFlash(w, "success", msg)
+	setFlash(w, "success", msg.String())
 	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 }
 
@@ -485,14 +487,15 @@ func (h *settingsHandler) RegenerateBackupCodes(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	msg := "totp_enabled:"
+	var msg strings.Builder
+	msg.WriteString("totp_enabled:")
 	for i, code := range backupCodes {
 		if i > 0 {
-			msg += ","
+			msg.WriteString(",")
 		}
-		msg += code
+		msg.WriteString(code)
 	}
-	setFlash(w, "success", msg)
+	setFlash(w, "success", msg.String())
 	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 }
 

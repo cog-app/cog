@@ -810,7 +810,7 @@ func (h *Pages) SaveScanFolders(w http.ResponseWriter, r *http.Request) {
 	folders := r.FormValue("folders")
 	// Validate at least one non-empty line.
 	hasLine := false
-	for _, line := range strings.Split(folders, "\n") {
+	for line := range strings.SplitSeq(folders, "\n") {
 		if strings.TrimSpace(line) != "" {
 			hasLine = true
 			break
@@ -839,7 +839,7 @@ func (h *Pages) ScanFoldersPreview(w http.ResponseWriter, r *http.Request) {
 	// Parse patterns from the posted textarea.
 	raw := r.FormValue("folders")
 	var patterns []string
-	for _, line := range strings.Split(raw, "\n") {
+	for line := range strings.SplitSeq(raw, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			patterns = append(patterns, line)
