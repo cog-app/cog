@@ -1,5 +1,3 @@
-//go:build seed
-
 package files
 
 import (

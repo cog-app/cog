@@ -26,6 +26,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/settings"
+	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/plugin"
@@ -146,7 +147,13 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 // User wraps a user with pre-built auth for convenient test usage.
 type User struct {
 	*user.User
+	e    *Env
 	Auth HTTPOpt
+}
+
+func (u *User) Seed(t testing.TB) *User {
+	require.NoError(t, u.e.Providers.SeedPlugins(u.Username))
+	return u
 }
 
 // CreateUser creates a test user and returns a TestUser with embedded auth.
@@ -156,7 +163,11 @@ func (e *Env) CreateUser(t testing.TB, username, password string) *User {
 	if err != nil {
 		t.Fatalf("cogtest: create user %q: %v", username, err)
 	}
-	return &User{User: u, Auth: BasicAuth(username, password)}
+	return &User{
+		User: u,
+		e:    e,
+		Auth: BasicAuth(username, password),
+	}
 }
 
 // --- HTTP helpers ---

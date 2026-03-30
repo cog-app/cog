@@ -14,7 +14,7 @@ func TestBrowser(t *testing.T) {
 	t.Cleanup(eng.Close)
 
 	env.CreateUser(t, "empty", "pass")
-	env.CreateUser(t, "settings", "pass")
+	env.CreateUser(t, "settings", "pass").Seed(t)
 	env.CreateUser(t, "starred", "pass")
 
 	t.Run("EmptyState", func(t *testing.T) {

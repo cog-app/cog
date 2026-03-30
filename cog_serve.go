@@ -33,10 +33,7 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 
 			handler := web.New(p)
 
-			// Run seed hook if built with -tags seed and COG_SEED is set.
-			if seedHook != nil {
-				seedHook(p)
-			}
+			runSeed(p)
 
 			// Start search indexing after plugins are registered.
 			if err := p.StartSearch(context.Background()); err != nil {

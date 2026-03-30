@@ -24,9 +24,6 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
-// seedHook is set by cog_seed.go when built with the "seed" build tag.
-var seedHook func(*services.Providers)
-
 // Config holds server configuration for custom Cog builds.
 type Config = config.Config
 

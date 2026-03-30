@@ -1,22 +1,11 @@
 package cog
 
 import (
-	"sync"
-
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
-
-func init() {
-	seedHook = runSeed
-}
-
-// seeder is implemented by plugins that provide dev seed data.
-type seeder interface {
-	Seed(username string) error
-}
 
 type seedUser struct {
 	username    string
@@ -78,23 +67,9 @@ func runSeed(p *services.Providers) {
 	mount.Bootstrap(p.Config.DataDir, p.Users, p.Volumes, p.Mounts)
 
 	// Seed plugin data for the admin user concurrently.
-	var wg sync.WaitGroup
-	for _, id := range p.Plugins.PluginIDs() {
-		plug, ok := p.Plugins.Plugin(id)
-		if !ok {
-			continue
-		}
-		s, ok := plug.(seeder)
-		if !ok {
-			continue
-		}
-		wg.Go(func() {
-			if err := s.Seed("admin"); err != nil {
-				p.Log.Error("seed: plugin failed", "plugin", id, "err", err)
-			}
-		})
+	if err := p.SeedPlugins("admin"); err != nil {
+		p.Log.Error("seed: plugin failed", "err", err)
 	}
-	wg.Wait()
 
 	p.Log.Info("seeding complete")
 }

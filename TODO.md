@@ -18,8 +18,23 @@ These tasks should be completed by Claude in priority order. Check them off the 
 - [ ] Allow import from NextCloud via API (for individual user) / Database (for instance)
 - [-] Audit log activities to table and expose it via WebDAV
 - [ ] Plugin: Deck
-- [ ] Plugin: NextPod
 - [ ] Plugin: Map
   - Shows gallery locations
   - Shows contacts
   - Works with PhoneTrack app
+- [ ] News: Filtering rules
+  - Article skipper (search patterns?)
+  - Ad hider
+  - Profanity filter
+- [ ] Plugin: Media Queue; subscribe to audio/video media sources and watch a playlist
+  - Multiple media sources:
+    - [ ] Podcasts over RSS
+    - [ ] YouTube channels/playlists
+    - [ ] General conference talks
+  - [ ] Organize Sources into Groups
+  - [ ] Allow playback filtering by automated media tags (audio/Sunday)
+  - [ ] NextPod/GPodder API compatibility
+  - [ ] Cache content locally
+  - [ ] Skip media by patterns (search patterns?)
+  - [ ] Content filtering (ad skipping; profanity blocking)
+  - [ ] Includes a mobile app

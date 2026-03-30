@@ -6,9 +6,11 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/activity"
@@ -219,6 +221,36 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		Clock:          c,
 		StartedAt:      c(),
 	}
+}
+
+func (p *Providers) SeedPlugins(username string) error {
+	type seeder interface {
+		Seed(username string) error
+	}
+
+	pluginIDs := p.Plugins.PluginIDs()
+	errs := make([]error, len(pluginIDs))
+
+	// Seed plugin data for the admin user concurrently.
+	var wg sync.WaitGroup
+	for i, id := range p.Plugins.PluginIDs() {
+		plug, ok := p.Plugins.Plugin(id)
+		if !ok {
+			continue
+		}
+		s, ok := plug.(seeder)
+		if !ok {
+			continue
+		}
+		wg.Go(func() {
+			if err := s.Seed("admin"); err != nil {
+				errs[i] = fmt.Errorf("seed: plugin failed id=%v: %w", err)
+			}
+		})
+	}
+	wg.Wait()
+
+	return errors.Join(errs...)
 }
 
 // StartSearch starts the search manager after plugins have been registered.
