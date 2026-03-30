@@ -235,33 +235,47 @@ func (p *Plugin) runScanWorker(ctx context.Context) error {
 	return nil
 }
 
-// --- RPC client (runs in server process) ---
+// --- Scanner client interface ---
 
-// ScanClient wraps an *rpc.Client for type-safe scan operations.
-type ScanClient struct {
+// scannerClient abstracts the scan worker so the server can talk to either
+// an out-of-process RPC worker or an in-process worker.
+type scannerClient interface {
+	ScanUser(username string) error
+	ScanAllUsers() error
+	GetStatus() (ScanStatus, error)
+	Profile(name string, debug, seconds int) ([]byte, error)
+	ReleaseMemory() error
+	MemStats() (*MemStatsResult, error)
+	Close() error
+}
+
+// --- RPC client (runs in server process, talks to subprocess) ---
+
+// rpcScanClient wraps an *rpc.Client for type-safe scan operations.
+type rpcScanClient struct {
 	mu     sync.Mutex
 	client *rpc.Client
 }
 
-func newScanClient(rwc io.ReadWriteCloser) *ScanClient {
-	return &ScanClient{client: rpc.NewClient(rwc)}
+func newRPCScanClient(rwc io.ReadWriteCloser) *rpcScanClient {
+	return &rpcScanClient{client: rpc.NewClient(rwc)}
 }
 
-func (c *ScanClient) ScanUser(username string) error {
+func (c *rpcScanClient) ScanUser(username string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var result ScanResult
 	return c.client.Call("ScanRPC.ScanUser", &ScanUserArgs{Username: username}, &result)
 }
 
-func (c *ScanClient) ScanAllUsers() error {
+func (c *rpcScanClient) ScanAllUsers() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var result ScanResult
 	return c.client.Call("ScanRPC.ScanAllUsers", &ScanAllArgs{}, &result)
 }
 
-func (c *ScanClient) GetStatus() (ScanStatus, error) {
+func (c *rpcScanClient) GetStatus() (ScanStatus, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var result ScanStatusResult
@@ -278,7 +292,7 @@ func (c *ScanClient) GetStatus() (ScanStatus, error) {
 	return s, nil
 }
 
-func (c *ScanClient) Profile(name string, debug, seconds int) ([]byte, error) {
+func (c *rpcScanClient) Profile(name string, debug, seconds int) ([]byte, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var result ProfileResult
@@ -288,13 +302,13 @@ func (c *ScanClient) Profile(name string, debug, seconds int) ([]byte, error) {
 	return result.Data, nil
 }
 
-func (c *ScanClient) ReleaseMemory() error {
+func (c *rpcScanClient) ReleaseMemory() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.client.Call("ScanRPC.ReleaseMemory", &struct{}{}, &struct{}{})
 }
 
-func (c *ScanClient) MemStats() (*MemStatsResult, error) {
+func (c *rpcScanClient) MemStats() (*MemStatsResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var result MemStatsResult
@@ -304,11 +318,72 @@ func (c *ScanClient) MemStats() (*MemStatsResult, error) {
 	return &result, nil
 }
 
-func (c *ScanClient) Close() error {
+func (c *rpcScanClient) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.client.Close()
 }
+
+// --- In-process client (no subprocess, calls ScanRPC directly) ---
+
+// inProcessScanClient runs the scan worker in the same process.
+type inProcessScanClient struct {
+	svc *ScanRPC
+}
+
+func newInProcessScanClient(p *Plugin, ctx context.Context) *inProcessScanClient {
+	if db, err := p.SystemDB(); err == nil {
+		SettingScanRunning.Set(db, false)
+	}
+	return &inProcessScanClient{svc: &ScanRPC{plugin: p, ctx: ctx}}
+}
+
+func (c *inProcessScanClient) ScanUser(username string) error {
+	var result ScanResult
+	return c.svc.ScanUser(&ScanUserArgs{Username: username}, &result)
+}
+
+func (c *inProcessScanClient) ScanAllUsers() error {
+	var result ScanResult
+	return c.svc.ScanAllUsers(&ScanAllArgs{}, &result)
+}
+
+func (c *inProcessScanClient) GetStatus() (ScanStatus, error) {
+	var result ScanStatusResult
+	if err := c.svc.GetStatus(&ScanStatusArgs{}, &result); err != nil {
+		return ScanStatus{}, err
+	}
+	var s ScanStatus
+	s.Running = result.Running
+	s.LastRun = result.LastRun
+	s.Warnings = result.Warnings
+	if result.LastError != "" {
+		s.LastError = fmt.Errorf("%s", result.LastError)
+	}
+	return s, nil
+}
+
+func (c *inProcessScanClient) Profile(name string, debug, seconds int) ([]byte, error) {
+	var result ProfileResult
+	if err := c.svc.Profile(&ProfileArgs{Name: name, Debug: debug, Seconds: seconds}, &result); err != nil {
+		return nil, err
+	}
+	return result.Data, nil
+}
+
+func (c *inProcessScanClient) ReleaseMemory() error {
+	return c.svc.ReleaseMemory(&struct{}{}, &struct{}{})
+}
+
+func (c *inProcessScanClient) MemStats() (*MemStatsResult, error) {
+	var result MemStatsResult
+	if err := c.svc.MemStats(&struct{}{}, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *inProcessScanClient) Close() error { return nil }
 
 // --- Helpers ---
 

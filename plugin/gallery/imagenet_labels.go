@@ -1,3 +1,5 @@
+//go:build linux
+
 package gallery
 
 // imagenetLabels contains the 1000 ImageNet class names corresponding to MobileNetV2 output indices.

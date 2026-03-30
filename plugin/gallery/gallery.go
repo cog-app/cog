@@ -15,22 +15,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"syscall"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/contacts"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
-// setNice sets the niceness (priority) of a process. Errors are ignored.
-func setNice(pid, niceness int) {
-	syscall.Setpriority(syscall.PRIO_PROCESS, pid, niceness)
-}
 
 //go:embed sql
 var sqlFS embed.FS
@@ -59,9 +52,9 @@ type Plugin struct {
 	done     chan struct{}
 
 	scanMu     sync.Mutex
-	scanClient *ScanClient // RPC client to scan worker subprocess
-	isWorker   bool        // true when running as scan worker subprocess
-	workerPID  int         // PID of scan worker subprocess (for RSS monitoring)
+	scanClient scannerClient // RPC or in-process scan worker client
+	isWorker   bool          // true when running as scan worker subprocess
+	workerPID  int           // PID of scan worker subprocess (for RSS monitoring)
 
 	// activeBackends holds recognition backends during a scan so
 	// ReleaseMemory can free ONNX sessions under memory pressure.
@@ -208,9 +201,29 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 func (p *Plugin) Start(ctx context.Context) error {
 	ctx, p.cancel = context.WithCancel(ctx)
 	p.done = make(chan struct{})
-	go p.manageScanWorker(ctx)
+	if useSubprocess() {
+		go p.manageScanWorker(ctx)
+	} else {
+		go p.manageInProcessWorker(ctx)
+	}
 	go p.scanTimer(ctx)
 	return nil
+}
+
+// manageInProcessWorker runs the scan worker in-process instead of a subprocess.
+func (p *Plugin) manageInProcessWorker(ctx context.Context) {
+	defer close(p.done)
+
+	client := newInProcessScanClient(p, ctx)
+	p.scanMu.Lock()
+	p.scanClient = client
+	p.scanMu.Unlock()
+
+	<-ctx.Done()
+
+	p.scanMu.Lock()
+	p.scanClient = nil
+	p.scanMu.Unlock()
 }
 
 func (p *Plugin) Stop() error {
@@ -607,7 +620,7 @@ func (p *Plugin) manageScanWorker(ctx context.Context) {
 		setNice(pid, 10)
 
 		// Create RPC client over the subprocess pipes.
-		client := newScanClient(readWriteCloser{stdout, stdin})
+		client := newRPCScanClient(readWriteCloser{stdout, stdin})
 		p.scanMu.Lock()
 		p.scanClient = client
 		p.workerPID = pid
@@ -657,60 +670,6 @@ func (p *Plugin) scanTimer(ctx context.Context) {
 	}
 }
 
-// rssWatchdog monitors the worker's RSS and triggers memory release or kill.
-func (p *Plugin) rssWatchdog(ctx context.Context, pid int, client *ScanClient, done <-chan struct{}) {
-	sysDB, _ := p.SystemDB()
-	maxMB := uint64(2048)
-	if sysDB != nil {
-		maxMB = uint64(SettingWorkerMaxRSS.MustGet(sysDB))
-	}
-	maxBytes := maxMB * 1024 * 1024
-
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-done:
-			return
-		case <-ticker.C:
-			rss := readRSS(pid)
-			if rss == 0 || rss <= maxBytes {
-				continue
-			}
-			p.log.Warn("scan worker RSS exceeds limit",
-				"rss", formatBytes(rss), "limit", formatBytes(maxBytes))
-			client.ReleaseMemory()
-
-			// Give it time to free memory.
-			time.Sleep(15 * time.Second)
-
-			rss = readRSS(pid)
-			if rss > maxBytes {
-				p.log.Error("scan worker memory still high after release, killing",
-					"rss", formatBytes(rss))
-				syscall.Kill(pid, syscall.SIGKILL)
-				return
-			}
-			p.log.Info("scan worker memory recovered", "rss", formatBytes(rss))
-		}
-	}
-}
-
-// readRSS returns the resident set size of a process in bytes.
-func readRSS(pid int) uint64 {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/statm", pid))
-	if err != nil {
-		return 0
-	}
-	fields := strings.Fields(string(data))
-	if len(fields) < 2 {
-		return 0
-	}
-	pages, _ := strconv.ParseUint(fields[1], 10, 64)
-	return pages * uint64(os.Getpagesize())
-}
 
 // FolderIcon implements plugin.FolderIconProvider. It returns a photo-folder
 // icon for directories that match the user's configured scan folder patterns.

@@ -1,4 +1,5 @@
 /cog
+*.exe
 /tmp
 *.db
 *.db-*
