@@ -3,7 +3,10 @@ package media
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
+
+	"git.duckfam.us/jj-software/cog/internal/query"
 )
 
 // SourceKind identifies the type of media source.
@@ -547,6 +550,108 @@ func SourceEpisodeCounts(db *sql.DB) (map[int64]int, error) {
 		counts[sid] = n
 	}
 	return counts, rows.Err()
+}
+
+// --- Filters ---
+
+// Filter is a user-level rule that matches episodes and applies an action.
+// Use :source=name in the query to scope a filter to a specific source.
+type Filter struct {
+	ID          int64
+	SortOrder   int
+	Query       string
+	Action      string // "skip", "tag", "mute_profanity"
+	ActionValue string
+	CreatedAt   int64
+}
+
+func ListFilters(db *sql.DB) ([]Filter, error) {
+	rows, err := db.Query(`SELECT id, sort_order, query, action, action_value, created_at
+		FROM filters ORDER BY sort_order, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var filters []Filter
+	for rows.Next() {
+		var f Filter
+		if err := rows.Scan(&f.ID, &f.SortOrder, &f.Query, &f.Action, &f.ActionValue, &f.CreatedAt); err != nil {
+			return nil, err
+		}
+		filters = append(filters, f)
+	}
+	return filters, rows.Err()
+}
+
+func CreateFilter(db *sql.DB, queryStr, action, actionValue string) (*Filter, error) {
+	// Validate query parses (or is wildcard).
+	if queryStr != "*" {
+		if _, err := query.Parse(queryStr); err != nil {
+			return nil, fmt.Errorf("invalid filter query: %w", err)
+		}
+	}
+	var maxOrder int
+	db.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM filters`).Scan(&maxOrder)
+	res, err := db.Exec(`INSERT INTO filters (sort_order, query, action, action_value) VALUES (?, ?, ?, ?)`,
+		maxOrder+1, queryStr, action, actionValue)
+	if err != nil {
+		return nil, err
+	}
+	id, _ := res.LastInsertId()
+	return &Filter{ID: id, SortOrder: maxOrder + 1, Query: queryStr, Action: action, ActionValue: actionValue}, nil
+}
+
+func DeleteFilter(db *sql.DB, filterID int64) error {
+	_, err := db.Exec(`DELETE FROM filters WHERE id = ?`, filterID)
+	return err
+}
+
+// ApplyFilters evaluates all user-level filters against an episode.
+// The source title is included as the "source" field for filtering.
+// Returns true if the episode should be skipped from the queue.
+func ApplyFilters(db *sql.DB, sourceTitle string, episodeID int64, ep *Episode) bool {
+	filters, err := ListFilters(db)
+	if err != nil || len(filters) == 0 {
+		return false
+	}
+
+	rec := query.Record{
+		"title":       ep.Title,
+		"description": ep.Description,
+		"type":        string(ep.MediaType),
+		"duration":    strconv.Itoa(ep.DurationSec),
+		"url":         ep.MediaURL,
+		"source":      sourceTitle,
+	}
+
+	skip := false
+	for _, f := range filters {
+		if !filterMatches(f.Query, rec) {
+			continue
+		}
+		switch f.Action {
+		case "skip":
+			skip = true
+		case "tag":
+			if f.ActionValue != "" {
+				TagEpisode(db, episodeID, f.ActionValue)
+			}
+		case "mute_profanity":
+			TagEpisode(db, episodeID, "_mute_profanity")
+		}
+	}
+	return skip
+}
+
+func filterMatches(q string, rec query.Record) bool {
+	if q == "*" {
+		return true
+	}
+	expr, err := query.Parse(q)
+	if err != nil {
+		return false
+	}
+	return expr.Match(rec)
 }
 
 // FormatDuration formats seconds as "1h 23m" or "23m" or "1m".

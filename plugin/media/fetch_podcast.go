@@ -74,7 +74,9 @@ func fetchPodcast(client *http.Client, db *sql.DB, src *Source, clock func() tim
 		}
 		if id > 0 {
 			AutoTagEpisode(db, id, ep.MediaType)
-			QueueIfNew(db, id)
+			if !ApplyFilters(db, src.Title, id, ep) {
+				QueueIfNew(db, id)
+			}
 		}
 	}
 

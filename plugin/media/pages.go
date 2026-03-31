@@ -2,6 +2,7 @@ package media
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -24,6 +25,7 @@ type sidebarData struct {
 	Groups     []Group
 	EpCounts   map[int64]int
 	QueueCount int
+	Tags       []string
 	ActivePath string
 }
 
@@ -32,11 +34,13 @@ func (h *Pages) buildSidebar(db *sql.DB, activePath string) sidebarData {
 	groups, _ := ListGroups(db)
 	epCounts, _ := SourceEpisodeCounts(db)
 	queueCount, _ := QueueCount(db)
+	tags, _ := ListTags(db)
 	return sidebarData{
 		Sources:    sources,
 		Groups:     groups,
 		EpCounts:   epCounts,
 		QueueCount: queueCount,
+		Tags:       tags,
 		ActivePath: activePath,
 	}
 }
@@ -137,8 +141,9 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 	plugin.SetTitle(w, "Media Settings")
 	sources, _ := ListSources(db)
 	groups, _ := ListGroups(db)
+	filters, _ := ListFilters(db)
 	errMsg := r.URL.Query().Get("err")
-	mediaSettingsPage(sb, sources, groups, errMsg, plugin.CSRFToken(r)).Render(r.Context(), w)
+	mediaSettingsPage(sb, sources, groups, filters, errMsg, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // TagView shows episodes filtered by tag.
@@ -153,6 +158,55 @@ func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
 	plugin.SetTitle(w, "Tag: "+tag)
 	episodes, _ := ListEpisodesByTag(db, tag, 200)
 	mediaTagPage(sb, tag, episodes, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// SourceSettings shows the configuration page for a source.
+func (h *Pages) SourceSettings(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid source id", http.StatusBadRequest)
+		return
+	}
+	src, err := GetSource(db, id)
+	if err != nil {
+		http.Error(w, "source not found", http.StatusNotFound)
+		return
+	}
+	sb := h.buildSidebar(db, fmt.Sprintf("/apps/media/source/%d/settings", id))
+	plugin.SetTitle(w, src.Title+" Settings")
+	mediaSourceSettingsPage(sb, src, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// QueueByTag shows the queue filtered to a specific tag.
+func (h *Pages) QueueByTag(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	tag := r.PathValue("name")
+	sb := h.buildSidebar(db, "/apps/media/queue/tag/"+tag)
+	plugin.SetTitle(w, "Queue: "+tag)
+
+	// Get full queue then filter to episodes with this tag.
+	queue, _ := ListQueue(db)
+	var filtered []EpisodeView
+	for _, ep := range queue {
+		tags, _ := EpisodeTags(db, ep.ID)
+		for _, t := range tags {
+			if t == tag {
+				ep.Tags = tags
+				filtered = append(filtered, ep)
+				break
+			}
+		}
+	}
+	mediaQueueByTagPage(sb, tag, filtered, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // --- Actions ---
@@ -455,4 +509,45 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": ep.MediaURL})
+}
+
+// AddFilter handles POST to create a new filter for a source.
+func (h *Pages) AddFilter(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	queryStr := r.FormValue("query")
+	if queryStr == "" {
+		queryStr = "*"
+	}
+	action := r.FormValue("action")
+	actionValue := r.FormValue("action_value")
+
+	_, err = CreateFilter(db, queryStr, action, actionValue)
+	if err != nil {
+		http.Redirect(w, r, "/apps/media/settings?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/apps/media/settings", http.StatusSeeOther)
+}
+
+// DeleteFilterAction handles DELETE to remove a filter.
+func (h *Pages) DeleteFilterAction(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := DeleteFilter(db, id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }

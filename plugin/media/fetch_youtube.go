@@ -59,7 +59,9 @@ func fetchYouTube(ctx context.Context, db *sql.DB, src *Source, clock func() tim
 		}
 		if id > 0 {
 			AutoTagEpisode(db, id, MediaVideo)
-			QueueIfNew(db, id)
+			if !ApplyFilters(db, src.Title, id, ep) {
+				QueueIfNew(db, id)
+			}
 		}
 	}
 

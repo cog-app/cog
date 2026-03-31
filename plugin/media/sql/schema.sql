@@ -19,6 +19,15 @@ CREATE TABLE IF NOT EXISTS episodes (
 	UNIQUE(source_id, guid)
 );
 
+CREATE TABLE IF NOT EXISTS filters (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	sort_order INTEGER NOT NULL DEFAULT 0,
+	query TEXT NOT NULL DEFAULT '*',
+	action TEXT NOT NULL CHECK(action IN ('skip', 'tag', 'mute_profanity')),
+	action_value TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
 CREATE TABLE IF NOT EXISTS groups (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	name TEXT NOT NULL UNIQUE,
@@ -68,6 +77,8 @@ CREATE TABLE IF NOT EXISTS tags (
 CREATE INDEX IF NOT EXISTS idx_episodes_published ON episodes(published_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_episodes_source_id ON episodes(source_id);
+
+CREATE INDEX IF NOT EXISTS idx_filters_order ON filters(sort_order);
 
 CREATE INDEX IF NOT EXISTS idx_playback_last ON playback(last_played_at DESC);
 

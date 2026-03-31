@@ -35,6 +35,15 @@ templ mediaSidebar(sb sidebarData) {
 				@sidebarSourceLink(src, sb)
 			}
 		}
+		if len(sb.Tags) > 0 {
+			<div class="sidebar-divider"></div>
+			<div class="sidebar-group-label" style="font-size:0.8rem;text-transform:uppercase;padding:0.25rem 0.75rem;color:var(--color-text-muted)">Tags</div>
+			for _, tag := range sb.Tags {
+				<a href={ templ.SafeURL("/apps/media/queue/tag/" + tag) } class={ sidebarClass(sb.ActivePath, "/apps/media/queue/tag/"+tag) } style="padding-left:1.5rem;font-size:0.9rem">
+					{ tag }
+				</a>
+			}
+		}
 		<div class="sidebar-divider"></div>
 		<a href="/apps/media/settings" class={ sidebarClass(sb.ActivePath, "/apps/media/settings") }>Settings</a>
 	</nav>
@@ -289,11 +298,14 @@ templ mediaSourcePage(sb sidebarData, src *Source, episodes []EpisodeView, csrfT
 		<div class="sidebar-content">
 			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
 				<h1 style="margin:0">{ sourceDisplayTitle(*src) }</h1>
-				<button
-					class="btn btn-outline btn-sm"
-					hx-post={ fmt.Sprintf("/apps/media/sources/%d/refresh", src.ID) }
-					hx-swap="none"
-				>Refresh</button>
+				<div class="flex gap-1">
+					<button
+						class="btn btn-outline btn-sm"
+						hx-post={ fmt.Sprintf("/apps/media/sources/%d/refresh", src.ID) }
+						hx-swap="none"
+					>Refresh</button>
+					<a href={ templ.SafeURL(fmt.Sprintf("/apps/media/source/%d/settings", src.ID)) } class="btn btn-outline btn-sm">Settings</a>
+				</div>
 			</div>
 			if src.LastError != "" {
 				@ui.Alert("error", src.LastError)
@@ -369,7 +381,7 @@ templ mediaHistoryPage(sb sidebarData, episodes []EpisodeView, csrfToken string)
 }
 
 // --- Settings Page ---
-templ mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, errMsg string, csrfToken string) {
+templ mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters []Filter, errMsg string, csrfToken string) {
 	<div class="sidebar-layout">
 		@mediaSidebar(sb)
 		<div class="sidebar-content">
@@ -476,6 +488,62 @@ templ mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, errMsg
 					</table>
 				}
 			}
+			@ui.Card("Filters") {
+				<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">
+					Filters run on each new episode from any source. Use <code>*</code> to match all episodes, or the query syntax to target specific ones.
+					Available fields: <code>:title</code>, <code>:description</code>, <code>:type</code>, <code>:source</code>, <code>:url</code>, <code>:duration</code>.
+				</p>
+				if len(filters) > 0 {
+					<table class="table" style="margin-bottom:1rem">
+						<thead>
+							<tr>
+								<th>Query</th>
+								<th>Action</th>
+								<th>Value</th>
+								<th class="text-right"></th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, f := range filters {
+								<tr id={ fmt.Sprintf("filter-%d", f.ID) }>
+									<td><code>{ f.Query }</code></td>
+									<td>{ f.Action }</td>
+									<td>{ f.ActionValue }</td>
+									<td class="text-right">
+										<button
+											class="btn btn-danger btn-sm"
+											hx-delete={ fmt.Sprintf("/apps/media/filters/%d", f.ID) }
+											hx-target={ fmt.Sprintf("#filter-%d", f.ID) }
+											hx-swap="outerHTML"
+											hx-confirm="Delete this filter?"
+										>Delete</button>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+				<form method="post" action="/apps/media/filters" class="flex gap-1 items-end" style="flex-wrap:wrap">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<div class="form-group" style="flex:1;min-width:150px;margin-bottom:0">
+						<label for="filter-query">Query</label>
+						<input class="form-control" type="text" id="filter-query" name="query" placeholder={ `* or :source="My Podcast" or NOT bonus` } value="*"/>
+					</div>
+					<div class="form-group" style="margin-bottom:0">
+						<label for="filter-action">Action</label>
+						<select class="form-control" id="filter-action" name="action" onchange="document.getElementById('filter-value-group').style.display = this.value === 'tag' ? '' : 'none'">
+							<option value="skip">Skip (don't enqueue)</option>
+							<option value="tag">Tag</option>
+							<option value="mute_profanity">Mute profanity</option>
+						</select>
+					</div>
+					<div class="form-group" id="filter-value-group" style="margin-bottom:0;display:none">
+						<label for="filter-value">Tag name</label>
+						<input class="form-control" type="text" id="filter-value" name="action_value" placeholder="tag name"/>
+					</div>
+					<button class="btn btn-primary btn-sm" type="submit">Add Filter</button>
+				</form>
+			}
 		</div>
 	</div>
 }
@@ -492,6 +560,70 @@ templ mediaTagPage(sb sidebarData, tag string, episodes []EpisodeView, csrfToken
 				}
 			} else {
 				@mediaEpisodeList(episodes, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+// --- Shared Components ---
+// --- Source Settings Page ---
+templ mediaSourceSettingsPage(sb sidebarData, src *Source, csrfToken string) {
+	<div class="sidebar-layout">
+		@mediaSidebar(sb)
+		<div class="sidebar-content">
+			<h1>{ sourceDisplayTitle(*src) } Settings</h1>
+			@ui.Card("Source Info") {
+				<div class="flex gap-1" style="flex-wrap:wrap;margin-bottom:0.5rem">
+					<span class="badge">{ string(src.Kind) }</span>
+					if src.LastError != "" {
+						<span class="badge" style="background:var(--color-danger);color:white">Error</span>
+					} else if src.Paused {
+						<span class="badge">Paused</span>
+					} else {
+						<span class="badge" style="background:var(--color-success);color:white">OK</span>
+					}
+				</div>
+				<div class="text-muted" style="font-size:0.85rem;margin-bottom:0.5rem;word-break:break-all">{ src.URL }</div>
+				if src.LastError != "" {
+					<div class="text-danger" style="font-size:0.85rem;margin-bottom:0.5rem">{ src.LastError }</div>
+				}
+				<div class="flex gap-1">
+					<button
+						class="btn btn-outline btn-sm"
+						hx-post={ fmt.Sprintf("/apps/media/sources/%d/refresh", src.ID) }
+						hx-swap="none"
+					>Refresh Now</button>
+					<button
+						class="btn btn-danger btn-sm"
+						hx-delete={ fmt.Sprintf("/apps/media/sources/%d", src.ID) }
+						hx-confirm="Delete this source and all its episodes?"
+						hx-target="body"
+					>Delete Source</button>
+				</div>
+			}
+		</div>
+	</div>
+}
+
+// --- Queue By Tag Page ---
+templ mediaQueueByTagPage(sb sidebarData, tag string, queue []EpisodeView, csrfToken string) {
+	<div class="sidebar-layout">
+		@mediaSidebar(sb)
+		<div class="sidebar-content">
+			<h1>Queue: { tag }</h1>
+			if len(queue) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No queued episodes with tag "{ tag }".</p>
+				}
+			} else {
+				<div id="media-player-area">
+					@mediaPlayerComponent(&queue[0], csrfToken)
+				</div>
+				<div id="queue-list" style="margin-top:1rem">
+					for _, ep := range queue {
+						@mediaQueueItem(&ep, csrfToken)
+					}
+				</div>
 			}
 		</div>
 	</div>
