@@ -1,0 +1,647 @@
+package media
+
+import (
+	"fmt"
+	"strconv"
+	"time"
+
+	"git.duckfam.us/jj-software/cog/ui"
+)
+
+// --- Sidebar ---
+templ mediaSidebar(sb sidebarData) {
+	<nav class="sidebar">
+		<a href="/apps/media/" class={ sidebarClass(sb.ActivePath, "/apps/media/") }>
+			Queue
+			if sb.QueueCount > 0 {
+				<span class="badge">{ strconv.Itoa(sb.QueueCount) }</span>
+			}
+		</a>
+		<a href="/apps/media/browse" class={ sidebarClass(sb.ActivePath, "/apps/media/browse") }>Browse</a>
+		<a href="/apps/media/history" class={ sidebarClass(sb.ActivePath, "/apps/media/history") }>History</a>
+		<div class="sidebar-divider"></div>
+		for _, group := range sb.Groups {
+			<details class="sidebar-folder" open>
+				<summary class="sidebar-group-label">{ group.Name }</summary>
+				for _, src := range sb.Sources {
+					if src.GroupID.Valid && src.GroupID.Int64 == group.ID {
+						@sidebarSourceLink(src, sb)
+					}
+				}
+			</details>
+		}
+		for _, src := range sb.Sources {
+			if !src.GroupID.Valid {
+				@sidebarSourceLink(src, sb)
+			}
+		}
+		<div class="sidebar-divider"></div>
+		<a href="/apps/media/settings" class={ sidebarClass(sb.ActivePath, "/apps/media/settings") }>Settings</a>
+	</nav>
+}
+
+templ sidebarSourceLink(src Source, sb sidebarData) {
+	<a
+		href={ templ.SafeURL(fmt.Sprintf("/apps/media/source/%d", src.ID)) }
+		class={ sidebarClass(sb.ActivePath, fmt.Sprintf("/apps/media/source/%d", src.ID)) }
+		style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem"
+	>
+		if src.Kind == SourceYouTube {
+			<svg style="width:16px;height:12px;flex-shrink:0" viewBox="0 0 28 20" fill="currentColor"><path d="M27.4 3.1s-.3-1.9-1.1-2.8C25.1-.9 23.7-.9 23.1-1c-4.4-.3-11-.3-11-.3S5.5-.9 1.1-.6C.5-.5-.9-.5-2.1.7-2.9 1.6-3.2 3.5-3.2 3.5S-3.5 5.7-3.5 8v2.1c0 2.2.3 4.4.3 4.4s.3 1.9 1.1 2.8c1.1 1.2 2.5 1.1 3.1 1.3 2.3.2 9.5.3 9.5.3s6.6 0 11-.3c.6-.1 2-.1 3.2-1.3.8-.9 1.1-2.8 1.1-2.8s.3-2.2.3-4.4V7.5c0-2.2-.3-4.4-.3-4.4zM9.7 13.7V4.5l8.4 4.6-8.4 4.6z" transform="translate(3.5 1)"></path></svg>
+		} else if src.Kind == SourcePodcast {
+			<svg style="width:14px;height:14px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle></svg>
+		}
+		<span class="sidebar-item-text">{ sourceDisplayTitle(src) }</span>
+		if sb.EpCounts[src.ID] > 0 {
+			<span class="badge">{ strconv.Itoa(sb.EpCounts[src.ID]) }</span>
+		}
+	</a>
+}
+
+// --- Queue Page ---
+templ mediaQueuePage(sb sidebarData, queue []EpisodeView, csrfToken string) {
+	<div class="sidebar-layout">
+		@mediaSidebar(sb)
+		<div class="sidebar-content">
+			<h1>Queue</h1>
+			if len(queue) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">Your queue is empty. Browse sources and add episodes to your queue.</p>
+				}
+			} else {
+				<div id="media-player-area">
+					@mediaPlayerComponent(&queue[0], csrfToken)
+				</div>
+				<div id="queue-list" style="margin-top:1rem">
+					for _, ep := range queue {
+						@mediaQueueItem(&ep, csrfToken)
+					}
+				</div>
+			}
+		</div>
+	</div>
+}
+
+templ mediaQueueItem(ep *EpisodeView, csrfToken string) {
+	<div id={ fmt.Sprintf("queue-%d", ep.ID) } class="flex items-center gap-1" style="padding:0.5rem 0;border-bottom:1px solid var(--color-border)">
+		if ep.ThumbnailURL != "" {
+			@episodeThumbnail(ep)
+		}
+		<a href={ templ.SafeURL(fmt.Sprintf("/apps/media/episode/%d", ep.ID)) } style="flex:1;min-width:0">
+			<div style="font-weight:500">{ ep.Title }</div>
+			<div class="text-muted" style="font-size:0.85rem">
+				{ ep.SourceTitle }
+				if ep.DurationSec > 0 {
+					<span>· { FormatDuration(ep.DurationSec) }</span>
+				}
+				if ep.ProgressSec > 0 {
+					<span>· { FormatDuration(int(ep.ProgressSec)) } played</span>
+				}
+			</div>
+		</a>
+		<button
+			class="btn btn-outline btn-sm"
+			hx-delete={ fmt.Sprintf("/apps/media/queue/%d", ep.ID) }
+			hx-target={ fmt.Sprintf("#queue-%d", ep.ID) }
+			hx-swap="outerHTML"
+			hx-confirm="Remove from queue?"
+		>Remove</button>
+	</div>
+}
+
+// --- Player Component ---
+templ mediaPlayerComponent(ep *EpisodeView, csrfToken string) {
+	<div
+		id="media-player"
+		class="card"
+		style="padding:1rem"
+		data-episode-id={ strconv.FormatInt(ep.ID, 10) }
+		data-resume={ fmt.Sprintf("%.1f", ep.ProgressSec) }
+		data-media-type={ string(ep.MediaType) }
+		data-source-kind={ sourceKindForEpisode(ep) }
+	>
+		<div style="font-weight:600;margin-bottom:0.5rem">{ ep.Title }</div>
+		<div class="text-muted" style="font-size:0.85rem;margin-bottom:0.5rem">{ ep.SourceTitle }</div>
+		if ep.MediaType == MediaVideo {
+			<video
+				id="player-el"
+				style="width:100%;max-height:480px;background:#000;margin-bottom:0.5rem"
+				preload="metadata"
+				if sourceKindForEpisode(ep) != "youtube" {
+					src={ ep.MediaURL }
+				}
+			></video>
+		} else {
+			<audio
+				id="player-el"
+				style="width:100%;margin-bottom:0.5rem"
+				preload="metadata"
+				if sourceKindForEpisode(ep) != "youtube" {
+					src={ ep.MediaURL }
+				}
+			></audio>
+		}
+		<div class="flex items-center gap-1" style="flex-wrap:wrap">
+			<button class="btn btn-outline btn-sm" onclick="playerSkip(-15)" title="Back 15s">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+			</button>
+			<button class="btn btn-primary btn-sm" id="player-play-btn" onclick="playerToggle()" title="Play" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border-radius:50%">
+				<svg id="icon-play" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+				<svg id="icon-pause" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+			</button>
+			<button class="btn btn-outline btn-sm" onclick="playerSkip(30)" title="Forward 30s">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+			</button>
+			<span id="player-time" class="text-muted" style="font-size:0.85rem;margin-left:0.5rem">0:00 / 0:00</span>
+			<button
+				class="btn btn-outline btn-sm"
+				style="margin-left:auto"
+				hx-post={ fmt.Sprintf("/apps/media/episodes/%d/complete", ep.ID) }
+				hx-target="#media-player"
+				hx-swap="outerHTML"
+			>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+				Done
+			</button>
+		</div>
+		<input type="hidden" name="csrf_token" value={ csrfToken }/>
+		@playerScript()
+	</div>
+}
+
+templ playerScript() {
+	<script>
+	(function() {
+		var player = document.getElementById('media-player');
+		if (!player) return;
+		var el = document.getElementById('player-el');
+		if (!el) return;
+		var epID = player.dataset.episodeId;
+		var resume = parseFloat(player.dataset.resume) || 0;
+		var sourceKind = player.dataset.sourceKind;
+		var playBtn = document.getElementById('player-play-btn');
+		var timeSpan = document.getElementById('player-time');
+		var csrfToken = player.querySelector('[name=csrf_token]').value;
+		var lastSaved = 0;
+
+		function formatTime(sec) {
+			sec = Math.floor(sec);
+			var h = Math.floor(sec / 3600);
+			var m = Math.floor((sec % 3600) / 60);
+			var s = sec % 60;
+			if (h > 0) return h + ':' + (m<10?'0':'') + m + ':' + (s<10?'0':'') + s;
+			return m + ':' + (s<10?'0':'') + s;
+		}
+
+		if (sourceKind === 'youtube') {
+			fetch('/apps/media/api/stream-url/' + epID, {
+				headers: {'X-CSRF-Token': csrfToken}
+			}).then(function(r) { return r.json(); })
+			.then(function(data) {
+				if (data.url) { el.src = data.url; if (resume > 0) el.currentTime = resume; }
+			}).catch(function() {});
+		} else if (resume > 0) {
+			el.addEventListener('loadedmetadata', function() { el.currentTime = resume; }, {once: true});
+		}
+
+		el.addEventListener('timeupdate', function() {
+			timeSpan.textContent = formatTime(el.currentTime) + ' / ' + formatTime(el.duration || 0);
+			// Save progress every 15 seconds of playback
+			var now = el.currentTime;
+			if (Math.abs(now - lastSaved) >= 15) {
+				lastSaved = now;
+				fetch('/apps/media/episodes/' + epID + '/progress', {
+					method: 'POST',
+					headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken},
+					body: 'progress=' + now.toFixed(1)
+				});
+			}
+		});
+
+		el.addEventListener('ended', function() {
+			// Mark complete and autoplay next
+			fetch('/apps/media/episodes/' + epID + '/complete', {
+				method: 'POST',
+				headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken}
+			}).then(function(r) { return r.text(); })
+			.then(function(html) {
+				if (html && html.trim()) {
+					player.outerHTML = html;
+					// Autoplay the next episode
+					var nextEl = document.getElementById('player-el');
+					if (nextEl) {
+						nextEl.addEventListener('canplay', function() { nextEl.play(); }, {once: true});
+					}
+				}
+			}).catch(function() {});
+		});
+
+		var iconPlay = document.getElementById('icon-play');
+		var iconPause = document.getElementById('icon-pause');
+		el.addEventListener('play', function() {
+			if (iconPlay) iconPlay.style.display = 'none';
+			if (iconPause) iconPause.style.display = '';
+			playBtn.title = 'Pause';
+		});
+		el.addEventListener('pause', function() {
+			if (iconPlay) iconPlay.style.display = '';
+			if (iconPause) iconPause.style.display = 'none';
+			playBtn.title = 'Play';
+		});
+
+		window.playerToggle = function() {
+			if (el.paused) el.play(); else el.pause();
+		};
+		window.playerSkip = function(sec) {
+			el.currentTime = Math.max(0, el.currentTime + sec);
+		};
+	})();
+	</script>
+}
+
+templ mediaPlayerEmpty() {
+	<div id="media-player" class="card" style="padding:1rem">
+		<p class="text-muted">Queue is empty. Add episodes from your sources.</p>
+	</div>
+}
+
+// --- Browse Page ---
+templ mediaBrowsePage(sb sidebarData, episodes []EpisodeView, csrfToken string) {
+	<div class="sidebar-layout">
+		@mediaSidebar(sb)
+		<div class="sidebar-content">
+			<h1>Browse</h1>
+			if len(episodes) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No episodes yet. Add sources in Settings.</p>
+				}
+			} else {
+				@mediaEpisodeList(episodes, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+// --- Source Page ---
+templ mediaSourcePage(sb sidebarData, src *Source, episodes []EpisodeView, csrfToken string) {
+	<div class="sidebar-layout">
+		@mediaSidebar(sb)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+				<h1 style="margin:0">{ sourceDisplayTitle(*src) }</h1>
+				<button
+					class="btn btn-outline btn-sm"
+					hx-post={ fmt.Sprintf("/apps/media/sources/%d/refresh", src.ID) }
+					hx-swap="none"
+				>Refresh</button>
+			</div>
+			if src.LastError != "" {
+				@ui.Alert("error", src.LastError)
+			}
+			if src.Description != "" {
+				<p class="text-muted" style="margin-bottom:1rem">{ src.Description }</p>
+			}
+			if len(episodes) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No episodes yet.</p>
+				}
+			} else {
+				@mediaEpisodeList(episodes, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+// --- Episode Detail Page ---
+templ mediaEpisodePage(sb sidebarData, ep *EpisodeView, csrfToken string) {
+	<div class="sidebar-layout">
+		@mediaSidebar(sb)
+		<div class="sidebar-content">
+			<h1>{ ep.Title }</h1>
+			<div class="text-muted mb-2">
+				{ ep.SourceTitle }
+				if ep.DurationSec > 0 {
+					<span>· { FormatDuration(ep.DurationSec) }</span>
+				}
+				if ep.PublishedAt > 0 {
+					<span>· { formatTime(ep.PublishedAt) }</span>
+				}
+			</div>
+			<div id="media-player-area">
+				@mediaPlayerComponent(ep, csrfToken)
+			</div>
+			if !ep.InQueue {
+				<div style="margin-top:0.5rem">
+					<button
+						class="btn btn-outline btn-sm"
+						hx-post={ fmt.Sprintf("/apps/media/queue/%d", ep.ID) }
+						hx-swap="none"
+					>Add to Queue</button>
+				</div>
+			}
+			<div id={ fmt.Sprintf("tags-%d", ep.ID) } style="margin-top:1rem">
+				@mediaTagList(ep.ID, ep.Tags, csrfToken)
+			</div>
+			if ep.Description != "" {
+				<div class="card" style="margin-top:1rem;padding:1rem">
+					@templ.Raw(ep.Description)
+				</div>
+			}
+		</div>
+	</div>
+}
+
+// --- History Page ---
+templ mediaHistoryPage(sb sidebarData, episodes []EpisodeView, csrfToken string) {
+	<div class="sidebar-layout">
+		@mediaSidebar(sb)
+		<div class="sidebar-content">
+			<h1>History</h1>
+			if len(episodes) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No playback history yet.</p>
+				}
+			} else {
+				@mediaEpisodeList(episodes, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+// --- Settings Page ---
+templ mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, errMsg string, csrfToken string) {
+	<div class="sidebar-layout">
+		@mediaSidebar(sb)
+		<div class="sidebar-content">
+			<h1>Media Settings</h1>
+			@ui.Alert("error", errMsg)
+			@ui.Card("Add Source") {
+				<form method="post" action="/apps/media/sources" class="flex gap-1 items-end" style="flex-wrap:wrap">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<div class="form-group" style="flex:1;min-width:200px;margin-bottom:0">
+						<label for="url">URL</label>
+						<input class="form-control" type="url" id="url" name="url" placeholder="Podcast RSS, YouTube channel, or media URL" required/>
+					</div>
+					if len(groups) > 0 {
+						<div class="form-group" style="margin-bottom:0">
+							<label for="group_id">Group</label>
+							<select class="form-control" id="group_id" name="group_id">
+								<option value="">None</option>
+								for _, g := range groups {
+									<option value={ strconv.FormatInt(g.ID, 10) }>{ g.Name }</option>
+								}
+							</select>
+						</div>
+					}
+					<button class="btn btn-primary" type="submit">Add Source</button>
+				</form>
+			}
+			@ui.Card("Sources") {
+				if len(sources) == 0 {
+					<p class="text-muted">No sources yet.</p>
+				} else {
+					<table class="table">
+						<thead>
+							<tr>
+								<th>Title</th>
+								<th>Type</th>
+								<th>Status</th>
+								<th class="text-right">Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, src := range sources {
+								<tr id={ fmt.Sprintf("source-%d", src.ID) }>
+									<td>{ sourceDisplayTitle(src) }</td>
+									<td>{ string(src.Kind) }</td>
+									<td>
+										if src.LastError != "" {
+											<span class="text-danger" title={ src.LastError }>Error</span>
+										} else if src.Paused {
+											<span class="text-muted">Paused</span>
+										} else {
+											<span class="text-success">OK</span>
+										}
+									</td>
+									<td class="text-right">
+										<button
+											class="btn btn-outline btn-sm"
+											hx-post={ fmt.Sprintf("/apps/media/sources/%d/refresh", src.ID) }
+											hx-swap="none"
+										>Refresh</button>
+										<button
+											class="btn btn-danger btn-sm"
+											hx-delete={ fmt.Sprintf("/apps/media/sources/%d", src.ID) }
+											hx-target={ fmt.Sprintf("#source-%d", src.ID) }
+											hx-swap="outerHTML"
+											hx-confirm="Delete this source and all its episodes?"
+										>Delete</button>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+			}
+			@ui.Card("Groups") {
+				<form method="post" action="/apps/media/groups" class="flex gap-1 items-end mb-2">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<input class="form-control" type="text" name="name" placeholder="New group" required style="max-width:200px"/>
+					<button class="btn btn-outline btn-sm" type="submit">Create</button>
+				</form>
+				if len(groups) > 0 {
+					<table class="table">
+						<thead>
+							<tr>
+								<th>Name</th>
+								<th class="text-right">Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, group := range groups {
+								<tr id={ fmt.Sprintf("group-%d", group.ID) }>
+									<td>{ group.Name }</td>
+									<td class="text-right">
+										<button
+											class="btn btn-danger btn-sm"
+											hx-delete={ fmt.Sprintf("/apps/media/groups/%d", group.ID) }
+											hx-target={ fmt.Sprintf("#group-%d", group.ID) }
+											hx-swap="outerHTML"
+											hx-confirm="Delete this group?"
+										>Delete</button>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+			}
+		</div>
+	</div>
+}
+
+// --- Tag Page ---
+templ mediaTagPage(sb sidebarData, tag string, episodes []EpisodeView, csrfToken string) {
+	<div class="sidebar-layout">
+		@mediaSidebar(sb)
+		<div class="sidebar-content">
+			<h1>Tag: { tag }</h1>
+			if len(episodes) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No episodes with this tag.</p>
+				}
+			} else {
+				@mediaEpisodeList(episodes, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+// --- Shared Components ---
+templ mediaEpisodeList(episodes []EpisodeView, csrfToken string) {
+	<div id="episode-list">
+		for i := range episodes {
+			@mediaEpisodeRow(&episodes[i], csrfToken)
+		}
+	</div>
+}
+
+templ mediaEpisodeRow(ep *EpisodeView, csrfToken string) {
+	<div id={ fmt.Sprintf("ep-%d", ep.ID) } class="flex items-center gap-1" style="padding:0.5rem 0;border-bottom:1px solid var(--color-border)">
+		if ep.ThumbnailURL != "" {
+			@episodeThumbnail(ep)
+		}
+		<a href={ templ.SafeURL(fmt.Sprintf("/apps/media/episode/%d", ep.ID)) } style="flex:1;min-width:0">
+			<div style="font-weight:500">
+				if ep.MediaType == MediaVideo {
+					<span title="Video">&#9654;</span>
+				} else {
+					<span title="Audio">&#9835;</span>
+				}
+				{ ep.Title }
+			</div>
+			<div class="text-muted" style="font-size:0.85rem">
+				{ ep.SourceTitle }
+				if ep.DurationSec > 0 {
+					<span>· { FormatDuration(ep.DurationSec) }</span>
+				}
+				if ep.PublishedAt > 0 {
+					<span>· { formatTime(ep.PublishedAt) }</span>
+				}
+				if ep.Completed {
+					<span>· &#10003; Completed</span>
+				} else if ep.ProgressSec > 0 {
+					<span>· { FormatDuration(int(ep.ProgressSec)) } played</span>
+				}
+			</div>
+		</a>
+		<div class="flex gap-1" style="flex-shrink:0">
+			if ep.InQueue {
+				<button
+					class="btn btn-outline btn-sm"
+					hx-delete={ fmt.Sprintf("/apps/media/queue/%d", ep.ID) }
+					hx-target={ fmt.Sprintf("#ep-%d", ep.ID) }
+					hx-swap="outerHTML"
+				>Dequeue</button>
+			} else {
+				<button
+					class="btn btn-outline btn-sm"
+					hx-post={ fmt.Sprintf("/apps/media/queue/%d", ep.ID) }
+					hx-target={ fmt.Sprintf("#ep-%d", ep.ID) }
+					hx-swap="outerHTML"
+				>Queue</button>
+			}
+		</div>
+	</div>
+}
+
+templ mediaTagList(episodeID int64, tags []string, csrfToken string) {
+	<div id={ fmt.Sprintf("tags-%d", episodeID) }>
+		<div class="flex items-center gap-1" style="flex-wrap:wrap">
+			for _, tag := range tags {
+				<span class="badge" style="display:inline-flex;align-items:center;gap:0.25rem">
+					<a href={ templ.SafeURL("/apps/media/tag/" + tag) }>{ tag }</a>
+					<button
+						class="btn btn-sm"
+						style="padding:0 0.25rem;line-height:1;font-size:0.8rem"
+						hx-delete={ fmt.Sprintf("/apps/media/episodes/%d/tag/%s", episodeID, tag) }
+						hx-target={ fmt.Sprintf("#tags-%d", episodeID) }
+						hx-swap="outerHTML"
+					>&times;</button>
+				</span>
+			}
+			<form
+				style="display:inline-flex;gap:0.25rem;align-items:center"
+				hx-post={ fmt.Sprintf("/apps/media/episodes/%d/tag", episodeID) }
+				hx-target={ fmt.Sprintf("#tags-%d", episodeID) }
+				hx-swap="outerHTML"
+			>
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<input class="form-control" type="text" name="tag" placeholder="Add tag" style="width:100px;padding:0.2rem 0.4rem;font-size:0.85rem"/>
+				<button class="btn btn-outline btn-sm" type="submit">+</button>
+			</form>
+		</div>
+	</div>
+}
+
+templ episodeThumbnail(ep *EpisodeView) {
+	if ep.MediaType == MediaVideo {
+		<img src={ ep.ThumbnailURL } alt="" style="width:80px;height:45px;object-fit:cover;border-radius:4px;flex-shrink:0"/>
+	} else {
+		<img src={ ep.ThumbnailURL } alt="" style="width:48px;height:48px;object-fit:cover;border-radius:4px;flex-shrink:0"/>
+	}
+}
+
+// --- Helper Functions ---
+
+func sidebarClass(activePath, itemPath string) string {
+	if activePath == itemPath {
+		return "sidebar-item active"
+	}
+	return "sidebar-item"
+}
+
+func sourceDisplayTitle(src Source) string {
+	if src.Title != "" {
+		return src.Title
+	}
+	return src.URL
+}
+
+func sourceKindForEpisode(ep *EpisodeView) string {
+	// Heuristic: if media URL is a YouTube watch URL, it's a YouTube source.
+	if len(ep.MediaURL) > 0 {
+		if contains(ep.MediaURL, "youtube.com/watch") || contains(ep.MediaURL, "youtu.be/") {
+			return "youtube"
+		}
+	}
+	return ""
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && findSubstr(s, substr)
+}
+
+func findSubstr(s, substr string) bool {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func formatTime(unix int64) string {
+	if unix == 0 {
+		return ""
+	}
+	t := time.Unix(unix, 0)
+	now := time.Now()
+	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
+		return t.Format("15:04")
+	}
+	if t.Year() == now.Year() {
+		return t.Format("Jan 2")
+	}
+	return t.Format("2006-01-02")
+}

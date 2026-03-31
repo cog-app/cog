@@ -8,6 +8,7 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/dashboard"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/plugin/gallery"
+	"git.duckfam.us/jj-software/cog/plugin/media"
 	"git.duckfam.us/jj-software/cog/plugin/notes"
 	"git.duckfam.us/jj-software/cog/plugin/rss"
 	"git.duckfam.us/jj-software/cog/plugin/tasks"
@@ -24,5 +25,6 @@ func main() {
 		gallery.New(),
 		bookmarks.New(),
 		tasks.New(),
+		media.New(),
 	)
 }

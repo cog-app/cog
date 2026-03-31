@@ -38,3 +38,5 @@ These tasks should be completed by Claude in priority order. Check them off the 
   - [ ] Skip media by patterns (search patterns?)
   - [ ] Content filtering (ad skipping; profanity blocking)
   - [ ] Includes a mobile app
+  - Calendar
+    - Allow subscribing to iCal subscriptions; expose those via CalDAV (so I don't need to configure it on each device and can make edits)

@@ -1,0 +1,112 @@
+package query
+
+import (
+	"fmt"
+	"strings"
+)
+
+// Record is a flat key-value map that expressions are matched against.
+type Record map[string]string
+
+// Expr is a parsed query expression that can match records and serialize to a string.
+type Expr interface {
+	Match(r Record) bool
+	String() string
+}
+
+// TextExpr matches if any record value contains the term (case-insensitive).
+type TextExpr struct {
+	Value string
+}
+
+func (e *TextExpr) Match(r Record) bool {
+	lower := strings.ToLower(e.Value)
+	for _, v := range r {
+		if strings.Contains(strings.ToLower(v), lower) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *TextExpr) String() string { return e.Value }
+
+// PhraseExpr matches if any record value contains the exact phrase (case-insensitive).
+type PhraseExpr struct {
+	Value string
+}
+
+func (e *PhraseExpr) Match(r Record) bool {
+	lower := strings.ToLower(e.Value)
+	for _, v := range r {
+		if strings.Contains(strings.ToLower(v), lower) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *PhraseExpr) String() string { return fmt.Sprintf("%q", e.Value) }
+
+// NotExpr negates its inner expression.
+type NotExpr struct {
+	Inner Expr
+}
+
+func (e *NotExpr) Match(r Record) bool { return !e.Inner.Match(r) }
+func (e *NotExpr) String() string      { return "NOT " + e.Inner.String() }
+
+// AndExpr requires both sides to match.
+type AndExpr struct {
+	Left, Right Expr
+}
+
+func (e *AndExpr) Match(r Record) bool { return e.Left.Match(r) && e.Right.Match(r) }
+func (e *AndExpr) String() string      { return e.Left.String() + " AND " + e.Right.String() }
+
+// OrExpr requires either side to match.
+type OrExpr struct {
+	Left, Right Expr
+}
+
+func (e *OrExpr) Match(r Record) bool { return e.Left.Match(r) || e.Right.Match(r) }
+func (e *OrExpr) String() string {
+	return "(" + e.Left.String() + " OR " + e.Right.String() + ")"
+}
+
+// FieldEqExpr matches record[Field] == Value (case-insensitive).
+type FieldEqExpr struct {
+	Field string
+	Value string
+}
+
+func (e *FieldEqExpr) Match(r Record) bool {
+	return strings.EqualFold(r[e.Field], e.Value)
+}
+
+func (e *FieldEqExpr) String() string {
+	if strings.ContainsAny(e.Value, " \t\"") {
+		return fmt.Sprintf(":%s=%q", e.Field, e.Value)
+	}
+	return fmt.Sprintf(":%s=%s", e.Field, e.Value)
+}
+
+// FieldInExpr matches if record[Field] is in the set (case-insensitive).
+type FieldInExpr struct {
+	Field  string
+	Values []string
+}
+
+func (e *FieldInExpr) Match(r Record) bool {
+	v := strings.ToLower(r[e.Field])
+	for _, want := range e.Values {
+		if strings.ToLower(want) == v {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *FieldInExpr) String() string {
+	return fmt.Sprintf(":%s IN (%s)", e.Field, strings.Join(e.Values, ", "))
+}

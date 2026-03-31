@@ -5,8 +5,10 @@ import (
 	"os"
 	"strings"
 
+	"git.duckfam.us/jj-software/cog/internal/query"
 	"github.com/blevesearch/bleve/v2"
 	"github.com/blevesearch/bleve/v2/mapping"
+	bleveQuery "github.com/blevesearch/bleve/v2/search/query"
 )
 
 // Index wraps a Bleve index with a standard mapping.
@@ -54,14 +56,29 @@ func (i *Index) Batch(docs []Document, deleteIDs []string) error {
 	return i.idx.Batch(b)
 }
 
-// Search performs a match query and returns scored hits with stored fields.
-func (i *Index) Search(query string, limit, offset int) (*Result, error) {
+// Search performs a query and returns scored hits with stored fields.
+// The query string supports the syntax defined in internal/query:
+// text terms, "phrases", NOT/AND/OR operators, (grouping),
+// :field=value, and :field IN (a, b, c).
+func (i *Index) Search(input string, limit, offset int) (*Result, error) {
 	if limit <= 0 {
 		limit = 20
 	}
-	matchQ := bleve.NewMatchQuery(query)
-	prefixQ := bleve.NewPrefixQuery(strings.ToLower(query))
-	q := bleve.NewDisjunctionQuery(matchQ, prefixQ)
+
+	var q bleveQuery.Query
+	if expr, err := query.Parse(input); err == nil {
+		q = toBleveQuery(expr)
+	} else {
+		// Fall back to simple match+prefix for unparseable input.
+		matchQ := bleve.NewMatchQuery(input)
+		prefixQ := bleve.NewPrefixQuery(strings.ToLower(input))
+		q = bleve.NewDisjunctionQuery(matchQ, prefixQ)
+	}
+
+	return i.executeSearch(q, limit, offset)
+}
+
+func (i *Index) executeSearch(q bleveQuery.Query, limit, offset int) (*Result, error) {
 	req := bleve.NewSearchRequestOptions(q, limit, offset, false)
 	req.Fields = []string{"_id", "name", "subtext", "content", "source"}
 	resp, err := i.idx.Search(req)
