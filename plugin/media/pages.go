@@ -3,9 +3,11 @@ package media
 import (
 	"database/sql"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -159,7 +161,8 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 	groups, _ := ListGroups(db)
 	filters, _ := ListFilters(db)
 	errMsg := r.URL.Query().Get("err")
-	mediaSettingsPage(sb, sources, groups, filters, errMsg, plugin.CSRFToken(r)).Render(r.Context(), w)
+	imported := r.URL.Query().Get("imported")
+	mediaSettingsPage(sb, sources, groups, filters, errMsg, imported, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // TagView shows episodes filtered by tag.
@@ -224,6 +227,111 @@ func (h *Pages) QueueByTag(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	mediaQueueByTagPage(sb, tag, filtered, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// Import handles POST to import sources from various formats.
+func (h *Pages) Import(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB
+		http.Redirect(w, r, "/apps/media/settings?err="+url.QueryEscape("File too large"), http.StatusSeeOther)
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		http.Redirect(w, r, "/apps/media/settings?err="+url.QueryEscape("No file uploaded"), http.StatusSeeOther)
+		return
+	}
+	defer file.Close()
+
+	format := r.FormValue("format")
+	var groupID sql.NullInt64
+	if gid := r.FormValue("group_id"); gid != "" {
+		if id, err := strconv.ParseInt(gid, 10, 64); err == nil {
+			groupID = sql.NullInt64{Int64: id, Valid: true}
+		}
+	}
+
+	now := h.plugin.ctx.Now().Unix()
+	var result ImportResult
+
+	switch format {
+	case "opml":
+		data, err := io.ReadAll(io.LimitReader(file, 2<<20))
+		if err != nil {
+			http.Redirect(w, r, "/apps/media/settings?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			return
+		}
+		result, err = ImportOPML(db, data, groupID)
+		if err != nil {
+			http.Redirect(w, r, "/apps/media/settings?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			return
+		}
+
+	case "antennapod":
+		tmpFile, err := os.CreateTemp("", "antennapod-*.db")
+		if err != nil {
+			http.Redirect(w, r, "/apps/media/settings?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			return
+		}
+		io.Copy(tmpFile, file)
+		tmpFile.Close()
+		defer os.Remove(tmpFile.Name())
+		result, err = ImportAntennaPod(db, tmpFile.Name(), groupID, now)
+		if err != nil {
+			http.Redirect(w, r, "/apps/media/settings?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			return
+		}
+
+	case "youtube-csv":
+		data, err := io.ReadAll(io.LimitReader(file, 2<<20))
+		if err != nil {
+			http.Redirect(w, r, "/apps/media/settings?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			return
+		}
+		result, err = ImportYouTubeTakeout(db, data, groupID)
+		if err != nil {
+			http.Redirect(w, r, "/apps/media/settings?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			return
+		}
+
+	case "newpipe":
+		tmpFile, err := os.CreateTemp("", "newpipe-*.zip")
+		if err != nil {
+			http.Redirect(w, r, "/apps/media/settings?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			return
+		}
+		io.Copy(tmpFile, file)
+		tmpFile.Close()
+		defer os.Remove(tmpFile.Name())
+		result, err = ImportNewPipe(db, tmpFile.Name(), groupID, now)
+		if err != nil {
+			http.Redirect(w, r, "/apps/media/settings?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			return
+		}
+
+	default:
+		http.Redirect(w, r, "/apps/media/settings?err="+url.QueryEscape("Unknown format"), http.StatusSeeOther)
+		return
+	}
+
+	// Fetch all new unfetched sources in the background.
+	u := plugin.UserFromContext(r.Context())
+	sources, _ := ListSources(db)
+	go func() {
+		for _, src := range sources {
+			if src.LastCheckedAt == 0 {
+				h.plugin.FetchSourceNow(u.Username, src.ID)
+			}
+		}
+	}()
+
+	http.Redirect(w, r, "/apps/media/settings?imported="+url.QueryEscape(result.String()), http.StatusSeeOther)
 }
 
 // --- Actions ---
@@ -690,4 +798,80 @@ func (h *Pages) DeleteFilterAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// AdminCacheSettings shows the admin media cache configuration page.
+func (h *Pages) AdminCacheSettings(w http.ResponseWriter, r *http.Request) {
+	currentVolume := h.plugin.CacheVolumeName()
+
+	var volumeNames []string
+	if va := h.plugin.ctx.VolumeAccess(); va != nil {
+		if vols, err := va.ListAccessible(""); err == nil {
+			for _, v := range vols {
+				volumeNames = append(volumeNames, v.Name)
+			}
+		}
+	}
+	if len(volumeNames) == 0 {
+		volumeNames = []string{"default"}
+	}
+
+	scan := h.plugin.GetScanStatus()
+	flash := r.URL.Query().Get("flash")
+	mediaAdminCachePage(currentVolume, volumeNames, scan, flash, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// SaveAdminCacheSettings handles POST to save cache volume.
+func (h *Pages) SaveAdminCacheSettings(w http.ResponseWriter, r *http.Request) {
+	volume := r.FormValue("cache_volume")
+	if volume == "" {
+		volume = "default"
+	}
+	h.plugin.setSetting("cache_volume", volume)
+	http.Redirect(w, r, "/admin/plugins/media?flash=Saved", http.StatusSeeOther)
+}
+
+// ScanStatusPartial returns the full scan status card (admin HTMX partial).
+func (h *Pages) ScanStatusPartial(w http.ResponseWriter, r *http.Request) {
+	scan := h.plugin.GetScanStatus()
+	mediaScanStatusCard(scan, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// UserScanStatusPartial returns the sidebar scan banner (HTMX partial).
+func (h *Pages) UserScanStatusPartial(w http.ResponseWriter, r *http.Request) {
+	scan := h.plugin.GetScanStatus()
+	mediaScanBanner(scan).Render(r.Context(), w)
+}
+
+// TriggerScan handles POST to trigger a scan for the current user.
+func (h *Pages) TriggerScan(w http.ResponseWriter, r *http.Request) {
+	username := plugin.Username(r)
+	h.plugin.RequestScan(username)
+	http.Redirect(w, r, "/apps/media/settings", http.StatusSeeOther)
+}
+
+// TriggerSystemScan handles admin POST to scan all users.
+func (h *Pages) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
+	h.plugin.RequestScan("*")
+	http.Redirect(w, r, "/admin/plugins/media", http.StatusSeeOther)
+}
+
+// PurgeCache handles admin POST to delete all cached/clean files.
+func (h *Pages) PurgeCache(w http.ResponseWriter, r *http.Request) {
+	entries, _ := os.ReadDir(h.plugin.ctx.DataDir())
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		username := entry.Name()
+		cleanDir := filepath.Join(h.plugin.ctx.DataDir(), username, "app_data", "media", "clean")
+		os.RemoveAll(cleanDir)
+		captionsDir := filepath.Join(h.plugin.ctx.DataDir(), username, "app_data", "media", "captions")
+		os.RemoveAll(captionsDir)
+
+		if db, err := h.plugin.DB(username); err == nil {
+			db.Exec(`UPDATE episodes SET clean_audio_path = '', captions_path = ''`)
+		}
+	}
+	http.Redirect(w, r, "/admin/plugins/media?flash=Cache+purged", http.StatusSeeOther)
 }

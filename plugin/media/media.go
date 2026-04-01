@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -25,6 +26,15 @@ var sqlFS embed.FS
 
 const PluginID = "media"
 
+// ScanStatus tracks the state of background source polling.
+type ScanStatus struct {
+	Running   bool
+	LastRun   time.Time
+	LastError string
+	Warnings  []string
+	Progress  string // e.g. "3/10 sources"
+}
+
 // Plugin is the media queue plugin.
 type Plugin struct {
 	ctx            plugin.PluginContext
@@ -33,6 +43,8 @@ type Plugin struct {
 	done           chan struct{}
 	client         *http.Client
 	contentFilters []plugin.ContentFilter
+	scanMu         sync.Mutex
+	scanStatus     ScanStatus
 }
 
 // New creates a new Media plugin instance.
@@ -93,6 +105,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "sources/{id}/refresh", http.HandlerFunc(pages.RefreshSource))
 	ctx.RegisterAction("POST", "filters", http.HandlerFunc(pages.AddFilter))
 	ctx.RegisterAction("DELETE", "filters/{id}", http.HandlerFunc(pages.DeleteFilterAction))
+	ctx.RegisterAction("POST", "import", http.HandlerFunc(pages.Import))
 	ctx.RegisterAction("POST", "groups", http.HandlerFunc(pages.AddGroup))
 	ctx.RegisterAction("DELETE", "groups/{id}", http.HandlerFunc(pages.DeleteGroup))
 	ctx.RegisterAction("POST", "queue/{episodeID}", http.HandlerFunc(pages.QueueAdd))
@@ -103,11 +116,29 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "episodes/{id}/tag", http.HandlerFunc(pages.AddTag))
 	ctx.RegisterAction("DELETE", "episodes/{id}/tag/{name}", http.HandlerFunc(pages.RemoveTag))
 
+	ctx.RegisterAction("POST", "scan", http.HandlerFunc(pages.TriggerScan))
+
 	// API routes (GET)
 	ctx.RegisterAPI("api/stream-url/{id}", http.HandlerFunc(pages.StreamURL))
 	ctx.RegisterAPI("api/filter-preview", http.HandlerFunc(pages.FilterPreview))
 	ctx.RegisterAPI("api/clean-audio/{id}", http.HandlerFunc(pages.CleanAudio))
 	ctx.RegisterAPI("api/clean-file/{id}", http.HandlerFunc(pages.ServeCleanFile))
+	ctx.RegisterAPI("api/scan-status", http.HandlerFunc(pages.ScanStatusPartial))
+	ctx.RegisterAPI("api/user-scan-status", http.HandlerFunc(pages.UserScanStatusPartial))
+
+	// Admin settings pages.
+	ctx.RegisterSettingsPage(plugin.SettingsPage{
+		Handler: http.HandlerFunc(pages.AdminCacheSettings),
+		Action:  http.HandlerFunc(pages.SaveAdminCacheSettings),
+	})
+	ctx.RegisterSettingsPage(plugin.SettingsPage{
+		Slug:   "scan",
+		Action: http.HandlerFunc(pages.TriggerSystemScan),
+	})
+	ctx.RegisterSettingsPage(plugin.SettingsPage{
+		Slug:   "purge",
+		Action: http.HandlerFunc(pages.PurgeCache),
+	})
 
 	return nil
 }
@@ -150,6 +181,96 @@ func (p *Plugin) Stop() error {
 		<-p.done
 	}
 	return nil
+}
+
+// rootDB returns the plugin-global database for storing admin settings.
+func (p *Plugin) rootDB() (*sql.DB, error) {
+	db, err := p.ctx.RootDB()
+	if err != nil {
+		return nil, err
+	}
+	db.Exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`)
+	return db, nil
+}
+
+func (p *Plugin) getSetting(key, defaultVal string) string {
+	db, err := p.rootDB()
+	if err != nil {
+		return defaultVal
+	}
+	var val string
+	if err := db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&val); err != nil {
+		return defaultVal
+	}
+	return val
+}
+
+func (p *Plugin) setSetting(key, val string) error {
+	db, err := p.rootDB()
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, val)
+	return err
+}
+
+// CacheVolumeName returns the configured cache volume name, or "default".
+func (p *Plugin) CacheVolumeName() string {
+	return p.getSetting("cache_volume", "default")
+}
+
+// GetScanStatus returns the current scan status.
+func (p *Plugin) GetScanStatus() ScanStatus {
+	p.scanMu.Lock()
+	defer p.scanMu.Unlock()
+	s := p.scanStatus
+	// Copy warnings slice to avoid races.
+	if len(s.Warnings) > 0 {
+		w := make([]string, len(s.Warnings))
+		copy(w, s.Warnings)
+		s.Warnings = w
+	}
+	return s
+}
+
+// RequestScan triggers an immediate scan for a user (or "*" for all users).
+func (p *Plugin) RequestScan(username string) {
+	go func() {
+		ctx := context.Background()
+		if username == "*" {
+			p.pollAllUsers(ctx)
+		} else {
+			p.pollUser(ctx, username, p.ctx.Now().Unix())
+		}
+	}()
+}
+
+func (p *Plugin) setScanRunning(progress string) {
+	p.scanMu.Lock()
+	p.scanStatus.Running = true
+	p.scanStatus.Progress = progress
+	p.scanStatus.Warnings = nil
+	p.scanMu.Unlock()
+}
+
+func (p *Plugin) setScanProgress(progress string) {
+	p.scanMu.Lock()
+	p.scanStatus.Progress = progress
+	p.scanMu.Unlock()
+}
+
+func (p *Plugin) addScanWarning(msg string) {
+	p.scanMu.Lock()
+	p.scanStatus.Warnings = append(p.scanStatus.Warnings, msg)
+	p.scanMu.Unlock()
+}
+
+func (p *Plugin) setScanDone(lastErr string) {
+	p.scanMu.Lock()
+	p.scanStatus.Running = false
+	p.scanStatus.LastRun = p.ctx.Now()
+	p.scanStatus.LastError = lastErr
+	p.scanMu.Unlock()
 }
 
 // DB returns the media plugin database for a user, running migrations if needed.

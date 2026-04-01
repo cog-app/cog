@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -25,6 +26,13 @@ var feedLinkTypes = map[string]bool{
 	"application/atom+xml":  true,
 	"application/feed+json": true,
 }
+
+func envBool(key string) bool {
+	v := os.Getenv(key)
+	return v == "true" || v == "1" || v == "yes"
+}
+
+var allowPrivateIPs = envBool("COG_PRIvaTE_IPS")
 
 // validateFeedURL checks that a URL is safe to fetch (no SSRF).
 func validateFeedURL(rawURL string) error {
@@ -47,6 +55,9 @@ func validateFeedURL(rawURL string) error {
 	for _, ipStr := range ips {
 		ip := net.ParseIP(ipStr)
 		if ip == nil {
+			continue
+		}
+		if allowPrivateIPs {
 			continue
 		}
 		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {

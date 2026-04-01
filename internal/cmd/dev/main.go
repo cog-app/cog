@@ -202,6 +202,7 @@ func startServer(bin, dbPath, devDir, addr string, logRequests bool, teeOut, tee
 		"COG_DATA_DIR="+filepath.Join(devDir, "data"),
 		"COG_BASE_URL="+baseURL,
 		"COG_SEED=true",
+		"COG_PRIvaTE_IPS=true",
 	)
 	if logRequests {
 		srv.Env = append(srv.Env, "COG_LOG_REQUESTS=true")
