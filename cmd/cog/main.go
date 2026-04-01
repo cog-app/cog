@@ -10,6 +10,7 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/gallery"
 	"git.duckfam.us/jj-software/cog/plugin/media"
 	"git.duckfam.us/jj-software/cog/plugin/notes"
+	"git.duckfam.us/jj-software/cog/plugin/profanity"
 	"git.duckfam.us/jj-software/cog/plugin/rss"
 	"git.duckfam.us/jj-software/cog/plugin/tasks"
 )
@@ -26,5 +27,6 @@ func main() {
 		bookmarks.New(),
 		tasks.New(),
 		media.New(),
+		profanity.New(),
 	)
 }

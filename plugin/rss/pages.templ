@@ -313,7 +313,7 @@ templ rssItemRow(item ItemWithFeed, csrfToken string) {
 	</div>
 }
 
-templ rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, errMsg string, csrfToken string) {
+templ rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []Filter, errMsg string, csrfToken string) {
 	<div class="sidebar-layout">
 		@rssSidebar(sb)
 		<div class="sidebar-content">
@@ -388,29 +388,6 @@ templ rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, errMsg str
 										>Delete</button>
 									</td>
 								</tr>
-								<tr>
-									<td colspan="5" style="padding:0.25rem 0.75rem">
-										<form
-											method="post"
-											action={ templ.SafeURL(fmt.Sprintf("/apps/rss/feeds/%d/auto-read", feed.ID)) }
-											class="flex gap-1 items-center"
-											style="font-size:0.85rem"
-										>
-											<input type="hidden" name="csrf_token" value={ csrfToken }/>
-											<label class="text-muted" style="white-space:nowrap" for={ fmt.Sprintf("arp-%d", feed.ID) }>Auto-read regex:</label>
-											<input
-												class="form-control"
-												type="text"
-												name="pattern"
-												id={ fmt.Sprintf("arp-%d", feed.ID) }
-												value={ feed.AutoReadPattern }
-												placeholder="e.g. (?i)sponsor|ad"
-												style="max-width:250px;font-size:0.85rem;padding:0.25rem 0.5rem"
-											/>
-											<button class="btn btn-outline btn-sm" type="submit">Save</button>
-										</form>
-									</td>
-								</tr>
 							}
 						</tbody>
 					</table>
@@ -459,7 +436,93 @@ templ rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, errMsg str
 					</form>
 				</div>
 			}
+			@ui.Card("Filters") {
+				<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">
+					Filters run on each new article from any feed. Matching articles are automatically marked as read.
+					Available fields: <code>:title</code>, <code>:author</code>, <code>:url</code>, <code>:content</code>, <code>:source</code> (feed name).
+				</p>
+				if len(filters) > 0 {
+					<table class="table" style="margin-bottom:1rem">
+						<thead>
+							<tr>
+								<th>Query</th>
+								<th>Action</th>
+								<th class="text-right"></th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, f := range filters {
+								<tr id={ fmt.Sprintf("filter-%d", f.ID) }>
+									<td><code>{ f.Query }</code></td>
+									<td>{ f.Action }</td>
+									<td class="text-right">
+										<button
+											class="btn btn-danger btn-sm"
+											hx-delete={ fmt.Sprintf("/apps/rss/filters/%d", f.ID) }
+											hx-target={ fmt.Sprintf("#filter-%d", f.ID) }
+											hx-swap="outerHTML"
+											hx-confirm="Delete this filter?"
+										>Delete</button>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+				<form method="post" action="/apps/rss/filters" class="flex gap-1 items-end" style="flex-wrap:wrap">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<div class="form-group" style="flex:1;min-width:150px;margin-bottom:0">
+						<label for="filter-query">Query</label>
+						<input
+							class="form-control"
+							type="text"
+							id="filter-query"
+							name="query"
+							placeholder={ `* or :source="Tech Blog" or sponsor` }
+							value="*"
+							hx-get="/apps/rss/filter-preview"
+							hx-trigger="input changed delay:300ms"
+							hx-target="#rss-filter-preview"
+						/>
+					</div>
+					<div class="form-group" style="margin-bottom:0">
+						<label for="filter-action">Action</label>
+						<select class="form-control" id="filter-action" name="action">
+							<option value="skip">Skip (mark as read)</option>
+							<option value="mute_profanity">Mute profanity</option>
+						</select>
+					</div>
+					<button class="btn btn-primary btn-sm" type="submit">Add Filter</button>
+				</form>
+				<div id="rss-filter-preview" style="margin-top:0.5rem"></div>
+			}
 		</div>
+	</div>
+}
+
+// filterPreviewResult renders the live preview of filter matches.
+// matchCount=-1 means "matches all". errMsg non-empty means parse error.
+templ filterPreviewResult(preview []ItemWithFeed, matchCount, totalCount int, errMsg string) {
+	<div style="font-size:0.85rem">
+		if errMsg != "" {
+			<span class="text-danger">Parse error: { errMsg }</span>
+		} else if matchCount == -1 {
+			<span class="text-muted">Matches all articles</span>
+		} else if matchCount == 0 {
+			<span class="text-muted">No matching articles</span>
+		} else {
+			<span class="text-muted">
+				Matches { strconv.Itoa(matchCount) } of { strconv.Itoa(totalCount) } articles
+			</span>
+			<ul style="margin:0.25rem 0 0;padding-left:1.25rem">
+				for _, it := range preview {
+					<li class="text-muted">{ it.Title }</li>
+				}
+				if matchCount > len(preview) {
+					<li class="text-muted">…</li>
+				}
+			</ul>
+		}
 	</div>
 }
 

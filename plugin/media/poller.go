@@ -71,7 +71,7 @@ func (p *Plugin) pollUser(ctx context.Context, username string, now int64) {
 	}
 
 	for i := range sources {
-		if err := p.fetchSource(ctx, db, &sources[i]); err != nil {
+		if err := p.fetchSource(ctx, db, username, &sources[i]); err != nil {
 			p.log.Error("fetch source", "url", sources[i].URL, "user", username, "err", err)
 		}
 	}

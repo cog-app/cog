@@ -1,0 +1,8 @@
+# Default profanity word list
+# Format: word=replacement (one per line)
+# Lines starting with # are comments
+damn=darn
+hell=heck
+crap=crud
+ass=butt
+piss=pee

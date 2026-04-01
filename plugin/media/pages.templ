@@ -106,6 +106,7 @@ templ mediaQueueItem(ep *EpisodeView, csrfToken string) {
 				if ep.ProgressSec > 0 {
 					<span>· { FormatDuration(int(ep.ProgressSec)) } played</span>
 				}
+				@episodeStatusBadge(ep)
 			</div>
 		</a>
 		<button
@@ -213,8 +214,39 @@ templ playerScript() {
 			el.addEventListener('loadedmetadata', function() { el.currentTime = resume; }, {once: true});
 		}
 
+		// Fetch clean audio ranges (profanity muting).
+		var muteRanges = [];
+		fetch('/apps/media/api/clean-audio/' + epID, {
+			headers: {'X-CSRF-Token': csrfToken}
+		}).then(function(r) { return r.json(); })
+		.then(function(data) {
+			if (data.ranges) muteRanges = data.ranges;
+		}).catch(function() {});
+
+		var wasMuted = false;
+		var originalVolume = 1;
+
 		el.addEventListener('timeupdate', function() {
 			timeSpan.textContent = formatTime(el.currentTime) + ' / ' + formatTime(el.duration || 0);
+
+			// Apply profanity muting.
+			var t = el.currentTime;
+			var shouldMute = false;
+			for (var i = 0; i < muteRanges.length; i++) {
+				if (t >= muteRanges[i].Start && t <= muteRanges[i].End) {
+					shouldMute = true;
+					break;
+				}
+			}
+			if (shouldMute && !wasMuted) {
+				originalVolume = el.volume;
+				el.volume = 0;
+				wasMuted = true;
+			} else if (!shouldMute && wasMuted) {
+				el.volume = originalVolume;
+				wasMuted = false;
+			}
+
 			// Save progress every 15 seconds of playback
 			var now = el.currentTime;
 			if (Math.abs(now - lastSaved) >= 15) {
@@ -330,14 +362,17 @@ templ mediaEpisodePage(sb sidebarData, ep *EpisodeView, csrfToken string) {
 		@mediaSidebar(sb)
 		<div class="sidebar-content">
 			<h1>{ ep.Title }</h1>
-			<div class="text-muted mb-2">
-				{ ep.SourceTitle }
-				if ep.DurationSec > 0 {
-					<span>· { FormatDuration(ep.DurationSec) }</span>
-				}
-				if ep.PublishedAt > 0 {
-					<span>· { formatTime(ep.PublishedAt) }</span>
-				}
+			<div class="text-muted mb-2" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+				<span>
+					{ ep.SourceTitle }
+					if ep.DurationSec > 0 {
+						<span>· { FormatDuration(ep.DurationSec) }</span>
+					}
+					if ep.PublishedAt > 0 {
+						<span>· { formatTime(ep.PublishedAt) }</span>
+					}
+				</span>
+				@episodeStatusBadge(ep)
 			</div>
 			<div id="media-player-area">
 				@mediaPlayerComponent(ep, csrfToken)
@@ -527,7 +562,17 @@ templ mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filter
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
 					<div class="form-group" style="flex:1;min-width:150px;margin-bottom:0">
 						<label for="filter-query">Query</label>
-						<input class="form-control" type="text" id="filter-query" name="query" placeholder={ `* or :source="My Podcast" or NOT bonus` } value="*"/>
+						<input
+							class="form-control"
+							type="text"
+							id="filter-query"
+							name="query"
+							placeholder={ `* or :source="My Podcast" or NOT bonus` }
+							value="*"
+							hx-get="/apps/media/api/filter-preview"
+							hx-trigger="input changed delay:300ms"
+							hx-target="#media-filter-preview"
+						/>
 					</div>
 					<div class="form-group" style="margin-bottom:0">
 						<label for="filter-action">Action</label>
@@ -543,6 +588,7 @@ templ mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filter
 					</div>
 					<button class="btn btn-primary btn-sm" type="submit">Add Filter</button>
 				</form>
+				<div id="media-filter-preview" style="margin-top:0.5rem"></div>
 			}
 		</div>
 	</div>
@@ -665,6 +711,7 @@ templ mediaEpisodeRow(ep *EpisodeView, csrfToken string) {
 				} else if ep.ProgressSec > 0 {
 					<span>· { FormatDuration(int(ep.ProgressSec)) } played</span>
 				}
+				@episodeStatusBadge(ep)
 			</div>
 		</a>
 		<div class="flex gap-1" style="flex-shrink:0">
@@ -724,7 +771,40 @@ templ episodeThumbnail(ep *EpisodeView) {
 	}
 }
 
+templ episodeStatusBadge(ep *EpisodeView) {
+	if ep.CleanAudioPath != "" {
+		<span class="badge" style="background:var(--color-success);color:white;font-size:0.7rem" title="Profanity-filtered audio available">filtered</span>
+	} else if ep.CaptionsPath != "" {
+		<span class="badge" style="background:var(--color-primary);color:white;font-size:0.7rem" title="Captions available, not yet filtered">captions</span>
+	} else {
+		<span class="badge" style="font-size:0.7rem" title="Streaming from source">stream</span>
+	}
+}
+
 // --- Helper Functions ---
+templ mediaFilterPreview(preview []EpisodeView, matchCount, totalCount int, errMsg string) {
+	<div style="font-size:0.85rem">
+		if errMsg != "" {
+			<span class="text-danger">Parse error: { errMsg }</span>
+		} else if matchCount == -1 {
+			<span class="text-muted">Matches all episodes</span>
+		} else if matchCount == 0 {
+			<span class="text-muted">No matching episodes</span>
+		} else {
+			<span class="text-muted">
+				Matches { strconv.Itoa(matchCount) } of { strconv.Itoa(totalCount) } episodes
+			</span>
+			<ul style="margin:0.25rem 0 0;padding-left:1.25rem">
+				for _, ep := range preview {
+					<li class="text-muted">{ ep.Title } <span style="opacity:0.6">({ ep.SourceTitle })</span></li>
+				}
+				if matchCount > len(preview) {
+					<li class="text-muted">…</li>
+				}
+			</ul>
+		}
+	</div>
+}
 
 func sidebarClass(activePath, itemPath string) string {
 	if activePath == itemPath {

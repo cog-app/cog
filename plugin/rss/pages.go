@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/query"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
@@ -61,6 +62,14 @@ func (h *Pages) buildSidebar(db *sql.DB, activePath string) sidebarData {
 	}
 }
 
+// filterItems applies content filters to item HTML content in-place.
+func (h *Pages) filterItems(username string, items []ItemWithFeed) {
+	for i := range items {
+		items[i].ContentHTML = h.plugin.filterHTML(username, items[i].ContentHTML)
+		items[i].Title = h.plugin.filterText(username, items[i].Title)
+	}
+}
+
 // Index shows unread items across all feeds.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
@@ -75,6 +84,7 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	}
 	plugin.SetTitle(w, "News")
 	items, _ := UnreadItems(db, 200)
+	h.filterItems(plugin.Username(r), items)
 	rssIndexPage(sb, items, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
@@ -103,6 +113,7 @@ func (h *Pages) Feed(w http.ResponseWriter, r *http.Request) {
 	}
 	plugin.SetTitle(w, feed.Title)
 	items, _ := FeedItems(db, id, 200)
+	h.filterItems(plugin.Username(r), items)
 	rssFeedPage(sb, feed, items, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
@@ -120,6 +131,7 @@ func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
 	}
 	plugin.SetTitle(w, "Starred")
 	items, _ := StarredItems(db, 200)
+	h.filterItems(plugin.Username(r), items)
 	rssStarredPage(sb, items, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
@@ -148,6 +160,7 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 	}
 	plugin.SetTitle(w, folder.Name)
 	items, _ := FolderItems(db, id, 200)
+	h.filterItems(plugin.Username(r), items)
 	rssFolderPage(sb, folder, items, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
@@ -166,8 +179,9 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 	plugin.SetTitle(w, "RSS Settings")
 	feeds, _ := ListFeeds(db)
 	folders, _ := ListFolders(db)
+	filters, _ := ListFilters(db)
 	errMsg := r.URL.Query().Get("err")
-	rssSettingsPage(sb, feeds, folders, errMsg, plugin.CSRFToken(r)).Render(r.Context(), w)
+	rssSettingsPage(sb, feeds, folders, filters, errMsg, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // AddFeed handles POST to create a new feed subscription.
@@ -423,8 +437,29 @@ func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/apps/rss/settings", http.StatusSeeOther)
 }
 
-// SetAutoReadPattern handles POST to set the auto-read regex pattern for a feed.
-func (h *Pages) SetAutoReadPattern(w http.ResponseWriter, r *http.Request) {
+// AddFilter handles POST to create a new filter.
+func (h *Pages) AddFilter(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	queryStr := r.FormValue("query")
+	if queryStr == "" {
+		queryStr = "*"
+	}
+	action := r.FormValue("action")
+	actionValue := r.FormValue("action_value")
+	_, err = CreateFilter(db, queryStr, action, actionValue)
+	if err != nil {
+		http.Redirect(w, r, "/apps/rss/settings?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/apps/rss/settings", http.StatusSeeOther)
+}
+
+// DeleteFilterAction handles DELETE to remove a filter.
+func (h *Pages) DeleteFilterAction(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -435,12 +470,63 @@ func (h *Pages) SetAutoReadPattern(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	pattern := r.FormValue("pattern")
-	if err := SetFeedAutoReadPattern(db, id, pattern); err != nil {
+	if err := DeleteFilter(db, id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/apps/rss/settings", http.StatusSeeOther)
+	w.WriteHeader(http.StatusOK)
+}
+
+// FilterPreview returns an HTMX partial showing items matching a filter query.
+func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("query")
+	if q == "" {
+		w.Header().Set("Content-Type", "text/html")
+		return
+	}
+
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if q == "*" {
+		filterPreviewResult(nil, -1, 0, "").Render(r.Context(), w)
+		return
+	}
+
+	expr, err := query.Parse(q)
+	if err != nil {
+		filterPreviewResult(nil, 0, 0, err.Error()).Render(r.Context(), w)
+		return
+	}
+
+	items, _ := AllItems(db, 200, 0, 0, 0, true)
+	feeds, _ := ListFeeds(db)
+	feedNames := make(map[int64]string, len(feeds))
+	for _, f := range feeds {
+		feedNames[f.ID] = f.Title
+	}
+
+	var matches []ItemWithFeed
+	for _, it := range items {
+		rec := query.Record{
+			"title":   it.Title,
+			"author":  it.Author,
+			"url":     it.URL,
+			"content": it.ContentHTML,
+			"source":  feedNames[it.FeedID],
+		}
+		if expr.Match(rec) {
+			matches = append(matches, it)
+		}
+	}
+	preview := matches
+	if len(preview) > 5 {
+		preview = preview[:5]
+	}
+	filterPreviewResult(preview, len(matches), len(items), "").Render(r.Context(), w)
 }
 
 // ExportOPML handles GET to export feeds as OPML.

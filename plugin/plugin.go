@@ -193,6 +193,35 @@ type FolderIconProvider interface {
 	FolderIcon(username, folderPath string) (icon string, ok bool)
 }
 
+// ContentFilter is an optional interface that plugins implement to filter
+// text and audio content. Consuming plugins (RSS, media) discover filters
+// among registered plugins and apply them at render/fetch time.
+type ContentFilter interface {
+	// FilterText replaces filtered content in plain text. Returns modified text.
+	FilterText(username, text string) string
+	// FilterHTML replaces filtered content in HTML text nodes. Returns modified HTML.
+	FilterHTML(username, html string) string
+	// AudioRanges returns time ranges that should be cleaned in audio/video,
+	// given timed caption segments. Each range includes replacement text for TTS.
+	AudioRanges(username string, captions []CaptionSegment) []AudioRange
+	// CleanAudioFile produces a cleaned version of an audio/video file by
+	// replacing profane segments with silence or TTS. Returns the output path.
+	// inputURL can be a local path or remote URL. outputPath is where to write.
+	CleanAudioFile(ctx context.Context, username, inputURL, outputPath string, captions []CaptionSegment) error
+}
+
+// CaptionSegment is a timed text segment from a caption/subtitle file.
+type CaptionSegment struct {
+	Start, End float64 // seconds
+	Text       string
+}
+
+// AudioRange is a time range in audio/video that should be cleaned.
+type AudioRange struct {
+	Start, End      float64 // seconds
+	ReplacementText string  // clean text for TTS, empty = mute
+}
+
 // ActivityLogger allows plugins to write entries to the centralized activity log.
 type ActivityLogger interface {
 	// Log records an activity for the given user.

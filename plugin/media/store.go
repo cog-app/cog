@@ -57,17 +57,19 @@ type Source struct {
 
 // Episode is an individual media item from a source.
 type Episode struct {
-	ID           int64
-	SourceID     int64
-	GUID         string
-	Title        string
-	Description  string
-	MediaURL     string
-	MediaType    MediaType
-	DurationSec  int
-	ThumbnailURL string
-	PublishedAt  int64
-	FetchedAt    int64
+	ID             int64
+	SourceID       int64
+	GUID           string
+	Title          string
+	Description    string
+	MediaURL       string
+	MediaType      MediaType
+	DurationSec    int
+	ThumbnailURL   string
+	CaptionsPath   string
+	CleanAudioPath string
+	PublishedAt    int64
+	FetchedAt      int64
 }
 
 // EpisodeView extends Episode with display-time data.
@@ -231,6 +233,22 @@ func scanSources(rows *sql.Rows) ([]Source, error) {
 
 // --- Episode CRUD ---
 
+func SetCaptionsPath(db *sql.DB, episodeID int64, path string) error {
+	_, err := db.Exec(`UPDATE episodes SET captions_path = ? WHERE id = ?`, path, episodeID)
+	return err
+}
+
+func SetCleanAudioPath(db *sql.DB, episodeID int64, path string) error {
+	_, err := db.Exec(`UPDATE episodes SET clean_audio_path = ? WHERE id = ?`, path, episodeID)
+	return err
+}
+
+// ClearAllCleanAudio removes all clean audio paths (e.g. when word list changes).
+func ClearAllCleanAudio(db *sql.DB) error {
+	_, err := db.Exec(`UPDATE episodes SET clean_audio_path = '' WHERE clean_audio_path != ''`)
+	return err
+}
+
 func UpsertEpisode(db *sql.DB, e *Episode) (int64, error) {
 	res, err := db.Exec(`INSERT INTO episodes (source_id, guid, title, description, media_url, media_type, duration_sec, thumbnail_url, published_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -256,7 +274,7 @@ func GetEpisode(db *sql.DB, id int64) (*EpisodeView, error) {
 	var completed sql.NullBool
 	var queuePos sql.NullInt64
 	err := db.QueryRow(`SELECT e.id, e.source_id, e.guid, e.title, e.description,
-		e.media_url, e.media_type, e.duration_sec, e.thumbnail_url, e.published_at, e.fetched_at,
+		e.media_url, e.media_type, e.duration_sec, e.thumbnail_url, e.captions_path, e.clean_audio_path, e.published_at, e.fetched_at,
 		s.title,
 		p.progress_sec, p.completed,
 		q.position
@@ -266,7 +284,7 @@ func GetEpisode(db *sql.DB, id int64) (*EpisodeView, error) {
 		LEFT JOIN queue q ON q.episode_id = e.id
 		WHERE e.id = ?`, id).Scan(
 		&ev.ID, &ev.SourceID, &ev.GUID, &ev.Title, &ev.Description,
-		&ev.MediaURL, &ev.MediaType, &ev.DurationSec, &ev.ThumbnailURL, &ev.PublishedAt, &ev.FetchedAt,
+		&ev.MediaURL, &ev.MediaType, &ev.DurationSec, &ev.ThumbnailURL, &ev.CaptionsPath, &ev.CleanAudioPath, &ev.PublishedAt, &ev.FetchedAt,
 		&ev.SourceTitle,
 		&progressSec, &completed,
 		&queuePos)
@@ -289,7 +307,7 @@ func GetEpisode(db *sql.DB, id int64) (*EpisodeView, error) {
 
 func ListEpisodesBySource(db *sql.DB, sourceID int64, limit int) ([]EpisodeView, error) {
 	return queryEpisodes(db, `SELECT e.id, e.source_id, e.guid, e.title, e.description,
-		e.media_url, e.media_type, e.duration_sec, e.thumbnail_url, e.published_at, e.fetched_at,
+		e.media_url, e.media_type, e.duration_sec, e.thumbnail_url, e.captions_path, e.clean_audio_path, e.published_at, e.fetched_at,
 		s.title,
 		p.progress_sec, p.completed,
 		q.position
@@ -303,7 +321,7 @@ func ListEpisodesBySource(db *sql.DB, sourceID int64, limit int) ([]EpisodeView,
 
 func ListRecentEpisodes(db *sql.DB, limit int) ([]EpisodeView, error) {
 	return queryEpisodes(db, `SELECT e.id, e.source_id, e.guid, e.title, e.description,
-		e.media_url, e.media_type, e.duration_sec, e.thumbnail_url, e.published_at, e.fetched_at,
+		e.media_url, e.media_type, e.duration_sec, e.thumbnail_url, e.captions_path, e.clean_audio_path, e.published_at, e.fetched_at,
 		s.title,
 		p.progress_sec, p.completed,
 		q.position
@@ -316,7 +334,7 @@ func ListRecentEpisodes(db *sql.DB, limit int) ([]EpisodeView, error) {
 
 func ListEpisodesByTag(db *sql.DB, tag string, limit int) ([]EpisodeView, error) {
 	return queryEpisodes(db, `SELECT e.id, e.source_id, e.guid, e.title, e.description,
-		e.media_url, e.media_type, e.duration_sec, e.thumbnail_url, e.published_at, e.fetched_at,
+		e.media_url, e.media_type, e.duration_sec, e.thumbnail_url, e.captions_path, e.clean_audio_path, e.published_at, e.fetched_at,
 		s.title,
 		p.progress_sec, p.completed,
 		q.position
@@ -344,7 +362,7 @@ func queryEpisodes(db *sql.DB, query string, args ...any) ([]EpisodeView, error)
 		var queuePos sql.NullInt64
 		if err := rows.Scan(
 			&ev.ID, &ev.SourceID, &ev.GUID, &ev.Title, &ev.Description,
-			&ev.MediaURL, &ev.MediaType, &ev.DurationSec, &ev.ThumbnailURL, &ev.PublishedAt, &ev.FetchedAt,
+			&ev.MediaURL, &ev.MediaType, &ev.DurationSec, &ev.ThumbnailURL, &ev.CaptionsPath, &ev.CleanAudioPath, &ev.PublishedAt, &ev.FetchedAt,
 			&ev.SourceTitle,
 			&progressSec, &completed,
 			&queuePos); err != nil {
@@ -369,7 +387,7 @@ func queryEpisodes(db *sql.DB, query string, args ...any) ([]EpisodeView, error)
 
 func ListQueue(db *sql.DB) ([]EpisodeView, error) {
 	return queryEpisodes(db, `SELECT e.id, e.source_id, e.guid, e.title, e.description,
-		e.media_url, e.media_type, e.duration_sec, e.thumbnail_url, e.published_at, e.fetched_at,
+		e.media_url, e.media_type, e.duration_sec, e.thumbnail_url, e.captions_path, e.clean_audio_path, e.published_at, e.fetched_at,
 		s.title,
 		p.progress_sec, p.completed,
 		q.position
@@ -451,7 +469,7 @@ func MarkCompleted(db *sql.DB, episodeID int64, now int64) error {
 
 func RecentlyPlayed(db *sql.DB, limit int) ([]EpisodeView, error) {
 	return queryEpisodes(db, `SELECT e.id, e.source_id, e.guid, e.title, e.description,
-		e.media_url, e.media_type, e.duration_sec, e.thumbnail_url, e.published_at, e.fetched_at,
+		e.media_url, e.media_type, e.duration_sec, e.thumbnail_url, e.captions_path, e.clean_audio_path, e.published_at, e.fetched_at,
 		s.title,
 		p.progress_sec, p.completed,
 		q.position

@@ -18,6 +18,15 @@ CREATE TABLE IF NOT EXISTS feeds (
 	created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
+CREATE TABLE IF NOT EXISTS filters (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	sort_order INTEGER NOT NULL DEFAULT 0,
+	query TEXT NOT NULL DEFAULT '*',
+	action TEXT NOT NULL CHECK(action IN ('skip', 'mute_profanity')),
+	action_value TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
 CREATE TABLE IF NOT EXISTS folders (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	name TEXT NOT NULL UNIQUE,

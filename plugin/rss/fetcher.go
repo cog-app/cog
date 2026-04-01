@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -252,37 +251,39 @@ func fetchFeed(client *http.Client, db *sql.DB, feed *Feed, clock func() time.Ti
 		}
 	}
 
-	// Auto-mark-read: apply regex pattern if configured.
-	if feed.AutoReadPattern != "" {
-		if re, err := regexp.Compile(feed.AutoReadPattern); err == nil {
-			autoMarkReadByRegex(db, feed.ID, re)
-		}
-	}
+	// Apply user-level filters to unread items in this feed.
+	applyFiltersToFeed(db, feed)
 
 	return nil
 }
 
-// autoMarkReadByRegex marks unread items matching the regex as read.
-// We do this in Go since SQLite's REGEXP requires a custom function.
-func autoMarkReadByRegex(db *sql.DB, feedID int64, re *regexp.Regexp) {
-	rows, err := db.Query(`SELECT id, title FROM items WHERE feed_id = ? AND is_read = 0`, feedID)
+// applyFiltersToFeed evaluates all user filters against unread items in a feed.
+func applyFiltersToFeed(db *sql.DB, feed *Feed) {
+	filters, err := ListFilters(db)
+	if err != nil || len(filters) == 0 {
+		return
+	}
+
+	rows, err := db.Query(`SELECT id, title, author, url, content_html FROM items WHERE feed_id = ? AND is_read = 0`, feed.ID)
 	if err != nil {
 		return
 	}
 	defer rows.Close()
-	var ids []int64
+
+	var skipIDs []int64
 	for rows.Next() {
 		var id int64
-		var title string
-		if err := rows.Scan(&id, &title); err != nil {
+		var item Item
+		if err := rows.Scan(&id, &item.Title, &item.Author, &item.URL, &item.ContentHTML); err != nil {
 			continue
 		}
-		if re.MatchString(title) {
-			ids = append(ids, id)
+		item.ID = id
+		if ApplyFilters(db, feed.Title, &item) {
+			skipIDs = append(skipIDs, id)
 		}
 	}
-	if len(ids) > 0 {
-		MarkItemsRead(db, ids)
+	if len(skipIDs) > 0 {
+		MarkItemsRead(db, skipIDs)
 	}
 }
 

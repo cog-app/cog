@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"git.duckfam.us/jj-software/cog/internal/query"
 )
 
 // Folder is a logical grouping of feeds.
@@ -442,4 +444,96 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// --- Filters ---
+
+// Filter is a user-level rule that matches items and applies an action.
+type Filter struct {
+	ID          int64
+	SortOrder   int
+	Query       string
+	Action      string // "skip", "mute_profanity"
+	ActionValue string
+	CreatedAt   int64
+}
+
+func ListFilters(db *sql.DB) ([]Filter, error) {
+	rows, err := db.Query(`SELECT id, sort_order, query, action, action_value, created_at
+		FROM filters ORDER BY sort_order, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var filters []Filter
+	for rows.Next() {
+		var f Filter
+		if err := rows.Scan(&f.ID, &f.SortOrder, &f.Query, &f.Action, &f.ActionValue, &f.CreatedAt); err != nil {
+			return nil, err
+		}
+		filters = append(filters, f)
+	}
+	return filters, rows.Err()
+}
+
+func CreateFilter(db *sql.DB, queryStr, action, actionValue string) (*Filter, error) {
+	if queryStr != "*" {
+		if _, err := query.Parse(queryStr); err != nil {
+			return nil, fmt.Errorf("invalid filter query: %w", err)
+		}
+	}
+	var maxOrder int
+	db.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM filters`).Scan(&maxOrder)
+	res, err := db.Exec(`INSERT INTO filters (sort_order, query, action, action_value) VALUES (?, ?, ?, ?)`,
+		maxOrder+1, queryStr, action, actionValue)
+	if err != nil {
+		return nil, err
+	}
+	id, _ := res.LastInsertId()
+	return &Filter{ID: id, SortOrder: maxOrder + 1, Query: queryStr, Action: action, ActionValue: actionValue}, nil
+}
+
+func DeleteFilter(db *sql.DB, filterID int64) error {
+	_, err := db.Exec(`DELETE FROM filters WHERE id = ?`, filterID)
+	return err
+}
+
+// ApplyFilters evaluates all user-level filters against an item.
+// Returns true if the item should be marked as read (skipped).
+func ApplyFilters(db *sql.DB, feedTitle string, item *Item) bool {
+	filters, err := ListFilters(db)
+	if err != nil || len(filters) == 0 {
+		return false
+	}
+
+	rec := query.Record{
+		"title":   item.Title,
+		"author":  item.Author,
+		"url":     item.URL,
+		"content": item.ContentHTML,
+		"source":  feedTitle,
+	}
+
+	skip := false
+	for _, f := range filters {
+		if !filterMatches(f.Query, rec) {
+			continue
+		}
+		switch f.Action {
+		case "skip":
+			skip = true
+		}
+	}
+	return skip
+}
+
+func filterMatches(q string, rec query.Record) bool {
+	if q == "*" {
+		return true
+	}
+	expr, err := query.Parse(q)
+	if err != nil {
+		return false
+	}
+	return expr.Match(rec)
 }

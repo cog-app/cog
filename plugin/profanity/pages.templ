@@ -1,0 +1,94 @@
+package profanity
+
+import "git.duckfam.us/jj-software/cog/ui"
+
+templ profanitySettingsPage(content string, flash string, csrfToken string) {
+	<h1>Profanity Filter</h1>
+	if flash != "" {
+		@ui.Alert("success", flash)
+	}
+	@ui.Card("Word List") {
+		<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">
+			One entry per line. Format: <code>word=replacement</code> or just <code>word</code> (defaults to <code>***</code>).
+			Lines starting with <code>#</code> are comments.
+			Profane words are replaced with <code>[replacement]</code> in text content, and muted/replaced in audio.
+		</p>
+		<form method="post" action="/apps/profanity/settings">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<textarea
+				class="form-control"
+				name="wordlist"
+				rows="15"
+				style="font-family:monospace;font-size:0.9rem"
+				placeholder={ "# Example:\ndamn=darn\nhell=heck\ncrap=crud" }
+			>{ content }</textarea>
+			<div style="margin-top:0.5rem">
+				<button class="btn btn-primary" type="submit">Save</button>
+			</div>
+		</form>
+	}
+}
+
+templ profanityAdminPage(cfg adminSettingsData, flash string, csrfToken string) {
+	if flash != "" {
+		@ui.Alert("success", flash)
+	}
+	@ui.Card("Text-to-Speech Engine") {
+		<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">
+			When profane audio segments are detected, the TTS engine generates clean replacement audio that gets spliced into the file.
+			If set to <strong>None</strong>, profane segments are muted (silence) instead.
+		</p>
+		<form method="post">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<div class="form-group">
+				<label for="tts_engine">TTS Engine</label>
+				<select class="form-control" id="tts_engine" name="tts_engine">
+					if cfg.TTSEngine == "piper" {
+						<option value="none">None (mute only)</option>
+						<option value="piper" selected>Piper</option>
+						<option value="system">System command</option>
+					} else if cfg.TTSEngine == "system" {
+						<option value="none">None (mute only)</option>
+						<option value="piper">Piper</option>
+						<option value="system" selected>System command</option>
+					} else {
+						<option value="none" selected>None (mute only)</option>
+						<option value="piper">Piper</option>
+						<option value="system">System command</option>
+					}
+				</select>
+			</div>
+			<div class="form-group" id="tts-piper" style={ piperDisplay(cfg.TTSEngine) }>
+				<label for="tts_model">Piper Model</label>
+				<input class="form-control" type="text" id="tts_model" name="tts_model" value={ cfg.TTSModel } placeholder="e.g. en_US-lessac-medium"/>
+				<div class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">Piper model name or path.</div>
+			</div>
+			<div class="form-group" id="tts-system" style={ systemDisplay(cfg.TTSEngine) }>
+				<label for="tts_command">System Command</label>
+				<input class="form-control" type="text" id="tts_command" name="tts_command" value={ cfg.TTSCommand } placeholder="echo $TEXT | piper --output_file $OUTPUT"/>
+				<div class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">Command template. Use $TEXT and $OUTPUT as placeholders.</div>
+			</div>
+			<button class="btn btn-primary" type="submit">Save</button>
+		</form>
+		<script>
+		document.getElementById('tts_engine').addEventListener('change', function() {
+			document.getElementById('tts-piper').style.display = this.value === 'piper' ? '' : 'none';
+			document.getElementById('tts-system').style.display = this.value === 'system' ? '' : 'none';
+		});
+		</script>
+	}
+}
+
+func piperDisplay(engine string) string {
+	if engine == "piper" {
+		return ""
+	}
+	return "display:none"
+}
+
+func systemDisplay(engine string) string {
+	if engine == "system" {
+		return ""
+	}
+	return "display:none"
+}

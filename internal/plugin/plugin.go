@@ -49,6 +49,9 @@ type CheckStatus = cogplugin.CheckStatus
 type CheckResult = cogplugin.CheckResult
 type Doctor = cogplugin.Doctor
 type ActivityLogger = cogplugin.ActivityLogger
+type ContentFilter = cogplugin.ContentFilter
+type CaptionSegment = cogplugin.CaptionSegment
+type AudioRange = cogplugin.AudioRange
 type VFS = vfs.FS
 
 // Re-export permission constants (cannot alias constants).

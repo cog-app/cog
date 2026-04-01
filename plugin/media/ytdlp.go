@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -137,4 +139,51 @@ func ytdlpVideoInfo(ctx context.Context, url string) (*ytdlpInfo, error) {
 		return nil, fmt.Errorf("yt-dlp parse: %w", err)
 	}
 	return &info, nil
+}
+
+// ytdlpFetchCaptions downloads auto-generated captions for a YouTube video.
+// Returns the path to the downloaded VTT file, or empty string if unavailable.
+func ytdlpFetchCaptions(ctx context.Context, watchURL, outputDir string) (string, error) {
+	if !ytdlpAvailable() {
+		return "", fmt.Errorf("yt-dlp not found in PATH")
+	}
+	// yt-dlp writes to {outputDir}/captions.en.vtt (or similar).
+	outTemplate := outputDir + "/captions"
+	cmd := exec.CommandContext(ctx, "yt-dlp",
+		"--write-auto-sub",
+		"--sub-lang", "en",
+		"--sub-format", "vtt",
+		"--skip-download",
+		"--no-warnings",
+		"-o", outTemplate,
+		watchURL,
+	)
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("yt-dlp captions: %w", err)
+	}
+
+	// Find the written VTT file. yt-dlp appends .{lang}.vtt to the output template.
+	matches, _ := filepath.Glob(outTemplate + "*.vtt")
+	if len(matches) == 0 {
+		return "", fmt.Errorf("no caption file found")
+	}
+	return matches[0], nil
+}
+
+// ytdlpFetchCaptionsForEpisode fetches captions for an episode and stores them.
+// Returns the caption file path relative to the data dir.
+func ytdlpFetchCaptionsForEpisode(ctx context.Context, dataDir, username string, episodeID int64, watchURL string) (string, error) {
+	captionDir := filepath.Join(dataDir, username, "app_data", "media", "captions")
+	if err := os.MkdirAll(captionDir, 0o755); err != nil {
+		return "", err
+	}
+	epDir := filepath.Join(captionDir, fmt.Sprintf("%d", episodeID))
+	if err := os.MkdirAll(epDir, 0o755); err != nil {
+		return "", err
+	}
+	vttPath, err := ytdlpFetchCaptions(ctx, watchURL, epDir)
+	if err != nil {
+		return "", err
+	}
+	return vttPath, nil
 }

@@ -20,6 +20,16 @@ const (
 	KeyEmailOverrideText = "email_override_text"
 )
 
+// Media/profanity setting keys.
+const (
+	KeyWhisperEnabled   = "whisper_enabled"
+	KeyWhisperModel     = "whisper_model" // tiny, base, small, medium, large
+	KeyTTSEngine        = "tts_engine"    // none, piper, system
+	KeyTTSModel         = "tts_model"     // piper model name
+	KeyTTSCommand       = "tts_command"   // system command template
+	KeyMediaCacheVolume = "media_cache_volume"
+)
+
 // SMTP setting keys.
 const (
 	KeySMTPHost = "smtp_host"

@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS episodes (
 	media_type TEXT NOT NULL DEFAULT 'audio' CHECK(media_type IN ('audio', 'video')),
 	duration_sec INTEGER NOT NULL DEFAULT 0,
 	thumbnail_url TEXT NOT NULL DEFAULT '',
+	captions_path TEXT NOT NULL DEFAULT '',
+	clean_audio_path TEXT NOT NULL DEFAULT '',
 	published_at INTEGER NOT NULL DEFAULT 0,
 	fetched_at INTEGER NOT NULL DEFAULT (unixepoch()),
 	UNIQUE(source_id, guid)

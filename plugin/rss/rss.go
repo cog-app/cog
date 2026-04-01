@@ -23,11 +23,12 @@ const PluginID = "rss"
 
 // Plugin is the RSS feed reader plugin.
 type Plugin struct {
-	ctx    plugin.PluginContext
-	log    *slog.Logger
-	cancel context.CancelFunc
-	done   chan struct{}
-	client *http.Client
+	ctx            plugin.PluginContext
+	log            *slog.Logger
+	cancel         context.CancelFunc
+	done           chan struct{}
+	client         *http.Client
+	contentFilters []plugin.ContentFilter
 }
 
 // New creates a new RSS plugin instance.
@@ -73,11 +74,13 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterPage("folder/{id}", http.HandlerFunc(pages.FolderView))
 	ctx.RegisterPage("settings", http.HandlerFunc(pages.Settings))
 	ctx.RegisterAPI("opml/export", http.HandlerFunc(pages.ExportOPML))
+	ctx.RegisterAPI("filter-preview", http.HandlerFunc(pages.FilterPreview))
 	ctx.RegisterAction("POST", "feeds", http.HandlerFunc(pages.AddFeed))
 	ctx.RegisterAction("DELETE", "feeds/{id}", http.HandlerFunc(pages.DeleteFeed))
 	ctx.RegisterAction("POST", "feeds/{id}/read", http.HandlerFunc(pages.MarkFeedRead))
 	ctx.RegisterAction("POST", "feeds/{id}/refresh", http.HandlerFunc(pages.RefreshFeed))
-	ctx.RegisterAction("POST", "feeds/{id}/auto-read", http.HandlerFunc(pages.SetAutoReadPattern))
+	ctx.RegisterAction("POST", "filters", http.HandlerFunc(pages.AddFilter))
+	ctx.RegisterAction("DELETE", "filters/{id}", http.HandlerFunc(pages.DeleteFilterAction))
 	ctx.RegisterAction("POST", "folders", http.HandlerFunc(pages.AddFolder))
 	ctx.RegisterAction("DELETE", "folders/{id}", http.HandlerFunc(pages.DeleteFolder))
 	ctx.RegisterAction("POST", "items/{id}/read", http.HandlerFunc(pages.ToggleRead))
@@ -96,6 +99,15 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 }
 
 func (p *Plugin) Start(ctx context.Context) error {
+	// Discover content filter plugins.
+	if priv, ok := p.ctx.(plugin.PrivilegedContext); ok {
+		for plug := range priv.Plugins() {
+			if cf, ok := plug.(plugin.ContentFilter); ok {
+				p.contentFilters = append(p.contentFilters, cf)
+			}
+		}
+	}
+
 	ctx, p.cancel = context.WithCancel(ctx)
 	p.done = make(chan struct{})
 	go p.poll(ctx)
@@ -120,6 +132,22 @@ func (p *Plugin) DB(username string) (*sql.DB, error) {
 		return nil, fmt.Errorf("migrate rss db for %s: %w", username, err)
 	}
 	return db, nil
+}
+
+// filterHTML applies all content filters to HTML content.
+func (p *Plugin) filterHTML(username, html string) string {
+	for _, cf := range p.contentFilters {
+		html = cf.FilterHTML(username, html)
+	}
+	return html
+}
+
+// filterText applies all content filters to plain text.
+func (p *Plugin) filterText(username, text string) string {
+	for _, cf := range p.contentFilters {
+		text = cf.FilterText(username, text)
+	}
+	return text
 }
 
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {

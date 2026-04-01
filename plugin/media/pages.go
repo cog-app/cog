@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/query"
+	cgplugin "git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/plugin/profanity"
 )
 
 // Pages holds the web UI handlers for the media plugin.
@@ -45,6 +49,14 @@ func (h *Pages) buildSidebar(db *sql.DB, activePath string) sidebarData {
 	}
 }
 
+// filterEpisodes applies content filters to episode text in-place.
+func (h *Pages) filterEpisodes(username string, episodes []EpisodeView) {
+	for i := range episodes {
+		episodes[i].Title = h.plugin.filterText(username, episodes[i].Title)
+		episodes[i].Description = h.plugin.filterHTML(username, episodes[i].Description)
+	}
+}
+
 // Queue is the landing page showing the playback queue.
 func (h *Pages) Queue(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
@@ -55,6 +67,7 @@ func (h *Pages) Queue(w http.ResponseWriter, r *http.Request) {
 	sb := h.buildSidebar(db, "/apps/media/")
 	plugin.SetTitle(w, "Media Queue")
 	queue, _ := ListQueue(db)
+	h.filterEpisodes(plugin.Username(r), queue)
 	mediaQueuePage(sb, queue, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
@@ -68,6 +81,7 @@ func (h *Pages) Browse(w http.ResponseWriter, r *http.Request) {
 	sb := h.buildSidebar(db, "/apps/media/browse")
 	plugin.SetTitle(w, "Browse Sources")
 	episodes, _ := ListRecentEpisodes(db, 50)
+	h.filterEpisodes(plugin.Username(r), episodes)
 	mediaBrowsePage(sb, episodes, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
@@ -92,6 +106,7 @@ func (h *Pages) Source(w http.ResponseWriter, r *http.Request) {
 	sb := h.buildSidebar(db, "/apps/media/source/"+idStr)
 	plugin.SetTitle(w, src.Title)
 	episodes, _ := ListEpisodesBySource(db, id, 200)
+	h.filterEpisodes(plugin.Username(r), episodes)
 	mediaSourcePage(sb, src, episodes, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
@@ -127,6 +142,7 @@ func (h *Pages) History(w http.ResponseWriter, r *http.Request) {
 	sb := h.buildSidebar(db, "/apps/media/history")
 	plugin.SetTitle(w, "History")
 	episodes, _ := RecentlyPlayed(db, 50)
+	h.filterEpisodes(plugin.Username(r), episodes)
 	mediaHistoryPage(sb, episodes, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
@@ -157,6 +173,7 @@ func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
 	sb := h.buildSidebar(db, "/apps/media/tag/"+tag)
 	plugin.SetTitle(w, "Tag: "+tag)
 	episodes, _ := ListEpisodesByTag(db, tag, 200)
+	h.filterEpisodes(plugin.Username(r), episodes)
 	mediaTagPage(sb, tag, episodes, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
@@ -491,6 +508,15 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Serve clean audio file URL if available.
+	if ep.CleanAudioPath != "" {
+		if _, err := os.Stat(ep.CleanAudioPath); err == nil {
+			cleanURL := fmt.Sprintf("/apps/media/api/clean-file/%d", ep.ID)
+			plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": cleanURL, "clean": "true"})
+			return
+		}
+	}
+
 	// For YouTube, resolve the stream URL via yt-dlp.
 	src, err := GetSource(db, ep.SourceID)
 	if err != nil {
@@ -509,6 +535,120 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": ep.MediaURL})
+}
+
+// ServeCleanFile serves the profanity-cleaned audio/video file for an episode.
+func (h *Pages) ServeCleanFile(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	ep, err := GetEpisode(db, id)
+	if err != nil {
+		http.Error(w, "episode not found", http.StatusNotFound)
+		return
+	}
+	if ep.CleanAudioPath == "" {
+		http.Error(w, "no clean audio available", http.StatusNotFound)
+		return
+	}
+	http.ServeFile(w, r, ep.CleanAudioPath)
+}
+
+// CleanAudio returns mute/replacement ranges for profanity in an episode's captions.
+func (h *Pages) CleanAudio(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	ep, err := GetEpisode(db, id)
+	if err != nil {
+		http.Error(w, "episode not found", http.StatusNotFound)
+		return
+	}
+
+	if ep.CaptionsPath == "" {
+		plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": []any{}})
+		return
+	}
+
+	// Parse VTT captions.
+	f, err := os.Open(ep.CaptionsPath)
+	if err != nil {
+		plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": []any{}})
+		return
+	}
+	defer f.Close()
+	captions := profanity.ParseVTT(f)
+
+	// Apply all content filters to get audio ranges.
+	username := plugin.Username(r)
+	var allRanges []cgplugin.AudioRange
+	for _, cf := range h.plugin.contentFilters {
+		ranges := cf.AudioRanges(username, captions)
+		allRanges = append(allRanges, ranges...)
+	}
+
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": allRanges})
+}
+
+// FilterPreview returns an HTMX partial showing episodes matching a filter query.
+func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("query")
+	if q == "" {
+		w.Header().Set("Content-Type", "text/html")
+		return
+	}
+
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if q == "*" {
+		mediaFilterPreview(nil, -1, 0, "").Render(r.Context(), w)
+		return
+	}
+
+	expr, err := query.Parse(q)
+	if err != nil {
+		mediaFilterPreview(nil, 0, 0, err.Error()).Render(r.Context(), w)
+		return
+	}
+
+	episodes, _ := ListRecentEpisodes(db, 200)
+	var matches []EpisodeView
+	for _, ep := range episodes {
+		rec := query.Record{
+			"title":       ep.Title,
+			"description": ep.Description,
+			"type":        string(ep.MediaType),
+			"duration":    strconv.Itoa(ep.DurationSec),
+			"url":         ep.MediaURL,
+			"source":      ep.SourceTitle,
+		}
+		if expr.Match(rec) {
+			matches = append(matches, ep)
+		}
+	}
+	preview := matches
+	if len(preview) > 5 {
+		preview = preview[:5]
+	}
+	mediaFilterPreview(preview, len(matches), len(episodes), "").Render(r.Context(), w)
 }
 
 // AddFilter handles POST to create a new filter for a source.

@@ -9,10 +9,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/plugin/profanity"
 )
 
 //go:generate go tool migratesql .
@@ -24,11 +27,12 @@ const PluginID = "media"
 
 // Plugin is the media queue plugin.
 type Plugin struct {
-	ctx    plugin.PluginContext
-	log    *slog.Logger
-	cancel context.CancelFunc
-	done   chan struct{}
-	client *http.Client
+	ctx            plugin.PluginContext
+	log            *slog.Logger
+	cancel         context.CancelFunc
+	done           chan struct{}
+	client         *http.Client
+	contentFilters []plugin.ContentFilter
 }
 
 // New creates a new Media plugin instance.
@@ -101,15 +105,43 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 
 	// API routes (GET)
 	ctx.RegisterAPI("api/stream-url/{id}", http.HandlerFunc(pages.StreamURL))
+	ctx.RegisterAPI("api/filter-preview", http.HandlerFunc(pages.FilterPreview))
+	ctx.RegisterAPI("api/clean-audio/{id}", http.HandlerFunc(pages.CleanAudio))
+	ctx.RegisterAPI("api/clean-file/{id}", http.HandlerFunc(pages.ServeCleanFile))
 
 	return nil
 }
 
 func (p *Plugin) Start(ctx context.Context) error {
+	// Discover content filter plugins.
+	if priv, ok := p.ctx.(plugin.PrivilegedContext); ok {
+		for plug := range priv.Plugins() {
+			if cf, ok := plug.(plugin.ContentFilter); ok {
+				p.contentFilters = append(p.contentFilters, cf)
+			}
+		}
+	}
+
 	ctx, p.cancel = context.WithCancel(ctx)
 	p.done = make(chan struct{})
 	go p.poll(ctx)
 	return nil
+}
+
+// filterHTML applies all content filters to HTML content.
+func (p *Plugin) filterHTML(username, html string) string {
+	for _, cf := range p.contentFilters {
+		html = cf.FilterHTML(username, html)
+	}
+	return html
+}
+
+// filterText applies all content filters to plain text.
+func (p *Plugin) filterText(username, text string) string {
+	for _, cf := range p.contentFilters {
+		text = cf.FilterText(username, text)
+	}
+	return text
 }
 
 func (p *Plugin) Stop() error {
@@ -162,22 +194,84 @@ func (p *Plugin) FetchSourceNow(username string, sourceID int64) {
 	if err != nil {
 		return
 	}
-	if err := p.fetchSource(context.Background(), db, src); err != nil {
+	if err := p.fetchSource(context.Background(), db, username, src); err != nil {
 		p.log.Error("immediate fetch", "url", src.URL, "err", err)
 	}
 }
 
-func (p *Plugin) fetchSource(ctx context.Context, db *sql.DB, src *Source) error {
+func (p *Plugin) fetchSource(ctx context.Context, db *sql.DB, username string, src *Source) error {
 	now := p.ctx.Now().Unix()
 	switch src.Kind {
 	case SourcePodcast:
 		return fetchPodcast(p.client, db, src, p.ctx.Now)
 	case SourceYouTube:
-		return fetchYouTube(ctx, db, src, p.ctx.Now)
+		err := fetchYouTube(ctx, db, src, p.ctx.Now)
+		if err == nil {
+			p.fetchMissingCaptions(ctx, db, username, src)
+		}
+		return err
 	case SourceURL:
 		// One-off sources are not polled.
 		return RecordSourceSuccess(db, src, "", "", now)
 	default:
 		return fmt.Errorf("unknown source kind: %s", src.Kind)
+	}
+}
+
+// fetchMissingCaptions fetches captions for YouTube episodes that don't have them yet,
+// and produces clean audio files when content filters are available.
+func (p *Plugin) fetchMissingCaptions(ctx context.Context, db *sql.DB, username string, src *Source) {
+	if src.Kind != SourceYouTube {
+		return
+	}
+	episodes, err := ListEpisodesBySource(db, src.ID, 50)
+	if err != nil {
+		return
+	}
+	for _, ep := range episodes {
+		if ep.CaptionsPath == "" {
+			vttPath, err := ytdlpFetchCaptionsForEpisode(ctx, p.ctx.DataDir(), username, ep.ID, ep.MediaURL)
+			if err != nil {
+				p.log.Debug("caption fetch failed", "episode", ep.ID, "err", err)
+				continue
+			}
+			SetCaptionsPath(db, ep.ID, vttPath)
+			ep.CaptionsPath = vttPath
+		}
+
+		// Produce clean audio if we have captions and content filters.
+		if ep.CaptionsPath != "" && ep.CleanAudioPath == "" && len(p.contentFilters) > 0 {
+			p.produceCleanAudio(ctx, db, username, &ep)
+		}
+	}
+}
+
+// produceCleanAudio creates a profanity-cleaned version of an episode's audio.
+func (p *Plugin) produceCleanAudio(ctx context.Context, db *sql.DB, username string, ep *EpisodeView) {
+	f, err := os.Open(ep.CaptionsPath)
+	if err != nil {
+		return
+	}
+	captions := profanity.ParseVTT(f)
+	f.Close()
+
+	if len(captions) == 0 {
+		return
+	}
+
+	cleanDir := filepath.Join(p.ctx.DataDir(), username, "app_data", "media", "clean")
+	os.MkdirAll(cleanDir, 0o755)
+	cleanPath := filepath.Join(cleanDir, fmt.Sprintf("%d_clean.mp4", ep.ID))
+
+	for _, cf := range p.contentFilters {
+		if err := cf.CleanAudioFile(ctx, username, ep.MediaURL, cleanPath, captions); err != nil {
+			p.log.Debug("clean audio failed", "episode", ep.ID, "err", err)
+			continue
+		}
+		if _, err := os.Stat(cleanPath); err == nil {
+			SetCleanAudioPath(db, ep.ID, cleanPath)
+			p.log.Info("produced clean audio", "episode", ep.ID)
+			return
+		}
 	}
 }
