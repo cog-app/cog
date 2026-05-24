@@ -64,19 +64,33 @@ func (s *EmailOTPStore) Validate(userID, code string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("query email otp: %w", err)
 	}
-	defer rows.Close()
-
+	// Buffer the matched ID and close before UPDATE — issuing Exec while
+	// the iterator is still open on the same SQLite connection silently
+	// fails (same bug pattern as backup-code validation).
+	var matched string
 	for rows.Next() {
 		var id, hash string
 		if err := rows.Scan(&id, &hash); err != nil {
+			rows.Close()
 			return false, fmt.Errorf("scan email otp: %w", err)
 		}
 		if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(code)); err == nil {
-			s.db.Exec(`UPDATE email_otp SET used = 1 WHERE id = ?`, id)
-			return true, nil
+			matched = id
+			break
 		}
 	}
-	return false, rows.Err()
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return false, err
+	}
+	rows.Close()
+	if matched == "" {
+		return false, nil
+	}
+	if _, err := s.db.Exec(`UPDATE email_otp SET used = 1 WHERE id = ?`, matched); err != nil {
+		return false, fmt.Errorf("mark email otp used: %w", err)
+	}
+	return true, nil
 }
 
 // generateOTPCode returns a random 6-digit numeric code.

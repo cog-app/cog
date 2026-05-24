@@ -136,20 +136,34 @@ func (s *TOTPStore) validateBackupCode(userID, code string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("query backup codes: %w", err)
 	}
-	defer rows.Close()
-
+	// Buffer the matching row ID and close the iterator before issuing the
+	// UPDATE — running Exec while rows is open contends with the same
+	// SQLite connection and the UPDATE silently fails (the audit flagged
+	// this class of bug).
+	var matched string
 	for rows.Next() {
 		var id, hash string
 		if err := rows.Scan(&id, &hash); err != nil {
+			rows.Close()
 			return false, fmt.Errorf("scan backup code: %w", err)
 		}
 		if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(code)); err == nil {
-			// Mark as used.
-			s.db.Exec(`UPDATE totp_backup_codes SET used = 1 WHERE id = ?`, id)
-			return true, nil
+			matched = id
+			break
 		}
 	}
-	return false, rows.Err()
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return false, err
+	}
+	rows.Close()
+	if matched == "" {
+		return false, nil
+	}
+	if _, err := s.db.Exec(`UPDATE totp_backup_codes SET used = 1 WHERE id = ?`, matched); err != nil {
+		return false, fmt.Errorf("mark backup code used: %w", err)
+	}
+	return true, nil
 }
 
 func (s *TOTPStore) regenerateBackupCodes(userID string) ([]string, error) {
