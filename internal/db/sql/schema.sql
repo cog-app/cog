@@ -173,3 +173,5 @@ CREATE TABLE IF NOT EXISTS volume_quotas (
 	updated_at INTEGER NOT NULL,
 	UNIQUE(volume_id, subject_type, subject_id)
 );
+/* email index for forgot-password lookups */
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email != '';

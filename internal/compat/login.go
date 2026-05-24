@@ -106,6 +106,17 @@ func (h *LoginFlowHandler) HandlePoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rate-limit by client IP. NextCloud clients poll once or twice per
+	// second; an attacker can spam this to lock contention on the pending
+	// map (audit security.md #22). Apply the same limiter used for /login.
+	if h.RateLimiter != nil {
+		ip := ratelimit.ClientIP(r)
+		if h.RateLimiter.IsLimited(ip) {
+			http.Error(w, "Rate limited", http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	token := r.FormValue("token")
 	if token == "" {
 		http.Error(w, "Missing token", http.StatusBadRequest)

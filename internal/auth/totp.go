@@ -175,7 +175,11 @@ func (s *TOTPStore) regenerateBackupCodes(userID string) ([]string, error) {
 	const numCodes = 10
 	codes := make([]string, numCodes)
 	for i := range codes {
-		codes[i] = generateBackupCode()
+		c, err := generateBackupCode()
+		if err != nil {
+			return nil, err
+		}
+		codes[i] = c
 	}
 
 	for _, code := range codes {
@@ -200,14 +204,18 @@ func (s *TOTPStore) regenerateBackupCodes(userID string) ([]string, error) {
 }
 
 // generateBackupCode returns an 8-character lowercase alphanumeric code.
-// Uses an unambiguous alphabet (no 0/o/1/l/i).
-func generateBackupCode() string {
+// Uses an unambiguous alphabet (no 0/o/1/l/i). crypto/rand failure surfaces
+// as an error; previous swallow could have produced predictable codes from
+// a zero buffer (audit security.md #31).
+func generateBackupCode() (string, error) {
 	const alphabet = "23456789abcdefghjkmnpqrstuvwxyz"
 	b := make([]byte, 8)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate backup code: %w", err)
+	}
 	code := make([]byte, 8)
 	for i := range code {
 		code[i] = alphabet[int(b[i])%len(alphabet)]
 	}
-	return string(code)
+	return string(code), nil
 }

@@ -405,7 +405,11 @@ func (h *WebDAVHandler) HandleDirectDownload(baseURL string) http.HandlerFunc {
 			return
 		}
 
-		token := h.createDirectToken(u.Username, meta.Path)
+		token, err := h.createDirectToken(u.Username, meta.Path)
+		if err != nil {
+			writeOCSError(w, http.StatusInternalServerError, 500, "create token: "+err.Error())
+			return
+		}
 		url := baseURL + "/remote.php/dav/direct/" + token
 		writeOCS(w, http.StatusOK, map[string]any{
 			"url": url,
@@ -413,9 +417,11 @@ func (h *WebDAVHandler) HandleDirectDownload(baseURL string) http.HandlerFunc {
 	}
 }
 
-func (h *WebDAVHandler) createDirectToken(username, filePath string) string {
+func (h *WebDAVHandler) createDirectToken(username, filePath string) (string, error) {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate direct token: %w", err)
+	}
 	token := hex.EncodeToString(b)
 
 	h.directMu.Lock()
@@ -434,7 +440,7 @@ func (h *WebDAVHandler) createDirectToken(username, filePath string) string {
 		FilePath: filePath,
 		Created:  h.Clock(),
 	}
-	return token
+	return token, nil
 }
 
 // HandleDirectServe handles GET /remote.php/dav/direct/{token}.

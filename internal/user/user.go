@@ -110,10 +110,30 @@ func (s *Store) GetByID(id string) (*User, error) {
 	))
 }
 
+// GetByEmail looks up a user by exact email match. Empty email returns
+// ErrNotFound to prevent matching accounts that haven't set one.
+func (s *Store) GetByEmail(email string) (*User, error) {
+	if email == "" {
+		return nil, ErrNotFound
+	}
+	return s.scanUser(s.db.QueryRow(
+		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method FROM users WHERE email = ?`, email,
+	))
+}
+
+// dummyBcryptHash is a pre-computed bcrypt hash for the empty password.
+// Used to make Authenticate run bcrypt even for unknown usernames so the
+// caller can't distinguish "no such user" from "wrong password" via timing
+// (audit security.md #25).
+var dummyBcryptHash = []byte("$2a$10$abcdefghijklmnopqrstuOuukDpEPiQyGyDk/JFFwjVjVnKEZRiou")
+
 func (s *Store) Authenticate(username, password string) (*User, error) {
 	u, err := s.GetByUsername(username)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
+			// Run bcrypt against a dummy hash so the response time matches
+			// the wrong-password path. Result is discarded.
+			_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(password))
 			return nil, ErrAuthFailed
 		}
 		return nil, err

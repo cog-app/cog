@@ -36,7 +36,10 @@ func (s *EmailOTPStore) Create(userID string) (string, error) {
 		slog.Warn("email otp invalidate previous", "user", userID, "err", err)
 	}
 
-	code := generateOTPCode()
+	code, err := generateOTPCode()
+	if err != nil {
+		return "", err
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
 	if err != nil {
 		return "", fmt.Errorf("hash otp: %w", err)
@@ -98,8 +101,13 @@ func (s *EmailOTPStore) Validate(userID, code string) (bool, error) {
 	return true, nil
 }
 
-// generateOTPCode returns a random 6-digit numeric code.
-func generateOTPCode() string {
-	n, _ := rand.Int(rand.Reader, big.NewInt(1000000))
-	return fmt.Sprintf("%06d", n.Int64())
+// generateOTPCode returns a random 6-digit numeric code. crypto/rand failure
+// surfaces as an error; the previous swallow path silently returned "000000"
+// (audit security.md #29).
+func generateOTPCode() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
+	if err != nil {
+		return "", fmt.Errorf("generate otp code: %w", err)
+	}
+	return fmt.Sprintf("%06d", n.Int64()), nil
 }

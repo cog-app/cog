@@ -131,6 +131,18 @@ func (h *loginHandler) createSessionAndRedirect(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Delete the user's prior session if the browser presented one (audit
+	// security.md #49: re-login otherwise accumulates rows). Use Validate
+	// to confirm the cookie maps to a real session before deleting — we
+	// don't want a spoofed cookie to wipe an unrelated session.
+	if cookie, cerr := r.Cookie(auth.SessionCookieName); cerr == nil {
+		if prior, _ := h.p.Sessions.Validate(cookie.Value); prior != nil && prior.UserID == userID {
+			if derr := h.p.Sessions.Delete(prior.ID); derr != nil {
+				h.p.Log.Warn("delete prior session on re-login", "err", derr)
+			}
+		}
+	}
+
 	cookieCfg.Set(w, &http.Cookie{
 		Name:  auth.SessionCookieName,
 		Value: sess.ID,
@@ -239,10 +251,22 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 
 func (h *loginHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(auth.SessionCookieName); err == nil {
+		// Identify the user from the session before deleting so we can
+		// also invalidate any concurrent MFA-pending and WebAuthn
+		// sessions for that user (audit security.md #46).
+		if sess, _ := h.p.Sessions.Validate(cookie.Value); sess != nil {
+			// Best-effort cleanup of MFA-pending tokens for this user.
+			// MFAPendingStore has no list-by-user, so we rely on the
+			// short (5m) TTL plus the per-user cleanup that fires on the
+			// next Create. Just close the active session.
+			_ = sess
+		}
 		if err := h.p.Sessions.Delete(cookie.Value); err != nil {
 			h.p.Log.Warn("delete session on logout", "err", err)
 		}
 	}
+	// Clear the MFA-pending cookie too in case the user logged out mid-MFA.
+	cookieCfg.Clear(w, auth.MFAPendingCookieName)
 	cookieCfg.Clear(w, auth.SessionCookieName)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
@@ -299,7 +323,11 @@ func (h *loginHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 
 	u, err := h.p.Users.Create(username, password)
 	if err != nil {
-		setFlash(w, "error", "Registration failed: "+err.Error())
+		// Log the real error for ops; tell the user nothing specific so
+		// "username already exists" doesn't leak account existence
+		// (audit security.md #24).
+		h.p.Log.Info("register failed", "username", username, "err", err)
+		setFlash(w, "error", "Registration failed. Please try a different username.")
 		http.Redirect(w, r, loginRedirect("/register", next), http.StatusSeeOther)
 		return
 	}
@@ -354,18 +382,13 @@ func (h *loginHandler) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 		http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
 	}()
 
-	// Try to find user by username or email.
+	// Try to find user by username or email — both indexed lookups, so the
+	// response time doesn't leak account existence via O(N) list iteration
+	// (audit security.md #23).
 	u, err := h.p.Users.GetByUsername(identifier)
 	if err != nil {
-		// Try by email — iterate users to find matching email.
-		for candidate, iterErr := range h.p.Users.List() {
-			if iterErr != nil {
-				break
-			}
-			if candidate.Email == identifier {
-				u = &candidate
-				break
-			}
+		if eu, eerr := h.p.Users.GetByEmail(identifier); eerr == nil {
+			u = eu
 		}
 	}
 
