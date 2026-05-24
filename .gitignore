@@ -5,3 +5,4 @@
 *.db-*
 **/testdata/snapshots/*.actual.png
 **/testdata/snapshots/*.diff.png
+/verify

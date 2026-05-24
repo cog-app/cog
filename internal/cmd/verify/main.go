@@ -271,6 +271,19 @@ summary .count{color:#999;font-weight:400;font-size:0.85rem;margin-left:0.5rem}
 func reportCoverage(profile string) {
 	fmt.Printf("\n\033[1;34m▶ Coverage report\033[0m\n")
 
+	pkgCov, totalCovered, totalStmts, err := perPackageStatementCoverage(profile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  parse profile: %v\n", err)
+	} else {
+		printPerPackageTable(pkgCov)
+		if totalStmts > 0 {
+			pct := 100 * float64(totalCovered) / float64(totalStmts)
+			fmt.Printf("\n  \033[1mtotal: %d/%d statements (%.1f%%)\033[0m\n",
+				totalCovered, totalStmts, pct)
+		}
+	}
+
+	// Also list uncovered handler-like functions from `go tool cover -func`.
 	cmd := exec.Command("go", "tool", "cover", "-func="+profile)
 	out, err := cmd.Output()
 	if err != nil {
@@ -278,20 +291,16 @@ func reportCoverage(profile string) {
 		return
 	}
 
-	// Print total line
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
-	var totalLine string
 	var uncovered []string
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "total:") {
-			totalLine = line
 			continue
 		}
 		if !strings.HasSuffix(strings.TrimSpace(line), "0.0%") {
 			continue
 		}
-		// Skip templates, test infrastructure, CLI commands, generated code
 		if strings.Contains(line, "_templ.go") ||
 			strings.Contains(line, "plugcmd") ||
 			strings.Contains(line, "plugpb") ||
@@ -304,7 +313,6 @@ func reportCoverage(profile string) {
 			strings.Contains(line, "tmp/dev") {
 			continue
 		}
-		// Only report handler-like functions
 		lower := strings.ToLower(line)
 		if containsAny(lower, "handle", "serve", "page", "view",
 			"create", "update", "delete", "list", "get",
@@ -315,12 +323,8 @@ func reportCoverage(profile string) {
 		}
 	}
 
-	if totalLine != "" {
-		fmt.Printf("  %s\n", totalLine)
-	}
-
 	if len(uncovered) == 0 {
-		fmt.Println("  No uncovered handler functions found.")
+		fmt.Println("\n  No uncovered handler functions found.")
 		return
 	}
 
@@ -328,6 +332,138 @@ func reportCoverage(profile string) {
 	for _, line := range uncovered {
 		fmt.Printf("    %s\n", line)
 	}
+}
+
+// pkgCoverage holds statement-level coverage for one package.
+type pkgCoverage struct {
+	pkg            string
+	stmts, covered int
+}
+
+// perPackageStatementCoverage reads a Go coverage profile and aggregates
+// statement-level coverage per package. The profile contains duplicate blocks
+// when multiple test binaries cover the same source (each `go test` run
+// emits its own copy under -coverpkg=./...); we dedupe by block location and
+// OR the counts (per "mode: set" semantics) before summing. Skips generated
+// _templ.go files.
+// Returns (rows, totalCovered, totalStmts, err).
+func perPackageStatementCoverage(profile string) ([]pkgCoverage, int, int, error) {
+	f, err := os.Open(profile)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	defer f.Close()
+
+	// First pass: dedupe block lines, keep the maximum count seen for each
+	// unique <file>:<range> key.
+	type blockInfo struct {
+		filePath string
+		numStmts int
+		hit      bool
+	}
+	blocks := map[string]*blockInfo{}
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" || strings.HasPrefix(line, "mode:") {
+			continue
+		}
+
+		// Format: "<file>:<startL>.<startC>,<endL>.<endC> <numStmts> <count>"
+		space := strings.LastIndexByte(line, ' ')
+		if space < 0 {
+			continue
+		}
+		count := atoiOr(line[space+1:], 0)
+		rest := line[:space]
+		space2 := strings.LastIndexByte(rest, ' ')
+		if space2 < 0 {
+			continue
+		}
+		numStmts := atoiOr(rest[space2+1:], 0)
+		key := rest[:space2] // "<file>:<startL>.<startC>,<endL>.<endC>"
+
+		before, _, ok := strings.Cut(key, ":")
+		if !ok {
+			continue
+		}
+		filePath := before
+		if strings.HasSuffix(filePath, "_templ.go") {
+			continue
+		}
+
+		b := blocks[key]
+		if b == nil {
+			b = &blockInfo{filePath: filePath, numStmts: numStmts}
+			blocks[key] = b
+		}
+		if count > 0 {
+			b.hit = true
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, 0, 0, err
+	}
+
+	// Second pass: aggregate per package.
+	const modulePrefix = "git.duckfam.us/jj-software/cog/"
+	pkgs := map[string]*pkgCoverage{}
+	var totalCovered, totalStmts int
+	for _, b := range blocks {
+		path := strings.TrimPrefix(b.filePath, modulePrefix)
+		slash := strings.LastIndexByte(path, '/')
+		pkg := "."
+		if slash >= 0 {
+			pkg = path[:slash]
+		}
+		p := pkgs[pkg]
+		if p == nil {
+			p = &pkgCoverage{pkg: pkg}
+			pkgs[pkg] = p
+		}
+		p.stmts += b.numStmts
+		totalStmts += b.numStmts
+		if b.hit {
+			p.covered += b.numStmts
+			totalCovered += b.numStmts
+		}
+	}
+
+	rows := make([]pkgCoverage, 0, len(pkgs))
+	for _, p := range pkgs {
+		rows = append(rows, *p)
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].pkg < rows[j].pkg })
+	return rows, totalCovered, totalStmts, nil
+}
+
+func printPerPackageTable(rows []pkgCoverage) {
+	fmt.Println("\n  Per-package statement coverage (cross-package profile):")
+	for _, r := range rows {
+		pct := 0.0
+		if r.stmts > 0 {
+			pct = 100 * float64(r.covered) / float64(r.stmts)
+		}
+		color := "\033[0;32m"
+		switch {
+		case pct < 30:
+			color = "\033[0;31m"
+		case pct < 60:
+			color = "\033[0;33m"
+		}
+		fmt.Printf("    %s%5.1f%%\033[0m  %-40s (%d/%d stmts)\n",
+			color, pct, r.pkg, r.covered, r.stmts)
+	}
+}
+
+func atoiOr(s string, def int) int {
+	var n int
+	if _, err := fmt.Sscanf(s, "%d", &n); err != nil {
+		return def
+	}
+	return n
 }
 
 func containsAny(s string, substrs ...string) bool {
