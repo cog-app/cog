@@ -132,6 +132,10 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 		t.Fatalf("cogtest: start search: %v", err)
 	}
 	t.Cleanup(func() { mgr.Stop() })
+	// Stop the plugin registry so external gRPC plugin subprocesses are
+	// terminated; without this, the test exits with child stdout/stderr
+	// pipes still open and the go test runner waits on them.
+	t.Cleanup(func() { p.Plugins.Stop() })
 	ts.Config.Handler = handler
 
 	return &Env{
