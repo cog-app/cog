@@ -40,6 +40,11 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/files/favorite", auth.RequireAuth(http.HandlerFunc(a.handleFavorite)))
 	mux.Handle("GET /api/files/favorites", auth.RequireAuth(http.HandlerFunc(a.handleFavorites)))
 
+	// Comments
+	mux.Handle("GET /api/files/comments", auth.RequireAuth(http.HandlerFunc(a.handleListComments)))
+	mux.Handle("POST /api/files/comments", auth.RequireAuth(http.HandlerFunc(a.handleCreateComment)))
+	mux.Handle("DELETE /api/files/comments/{id}", auth.RequireAuth(http.HandlerFunc(a.handleDeleteComment)))
+
 	// Sharing operations
 	mux.Handle("POST /api/shares", auth.RequireAuth(http.HandlerFunc(a.handleShareCreate)))
 	mux.Handle("GET /api/shares", auth.RequireAuth(http.HandlerFunc(a.handleShareList)))
