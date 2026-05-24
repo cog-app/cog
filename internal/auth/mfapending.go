@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
@@ -42,7 +43,14 @@ func (s *MFAPendingStore) hash(token string) string {
 }
 
 // Create generates a pending MFA token for the user.
+// nextURL is sanitized server-side: only same-origin in-app paths survive;
+// anything else (protocol-relative, absolute URL, javascript:, missing
+// leading slash) is dropped on the floor. This defends against malformed
+// values reaching the post-MFA redirect path (audit security.md #18) even
+// if a later refactor forgets to call safeNext at read time.
 func (s *MFAPendingStore) Create(userID, nextURL string) (*MFAPending, error) {
+	nextURL = sanitizeNextURL(nextURL)
+
 	// Lazy cleanup of expired entries.
 	s.db.Exec(`DELETE FROM mfa_pending WHERE expires_at < ?`, s.clock().Unix())
 
@@ -61,6 +69,17 @@ func (s *MFAPendingStore) Create(userID, nextURL string) (*MFAPending, error) {
 	}
 
 	return &MFAPending{Token: token, UserID: userID, NextURL: nextURL}, nil
+}
+
+// sanitizeNextURL returns next only when it is a same-origin in-app path:
+// starts with "/", does not start with "//", and is not a relative or
+// scheme-bearing URL. All other inputs return "" so the post-MFA redirect
+// falls back to the root.
+func sanitizeNextURL(next string) string {
+	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
+		return ""
+	}
+	return next
 }
 
 // Validate checks the pending MFA token and returns it if valid.

@@ -4,8 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -19,11 +23,35 @@ type API struct {
 	files  *Plugin
 	shares *share.Store
 	users  *user.Store
+
+	// shareLockouts tracks consecutive failed password attempts per
+	// (share-token, client-IP) so we can throttle brute-force at the
+	// public-link layer (audit security.md #36).
+	shareLockoutMu sync.Mutex
+	shareLockouts  map[string]shareLockoutEntry
 }
+
+type shareLockoutEntry struct {
+	failures int
+	until    time.Time
+}
+
+// shareLockoutThreshold is the number of wrong-password attempts in a window
+// that triggers a lockout for the (token, IP) pair.
+const shareLockoutThreshold = 5
+
+// shareLockoutCooldown is how long after threshold the (token, IP) is blocked
+// before attempts are allowed again.
+const shareLockoutCooldown = 5 * time.Minute
 
 // NewAPI creates a new files API handler.
 func NewAPI(files *Plugin, shares *share.Store, users *user.Store) *API {
-	return &API{files: files, shares: shares, users: users}
+	return &API{
+		files:         files,
+		shares:        shares,
+		users:         users,
+		shareLockouts: make(map[string]shareLockoutEntry),
+	}
 }
 
 // RegisterRoutes mounts the files API on the given mux.
@@ -714,16 +742,70 @@ func (a *API) verifyOwnership(u *user.User, resourceType, resourceID string) err
 }
 
 // checkSharePassword extracts a password from the request (Basic auth or query param)
-// and validates it against the share record.
+// and validates it against the share record. Per-token-per-IP brute-force
+// throttling kicks in after shareLockoutThreshold consecutive failures
+// (audit security.md #36).
 func (a *API) checkSharePassword(rec *share.Record, r *http.Request) error {
 	if rec.PasswordHash == nil || *rec.PasswordHash == "" {
 		return nil
 	}
-	// Try Basic auth password first (username is ignored for share links).
-	if _, password, ok := r.BasicAuth(); ok {
-		return share.CheckPassword(rec, password)
+
+	key := rec.ID + "|" + clientIPForLockout(r)
+	if a.shareLockoutTooHot(key) {
+		return share.ErrPasswordIncorrect
 	}
-	// Fall back to query parameter.
-	password := r.URL.Query().Get("password")
-	return share.CheckPassword(rec, password)
+
+	var password string
+	if _, p, ok := r.BasicAuth(); ok {
+		password = p
+	} else {
+		password = r.URL.Query().Get("password")
+	}
+
+	err := share.CheckPassword(rec, password)
+	a.recordShareAttempt(key, err == nil)
+	return err
+}
+
+// shareLockoutTooHot returns true if the (token, IP) pair is currently locked
+// out due to too many recent failures.
+func (a *API) shareLockoutTooHot(key string) bool {
+	a.shareLockoutMu.Lock()
+	defer a.shareLockoutMu.Unlock()
+	e := a.shareLockouts[key]
+	return e.failures >= shareLockoutThreshold && time.Now().Before(e.until)
+}
+
+// recordShareAttempt updates the lockout counter for a (token, IP) pair.
+// success clears the counter; failure increments it and arms the cooldown
+// once the threshold is reached.
+func (a *API) recordShareAttempt(key string, success bool) {
+	a.shareLockoutMu.Lock()
+	defer a.shareLockoutMu.Unlock()
+	if success {
+		delete(a.shareLockouts, key)
+		return
+	}
+	e := a.shareLockouts[key]
+	e.failures++
+	if e.failures >= shareLockoutThreshold {
+		e.until = time.Now().Add(shareLockoutCooldown)
+	}
+	a.shareLockouts[key] = e
+}
+
+// clientIPForLockout extracts an IP-ish identifier for lockout keying. We
+// don't need DNS-quality accuracy; just a stable per-attacker key.
+func clientIPForLockout(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// Take the first hop (leftmost).
+		if i := strings.IndexByte(xff, ','); i > 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return strings.TrimSpace(xff)
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }

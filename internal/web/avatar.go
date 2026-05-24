@@ -33,7 +33,12 @@ func (h *avatarHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if u.Avatar != "" {
-		path := filepath.Join(h.avatarsDir(), u.Avatar)
+		// Defense-in-depth: the Avatar column is written by Upload as
+		// `<id><ext>`, but a DB-level write (admin shell, future bug,
+		// migration mishap) could plant a value containing path separators
+		// or "..". filepath.Base strips any directory component so the
+		// lookup stays inside avatarsDir() (audit security.md #42).
+		path := filepath.Join(h.avatarsDir(), filepath.Base(u.Avatar))
 		if f, err := os.Open(path); err == nil {
 			defer f.Close()
 			ext := filepath.Ext(u.Avatar)
@@ -120,9 +125,10 @@ func (h *avatarHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Remove old avatar if exists.
+	// Remove old avatar if exists. Use filepath.Base so a malformed DB
+	// value can't redirect the Remove to a path outside avatarsDir().
 	if u.Avatar != "" {
-		os.Remove(filepath.Join(h.avatarsDir(), u.Avatar))
+		os.Remove(filepath.Join(h.avatarsDir(), filepath.Base(u.Avatar)))
 	}
 
 	filename := u.ID + ext
@@ -156,7 +162,7 @@ func (h *avatarHandler) Upload(w http.ResponseWriter, r *http.Request) {
 func (h *avatarHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u.Avatar != "" {
-		os.Remove(filepath.Join(h.avatarsDir(), u.Avatar))
+		os.Remove(filepath.Join(h.avatarsDir(), filepath.Base(u.Avatar)))
 	}
 	empty := ""
 	if err := h.p.Users.Update(u.ID, user.UpdateOpts{Avatar: &empty}); err != nil {

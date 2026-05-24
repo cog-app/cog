@@ -19,6 +19,17 @@ type AppPassword struct {
 	CreatedAt time.Time
 }
 
+// MaxAppPasswordsPerUser caps how many app passwords a single user can have
+// outstanding. Validate iterates every app_passwords row and runs bcrypt
+// against each, so an unbounded count is a DoS surface (audit security.md
+// #11). Beyond this limit, Create returns ErrTooManyAppPasswords and the
+// user must delete an existing one.
+const MaxAppPasswordsPerUser = 32
+
+// ErrTooManyAppPasswords is returned by Create when a user already has
+// MaxAppPasswordsPerUser tokens.
+var ErrTooManyAppPasswords = errors.New("too many app passwords for user")
+
 type AppPasswordStore struct {
 	db    *sql.DB
 	clock clock.Clock
@@ -30,7 +41,16 @@ func NewAppPasswordStore(db *sql.DB, c clock.Clock) *AppPasswordStore {
 
 // Create generates a new app password and returns the plaintext token.
 // The token is hashed before storage; the caller must present the plaintext to the user.
+// Refuses creation once the user is at the per-user cap.
 func (s *AppPasswordStore) Create(userID, name string) (plaintext string, ap *AppPassword, err error) {
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM app_passwords WHERE user_id = ?`, userID).Scan(&count); err != nil {
+		return "", nil, fmt.Errorf("count app passwords: %w", err)
+	}
+	if count >= MaxAppPasswordsPerUser {
+		return "", nil, ErrTooManyAppPasswords
+	}
+
 	token, err := generateToken(32)
 	if err != nil {
 		return "", nil, err
