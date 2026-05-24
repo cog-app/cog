@@ -24,7 +24,6 @@ func TestConcurrent_PUTSamePath(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(N)
 	for i := range N {
-		i := i
 		go func() {
 			defer wg.Done()
 			body := fmt.Sprintf("writer-%d", i)
@@ -50,7 +49,6 @@ func TestConcurrent_PUTDifferentPaths(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(N)
 	for i := range N {
-		i := i
 		go func() {
 			defer wg.Done()
 			path := fmt.Sprintf("/file-%d.txt", i)
@@ -80,7 +78,6 @@ func TestConcurrent_SessionCreateRace(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(N)
 	for i := range N {
-		i := i
 		go func() {
 			defer wg.Done()
 			sess, err := env.Providers.Sessions.Create(alice.ID)
@@ -126,7 +123,6 @@ func TestConcurrent_ShareCreateRace(t *testing.T) {
 	errs := make([]error, N)
 	recs := make([]*share.Record, N)
 	for i := range N {
-		i := i
 		go func() {
 			defer wg.Done()
 			fileID, err := lookupFileID(env, alice.Username, "/s-"+strconv.Itoa(i)+".txt")
