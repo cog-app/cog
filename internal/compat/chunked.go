@@ -99,10 +99,13 @@ func (h *ChunkedUploadHandler) handleMkcol(w http.ResponseWriter, u *user.User, 
 	if h.sessions == nil {
 		h.sessions = make(map[string]*uploadSession)
 	}
-	// Evict stale sessions (older than 24h)
+	// Evict stale sessions (older than 24h). Log cleanup failures so leaked
+	// chunk dirs are visible.
 	for k, s := range h.sessions {
 		if h.Clock().Sub(s.CreatedAt) > 24*time.Hour {
-			os.RemoveAll(s.Dir)
+			if err := os.RemoveAll(s.Dir); err != nil {
+				slog.Warn("chunked upload stale session cleanup", "dir", s.Dir, "err", err)
+			}
 			delete(h.sessions, k)
 		}
 	}
@@ -238,7 +241,9 @@ func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request
 	h.mu.Lock()
 	delete(h.sessions, sessionKey)
 	h.mu.Unlock()
-	os.RemoveAll(sess.Dir)
+	if err := os.RemoveAll(sess.Dir); err != nil {
+		slog.Warn("chunked upload session cleanup", "dir", sess.Dir, "err", err)
+	}
 
 	w.Header().Set("ETag", `"`+meta.ETag+`"`)
 	w.Header().Set("OC-FileId", strings.Repeat("0", max(0, 8-len(meta.ETag)))+meta.ETag)
@@ -258,6 +263,8 @@ func (h *ChunkedUploadHandler) handleDelete(w http.ResponseWriter, u *user.User,
 		return
 	}
 
-	os.RemoveAll(sess.Dir)
+	if err := os.RemoveAll(sess.Dir); err != nil {
+		slog.Warn("chunked upload delete cleanup", "dir", sess.Dir, "err", err)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

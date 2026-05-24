@@ -607,9 +607,18 @@ func (h *SharingHandler) HandleUpdateShare(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// Re-fetch
-	rec, _ = h.Shares.Get(shareID)
-	owner, _ := h.Users.GetByID(rec.OwnerUserID)
+	// Re-fetch — these were silently dropping errors and feeding nils into
+	// shareToOCS, which would then NPE.
+	rec, err = h.Shares.Get(shareID)
+	if err != nil {
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "refetch share: "+err.Error())
+		return
+	}
+	owner, err := h.Users.GetByID(rec.OwnerUserID)
+	if err != nil {
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "refetch owner: "+err.Error())
+		return
+	}
 	ocs, ocsErr := h.shareToOCS(rec, owner)
 	if ocsErr != nil {
 		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, ocsErr.Error())

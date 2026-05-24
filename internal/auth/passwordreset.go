@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
@@ -34,10 +35,14 @@ func (s *PasswordResetStore) hash(token string) string {
 // Create generates a password reset token for the user. Invalidates existing
 // tokens for the user. Returns the plaintext token; only the hash is stored.
 func (s *PasswordResetStore) Create(userID string) (string, error) {
-	// Invalidate existing tokens for this user.
-	s.db.Exec(`DELETE FROM password_reset_tokens WHERE user_id = ?`, userID)
+	// Invalidate existing tokens for this user — best-effort, log on failure.
+	if _, err := s.db.Exec(`DELETE FROM password_reset_tokens WHERE user_id = ?`, userID); err != nil {
+		slog.Warn("password reset invalidate previous", "user", userID, "err", err)
+	}
 	// Lazy cleanup expired tokens.
-	s.db.Exec(`DELETE FROM password_reset_tokens WHERE expires_at < ?`, s.clock().Unix())
+	if _, err := s.db.Exec(`DELETE FROM password_reset_tokens WHERE expires_at < ?`, s.clock().Unix()); err != nil {
+		slog.Warn("password reset cleanup expired", "err", err)
+	}
 
 	token, err := generateToken(32)
 	if err != nil {

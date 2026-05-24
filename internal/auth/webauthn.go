@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"time"
 
@@ -315,8 +316,10 @@ func (s *WebAuthnStore) updateCredentialSignCount(userID string, cred *webauthn.
 }
 
 func (s *WebAuthnStore) storeSession(userID string, session *webauthn.SessionData) error {
-	// Clean up old sessions.
-	s.db.Exec(`DELETE FROM webauthn_sessions WHERE user_id = ?`, userID)
+	// Clean up old sessions — best-effort, log on failure.
+	if _, err := s.db.Exec(`DELETE FROM webauthn_sessions WHERE user_id = ?`, userID); err != nil {
+		slog.Warn("webauthn store: cleanup old session", "user", userID, "err", err)
+	}
 
 	id, err := generateToken(16)
 	if err != nil {
@@ -367,5 +370,7 @@ func (s *WebAuthnStore) loadSession(userID string) (*webauthn.SessionData, error
 }
 
 func (s *WebAuthnStore) deleteSession(userID string) {
-	s.db.Exec(`DELETE FROM webauthn_sessions WHERE user_id = ?`, userID)
+	if _, err := s.db.Exec(`DELETE FROM webauthn_sessions WHERE user_id = ?`, userID); err != nil {
+		slog.Warn("webauthn store: delete session", "user", userID, "err", err)
+	}
 }

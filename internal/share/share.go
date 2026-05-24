@@ -150,7 +150,10 @@ func (s *Store) SetPassword(shareID, password string) error {
 	if err != nil {
 		return fmt.Errorf("set share password: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set share password rows affected: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -206,7 +209,10 @@ func (s *Store) Delete(id string) error {
 	if err != nil {
 		return fmt.Errorf("delete share: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete share rows affected: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -51,8 +52,10 @@ func (s *MFAPendingStore) hash(token string) string {
 func (s *MFAPendingStore) Create(userID, nextURL string) (*MFAPending, error) {
 	nextURL = sanitizeNextURL(nextURL)
 
-	// Lazy cleanup of expired entries.
-	s.db.Exec(`DELETE FROM mfa_pending WHERE expires_at < ?`, s.clock().Unix())
+	// Lazy cleanup of expired entries — best-effort, log on failure.
+	if _, err := s.db.Exec(`DELETE FROM mfa_pending WHERE expires_at < ?`, s.clock().Unix()); err != nil {
+		slog.Warn("mfa pending cleanup expired", "err", err)
+	}
 
 	token, err := generateToken(32)
 	if err != nil {
@@ -99,7 +102,9 @@ func (s *MFAPendingStore) Validate(token string) (*MFAPending, error) {
 	}
 
 	if time.Unix(expiresAt, 0).Before(s.clock()) {
-		s.db.Exec(`DELETE FROM mfa_pending WHERE token = ?`, s.hash(token))
+		if _, err := s.db.Exec(`DELETE FROM mfa_pending WHERE token = ?`, s.hash(token)); err != nil {
+			slog.Warn("mfa pending delete expired", "err", err)
+		}
 		return nil, nil
 	}
 

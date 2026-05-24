@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"time"
 
@@ -27,9 +28,13 @@ func NewEmailOTPStore(db *sql.DB, c clock.Clock) *EmailOTPStore {
 // Create generates a 6-digit OTP for the user. Invalidates any existing
 // unused codes for the user. Returns the plaintext code.
 func (s *EmailOTPStore) Create(userID string) (string, error) {
-	// Lazy cleanup.
-	s.db.Exec(`DELETE FROM email_otp WHERE expires_at < ?`, s.clock().Unix())
-	s.db.Exec(`DELETE FROM email_otp WHERE user_id = ? AND used = 0`, userID)
+	// Lazy cleanup — best-effort but errors get logged so they're visible.
+	if _, err := s.db.Exec(`DELETE FROM email_otp WHERE expires_at < ?`, s.clock().Unix()); err != nil {
+		slog.Warn("email otp cleanup expired", "err", err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM email_otp WHERE user_id = ? AND used = 0`, userID); err != nil {
+		slog.Warn("email otp invalidate previous", "user", userID, "err", err)
+	}
 
 	code := generateOTPCode()
 	hash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)

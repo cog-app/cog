@@ -221,7 +221,9 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// MFA passed — clean up pending token and create session.
-	h.p.MFAPending.Delete(cookie.Value)
+	if err := h.p.MFAPending.Delete(cookie.Value); err != nil {
+		h.p.Log.Warn("delete mfa pending after success", "err", err)
+	}
 	cookieCfg.Clear(w, auth.MFAPendingCookieName)
 
 	if h.p.RateLimiter != nil {
@@ -237,7 +239,9 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 
 func (h *loginHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(auth.SessionCookieName); err == nil {
-		h.p.Sessions.Delete(cookie.Value)
+		if err := h.p.Sessions.Delete(cookie.Value); err != nil {
+			h.p.Log.Warn("delete session on logout", "err", err)
+		}
 	}
 	cookieCfg.Clear(w, auth.SessionCookieName)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -436,8 +440,16 @@ func (h *loginHandler) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	h.p.PasswordResets.MarkUsed(token)
-	h.p.Sessions.DeleteAllForUser(userID)
+	// MarkUsed errors don't block the user from logging in — but they DO
+	// matter for one-shot-token semantics. If MarkUsed fails the token
+	// stays usable until expiry; flag it loudly. Same for revoking other
+	// sessions — log the failure so admins notice if sessions linger.
+	if err := h.p.PasswordResets.MarkUsed(token); err != nil {
+		h.p.Log.Error("mark password reset used", "user", userID, "err", err)
+	}
+	if err := h.p.Sessions.DeleteAllForUser(userID); err != nil {
+		h.p.Log.Error("revoke sessions after reset", "user", userID, "err", err)
+	}
 
 	setFlash(w, "success", "Password reset successfully. Please log in with your new password.")
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -523,7 +535,9 @@ func (h *loginHandler) FinishWebAuthnLogin(w http.ResponseWriter, r *http.Reques
 	}
 
 	// MFA passed — clean up and create session.
-	h.p.MFAPending.Delete(cookie.Value)
+	if err := h.p.MFAPending.Delete(cookie.Value); err != nil {
+		h.p.Log.Warn("delete mfa pending after webauthn", "err", err)
+	}
 	cookieCfg.Clear(w, auth.MFAPendingCookieName)
 
 	sess, err := h.p.Sessions.Create(u.ID)
