@@ -1,6 +1,7 @@
 package federation
 
 import (
+	"encoding/xml"
 	"io"
 	"log/slog"
 	"net/http"
@@ -196,19 +197,28 @@ func writePropResponse(w io.Writer, href string, info os.FileInfo) {
 	if info.IsDir() {
 		resourceType = "<d:collection/>"
 	}
+	// href incorporates the filename which is user-controlled; XML-escape it.
 	io.WriteString(w, `<d:response>`)
-	io.WriteString(w, `<d:href>`+href+`</d:href>`)
+	io.WriteString(w, `<d:href>`+xmlEscape(href)+`</d:href>`)
 	io.WriteString(w, `<d:propstat>`)
 	io.WriteString(w, `<d:prop>`)
 	io.WriteString(w, `<d:resourcetype>`+resourceType+`</d:resourcetype>`)
 	if !info.IsDir() {
-		io.WriteString(w, `<d:getcontentlength>`+strconv.Itoa(int(info.Size()))+`</d:getcontentlength>`)
+		io.WriteString(w, `<d:getcontentlength>`+strconv.FormatInt(info.Size(), 10)+`</d:getcontentlength>`)
 	}
 	io.WriteString(w, `<d:getlastmodified>`+info.ModTime().UTC().Format(http.TimeFormat)+`</d:getlastmodified>`)
 	io.WriteString(w, `</d:prop>`)
 	io.WriteString(w, `<d:status>HTTP/1.1 200 OK</d:status>`)
 	io.WriteString(w, `</d:propstat>`)
 	io.WriteString(w, `</d:response>`)
+}
+
+// xmlEscape escapes a string for inclusion as element content or quoted
+// attribute value in XML output.
+func xmlEscape(s string) string {
+	var b strings.Builder
+	xml.EscapeText(&b, []byte(s))
+	return b.String()
 }
 
 func (h *TokenWebDAVHandler) handlePut(w http.ResponseWriter, r *http.Request, username, targetPath string) {

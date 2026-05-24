@@ -554,9 +554,11 @@ func (h *WebDAVHandler) handleProppatch(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
-	// Return 207 Multi-Status response
+	// Return 207 Multi-Status response. Escape the href since filePath
+	// is user-controlled (filenames can contain "<", "&", etc.) — audit
+	// security.md #14.
 	hrefPrefix := "/remote.php/dav/files/" + urlUserID
-	href := hrefPrefix + filePath
+	href := xmlEscape(hrefPrefix + filePath)
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(207)
@@ -631,6 +633,7 @@ func (h *WebDAVHandler) handleReport(w http.ResponseWriter, r *http.Request, u *
 
 func (h *WebDAVHandler) handleLock(w http.ResponseWriter, r *http.Request, u *user.User, filePath string) {
 	// Stub: return a valid lock-discovery response so clients think locking succeeded.
+	// username and filePath are user-controlled; escape both for XML output.
 	token := "opaquelocktoken:stub-" + u.Username + "-" + filePath
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.Header().Set("Lock-Token", "<"+token+">")
@@ -647,7 +650,7 @@ func (h *WebDAVHandler) handleLock(w http.ResponseWriter, r *http.Request, u *us
       <D:locktoken><D:href>%s</D:href></D:locktoken>
     </D:activelock>
   </D:lockdiscovery>
-</D:prop>`, u.Username, token)
+</D:prop>`, xmlEscape(u.Username), xmlEscape(token))
 }
 
 // --- UNLOCK (stub) ---
