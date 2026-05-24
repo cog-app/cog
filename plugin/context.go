@@ -53,6 +53,9 @@ type PluginContext interface {
 	// Returns ErrQuotaExceeded if the upload would exceed the user's quota.
 	QuotaCheck(username string, additionalBytes int64) error
 
+	// Cookies returns the cookie configuration (Secure flag) for this deployment.
+	Cookies() CookieConfig
+
 	// Optional service accessors — return nil if the service is unavailable.
 	ShareStore() ShareStore
 	EmailSender() EmailSender

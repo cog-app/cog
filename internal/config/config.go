@@ -10,6 +10,23 @@ type Config struct {
 	LogFormat string `json:"log_format"` // "text" (default) or "json"
 	LogLevel  string `json:"log_level"`  // "debug", "info" (default), "warn", "error"
 
+	// TrustedProxies is a comma-separated list of CIDR ranges whose
+	// X-Forwarded-For / X-Real-IP headers are honored. Defaults to empty,
+	// meaning headers are ignored entirely. Set this to the reverse proxy's
+	// source range (e.g. "172.16.0.0/12" for a Docker bridge network, or
+	// "127.0.0.1/32,::1/128" for a local proxy).
+	TrustedProxies string `json:"trusted_proxies"`
+
+	// FederationPeers is a comma-separated allowlist of remote hosts whose
+	// inbound OCM shares are accepted. Empty = allow any.
+	FederationPeers string `json:"federation_peers"`
+
+	// TrustedProcessPlugins lists process plugin IDs (without the "cog-plugin-"
+	// prefix) that may be loaded as trusted: they receive the host CSRF secret
+	// and direct system DB access. Plugins not in this list are still
+	// discovered, but loaded sandboxed via gRPC.
+	TrustedProcessPlugins string `json:"trusted_process_plugins"`
+
 	SSHAddr        string `json:"ssh_addr"`          // env COG_SSH_ADDR, default ":2222"
 	SSHEnabled     bool   `json:"ssh_enabled"`       // env COG_SSH_ENABLED, default true
 	SSHHostKeyPath string `json:"ssh_host_key_path"` // env COG_SSH_HOST_KEY, default ""

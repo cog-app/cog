@@ -1,6 +1,7 @@
 package federation
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -8,6 +9,10 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
+
+func secretEqual(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
 
 // OCMHandler handles inbound OCM requests from remote servers.
 type OCMHandler struct {
@@ -75,8 +80,19 @@ func (h *OCMHandler) HandleReceiveShare(w http.ResponseWriter, r *http.Request) 
 		remoteHost = ocm.Owner[at+1:]
 	}
 
-	// Extract the shared secret token.
+	if !PeerAllowed(remoteHost) {
+		h.Log.Warn("federation share from disallowed peer", "host", remoteHost)
+		http.Error(w, "peer not allowed", http.StatusForbidden)
+		return
+	}
+
+	// Extract the shared secret token. Required: notifications cannot be
+	// authenticated without one.
 	token := ocm.Protocol.Options.SharedSecret
+	if token == "" {
+		http.Error(w, "missing sharedSecret", http.StatusBadRequest)
+		return
+	}
 
 	fs := &FederatedShare{
 		Direction:    "inbound",
@@ -120,34 +136,38 @@ func (h *OCMHandler) HandleNotification(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if notif.ProviderID == "" || notif.SharedSecret == "" {
+		http.Error(w, "providerId and sharedSecret required", http.StatusBadRequest)
+		return
+	}
+
+	fs, err := h.Store.Get(notif.ProviderID)
+	if err != nil {
+		// Don't leak whether the share existed.
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	if !secretEqual(fs.Token, notif.SharedSecret) {
+		h.Log.Warn("federation notification with bad secret", "id", fs.ID, "type", notif.NotificationType)
+		http.Error(w, "invalid sharedSecret", http.StatusForbidden)
+		return
+	}
+
 	switch notif.NotificationType {
 	case NotifyShareAccepted:
-		// The remote user accepted our outbound share.
-		if notif.ProviderID != "" {
-			fs, err := h.Store.Get(notif.ProviderID)
-			if err == nil && fs.Direction == "outbound" {
-				h.Store.UpdateState(fs.ID, "accepted")
-				h.Log.Info("outbound share accepted", "id", fs.ID)
-			}
+		if fs.Direction == "outbound" {
+			h.Store.UpdateState(fs.ID, "accepted")
+			h.Log.Info("outbound share accepted", "id", fs.ID)
 		}
-
 	case NotifyShareDeclined:
-		if notif.ProviderID != "" {
-			fs, err := h.Store.Get(notif.ProviderID)
-			if err == nil && fs.Direction == "outbound" {
-				h.Store.UpdateState(fs.ID, "rejected")
-				h.Log.Info("outbound share declined", "id", fs.ID)
-			}
+		if fs.Direction == "outbound" {
+			h.Store.UpdateState(fs.ID, "rejected")
+			h.Log.Info("outbound share declined", "id", fs.ID)
 		}
-
 	case NotifyShareUnshared:
-		if notif.ProviderID != "" {
-			fs, err := h.Store.Get(notif.ProviderID)
-			if err == nil {
-				h.Store.UpdateState(fs.ID, "removed")
-				h.Log.Info("share unshared by remote", "id", fs.ID)
-			}
-		}
+		h.Store.UpdateState(fs.ID, "removed")
+		h.Log.Info("share unshared by remote", "id", fs.ID)
 	}
 
 	w.WriteHeader(http.StatusOK)

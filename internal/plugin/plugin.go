@@ -30,6 +30,7 @@ type SubjectRef = cogplugin.SubjectRef
 type ResourceRef = cogplugin.ResourceRef
 type SearchSourceDef = cogplugin.SearchSourceDef
 type PermissionLevel = cogplugin.PermissionLevel
+type CookieConfig = cogplugin.CookieConfig
 type ShareStore = cogplugin.ShareStore
 type ShareRecord = cogplugin.ShareRecord
 type AccessDecision = cogplugin.AccessDecision

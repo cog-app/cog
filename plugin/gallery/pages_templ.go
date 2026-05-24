@@ -1048,7 +1048,7 @@ func photoViewPage(activePath string, m *Media, tags []Tag, faces []Face, csrfTo
 					}
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "</div><script>\n\t\t\t\t\t\tfunction openLightbox(img) {\n\t\t\t\t\t\t\tvar src = img.getAttribute('data-full-src');\n\t\t\t\t\t\t\tvar overlay = document.createElement('div');\n\t\t\t\t\t\t\toverlay.className = 'lightbox';\n\t\t\t\t\t\t\tvar lbImg = document.createElement('img');\n\t\t\t\t\t\t\tlbImg.src = src;\n\t\t\t\t\t\t\tlbImg.alt = '';\n\t\t\t\t\t\t\tvar closeBtn = document.createElement('button');\n\t\t\t\t\t\t\tcloseBtn.className = 'lightbox-close';\n\t\t\t\t\t\t\tcloseBtn.setAttribute('aria-label', 'Close');\n\t\t\t\t\t\t\tcloseBtn.innerHTML = '&times;';\n\t\t\t\t\t\t\toverlay.appendChild(closeBtn);\n\t\t\t\t\t\t\toverlay.appendChild(lbImg);\n\n\t\t\t\t\t\t\tfunction closeLightbox() {\n\t\t\t\t\t\t\t\toverlay.remove();\n\t\t\t\t\t\t\t\tdocument.removeEventListener('keydown', keyHandler);\n\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\tlbImg.addEventListener('click', function(e) {\n\t\t\t\t\t\t\t\te.stopPropagation();\n\t\t\t\t\t\t\t\toverlay.classList.toggle('lightbox-full');\n\t\t\t\t\t\t\t});\n\n\t\t\t\t\t\t\toverlay.addEventListener('click', function(e) {\n\t\t\t\t\t\t\t\tif (e.target === overlay || e.target === closeBtn) {\n\t\t\t\t\t\t\t\t\tcloseLightbox();\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t});\n\n\t\t\t\t\t\t\tfunction keyHandler(e) {\n\t\t\t\t\t\t\t\tif (e.key === 'Escape') closeLightbox();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tdocument.addEventListener('keydown', keyHandler);\n\t\t\t\t\t\t\tdocument.body.appendChild(overlay);\n\t\t\t\t\t\t}\n\t\t\t\t\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "</div><script>\n\t\t\t\t\t\t\tfunction openLightbox(img) {\n\t\t\t\t\t\t\t\tvar src = img.getAttribute(\"data-full-src\");\n\t\t\t\t\t\t\t\tvar overlay = document.createElement(\"div\");\n\t\t\t\t\t\t\t\toverlay.className = \"lightbox\";\n\t\t\t\t\t\t\t\tvar lbImg = document.createElement(\"img\");\n\t\t\t\t\t\t\t\tlbImg.src = src;\n\t\t\t\t\t\t\t\tlbImg.alt = \"\";\n\t\t\t\t\t\t\t\tvar closeBtn = document.createElement(\"button\");\n\t\t\t\t\t\t\t\tcloseBtn.className = \"lightbox-close\";\n\t\t\t\t\t\t\t\tcloseBtn.setAttribute(\"aria-label\", \"Close\");\n\t\t\t\t\t\t\t\tcloseBtn.innerHTML = \"&times;\";\n\t\t\t\t\t\t\t\toverlay.appendChild(closeBtn);\n\t\t\t\t\t\t\t\toverlay.appendChild(lbImg);\n\n\t\t\t\t\t\t\t\tfunction closeLightbox() {\n\t\t\t\t\t\t\t\t\toverlay.remove();\n\t\t\t\t\t\t\t\t\tdocument.removeEventListener(\"keydown\", keyHandler);\n\t\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t\tlbImg.addEventListener(\"click\", function (e) {\n\t\t\t\t\t\t\t\t\te.stopPropagation();\n\t\t\t\t\t\t\t\t\toverlay.classList.toggle(\"lightbox-full\");\n\t\t\t\t\t\t\t\t});\n\n\t\t\t\t\t\t\t\toverlay.addEventListener(\"click\", function (e) {\n\t\t\t\t\t\t\t\t\tif (e.target === overlay || e.target === closeBtn) {\n\t\t\t\t\t\t\t\t\t\tcloseLightbox();\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t});\n\n\t\t\t\t\t\t\t\tfunction keyHandler(e) {\n\t\t\t\t\t\t\t\t\tif (e.key === \"Escape\") closeLightbox();\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tdocument.addEventListener(\"keydown\", keyHandler);\n\t\t\t\t\t\t\t\tdocument.body.appendChild(overlay);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2017,7 +2017,7 @@ func personNameForm(person *Person, csrfToken string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 166, "\" hx-trigger=\"input changed delay:200ms\" hx-target=\"next .picker-results\" hx-include=\"this\" hx-params=\"name\"><div class=\"picker-results\"></div></div><button type=\"submit\" class=\"btn btn-primary btn-sm\">Save</button><script>\n\t\t(function() {\n\t\t\tvar form = document.currentScript.parentElement;\n\t\t\tvar input = form.querySelector('.person-name-input');\n\t\t\tvar results = form.querySelector('.picker-results');\n\t\t\tvar mergeField = form.querySelector('.merge-target');\n\t\t\tvar contactField = form.querySelector('.contact-target');\n\n\t\t\t// Close when clicking outside.\n\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\tif (!form.contains(e.target)) results.innerHTML = '';\n\t\t\t});\n\n\t\t\t// Handle result click — merge into person or link to contact.\n\t\t\tresults.addEventListener('click', function(e) {\n\t\t\t\tvar opt = e.target.closest('.picker-option');\n\t\t\t\tif (!opt) return;\n\t\t\t\tvar id = opt.dataset.id;\n\t\t\t\tif (id.indexOf('contact:') === 0) {\n\t\t\t\t\tcontactField.value = id.substring(8);\n\t\t\t\t\tmergeField.value = '';\n\t\t\t\t} else {\n\t\t\t\t\tmergeField.value = id;\n\t\t\t\t\tcontactField.value = '';\n\t\t\t\t}\n\t\t\t\tinput.value = opt.dataset.name;\n\t\t\t\tresults.innerHTML = '';\n\t\t\t});\n\n\t\t\t// Clear merge/contact targets when user edits name manually.\n\t\t\tinput.addEventListener('input', function() {\n\t\t\t\tmergeField.value = '';\n\t\t\t\tcontactField.value = '';\n\t\t\t});\n\n\t\t\t// Keyboard navigation.\n\t\t\tinput.addEventListener('keydown', function(e) {\n\t\t\t\tvar opts = results.querySelectorAll('.picker-option');\n\t\t\t\tif (!opts.length) return;\n\t\t\t\tvar cur = results.querySelector('.picker-option.active');\n\t\t\t\tvar idx = cur ? Array.prototype.indexOf.call(opts, cur) : -1;\n\t\t\t\tif (e.key === 'ArrowDown') {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tif (cur) cur.classList.remove('active');\n\t\t\t\t\tidx = (idx + 1) % opts.length;\n\t\t\t\t\topts[idx].classList.add('active');\n\t\t\t\t} else if (e.key === 'ArrowUp') {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tif (cur) cur.classList.remove('active');\n\t\t\t\t\tidx = idx <= 0 ? opts.length - 1 : idx - 1;\n\t\t\t\t\topts[idx].classList.add('active');\n\t\t\t\t} else if (e.key === 'Enter' && cur) {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tcur.click();\n\t\t\t\t} else if (e.key === 'Escape') {\n\t\t\t\t\tresults.innerHTML = '';\n\t\t\t\t}\n\t\t\t});\n\t\t})();\n\t\t</script></form>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 166, "\" hx-trigger=\"input changed delay:200ms\" hx-target=\"next .picker-results\" hx-include=\"this\" hx-params=\"name\"><div class=\"picker-results\"></div></div><button type=\"submit\" class=\"btn btn-primary btn-sm\">Save</button><script>\n\t\t\t(function () {\n\t\t\t\tvar form = document.currentScript.parentElement;\n\t\t\t\tvar input = form.querySelector(\".person-name-input\");\n\t\t\t\tvar results = form.querySelector(\".picker-results\");\n\t\t\t\tvar mergeField = form.querySelector(\".merge-target\");\n\t\t\t\tvar contactField = form.querySelector(\".contact-target\");\n\n\t\t\t\t// Close when clicking outside.\n\t\t\t\tdocument.addEventListener(\"click\", function (e) {\n\t\t\t\t\tif (!form.contains(e.target)) results.innerHTML = \"\";\n\t\t\t\t});\n\n\t\t\t\t// Handle result click — merge into person or link to contact.\n\t\t\t\tresults.addEventListener(\"click\", function (e) {\n\t\t\t\t\tvar opt = e.target.closest(\".picker-option\");\n\t\t\t\t\tif (!opt) return;\n\t\t\t\t\tvar id = opt.dataset.id;\n\t\t\t\t\tif (id.indexOf(\"contact:\") === 0) {\n\t\t\t\t\t\tcontactField.value = id.substring(8);\n\t\t\t\t\t\tmergeField.value = \"\";\n\t\t\t\t\t} else {\n\t\t\t\t\t\tmergeField.value = id;\n\t\t\t\t\t\tcontactField.value = \"\";\n\t\t\t\t\t}\n\t\t\t\t\tinput.value = opt.dataset.name;\n\t\t\t\t\tresults.innerHTML = \"\";\n\t\t\t\t});\n\n\t\t\t\t// Clear merge/contact targets when user edits name manually.\n\t\t\t\tinput.addEventListener(\"input\", function () {\n\t\t\t\t\tmergeField.value = \"\";\n\t\t\t\t\tcontactField.value = \"\";\n\t\t\t\t});\n\n\t\t\t\t// Keyboard navigation.\n\t\t\t\tinput.addEventListener(\"keydown\", function (e) {\n\t\t\t\t\tvar opts = results.querySelectorAll(\".picker-option\");\n\t\t\t\t\tif (!opts.length) return;\n\t\t\t\t\tvar cur = results.querySelector(\".picker-option.active\");\n\t\t\t\t\tvar idx = cur ? Array.prototype.indexOf.call(opts, cur) : -1;\n\t\t\t\t\tif (e.key === \"ArrowDown\") {\n\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\tif (cur) cur.classList.remove(\"active\");\n\t\t\t\t\t\tidx = (idx + 1) % opts.length;\n\t\t\t\t\t\topts[idx].classList.add(\"active\");\n\t\t\t\t\t} else if (e.key === \"ArrowUp\") {\n\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\tif (cur) cur.classList.remove(\"active\");\n\t\t\t\t\t\tidx = idx <= 0 ? opts.length - 1 : idx - 1;\n\t\t\t\t\t\topts[idx].classList.add(\"active\");\n\t\t\t\t\t} else if (e.key === \"Enter\" && cur) {\n\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\tcur.click();\n\t\t\t\t\t} else if (e.key === \"Escape\") {\n\t\t\t\t\t\tresults.innerHTML = \"\";\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t})();\n\t\t</script></form>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3405,7 +3405,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 280, "\" step=\"0.05\" min=\"0\" max=\"1\"> <small class=\"text-muted\">Tags below this confidence are discarded. Default: 0.5</small></div><button type=\"submit\" class=\"btn btn-primary btn-sm\">Save</button><script>\n\t\t\t(function() {\n\t\t\t\tvar sel = document.querySelector('select[name=\"tag_backend\"]');\n\t\t\t\tvar group = document.getElementById('tag-model-group');\n\t\t\t\tfunction update() { group.style.display = sel.value === 'onnx' ? '' : 'none'; }\n\t\t\t\tsel.addEventListener('change', update);\n\t\t\t\tupdate();\n\t\t\t})();\n\t\t\t</script></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 280, "\" step=\"0.05\" min=\"0\" max=\"1\"> <small class=\"text-muted\">Tags below this confidence are discarded. Default: 0.5</small></div><button type=\"submit\" class=\"btn btn-primary btn-sm\">Save</button><script>\n\t\t\t\t(function () {\n\t\t\t\t\tvar sel = document.querySelector('select[name=\"tag_backend\"]');\n\t\t\t\t\tvar group = document.getElementById(\"tag-model-group\");\n\t\t\t\t\tfunction update() {\n\t\t\t\t\t\tgroup.style.display = sel.value === \"onnx\" ? \"\" : \"none\";\n\t\t\t\t\t}\n\t\t\t\t\tsel.addEventListener(\"change\", update);\n\t\t\t\t\tupdate();\n\t\t\t\t})();\n\t\t\t</script></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -3434,7 +3434,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			var templ_7745c5c3_Var173 string
 			templ_7745c5c3_Var173, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1010, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1012, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var173))
 			if templ_7745c5c3_Err != nil {
@@ -3477,7 +3477,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			var templ_7745c5c3_Var174 string
 			templ_7745c5c3_Var174, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "face_min_confidence", "0.7"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1022, Col: 118}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1024, Col: 118}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var174))
 			if templ_7745c5c3_Err != nil {
@@ -3490,7 +3490,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			var templ_7745c5c3_Var175 string
 			templ_7745c5c3_Var175, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "cluster_threshold", "0.35"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1027, Col: 115}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1029, Col: 115}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var175))
 			if templ_7745c5c3_Err != nil {
@@ -3525,7 +3525,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			var templ_7745c5c3_Var177 string
 			templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1035, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1037, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var177))
 			if templ_7745c5c3_Err != nil {
@@ -3598,7 +3598,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			var templ_7745c5c3_Var178 string
 			templ_7745c5c3_Var178, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "duplicate_distance", "5"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1055, Col: 114}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1057, Col: 114}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var178))
 			if templ_7745c5c3_Err != nil {
@@ -3633,7 +3633,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			var templ_7745c5c3_Var180 string
 			templ_7745c5c3_Var180, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1063, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1065, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var180))
 			if templ_7745c5c3_Err != nil {
@@ -3678,7 +3678,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			var templ_7745c5c3_Var182 string
 			templ_7745c5c3_Var182, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1077, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1079, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var182))
 			if templ_7745c5c3_Err != nil {
@@ -3733,7 +3733,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			var templ_7745c5c3_Var184 string
 			templ_7745c5c3_Var184, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1096, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1098, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var184))
 			if templ_7745c5c3_Err != nil {
@@ -3746,7 +3746,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			var templ_7745c5c3_Var185 string
 			templ_7745c5c3_Var185, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "onnx_library_path", ""))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1101, Col: 109}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1103, Col: 109}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var185))
 			if templ_7745c5c3_Err != nil {
@@ -3759,7 +3759,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			var templ_7745c5c3_Var186 string
 			templ_7745c5c3_Var186, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "onnx_models_dir", ""))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1106, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1108, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var186))
 			if templ_7745c5c3_Err != nil {
@@ -3772,7 +3772,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			var templ_7745c5c3_Var187 string
 			templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "recognition_url", ""))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1110, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1112, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var187))
 			if templ_7745c5c3_Err != nil {
@@ -3785,7 +3785,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			var templ_7745c5c3_Var188 string
 			templ_7745c5c3_Var188, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "recognition_api_key", ""))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1114, Col: 117}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1116, Col: 117}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var188))
 			if templ_7745c5c3_Err != nil {
@@ -3798,7 +3798,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			var templ_7745c5c3_Var189 string
 			templ_7745c5c3_Var189, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "recognition_model", ""))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1118, Col: 109}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1120, Col: 109}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var189))
 			if templ_7745c5c3_Err != nil {
@@ -3893,7 +3893,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) t
 				var templ_7745c5c3_Var192 string
 				templ_7745c5c3_Var192, templ_7745c5c3_Err = templ.JoinStringErrs(scan.LastRun.Format("Jan 2, 2006 3:04:05 PM"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1150, Col: 57}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1152, Col: 57}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var192))
 				if templ_7745c5c3_Err != nil {
@@ -3912,7 +3912,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) t
 				var templ_7745c5c3_Var193 string
 				templ_7745c5c3_Var193, templ_7745c5c3_Err = templ.JoinStringErrs(scan.LastError.Error())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1156, Col: 68}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1158, Col: 68}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var193))
 				if templ_7745c5c3_Err != nil {
@@ -3936,7 +3936,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) t
 					var templ_7745c5c3_Var194 string
 					templ_7745c5c3_Var194, templ_7745c5c3_Err = templ.JoinStringErrs(w)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1164, Col: 16}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1166, Col: 16}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var194))
 					if templ_7745c5c3_Err != nil {
@@ -3959,7 +3959,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) t
 			var templ_7745c5c3_Var195 string
 			templ_7745c5c3_Var195, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.TotalImages))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1171, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1173, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var195))
 			if templ_7745c5c3_Err != nil {
@@ -3972,7 +3972,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) t
 			var templ_7745c5c3_Var196 string
 			templ_7745c5c3_Var196, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.Done))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1175, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1177, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var196))
 			if templ_7745c5c3_Err != nil {
@@ -3985,7 +3985,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) t
 			var templ_7745c5c3_Var197 string
 			templ_7745c5c3_Var197, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.Pending))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1179, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1181, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var197))
 			if templ_7745c5c3_Err != nil {
@@ -4003,7 +4003,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) t
 				var templ_7745c5c3_Var198 string
 				templ_7745c5c3_Var198, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.Errored))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1185, Col: 36}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1187, Col: 36}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var198))
 				if templ_7745c5c3_Err != nil {
@@ -4022,7 +4022,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) t
 						var templ_7745c5c3_Var199 string
 						templ_7745c5c3_Var199, templ_7745c5c3_Err = templ.JoinStringErrs(e)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1188, Col: 43}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1190, Col: 43}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var199))
 						if templ_7745c5c3_Err != nil {
@@ -4046,7 +4046,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) t
 			var templ_7745c5c3_Var200 string
 			templ_7745c5c3_Var200, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1197, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1199, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var200))
 			if templ_7745c5c3_Err != nil {
@@ -4089,7 +4089,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) t
 				var templ_7745c5c3_Var201 string
 				templ_7745c5c3_Var201, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1208, Col: 62}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1210, Col: 62}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var201))
 				if templ_7745c5c3_Err != nil {
@@ -4155,7 +4155,7 @@ func renamePreviewPage(pattern string, previews []RenamePreview, csrfToken strin
 		var templ_7745c5c3_Var203 string
 		templ_7745c5c3_Var203, templ_7745c5c3_Err = templ.JoinStringErrs(pattern)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1225, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1227, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var203))
 		if templ_7745c5c3_Err != nil {
@@ -4196,7 +4196,7 @@ func renamePreviewPage(pattern string, previews []RenamePreview, csrfToken strin
 			var templ_7745c5c3_Var205 string
 			templ_7745c5c3_Var205, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(previews)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1231, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1233, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var205))
 			if templ_7745c5c3_Err != nil {
@@ -4230,7 +4230,7 @@ func renamePreviewPage(pattern string, previews []RenamePreview, csrfToken strin
 					var templ_7745c5c3_Var207 string
 					templ_7745c5c3_Var207, templ_7745c5c3_Err = templ.JoinStringErrs(p.OldPath)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1243, Col: 24}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1245, Col: 24}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var207))
 					if templ_7745c5c3_Err != nil {
@@ -4243,7 +4243,7 @@ func renamePreviewPage(pattern string, previews []RenamePreview, csrfToken strin
 					var templ_7745c5c3_Var208 string
 					templ_7745c5c3_Var208, templ_7745c5c3_Err = templ.JoinStringErrs(p.NewPath)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1244, Col: 24}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1246, Col: 24}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var208))
 					if templ_7745c5c3_Err != nil {
@@ -4271,7 +4271,7 @@ func renamePreviewPage(pattern string, previews []RenamePreview, csrfToken strin
 			var templ_7745c5c3_Var209 string
 			templ_7745c5c3_Var209, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1251, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1253, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var209))
 			if templ_7745c5c3_Err != nil {
@@ -4284,7 +4284,7 @@ func renamePreviewPage(pattern string, previews []RenamePreview, csrfToken strin
 			var templ_7745c5c3_Var210 string
 			templ_7745c5c3_Var210, templ_7745c5c3_Err = templ.JoinStringErrs(pattern)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1252, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1254, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var210))
 			if templ_7745c5c3_Err != nil {

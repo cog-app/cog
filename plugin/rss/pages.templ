@@ -59,25 +59,30 @@ templ rssSidebar(sb sidebarData) {
 		<a href="/apps/rss/settings" class={ sidebarClass(sb.ActivePath, "/apps/rss/settings") }>Settings</a>
 	</nav>
 	<script>
-	// Preserve folder open/closed state across HTMX sidebar refreshes
-	(function() {
-		var openFolders = new Set();
-		document.addEventListener('htmx:beforeSwap', function(e) {
-			if (e.detail.target && e.detail.target.id === 'rss-sidebar') {
-				openFolders.clear();
-				e.detail.target.querySelectorAll('details[data-folder-id]').forEach(function(d) {
-					if (d.open) openFolders.add(d.getAttribute('data-folder-id'));
-				});
-			}
-		});
-		document.addEventListener('htmx:afterSwap', function(e) {
-			if (e.detail.target && e.detail.target.id === 'rss-sidebar') {
-				e.detail.target.querySelectorAll('details[data-folder-id]').forEach(function(d) {
-					if (openFolders.has(d.getAttribute('data-folder-id'))) d.open = true;
-				});
-			}
-		});
-	})();
+		// Preserve folder open/closed state across HTMX sidebar refreshes
+		(function () {
+			var openFolders = new Set();
+			document.addEventListener("htmx:beforeSwap", function (e) {
+				if (e.detail.target && e.detail.target.id === "rss-sidebar") {
+					openFolders.clear();
+					e.detail.target
+						.querySelectorAll("details[data-folder-id]")
+						.forEach(function (d) {
+							if (d.open) openFolders.add(d.getAttribute("data-folder-id"));
+						});
+				}
+			});
+			document.addEventListener("htmx:afterSwap", function (e) {
+				if (e.detail.target && e.detail.target.id === "rss-sidebar") {
+					e.detail.target
+						.querySelectorAll("details[data-folder-id]")
+						.forEach(function (d) {
+							if (openFolders.has(d.getAttribute("data-folder-id")))
+								d.open = true;
+						});
+				}
+			});
+		})();
 	</script>
 }
 
@@ -187,63 +192,89 @@ templ rssItemList(items []ItemWithFeed, csrfToken string) {
 		}
 	</div>
 	<script>
-	function toggleArticle(id) {
-		var el = document.getElementById('detail-' + id);
-		var row = document.getElementById('item-' + id);
-		var summary = document.getElementById('summary-' + id);
-		if (!el) return;
-		var isOpen = el.style.display !== 'none';
-		// Close all open details
-		document.querySelectorAll('.rss-item-detail').forEach(function(d) { d.style.display = 'none'; });
-		document.querySelectorAll('.rss-item-active').forEach(function(r) { r.classList.remove('rss-item-active'); });
-		document.querySelectorAll('.rss-item-summary-line').forEach(function(s) { s.style.display = ''; });
-		if (!isOpen) {
-			el.style.display = '';
-			row.classList.add('rss-item-active');
-			if (summary) summary.style.display = 'none';
-			// Mark as read visually and on the server
-			if (!row.classList.contains('rss-item-read')) {
-				row.classList.add('rss-item-read');
-				// Update the read toggle button to show hollow circle (read state)
-				var readBtn = row.querySelector('[title="Toggle read"]');
-				if (readBtn) readBtn.innerHTML = '\u25CB';
-			}
-			fetch('/apps/rss/items/' + id + '/mark-read', {
-				method: 'POST',
-				headers: {'X-CSRF-Token': document.querySelector('[name=csrf_token]') ? document.querySelector('[name=csrf_token]').value : ''}
+		function toggleArticle(id) {
+			var el = document.getElementById("detail-" + id);
+			var row = document.getElementById("item-" + id);
+			var summary = document.getElementById("summary-" + id);
+			if (!el) return;
+			var isOpen = el.style.display !== "none";
+			// Close all open details
+			document.querySelectorAll(".rss-item-detail").forEach(function (d) {
+				d.style.display = "none";
 			});
-		}
-	}
-	(function() {
-		document.addEventListener('keydown', function(e) {
-			if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
-			var items = Array.from(document.querySelectorAll('.rss-item'));
-			var active = document.querySelector('.rss-item-active');
-			var idx = active ? items.indexOf(active) : -1;
-			if (e.key === 'j') {
-				e.preventDefault();
-				var next = idx + 1;
-				if (next < items.length) {
-					var id = items[next].id.replace('item-', '');
-					toggleArticle(id);
-					items[next].scrollIntoView({block: 'nearest', behavior: 'smooth'});
+			document.querySelectorAll(".rss-item-active").forEach(function (r) {
+				r.classList.remove("rss-item-active");
+			});
+			document.querySelectorAll(".rss-item-summary-line").forEach(function (s) {
+				s.style.display = "";
+			});
+			if (!isOpen) {
+				el.style.display = "";
+				row.classList.add("rss-item-active");
+				if (summary) summary.style.display = "none";
+				// Mark as read visually and on the server
+				if (!row.classList.contains("rss-item-read")) {
+					row.classList.add("rss-item-read");
+					// Update the read toggle button to show hollow circle (read state)
+					var readBtn = row.querySelector('[title="Toggle read"]');
+					if (readBtn) readBtn.innerHTML = "\u25CB";
 				}
-			} else if (e.key === 'k') {
-				e.preventDefault();
-				var prev = idx - 1;
-				if (prev >= 0) {
-					var id = items[prev].id.replace('item-', '');
-					toggleArticle(id);
-					items[prev].scrollIntoView({block: 'nearest', behavior: 'smooth'});
-				}
-			} else if (e.key === 'o' || e.key === 'Enter') {
-				if (active) {
-					var link = active.querySelector('.rss-item-detail a[target=_blank]');
-					if (link) { e.preventDefault(); window.open(link.href, '_blank'); }
-				}
+				fetch("/apps/rss/items/" + id + "/mark-read", {
+					method: "POST",
+					headers: {
+						"X-CSRF-Token": document.querySelector("[name=csrf_token]")
+							? document.querySelector("[name=csrf_token]").value
+							: "",
+					},
+				});
 			}
-		});
-	})();
+		}
+		(function () {
+			document.addEventListener("keydown", function (e) {
+				if (
+					e.target.tagName === "INPUT" ||
+					e.target.tagName === "TEXTAREA" ||
+					e.target.tagName === "SELECT"
+				)
+					return;
+				var items = Array.from(document.querySelectorAll(".rss-item"));
+				var active = document.querySelector(".rss-item-active");
+				var idx = active ? items.indexOf(active) : -1;
+				if (e.key === "j") {
+					e.preventDefault();
+					var next = idx + 1;
+					if (next < items.length) {
+						var id = items[next].id.replace("item-", "");
+						toggleArticle(id);
+						items[next].scrollIntoView({
+							block: "nearest",
+							behavior: "smooth",
+						});
+					}
+				} else if (e.key === "k") {
+					e.preventDefault();
+					var prev = idx - 1;
+					if (prev >= 0) {
+						var id = items[prev].id.replace("item-", "");
+						toggleArticle(id);
+						items[prev].scrollIntoView({
+							block: "nearest",
+							behavior: "smooth",
+						});
+					}
+				} else if (e.key === "o" || e.key === "Enter") {
+					if (active) {
+						var link = active.querySelector(
+							".rss-item-detail a[target=_blank]",
+						);
+						if (link) {
+							e.preventDefault();
+							window.open(link.href, "_blank");
+						}
+					}
+				}
+			});
+		})();
 	</script>
 }
 

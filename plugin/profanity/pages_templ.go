@@ -230,7 +230,7 @@ func profanityAdminPage(cfg adminSettingsData, flash string, csrfToken string) t
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\" placeholder=\"echo $TEXT | piper --output_file $OUTPUT\"><div class=\"text-muted\" style=\"font-size:0.85rem;margin-top:0.25rem\">Command template. Use $TEXT and $OUTPUT as placeholders.</div></div><button class=\"btn btn-primary\" type=\"submit\">Save</button></form><script>\n\t\tdocument.getElementById('tts_engine').addEventListener('change', function() {\n\t\t\tdocument.getElementById('tts-piper').style.display = this.value === 'piper' ? '' : 'none';\n\t\t\tdocument.getElementById('tts-system').style.display = this.value === 'system' ? '' : 'none';\n\t\t});\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\" placeholder=\"echo $TEXT | piper --output_file $OUTPUT\"><div class=\"text-muted\" style=\"font-size:0.85rem;margin-top:0.25rem\">Command template. Use $TEXT and $OUTPUT as placeholders.</div></div><button class=\"btn btn-primary\" type=\"submit\">Save</button></form><script>\n\t\t\tdocument\n\t\t\t\t.getElementById(\"tts_engine\")\n\t\t\t\t.addEventListener(\"change\", function () {\n\t\t\t\t\tdocument.getElementById(\"tts-piper\").style.display =\n\t\t\t\t\t\tthis.value === \"piper\" ? \"\" : \"none\";\n\t\t\t\t\tdocument.getElementById(\"tts-system\").style.display =\n\t\t\t\t\t\tthis.value === \"system\" ? \"\" : \"none\";\n\t\t\t\t});\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

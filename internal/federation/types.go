@@ -67,10 +67,14 @@ type OCMResourceType struct {
 }
 
 // OCMNotification is sent between servers to communicate share state changes.
+// SharedSecret authenticates the notification: the sender echoes back the
+// secret that was established at share creation. Notifications without a
+// matching secret are rejected.
 type OCMNotification struct {
 	NotificationType string `json:"notificationType"`
 	ResourceType     string `json:"resourceType"`
 	ProviderID       string `json:"providerId"`
+	SharedSecret     string `json:"sharedSecret"`
 	Notification     any    `json:"notification"`
 }
 

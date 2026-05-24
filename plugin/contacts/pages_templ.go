@@ -456,7 +456,7 @@ func contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken stri
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</select></div><div class=\"form-group\"><label for=\"cc-fn\">Name</label> <input class=\"form-control\" type=\"text\" id=\"cc-fn\" name=\"fn\" required></div><!-- Emails --><fieldset style=\"border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem\"><legend style=\"font-weight:500;font-size:0.9rem\">Emails</legend><div id=\"cc-emails\"><div class=\"flex gap-1 items-end mb-1\"><select class=\"form-control\" name=\"email_type\" style=\"width:100px\"><option value=\"INTERNET\">Personal</option> <option value=\"WORK\">Work</option> <option value=\"HOME\">Home</option></select> <input class=\"form-control\" type=\"email\" name=\"email_value\" placeholder=\"email@example.com\" style=\"flex:1\"></div></div><button type=\"button\" class=\"btn btn-outline btn-sm\" onclick=\"addField('cc-emails','email')\">+ Add email</button></fieldset><!-- Phones --><fieldset style=\"border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem\"><legend style=\"font-weight:500;font-size:0.9rem\">Phones</legend><div id=\"cc-phones\"><div class=\"flex gap-1 items-end mb-1\"><select class=\"form-control\" name=\"phone_type\" style=\"width:100px\"><option value=\"CELL\">Cell</option> <option value=\"WORK\">Work</option> <option value=\"HOME\">Home</option> <option value=\"FAX\">Fax</option></select> <input class=\"form-control\" type=\"tel\" name=\"phone_value\" placeholder=\"+1 555-1234\" style=\"flex:1\"></div></div><button type=\"button\" class=\"btn btn-outline btn-sm\" onclick=\"addField('cc-phones','phone')\">+ Add phone</button></fieldset><!-- Business fields --><fieldset style=\"border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem\"><legend style=\"font-weight:500;font-size:0.9rem\">Work</legend><div class=\"form-group\"><label for=\"cc-org\">Organization</label> <input class=\"form-control\" type=\"text\" id=\"cc-org\" name=\"org\"></div><div class=\"form-group\"><label for=\"cc-title\">Title</label> <input class=\"form-control\" type=\"text\" id=\"cc-title\" name=\"title\"></div></fieldset><div class=\"form-group\"><label for=\"cc-note\">Note</label> <textarea class=\"form-control\" id=\"cc-note\" name=\"note\" rows=\"3\"></textarea></div><div class=\"flex gap-1\" style=\"justify-content:flex-end\"><button type=\"button\" class=\"btn\" onclick=\"document.getElementById('create-contact-modal').style.display='none'\">Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Create</button></div></form></div></div><style>\n\t\t\t.avatar-initials {\n\t\t\t\tdisplay: inline-flex; align-items: center; justify-content: center;\n\t\t\t\twidth: 32px; height: 32px; border-radius: 50%;\n\t\t\t\tcolor: #fff; font-weight: 600; font-size: 0.8rem;\n\t\t\t}\n\t\t\t.typed-label { font-size:0.75rem; color:var(--color-muted,#888); text-transform:uppercase; }\n\t\t</style><script>\n\t\tfunction showContactDetail(id) {\n\t\t\tfetch('/apps/contacts/contacts/' + id, {\n\t\t\t\theaders: {'X-CSRF-Token': document.querySelector('[name=csrf_token]').value}\n\t\t\t})\n\t\t\t.then(function(r) { return r.text(); })\n\t\t\t.then(function(html) {\n\t\t\t\tvar el = document.getElementById('contact-modal-body');\n\t\t\t\tel.innerHTML = html;\n\t\t\t\thtmx.process(el);\n\t\t\t\tdocument.getElementById('contact-modal').style.display = 'flex';\n\t\t\t});\n\t\t}\n\t\tfunction addField(containerId, kind) {\n\t\t\tvar container = document.getElementById(containerId);\n\t\t\tvar row = document.createElement('div');\n\t\t\trow.className = 'flex gap-1 items-end mb-1';\n\t\t\tif (kind === 'email') {\n\t\t\t\trow.innerHTML = '<select class=\"form-control\" name=\"email_type\" style=\"width:100px\">' +\n\t\t\t\t\t'<option value=\"INTERNET\">Personal</option><option value=\"WORK\">Work</option><option value=\"HOME\">Home</option>' +\n\t\t\t\t\t'</select>' +\n\t\t\t\t\t'<input class=\"form-control\" type=\"email\" name=\"email_value\" placeholder=\"email@example.com\" style=\"flex:1\"/>' +\n\t\t\t\t\t'<button type=\"button\" class=\"btn btn-danger btn-sm\" onclick=\"this.parentElement.remove()\">X</button>';\n\t\t\t} else {\n\t\t\t\trow.innerHTML = '<select class=\"form-control\" name=\"phone_type\" style=\"width:100px\">' +\n\t\t\t\t\t'<option value=\"CELL\">Cell</option><option value=\"WORK\">Work</option><option value=\"HOME\">Home</option><option value=\"FAX\">Fax</option>' +\n\t\t\t\t\t'</select>' +\n\t\t\t\t\t'<input class=\"form-control\" type=\"tel\" name=\"phone_value\" placeholder=\"+1 555-1234\" style=\"flex:1\"/>' +\n\t\t\t\t\t'<button type=\"button\" class=\"btn btn-danger btn-sm\" onclick=\"this.parentElement.remove()\">X</button>';\n\t\t\t}\n\t\t\tcontainer.appendChild(row);\n\t\t}\n\t\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</select></div><div class=\"form-group\"><label for=\"cc-fn\">Name</label> <input class=\"form-control\" type=\"text\" id=\"cc-fn\" name=\"fn\" required></div><!-- Emails --><fieldset style=\"border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem\"><legend style=\"font-weight:500;font-size:0.9rem\">Emails</legend><div id=\"cc-emails\"><div class=\"flex gap-1 items-end mb-1\"><select class=\"form-control\" name=\"email_type\" style=\"width:100px\"><option value=\"INTERNET\">Personal</option> <option value=\"WORK\">Work</option> <option value=\"HOME\">Home</option></select> <input class=\"form-control\" type=\"email\" name=\"email_value\" placeholder=\"email@example.com\" style=\"flex:1\"></div></div><button type=\"button\" class=\"btn btn-outline btn-sm\" onclick=\"addField('cc-emails','email')\">+ Add email</button></fieldset><!-- Phones --><fieldset style=\"border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem\"><legend style=\"font-weight:500;font-size:0.9rem\">Phones</legend><div id=\"cc-phones\"><div class=\"flex gap-1 items-end mb-1\"><select class=\"form-control\" name=\"phone_type\" style=\"width:100px\"><option value=\"CELL\">Cell</option> <option value=\"WORK\">Work</option> <option value=\"HOME\">Home</option> <option value=\"FAX\">Fax</option></select> <input class=\"form-control\" type=\"tel\" name=\"phone_value\" placeholder=\"+1 555-1234\" style=\"flex:1\"></div></div><button type=\"button\" class=\"btn btn-outline btn-sm\" onclick=\"addField('cc-phones','phone')\">+ Add phone</button></fieldset><!-- Business fields --><fieldset style=\"border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem\"><legend style=\"font-weight:500;font-size:0.9rem\">Work</legend><div class=\"form-group\"><label for=\"cc-org\">Organization</label> <input class=\"form-control\" type=\"text\" id=\"cc-org\" name=\"org\"></div><div class=\"form-group\"><label for=\"cc-title\">Title</label> <input class=\"form-control\" type=\"text\" id=\"cc-title\" name=\"title\"></div></fieldset><div class=\"form-group\"><label for=\"cc-note\">Note</label> <textarea class=\"form-control\" id=\"cc-note\" name=\"note\" rows=\"3\"></textarea></div><div class=\"flex gap-1\" style=\"justify-content:flex-end\"><button type=\"button\" class=\"btn\" onclick=\"document.getElementById('create-contact-modal').style.display='none'\">Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Create</button></div></form></div></div><style>\n\t\t.avatar-initials {\n\t\t\tdisplay: inline-flex;\n\t\t\talign-items: center;\n\t\t\tjustify-content: center;\n\t\t\twidth: 32px;\n\t\t\theight: 32px;\n\t\t\tborder-radius: 50%;\n\t\t\tcolor: #fff;\n\t\t\tfont-weight: 600;\n\t\t\tfont-size: 0.8rem;\n\t\t}\n\t\t.typed-label {\n\t\t\tfont-size: 0.75rem;\n\t\t\tcolor: var(--color-muted, #888);\n\t\t\ttext-transform: uppercase;\n\t\t}\n\t</style><script>\n\t\tfunction showContactDetail(id) {\n\t\t\tfetch(\"/apps/contacts/contacts/\" + id, {\n\t\t\t\theaders: {\n\t\t\t\t\t\"X-CSRF-Token\": document.querySelector(\"[name=csrf_token]\").value,\n\t\t\t\t},\n\t\t\t})\n\t\t\t\t.then(function (r) {\n\t\t\t\t\treturn r.text();\n\t\t\t\t})\n\t\t\t\t.then(function (html) {\n\t\t\t\t\tvar el = document.getElementById(\"contact-modal-body\");\n\t\t\t\t\tel.innerHTML = html;\n\t\t\t\t\thtmx.process(el);\n\t\t\t\t\tdocument.getElementById(\"contact-modal\").style.display = \"flex\";\n\t\t\t\t});\n\t\t}\n\t\tfunction addField(containerId, kind) {\n\t\t\tvar container = document.getElementById(containerId);\n\t\t\tvar row = document.createElement(\"div\");\n\t\t\trow.className = \"flex gap-1 items-end mb-1\";\n\t\t\tif (kind === \"email\") {\n\t\t\t\trow.innerHTML =\n\t\t\t\t\t'<select class=\"form-control\" name=\"email_type\" style=\"width:100px\">' +\n\t\t\t\t\t'<option value=\"INTERNET\">Personal</option><option value=\"WORK\">Work</option><option value=\"HOME\">Home</option>' +\n\t\t\t\t\t\"</select>\" +\n\t\t\t\t\t'<input class=\"form-control\" type=\"email\" name=\"email_value\" placeholder=\"email@example.com\" style=\"flex:1\"/>' +\n\t\t\t\t\t'<button type=\"button\" class=\"btn btn-danger btn-sm\" onclick=\"this.parentElement.remove()\">X</button>';\n\t\t\t} else {\n\t\t\t\trow.innerHTML =\n\t\t\t\t\t'<select class=\"form-control\" name=\"phone_type\" style=\"width:100px\">' +\n\t\t\t\t\t'<option value=\"CELL\">Cell</option><option value=\"WORK\">Work</option><option value=\"HOME\">Home</option><option value=\"FAX\">Fax</option>' +\n\t\t\t\t\t\"</select>\" +\n\t\t\t\t\t'<input class=\"form-control\" type=\"tel\" name=\"phone_value\" placeholder=\"+1 555-1234\" style=\"flex:1\"/>' +\n\t\t\t\t\t'<button type=\"button\" class=\"btn btn-danger btn-sm\" onclick=\"this.parentElement.remove()\">X</button>';\n\t\t\t}\n\t\t\tcontainer.appendChild(row);\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -537,7 +537,7 @@ func contactsStarredPage(books []AddressBook, cards []CardWithBook) templ.Compon
 				var templ_7745c5c3_Var29 string
 				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("contact-%d", c.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 237, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 253, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 				if templ_7745c5c3_Err != nil {
@@ -564,7 +564,7 @@ func contactsStarredPage(books []AddressBook, cards []CardWithBook) templ.Compon
 					var templ_7745c5c3_Var31 string
 					templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/contacts/photos/%d", c.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 243, Col: 67}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 259, Col: 67}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 					if templ_7745c5c3_Err != nil {
@@ -582,7 +582,7 @@ func contactsStarredPage(books []AddressBook, cards []CardWithBook) templ.Compon
 					var templ_7745c5c3_Var32 string
 					templ_7745c5c3_Var32, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("background:%s", c.BookColor))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 245, Col: 90}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 261, Col: 90}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 					if templ_7745c5c3_Err != nil {
@@ -595,7 +595,7 @@ func contactsStarredPage(books []AddressBook, cards []CardWithBook) templ.Compon
 					var templ_7745c5c3_Var33 string
 					templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(contactInitials(c.FN))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 245, Col: 116}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 261, Col: 116}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 					if templ_7745c5c3_Err != nil {
@@ -613,7 +613,7 @@ func contactsStarredPage(books []AddressBook, cards []CardWithBook) templ.Compon
 				var templ_7745c5c3_Var34 string
 				templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(c.FN)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 249, Col: 16}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 265, Col: 16}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 				if templ_7745c5c3_Err != nil {
@@ -644,7 +644,7 @@ func contactsStarredPage(books []AddressBook, cards []CardWithBook) templ.Compon
 				var templ_7745c5c3_Var35 string
 				templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(c.Email)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 256, Col: 42}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 272, Col: 42}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 				if templ_7745c5c3_Err != nil {
@@ -657,7 +657,7 @@ func contactsStarredPage(books []AddressBook, cards []CardWithBook) templ.Compon
 				var templ_7745c5c3_Var36 string
 				templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(c.Tel)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 257, Col: 40}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 273, Col: 40}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 				if templ_7745c5c3_Err != nil {
@@ -670,7 +670,7 @@ func contactsStarredPage(books []AddressBook, cards []CardWithBook) templ.Compon
 				var templ_7745c5c3_Var37 string
 				templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(c.Org)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 258, Col: 40}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 274, Col: 40}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 				if templ_7745c5c3_Err != nil {
@@ -683,7 +683,7 @@ func contactsStarredPage(books []AddressBook, cards []CardWithBook) templ.Compon
 				var templ_7745c5c3_Var38 string
 				templ_7745c5c3_Var38, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("display:inline-block;width:8px;height:8px;border-radius:50%%;background:%s;vertical-align:middle;margin-right:4px", c.BookColor))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 260, Col: 165}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 276, Col: 165}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 				if templ_7745c5c3_Err != nil {
@@ -696,7 +696,7 @@ func contactsStarredPage(books []AddressBook, cards []CardWithBook) templ.Compon
 				var templ_7745c5c3_Var39 string
 				templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(c.BookName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 261, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 277, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 				if templ_7745c5c3_Err != nil {
@@ -712,7 +712,7 @@ func contactsStarredPage(books []AddressBook, cards []CardWithBook) templ.Compon
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</div></div><!-- Contact detail modal --><div id=\"contact-modal\" class=\"modal-overlay\" style=\"display:none\" onclick=\"if(event.target===this)this.style.display='none'\"><div class=\"modal-content\" id=\"contact-modal-body\"></div></div><style>\n\t\t\t.avatar-initials {\n\t\t\t\tdisplay: inline-flex; align-items: center; justify-content: center;\n\t\t\t\twidth: 32px; height: 32px; border-radius: 50%;\n\t\t\t\tcolor: #fff; font-weight: 600; font-size: 0.8rem;\n\t\t\t}\n\t\t</style><script>\n\t\tfunction showContactDetail(id) {\n\t\t\tfetch('/apps/contacts/contacts/' + id, {\n\t\t\t\theaders: {'X-CSRF-Token': document.querySelector('[name=csrf_token]').value}\n\t\t\t})\n\t\t\t.then(function(r) { return r.text(); })\n\t\t\t.then(function(html) {\n\t\t\t\tvar el = document.getElementById('contact-modal-body');\n\t\t\t\tel.innerHTML = html;\n\t\t\t\thtmx.process(el);\n\t\t\t\tdocument.getElementById('contact-modal').style.display = 'flex';\n\t\t\t});\n\t\t}\n\t\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</div></div><!-- Contact detail modal --><div id=\"contact-modal\" class=\"modal-overlay\" style=\"display:none\" onclick=\"if(event.target===this)this.style.display='none'\"><div class=\"modal-content\" id=\"contact-modal-body\"></div></div><style>\n\t\t.avatar-initials {\n\t\t\tdisplay: inline-flex;\n\t\t\talign-items: center;\n\t\t\tjustify-content: center;\n\t\t\twidth: 32px;\n\t\t\theight: 32px;\n\t\t\tborder-radius: 50%;\n\t\t\tcolor: #fff;\n\t\t\tfont-weight: 600;\n\t\t\tfont-size: 0.8rem;\n\t\t}\n\t</style><script>\n\t\tfunction showContactDetail(id) {\n\t\t\tfetch(\"/apps/contacts/contacts/\" + id, {\n\t\t\t\theaders: {\n\t\t\t\t\t\"X-CSRF-Token\": document.querySelector(\"[name=csrf_token]\").value,\n\t\t\t\t},\n\t\t\t})\n\t\t\t\t.then(function (r) {\n\t\t\t\t\treturn r.text();\n\t\t\t\t})\n\t\t\t\t.then(function (html) {\n\t\t\t\t\tvar el = document.getElementById(\"contact-modal-body\");\n\t\t\t\t\tel.innerHTML = html;\n\t\t\t\t\thtmx.process(el);\n\t\t\t\t\tdocument.getElementById(\"contact-modal\").style.display = \"flex\";\n\t\t\t\t});\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -749,7 +749,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/contacts/photos/%d", c.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 300, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 326, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -767,7 +767,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("width:80px;height:80px;font-size:1.5rem;margin-bottom:0.75rem;display:inline-flex;background:%s", contactColor(c, book)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 302, Col: 173}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 328, Col: 173}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
@@ -780,7 +780,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(contactInitials(c.FN))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 302, Col: 199}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 328, Col: 199}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
@@ -798,7 +798,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 		var templ_7745c5c3_Var44 string
 		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(c.FN)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 305, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 331, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
@@ -824,7 +824,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var45 string
 			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(e.Type)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 311, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 337, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 			if templ_7745c5c3_Err != nil {
@@ -837,7 +837,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var46 templ.SafeURL
 			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("mailto:" + e.Value))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 313, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 339, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 			if templ_7745c5c3_Err != nil {
@@ -850,7 +850,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var47 string
 			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(e.Value)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 313, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 339, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 			if templ_7745c5c3_Err != nil {
@@ -869,7 +869,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var48 templ.SafeURL
 			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("mailto:" + c.Email))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 317, Col: 73}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 343, Col: 73}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 			if templ_7745c5c3_Err != nil {
@@ -882,7 +882,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(c.Email)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 317, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 343, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
@@ -905,7 +905,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var50 string
 			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(p.Type)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 322, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 348, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 			if templ_7745c5c3_Err != nil {
@@ -918,7 +918,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var51 templ.SafeURL
 			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("tel:" + p.Value))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 324, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 350, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 			if templ_7745c5c3_Err != nil {
@@ -931,7 +931,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var52 string
 			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(p.Value)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 324, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 350, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 			if templ_7745c5c3_Err != nil {
@@ -950,7 +950,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var53 templ.SafeURL
 			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("tel:" + c.Tel))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 328, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 354, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 			if templ_7745c5c3_Err != nil {
@@ -963,7 +963,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var54 string
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(c.Tel)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 328, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 354, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 			if templ_7745c5c3_Err != nil {
@@ -986,7 +986,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var55 string
 			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(c.Org)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 332, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 358, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 			if templ_7745c5c3_Err != nil {
@@ -1005,7 +1005,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var56 string
 			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(c.Title)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 335, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 361, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 			if templ_7745c5c3_Err != nil {
@@ -1024,7 +1024,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var57 string
 			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(c.Note)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 338, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 364, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 			if templ_7745c5c3_Err != nil {
@@ -1047,7 +1047,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var58 string
 			templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(a.Type)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 343, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 369, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 			if templ_7745c5c3_Err != nil {
@@ -1061,7 +1061,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 				var templ_7745c5c3_Var59 string
 				templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(a.Street)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 346, Col: 14}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 372, Col: 14}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 				if templ_7745c5c3_Err != nil {
@@ -1076,7 +1076,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 				var templ_7745c5c3_Var60 string
 				templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(a.City)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 350, Col: 12}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 376, Col: 12}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 				if templ_7745c5c3_Err != nil {
@@ -1090,7 +1090,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 					var templ_7745c5c3_Var61 string
 					templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(", ")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 352, Col: 11}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 378, Col: 11}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 					if templ_7745c5c3_Err != nil {
@@ -1104,7 +1104,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 				var templ_7745c5c3_Var62 string
 				templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(a.State)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 354, Col: 13}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 380, Col: 13}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 				if templ_7745c5c3_Err != nil {
@@ -1117,7 +1117,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 				var templ_7745c5c3_Var63 string
 				templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(a.Zip)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 354, Col: 23}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 380, Col: 23}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 				if templ_7745c5c3_Err != nil {
@@ -1132,7 +1132,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 				var templ_7745c5c3_Var64 string
 				templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(a.Country)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 358, Col: 15}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 384, Col: 15}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 				if templ_7745c5c3_Err != nil {
@@ -1152,7 +1152,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var65 string
 			templ_7745c5c3_Var65, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s;vertical-align:middle", book.Color))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 364, Col: 142}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 390, Col: 142}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 			if templ_7745c5c3_Err != nil {
@@ -1165,7 +1165,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var66 string
 			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(" " + book.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 365, Col: 20}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 391, Col: 20}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 			if templ_7745c5c3_Err != nil {
@@ -1191,7 +1191,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 		var templ_7745c5c3_Var67 templ.SafeURL
 		templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/contacts/contacts/%d", c.ID)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 375, Col: 92}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 401, Col: 92}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 		if templ_7745c5c3_Err != nil {
@@ -1204,7 +1204,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 		var templ_7745c5c3_Var68 string
 		templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 376, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 402, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 		if templ_7745c5c3_Err != nil {
@@ -1223,7 +1223,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 				var templ_7745c5c3_Var69 string
 				templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(b.ID, 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 382, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 408, Col: 49}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 				if templ_7745c5c3_Err != nil {
@@ -1236,7 +1236,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 				var templ_7745c5c3_Var70 string
 				templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(b.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 382, Col: 69}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 408, Col: 69}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 				if templ_7745c5c3_Err != nil {
@@ -1254,7 +1254,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 				var templ_7745c5c3_Var71 string
 				templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(b.ID, 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 384, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 410, Col: 49}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 				if templ_7745c5c3_Err != nil {
@@ -1267,7 +1267,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 				var templ_7745c5c3_Var72 string
 				templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(b.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 384, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 410, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 				if templ_7745c5c3_Err != nil {
@@ -1286,7 +1286,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 		var templ_7745c5c3_Var73 string
 		templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(c.FN)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 391, Col: 76}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 417, Col: 76}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 		if templ_7745c5c3_Err != nil {
@@ -1334,7 +1334,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var74 string
 			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(e.Value)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 404, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 430, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 			if templ_7745c5c3_Err != nil {
@@ -1353,7 +1353,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var75 string
 			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(c.Email)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 415, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 441, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 			if templ_7745c5c3_Err != nil {
@@ -1416,7 +1416,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var76 string
 			templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(p.Value)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 433, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 459, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 			if templ_7745c5c3_Err != nil {
@@ -1435,7 +1435,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 			var templ_7745c5c3_Var77 string
 			templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.JoinStringErrs(c.Tel)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 445, Col: 77}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 471, Col: 77}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var77))
 			if templ_7745c5c3_Err != nil {
@@ -1453,7 +1453,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 		var templ_7745c5c3_Var78 string
 		templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(c.Org)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 456, Col: 80}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 482, Col: 80}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 		if templ_7745c5c3_Err != nil {
@@ -1466,7 +1466,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 		var templ_7745c5c3_Var79 string
 		templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(c.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 460, Col: 86}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 486, Col: 86}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
 		if templ_7745c5c3_Err != nil {
@@ -1479,7 +1479,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 		var templ_7745c5c3_Var80 string
 		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(c.Note)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 465, Col: 76}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 491, Col: 76}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 		if templ_7745c5c3_Err != nil {
@@ -1492,7 +1492,7 @@ func contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTok
 		var templ_7745c5c3_Var81 string
 		templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/contacts/contacts/%d", c.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 471, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 497, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 		if templ_7745c5c3_Err != nil {
@@ -1558,7 +1558,7 @@ func contactsSettingsPage(books []AddressBook, csrfToken string) templ.Component
 			var templ_7745c5c3_Var84 string
 			templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 490, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 516, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 			if templ_7745c5c3_Err != nil {
@@ -1604,7 +1604,7 @@ func contactsSettingsPage(books []AddressBook, csrfToken string) templ.Component
 					var templ_7745c5c3_Var86 string
 					templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("book-%d", book.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 522, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 548, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
 					if templ_7745c5c3_Err != nil {
@@ -1617,7 +1617,7 @@ func contactsSettingsPage(books []AddressBook, csrfToken string) templ.Component
 					var templ_7745c5c3_Var87 string
 					templ_7745c5c3_Var87, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("display:inline-block;width:16px;height:16px;border-radius:50%%;background:%s", book.Color))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 523, Col: 130}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 549, Col: 130}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
 					if templ_7745c5c3_Err != nil {
@@ -1630,7 +1630,7 @@ func contactsSettingsPage(books []AddressBook, csrfToken string) templ.Component
 					var templ_7745c5c3_Var88 string
 					templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs(book.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 524, Col: 24}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 550, Col: 24}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 					if templ_7745c5c3_Err != nil {
@@ -1643,7 +1643,7 @@ func contactsSettingsPage(books []AddressBook, csrfToken string) templ.Component
 					var templ_7745c5c3_Var89 string
 					templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(book.UID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 525, Col: 23}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 551, Col: 23}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
 					if templ_7745c5c3_Err != nil {
@@ -1656,7 +1656,7 @@ func contactsSettingsPage(books []AddressBook, csrfToken string) templ.Component
 					var templ_7745c5c3_Var90 string
 					templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(book.CTag, 10))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 526, Col: 47}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 552, Col: 47}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
 					if templ_7745c5c3_Err != nil {
@@ -1669,7 +1669,7 @@ func contactsSettingsPage(books []AddressBook, csrfToken string) templ.Component
 					var templ_7745c5c3_Var91 string
 					templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(book.ID, 10))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 528, Col: 96}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 554, Col: 96}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
 					if templ_7745c5c3_Err != nil {
@@ -1682,7 +1682,7 @@ func contactsSettingsPage(books []AddressBook, csrfToken string) templ.Component
 					var templ_7745c5c3_Var92 string
 					templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/contacts/books/%d", book.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 531, Col: 70}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 557, Col: 70}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
 					if templ_7745c5c3_Err != nil {
@@ -1695,7 +1695,7 @@ func contactsSettingsPage(books []AddressBook, csrfToken string) templ.Component
 					var templ_7745c5c3_Var93 string
 					templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#book-%d", book.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 532, Col: 55}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 558, Col: 55}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
 					if templ_7745c5c3_Err != nil {

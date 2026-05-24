@@ -183,14 +183,15 @@ func spliceWithTTS(ctx context.Context, cfg TTSConfig, tmpDir, inputURL, outputP
 
 	// Mix all TTS clips with the muted original.
 	filterParts := overlayFilters
-	mixInputs := "[0]"
+	var mixInputs strings.Builder
+	mixInputs.WriteString("[0]")
 	for i := range overlayFilters {
-		mixInputs += fmt.Sprintf("[tts%d]", i)
+		mixInputs.WriteString(fmt.Sprintf("[tts%d]", i))
 	}
 	// amix with duration=first to keep original length.
 	nInputs := 1 + len(overlayFilters)
 	filterParts = append(filterParts,
-		fmt.Sprintf("%samix=inputs=%d:duration=first", mixInputs, nInputs))
+		fmt.Sprintf("%samix=inputs=%d:duration=first", mixInputs.String(), nInputs))
 
 	args = append(args, "-filter_complex", strings.Join(filterParts, ";"))
 	args = append(args, "-c:v", "copy", outputPath)

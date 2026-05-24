@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -218,12 +219,9 @@ func (h *Pages) QueueByTag(w http.ResponseWriter, r *http.Request) {
 	var filtered []EpisodeView
 	for _, ep := range queue {
 		tags, _ := EpisodeTags(db, ep.ID)
-		for _, t := range tags {
-			if t == tag {
-				ep.Tags = tags
-				filtered = append(filtered, ep)
-				break
-			}
+		if slices.Contains(tags, tag) {
+			ep.Tags = tags
+			filtered = append(filtered, ep)
 		}
 	}
 	mediaQueueByTagPage(sb, tag, filtered, plugin.CSRFToken(r)).Render(r.Context(), w)

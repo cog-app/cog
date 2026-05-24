@@ -133,3 +133,4 @@ func (t *trustedRegistrar) UserLookup() cogplugin.UserLookup     { return nil }
 func (t *trustedRegistrar) GroupStore() cogplugin.GroupStore     { return nil }
 func (t *trustedRegistrar) FilesAccess() cogplugin.FilesAccess   { return nil }
 func (t *trustedRegistrar) VolumeAccess() cogplugin.VolumeAccess { return nil }
+func (t *trustedRegistrar) Cookies() cogplugin.CookieConfig      { return cogplugin.CookieConfig{} }

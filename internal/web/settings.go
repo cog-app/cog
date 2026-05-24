@@ -345,8 +345,26 @@ func (h *settingsHandler) DeleteMount(w http.ResponseWriter, r *http.Request) {
 
 // SetupTOTP begins TOTP enrollment: generates a key and redirects to the
 // security page where the QR code and verification form will be displayed.
+//
+// If the user already has confirmed TOTP, re-enrollment requires the current
+// password — otherwise a hijacked session could silently overwrite the
+// authenticator secret, locking the legitimate user out.
 func (h *settingsHandler) SetupTOTP(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
+
+	if u.MFAMethod == "totp" {
+		pw := r.FormValue("current_password")
+		if pw == "" {
+			setFlash(w, "error", "Enter your current password to re-enroll TOTP.")
+			http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+			return
+		}
+		if _, err := h.p.Users.Authenticate(u.Username, pw); err != nil {
+			setFlash(w, "error", "Current password is incorrect.")
+			http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+			return
+		}
+	}
 
 	key, err := h.p.TOTP.BeginSetup(u.ID, u.Username, "Cog")
 	if err != nil {

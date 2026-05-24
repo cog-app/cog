@@ -407,7 +407,7 @@ func dashboardEditPage(pd ui.PageData, allWidgets []plugin.Widget, layout *Layou
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<div style=\"display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem\"><a href=\"/\" class=\"btn\">Cancel</a> <button type=\"submit\" class=\"btn btn-primary\">Save</button></div></form><script>\n\t\tfunction moveWidget(el, dir) {\n\t\t\tvar parent = el.parentNode;\n\t\t\tif (dir === -1 && el.previousElementSibling) {\n\t\t\t\tparent.insertBefore(el, el.previousElementSibling);\n\t\t\t} else if (dir === 1 && el.nextElementSibling) {\n\t\t\t\tparent.insertBefore(el.nextElementSibling, el);\n\t\t\t}\n\t\t}\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<div style=\"display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem\"><a href=\"/\" class=\"btn\">Cancel</a> <button type=\"submit\" class=\"btn btn-primary\">Save</button></div></form><script>\n\t\t\tfunction moveWidget(el, dir) {\n\t\t\t\tvar parent = el.parentNode;\n\t\t\t\tif (dir === -1 && el.previousElementSibling) {\n\t\t\t\t\tparent.insertBefore(el, el.previousElementSibling);\n\t\t\t\t} else if (dir === 1 && el.nextElementSibling) {\n\t\t\t\t\tparent.insertBefore(el.nextElementSibling, el);\n\t\t\t\t}\n\t\t\t}\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

@@ -52,6 +52,7 @@ type RegistryServices struct {
 	QuotaChecker QuotaChecker
 	VolumeAccess VolumeAccess
 	ActivityLog  ActivityLogger
+	Cookies      CookieConfig
 }
 
 // Registry manages plugin lifecycle, per-user database provisioning,
@@ -150,14 +151,28 @@ func (r *Registry) Add(p Plugin) error {
 }
 
 // Start starts all registered plugins in registration order.
+// Panics in a plugin's Start are recovered and logged so one bad plugin
+// cannot kill the host process; the offending plugin is still considered
+// started (its routes are already mounted) but its background goroutines may
+// not have launched.
 func (r *Registry) Start(ctx context.Context) error {
 	for _, id := range r.order {
-		if err := r.plugins[id].Start(ctx); err != nil {
+		if err := r.startOne(ctx, id); err != nil {
 			return fmt.Errorf("start plugin %q: %w", id, err)
 		}
 		r.log.Info("plugin started", "plugin", id)
 	}
 	return nil
+}
+
+func (r *Registry) startOne(ctx context.Context, id string) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.log.Error("panic in plugin Start", "plugin", id, "panic", rec)
+			err = fmt.Errorf("plugin %q panicked in Start: %v", id, rec)
+		}
+	}()
+	return r.plugins[id].Start(ctx)
 }
 
 // Stop stops all plugins in reverse registration order.
@@ -367,12 +382,24 @@ func (r *Registry) ResourceDefs() map[string][]ResourceDef {
 }
 
 // FireHook dispatches a hook event to all subscribers.
+// Each callback runs under a recover; a panicking subscriber must not take
+// down the request handler that fired the hook.
 func (r *Registry) FireHook(ctx context.Context, hookName string, data any) {
-	for _, reg := range r.registrars {
+	for pluginID, reg := range r.registrars {
 		for _, cb := range reg.hooks[hookName] {
-			cb(ctx, data)
+			r.safeCallback(pluginID, hookName, cb, ctx, data)
 		}
 	}
+}
+
+func (r *Registry) safeCallback(pluginID, hookName string, cb HookCallback, ctx context.Context, data any) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.log.Error("panic in hook subscriber",
+				"plugin", pluginID, "hook", hookName, "panic", rec)
+		}
+	}()
+	cb(ctx, data)
 }
 
 // Plugin returns a registered plugin by ID.
@@ -567,6 +594,10 @@ func (pr *pluginRegistrar) ActivityLog() ActivityLogger {
 	return pr.registry.services.ActivityLog
 }
 
+func (pr *pluginRegistrar) Cookies() CookieConfig {
+	return pr.registry.services.Cookies
+}
+
 func (pr *pluginRegistrar) QuotaCheck(username string, additionalBytes int64) error {
 	if pr.registry.services.QuotaChecker == nil {
 		return nil
@@ -578,9 +609,28 @@ func (pr *pluginRegistrar) UserVFS(username string) vfs.FS {
 	return pr.registry.UserVFS(username)
 }
 
-// wrap applies RequirePluginEnabled middleware to a handler.
+// wrap applies RequirePluginEnabled + panic recovery to a handler.
+// Every plugin-registered HTTP handler eventually flows through here.
 func (pr *pluginRegistrar) wrap(h http.Handler) http.Handler {
-	return pr.registry.RequirePluginEnabled(pr.pluginID)(h)
+	return pr.registry.RequirePluginEnabled(pr.pluginID)(pr.recover(h))
+}
+
+// recover wraps a plugin handler with panic recovery. A panic logs the
+// plugin ID + request path and returns 500 to the client instead of killing
+// the host process.
+func (pr *pluginRegistrar) recover(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				pr.registry.log.Error("panic in plugin handler",
+					"plugin", pr.pluginID, "path", r.URL.Path, "method", r.Method, "panic", rec)
+				// Best-effort 500. If headers already sent, the client sees a
+				// truncated response — better than the whole server dying.
+				http.Error(w, "internal error", http.StatusInternalServerError)
+			}
+		}()
+		h.ServeHTTP(w, r)
+	})
 }
 
 func (pr *pluginRegistrar) RegisterPage(path string, handler http.Handler) {
@@ -904,7 +954,9 @@ func (r *Registry) IsEnabled(pluginID string) bool {
 	if r.IsPluginProtected(pluginID) {
 		return true
 	}
+	r.mu.Lock()
 	enabled, ok := r.enabled[pluginID]
+	r.mu.Unlock()
 	if !ok {
 		return true // default enabled
 	}
@@ -916,7 +968,9 @@ func (r *Registry) SetEnabled(pluginID string, enabled bool) {
 	if r.IsPluginProtected(pluginID) {
 		return
 	}
+	r.mu.Lock()
 	r.enabled[pluginID] = enabled
+	r.mu.Unlock()
 	if r.sysDB != nil {
 		if _, err := r.sysDB.Exec(
 			`INSERT INTO plugin_settings (plugin_id, enabled) VALUES (?, ?) ON CONFLICT(plugin_id) DO UPDATE SET enabled = ?`,
@@ -960,6 +1014,8 @@ func (r *Registry) loadEnabledState() {
 		return // table may not exist yet
 	}
 	defer rows.Close()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for rows.Next() {
 		var id string
 		var enabled int
@@ -1018,7 +1074,14 @@ func (r *Registry) DiscoverProcessPlugins() {
 			}
 
 			r.log.Info("loading process plugin", "plugin", pluginID, "path", binaryPath)
-			if err := r.LoadExternalTrusted(binaryPath); err != nil {
+			if isTrustedProcessPlugin(pluginID) {
+				r.log.Warn("loading process plugin as TRUSTED (host secrets exposed)",
+					"plugin", pluginID, "path", binaryPath)
+				err = r.LoadExternalTrusted(binaryPath)
+			} else {
+				err = r.LoadExternal(binaryPath)
+			}
+			if err != nil {
 				r.log.Error("failed to load process plugin", "plugin", pluginID, "path", binaryPath, "err", err)
 				continue
 			}
@@ -1026,6 +1089,28 @@ func (r *Registry) DiscoverProcessPlugins() {
 			r.discovered[pluginID] = binaryPath
 		}
 	}
+}
+
+// trustedProcessPlugins is the parsed COG_TRUSTED_PROCESS_PLUGINS allowlist.
+// Set via SetTrustedProcessPlugins at startup.
+var trustedProcessPlugins map[string]bool
+
+// SetTrustedProcessPlugins configures which discovered process plugin IDs are
+// loaded as trusted (handed the host CSRF secret and direct DB access).
+// Comma-separated list of plugin IDs.
+func SetTrustedProcessPlugins(spec string) {
+	out := make(map[string]bool)
+	for raw := range strings.SplitSeq(spec, ",") {
+		id := strings.TrimSpace(raw)
+		if id != "" {
+			out[id] = true
+		}
+	}
+	trustedProcessPlugins = out
+}
+
+func isTrustedProcessPlugin(id string) bool {
+	return trustedProcessPlugins[id]
 }
 
 // NavItems returns nav items from all enabled plugins.

@@ -1251,7 +1251,7 @@ func adminEmailPage(pd ui.PageData, smtp smtpSettingsData, overrideHTML string, 
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "<button class=\"btn btn-primary\" type=\"submit\">Save Email Settings</button></form><script>\n\t\tvar htmlPreviewName = 'password_reset';\n\t\tvar textPreviewName = 'password_reset';\n\t\tvar previewTimer = null;\n\t\tvar csrfToken = document.querySelector('input[name=csrf_token]').value;\n\n\t\tfunction schedulePreview() {\n\t\t\tclearTimeout(previewTimer);\n\t\t\tpreviewTimer = setTimeout(refreshAllPreviews, 400);\n\t\t}\n\n\t\tfunction refreshAllPreviews() {\n\t\t\trefreshPreview('preview-html', htmlPreviewName, 'html');\n\t\t\trefreshPreview('preview-text', textPreviewName, 'text');\n\t\t}\n\n\t\tfunction showHTMLPreview(name) {\n\t\t\thtmlPreviewName = name;\n\t\t\trefreshPreview('preview-html', name, 'html');\n\t\t}\n\n\t\tfunction showTextPreview(name) {\n\t\t\ttextPreviewName = name;\n\t\t\trefreshPreview('preview-text', name, 'text');\n\t\t}\n\n\t\tfunction refreshPreview(frameId, name, format) {\n\t\t\tvar frame = document.getElementById(frameId);\n\t\t\tif (!frame || !frame.offsetParent) return; // skip if details is closed\n\t\t\tvar url = '/admin/email/preview/' + name;\n\t\t\tif (format === 'text') url += '?format=text';\n\t\t\tvar body = new URLSearchParams();\n\t\t\tbody.set('csrf_token', csrfToken);\n\t\t\tbody.set('override_html', document.getElementById('override-html').value);\n\t\t\tbody.set('override_text', document.getElementById('override-text').value);\n\t\t\tfetch(url, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body.toString()})\n\t\t\t\t.then(function(r) { return r.text(); })\n\t\t\t\t.then(function(html) { frame.srcdoc = html; });\n\t\t}\n\n\t\t// Load initial preview when a details element is opened.\n\t\tdocument.querySelectorAll('details').forEach(function(d) {\n\t\t\td.addEventListener('toggle', function() {\n\t\t\t\tif (d.open) {\n\t\t\t\t\tvar frame = d.querySelector('iframe');\n\t\t\t\t\tif (frame && !frame.srcdoc) {\n\t\t\t\t\t\tif (frame.id === 'preview-html') refreshPreview('preview-html', htmlPreviewName, 'html');\n\t\t\t\t\t\tif (frame.id === 'preview-text') refreshPreview('preview-text', textPreviewName, 'text');\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t});\n\t\t});\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "<button class=\"btn btn-primary\" type=\"submit\">Save Email Settings</button></form><script>\n\t\t\tvar htmlPreviewName = \"password_reset\";\n\t\t\tvar textPreviewName = \"password_reset\";\n\t\t\tvar previewTimer = null;\n\t\t\tvar csrfToken = document.querySelector(\"input[name=csrf_token]\").value;\n\n\t\t\tfunction schedulePreview() {\n\t\t\t\tclearTimeout(previewTimer);\n\t\t\t\tpreviewTimer = setTimeout(refreshAllPreviews, 400);\n\t\t\t}\n\n\t\t\tfunction refreshAllPreviews() {\n\t\t\t\trefreshPreview(\"preview-html\", htmlPreviewName, \"html\");\n\t\t\t\trefreshPreview(\"preview-text\", textPreviewName, \"text\");\n\t\t\t}\n\n\t\t\tfunction showHTMLPreview(name) {\n\t\t\t\thtmlPreviewName = name;\n\t\t\t\trefreshPreview(\"preview-html\", name, \"html\");\n\t\t\t}\n\n\t\t\tfunction showTextPreview(name) {\n\t\t\t\ttextPreviewName = name;\n\t\t\t\trefreshPreview(\"preview-text\", name, \"text\");\n\t\t\t}\n\n\t\t\tfunction refreshPreview(frameId, name, format) {\n\t\t\t\tvar frame = document.getElementById(frameId);\n\t\t\t\tif (!frame || !frame.offsetParent) return; // skip if details is closed\n\t\t\t\tvar url = \"/admin/email/preview/\" + name;\n\t\t\t\tif (format === \"text\") url += \"?format=text\";\n\t\t\t\tvar body = new URLSearchParams();\n\t\t\t\tbody.set(\"csrf_token\", csrfToken);\n\t\t\t\tbody.set(\n\t\t\t\t\t\"override_html\",\n\t\t\t\t\tdocument.getElementById(\"override-html\").value,\n\t\t\t\t);\n\t\t\t\tbody.set(\n\t\t\t\t\t\"override_text\",\n\t\t\t\t\tdocument.getElementById(\"override-text\").value,\n\t\t\t\t);\n\t\t\t\tfetch(url, {\n\t\t\t\t\tmethod: \"POST\",\n\t\t\t\t\theaders: { \"Content-Type\": \"application/x-www-form-urlencoded\" },\n\t\t\t\t\tbody: body.toString(),\n\t\t\t\t})\n\t\t\t\t\t.then(function (r) {\n\t\t\t\t\t\treturn r.text();\n\t\t\t\t\t})\n\t\t\t\t\t.then(function (html) {\n\t\t\t\t\t\tframe.srcdoc = html;\n\t\t\t\t\t});\n\t\t\t}\n\n\t\t\t// Load initial preview when a details element is opened.\n\t\t\tdocument.querySelectorAll(\"details\").forEach(function (d) {\n\t\t\t\td.addEventListener(\"toggle\", function () {\n\t\t\t\t\tif (d.open) {\n\t\t\t\t\t\tvar frame = d.querySelector(\"iframe\");\n\t\t\t\t\t\tif (frame && !frame.srcdoc) {\n\t\t\t\t\t\t\tif (frame.id === \"preview-html\")\n\t\t\t\t\t\t\t\trefreshPreview(\"preview-html\", htmlPreviewName, \"html\");\n\t\t\t\t\t\t\tif (frame.id === \"preview-text\")\n\t\t\t\t\t\t\t\trefreshPreview(\"preview-text\", textPreviewName, \"text\");\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t});\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1311,7 +1311,7 @@ func smtpTestAlert(kind, title, detail string) templ.Component {
 		var templ_7745c5c3_Var61 string
 		templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 359, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 375, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 		if templ_7745c5c3_Err != nil {
@@ -1324,7 +1324,7 @@ func smtpTestAlert(kind, title, detail string) templ.Component {
 		var templ_7745c5c3_Var62 string
 		templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(detail)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 360, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 376, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 		if templ_7745c5c3_Err != nil {
@@ -1405,7 +1405,7 @@ func adminLogsPage(pd ui.PageData, entries []logbuf.Entry, sources []string) tem
 			var templ_7745c5c3_Var65 string
 			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d entries", len(entries)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 395, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 411, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 			if templ_7745c5c3_Err != nil {
@@ -1418,7 +1418,7 @@ func adminLogsPage(pd ui.PageData, entries []logbuf.Entry, sources []string) tem
 			var templ_7745c5c3_Var66 string
 			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(sourceSelectSize(sources))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 404, Col: 124}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 420, Col: 124}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 			if templ_7745c5c3_Err != nil {
@@ -1436,7 +1436,7 @@ func adminLogsPage(pd ui.PageData, entries []logbuf.Entry, sources []string) tem
 				var templ_7745c5c3_Var67 string
 				templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(s)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 407, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 423, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 				if templ_7745c5c3_Err != nil {
@@ -1449,7 +1449,7 @@ func adminLogsPage(pd ui.PageData, entries []logbuf.Entry, sources []string) tem
 				var templ_7745c5c3_Var68 string
 				templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(s)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 407, Col: 37}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 423, Col: 37}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 				if templ_7745c5c3_Err != nil {
@@ -1533,7 +1533,7 @@ func logEntriesPartial(entries []logbuf.Entry) templ.Component {
 			var templ_7745c5c3_Var71 string
 			templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(entries[i].Time.Format("15:04:05.000"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 435, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 451, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 			if templ_7745c5c3_Err != nil {
@@ -1568,7 +1568,7 @@ func logEntriesPartial(entries []logbuf.Entry) templ.Component {
 			var templ_7745c5c3_Var74 string
 			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(logLevelLabel(entries[i].Level))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 436, Col: 93}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 452, Col: 93}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 			if templ_7745c5c3_Err != nil {
@@ -1581,7 +1581,7 @@ func logEntriesPartial(entries []logbuf.Entry) templ.Component {
 			var templ_7745c5c3_Var75 string
 			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(entries[i].Message)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 437, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 453, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 			if templ_7745c5c3_Err != nil {
@@ -1658,7 +1658,7 @@ func adminPluginsPage(pd ui.PageData, plugins []PluginInfo) templ.Component {
 					var templ_7745c5c3_Var79 string
 					templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(p.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 460, Col: 17}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 476, Col: 17}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
 					if templ_7745c5c3_Err != nil {
@@ -1697,7 +1697,7 @@ func adminPluginsPage(pd ui.PageData, plugins []PluginInfo) templ.Component {
 						var templ_7745c5c3_Var80 templ.SafeURL
 						templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/admin/plugins/" + p.ID + "/toggle"))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 473, Col: 89}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 489, Col: 89}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 						if templ_7745c5c3_Err != nil {
@@ -1710,7 +1710,7 @@ func adminPluginsPage(pd ui.PageData, plugins []PluginInfo) templ.Component {
 						var templ_7745c5c3_Var81 string
 						templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 474, Col: 69}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 490, Col: 69}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 						if templ_7745c5c3_Err != nil {

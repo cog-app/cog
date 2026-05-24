@@ -91,32 +91,46 @@ templ Base(pd PageData) {
 				</div>
 			</nav>
 			<script>
-		// Adaptive navbar collapse based on item count and available width.
-		(function(){
-			var nb = document.querySelector('.navbar');
-			if (!nb) return;
-			var n = parseInt(nb.getAttribute('data-nav-count'), 10) || 0;
-			if (n === 0) return;
-			// Per-item widths at each stage:
-			var FULL=85, COMPACT=55, ICON=34;
-			// Fixed overhead differs per stage (brand+search+end+padding):
-			// full/compact: brand(70)+search(280)+end(80)+pad(32)=462
-			// icon-only: brand(55)+search(140)+end(40)+pad(16)=251
-			// collapsed (no nav, no search): brand(24)+apps-btn(36)+end(40)+pad(16)=116
-			var FX=462, FX_I=251, FX_C=116;
-			function u(){
-				var w = nb.offsetWidth;
-				nb.classList.remove('navbar--compact','navbar--icon-only','navbar--collapsed');
-				if (n*FULL+FX <= w) return;
-				if (n*COMPACT+FX <= w) { nb.classList.add('navbar--compact'); return; }
-				if (n*ICON+FX_I <= w) { nb.classList.add('navbar--icon-only'); return; }
-				nb.classList.add('navbar--collapsed');
-			}
-			u();
-			if (window.ResizeObserver) new ResizeObserver(u).observe(nb);
-			else window.addEventListener('resize',u);
-		})();
-		</script>
+				// Adaptive navbar collapse based on item count and available width.
+				(function () {
+					var nb = document.querySelector(".navbar");
+					if (!nb) return;
+					var n = parseInt(nb.getAttribute("data-nav-count"), 10) || 0;
+					if (n === 0) return;
+					// Per-item widths at each stage:
+					var FULL = 85,
+						COMPACT = 55,
+						ICON = 34;
+					// Fixed overhead differs per stage (brand+search+end+padding):
+					// full/compact: brand(70)+search(280)+end(80)+pad(32)=462
+					// icon-only: brand(55)+search(140)+end(40)+pad(16)=251
+					// collapsed (no nav, no search): brand(24)+apps-btn(36)+end(40)+pad(16)=116
+					var FX = 462,
+						FX_I = 251,
+						FX_C = 116;
+					function u() {
+						var w = nb.offsetWidth;
+						nb.classList.remove(
+							"navbar--compact",
+							"navbar--icon-only",
+							"navbar--collapsed",
+						);
+						if (n * FULL + FX <= w) return;
+						if (n * COMPACT + FX <= w) {
+							nb.classList.add("navbar--compact");
+							return;
+						}
+						if (n * ICON + FX_I <= w) {
+							nb.classList.add("navbar--icon-only");
+							return;
+						}
+						nb.classList.add("navbar--collapsed");
+					}
+					u();
+					if (window.ResizeObserver) new ResizeObserver(u).observe(nb);
+					else window.addEventListener("resize", u);
+				})();
+			</script>
 			if pd.PluginID != "" {
 				<main class="content" data-plugin={ pd.PluginID }>
 					{ children... }
@@ -127,114 +141,135 @@ templ Base(pd PageData) {
 				</main>
 			}
 			<script>
-		// Notification polling
-		(function() {
-			var bell = document.getElementById("notif-bell");
-			var badge = document.getElementById("notif-badge");
-			var panel = document.getElementById("notif-panel");
-			if (!bell) return;
-			var pending = [];
+				// Notification polling
+				(function () {
+					var bell = document.getElementById("notif-bell");
+					var badge = document.getElementById("notif-badge");
+					var panel = document.getElementById("notif-panel");
+					if (!bell) return;
+					var pending = [];
 
-			function checkNotifications() {
-				fetch("/apps/calendar/notifications")
-					.then(function(r) { return r.ok ? r.json() : []; })
-					.then(function(data) {
-						if (!data || !data.length) return;
-						pending = pending.concat(data);
-						bell.style.display = "";
-						badge.style.display = "";
-						badge.textContent = pending.length;
-						// Show browser notification if permitted
-						if (Notification.permission === "granted") {
-							data.forEach(function(n) {
-								new Notification("Reminder: " + n.summary, { body: "Starting " + new Date(n.start).toLocaleString() });
-							});
-						} else if (Notification.permission !== "denied") {
-							Notification.requestPermission();
+					function checkNotifications() {
+						fetch("/apps/calendar/notifications")
+							.then(function (r) {
+								return r.ok ? r.json() : [];
+							})
+							.then(function (data) {
+								if (!data || !data.length) return;
+								pending = pending.concat(data);
+								bell.style.display = "";
+								badge.style.display = "";
+								badge.textContent = pending.length;
+								// Show browser notification if permitted
+								if (Notification.permission === "granted") {
+									data.forEach(function (n) {
+										new Notification("Reminder: " + n.summary, {
+											body: "Starting " + new Date(n.start).toLocaleString(),
+										});
+									});
+								} else if (Notification.permission !== "denied") {
+									Notification.requestPermission();
+								}
+							})
+							.catch(function () {});
+					}
+
+					window.toggleNotifPanel = function () {
+						if (panel.style.display === "none") {
+							panel.style.display = "block";
+							panel.innerHTML = "";
+							if (!pending.length) {
+								panel.innerHTML =
+									'<div style="padding:0.75rem;color:var(--color-text-muted)">No notifications</div>';
+							} else {
+								pending.forEach(function (n) {
+									var d = document.createElement("a");
+									d.href = "/apps/calendar/?date=" + n.start.slice(0, 10);
+									d.className = "search-hit";
+									d.innerHTML =
+										'<span class="search-hit-name">' +
+										n.summary +
+										'</span><span class="search-hit-sub">' +
+										new Date(n.start).toLocaleString() +
+										"</span>";
+									panel.appendChild(d);
+								});
+							}
+						} else {
+							panel.style.display = "none";
 						}
-					}).catch(function() {});
-			}
+					};
 
-			window.toggleNotifPanel = function() {
-				if (panel.style.display === "none") {
-					panel.style.display = "block";
-					panel.innerHTML = "";
-					if (!pending.length) {
-						panel.innerHTML = '<div style="padding:0.75rem;color:var(--color-text-muted)">No notifications</div>';
-					} else {
-						pending.forEach(function(n) {
-							var d = document.createElement("a");
-							d.href = "/apps/calendar/?date=" + n.start.slice(0,10);
-							d.className = "search-hit";
-							d.innerHTML = '<span class="search-hit-name">' + n.summary + '</span><span class="search-hit-sub">' + new Date(n.start).toLocaleString() + '</span>';
-							panel.appendChild(d);
-						});
-					}
-				} else {
-					panel.style.display = "none";
-				}
-			};
-
-			// Poll every 60 seconds
-			setInterval(checkNotifications, 60000);
-			// Initial check after 5 seconds
-			setTimeout(checkNotifications, 5000);
-		})();
-		</script>
+					// Poll every 60 seconds
+					setInterval(checkNotifications, 60000);
+					// Initial check after 5 seconds
+					setTimeout(checkNotifications, 5000);
+				})();
+			</script>
 			<script>
-		(function() {
-			var box = document.getElementById("search-box");
-			if (!box) return;
-			var results = document.getElementById("search-results");
+				(function () {
+					var box = document.getElementById("search-box");
+					if (!box) return;
+					var results = document.getElementById("search-results");
 
-			document.addEventListener("keydown", function(e) {
-				if (e.key === "/" && !e.ctrlKey && !e.metaKey &&
-					!["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName) &&
-					!document.activeElement.isContentEditable) {
-					e.preventDefault();
-					box.focus();
-					box.select();
-				}
-			});
+					document.addEventListener("keydown", function (e) {
+						if (
+							e.key === "/" &&
+							!e.ctrlKey &&
+							!e.metaKey &&
+							!["INPUT", "TEXTAREA", "SELECT"].includes(
+								document.activeElement.tagName,
+							) &&
+							!document.activeElement.isContentEditable
+						) {
+							e.preventDefault();
+							box.focus();
+							box.select();
+						}
+					});
 
-			box.addEventListener("keydown", function(e) {
-				var hits = results.querySelectorAll(".search-hit");
-				if (!hits.length) {
-					if (e.key === "Escape") { box.blur(); }
-					return;
-				}
-				var cur = results.querySelector(".search-hit-active");
-				var idx = cur ? Array.prototype.indexOf.call(hits, cur) : -1;
+					box.addEventListener("keydown", function (e) {
+						var hits = results.querySelectorAll(".search-hit");
+						if (!hits.length) {
+							if (e.key === "Escape") {
+								box.blur();
+							}
+							return;
+						}
+						var cur = results.querySelector(".search-hit-active");
+						var idx = cur ? Array.prototype.indexOf.call(hits, cur) : -1;
 
-				if (e.key === "ArrowDown") {
-					e.preventDefault();
-					if (cur) cur.classList.remove("search-hit-active");
-					idx = (idx + 1) % hits.length;
-					hits[idx].classList.add("search-hit-active");
-					hits[idx].scrollIntoView({block:"nearest"});
-				} else if (e.key === "ArrowUp") {
-					e.preventDefault();
-					if (cur) cur.classList.remove("search-hit-active");
-					idx = idx <= 0 ? hits.length - 1 : idx - 1;
-					hits[idx].classList.add("search-hit-active");
-					hits[idx].scrollIntoView({block:"nearest"});
-				} else if (e.key === "Enter") {
-					if (cur) {
-						e.preventDefault();
-						cur.click();
-					}
-				} else if (e.key === "Escape") {
-					box.blur();
-				}
-			});
+						if (e.key === "ArrowDown") {
+							e.preventDefault();
+							if (cur) cur.classList.remove("search-hit-active");
+							idx = (idx + 1) % hits.length;
+							hits[idx].classList.add("search-hit-active");
+							hits[idx].scrollIntoView({ block: "nearest" });
+						} else if (e.key === "ArrowUp") {
+							e.preventDefault();
+							if (cur) cur.classList.remove("search-hit-active");
+							idx = idx <= 0 ? hits.length - 1 : idx - 1;
+							hits[idx].classList.add("search-hit-active");
+							hits[idx].scrollIntoView({ block: "nearest" });
+						} else if (e.key === "Enter") {
+							if (cur) {
+								e.preventDefault();
+								cur.click();
+							}
+						} else if (e.key === "Escape") {
+							box.blur();
+						}
+					});
 
-			new MutationObserver(function() {
-				var hits = results.querySelectorAll(".search-hit");
-				hits.forEach(function(h) { h.classList.remove("search-hit-active"); });
-				if (hits.length) hits[0].classList.add("search-hit-active");
-			}).observe(results, {childList: true});
-		})();
-		</script>
+					new MutationObserver(function () {
+						var hits = results.querySelectorAll(".search-hit");
+						hits.forEach(function (h) {
+							h.classList.remove("search-hit-active");
+						});
+						if (hits.length) hits[0].classList.add("search-hit-active");
+					}).observe(results, { childList: true });
+				})();
+			</script>
 		</body>
 	</html>
 }
@@ -323,32 +358,46 @@ templ Shell(pd PageData, body templ.Component) {
 				</div>
 			</nav>
 			<script>
-		// Adaptive navbar collapse based on item count and available width.
-		(function(){
-			var nb = document.querySelector('.navbar');
-			if (!nb) return;
-			var n = parseInt(nb.getAttribute('data-nav-count'), 10) || 0;
-			if (n === 0) return;
-			// Per-item widths at each stage:
-			var FULL=85, COMPACT=55, ICON=34;
-			// Fixed overhead differs per stage (brand+search+end+padding):
-			// full/compact: brand(70)+search(280)+end(80)+pad(32)=462
-			// icon-only: brand(55)+search(140)+end(40)+pad(16)=251
-			// collapsed (no nav, no search): brand(24)+apps-btn(36)+end(40)+pad(16)=116
-			var FX=462, FX_I=251, FX_C=116;
-			function u(){
-				var w = nb.offsetWidth;
-				nb.classList.remove('navbar--compact','navbar--icon-only','navbar--collapsed');
-				if (n*FULL+FX <= w) return;
-				if (n*COMPACT+FX <= w) { nb.classList.add('navbar--compact'); return; }
-				if (n*ICON+FX_I <= w) { nb.classList.add('navbar--icon-only'); return; }
-				nb.classList.add('navbar--collapsed');
-			}
-			u();
-			if (window.ResizeObserver) new ResizeObserver(u).observe(nb);
-			else window.addEventListener('resize',u);
-		})();
-		</script>
+				// Adaptive navbar collapse based on item count and available width.
+				(function () {
+					var nb = document.querySelector(".navbar");
+					if (!nb) return;
+					var n = parseInt(nb.getAttribute("data-nav-count"), 10) || 0;
+					if (n === 0) return;
+					// Per-item widths at each stage:
+					var FULL = 85,
+						COMPACT = 55,
+						ICON = 34;
+					// Fixed overhead differs per stage (brand+search+end+padding):
+					// full/compact: brand(70)+search(280)+end(80)+pad(32)=462
+					// icon-only: brand(55)+search(140)+end(40)+pad(16)=251
+					// collapsed (no nav, no search): brand(24)+apps-btn(36)+end(40)+pad(16)=116
+					var FX = 462,
+						FX_I = 251,
+						FX_C = 116;
+					function u() {
+						var w = nb.offsetWidth;
+						nb.classList.remove(
+							"navbar--compact",
+							"navbar--icon-only",
+							"navbar--collapsed",
+						);
+						if (n * FULL + FX <= w) return;
+						if (n * COMPACT + FX <= w) {
+							nb.classList.add("navbar--compact");
+							return;
+						}
+						if (n * ICON + FX_I <= w) {
+							nb.classList.add("navbar--icon-only");
+							return;
+						}
+						nb.classList.add("navbar--collapsed");
+					}
+					u();
+					if (window.ResizeObserver) new ResizeObserver(u).observe(nb);
+					else window.addEventListener("resize", u);
+				})();
+			</script>
 			if pd.PluginID != "" {
 				<main class="content" data-plugin={ pd.PluginID }>
 					@body
@@ -359,114 +408,135 @@ templ Shell(pd PageData, body templ.Component) {
 				</main>
 			}
 			<script>
-		// Notification polling
-		(function() {
-			var bell = document.getElementById("notif-bell");
-			var badge = document.getElementById("notif-badge");
-			var panel = document.getElementById("notif-panel");
-			if (!bell) return;
-			var pending = [];
+				// Notification polling
+				(function () {
+					var bell = document.getElementById("notif-bell");
+					var badge = document.getElementById("notif-badge");
+					var panel = document.getElementById("notif-panel");
+					if (!bell) return;
+					var pending = [];
 
-			function checkNotifications() {
-				fetch("/apps/calendar/notifications")
-					.then(function(r) { return r.ok ? r.json() : []; })
-					.then(function(data) {
-						if (!data || !data.length) return;
-						pending = pending.concat(data);
-						bell.style.display = "";
-						badge.style.display = "";
-						badge.textContent = pending.length;
-						// Show browser notification if permitted
-						if (Notification.permission === "granted") {
-							data.forEach(function(n) {
-								new Notification("Reminder: " + n.summary, { body: "Starting " + new Date(n.start).toLocaleString() });
-							});
-						} else if (Notification.permission !== "denied") {
-							Notification.requestPermission();
+					function checkNotifications() {
+						fetch("/apps/calendar/notifications")
+							.then(function (r) {
+								return r.ok ? r.json() : [];
+							})
+							.then(function (data) {
+								if (!data || !data.length) return;
+								pending = pending.concat(data);
+								bell.style.display = "";
+								badge.style.display = "";
+								badge.textContent = pending.length;
+								// Show browser notification if permitted
+								if (Notification.permission === "granted") {
+									data.forEach(function (n) {
+										new Notification("Reminder: " + n.summary, {
+											body: "Starting " + new Date(n.start).toLocaleString(),
+										});
+									});
+								} else if (Notification.permission !== "denied") {
+									Notification.requestPermission();
+								}
+							})
+							.catch(function () {});
+					}
+
+					window.toggleNotifPanel = function () {
+						if (panel.style.display === "none") {
+							panel.style.display = "block";
+							panel.innerHTML = "";
+							if (!pending.length) {
+								panel.innerHTML =
+									'<div style="padding:0.75rem;color:var(--color-text-muted)">No notifications</div>';
+							} else {
+								pending.forEach(function (n) {
+									var d = document.createElement("a");
+									d.href = "/apps/calendar/?date=" + n.start.slice(0, 10);
+									d.className = "search-hit";
+									d.innerHTML =
+										'<span class="search-hit-name">' +
+										n.summary +
+										'</span><span class="search-hit-sub">' +
+										new Date(n.start).toLocaleString() +
+										"</span>";
+									panel.appendChild(d);
+								});
+							}
+						} else {
+							panel.style.display = "none";
 						}
-					}).catch(function() {});
-			}
+					};
 
-			window.toggleNotifPanel = function() {
-				if (panel.style.display === "none") {
-					panel.style.display = "block";
-					panel.innerHTML = "";
-					if (!pending.length) {
-						panel.innerHTML = '<div style="padding:0.75rem;color:var(--color-text-muted)">No notifications</div>';
-					} else {
-						pending.forEach(function(n) {
-							var d = document.createElement("a");
-							d.href = "/apps/calendar/?date=" + n.start.slice(0,10);
-							d.className = "search-hit";
-							d.innerHTML = '<span class="search-hit-name">' + n.summary + '</span><span class="search-hit-sub">' + new Date(n.start).toLocaleString() + '</span>';
-							panel.appendChild(d);
-						});
-					}
-				} else {
-					panel.style.display = "none";
-				}
-			};
-
-			// Poll every 60 seconds
-			setInterval(checkNotifications, 60000);
-			// Initial check after 5 seconds
-			setTimeout(checkNotifications, 5000);
-		})();
-		</script>
+					// Poll every 60 seconds
+					setInterval(checkNotifications, 60000);
+					// Initial check after 5 seconds
+					setTimeout(checkNotifications, 5000);
+				})();
+			</script>
 			<script>
-		(function() {
-			var box = document.getElementById("search-box");
-			if (!box) return;
-			var results = document.getElementById("search-results");
+				(function () {
+					var box = document.getElementById("search-box");
+					if (!box) return;
+					var results = document.getElementById("search-results");
 
-			document.addEventListener("keydown", function(e) {
-				if (e.key === "/" && !e.ctrlKey && !e.metaKey &&
-					!["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName) &&
-					!document.activeElement.isContentEditable) {
-					e.preventDefault();
-					box.focus();
-					box.select();
-				}
-			});
+					document.addEventListener("keydown", function (e) {
+						if (
+							e.key === "/" &&
+							!e.ctrlKey &&
+							!e.metaKey &&
+							!["INPUT", "TEXTAREA", "SELECT"].includes(
+								document.activeElement.tagName,
+							) &&
+							!document.activeElement.isContentEditable
+						) {
+							e.preventDefault();
+							box.focus();
+							box.select();
+						}
+					});
 
-			box.addEventListener("keydown", function(e) {
-				var hits = results.querySelectorAll(".search-hit");
-				if (!hits.length) {
-					if (e.key === "Escape") { box.blur(); }
-					return;
-				}
-				var cur = results.querySelector(".search-hit-active");
-				var idx = cur ? Array.prototype.indexOf.call(hits, cur) : -1;
+					box.addEventListener("keydown", function (e) {
+						var hits = results.querySelectorAll(".search-hit");
+						if (!hits.length) {
+							if (e.key === "Escape") {
+								box.blur();
+							}
+							return;
+						}
+						var cur = results.querySelector(".search-hit-active");
+						var idx = cur ? Array.prototype.indexOf.call(hits, cur) : -1;
 
-				if (e.key === "ArrowDown") {
-					e.preventDefault();
-					if (cur) cur.classList.remove("search-hit-active");
-					idx = (idx + 1) % hits.length;
-					hits[idx].classList.add("search-hit-active");
-					hits[idx].scrollIntoView({block:"nearest"});
-				} else if (e.key === "ArrowUp") {
-					e.preventDefault();
-					if (cur) cur.classList.remove("search-hit-active");
-					idx = idx <= 0 ? hits.length - 1 : idx - 1;
-					hits[idx].classList.add("search-hit-active");
-					hits[idx].scrollIntoView({block:"nearest"});
-				} else if (e.key === "Enter") {
-					if (cur) {
-						e.preventDefault();
-						cur.click();
-					}
-				} else if (e.key === "Escape") {
-					box.blur();
-				}
-			});
+						if (e.key === "ArrowDown") {
+							e.preventDefault();
+							if (cur) cur.classList.remove("search-hit-active");
+							idx = (idx + 1) % hits.length;
+							hits[idx].classList.add("search-hit-active");
+							hits[idx].scrollIntoView({ block: "nearest" });
+						} else if (e.key === "ArrowUp") {
+							e.preventDefault();
+							if (cur) cur.classList.remove("search-hit-active");
+							idx = idx <= 0 ? hits.length - 1 : idx - 1;
+							hits[idx].classList.add("search-hit-active");
+							hits[idx].scrollIntoView({ block: "nearest" });
+						} else if (e.key === "Enter") {
+							if (cur) {
+								e.preventDefault();
+								cur.click();
+							}
+						} else if (e.key === "Escape") {
+							box.blur();
+						}
+					});
 
-			new MutationObserver(function() {
-				var hits = results.querySelectorAll(".search-hit");
-				hits.forEach(function(h) { h.classList.remove("search-hit-active"); });
-				if (hits.length) hits[0].classList.add("search-hit-active");
-			}).observe(results, {childList: true});
-		})();
-		</script>
+					new MutationObserver(function () {
+						var hits = results.querySelectorAll(".search-hit");
+						hits.forEach(function (h) {
+							h.classList.remove("search-hit-active");
+						});
+						if (hits.length) hits[0].classList.add("search-hit-active");
+					}).observe(results, { childList: true });
+				})();
+			</script>
 		</body>
 	</html>
 }
@@ -661,61 +731,83 @@ templ MFAPage(errMsg string, next string, mfaMethod string) {
 							<button id="webauthn-btn" class="btn btn-primary" type="button" style="width:100%" onclick="startWebAuthnLogin()">Verify with Passkey</button>
 						</div>
 						<script>
-						async function startWebAuthnLogin() {
-							var btn = document.getElementById("webauthn-btn");
-							var status = document.getElementById("webauthn-status");
-							btn.disabled = true;
-							btn.textContent = "Waiting for passkey...";
-							try {
-								var beginResp = await fetch("/login/mfa/webauthn/begin", {method:"POST"});
-								if (!beginResp.ok) throw new Error("Failed to start");
-								var options = await beginResp.json();
-								options.publicKey.challenge = base64urlToBuffer(options.publicKey.challenge);
-								if (options.publicKey.allowCredentials) {
-									options.publicKey.allowCredentials = options.publicKey.allowCredentials.map(function(c) {
-										c.id = base64urlToBuffer(c.id); return c;
+							async function startWebAuthnLogin() {
+								var btn = document.getElementById("webauthn-btn");
+								var status = document.getElementById("webauthn-status");
+								btn.disabled = true;
+								btn.textContent = "Waiting for passkey...";
+								try {
+									var beginResp = await fetch("/login/mfa/webauthn/begin", {
+										method: "POST",
 									});
-								}
-								var assertion = await navigator.credentials.get(options);
-								var body = JSON.stringify({
-									id: assertion.id,
-									rawId: bufferToBase64url(assertion.rawId),
-									type: assertion.type,
-									response: {
-										authenticatorData: bufferToBase64url(assertion.response.authenticatorData),
-										clientDataJSON: bufferToBase64url(assertion.response.clientDataJSON),
-										signature: bufferToBase64url(assertion.response.signature),
-										userHandle: assertion.response.userHandle ? bufferToBase64url(assertion.response.userHandle) : ""
+									if (!beginResp.ok) throw new Error("Failed to start");
+									var options = await beginResp.json();
+									options.publicKey.challenge = base64urlToBuffer(
+										options.publicKey.challenge,
+									);
+									if (options.publicKey.allowCredentials) {
+										options.publicKey.allowCredentials =
+											options.publicKey.allowCredentials.map(function (c) {
+												c.id = base64urlToBuffer(c.id);
+												return c;
+											});
 									}
-								});
-								var finishResp = await fetch("/login/mfa/webauthn/finish", {
-									method: "POST",
-									headers: {"Content-Type":"application/json"},
-									body: body
-								});
-								if (!finishResp.ok) throw new Error("Verification failed");
-								var result = await finishResp.json();
-								window.location.href = result.redirect || "/";
-							} catch(e) {
-								status.innerHTML = '<div class="alert alert-error">' + (e.message || "Passkey verification failed") + '</div>';
-								status.innerHTML += '<button class="btn btn-primary" type="button" style="width:100%;margin-top:0.5rem" onclick="startWebAuthnLogin()">Try Again</button>';
+									var assertion = await navigator.credentials.get(options);
+									var body = JSON.stringify({
+										id: assertion.id,
+										rawId: bufferToBase64url(assertion.rawId),
+										type: assertion.type,
+										response: {
+											authenticatorData: bufferToBase64url(
+												assertion.response.authenticatorData,
+											),
+											clientDataJSON: bufferToBase64url(
+												assertion.response.clientDataJSON,
+											),
+											signature: bufferToBase64url(
+												assertion.response.signature,
+											),
+											userHandle: assertion.response.userHandle
+												? bufferToBase64url(assertion.response.userHandle)
+												: "",
+										},
+									});
+									var finishResp = await fetch("/login/mfa/webauthn/finish", {
+										method: "POST",
+										headers: { "Content-Type": "application/json" },
+										body: body,
+									});
+									if (!finishResp.ok) throw new Error("Verification failed");
+									var result = await finishResp.json();
+									window.location.href = result.redirect || "/";
+								} catch (e) {
+									status.innerHTML =
+										'<div class="alert alert-error">' +
+										(e.message || "Passkey verification failed") +
+										"</div>";
+									status.innerHTML +=
+										'<button class="btn btn-primary" type="button" style="width:100%;margin-top:0.5rem" onclick="startWebAuthnLogin()">Try Again</button>';
+								}
 							}
-						}
-						function base64urlToBuffer(b) {
-							var s = b.replace(/-/g,"+").replace(/_/g,"/");
-							while (s.length%4) s+="=";
-							var raw = atob(s);
-							var arr = new Uint8Array(raw.length);
-							for (var i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
-							return arr.buffer;
-						}
-						function bufferToBase64url(buf) {
-							var arr = new Uint8Array(buf);
-							var s = "";
-							for (var i=0;i<arr.length;i++) s+=String.fromCharCode(arr[i]);
-							return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
-						}
-						startWebAuthnLogin();
+							function base64urlToBuffer(b) {
+								var s = b.replace(/-/g, "+").replace(/_/g, "/");
+								while (s.length % 4) s += "=";
+								var raw = atob(s);
+								var arr = new Uint8Array(raw.length);
+								for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+								return arr.buffer;
+							}
+							function bufferToBase64url(buf) {
+								var arr = new Uint8Array(buf);
+								var s = "";
+								for (var i = 0; i < arr.length; i++)
+									s += String.fromCharCode(arr[i]);
+								return btoa(s)
+									.replace(/\+/g, "-")
+									.replace(/\//g, "_")
+									.replace(/=/g, "");
+							}
+							startWebAuthnLogin();
 						</script>
 					} else {
 						if mfaMethod == "email" {

@@ -268,34 +268,41 @@ templ taskListSettingsPage(sb sidebarData, list *TaskList, csrfToken string) {
 templ sortableScript(listID int64, csrfToken string) {
 	<script src="/static/vendor/sortable.min.js"></script>
 	<script>
-		(function() {
-			const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
-			const listId = Number(document.querySelector('[data-list-id]')?.dataset.listId || 0);
-			document.querySelectorAll('.task-group').forEach(function(el) {
+		(function () {
+			const csrfToken =
+				document.querySelector('input[name="csrf_token"]')?.value || "";
+			const listId = Number(
+				document.querySelector("[data-list-id]")?.dataset.listId || 0,
+			);
+			document.querySelectorAll(".task-group").forEach(function (el) {
 				new Sortable(el, {
-					group: 'tasks',
-					handle: '.drag-handle',
+					group: "tasks",
+					handle: ".drag-handle",
 					animation: 150,
 					fallbackOnBody: true,
 					swapThreshold: 0.65,
-					onEnd: function(evt) {
+					onEnd: function (evt) {
 						const parentId = evt.to.dataset.parentId || null;
 						const ids = Array.from(evt.to.children)
-							.filter(function(c) { return c.dataset && c.dataset.taskId; })
-							.map(function(c) { return Number(c.dataset.taskId); });
-						fetch('/apps/tasks/reorder', {
-							method: 'POST',
+							.filter(function (c) {
+								return c.dataset && c.dataset.taskId;
+							})
+							.map(function (c) {
+								return Number(c.dataset.taskId);
+							});
+						fetch("/apps/tasks/reorder", {
+							method: "POST",
 							headers: {
-								'Content-Type': 'application/json',
-								'X-CSRF-Token': csrfToken
+								"Content-Type": "application/json",
+								"X-CSRF-Token": csrfToken,
 							},
 							body: JSON.stringify({
 								list_id: listId,
 								parent_id: parentId ? Number(parentId) : null,
-								task_ids: ids
-							})
+								task_ids: ids,
+							}),
 						});
-					}
+					},
 				});
 			});
 		})();

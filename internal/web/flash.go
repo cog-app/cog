@@ -5,9 +5,16 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 )
 
 const flashCookieName = "cog_flash"
+
+// cookieCfg is set once by New() at startup and read by flash helpers and any
+// other package-level cookie writer in this package. Not safe to mutate after
+// startup.
+var cookieCfg cogplugin.CookieConfig
 
 // Flash holds a one-time message displayed after a redirect.
 type Flash struct {
@@ -31,13 +38,10 @@ func setFlashURL(w http.ResponseWriter, kind, message, linkURL string) {
 
 func writeFlash(w http.ResponseWriter, f Flash) {
 	data, _ := json.Marshal(f)
-	http.SetCookie(w, &http.Cookie{
-		Name:     flashCookieName,
-		Value:    url.QueryEscape(string(data)),
-		Path:     "/",
-		MaxAge:   60,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+	cookieCfg.Set(w, &http.Cookie{
+		Name:   flashCookieName,
+		Value:  url.QueryEscape(string(data)),
+		MaxAge: 60,
 	})
 }
 
@@ -48,13 +52,7 @@ func getFlash(w http.ResponseWriter, r *http.Request) *Flash {
 		return nil
 	}
 	// Clear immediately.
-	http.SetCookie(w, &http.Cookie{
-		Name:     flashCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
+	cookieCfg.Clear(w, flashCookieName)
 	val, err := url.QueryUnescape(cookie.Value)
 	if err != nil {
 		return nil

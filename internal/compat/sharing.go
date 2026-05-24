@@ -470,7 +470,9 @@ func (h *SharingHandler) createFederatedShare(w http.ResponseWriter, r *http.Req
 	writeOCSReq(w, r, http.StatusOK, ocs)
 }
 
-// HandleGetShare handles GET .../shares/{shareId}
+// HandleGetShare handles GET .../shares/{shareId}.
+// Only the owner, the share subject, or a member of a subject group may view
+// the share. Other users get 404 to avoid existence oracles.
 func (h *SharingHandler) HandleGetShare(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u == nil {
@@ -490,6 +492,11 @@ func (h *SharingHandler) HandleGetShare(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if !h.shareVisibleTo(rec, u) {
+		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share not found")
+		return
+	}
+
 	owner, err := h.Users.GetByID(rec.OwnerUserID)
 	if err != nil {
 		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "owner not found")
@@ -502,6 +509,37 @@ func (h *SharingHandler) HandleGetShare(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeOCSReq(w, r, http.StatusOK, ocs)
+}
+
+// shareVisibleTo returns true if u may view rec. Owner, user-subject, or
+// group-subject member.
+func (h *SharingHandler) shareVisibleTo(rec *share.Record, u *user.User) bool {
+	if rec.OwnerUserID == u.ID {
+		return true
+	}
+	switch rec.SubjectType {
+	case "USER":
+		// SubjectID may be user ID or username depending on creator.
+		if rec.SubjectID == u.ID || rec.SubjectID == u.Username {
+			return true
+		}
+	case "GROUP":
+		if h.Groups == nil {
+			return false
+		}
+		for g, err := range h.Groups.ListGroupsForUser(u.ID) {
+			if err != nil {
+				return false
+			}
+			if g.ID == rec.SubjectID || g.Name == rec.SubjectID {
+				return true
+			}
+		}
+	}
+	// PUBLIC shares are intentionally not visible via /api/shares/{id} except
+	// to the owner — the token is delivered out-of-band by the owner. This
+	// prevents enumeration of public-link tokens by any authenticated user.
+	return false
 }
 
 // HandleUpdateShare handles PUT .../shares/{shareId}

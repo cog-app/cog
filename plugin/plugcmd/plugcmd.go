@@ -290,6 +290,7 @@ func (r *capturingRegistrar) RegisterDAVHandler(prefix string, handler http.Hand
 func (r *capturingRegistrar) RegisterSettingsPage(page cogplugin.SettingsPage)       {}
 func (r *capturingRegistrar) RegisterCommand(def cogplugin.CommandDef)               {}
 func (r *capturingRegistrar) ActivityLog() cogplugin.ActivityLogger                  { return nil }
+func (r *capturingRegistrar) Cookies() cogplugin.CookieConfig                        { return cogplugin.CookieConfig{} }
 
 // responseCapture is a minimal http.ResponseWriter for capturing plugin responses.
 type responseCapture struct {

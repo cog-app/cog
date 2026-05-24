@@ -71,10 +71,14 @@ templ profanityAdminPage(cfg adminSettingsData, flash string, csrfToken string) 
 			<button class="btn btn-primary" type="submit">Save</button>
 		</form>
 		<script>
-		document.getElementById('tts_engine').addEventListener('change', function() {
-			document.getElementById('tts-piper').style.display = this.value === 'piper' ? '' : 'none';
-			document.getElementById('tts-system').style.display = this.value === 'system' ? '' : 'none';
-		});
+			document
+				.getElementById("tts_engine")
+				.addEventListener("change", function () {
+					document.getElementById("tts-piper").style.display =
+						this.value === "piper" ? "" : "none";
+					document.getElementById("tts-system").style.display =
+						this.value === "system" ? "" : "none";
+				});
 		</script>
 	}
 }

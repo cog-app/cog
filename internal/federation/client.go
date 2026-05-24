@@ -17,11 +17,16 @@ type Client struct {
 	BaseURL string // our base URL for constructing callback URLs
 }
 
-// NewClient creates an OCM client.
+// NewClient creates an OCM client with SSRF protections: dials are gated by
+// safeDialContext (blocks private/loopback/link-local/metadata IPs and pins to
+// the resolved address), redirects are refused, and only HTTPS is permitted
+// for remote hosts.
 func NewClient(baseURL string) *Client {
 	return &Client{
 		HTTP: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:       30 * time.Second,
+			Transport:     safeTransport(),
+			CheckRedirect: noRedirect,
 		},
 		BaseURL: strings.TrimSuffix(baseURL, "/"),
 	}
@@ -132,9 +137,19 @@ func (c *Client) Notify(ctx context.Context, remoteHost string, notif OCMNotific
 	return nil
 }
 
+// normalizeHost prepends https:// when missing. An explicit http:// is honored
+// only in allowPrivate (test) mode; in production normalizeHost upgrades it to
+// https:// to defeat downgrade attacks.
 func normalizeHost(host string) string {
-	if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
-		return strings.TrimSuffix(host, "/")
+	host = strings.TrimSuffix(host, "/")
+	if strings.HasPrefix(host, "https://") {
+		return host
 	}
-	return "https://" + strings.TrimSuffix(host, "/")
+	if strings.HasPrefix(host, "http://") {
+		if allowPrivate {
+			return host
+		}
+		return "https://" + strings.TrimPrefix(host, "http://")
+	}
+	return "https://" + host
 }

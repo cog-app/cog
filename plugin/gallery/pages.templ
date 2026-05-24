@@ -279,42 +279,42 @@ templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face, csrfT
 							}
 						</div>
 						<script>
-						function openLightbox(img) {
-							var src = img.getAttribute('data-full-src');
-							var overlay = document.createElement('div');
-							overlay.className = 'lightbox';
-							var lbImg = document.createElement('img');
-							lbImg.src = src;
-							lbImg.alt = '';
-							var closeBtn = document.createElement('button');
-							closeBtn.className = 'lightbox-close';
-							closeBtn.setAttribute('aria-label', 'Close');
-							closeBtn.innerHTML = '&times;';
-							overlay.appendChild(closeBtn);
-							overlay.appendChild(lbImg);
+							function openLightbox(img) {
+								var src = img.getAttribute("data-full-src");
+								var overlay = document.createElement("div");
+								overlay.className = "lightbox";
+								var lbImg = document.createElement("img");
+								lbImg.src = src;
+								lbImg.alt = "";
+								var closeBtn = document.createElement("button");
+								closeBtn.className = "lightbox-close";
+								closeBtn.setAttribute("aria-label", "Close");
+								closeBtn.innerHTML = "&times;";
+								overlay.appendChild(closeBtn);
+								overlay.appendChild(lbImg);
 
-							function closeLightbox() {
-								overlay.remove();
-								document.removeEventListener('keydown', keyHandler);
-							}
-
-							lbImg.addEventListener('click', function(e) {
-								e.stopPropagation();
-								overlay.classList.toggle('lightbox-full');
-							});
-
-							overlay.addEventListener('click', function(e) {
-								if (e.target === overlay || e.target === closeBtn) {
-									closeLightbox();
+								function closeLightbox() {
+									overlay.remove();
+									document.removeEventListener("keydown", keyHandler);
 								}
-							});
 
-							function keyHandler(e) {
-								if (e.key === 'Escape') closeLightbox();
+								lbImg.addEventListener("click", function (e) {
+									e.stopPropagation();
+									overlay.classList.toggle("lightbox-full");
+								});
+
+								overlay.addEventListener("click", function (e) {
+									if (e.target === overlay || e.target === closeBtn) {
+										closeLightbox();
+									}
+								});
+
+								function keyHandler(e) {
+									if (e.key === "Escape") closeLightbox();
+								}
+								document.addEventListener("keydown", keyHandler);
+								document.body.appendChild(overlay);
 							}
-							document.addEventListener('keydown', keyHandler);
-							document.body.appendChild(overlay);
-						}
 						</script>
 					}
 				</div>
@@ -573,64 +573,64 @@ templ personNameForm(person *Person, csrfToken string) {
 		</div>
 		<button type="submit" class="btn btn-primary btn-sm">Save</button>
 		<script>
-		(function() {
-			var form = document.currentScript.parentElement;
-			var input = form.querySelector('.person-name-input');
-			var results = form.querySelector('.picker-results');
-			var mergeField = form.querySelector('.merge-target');
-			var contactField = form.querySelector('.contact-target');
+			(function () {
+				var form = document.currentScript.parentElement;
+				var input = form.querySelector(".person-name-input");
+				var results = form.querySelector(".picker-results");
+				var mergeField = form.querySelector(".merge-target");
+				var contactField = form.querySelector(".contact-target");
 
-			// Close when clicking outside.
-			document.addEventListener('click', function(e) {
-				if (!form.contains(e.target)) results.innerHTML = '';
-			});
+				// Close when clicking outside.
+				document.addEventListener("click", function (e) {
+					if (!form.contains(e.target)) results.innerHTML = "";
+				});
 
-			// Handle result click — merge into person or link to contact.
-			results.addEventListener('click', function(e) {
-				var opt = e.target.closest('.picker-option');
-				if (!opt) return;
-				var id = opt.dataset.id;
-				if (id.indexOf('contact:') === 0) {
-					contactField.value = id.substring(8);
-					mergeField.value = '';
-				} else {
-					mergeField.value = id;
-					contactField.value = '';
-				}
-				input.value = opt.dataset.name;
-				results.innerHTML = '';
-			});
+				// Handle result click — merge into person or link to contact.
+				results.addEventListener("click", function (e) {
+					var opt = e.target.closest(".picker-option");
+					if (!opt) return;
+					var id = opt.dataset.id;
+					if (id.indexOf("contact:") === 0) {
+						contactField.value = id.substring(8);
+						mergeField.value = "";
+					} else {
+						mergeField.value = id;
+						contactField.value = "";
+					}
+					input.value = opt.dataset.name;
+					results.innerHTML = "";
+				});
 
-			// Clear merge/contact targets when user edits name manually.
-			input.addEventListener('input', function() {
-				mergeField.value = '';
-				contactField.value = '';
-			});
+				// Clear merge/contact targets when user edits name manually.
+				input.addEventListener("input", function () {
+					mergeField.value = "";
+					contactField.value = "";
+				});
 
-			// Keyboard navigation.
-			input.addEventListener('keydown', function(e) {
-				var opts = results.querySelectorAll('.picker-option');
-				if (!opts.length) return;
-				var cur = results.querySelector('.picker-option.active');
-				var idx = cur ? Array.prototype.indexOf.call(opts, cur) : -1;
-				if (e.key === 'ArrowDown') {
-					e.preventDefault();
-					if (cur) cur.classList.remove('active');
-					idx = (idx + 1) % opts.length;
-					opts[idx].classList.add('active');
-				} else if (e.key === 'ArrowUp') {
-					e.preventDefault();
-					if (cur) cur.classList.remove('active');
-					idx = idx <= 0 ? opts.length - 1 : idx - 1;
-					opts[idx].classList.add('active');
-				} else if (e.key === 'Enter' && cur) {
-					e.preventDefault();
-					cur.click();
-				} else if (e.key === 'Escape') {
-					results.innerHTML = '';
-				}
-			});
-		})();
+				// Keyboard navigation.
+				input.addEventListener("keydown", function (e) {
+					var opts = results.querySelectorAll(".picker-option");
+					if (!opts.length) return;
+					var cur = results.querySelector(".picker-option.active");
+					var idx = cur ? Array.prototype.indexOf.call(opts, cur) : -1;
+					if (e.key === "ArrowDown") {
+						e.preventDefault();
+						if (cur) cur.classList.remove("active");
+						idx = (idx + 1) % opts.length;
+						opts[idx].classList.add("active");
+					} else if (e.key === "ArrowUp") {
+						e.preventDefault();
+						if (cur) cur.classList.remove("active");
+						idx = idx <= 0 ? opts.length - 1 : idx - 1;
+						opts[idx].classList.add("active");
+					} else if (e.key === "Enter" && cur) {
+						e.preventDefault();
+						cur.click();
+					} else if (e.key === "Escape") {
+						results.innerHTML = "";
+					}
+				});
+			})();
 		</script>
 	</form>
 }
@@ -995,13 +995,15 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			</div>
 			<button type="submit" class="btn btn-primary btn-sm">Save</button>
 			<script>
-			(function() {
-				var sel = document.querySelector('select[name="tag_backend"]');
-				var group = document.getElementById('tag-model-group');
-				function update() { group.style.display = sel.value === 'onnx' ? '' : 'none'; }
-				sel.addEventListener('change', update);
-				update();
-			})();
+				(function () {
+					var sel = document.querySelector('select[name="tag_backend"]');
+					var group = document.getElementById("tag-model-group");
+					function update() {
+						group.style.display = sel.value === "onnx" ? "" : "none";
+					}
+					sel.addEventListener("change", update);
+					update();
+				})();
 			</script>
 		</form>
 	}

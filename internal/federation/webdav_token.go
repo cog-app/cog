@@ -90,20 +90,26 @@ func (h *TokenWebDAVHandler) servePublicShare(w http.ResponseWriter, r *http.Req
 	}
 	resourcePath := meta.Path
 
-	// Build the local filesystem path.
+	// Build the local filesystem path used only for PROPFIND read-listing and
+	// GET/HEAD serving. Writes go through the files plugin (see handlePut/Mkcol/Delete)
+	// so they update DB metadata, quota, indexing, and activity.
 	filesDir := filepath.Join(h.DataDir, owner.Username, "files")
 	basePath := filepath.Join(filesDir, filepath.FromSlash(resourcePath))
 
-	// Extract the sub-path from the request URL.
+	// Extract the sub-path from the request URL (slash-form, relative to the
+	// shared resource root).
 	subPath := strings.TrimPrefix(r.URL.Path, "/public.php/webdav")
 	subPath = path.Clean("/" + subPath)
 	localPath := filepath.Join(basePath, filepath.FromSlash(subPath))
 
 	// Security: ensure we don't escape the share root.
-	if !strings.HasPrefix(localPath, basePath) {
+	if localPath != basePath && !strings.HasPrefix(localPath, basePath+string(os.PathSeparator)) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
+
+	// Owner-namespace path passed to the files plugin (slash-form).
+	targetPath := path.Join(resourcePath, subPath)
 
 	// Enforce permissions.
 	isReadOnly := rec.Permissions&2 == 0 // no write permission
@@ -119,11 +125,11 @@ func (h *TokenWebDAVHandler) servePublicShare(w http.ResponseWriter, r *http.Req
 	case http.MethodGet, http.MethodHead:
 		http.ServeFile(w, r, localPath)
 	case http.MethodPut:
-		h.handlePut(w, r, localPath)
+		h.handlePut(w, r, owner.Username, targetPath)
 	case "MKCOL":
-		h.handleMkcol(w, localPath)
+		h.handleMkcol(w, owner.Username, targetPath)
 	case http.MethodDelete:
-		h.handleDelete(w, localPath)
+		h.handleDelete(w, owner.Username, targetPath)
 	case "OPTIONS":
 		w.Header().Set("Allow", "OPTIONS, GET, HEAD, PUT, DELETE, MKCOL, PROPFIND")
 		w.Header().Set("DAV", "1, 2")
@@ -205,35 +211,24 @@ func writePropResponse(w io.Writer, href string, info os.FileInfo) {
 	io.WriteString(w, `</d:response>`)
 }
 
-func (h *TokenWebDAVHandler) handlePut(w http.ResponseWriter, r *http.Request, localPath string) {
-	dir := filepath.Dir(localPath)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	f, err := os.Create(localPath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer f.Close()
-	if _, err := io.Copy(f, r.Body); err != nil {
+func (h *TokenWebDAVHandler) handlePut(w http.ResponseWriter, r *http.Request, username, targetPath string) {
+	if _, err := h.Files.Upload(username, targetPath, r.Body); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (h *TokenWebDAVHandler) handleMkcol(w http.ResponseWriter, localPath string) {
-	if err := os.MkdirAll(localPath, 0o700); err != nil {
+func (h *TokenWebDAVHandler) handleMkcol(w http.ResponseWriter, username, targetPath string) {
+	if _, err := h.Files.CreateDir(username, targetPath); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (h *TokenWebDAVHandler) handleDelete(w http.ResponseWriter, localPath string) {
-	if err := os.RemoveAll(localPath); err != nil {
+func (h *TokenWebDAVHandler) handleDelete(w http.ResponseWriter, username, targetPath string) {
+	if err := h.Files.Delete(username, targetPath); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -13,12 +13,17 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 )
 
-// WebAuthnStore manages WebAuthn credentials and challenge sessions.
+// WebAuthnStore manages WebAuthn credentials and challenge sessions. Session
+// data (containing the active challenge) is encrypted at rest under a
+// purpose-derived key.
 type WebAuthnStore struct {
-	db    *sql.DB
-	clock clock.Clock
-	wa    *webauthn.WebAuthn
+	db      *sql.DB
+	clock   clock.Clock
+	wa      *webauthn.WebAuthn
+	sessKey []byte
 }
+
+const webauthnSessionLabel = "webauthn_session/v1"
 
 // WebAuthnCredential represents a stored passkey credential.
 type WebAuthnCredential struct {
@@ -30,7 +35,7 @@ type WebAuthnCredential struct {
 
 // NewWebAuthnStore creates a new WebAuthn store. baseURL is used to derive
 // the RPID (domain) and origin.
-func NewWebAuthnStore(db *sql.DB, c clock.Clock, baseURL string) (*WebAuthnStore, error) {
+func NewWebAuthnStore(db *sql.DB, c clock.Clock, baseURL string, secret []byte) (*WebAuthnStore, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse base url: %w", err)
@@ -45,7 +50,12 @@ func NewWebAuthnStore(db *sql.DB, c clock.Clock, baseURL string) (*WebAuthnStore
 		return nil, fmt.Errorf("create webauthn: %w", err)
 	}
 
-	return &WebAuthnStore{db: db, clock: c, wa: wa}, nil
+	return &WebAuthnStore{
+		db:      db,
+		clock:   c,
+		wa:      wa,
+		sessKey: DerivedKey(secret, webauthnSessionLabel),
+	}, nil
 }
 
 // webAuthnUser adapts a user for the WebAuthn library.
@@ -317,11 +327,15 @@ func (s *WebAuthnStore) storeSession(userID string, session *webauthn.SessionDat
 	if err != nil {
 		return fmt.Errorf("marshal session: %w", err)
 	}
+	encrypted, err := encryptSecret(data, s.sessKey)
+	if err != nil {
+		return fmt.Errorf("encrypt session: %w", err)
+	}
 
 	expires := s.clock().Add(5 * time.Minute)
 	_, err = s.db.Exec(
 		`INSERT INTO webauthn_sessions (id, user_id, session_data, expires_at) VALUES (?, ?, ?, ?)`,
-		id, userID, string(data), expires.Unix(),
+		id, userID, encrypted, expires.Unix(),
 	)
 	return err
 }
@@ -341,8 +355,12 @@ func (s *WebAuthnStore) loadSession(userID string) (*webauthn.SessionData, error
 		return nil, fmt.Errorf("webauthn session expired")
 	}
 
+	decrypted, err := decryptSecret(data, s.sessKey)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt session: %w", err)
+	}
 	var session webauthn.SessionData
-	if err := json.Unmarshal([]byte(data), &session); err != nil {
+	if err := json.Unmarshal(decrypted, &session); err != nil {
 		return nil, fmt.Errorf("unmarshal session: %w", err)
 	}
 	return &session, nil

@@ -89,6 +89,12 @@ func (m *Manager) SystemHook() func(op int, db, table string, rowid int64) {
 }
 
 // UserDBHook returns a hook function for a per-user plugin database.
+//
+// The hook is invoked synchronously inside the SQLite write path; doing any
+// SQL here (via FullSync etc.) would deadlock the per-user DB. So this hook
+// only forwards changes when the user's index is already open. If it is not,
+// initialization is kicked off in a background goroutine — that init's
+// FullSync sweeps the same row we just dropped, so no change is lost.
 func (m *Manager) UserDBHook(username, pluginID string) func(op int, db, table string, rowid int64) {
 	return func(op int, dbName, table string, rowid int64) {
 		m.mu.Lock()
@@ -96,13 +102,15 @@ func (m *Manager) UserDBHook(username, pluginID string) func(op int, db, table s
 		m.mu.Unlock()
 
 		if !ok {
-			// Lazily open user index on first hook.
-			var err error
-			us, err = m.ensureUserIndex(username)
-			if err != nil {
-				m.log.Error("lazy open user index failed", "user", username, "err", err)
-				return
-			}
+			// Index not opened yet; init asynchronously and drop this change.
+			// ensureUserIndex performs a FullSync on first open, which will
+			// pick up the row we just saw.
+			go func() {
+				if _, err := m.ensureUserIndex(username); err != nil {
+					m.log.Error("lazy open user index failed", "user", username, "err", err)
+				}
+			}()
+			return
 		}
 
 		us.collector.Send(Change{
@@ -202,12 +210,13 @@ func (m *Manager) DeleteSharedDocument(username, docID string) error {
 }
 
 func (m *Manager) ensureUserIndex(username string) (*userSearch, error) {
+	// Fast path: lock just to read.
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if us, ok := m.userIndices[username]; ok {
+		m.mu.Unlock()
 		return us, nil
 	}
+	m.mu.Unlock()
 
 	indexPath := filepath.Join(m.dataDir, username, ".search", "user.bleve")
 	idx, err := Open(indexPath)
@@ -215,16 +224,7 @@ func (m *Manager) ensureUserIndex(username string) (*userSearch, error) {
 		return nil, fmt.Errorf("open user search index for %s: %w", username, err)
 	}
 
-	// Create a collector that uses the user's plugin DB for enrichment.
-	us := &userSearch{index: idx}
-
-	// For per-user indices, we need a dbFunc that returns the right DB.
-	// We'll register plugin sources and each one gets its own dbFunc call.
-	collector := NewCollector(m.log, idx, func() *sql.DB {
-		// Return first available plugin DB for this user.
-		// Each plugin source will use its own DB via Enrich.
-		return nil
-	})
+	collector := NewCollector(m.log, idx, func() *sql.DB { return nil })
 
 	// Register plugin sources for this user.
 	for pluginID, defs := range m.pluginSources {
@@ -236,13 +236,24 @@ func (m *Manager) ensureUserIndex(username string) (*userSearch, error) {
 
 	collector.Start(m.ctx)
 
-	// Full sync on first open.
+	// Insert into map under lock. If someone else won the race, discard ours.
+	m.mu.Lock()
+	if existing, ok := m.userIndices[username]; ok {
+		m.mu.Unlock()
+		// Lost the race: shut down our duplicate and return the winner.
+		collector.Stop()
+		idx.Close()
+		return existing, nil
+	}
+	us := &userSearch{index: idx, collector: collector}
+	m.userIndices[username] = us
+	m.mu.Unlock()
+
+	// FullSync runs without the manager lock — it issues SELECTs against the
+	// per-user plugin DB and would otherwise block all other user-index opens.
 	if err := collector.FullSync(); err != nil {
 		m.log.Error("user full sync failed", "user", username, "err", err)
 	}
-
-	us.collector = collector
-	m.userIndices[username] = us
 	return us, nil
 }
 

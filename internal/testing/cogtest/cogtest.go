@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -140,6 +141,21 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 		Mailbox:   mbox,
 		Handler:   handler,
 	}
+}
+
+// WithCookieJar installs an empty cookie jar on the env's HTTP client so
+// cookies (e.g., session cookies) persist across requests in a test. Without
+// this, BasicAuth-driven middleware-created sessions would pollute later
+// requests in the same test that intend to switch users via BasicAuth.
+// Call this only in tests that need a stateful browser-like session.
+func (e *Env) WithCookieJar(t testing.TB) *Env {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cogtest: cookiejar: %v", err)
+	}
+	e.Client.Jar = jar
+	return e
 }
 
 // --- Setup helpers ---

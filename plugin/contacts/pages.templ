@@ -167,46 +167,62 @@ templ contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken str
 		</div>
 	</div>
 	<style>
-			.avatar-initials {
-				display: inline-flex; align-items: center; justify-content: center;
-				width: 32px; height: 32px; border-radius: 50%;
-				color: #fff; font-weight: 600; font-size: 0.8rem;
-			}
-			.typed-label { font-size:0.75rem; color:var(--color-muted,#888); text-transform:uppercase; }
-		</style>
+		.avatar-initials {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 32px;
+			height: 32px;
+			border-radius: 50%;
+			color: #fff;
+			font-weight: 600;
+			font-size: 0.8rem;
+		}
+		.typed-label {
+			font-size: 0.75rem;
+			color: var(--color-muted, #888);
+			text-transform: uppercase;
+		}
+	</style>
 	<script>
 		function showContactDetail(id) {
-			fetch('/apps/contacts/contacts/' + id, {
-				headers: {'X-CSRF-Token': document.querySelector('[name=csrf_token]').value}
+			fetch("/apps/contacts/contacts/" + id, {
+				headers: {
+					"X-CSRF-Token": document.querySelector("[name=csrf_token]").value,
+				},
 			})
-			.then(function(r) { return r.text(); })
-			.then(function(html) {
-				var el = document.getElementById('contact-modal-body');
-				el.innerHTML = html;
-				htmx.process(el);
-				document.getElementById('contact-modal').style.display = 'flex';
-			});
+				.then(function (r) {
+					return r.text();
+				})
+				.then(function (html) {
+					var el = document.getElementById("contact-modal-body");
+					el.innerHTML = html;
+					htmx.process(el);
+					document.getElementById("contact-modal").style.display = "flex";
+				});
 		}
 		function addField(containerId, kind) {
 			var container = document.getElementById(containerId);
-			var row = document.createElement('div');
-			row.className = 'flex gap-1 items-end mb-1';
-			if (kind === 'email') {
-				row.innerHTML = '<select class="form-control" name="email_type" style="width:100px">' +
+			var row = document.createElement("div");
+			row.className = "flex gap-1 items-end mb-1";
+			if (kind === "email") {
+				row.innerHTML =
+					'<select class="form-control" name="email_type" style="width:100px">' +
 					'<option value="INTERNET">Personal</option><option value="WORK">Work</option><option value="HOME">Home</option>' +
-					'</select>' +
+					"</select>" +
 					'<input class="form-control" type="email" name="email_value" placeholder="email@example.com" style="flex:1"/>' +
 					'<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>';
 			} else {
-				row.innerHTML = '<select class="form-control" name="phone_type" style="width:100px">' +
+				row.innerHTML =
+					'<select class="form-control" name="phone_type" style="width:100px">' +
 					'<option value="CELL">Cell</option><option value="WORK">Work</option><option value="HOME">Home</option><option value="FAX">Fax</option>' +
-					'</select>' +
+					"</select>" +
 					'<input class="form-control" type="tel" name="phone_value" placeholder="+1 555-1234" style="flex:1"/>' +
 					'<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>';
 			}
 			container.appendChild(row);
 		}
-		</script>
+	</script>
 }
 
 templ contactsStarredPage(books []AddressBook, cards []CardWithBook) {
@@ -273,26 +289,36 @@ templ contactsStarredPage(books []AddressBook, cards []CardWithBook) {
 		<div class="modal-content" id="contact-modal-body"></div>
 	</div>
 	<style>
-			.avatar-initials {
-				display: inline-flex; align-items: center; justify-content: center;
-				width: 32px; height: 32px; border-radius: 50%;
-				color: #fff; font-weight: 600; font-size: 0.8rem;
-			}
-		</style>
+		.avatar-initials {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 32px;
+			height: 32px;
+			border-radius: 50%;
+			color: #fff;
+			font-weight: 600;
+			font-size: 0.8rem;
+		}
+	</style>
 	<script>
 		function showContactDetail(id) {
-			fetch('/apps/contacts/contacts/' + id, {
-				headers: {'X-CSRF-Token': document.querySelector('[name=csrf_token]').value}
+			fetch("/apps/contacts/contacts/" + id, {
+				headers: {
+					"X-CSRF-Token": document.querySelector("[name=csrf_token]").value,
+				},
 			})
-			.then(function(r) { return r.text(); })
-			.then(function(html) {
-				var el = document.getElementById('contact-modal-body');
-				el.innerHTML = html;
-				htmx.process(el);
-				document.getElementById('contact-modal').style.display = 'flex';
-			});
+				.then(function (r) {
+					return r.text();
+				})
+				.then(function (html) {
+					var el = document.getElementById("contact-modal-body");
+					el.innerHTML = html;
+					htmx.process(el);
+					document.getElementById("contact-modal").style.display = "flex";
+				});
 		}
-		</script>
+	</script>
 }
 
 templ contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfToken string) {

@@ -137,17 +137,19 @@ templ noteViewPage(sb sidebarData, note *Note, renderedHTML string, csrfToken st
 	</div>
 	if extras.NeedsKaTeX {
 		<script>
-			renderMathInElement(document.querySelector('.note-content'), {
+			renderMathInElement(document.querySelector(".note-content"), {
 				delimiters: [
-					{left: '$$', right: '$$', display: true},
-					{left: '$', right: '$', display: false}
+					{ left: "$$", right: "$$", display: true },
+					{ left: "$", right: "$", display: false },
 				],
-				throwOnError: false
+				throwOnError: false,
 			});
 		</script>
 	}
 	if extras.NeedsMermaid {
-		<script>mermaid.initialize({startOnLoad: true, theme: 'default'});</script>
+		<script>
+			mermaid.initialize({ startOnLoad: true, theme: "default" });
+		</script>
 	}
 }
 

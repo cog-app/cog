@@ -19,12 +19,17 @@ type ShareRecord struct {
 
 // Propagator indexes shared resources into recipients' search indices.
 // It runs asynchronously, processing events from a bounded channel.
+//
+// Shutdown uses quit + stopped flag rather than close(ch) so concurrent
+// producers (OnShareCreate/Delete) cannot panic by sending to a closed channel.
 type Propagator struct {
 	log     *slog.Logger
 	mgr     *Manager
 	ch      chan propagateEvent
+	quit    chan struct{}
 	done    chan struct{}
 	started atomic.Bool
+	stopped atomic.Bool
 
 	// Function callbacks to avoid import cycles.
 	// ResolveRecipientUsernames expands a share into target usernames.
@@ -44,6 +49,7 @@ func NewPropagator(log *slog.Logger, mgr *Manager) *Propagator {
 		log:  log.With("component", "search-propagator"),
 		mgr:  mgr,
 		ch:   make(chan propagateEvent, 1024),
+		quit: make(chan struct{}),
 		done: make(chan struct{}),
 	}
 }
@@ -54,23 +60,27 @@ func (p *Propagator) Start() {
 	go p.run()
 }
 
-// Stop closes the channel and waits for the worker to drain.
+// Stop signals the worker to drain and exit.
 // It is safe to call even if Start was never called.
 func (p *Propagator) Stop() {
 	if !p.started.Load() {
 		return
 	}
-	close(p.ch)
+	if p.stopped.Swap(true) {
+		return
+	}
+	close(p.quit)
 	<-p.done
 }
 
 // OnShareCreate queues a share-create event for propagation.
 func (p *Propagator) OnShareCreate(rec *ShareRecord) {
-	if rec == nil {
+	if rec == nil || p.stopped.Load() {
 		return
 	}
 	select {
 	case p.ch <- propagateEvent{Kind: "create", Record: rec}:
+	case <-p.quit:
 	default:
 		p.log.Warn("propagator channel full, dropping create event")
 	}
@@ -78,11 +88,12 @@ func (p *Propagator) OnShareCreate(rec *ShareRecord) {
 
 // OnShareDelete queues a share-delete event for propagation.
 func (p *Propagator) OnShareDelete(rec *ShareRecord) {
-	if rec == nil {
+	if rec == nil || p.stopped.Load() {
 		return
 	}
 	select {
 	case p.ch <- propagateEvent{Kind: "delete", Record: rec}:
+	case <-p.quit:
 	default:
 		p.log.Warn("propagator channel full, dropping delete event")
 	}
@@ -90,12 +101,30 @@ func (p *Propagator) OnShareDelete(rec *ShareRecord) {
 
 func (p *Propagator) run() {
 	defer close(p.done)
-	for ev := range p.ch {
-		switch ev.Kind {
-		case "create":
-			p.handleCreate(ev.Record)
-		case "delete":
-			p.handleDelete(ev.Record)
+	for {
+		select {
+		case ev := <-p.ch:
+			switch ev.Kind {
+			case "create":
+				p.handleCreate(ev.Record)
+			case "delete":
+				p.handleDelete(ev.Record)
+			}
+		case <-p.quit:
+			// Drain remaining events then exit.
+			for {
+				select {
+				case ev := <-p.ch:
+					switch ev.Kind {
+					case "create":
+						p.handleCreate(ev.Record)
+					case "delete":
+						p.handleDelete(ev.Record)
+					}
+				default:
+					return
+				}
+			}
 		}
 	}
 }

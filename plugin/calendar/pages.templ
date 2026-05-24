@@ -155,10 +155,11 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 	<script>
 		function addAttendeeRow(containerId) {
 			var container = document.getElementById(containerId);
-			var row = document.createElement('div');
-			row.className = 'flex gap-1 items-center';
-			row.style.marginBottom = '0.25rem';
-			row.innerHTML = '<input class="form-control" type="email" name="attendee_email" placeholder="email@example.com" style="flex:1"/>' +
+			var row = document.createElement("div");
+			row.className = "flex gap-1 items-center";
+			row.style.marginBottom = "0.25rem";
+			row.innerHTML =
+				'<input class="form-control" type="email" name="attendee_email" placeholder="email@example.com" style="flex:1"/>' +
 				'<input class="form-control" type="text" name="attendee_name" placeholder="Name" style="flex:1"/>' +
 				'<select class="form-control" name="attendee_role" style="width:auto">' +
 				'<option value="REQ-PARTICIPANT" selected>Required</option>' +
@@ -168,30 +169,30 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 			container.appendChild(row);
 		}
 		function toggleRecurrenceOpts(prefix) {
-			var freq = document.getElementById(prefix + '-freq').value;
-			var opts = document.getElementById(prefix + '-rrule-opts');
-			var custom = document.getElementById(prefix + '-rrule-custom');
-			var byday = document.getElementById(prefix + '-byday');
-			if (freq === 'NONE') {
-				if (opts) opts.style.display = 'none';
-				if (custom) custom.style.display = 'none';
-			} else if (freq === 'CUSTOM') {
-				if (opts) opts.style.display = 'none';
-				if (custom) custom.style.display = '';
+			var freq = document.getElementById(prefix + "-freq").value;
+			var opts = document.getElementById(prefix + "-rrule-opts");
+			var custom = document.getElementById(prefix + "-rrule-custom");
+			var byday = document.getElementById(prefix + "-byday");
+			if (freq === "NONE") {
+				if (opts) opts.style.display = "none";
+				if (custom) custom.style.display = "none";
+			} else if (freq === "CUSTOM") {
+				if (opts) opts.style.display = "none";
+				if (custom) custom.style.display = "";
 			} else {
-				if (opts) opts.style.display = '';
-				if (custom) custom.style.display = 'none';
-				if (byday) byday.style.display = freq === 'WEEKLY' ? '' : 'none';
+				if (opts) opts.style.display = "";
+				if (custom) custom.style.display = "none";
+				if (byday) byday.style.display = freq === "WEEKLY" ? "" : "none";
 			}
 		}
 		function clearColorIfUnchecked(cbId, colorId) {
 			var cb = document.getElementById(cbId);
-			if (cb && !cb.checked) document.getElementById(colorId).value = '';
+			if (cb && !cb.checked) document.getElementById(colorId).value = "";
 		}
 		// Color picker: sync with calendar default when toggling custom off
 		function syncCalColor(sel, colorId, checkboxId) {
 			var opt = sel.options[sel.selectedIndex];
-			var color = opt.getAttribute('data-color') || '#0082c9';
+			var color = opt.getAttribute("data-color") || "#0082c9";
 			var cb = document.getElementById(checkboxId);
 			if (!cb || !cb.checked) {
 				document.getElementById(colorId).value = color;
@@ -201,91 +202,110 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 			if (!cb.checked) {
 				var sel = document.getElementById(calSelId);
 				var opt = sel.options[sel.selectedIndex];
-				document.getElementById(colorId).value = opt.getAttribute('data-color') || '#0082c9';
+				document.getElementById(colorId).value =
+					opt.getAttribute("data-color") || "#0082c9";
 			}
 		}
 		function handleColorToggleEdit(cb, colorId) {
 			// For edit modal, unchecking resets to calendar default (stored in data attr)
 			if (!cb.checked) {
 				var picker = document.getElementById(colorId);
-				picker.value = picker.getAttribute('data-default') || '#0082c9';
+				picker.value = picker.getAttribute("data-default") || "#0082c9";
 			}
 		}
-		(function() {
-			var calEl = document.getElementById('calendar');
+		(function () {
+			var calEl = document.getElementById("calendar");
 			var params = new URLSearchParams(window.location.search);
-			var initDate = params.get('date');
+			var initDate = params.get("date");
 			var calOpts = {
-				initialView: 'dayGridMonth',
+				initialView: "dayGridMonth",
 				headerToolbar: {
-					left: 'prev,next today',
-					center: 'title',
-					right: 'dayGridMonth,timeGridWeek,timeGridDay'
+					left: "prev,next today",
+					center: "title",
+					right: "dayGridMonth,timeGridWeek,timeGridDay",
 				},
-				events: '/apps/calendar/events.json',
+				events: "/apps/calendar/events.json",
 				editable: false,
 				selectable: true,
-				datesSet: function(info) {
+				datesSet: function (info) {
 					var d = info.view.currentStart.toISOString().slice(0, 10);
-					history.replaceState(null, '', '/apps/calendar/?date=' + d);
+					history.replaceState(null, "", "/apps/calendar/?date=" + d);
 				},
-				eventClick: function(info) {
+				eventClick: function (info) {
 					info.jsEvent.preventDefault();
 					var id = info.event.id;
-					fetch('/apps/calendar/events/' + id, {
-						headers: {'X-CSRF-Token': document.querySelector('[name=csrf_token]').value}
+					fetch("/apps/calendar/events/" + id, {
+						headers: {
+							"X-CSRF-Token": document.querySelector("[name=csrf_token]").value,
+						},
 					})
-					.then(function(r) { return r.text(); })
-					.then(function(html) {
-						var body = document.getElementById('event-modal-body');
-						body.innerHTML = html;
-						htmx.process(body);
-						document.getElementById('event-modal').style.display = 'flex';
-					});
+						.then(function (r) {
+							return r.text();
+						})
+						.then(function (html) {
+							var body = document.getElementById("event-modal-body");
+							body.innerHTML = html;
+							htmx.process(body);
+							document.getElementById("event-modal").style.display = "flex";
+						});
 				},
-				dateClick: function(info) {
-					var modal = document.getElementById('create-modal');
+				dateClick: function (info) {
+					var modal = document.getElementById("create-modal");
 					var isAllDay = info.allDay;
 					if (isAllDay) {
-						document.getElementById('ce-allday').checked = true;
-						document.getElementById('ce-datetime-fields').style.display = 'none';
-						document.getElementById('ce-date-fields').style.display = '';
-						document.getElementById('ce-date-start').value = info.dateStr;
+						document.getElementById("ce-allday").checked = true;
+						document.getElementById("ce-datetime-fields").style.display =
+							"none";
+						document.getElementById("ce-date-fields").style.display = "";
+						document.getElementById("ce-date-start").value = info.dateStr;
 					} else {
-						document.getElementById('ce-allday').checked = false;
-						document.getElementById('ce-datetime-fields').style.display = '';
-						document.getElementById('ce-date-fields').style.display = 'none';
-						document.getElementById('ce-start').value = info.dateStr.slice(0, 16);
+						document.getElementById("ce-allday").checked = false;
+						document.getElementById("ce-datetime-fields").style.display = "";
+						document.getElementById("ce-date-fields").style.display = "none";
+						document.getElementById("ce-start").value = info.dateStr.slice(
+							0,
+							16,
+						);
 					}
-					modal.style.display = 'flex';
-					document.getElementById('ce-summary').focus();
+					modal.style.display = "flex";
+					document.getElementById("ce-summary").focus();
 				},
-				height: 'auto'
+				height: "auto",
 			};
-			if (initDate) { calOpts.initialDate = initDate; }
+			if (initDate) {
+				calOpts.initialDate = initDate;
+			}
 			var calendar = new FullCalendar.Calendar(calEl, calOpts);
 			calendar.render();
 			// Calendar toggle checkboxes
-			document.querySelectorAll('.cal-toggle').forEach(function(cb) {
-				cb.addEventListener('change', function() {
+			document.querySelectorAll(".cal-toggle").forEach(function (cb) {
+				cb.addEventListener("change", function () {
 					var calId = parseInt(this.dataset.calendarId);
-					calendar.getEvents().forEach(function(ev) {
+					calendar.getEvents().forEach(function (ev) {
 						if (ev.extendedProps.calendarId === calId) {
-							ev.setProp('display', cb.checked ? 'auto' : 'none');
+							ev.setProp("display", cb.checked ? "auto" : "none");
 						}
 					});
 				});
 			});
 			// Init create modal: sync color to first calendar's default
-			(function() {
-				var sel = document.getElementById('ce-calendar');
-				if (sel && sel.options.length) syncCalColor(sel, 'ce-color', 'ce-color-enable');
+			(function () {
+				var sel = document.getElementById("ce-calendar");
+				if (sel && sel.options.length)
+					syncCalColor(sel, "ce-color", "ce-color-enable");
 			})();
 			// All-day toggle in create modal
-			document.getElementById('ce-allday').addEventListener('change', function() {
-				document.getElementById('ce-datetime-fields').style.display = this.checked ? 'none' : '';
-				document.getElementById('ce-date-fields').style.display = this.checked ? '' : 'none';
-			});
+			document
+				.getElementById("ce-allday")
+				.addEventListener("change", function () {
+					document.getElementById("ce-datetime-fields").style.display = this
+						.checked
+						? "none"
+						: "";
+					document.getElementById("ce-date-fields").style.display = this.checked
+						? ""
+						: "none";
+				});
 		})();
 	</script>
 }

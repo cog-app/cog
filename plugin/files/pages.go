@@ -190,7 +190,7 @@ func (h *Pages) ServeGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var flashMsg, flashKind string
-	if flash := getFlash(w, r); flash != nil {
+	if flash := h.getFlash(w, r); flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
 
@@ -363,7 +363,7 @@ func (h *Pages) serveArchiveListing(w http.ResponseWriter, r *http.Request, user
 	}
 
 	var flashMsg, flashKind string
-	if flash := getFlash(w, r); flash != nil {
+	if flash := h.getFlash(w, r); flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
 
@@ -474,12 +474,12 @@ func (h *Pages) serveArchiveFileStream(w http.ResponseWriter, r *http.Request, u
 func (h *Pages) handleExtract(w http.ResponseWriter, r *http.Request, username, fp string) {
 	meta, err := h.plugin.GetByPath(username, fp)
 	if err != nil {
-		setFlash(w, "error", "File not found.")
+		h.setFlash(w, "error", "File not found.")
 		http.Redirect(w, r, "/apps/files"+parentDir(fp), http.StatusSeeOther)
 		return
 	}
 	if !isArchiveFile(meta) {
-		setFlash(w, "error", "Not an archive file.")
+		h.setFlash(w, "error", "Not an archive file.")
 		http.Redirect(w, r, "/apps/files"+fp, http.StatusSeeOther)
 		return
 	}
@@ -487,12 +487,12 @@ func (h *Pages) handleExtract(w http.ResponseWriter, r *http.Request, username, 
 	destDir := ExtractDestination(fp)
 	count, err := h.plugin.ExtractArchive(username, fp, destDir)
 	if err != nil {
-		setFlash(w, "error", "Extract failed: "+err.Error())
+		h.setFlash(w, "error", "Extract failed: "+err.Error())
 		http.Redirect(w, r, "/apps/files"+fp, http.StatusSeeOther)
 		return
 	}
 
-	setFlash(w, "success", fmt.Sprintf("Extracted %d items to %s", count, path.Base(destDir)))
+	h.setFlash(w, "success", fmt.Sprintf("Extracted %d items to %s", count, path.Base(destDir)))
 	http.Redirect(w, r, "/apps/files"+destDir, http.StatusSeeOther)
 }
 
@@ -541,7 +541,7 @@ func (h *Pages) ServePost(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		setFlash(w, "success", "File saved.")
+		h.setFlash(w, "success", "File saved.")
 		http.Redirect(w, r, "/apps/files"+fp, http.StatusSeeOther)
 		return
 	}
@@ -724,30 +724,21 @@ type flash struct {
 	Message string `json:"m"`
 }
 
-func setFlash(w http.ResponseWriter, kind, message string) {
+func (h *Pages) setFlash(w http.ResponseWriter, kind, message string) {
 	data, _ := json.Marshal(flash{Kind: kind, Message: message})
-	http.SetCookie(w, &http.Cookie{
-		Name:     flashCookieName,
-		Value:    url.QueryEscape(string(data)),
-		Path:     "/",
-		MaxAge:   60,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+	h.plugin.ctx.Cookies().Set(w, &http.Cookie{
+		Name:   flashCookieName,
+		Value:  url.QueryEscape(string(data)),
+		MaxAge: 60,
 	})
 }
 
-func getFlash(w http.ResponseWriter, r *http.Request) *flash {
+func (h *Pages) getFlash(w http.ResponseWriter, r *http.Request) *flash {
 	cookie, err := r.Cookie(flashCookieName)
 	if err != nil {
 		return nil
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     flashCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
+	h.plugin.ctx.Cookies().Clear(w, flashCookieName)
 	val, err := url.QueryUnescape(cookie.Value)
 	if err != nil {
 		return nil

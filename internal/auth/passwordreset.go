@@ -11,19 +11,28 @@ import (
 
 const passwordResetDuration = 1 * time.Hour
 
-// PasswordResetStore manages password reset tokens.
+const resetTokenLabel = "pwreset/v1"
+
+// PasswordResetStore manages password reset tokens. Tokens are stored hashed
+// (HMAC-SHA256 under a per-purpose key derived from the master secret) so a
+// database leak does not yield usable reset tokens.
 type PasswordResetStore struct {
-	db    *sql.DB
-	clock clock.Clock
+	db     *sql.DB
+	clock  clock.Clock
+	secret []byte
 }
 
 // NewPasswordResetStore creates a new password reset store.
-func NewPasswordResetStore(db *sql.DB, c clock.Clock) *PasswordResetStore {
-	return &PasswordResetStore{db: db, clock: c}
+func NewPasswordResetStore(db *sql.DB, c clock.Clock, secret []byte) *PasswordResetStore {
+	return &PasswordResetStore{db: db, clock: c, secret: secret}
+}
+
+func (s *PasswordResetStore) hash(token string) string {
+	return HashAtRest(s.secret, resetTokenLabel, token)
 }
 
 // Create generates a password reset token for the user. Invalidates existing
-// tokens for the user. Returns the plaintext token.
+// tokens for the user. Returns the plaintext token; only the hash is stored.
 func (s *PasswordResetStore) Create(userID string) (string, error) {
 	// Invalidate existing tokens for this user.
 	s.db.Exec(`DELETE FROM password_reset_tokens WHERE user_id = ?`, userID)
@@ -40,7 +49,7 @@ func (s *PasswordResetStore) Create(userID string) (string, error) {
 
 	_, err = s.db.Exec(
 		`INSERT INTO password_reset_tokens (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)`,
-		token, userID, now.Unix(), expires.Unix(),
+		s.hash(token), userID, now.Unix(), expires.Unix(),
 	)
 	if err != nil {
 		return "", fmt.Errorf("create password reset: %w", err)
@@ -55,7 +64,7 @@ func (s *PasswordResetStore) Validate(token string) (string, error) {
 	var expiresAt int64
 	var used int
 	err := s.db.QueryRow(
-		`SELECT user_id, expires_at, used FROM password_reset_tokens WHERE token = ?`, token,
+		`SELECT user_id, expires_at, used FROM password_reset_tokens WHERE token = ?`, s.hash(token),
 	).Scan(&userID, &expiresAt, &used)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", fmt.Errorf("invalid or expired reset token")
@@ -76,6 +85,6 @@ func (s *PasswordResetStore) Validate(token string) (string, error) {
 
 // MarkUsed marks a token as used.
 func (s *PasswordResetStore) MarkUsed(token string) error {
-	_, err := s.db.Exec(`UPDATE password_reset_tokens SET used = 1 WHERE token = ?`, token)
+	_, err := s.db.Exec(`UPDATE password_reset_tokens SET used = 1 WHERE token = ?`, s.hash(token))
 	return err
 }

@@ -8,6 +8,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 )
 
 type contextKey string
@@ -35,6 +36,7 @@ type Middleware struct {
 	Sessions     *SessionStore
 	AppPasswords *AppPasswordStore
 	RateLimiter  *ratelimit.Limiter
+	Cookies      cogplugin.CookieConfig
 }
 
 func (m *Middleware) Wrap(next http.Handler) http.Handler {
@@ -46,12 +48,9 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			if sessionID == "" && m.Sessions != nil {
 				if sess, err := m.Sessions.Create(u.ID); err == nil {
 					sessionID = sess.ID
-					http.SetCookie(w, &http.Cookie{
-						Name:     SessionCookieName,
-						Value:    sess.ID,
-						Path:     "/",
-						HttpOnly: true,
-						SameSite: http.SameSiteLaxMode,
+					m.Cookies.Set(w, &http.Cookie{
+						Name:  SessionCookieName,
+						Value: sess.ID,
 					})
 				}
 			}

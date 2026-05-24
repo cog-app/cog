@@ -487,12 +487,9 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     auth.SessionCookieName,
-		Value:    sess.ID,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+	cookieCfg.Set(w, &http.Cookie{
+		Name:  auth.SessionCookieName,
+		Value: sess.ID,
 	})
 	http.Redirect(w, r, "/settings/groups/"+inv.GroupID, http.StatusSeeOther)
 }

@@ -54,49 +54,49 @@ script volumeFormToggle() {
 // so the user can drill deeper.
 templ dirPickerScript() {
 	<script>
-	(function() {
-		var el = document.currentScript.closest('.picker');
-		var input = el.querySelector('.picker-input');
-		var results = el.querySelector('.picker-results');
+		(function () {
+			var el = document.currentScript.closest(".picker");
+			var input = el.querySelector(".picker-input");
+			var results = el.querySelector(".picker-results");
 
-		document.addEventListener('click', function(e) {
-			if (!el.contains(e.target)) results.innerHTML = '';
-		});
+			document.addEventListener("click", function (e) {
+				if (!el.contains(e.target)) results.innerHTML = "";
+			});
 
-		results.addEventListener('click', function(e) {
-			var opt = e.target.closest('.picker-option');
-			if (!opt) return;
-			var path = opt.dataset.id;
-			// Append trailing slash so the next search lists children.
-			if (!path.endsWith('/')) path += '/';
-			input.value = path;
-			input.focus();
-			htmx.trigger(input, 'input');
-		});
+			results.addEventListener("click", function (e) {
+				var opt = e.target.closest(".picker-option");
+				if (!opt) return;
+				var path = opt.dataset.id;
+				// Append trailing slash so the next search lists children.
+				if (!path.endsWith("/")) path += "/";
+				input.value = path;
+				input.focus();
+				htmx.trigger(input, "input");
+			});
 
-		input.addEventListener('keydown', function(e) {
-			var opts = results.querySelectorAll('.picker-option');
-			if (!opts.length) return;
-			var cur = results.querySelector('.picker-option.active');
-			var idx = cur ? Array.prototype.indexOf.call(opts, cur) : -1;
-			if (e.key === 'ArrowDown') {
-				e.preventDefault();
-				if (cur) cur.classList.remove('active');
-				idx = (idx + 1) % opts.length;
-				opts[idx].classList.add('active');
-			} else if (e.key === 'ArrowUp') {
-				e.preventDefault();
-				if (cur) cur.classList.remove('active');
-				idx = idx <= 0 ? opts.length - 1 : idx - 1;
-				opts[idx].classList.add('active');
-			} else if (e.key === 'Enter' && cur) {
-				e.preventDefault();
-				cur.click();
-			} else if (e.key === 'Escape') {
-				results.innerHTML = '';
-			}
-		});
-	})();
+			input.addEventListener("keydown", function (e) {
+				var opts = results.querySelectorAll(".picker-option");
+				if (!opts.length) return;
+				var cur = results.querySelector(".picker-option.active");
+				var idx = cur ? Array.prototype.indexOf.call(opts, cur) : -1;
+				if (e.key === "ArrowDown") {
+					e.preventDefault();
+					if (cur) cur.classList.remove("active");
+					idx = (idx + 1) % opts.length;
+					opts[idx].classList.add("active");
+				} else if (e.key === "ArrowUp") {
+					e.preventDefault();
+					if (cur) cur.classList.remove("active");
+					idx = idx <= 0 ? opts.length - 1 : idx - 1;
+					opts[idx].classList.add("active");
+				} else if (e.key === "Enter" && cur) {
+					e.preventDefault();
+					cur.click();
+				} else if (e.key === "Escape") {
+					results.innerHTML = "";
+				}
+			});
+		})();
 	</script>
 }
 

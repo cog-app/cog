@@ -137,7 +137,7 @@ func Picker(searchURL, name, placeholder string, multi bool) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<script>\n\t\t(function() {\n\t\t\tvar el = document.currentScript.parentElement;\n\t\t\tvar input = el.querySelector('.picker-input');\n\t\t\tvar results = el.querySelector('.picker-results');\n\t\t\tvar isMulti = el.dataset.multi === 'true';\n\t\t\tvar fieldName = el.dataset.name;\n\t\t\tvar chips = el.querySelector('.picker-chips');\n\t\t\tvar hiddenSingle = el.querySelector('.picker-value');\n\n\t\t\t// Close results when clicking outside.\n\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\tif (!el.contains(e.target)) results.innerHTML = '';\n\t\t\t});\n\n\t\t\t// Handle result click via event delegation.\n\t\t\tresults.addEventListener('click', function(e) {\n\t\t\t\tvar opt = e.target.closest('.picker-option');\n\t\t\t\tif (!opt) return;\n\t\t\t\tvar id = opt.dataset.id;\n\t\t\t\tvar name = opt.dataset.name;\n\t\t\t\tif (isMulti) {\n\t\t\t\t\t// Check if already selected.\n\t\t\t\t\tif (el.querySelector('input[value=\"' + id + '\"]')) {\n\t\t\t\t\t\tresults.innerHTML = '';\n\t\t\t\t\t\tinput.value = '';\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar chip = document.createElement('span');\n\t\t\t\t\tchip.className = 'picker-chip';\n\t\t\t\t\tchip.innerHTML = name +\n\t\t\t\t\t\t'<input type=\"hidden\" name=\"' + fieldName + '\" value=\"' + id + '\"/>' +\n\t\t\t\t\t\t'<button type=\"button\" onclick=\"this.parentElement.remove()\">&times;</button>';\n\t\t\t\t\tchips.appendChild(chip);\n\t\t\t\t} else {\n\t\t\t\t\thiddenSingle.value = id;\n\t\t\t\t\tinput.value = name;\n\t\t\t\t}\n\t\t\t\tresults.innerHTML = '';\n\t\t\t\tif (isMulti) input.value = '';\n\t\t\t});\n\n\t\t\t// Keyboard navigation.\n\t\t\tinput.addEventListener('keydown', function(e) {\n\t\t\t\tvar opts = results.querySelectorAll('.picker-option');\n\t\t\t\tif (!opts.length) return;\n\t\t\t\tvar cur = results.querySelector('.picker-option.active');\n\t\t\t\tvar idx = cur ? Array.prototype.indexOf.call(opts, cur) : -1;\n\t\t\t\tif (e.key === 'ArrowDown') {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tif (cur) cur.classList.remove('active');\n\t\t\t\t\tidx = (idx + 1) % opts.length;\n\t\t\t\t\topts[idx].classList.add('active');\n\t\t\t\t} else if (e.key === 'ArrowUp') {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tif (cur) cur.classList.remove('active');\n\t\t\t\t\tidx = idx <= 0 ? opts.length - 1 : idx - 1;\n\t\t\t\t\topts[idx].classList.add('active');\n\t\t\t\t} else if (e.key === 'Enter') {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tif (cur) cur.click();\n\t\t\t\t} else if (e.key === 'Escape') {\n\t\t\t\t\tresults.innerHTML = '';\n\t\t\t\t}\n\t\t\t});\n\t\t})();\n\t\t</script></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<script>\n\t\t\t(function () {\n\t\t\t\tvar el = document.currentScript.parentElement;\n\t\t\t\tvar input = el.querySelector(\".picker-input\");\n\t\t\t\tvar results = el.querySelector(\".picker-results\");\n\t\t\t\tvar isMulti = el.dataset.multi === \"true\";\n\t\t\t\tvar fieldName = el.dataset.name;\n\t\t\t\tvar chips = el.querySelector(\".picker-chips\");\n\t\t\t\tvar hiddenSingle = el.querySelector(\".picker-value\");\n\n\t\t\t\t// Close results when clicking outside.\n\t\t\t\tdocument.addEventListener(\"click\", function (e) {\n\t\t\t\t\tif (!el.contains(e.target)) results.innerHTML = \"\";\n\t\t\t\t});\n\n\t\t\t\t// Handle result click via event delegation.\n\t\t\t\tresults.addEventListener(\"click\", function (e) {\n\t\t\t\t\tvar opt = e.target.closest(\".picker-option\");\n\t\t\t\t\tif (!opt) return;\n\t\t\t\t\tvar id = opt.dataset.id;\n\t\t\t\t\tvar name = opt.dataset.name;\n\t\t\t\t\tif (isMulti) {\n\t\t\t\t\t\t// Check if already selected.\n\t\t\t\t\t\tif (el.querySelector('input[value=\"' + id + '\"]')) {\n\t\t\t\t\t\t\tresults.innerHTML = \"\";\n\t\t\t\t\t\t\tinput.value = \"\";\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar chip = document.createElement(\"span\");\n\t\t\t\t\t\tchip.className = \"picker-chip\";\n\t\t\t\t\t\tchip.innerHTML =\n\t\t\t\t\t\t\tname +\n\t\t\t\t\t\t\t'<input type=\"hidden\" name=\"' +\n\t\t\t\t\t\t\tfieldName +\n\t\t\t\t\t\t\t'\" value=\"' +\n\t\t\t\t\t\t\tid +\n\t\t\t\t\t\t\t'\"/>' +\n\t\t\t\t\t\t\t'<button type=\"button\" onclick=\"this.parentElement.remove()\">&times;</button>';\n\t\t\t\t\t\tchips.appendChild(chip);\n\t\t\t\t\t} else {\n\t\t\t\t\t\thiddenSingle.value = id;\n\t\t\t\t\t\tinput.value = name;\n\t\t\t\t\t}\n\t\t\t\t\tresults.innerHTML = \"\";\n\t\t\t\t\tif (isMulti) input.value = \"\";\n\t\t\t\t});\n\n\t\t\t\t// Keyboard navigation.\n\t\t\t\tinput.addEventListener(\"keydown\", function (e) {\n\t\t\t\t\tvar opts = results.querySelectorAll(\".picker-option\");\n\t\t\t\t\tif (!opts.length) return;\n\t\t\t\t\tvar cur = results.querySelector(\".picker-option.active\");\n\t\t\t\t\tvar idx = cur ? Array.prototype.indexOf.call(opts, cur) : -1;\n\t\t\t\t\tif (e.key === \"ArrowDown\") {\n\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\tif (cur) cur.classList.remove(\"active\");\n\t\t\t\t\t\tidx = (idx + 1) % opts.length;\n\t\t\t\t\t\topts[idx].classList.add(\"active\");\n\t\t\t\t\t} else if (e.key === \"ArrowUp\") {\n\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\tif (cur) cur.classList.remove(\"active\");\n\t\t\t\t\t\tidx = idx <= 0 ? opts.length - 1 : idx - 1;\n\t\t\t\t\t\topts[idx].classList.add(\"active\");\n\t\t\t\t\t} else if (e.key === \"Enter\") {\n\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\tif (cur) cur.click();\n\t\t\t\t\t} else if (e.key === \"Escape\") {\n\t\t\t\t\t\tresults.innerHTML = \"\";\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t})();\n\t\t</script></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -175,7 +175,7 @@ func PickerResults(items []PickerItem) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(item.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/picker.templ`, Line: 109, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/picker.templ`, Line: 114, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -188,7 +188,7 @@ func PickerResults(items []PickerItem) templ.Component {
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(item.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/picker.templ`, Line: 109, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/picker.templ`, Line: 114, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -206,7 +206,7 @@ func PickerResults(items []PickerItem) templ.Component {
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(item.AvatarURL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/picker.templ`, Line: 111, Col: 47}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/picker.templ`, Line: 116, Col: 47}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -224,7 +224,7 @@ func PickerResults(items []PickerItem) templ.Component {
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(item.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/picker.templ`, Line: 114, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/picker.templ`, Line: 119, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -242,7 +242,7 @@ func PickerResults(items []PickerItem) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(item.Sub)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/picker.templ`, Line: 116, Col: 47}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/picker.templ`, Line: 121, Col: 47}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {

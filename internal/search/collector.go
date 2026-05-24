@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,6 +18,10 @@ const (
 
 // Collector accumulates database changes and flushes them to a search index
 // in batches. It deduplicates changes within a batch window.
+//
+// Shutdown uses a quit channel and a stopped atomic flag rather than closing
+// the input channel — closing would race with Send() and panic on producers
+// (the SQLite update hook fires from any goroutine).
 type Collector struct {
 	log      *slog.Logger
 	ch       chan Change
@@ -25,8 +30,10 @@ type Collector struct {
 	tableMap map[string]SearchSource // table name -> source
 	dbFunc   func() *sql.DB
 
-	done chan struct{}
-	once sync.Once
+	quit    chan struct{}
+	done    chan struct{}
+	once    sync.Once
+	stopped atomic.Bool
 }
 
 // NewCollector creates a new collector that writes to the given index.
@@ -39,6 +46,7 @@ func NewCollector(log *slog.Logger, index *Index, dbFunc func() *sql.DB) *Collec
 		sources:  make(map[string]SearchSource),
 		tableMap: make(map[string]SearchSource),
 		dbFunc:   dbFunc,
+		quit:     make(chan struct{}),
 		done:     make(chan struct{}),
 	}
 }
@@ -51,10 +59,15 @@ func (c *Collector) RegisterSource(src SearchSource) {
 	}
 }
 
-// Send pushes a change to the collector. Non-blocking; drops on full channel.
+// Send pushes a change to the collector. Non-blocking; drops on full channel
+// or after Stop. Safe to call from the SQLite update hook on any goroutine.
 func (c *Collector) Send(ch Change) {
+	if c.stopped.Load() {
+		return
+	}
 	select {
 	case c.ch <- ch:
+	case <-c.quit:
 	default:
 		// Channel full — drop the change. FullSync will catch up later.
 	}
@@ -67,7 +80,10 @@ func (c *Collector) Start(ctx context.Context) {
 
 // Stop signals the collector to drain remaining changes and shut down.
 func (c *Collector) Stop() {
-	c.once.Do(func() { close(c.ch) })
+	c.once.Do(func() {
+		c.stopped.Store(true)
+		close(c.quit)
+	})
 	<-c.done
 }
 
@@ -94,11 +110,7 @@ func (c *Collector) run(ctx context.Context) {
 
 	for {
 		select {
-		case ch, ok := <-c.ch:
-			if !ok {
-				flush()
-				return
-			}
+		case ch := <-c.ch:
 			src, ok := c.tableMap[ch.Table]
 			if !ok {
 				continue
@@ -117,6 +129,27 @@ func (c *Collector) run(ctx context.Context) {
 			}
 		case <-timer.C:
 			flush()
+		case <-c.quit:
+			// Drain any buffered changes before exiting.
+			for {
+				select {
+				case ch := <-c.ch:
+					src, ok := c.tableMap[ch.Table]
+					if !ok {
+						continue
+					}
+					m, ok := pending[src]
+					if !ok {
+						m = make(map[int64]Op)
+						pending[src] = m
+					}
+					m[ch.RowID] = ch.Op
+					count++
+				default:
+					flush()
+					return
+				}
+			}
 		case <-ctx.Done():
 			flush()
 			return

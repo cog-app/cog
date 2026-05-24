@@ -29,6 +29,13 @@ type loginFlowEntry struct {
 }
 
 // LoginFlowHandler implements NextCloud Login Flow v2.
+//
+// Security model: the grant endpoint requires the user be authenticated in the
+// browser already (a session cookie). The grant page is a single CSRF-protected
+// "Grant" button — it never re-prompts for the password. This means an attacker
+// who starts a login flow with their own poll token cannot trick a victim into
+// minting an app password against their (the victim's) account, since the
+// granted credentials always come from the browser session, not form input.
 type LoginFlowHandler struct {
 	mu          sync.Mutex
 	pending     map[string]*loginFlowEntry // keyed by poll token
@@ -38,15 +45,17 @@ type LoginFlowHandler struct {
 	BaseURL     string
 	RateLimiter *ratelimit.Limiter
 	Clock       clock.Clock
+	CSRFSecret  []byte
 }
 
-func NewLoginFlowHandler(users *user.Store, appPWs *auth.AppPasswordStore, sessions *auth.SessionStore, baseURL string) *LoginFlowHandler {
+func NewLoginFlowHandler(users *user.Store, appPWs *auth.AppPasswordStore, sessions *auth.SessionStore, baseURL string, csrfSecret []byte) *LoginFlowHandler {
 	return &LoginFlowHandler{
-		pending:  make(map[string]*loginFlowEntry),
-		Users:    users,
-		AppPWs:   appPWs,
-		Sessions: sessions,
-		BaseURL:  baseURL,
+		pending:    make(map[string]*loginFlowEntry),
+		Users:      users,
+		AppPWs:     appPWs,
+		Sessions:   sessions,
+		BaseURL:    baseURL,
+		CSRFSecret: csrfSecret,
 	}
 }
 
@@ -134,8 +143,9 @@ func (h *LoginFlowHandler) HandlePoll(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HandleGrant handles GET and POST /index.php/login/v2/grant
-// GET shows a login form; POST validates credentials and grants the flow.
+// HandleGrant handles GET and POST /index.php/login/v2/grant.
+// Requires the user be authenticated; the grant is bound to the session, not
+// to form-submitted credentials.
 func (h *LoginFlowHandler) HandleGrant(w http.ResponseWriter, r *http.Request) {
 	loginToken := r.URL.Query().Get("token")
 	if loginToken == "" {
@@ -143,49 +153,37 @@ func (h *LoginFlowHandler) HandleGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	u := auth.UserFromContext(r.Context())
+	if u == nil {
+		// Bounce through /login and come back here with the token preserved.
+		http.Redirect(w, r, "/login?next=/index.php/login/v2/grant?token="+loginToken, http.StatusSeeOther)
+		return
+	}
+
+	sessID := auth.SessionIDFromContext(r.Context())
+	csrf := auth.CSRFToken(sessID, h.CSRFSecret)
+
 	switch r.Method {
 	case http.MethodGet:
-		h.renderGrantPage(w, loginToken, "")
+		h.renderGrantPage(w, loginToken, csrf, u.Username, "")
 	case http.MethodPost:
-		h.processGrant(w, r, loginToken)
+		// Validate CSRF token bound to the current session.
+		if r.FormValue("csrf_token") != csrf {
+			h.renderGrantPage(w, loginToken, csrf, u.Username, "Invalid CSRF token")
+			return
+		}
+		h.processGrant(w, r, loginToken, u)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (h *LoginFlowHandler) processGrant(w http.ResponseWriter, r *http.Request, loginToken string) {
-	username := r.FormValue("username")
-	password := r.FormValue("password")
-
-	// Rate limit by client IP.
-	if h.RateLimiter != nil {
-		ip := ratelimit.ClientIP(r)
-		if h.RateLimiter.IsLimited(ip) {
-			h.renderGrantPage(w, loginToken, "Too many failed attempts. Please try again later.")
-			return
-		}
-	}
-
-	u, err := h.Users.Authenticate(username, password)
-	if err != nil {
-		if h.RateLimiter != nil {
-			h.RateLimiter.RecordFailure(ratelimit.ClientIP(r))
-		}
-		h.renderGrantPage(w, loginToken, "Invalid username or password")
-		return
-	}
-
-	if h.RateLimiter != nil {
-		h.RateLimiter.Reset(ratelimit.ClientIP(r))
-	}
-
+func (h *LoginFlowHandler) processGrant(w http.ResponseWriter, r *http.Request, loginToken string, u *user.User) {
 	// Find the pending flow by login token
 	h.mu.Lock()
-	var pollToken string
 	var entry *loginFlowEntry
-	for pt, e := range h.pending {
+	for _, e := range h.pending {
 		if e.Token == loginToken && !e.Granted {
-			pollToken = pt
 			entry = e
 			break
 		}
@@ -196,7 +194,7 @@ func (h *LoginFlowHandler) processGrant(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	// Create an app password for this login flow
+	// Create an app password tied to the authenticated browser session's user.
 	appPW, _, err := h.AppPWs.Create(u.ID, fmt.Sprintf("Login Flow (%s)", h.Clock().Format("2006-01-02 15:04")))
 	if err != nil {
 		h.mu.Unlock()
@@ -207,32 +205,33 @@ func (h *LoginFlowHandler) processGrant(w http.ResponseWriter, r *http.Request, 
 	entry.LoginName = u.Username
 	entry.AppPassword = appPW
 	entry.Granted = true
-	_ = pollToken // entry is already in the map
 	h.mu.Unlock()
 
 	w.Header().Set("Content-Type", "text/html")
 	fmt.Fprint(w, `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h1>Login Granted</h1><p>You can close this window and return to your app.</p></body></html>`)
 }
 
-func (h *LoginFlowHandler) renderGrantPage(w http.ResponseWriter, token string, errMsg string) {
-	tmpl := template.Must(template.New("grant").Parse(`<!DOCTYPE html>
+var grantTmpl = template.Must(template.New("grant").Parse(`<!DOCTYPE html>
 <html>
 <head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Cog - Login</title></head>
 <body>
 <h1>Grant App Access</h1>
 {{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<p>Signed in as <strong>{{.Username}}</strong>. Approving will create an app password tied to your account for the requesting application.</p>
 <form method="POST" action="?token={{.Token}}">
-  <label>Username: <input type="text" name="username" required></label><br>
-  <label>Password: <input type="password" name="password" required></label><br>
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
   <button type="submit">Grant Access</button>
 </form>
 </body>
 </html>`))
 
+func (h *LoginFlowHandler) renderGrantPage(w http.ResponseWriter, token, csrf, username, errMsg string) {
 	w.Header().Set("Content-Type", "text/html")
-	tmpl.Execute(w, map[string]string{
-		"Token": token,
-		"Error": errMsg,
+	grantTmpl.Execute(w, map[string]string{
+		"Token":     token,
+		"CSRFToken": csrf,
+		"Username":  username,
+		"Error":     errMsg,
 	})
 }
 

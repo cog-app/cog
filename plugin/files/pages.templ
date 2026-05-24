@@ -156,133 +156,143 @@ script toggleFavorite(filePath string, setFav bool) {
 
 templ filesActions(csrfToken string) {
 	<script type="text/javascript">
-	function toggleSelectAll(el) {
-		document.querySelectorAll('.file-check').forEach(function(cb) { cb.checked = el.checked; });
-		updateBulkBtn();
-	}
-	function updateBulkBtn() {
-		var checked = document.querySelectorAll('.file-check:checked');
-		document.getElementById('bulk-delete-btn').style.display = checked.length > 0 ? '' : 'none';
-	}
-	function bulkDelete() {
-		var checked = document.querySelectorAll('.file-check:checked');
-		if (!checked.length) return;
-		if (!confirm('Delete ' + checked.length + ' item(s)?')) return;
-		var csrf = {{ csrfToken }};
-		var pending = checked.length;
-		var errors = [];
-		checked.forEach(function(cb) {
-			fetch('/apps/files' + cb.value, {
-				method: 'DELETE',
-				headers: {'X-CSRF-Token': csrf}
-			}).then(function(resp) {
-				if (resp.ok) {
-					var row = cb.closest('tr');
-					if (row) row.remove();
-				} else {
-					errors.push(cb.value);
-				}
-				pending--;
-				if (pending === 0) {
-					if (errors.length > 0) alert('Failed to delete: ' + errors.join(', '));
-					updateBulkBtn();
-					document.getElementById('select-all').checked = false;
-				}
-			}).catch(function() {
-				errors.push(cb.value);
-				pending--;
-				if (pending === 0) {
-					if (errors.length > 0) alert('Failed to delete: ' + errors.join(', '));
-					updateBulkBtn();
-				}
+		function toggleSelectAll(el) {
+			document.querySelectorAll(".file-check").forEach(function (cb) {
+				cb.checked = el.checked;
 			});
-		});
-	}
+			updateBulkBtn();
+		}
+		function updateBulkBtn() {
+			var checked = document.querySelectorAll(".file-check:checked");
+			document.getElementById("bulk-delete-btn").style.display =
+				checked.length > 0 ? "" : "none";
+		}
+		function bulkDelete() {
+			var checked = document.querySelectorAll(".file-check:checked");
+			if (!checked.length) return;
+			if (!confirm("Delete " + checked.length + " item(s)?")) return;
+			var csrf = {{ csrfToken }};
+			var pending = checked.length;
+			var errors = [];
+			checked.forEach(function (cb) {
+				fetch("/apps/files" + cb.value, {
+					method: "DELETE",
+					headers: { "X-CSRF-Token": csrf },
+				})
+					.then(function (resp) {
+						if (resp.ok) {
+							var row = cb.closest("tr");
+							if (row) row.remove();
+						} else {
+							errors.push(cb.value);
+						}
+						pending--;
+						if (pending === 0) {
+							if (errors.length > 0)
+								alert("Failed to delete: " + errors.join(", "));
+							updateBulkBtn();
+							document.getElementById("select-all").checked = false;
+						}
+					})
+					.catch(function () {
+						errors.push(cb.value);
+						pending--;
+						if (pending === 0) {
+							if (errors.length > 0)
+								alert("Failed to delete: " + errors.join(", "));
+							updateBulkBtn();
+						}
+					});
+			});
+		}
 	</script>
 }
 
 templ filesDragDrop(dirPath string, csrfToken string) {
 	<script type="text/javascript">
-	(function() {
-		var basePath = {{ dirPath }};
-		var csrf = {{ csrfToken }};
-		var overlay = document.getElementById('drop-overlay');
-		var dragCount = 0;
+		(function () {
+			var basePath = {{ dirPath }};
+			var csrf = {{ csrfToken }};
+			var overlay = document.getElementById("drop-overlay");
+			var dragCount = 0;
 
-		document.addEventListener('dragenter', function(e) {
-			if (!e.dataTransfer.types.includes('Files')) return;
-			e.preventDefault();
-			dragCount++;
-			overlay.style.display = '';
-		});
-
-		document.addEventListener('dragleave', function(e) {
-			dragCount--;
-			if (dragCount <= 0) {
-				dragCount = 0;
-				overlay.style.display = 'none';
-			}
-		});
-
-		document.addEventListener('dragover', function(e) {
-			if (!e.dataTransfer.types.includes('Files')) return;
-			e.preventDefault();
-			// Highlight folder row if hovering over one.
-			var row = e.target.closest('tr[data-dir]');
-			document.querySelectorAll('tr[data-dir]').forEach(function(r) {
-				r.style.background = '';
-			});
-			if (row) {
-				row.style.background = 'var(--color-primary-light, rgba(0,130,201,0.1))';
-			}
-		});
-
-		document.addEventListener('drop', function(e) {
-			e.preventDefault();
-			dragCount = 0;
-			overlay.style.display = 'none';
-			document.querySelectorAll('tr[data-dir]').forEach(function(r) {
-				r.style.background = '';
+			document.addEventListener("dragenter", function (e) {
+				if (!e.dataTransfer.types.includes("Files")) return;
+				e.preventDefault();
+				dragCount++;
+				overlay.style.display = "";
 			});
 
-			var files = e.dataTransfer.files;
-			if (!files.length) return;
+			document.addEventListener("dragleave", function (e) {
+				dragCount--;
+				if (dragCount <= 0) {
+					dragCount = 0;
+					overlay.style.display = "none";
+				}
+			});
 
-			// Determine upload target: folder row or current directory.
-			var row = e.target.closest('tr[data-dir]');
-			var uploadPath = row ? row.getAttribute('data-dir') : basePath;
-
-			var pending = files.length;
-			var errors = [];
-
-			for (var i = 0; i < files.length; i++) {
-				var fd = new FormData();
-				fd.append('csrf_token', csrf);
-				fd.append('file', files[i]);
-				fetch('/apps/files' + uploadPath, {
-					method: 'POST',
-					body: fd,
-					redirect: 'manual'
-				}).then(function(resp) {
-					if (resp.status >= 400) {
-						errors.push('Upload failed: ' + resp.statusText);
-					}
-					pending--;
-					if (pending === 0) {
-						if (errors.length > 0) alert(errors.join('\n'));
-						window.location.reload();
-					}
-				}).catch(function(err) {
-					errors.push(err.message);
-					pending--;
-					if (pending === 0) {
-						if (errors.length > 0) alert(errors.join('\n'));
-						window.location.reload();
-					}
+			document.addEventListener("dragover", function (e) {
+				if (!e.dataTransfer.types.includes("Files")) return;
+				e.preventDefault();
+				// Highlight folder row if hovering over one.
+				var row = e.target.closest("tr[data-dir]");
+				document.querySelectorAll("tr[data-dir]").forEach(function (r) {
+					r.style.background = "";
 				});
-			}
-		});
-	})();
+				if (row) {
+					row.style.background =
+						"var(--color-primary-light, rgba(0,130,201,0.1))";
+				}
+			});
+
+			document.addEventListener("drop", function (e) {
+				e.preventDefault();
+				dragCount = 0;
+				overlay.style.display = "none";
+				document.querySelectorAll("tr[data-dir]").forEach(function (r) {
+					r.style.background = "";
+				});
+
+				var files = e.dataTransfer.files;
+				if (!files.length) return;
+
+				// Determine upload target: folder row or current directory.
+				var row = e.target.closest("tr[data-dir]");
+				var uploadPath = row ? row.getAttribute("data-dir") : basePath;
+
+				var pending = files.length;
+				var errors = [];
+
+				for (var i = 0; i < files.length; i++) {
+					var fd = new FormData();
+					fd.append("csrf_token", csrf);
+					fd.append("file", files[i]);
+					fetch("/apps/files" + uploadPath, {
+						method: "POST",
+						body: fd,
+						redirect: "manual",
+					})
+						.then(function (resp) {
+							if (resp.status >= 400) {
+								errors.push("Upload failed: " + resp.statusText);
+							}
+							pending--;
+							if (pending === 0) {
+								if (errors.length > 0) alert(errors.join("\n"));
+								window.location.reload();
+							}
+						})
+						.catch(function (err) {
+							errors.push(err.message);
+							pending--;
+							if (pending === 0) {
+								if (errors.length > 0) alert(errors.join("\n"));
+								window.location.reload();
+							}
+						});
+				}
+			});
+		})();
 	</script>
 }
 

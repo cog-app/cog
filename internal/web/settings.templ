@@ -374,62 +374,87 @@ templ settingsWebAuthnCard(pd ui.PageData, mfaMethod string, creds []auth.WebAut
 		</div>
 		<div id="webauthn-register-status" style="margin-top:0.5rem"></div>
 		<script>
-		async function registerPasskey() {
-			var nameEl = document.getElementById("webauthn-name");
-			var status = document.getElementById("webauthn-register-status");
-			var btn = document.getElementById("webauthn-register-btn");
-			var name = nameEl.value || "Passkey";
-			btn.disabled = true;
-			status.innerHTML = '<span class="text-muted">Waiting for passkey...</span>';
-			try {
-				var csrf = document.querySelector('body').getAttribute('hx-headers');
-				var csrfToken = JSON.parse(csrf)['X-CSRF-Token'];
-				var headers = {"Content-Type":"application/json","X-CSRF-Token":csrfToken};
-				var beginResp = await fetch("/settings/webauthn/register/begin",{method:"POST",headers:headers});
-				if (!beginResp.ok) throw new Error(await beginResp.text());
-				var options = await beginResp.json();
-				options.publicKey.challenge = base64urlToBuffer(options.publicKey.challenge);
-				options.publicKey.user.id = base64urlToBuffer(options.publicKey.user.id);
-				if (options.publicKey.excludeCredentials) {
-					options.publicKey.excludeCredentials = options.publicKey.excludeCredentials.map(function(c){
-						c.id = base64urlToBuffer(c.id); return c;
+			async function registerPasskey() {
+				var nameEl = document.getElementById("webauthn-name");
+				var status = document.getElementById("webauthn-register-status");
+				var btn = document.getElementById("webauthn-register-btn");
+				var name = nameEl.value || "Passkey";
+				btn.disabled = true;
+				status.innerHTML =
+					'<span class="text-muted">Waiting for passkey...</span>';
+				try {
+					var csrf = document.querySelector("body").getAttribute("hx-headers");
+					var csrfToken = JSON.parse(csrf)["X-CSRF-Token"];
+					var headers = {
+						"Content-Type": "application/json",
+						"X-CSRF-Token": csrfToken,
+					};
+					var beginResp = await fetch("/settings/webauthn/register/begin", {
+						method: "POST",
+						headers: headers,
 					});
-				}
-				var cred = await navigator.credentials.create(options);
-				var body = JSON.stringify({
-					name: name,
-					credential: {
-						id: cred.id,
-						rawId: bufferToBase64url(cred.rawId),
-						type: cred.type,
-						response: {
-							attestationObject: bufferToBase64url(cred.response.attestationObject),
-							clientDataJSON: bufferToBase64url(cred.response.clientDataJSON)
-						}
+					if (!beginResp.ok) throw new Error(await beginResp.text());
+					var options = await beginResp.json();
+					options.publicKey.challenge = base64urlToBuffer(
+						options.publicKey.challenge,
+					);
+					options.publicKey.user.id = base64urlToBuffer(
+						options.publicKey.user.id,
+					);
+					if (options.publicKey.excludeCredentials) {
+						options.publicKey.excludeCredentials =
+							options.publicKey.excludeCredentials.map(function (c) {
+								c.id = base64urlToBuffer(c.id);
+								return c;
+							});
 					}
-				});
-				var finishResp = await fetch("/settings/webauthn/register/finish",{method:"POST",headers:headers,body:body});
-				if (!finishResp.ok) throw new Error(await finishResp.text());
-				window.location.reload();
-			} catch(e) {
-				status.innerHTML = '<span style="color:var(--color-danger)">' + (e.message || "Registration failed") + '</span>';
-				btn.disabled = false;
+					var cred = await navigator.credentials.create(options);
+					var body = JSON.stringify({
+						name: name,
+						credential: {
+							id: cred.id,
+							rawId: bufferToBase64url(cred.rawId),
+							type: cred.type,
+							response: {
+								attestationObject: bufferToBase64url(
+									cred.response.attestationObject,
+								),
+								clientDataJSON: bufferToBase64url(cred.response.clientDataJSON),
+							},
+						},
+					});
+					var finishResp = await fetch("/settings/webauthn/register/finish", {
+						method: "POST",
+						headers: headers,
+						body: body,
+					});
+					if (!finishResp.ok) throw new Error(await finishResp.text());
+					window.location.reload();
+				} catch (e) {
+					status.innerHTML =
+						'<span style="color:var(--color-danger)">' +
+						(e.message || "Registration failed") +
+						"</span>";
+					btn.disabled = false;
+				}
 			}
-		}
-		function base64urlToBuffer(b) {
-			var s = b.replace(/-/g,"+").replace(/_/g,"/");
-			while (s.length%4) s+="=";
-			var raw = atob(s);
-			var arr = new Uint8Array(raw.length);
-			for (var i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
-			return arr.buffer;
-		}
-		function bufferToBase64url(buf) {
-			var arr = new Uint8Array(buf);
-			var s = "";
-			for (var i=0;i<arr.length;i++) s+=String.fromCharCode(arr[i]);
-			return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
-		}
+			function base64urlToBuffer(b) {
+				var s = b.replace(/-/g, "+").replace(/_/g, "/");
+				while (s.length % 4) s += "=";
+				var raw = atob(s);
+				var arr = new Uint8Array(raw.length);
+				for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+				return arr.buffer;
+			}
+			function bufferToBase64url(buf) {
+				var arr = new Uint8Array(buf);
+				var s = "";
+				for (var i = 0; i < arr.length; i++) s += String.fromCharCode(arr[i]);
+				return btoa(s)
+					.replace(/\+/g, "-")
+					.replace(/\//g, "_")
+					.replace(/=/g, "");
+			}
 		</script>
 	}
 }

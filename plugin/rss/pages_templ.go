@@ -253,7 +253,7 @@ func rssSidebar(sb sidebarData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\">Settings</a></nav><script>\n\t// Preserve folder open/closed state across HTMX sidebar refreshes\n\t(function() {\n\t\tvar openFolders = new Set();\n\t\tdocument.addEventListener('htmx:beforeSwap', function(e) {\n\t\t\tif (e.detail.target && e.detail.target.id === 'rss-sidebar') {\n\t\t\t\topenFolders.clear();\n\t\t\t\te.detail.target.querySelectorAll('details[data-folder-id]').forEach(function(d) {\n\t\t\t\t\tif (d.open) openFolders.add(d.getAttribute('data-folder-id'));\n\t\t\t\t});\n\t\t\t}\n\t\t});\n\t\tdocument.addEventListener('htmx:afterSwap', function(e) {\n\t\t\tif (e.detail.target && e.detail.target.id === 'rss-sidebar') {\n\t\t\t\te.detail.target.querySelectorAll('details[data-folder-id]').forEach(function(d) {\n\t\t\t\t\tif (openFolders.has(d.getAttribute('data-folder-id'))) d.open = true;\n\t\t\t\t});\n\t\t\t}\n\t\t});\n\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\">Settings</a></nav><script>\n\t\t// Preserve folder open/closed state across HTMX sidebar refreshes\n\t\t(function () {\n\t\t\tvar openFolders = new Set();\n\t\t\tdocument.addEventListener(\"htmx:beforeSwap\", function (e) {\n\t\t\t\tif (e.detail.target && e.detail.target.id === \"rss-sidebar\") {\n\t\t\t\t\topenFolders.clear();\n\t\t\t\t\te.detail.target\n\t\t\t\t\t\t.querySelectorAll(\"details[data-folder-id]\")\n\t\t\t\t\t\t.forEach(function (d) {\n\t\t\t\t\t\t\tif (d.open) openFolders.add(d.getAttribute(\"data-folder-id\"));\n\t\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t});\n\t\t\tdocument.addEventListener(\"htmx:afterSwap\", function (e) {\n\t\t\t\tif (e.detail.target && e.detail.target.id === \"rss-sidebar\") {\n\t\t\t\t\te.detail.target\n\t\t\t\t\t\t.querySelectorAll(\"details[data-folder-id]\")\n\t\t\t\t\t\t.forEach(function (d) {\n\t\t\t\t\t\t\tif (openFolders.has(d.getAttribute(\"data-folder-id\")))\n\t\t\t\t\t\t\t\td.open = true;\n\t\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t});\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -294,7 +294,7 @@ func sidebarFeedLink(feed Feed, sb sidebarData) templ.Component {
 		var templ_7745c5c3_Var16 templ.SafeURL
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/rss/feed/%d", feed.ID)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 86, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 91, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -320,7 +320,7 @@ func sidebarFeedLink(feed Feed, sb sidebarData) templ.Component {
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(feedDisplayTitle(feed))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 90, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 95, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -344,7 +344,7 @@ func sidebarFeedLink(feed Feed, sb sidebarData) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(sb.UnreadCounts[feed.ID]))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 95, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 100, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -404,7 +404,7 @@ func rssIndexPage(sb sidebarData, items []ItemWithFeed, csrfToken string) templ.
 			var templ_7745c5c3_Var21 string
 			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 108, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 113, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 			if templ_7745c5c3_Err != nil {
@@ -492,7 +492,7 @@ func rssFeedPage(sb sidebarData, feed *Feed, items []ItemWithFeed, csrfToken str
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(feedDisplayTitle(*feed))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 129, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 134, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
@@ -505,7 +505,7 @@ func rssFeedPage(sb sidebarData, feed *Feed, items []ItemWithFeed, csrfToken str
 		var templ_7745c5c3_Var25 templ.SafeURL
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/rss/feeds/%d/read", feed.ID)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 130, Col: 95}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 135, Col: 95}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 		if templ_7745c5c3_Err != nil {
@@ -518,7 +518,7 @@ func rssFeedPage(sb sidebarData, feed *Feed, items []ItemWithFeed, csrfToken str
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 131, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 136, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 		if templ_7745c5c3_Err != nil {
@@ -677,7 +677,7 @@ func rssFolderPage(sb sidebarData, folder *Folder, items []ItemWithFeed, csrfTok
 		var templ_7745c5c3_Var31 string
 		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(folder.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 170, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 175, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 		if templ_7745c5c3_Err != nil {
@@ -755,7 +755,7 @@ func rssItemList(items []ItemWithFeed, csrfToken string) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</div><script>\n\tfunction toggleArticle(id) {\n\t\tvar el = document.getElementById('detail-' + id);\n\t\tvar row = document.getElementById('item-' + id);\n\t\tvar summary = document.getElementById('summary-' + id);\n\t\tif (!el) return;\n\t\tvar isOpen = el.style.display !== 'none';\n\t\t// Close all open details\n\t\tdocument.querySelectorAll('.rss-item-detail').forEach(function(d) { d.style.display = 'none'; });\n\t\tdocument.querySelectorAll('.rss-item-active').forEach(function(r) { r.classList.remove('rss-item-active'); });\n\t\tdocument.querySelectorAll('.rss-item-summary-line').forEach(function(s) { s.style.display = ''; });\n\t\tif (!isOpen) {\n\t\t\tel.style.display = '';\n\t\t\trow.classList.add('rss-item-active');\n\t\t\tif (summary) summary.style.display = 'none';\n\t\t\t// Mark as read visually and on the server\n\t\t\tif (!row.classList.contains('rss-item-read')) {\n\t\t\t\trow.classList.add('rss-item-read');\n\t\t\t\t// Update the read toggle button to show hollow circle (read state)\n\t\t\t\tvar readBtn = row.querySelector('[title=\"Toggle read\"]');\n\t\t\t\tif (readBtn) readBtn.innerHTML = '\\u25CB';\n\t\t\t}\n\t\t\tfetch('/apps/rss/items/' + id + '/mark-read', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: {'X-CSRF-Token': document.querySelector('[name=csrf_token]') ? document.querySelector('[name=csrf_token]').value : ''}\n\t\t\t});\n\t\t}\n\t}\n\t(function() {\n\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\tif (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;\n\t\t\tvar items = Array.from(document.querySelectorAll('.rss-item'));\n\t\t\tvar active = document.querySelector('.rss-item-active');\n\t\t\tvar idx = active ? items.indexOf(active) : -1;\n\t\t\tif (e.key === 'j') {\n\t\t\t\te.preventDefault();\n\t\t\t\tvar next = idx + 1;\n\t\t\t\tif (next < items.length) {\n\t\t\t\t\tvar id = items[next].id.replace('item-', '');\n\t\t\t\t\ttoggleArticle(id);\n\t\t\t\t\titems[next].scrollIntoView({block: 'nearest', behavior: 'smooth'});\n\t\t\t\t}\n\t\t\t} else if (e.key === 'k') {\n\t\t\t\te.preventDefault();\n\t\t\t\tvar prev = idx - 1;\n\t\t\t\tif (prev >= 0) {\n\t\t\t\t\tvar id = items[prev].id.replace('item-', '');\n\t\t\t\t\ttoggleArticle(id);\n\t\t\t\t\titems[prev].scrollIntoView({block: 'nearest', behavior: 'smooth'});\n\t\t\t\t}\n\t\t\t} else if (e.key === 'o' || e.key === 'Enter') {\n\t\t\t\tif (active) {\n\t\t\t\t\tvar link = active.querySelector('.rss-item-detail a[target=_blank]');\n\t\t\t\t\tif (link) { e.preventDefault(); window.open(link.href, '_blank'); }\n\t\t\t\t}\n\t\t\t}\n\t\t});\n\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</div><script>\n\t\tfunction toggleArticle(id) {\n\t\t\tvar el = document.getElementById(\"detail-\" + id);\n\t\t\tvar row = document.getElementById(\"item-\" + id);\n\t\t\tvar summary = document.getElementById(\"summary-\" + id);\n\t\t\tif (!el) return;\n\t\t\tvar isOpen = el.style.display !== \"none\";\n\t\t\t// Close all open details\n\t\t\tdocument.querySelectorAll(\".rss-item-detail\").forEach(function (d) {\n\t\t\t\td.style.display = \"none\";\n\t\t\t});\n\t\t\tdocument.querySelectorAll(\".rss-item-active\").forEach(function (r) {\n\t\t\t\tr.classList.remove(\"rss-item-active\");\n\t\t\t});\n\t\t\tdocument.querySelectorAll(\".rss-item-summary-line\").forEach(function (s) {\n\t\t\t\ts.style.display = \"\";\n\t\t\t});\n\t\t\tif (!isOpen) {\n\t\t\t\tel.style.display = \"\";\n\t\t\t\trow.classList.add(\"rss-item-active\");\n\t\t\t\tif (summary) summary.style.display = \"none\";\n\t\t\t\t// Mark as read visually and on the server\n\t\t\t\tif (!row.classList.contains(\"rss-item-read\")) {\n\t\t\t\t\trow.classList.add(\"rss-item-read\");\n\t\t\t\t\t// Update the read toggle button to show hollow circle (read state)\n\t\t\t\t\tvar readBtn = row.querySelector('[title=\"Toggle read\"]');\n\t\t\t\t\tif (readBtn) readBtn.innerHTML = \"\\u25CB\";\n\t\t\t\t}\n\t\t\t\tfetch(\"/apps/rss/items/\" + id + \"/mark-read\", {\n\t\t\t\t\tmethod: \"POST\",\n\t\t\t\t\theaders: {\n\t\t\t\t\t\t\"X-CSRF-Token\": document.querySelector(\"[name=csrf_token]\")\n\t\t\t\t\t\t\t? document.querySelector(\"[name=csrf_token]\").value\n\t\t\t\t\t\t\t: \"\",\n\t\t\t\t\t},\n\t\t\t\t});\n\t\t\t}\n\t\t}\n\t\t(function () {\n\t\t\tdocument.addEventListener(\"keydown\", function (e) {\n\t\t\t\tif (\n\t\t\t\t\te.target.tagName === \"INPUT\" ||\n\t\t\t\t\te.target.tagName === \"TEXTAREA\" ||\n\t\t\t\t\te.target.tagName === \"SELECT\"\n\t\t\t\t)\n\t\t\t\t\treturn;\n\t\t\t\tvar items = Array.from(document.querySelectorAll(\".rss-item\"));\n\t\t\t\tvar active = document.querySelector(\".rss-item-active\");\n\t\t\t\tvar idx = active ? items.indexOf(active) : -1;\n\t\t\t\tif (e.key === \"j\") {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tvar next = idx + 1;\n\t\t\t\t\tif (next < items.length) {\n\t\t\t\t\t\tvar id = items[next].id.replace(\"item-\", \"\");\n\t\t\t\t\t\ttoggleArticle(id);\n\t\t\t\t\t\titems[next].scrollIntoView({\n\t\t\t\t\t\t\tblock: \"nearest\",\n\t\t\t\t\t\t\tbehavior: \"smooth\",\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t} else if (e.key === \"k\") {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tvar prev = idx - 1;\n\t\t\t\t\tif (prev >= 0) {\n\t\t\t\t\t\tvar id = items[prev].id.replace(\"item-\", \"\");\n\t\t\t\t\t\ttoggleArticle(id);\n\t\t\t\t\t\titems[prev].scrollIntoView({\n\t\t\t\t\t\t\tblock: \"nearest\",\n\t\t\t\t\t\t\tbehavior: \"smooth\",\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t} else if (e.key === \"o\" || e.key === \"Enter\") {\n\t\t\t\t\tif (active) {\n\t\t\t\t\t\tvar link = active.querySelector(\n\t\t\t\t\t\t\t\".rss-item-detail a[target=_blank]\",\n\t\t\t\t\t\t);\n\t\t\t\t\t\tif (link) {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\twindow.open(link.href, \"_blank\");\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t});\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -796,7 +796,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var36 string
 		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("item-%d", item.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 251, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 282, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
@@ -839,7 +839,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(item.FeedTitle)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 255, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 286, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 		if templ_7745c5c3_Err != nil {
@@ -857,7 +857,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(item.Author)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 257, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 288, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
@@ -875,7 +875,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(formatTime(item.PublishedAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 259, Col: 94}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 290, Col: 94}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {
@@ -888,7 +888,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var42 string
 		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(item.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 262, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 293, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 		if templ_7745c5c3_Err != nil {
@@ -906,7 +906,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("summary-%d", item.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 265, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 296, Col: 49}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
@@ -919,7 +919,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var44 string
 			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(itemSummary(item.ContentHTML))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 266, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 297, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
@@ -942,7 +942,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var45 templ.SafeURL
 			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(item.URL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 273, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 304, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 			if templ_7745c5c3_Err != nil {
@@ -964,7 +964,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var46 string
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/rss/items/%d/read", item.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 283, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 314, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 		if templ_7745c5c3_Err != nil {
@@ -977,7 +977,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var47 string
 		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#item-%d", item.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 284, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 315, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 		if templ_7745c5c3_Err != nil {
@@ -1005,7 +1005,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var48 string
 		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("detail-%d", item.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 296, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 327, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 		if templ_7745c5c3_Err != nil {
@@ -1023,7 +1023,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(itemPreviewImage(item.ContentHTML))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 298, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 329, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
@@ -1055,7 +1055,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var50 string
 			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(itemSummary(item.ContentHTML))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 305, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 336, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 			if templ_7745c5c3_Err != nil {
@@ -1078,7 +1078,7 @@ func rssItemRow(item ItemWithFeed, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var51 templ.SafeURL
 			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(item.URL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 309, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 340, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 			if templ_7745c5c3_Err != nil {
@@ -1153,7 +1153,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 			var templ_7745c5c3_Var54 string
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 324, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 355, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 			if templ_7745c5c3_Err != nil {
@@ -1176,7 +1176,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var55 string
 					templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(f.ID, 10))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 335, Col: 52}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 366, Col: 52}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 					if templ_7745c5c3_Err != nil {
@@ -1189,7 +1189,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var56 string
 					templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(f.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 335, Col: 63}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 366, Col: 63}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 					if templ_7745c5c3_Err != nil {
@@ -1245,7 +1245,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var58 string
 					templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("feed-%d", feed.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 359, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 390, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 					if templ_7745c5c3_Err != nil {
@@ -1258,7 +1258,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var59 string
 					templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(feedDisplayTitle(feed))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 360, Col: 37}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 391, Col: 37}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 					if templ_7745c5c3_Err != nil {
@@ -1271,7 +1271,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var60 string
 					templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(feed.URL)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 362, Col: 32}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 393, Col: 32}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 					if templ_7745c5c3_Err != nil {
@@ -1284,7 +1284,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var61 string
 					templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(feed.URL)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 362, Col: 45}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 393, Col: 45}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 					if templ_7745c5c3_Err != nil {
@@ -1297,7 +1297,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var62 string
 					templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(feedFolderName(feed, folders))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 365, Col: 41}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 396, Col: 41}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 					if templ_7745c5c3_Err != nil {
@@ -1315,7 +1315,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 						var templ_7745c5c3_Var63 string
 						templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(feed.LastError)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 369, Col: 59}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 400, Col: 59}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 						if templ_7745c5c3_Err != nil {
@@ -1343,7 +1343,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var64 string
 					templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/rss/feeds/%d/refresh", feed.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 379, Col: 71}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 410, Col: 71}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 					if templ_7745c5c3_Err != nil {
@@ -1356,7 +1356,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var65 string
 					templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/rss/feeds/%d", feed.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 384, Col: 65}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 415, Col: 65}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 					if templ_7745c5c3_Err != nil {
@@ -1369,7 +1369,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var66 string
 					templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#feed-%d", feed.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 385, Col: 55}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 416, Col: 55}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 					if templ_7745c5c3_Err != nil {
@@ -1410,7 +1410,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 			var templ_7745c5c3_Var68 string
 			templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 398, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 429, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 			if templ_7745c5c3_Err != nil {
@@ -1433,7 +1433,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var69 string
 					templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("folder-%d", folder.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 412, Col: 52}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 443, Col: 52}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 					if templ_7745c5c3_Err != nil {
@@ -1446,7 +1446,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var70 string
 					templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(folder.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 413, Col: 26}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 444, Col: 26}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 					if templ_7745c5c3_Err != nil {
@@ -1459,7 +1459,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var71 string
 					templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/rss/folders/%d", folder.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 417, Col: 69}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 448, Col: 69}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 					if templ_7745c5c3_Err != nil {
@@ -1472,7 +1472,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var72 string
 					templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#folder-%d", folder.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 418, Col: 59}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 449, Col: 59}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 					if templ_7745c5c3_Err != nil {
@@ -1513,7 +1513,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 			var templ_7745c5c3_Var74 string
 			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 433, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 464, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 			if templ_7745c5c3_Err != nil {
@@ -1558,7 +1558,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var76 string
 					templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("filter-%d", f.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 455, Col: 47}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 486, Col: 47}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 					if templ_7745c5c3_Err != nil {
@@ -1571,7 +1571,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var77 string
 					templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.JoinStringErrs(f.Query)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 456, Col: 28}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 487, Col: 28}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var77))
 					if templ_7745c5c3_Err != nil {
@@ -1584,7 +1584,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var78 string
 					templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(f.Action)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 457, Col: 23}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 488, Col: 23}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 					if templ_7745c5c3_Err != nil {
@@ -1597,7 +1597,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var79 string
 					templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/rss/filters/%d", f.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 461, Col: 64}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 492, Col: 64}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
 					if templ_7745c5c3_Err != nil {
@@ -1610,7 +1610,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 					var templ_7745c5c3_Var80 string
 					templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#filter-%d", f.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 462, Col: 54}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 493, Col: 54}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 					if templ_7745c5c3_Err != nil {
@@ -1633,7 +1633,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 			var templ_7745c5c3_Var81 string
 			templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 473, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 504, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 			if templ_7745c5c3_Err != nil {
@@ -1646,7 +1646,7 @@ func rssSettingsPage(sb sidebarData, feeds []Feed, folders []Folder, filters []F
 			var templ_7745c5c3_Var82 string
 			templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(`* or :source="Tech Blog" or sponsor`)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 481, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 512, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
 			if templ_7745c5c3_Err != nil {
@@ -1705,7 +1705,7 @@ func filterPreviewResult(preview []ItemWithFeed, matchCount, totalCount int, err
 			var templ_7745c5c3_Var84 string
 			templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(errMsg)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 508, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 539, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 			if templ_7745c5c3_Err != nil {
@@ -1733,7 +1733,7 @@ func filterPreviewResult(preview []ItemWithFeed, matchCount, totalCount int, err
 			var templ_7745c5c3_Var85 string
 			templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(matchCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 515, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 546, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
 			if templ_7745c5c3_Err != nil {
@@ -1746,7 +1746,7 @@ func filterPreviewResult(preview []ItemWithFeed, matchCount, totalCount int, err
 			var templ_7745c5c3_Var86 string
 			templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(totalCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 515, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 546, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
 			if templ_7745c5c3_Err != nil {
@@ -1764,7 +1764,7 @@ func filterPreviewResult(preview []ItemWithFeed, matchCount, totalCount int, err
 				var templ_7745c5c3_Var87 string
 				templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs(it.Title)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 519, Col: 38}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/rss/pages.templ`, Line: 550, Col: 38}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
 				if templ_7745c5c3_Err != nil {

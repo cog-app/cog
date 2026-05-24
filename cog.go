@@ -64,6 +64,10 @@ func configFromEnv() config.Config {
 		LogFormat: envOr("COG_LOG_FORMAT", "text"),
 		LogLevel:  envOr("COG_LOG_LEVEL", "info"),
 
+		TrustedProxies:        os.Getenv("COG_TRUSTED_PROXIES"),
+		FederationPeers:       os.Getenv("COG_FEDERATION_PEERS"),
+		TrustedProcessPlugins: os.Getenv("COG_TRUSTED_PROCESS_PLUGINS"),
+
 		SSHAddr:        envOr("COG_SSH_ADDR", ":8522"),
 		SSHEnabled:     envBoolDefault("COG_SSH_ENABLED", true),
 		SSHHostKeyPath: os.Getenv("COG_SSH_HOST_KEY"),

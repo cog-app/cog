@@ -2,16 +2,19 @@ package web_test
 
 import (
 	"net/url"
+	"regexp"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 )
 
+var grantCSRFRe = regexp.MustCompile(`name="csrf_token"\s+value="([^"]+)"`)
+
 // TestNCLoginFlow replays the NextCloud Android app login sequence
 // observed from a real device connecting to Cog.
 func TestNCLoginFlow(t *testing.T) {
-	env := cogtest.New(t)
+	env := cogtest.New(t).WithCookieJar(t)
 	admin := env.CreateUser(t, "admin", "admin")
 
 	// Step 1: GET /status.php — server discovery
@@ -43,20 +46,33 @@ func TestNCLoginFlow(t *testing.T) {
 	grantToken := loginURL.Query().Get("token")
 	require.NotEmpty(t, grantToken)
 
-	// Step 4: GET /index.php/login/v2/grant — render login form
+	// Step 4: GET /grant without auth → bounce to /login (303). Follow.
 	env.Get(t, "/index.php/login/v2/grant?token="+grantToken).
 		Status(200).
-		Contains("<form")
+		Contains("Log in")
 
 	// Step 5: POST /index.php/login/v2/poll — poll before grant (should be 404)
 	env.PostForm(t, "/index.php/login/v2/poll", url.Values{"token": {initResp.Poll.Token}}).
 		Status(404)
 
-	// Step 6: POST /index.php/login/v2/grant — submit credentials
-	env.PostForm(t, "/index.php/login/v2/grant?token="+grantToken,
-		url.Values{"username": {"admin"}, "password": {"admin"}}).
+	// Step 6a: log in via /login (sets session cookie in the jar).
+	env.PostForm(t, "/login", url.Values{
+		"username": {"admin"},
+		"password": {"admin"},
+	}).Status(200) // /login redirects to / which 200s after auth.
+
+	// Step 6b: GET /grant authenticated — render confirm form, extract CSRF.
+	grantPage := env.Get(t, "/index.php/login/v2/grant?token="+grantToken).
 		Status(200).
-		Contains("Login Granted")
+		Contains("Grant Access")
+	m := grantCSRFRe.FindStringSubmatch(grantPage.ReadBody())
+	require.True(t, len(m) == 2)
+	csrf := m[1]
+
+	// Step 6c: POST /grant with CSRF — authoritative grant.
+	env.PostForm(t, "/index.php/login/v2/grant?token="+grantToken, url.Values{
+		"csrf_token": {csrf},
+	}).Status(200).Contains("Login Granted")
 
 	// Step 7: POST /index.php/login/v2/poll — poll after grant
 	var pollResp struct {
@@ -106,12 +122,13 @@ func TestNCLoginFlow(t *testing.T) {
 	env.Get(t, "/index.php/204").Status(204)
 }
 
-// TestNCLoginFlowBadPassword ensures wrong credentials don't grant access.
-func TestNCLoginFlowBadPassword(t *testing.T) {
+// TestNCLoginFlowUnauthGrant ensures POST /grant without a session cannot
+// mint an app password. The grant is bound to the browser session, not to
+// form-supplied credentials, so without a session there's no user to grant to.
+func TestNCLoginFlowUnauthGrant(t *testing.T) {
 	env := cogtest.New(t)
 	env.CreateUser(t, "admin", "admin")
 
-	// Init flow
 	var initResp struct {
 		Poll  struct{ Token string } `json:"poll"`
 		Login string                 `json:"login"`
@@ -121,13 +138,12 @@ func TestNCLoginFlowBadPassword(t *testing.T) {
 	loginURL, _ := url.Parse(initResp.Login)
 	grantToken := loginURL.Query().Get("token")
 
-	// Submit bad password
-	env.PostForm(t, "/index.php/login/v2/grant?token="+grantToken,
-		url.Values{"username": {"admin"}, "password": {"wrong"}}).
-		Status(200).
-		Contains("Invalid")
+	// POST grant without a session — bounces to /login, no grant happens.
+	env.PostForm(t, "/index.php/login/v2/grant?token="+grantToken, url.Values{
+		"csrf_token": {"anything"},
+	}).Status(200).Contains("Log in")
 
-	// Poll should still be pending
+	// Poll should still be pending — no credentials issued.
 	env.PostForm(t, "/index.php/login/v2/poll", url.Values{"token": {initResp.Poll.Token}}).
 		Status(404)
 }

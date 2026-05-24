@@ -298,57 +298,73 @@ templ adminEmailPage(pd ui.PageData, smtp smtpSettingsData, overrideHTML string,
 			<button class="btn btn-primary" type="submit">Save Email Settings</button>
 		</form>
 		<script>
-		var htmlPreviewName = 'password_reset';
-		var textPreviewName = 'password_reset';
-		var previewTimer = null;
-		var csrfToken = document.querySelector('input[name=csrf_token]').value;
+			var htmlPreviewName = "password_reset";
+			var textPreviewName = "password_reset";
+			var previewTimer = null;
+			var csrfToken = document.querySelector("input[name=csrf_token]").value;
 
-		function schedulePreview() {
-			clearTimeout(previewTimer);
-			previewTimer = setTimeout(refreshAllPreviews, 400);
-		}
+			function schedulePreview() {
+				clearTimeout(previewTimer);
+				previewTimer = setTimeout(refreshAllPreviews, 400);
+			}
 
-		function refreshAllPreviews() {
-			refreshPreview('preview-html', htmlPreviewName, 'html');
-			refreshPreview('preview-text', textPreviewName, 'text');
-		}
+			function refreshAllPreviews() {
+				refreshPreview("preview-html", htmlPreviewName, "html");
+				refreshPreview("preview-text", textPreviewName, "text");
+			}
 
-		function showHTMLPreview(name) {
-			htmlPreviewName = name;
-			refreshPreview('preview-html', name, 'html');
-		}
+			function showHTMLPreview(name) {
+				htmlPreviewName = name;
+				refreshPreview("preview-html", name, "html");
+			}
 
-		function showTextPreview(name) {
-			textPreviewName = name;
-			refreshPreview('preview-text', name, 'text');
-		}
+			function showTextPreview(name) {
+				textPreviewName = name;
+				refreshPreview("preview-text", name, "text");
+			}
 
-		function refreshPreview(frameId, name, format) {
-			var frame = document.getElementById(frameId);
-			if (!frame || !frame.offsetParent) return; // skip if details is closed
-			var url = '/admin/email/preview/' + name;
-			if (format === 'text') url += '?format=text';
-			var body = new URLSearchParams();
-			body.set('csrf_token', csrfToken);
-			body.set('override_html', document.getElementById('override-html').value);
-			body.set('override_text', document.getElementById('override-text').value);
-			fetch(url, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body.toString()})
-				.then(function(r) { return r.text(); })
-				.then(function(html) { frame.srcdoc = html; });
-		}
+			function refreshPreview(frameId, name, format) {
+				var frame = document.getElementById(frameId);
+				if (!frame || !frame.offsetParent) return; // skip if details is closed
+				var url = "/admin/email/preview/" + name;
+				if (format === "text") url += "?format=text";
+				var body = new URLSearchParams();
+				body.set("csrf_token", csrfToken);
+				body.set(
+					"override_html",
+					document.getElementById("override-html").value,
+				);
+				body.set(
+					"override_text",
+					document.getElementById("override-text").value,
+				);
+				fetch(url, {
+					method: "POST",
+					headers: { "Content-Type": "application/x-www-form-urlencoded" },
+					body: body.toString(),
+				})
+					.then(function (r) {
+						return r.text();
+					})
+					.then(function (html) {
+						frame.srcdoc = html;
+					});
+			}
 
-		// Load initial preview when a details element is opened.
-		document.querySelectorAll('details').forEach(function(d) {
-			d.addEventListener('toggle', function() {
-				if (d.open) {
-					var frame = d.querySelector('iframe');
-					if (frame && !frame.srcdoc) {
-						if (frame.id === 'preview-html') refreshPreview('preview-html', htmlPreviewName, 'html');
-						if (frame.id === 'preview-text') refreshPreview('preview-text', textPreviewName, 'text');
+			// Load initial preview when a details element is opened.
+			document.querySelectorAll("details").forEach(function (d) {
+				d.addEventListener("toggle", function () {
+					if (d.open) {
+						var frame = d.querySelector("iframe");
+						if (frame && !frame.srcdoc) {
+							if (frame.id === "preview-html")
+								refreshPreview("preview-html", htmlPreviewName, "html");
+							if (frame.id === "preview-text")
+								refreshPreview("preview-text", textPreviewName, "text");
+						}
 					}
-				}
+				});
 			});
-		});
 		</script>
 	}
 }

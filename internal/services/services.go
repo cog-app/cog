@@ -31,6 +31,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/dashboard"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 )
@@ -65,6 +66,7 @@ type Providers struct {
 	EmailHook      email.SendHook // if set, all email goes through this instead of SMTP
 	RateLimiter    *ratelimit.Limiter
 	CSRFSecret     []byte
+	Cookies        cogplugin.CookieConfig
 	Clock          clock.Clock
 	StartedAt      time.Time
 }
@@ -174,6 +176,10 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 
 	secret := loadOrCreateSecret(sysDB)
 
+	ratelimit.SetTrustedProxies(cfg.TrustedProxies)
+	federation.SetPeerAllowlist(cfg.FederationPeers)
+	plugin.SetTrustedProcessPlugins(cfg.TrustedProcessPlugins)
+
 	registry := plugin.NewRegistry(log, cfg.DataDir, http.NewServeMux(), sysDB, secret, c)
 	for _, p := range plugins {
 		registry.Add(p)
@@ -209,15 +215,16 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		Quotas:         quotas,
 		Settings:       settings.NewStore(sysDB),
 		TOTP:           auth.NewTOTPStore(sysDB, secret),
-		MFAPending:     auth.NewMFAPendingStore(sysDB, c),
+		MFAPending:     auth.NewMFAPendingStore(sysDB, c, secret),
 		EmailOTP:       auth.NewEmailOTPStore(sysDB, c),
-		PasswordResets: auth.NewPasswordResetStore(sysDB, c),
-		WebAuthn:       newWebAuthnStore(sysDB, c, cfg.BaseURL, log),
+		PasswordResets: auth.NewPasswordResetStore(sysDB, c, secret),
+		WebAuthn:       newWebAuthnStore(sysDB, c, cfg.BaseURL, secret, log),
 		RateLimiter:    ratelimit.New(10, 15*time.Minute, c),
 		Activities:     activities,
 		Federation:     fedStore,
 		FedClient:      fedClient,
 		CSRFSecret:     secret,
+		Cookies:        cogplugin.CookieConfigFromBaseURL(cfg.BaseURL),
 		Clock:          c,
 		StartedAt:      c(),
 	}
@@ -289,11 +296,11 @@ func (p *Providers) Close() error {
 
 // newWebAuthnStore creates a WebAuthn store, returning nil on error
 // (e.g., when BaseURL is not a valid URL in test environments).
-func newWebAuthnStore(db *sql.DB, c clock.Clock, baseURL string, log *slog.Logger) *auth.WebAuthnStore {
+func newWebAuthnStore(db *sql.DB, c clock.Clock, baseURL string, secret []byte, log *slog.Logger) *auth.WebAuthnStore {
 	if baseURL == "" {
 		return nil
 	}
-	wa, err := auth.NewWebAuthnStore(db, c, baseURL)
+	wa, err := auth.NewWebAuthnStore(db, c, baseURL, secret)
 	if err != nil {
 		log.Warn("webauthn init failed (passkeys disabled)", "err", err)
 		return nil

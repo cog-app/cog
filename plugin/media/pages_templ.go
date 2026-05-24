@@ -843,7 +843,7 @@ func playerScript() templ.Component {
 			templ_7745c5c3_Var44 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "<script>\n\t(function() {\n\t\tvar player = document.getElementById('media-player');\n\t\tif (!player) return;\n\t\tvar el = document.getElementById('player-el');\n\t\tif (!el) return;\n\t\tvar epID = player.dataset.episodeId;\n\t\tvar resume = parseFloat(player.dataset.resume) || 0;\n\t\tvar sourceKind = player.dataset.sourceKind;\n\t\tvar playBtn = document.getElementById('player-play-btn');\n\t\tvar timeSpan = document.getElementById('player-time');\n\t\tvar csrfToken = player.querySelector('[name=csrf_token]').value;\n\t\tvar lastSaved = 0;\n\n\t\tfunction formatTime(sec) {\n\t\t\tsec = Math.floor(sec);\n\t\t\tvar h = Math.floor(sec / 3600);\n\t\t\tvar m = Math.floor((sec % 3600) / 60);\n\t\t\tvar s = sec % 60;\n\t\t\tif (h > 0) return h + ':' + (m<10?'0':'') + m + ':' + (s<10?'0':'') + s;\n\t\t\treturn m + ':' + (s<10?'0':'') + s;\n\t\t}\n\n\t\tif (sourceKind === 'youtube') {\n\t\t\tfetch('/apps/media/api/stream-url/' + epID, {\n\t\t\t\theaders: {'X-CSRF-Token': csrfToken}\n\t\t\t}).then(function(r) { return r.json(); })\n\t\t\t.then(function(data) {\n\t\t\t\tif (data.url) {\n\t\t\t\t\tel.src = data.url;\n\t\t\t\t\tif (resume > 0) el.currentTime = resume;\n\t\t\t\t\tel.play().catch(function() {});\n\t\t\t\t}\n\t\t\t}).catch(function() {});\n\t\t} else {\n\t\t\tel.addEventListener('loadedmetadata', function() {\n\t\t\t\tif (resume > 0) el.currentTime = resume;\n\t\t\t\tel.play().catch(function() {});\n\t\t\t}, {once: true});\n\t\t}\n\n\t\t// Fetch clean audio ranges (profanity muting).\n\t\tvar muteRanges = [];\n\t\tfetch('/apps/media/api/clean-audio/' + epID, {\n\t\t\theaders: {'X-CSRF-Token': csrfToken}\n\t\t}).then(function(r) { return r.json(); })\n\t\t.then(function(data) {\n\t\t\tif (data.ranges) muteRanges = data.ranges;\n\t\t}).catch(function() {});\n\n\t\tvar wasMuted = false;\n\t\tvar originalVolume = 1;\n\n\t\tel.addEventListener('timeupdate', function() {\n\t\t\ttimeSpan.textContent = formatTime(el.currentTime) + ' / ' + formatTime(el.duration || 0);\n\n\t\t\t// Apply profanity muting.\n\t\t\tvar t = el.currentTime;\n\t\t\tvar shouldMute = false;\n\t\t\tfor (var i = 0; i < muteRanges.length; i++) {\n\t\t\t\tif (t >= muteRanges[i].Start && t <= muteRanges[i].End) {\n\t\t\t\t\tshouldMute = true;\n\t\t\t\t\tbreak;\n\t\t\t\t}\n\t\t\t}\n\t\t\tif (shouldMute && !wasMuted) {\n\t\t\t\toriginalVolume = el.volume;\n\t\t\t\tel.volume = 0;\n\t\t\t\twasMuted = true;\n\t\t\t} else if (!shouldMute && wasMuted) {\n\t\t\t\tel.volume = originalVolume;\n\t\t\t\twasMuted = false;\n\t\t\t}\n\n\t\t\t// Save progress every 15 seconds of playback\n\t\t\tvar now = el.currentTime;\n\t\t\tif (Math.abs(now - lastSaved) >= 15) {\n\t\t\t\tlastSaved = now;\n\t\t\t\tfetch('/apps/media/episodes/' + epID + '/progress', {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken},\n\t\t\t\t\tbody: 'progress=' + now.toFixed(1)\n\t\t\t\t});\n\t\t\t}\n\t\t});\n\n\t\tel.addEventListener('ended', function() {\n\t\t\t// Mark complete and autoplay next\n\t\t\tfetch('/apps/media/episodes/' + epID + '/complete', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken}\n\t\t\t}).then(function(r) { return r.text(); })\n\t\t\t.then(function(html) {\n\t\t\t\tif (html && html.trim()) {\n\t\t\t\t\tplayer.outerHTML = html;\n\t\t\t\t\t// Autoplay the next episode\n\t\t\t\t\tvar nextEl = document.getElementById('player-el');\n\t\t\t\t\tif (nextEl) {\n\t\t\t\t\t\tnextEl.addEventListener('canplay', function() { nextEl.play(); }, {once: true});\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}).catch(function() {});\n\t\t});\n\n\t\tvar iconPlay = document.getElementById('icon-play');\n\t\tvar iconPause = document.getElementById('icon-pause');\n\t\tel.addEventListener('play', function() {\n\t\t\tif (iconPlay) iconPlay.style.display = 'none';\n\t\t\tif (iconPause) iconPause.style.display = '';\n\t\t\tplayBtn.title = 'Pause';\n\t\t});\n\t\tel.addEventListener('pause', function() {\n\t\t\tif (iconPlay) iconPlay.style.display = '';\n\t\t\tif (iconPause) iconPause.style.display = 'none';\n\t\t\tplayBtn.title = 'Play';\n\t\t});\n\n\t\twindow.playerToggle = function() {\n\t\t\tif (el.paused) el.play(); else el.pause();\n\t\t};\n\t\twindow.playerSkip = function(sec) {\n\t\t\tel.currentTime = Math.max(0, el.currentTime + sec);\n\t\t};\n\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "<script>\n\t\t(function () {\n\t\t\tvar player = document.getElementById(\"media-player\");\n\t\t\tif (!player) return;\n\t\t\tvar el = document.getElementById(\"player-el\");\n\t\t\tif (!el) return;\n\t\t\tvar epID = player.dataset.episodeId;\n\t\t\tvar resume = parseFloat(player.dataset.resume) || 0;\n\t\t\tvar sourceKind = player.dataset.sourceKind;\n\t\t\tvar playBtn = document.getElementById(\"player-play-btn\");\n\t\t\tvar timeSpan = document.getElementById(\"player-time\");\n\t\t\tvar csrfToken = player.querySelector(\"[name=csrf_token]\").value;\n\t\t\tvar lastSaved = 0;\n\n\t\t\tfunction formatTime(sec) {\n\t\t\t\tsec = Math.floor(sec);\n\t\t\t\tvar h = Math.floor(sec / 3600);\n\t\t\t\tvar m = Math.floor((sec % 3600) / 60);\n\t\t\t\tvar s = sec % 60;\n\t\t\t\tif (h > 0)\n\t\t\t\t\treturn (\n\t\t\t\t\t\th + \":\" + (m < 10 ? \"0\" : \"\") + m + \":\" + (s < 10 ? \"0\" : \"\") + s\n\t\t\t\t\t);\n\t\t\t\treturn m + \":\" + (s < 10 ? \"0\" : \"\") + s;\n\t\t\t}\n\n\t\t\tif (sourceKind === \"youtube\") {\n\t\t\t\tfetch(\"/apps/media/api/stream-url/\" + epID, {\n\t\t\t\t\theaders: { \"X-CSRF-Token\": csrfToken },\n\t\t\t\t})\n\t\t\t\t\t.then(function (r) {\n\t\t\t\t\t\treturn r.json();\n\t\t\t\t\t})\n\t\t\t\t\t.then(function (data) {\n\t\t\t\t\t\tif (data.url) {\n\t\t\t\t\t\t\tel.src = data.url;\n\t\t\t\t\t\t\tif (resume > 0) el.currentTime = resume;\n\t\t\t\t\t\t\tel.play().catch(function () {});\n\t\t\t\t\t\t}\n\t\t\t\t\t})\n\t\t\t\t\t.catch(function () {});\n\t\t\t} else {\n\t\t\t\tel.addEventListener(\n\t\t\t\t\t\"loadedmetadata\",\n\t\t\t\t\tfunction () {\n\t\t\t\t\t\tif (resume > 0) el.currentTime = resume;\n\t\t\t\t\t\tel.play().catch(function () {});\n\t\t\t\t\t},\n\t\t\t\t\t{ once: true },\n\t\t\t\t);\n\t\t\t}\n\n\t\t\t// Fetch clean audio ranges (profanity muting).\n\t\t\tvar muteRanges = [];\n\t\t\tfetch(\"/apps/media/api/clean-audio/\" + epID, {\n\t\t\t\theaders: { \"X-CSRF-Token\": csrfToken },\n\t\t\t})\n\t\t\t\t.then(function (r) {\n\t\t\t\t\treturn r.json();\n\t\t\t\t})\n\t\t\t\t.then(function (data) {\n\t\t\t\t\tif (data.ranges) muteRanges = data.ranges;\n\t\t\t\t})\n\t\t\t\t.catch(function () {});\n\n\t\t\tvar wasMuted = false;\n\t\t\tvar originalVolume = 1;\n\n\t\t\tel.addEventListener(\"timeupdate\", function () {\n\t\t\t\ttimeSpan.textContent =\n\t\t\t\t\tformatTime(el.currentTime) + \" / \" + formatTime(el.duration || 0);\n\n\t\t\t\t// Apply profanity muting.\n\t\t\t\tvar t = el.currentTime;\n\t\t\t\tvar shouldMute = false;\n\t\t\t\tfor (var i = 0; i < muteRanges.length; i++) {\n\t\t\t\t\tif (t >= muteRanges[i].Start && t <= muteRanges[i].End) {\n\t\t\t\t\t\tshouldMute = true;\n\t\t\t\t\t\tbreak;\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tif (shouldMute && !wasMuted) {\n\t\t\t\t\toriginalVolume = el.volume;\n\t\t\t\t\tel.volume = 0;\n\t\t\t\t\twasMuted = true;\n\t\t\t\t} else if (!shouldMute && wasMuted) {\n\t\t\t\t\tel.volume = originalVolume;\n\t\t\t\t\twasMuted = false;\n\t\t\t\t}\n\n\t\t\t\t// Save progress every 15 seconds of playback\n\t\t\t\tvar now = el.currentTime;\n\t\t\t\tif (Math.abs(now - lastSaved) >= 15) {\n\t\t\t\t\tlastSaved = now;\n\t\t\t\t\tfetch(\"/apps/media/episodes/\" + epID + \"/progress\", {\n\t\t\t\t\t\tmethod: \"POST\",\n\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t\"Content-Type\": \"application/x-www-form-urlencoded\",\n\t\t\t\t\t\t\t\"X-CSRF-Token\": csrfToken,\n\t\t\t\t\t\t},\n\t\t\t\t\t\tbody: \"progress=\" + now.toFixed(1),\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t});\n\n\t\t\tel.addEventListener(\"ended\", function () {\n\t\t\t\t// Mark complete and autoplay next\n\t\t\t\tfetch(\"/apps/media/episodes/\" + epID + \"/complete\", {\n\t\t\t\t\tmethod: \"POST\",\n\t\t\t\t\theaders: {\n\t\t\t\t\t\t\"Content-Type\": \"application/x-www-form-urlencoded\",\n\t\t\t\t\t\t\"X-CSRF-Token\": csrfToken,\n\t\t\t\t\t},\n\t\t\t\t})\n\t\t\t\t\t.then(function (r) {\n\t\t\t\t\t\treturn r.text();\n\t\t\t\t\t})\n\t\t\t\t\t.then(function (html) {\n\t\t\t\t\t\tif (html && html.trim()) {\n\t\t\t\t\t\t\tplayer.outerHTML = html;\n\t\t\t\t\t\t\t// Autoplay the next episode\n\t\t\t\t\t\t\tvar nextEl = document.getElementById(\"player-el\");\n\t\t\t\t\t\t\tif (nextEl) {\n\t\t\t\t\t\t\t\tnextEl.addEventListener(\n\t\t\t\t\t\t\t\t\t\"canplay\",\n\t\t\t\t\t\t\t\t\tfunction () {\n\t\t\t\t\t\t\t\t\t\tnextEl.play();\n\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t\t{ once: true },\n\t\t\t\t\t\t\t\t);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t})\n\t\t\t\t\t.catch(function () {});\n\t\t\t});\n\n\t\t\tvar iconPlay = document.getElementById(\"icon-play\");\n\t\t\tvar iconPause = document.getElementById(\"icon-pause\");\n\t\t\tel.addEventListener(\"play\", function () {\n\t\t\t\tif (iconPlay) iconPlay.style.display = \"none\";\n\t\t\t\tif (iconPause) iconPause.style.display = \"\";\n\t\t\t\tplayBtn.title = \"Pause\";\n\t\t\t});\n\t\t\tel.addEventListener(\"pause\", function () {\n\t\t\t\tif (iconPlay) iconPlay.style.display = \"\";\n\t\t\t\tif (iconPause) iconPause.style.display = \"none\";\n\t\t\t\tplayBtn.title = \"Play\";\n\t\t\t});\n\n\t\t\twindow.playerToggle = function () {\n\t\t\t\tif (el.paused) el.play();\n\t\t\t\telse el.pause();\n\t\t\t};\n\t\t\twindow.playerSkip = function (sec) {\n\t\t\t\tel.currentTime = Math.max(0, el.currentTime + sec);\n\t\t\t};\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -988,7 +988,7 @@ func mediaSourcePage(sb sidebarData, src *Source, episodes []EpisodeView, csrfTo
 		var templ_7745c5c3_Var49 string
 		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(sourceDisplayTitle(*src))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 340, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 373, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 		if templ_7745c5c3_Err != nil {
@@ -1001,7 +1001,7 @@ func mediaSourcePage(sb sidebarData, src *Source, episodes []EpisodeView, csrfTo
 		var templ_7745c5c3_Var50 string
 		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/media/sources/%d/refresh", src.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 344, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 377, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 		if templ_7745c5c3_Err != nil {
@@ -1014,7 +1014,7 @@ func mediaSourcePage(sb sidebarData, src *Source, episodes []EpisodeView, csrfTo
 		var templ_7745c5c3_Var51 templ.SafeURL
 		templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/media/source/%d/settings", src.ID)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 347, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 380, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 		if templ_7745c5c3_Err != nil {
@@ -1038,7 +1038,7 @@ func mediaSourcePage(sb sidebarData, src *Source, episodes []EpisodeView, csrfTo
 			var templ_7745c5c3_Var52 string
 			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(src.Description)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 354, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 387, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 			if templ_7745c5c3_Err != nil {
@@ -1123,7 +1123,7 @@ func mediaEpisodePage(sb sidebarData, ep *EpisodeView, csrfToken string) templ.C
 		var templ_7745c5c3_Var55 string
 		templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(ep.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 372, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 405, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 		if templ_7745c5c3_Err != nil {
@@ -1136,7 +1136,7 @@ func mediaEpisodePage(sb sidebarData, ep *EpisodeView, csrfToken string) templ.C
 		var templ_7745c5c3_Var56 string
 		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(ep.SourceTitle)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 375, Col: 21}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 408, Col: 21}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 		if templ_7745c5c3_Err != nil {
@@ -1154,7 +1154,7 @@ func mediaEpisodePage(sb sidebarData, ep *EpisodeView, csrfToken string) templ.C
 			var templ_7745c5c3_Var57 string
 			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(FormatDuration(ep.DurationSec))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 377, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 410, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 			if templ_7745c5c3_Err != nil {
@@ -1173,7 +1173,7 @@ func mediaEpisodePage(sb sidebarData, ep *EpisodeView, csrfToken string) templ.C
 			var templ_7745c5c3_Var58 string
 			templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(formatTime(ep.PublishedAt))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 380, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 413, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 			if templ_7745c5c3_Err != nil {
@@ -1212,7 +1212,7 @@ func mediaEpisodePage(sb sidebarData, ep *EpisodeView, csrfToken string) templ.C
 			var templ_7745c5c3_Var59 string
 			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/media/queue/%d", ep.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 392, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 425, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 			if templ_7745c5c3_Err != nil {
@@ -1230,7 +1230,7 @@ func mediaEpisodePage(sb sidebarData, ep *EpisodeView, csrfToken string) templ.C
 		var templ_7745c5c3_Var60 string
 		templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("tags-%d", ep.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 397, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 430, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 		if templ_7745c5c3_Err != nil {
@@ -1404,7 +1404,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 			var templ_7745c5c3_Var65 string
 			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 439, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 472, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 			if templ_7745c5c3_Err != nil {
@@ -1439,7 +1439,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 			var templ_7745c5c3_Var67 string
 			templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 447, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 480, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 			if templ_7745c5c3_Err != nil {
@@ -1462,7 +1462,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var68 string
 					templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(g.ID, 10))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 467, Col: 52}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 500, Col: 52}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 					if templ_7745c5c3_Err != nil {
@@ -1475,7 +1475,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var69 string
 					templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(g.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 467, Col: 63}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 500, Col: 63}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 					if templ_7745c5c3_Err != nil {
@@ -1520,7 +1520,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 			var templ_7745c5c3_Var71 string
 			templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 477, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 510, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 			if templ_7745c5c3_Err != nil {
@@ -1543,7 +1543,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var72 string
 					templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(g.ID, 10))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 488, Col: 52}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 521, Col: 52}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 					if templ_7745c5c3_Err != nil {
@@ -1556,7 +1556,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var73 string
 					templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(g.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 488, Col: 63}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 521, Col: 63}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 					if templ_7745c5c3_Err != nil {
@@ -1612,7 +1612,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var75 string
 					templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("source-%d", src.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 511, Col: 49}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 544, Col: 49}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 					if templ_7745c5c3_Err != nil {
@@ -1625,7 +1625,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var76 string
 					templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(sourceDisplayTitle(src))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 512, Col: 38}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 545, Col: 38}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 					if templ_7745c5c3_Err != nil {
@@ -1638,7 +1638,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var77 string
 					templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.JoinStringErrs(string(src.Kind))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 513, Col: 31}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 546, Col: 31}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var77))
 					if templ_7745c5c3_Err != nil {
@@ -1656,7 +1656,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 						var templ_7745c5c3_Var78 string
 						templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(src.LastError)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 516, Col: 58}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 549, Col: 58}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 						if templ_7745c5c3_Err != nil {
@@ -1684,7 +1684,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var79 string
 					templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/media/sources/%d/refresh", src.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 526, Col: 74}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 559, Col: 74}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
 					if templ_7745c5c3_Err != nil {
@@ -1697,7 +1697,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var80 string
 					templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/media/sources/%d", src.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 531, Col: 68}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 564, Col: 68}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 					if templ_7745c5c3_Err != nil {
@@ -1710,7 +1710,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var81 string
 					templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#source-%d", src.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 532, Col: 56}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 565, Col: 56}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 					if templ_7745c5c3_Err != nil {
@@ -1751,7 +1751,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 			var templ_7745c5c3_Var83 string
 			templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 545, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 578, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 			if templ_7745c5c3_Err != nil {
@@ -1774,7 +1774,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var84 string
 					templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("group-%d", group.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 559, Col: 50}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 592, Col: 50}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 					if templ_7745c5c3_Err != nil {
@@ -1787,7 +1787,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var85 string
 					templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(group.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 560, Col: 25}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 593, Col: 25}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
 					if templ_7745c5c3_Err != nil {
@@ -1800,7 +1800,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var86 string
 					templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/media/groups/%d", group.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 564, Col: 69}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 597, Col: 69}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
 					if templ_7745c5c3_Err != nil {
@@ -1813,7 +1813,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var87 string
 					templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#group-%d", group.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 565, Col: 57}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 598, Col: 57}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
 					if templ_7745c5c3_Err != nil {
@@ -1864,7 +1864,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var89 string
 					templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("filter-%d", f.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 593, Col: 47}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 626, Col: 47}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
 					if templ_7745c5c3_Err != nil {
@@ -1877,7 +1877,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var90 string
 					templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs(f.Query)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 594, Col: 28}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 627, Col: 28}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
 					if templ_7745c5c3_Err != nil {
@@ -1890,7 +1890,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var91 string
 					templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs(f.Action)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 595, Col: 23}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 628, Col: 23}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
 					if templ_7745c5c3_Err != nil {
@@ -1903,7 +1903,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var92 string
 					templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(f.ActionValue)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 596, Col: 28}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 629, Col: 28}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
 					if templ_7745c5c3_Err != nil {
@@ -1916,7 +1916,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var93 string
 					templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/media/filters/%d", f.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 600, Col: 66}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 633, Col: 66}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
 					if templ_7745c5c3_Err != nil {
@@ -1929,7 +1929,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 					var templ_7745c5c3_Var94 string
 					templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#filter-%d", f.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 601, Col: 54}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 634, Col: 54}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
 					if templ_7745c5c3_Err != nil {
@@ -1952,7 +1952,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 			var templ_7745c5c3_Var95 string
 			templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 612, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 645, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var95))
 			if templ_7745c5c3_Err != nil {
@@ -1965,7 +1965,7 @@ func mediaSettingsPage(sb sidebarData, sources []Source, groups []Group, filters
 			var templ_7745c5c3_Var96 string
 			templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.JoinStringErrs(`* or :source="My Podcast" or NOT bonus`)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 620, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 653, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var96))
 			if templ_7745c5c3_Err != nil {
@@ -2026,7 +2026,7 @@ func mediaTagPage(sb sidebarData, tag string, episodes []EpisodeView, csrfToken 
 		var templ_7745c5c3_Var98 string
 		templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.JoinStringErrs(tag)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 652, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 685, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var98))
 		if templ_7745c5c3_Err != nil {
@@ -2111,7 +2111,7 @@ func mediaSourceSettingsPage(sb sidebarData, src *Source, csrfToken string) temp
 		var templ_7745c5c3_Var101 string
 		templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.JoinStringErrs(sourceDisplayTitle(*src))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 670, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 703, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var101))
 		if templ_7745c5c3_Err != nil {
@@ -2140,7 +2140,7 @@ func mediaSourceSettingsPage(sb sidebarData, src *Source, csrfToken string) temp
 			var templ_7745c5c3_Var103 string
 			templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs(string(src.Kind))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 673, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 706, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
 			if templ_7745c5c3_Err != nil {
@@ -2173,7 +2173,7 @@ func mediaSourceSettingsPage(sb sidebarData, src *Source, csrfToken string) temp
 			var templ_7745c5c3_Var104 string
 			templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.JoinStringErrs(src.URL)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 682, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 715, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var104))
 			if templ_7745c5c3_Err != nil {
@@ -2191,7 +2191,7 @@ func mediaSourceSettingsPage(sb sidebarData, src *Source, csrfToken string) temp
 				var templ_7745c5c3_Var105 string
 				templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.JoinStringErrs(src.LastError)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 684, Col: 92}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 717, Col: 92}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var105))
 				if templ_7745c5c3_Err != nil {
@@ -2209,7 +2209,7 @@ func mediaSourceSettingsPage(sb sidebarData, src *Source, csrfToken string) temp
 			var templ_7745c5c3_Var106 string
 			templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/media/sources/%d/refresh", src.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 689, Col: 69}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 722, Col: 69}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var106))
 			if templ_7745c5c3_Err != nil {
@@ -2222,7 +2222,7 @@ func mediaSourceSettingsPage(sb sidebarData, src *Source, csrfToken string) temp
 			var templ_7745c5c3_Var107 string
 			templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/media/sources/%d", src.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 694, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 727, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var107))
 			if templ_7745c5c3_Err != nil {
@@ -2283,7 +2283,7 @@ func mediaQueueByTagPage(sb sidebarData, tag string, queue []EpisodeView, csrfTo
 		var templ_7745c5c3_Var109 string
 		templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.JoinStringErrs(tag)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 709, Col: 19}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 742, Col: 19}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var109))
 		if templ_7745c5c3_Err != nil {
@@ -2313,7 +2313,7 @@ func mediaQueueByTagPage(sb sidebarData, tag string, queue []EpisodeView, csrfTo
 				var templ_7745c5c3_Var111 string
 				templ_7745c5c3_Var111, templ_7745c5c3_Err = templ.JoinStringErrs(tag)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 712, Col: 61}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 745, Col: 61}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var111))
 				if templ_7745c5c3_Err != nil {
@@ -2429,7 +2429,7 @@ func mediaEpisodeRow(ep *EpisodeView, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var114 string
 		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("ep-%d", ep.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 738, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 771, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var114))
 		if templ_7745c5c3_Err != nil {
@@ -2452,7 +2452,7 @@ func mediaEpisodeRow(ep *EpisodeView, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var115 templ.SafeURL
 		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/media/episode/%d", ep.ID)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 742, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 775, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var115))
 		if templ_7745c5c3_Err != nil {
@@ -2476,7 +2476,7 @@ func mediaEpisodeRow(ep *EpisodeView, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var116 string
 		templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.JoinStringErrs(ep.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 749, Col: 14}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 782, Col: 14}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var116))
 		if templ_7745c5c3_Err != nil {
@@ -2489,7 +2489,7 @@ func mediaEpisodeRow(ep *EpisodeView, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var117 string
 		templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.JoinStringErrs(ep.SourceTitle)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 752, Col: 20}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 785, Col: 20}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var117))
 		if templ_7745c5c3_Err != nil {
@@ -2507,7 +2507,7 @@ func mediaEpisodeRow(ep *EpisodeView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var118 string
 			templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.JoinStringErrs(FormatDuration(ep.DurationSec))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 754, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 787, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var118))
 			if templ_7745c5c3_Err != nil {
@@ -2526,7 +2526,7 @@ func mediaEpisodeRow(ep *EpisodeView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var119 string
 			templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.JoinStringErrs(formatTime(ep.PublishedAt))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 757, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 790, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var119))
 			if templ_7745c5c3_Err != nil {
@@ -2550,7 +2550,7 @@ func mediaEpisodeRow(ep *EpisodeView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var120 string
 			templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.JoinStringErrs(FormatDuration(int(ep.ProgressSec)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 762, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 795, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var120))
 			if templ_7745c5c3_Err != nil {
@@ -2577,7 +2577,7 @@ func mediaEpisodeRow(ep *EpisodeView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var121 string
 			templ_7745c5c3_Var121, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/media/queue/%d", ep.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 773, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 806, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var121))
 			if templ_7745c5c3_Err != nil {
@@ -2590,7 +2590,7 @@ func mediaEpisodeRow(ep *EpisodeView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var122 string
 			templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#ep-%d", ep.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 774, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 807, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var122))
 			if templ_7745c5c3_Err != nil {
@@ -2608,7 +2608,7 @@ func mediaEpisodeRow(ep *EpisodeView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var123 string
 			templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/media/queue/%d", ep.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 783, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 816, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var123))
 			if templ_7745c5c3_Err != nil {
@@ -2621,7 +2621,7 @@ func mediaEpisodeRow(ep *EpisodeView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var124 string
 			templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#ep-%d", ep.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 784, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 817, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var124))
 			if templ_7745c5c3_Err != nil {
@@ -2668,7 +2668,7 @@ func mediaTagList(episodeID int64, tags []string, csrfToken string) templ.Compon
 		var templ_7745c5c3_Var126 string
 		templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("tags-%d", episodeID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 795, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 828, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var126))
 		if templ_7745c5c3_Err != nil {
@@ -2686,7 +2686,7 @@ func mediaTagList(episodeID int64, tags []string, csrfToken string) templ.Compon
 			var templ_7745c5c3_Var127 templ.SafeURL
 			templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/apps/media/tag/" + tag))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 799, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 832, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var127))
 			if templ_7745c5c3_Err != nil {
@@ -2699,7 +2699,7 @@ func mediaTagList(episodeID int64, tags []string, csrfToken string) templ.Compon
 			var templ_7745c5c3_Var128 string
 			templ_7745c5c3_Var128, templ_7745c5c3_Err = templ.JoinStringErrs(tag)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 799, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 832, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var128))
 			if templ_7745c5c3_Err != nil {
@@ -2712,7 +2712,7 @@ func mediaTagList(episodeID int64, tags []string, csrfToken string) templ.Compon
 			var templ_7745c5c3_Var129 string
 			templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/media/episodes/%d/tag/%s", episodeID, tag))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 803, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 836, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var129))
 			if templ_7745c5c3_Err != nil {
@@ -2725,7 +2725,7 @@ func mediaTagList(episodeID int64, tags []string, csrfToken string) templ.Compon
 			var templ_7745c5c3_Var130 string
 			templ_7745c5c3_Var130, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#tags-%d", episodeID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 804, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 837, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var130))
 			if templ_7745c5c3_Err != nil {
@@ -2743,7 +2743,7 @@ func mediaTagList(episodeID int64, tags []string, csrfToken string) templ.Compon
 		var templ_7745c5c3_Var131 string
 		templ_7745c5c3_Var131, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/media/episodes/%d/tag", episodeID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 811, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 844, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var131))
 		if templ_7745c5c3_Err != nil {
@@ -2756,7 +2756,7 @@ func mediaTagList(episodeID int64, tags []string, csrfToken string) templ.Compon
 		var templ_7745c5c3_Var132 string
 		templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#tags-%d", episodeID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 812, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 845, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var132))
 		if templ_7745c5c3_Err != nil {
@@ -2769,7 +2769,7 @@ func mediaTagList(episodeID int64, tags []string, csrfToken string) templ.Compon
 		var templ_7745c5c3_Var133 string
 		templ_7745c5c3_Var133, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 815, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 848, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var133))
 		if templ_7745c5c3_Err != nil {
@@ -2812,7 +2812,7 @@ func episodeThumbnail(ep *EpisodeView) templ.Component {
 			var templ_7745c5c3_Var135 string
 			templ_7745c5c3_Var135, templ_7745c5c3_Err = templ.JoinStringErrs(ep.ThumbnailURL)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 825, Col: 28}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 858, Col: 28}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var135))
 			if templ_7745c5c3_Err != nil {
@@ -2830,7 +2830,7 @@ func episodeThumbnail(ep *EpisodeView) templ.Component {
 			var templ_7745c5c3_Var136 string
 			templ_7745c5c3_Var136, templ_7745c5c3_Err = templ.JoinStringErrs(ep.ThumbnailURL)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 827, Col: 28}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 860, Col: 28}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var136))
 			if templ_7745c5c3_Err != nil {
@@ -2913,7 +2913,7 @@ func mediaAdminCachePage(currentVolume string, volumeNames []string, scan ScanSt
 			var templ_7745c5c3_Var140 string
 			templ_7745c5c3_Var140, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 843, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 876, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var140))
 			if templ_7745c5c3_Err != nil {
@@ -2932,7 +2932,7 @@ func mediaAdminCachePage(currentVolume string, volumeNames []string, scan ScanSt
 					var templ_7745c5c3_Var141 string
 					templ_7745c5c3_Var141, templ_7745c5c3_Err = templ.JoinStringErrs(name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 849, Col: 27}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 882, Col: 27}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var141))
 					if templ_7745c5c3_Err != nil {
@@ -2945,7 +2945,7 @@ func mediaAdminCachePage(currentVolume string, volumeNames []string, scan ScanSt
 					var templ_7745c5c3_Var142 string
 					templ_7745c5c3_Var142, templ_7745c5c3_Err = templ.JoinStringErrs(name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 849, Col: 45}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 882, Col: 45}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var142))
 					if templ_7745c5c3_Err != nil {
@@ -2963,7 +2963,7 @@ func mediaAdminCachePage(currentVolume string, volumeNames []string, scan ScanSt
 					var templ_7745c5c3_Var143 string
 					templ_7745c5c3_Var143, templ_7745c5c3_Err = templ.JoinStringErrs(name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 851, Col: 27}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 884, Col: 27}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var143))
 					if templ_7745c5c3_Err != nil {
@@ -2976,7 +2976,7 @@ func mediaAdminCachePage(currentVolume string, volumeNames []string, scan ScanSt
 					var templ_7745c5c3_Var144 string
 					templ_7745c5c3_Var144, templ_7745c5c3_Err = templ.JoinStringErrs(name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 851, Col: 36}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 884, Col: 36}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var144))
 					if templ_7745c5c3_Err != nil {
@@ -3031,7 +3031,7 @@ func mediaScanBanner(scan ScanStatus) templ.Component {
 			var templ_7745c5c3_Var146 string
 			templ_7745c5c3_Var146, templ_7745c5c3_Err = templ.JoinStringErrs(scan.Progress)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 865, Col: 18}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 898, Col: 18}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var146))
 			if templ_7745c5c3_Err != nil {
@@ -3089,7 +3089,7 @@ func mediaScanStatusCard(scan ScanStatus, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var148 string
 			templ_7745c5c3_Var148, templ_7745c5c3_Err = templ.JoinStringErrs(scan.Progress)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 885, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 918, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var148))
 			if templ_7745c5c3_Err != nil {
@@ -3117,7 +3117,7 @@ func mediaScanStatusCard(scan ScanStatus, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var149 string
 			templ_7745c5c3_Var149, templ_7745c5c3_Err = templ.JoinStringErrs(scan.LastRun.Format("Jan 2, 2006 3:04:05 PM"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 894, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 927, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var149))
 			if templ_7745c5c3_Err != nil {
@@ -3136,7 +3136,7 @@ func mediaScanStatusCard(scan ScanStatus, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var150 string
 			templ_7745c5c3_Var150, templ_7745c5c3_Err = templ.JoinStringErrs(scan.LastError)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 900, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 933, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var150))
 			if templ_7745c5c3_Err != nil {
@@ -3160,7 +3160,7 @@ func mediaScanStatusCard(scan ScanStatus, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var151 string
 				templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.JoinStringErrs(w)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 908, Col: 15}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 941, Col: 15}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var151))
 				if templ_7745c5c3_Err != nil {
@@ -3183,7 +3183,7 @@ func mediaScanStatusCard(scan ScanStatus, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var152 string
 		templ_7745c5c3_Var152, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 916, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 949, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var152))
 		if templ_7745c5c3_Err != nil {
@@ -3216,7 +3216,7 @@ func mediaScanStatusCard(scan ScanStatus, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var153 string
 			templ_7745c5c3_Var153, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 925, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 958, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var153))
 			if templ_7745c5c3_Err != nil {
@@ -3310,7 +3310,7 @@ func mediaFilterPreview(preview []EpisodeView, matchCount, totalCount int, errMs
 			var templ_7745c5c3_Var156 string
 			templ_7745c5c3_Var156, templ_7745c5c3_Err = templ.JoinStringErrs(errMsg)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 947, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 980, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var156))
 			if templ_7745c5c3_Err != nil {
@@ -3338,7 +3338,7 @@ func mediaFilterPreview(preview []EpisodeView, matchCount, totalCount int, errMs
 			var templ_7745c5c3_Var157 string
 			templ_7745c5c3_Var157, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(matchCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 954, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 987, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var157))
 			if templ_7745c5c3_Err != nil {
@@ -3351,7 +3351,7 @@ func mediaFilterPreview(preview []EpisodeView, matchCount, totalCount int, errMs
 			var templ_7745c5c3_Var158 string
 			templ_7745c5c3_Var158, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(totalCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 954, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 987, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var158))
 			if templ_7745c5c3_Err != nil {
@@ -3369,7 +3369,7 @@ func mediaFilterPreview(preview []EpisodeView, matchCount, totalCount int, errMs
 				var templ_7745c5c3_Var159 string
 				templ_7745c5c3_Var159, templ_7745c5c3_Err = templ.JoinStringErrs(ep.Title)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 958, Col: 38}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 991, Col: 38}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var159))
 				if templ_7745c5c3_Err != nil {
@@ -3382,7 +3382,7 @@ func mediaFilterPreview(preview []EpisodeView, matchCount, totalCount int, errMs
 				var templ_7745c5c3_Var160 string
 				templ_7745c5c3_Var160, templ_7745c5c3_Err = templ.JoinStringErrs(ep.SourceTitle)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 958, Col: 84}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/media/pages.templ`, Line: 991, Col: 84}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var160))
 				if templ_7745c5c3_Err != nil {

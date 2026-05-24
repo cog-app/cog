@@ -11,15 +11,19 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const totpEncryptLabel = "totp_secret/v1"
+
 // TOTPStore manages TOTP secrets and backup codes.
 type TOTPStore struct {
 	db            *sql.DB
-	encryptionKey []byte // 32-byte AES key (CSRFSecret)
+	encryptionKey []byte // 32-byte AES key, derived from master via HKDF
 }
 
-// NewTOTPStore creates a new TOTP store.
-func NewTOTPStore(db *sql.DB, encryptionKey []byte) *TOTPStore {
-	return &TOTPStore{db: db, encryptionKey: encryptionKey}
+// NewTOTPStore creates a new TOTP store. secret is the master secret used to
+// derive a TOTP-specific AES key. Different purposes (CSRF, webauthn session
+// encryption, etc.) derive distinct keys so one compromise doesn't cascade.
+func NewTOTPStore(db *sql.DB, secret []byte) *TOTPStore {
+	return &TOTPStore{db: db, encryptionKey: DerivedKey(secret, totpEncryptLabel)}
 }
 
 // BeginSetup generates a new TOTP key and stores the encrypted secret

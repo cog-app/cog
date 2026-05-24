@@ -182,129 +182,162 @@ templ mediaPlayerComponent(ep *EpisodeView, csrfToken string) {
 
 templ playerScript() {
 	<script>
-	(function() {
-		var player = document.getElementById('media-player');
-		if (!player) return;
-		var el = document.getElementById('player-el');
-		if (!el) return;
-		var epID = player.dataset.episodeId;
-		var resume = parseFloat(player.dataset.resume) || 0;
-		var sourceKind = player.dataset.sourceKind;
-		var playBtn = document.getElementById('player-play-btn');
-		var timeSpan = document.getElementById('player-time');
-		var csrfToken = player.querySelector('[name=csrf_token]').value;
-		var lastSaved = 0;
+		(function () {
+			var player = document.getElementById("media-player");
+			if (!player) return;
+			var el = document.getElementById("player-el");
+			if (!el) return;
+			var epID = player.dataset.episodeId;
+			var resume = parseFloat(player.dataset.resume) || 0;
+			var sourceKind = player.dataset.sourceKind;
+			var playBtn = document.getElementById("player-play-btn");
+			var timeSpan = document.getElementById("player-time");
+			var csrfToken = player.querySelector("[name=csrf_token]").value;
+			var lastSaved = 0;
 
-		function formatTime(sec) {
-			sec = Math.floor(sec);
-			var h = Math.floor(sec / 3600);
-			var m = Math.floor((sec % 3600) / 60);
-			var s = sec % 60;
-			if (h > 0) return h + ':' + (m<10?'0':'') + m + ':' + (s<10?'0':'') + s;
-			return m + ':' + (s<10?'0':'') + s;
-		}
-
-		if (sourceKind === 'youtube') {
-			fetch('/apps/media/api/stream-url/' + epID, {
-				headers: {'X-CSRF-Token': csrfToken}
-			}).then(function(r) { return r.json(); })
-			.then(function(data) {
-				if (data.url) {
-					el.src = data.url;
-					if (resume > 0) el.currentTime = resume;
-					el.play().catch(function() {});
-				}
-			}).catch(function() {});
-		} else {
-			el.addEventListener('loadedmetadata', function() {
-				if (resume > 0) el.currentTime = resume;
-				el.play().catch(function() {});
-			}, {once: true});
-		}
-
-		// Fetch clean audio ranges (profanity muting).
-		var muteRanges = [];
-		fetch('/apps/media/api/clean-audio/' + epID, {
-			headers: {'X-CSRF-Token': csrfToken}
-		}).then(function(r) { return r.json(); })
-		.then(function(data) {
-			if (data.ranges) muteRanges = data.ranges;
-		}).catch(function() {});
-
-		var wasMuted = false;
-		var originalVolume = 1;
-
-		el.addEventListener('timeupdate', function() {
-			timeSpan.textContent = formatTime(el.currentTime) + ' / ' + formatTime(el.duration || 0);
-
-			// Apply profanity muting.
-			var t = el.currentTime;
-			var shouldMute = false;
-			for (var i = 0; i < muteRanges.length; i++) {
-				if (t >= muteRanges[i].Start && t <= muteRanges[i].End) {
-					shouldMute = true;
-					break;
-				}
-			}
-			if (shouldMute && !wasMuted) {
-				originalVolume = el.volume;
-				el.volume = 0;
-				wasMuted = true;
-			} else if (!shouldMute && wasMuted) {
-				el.volume = originalVolume;
-				wasMuted = false;
+			function formatTime(sec) {
+				sec = Math.floor(sec);
+				var h = Math.floor(sec / 3600);
+				var m = Math.floor((sec % 3600) / 60);
+				var s = sec % 60;
+				if (h > 0)
+					return (
+						h + ":" + (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s
+					);
+				return m + ":" + (s < 10 ? "0" : "") + s;
 			}
 
-			// Save progress every 15 seconds of playback
-			var now = el.currentTime;
-			if (Math.abs(now - lastSaved) >= 15) {
-				lastSaved = now;
-				fetch('/apps/media/episodes/' + epID + '/progress', {
-					method: 'POST',
-					headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken},
-					body: 'progress=' + now.toFixed(1)
-				});
+			if (sourceKind === "youtube") {
+				fetch("/apps/media/api/stream-url/" + epID, {
+					headers: { "X-CSRF-Token": csrfToken },
+				})
+					.then(function (r) {
+						return r.json();
+					})
+					.then(function (data) {
+						if (data.url) {
+							el.src = data.url;
+							if (resume > 0) el.currentTime = resume;
+							el.play().catch(function () {});
+						}
+					})
+					.catch(function () {});
+			} else {
+				el.addEventListener(
+					"loadedmetadata",
+					function () {
+						if (resume > 0) el.currentTime = resume;
+						el.play().catch(function () {});
+					},
+					{ once: true },
+				);
 			}
-		});
 
-		el.addEventListener('ended', function() {
-			// Mark complete and autoplay next
-			fetch('/apps/media/episodes/' + epID + '/complete', {
-				method: 'POST',
-				headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken}
-			}).then(function(r) { return r.text(); })
-			.then(function(html) {
-				if (html && html.trim()) {
-					player.outerHTML = html;
-					// Autoplay the next episode
-					var nextEl = document.getElementById('player-el');
-					if (nextEl) {
-						nextEl.addEventListener('canplay', function() { nextEl.play(); }, {once: true});
+			// Fetch clean audio ranges (profanity muting).
+			var muteRanges = [];
+			fetch("/apps/media/api/clean-audio/" + epID, {
+				headers: { "X-CSRF-Token": csrfToken },
+			})
+				.then(function (r) {
+					return r.json();
+				})
+				.then(function (data) {
+					if (data.ranges) muteRanges = data.ranges;
+				})
+				.catch(function () {});
+
+			var wasMuted = false;
+			var originalVolume = 1;
+
+			el.addEventListener("timeupdate", function () {
+				timeSpan.textContent =
+					formatTime(el.currentTime) + " / " + formatTime(el.duration || 0);
+
+				// Apply profanity muting.
+				var t = el.currentTime;
+				var shouldMute = false;
+				for (var i = 0; i < muteRanges.length; i++) {
+					if (t >= muteRanges[i].Start && t <= muteRanges[i].End) {
+						shouldMute = true;
+						break;
 					}
 				}
-			}).catch(function() {});
-		});
+				if (shouldMute && !wasMuted) {
+					originalVolume = el.volume;
+					el.volume = 0;
+					wasMuted = true;
+				} else if (!shouldMute && wasMuted) {
+					el.volume = originalVolume;
+					wasMuted = false;
+				}
 
-		var iconPlay = document.getElementById('icon-play');
-		var iconPause = document.getElementById('icon-pause');
-		el.addEventListener('play', function() {
-			if (iconPlay) iconPlay.style.display = 'none';
-			if (iconPause) iconPause.style.display = '';
-			playBtn.title = 'Pause';
-		});
-		el.addEventListener('pause', function() {
-			if (iconPlay) iconPlay.style.display = '';
-			if (iconPause) iconPause.style.display = 'none';
-			playBtn.title = 'Play';
-		});
+				// Save progress every 15 seconds of playback
+				var now = el.currentTime;
+				if (Math.abs(now - lastSaved) >= 15) {
+					lastSaved = now;
+					fetch("/apps/media/episodes/" + epID + "/progress", {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/x-www-form-urlencoded",
+							"X-CSRF-Token": csrfToken,
+						},
+						body: "progress=" + now.toFixed(1),
+					});
+				}
+			});
 
-		window.playerToggle = function() {
-			if (el.paused) el.play(); else el.pause();
-		};
-		window.playerSkip = function(sec) {
-			el.currentTime = Math.max(0, el.currentTime + sec);
-		};
-	})();
+			el.addEventListener("ended", function () {
+				// Mark complete and autoplay next
+				fetch("/apps/media/episodes/" + epID + "/complete", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/x-www-form-urlencoded",
+						"X-CSRF-Token": csrfToken,
+					},
+				})
+					.then(function (r) {
+						return r.text();
+					})
+					.then(function (html) {
+						if (html && html.trim()) {
+							player.outerHTML = html;
+							// Autoplay the next episode
+							var nextEl = document.getElementById("player-el");
+							if (nextEl) {
+								nextEl.addEventListener(
+									"canplay",
+									function () {
+										nextEl.play();
+									},
+									{ once: true },
+								);
+							}
+						}
+					})
+					.catch(function () {});
+			});
+
+			var iconPlay = document.getElementById("icon-play");
+			var iconPause = document.getElementById("icon-pause");
+			el.addEventListener("play", function () {
+				if (iconPlay) iconPlay.style.display = "none";
+				if (iconPause) iconPause.style.display = "";
+				playBtn.title = "Pause";
+			});
+			el.addEventListener("pause", function () {
+				if (iconPlay) iconPlay.style.display = "";
+				if (iconPause) iconPause.style.display = "none";
+				playBtn.title = "Play";
+			});
+
+			window.playerToggle = function () {
+				if (el.paused) el.play();
+				else el.pause();
+			};
+			window.playerSkip = function (sec) {
+				el.currentTime = Math.max(0, el.currentTime + sec);
+			};
+		})();
 	</script>
 }
 

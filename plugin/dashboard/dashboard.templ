@@ -92,14 +92,14 @@ templ dashboardEditPage(pd ui.PageData, allWidgets []plugin.Widget, layout *Layo
 			</div>
 		</form>
 		<script>
-		function moveWidget(el, dir) {
-			var parent = el.parentNode;
-			if (dir === -1 && el.previousElementSibling) {
-				parent.insertBefore(el, el.previousElementSibling);
-			} else if (dir === 1 && el.nextElementSibling) {
-				parent.insertBefore(el.nextElementSibling, el);
+			function moveWidget(el, dir) {
+				var parent = el.parentNode;
+				if (dir === -1 && el.previousElementSibling) {
+					parent.insertBefore(el, el.previousElementSibling);
+				} else if (dir === 1 && el.nextElementSibling) {
+					parent.insertBefore(el.nextElementSibling, el);
+				}
 			}
-		}
 		</script>
 	}
 }

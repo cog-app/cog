@@ -94,13 +94,10 @@ func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal error", http.StatusInternalServerError)
 			return
 		}
-		http.SetCookie(w, &http.Cookie{
-			Name:     auth.MFAPendingCookieName,
-			Value:    pending.Token,
-			Path:     "/",
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-			MaxAge:   300, // 5 minutes
+		cookieCfg.Set(w, &http.Cookie{
+			Name:   auth.MFAPendingCookieName,
+			Value:  pending.Token,
+			MaxAge: 300, // 5 minutes
 		})
 
 		// For email OTP, generate and send the code now.
@@ -134,12 +131,9 @@ func (h *loginHandler) createSessionAndRedirect(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     auth.SessionCookieName,
-		Value:    sess.ID,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+	cookieCfg.Set(w, &http.Cookie{
+		Name:  auth.SessionCookieName,
+		Value: sess.ID,
 	})
 	http.Redirect(w, r, safeNext(next), http.StatusSeeOther)
 }
@@ -228,13 +222,7 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 
 	// MFA passed — clean up pending token and create session.
 	h.p.MFAPending.Delete(cookie.Value)
-	http.SetCookie(w, &http.Cookie{
-		Name:     auth.MFAPendingCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
+	cookieCfg.Clear(w, auth.MFAPendingCookieName)
 
 	if h.p.RateLimiter != nil {
 		h.p.RateLimiter.Reset(ratelimit.ClientIP(r))
@@ -251,13 +239,7 @@ func (h *loginHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(auth.SessionCookieName); err == nil {
 		h.p.Sessions.Delete(cookie.Value)
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     auth.SessionCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
+	cookieCfg.Clear(w, auth.SessionCookieName)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
@@ -542,13 +524,7 @@ func (h *loginHandler) FinishWebAuthnLogin(w http.ResponseWriter, r *http.Reques
 
 	// MFA passed — clean up and create session.
 	h.p.MFAPending.Delete(cookie.Value)
-	http.SetCookie(w, &http.Cookie{
-		Name:     auth.MFAPendingCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
+	cookieCfg.Clear(w, auth.MFAPendingCookieName)
 
 	sess, err := h.p.Sessions.Create(u.ID)
 	if err != nil {
@@ -556,12 +532,9 @@ func (h *loginHandler) FinishWebAuthnLogin(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     auth.SessionCookieName,
-		Value:    sess.ID,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+	cookieCfg.Set(w, &http.Cookie{
+		Name:  auth.SessionCookieName,
+		Value: sess.ID,
 	})
 
 	next := pending.NextURL

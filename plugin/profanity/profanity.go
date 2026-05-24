@@ -226,7 +226,7 @@ func displayName() string { return "Profanity Filter" }
 // wordListPreview returns the first N entries for display.
 func wordListPreview(content string) []string {
 	var entries []string
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue

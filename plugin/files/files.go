@@ -288,6 +288,17 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 	}
 	size := counter.n
 
+	// Post-write quota check fires regardless of caller's reader type. If the
+	// upload pushed the user over quota, delete the file and refuse.
+	if err := p.ctx.QuotaCheck(username, size); err != nil {
+		if fs := p.userFS(username); fs != nil {
+			_ = fs.Delete(filePath)
+		} else {
+			_ = os.Remove(filepath.Join(p.ctx.UserFilesDir(username), filePath))
+		}
+		return nil, err
+	}
+
 	db, err := p.DB(username)
 	if err != nil {
 		return nil, err
@@ -424,6 +435,8 @@ func (p *Plugin) Delete(username, filePath string) error {
 }
 
 // HardDelete permanently removes a file or directory, bypassing the trash.
+// Metadata deletion runs in a single transaction so a crash mid-delete leaves
+// either the row intact or fully removed, not a stranded child record.
 func (p *Plugin) HardDelete(username, filePath string) error {
 	filePath = normalizePath(filePath)
 
@@ -437,7 +450,10 @@ func (p *Plugin) HardDelete(username, filePath string) error {
 		return err
 	}
 
-	// Remove from disk via VFS.
+	// Remove from disk via VFS first. A subsequent DB failure leaves an
+	// orphan metadata row referencing a missing file — recoverable by lazy
+	// reconcile — which is preferable to deleting metadata while the file
+	// still exists on disk.
 	if fs := p.userFS(username); fs != nil {
 		if err := fs.Delete(filePath); err != nil {
 			return fmt.Errorf("remove: %w", err)
@@ -455,16 +471,24 @@ func (p *Plugin) HardDelete(username, filePath string) error {
 		}
 	}
 
-	// Remove metadata.
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin hard-delete tx: %w", err)
+	}
+	defer tx.Rollback()
+
 	if meta.IsDir {
-		if _, err := db.Exec(`DELETE FROM files WHERE path LIKE ? OR path = ?`,
+		if _, err := tx.Exec(`DELETE FROM files WHERE path LIKE ? OR path = ?`,
 			filePath+"/%", filePath); err != nil {
 			return fmt.Errorf("delete dir metadata: %w", err)
 		}
 	} else {
-		if _, err := db.Exec(`DELETE FROM files WHERE path = ?`, filePath); err != nil {
+		if _, err := tx.Exec(`DELETE FROM files WHERE path = ?`, filePath); err != nil {
 			return fmt.Errorf("delete file metadata: %w", err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit hard-delete: %w", err)
 	}
 	p.logActivity(username, "file_deleted", username+" deleted "+filepath.Base(filePath), strconv.FormatInt(meta.ID, 10), filePath)
 	return nil
@@ -505,25 +529,33 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 	now := p.ctx.Now().Unix()
 	etag := generateETag()
 
-	_, err = db.Exec(`
+	// Atomically rename the row and reparent any children. A crash between
+	// the two statements would otherwise strand children under the old path.
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("begin rename tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
 		UPDATE files SET path = ?, parent_path = ?, name = ?, mtime = ?, etag = ?
 		WHERE path = ?`,
-		newPath, newParent, newName, now, etag, oldPath)
-	if err != nil {
+		newPath, newParent, newName, now, etag, oldPath); err != nil {
 		return nil, fmt.Errorf("update file metadata: %w", err)
 	}
 
-	// Update children if directory
-	_, err = db.Exec(`
+	if _, err := tx.Exec(`
 		UPDATE files SET
 			path = ? || substr(path, ?),
 			parent_path = ? || substr(parent_path, ?)
 		WHERE path LIKE ?`,
 		newPath, len(oldPath)+1,
 		newPath, len(oldPath)+1,
-		oldPath+"/%")
-	if err != nil {
+		oldPath+"/%"); err != nil {
 		return nil, fmt.Errorf("update children metadata: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit rename: %w", err)
 	}
 
 	p.logActivity(username, "file_changed", username+" renamed "+filepath.Base(oldPath)+" to "+newName, "", newPath)

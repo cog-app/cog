@@ -152,6 +152,7 @@ func (h *OCSHandler) HandleAcceptShare(w http.ResponseWriter, r *http.Request) {
 			NotificationType: NotifyShareAccepted,
 			ResourceType:     fs.ResourceType,
 			ProviderID:       fs.RemoteID,
+			SharedSecret:     fs.Token,
 		})
 	}
 
@@ -188,6 +189,7 @@ func (h *OCSHandler) HandleDeclineShare(w http.ResponseWriter, r *http.Request) 
 			NotificationType: NotifyShareDeclined,
 			ResourceType:     fs.ResourceType,
 			ProviderID:       fs.RemoteID,
+			SharedSecret:     fs.Token,
 		})
 	}
 
@@ -224,6 +226,7 @@ func (h *OCSHandler) HandleRemoveShare(w http.ResponseWriter, r *http.Request) {
 			NotificationType: NotifyShareUnshared,
 			ResourceType:     fs.ResourceType,
 			ProviderID:       fs.RemoteID,
+			SharedSecret:     fs.Token,
 		})
 	}
 

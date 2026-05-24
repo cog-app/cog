@@ -20,26 +20,34 @@ import (
 // New builds the full HTTP handler with all routes and middleware.
 // All plugins (including first-party) are passed in via the plugins slice.
 func New(p *services.Providers) http.Handler {
+	cookieCfg = p.Cookies
+
 	authMW := &auth.Middleware{
 		Users:        p.Users,
 		Sessions:     p.Sessions,
 		AppPasswords: p.AppPasswords,
 		RateLimiter:  p.RateLimiter,
+		Cookies:      p.Cookies,
 	}
 
-	loginFlow := compat.NewLoginFlowHandler(p.Users, p.AppPasswords, p.Sessions, p.Config.BaseURL)
+	loginFlow := compat.NewLoginFlowHandler(p.Users, p.AppPasswords, p.Sessions, p.Config.BaseURL, p.CSRFSecret)
 	loginFlow.RateLimiter = p.RateLimiter
 	loginFlow.Clock = p.Clock
 
 	// Use the plugin registry's mux so plugin-registered routes share the same router.
 	mux := p.Plugins.Mux()
 
-	// --- Debug endpoints ---
-	mux.HandleFunc("GET /debug/pprof/", pprof.Index)
-	mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
-	mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
-	mux.HandleFunc("GET /debug/pprof/symbol", pprof.Symbol)
-	mux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
+	// --- Debug endpoints (admin-only; auth middleware applied to whole mux below) ---
+	// pprof handlers read r.URL.Path and expect the "/debug/pprof/" prefix, so we
+	// strip the "/admin" portion before dispatch.
+	pprofGate := func(h http.Handler) http.Handler {
+		return auth.RequireAuth(auth.RequireAdmin(http.StripPrefix("/admin", h)))
+	}
+	mux.Handle("GET /admin/debug/pprof/", pprofGate(http.HandlerFunc(pprof.Index)))
+	mux.Handle("GET /admin/debug/pprof/cmdline", pprofGate(http.HandlerFunc(pprof.Cmdline)))
+	mux.Handle("GET /admin/debug/pprof/profile", pprofGate(http.HandlerFunc(pprof.Profile)))
+	mux.Handle("GET /admin/debug/pprof/symbol", pprofGate(http.HandlerFunc(pprof.Symbol)))
+	mux.Handle("GET /admin/debug/pprof/trace", pprofGate(http.HandlerFunc(pprof.Trace)))
 
 	// --- Static assets ---
 	staticSub, _ := fs.Sub(ui.StaticFS, "static")
@@ -53,7 +61,7 @@ func New(p *services.Providers) http.Handler {
 	qc := buildQuotaChecker(p, fp)
 
 	// --- Wire optional services for plugins ---
-	p.Plugins.SetServices(buildRegistryServices(p.Shares, p.EmailSender, p.Users, p.Groups, qc, p.Access, p.Activities))
+	p.Plugins.SetServices(buildRegistryServices(p.Shares, p.EmailSender, p.Users, p.Groups, qc, p.Access, p.Activities, p.Cookies))
 
 	// --- Web UI handlers ---
 	h := handler{p}

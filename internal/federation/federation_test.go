@@ -131,6 +131,10 @@ func TestFederationAcceptReject(t *testing.T) {
 }
 
 func TestFederationCrossInstance(t *testing.T) {
+	// httptest servers bind to 127.0.0.1, which the SSRF guard normally blocks.
+	federation.SetAllowPrivate(true)
+	t.Cleanup(func() { federation.SetAllowPrivate(false) })
+
 	// Set up two Cog instances with real httptest.Servers that can talk to each other.
 	sender := cogtest.New(t)
 	receiver := cogtest.New(t)
@@ -205,11 +209,25 @@ func TestFederationNotification(t *testing.T) {
 	}
 	require.NoError(t, env.Providers.Federation.Create(fs))
 
-	// Remote sends SHARE_ACCEPTED notification.
+	// Refetch to pick up the auto-generated Token.
+	stored, err := env.Providers.Federation.Get(fs.ID)
+	require.NoError(t, err)
+
+	// Notification with wrong secret is rejected.
+	bad := federation.OCMNotification{
+		NotificationType: federation.NotifyShareAccepted,
+		ResourceType:     "file",
+		ProviderID:       fs.ID,
+		SharedSecret:     "wrong",
+	}
+	env.PostJSON(t, "/ocm/notifications", bad).Status(403)
+
+	// Remote sends SHARE_ACCEPTED notification with the correct secret.
 	notif := federation.OCMNotification{
 		NotificationType: federation.NotifyShareAccepted,
 		ResourceType:     "file",
 		ProviderID:       fs.ID,
+		SharedSecret:     stored.Token,
 	}
 	resp := env.PostJSON(t, "/ocm/notifications", notif)
 	resp.Status(200)

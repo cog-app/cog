@@ -56,30 +56,45 @@ func (p *Plugin) Trash(username, filePath string) error {
 		return fmt.Errorf("move to trash: %w", err)
 	}
 
-	// Insert trash record
-	_, err = db.Exec(`
+	// Atomically: insert trash record + delete files metadata. On any failure,
+	// roll back the disk rename so we don't leave orphan files in trash with
+	// no metadata or vice versa.
+	tx, err := db.Begin()
+	if err != nil {
+		_ = os.Rename(dstPath, srcPath)
+		return fmt.Errorf("begin trash tx: %w", err)
+	}
+	commit := false
+	defer func() {
+		if !commit {
+			_ = tx.Rollback()
+			_ = os.Rename(dstPath, srcPath)
+		}
+	}()
+
+	if _, err := tx.Exec(`
 		INSERT INTO trash (original_path, original_name, size, mtime, mime_type, is_dir, deleted_at, trash_name)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		meta.Path, meta.Name, meta.Size, meta.MTime, meta.MimeType,
-		boolToInt(meta.IsDir), now, trashName)
-	if err != nil {
-		// Try to move back on DB error
-		os.Rename(dstPath, srcPath)
+		boolToInt(meta.IsDir), now, trashName); err != nil {
 		return fmt.Errorf("insert trash record: %w", err)
 	}
 
-	// Remove from files table
 	if meta.IsDir {
-		if _, err := db.Exec(`DELETE FROM files WHERE path LIKE ? OR path = ?`,
+		if _, err := tx.Exec(`DELETE FROM files WHERE path LIKE ? OR path = ?`,
 			filePath+"/%", filePath); err != nil {
 			return fmt.Errorf("delete dir metadata: %w", err)
 		}
 	} else {
-		if _, err := db.Exec(`DELETE FROM files WHERE path = ?`, filePath); err != nil {
+		if _, err := tx.Exec(`DELETE FROM files WHERE path = ?`, filePath); err != nil {
 			return fmt.Errorf("delete file metadata: %w", err)
 		}
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit trash: %w", err)
+	}
+	commit = true
 	return nil
 }
 
@@ -160,32 +175,43 @@ func (p *Plugin) RestoreFromTrash(username, trashName string) error {
 		return fmt.Errorf("restore from trash: %w", err)
 	}
 
-	// Re-insert file metadata
 	parentPath := filepath.Dir(item.OriginalPath)
 	if parentPath == "." {
 		parentPath = "/"
 	}
 
-	if item.IsDir {
-		_, err = db.Exec(`
-			INSERT OR REPLACE INTO files (path, parent_path, name, size, mtime, mime_type, etag, is_dir)
-			VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-			item.OriginalPath, parentPath, item.OriginalName, item.Size, item.MTime, item.MimeType, generateETag())
-	} else {
-		_, err = db.Exec(`
-			INSERT OR REPLACE INTO files (path, parent_path, name, size, mtime, mime_type, etag, is_dir)
-			VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
-			item.OriginalPath, parentPath, item.OriginalName, item.Size, item.MTime, item.MimeType, generateETag())
-	}
+	tx, err := db.Begin()
 	if err != nil {
+		_ = os.Rename(dstPath, srcPath)
+		return fmt.Errorf("begin restore tx: %w", err)
+	}
+	commit := false
+	defer func() {
+		if !commit {
+			_ = tx.Rollback()
+			_ = os.Rename(dstPath, srcPath)
+		}
+	}()
+
+	isDirInt := 0
+	if item.IsDir {
+		isDirInt = 1
+	}
+	if _, err := tx.Exec(`
+		INSERT OR REPLACE INTO files (path, parent_path, name, size, mtime, mime_type, etag, is_dir)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		item.OriginalPath, parentPath, item.OriginalName, item.Size, item.MTime, item.MimeType, generateETag(), isDirInt); err != nil {
 		return fmt.Errorf("restore metadata: %w", err)
 	}
 
-	// Remove from trash table
-	if _, err := db.Exec(`DELETE FROM trash WHERE trash_name = ?`, trashName); err != nil {
+	if _, err := tx.Exec(`DELETE FROM trash WHERE trash_name = ?`, trashName); err != nil {
 		return fmt.Errorf("delete trash record: %w", err)
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit restore: %w", err)
+	}
+	commit = true
 	return nil
 }
 

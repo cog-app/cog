@@ -305,7 +305,7 @@ func Base(pd PageData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div></nav><script>\n\t\t// Adaptive navbar collapse based on item count and available width.\n\t\t(function(){\n\t\t\tvar nb = document.querySelector('.navbar');\n\t\t\tif (!nb) return;\n\t\t\tvar n = parseInt(nb.getAttribute('data-nav-count'), 10) || 0;\n\t\t\tif (n === 0) return;\n\t\t\t// Per-item widths at each stage:\n\t\t\tvar FULL=85, COMPACT=55, ICON=34;\n\t\t\t// Fixed overhead differs per stage (brand+search+end+padding):\n\t\t\t// full/compact: brand(70)+search(280)+end(80)+pad(32)=462\n\t\t\t// icon-only: brand(55)+search(140)+end(40)+pad(16)=251\n\t\t\t// collapsed (no nav, no search): brand(24)+apps-btn(36)+end(40)+pad(16)=116\n\t\t\tvar FX=462, FX_I=251, FX_C=116;\n\t\t\tfunction u(){\n\t\t\t\tvar w = nb.offsetWidth;\n\t\t\t\tnb.classList.remove('navbar--compact','navbar--icon-only','navbar--collapsed');\n\t\t\t\tif (n*FULL+FX <= w) return;\n\t\t\t\tif (n*COMPACT+FX <= w) { nb.classList.add('navbar--compact'); return; }\n\t\t\t\tif (n*ICON+FX_I <= w) { nb.classList.add('navbar--icon-only'); return; }\n\t\t\t\tnb.classList.add('navbar--collapsed');\n\t\t\t}\n\t\t\tu();\n\t\t\tif (window.ResizeObserver) new ResizeObserver(u).observe(nb);\n\t\t\telse window.addEventListener('resize',u);\n\t\t})();\n\t\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div></nav><script>\n\t\t\t\t// Adaptive navbar collapse based on item count and available width.\n\t\t\t\t(function () {\n\t\t\t\t\tvar nb = document.querySelector(\".navbar\");\n\t\t\t\t\tif (!nb) return;\n\t\t\t\t\tvar n = parseInt(nb.getAttribute(\"data-nav-count\"), 10) || 0;\n\t\t\t\t\tif (n === 0) return;\n\t\t\t\t\t// Per-item widths at each stage:\n\t\t\t\t\tvar FULL = 85,\n\t\t\t\t\t\tCOMPACT = 55,\n\t\t\t\t\t\tICON = 34;\n\t\t\t\t\t// Fixed overhead differs per stage (brand+search+end+padding):\n\t\t\t\t\t// full/compact: brand(70)+search(280)+end(80)+pad(32)=462\n\t\t\t\t\t// icon-only: brand(55)+search(140)+end(40)+pad(16)=251\n\t\t\t\t\t// collapsed (no nav, no search): brand(24)+apps-btn(36)+end(40)+pad(16)=116\n\t\t\t\t\tvar FX = 462,\n\t\t\t\t\t\tFX_I = 251,\n\t\t\t\t\t\tFX_C = 116;\n\t\t\t\t\tfunction u() {\n\t\t\t\t\t\tvar w = nb.offsetWidth;\n\t\t\t\t\t\tnb.classList.remove(\n\t\t\t\t\t\t\t\"navbar--compact\",\n\t\t\t\t\t\t\t\"navbar--icon-only\",\n\t\t\t\t\t\t\t\"navbar--collapsed\",\n\t\t\t\t\t\t);\n\t\t\t\t\t\tif (n * FULL + FX <= w) return;\n\t\t\t\t\t\tif (n * COMPACT + FX <= w) {\n\t\t\t\t\t\t\tnb.classList.add(\"navbar--compact\");\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (n * ICON + FX_I <= w) {\n\t\t\t\t\t\t\tnb.classList.add(\"navbar--icon-only\");\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tnb.classList.add(\"navbar--collapsed\");\n\t\t\t\t\t}\n\t\t\t\t\tu();\n\t\t\t\t\tif (window.ResizeObserver) new ResizeObserver(u).observe(nb);\n\t\t\t\t\telse window.addEventListener(\"resize\", u);\n\t\t\t\t})();\n\t\t\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -317,7 +317,7 @@ func Base(pd PageData) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(pd.PluginID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 121, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 135, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -349,7 +349,7 @@ func Base(pd PageData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<script>\n\t\t// Notification polling\n\t\t(function() {\n\t\t\tvar bell = document.getElementById(\"notif-bell\");\n\t\t\tvar badge = document.getElementById(\"notif-badge\");\n\t\t\tvar panel = document.getElementById(\"notif-panel\");\n\t\t\tif (!bell) return;\n\t\t\tvar pending = [];\n\n\t\t\tfunction checkNotifications() {\n\t\t\t\tfetch(\"/apps/calendar/notifications\")\n\t\t\t\t\t.then(function(r) { return r.ok ? r.json() : []; })\n\t\t\t\t\t.then(function(data) {\n\t\t\t\t\t\tif (!data || !data.length) return;\n\t\t\t\t\t\tpending = pending.concat(data);\n\t\t\t\t\t\tbell.style.display = \"\";\n\t\t\t\t\t\tbadge.style.display = \"\";\n\t\t\t\t\t\tbadge.textContent = pending.length;\n\t\t\t\t\t\t// Show browser notification if permitted\n\t\t\t\t\t\tif (Notification.permission === \"granted\") {\n\t\t\t\t\t\t\tdata.forEach(function(n) {\n\t\t\t\t\t\t\t\tnew Notification(\"Reminder: \" + n.summary, { body: \"Starting \" + new Date(n.start).toLocaleString() });\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t} else if (Notification.permission !== \"denied\") {\n\t\t\t\t\t\t\tNotification.requestPermission();\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {});\n\t\t\t}\n\n\t\t\twindow.toggleNotifPanel = function() {\n\t\t\t\tif (panel.style.display === \"none\") {\n\t\t\t\t\tpanel.style.display = \"block\";\n\t\t\t\t\tpanel.innerHTML = \"\";\n\t\t\t\t\tif (!pending.length) {\n\t\t\t\t\t\tpanel.innerHTML = '<div style=\"padding:0.75rem;color:var(--color-text-muted)\">No notifications</div>';\n\t\t\t\t\t} else {\n\t\t\t\t\t\tpending.forEach(function(n) {\n\t\t\t\t\t\t\tvar d = document.createElement(\"a\");\n\t\t\t\t\t\t\td.href = \"/apps/calendar/?date=\" + n.start.slice(0,10);\n\t\t\t\t\t\t\td.className = \"search-hit\";\n\t\t\t\t\t\t\td.innerHTML = '<span class=\"search-hit-name\">' + n.summary + '</span><span class=\"search-hit-sub\">' + new Date(n.start).toLocaleString() + '</span>';\n\t\t\t\t\t\t\tpanel.appendChild(d);\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t} else {\n\t\t\t\t\tpanel.style.display = \"none\";\n\t\t\t\t}\n\t\t\t};\n\n\t\t\t// Poll every 60 seconds\n\t\t\tsetInterval(checkNotifications, 60000);\n\t\t\t// Initial check after 5 seconds\n\t\t\tsetTimeout(checkNotifications, 5000);\n\t\t})();\n\t\t</script><script>\n\t\t(function() {\n\t\t\tvar box = document.getElementById(\"search-box\");\n\t\t\tif (!box) return;\n\t\t\tvar results = document.getElementById(\"search-results\");\n\n\t\t\tdocument.addEventListener(\"keydown\", function(e) {\n\t\t\t\tif (e.key === \"/\" && !e.ctrlKey && !e.metaKey &&\n\t\t\t\t\t![\"INPUT\",\"TEXTAREA\",\"SELECT\"].includes(document.activeElement.tagName) &&\n\t\t\t\t\t!document.activeElement.isContentEditable) {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tbox.focus();\n\t\t\t\t\tbox.select();\n\t\t\t\t}\n\t\t\t});\n\n\t\t\tbox.addEventListener(\"keydown\", function(e) {\n\t\t\t\tvar hits = results.querySelectorAll(\".search-hit\");\n\t\t\t\tif (!hits.length) {\n\t\t\t\t\tif (e.key === \"Escape\") { box.blur(); }\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar cur = results.querySelector(\".search-hit-active\");\n\t\t\t\tvar idx = cur ? Array.prototype.indexOf.call(hits, cur) : -1;\n\n\t\t\t\tif (e.key === \"ArrowDown\") {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tif (cur) cur.classList.remove(\"search-hit-active\");\n\t\t\t\t\tidx = (idx + 1) % hits.length;\n\t\t\t\t\thits[idx].classList.add(\"search-hit-active\");\n\t\t\t\t\thits[idx].scrollIntoView({block:\"nearest\"});\n\t\t\t\t} else if (e.key === \"ArrowUp\") {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tif (cur) cur.classList.remove(\"search-hit-active\");\n\t\t\t\t\tidx = idx <= 0 ? hits.length - 1 : idx - 1;\n\t\t\t\t\thits[idx].classList.add(\"search-hit-active\");\n\t\t\t\t\thits[idx].scrollIntoView({block:\"nearest\"});\n\t\t\t\t} else if (e.key === \"Enter\") {\n\t\t\t\t\tif (cur) {\n\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\tcur.click();\n\t\t\t\t\t}\n\t\t\t\t} else if (e.key === \"Escape\") {\n\t\t\t\t\tbox.blur();\n\t\t\t\t}\n\t\t\t});\n\n\t\t\tnew MutationObserver(function() {\n\t\t\t\tvar hits = results.querySelectorAll(\".search-hit\");\n\t\t\t\thits.forEach(function(h) { h.classList.remove(\"search-hit-active\"); });\n\t\t\t\tif (hits.length) hits[0].classList.add(\"search-hit-active\");\n\t\t\t}).observe(results, {childList: true});\n\t\t})();\n\t\t</script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<script>\n\t\t\t\t// Notification polling\n\t\t\t\t(function () {\n\t\t\t\t\tvar bell = document.getElementById(\"notif-bell\");\n\t\t\t\t\tvar badge = document.getElementById(\"notif-badge\");\n\t\t\t\t\tvar panel = document.getElementById(\"notif-panel\");\n\t\t\t\t\tif (!bell) return;\n\t\t\t\t\tvar pending = [];\n\n\t\t\t\t\tfunction checkNotifications() {\n\t\t\t\t\t\tfetch(\"/apps/calendar/notifications\")\n\t\t\t\t\t\t\t.then(function (r) {\n\t\t\t\t\t\t\t\treturn r.ok ? r.json() : [];\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t.then(function (data) {\n\t\t\t\t\t\t\t\tif (!data || !data.length) return;\n\t\t\t\t\t\t\t\tpending = pending.concat(data);\n\t\t\t\t\t\t\t\tbell.style.display = \"\";\n\t\t\t\t\t\t\t\tbadge.style.display = \"\";\n\t\t\t\t\t\t\t\tbadge.textContent = pending.length;\n\t\t\t\t\t\t\t\t// Show browser notification if permitted\n\t\t\t\t\t\t\t\tif (Notification.permission === \"granted\") {\n\t\t\t\t\t\t\t\t\tdata.forEach(function (n) {\n\t\t\t\t\t\t\t\t\t\tnew Notification(\"Reminder: \" + n.summary, {\n\t\t\t\t\t\t\t\t\t\t\tbody: \"Starting \" + new Date(n.start).toLocaleString(),\n\t\t\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t\t} else if (Notification.permission !== \"denied\") {\n\t\t\t\t\t\t\t\t\tNotification.requestPermission();\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t.catch(function () {});\n\t\t\t\t\t}\n\n\t\t\t\t\twindow.toggleNotifPanel = function () {\n\t\t\t\t\t\tif (panel.style.display === \"none\") {\n\t\t\t\t\t\t\tpanel.style.display = \"block\";\n\t\t\t\t\t\t\tpanel.innerHTML = \"\";\n\t\t\t\t\t\t\tif (!pending.length) {\n\t\t\t\t\t\t\t\tpanel.innerHTML =\n\t\t\t\t\t\t\t\t\t'<div style=\"padding:0.75rem;color:var(--color-text-muted)\">No notifications</div>';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tpending.forEach(function (n) {\n\t\t\t\t\t\t\t\t\tvar d = document.createElement(\"a\");\n\t\t\t\t\t\t\t\t\td.href = \"/apps/calendar/?date=\" + n.start.slice(0, 10);\n\t\t\t\t\t\t\t\t\td.className = \"search-hit\";\n\t\t\t\t\t\t\t\t\td.innerHTML =\n\t\t\t\t\t\t\t\t\t\t'<span class=\"search-hit-name\">' +\n\t\t\t\t\t\t\t\t\t\tn.summary +\n\t\t\t\t\t\t\t\t\t\t'</span><span class=\"search-hit-sub\">' +\n\t\t\t\t\t\t\t\t\t\tnew Date(n.start).toLocaleString() +\n\t\t\t\t\t\t\t\t\t\t\"</span>\";\n\t\t\t\t\t\t\t\t\tpanel.appendChild(d);\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tpanel.style.display = \"none\";\n\t\t\t\t\t\t}\n\t\t\t\t\t};\n\n\t\t\t\t\t// Poll every 60 seconds\n\t\t\t\t\tsetInterval(checkNotifications, 60000);\n\t\t\t\t\t// Initial check after 5 seconds\n\t\t\t\t\tsetTimeout(checkNotifications, 5000);\n\t\t\t\t})();\n\t\t\t</script><script>\n\t\t\t\t(function () {\n\t\t\t\t\tvar box = document.getElementById(\"search-box\");\n\t\t\t\t\tif (!box) return;\n\t\t\t\t\tvar results = document.getElementById(\"search-results\");\n\n\t\t\t\t\tdocument.addEventListener(\"keydown\", function (e) {\n\t\t\t\t\t\tif (\n\t\t\t\t\t\t\te.key === \"/\" &&\n\t\t\t\t\t\t\t!e.ctrlKey &&\n\t\t\t\t\t\t\t!e.metaKey &&\n\t\t\t\t\t\t\t![\"INPUT\", \"TEXTAREA\", \"SELECT\"].includes(\n\t\t\t\t\t\t\t\tdocument.activeElement.tagName,\n\t\t\t\t\t\t\t) &&\n\t\t\t\t\t\t\t!document.activeElement.isContentEditable\n\t\t\t\t\t\t) {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tbox.focus();\n\t\t\t\t\t\t\tbox.select();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\n\t\t\t\t\tbox.addEventListener(\"keydown\", function (e) {\n\t\t\t\t\t\tvar hits = results.querySelectorAll(\".search-hit\");\n\t\t\t\t\t\tif (!hits.length) {\n\t\t\t\t\t\t\tif (e.key === \"Escape\") {\n\t\t\t\t\t\t\t\tbox.blur();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar cur = results.querySelector(\".search-hit-active\");\n\t\t\t\t\t\tvar idx = cur ? Array.prototype.indexOf.call(hits, cur) : -1;\n\n\t\t\t\t\t\tif (e.key === \"ArrowDown\") {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tif (cur) cur.classList.remove(\"search-hit-active\");\n\t\t\t\t\t\t\tidx = (idx + 1) % hits.length;\n\t\t\t\t\t\t\thits[idx].classList.add(\"search-hit-active\");\n\t\t\t\t\t\t\thits[idx].scrollIntoView({ block: \"nearest\" });\n\t\t\t\t\t\t} else if (e.key === \"ArrowUp\") {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tif (cur) cur.classList.remove(\"search-hit-active\");\n\t\t\t\t\t\t\tidx = idx <= 0 ? hits.length - 1 : idx - 1;\n\t\t\t\t\t\t\thits[idx].classList.add(\"search-hit-active\");\n\t\t\t\t\t\t\thits[idx].scrollIntoView({ block: \"nearest\" });\n\t\t\t\t\t\t} else if (e.key === \"Enter\") {\n\t\t\t\t\t\t\tif (cur) {\n\t\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\t\tcur.click();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else if (e.key === \"Escape\") {\n\t\t\t\t\t\t\tbox.blur();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\n\t\t\t\t\tnew MutationObserver(function () {\n\t\t\t\t\t\tvar hits = results.querySelectorAll(\".search-hit\");\n\t\t\t\t\t\thits.forEach(function (h) {\n\t\t\t\t\t\t\th.classList.remove(\"search-hit-active\");\n\t\t\t\t\t\t});\n\t\t\t\t\t\tif (hits.length) hits[0].classList.add(\"search-hit-active\");\n\t\t\t\t\t}).observe(results, { childList: true });\n\t\t\t\t})();\n\t\t\t</script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -387,7 +387,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(pd.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 250, Col: 20}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 285, Col: 20}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -400,7 +400,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 		var templ_7745c5c3_Var19 templ.SafeURL
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(pd.FaviconURL()))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 252, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 287, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
@@ -413,7 +413,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, pd.CSRFToken))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 256, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 291, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
@@ -426,7 +426,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(pd.Nav)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 257, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 292, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {
@@ -457,7 +457,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 				var templ_7745c5c3_Var22 templ.SafeURL
 				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(item.URL))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 266, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 301, Col: 41}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 				if templ_7745c5c3_Err != nil {
@@ -470,7 +470,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 				var templ_7745c5c3_Var23 string
 				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 266, Col: 77}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 301, Col: 77}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 				if templ_7745c5c3_Err != nil {
@@ -493,7 +493,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 				var templ_7745c5c3_Var24 string
 				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 270, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 305, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 				if templ_7745c5c3_Err != nil {
@@ -511,7 +511,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 				var templ_7745c5c3_Var25 templ.SafeURL
 				templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(item.URL))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 273, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 308, Col: 41}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 				if templ_7745c5c3_Err != nil {
@@ -524,7 +524,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 				var templ_7745c5c3_Var26 string
 				templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 273, Col: 62}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 308, Col: 62}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 				if templ_7745c5c3_Err != nil {
@@ -547,7 +547,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 				var templ_7745c5c3_Var27 string
 				templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 277, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 312, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 				if templ_7745c5c3_Err != nil {
@@ -580,7 +580,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 			var templ_7745c5c3_Var29 templ.SafeURL
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(item.URL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 289, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 324, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 			if templ_7745c5c3_Err != nil {
@@ -612,7 +612,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 293, Col: 20}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 328, Col: 20}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
@@ -647,7 +647,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</div></nav><script>\n\t\t// Adaptive navbar collapse based on item count and available width.\n\t\t(function(){\n\t\t\tvar nb = document.querySelector('.navbar');\n\t\t\tif (!nb) return;\n\t\t\tvar n = parseInt(nb.getAttribute('data-nav-count'), 10) || 0;\n\t\t\tif (n === 0) return;\n\t\t\t// Per-item widths at each stage:\n\t\t\tvar FULL=85, COMPACT=55, ICON=34;\n\t\t\t// Fixed overhead differs per stage (brand+search+end+padding):\n\t\t\t// full/compact: brand(70)+search(280)+end(80)+pad(32)=462\n\t\t\t// icon-only: brand(55)+search(140)+end(40)+pad(16)=251\n\t\t\t// collapsed (no nav, no search): brand(24)+apps-btn(36)+end(40)+pad(16)=116\n\t\t\tvar FX=462, FX_I=251, FX_C=116;\n\t\t\tfunction u(){\n\t\t\t\tvar w = nb.offsetWidth;\n\t\t\t\tnb.classList.remove('navbar--compact','navbar--icon-only','navbar--collapsed');\n\t\t\t\tif (n*FULL+FX <= w) return;\n\t\t\t\tif (n*COMPACT+FX <= w) { nb.classList.add('navbar--compact'); return; }\n\t\t\t\tif (n*ICON+FX_I <= w) { nb.classList.add('navbar--icon-only'); return; }\n\t\t\t\tnb.classList.add('navbar--collapsed');\n\t\t\t}\n\t\t\tu();\n\t\t\tif (window.ResizeObserver) new ResizeObserver(u).observe(nb);\n\t\t\telse window.addEventListener('resize',u);\n\t\t})();\n\t\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</div></nav><script>\n\t\t\t\t// Adaptive navbar collapse based on item count and available width.\n\t\t\t\t(function () {\n\t\t\t\t\tvar nb = document.querySelector(\".navbar\");\n\t\t\t\t\tif (!nb) return;\n\t\t\t\t\tvar n = parseInt(nb.getAttribute(\"data-nav-count\"), 10) || 0;\n\t\t\t\t\tif (n === 0) return;\n\t\t\t\t\t// Per-item widths at each stage:\n\t\t\t\t\tvar FULL = 85,\n\t\t\t\t\t\tCOMPACT = 55,\n\t\t\t\t\t\tICON = 34;\n\t\t\t\t\t// Fixed overhead differs per stage (brand+search+end+padding):\n\t\t\t\t\t// full/compact: brand(70)+search(280)+end(80)+pad(32)=462\n\t\t\t\t\t// icon-only: brand(55)+search(140)+end(40)+pad(16)=251\n\t\t\t\t\t// collapsed (no nav, no search): brand(24)+apps-btn(36)+end(40)+pad(16)=116\n\t\t\t\t\tvar FX = 462,\n\t\t\t\t\t\tFX_I = 251,\n\t\t\t\t\t\tFX_C = 116;\n\t\t\t\t\tfunction u() {\n\t\t\t\t\t\tvar w = nb.offsetWidth;\n\t\t\t\t\t\tnb.classList.remove(\n\t\t\t\t\t\t\t\"navbar--compact\",\n\t\t\t\t\t\t\t\"navbar--icon-only\",\n\t\t\t\t\t\t\t\"navbar--collapsed\",\n\t\t\t\t\t\t);\n\t\t\t\t\t\tif (n * FULL + FX <= w) return;\n\t\t\t\t\t\tif (n * COMPACT + FX <= w) {\n\t\t\t\t\t\t\tnb.classList.add(\"navbar--compact\");\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (n * ICON + FX_I <= w) {\n\t\t\t\t\t\t\tnb.classList.add(\"navbar--icon-only\");\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tnb.classList.add(\"navbar--collapsed\");\n\t\t\t\t\t}\n\t\t\t\t\tu();\n\t\t\t\t\tif (window.ResizeObserver) new ResizeObserver(u).observe(nb);\n\t\t\t\t\telse window.addEventListener(\"resize\", u);\n\t\t\t\t})();\n\t\t\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -659,7 +659,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(pd.PluginID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 353, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 402, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
@@ -691,7 +691,7 @@ func Shell(pd PageData, body templ.Component) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<script>\n\t\t// Notification polling\n\t\t(function() {\n\t\t\tvar bell = document.getElementById(\"notif-bell\");\n\t\t\tvar badge = document.getElementById(\"notif-badge\");\n\t\t\tvar panel = document.getElementById(\"notif-panel\");\n\t\t\tif (!bell) return;\n\t\t\tvar pending = [];\n\n\t\t\tfunction checkNotifications() {\n\t\t\t\tfetch(\"/apps/calendar/notifications\")\n\t\t\t\t\t.then(function(r) { return r.ok ? r.json() : []; })\n\t\t\t\t\t.then(function(data) {\n\t\t\t\t\t\tif (!data || !data.length) return;\n\t\t\t\t\t\tpending = pending.concat(data);\n\t\t\t\t\t\tbell.style.display = \"\";\n\t\t\t\t\t\tbadge.style.display = \"\";\n\t\t\t\t\t\tbadge.textContent = pending.length;\n\t\t\t\t\t\t// Show browser notification if permitted\n\t\t\t\t\t\tif (Notification.permission === \"granted\") {\n\t\t\t\t\t\t\tdata.forEach(function(n) {\n\t\t\t\t\t\t\t\tnew Notification(\"Reminder: \" + n.summary, { body: \"Starting \" + new Date(n.start).toLocaleString() });\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t} else if (Notification.permission !== \"denied\") {\n\t\t\t\t\t\t\tNotification.requestPermission();\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {});\n\t\t\t}\n\n\t\t\twindow.toggleNotifPanel = function() {\n\t\t\t\tif (panel.style.display === \"none\") {\n\t\t\t\t\tpanel.style.display = \"block\";\n\t\t\t\t\tpanel.innerHTML = \"\";\n\t\t\t\t\tif (!pending.length) {\n\t\t\t\t\t\tpanel.innerHTML = '<div style=\"padding:0.75rem;color:var(--color-text-muted)\">No notifications</div>';\n\t\t\t\t\t} else {\n\t\t\t\t\t\tpending.forEach(function(n) {\n\t\t\t\t\t\t\tvar d = document.createElement(\"a\");\n\t\t\t\t\t\t\td.href = \"/apps/calendar/?date=\" + n.start.slice(0,10);\n\t\t\t\t\t\t\td.className = \"search-hit\";\n\t\t\t\t\t\t\td.innerHTML = '<span class=\"search-hit-name\">' + n.summary + '</span><span class=\"search-hit-sub\">' + new Date(n.start).toLocaleString() + '</span>';\n\t\t\t\t\t\t\tpanel.appendChild(d);\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t} else {\n\t\t\t\t\tpanel.style.display = \"none\";\n\t\t\t\t}\n\t\t\t};\n\n\t\t\t// Poll every 60 seconds\n\t\t\tsetInterval(checkNotifications, 60000);\n\t\t\t// Initial check after 5 seconds\n\t\t\tsetTimeout(checkNotifications, 5000);\n\t\t})();\n\t\t</script><script>\n\t\t(function() {\n\t\t\tvar box = document.getElementById(\"search-box\");\n\t\t\tif (!box) return;\n\t\t\tvar results = document.getElementById(\"search-results\");\n\n\t\t\tdocument.addEventListener(\"keydown\", function(e) {\n\t\t\t\tif (e.key === \"/\" && !e.ctrlKey && !e.metaKey &&\n\t\t\t\t\t![\"INPUT\",\"TEXTAREA\",\"SELECT\"].includes(document.activeElement.tagName) &&\n\t\t\t\t\t!document.activeElement.isContentEditable) {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tbox.focus();\n\t\t\t\t\tbox.select();\n\t\t\t\t}\n\t\t\t});\n\n\t\t\tbox.addEventListener(\"keydown\", function(e) {\n\t\t\t\tvar hits = results.querySelectorAll(\".search-hit\");\n\t\t\t\tif (!hits.length) {\n\t\t\t\t\tif (e.key === \"Escape\") { box.blur(); }\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar cur = results.querySelector(\".search-hit-active\");\n\t\t\t\tvar idx = cur ? Array.prototype.indexOf.call(hits, cur) : -1;\n\n\t\t\t\tif (e.key === \"ArrowDown\") {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tif (cur) cur.classList.remove(\"search-hit-active\");\n\t\t\t\t\tidx = (idx + 1) % hits.length;\n\t\t\t\t\thits[idx].classList.add(\"search-hit-active\");\n\t\t\t\t\thits[idx].scrollIntoView({block:\"nearest\"});\n\t\t\t\t} else if (e.key === \"ArrowUp\") {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tif (cur) cur.classList.remove(\"search-hit-active\");\n\t\t\t\t\tidx = idx <= 0 ? hits.length - 1 : idx - 1;\n\t\t\t\t\thits[idx].classList.add(\"search-hit-active\");\n\t\t\t\t\thits[idx].scrollIntoView({block:\"nearest\"});\n\t\t\t\t} else if (e.key === \"Enter\") {\n\t\t\t\t\tif (cur) {\n\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\tcur.click();\n\t\t\t\t\t}\n\t\t\t\t} else if (e.key === \"Escape\") {\n\t\t\t\t\tbox.blur();\n\t\t\t\t}\n\t\t\t});\n\n\t\t\tnew MutationObserver(function() {\n\t\t\t\tvar hits = results.querySelectorAll(\".search-hit\");\n\t\t\t\thits.forEach(function(h) { h.classList.remove(\"search-hit-active\"); });\n\t\t\t\tif (hits.length) hits[0].classList.add(\"search-hit-active\");\n\t\t\t}).observe(results, {childList: true});\n\t\t})();\n\t\t</script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<script>\n\t\t\t\t// Notification polling\n\t\t\t\t(function () {\n\t\t\t\t\tvar bell = document.getElementById(\"notif-bell\");\n\t\t\t\t\tvar badge = document.getElementById(\"notif-badge\");\n\t\t\t\t\tvar panel = document.getElementById(\"notif-panel\");\n\t\t\t\t\tif (!bell) return;\n\t\t\t\t\tvar pending = [];\n\n\t\t\t\t\tfunction checkNotifications() {\n\t\t\t\t\t\tfetch(\"/apps/calendar/notifications\")\n\t\t\t\t\t\t\t.then(function (r) {\n\t\t\t\t\t\t\t\treturn r.ok ? r.json() : [];\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t.then(function (data) {\n\t\t\t\t\t\t\t\tif (!data || !data.length) return;\n\t\t\t\t\t\t\t\tpending = pending.concat(data);\n\t\t\t\t\t\t\t\tbell.style.display = \"\";\n\t\t\t\t\t\t\t\tbadge.style.display = \"\";\n\t\t\t\t\t\t\t\tbadge.textContent = pending.length;\n\t\t\t\t\t\t\t\t// Show browser notification if permitted\n\t\t\t\t\t\t\t\tif (Notification.permission === \"granted\") {\n\t\t\t\t\t\t\t\t\tdata.forEach(function (n) {\n\t\t\t\t\t\t\t\t\t\tnew Notification(\"Reminder: \" + n.summary, {\n\t\t\t\t\t\t\t\t\t\t\tbody: \"Starting \" + new Date(n.start).toLocaleString(),\n\t\t\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t\t} else if (Notification.permission !== \"denied\") {\n\t\t\t\t\t\t\t\t\tNotification.requestPermission();\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t.catch(function () {});\n\t\t\t\t\t}\n\n\t\t\t\t\twindow.toggleNotifPanel = function () {\n\t\t\t\t\t\tif (panel.style.display === \"none\") {\n\t\t\t\t\t\t\tpanel.style.display = \"block\";\n\t\t\t\t\t\t\tpanel.innerHTML = \"\";\n\t\t\t\t\t\t\tif (!pending.length) {\n\t\t\t\t\t\t\t\tpanel.innerHTML =\n\t\t\t\t\t\t\t\t\t'<div style=\"padding:0.75rem;color:var(--color-text-muted)\">No notifications</div>';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tpending.forEach(function (n) {\n\t\t\t\t\t\t\t\t\tvar d = document.createElement(\"a\");\n\t\t\t\t\t\t\t\t\td.href = \"/apps/calendar/?date=\" + n.start.slice(0, 10);\n\t\t\t\t\t\t\t\t\td.className = \"search-hit\";\n\t\t\t\t\t\t\t\t\td.innerHTML =\n\t\t\t\t\t\t\t\t\t\t'<span class=\"search-hit-name\">' +\n\t\t\t\t\t\t\t\t\t\tn.summary +\n\t\t\t\t\t\t\t\t\t\t'</span><span class=\"search-hit-sub\">' +\n\t\t\t\t\t\t\t\t\t\tnew Date(n.start).toLocaleString() +\n\t\t\t\t\t\t\t\t\t\t\"</span>\";\n\t\t\t\t\t\t\t\t\tpanel.appendChild(d);\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tpanel.style.display = \"none\";\n\t\t\t\t\t\t}\n\t\t\t\t\t};\n\n\t\t\t\t\t// Poll every 60 seconds\n\t\t\t\t\tsetInterval(checkNotifications, 60000);\n\t\t\t\t\t// Initial check after 5 seconds\n\t\t\t\t\tsetTimeout(checkNotifications, 5000);\n\t\t\t\t})();\n\t\t\t</script><script>\n\t\t\t\t(function () {\n\t\t\t\t\tvar box = document.getElementById(\"search-box\");\n\t\t\t\t\tif (!box) return;\n\t\t\t\t\tvar results = document.getElementById(\"search-results\");\n\n\t\t\t\t\tdocument.addEventListener(\"keydown\", function (e) {\n\t\t\t\t\t\tif (\n\t\t\t\t\t\t\te.key === \"/\" &&\n\t\t\t\t\t\t\t!e.ctrlKey &&\n\t\t\t\t\t\t\t!e.metaKey &&\n\t\t\t\t\t\t\t![\"INPUT\", \"TEXTAREA\", \"SELECT\"].includes(\n\t\t\t\t\t\t\t\tdocument.activeElement.tagName,\n\t\t\t\t\t\t\t) &&\n\t\t\t\t\t\t\t!document.activeElement.isContentEditable\n\t\t\t\t\t\t) {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tbox.focus();\n\t\t\t\t\t\t\tbox.select();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\n\t\t\t\t\tbox.addEventListener(\"keydown\", function (e) {\n\t\t\t\t\t\tvar hits = results.querySelectorAll(\".search-hit\");\n\t\t\t\t\t\tif (!hits.length) {\n\t\t\t\t\t\t\tif (e.key === \"Escape\") {\n\t\t\t\t\t\t\t\tbox.blur();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar cur = results.querySelector(\".search-hit-active\");\n\t\t\t\t\t\tvar idx = cur ? Array.prototype.indexOf.call(hits, cur) : -1;\n\n\t\t\t\t\t\tif (e.key === \"ArrowDown\") {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tif (cur) cur.classList.remove(\"search-hit-active\");\n\t\t\t\t\t\t\tidx = (idx + 1) % hits.length;\n\t\t\t\t\t\t\thits[idx].classList.add(\"search-hit-active\");\n\t\t\t\t\t\t\thits[idx].scrollIntoView({ block: \"nearest\" });\n\t\t\t\t\t\t} else if (e.key === \"ArrowUp\") {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tif (cur) cur.classList.remove(\"search-hit-active\");\n\t\t\t\t\t\t\tidx = idx <= 0 ? hits.length - 1 : idx - 1;\n\t\t\t\t\t\t\thits[idx].classList.add(\"search-hit-active\");\n\t\t\t\t\t\t\thits[idx].scrollIntoView({ block: \"nearest\" });\n\t\t\t\t\t\t} else if (e.key === \"Enter\") {\n\t\t\t\t\t\t\tif (cur) {\n\t\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\t\tcur.click();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else if (e.key === \"Escape\") {\n\t\t\t\t\t\t\tbox.blur();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\n\t\t\t\t\tnew MutationObserver(function () {\n\t\t\t\t\t\tvar hits = results.querySelectorAll(\".search-hit\");\n\t\t\t\t\t\thits.forEach(function (h) {\n\t\t\t\t\t\t\th.classList.remove(\"search-hit-active\");\n\t\t\t\t\t\t});\n\t\t\t\t\t\tif (hits.length) hits[0].classList.add(\"search-hit-active\");\n\t\t\t\t\t}).observe(results, { childList: true });\n\t\t\t\t})();\n\t\t\t</script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -816,7 +816,7 @@ func sidebarItems(items []SidebarItem) templ.Component {
 				var templ_7745c5c3_Var36 string
 				templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 508, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 578, Col: 43}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 				if templ_7745c5c3_Err != nil {
@@ -835,7 +835,7 @@ func sidebarItems(items []SidebarItem) templ.Component {
 						var templ_7745c5c3_Var37 templ.SafeURL
 						templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(child.URL))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 511, Col: 39}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 581, Col: 39}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 						if templ_7745c5c3_Err != nil {
@@ -848,7 +848,7 @@ func sidebarItems(items []SidebarItem) templ.Component {
 						var templ_7745c5c3_Var38 string
 						templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(child.Label)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 511, Col: 97}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 581, Col: 97}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 						if templ_7745c5c3_Err != nil {
@@ -866,7 +866,7 @@ func sidebarItems(items []SidebarItem) templ.Component {
 						var templ_7745c5c3_Var39 templ.SafeURL
 						templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(child.URL))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 513, Col: 39}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 583, Col: 39}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 						if templ_7745c5c3_Err != nil {
@@ -879,7 +879,7 @@ func sidebarItems(items []SidebarItem) templ.Component {
 						var templ_7745c5c3_Var40 string
 						templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(child.Label)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 513, Col: 90}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 583, Col: 90}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 						if templ_7745c5c3_Err != nil {
@@ -899,7 +899,7 @@ func sidebarItems(items []SidebarItem) templ.Component {
 				var templ_7745c5c3_Var41 templ.SafeURL
 				templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(item.URL))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 517, Col: 36}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 587, Col: 36}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 				if templ_7745c5c3_Err != nil {
@@ -912,7 +912,7 @@ func sidebarItems(items []SidebarItem) templ.Component {
 				var templ_7745c5c3_Var42 string
 				templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 517, Col: 79}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 587, Col: 79}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 				if templ_7745c5c3_Err != nil {
@@ -930,7 +930,7 @@ func sidebarItems(items []SidebarItem) templ.Component {
 				var templ_7745c5c3_Var43 templ.SafeURL
 				templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(item.URL))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 519, Col: 36}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 589, Col: 36}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 				if templ_7745c5c3_Err != nil {
@@ -943,7 +943,7 @@ func sidebarItems(items []SidebarItem) templ.Component {
 				var templ_7745c5c3_Var44 string
 				templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 519, Col: 72}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 589, Col: 72}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 				if templ_7745c5c3_Err != nil {
@@ -1060,7 +1060,7 @@ func UserDropdown(pd PageData) templ.Component {
 		var templ_7745c5c3_Var48 string
 		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(pd.User.AvatarURL())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 550, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 620, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 		if templ_7745c5c3_Err != nil {
@@ -1078,7 +1078,7 @@ func UserDropdown(pd PageData) templ.Component {
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(pd.User.DisplayName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 552, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 622, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
@@ -1096,7 +1096,7 @@ func UserDropdown(pd PageData) templ.Component {
 			var templ_7745c5c3_Var50 string
 			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(pd.User.Username)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 554, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 624, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 			if templ_7745c5c3_Err != nil {
@@ -1234,7 +1234,7 @@ func UserDropdown(pd PageData) templ.Component {
 		var templ_7745c5c3_Var61 string
 		templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 569, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 639, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 		if templ_7745c5c3_Err != nil {
@@ -1309,7 +1309,7 @@ func LoginPage(flashMsg string, flashKind string, next string, registrationEnabl
 			var templ_7745c5c3_Var63 string
 			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(next)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 605, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 675, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 			if templ_7745c5c3_Err != nil {
@@ -1327,7 +1327,7 @@ func LoginPage(flashMsg string, flashKind string, next string, registrationEnabl
 		var templ_7745c5c3_Var64 string
 		templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(defaultUsername)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 609, Col: 100}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 679, Col: 100}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 		if templ_7745c5c3_Err != nil {
@@ -1340,7 +1340,7 @@ func LoginPage(flashMsg string, flashKind string, next string, registrationEnabl
 		var templ_7745c5c3_Var65 string
 		templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(defaultPassword)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 613, Col: 104}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 683, Col: 104}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 		if templ_7745c5c3_Err != nil {
@@ -1363,7 +1363,7 @@ func LoginPage(flashMsg string, flashKind string, next string, registrationEnabl
 				var templ_7745c5c3_Var66 templ.SafeURL
 				templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/register?next=" + next))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 624, Col: 57}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 694, Col: 57}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 				if templ_7745c5c3_Err != nil {
@@ -1440,7 +1440,7 @@ func MFAPage(errMsg string, next string, mfaMethod string) templ.Component {
 				var templ_7745c5c3_Var68 string
 				templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(errMsg)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 658, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 728, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 				if templ_7745c5c3_Err != nil {
@@ -1451,7 +1451,7 @@ func MFAPage(errMsg string, next string, mfaMethod string) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, " <div id=\"webauthn-status\" style=\"text-align:center;padding:1rem\"><button id=\"webauthn-btn\" class=\"btn btn-primary\" type=\"button\" style=\"width:100%\" onclick=\"startWebAuthnLogin()\">Verify with Passkey</button></div><script>\n\t\t\t\t\t\tasync function startWebAuthnLogin() {\n\t\t\t\t\t\t\tvar btn = document.getElementById(\"webauthn-btn\");\n\t\t\t\t\t\t\tvar status = document.getElementById(\"webauthn-status\");\n\t\t\t\t\t\t\tbtn.disabled = true;\n\t\t\t\t\t\t\tbtn.textContent = \"Waiting for passkey...\";\n\t\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\t\tvar beginResp = await fetch(\"/login/mfa/webauthn/begin\", {method:\"POST\"});\n\t\t\t\t\t\t\t\tif (!beginResp.ok) throw new Error(\"Failed to start\");\n\t\t\t\t\t\t\t\tvar options = await beginResp.json();\n\t\t\t\t\t\t\t\toptions.publicKey.challenge = base64urlToBuffer(options.publicKey.challenge);\n\t\t\t\t\t\t\t\tif (options.publicKey.allowCredentials) {\n\t\t\t\t\t\t\t\t\toptions.publicKey.allowCredentials = options.publicKey.allowCredentials.map(function(c) {\n\t\t\t\t\t\t\t\t\t\tc.id = base64urlToBuffer(c.id); return c;\n\t\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tvar assertion = await navigator.credentials.get(options);\n\t\t\t\t\t\t\t\tvar body = JSON.stringify({\n\t\t\t\t\t\t\t\t\tid: assertion.id,\n\t\t\t\t\t\t\t\t\trawId: bufferToBase64url(assertion.rawId),\n\t\t\t\t\t\t\t\t\ttype: assertion.type,\n\t\t\t\t\t\t\t\t\tresponse: {\n\t\t\t\t\t\t\t\t\t\tauthenticatorData: bufferToBase64url(assertion.response.authenticatorData),\n\t\t\t\t\t\t\t\t\t\tclientDataJSON: bufferToBase64url(assertion.response.clientDataJSON),\n\t\t\t\t\t\t\t\t\t\tsignature: bufferToBase64url(assertion.response.signature),\n\t\t\t\t\t\t\t\t\t\tuserHandle: assertion.response.userHandle ? bufferToBase64url(assertion.response.userHandle) : \"\"\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t\tvar finishResp = await fetch(\"/login/mfa/webauthn/finish\", {\n\t\t\t\t\t\t\t\t\tmethod: \"POST\",\n\t\t\t\t\t\t\t\t\theaders: {\"Content-Type\":\"application/json\"},\n\t\t\t\t\t\t\t\t\tbody: body\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t\tif (!finishResp.ok) throw new Error(\"Verification failed\");\n\t\t\t\t\t\t\t\tvar result = await finishResp.json();\n\t\t\t\t\t\t\t\twindow.location.href = result.redirect || \"/\";\n\t\t\t\t\t\t\t} catch(e) {\n\t\t\t\t\t\t\t\tstatus.innerHTML = '<div class=\"alert alert-error\">' + (e.message || \"Passkey verification failed\") + '</div>';\n\t\t\t\t\t\t\t\tstatus.innerHTML += '<button class=\"btn btn-primary\" type=\"button\" style=\"width:100%;margin-top:0.5rem\" onclick=\"startWebAuthnLogin()\">Try Again</button>';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tfunction base64urlToBuffer(b) {\n\t\t\t\t\t\t\tvar s = b.replace(/-/g,\"+\").replace(/_/g,\"/\");\n\t\t\t\t\t\t\twhile (s.length%4) s+=\"=\";\n\t\t\t\t\t\t\tvar raw = atob(s);\n\t\t\t\t\t\t\tvar arr = new Uint8Array(raw.length);\n\t\t\t\t\t\t\tfor (var i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);\n\t\t\t\t\t\t\treturn arr.buffer;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tfunction bufferToBase64url(buf) {\n\t\t\t\t\t\t\tvar arr = new Uint8Array(buf);\n\t\t\t\t\t\t\tvar s = \"\";\n\t\t\t\t\t\t\tfor (var i=0;i<arr.length;i++) s+=String.fromCharCode(arr[i]);\n\t\t\t\t\t\t\treturn btoa(s).replace(/\\+/g,\"-\").replace(/\\//g,\"_\").replace(/=/g,\"\");\n\t\t\t\t\t\t}\n\t\t\t\t\t\tstartWebAuthnLogin();\n\t\t\t\t\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, " <div id=\"webauthn-status\" style=\"text-align:center;padding:1rem\"><button id=\"webauthn-btn\" class=\"btn btn-primary\" type=\"button\" style=\"width:100%\" onclick=\"startWebAuthnLogin()\">Verify with Passkey</button></div><script>\n\t\t\t\t\t\t\tasync function startWebAuthnLogin() {\n\t\t\t\t\t\t\t\tvar btn = document.getElementById(\"webauthn-btn\");\n\t\t\t\t\t\t\t\tvar status = document.getElementById(\"webauthn-status\");\n\t\t\t\t\t\t\t\tbtn.disabled = true;\n\t\t\t\t\t\t\t\tbtn.textContent = \"Waiting for passkey...\";\n\t\t\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\t\t\tvar beginResp = await fetch(\"/login/mfa/webauthn/begin\", {\n\t\t\t\t\t\t\t\t\t\tmethod: \"POST\",\n\t\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t\t\tif (!beginResp.ok) throw new Error(\"Failed to start\");\n\t\t\t\t\t\t\t\t\tvar options = await beginResp.json();\n\t\t\t\t\t\t\t\t\toptions.publicKey.challenge = base64urlToBuffer(\n\t\t\t\t\t\t\t\t\t\toptions.publicKey.challenge,\n\t\t\t\t\t\t\t\t\t);\n\t\t\t\t\t\t\t\t\tif (options.publicKey.allowCredentials) {\n\t\t\t\t\t\t\t\t\t\toptions.publicKey.allowCredentials =\n\t\t\t\t\t\t\t\t\t\t\toptions.publicKey.allowCredentials.map(function (c) {\n\t\t\t\t\t\t\t\t\t\t\t\tc.id = base64urlToBuffer(c.id);\n\t\t\t\t\t\t\t\t\t\t\t\treturn c;\n\t\t\t\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\tvar assertion = await navigator.credentials.get(options);\n\t\t\t\t\t\t\t\t\tvar body = JSON.stringify({\n\t\t\t\t\t\t\t\t\t\tid: assertion.id,\n\t\t\t\t\t\t\t\t\t\trawId: bufferToBase64url(assertion.rawId),\n\t\t\t\t\t\t\t\t\t\ttype: assertion.type,\n\t\t\t\t\t\t\t\t\t\tresponse: {\n\t\t\t\t\t\t\t\t\t\t\tauthenticatorData: bufferToBase64url(\n\t\t\t\t\t\t\t\t\t\t\t\tassertion.response.authenticatorData,\n\t\t\t\t\t\t\t\t\t\t\t),\n\t\t\t\t\t\t\t\t\t\t\tclientDataJSON: bufferToBase64url(\n\t\t\t\t\t\t\t\t\t\t\t\tassertion.response.clientDataJSON,\n\t\t\t\t\t\t\t\t\t\t\t),\n\t\t\t\t\t\t\t\t\t\t\tsignature: bufferToBase64url(\n\t\t\t\t\t\t\t\t\t\t\t\tassertion.response.signature,\n\t\t\t\t\t\t\t\t\t\t\t),\n\t\t\t\t\t\t\t\t\t\t\tuserHandle: assertion.response.userHandle\n\t\t\t\t\t\t\t\t\t\t\t\t? bufferToBase64url(assertion.response.userHandle)\n\t\t\t\t\t\t\t\t\t\t\t\t: \"\",\n\t\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t\t\tvar finishResp = await fetch(\"/login/mfa/webauthn/finish\", {\n\t\t\t\t\t\t\t\t\t\tmethod: \"POST\",\n\t\t\t\t\t\t\t\t\t\theaders: { \"Content-Type\": \"application/json\" },\n\t\t\t\t\t\t\t\t\t\tbody: body,\n\t\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t\t\tif (!finishResp.ok) throw new Error(\"Verification failed\");\n\t\t\t\t\t\t\t\t\tvar result = await finishResp.json();\n\t\t\t\t\t\t\t\t\twindow.location.href = result.redirect || \"/\";\n\t\t\t\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t\t\t\tstatus.innerHTML =\n\t\t\t\t\t\t\t\t\t\t'<div class=\"alert alert-error\">' +\n\t\t\t\t\t\t\t\t\t\t(e.message || \"Passkey verification failed\") +\n\t\t\t\t\t\t\t\t\t\t\"</div>\";\n\t\t\t\t\t\t\t\t\tstatus.innerHTML +=\n\t\t\t\t\t\t\t\t\t\t'<button class=\"btn btn-primary\" type=\"button\" style=\"width:100%;margin-top:0.5rem\" onclick=\"startWebAuthnLogin()\">Try Again</button>';\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tfunction base64urlToBuffer(b) {\n\t\t\t\t\t\t\t\tvar s = b.replace(/-/g, \"+\").replace(/_/g, \"/\");\n\t\t\t\t\t\t\t\twhile (s.length % 4) s += \"=\";\n\t\t\t\t\t\t\t\tvar raw = atob(s);\n\t\t\t\t\t\t\t\tvar arr = new Uint8Array(raw.length);\n\t\t\t\t\t\t\t\tfor (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);\n\t\t\t\t\t\t\t\treturn arr.buffer;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tfunction bufferToBase64url(buf) {\n\t\t\t\t\t\t\t\tvar arr = new Uint8Array(buf);\n\t\t\t\t\t\t\t\tvar s = \"\";\n\t\t\t\t\t\t\t\tfor (var i = 0; i < arr.length; i++)\n\t\t\t\t\t\t\t\t\ts += String.fromCharCode(arr[i]);\n\t\t\t\t\t\t\t\treturn btoa(s)\n\t\t\t\t\t\t\t\t\t.replace(/\\+/g, \"-\")\n\t\t\t\t\t\t\t\t\t.replace(/\\//g, \"_\")\n\t\t\t\t\t\t\t\t\t.replace(/=/g, \"\");\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tstartWebAuthnLogin();\n\t\t\t\t\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1479,7 +1479,7 @@ func MFAPage(errMsg string, next string, mfaMethod string) templ.Component {
 				var templ_7745c5c3_Var69 string
 				templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(errMsg)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 727, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 819, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 				if templ_7745c5c3_Err != nil {
@@ -1502,7 +1502,7 @@ func MFAPage(errMsg string, next string, mfaMethod string) templ.Component {
 				var templ_7745c5c3_Var70 string
 				templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(next)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 731, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 823, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 				if templ_7745c5c3_Err != nil {
@@ -1574,7 +1574,7 @@ func ForgotPasswordPage(errMsg string, successMsg string) templ.Component {
 			var templ_7745c5c3_Var72 string
 			templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(successMsg)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 770, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 862, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 			if templ_7745c5c3_Err != nil {
@@ -1593,7 +1593,7 @@ func ForgotPasswordPage(errMsg string, successMsg string) templ.Component {
 			var templ_7745c5c3_Var73 string
 			templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(errMsg)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 773, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 865, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 			if templ_7745c5c3_Err != nil {
@@ -1660,7 +1660,7 @@ func ResetPasswordPage(errMsg string, token string) templ.Component {
 			var templ_7745c5c3_Var75 string
 			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(errMsg)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 813, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 905, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 			if templ_7745c5c3_Err != nil {
@@ -1678,7 +1678,7 @@ func ResetPasswordPage(errMsg string, token string) templ.Component {
 		var templ_7745c5c3_Var76 string
 		templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(token)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 816, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 908, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 		if templ_7745c5c3_Err != nil {
@@ -1734,7 +1734,7 @@ func RegisterPage(errMsg string, next string) templ.Component {
 			var templ_7745c5c3_Var78 string
 			templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(errMsg)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 855, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 947, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 			if templ_7745c5c3_Err != nil {
@@ -1757,7 +1757,7 @@ func RegisterPage(errMsg string, next string) templ.Component {
 			var templ_7745c5c3_Var79 string
 			templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(next)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 859, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 951, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
 			if templ_7745c5c3_Err != nil {
@@ -1780,7 +1780,7 @@ func RegisterPage(errMsg string, next string) templ.Component {
 			var templ_7745c5c3_Var80 templ.SafeURL
 			templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/login?next=" + next))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 878, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 970, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 			if templ_7745c5c3_Err != nil {
@@ -1833,7 +1833,7 @@ func CogIcon(size int) templ.Component {
 		var templ_7745c5c3_Var82 string
 		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(size))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 891, Col: 32}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 983, Col: 32}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
 		if templ_7745c5c3_Err != nil {
@@ -1846,7 +1846,7 @@ func CogIcon(size int) templ.Component {
 		var templ_7745c5c3_Var83 string
 		templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(size))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 891, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 983, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 		if templ_7745c5c3_Err != nil {
@@ -1955,7 +1955,7 @@ func SearchResults(pages []PageLink, userHits, systemHits []search.Hit, isAdmin 
 				var templ_7745c5c3_Var85 templ.SafeURL
 				templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(page.URL))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 959, Col: 55}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 1051, Col: 55}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
 				if templ_7745c5c3_Err != nil {
@@ -1968,7 +1968,7 @@ func SearchResults(pages []PageLink, userHits, systemHits []search.Hit, isAdmin 
 				var templ_7745c5c3_Var86 string
 				templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(page.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 960, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 1052, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
 				if templ_7745c5c3_Err != nil {
@@ -1981,7 +1981,7 @@ func SearchResults(pages []PageLink, userHits, systemHits []search.Hit, isAdmin 
 				var templ_7745c5c3_Var87 string
 				templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs(page.URL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 961, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 1053, Col: 43}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
 				if templ_7745c5c3_Err != nil {
@@ -2006,7 +2006,7 @@ func SearchResults(pages []PageLink, userHits, systemHits []search.Hit, isAdmin 
 				var templ_7745c5c3_Var88 templ.SafeURL
 				templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(hitURL(hit)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 968, Col: 58}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 1060, Col: 58}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 				if templ_7745c5c3_Err != nil {
@@ -2019,7 +2019,7 @@ func SearchResults(pages []PageLink, userHits, systemHits []search.Hit, isAdmin 
 				var templ_7745c5c3_Var89 string
 				templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(hitName(hit))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 969, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 1061, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
 				if templ_7745c5c3_Err != nil {
@@ -2037,7 +2037,7 @@ func SearchResults(pages []PageLink, userHits, systemHits []search.Hit, isAdmin 
 					var templ_7745c5c3_Var90 string
 					templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs(hitSubtext(hit))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 971, Col: 51}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 1063, Col: 51}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
 					if templ_7745c5c3_Err != nil {
@@ -2067,7 +2067,7 @@ func SearchResults(pages []PageLink, userHits, systemHits []search.Hit, isAdmin 
 				var templ_7745c5c3_Var91 templ.SafeURL
 				templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(hitURL(hit)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 979, Col: 58}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 1071, Col: 58}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
 				if templ_7745c5c3_Err != nil {
@@ -2080,7 +2080,7 @@ func SearchResults(pages []PageLink, userHits, systemHits []search.Hit, isAdmin 
 				var templ_7745c5c3_Var92 string
 				templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(hitName(hit))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 980, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 1072, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
 				if templ_7745c5c3_Err != nil {
@@ -2093,7 +2093,7 @@ func SearchResults(pages []PageLink, userHits, systemHits []search.Hit, isAdmin 
 				var templ_7745c5c3_Var93 string
 				templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs(hit.Source)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 981, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/layout.templ`, Line: 1073, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
 				if templ_7745c5c3_Err != nil {
