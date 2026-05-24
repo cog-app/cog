@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"net/url"
 )
 
 // CSRFToken generates a CSRF token from the session ID and a secret.
@@ -81,16 +82,45 @@ func RequireCSRF(secret []byte, next http.Handler) http.Handler {
 // csrfReject responds to a CSRF failure. For HTMX requests it sends
 // HX-Refresh to trigger a full page reload (which fetches a new token).
 // For regular form POSTs it redirects back to the page via GET.
+//
+// The Referer-based redirect is sanitized to same-origin only — without
+// this, an attacker could induce a CSRF-failing request from evil.com and
+// the Referer header (attacker-controlled) would land the victim on a
+// phishing page. Cross-origin or unparseable Referers fall back to the
+// current path.
 func csrfReject(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("HX-Refresh", "true")
 		http.Error(w, "Forbidden — invalid CSRF token", http.StatusForbidden)
 		return
 	}
-	// Redirect back so the user gets a fresh page with a valid token.
-	target := r.Header.Get("Referer")
+	target := sanitizeReferer(r.Header.Get("Referer"), r.Host)
 	if target == "" {
 		target = r.URL.Path
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// sanitizeReferer returns the path portion of referer only when it is
+// same-origin with host. Cross-origin, unparseable, or non-absolute
+// referers return "". An empty referer also returns "".
+func sanitizeReferer(referer, host string) string {
+	if referer == "" {
+		return ""
+	}
+	u, err := url.Parse(referer)
+	if err != nil {
+		return ""
+	}
+	// Same-origin requires a host (the Referer is absolute) that equals the
+	// request host. We don't validate scheme — relative paths inside the
+	// app are fine, but those don't arrive as Referer headers in practice.
+	if u.Host == "" || u.Host != host {
+		return ""
+	}
+	target := u.Path
+	if u.RawQuery != "" {
+		target += "?" + u.RawQuery
+	}
+	return target
 }
