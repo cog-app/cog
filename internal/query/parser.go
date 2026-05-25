@@ -20,10 +20,15 @@ func parse(tokens []token) (Expr, error) {
 }
 
 func (p *parser) peek() token {
-	if p.pos >= len(p.tokens) {
+	return p.peekAt(0)
+}
+
+func (p *parser) peekAt(offset int) token {
+	idx := p.pos + offset
+	if idx >= len(p.tokens) {
 		return token{kind: tokEOF}
 	}
-	return p.tokens[p.pos]
+	return p.tokens[idx]
 }
 
 func (p *parser) next() token {
@@ -129,6 +134,13 @@ func (p *parser) parsePrimary() (Expr, error) {
 		return &PhraseExpr{Value: t.val}, nil
 
 	case tokText:
+		// field:value shorthand — lookahead for colon followed by text/quoted
+		if p.peekAt(1).kind == tokColon {
+			next2 := p.peekAt(2)
+			if next2.kind == tokText || next2.kind == tokQuoted {
+				return p.parseFieldShorthand()
+			}
+		}
 		t := p.next()
 		return &TextExpr{Value: t.val}, nil
 
@@ -191,6 +203,17 @@ func (p *parser) parseFieldIn(field string) (Expr, error) {
 	}
 
 	return &FieldInExpr{Field: field, Values: values}, nil
+}
+
+// parseFieldShorthand parses "field:value" as a FieldEqExpr (shorthand for ":field=value").
+func (p *parser) parseFieldShorthand() (Expr, error) {
+	field := p.next() // consume field name
+	p.next()          // consume :
+	val, err := p.parseValue()
+	if err != nil {
+		return nil, err
+	}
+	return &FieldEqExpr{Field: field.val, Value: val}, nil
 }
 
 // parseValue returns a text or quoted string value.
