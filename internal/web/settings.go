@@ -94,7 +94,7 @@ func (h *settingsHandler) CreateAppPassword(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		if htmx {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			appPasswordErrorFragment("Failed to create app password: " + err.Error()).Render(r.Context(), w)
+			appPasswordErrorFragment("Failed to create app password: "+err.Error()).Render(r.Context(), w)
 			return
 		}
 		setFlash(w, "error", "Failed to create app password: "+err.Error())

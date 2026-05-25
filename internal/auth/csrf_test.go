@@ -31,8 +31,8 @@ func TestValidateCSRF(t *testing.T) {
 	token := CSRFToken("sess1", secret)
 
 	r := &http.Request{
-		Method: "POST",
-		Header: http.Header{},
+		Method:   "POST",
+		Header:   http.Header{},
 		PostForm: url.Values{"csrf_token": {token}},
 	}
 	if !ValidateCSRF(r, "sess1", secret) {
@@ -44,8 +44,8 @@ func TestValidateCSRFInvalid(t *testing.T) {
 	secret := []byte("test-secret")
 
 	r := &http.Request{
-		Method: "POST",
-		Header: http.Header{},
+		Method:   "POST",
+		Header:   http.Header{},
 		PostForm: url.Values{"csrf_token": {"wrong-token"}},
 	}
 	if ValidateCSRF(r, "sess1", secret) {
@@ -101,8 +101,8 @@ func TestValidateCSRFFor(t *testing.T) {
 	token := CSRFTokenFor("sess1", "myplugin", secret)
 
 	r := &http.Request{
-		Method: "POST",
-		Header: http.Header{},
+		Method:   "POST",
+		Header:   http.Header{},
 		PostForm: url.Values{"csrf_token": {token}},
 	}
 	if !ValidateCSRFFor(r, "sess1", "myplugin", secret) {
