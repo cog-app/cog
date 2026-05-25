@@ -100,6 +100,14 @@ func (e *FieldEqExpr) String() string {
 	return fmt.Sprintf(":%s=%s", e.Field, e.Value)
 }
 
+// MatchAllExpr matches every record unconditionally. It is produced by the
+// parser when the query consists of a bare '*' token, and is useful as a
+// catch-all filter rule ("apply this action to every item").
+type MatchAllExpr struct{}
+
+func (*MatchAllExpr) Match(_ Record) bool { return true }
+func (*MatchAllExpr) String() string      { return "*" }
+
 // FieldInExpr matches if record[Field] is in the set (case-insensitive).
 type FieldInExpr struct {
 	Field  string

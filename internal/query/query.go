@@ -3,6 +3,7 @@
 //
 // Syntax:
 //
+//	*                          match-all (every record matches)
 //	term                       text match (any field contains term)
 //	"exact phrase"             phrase match (any field contains phrase)
 //	NOT term / !term           negation
@@ -12,6 +13,7 @@
 //	:field=value               field equals value
 //	:field="multi word"        field equals quoted value
 //	:field IN (a, b, c)        field in set
+//	field:value                shorthand for :field=value
 package query
 
 // Parse parses a query string into an expression tree.

@@ -17,6 +17,7 @@ const (
 	tokEquals
 	tokBang
 	tokComma
+	tokStar
 )
 
 type token struct {
@@ -55,6 +56,8 @@ func (l *lexer) run() {
 			l.emit(tokBang, "!")
 		case ch == ',':
 			l.emit(tokComma, ",")
+		case ch == '*':
+			l.emit(tokStar, "*")
 		case ch == '"':
 			l.lexQuoted()
 		default:
@@ -92,6 +95,9 @@ func (l *lexer) lexWord() {
 		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' ||
 			ch == '(' || ch == ')' || ch == ':' || ch == '=' ||
 			ch == '!' || ch == ',' || ch == '"' {
+			break
+		}
+		if ch == '*' {
 			break
 		}
 		if ch >= 0x80 {

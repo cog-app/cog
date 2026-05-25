@@ -298,3 +298,33 @@ func TestTextMultiValue(t *testing.T) {
 		t.Error("expected match across multi-value fields")
 	}
 }
+
+func TestMatchAllExpr(t *testing.T) {
+	e, err := Parse("*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := e.(*MatchAllExpr); !ok {
+		t.Fatalf("expected *MatchAllExpr, got %T", e)
+	}
+	if !e.Match(Record{}) {
+		t.Error("MatchAllExpr should match empty record")
+	}
+	if !e.Match(Record{"title": {"anything"}}) {
+		t.Error("MatchAllExpr should match any record")
+	}
+	if e.String() != "*" {
+		t.Errorf("String() = %q, want %q", e.String(), "*")
+	}
+}
+
+func TestMatchAllExprInString(t *testing.T) {
+	// Ensure the String round-trip test covers *
+	e, err := Parse("*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.String() != "*" {
+		t.Errorf("Parse(%q).String() = %q, want %q", "*", e.String(), "*")
+	}
+}

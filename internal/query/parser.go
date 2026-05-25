@@ -93,7 +93,7 @@ func (p *parser) parseAnd() (Expr, error) {
 // isUnaryStart returns true if the next token can start a unary expression.
 func (p *parser) isUnaryStart() bool {
 	switch p.peek().kind {
-	case tokText, tokQuoted, tokLParen, tokNot, tokBang, tokColon:
+	case tokText, tokQuoted, tokLParen, tokNot, tokBang, tokColon, tokStar:
 		return true
 	}
 	return false
@@ -112,9 +112,13 @@ func (p *parser) parseUnary() (Expr, error) {
 	return p.parsePrimary()
 }
 
-// primary = "(" expr ")" | field_expr | phrase | text
+// primary = "(" expr ")" | "*" | field_expr | phrase | text
 func (p *parser) parsePrimary() (Expr, error) {
 	switch p.peek().kind {
+	case tokStar:
+		p.next() // consume *
+		return &MatchAllExpr{}, nil
+
 	case tokLParen:
 		p.next() // consume (
 		expr, err := p.parseExpr()
