@@ -312,3 +312,212 @@ func boolToInt(b bool) int {
 	}
 	return 0
 }
+
+// --- Item type ---
+
+// Item represents a single entry fetched from a subscription.
+type Item struct {
+	ID             int64
+	SubscriptionID int64
+	GUID           string
+	Type           string // text | audio | video
+	Title          string
+	Author         string
+	URL            string
+	ContentHTML    string
+	MediaURL       string
+	MediaMIME      string
+	DurationSec    int64
+	ThumbnailURL   string
+	PublishedAt    int64
+	FetchedAt      int64
+	IsRead         bool
+	IsStarred      bool
+	ContentHash    string
+}
+
+// --- Item methods ---
+
+// UpsertItem inserts an item; on (subscription_id, guid) conflict returns the
+// existing id with inserted=false. On success returns the new id with inserted=true.
+func (s *Store) UpsertItem(it Item) (int64, bool, error) {
+	res, err := s.db.Exec(`
+		INSERT OR IGNORE INTO items
+			(subscription_id, guid, type, title, author, url, content_html,
+			 media_url, media_mime, duration_sec, thumbnail_url, published_at,
+			 is_read, is_starred, content_hash)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		it.SubscriptionID, it.GUID, it.Type, it.Title, it.Author, it.URL, it.ContentHTML,
+		it.MediaURL, it.MediaMIME, it.DurationSec, it.ThumbnailURL, it.PublishedAt,
+		boolToInt(it.IsRead), boolToInt(it.IsStarred), it.ContentHash,
+	)
+	if err != nil {
+		return 0, false, fmt.Errorf("upsert item: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, false, fmt.Errorf("upsert item rows affected: %w", err)
+	}
+	if affected > 0 {
+		id, err := res.LastInsertId()
+		if err != nil {
+			return 0, false, fmt.Errorf("upsert item last insert id: %w", err)
+		}
+		return id, true, nil
+	}
+	// Conflict: return existing id.
+	var id int64
+	err = s.db.QueryRow(`SELECT id FROM items WHERE subscription_id = ? AND guid = ?`,
+		it.SubscriptionID, it.GUID).Scan(&id)
+	if err != nil {
+		return 0, false, fmt.Errorf("upsert item select existing: %w", err)
+	}
+	return id, false, nil
+}
+
+// GetItem returns a single item by ID.
+func (s *Store) GetItem(id int64) (Item, error) {
+	var it Item
+	var isRead, isStarred int
+	err := s.db.QueryRow(`
+		SELECT id, subscription_id, guid, type, title, author, url, content_html,
+		       media_url, media_mime, duration_sec, thumbnail_url, published_at,
+		       fetched_at, is_read, is_starred, content_hash
+		FROM items WHERE id = ?`, id).Scan(
+		&it.ID, &it.SubscriptionID, &it.GUID, &it.Type, &it.Title, &it.Author,
+		&it.URL, &it.ContentHTML, &it.MediaURL, &it.MediaMIME, &it.DurationSec,
+		&it.ThumbnailURL, &it.PublishedAt, &it.FetchedAt, &isRead, &isStarred,
+		&it.ContentHash,
+	)
+	if err != nil {
+		return Item{}, fmt.Errorf("get item: %w", err)
+	}
+	it.IsRead = isRead != 0
+	it.IsStarred = isStarred != 0
+	return it, nil
+}
+
+// DeleteItem removes an item by ID.
+func (s *Store) DeleteItem(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM items WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete item: %w", err)
+	}
+	return nil
+}
+
+// MarkRead sets or clears the is_read flag on an item.
+func (s *Store) MarkRead(id int64, read bool) error {
+	_, err := s.db.Exec(`UPDATE items SET is_read = ? WHERE id = ?`, boolToInt(read), id)
+	if err != nil {
+		return fmt.Errorf("mark read: %w", err)
+	}
+	return nil
+}
+
+// MarkStarred sets or clears the is_starred flag on an item.
+func (s *Store) MarkStarred(id int64, starred bool) error {
+	_, err := s.db.Exec(`UPDATE items SET is_starred = ? WHERE id = ?`, boolToInt(starred), id)
+	if err != nil {
+		return fmt.Errorf("mark starred: %w", err)
+	}
+	return nil
+}
+
+// ListItemsBySubscription returns items for a subscription ordered by published_at DESC.
+func (s *Store) ListItemsBySubscription(subID int64, limit int) ([]Item, error) {
+	rows, err := s.db.Query(`
+		SELECT id, subscription_id, guid, type, title, author, url, content_html,
+		       media_url, media_mime, duration_sec, thumbnail_url, published_at,
+		       fetched_at, is_read, is_starred, content_hash
+		FROM items WHERE subscription_id = ?
+		ORDER BY published_at DESC
+		LIMIT ?`, subID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list items by subscription: %w", err)
+	}
+	defer rows.Close()
+	var items []Item
+	for rows.Next() {
+		var it Item
+		var isRead, isStarred int
+		if err := rows.Scan(
+			&it.ID, &it.SubscriptionID, &it.GUID, &it.Type, &it.Title, &it.Author,
+			&it.URL, &it.ContentHTML, &it.MediaURL, &it.MediaMIME, &it.DurationSec,
+			&it.ThumbnailURL, &it.PublishedAt, &it.FetchedAt, &isRead, &isStarred,
+			&it.ContentHash,
+		); err != nil {
+			return nil, fmt.Errorf("list items scan: %w", err)
+		}
+		it.IsRead = isRead != 0
+		it.IsStarred = isStarred != 0
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list items rows: %w", err)
+	}
+	return items, nil
+}
+
+// --- Tag methods ---
+
+// AddTag ensures a tag exists and associates it with the item. Idempotent on (item, tag).
+func (s *Store) AddTag(itemID int64, tag string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("add tag begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err = tx.Exec(`INSERT OR IGNORE INTO tags (name) VALUES (?)`, tag); err != nil {
+		return fmt.Errorf("add tag insert tag: %w", err)
+	}
+	var tagID int64
+	if err = tx.QueryRow(`SELECT id FROM tags WHERE name = ?`, tag).Scan(&tagID); err != nil {
+		return fmt.Errorf("add tag select tag id: %w", err)
+	}
+	if _, err = tx.Exec(`INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?, ?)`, itemID, tagID); err != nil {
+		return fmt.Errorf("add tag insert item_tag: %w", err)
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("add tag commit: %w", err)
+	}
+	return nil
+}
+
+// RemoveTag removes the association between an item and a tag.
+func (s *Store) RemoveTag(itemID int64, tag string) error {
+	_, err := s.db.Exec(`
+		DELETE FROM item_tags
+		WHERE item_id = ? AND tag_id = (SELECT id FROM tags WHERE name = ?)`,
+		itemID, tag)
+	if err != nil {
+		return fmt.Errorf("remove tag: %w", err)
+	}
+	return nil
+}
+
+// ItemTags returns all tag names for an item, ordered by name.
+func (s *Store) ItemTags(itemID int64) ([]string, error) {
+	rows, err := s.db.Query(`
+		SELECT t.name FROM tags t
+		JOIN item_tags it ON it.tag_id = t.id
+		WHERE it.item_id = ?
+		ORDER BY t.name`, itemID)
+	if err != nil {
+		return nil, fmt.Errorf("item tags: %w", err)
+	}
+	defer rows.Close()
+	var tags []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("item tags scan: %w", err)
+		}
+		tags = append(tags, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("item tags rows: %w", err)
+	}
+	return tags, nil
+}
