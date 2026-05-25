@@ -1,0 +1,1 @@
+-- Schema is added in Task 3.
