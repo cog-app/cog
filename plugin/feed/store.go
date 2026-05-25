@@ -777,6 +777,19 @@ func (s *Store) PendingTranscribe(limit int) ([]int64, error) {
 	return scanInt64IDs(rows, "pending transcribe")
 }
 
+// PendingTranscribeReady returns item IDs that need transcription and whose
+// download row is already in 'ready' state.
+func (s *Store) PendingTranscribeReady(limit int) ([]int64, error) {
+	rows, err := s.db.Query(
+		`SELECT item_id FROM downloads
+		 WHERE needs_transcribe = 1 AND state = 'ready'
+		 ORDER BY item_id LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("pending transcribe ready: %w", err)
+	}
+	return scanInt64IDs(rows, "pending transcribe ready")
+}
+
 // ClearNeedsTranscribe clears the needs_transcribe flag for a download.
 func (s *Store) ClearNeedsTranscribe(itemID int64) error {
 	_, err := s.db.Exec(`UPDATE downloads SET needs_transcribe = 0 WHERE item_id = ?`, itemID)

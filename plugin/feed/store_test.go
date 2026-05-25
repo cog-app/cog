@@ -270,6 +270,28 @@ func TestListItemsBySubscription(t *testing.T) {
 	}
 }
 
+func TestPendingTranscribeReady(t *testing.T) {
+	s := newStore(t)
+	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "u"})
+
+	// Queued — should not appear.
+	id1, _, _ := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g1", Type: "audio"})
+	require.NoError(t, s.EnqueueTranscribe(id1))
+
+	// Ready — should appear.
+	id2, _, _ := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g2", Type: "audio"})
+	require.NoError(t, s.EnqueueDownload(id2))
+	require.NoError(t, s.MarkDownloadStart(id2))
+	require.NoError(t, s.MarkDownloadReady(id2, "/x", 1))
+	require.NoError(t, s.EnqueueTranscribe(id2))
+
+	pending, err := s.PendingTranscribeReady(10)
+	require.NoError(t, err)
+	if len(pending) != 1 || pending[0] != id2 {
+		t.Fatalf("got %v want [%d]", pending, id2)
+	}
+}
+
 func TestPendingProfanityReady(t *testing.T) {
 	s := newStore(t)
 	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "u"})
