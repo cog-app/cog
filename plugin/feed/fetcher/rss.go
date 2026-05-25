@@ -18,10 +18,10 @@ import (
 var sanitizer = bluemonday.UGCPolicy()
 
 // fetchRSS fetches an RSS/Atom feed and returns parsed items.
-func fetchRSS(ctx context.Context, sub feed.Subscription) (Result, error) {
+func fetchRSS(ctx context.Context, sub feed.Subscription) (feed.FetchResult, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sub.URL, nil)
 	if err != nil {
-		return Result{}, fmt.Errorf("rss fetch new request: %w", err)
+		return feed.FetchResult{}, fmt.Errorf("rss fetch new request: %w", err)
 	}
 	req.Header.Set("User-Agent", "Cog/1.0 (Feed Reader)")
 	if sub.ETag != "" {
@@ -33,12 +33,12 @@ func fetchRSS(ctx context.Context, sub feed.Subscription) (Result, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return Result{}, fmt.Errorf("rss fetch do: %w", err)
+		return feed.FetchResult{}, fmt.Errorf("rss fetch do: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotModified {
-		return Result{
+		return feed.FetchResult{
 			NotModified:  true,
 			ETag:         sub.ETag,
 			LastModified: sub.LastModified,
@@ -46,18 +46,18 @@ func fetchRSS(ctx context.Context, sub feed.Subscription) (Result, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return Result{}, fmt.Errorf("rss fetch HTTP %d", resp.StatusCode)
+		return feed.FetchResult{}, fmt.Errorf("rss fetch HTTP %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 	if err != nil {
-		return Result{}, fmt.Errorf("rss fetch read body: %w", err)
+		return feed.FetchResult{}, fmt.Errorf("rss fetch read body: %w", err)
 	}
 
 	parser := gofeed.NewParser()
 	parsed, err := parser.ParseString(string(body))
 	if err != nil {
-		return Result{}, fmt.Errorf("rss parse: %w", err)
+		return feed.FetchResult{}, fmt.Errorf("rss parse: %w", err)
 	}
 
 	etag := resp.Header.Get("ETag")
@@ -138,7 +138,7 @@ func fetchRSS(ctx context.Context, sub feed.Subscription) (Result, error) {
 		}
 	}
 
-	return Result{
+	return feed.FetchResult{
 		Items:               items,
 		ETag:                etag,
 		LastModified:        lastMod,

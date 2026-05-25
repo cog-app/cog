@@ -8,17 +8,8 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/feed"
 )
 
-// Result is what a Fetch call returns for a subscription poll.
-type Result struct {
-	Items               []feed.Item
-	ETag                string
-	LastModified        string
-	SubscriptionUpdates map[string]string // optional metadata to write back (title, description, site_url, image_url, favicon_url)
-	NotModified         bool
-}
-
 // Fetch dispatches by subscription kind.
-func Fetch(ctx context.Context, sub feed.Subscription) (Result, error) {
+func Fetch(ctx context.Context, sub feed.Subscription) (feed.FetchResult, error) {
 	switch sub.Kind {
 	case "rss":
 		return fetchRSS(ctx, sub)
@@ -27,6 +18,6 @@ func Fetch(ctx context.Context, sub feed.Subscription) (Result, error) {
 	case "url":
 		return fetchURL(ctx, sub)
 	default:
-		return Result{}, fmt.Errorf("unknown subscription kind: %q", sub.Kind)
+		return feed.FetchResult{}, fmt.Errorf("unknown subscription kind: %q", sub.Kind)
 	}
 }

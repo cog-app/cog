@@ -98,10 +98,10 @@ func ytdlpChannelMeta(ctx context.Context, url string) (*ytdlpPlaylistMeta, erro
 }
 
 // fetchYouTube fetches video metadata from a YouTube channel or playlist via yt-dlp.
-func fetchYouTube(ctx context.Context, sub feed.Subscription) (Result, error) {
+func fetchYouTube(ctx context.Context, sub feed.Subscription) (feed.FetchResult, error) {
 	entries, err := ytdlpListEntries(ctx, sub.URL)
 	if err != nil {
-		return Result{}, err
+		return feed.FetchResult{}, err
 	}
 	meta, _ := ytdlpChannelMeta(ctx, sub.URL) // best-effort; ignore failure
 
@@ -120,7 +120,7 @@ func fetchYouTube(ctx context.Context, sub feed.Subscription) (Result, error) {
 		})
 	}
 
-	r := Result{Items: items}
+	r := feed.FetchResult{Items: items}
 	if meta != nil {
 		r.SubscriptionUpdates = map[string]string{
 			"title":       meta.Title,

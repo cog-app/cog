@@ -20,29 +20,29 @@ import (
 
 const urlMaxBodyBytes = 5 * 1024 * 1024
 
-func fetchURL(ctx context.Context, sub feed.Subscription) (Result, error) {
+func fetchURL(ctx context.Context, sub feed.Subscription) (feed.FetchResult, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sub.URL, nil)
 	if err != nil {
-		return Result{}, fmt.Errorf("url fetch new request: %w", err)
+		return feed.FetchResult{}, fmt.Errorf("url fetch new request: %w", err)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return Result{}, fmt.Errorf("url fetch %s: %w", sub.URL, err)
+		return feed.FetchResult{}, fmt.Errorf("url fetch %s: %w", sub.URL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return Result{}, fmt.Errorf("url fetch %s: %s", sub.URL, resp.Status)
+		return feed.FetchResult{}, fmt.Errorf("url fetch %s: %s", sub.URL, resp.Status)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, urlMaxBodyBytes))
 	if err != nil {
-		return Result{}, fmt.Errorf("url fetch read body: %w", err)
+		return feed.FetchResult{}, fmt.Errorf("url fetch read body: %w", err)
 	}
 	sum := sha256.Sum256(body)
 	hash := hex.EncodeToString(sum[:])
 
 	if sub.ETag == hash {
-		return Result{ETag: hash, NotModified: true}, nil
+		return feed.FetchResult{ETag: hash, NotModified: true}, nil
 	}
 
 	title := sub.Title
@@ -72,5 +72,5 @@ func fetchURL(ctx context.Context, sub feed.Subscription) (Result, error) {
 		PublishedAt: time.Now().Unix(),
 	}
 
-	return Result{Items: []feed.Item{item}, ETag: hash}, nil
+	return feed.FetchResult{Items: []feed.Item{item}, ETag: hash}, nil
 }
