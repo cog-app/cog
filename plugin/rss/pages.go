@@ -512,11 +512,11 @@ func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 	var matches []ItemWithFeed
 	for _, it := range items {
 		rec := query.Record{
-			"title":   it.Title,
-			"author":  it.Author,
-			"url":     it.URL,
-			"content": it.ContentHTML,
-			"source":  feedNames[it.FeedID],
+			"title":   {it.Title},
+			"author":  {it.Author},
+			"url":     {it.URL},
+			"content": {it.ContentHTML},
+			"source":  {feedNames[it.FeedID]},
 		}
 		if expr.Match(rec) {
 			matches = append(matches, it)

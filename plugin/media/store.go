@@ -634,12 +634,12 @@ func ApplyFilters(db *sql.DB, sourceTitle string, episodeID int64, ep *Episode) 
 	}
 
 	rec := query.Record{
-		"title":       ep.Title,
-		"description": ep.Description,
-		"type":        string(ep.MediaType),
-		"duration":    strconv.Itoa(ep.DurationSec),
-		"url":         ep.MediaURL,
-		"source":      sourceTitle,
+		"title":       {ep.Title},
+		"description": {ep.Description},
+		"type":        {string(ep.MediaType)},
+		"duration":    {strconv.Itoa(ep.DurationSec)},
+		"url":         {ep.MediaURL},
+		"source":      {sourceTitle},
 	}
 
 	skip := false

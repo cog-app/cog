@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-// Record is a flat key-value map that expressions are matched against.
-type Record map[string]string
+// Record is a multi-valued key-value map that expressions are matched against.
+type Record map[string][]string
 
 // Expr is a parsed query expression that can match records and serialize to a string.
 type Expr interface {
@@ -21,9 +21,11 @@ type TextExpr struct {
 
 func (e *TextExpr) Match(r Record) bool {
 	lower := strings.ToLower(e.Value)
-	for _, v := range r {
-		if strings.Contains(strings.ToLower(v), lower) {
-			return true
+	for _, vs := range r {
+		for _, v := range vs {
+			if strings.Contains(strings.ToLower(v), lower) {
+				return true
+			}
 		}
 	}
 	return false
@@ -38,9 +40,11 @@ type PhraseExpr struct {
 
 func (e *PhraseExpr) Match(r Record) bool {
 	lower := strings.ToLower(e.Value)
-	for _, v := range r {
-		if strings.Contains(strings.ToLower(v), lower) {
-			return true
+	for _, vs := range r {
+		for _, v := range vs {
+			if strings.Contains(strings.ToLower(v), lower) {
+				return true
+			}
 		}
 	}
 	return false
@@ -81,7 +85,12 @@ type FieldEqExpr struct {
 }
 
 func (e *FieldEqExpr) Match(r Record) bool {
-	return strings.EqualFold(r[e.Field], e.Value)
+	for _, v := range r[e.Field] {
+		if strings.EqualFold(v, e.Value) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *FieldEqExpr) String() string {
@@ -98,10 +107,12 @@ type FieldInExpr struct {
 }
 
 func (e *FieldInExpr) Match(r Record) bool {
-	v := strings.ToLower(r[e.Field])
-	for _, want := range e.Values {
-		if strings.ToLower(want) == v {
-			return true
+	for _, have := range r[e.Field] {
+		haveL := strings.ToLower(have)
+		for _, want := range e.Values {
+			if strings.ToLower(want) == haveL {
+				return true
+			}
 		}
 	}
 	return false

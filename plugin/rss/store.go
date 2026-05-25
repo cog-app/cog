@@ -507,11 +507,11 @@ func ApplyFilters(db *sql.DB, feedTitle string, item *Item) bool {
 	}
 
 	rec := query.Record{
-		"title":   item.Title,
-		"author":  item.Author,
-		"url":     item.URL,
-		"content": item.ContentHTML,
-		"source":  feedTitle,
+		"title":   {item.Title},
+		"author":  {item.Author},
+		"url":     {item.URL},
+		"content": {item.ContentHTML},
+		"source":  {feedTitle},
 	}
 
 	skip := false

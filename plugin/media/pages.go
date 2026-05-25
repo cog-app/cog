@@ -739,12 +739,12 @@ func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 	var matches []EpisodeView
 	for _, ep := range episodes {
 		rec := query.Record{
-			"title":       ep.Title,
-			"description": ep.Description,
-			"type":        string(ep.MediaType),
-			"duration":    strconv.Itoa(ep.DurationSec),
-			"url":         ep.MediaURL,
-			"source":      ep.SourceTitle,
+			"title":       {ep.Title},
+			"description": {ep.Description},
+			"type":        {string(ep.MediaType)},
+			"duration":    {strconv.Itoa(ep.DurationSec)},
+			"url":         {ep.MediaURL},
+			"source":      {ep.SourceTitle},
 		}
 		if expr.Match(rec) {
 			matches = append(matches, ep)
