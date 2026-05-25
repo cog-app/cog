@@ -2,22 +2,36 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/exec"
+	"path/filepath"
 
 	"git.duckfam.us/jj-software/cog/plugin/feed"
 )
 
-// Transcribe is a v1 stub worker that consumes the needs_transcribe flag
-// without producing captions. A real backend will replace this in a future
-// release.
+// Transcribe produces caption files (VTT) for downloaded audio/video items.
+//
+// Strategy:
+//   - For YouTube items, try yt-dlp auto-captions first (fast, free).
+//   - For everything else (or YouTube fallback), run whisper-cli on the
+//     downloaded media file.
+//
+// If transcription is disabled (whisper_model == "none") and the item is not
+// a YouTube item with auto-captions, the worker logs a warning, clears the
+// needs_transcribe flag, and continues. The profanity worker will skip items
+// without a captions_path.
 type Transcribe struct {
-	store *feed.Store
+	store        *feed.Store
+	captionsRoot string
 }
 
 // NewTranscribe creates a Transcribe worker backed by the given store.
-func NewTranscribe(s *feed.Store) *Transcribe {
-	return &Transcribe{store: s}
+// captionsRoot is the directory where VTT files are written.
+func NewTranscribe(s *feed.Store, captionsRoot string) *Transcribe {
+	return &Transcribe{store: s, captionsRoot: captionsRoot}
 }
 
 // RunOnce processes all pending transcribe items whose download is ready.
@@ -30,10 +44,130 @@ func (w *Transcribe) RunOnce(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		slog.Info("feed transcribe stub: clearing flag (no captions backend in v1)", "item_id", id)
-		if err := w.store.ClearNeedsTranscribe(id); err != nil {
-			slog.Warn("feed transcribe: clear flag failed", "item_id", id, "err", err)
+		if err := w.processOne(ctx, id); err != nil {
+			slog.Warn("feed transcribe: process failed", "item_id", id, "err", err)
 		}
+	}
+	return nil
+}
+
+func (w *Transcribe) processOne(ctx context.Context, itemID int64) error {
+	it, err := w.store.GetItem(itemID)
+	if err != nil {
+		return fmt.Errorf("get item: %w", err)
+	}
+	sub, err := w.store.GetSubscription(it.SubscriptionID)
+	if err != nil {
+		return fmt.Errorf("get subscription: %w", err)
+	}
+	if err := os.MkdirAll(w.captionsRoot, 0o755); err != nil {
+		return fmt.Errorf("mkdir captions root: %w", err)
+	}
+	outPath := filepath.Join(w.captionsRoot, fmt.Sprintf("%d.vtt", itemID))
+
+	// Try YouTube auto-captions first.
+	if sub.Kind == "youtube" && it.MediaURL != "" {
+		if err := tryYouTubeCaptions(ctx, it.MediaURL, outPath); err == nil {
+			return w.recordCaptions(itemID, outPath)
+		} else {
+			slog.Info("feed transcribe: yt-dlp captions unavailable, falling back", "item_id", itemID, "err", err)
+		}
+	}
+
+	// Fall back to whisper-cli on the downloaded file.
+	d, err := w.store.GetDownload(itemID)
+	if err != nil {
+		return fmt.Errorf("get download: %w", err)
+	}
+	if d.LocalPath == "" {
+		// Nothing to transcribe; clear flag so we don't loop forever.
+		if err := w.store.ClearNeedsTranscribe(itemID); err != nil {
+			return fmt.Errorf("clear needs_transcribe: %w", err)
+		}
+		return fmt.Errorf("no local file to transcribe")
+	}
+
+	model := feed.SettingWhisperModel.MustGet(w.store.DB())
+	if model == feed.WhisperNone {
+		slog.Warn("feed transcribe: whisper disabled, skipping", "item_id", itemID)
+		return w.store.ClearNeedsTranscribe(itemID)
+	}
+
+	cliPath := feed.SettingWhisperCLIPath.MustGet(w.store.DB())
+	if cliPath == "" {
+		cliPath = "whisper-cli"
+	}
+	modelsDir := feed.SettingWhisperModelsDir.MustGet(w.store.DB())
+	if modelsDir == "" {
+		modelsDir = filepath.Join(w.captionsRoot, "..", "whisper-models")
+	}
+	modelPath, err := feed.EnsureWhisperModel(modelsDir, model)
+	if err != nil {
+		return fmt.Errorf("ensure model: %w", err)
+	}
+
+	prefix := filepath.Join(w.captionsRoot, fmt.Sprintf("%d", itemID))
+	cmd := exec.CommandContext(ctx, cliPath,
+		"-m", modelPath,
+		"-f", d.LocalPath,
+		"--output-vtt",
+		"-of", prefix,
+		"-nt",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("whisper-cli: %w: %s", err, string(out))
+	}
+	if _, err := os.Stat(outPath); err != nil {
+		return fmt.Errorf("whisper output missing at %s: %w", outPath, err)
+	}
+	return w.recordCaptions(itemID, outPath)
+}
+
+func (w *Transcribe) recordCaptions(itemID int64, path string) error {
+	if err := w.store.SetCaptionsPath(itemID, path); err != nil {
+		return fmt.Errorf("set captions path: %w", err)
+	}
+	if err := w.store.ClearNeedsTranscribe(itemID); err != nil {
+		return fmt.Errorf("clear needs_transcribe: %w", err)
+	}
+	return nil
+}
+
+// tryYouTubeCaptions invokes yt-dlp to fetch auto-generated English captions
+// for a YouTube URL into outPath (VTT). yt-dlp natively writes to
+// <prefix>.<lang>.vtt, so we ask it to write to a temp prefix and then copy
+// the resulting file.
+func tryYouTubeCaptions(ctx context.Context, videoURL, outPath string) error {
+	tmpDir, err := os.MkdirTemp("", "feed-yt-captions-*")
+	if err != nil {
+		return fmt.Errorf("mkdtmp: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	prefix := filepath.Join(tmpDir, "out")
+	cmd := exec.CommandContext(ctx, "yt-dlp",
+		"--write-auto-sub",
+		"--sub-lang", "en",
+		"--sub-format", "vtt",
+		"--skip-download",
+		"--no-warnings",
+		"-o", prefix,
+		videoURL,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("yt-dlp captions: %w: %s", err, string(out))
+	}
+	matches, _ := filepath.Glob(prefix + "*.vtt")
+	if len(matches) == 0 {
+		return errors.New("yt-dlp produced no captions file")
+	}
+	// Copy first match to outPath.
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		return fmt.Errorf("read captions: %w", err)
+	}
+	if err := os.WriteFile(outPath, data, 0o644); err != nil {
+		return fmt.Errorf("write captions: %w", err)
 	}
 	return nil
 }

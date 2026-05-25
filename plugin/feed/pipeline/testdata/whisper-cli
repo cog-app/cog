@@ -1,0 +1,17 @@
+#!/bin/sh
+# whisper-cli stub. Args we care about: -of <prefix>. Writes <prefix>.vtt.
+prefix=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -of) prefix="$2"; shift 2 ;;
+    *)   shift ;;
+  esac
+done
+[ -z "$prefix" ] && exit 1
+cat > "${prefix}.vtt" <<'VTT'
+WEBVTT
+
+00:00:00.000 --> 00:00:03.000
+hello world from whisper
+VTT
+exit 0

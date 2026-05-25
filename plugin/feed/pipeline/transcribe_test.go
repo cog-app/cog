@@ -2,6 +2,8 @@ package pipeline_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -9,23 +11,94 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/feed/pipeline"
 )
 
-func TestTranscribeStubClearsFlag(t *testing.T) {
+func TestTranscribeYouTubeCaptions(t *testing.T) {
+	abs, _ := filepath.Abs("testdata")
+	t.Setenv("PATH", abs+":"+os.Getenv("PATH"))
+
+	s := newPipelineStore(t)
+	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "youtube", URL: "https://yt/c1"})
+	id, _, _ := s.UpsertItem(feed.Item{
+		SubscriptionID: subID, GUID: "v1", Type: "video",
+		MediaURL: "https://www.youtube.com/watch?v=v1",
+	})
+	require.NoError(t, s.EnqueueDownload(id))
+	require.NoError(t, s.MarkDownloadStart(id))
+	require.NoError(t, s.MarkDownloadReady(id, "/dev/null", 1))
+	require.NoError(t, s.EnqueueTranscribe(id))
+
+	dir := t.TempDir()
+	w := pipeline.NewTranscribe(s, dir)
+	require.NoError(t, w.RunOnce(context.Background()))
+
+	d, _ := s.GetDownload(id)
+	if d.CaptionsPath == "" {
+		t.Fatal("captions_path not set")
+	}
+	if _, err := os.Stat(d.CaptionsPath); err != nil {
+		t.Fatalf("captions file missing: %v", err)
+	}
+	if d.NeedsTranscribe {
+		t.Fatal("flag not cleared")
+	}
+}
+
+func TestTranscribeWhisperFallback(t *testing.T) {
+	abs, _ := filepath.Abs("testdata")
+	t.Setenv("PATH", abs+":"+os.Getenv("PATH"))
+
+	s := newPipelineStore(t)
+	// RSS subscription -> always falls back to whisper.
+	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "u"})
+	id, _, _ := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g", Type: "audio"})
+	require.NoError(t, s.EnqueueDownload(id))
+	require.NoError(t, s.MarkDownloadStart(id))
+
+	// Use a real local file so whisper-cli stub can pretend to process it.
+	audio := filepath.Join(t.TempDir(), "in.wav")
+	require.NoError(t, os.WriteFile(audio, []byte("dummy"), 0o644))
+	require.NoError(t, s.MarkDownloadReady(id, audio, 5))
+	require.NoError(t, s.EnqueueTranscribe(id))
+
+	// Pre-create the model file so EnsureWhisperModel doesn't try to download.
+	modelsDir := filepath.Join(t.TempDir(), "models")
+	require.NoError(t, os.MkdirAll(modelsDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(modelsDir, "ggml-base.en.bin"), []byte("fake"), 0o644))
+	require.NoError(t, s.SetSetting("whisper_models_dir", modelsDir))
+
+	captionsDir := t.TempDir()
+	w := pipeline.NewTranscribe(s, captionsDir)
+	require.NoError(t, w.RunOnce(context.Background()))
+
+	d, _ := s.GetDownload(id)
+	if d.CaptionsPath == "" {
+		t.Fatal("captions_path not set")
+	}
+	if _, err := os.Stat(d.CaptionsPath); err != nil {
+		t.Fatalf("captions file missing: %v", err)
+	}
+	if d.NeedsTranscribe {
+		t.Fatal("flag not cleared")
+	}
+}
+
+func TestTranscribeNoneSkips(t *testing.T) {
 	s := newPipelineStore(t)
 	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "u"})
 	id, _, _ := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g", Type: "audio"})
 	require.NoError(t, s.EnqueueDownload(id))
 	require.NoError(t, s.MarkDownloadStart(id))
-	require.NoError(t, s.MarkDownloadReady(id, "/tmp/x.mp3", 1))
+	require.NoError(t, s.MarkDownloadReady(id, "/tmp/x", 1))
 	require.NoError(t, s.EnqueueTranscribe(id))
+	require.NoError(t, s.SetSetting("whisper_model", "none"))
 
-	w := pipeline.NewTranscribe(s)
+	w := pipeline.NewTranscribe(s, t.TempDir())
 	require.NoError(t, w.RunOnce(context.Background()))
 
 	d, _ := s.GetDownload(id)
-	if d.NeedsTranscribe {
-		t.Error("needs_transcribe not cleared")
-	}
 	if d.CaptionsPath != "" {
-		t.Errorf("stub should leave captions_path empty: %q", d.CaptionsPath)
+		t.Errorf("captions should remain empty: %q", d.CaptionsPath)
+	}
+	if d.NeedsTranscribe {
+		t.Error("flag should be cleared even when skipping")
 	}
 }

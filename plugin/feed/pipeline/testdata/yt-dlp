@@ -1,13 +1,31 @@
 #!/bin/sh
 # Stub yt-dlp for pipeline tests.
-# Pluck out the -o output path; write a small payload to it.
+# Handles both download mode (-o <dst> <url>) and captions mode
+# (--write-auto-sub --skip-download -o <prefix> <url>).
+captions=false
+prefix=""
 out=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    -o) out="$2"; shift 2 ;;
+    --write-auto-sub) captions=true; shift ;;
+    --skip-download)  captions=true; shift ;;
+    -o) prefix="$2"; out="$2"; shift 2 ;;
     *)  shift ;;
   esac
 done
+
+if $captions; then
+  [ -z "$prefix" ] && exit 1
+  cat > "${prefix}.en.vtt" <<'VTT'
+WEBVTT
+
+00:00:00.000 --> 00:00:02.000
+hello world from youtube captions
+VTT
+  exit 0
+fi
+
+# Otherwise: download mode (T14 behavior).
 [ -z "$out" ] && exit 1
 echo "dummy youtube payload" > "$out"
 exit 0
