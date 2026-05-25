@@ -1,0 +1,130 @@
+package feed
+
+import "strconv"
+
+templ feedSettingsPage(subs []Subscription, folders []Folder, filters []Filter, playlists []Playlist, flashMsg string, flashKind string, csrfToken string) {
+	<div id="feed-settings">
+		if flashMsg != "" {
+			<div class={ "flash", "flash-" + flashKind }>{ flashMsg }</div>
+		}
+		<section>
+			<h2>Subscriptions</h2>
+			<form id="add-subscription" method="post" action="/apps/feed/subscriptions">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<label>
+					Kind:
+					<select id="sub-kind" name="kind">
+						<option value="rss">RSS / Atom (incl. podcasts)</option>
+						<option value="youtube">YouTube channel</option>
+						<option value="url">Single URL (polled)</option>
+					</select>
+				</label>
+				<label>URL: <input id="sub-url" type="url" name="url" required/></label>
+				<label>
+					Folder:
+					<select name="folder_id">
+						<option value="">(none)</option>
+						for _, f := range folders {
+							<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Name }</option>
+						}
+					</select>
+				</label>
+				<button type="submit">Add subscription</button>
+			</form>
+			<ul id="subscription-list">
+				for _, s := range subs {
+					<li>
+						<span>{ subscriptionDisplayTitle(s) }</span>
+						<code>{ s.URL }</code>
+						<span>{ s.Kind }</span>
+						<form method="post" action={ templ.SafeURL("/apps/feed/subscriptions/" + strconv.FormatInt(s.ID, 10) + "/delete") }>
+							<input type="hidden" name="csrf_token" value={ csrfToken }/>
+							<button type="submit">Delete</button>
+						</form>
+					</li>
+				}
+			</ul>
+		</section>
+		<section>
+			<h2>Folders</h2>
+			<form id="add-folder" method="post" action="/apps/feed/folders">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<label>Name: <input id="folder-name" type="text" name="name" required/></label>
+				<button type="submit">Add folder</button>
+			</form>
+			<ul>
+				for _, f := range folders {
+					<li>
+						<span>{ f.Name }</span>
+						<form method="post" action={ templ.SafeURL("/apps/feed/folders/" + strconv.FormatInt(f.ID, 10) + "/delete") }>
+							<input type="hidden" name="csrf_token" value={ csrfToken }/>
+							<button type="submit">Delete</button>
+						</form>
+					</li>
+				}
+			</ul>
+		</section>
+		<section>
+			<h2>Filters</h2>
+			<form id="add-filter" method="post" action="/apps/feed/filters">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<label>Query: <input id="filter-query" type="text" name="query" required/></label>
+				<label>
+					Action:
+					<select id="filter-action" name="action">
+						<option value="skip">Skip</option>
+						<option value="tag">Tag</option>
+						<option value="download">Download</option>
+						<option value="mute_profanity">Mute profanity</option>
+						<option value="transcribe">Transcribe</option>
+					</select>
+				</label>
+				<label>Tag (for "Tag" action): <input id="filter-action-value" type="text" name="action_value"/></label>
+				<button type="submit">Add filter</button>
+			</form>
+			<ul>
+				for _, fl := range filters {
+					<li>
+						<code>{ fl.Query }</code>
+						→ { fl.Action }
+						if fl.ActionValue != "" {
+							<span>:{ fl.ActionValue }</span>
+						}
+						<form method="post" action={ templ.SafeURL("/apps/feed/filters/" + strconv.FormatInt(fl.ID, 10) + "/delete") }>
+							<input type="hidden" name="csrf_token" value={ csrfToken }/>
+							<button type="submit">Delete</button>
+						</form>
+					</li>
+				}
+			</ul>
+		</section>
+		<section>
+			<h2>Playlists</h2>
+			<form id="add-playlist" method="post" action="/apps/feed/playlists">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<label>Name: <input type="text" name="name" required/></label>
+				<label>Query: <input type="text" name="query" required/></label>
+				<button type="submit">Add playlist</button>
+			</form>
+			<ul>
+				for _, pl := range playlists {
+					<li>
+						<span>{ pl.Name }</span>
+						<code>{ pl.Query }</code>
+						<form method="post" action={ templ.SafeURL("/apps/feed/playlists/" + strconv.FormatInt(pl.ID, 10) + "/delete") }>
+							<input type="hidden" name="csrf_token" value={ csrfToken }/>
+							<button type="submit">Delete</button>
+						</form>
+					</li>
+				}
+			</ul>
+		</section>
+	</div>
+}
+
+func subscriptionDisplayTitle(s Subscription) string {
+	if s.Title != "" {
+		return s.Title
+	}
+	return s.URL
+}

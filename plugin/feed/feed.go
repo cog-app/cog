@@ -7,6 +7,7 @@ import (
 	"embed"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/feed/ncapi"
@@ -40,6 +41,18 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		PrimaryTable: "items",
 		EnrichSQL:    "SELECT rowid, title, url, content_html FROM items WHERE rowid IN (?)",
 	})
+
+	// Settings page and resource actions
+	pages := NewPages(p)
+	ctx.RegisterPage("settings", http.HandlerFunc(pages.Settings))
+	ctx.RegisterAction("POST", "subscriptions", http.HandlerFunc(pages.AddSubscription))
+	ctx.RegisterAction("POST", "subscriptions/{id}/delete", http.HandlerFunc(pages.DeleteSubscription))
+	ctx.RegisterAction("POST", "folders", http.HandlerFunc(pages.AddFolder))
+	ctx.RegisterAction("POST", "folders/{id}/delete", http.HandlerFunc(pages.DeleteFolder))
+	ctx.RegisterAction("POST", "filters", http.HandlerFunc(pages.AddFilter))
+	ctx.RegisterAction("POST", "filters/{id}/delete", http.HandlerFunc(pages.DeleteFilter))
+	ctx.RegisterAction("POST", "playlists", http.HandlerFunc(pages.AddPlaylist))
+	ctx.RegisterAction("POST", "playlists/{id}/delete", http.HandlerFunc(pages.DeletePlaylist))
 
 	// NextCloud News API compatibility
 	newsAPI := ncapi.New(p)
