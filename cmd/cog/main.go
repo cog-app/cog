@@ -6,12 +6,11 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/calendar"
 	"git.duckfam.us/jj-software/cog/plugin/contacts"
 	"git.duckfam.us/jj-software/cog/plugin/dashboard"
+	"git.duckfam.us/jj-software/cog/plugin/feed"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/plugin/gallery"
-	"git.duckfam.us/jj-software/cog/plugin/media"
 	"git.duckfam.us/jj-software/cog/plugin/notes"
 	"git.duckfam.us/jj-software/cog/plugin/profanity"
-	"git.duckfam.us/jj-software/cog/plugin/rss"
 	"git.duckfam.us/jj-software/cog/plugin/tasks"
 )
 
@@ -22,11 +21,10 @@ func main() {
 		calendar.New(),
 		contacts.New(),
 		notes.New(),
-		rss.New(),
+		feed.New(),
 		gallery.New(),
 		bookmarks.New(),
 		tasks.New(),
-		media.New(),
 		profanity.New(),
 	)
 }
