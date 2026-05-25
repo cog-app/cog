@@ -89,6 +89,16 @@ func (s *Store) RenameFolder(id int64, name string) error {
 	return nil
 }
 
+// GetFolder returns a single folder by ID.
+func (s *Store) GetFolder(id int64) (Folder, error) {
+	var f Folder
+	row := s.db.QueryRow(`SELECT id, name, created_at FROM folders WHERE id = ?`, id)
+	if err := row.Scan(&f.ID, &f.Name, &f.CreatedAt); err != nil {
+		return f, fmt.Errorf("get folder: %w", err)
+	}
+	return f, nil
+}
+
 // DeleteFolder removes a folder by ID. Subscriptions in the folder have their
 // folder_id set to NULL (enforced by the ON DELETE SET NULL constraint).
 func (s *Store) DeleteFolder(id int64) error {
