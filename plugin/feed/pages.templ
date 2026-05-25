@@ -591,28 +591,232 @@ templ feedSettingsPage(subs []Subscription, folders []Folder, filters []Filter, 
 	</div>
 }
 
-templ feedItemDetail(it Item, tags []string) {
-	@ui.Card(it.Title) {
+templ feedItemDetail(ip ItemPlayback, tags []string, csrfToken string) {
+	@ui.Card(ip.Title) {
+		<div class="text-muted" style="font-size:0.85rem;margin-bottom:0.5rem">
+			{ ip.SubscriptionTitle }
+			if ip.Author != "" {
+				&middot; { ip.Author }
+			}
+		</div>
 		<div class="mb-2">
 			for _, tg := range tags {
 				<span class="badge" style="margin-right:0.25rem">{ tg }</span>
 			}
 		</div>
-		if it.Type == "text" {
+		if ip.Type == "text" {
 			<div class="note-content">
-				@templ.Raw(it.ContentHTML)
+				@templ.Raw(ip.ContentHTML)
 			</div>
-		} else if it.Type == "audio" {
-			<audio controls src={ "/apps/feed/items/" + strconv.FormatInt(it.ID, 10) + "/media" } style="width:100%"></audio>
-		} else if it.Type == "video" {
-			<video controls src={ "/apps/feed/items/" + strconv.FormatInt(it.ID, 10) + "/media" } style="width:100%"></video>
+		} else {
+			@feedPlayer(ip, csrfToken)
 		}
-		if it.URL != "" {
+		if ip.URL != "" {
 			<p style="margin-top:1rem">
-				<a href={ templ.SafeURL(it.URL) } target="_blank" rel="noopener">Original</a>
+				<a href={ templ.SafeURL(ip.URL) } target="_blank" rel="noopener">Original</a>
 			</p>
 		}
 	}
+}
+
+templ feedPlayer(ip ItemPlayback, csrfToken string) {
+	<div
+		id="feed-player"
+		class="card"
+		style="padding:1rem"
+		data-item-id={ strconv.FormatInt(ip.ID, 10) }
+		data-resume={ fmt.Sprintf("%.1f", ip.ProgressSec) }
+		data-media-type={ ip.Type }
+		data-source-kind={ ip.SourceKind }
+	>
+		<div style="font-weight:600;margin-bottom:0.5rem">{ ip.Title }</div>
+		<div class="text-muted" style="font-size:0.85rem;margin-bottom:0.5rem">{ ip.SubscriptionTitle }</div>
+		if ip.Type == "video" {
+			<video
+				id="player-el"
+				style="width:100%;max-height:480px;background:#000;margin-bottom:0.5rem"
+				preload="metadata"
+				if ip.SourceKind != "youtube" {
+					src={ "/apps/feed/items/" + strconv.FormatInt(ip.ID, 10) + "/media" }
+				}
+			></video>
+		} else {
+			<audio
+				id="player-el"
+				style="width:100%;margin-bottom:0.5rem"
+				preload="metadata"
+				if ip.SourceKind != "youtube" {
+					src={ "/apps/feed/items/" + strconv.FormatInt(ip.ID, 10) + "/media" }
+				}
+			></audio>
+		}
+		<div class="flex items-center gap-1" style="flex-wrap:wrap">
+			<button class="btn btn-outline btn-sm" onclick="playerSkip(-15)" title="Back 15s">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+			</button>
+			<button class="btn btn-primary btn-sm" id="player-play-btn" onclick="playerToggle()" title="Play" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border-radius:50%">
+				<svg id="icon-play" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+				<svg id="icon-pause" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+			</button>
+			<button class="btn btn-outline btn-sm" onclick="playerSkip(30)" title="Forward 30s">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+			</button>
+			<span id="player-time" class="text-muted" style="font-size:0.85rem;margin-left:0.5rem">0:00 / 0:00</span>
+			<button
+				class="btn btn-outline btn-sm"
+				style="margin-left:auto"
+				hx-post={ fmt.Sprintf("/apps/feed/items/%d/complete", ip.ID) }
+				hx-target="#feed-player"
+				hx-swap="outerHTML"
+			>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+				Done
+			</button>
+		</div>
+		<input type="hidden" name="csrf_token" value={ csrfToken }/>
+		@feedPlayerScript()
+	</div>
+}
+
+templ feedPlayerScript() {
+	<script>
+		(function () {
+			var player = document.getElementById("feed-player");
+			if (!player) return;
+			var el = document.getElementById("player-el");
+			if (!el) return;
+			var itemID = player.dataset.itemId;
+			var resume = parseFloat(player.dataset.resume) || 0;
+			var sourceKind = player.dataset.sourceKind;
+			var playBtn = document.getElementById("player-play-btn");
+			var timeSpan = document.getElementById("player-time");
+			var csrfToken = player.querySelector("[name=csrf_token]").value;
+			var lastSaved = 0;
+
+			function formatTime(sec) {
+				sec = Math.floor(sec);
+				var h = Math.floor(sec / 3600);
+				var m = Math.floor((sec % 3600) / 60);
+				var s = sec % 60;
+				if (h > 0)
+					return (
+						h + ":" + (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s
+					);
+				return m + ":" + (s < 10 ? "0" : "") + s;
+			}
+
+			if (sourceKind === "youtube") {
+				fetch("/apps/feed/api/stream-url/" + itemID, {
+					headers: { "X-CSRF-Token": csrfToken },
+				})
+					.then(function (r) {
+						return r.json();
+					})
+					.then(function (data) {
+						if (data.url) {
+							el.src = data.url;
+							if (resume > 0) el.currentTime = resume;
+							el.play().catch(function () {});
+						}
+					})
+					.catch(function () {});
+			} else {
+				el.addEventListener(
+					"loadedmetadata",
+					function () {
+						if (resume > 0) el.currentTime = resume;
+						el.play().catch(function () {});
+					},
+					{ once: true },
+				);
+			}
+
+			// Fetch clean audio ranges (profanity muting).
+			var muteRanges = [];
+			fetch("/apps/feed/api/clean-audio/" + itemID, {
+				headers: { "X-CSRF-Token": csrfToken },
+			})
+				.then(function (r) {
+					return r.json();
+				})
+				.then(function (data) {
+					if (data.ranges) muteRanges = data.ranges;
+				})
+				.catch(function () {});
+
+			var wasMuted = false;
+			var originalVolume = 1;
+
+			el.addEventListener("timeupdate", function () {
+				timeSpan.textContent =
+					formatTime(el.currentTime) + " / " + formatTime(el.duration || 0);
+
+				// Apply profanity muting.
+				var t = el.currentTime;
+				var shouldMute = false;
+				for (var i = 0; i < muteRanges.length; i++) {
+					if (t >= muteRanges[i].Start && t <= muteRanges[i].End) {
+						shouldMute = true;
+						break;
+					}
+				}
+				if (shouldMute && !wasMuted) {
+					originalVolume = el.volume;
+					el.volume = 0;
+					wasMuted = true;
+				} else if (!shouldMute && wasMuted) {
+					el.volume = originalVolume;
+					wasMuted = false;
+				}
+
+				// Save progress every 15 seconds of playback.
+				var now = el.currentTime;
+				if (Math.abs(now - lastSaved) >= 15) {
+					lastSaved = now;
+					fetch("/apps/feed/items/" + itemID + "/progress", {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/x-www-form-urlencoded",
+							"X-CSRF-Token": csrfToken,
+						},
+						body: "progress=" + now.toFixed(1),
+					});
+				}
+			});
+
+			el.addEventListener("ended", function () {
+				// Mark complete; v1 returns empty body so the player stays until the user navigates.
+				fetch("/apps/feed/items/" + itemID + "/complete", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/x-www-form-urlencoded",
+						"X-CSRF-Token": csrfToken,
+					},
+				}).catch(function () {});
+			});
+
+			var iconPlay = document.getElementById("icon-play");
+			var iconPause = document.getElementById("icon-pause");
+			el.addEventListener("play", function () {
+				if (iconPlay) iconPlay.style.display = "none";
+				if (iconPause) iconPause.style.display = "";
+				playBtn.title = "Pause";
+			});
+			el.addEventListener("pause", function () {
+				if (iconPlay) iconPlay.style.display = "";
+				if (iconPause) iconPause.style.display = "none";
+				playBtn.title = "Play";
+			});
+
+			window.playerToggle = function () {
+				if (el.paused) el.play();
+				else el.pause();
+			};
+			window.playerSkip = function (sec) {
+				el.currentTime = Math.max(0, el.currentTime + sec);
+			};
+		})();
+	</script>
 }
 
 templ feedSystemSettingsPage(model string, modelsDir string, cliPath string, flash string, flashKind string) {

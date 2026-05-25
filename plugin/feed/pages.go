@@ -8,10 +8,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/query"
+	"git.duckfam.us/jj-software/cog/plugin/profanity"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
@@ -575,7 +577,7 @@ func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	it, err := store.GetItem(id)
+	ip, err := store.GetItemPlayback(id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -584,8 +586,112 @@ func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
 		slog.Error("feed: mark read", "id", id, "err", err)
 	}
 	tags, _ := store.ItemTags(id)
-	plugin.SetTitle(w, it.Title)
-	feedItemDetail(it, tags).Render(r.Context(), w)
+	plugin.SetTitle(w, ip.Title)
+	feedItemDetail(ip, tags, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// UpdateProgress handles POST to save playback position.
+func (h *Pages) UpdateProgress(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	progressSec, err := strconv.ParseFloat(r.FormValue("progress"), 64)
+	if err != nil {
+		http.Error(w, "invalid progress", http.StatusBadRequest)
+		return
+	}
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := store.SetPlayback(id, progressSec, false); err != nil {
+		slog.Error("feed: update progress", "id", id, "err", err)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// MarkComplete handles POST to mark an item as completed.
+func (h *Pages) MarkComplete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := store.SetPlayback(id, 0, true); err != nil {
+		slog.Error("feed: mark complete playback", "id", id, "err", err)
+	}
+	if err := store.MarkRead(id, true); err != nil {
+		slog.Error("feed: mark complete read", "id", id, "err", err)
+	}
+	// v1: return empty body; HTMX swaps the player away.
+	w.WriteHeader(http.StatusOK)
+}
+
+// StreamURL returns the direct stream URL for a YouTube item.
+func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	it, err := store.GetItem(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	streamURL, err := ResolveYouTubeStreamURL(r.Context(), it.MediaURL)
+	if err != nil {
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": streamURL})
+}
+
+// CleanAudio returns mute ranges for profanity in an item's captions.
+func (h *Pages) CleanAudio(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	d, err := store.GetDownload(id)
+	if err != nil || d.CaptionsPath == "" {
+		plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": []any{}})
+		return
+	}
+	prof := h.plugin.Profanity()
+	if prof == nil {
+		plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": []any{}})
+		return
+	}
+	f, err := os.Open(d.CaptionsPath)
+	if err != nil {
+		plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": []any{}})
+		return
+	}
+	defer f.Close()
+	u := plugin.UserFromContext(r.Context())
+	captions := profanity.ParseVTT(f)
+	ranges := prof.AudioRanges(u.Username, captions)
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": ranges})
 }
 
 // ItemMedia serves item media: prefers clean_audio_path, then local_path, then 302 to media_url.

@@ -901,6 +901,65 @@ func (s *Store) GetPlayback(itemID int64) (Playback, error) {
 	return pb, nil
 }
 
+// ItemPlayback is an Item joined with subscription, playback progress, and download info.
+type ItemPlayback struct {
+	Item
+	SubscriptionTitle string
+	ProgressSec       float64
+	Completed         bool
+	DownloadState     string
+	HasCleanAudio     bool
+	SourceKind        string // subscription.kind
+}
+
+// GetItemPlayback returns an ItemPlayback for a single item by ID, joining
+// subscriptions, playback, and downloads. Missing playback/download rows are
+// treated as zero values (no progress, not downloaded).
+func (s *Store) GetItemPlayback(itemID int64) (ItemPlayback, error) {
+	var ip ItemPlayback
+	var isRead, isStarred int
+	var progressSec float64
+	var completed, hasClean int
+	var downloadState string
+
+	err := s.db.QueryRow(`
+		SELECT
+			i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
+			i.content_html, i.media_url, i.media_mime, i.duration_sec, i.thumbnail_url,
+			i.published_at, i.fetched_at, i.is_read, i.is_starred, i.content_hash,
+			COALESCE(s.title, s.url) AS subscription_title,
+			s.kind,
+			COALESCE(pb.progress_sec, 0.0),
+			COALESCE(pb.completed, 0),
+			COALESCE(d.state, ''),
+			CASE WHEN d.clean_audio_path != '' AND d.clean_audio_path IS NOT NULL THEN 1 ELSE 0 END
+		FROM items i
+		JOIN subscriptions s ON i.subscription_id = s.id
+		LEFT JOIN playback pb ON pb.item_id = i.id
+		LEFT JOIN downloads d ON d.item_id = i.id
+		WHERE i.id = ?`, itemID).Scan(
+		&ip.ID, &ip.SubscriptionID, &ip.GUID, &ip.Type, &ip.Title, &ip.Author, &ip.URL,
+		&ip.ContentHTML, &ip.MediaURL, &ip.MediaMIME, &ip.DurationSec, &ip.ThumbnailURL,
+		&ip.PublishedAt, &ip.FetchedAt, &isRead, &isStarred, &ip.ContentHash,
+		&ip.SubscriptionTitle,
+		&ip.SourceKind,
+		&progressSec,
+		&completed,
+		&downloadState,
+		&hasClean,
+	)
+	if err != nil {
+		return ItemPlayback{}, fmt.Errorf("get item playback: %w", err)
+	}
+	ip.IsRead = isRead != 0
+	ip.IsStarred = isStarred != 0
+	ip.ProgressSec = progressSec
+	ip.Completed = completed != 0
+	ip.DownloadState = downloadState
+	ip.HasCleanAudio = hasClean != 0
+	return ip, nil
+}
+
 // --- Playlist methods ---
 
 // CreatePlaylist inserts a new playlist and returns its ID.

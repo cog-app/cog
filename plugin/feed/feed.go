@@ -89,6 +89,10 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "items/{id}/read", http.HandlerFunc(pages.ToggleRead))
 	ctx.RegisterAction("POST", "items/{id}/star", http.HandlerFunc(pages.ToggleStar))
 	ctx.RegisterAction("POST", "items/{id}/mark-read", http.HandlerFunc(pages.MarkItemRead))
+	ctx.RegisterAction("POST", "items/{id}/progress", http.HandlerFunc(pages.UpdateProgress))
+	ctx.RegisterAction("POST", "items/{id}/complete", http.HandlerFunc(pages.MarkComplete))
+	ctx.RegisterAPI("api/stream-url/{id}", http.HandlerFunc(pages.StreamURL))
+	ctx.RegisterAPI("api/clean-audio/{id}", http.HandlerFunc(pages.CleanAudio))
 
 	// View pages
 	ctx.RegisterPage("subscription/{id}", http.HandlerFunc(pages.SubscriptionView))
@@ -209,3 +213,6 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) e
 func (p *Plugin) RenderWidget(ctx context.Context, w io.Writer, userID string) error {
 	return p.renderWidget(ctx, w, userID)
 }
+
+// Profanity returns the discovered profanity plugin, or nil if not registered.
+func (p *Plugin) Profanity() *profanity.Plugin { return p.profanity }
