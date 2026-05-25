@@ -269,3 +269,25 @@ func TestListItemsBySubscription(t *testing.T) {
 		t.Fatalf("got %d items", len(items))
 	}
 }
+
+func TestPendingProfanityReady(t *testing.T) {
+	s := newStore(t)
+	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "u"})
+
+	// Item 1: queued + needs_profanity. Should NOT appear.
+	id1, _, _ := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g1", Type: "audio"})
+	require.NoError(t, s.EnqueueProfanity(id1))
+
+	// Item 2: ready + needs_profanity. Should appear.
+	id2, _, _ := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g2", Type: "audio"})
+	require.NoError(t, s.EnqueueDownload(id2))
+	require.NoError(t, s.MarkDownloadStart(id2))
+	require.NoError(t, s.MarkDownloadReady(id2, "/x", 1))
+	require.NoError(t, s.EnqueueProfanity(id2))
+
+	pending, err := s.PendingProfanityReady(10)
+	require.NoError(t, err)
+	if len(pending) != 1 || pending[0] != id2 {
+		t.Fatalf("got %v want [%d]", pending, id2)
+	}
+}

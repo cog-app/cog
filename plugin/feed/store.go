@@ -733,6 +733,19 @@ func (s *Store) PendingProfanity(limit int) ([]int64, error) {
 	return scanInt64IDs(rows, "pending profanity")
 }
 
+// PendingProfanityReady returns item IDs that need profanity muting and whose
+// download row is already in 'ready' state.
+func (s *Store) PendingProfanityReady(limit int) ([]int64, error) {
+	rows, err := s.db.Query(
+		`SELECT item_id FROM downloads
+		 WHERE needs_profanity = 1 AND state = 'ready'
+		 ORDER BY item_id LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("pending profanity ready: %w", err)
+	}
+	return scanInt64IDs(rows, "pending profanity ready")
+}
+
 // ClearNeedsProfanity clears the needs_profanity flag for a download.
 func (s *Store) ClearNeedsProfanity(itemID int64) error {
 	_, err := s.db.Exec(`UPDATE downloads SET needs_profanity = 0 WHERE item_id = ?`, itemID)
