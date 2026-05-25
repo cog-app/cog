@@ -42,8 +42,15 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		EnrichSQL:    "SELECT rowid, title, url, content_html FROM items WHERE rowid IN (?)",
 	})
 
-	// Settings page and resource actions
+	// Main app pages and item actions
 	pages := NewPages(p)
+	ctx.RegisterPage("{$}", http.HandlerFunc(pages.Index))
+	ctx.RegisterPage("items/{id}", http.HandlerFunc(pages.ItemDetail))
+	ctx.RegisterPage("items/{id}/media", http.HandlerFunc(pages.ItemMedia))
+	ctx.RegisterAction("POST", "items/{id}/read", http.HandlerFunc(pages.ToggleRead))
+	ctx.RegisterAction("POST", "items/{id}/star", http.HandlerFunc(pages.ToggleStar))
+
+	// Settings page and resource actions
 	ctx.RegisterPage("settings", http.HandlerFunc(pages.Settings))
 	ctx.RegisterAction("POST", "subscriptions", http.HandlerFunc(pages.AddSubscription))
 	ctx.RegisterAction("POST", "subscriptions/{id}/delete", http.HandlerFunc(pages.DeleteSubscription))

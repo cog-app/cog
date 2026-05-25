@@ -934,6 +934,57 @@ func (s *Store) DeletePlaylist(id int64) error {
 	return nil
 }
 
+// ListItems returns up to limit items, newest first.
+func (s *Store) ListItems(limit int) ([]Item, error) {
+	rows, err := s.db.Query(
+		`SELECT id, subscription_id, guid, type, title, author, url, content_html,
+		        media_url, media_mime, duration_sec, thumbnail_url, published_at,
+		        fetched_at, is_read, is_starred, content_hash
+		 FROM items ORDER BY published_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list items: %w", err)
+	}
+	defer rows.Close()
+	var items []Item
+	for rows.Next() {
+		var it Item
+		var isRead, isStarred int
+		if err := rows.Scan(
+			&it.ID, &it.SubscriptionID, &it.GUID, &it.Type, &it.Title, &it.Author,
+			&it.URL, &it.ContentHTML, &it.MediaURL, &it.MediaMIME, &it.DurationSec,
+			&it.ThumbnailURL, &it.PublishedAt, &it.FetchedAt, &isRead, &isStarred,
+			&it.ContentHash,
+		); err != nil {
+			return nil, fmt.Errorf("list items scan: %w", err)
+		}
+		it.IsRead = isRead != 0
+		it.IsStarred = isStarred != 0
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list items rows: %w", err)
+	}
+	return items, nil
+}
+
+// ListTags returns all distinct tag names ordered alphabetically.
+func (s *Store) ListTags() ([]string, error) {
+	rows, err := s.db.Query(`SELECT name FROM tags ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("list tags: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, fmt.Errorf("scan tag: %w", err)
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
 // RemoveTag removes the association between an item and a tag.
 func (s *Store) RemoveTag(itemID int64, tag string) error {
 	_, err := s.db.Exec(`

@@ -122,6 +122,78 @@ templ feedSettingsPage(subs []Subscription, folders []Folder, filters []Filter, 
 	</div>
 }
 
+templ feedIndexPage(folders []Folder, tags []string, playlists []Playlist, items []Item, query string) {
+	<div id="feed-app" class="feed-app">
+		<aside id="feed-sidebar">
+			<section>
+				<h3><a href="/apps/feed/">All</a></h3>
+			</section>
+			<section>
+				<h3>Folders</h3>
+				<ul>
+					for _, f := range folders {
+						<li><a href={ templ.SafeURL("/apps/feed/?q=folder:" + f.Name) }>{ f.Name }</a></li>
+					}
+				</ul>
+			</section>
+			<section>
+				<h3>Tags</h3>
+				<ul>
+					for _, tg := range tags {
+						<li><a href={ templ.SafeURL("/apps/feed/?q=tag:" + tg) }>{ tg }</a></li>
+					}
+				</ul>
+			</section>
+			<section>
+				<h3>Playlists</h3>
+				<ul>
+					for _, pl := range playlists {
+						<li><a href={ templ.SafeURL("/apps/feed/?q=" + pl.Query) }>{ pl.Name }</a></li>
+					}
+				</ul>
+			</section>
+		</aside>
+		<main id="feed-main">
+			<form method="get" action="/apps/feed/">
+				<input type="search" name="q" value={ query } placeholder="Search…"/>
+				<button type="submit">Go</button>
+			</form>
+			<ul id="feed-items">
+				for _, it := range items {
+					@feedItemRow(it)
+				}
+			</ul>
+		</main>
+	</div>
+}
+
+templ feedItemRow(it Item) {
+	<li class={ "feed-item", "type-" + it.Type }>
+		<a href={ templ.SafeURL("/apps/feed/items/" + strconv.FormatInt(it.ID, 10)) }>{ it.Title }</a>
+	</li>
+}
+
+templ feedItemDetail(it Item, tags []string) {
+	<article class={ "feed-detail", "type-" + it.Type }>
+		<h1>{ it.Title }</h1>
+		<div class="meta">
+			for _, tg := range tags {
+				<span class="tag">{ tg }</span>
+			}
+		</div>
+		if it.Type == "text" {
+			@templ.Raw(it.ContentHTML)
+		} else if it.Type == "audio" {
+			<audio controls src={ "/apps/feed/items/" + strconv.FormatInt(it.ID, 10) + "/media" }></audio>
+		} else if it.Type == "video" {
+			<video controls src={ "/apps/feed/items/" + strconv.FormatInt(it.ID, 10) + "/media" }></video>
+		}
+		if it.URL != "" {
+			<p><a href={ templ.SafeURL(it.URL) } target="_blank" rel="noopener">Original</a></p>
+		}
+	</article>
+}
+
 func subscriptionDisplayTitle(s Subscription) string {
 	if s.Title != "" {
 		return s.Title

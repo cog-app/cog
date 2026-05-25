@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/query"
 )
 
 const flashCookieName = "cog_flash"
@@ -316,4 +317,159 @@ func (h *Pages) DeletePlaylist(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+}
+
+// Index shows the main feed item list with optional query filtering.
+func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+
+	items, err := store.ListItems(200)
+	if err != nil {
+		http.Error(w, "could not list items: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if q != "" {
+		expr, perr := query.Parse(q)
+		if perr == nil {
+			filtered := items[:0]
+			for _, it := range items {
+				sub, _ := store.GetSubscription(it.SubscriptionID)
+				folder := ""
+				if sub.FolderID.Valid {
+					if f, ferr := store.GetFolder(sub.FolderID.Int64); ferr == nil {
+						folder = f.Name
+					}
+				}
+				tagsList, _ := store.ItemTags(it.ID)
+				dl, _ := store.GetDownload(it.ID)
+				rec := BuildRecord(it, sub, folder, tagsList, !it.IsRead, it.IsStarred, dl.State == "ready")
+				if expr.Match(rec) {
+					filtered = append(filtered, it)
+				}
+			}
+			items = filtered
+		}
+	}
+
+	folders, _ := store.ListFolders()
+	tags, _ := store.ListTags()
+	playlists, _ := store.ListPlaylists()
+
+	plugin.SetTitle(w, "Feed")
+	feedIndexPage(folders, tags, playlists, items, q).Render(r.Context(), w)
+}
+
+// ItemDetail shows a single feed item, marking it read on first view.
+func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	it, err := store.GetItem(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := store.MarkRead(id, true); err != nil {
+		slog.Error("feed: mark read", "id", id, "err", err)
+	}
+	tags, _ := store.ItemTags(id)
+	plugin.SetTitle(w, it.Title)
+	feedItemDetail(it, tags).Render(r.Context(), w)
+}
+
+// ItemMedia serves item media: prefers clean_audio_path, then local_path, then 302 to media_url.
+func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	it, err := store.GetItem(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	dl, _ := store.GetDownload(id)
+	if dl.CleanAudioPath != "" {
+		http.ServeFile(w, r, dl.CleanAudioPath)
+		return
+	}
+	if dl.LocalPath != "" {
+		http.ServeFile(w, r, dl.LocalPath)
+		return
+	}
+	if it.MediaURL != "" {
+		http.Redirect(w, r, it.MediaURL, http.StatusFound)
+		return
+	}
+	http.NotFound(w, r)
+}
+
+// ToggleRead toggles the read state of an item then redirects back.
+func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	it, err := store.GetItem(id)
+	if err == nil {
+		if err := store.MarkRead(id, !it.IsRead); err != nil {
+			slog.Error("feed: toggle read", "id", id, "err", err)
+		}
+	}
+	ref := r.Header.Get("Referer")
+	if ref == "" {
+		ref = "/apps/feed/"
+	}
+	http.Redirect(w, r, ref, http.StatusSeeOther)
+}
+
+// ToggleStar toggles the starred state of an item then redirects back.
+func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	it, err := store.GetItem(id)
+	if err == nil {
+		if err := store.MarkStarred(id, !it.IsStarred); err != nil {
+			slog.Error("feed: toggle star", "id", id, "err", err)
+		}
+	}
+	ref := r.Header.Get("Referer")
+	if ref == "" {
+		ref = "/apps/feed/"
+	}
+	http.Redirect(w, r, ref, http.StatusSeeOther)
 }
