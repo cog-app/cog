@@ -27,6 +27,7 @@ type FetchFunc func(ctx context.Context, sub Subscription) (FetchResult, error)
 type Poller struct {
 	store   *Store
 	fetchFn FetchFunc
+	engine  *FilterEngine
 }
 
 // NewPoller creates a Poller. Call WithFetcher before RunOnce to supply the fetch
@@ -41,6 +42,16 @@ func NewPoller(s *Store) *Poller {
 //	p := feed.NewPoller(store).WithFetcher(myFetch)
 func (p *Poller) WithFetcher(fn FetchFunc) *Poller {
 	p.fetchFn = fn
+	return p
+}
+
+// WithFilterEngine attaches a FilterEngine that will be applied to each
+// newly-inserted item. If not set (or nil), filter evaluation is skipped.
+// Returns the receiver for convenient chaining:
+//
+//	p := feed.NewPoller(store).WithFetcher(myFetch).WithFilterEngine(eng)
+func (p *Poller) WithFilterEngine(e *FilterEngine) *Poller {
+	p.engine = e
 	return p
 }
 
@@ -113,9 +124,10 @@ func (p *Poller) pollOne(ctx context.Context, sub Subscription) {
 			slog.Warn("feed poller: upsert item", "subscription_id", sub.ID, "guid", it.GUID, "err", err)
 			continue
 		}
-		if inserted {
-			// TODO(T13): run filter engine on newly inserted item id.
-			_ = id
+		if inserted && p.engine != nil {
+			if ferr := p.engine.Apply(id); ferr != nil {
+				slog.Warn("feed poller: filter apply", "item_id", id, "subscription_id", sub.ID, "err", ferr)
+			}
 		}
 	}
 
