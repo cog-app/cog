@@ -66,6 +66,11 @@ func (p *Plugin) ID() string { return PluginID }
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
 	p.log = ctx.Logger()
+	ctx.RegisterNavItem(plugin.NavItem{
+		Label: "Feed",
+		URL:   "/apps/feed/",
+		Icon:  `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle></svg>`,
+	})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Feed",
 		Priority: 25,
