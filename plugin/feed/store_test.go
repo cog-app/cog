@@ -313,3 +313,29 @@ func TestPendingProfanityReady(t *testing.T) {
 		t.Fatalf("got %v want [%d]", pending, id2)
 	}
 }
+
+func TestPendingProfanityWithCaptions(t *testing.T) {
+	s := newStore(t)
+	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "u"})
+
+	// Ready but no captions — should NOT appear.
+	id1, _, _ := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g1", Type: "audio"})
+	require.NoError(t, s.EnqueueDownload(id1))
+	require.NoError(t, s.MarkDownloadStart(id1))
+	require.NoError(t, s.MarkDownloadReady(id1, "/x", 1))
+	require.NoError(t, s.EnqueueProfanity(id1))
+
+	// Ready + has captions — should appear.
+	id2, _, _ := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g2", Type: "audio"})
+	require.NoError(t, s.EnqueueDownload(id2))
+	require.NoError(t, s.MarkDownloadStart(id2))
+	require.NoError(t, s.MarkDownloadReady(id2, "/x", 1))
+	require.NoError(t, s.SetCaptionsPath(id2, "/captions/g2.vtt"))
+	require.NoError(t, s.EnqueueProfanity(id2))
+
+	pending, err := s.PendingProfanityWithCaptions(10)
+	require.NoError(t, err)
+	if len(pending) != 1 || pending[0] != id2 {
+		t.Fatalf("got %v want [%d]", pending, id2)
+	}
+}

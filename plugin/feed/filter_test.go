@@ -81,3 +81,21 @@ func TestParseFilterQueryRejectsInvalid(t *testing.T) {
 		t.Fatalf("unexpected parse error: %v", err)
 	}
 }
+
+func TestFilterMuteProfanityAlsoEnqueuesTranscribe(t *testing.T) {
+	s := newStore(t)
+	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "u"})
+	id, _, _ := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g", Type: "audio"})
+	_, _ = s.CreateFilter(feed.Filter{SortOrder: 1, Query: "*", Action: "mute_profanity"})
+
+	eng, _ := feed.NewFilterEngine(s)
+	require.NoError(t, eng.Apply(id))
+
+	d, _ := s.GetDownload(id)
+	if !d.NeedsProfanity {
+		t.Error("needs_profanity not set")
+	}
+	if !d.NeedsTranscribe {
+		t.Error("needs_transcribe not set")
+	}
+}

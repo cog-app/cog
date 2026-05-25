@@ -4,33 +4,44 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
+	"git.duckfam.us/jj-software/cog/plugin/profanity"
 )
 
-// Processor applies a transformation that produces a profanity-muted audio
-// file at `out` from the input at `in`.
+// Processor produces a profanity-muted audio file at `out` from `in`, using
+// the captions to locate spans to mute.
 type Processor interface {
-	Process(ctx context.Context, in, out string) error
+	Process(ctx context.Context, in, out string, captions []cogplugin.CaptionSegment) error
 }
 
-// Profanity is a worker that drains items where needs_profanity=1 and the
-// download is ready, runs the Processor, and records the clean path.
+// ProfanityPluginProcessor adapts plugin/profanity into a Processor.
+type ProfanityPluginProcessor struct {
+	Plugin   *profanity.Plugin
+	Username string
+}
+
+func (p *ProfanityPluginProcessor) Process(ctx context.Context, in, out string, captions []cogplugin.CaptionSegment) error {
+	return p.Plugin.CleanAudioFile(ctx, p.Username, in, out, captions)
+}
+
+// Profanity worker — drains items with needs_profanity + ready download +
+// captions_path present, runs the Processor, records clean_audio_path.
 type Profanity struct {
 	store     *feed.Store
 	processor Processor
 }
 
-// NewProfanity creates a Profanity worker backed by the given store and processor.
 func NewProfanity(s *feed.Store, p Processor) *Profanity {
 	return &Profanity{store: s, processor: p}
 }
 
-// RunOnce processes all pending profanity items whose download is ready.
 func (w *Profanity) RunOnce(ctx context.Context) error {
-	ids, err := w.store.PendingProfanityReady(100)
+	ids, err := w.store.PendingProfanityWithCaptions(100)
 	if err != nil {
 		return fmt.Errorf("profanity list pending: %w", err)
 	}
@@ -53,9 +64,18 @@ func (w *Profanity) processOne(ctx context.Context, itemID int64) error {
 	if d.LocalPath == "" {
 		return fmt.Errorf("local_path empty for item %d", itemID)
 	}
+	if d.CaptionsPath == "" {
+		return fmt.Errorf("captions_path empty for item %d", itemID)
+	}
+	captionsFile, err := os.Open(d.CaptionsPath)
+	if err != nil {
+		return fmt.Errorf("open captions: %w", err)
+	}
+	captions := profanity.ParseVTT(captionsFile)
+	captionsFile.Close()
 
 	out := cleanPath(d.LocalPath)
-	if err := w.processor.Process(ctx, d.LocalPath, out); err != nil {
+	if err := w.processor.Process(ctx, d.LocalPath, out, captions); err != nil {
 		return fmt.Errorf("processor: %w", err)
 	}
 	if err := w.store.SetCleanAudioPath(itemID, out); err != nil {
@@ -70,8 +90,7 @@ func (w *Profanity) processOne(ctx context.Context, itemID int64) error {
 // cleanPath inserts ".clean" before the file extension.
 //
 //	foo.mp3 -> foo.clean.mp3
-//	foo.tar.gz -> foo.tar.clean.gz  (filepath.Ext returns only the last segment)
-//	foo (no ext) -> foo.clean
+//	foo     -> foo.clean
 func cleanPath(p string) string {
 	ext := filepath.Ext(p)
 	base := strings.TrimSuffix(p, ext)

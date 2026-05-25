@@ -94,6 +94,10 @@ func (e *FilterEngine) Apply(itemID int64) error {
 			if err := e.store.EnqueueProfanity(itemID); err != nil {
 				return fmt.Errorf("filter mute_profanity: %w", err)
 			}
+			// Captions are a prerequisite for profanity muting; transcribe runs first.
+			if err := e.store.EnqueueTranscribe(itemID); err != nil {
+				return fmt.Errorf("filter mute_profanity transcribe: %w", err)
+			}
 		case "transcribe":
 			if it.Type == "text" {
 				continue

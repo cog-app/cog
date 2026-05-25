@@ -748,6 +748,21 @@ func (s *Store) PendingProfanityReady(limit int) ([]int64, error) {
 	return scanInt64IDs(rows, "pending profanity ready")
 }
 
+// PendingProfanityWithCaptions returns item IDs that need profanity muting,
+// have a ready download, AND have a captions file produced by the transcribe
+// worker. Without captions the profanity worker cannot identify regions to mute.
+func (s *Store) PendingProfanityWithCaptions(limit int) ([]int64, error) {
+	rows, err := s.db.Query(
+		`SELECT item_id FROM downloads
+		 WHERE needs_profanity = 1 AND state = 'ready' AND captions_path != ''
+		 ORDER BY item_id LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("pending profanity with captions: %w", err)
+	}
+	defer rows.Close()
+	return scanInt64IDs(rows, "pending profanity with captions")
+}
+
 // ClearNeedsProfanity clears the needs_profanity flag for a download.
 func (s *Store) ClearNeedsProfanity(itemID int64) error {
 	_, err := s.db.Exec(`UPDATE downloads SET needs_profanity = 0 WHERE item_id = ?`, itemID)
