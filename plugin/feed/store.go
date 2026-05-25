@@ -485,6 +485,419 @@ func (s *Store) AddTag(itemID int64, tag string) error {
 	return nil
 }
 
+// --- Filter type ---
+
+// Filter is an auto-action rule applied to incoming items.
+type Filter struct {
+	ID          int64
+	SortOrder   int64
+	Query       string
+	Action      string // skip | tag | download | mute_profanity | transcribe
+	ActionValue string
+	CreatedAt   int64
+}
+
+// --- Download type ---
+
+// Download tracks a media file download for an item.
+type Download struct {
+	ItemID          int64
+	State           string // queued | downloading | ready | error
+	LocalPath       string
+	CleanAudioPath  string
+	CaptionsPath    string
+	Bytes           int64
+	Error           string
+	StartedAt       int64
+	CompletedAt     int64
+	NeedsProfanity  bool
+	NeedsTranscribe bool
+}
+
+// --- Playback type ---
+
+// Playback tracks listen progress for an item.
+type Playback struct {
+	ItemID       int64
+	ProgressSec  float64
+	Completed    bool
+	LastPlayedAt int64
+}
+
+// --- Playlist type ---
+
+// Playlist is a saved query that produces an ordered list of items.
+type Playlist struct {
+	ID        int64
+	Name      string
+	Query     string
+	SortOrder int64
+	CreatedAt int64
+}
+
+// --- Filter methods ---
+
+// CreateFilter inserts a new filter and returns its ID.
+func (s *Store) CreateFilter(f Filter) (int64, error) {
+	res, err := s.db.Exec(`
+		INSERT INTO filters (sort_order, query, action, action_value)
+		VALUES (?, ?, ?, ?)`,
+		f.SortOrder, f.Query, f.Action, f.ActionValue,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("create filter: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("create filter last insert id: %w", err)
+	}
+	return id, nil
+}
+
+// ListFilters returns all filters ordered by sort_order ASC.
+func (s *Store) ListFilters() ([]Filter, error) {
+	rows, err := s.db.Query(`
+		SELECT id, sort_order, query, action, action_value, created_at
+		FROM filters ORDER BY sort_order ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list filters: %w", err)
+	}
+	defer rows.Close()
+	var filters []Filter
+	for rows.Next() {
+		var f Filter
+		if err := rows.Scan(&f.ID, &f.SortOrder, &f.Query, &f.Action, &f.ActionValue, &f.CreatedAt); err != nil {
+			return nil, fmt.Errorf("list filters scan: %w", err)
+		}
+		filters = append(filters, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list filters rows: %w", err)
+	}
+	return filters, nil
+}
+
+// UpdateFilter updates an existing filter.
+func (s *Store) UpdateFilter(f Filter) error {
+	_, err := s.db.Exec(`
+		UPDATE filters SET sort_order = ?, query = ?, action = ?, action_value = ?
+		WHERE id = ?`,
+		f.SortOrder, f.Query, f.Action, f.ActionValue, f.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update filter: %w", err)
+	}
+	return nil
+}
+
+// DeleteFilter removes a filter by ID.
+func (s *Store) DeleteFilter(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM filters WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete filter: %w", err)
+	}
+	return nil
+}
+
+// --- Download methods ---
+
+// EnqueueDownload upserts a download row in state=queued.
+// Does not overwrite a row already in state 'ready' or 'downloading'.
+func (s *Store) EnqueueDownload(itemID int64) error {
+	_, err := s.db.Exec(`
+		INSERT INTO downloads (item_id, state) VALUES (?, 'queued')
+		ON CONFLICT(item_id) DO UPDATE SET
+			state = CASE
+				WHEN downloads.state IN ('ready','downloading') THEN downloads.state
+				ELSE 'queued'
+			END`,
+		itemID,
+	)
+	if err != nil {
+		return fmt.Errorf("enqueue download: %w", err)
+	}
+	return nil
+}
+
+// PendingDownloads returns up to limit downloads in state 'queued', ordered by item_id.
+func (s *Store) PendingDownloads(limit int) ([]Download, error) {
+	rows, err := s.db.Query(`
+		SELECT item_id, state, local_path, clean_audio_path, captions_path,
+		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe
+		FROM downloads WHERE state = 'queued' ORDER BY item_id LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("pending downloads: %w", err)
+	}
+	return scanDownloads(rows)
+}
+
+// MarkDownloadStart transitions a download to state 'downloading'.
+func (s *Store) MarkDownloadStart(itemID int64) error {
+	_, err := s.db.Exec(`
+		UPDATE downloads SET state = 'downloading', started_at = unixepoch()
+		WHERE item_id = ?`, itemID)
+	if err != nil {
+		return fmt.Errorf("mark download start: %w", err)
+	}
+	return nil
+}
+
+// MarkDownloadReady transitions a download to state 'ready' with path and byte count.
+func (s *Store) MarkDownloadReady(itemID int64, path string, bytes int64) error {
+	_, err := s.db.Exec(`
+		UPDATE downloads SET state = 'ready', local_path = ?, bytes = ?, completed_at = unixepoch()
+		WHERE item_id = ?`, path, bytes, itemID)
+	if err != nil {
+		return fmt.Errorf("mark download ready: %w", err)
+	}
+	return nil
+}
+
+// MarkDownloadError transitions a download to state 'error' with a message.
+func (s *Store) MarkDownloadError(itemID int64, errMsg string) error {
+	_, err := s.db.Exec(`
+		UPDATE downloads SET state = 'error', error = ?
+		WHERE item_id = ?`, errMsg, itemID)
+	if err != nil {
+		return fmt.Errorf("mark download error: %w", err)
+	}
+	return nil
+}
+
+// SetCleanAudioPath updates the clean_audio_path for a download row.
+func (s *Store) SetCleanAudioPath(itemID int64, path string) error {
+	_, err := s.db.Exec(`UPDATE downloads SET clean_audio_path = ? WHERE item_id = ?`, path, itemID)
+	if err != nil {
+		return fmt.Errorf("set clean audio path: %w", err)
+	}
+	return nil
+}
+
+// SetCaptionsPath updates the captions_path for a download row.
+func (s *Store) SetCaptionsPath(itemID int64, path string) error {
+	_, err := s.db.Exec(`UPDATE downloads SET captions_path = ? WHERE item_id = ?`, path, itemID)
+	if err != nil {
+		return fmt.Errorf("set captions path: %w", err)
+	}
+	return nil
+}
+
+// GetDownload returns the download record for an item.
+func (s *Store) GetDownload(itemID int64) (Download, error) {
+	var d Download
+	var needsProf, needsTrans int
+	err := s.db.QueryRow(`
+		SELECT item_id, state, local_path, clean_audio_path, captions_path,
+		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe
+		FROM downloads WHERE item_id = ?`, itemID).Scan(
+		&d.ItemID, &d.State, &d.LocalPath, &d.CleanAudioPath, &d.CaptionsPath,
+		&d.Bytes, &d.Error, &d.StartedAt, &d.CompletedAt, &needsProf, &needsTrans,
+	)
+	if err != nil {
+		return Download{}, fmt.Errorf("get download: %w", err)
+	}
+	d.NeedsProfanity = needsProf != 0
+	d.NeedsTranscribe = needsTrans != 0
+	return d, nil
+}
+
+// EnqueueProfanity ensures a download row exists and sets needs_profanity=1.
+func (s *Store) EnqueueProfanity(itemID int64) error {
+	if err := s.EnqueueDownload(itemID); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE downloads SET needs_profanity = 1 WHERE item_id = ?`, itemID)
+	if err != nil {
+		return fmt.Errorf("enqueue profanity: %w", err)
+	}
+	return nil
+}
+
+// PendingProfanity returns up to limit item IDs where needs_profanity=1.
+func (s *Store) PendingProfanity(limit int) ([]int64, error) {
+	rows, err := s.db.Query(`
+		SELECT item_id FROM downloads WHERE needs_profanity = 1 LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("pending profanity: %w", err)
+	}
+	return scanInt64IDs(rows, "pending profanity")
+}
+
+// ClearNeedsProfanity clears the needs_profanity flag for a download.
+func (s *Store) ClearNeedsProfanity(itemID int64) error {
+	_, err := s.db.Exec(`UPDATE downloads SET needs_profanity = 0 WHERE item_id = ?`, itemID)
+	if err != nil {
+		return fmt.Errorf("clear needs profanity: %w", err)
+	}
+	return nil
+}
+
+// EnqueueTranscribe ensures a download row exists and sets needs_transcribe=1.
+func (s *Store) EnqueueTranscribe(itemID int64) error {
+	if err := s.EnqueueDownload(itemID); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE downloads SET needs_transcribe = 1 WHERE item_id = ?`, itemID)
+	if err != nil {
+		return fmt.Errorf("enqueue transcribe: %w", err)
+	}
+	return nil
+}
+
+// PendingTranscribe returns up to limit item IDs where needs_transcribe=1.
+func (s *Store) PendingTranscribe(limit int) ([]int64, error) {
+	rows, err := s.db.Query(`
+		SELECT item_id FROM downloads WHERE needs_transcribe = 1 LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("pending transcribe: %w", err)
+	}
+	return scanInt64IDs(rows, "pending transcribe")
+}
+
+// ClearNeedsTranscribe clears the needs_transcribe flag for a download.
+func (s *Store) ClearNeedsTranscribe(itemID int64) error {
+	_, err := s.db.Exec(`UPDATE downloads SET needs_transcribe = 0 WHERE item_id = ?`, itemID)
+	if err != nil {
+		return fmt.Errorf("clear needs transcribe: %w", err)
+	}
+	return nil
+}
+
+// scanDownloads reads download rows into a slice.
+func scanDownloads(rows *sql.Rows) ([]Download, error) {
+	defer rows.Close()
+	var downloads []Download
+	for rows.Next() {
+		var d Download
+		var needsProf, needsTrans int
+		if err := rows.Scan(
+			&d.ItemID, &d.State, &d.LocalPath, &d.CleanAudioPath, &d.CaptionsPath,
+			&d.Bytes, &d.Error, &d.StartedAt, &d.CompletedAt, &needsProf, &needsTrans,
+		); err != nil {
+			return nil, fmt.Errorf("scan download: %w", err)
+		}
+		d.NeedsProfanity = needsProf != 0
+		d.NeedsTranscribe = needsTrans != 0
+		downloads = append(downloads, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("scan downloads rows: %w", err)
+	}
+	return downloads, nil
+}
+
+// scanInt64IDs reads a single-column int64 result into a slice.
+func scanInt64IDs(rows *sql.Rows, ctx string) ([]int64, error) {
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("%s scan: %w", ctx, err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s rows: %w", ctx, err)
+	}
+	return ids, nil
+}
+
+// --- Playback methods ---
+
+// SetPlayback upserts playback progress for an item.
+func (s *Store) SetPlayback(itemID int64, progressSec float64, completed bool) error {
+	_, err := s.db.Exec(`
+		INSERT INTO playback (item_id, progress_sec, completed, last_played_at)
+		VALUES (?, ?, ?, unixepoch())
+		ON CONFLICT(item_id) DO UPDATE SET
+			progress_sec = excluded.progress_sec,
+			completed = excluded.completed,
+			last_played_at = unixepoch()`,
+		itemID, progressSec, boolToInt(completed),
+	)
+	if err != nil {
+		return fmt.Errorf("set playback: %w", err)
+	}
+	return nil
+}
+
+// GetPlayback returns playback progress for an item.
+func (s *Store) GetPlayback(itemID int64) (Playback, error) {
+	var pb Playback
+	var completed int
+	err := s.db.QueryRow(`
+		SELECT item_id, progress_sec, completed, last_played_at
+		FROM playback WHERE item_id = ?`, itemID).Scan(
+		&pb.ItemID, &pb.ProgressSec, &completed, &pb.LastPlayedAt,
+	)
+	if err != nil {
+		return Playback{}, fmt.Errorf("get playback: %w", err)
+	}
+	pb.Completed = completed != 0
+	return pb, nil
+}
+
+// --- Playlist methods ---
+
+// CreatePlaylist inserts a new playlist and returns its ID.
+func (s *Store) CreatePlaylist(name, query string) (int64, error) {
+	res, err := s.db.Exec(`INSERT INTO playlists (name, query) VALUES (?, ?)`, name, query)
+	if err != nil {
+		return 0, fmt.Errorf("create playlist: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("create playlist last insert id: %w", err)
+	}
+	return id, nil
+}
+
+// ListPlaylists returns all playlists ordered by sort_order, name.
+func (s *Store) ListPlaylists() ([]Playlist, error) {
+	rows, err := s.db.Query(`
+		SELECT id, name, query, sort_order, created_at
+		FROM playlists ORDER BY sort_order, name`)
+	if err != nil {
+		return nil, fmt.Errorf("list playlists: %w", err)
+	}
+	defer rows.Close()
+	var playlists []Playlist
+	for rows.Next() {
+		var p Playlist
+		if err := rows.Scan(&p.ID, &p.Name, &p.Query, &p.SortOrder, &p.CreatedAt); err != nil {
+			return nil, fmt.Errorf("list playlists scan: %w", err)
+		}
+		playlists = append(playlists, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list playlists rows: %w", err)
+	}
+	return playlists, nil
+}
+
+// UpdatePlaylist updates an existing playlist.
+func (s *Store) UpdatePlaylist(p Playlist) error {
+	_, err := s.db.Exec(`
+		UPDATE playlists SET name = ?, query = ?, sort_order = ?
+		WHERE id = ?`,
+		p.Name, p.Query, p.SortOrder, p.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update playlist: %w", err)
+	}
+	return nil
+}
+
+// DeletePlaylist removes a playlist by ID.
+func (s *Store) DeletePlaylist(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM playlists WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete playlist: %w", err)
+	}
+	return nil
+}
+
 // RemoveTag removes the association between an item and a tag.
 func (s *Store) RemoveTag(itemID int64, tag string) error {
 	_, err := s.db.Exec(`

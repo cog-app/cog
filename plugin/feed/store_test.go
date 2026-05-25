@@ -145,6 +145,111 @@ func TestItemsAndTags(t *testing.T) {
 	}
 }
 
+func TestFiltersCRUD(t *testing.T) {
+	s := newStore(t)
+	id, err := s.CreateFilter(feed.Filter{
+		SortOrder:   1,
+		Query:       "kind:rss AND tag:morning",
+		Action:      "download",
+		ActionValue: "",
+	})
+	require.NoError(t, err)
+	fs, err := s.ListFilters()
+	require.NoError(t, err)
+	if len(fs) != 1 || fs[0].ID != id {
+		t.Fatalf("got %+v", fs)
+	}
+
+	fs[0].Action = "skip"
+	require.NoError(t, s.UpdateFilter(fs[0]))
+	fs, _ = s.ListFilters()
+	if fs[0].Action != "skip" {
+		t.Fatalf("update did not apply: %+v", fs)
+	}
+	require.NoError(t, s.DeleteFilter(id))
+}
+
+func TestDownloadsAndPlayback(t *testing.T) {
+	s := newStore(t)
+	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "u1"})
+	id, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g", Type: "audio"})
+	require.NoError(t, err)
+
+	require.NoError(t, s.EnqueueDownload(id))
+	dls, err := s.PendingDownloads(10)
+	require.NoError(t, err)
+	if len(dls) != 1 || dls[0].ItemID != id {
+		t.Fatalf("got %+v", dls)
+	}
+	require.NoError(t, s.MarkDownloadStart(id))
+	require.NoError(t, s.MarkDownloadReady(id, "/path/file.mp3", 12345))
+
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	if d.State != "ready" || d.LocalPath != "/path/file.mp3" || d.Bytes != 12345 {
+		t.Fatalf("got %+v", d)
+	}
+
+	require.NoError(t, s.SetCleanAudioPath(id, "/path/clean.mp3"))
+	require.NoError(t, s.SetCaptionsPath(id, "/path/captions.vtt"))
+	require.NoError(t, s.EnqueueProfanity(id))
+	require.NoError(t, s.EnqueueTranscribe(id))
+
+	d, _ = s.GetDownload(id)
+	if d.CleanAudioPath == "" || d.CaptionsPath == "" {
+		t.Fatalf("paths not set: %+v", d)
+	}
+
+	pending, err := s.PendingProfanity(10)
+	require.NoError(t, err)
+	if len(pending) != 1 {
+		t.Fatalf("want 1 profanity pending, got %d", len(pending))
+	}
+	pendingT, err := s.PendingTranscribe(10)
+	require.NoError(t, err)
+	if len(pendingT) != 1 {
+		t.Fatalf("want 1 transcribe pending, got %d", len(pendingT))
+	}
+
+	require.NoError(t, s.ClearNeedsProfanity(id))
+	require.NoError(t, s.ClearNeedsTranscribe(id))
+	pending, _ = s.PendingProfanity(10)
+	if len(pending) != 0 {
+		t.Fatal("profanity not cleared")
+	}
+
+	require.NoError(t, s.MarkDownloadError(id, "boom"))
+	d, _ = s.GetDownload(id)
+	if d.State != "error" || d.Error == "" {
+		t.Fatalf("got %+v", d)
+	}
+
+	require.NoError(t, s.SetPlayback(id, 42.5, false))
+	pb, err := s.GetPlayback(id)
+	require.NoError(t, err)
+	if pb.ProgressSec != 42.5 || pb.Completed {
+		t.Fatalf("got %+v", pb)
+	}
+}
+
+func TestPlaylistsCRUD(t *testing.T) {
+	s := newStore(t)
+	id, err := s.CreatePlaylist("Morning", "type:audio AND tag:morning")
+	require.NoError(t, err)
+	pls, err := s.ListPlaylists()
+	require.NoError(t, err)
+	if len(pls) != 1 || pls[0].ID != id {
+		t.Fatalf("got %+v", pls)
+	}
+	pls[0].Name = "Morning Edition"
+	require.NoError(t, s.UpdatePlaylist(pls[0]))
+	pls, _ = s.ListPlaylists()
+	if pls[0].Name != "Morning Edition" {
+		t.Fatal("update did not apply")
+	}
+	require.NoError(t, s.DeletePlaylist(id))
+}
+
 func TestListItemsBySubscription(t *testing.T) {
 	s := newStore(t)
 	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://y/feed.xml"})
