@@ -6,7 +6,12 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/url"
+	"strings"
 )
+
+// maxCSRFMultipartMem caps in-memory parsing of multipart bodies during
+// CSRF extraction. Files larger than this spill to disk.
+const maxCSRFMultipartMem = 32 << 20
 
 // CSRFToken generates a CSRF token from the session ID and a secret.
 func CSRFToken(sessionID string, secret []byte) string {
@@ -25,12 +30,32 @@ func CSRFTokenFor(sessionID, pluginID string, secret []byte) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// extractCSRFToken returns the CSRF token from either the X-CSRF-Token
+// header or the multipart/form body. It deliberately does NOT consult the
+// URL query string — r.FormValue would, and a token visible in proxy access
+// logs / Referer headers could then be used as a valid CSRF token (audit
+// security.md #33).
+func extractCSRFToken(r *http.Request) string {
+	if t := r.Header.Get("X-CSRF-Token"); t != "" {
+		return t
+	}
+	// PostForm is body-only (no query string). For multipart bodies we have
+	// to call ParseMultipartForm explicitly; for urlencoded forms ParseForm
+	// is enough.
+	ct := r.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "multipart/form-data") {
+		if err := r.ParseMultipartForm(maxCSRFMultipartMem); err != nil {
+			return ""
+		}
+	} else if err := r.ParseForm(); err != nil {
+		return ""
+	}
+	return r.PostForm.Get("csrf_token")
+}
+
 // ValidateCSRF checks the CSRF token from the request against the expected value.
 func ValidateCSRF(r *http.Request, sessionID string, secret []byte) bool {
-	token := r.Header.Get("X-CSRF-Token")
-	if token == "" {
-		token = r.FormValue("csrf_token")
-	}
+	token := extractCSRFToken(r)
 	if token == "" {
 		return false
 	}
@@ -40,10 +65,7 @@ func ValidateCSRF(r *http.Request, sessionID string, secret []byte) bool {
 
 // ValidateCSRFFor checks a plugin-scoped CSRF token from the request.
 func ValidateCSRFFor(r *http.Request, sessionID, pluginID string, secret []byte) bool {
-	token := r.Header.Get("X-CSRF-Token")
-	if token == "" {
-		token = r.FormValue("csrf_token")
-	}
+	token := extractCSRFToken(r)
 	if token == "" {
 		return false
 	}

@@ -78,8 +78,16 @@ func (s *MFAPendingStore) Create(userID, nextURL string) (*MFAPending, error) {
 // starts with "/", does not start with "//", and is not a relative or
 // scheme-bearing URL. All other inputs return "" so the post-MFA redirect
 // falls back to the root.
+// maxNextURLLen caps the post-MFA redirect path to avoid an unbounded
+// write to mfa_pending.next_url (audit security.md #47). 2KB is well above
+// any legitimate same-origin path.
+const maxNextURLLen = 2048
+
 func sanitizeNextURL(next string) string {
 	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
+		return ""
+	}
+	if len(next) > maxNextURLLen {
 		return ""
 	}
 	return next

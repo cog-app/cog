@@ -115,16 +115,49 @@ func TestCreateAppPasswordHTTP(t *testing.T) {
 	alice := env.CreateUser(t, "alice", "pass")
 	cookie, token := sessionAndCSRF(t, env, alice.ID)
 
+	// HTMX path: token returned inline in the response body.
 	resp := env.PostForm(t, "/settings/app-passwords",
 		url.Values{"name": {"test-app"}, "csrf_token": {token}},
-		cookie, cogtest.StopRedirect)
-	require.Equal(t, http.StatusSeeOther, resp.StatusCode)
+		cookie, cogtest.Header("HX-Request", "true"))
+	resp.Status(200)
 
-	// Verify password was created.
 	passwords, err := env.Providers.AppPasswords.ListByUser(alice.ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(passwords))
 	require.Equal(t, "test-app", passwords[0].Name)
+
+	// The fragment must contain the plaintext token. We can't recover the
+	// plaintext from storage (it's bcrypt-hashed), so just confirm the body
+	// has a <pre> block (where the token is rendered) and the success alert.
+	body := resp.ReadBody()
+	require.Contains(t, body, "<pre")
+	require.Contains(t, body, "App password created")
+}
+
+// TestCreateAppPassword_NoTokenInCookie ensures the plaintext app-password
+// token never enters the flash cookie (audit security.md #21). A non-HTMX
+// POST creates the password but must not echo the token via any Set-Cookie.
+func TestCreateAppPassword_NoTokenInCookie(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	cookie, token := sessionAndCSRF(t, env, alice.ID)
+
+	resp := env.PostForm(t, "/settings/app-passwords",
+		url.Values{"name": {"plain-form"}, "csrf_token": {token}},
+		cookie, cogtest.StopRedirect)
+	require.Equal(t, http.StatusSeeOther, resp.StatusCode)
+
+	passwords, err := env.Providers.AppPasswords.ListByUser(alice.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(passwords))
+
+	// No Set-Cookie should contain a long base64/hex-looking value beyond
+	// the standard session/flash sentinels. Specifically the legacy "token:"
+	// prefix must be gone.
+	for _, sc := range resp.Header.Values("Set-Cookie") {
+		require.NotContains(t, sc, "token%3A", "flash cookie still carries app-password token")
+		require.NotContains(t, sc, "token:", "flash cookie still carries app-password token")
+	}
 }
 
 func TestDeleteAppPasswordHTTP(t *testing.T) {

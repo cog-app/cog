@@ -62,10 +62,13 @@ func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	next := r.FormValue("next")
 
-	// Rate limit by client IP.
+	// Rate limit by client IP *and* by username (audit security.md #51).
+	// Per-IP catches one attacker hammering many accounts; per-user catches
+	// a distributed attacker rotating IPs against a single account.
+	userKey := "user:" + strings.ToLower(username)
 	if h.p.RateLimiter != nil {
 		ip := ratelimit.ClientIP(r)
-		if h.p.RateLimiter.IsLimited(ip) {
+		if h.p.RateLimiter.IsLimited(ip) || (username != "" && h.p.RateLimiter.IsLimited(userKey)) {
 			setFlash(w, "error", "Too many failed login attempts. Please try again later.")
 			http.Redirect(w, r, loginRedirect("/login", next), http.StatusSeeOther)
 			return
@@ -76,6 +79,9 @@ func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if h.p.RateLimiter != nil {
 			h.p.RateLimiter.RecordFailure(ratelimit.ClientIP(r))
+			if username != "" {
+				h.p.RateLimiter.RecordFailure(userKey)
+			}
 		}
 		setFlash(w, "error", "Invalid username or password.")
 		http.Redirect(w, r, loginRedirect("/login", next), http.StatusSeeOther)
@@ -85,6 +91,7 @@ func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	// Clear rate limit on success.
 	if h.p.RateLimiter != nil {
 		h.p.RateLimiter.Reset(ratelimit.ClientIP(r))
+		h.p.RateLimiter.Reset(userKey)
 	}
 
 	// If MFA is enabled, redirect to verification instead of creating a session.

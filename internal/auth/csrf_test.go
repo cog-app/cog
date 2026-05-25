@@ -33,7 +33,7 @@ func TestValidateCSRF(t *testing.T) {
 	r := &http.Request{
 		Method: "POST",
 		Header: http.Header{},
-		Form:   url.Values{"csrf_token": {token}},
+		PostForm: url.Values{"csrf_token": {token}},
 	}
 	if !ValidateCSRF(r, "sess1", secret) {
 		t.Fatal("expected valid CSRF token to pass")
@@ -46,7 +46,7 @@ func TestValidateCSRFInvalid(t *testing.T) {
 	r := &http.Request{
 		Method: "POST",
 		Header: http.Header{},
-		Form:   url.Values{"csrf_token": {"wrong-token"}},
+		PostForm: url.Values{"csrf_token": {"wrong-token"}},
 	}
 	if ValidateCSRF(r, "sess1", secret) {
 		t.Fatal("expected invalid CSRF token to fail")
@@ -103,7 +103,7 @@ func TestValidateCSRFFor(t *testing.T) {
 	r := &http.Request{
 		Method: "POST",
 		Header: http.Header{},
-		Form:   url.Values{"csrf_token": {token}},
+		PostForm: url.Values{"csrf_token": {token}},
 	}
 	if !ValidateCSRFFor(r, "sess1", "myplugin", secret) {
 		t.Fatal("expected valid plugin CSRF token to pass")

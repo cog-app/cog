@@ -849,6 +849,10 @@ func (pr *pluginRegistrar) RegisterHook(hookName string, callback HookCallback) 
 }
 
 func (pr *pluginRegistrar) RegisterNavItem(item NavItem) {
+	// Sanitize plugin-supplied SVG icon once at registration so
+	// templ.Raw(item.Icon) downstream can't smuggle <script> or event
+	// handlers from a hostile external plugin (audit security.md #50).
+	item.Icon = ui.SanitizeIcon(item.Icon)
 	pr.navItems = append(pr.navItems, item)
 }
 

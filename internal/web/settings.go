@@ -66,23 +66,49 @@ func (h *settingsHandler) ShowSecurity(w http.ResponseWriter, r *http.Request) {
 	settingsSecurityPage(pd, flashMsg, flashKind, appPasswords, u.MFAMethod, backupCodeCount, smtpConfigured, webauthnAvailable, webauthnCreds).Render(r.Context(), w)
 }
 
+// CreateAppPassword mints a new app password.
+//
+// Audit security.md #21: the plaintext token must never enter a cookie, log,
+// or browser-history surface. HTMX clients receive an inline HTML fragment
+// containing the token (single round-trip, response body only). Non-HTMX
+// callers are redirected back to the settings page with a generic flash —
+// the token is created but not shown, since legacy form-post can't deliver
+// it safely. The UI always uses the HTMX path.
 func (h *settingsHandler) CreateAppPassword(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	name := r.FormValue("name")
+	htmx := r.Header.Get("HX-Request") == "true"
+
 	if name == "" {
+		if htmx {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			appPasswordErrorFragment("App password name is required.").Render(r.Context(), w)
+			return
+		}
 		setFlash(w, "error", "App password name is required.")
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
 
-	plaintext, _, err := h.p.AppPasswords.Create(u.ID, name)
+	plaintext, ap, err := h.p.AppPasswords.Create(u.ID, name)
 	if err != nil {
+		if htmx {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			appPasswordErrorFragment("Failed to create app password: " + err.Error()).Render(r.Context(), w)
+			return
+		}
 		setFlash(w, "error", "Failed to create app password: "+err.Error())
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
 
-	setFlash(w, "success", "token:"+plaintext)
+	if htmx {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		appPasswordCreatedFragment(plaintext, *ap).Render(r.Context(), w)
+		return
+	}
+	// Non-HTMX fallback: token created but not exposed to avoid cookie leak.
+	setFlash(w, "success", "App password created. Use the UI to view the token.")
 	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 }
 

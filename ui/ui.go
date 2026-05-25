@@ -4,9 +4,37 @@ package ui
 import (
 	"encoding/base64"
 	"strings"
+	"sync"
 
 	"git.duckfam.us/jj-software/cog/internal/user"
+	"github.com/microcosm-cc/bluemonday"
 )
+
+// svgPolicy sanitizes plugin-supplied SVG icons before they're rendered as
+// raw HTML in the nav (audit security.md #50). Plugins are typically trusted
+// but external gRPC plugins should not be able to inject <script> or event
+// handlers through their declared icon.
+var svgPolicy = sync.OnceValue(func() *bluemonday.Policy {
+	p := bluemonday.NewPolicy()
+	p.AllowElements("svg", "g", "path", "circle", "rect", "line", "polyline",
+		"polygon", "ellipse", "defs", "use", "title", "desc")
+	p.AllowAttrs("xmlns", "viewBox", "width", "height", "fill", "stroke",
+		"stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-dasharray",
+		"stroke-miterlimit", "class", "transform", "d", "cx", "cy", "r", "rx",
+		"ry", "x", "y", "x1", "y1", "x2", "y2", "points", "id", "href",
+		"opacity", "fill-rule", "clip-rule", "fill-opacity", "stroke-opacity").
+		Globally()
+	return p
+})
+
+// SanitizeIcon strips unsafe constructs (scripts, event handlers, foreign
+// elements) from a plugin-supplied SVG icon string.
+func SanitizeIcon(icon string) string {
+	if icon == "" {
+		return ""
+	}
+	return svgPolicy().Sanitize(icon)
+}
 
 // PageData carries data needed by the layout template.
 type PageData struct {

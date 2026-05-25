@@ -106,7 +106,8 @@ func (h *adminHandler) EditUserForm(w http.ResponseWriter, r *http.Request) {
 
 func (h *adminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := h.p.Users.GetByID(id); err != nil {
+	before, err := h.p.Users.GetByID(id)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -117,6 +118,16 @@ func (h *adminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		setFlash(w, "error", "Failed to update user.")
 		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 		return
+	}
+
+	// Audit security.md #37: when admin status changes, invalidate the
+	// affected user's existing sessions so a captured pre-elevation cookie
+	// can't ride the new privilege level. The user re-logs in to pick up
+	// the change.
+	if before.IsAdmin != isAdmin {
+		if err := h.p.Sessions.DeleteAllForUser(id); err != nil {
+			h.p.Log.Warn("revoke sessions on admin change", "user", id, "err", err)
+		}
 	}
 
 	setFlash(w, "success", "User updated.")
@@ -139,6 +150,11 @@ func (h *adminHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		setFlash(w, "error", "Failed to reset password.")
 		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 		return
+	}
+	// Audit security.md #37: revoke the target user's existing sessions so
+	// any captured cookie can't survive an admin-driven password reset.
+	if err := h.p.Sessions.DeleteAllForUser(id); err != nil {
+		h.p.Log.Warn("revoke sessions on admin password reset", "user", id, "err", err)
 	}
 
 	// Invalidate all sessions for the target user.

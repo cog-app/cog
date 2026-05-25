@@ -316,11 +316,6 @@ func (s *WebAuthnStore) updateCredentialSignCount(userID string, cred *webauthn.
 }
 
 func (s *WebAuthnStore) storeSession(userID string, session *webauthn.SessionData) error {
-	// Clean up old sessions — best-effort, log on failure.
-	if _, err := s.db.Exec(`DELETE FROM webauthn_sessions WHERE user_id = ?`, userID); err != nil {
-		slog.Warn("webauthn store: cleanup old session", "user", userID, "err", err)
-	}
-
 	id, err := generateToken(16)
 	if err != nil {
 		return err
@@ -335,12 +330,25 @@ func (s *WebAuthnStore) storeSession(userID string, session *webauthn.SessionDat
 		return fmt.Errorf("encrypt session: %w", err)
 	}
 
+	// Audit security.md #55: DELETE-then-INSERT was a two-statement window
+	// during which loadSession could see zero rows. Wrap in a transaction so
+	// the prior session is replaced atomically.
 	expires := s.clock().Add(5 * time.Minute)
-	_, err = s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin webauthn session tx: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM webauthn_sessions WHERE user_id = ?`, userID); err != nil {
+		return fmt.Errorf("cleanup old webauthn session: %w", err)
+	}
+	if _, err := tx.Exec(
 		`INSERT INTO webauthn_sessions (id, user_id, session_data, expires_at) VALUES (?, ?, ?, ?)`,
 		id, userID, encrypted, expires.Unix(),
-	)
-	return err
+	); err != nil {
+		return fmt.Errorf("insert webauthn session: %w", err)
+	}
+	return tx.Commit()
 }
 
 func (s *WebAuthnStore) loadSession(userID string) (*webauthn.SessionData, error) {

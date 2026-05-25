@@ -56,10 +56,7 @@ templ settingsSecurityPage(pd ui.PageData, flash string, flashKind string, appPa
 	@ui.SidebarPage(pd, settingsSidebar("security")) {
 		<h1 style="margin-bottom:1rem">Security</h1>
 		if flash != "" {
-			if flashKind == "success" && len(flash) > 6 && flash[:6] == "token:" {
-				@ui.Alert("success", "App password created. Copy this token now — it will not be shown again:")
-				<pre style="background:var(--color-bg-alt);padding:1rem;border-radius:var(--radius);margin-bottom:1rem;word-break:break-all">{ flash[6:] }</pre>
-			} else if flashKind == "success" && strings.HasPrefix(flash, "totp_enabled:") {
+			if flashKind == "success" && strings.HasPrefix(flash, "totp_enabled:") {
 				@ui.Alert("success", "Two-factor authentication enabled. Save these backup codes — they will not be shown again:")
 				<div style="background:var(--color-bg-alt);padding:1rem;border-radius:var(--radius);margin-bottom:1rem;font-family:monospace">
 					for _, code := range strings.Split(flash[len("totp_enabled:"):], ",") {
@@ -85,38 +82,29 @@ templ settingsSecurityPage(pd ui.PageData, flash string, flashKind string, appPa
 		}
 		@ui.Card("App Passwords") {
 			<p class="text-muted" style="margin-bottom:0.75rem">App passwords let third-party clients access your account without your main password.</p>
-			if len(appPasswords) > 0 {
-				<table class="table" style="margin-bottom:1rem">
-					<thead>
-						<tr>
-							<th>Name</th>
-							<th>Created</th>
-							<th class="text-right">Actions</th>
-						</tr>
-					</thead>
-					<tbody>
-						for _, ap := range appPasswords {
-							<tr id={ "apppass-" + ap.ID }>
-								<td>{ ap.Name }</td>
-								<td>{ ap.CreatedAt.Format("2006-01-02") }</td>
-								<td class="text-right">
-									<button
-										class="btn btn-danger btn-sm"
-										hx-delete={ "/settings/app-passwords/" + ap.ID }
-										hx-target={ "#apppass-" + ap.ID }
-										hx-swap="outerHTML"
-										hx-confirm="Revoke this app password?"
-									>Revoke</button>
-								</td>
-							</tr>
-						}
-					</tbody>
-				</table>
-			} else {
-				<p class="text-muted" style="margin-bottom:0.75rem">No app passwords.</p>
-			}
+			<table class="table" style="margin-bottom:1rem">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Created</th>
+						<th class="text-right">Actions</th>
+					</tr>
+				</thead>
+				<tbody id="app-passwords-list">
+					for _, ap := range appPasswords {
+						@appPasswordRow(ap)
+					}
+				</tbody>
+			</table>
+			<div id="new-app-pw"></div>
 			<h4>Create App Password</h4>
-			<form method="post" action="/settings/app-passwords" class="flex gap-1 items-center">
+			<form
+				hx-post="/settings/app-passwords"
+				hx-target="#new-app-pw"
+				hx-swap="innerHTML"
+				hx-on::after-request="if(event.detail.successful) this.reset()"
+				class="flex gap-1 items-center"
+			>
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 				<input class="form-control" type="text" name="name" placeholder="Password name" required style="max-width:300px"/>
 				<button class="btn btn-primary" type="submit">Create</button>
@@ -461,4 +449,54 @@ templ settingsWebAuthnCard(pd ui.PageData, mfaMethod string, creds []auth.WebAut
 
 func percentStr(p int) string {
 	return strconv.Itoa(p)
+}
+
+// appPasswordRow renders one row in the app-passwords table. Shared between
+// initial page render and the OOB append after a successful create.
+templ appPasswordRow(ap auth.AppPassword) {
+	<tr id={ "apppass-" + ap.ID }>
+		<td>{ ap.Name }</td>
+		<td>{ ap.CreatedAt.Format("2006-01-02") }</td>
+		<td class="text-right">
+			<button
+				class="btn btn-danger btn-sm"
+				hx-delete={ "/settings/app-passwords/" + ap.ID }
+				hx-target={ "#apppass-" + ap.ID }
+				hx-swap="outerHTML"
+				hx-confirm="Revoke this app password?"
+			>Revoke</button>
+		</td>
+	</tr>
+}
+
+// appPasswordCreatedFragment is the HTMX response after a successful create.
+// It returns the freshly minted token (rendered once into the page body, never
+// stored in a cookie — audit security.md #21) plus an OOB-swapped row that
+// appends to the table.
+templ appPasswordCreatedFragment(plaintext string, ap auth.AppPassword) {
+	@ui.Alert("success", "App password created. Copy this token now — it will not be shown again:")
+	<pre style="background:var(--color-bg-alt);padding:1rem;border-radius:var(--radius);margin-bottom:1rem;word-break:break-all">{ plaintext }</pre>
+	// HTMX parses OOB content with the body-fragment rules of the browser,
+	// which would strip a bare <tr>. Wrap in <template> so the row survives
+	// parsing; HTMX unwraps it before the swap.
+	<template>
+		<tr id={ "apppass-" + ap.ID } hx-swap-oob={ "beforeend:#app-passwords-list" }>
+			<td>{ ap.Name }</td>
+			<td>{ ap.CreatedAt.Format("2006-01-02") }</td>
+			<td class="text-right">
+				<button
+					class="btn btn-danger btn-sm"
+					hx-delete={ "/settings/app-passwords/" + ap.ID }
+					hx-target={ "#apppass-" + ap.ID }
+					hx-swap="outerHTML"
+					hx-confirm="Revoke this app password?"
+				>Revoke</button>
+			</td>
+		</tr>
+	</template>
+}
+
+// appPasswordErrorFragment renders an inline error alert for the HTMX path.
+templ appPasswordErrorFragment(msg string) {
+	@ui.Alert("error", msg)
 }

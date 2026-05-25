@@ -376,7 +376,9 @@ func (h *SharingHandler) logShareActivity(u *user.User, rec *share.Record, typ, 
 		return
 	}
 	subject := fmt.Sprintf("%s %s %s", u.DisplayName, verb, rec.ResourceType)
-	h.Activities.Log(u.Username, u.Username, "sharing", typ, subject, rec.ResourceType, rec.ResourceID, "")
+	if err := h.Activities.Log(u.Username, u.Username, "sharing", typ, subject, rec.ResourceType, rec.ResourceID, ""); err != nil {
+		slog.Warn("activity log failed", "type", typ, "resource", rec.ResourceID, "err", err)
+	}
 }
 
 // createFederatedShare handles outbound federated sharing (shareType=6).
@@ -679,6 +681,23 @@ func (h *SharingHandler) HandleSharees(w http.ResponseWriter, r *http.Request) {
 		if n, err := strconv.Atoi(pp); err == nil && n > 0 {
 			perPage = n
 		}
+	}
+
+	// Audit security.md #48: non-admins should not be able to enumerate the
+	// full user roster. Require at least 2 chars of search before returning
+	// any users/groups. Admins keep unrestricted browsing for the picker UI.
+	if !u.IsAdmin && len(search) < 2 {
+		writeOCSReq(w, r, http.StatusOK, map[string]any{
+			"exact": map[string]any{
+				"users":   []any{},
+				"groups":  []any{},
+				"remotes": []any{},
+			},
+			"users":   []any{},
+			"groups":  []any{},
+			"remotes": []any{},
+		})
+		return
 	}
 
 	var exactUsers, users []map[string]any

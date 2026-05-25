@@ -334,10 +334,10 @@ func TestBrowserSettingsCreateAppPassword(t *testing.T) {
 	b.Login(t, "alice", "pass")
 
 	b.Navigate(t, "/settings/security")
-	b.WaitVisible(t, `form[action="/settings/app-passwords"] input[name="name"]`)
+	b.WaitVisible(t, `form[hx-post="/settings/app-passwords"] input[name="name"]`)
 
-	b.Type(t, `form[action="/settings/app-passwords"] input[name="name"]`, "my-app")
-	b.Click(t, `form[action="/settings/app-passwords"] button[type="submit"]`)
+	b.Type(t, `form[hx-post="/settings/app-passwords"] input[name="name"]`, "my-app")
+	b.Click(t, `form[hx-post="/settings/app-passwords"] button[type="submit"]`)
 
 	// Should show the created token.
 	b.WaitVisible(t, ".alert-success")

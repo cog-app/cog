@@ -385,3 +385,17 @@ func TestValidateCSRF_HeaderBeatsForm(t *testing.T) {
 		t.Fatal("header token should be accepted")
 	}
 }
+
+// TestValidateCSRF_QueryStringIgnored pins audit security.md #33: a token in
+// the URL query string must NOT be honored, because Referer/log leaks could
+// then become CSRF bypasses.
+func TestValidateCSRF_QueryStringIgnored(t *testing.T) {
+	secret := []byte("s")
+	good := CSRFToken("sess1", secret)
+
+	req := httptest.NewRequest("POST", "/?csrf_token="+good, strings.NewReader(""))
+	// Body has nothing, header has nothing, only query string.
+	if ValidateCSRF(req, "sess1", secret) {
+		t.Fatal("CSRF token in query string must not be accepted")
+	}
+}

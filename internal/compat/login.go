@@ -1,6 +1,7 @@
 package compat
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -255,6 +256,25 @@ func (h *LoginFlowHandler) Cleanup() {
 			delete(h.pending, token)
 		}
 	}
+}
+
+// StartCleanup runs Cleanup every loginFlowExpiry/2 until ctx is canceled.
+// Without this the pending map grows unboundedly if clients abandon their
+// polls (audit security.md #56).
+func (h *LoginFlowHandler) StartCleanup(ctx context.Context) {
+	interval := loginFlowExpiry / 2
+	go func() {
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				h.Cleanup()
+			}
+		}
+	}()
 }
 
 func randomHex(n int) (string, error) {
