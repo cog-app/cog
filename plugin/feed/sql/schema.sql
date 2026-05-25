@@ -1,10 +1,10 @@
-CREATE TABLE folders (
+CREATE TABLE IF NOT EXISTS folders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
-CREATE TABLE subscriptions (
+CREATE TABLE IF NOT EXISTS subscriptions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL,
     kind TEXT NOT NULL CHECK(kind IN ('rss','youtube','url')),
@@ -26,7 +26,7 @@ CREATE TABLE subscriptions (
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
-CREATE TABLE items (
+CREATE TABLE IF NOT EXISTS items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     subscription_id INTEGER NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
     guid TEXT NOT NULL,
@@ -47,18 +47,18 @@ CREATE TABLE items (
     UNIQUE(subscription_id, guid)
 );
 
-CREATE TABLE tags (
+CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE
 );
 
-CREATE TABLE item_tags (
+CREATE TABLE IF NOT EXISTS item_tags (
     item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
     tag_id  INTEGER NOT NULL REFERENCES tags(id)  ON DELETE CASCADE,
     PRIMARY KEY (item_id, tag_id)
 );
 
-CREATE TABLE filters (
+CREATE TABLE IF NOT EXISTS filters (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sort_order INTEGER NOT NULL DEFAULT 0,
     query TEXT NOT NULL DEFAULT '*',
@@ -67,7 +67,7 @@ CREATE TABLE filters (
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
-CREATE TABLE downloads (
+CREATE TABLE IF NOT EXISTS downloads (
     item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
     state TEXT NOT NULL CHECK(state IN ('queued','downloading','ready','error')),
     local_path TEXT NOT NULL DEFAULT '',
@@ -81,14 +81,14 @@ CREATE TABLE downloads (
     needs_transcribe INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE playback (
+CREATE TABLE IF NOT EXISTS playback (
     item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
     progress_sec REAL NOT NULL DEFAULT 0,
     completed INTEGER NOT NULL DEFAULT 0,
     last_played_at INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE playlists (
+CREATE TABLE IF NOT EXISTS playlists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     query TEXT NOT NULL,
@@ -96,13 +96,13 @@ CREATE TABLE playlists (
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
-CREATE INDEX idx_subscriptions_next_check ON subscriptions(next_check_at);
-CREATE INDEX idx_subscriptions_folder ON subscriptions(folder_id);
-CREATE INDEX idx_items_subscription ON items(subscription_id);
-CREATE INDEX idx_items_published ON items(published_at DESC);
-CREATE INDEX idx_items_unread ON items(is_read, published_at DESC);
-CREATE INDEX idx_items_starred ON items(is_starred, published_at DESC);
-CREATE INDEX idx_items_type ON items(type, published_at DESC);
-CREATE INDEX idx_downloads_state ON downloads(state);
-CREATE INDEX idx_filters_order ON filters(sort_order);
-CREATE INDEX idx_playback_last ON playback(last_played_at DESC);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_next_check ON subscriptions(next_check_at);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_folder ON subscriptions(folder_id);
+CREATE INDEX IF NOT EXISTS idx_items_subscription ON items(subscription_id);
+CREATE INDEX IF NOT EXISTS idx_items_published ON items(published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_items_unread ON items(is_read, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_items_starred ON items(is_starred, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_items_type ON items(type, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_downloads_state ON downloads(state);
+CREATE INDEX IF NOT EXISTS idx_filters_order ON filters(sort_order);
+CREATE INDEX IF NOT EXISTS idx_playback_last ON playback(last_played_at DESC);
