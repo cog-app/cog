@@ -1,0 +1,13 @@
+#!/bin/sh
+# Stub yt-dlp for pipeline tests.
+# Pluck out the -o output path; write a small payload to it.
+out=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    *)  shift ;;
+  esac
+done
+[ -z "$out" ] && exit 1
+echo "dummy youtube payload" > "$out"
+exit 0
