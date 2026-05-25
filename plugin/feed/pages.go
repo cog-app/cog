@@ -3,6 +3,7 @@ package feed
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -500,6 +501,61 @@ func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	h.setFlash(w, "success", "Saved.")
 	http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+}
+
+// ImportOPML handles POST of an OPML file to bulk-add RSS subscriptions.
+func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := r.ParseMultipartForm(2 << 20); err != nil {
+		h.setFlash(w, "error", "Upload too large or malformed.")
+		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		return
+	}
+	file, _, err := r.FormFile("opml")
+	if err != nil {
+		h.setFlash(w, "error", "No OPML file uploaded.")
+		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, 2<<20))
+	if err != nil {
+		h.setFlash(w, "error", "Failed to read OPML: "+err.Error())
+		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		return
+	}
+
+	n, err := store.ImportOPML(data)
+	if err != nil {
+		h.setFlash(w, "error", "OPML parse error: "+err.Error())
+		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		return
+	}
+	h.setFlash(w, "success", fmt.Sprintf("Imported %d subscriptions.", n))
+	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+}
+
+// ExportOPML returns the user's RSS subscriptions as an OPML file download.
+func (h *Pages) ExportOPML(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	data, err := store.ExportOPML()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set("Content-Disposition", `attachment; filename="cog-feeds.opml"`)
+	_, _ = w.Write(data)
 }
 
 // ToggleStar toggles the starred state of an item then redirects back.

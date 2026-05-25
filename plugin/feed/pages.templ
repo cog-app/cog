@@ -48,6 +48,10 @@ templ feedSettingsPage(subs []Subscription, folders []Folder, filters []Filter, 
 					</li>
 				}
 			</ul>
+			<div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+				@ui.Upload("/apps/feed/opml/import", "opml", ".opml,.xml,application/xml", csrfToken, "Import OPML", "btn-secondary btn-sm")
+				<a class="btn btn-secondary btn-sm" href="/apps/feed/opml/export">Export OPML</a>
+			</div>
 		}
 		@ui.Card("Folders") {
 			<form id="add-folder" method="post" action="/apps/feed/folders" class="flex gap-1 items-center">
