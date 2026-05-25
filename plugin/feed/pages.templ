@@ -1,10 +1,468 @@
 package feed
 
 import (
+	"fmt"
+	"net/url"
 	"strconv"
+	"strings"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/ui"
 )
+
+// sidebarData holds all data needed to render the feed sidebar.
+type sidebarData struct {
+	Folders       []Folder
+	Subscriptions []Subscription
+	Tags          []string
+	Playlists     []Playlist
+	ActivePath    string
+	TotalUnread   int
+	StarredCount  int
+	UnreadCounts  map[int64]int // by subscription_id
+	FolderUnread  map[int64]int // by folder_id
+}
+
+templ feedSidebar(sb sidebarData) {
+	<nav class="sidebar" id="feed-sidebar">
+		<a href="/apps/feed/" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/") }>
+			All
+			if sb.TotalUnread > 0 {
+				<span class="badge">{ strconv.Itoa(sb.TotalUnread) }</span>
+			}
+		</a>
+		<a href="/apps/feed/starred" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/starred") }>
+			Starred
+			if sb.StarredCount > 0 {
+				<span class="badge">{ strconv.Itoa(sb.StarredCount) }</span>
+			}
+		</a>
+		<div class="sidebar-divider"></div>
+		for _, folder := range sb.Folders {
+			<details class="sidebar-folder" data-folder-id={ strconv.FormatInt(folder.ID, 10) } open?={ isFeedFolderActive(folder, sb) }>
+				<summary class="sidebar-group-label">
+					<a
+						href={ templ.SafeURL(fmt.Sprintf("/apps/feed/folder/%d", folder.ID)) }
+						style="color:inherit;text-decoration:none"
+						onclick="event.stopPropagation()"
+					>{ folder.Name }</a>
+					if sb.FolderUnread[folder.ID] > 0 {
+						<span class="badge">{ strconv.Itoa(sb.FolderUnread[folder.ID]) }</span>
+					}
+				</summary>
+				for _, sub := range sb.Subscriptions {
+					if sub.FolderID.Valid && sub.FolderID.Int64 == folder.ID {
+						@feedSidebarSubLink(sub, sb)
+					}
+				}
+			</details>
+		}
+		for _, sub := range sb.Subscriptions {
+			if !sub.FolderID.Valid {
+				@feedSidebarSubLink(sub, sb)
+			}
+		}
+		if len(sb.Tags) > 0 {
+			<div class="sidebar-divider"></div>
+			<span class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-muted)">Tags</span>
+			for _, tag := range sb.Tags {
+				<a
+					href={ templ.SafeURL("/apps/feed/tag/" + url.PathEscape(tag)) }
+					class={ feedSidebarClass(sb.ActivePath, "/apps/feed/tag/"+tag) }
+					style="padding-left:1.5rem;font-size:0.9rem"
+				>{ tag }</a>
+			}
+		}
+		if len(sb.Playlists) > 0 {
+			<div class="sidebar-divider"></div>
+			<span class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-muted)">Playlists</span>
+			for _, pl := range sb.Playlists {
+				<a
+					href={ templ.SafeURL("/apps/feed/?q=" + url.QueryEscape(pl.Query)) }
+					class="sidebar-item"
+					style="padding-left:1.5rem;font-size:0.9rem"
+				>{ pl.Name }</a>
+			}
+		}
+		<div class="sidebar-divider"></div>
+		<a href="/apps/feed/settings" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/settings") }>Settings</a>
+	</nav>
+	<script>
+		// Preserve folder open/closed state across HTMX sidebar refreshes.
+		(function () {
+			var openFolders = new Set();
+			document.addEventListener("htmx:beforeSwap", function (e) {
+				if (e.detail.target && e.detail.target.id === "feed-sidebar") {
+					openFolders.clear();
+					e.detail.target
+						.querySelectorAll("details[data-folder-id]")
+						.forEach(function (d) {
+							if (d.open) openFolders.add(d.getAttribute("data-folder-id"));
+						});
+				}
+			});
+			document.addEventListener("htmx:afterSwap", function (e) {
+				if (e.detail.target && e.detail.target.id === "feed-sidebar") {
+					e.detail.target
+						.querySelectorAll("details[data-folder-id]")
+						.forEach(function (d) {
+							if (openFolders.has(d.getAttribute("data-folder-id")))
+								d.open = true;
+						});
+				}
+			});
+		})();
+	</script>
+}
+
+templ feedSidebarSubLink(sub Subscription, sb sidebarData) {
+	<a
+		href={ templ.SafeURL(fmt.Sprintf("/apps/feed/subscription/%d", sub.ID)) }
+		class={ feedSidebarSubClass(sub, sb) }
+		style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem"
+	>
+		<span class="sidebar-item-text">{ subscriptionDisplayTitle(sub) }</span>
+		if sub.LastError != "" {
+			<span class="text-danger" title={ sub.LastError }>!</span>
+		}
+		if sb.UnreadCounts[sub.ID] > 0 {
+			<span class="badge">{ strconv.Itoa(sb.UnreadCounts[sub.ID]) }</span>
+		}
+	</a>
+}
+
+templ feedIndexPage(sb sidebarData, items []ItemWithSubscription, q string, csrfToken string) {
+	<div class="sidebar-layout">
+		@feedSidebar(sb)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between;flex-wrap:wrap">
+				<h1 style="margin:0">All Articles</h1>
+				<div class="flex gap-1 items-center">
+					<form method="get" action="/apps/feed/">
+						<div class="flex gap-1">
+							<input class="form-control" type="search" name="q" value={ q } placeholder="Search feeds…" style="max-width:280px"/>
+							<button class="btn btn-outline btn-sm" type="submit">Go</button>
+						</div>
+					</form>
+					if sb.TotalUnread > 0 {
+						<form method="post" action="/apps/feed/items/read-all">
+							<input type="hidden" name="csrf_token" value={ csrfToken }/>
+							<button class="btn btn-outline btn-sm" type="submit">Mark all read</button>
+						</form>
+					}
+				</div>
+			</div>
+			if len(items) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No articles yet. Subscribe to feeds in Settings.</p>
+				}
+			} else {
+				@feedItemList(items, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ feedSubscriptionPage(sb sidebarData, sub *Subscription, items []ItemWithSubscription, csrfToken string) {
+	<div class="sidebar-layout">
+		@feedSidebar(sb)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+				<h1 style="margin:0">{ subscriptionDisplayTitle(*sub) }</h1>
+				<div class="flex gap-1">
+					<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/feed/subscriptions/%d/refresh", sub.ID)) }>
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<button class="btn btn-outline btn-sm" type="submit">Refresh</button>
+					</form>
+					<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/feed/subscriptions/%d/read-all", sub.ID)) }>
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<button class="btn btn-outline btn-sm" type="submit">Mark all read</button>
+					</form>
+				</div>
+			</div>
+			if sub.LastError != "" {
+				@ui.Alert("error", sub.LastError)
+			}
+			if len(items) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No articles in this subscription yet.</p>
+				}
+			} else {
+				@feedItemList(items, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ feedFolderPage(sb sidebarData, folder *Folder, items []ItemWithSubscription, csrfToken string) {
+	<div class="sidebar-layout">
+		@feedSidebar(sb)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+				<h1 style="margin:0">{ folder.Name }</h1>
+				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/feed/folders/%d/read-all", folder.ID)) }>
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<button class="btn btn-outline btn-sm" type="submit">Mark all read</button>
+				</form>
+			</div>
+			if len(items) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No articles in this folder.</p>
+				}
+			} else {
+				@feedItemList(items, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ feedStarredPage(sb sidebarData, items []ItemWithSubscription, csrfToken string) {
+	<div class="sidebar-layout">
+		@feedSidebar(sb)
+		<div class="sidebar-content">
+			<h1>Starred</h1>
+			if len(items) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No starred articles.</p>
+				}
+			} else {
+				@feedItemList(items, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ feedTagPage(sb sidebarData, tag string, items []ItemWithSubscription, csrfToken string) {
+	<div class="sidebar-layout">
+		@feedSidebar(sb)
+		<div class="sidebar-content">
+			<h1>Tag: { tag }</h1>
+			if len(items) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No articles with this tag.</p>
+				}
+			} else {
+				@feedItemList(items, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ feedItemList(items []ItemWithSubscription, csrfToken string) {
+	<div id="item-list">
+		for _, item := range items {
+			@feedItemRow(item, csrfToken)
+		}
+	</div>
+	<script>
+		function toggleArticle(id) {
+			var el = document.getElementById("detail-" + id);
+			var row = document.getElementById("item-" + id);
+			var summary = document.getElementById("summary-" + id);
+			if (!el) return;
+			var isOpen = el.style.display !== "none";
+			// Close all open details.
+			document.querySelectorAll(".feed-item-detail").forEach(function (d) {
+				d.style.display = "none";
+			});
+			document.querySelectorAll(".feed-item-active").forEach(function (r) {
+				r.classList.remove("feed-item-active");
+			});
+			document
+				.querySelectorAll(".feed-item-summary-line")
+				.forEach(function (s) {
+					s.style.display = "";
+				});
+			if (!isOpen) {
+				el.style.display = "";
+				row.classList.add("feed-item-active");
+				if (summary) summary.style.display = "none";
+				// Mark as read visually and on the server.
+				if (!row.classList.contains("feed-item-read")) {
+					row.classList.add("feed-item-read");
+					var readBtn = row.querySelector('[title="Toggle read"]');
+					if (readBtn) readBtn.innerHTML = "○";
+				}
+				fetch("/apps/feed/items/" + id + "/mark-read", {
+					method: "POST",
+					headers: {
+						"X-CSRF-Token": document.querySelector("[name=csrf_token]")
+							? document.querySelector("[name=csrf_token]").value
+							: "",
+					},
+				});
+			}
+		}
+		(function () {
+			document.addEventListener("keydown", function (e) {
+				if (
+					e.target.tagName === "INPUT" ||
+					e.target.tagName === "TEXTAREA" ||
+					e.target.tagName === "SELECT"
+				)
+					return;
+				var items = Array.from(document.querySelectorAll(".feed-item"));
+				var active = document.querySelector(".feed-item-active");
+				var idx = active ? items.indexOf(active) : -1;
+				if (e.key === "j") {
+					e.preventDefault();
+					var next = idx + 1;
+					if (next < items.length) {
+						var id = items[next].id.replace("item-", "");
+						toggleArticle(id);
+						items[next].scrollIntoView({
+							block: "nearest",
+							behavior: "smooth",
+						});
+					}
+				} else if (e.key === "k") {
+					e.preventDefault();
+					var prev = idx - 1;
+					if (prev >= 0) {
+						var id = items[prev].id.replace("item-", "");
+						toggleArticle(id);
+						items[prev].scrollIntoView({
+							block: "nearest",
+							behavior: "smooth",
+						});
+					}
+				} else if (e.key === "o" || e.key === "Enter") {
+					if (active) {
+						var link = active.querySelector(
+							".feed-item-detail a[target=_blank]",
+						);
+						if (link) {
+							e.preventDefault();
+							window.open(link.href, "_blank");
+						}
+					}
+				}
+			});
+		})();
+	</script>
+}
+
+templ feedItemRow(item ItemWithSubscription, csrfToken string) {
+	if item.Type == "audio" || item.Type == "video" {
+		@feedMediaItemRow(item, csrfToken)
+	} else {
+		@feedTextItemRow(item, csrfToken)
+	}
+}
+
+templ feedTextItemRow(item ItemWithSubscription, csrfToken string) {
+	<div id={ fmt.Sprintf("item-%d", item.ID) } class={ feedItemRowClass(item.IsRead) } style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0)">
+		<div class="flex items-center gap-1" style="justify-content:space-between;cursor:pointer" onclick={ templ.ComponentScript{Call: fmt.Sprintf("toggleArticle(%d)", item.ID)} }>
+			<div style="min-width:0;flex:1">
+				<div class="flex items-center gap-1" style="flex-wrap:wrap">
+					<span class="text-muted" style="font-size:0.8rem">{ item.SubscriptionTitle }</span>
+					if item.Author != "" {
+						<span class="text-muted" style="font-size:0.8rem">&middot; { item.Author }</span>
+					}
+					<span class="text-muted" style="font-size:0.8rem">&middot; { feedFormatTime(item.PublishedAt) }</span>
+				</div>
+				<div style="font-weight:500">{ item.Title }</div>
+				if feedItemSummary(item.ContentHTML) != "" {
+					<div id={ fmt.Sprintf("summary-%d", item.ID) } class="feed-item-summary-line">
+						{ feedItemSummary(item.ContentHTML) }
+					</div>
+				}
+			</div>
+			<div class="flex gap-1" style="flex-shrink:0" onclick="event.stopPropagation()">
+				if item.URL != "" {
+					<a
+						href={ templ.SafeURL(item.URL) }
+						target="_blank"
+						rel="noopener"
+						class="btn btn-outline btn-sm"
+						title="Open article"
+					>&#8599;</a>
+				}
+				@ui.Star(item.IsStarred, fmt.Sprintf("/apps/feed/items/%d/star", item.ID))
+				<button
+					class="btn btn-outline btn-sm"
+					hx-post={ fmt.Sprintf("/apps/feed/items/%d/read", item.ID) }
+					hx-target={ fmt.Sprintf("#item-%d", item.ID) }
+					hx-swap="outerHTML"
+					title="Toggle read"
+				>
+					if item.IsRead {
+						&#9675;
+					} else {
+						&#9679;
+					}
+				</button>
+			</div>
+		</div>
+		<div id={ fmt.Sprintf("detail-%d", item.ID) } class="feed-item-detail" style="display:none">
+			if feedItemPreviewImage(item.ContentHTML) != "" {
+				<img class="feed-item-preview-img" src={ feedItemPreviewImage(item.ContentHTML) } alt=""/>
+			}
+			if item.ContentHTML != "" {
+				<div class="feed-item-content">
+					@templ.Raw(item.ContentHTML)
+				</div>
+			} else if feedItemSummary(item.ContentHTML) != "" {
+				<p class="feed-item-summary">{ feedItemSummary(item.ContentHTML) }</p>
+			}
+			<div style="margin-top:0.75rem;clear:both">
+				if item.URL != "" {
+					<a href={ templ.SafeURL(item.URL) } target="_blank" rel="noopener" class="btn btn-outline btn-sm">Open article</a>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+templ feedMediaItemRow(item ItemWithSubscription, csrfToken string) {
+	<div id={ fmt.Sprintf("item-%d", item.ID) } class={ feedItemRowClass(item.IsRead) } style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0)">
+		<div class="flex items-center gap-1" style="justify-content:space-between">
+			<div style="min-width:0;flex:1">
+				<div class="flex items-center gap-1" style="flex-wrap:wrap">
+					<span class="text-muted" style="font-size:0.8rem">{ item.SubscriptionTitle }</span>
+					if item.Author != "" {
+						<span class="text-muted" style="font-size:0.8rem">&middot; { item.Author }</span>
+					}
+					<span class="text-muted" style="font-size:0.8rem">&middot; { feedFormatTime(item.PublishedAt) }</span>
+					if item.DurationSec > 0 {
+						<span class="text-muted" style="font-size:0.8rem">&middot; { feedFormatDuration(item.DurationSec) }</span>
+					}
+				</div>
+				<div style="font-weight:500">{ item.Title }</div>
+			</div>
+			<div class="flex gap-1" style="flex-shrink:0">
+				<a
+					href={ templ.SafeURL(fmt.Sprintf("/apps/feed/items/%d", item.ID)) }
+					class="btn btn-outline btn-sm"
+					title={ "Play " + item.Type }
+				>&#9654; Play</a>
+				if item.URL != "" {
+					<a
+						href={ templ.SafeURL(item.URL) }
+						target="_blank"
+						rel="noopener"
+						class="btn btn-outline btn-sm"
+						title="Open original"
+					>&#8599;</a>
+				}
+				@ui.Star(item.IsStarred, fmt.Sprintf("/apps/feed/items/%d/star", item.ID))
+				<button
+					class="btn btn-outline btn-sm"
+					hx-post={ fmt.Sprintf("/apps/feed/items/%d/read", item.ID) }
+					hx-target={ fmt.Sprintf("#item-%d", item.ID) }
+					hx-swap="outerHTML"
+					title="Toggle read"
+				>
+					if item.IsRead {
+						&#9675;
+					} else {
+						&#9679;
+					}
+				</button>
+			</div>
+		</div>
+	</div>
+}
 
 templ feedSettingsPage(subs []Subscription, folders []Folder, filters []Filter, playlists []Playlist, flashMsg string, flashKind string, csrfToken string) {
 	<div id="feed-settings">
@@ -98,7 +556,7 @@ templ feedSettingsPage(subs []Subscription, folders []Folder, filters []Filter, 
 				for _, fl := range filters {
 					<li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
 						<code style="flex:1">{ fl.Query }</code>
-						<span>→ { fl.Action }</span>
+						<span>&#8594; { fl.Action }</span>
 						if fl.ActionValue != "" {
 							<span class="badge">{ fl.ActionValue }</span>
 						}
@@ -133,60 +591,6 @@ templ feedSettingsPage(subs []Subscription, folders []Folder, filters []Filter, 
 	</div>
 }
 
-templ feedIndexPage(folders []Folder, tags []string, playlists []Playlist, items []Item, query string) {
-	<div class="sidebar-layout">
-		<nav class="sidebar" id="feed-sidebar">
-			<a href="/apps/feed/" class="sidebar-item">All</a>
-			if len(folders) > 0 {
-				<div class="sidebar-divider"></div>
-				for _, f := range folders {
-					<a href={ templ.SafeURL("/apps/feed/?q=folder:" + f.Name) } class="sidebar-item" style="padding-left:1.5rem;font-size:0.9rem">{ f.Name }</a>
-				}
-			}
-			if len(tags) > 0 {
-				<div class="sidebar-divider"></div>
-				for _, tg := range tags {
-					<a href={ templ.SafeURL("/apps/feed/?q=tag:" + tg) } class="sidebar-item" style="padding-left:1.5rem;font-size:0.9rem">{ tg }</a>
-				}
-			}
-			if len(playlists) > 0 {
-				<div class="sidebar-divider"></div>
-				for _, pl := range playlists {
-					<a href={ templ.SafeURL("/apps/feed/?q=" + pl.Query) } class="sidebar-item">{ pl.Name }</a>
-				}
-			}
-			<div class="sidebar-divider"></div>
-			<a href="/apps/feed/settings" class="sidebar-item">Settings</a>
-		</nav>
-		<div class="sidebar-content">
-			<form method="get" action="/apps/feed/" class="mb-2">
-				<div class="flex gap-1">
-					<input class="form-control" type="search" name="q" value={ query } placeholder="Search feeds…" style="max-width:400px"/>
-					<button class="btn btn-outline btn-sm" type="submit">Go</button>
-				</div>
-			</form>
-			if len(items) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No items found.</p>
-				}
-			} else {
-				<ul id="feed-items" style="padding-left:0;list-style:none;margin:0">
-					for _, it := range items {
-						@feedItemRow(it)
-					}
-				</ul>
-			}
-		</div>
-	</div>
-}
-
-templ feedItemRow(it Item) {
-	<li id={ "item-" + strconv.FormatInt(it.ID, 10) } style="padding:0.5rem 0;border-bottom:1px solid var(--color-border)">
-		<a href={ templ.SafeURL("/apps/feed/items/" + strconv.FormatInt(it.ID, 10)) } class="item-link" style="font-weight:500">{ it.Title }</a>
-		<span class="badge" style="margin-left:0.4rem;font-size:0.75rem">{ it.Type }</span>
-	</li>
-}
-
 templ feedItemDetail(it Item, tags []string) {
 	@ui.Card(it.Title) {
 		<div class="mb-2">
@@ -211,13 +615,6 @@ templ feedItemDetail(it Item, tags []string) {
 	}
 }
 
-func subscriptionDisplayTitle(s Subscription) string {
-	if s.Title != "" {
-		return s.Title
-	}
-	return s.URL
-}
-
 templ feedSystemSettingsPage(model string, modelsDir string, cliPath string, flash string, flashKind string) {
 	@ui.Alert(flashKind, flash)
 	@ui.Card("Transcription (whisper.cpp)") {
@@ -238,4 +635,126 @@ templ feedSystemSettingsPage(model string, modelsDir string, cliPath string, fla
 			@ui.Button("primary", "Save")
 		</form>
 	}
+}
+
+// --- Template helpers ---
+
+func subscriptionDisplayTitle(s Subscription) string {
+	if s.Title != "" {
+		return s.Title
+	}
+	return s.URL
+}
+
+func feedSidebarClass(activePath, itemPath string) string {
+	if activePath == itemPath {
+		return "sidebar-item active"
+	}
+	return "sidebar-item"
+}
+
+func feedSidebarSubClass(sub Subscription, sb sidebarData) string {
+	base := feedSidebarClass(sb.ActivePath, fmt.Sprintf("/apps/feed/subscription/%d", sub.ID))
+	if sub.LastError != "" {
+		return base + " text-danger"
+	}
+	return base
+}
+
+func isFeedFolderActive(folder Folder, sb sidebarData) bool {
+	if sb.ActivePath == fmt.Sprintf("/apps/feed/folder/%d", folder.ID) {
+		return true
+	}
+	for _, sub := range sb.Subscriptions {
+		if sub.FolderID.Valid && sub.FolderID.Int64 == folder.ID {
+			if sb.ActivePath == fmt.Sprintf("/apps/feed/subscription/%d", sub.ID) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func feedItemRowClass(isRead bool) string {
+	if isRead {
+		return "feed-item feed-item-read"
+	}
+	return "feed-item"
+}
+
+func feedFormatTime(unix int64) string {
+	if unix == 0 {
+		return ""
+	}
+	t := time.Unix(unix, 0)
+	now := time.Now()
+	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
+		return t.Format("15:04")
+	}
+	if t.Year() == now.Year() {
+		return t.Format("Jan 2")
+	}
+	return t.Format("2006-01-02")
+}
+
+func feedFormatDuration(sec int64) string {
+	h := sec / 3600
+	m := (sec % 3600) / 60
+	s := sec % 60
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%d:%02d", m, s)
+}
+
+func feedItemPreviewImage(html string) string {
+	idx := strings.Index(html, "<img")
+	if idx == -1 {
+		return ""
+	}
+	rest := html[idx:]
+	srcIdx := strings.Index(rest, `src="`)
+	if srcIdx == -1 {
+		srcIdx = strings.Index(rest, "src='")
+		if srcIdx == -1 {
+			return ""
+		}
+		rest = rest[srcIdx+5:]
+		end := strings.Index(rest, "'")
+		if end == -1 {
+			return ""
+		}
+		return rest[:end]
+	}
+	rest = rest[srcIdx+5:]
+	end := strings.Index(rest, `"`)
+	if end == -1 {
+		return ""
+	}
+	return rest[:end]
+}
+
+func feedItemSummary(html string) string {
+	var b strings.Builder
+	inTag := false
+	count := 0
+	for _, r := range html {
+		if r == '<' {
+			inTag = true
+			continue
+		}
+		if r == '>' {
+			inTag = false
+			continue
+		}
+		if !inTag {
+			b.WriteRune(r)
+			count++
+			if count >= 300 {
+				b.WriteString("...")
+				break
+			}
+		}
+	}
+	return b.String()
 }

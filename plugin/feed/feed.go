@@ -88,6 +88,19 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterPage("items/{id}/media", http.HandlerFunc(pages.ItemMedia))
 	ctx.RegisterAction("POST", "items/{id}/read", http.HandlerFunc(pages.ToggleRead))
 	ctx.RegisterAction("POST", "items/{id}/star", http.HandlerFunc(pages.ToggleStar))
+	ctx.RegisterAction("POST", "items/{id}/mark-read", http.HandlerFunc(pages.MarkItemRead))
+
+	// View pages
+	ctx.RegisterPage("subscription/{id}", http.HandlerFunc(pages.SubscriptionView))
+	ctx.RegisterPage("folder/{id}", http.HandlerFunc(pages.FolderView))
+	ctx.RegisterPage("starred", http.HandlerFunc(pages.StarredView))
+	ctx.RegisterPage("tag/{name}", http.HandlerFunc(pages.TagView))
+
+	// Bulk-mark and refresh actions
+	ctx.RegisterAction("POST", "items/read-all", http.HandlerFunc(pages.MarkAllRead))
+	ctx.RegisterAction("POST", "subscriptions/{id}/refresh", http.HandlerFunc(pages.RefreshSubscription))
+	ctx.RegisterAction("POST", "subscriptions/{id}/read-all", http.HandlerFunc(pages.MarkSubscriptionRead))
+	ctx.RegisterAction("POST", "folders/{id}/read-all", http.HandlerFunc(pages.MarkFolderRead))
 
 	// Settings page and resource actions
 	ctx.RegisterPage("settings", http.HandlerFunc(pages.Settings))

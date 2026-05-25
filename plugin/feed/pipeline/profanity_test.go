@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
 	"git.duckfam.us/jj-software/cog/plugin/feed/pipeline"
 )

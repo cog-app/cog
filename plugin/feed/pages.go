@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/query"
+	"git.duckfam.us/jj-software/cog/ui"
 )
 
 const flashCookieName = "cog_flash"
@@ -320,6 +322,54 @@ func (h *Pages) DeletePlaylist(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
 }
 
+// buildSidebar assembles sidebar data for the given active path.
+func (h *Pages) buildSidebar(store *Store, activePath string) sidebarData {
+	folders, _ := store.ListFolders()
+	subs, _ := store.ListSubscriptions()
+	tags, _ := store.ListTags()
+	playlists, _ := store.ListPlaylists()
+	unreadCounts, _ := store.CountUnreadBySubscription()
+	folderUnread, _ := store.CountUnreadByFolder()
+	totalUnread, _ := store.CountUnread()
+	starredCount, _ := store.CountStarred()
+	return sidebarData{
+		Folders:       folders,
+		Subscriptions: subs,
+		Tags:          tags,
+		Playlists:     playlists,
+		ActivePath:    activePath,
+		TotalUnread:   int(totalUnread),
+		StarredCount:  int(starredCount),
+		UnreadCounts:  unreadCounts,
+		FolderUnread:  folderUnread,
+	}
+}
+
+// applyQueryFilter filters an ItemWithSubscription slice using the query engine.
+func applyQueryFilter(store *Store, items []ItemWithSubscription, q string) []ItemWithSubscription {
+	expr, err := query.Parse(q)
+	if err != nil {
+		return items
+	}
+	filtered := items[:0]
+	for _, it := range items {
+		sub, _ := store.GetSubscription(it.SubscriptionID)
+		folder := ""
+		if sub.FolderID.Valid {
+			if f, ferr := store.GetFolder(sub.FolderID.Int64); ferr == nil {
+				folder = f.Name
+			}
+		}
+		tagsList, _ := store.ItemTags(it.ID)
+		dl, _ := store.GetDownload(it.ID)
+		rec := BuildRecord(it.Item, sub, folder, tagsList, !it.IsRead, it.IsStarred, dl.State == "ready")
+		if expr.Match(rec) {
+			filtered = append(filtered, it)
+		}
+	}
+	return filtered
+}
+
 // Index shows the main feed item list with optional query filtering.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
@@ -329,42 +379,188 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query().Get("q")
+	sb := h.buildSidebar(store, "/apps/feed/")
 
-	items, err := store.ListItems(200)
+	items, err := store.ListItemsForView(ViewSpec{All: true}, 200)
 	if err != nil {
 		http.Error(w, "could not list items: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	if q != "" {
-		expr, perr := query.Parse(q)
-		if perr == nil {
-			filtered := items[:0]
-			for _, it := range items {
-				sub, _ := store.GetSubscription(it.SubscriptionID)
-				folder := ""
-				if sub.FolderID.Valid {
-					if f, ferr := store.GetFolder(sub.FolderID.Int64); ferr == nil {
-						folder = f.Name
-					}
-				}
-				tagsList, _ := store.ItemTags(it.ID)
-				dl, _ := store.GetDownload(it.ID)
-				rec := BuildRecord(it, sub, folder, tagsList, !it.IsRead, it.IsStarred, dl.State == "ready")
-				if expr.Match(rec) {
-					filtered = append(filtered, it)
-				}
-			}
-			items = filtered
-		}
+		items = applyQueryFilter(store, items, q)
 	}
 
-	folders, _ := store.ListFolders()
-	tags, _ := store.ListTags()
-	playlists, _ := store.ListPlaylists()
+
 
 	plugin.SetTitle(w, "Feed")
-	feedIndexPage(folders, tags, playlists, items, q).Render(r.Context(), w)
+	feedIndexPage(sb, items, q, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// SubscriptionView shows items for a single subscription.
+func (h *Pages) SubscriptionView(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	sub, err := store.GetSubscription(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	sb := h.buildSidebar(store, "/apps/feed/subscription/"+idStr)
+	items, _ := store.ListItemsForView(ViewSpec{SubscriptionID: sql.NullInt64{Int64: id, Valid: true}}, 200)
+
+	plugin.SetTitle(w, subscriptionDisplayTitle(sub))
+	feedSubscriptionPage(sb, &sub, items, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// FolderView shows items for all subscriptions in a folder.
+func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	folder, err := store.GetFolder(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	sb := h.buildSidebar(store, "/apps/feed/folder/"+idStr)
+	items, _ := store.ListItemsForView(ViewSpec{FolderID: sql.NullInt64{Int64: id, Valid: true}}, 200)
+
+	plugin.SetTitle(w, folder.Name)
+	feedFolderPage(sb, &folder, items, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// StarredView shows all starred items.
+func (h *Pages) StarredView(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	sb := h.buildSidebar(store, "/apps/feed/starred")
+	items, _ := store.ListItemsForView(ViewSpec{Starred: true}, 200)
+
+	plugin.SetTitle(w, "Starred")
+	feedStarredPage(sb, items, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// TagView shows items with a specific tag.
+func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	tagName := r.PathValue("name")
+	sb := h.buildSidebar(store, "/apps/feed/tag/"+tagName)
+	items, _ := store.ListItemsForView(ViewSpec{TagName: tagName}, 200)
+
+	plugin.SetTitle(w, "Tag: "+tagName)
+	feedTagPage(sb, tagName, items, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// RefreshSubscription sets next_check_at=1 on a subscription to trigger immediate re-poll.
+func (h *Pages) RefreshSubscription(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := store.UpdateSubscriptionNextCheck(id, 1); err != nil {
+		slog.Error("feed: refresh subscription", "id", id, "err", err)
+	}
+	u := plugin.UserFromContext(r.Context())
+	go h.plugin.TriggerFetch(u.Username, id)
+	http.Redirect(w, r, fmt.Sprintf("/apps/feed/subscription/%d", id), http.StatusSeeOther)
+}
+
+// MarkSubscriptionRead marks all items in a subscription as read.
+func (h *Pages) MarkSubscriptionRead(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := store.MarkAllReadBySubscription(id); err != nil {
+		slog.Error("feed: mark subscription read", "id", id, "err", err)
+	}
+	http.Redirect(w, r, fmt.Sprintf("/apps/feed/subscription/%d", id), http.StatusSeeOther)
+}
+
+// MarkFolderRead marks all items in a folder's subscriptions as read.
+func (h *Pages) MarkFolderRead(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := store.MarkAllReadByFolder(id); err != nil {
+		slog.Error("feed: mark folder read", "id", id, "err", err)
+	}
+	http.Redirect(w, r, fmt.Sprintf("/apps/feed/folder/%d", id), http.StatusSeeOther)
+}
+
+// MarkAllRead marks all items as read and redirects to index.
+func (h *Pages) MarkAllRead(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := store.MarkAllRead(); err != nil {
+		slog.Error("feed: mark all read", "err", err)
+	}
+	http.Redirect(w, r, "/apps/feed/", http.StatusSeeOther)
+}
+
+// MarkItemRead force-marks a single item as read (non-toggle, used by inline expand).
+func (h *Pages) MarkItemRead(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := store.MarkItemRead(id); err != nil {
+		slog.Error("feed: mark item read", "id", id, "err", err)
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ItemDetail shows a single feed item, marking it read on first view.
@@ -425,7 +621,8 @@ func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-// ToggleRead toggles the read state of an item then redirects back.
+// ToggleRead toggles the read state of an item. For HTMX requests it returns
+// the updated item row HTML for outerHTML swap; otherwise it redirects back.
 func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -442,6 +639,18 @@ func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
 		if err := store.MarkRead(id, !it.IsRead); err != nil {
 			slog.Error("feed: toggle read", "id", id, "err", err)
 		}
+	}
+	// If HTMX triggered this request, return the updated row for outerHTML swap.
+	if r.Header.Get("HX-Request") == "true" {
+		it, err = store.GetItem(id)
+		if err != nil {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		sub, _ := store.GetSubscription(it.SubscriptionID)
+		iws := ItemWithSubscription{Item: it, SubscriptionTitle: subscriptionDisplayTitle(sub)}
+		feedItemRow(iws, plugin.CSRFToken(r)).Render(r.Context(), w)
+		return
 	}
 	ref := r.Header.Get("Referer")
 	if ref == "" {
@@ -559,6 +768,8 @@ func (h *Pages) ExportOPML(w http.ResponseWriter, r *http.Request) {
 }
 
 // ToggleStar toggles the starred state of an item then redirects back.
+// ToggleStar toggles the starred state of an item. For HTMX requests it returns
+// the updated star button HTML for outerHTML swap; otherwise it redirects back.
 func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -575,6 +786,16 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 		if err := store.MarkStarred(id, !it.IsStarred); err != nil {
 			slog.Error("feed: toggle star", "id", id, "err", err)
 		}
+	}
+	// If HTMX triggered this, return the updated star button for outerHTML swap.
+	if r.Header.Get("HX-Request") == "true" {
+		it, err = store.GetItem(id)
+		if err != nil {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		ui.Star(it.IsStarred, fmt.Sprintf("/apps/feed/items/%d/star", it.ID)).Render(r.Context(), w)
+		return
 	}
 	ref := r.Header.Get("Referer")
 	if ref == "" {

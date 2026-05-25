@@ -154,9 +154,6 @@ func backoffNextCheck(sub Subscription, now int64) int64 {
 		sub.ErrorCount,
 		// cap to avoid overflow
 		12)
-	delta := min(interval<<shift, 86400)
-	if delta < 1 {
-		delta = 1
-	}
+	delta := max(min(interval<<shift, 86400), 1)
 	return now + delta
 }

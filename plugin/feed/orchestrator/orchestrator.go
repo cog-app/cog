@@ -26,10 +26,7 @@ import (
 //   - tick: how often to run a full pass over all users.
 //   - log: structured logger.
 func Run(ctx context.Context, plug *feed.Plugin, profPlugin *profanity.Plugin, dataDir string, tick time.Duration, log *slog.Logger) {
-	initial := 2 * time.Second
-	if tick < initial {
-		initial = tick
-	}
+	initial := min(tick, 2*time.Second)
 
 	timer := time.NewTimer(initial)
 	defer timer.Stop()

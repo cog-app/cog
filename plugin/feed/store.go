@@ -262,6 +262,16 @@ func (s *Store) RecordSubscriptionError(id int64, errMsg string, nextCheckAt int
 	return nil
 }
 
+// UpdateSubscriptionNextCheck sets next_check_at on a subscription.
+// Set to 1 to trigger an immediate re-poll on the next orchestrator tick.
+func (s *Store) UpdateSubscriptionNextCheck(id int64, nextCheckAt int64) error {
+	_, err := s.db.Exec(`UPDATE subscriptions SET next_check_at = ? WHERE id = ?`, nextCheckAt, id)
+	if err != nil {
+		return fmt.Errorf("update subscription next check: %w", err)
+	}
+	return nil
+}
+
 // PauseSubscription sets or clears the paused flag on a subscription.
 func (s *Store) PauseSubscription(id int64, paused bool) error {
 	_, err := s.db.Exec(`UPDATE subscriptions SET paused = ? WHERE id = ?`, boolToInt(paused), id)
@@ -958,6 +968,183 @@ func (s *Store) CountUnread() (int64, error) {
 		return 0, fmt.Errorf("count unread: %w", err)
 	}
 	return n, nil
+}
+
+// CountStarred returns the total number of starred items.
+func (s *Store) CountStarred() (int64, error) {
+	var n int64
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM items WHERE is_starred = 1`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count starred: %w", err)
+	}
+	return n, nil
+}
+
+// CountUnreadBySubscription returns a map of subscription_id -> unread count.
+func (s *Store) CountUnreadBySubscription() (map[int64]int, error) {
+	rows, err := s.db.Query(`
+		SELECT subscription_id, COUNT(*) FROM items WHERE is_read = 0
+		GROUP BY subscription_id`)
+	if err != nil {
+		return nil, fmt.Errorf("count unread by subscription: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[int64]int)
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, fmt.Errorf("count unread by subscription scan: %w", err)
+		}
+		out[id] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("count unread by subscription rows: %w", err)
+	}
+	return out, nil
+}
+
+// CountUnreadByFolder returns a map of folder_id -> unread count.
+func (s *Store) CountUnreadByFolder() (map[int64]int, error) {
+	rows, err := s.db.Query(`
+		SELECT s.folder_id, COUNT(*)
+		FROM items i
+		JOIN subscriptions s ON i.subscription_id = s.id
+		WHERE i.is_read = 0 AND s.folder_id IS NOT NULL
+		GROUP BY s.folder_id`)
+	if err != nil {
+		return nil, fmt.Errorf("count unread by folder: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[int64]int)
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, fmt.Errorf("count unread by folder scan: %w", err)
+		}
+		out[id] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("count unread by folder rows: %w", err)
+	}
+	return out, nil
+}
+
+// ItemWithSubscription is an Item joined with its subscription title.
+type ItemWithSubscription struct {
+	Item
+	SubscriptionTitle string
+}
+
+// ViewSpec selects which items to return in ListItemsForView.
+type ViewSpec struct {
+	All            bool
+	Starred        bool
+	FolderID       sql.NullInt64
+	SubscriptionID sql.NullInt64
+	TagName        string
+}
+
+// ListItemsForView returns items (with subscription title) according to the ViewSpec.
+func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscription, error) {
+	base := `
+		SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
+		       i.content_html, i.media_url, i.media_mime, i.duration_sec, i.thumbnail_url,
+		       i.published_at, i.fetched_at, i.is_read, i.is_starred, i.content_hash,
+		       COALESCE(s.title, s.url) AS subscription_title
+		FROM items i
+		JOIN subscriptions s ON i.subscription_id = s.id`
+
+	var where []string
+	var args []any
+
+	switch {
+	case spec.Starred:
+		where = append(where, "i.is_starred = 1")
+	case spec.SubscriptionID.Valid:
+		where = append(where, "i.subscription_id = ?")
+		args = append(args, spec.SubscriptionID.Int64)
+	case spec.FolderID.Valid:
+		where = append(where, "s.folder_id = ?")
+		args = append(args, spec.FolderID.Int64)
+	case spec.TagName != "":
+		base += " JOIN item_tags it ON it.item_id = i.id JOIN tags t ON t.id = it.tag_id"
+		where = append(where, "t.name = ?")
+		args = append(args, spec.TagName)
+	}
+	// spec.All: no extra WHERE
+
+	q := base
+	if len(where) > 0 {
+		q += " WHERE " + strings.Join(where, " AND ")
+	}
+	q += " ORDER BY i.published_at DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list items for view: %w", err)
+	}
+	defer rows.Close()
+
+	var items []ItemWithSubscription
+	for rows.Next() {
+		var iws ItemWithSubscription
+		var isRead, isStarred int
+		if err := rows.Scan(
+			&iws.ID, &iws.SubscriptionID, &iws.GUID, &iws.Type, &iws.Title, &iws.Author,
+			&iws.URL, &iws.ContentHTML, &iws.MediaURL, &iws.MediaMIME, &iws.DurationSec,
+			&iws.ThumbnailURL, &iws.PublishedAt, &iws.FetchedAt, &isRead, &isStarred,
+			&iws.ContentHash, &iws.SubscriptionTitle,
+		); err != nil {
+			return nil, fmt.Errorf("list items for view scan: %w", err)
+		}
+		iws.IsRead = isRead != 0
+		iws.IsStarred = isStarred != 0
+		items = append(items, iws)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list items for view rows: %w", err)
+	}
+	return items, nil
+}
+
+// MarkAllRead marks all items as read.
+func (s *Store) MarkAllRead() error {
+	_, err := s.db.Exec(`UPDATE items SET is_read = 1`)
+	if err != nil {
+		return fmt.Errorf("mark all read: %w", err)
+	}
+	return nil
+}
+
+// MarkAllReadBySubscription marks all items in a subscription as read.
+func (s *Store) MarkAllReadBySubscription(subID int64) error {
+	_, err := s.db.Exec(`UPDATE items SET is_read = 1 WHERE subscription_id = ?`, subID)
+	if err != nil {
+		return fmt.Errorf("mark all read by subscription: %w", err)
+	}
+	return nil
+}
+
+// MarkAllReadByFolder marks all items in subscriptions belonging to a folder as read.
+func (s *Store) MarkAllReadByFolder(folderID int64) error {
+	_, err := s.db.Exec(`
+		UPDATE items SET is_read = 1
+		WHERE subscription_id IN (SELECT id FROM subscriptions WHERE folder_id = ?)`, folderID)
+	if err != nil {
+		return fmt.Errorf("mark all read by folder: %w", err)
+	}
+	return nil
+}
+
+// MarkItemRead force-sets a single item as read (non-toggle).
+func (s *Store) MarkItemRead(id int64) error {
+	_, err := s.db.Exec(`UPDATE items SET is_read = 1 WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("mark item read: %w", err)
+	}
+	return nil
 }
 
 // RecentUnread returns up to limit unread items ordered by published_at DESC.
