@@ -9,9 +9,11 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/feed/ncapi"
+	"git.duckfam.us/jj-software/cog/plugin/profanity"
 )
 
 //go:generate go tool migratesql .
@@ -21,16 +23,42 @@ var sqlFS embed.FS
 
 const PluginID = "feed"
 
+// OrchestratorRunner is a function that drives background workers until ctx is
+// canceled. It is swappable so the orchestrator sub-package can be injected
+// without an import cycle (the orchestrator imports feed, not vice-versa).
+type OrchestratorRunner func(ctx context.Context, plug *Plugin, profPlugin *profanity.Plugin, dataDir string, tick time.Duration, log *slog.Logger)
+
 // Plugin is the feed reader plugin.
 type Plugin struct {
 	plugin.Protected
-	ctx plugin.PluginContext
-	log *slog.Logger
+	ctx          plugin.PluginContext
+	log          *slog.Logger
+	cancel       context.CancelFunc
+	done         chan struct{}
+	tickInterval time.Duration
+	profanity    *profanity.Plugin // discovered in Start; may be nil
+	runOrchestra OrchestratorRunner
 }
 
 // New creates a new feed plugin instance.
 func New() *Plugin {
-	return &Plugin{}
+	return &Plugin{tickInterval: 60 * time.Second}
+}
+
+// WithTickInterval overrides the background-poll interval. Returns the receiver
+// for convenient chaining. Ignored if d <= 0.
+func (p *Plugin) WithTickInterval(d time.Duration) *Plugin {
+	if d > 0 {
+		p.tickInterval = d
+	}
+	return p
+}
+
+// WithOrchestrator injects the background runner (called by the orchestrator
+// sub-package to avoid an import cycle). Must be set before Start is called.
+func (p *Plugin) WithOrchestrator(fn OrchestratorRunner) *Plugin {
+	p.runOrchestra = fn
+	return p
 }
 
 func (p *Plugin) ID() string { return PluginID }
@@ -81,12 +109,45 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	return nil
 }
 
-func (p *Plugin) Start(_ context.Context) error {
+func (p *Plugin) Start(parent context.Context) error {
+	// Discover the profanity plugin via the privileged context.
+	if priv, ok := p.ctx.(plugin.PrivilegedContext); ok {
+		for plug := range priv.Plugins() {
+			if pp, ok := plug.(*profanity.Plugin); ok {
+				p.profanity = pp
+				break
+			}
+		}
+	}
+
+	if p.runOrchestra == nil {
+		// No orchestrator injected; background polling is disabled.
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(parent)
+	p.cancel = cancel
+	p.done = make(chan struct{})
+
+	go func() {
+		defer close(p.done)
+		p.runOrchestra(ctx, p, p.profanity, p.ctx.DataDir(), p.tickInterval, p.log)
+	}()
 	return nil
 }
 
 func (p *Plugin) Stop() error {
+	if p.cancel != nil {
+		p.cancel()
+		<-p.done
+	}
 	return nil
+}
+
+// DataDir returns the root data directory for all users.
+// Exposed so the orchestrator sub-package can construct per-user paths.
+func (p *Plugin) DataDir() string {
+	return p.ctx.DataDir()
 }
 
 // TriggerFetch schedules an immediate background fetch for a subscription.
