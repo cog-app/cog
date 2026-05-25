@@ -1,0 +1,15 @@
+package feed
+
+import "strconv"
+
+templ feedWidget(unread int64, recent []Item) {
+	<div class="widget feed-widget">
+		<h3><a href="/apps/feed/">Feed</a></h3>
+		<p class="unread-count">{ strconv.FormatInt(unread, 10) } unread</p>
+		<ul>
+			for _, it := range recent {
+				<li><a href={ templ.SafeURL("/apps/feed/items/" + strconv.FormatInt(it.ID, 10)) }>{ it.Title }</a></li>
+			}
+		</ul>
+	</div>
+}

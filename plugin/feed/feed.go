@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -37,6 +38,11 @@ func (p *Plugin) ID() string { return PluginID }
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
 	p.log = ctx.Logger()
+	ctx.RegisterWidget(plugin.Widget{
+		Title:    "Feed",
+		Priority: 25,
+		Render:   p.renderWidget,
+	})
 	ctx.RegisterSearchSource(plugin.SearchSourceDef{
 		PrimaryTable: "items",
 		EnrichSQL:    "SELECT rowid, title, url, content_html FROM items WHERE rowid IN (?)",
@@ -94,4 +100,26 @@ func (p *Plugin) DB(username string) (*sql.DB, error) {
 		return nil, fmt.Errorf("migrate feed db for %s: %w", username, err)
 	}
 	return db, nil
+}
+
+func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
+	db, err := p.DB(userID)
+	if err != nil {
+		return fmt.Errorf("feed widget: db: %w", err)
+	}
+	store := NewStore(db)
+	unread, err := store.CountUnread()
+	if err != nil {
+		return fmt.Errorf("feed widget: count unread: %w", err)
+	}
+	recent, err := store.RecentUnread(5)
+	if err != nil {
+		return fmt.Errorf("feed widget: recent: %w", err)
+	}
+	return feedWidget(unread, recent).Render(ctx, w)
+}
+
+// RenderWidget is an exported wrapper around renderWidget for tests.
+func (p *Plugin) RenderWidget(ctx context.Context, w io.Writer, userID string) error {
+	return p.renderWidget(ctx, w, userID)
 }

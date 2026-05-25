@@ -934,6 +934,48 @@ func (s *Store) DeletePlaylist(id int64) error {
 	return nil
 }
 
+// CountUnread returns the number of unread items across all subscriptions.
+func (s *Store) CountUnread() (int64, error) {
+	var n int64
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM items WHERE is_read = 0`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count unread: %w", err)
+	}
+	return n, nil
+}
+
+// RecentUnread returns up to limit unread items ordered by published_at DESC.
+func (s *Store) RecentUnread(limit int) ([]Item, error) {
+	rows, err := s.db.Query(
+		`SELECT id, subscription_id, guid, type, title, author, url, content_html,
+		        media_url, media_mime, duration_sec, thumbnail_url, published_at,
+		        fetched_at, is_read, is_starred, content_hash
+		 FROM items WHERE is_read = 0 ORDER BY published_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("recent unread: %w", err)
+	}
+	defer rows.Close()
+	var items []Item
+	for rows.Next() {
+		var it Item
+		var isRead, isStarred int
+		if err := rows.Scan(
+			&it.ID, &it.SubscriptionID, &it.GUID, &it.Type, &it.Title, &it.Author,
+			&it.URL, &it.ContentHTML, &it.MediaURL, &it.MediaMIME, &it.DurationSec,
+			&it.ThumbnailURL, &it.PublishedAt, &it.FetchedAt, &isRead, &isStarred,
+			&it.ContentHash,
+		); err != nil {
+			return nil, fmt.Errorf("recent unread scan: %w", err)
+		}
+		it.IsRead = isRead != 0
+		it.IsStarred = isStarred != 0
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("recent unread rows: %w", err)
+	}
+	return items, nil
+}
+
 // ListItems returns up to limit items, newest first.
 func (s *Store) ListItems(limit int) ([]Item, error) {
 	rows, err := s.db.Query(
