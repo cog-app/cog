@@ -32,6 +32,10 @@ func (p *Plugin) ID() string { return PluginID }
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	ctx.RegisterSearchSource(plugin.SearchSourceDef{
+		PrimaryTable: "items",
+		EnrichSQL:    "SELECT rowid, title, url, content_html FROM items WHERE rowid IN (?)",
+	})
 	return nil
 }
 

@@ -116,6 +116,7 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	// Wire search manager for tests (uses temp dir, no hooks).
 	mgr := search.NewManager(log, dataDir)
 	mgr.SetSystemDB(sysDB)
+	mgr.SetUserDBFunc(p.Plugins.PluginDB)
 	p.Search = mgr
 
 	// Set up email capture via hook (no real SMTP needed).
