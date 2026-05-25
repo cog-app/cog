@@ -1,0 +1,33 @@
+#!/bin/sh
+# Stub yt-dlp for tests.
+# Detect invocation mode by inspecting arguments.
+
+FLAT=0
+DUMP_SINGLE=0
+PLAYLIST_ITEMS_0=0
+PREV=""
+
+for arg in "$@"; do
+	case "$arg" in
+		--flat-playlist) FLAT=1 ;;
+		--dump-single-json) DUMP_SINGLE=1 ;;
+		--playlist-items)
+			PREV="playlist-items"
+			;;
+		*)
+			if [ "$PREV" = "playlist-items" ] && [ "$arg" = "0" ]; then
+				PLAYLIST_ITEMS_0=1
+			fi
+			PREV=""
+			;;
+	esac
+done
+
+if [ "$DUMP_SINGLE" = "1" ] && [ "$PLAYLIST_ITEMS_0" = "1" ]; then
+	# ytdlpChannelMeta mode: --dump-single-json --flat-playlist --playlist-items 0
+	printf '{"title":"Channel Name","uploader":"Channel Name","description":"chan desc","thumbnail":"https://img/chan.jpg"}\n'
+else
+	# ytdlpListEntries mode: --flat-playlist --dump-json
+	printf '{"id":"vid1","title":"Video 1","webpage_url":"https://www.youtube.com/watch?v=vid1","thumbnail":"https://img/1.jpg","duration":300.0,"uploader":"chan","channel":"chan"}\n'
+	printf '{"id":"vid2","title":"Video 2","webpage_url":"https://www.youtube.com/watch?v=vid2","thumbnail":"https://img/2.jpg","duration":420.0,"uploader":"chan","channel":"chan"}\n'
+fi

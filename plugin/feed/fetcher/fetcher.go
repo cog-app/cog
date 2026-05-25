@@ -23,7 +23,7 @@ func Fetch(ctx context.Context, sub feed.Subscription) (Result, error) {
 	case "rss":
 		return fetchRSS(ctx, sub)
 	case "youtube":
-		return Result{}, fmt.Errorf("youtube fetcher: not implemented (Task 8)")
+		return fetchYouTube(ctx, sub)
 	case "url":
 		return Result{}, fmt.Errorf("url fetcher: not implemented (Task 9)")
 	default:
