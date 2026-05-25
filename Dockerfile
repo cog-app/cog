@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	ca-certificates \
 	libstdc++6 \
 	wget \
+	yt-dlp \
 	&& rm -rf /var/lib/apt/lists/*
 # ONNX Runtime for image recognition
 ARG ONNXRUNTIME_VERSION=1.24.3
@@ -32,12 +33,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	&& rm -rf /var/lib/apt/lists/*
 
 FROM ${BUILD_BASE:-golang:1.26-trixie} AS build_dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends git gcc libc6-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends git gcc g++ cmake libc6-dev && rm -rf /var/lib/apt/lists/*
 RUN git config --global --add safe.directory '*'
 
 WORKDIR /code
 COPY go.mod go.sum .
 RUN go mod download # cache mod downloads
+
+# whisper.cpp for the feed plugin's transcription backend.
+FROM build_dependencies AS whisper_build
+ARG WHISPER_CPP_VERSION=v1.7.4
+RUN git clone --depth 1 --branch ${WHISPER_CPP_VERSION} https://github.com/ggerganov/whisper.cpp /whisper.cpp && \
+	cd /whisper.cpp && \
+	cmake -B build -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON && \
+	cmake --build build --config Release --target whisper-cli -j
 
 FROM build_dependencies AS build
 COPY . .
@@ -47,6 +56,7 @@ RUN CGO_ENABLED=1 go build -o cog-plugin-recipes ./cmd/cog-plugin-recipes
 FROM dependencies AS publish
 COPY --from=build /code/cog /usr/bin/cog
 COPY --from=build /code/cog-plugin-recipes /usr/bin/cog-plugin-recipes
+COPY --from=whisper_build /whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper-cli
 RUN mkdir -p /etc/bash_completion.d && cog completion bash > /etc/bash_completion.d/cog 2>/dev/null || true
 RUN cog doctor
 EXPOSE 8580
