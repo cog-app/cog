@@ -25,7 +25,7 @@ func Fetch(ctx context.Context, sub feed.Subscription) (Result, error) {
 	case "youtube":
 		return fetchYouTube(ctx, sub)
 	case "url":
-		return Result{}, fmt.Errorf("url fetcher: not implemented (Task 9)")
+		return fetchURL(ctx, sub)
 	default:
 		return Result{}, fmt.Errorf("unknown subscription kind: %q", sub.Kind)
 	}
