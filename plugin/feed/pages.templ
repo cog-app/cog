@@ -1,197 +1,210 @@
 package feed
 
-import "strconv"
+import (
+	"strconv"
+
+	"git.duckfam.us/jj-software/cog/ui"
+)
 
 templ feedSettingsPage(subs []Subscription, folders []Folder, filters []Filter, playlists []Playlist, flashMsg string, flashKind string, csrfToken string) {
 	<div id="feed-settings">
-		if flashMsg != "" {
-			<div class={ "flash", "flash-" + flashKind }>{ flashMsg }</div>
-		}
-		<section>
-			<h2>Subscriptions</h2>
+		@ui.Alert(flashKind, flashMsg)
+		@ui.Card("Subscriptions") {
 			<form id="add-subscription" method="post" action="/apps/feed/subscriptions">
 				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<label>
-					Kind:
-					<select id="sub-kind" name="kind">
+				<div class="form-group">
+					<label for="sub-kind">Kind</label>
+					<select id="sub-kind" name="kind" class="form-control">
 						<option value="rss">RSS / Atom (incl. podcasts)</option>
 						<option value="youtube">YouTube channel</option>
 						<option value="url">Single URL (polled)</option>
 					</select>
-				</label>
-				<label>URL: <input id="sub-url" type="url" name="url" required/></label>
-				<label>
-					Folder:
-					<select name="folder_id">
+				</div>
+				<div class="form-group">
+					<label for="sub-url">URL</label>
+					<input class="form-control" type="url" id="sub-url" name="url" required/>
+				</div>
+				<div class="form-group">
+					<label for="sub-folder">Folder</label>
+					<select id="sub-folder" name="folder_id" class="form-control">
 						<option value="">(none)</option>
 						for _, f := range folders {
 							<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Name }</option>
 						}
 					</select>
-				</label>
-				<button type="submit">Add subscription</button>
+				</div>
+				@ui.Button("primary", "Add subscription")
 			</form>
-			<ul id="subscription-list">
+			<ul id="subscription-list" style="margin-top:1rem;padding-left:0;list-style:none">
 				for _, s := range subs {
-					<li>
-						<span>{ subscriptionDisplayTitle(s) }</span>
+					<li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+						<span style="flex:1">{ subscriptionDisplayTitle(s) }</span>
 						<code>{ s.URL }</code>
-						<span>{ s.Kind }</span>
-						<form method="post" action={ templ.SafeURL("/apps/feed/subscriptions/" + strconv.FormatInt(s.ID, 10) + "/delete") }>
+						<span class="badge">{ s.Kind }</span>
+						<form method="post" action={ templ.SafeURL("/apps/feed/subscriptions/" + strconv.FormatInt(s.ID, 10) + "/delete") } style="margin:0">
 							<input type="hidden" name="csrf_token" value={ csrfToken }/>
-							<button type="submit">Delete</button>
+							@ui.Button("danger", "Delete")
 						</form>
 					</li>
 				}
 			</ul>
-		</section>
-		<section>
-			<h2>Folders</h2>
-			<form id="add-folder" method="post" action="/apps/feed/folders">
+		}
+		@ui.Card("Folders") {
+			<form id="add-folder" method="post" action="/apps/feed/folders" class="flex gap-1 items-center">
 				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<label>Name: <input id="folder-name" type="text" name="name" required/></label>
-				<button type="submit">Add folder</button>
+				<input class="form-control" type="text" id="folder-name" name="name" placeholder="Folder name" required style="max-width:300px"/>
+				@ui.Button("primary", "Add folder")
 			</form>
-			<ul>
+			<ul style="margin-top:1rem;padding-left:0;list-style:none">
 				for _, f := range folders {
-					<li>
-						<span>{ f.Name }</span>
-						<form method="post" action={ templ.SafeURL("/apps/feed/folders/" + strconv.FormatInt(f.ID, 10) + "/delete") }>
+					<li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+						<span style="flex:1">{ f.Name }</span>
+						<form method="post" action={ templ.SafeURL("/apps/feed/folders/" + strconv.FormatInt(f.ID, 10) + "/delete") } style="margin:0">
 							<input type="hidden" name="csrf_token" value={ csrfToken }/>
-							<button type="submit">Delete</button>
+							@ui.Button("danger", "Delete")
 						</form>
 					</li>
 				}
 			</ul>
-		</section>
-		<section>
-			<h2>Filters</h2>
+		}
+		@ui.Card("Filters") {
 			<form id="add-filter" method="post" action="/apps/feed/filters">
 				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<label>Query: <input id="filter-query" type="text" name="query" required/></label>
-				<label>
-					Action:
-					<select id="filter-action" name="action">
+				<div class="form-group">
+					<label for="filter-query">Query</label>
+					<input class="form-control" type="text" id="filter-query" name="query" required/>
+				</div>
+				<div class="form-group">
+					<label for="filter-action">Action</label>
+					<select id="filter-action" name="action" class="form-control">
 						<option value="skip">Skip</option>
 						<option value="tag">Tag</option>
 						<option value="download">Download</option>
 						<option value="mute_profanity">Mute profanity</option>
 						<option value="transcribe">Transcribe</option>
 					</select>
-				</label>
-				<label>Tag (for "Tag" action): <input id="filter-action-value" type="text" name="action_value"/></label>
-				<button type="submit">Add filter</button>
+				</div>
+				<div class="form-group">
+					<label for="filter-action-value">Tag (for &ldquo;Tag&rdquo; action)</label>
+					<input class="form-control" type="text" id="filter-action-value" name="action_value"/>
+				</div>
+				@ui.Button("primary", "Add filter")
 			</form>
-			<ul>
+			<ul style="margin-top:1rem;padding-left:0;list-style:none">
 				for _, fl := range filters {
-					<li>
-						<code>{ fl.Query }</code>
-						→ { fl.Action }
+					<li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+						<code style="flex:1">{ fl.Query }</code>
+						<span>→ { fl.Action }</span>
 						if fl.ActionValue != "" {
-							<span>:{ fl.ActionValue }</span>
+							<span class="badge">{ fl.ActionValue }</span>
 						}
-						<form method="post" action={ templ.SafeURL("/apps/feed/filters/" + strconv.FormatInt(fl.ID, 10) + "/delete") }>
+						<form method="post" action={ templ.SafeURL("/apps/feed/filters/" + strconv.FormatInt(fl.ID, 10) + "/delete") } style="margin:0">
 							<input type="hidden" name="csrf_token" value={ csrfToken }/>
-							<button type="submit">Delete</button>
+							@ui.Button("danger", "Delete")
 						</form>
 					</li>
 				}
 			</ul>
-		</section>
-		<section>
-			<h2>Playlists</h2>
+		}
+		@ui.Card("Playlists") {
 			<form id="add-playlist" method="post" action="/apps/feed/playlists">
 				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<label>Name: <input type="text" name="name" required/></label>
-				<label>Query: <input type="text" name="query" required/></label>
-				<button type="submit">Add playlist</button>
+				@ui.FormField("Name", "name", "text", "", "Playlist name")
+				@ui.FormField("Query", "query", "text", "", "e.g. type:audio")
+				@ui.Button("primary", "Add playlist")
 			</form>
-			<ul>
+			<ul style="margin-top:1rem;padding-left:0;list-style:none">
 				for _, pl := range playlists {
-					<li>
-						<span>{ pl.Name }</span>
+					<li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+						<span style="flex:1">{ pl.Name }</span>
 						<code>{ pl.Query }</code>
-						<form method="post" action={ templ.SafeURL("/apps/feed/playlists/" + strconv.FormatInt(pl.ID, 10) + "/delete") }>
+						<form method="post" action={ templ.SafeURL("/apps/feed/playlists/" + strconv.FormatInt(pl.ID, 10) + "/delete") } style="margin:0">
 							<input type="hidden" name="csrf_token" value={ csrfToken }/>
-							<button type="submit">Delete</button>
+							@ui.Button("danger", "Delete")
 						</form>
 					</li>
 				}
 			</ul>
-		</section>
+		}
 	</div>
 }
 
 templ feedIndexPage(folders []Folder, tags []string, playlists []Playlist, items []Item, query string) {
-	<div id="feed-app" class="feed-app">
-		<aside id="feed-sidebar">
-			<section>
-				<h3><a href="/apps/feed/">All</a></h3>
-			</section>
-			<section>
-				<h3>Folders</h3>
-				<ul>
-					for _, f := range folders {
-						<li><a href={ templ.SafeURL("/apps/feed/?q=folder:" + f.Name) }>{ f.Name }</a></li>
-					}
-				</ul>
-			</section>
-			<section>
-				<h3>Tags</h3>
-				<ul>
-					for _, tg := range tags {
-						<li><a href={ templ.SafeURL("/apps/feed/?q=tag:" + tg) }>{ tg }</a></li>
-					}
-				</ul>
-			</section>
-			<section>
-				<h3>Playlists</h3>
-				<ul>
-					for _, pl := range playlists {
-						<li><a href={ templ.SafeURL("/apps/feed/?q=" + pl.Query) }>{ pl.Name }</a></li>
-					}
-				</ul>
-			</section>
-		</aside>
-		<main id="feed-main">
-			<form method="get" action="/apps/feed/">
-				<input type="search" name="q" value={ query } placeholder="Search…"/>
-				<button type="submit">Go</button>
-			</form>
-			<ul id="feed-items">
-				for _, it := range items {
-					@feedItemRow(it)
+	<div class="sidebar-layout">
+		<nav class="sidebar" id="feed-sidebar">
+			<a href="/apps/feed/" class="sidebar-item">All</a>
+			if len(folders) > 0 {
+				<div class="sidebar-divider"></div>
+				for _, f := range folders {
+					<a href={ templ.SafeURL("/apps/feed/?q=folder:" + f.Name) } class="sidebar-item" style="padding-left:1.5rem;font-size:0.9rem">{ f.Name }</a>
 				}
-			</ul>
-		</main>
+			}
+			if len(tags) > 0 {
+				<div class="sidebar-divider"></div>
+				for _, tg := range tags {
+					<a href={ templ.SafeURL("/apps/feed/?q=tag:" + tg) } class="sidebar-item" style="padding-left:1.5rem;font-size:0.9rem">{ tg }</a>
+				}
+			}
+			if len(playlists) > 0 {
+				<div class="sidebar-divider"></div>
+				for _, pl := range playlists {
+					<a href={ templ.SafeURL("/apps/feed/?q=" + pl.Query) } class="sidebar-item">{ pl.Name }</a>
+				}
+			}
+			<div class="sidebar-divider"></div>
+			<a href="/apps/feed/settings" class="sidebar-item">Settings</a>
+		</nav>
+		<div class="sidebar-content">
+			<form method="get" action="/apps/feed/" class="mb-2">
+				<div class="flex gap-1">
+					<input class="form-control" type="search" name="q" value={ query } placeholder="Search feeds…" style="max-width:400px"/>
+					<button class="btn btn-outline btn-sm" type="submit">Go</button>
+				</div>
+			</form>
+			if len(items) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No items found.</p>
+				}
+			} else {
+				<ul id="feed-items" style="padding-left:0;list-style:none;margin:0">
+					for _, it := range items {
+						@feedItemRow(it)
+					}
+				</ul>
+			}
+		</div>
 	</div>
 }
 
 templ feedItemRow(it Item) {
-	<li class={ "feed-item", "type-" + it.Type }>
-		<a href={ templ.SafeURL("/apps/feed/items/" + strconv.FormatInt(it.ID, 10)) }>{ it.Title }</a>
+	<li id={ "item-" + strconv.FormatInt(it.ID, 10) } style="padding:0.5rem 0;border-bottom:1px solid var(--color-border)">
+		<a href={ templ.SafeURL("/apps/feed/items/" + strconv.FormatInt(it.ID, 10)) } class="item-link" style="font-weight:500">{ it.Title }</a>
+		<span class="badge" style="margin-left:0.4rem;font-size:0.75rem">{ it.Type }</span>
 	</li>
 }
 
 templ feedItemDetail(it Item, tags []string) {
-	<article class={ "feed-detail", "type-" + it.Type }>
-		<h1>{ it.Title }</h1>
-		<div class="meta">
+	@ui.Card(it.Title) {
+		<div class="mb-2">
 			for _, tg := range tags {
-				<span class="tag">{ tg }</span>
+				<span class="badge" style="margin-right:0.25rem">{ tg }</span>
 			}
 		</div>
 		if it.Type == "text" {
-			@templ.Raw(it.ContentHTML)
+			<div class="note-content">
+				@templ.Raw(it.ContentHTML)
+			</div>
 		} else if it.Type == "audio" {
-			<audio controls src={ "/apps/feed/items/" + strconv.FormatInt(it.ID, 10) + "/media" }></audio>
+			<audio controls src={ "/apps/feed/items/" + strconv.FormatInt(it.ID, 10) + "/media" } style="width:100%"></audio>
 		} else if it.Type == "video" {
-			<video controls src={ "/apps/feed/items/" + strconv.FormatInt(it.ID, 10) + "/media" }></video>
+			<video controls src={ "/apps/feed/items/" + strconv.FormatInt(it.ID, 10) + "/media" } style="width:100%"></video>
 		}
 		if it.URL != "" {
-			<p><a href={ templ.SafeURL(it.URL) } target="_blank" rel="noopener">Original</a></p>
+			<p style="margin-top:1rem">
+				<a href={ templ.SafeURL(it.URL) } target="_blank" rel="noopener">Original</a>
+			</p>
 		}
-	</article>
+	}
 }
 
 func subscriptionDisplayTitle(s Subscription) string {
@@ -202,35 +215,23 @@ func subscriptionDisplayTitle(s Subscription) string {
 }
 
 templ feedSystemSettingsPage(model string, modelsDir string, cliPath string, flash string, flashKind string) {
-	<div id="feed-system-settings">
-		if flash != "" {
-			<div class={ "flash", "flash-" + flashKind }>{ flash }</div>
-		}
-		<h2>Feed — System Settings</h2>
+	@ui.Alert(flashKind, flash)
+	@ui.Card("Transcription (whisper.cpp)") {
 		<form method="post" action="">
-			<fieldset>
-				<legend>Transcription (whisper.cpp)</legend>
-				<label>
-					Model:
-					<select name="whisper_model">
-						<option value="none" selected?={ model == "none" }>None (disable transcription)</option>
-						<option value="tiny.en" selected?={ model == "tiny.en" }>tiny.en (~75 MB)</option>
-						<option value="base.en" selected?={ model == "base.en" }>base.en (~140 MB) — default</option>
-						<option value="small.en" selected?={ model == "small.en" }>small.en (~470 MB)</option>
-						<option value="medium.en" selected?={ model == "medium.en" }>medium.en (~1.5 GB)</option>
-						<option value="large-v3" selected?={ model == "large-v3" }>large-v3 (~3 GB)</option>
-					</select>
-				</label>
-				<label>
-					Models directory:
-					<input type="text" name="whisper_models_dir" value={ modelsDir } placeholder="(auto: plugin data dir)"/>
-				</label>
-				<label>
-					whisper-cli binary:
-					<input type="text" name="whisper_cli_path" value={ cliPath } placeholder="(auto: search PATH)"/>
-				</label>
-			</fieldset>
-			<button type="submit">Save</button>
+			<div class="form-group">
+				<label for="whisper_model">Model</label>
+				<select name="whisper_model" id="whisper_model" class="form-control">
+					<option value="none" selected?={ model == "none" }>None (disable transcription)</option>
+					<option value="tiny.en" selected?={ model == "tiny.en" }>tiny.en (~75 MB)</option>
+					<option value="base.en" selected?={ model == "base.en" }>base.en (~140 MB) — default</option>
+					<option value="small.en" selected?={ model == "small.en" }>small.en (~470 MB)</option>
+					<option value="medium.en" selected?={ model == "medium.en" }>medium.en (~1.5 GB)</option>
+					<option value="large-v3" selected?={ model == "large-v3" }>large-v3 (~3 GB)</option>
+				</select>
+			</div>
+			@ui.FormField("Models directory", "whisper_models_dir", "text", modelsDir, "(auto: plugin data dir)")
+			@ui.FormField("whisper-cli binary", "whisper_cli_path", "text", cliPath, "(auto: search PATH)")
+			@ui.Button("primary", "Save")
 		</form>
-	</div>
+	}
 }
