@@ -16,13 +16,13 @@ This is a greenfield plugin. No user data migration. After cutover the `rss` and
 - Filters drive everything downstream of ingest: skip, tag, download, profanity-mute, transcribe.
 - Search grammar is the existing cog-level grammar (`internal/query`) verbatim, used both for per-item filter evaluation and for Bleve-backed list views.
 - Playlists are saved queries (smart only).
-- Folders organize sources hierarchically-in-name-only (flat, NC News–compatible). Tags apply to items.
+- Folders organize subscriptions hierarchically-in-name-only (flat, NC News–compatible). Tags apply to items.
 
 ## Non-goals (v1)
 
 - Manual playlist ordering.
 - Nested folders.
-- Cross-source dedup (same article from two sources stays two items).
+- Cross-subscription dedup (same article from two subscriptions stays two items).
 - Migration of existing rss/media user data.
 - Mobile client implementation (only the API it will consume).
 - Transcription backend (action exists but stubs/TODO).
@@ -34,16 +34,16 @@ New plugin at `plugin/feed/` with `PluginID = "feed"`. Per-user SQLite database,
 Package layout:
 
 - `feed.go` — plugin entry, registration, lifecycle.
-- `store.go` — DB access for folders, sources, items, filters, tags, item_tags, downloads, playback, playlists.
+- `store.go` — DB access for folders, subscriptions, items, filters, tags, item_tags, downloads, playback, playlists.
 - `fetcher/` — kind-dispatched fetchers:
   - `rss.go` — RSS and Atom via `gofeed`; HTML sanitized with `bluemonday.UGCPolicy`; emits one text item if body present and one audio/video item per enclosure (mime-sniffed).
   - `youtube.go` — yt-dlp metadata fetch (no download); emits one video item per entry.
-  - `url.go` — single-shot one-item source.
-- `poller.go` — scheduling loop over `sources.next_check_at`, ignoring paused sources.
+  - `url.go` — fetches a page, hashes the body, emits an item on first fetch and on each change.
+- `poller.go` — scheduling loop over `subscriptions.next_check_at`, ignoring paused subscriptions.
 - `pipeline/` — `download.go`, `profanity.go`, `transcribe.go` workers, driven by filter actions / `downloads` table.
 - `filter.go` — parses each filter's `query` at save time, evaluates per item at ingest using `query.Expr.Match`.
 - `search.go` — builds the cog-level `SearchSourceDef` so items are indexed in Bleve and surfaced through cog-wide search.
-- `ncapi/` — NextCloud News API surface; results scoped to `type='text'`, sources scoped to `kind='rss'`.
+- `ncapi/` — NextCloud News API surface; results scoped to `type='text'`, subscriptions scoped to `kind='rss'`.
 - `pages.go`, `pages.templ` — web UI (sidebar of folders + tags + playlists; main item list and detail).
 - `widget.templ` — dashboard widget.
 - `sql/schema.sql`, `sql/migration001.sql`, … — schema + future migrations.
@@ -58,7 +58,7 @@ CREATE TABLE folders (
 );
 -- Folders are ordered by name in the UI; no sort_order column.
 
-CREATE TABLE sources (
+CREATE TABLE subscriptions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL,
     kind TEXT NOT NULL CHECK(kind IN ('rss','youtube','url')),
@@ -82,7 +82,7 @@ CREATE TABLE sources (
 
 CREATE TABLE items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    subscription_id INTEGER NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
     guid TEXT NOT NULL,
     type TEXT NOT NULL CHECK(type IN ('text','audio','video')),
     title TEXT NOT NULL DEFAULT '',
@@ -98,7 +98,7 @@ CREATE TABLE items (
     is_read INTEGER NOT NULL DEFAULT 0,
     is_starred INTEGER NOT NULL DEFAULT 0,
     content_hash TEXT NOT NULL DEFAULT '',
-    UNIQUE(source_id, guid)
+    UNIQUE(subscription_id, guid)
 );
 
 CREATE TABLE tags (
@@ -148,9 +148,9 @@ CREATE TABLE playlists (
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
-CREATE INDEX idx_sources_next_check ON sources(next_check_at);
-CREATE INDEX idx_sources_folder ON sources(folder_id);
-CREATE INDEX idx_items_source ON items(source_id);
+CREATE INDEX idx_subscriptions_next_check ON subscriptions(next_check_at);
+CREATE INDEX idx_subscriptions_folder ON subscriptions(folder_id);
+CREATE INDEX idx_items_subscription ON items(subscription_id);
 CREATE INDEX idx_items_published ON items(published_at DESC);
 CREATE INDEX idx_items_unread ON items(is_read, published_at DESC);
 CREATE INDEX idx_items_starred ON items(is_starred, published_at DESC);
@@ -162,7 +162,7 @@ CREATE INDEX idx_playback_last ON playback(last_played_at DESC);
 
 Design notes:
 
-- An RSS entry with both a body and one or more enclosures produces multiple items: one `type='text'` item carrying `content_html`, plus one `type='audio'`/`'video'` item per enclosure carrying `media_url` and `media_mime`. The text item has empty media fields; media items have empty `content_html`. Items share the source but not the GUID — each item's `guid` is derived as `<entry-guid>` for text and `<entry-guid>#<enclosure-url-hash>` for media, ensuring uniqueness under the `(source_id, guid)` constraint.
+- An RSS entry with both a body and one or more enclosures produces multiple items: one `type='text'` item carrying `content_html`, plus one `type='audio'`/`'video'` item per enclosure carrying `media_url` and `media_mime`. The text item has empty media fields; media items have empty `content_html`. Items share the subscription but not the GUID — each item's `guid` is derived as `<entry-guid>` for text and `<entry-guid>#<enclosure-url-hash>` for media, ensuring uniqueness under the `(subscription_id, guid)` constraint.
 - `downloads` is a separate row keyed on `item_id` so re-download or reprocessing does not churn the `items` row, and so download state is only present for items that need bytes.
 - `playlists` v1 are smart-only: an ordered list of saved queries shown in the sidebar.
 
@@ -170,14 +170,14 @@ Design notes:
 
 ### Ingest
 
-1. Poller selects `sources` where `next_check_at <= now AND paused = 0`, ordered by `next_check_at`.
+1. Poller selects `subscriptions` where `next_check_at <= now AND paused = 0`, ordered by `next_check_at`.
 2. Dispatch by `kind`:
    - `rss`: HTTP GET with `If-None-Match`/`If-Modified-Since` from prior `etag`/`last_modified`; parse with gofeed; sanitize HTML with `bluemonday.UGCPolicy`. Emit a text item per entry that has a body; emit one audio/video item per enclosure (mime-sniffed).
    - `youtube`: yt-dlp metadata fetch (no download); emit one `type='video'` item per video.
-   - `url`: resolve once, emit a single item of the appropriate type.
-3. `INSERT OR IGNORE` on `(source_id, guid)` deduplicates per source.
+   - `url`: HTTP GET the page, hash the body (or a normalized extraction of it), emit a single item; on subsequent polls re-emit only when the hash changes. Same scheduling fields as RSS, so `url` subscriptions can poll for change detection.
+3. `INSERT OR IGNORE` on `(subscription_id, guid)` deduplicates per subscription.
 4. For each newly-inserted item, run the filter engine.
-5. Update source: `last_checked_at`, `last_success_at`, `next_check_at = now + poll_interval_sec`; reset `error_count` and `last_error`.
+5. Update subscription: `last_checked_at`, `last_success_at`, `next_check_at = now + poll_interval_sec`; reset `error_count` and `last_error`.
 
 On fetch error: increment `error_count`, set `last_error`, set `next_check_at = now + min(poll_interval_sec * 2^error_count, 86400)`. Log via slog. Never swallow.
 
@@ -187,7 +187,7 @@ On fetch error: increment `error_count`, set `last_error`, set `next_check_at = 
 - Each filter's `query` is parsed at save time using `internal/query`. Parse errors reject the form.
 - At ingest, build a `query.Record` for each new item and call `expr.Match(record)`. All matching filters apply (not first-match) so a single item can be tagged and queued for download by separate filter rules.
 - Actions:
-  - `skip` — delete the item. Skipping is final; the `(source_id, guid)` row stays not-present, so re-fetch will re-evaluate against current filters. To suppress re-emergence permanently, the user can change the filter or pause the source.
+  - `skip` — delete the item. Skipping is final; the `(subscription_id, guid)` row stays not-present, so re-fetch will re-evaluate against current filters. To suppress re-emergence permanently, the user can change the filter or pause the subscription.
   - `tag` — insert into `item_tags` with the tag named by `action_value` (created on demand).
   - `download` — upsert `downloads(item_id, state='queued')`.
   - `mute_profanity` — set a pending pipeline step on the item. If `download` is not also requested, the worker pulls bytes from `media_url` directly to a temp file, processes, and writes `clean_audio_path`.
@@ -203,7 +203,7 @@ On fetch error: increment `error_count`, set `last_error`, set `next_check_at = 
 
 - Web UI item list reads through the cog-level search manager. Items are registered as a `SearchSourceDef` so the search box accepts the standard cog query grammar (`folder:Development tag:sunday is:unread`, free text, AND/OR/NOT, phrases). Bleve handles ranking and pagination.
 - Playlist view executes the saved query through the same search manager.
-- NextCloud News API filters to `type='text'` items from `kind='rss'` sources; folder, item, and feed shapes match the existing rss plugin's responses verbatim.
+- NextCloud News API filters to `type='text'` items from `kind='rss'` subscriptions; folder, item, and feed shapes match the existing rss plugin's responses verbatim. Note: cog-internal terminology is `subscription`, but the NC News API surface continues to use NC's wire term `feed` in JSON keys and URL segments for compatibility.
 - A new feed-native JSON API exposes items where `type IN ('audio','video')` plus playback state, intended for a future mobile client. The API serves signed URLs to `clean_audio_path` when present, falling back to `local_path`, then `media_url`. Detailed shape is out of scope for this design.
 
 ### Search grammar and `internal/query`
@@ -214,16 +214,16 @@ The per-item record for the filter engine populates:
 
 - `title`, `author`, `content` — text searched by `TextExpr`/`PhraseExpr`
 - `type` — one of `text|audio|video`
-- `kind` — source kind: `rss|youtube|url`
-- `folder` — source's folder name, if any
+- `kind` — subscription kind: `rss|youtube|url`
+- `folder` — subscription's folder name, if any
 - `tag` — multi-valued, set of currently-assigned tag names (tags added by earlier filters in the same ingest pass are visible to later filters)
 - `is` — multi-valued status flags: `unread`, `starred`, `downloaded`
-- `source` — source title
+- `subscription` — subscription title
 - `published` — RFC3339 timestamp
 
 ## Errors and operational notes
 
-- Fetch errors: backoff on the source row, slog at warn.
+- Fetch errors: backoff on the subscription row, slog at warn.
 - Filter save: parse errors reject the form; runtime match never errors.
 - Download/processing errors: stored on `downloads.error`, last writer wins; UI shows pipeline state per item with a manual retry button that re-queues.
 - No swallowed errors; every error path either wraps and returns or logs via slog with context.
@@ -233,8 +233,8 @@ The per-item record for the filter engine populates:
 ## Testing
 
 - **Unit:** filter engine (grammar parse + match per item), per-kind fetchers (RSS body-only, RSS with enclosure, YouTube via stub yt-dlp), record builder, download state transitions.
-- **Integration via `cogtest`:** ingest fixtures covering text-only RSS, RSS with audio enclosure, RSS with video enclosure, YouTube channel, single URL. Filter rules assert tag/skip/download outcomes. NC News API responses match shapes from the current `plugin/rss` tests.
-- **Browser via `webtest`:** sidebar (folders + tags + playlists), item list, search box uses cog-level search and returns expected items, settings forms for sources/folders/filters/playlists.
+- **Integration via `cogtest`:** ingest fixtures covering text-only RSS, RSS with audio enclosure, RSS with video enclosure, YouTube channel, and a URL subscription (initial fetch, unchanged re-poll, changed re-poll). Filter rules assert tag/skip/download outcomes. NC News API responses match shapes from the current `plugin/rss` tests.
+- **Browser via `webtest`:** sidebar (folders + tags + playlists), item list, search box uses cog-level search and returns expected items, settings forms for subscriptions/folders/filters/playlists.
 - **Testdata:** copied and extended from `plugin/rss/testdata`, adding feed-with-enclosure fixtures; YouTube tests use a mock yt-dlp binary in PATH, as the existing media tests do.
 - **`internal/query` changes:** updated tests verifying multi-valued field matching.
 - **Skip:** transcribe pipeline tests in v1 (action stubbed).
