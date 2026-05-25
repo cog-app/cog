@@ -449,6 +449,59 @@ func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, ref, http.StatusSeeOther)
 }
 
+// SystemSettings renders the admin-only feed system settings page.
+func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	db := store.DB()
+	model := string(SettingWhisperModel.MustGet(db))
+	modelsDir := SettingWhisperModelsDir.MustGet(db)
+	cliPath := SettingWhisperCLIPath.MustGet(db)
+	var flashMsg, flashKind string
+	if f := h.getFlash(w, r); f != nil {
+		flashMsg, flashKind = f.Message, f.Kind
+	}
+	plugin.SetTitle(w, "Feed System Settings")
+	feedSystemSettingsPage(model, modelsDir, cliPath, flashMsg, flashKind).Render(r.Context(), w)
+}
+
+// SaveSystemSettings persists model selection + paths.
+func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		h.setFlash(w, "error", "Failed to open DB: "+err.Error())
+		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		return
+	}
+	db := store.DB()
+	model := WhisperModel(r.FormValue("whisper_model"))
+	if model != WhisperNone && WhisperModelFile(model) == "" {
+		h.setFlash(w, "error", "Unknown whisper model: "+string(model))
+		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		return
+	}
+	if err := SettingWhisperModel.Set(db, model); err != nil {
+		h.setFlash(w, "error", err.Error())
+		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		return
+	}
+	if err := SettingWhisperModelsDir.Set(db, r.FormValue("whisper_models_dir")); err != nil {
+		h.setFlash(w, "error", err.Error())
+		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		return
+	}
+	if err := SettingWhisperCLIPath.Set(db, r.FormValue("whisper_cli_path")); err != nil {
+		h.setFlash(w, "error", err.Error())
+		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		return
+	}
+	h.setFlash(w, "success", "Saved.")
+	http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+}
+
 // ToggleStar toggles the starred state of an item then redirects back.
 func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)

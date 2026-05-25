@@ -1171,3 +1171,23 @@ func BoolSetting(key string, defaultValue bool) Setting[bool] {
 		},
 	}
 }
+
+// --- Whisper model settings ---
+
+// WhisperModel identifies which whisper.cpp model the transcribe worker uses.
+type WhisperModel string
+
+const (
+	WhisperNone     WhisperModel = "none"
+	WhisperTinyEn   WhisperModel = "tiny.en"
+	WhisperBaseEn   WhisperModel = "base.en"
+	WhisperSmallEn  WhisperModel = "small.en"
+	WhisperMediumEn WhisperModel = "medium.en"
+	WhisperLargeV3  WhisperModel = "large-v3"
+)
+
+var (
+	SettingWhisperModel     = StringSetting("whisper_model", WhisperBaseEn)
+	SettingWhisperModelsDir = StringSetting[string]("whisper_models_dir", "") // empty means "auto: <plugin data>/whisper-models"
+	SettingWhisperCLIPath   = StringSetting[string]("whisper_cli_path", "")   // empty means "auto: lookup whisper-cli in PATH"
+)

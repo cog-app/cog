@@ -253,7 +253,7 @@ func TestPlaylistsCRUD(t *testing.T) {
 func TestListItemsBySubscription(t *testing.T) {
 	s := newStore(t)
 	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://y/feed.xml"})
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		_, _, err := s.UpsertItem(feed.Item{
 			SubscriptionID: subID,
 			GUID:           fmt.Sprintf("g%d", i),

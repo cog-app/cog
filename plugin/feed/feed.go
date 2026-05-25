@@ -67,6 +67,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "playlists", http.HandlerFunc(pages.AddPlaylist))
 	ctx.RegisterAction("POST", "playlists/{id}/delete", http.HandlerFunc(pages.DeletePlaylist))
 
+	ctx.RegisterSettingsPage(plugin.SettingsPage{
+		Handler: http.HandlerFunc(pages.SystemSettings),
+		Action:  http.HandlerFunc(pages.SaveSystemSettings),
+	})
+
 	// NextCloud News API compatibility
 	newsAPI := ncapi.New(p)
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {

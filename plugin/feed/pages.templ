@@ -200,3 +200,37 @@ func subscriptionDisplayTitle(s Subscription) string {
 	}
 	return s.URL
 }
+
+templ feedSystemSettingsPage(model string, modelsDir string, cliPath string, flash string, flashKind string) {
+	<div id="feed-system-settings">
+		if flash != "" {
+			<div class={ "flash", "flash-" + flashKind }>{ flash }</div>
+		}
+		<h2>Feed — System Settings</h2>
+		<form method="post" action="">
+			<fieldset>
+				<legend>Transcription (whisper.cpp)</legend>
+				<label>
+					Model:
+					<select name="whisper_model">
+						<option value="none" selected?={ model == "none" }>None (disable transcription)</option>
+						<option value="tiny.en" selected?={ model == "tiny.en" }>tiny.en (~75 MB)</option>
+						<option value="base.en" selected?={ model == "base.en" }>base.en (~140 MB) — default</option>
+						<option value="small.en" selected?={ model == "small.en" }>small.en (~470 MB)</option>
+						<option value="medium.en" selected?={ model == "medium.en" }>medium.en (~1.5 GB)</option>
+						<option value="large-v3" selected?={ model == "large-v3" }>large-v3 (~3 GB)</option>
+					</select>
+				</label>
+				<label>
+					Models directory:
+					<input type="text" name="whisper_models_dir" value={ modelsDir } placeholder="(auto: plugin data dir)"/>
+				</label>
+				<label>
+					whisper-cli binary:
+					<input type="text" name="whisper_cli_path" value={ cliPath } placeholder="(auto: search PATH)"/>
+				</label>
+			</fieldset>
+			<button type="submit">Save</button>
+		</form>
+	</div>
+}

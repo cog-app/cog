@@ -2,6 +2,7 @@ package feed_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -41,13 +42,7 @@ func TestPollerFilterEngineRunsOnInsert(t *testing.T) {
 	for _, it := range items {
 		tags, err := store.ItemTags(it.ID)
 		require.NoError(t, err)
-		found := false
-		for _, tag := range tags {
-			if tag == "auto" {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(tags, "auto")
 		if !found {
 			t.Errorf("item %d (%q): expected tag %q, got %v", it.ID, it.Title, "auto", tags)
 		}

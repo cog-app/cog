@@ -12,6 +12,11 @@ CREATE TABLE IF NOT EXISTS downloads (
     needs_transcribe INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS feed_settings (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS filters (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sort_order INTEGER NOT NULL DEFAULT 0,
@@ -115,8 +120,3 @@ CREATE INDEX IF NOT EXISTS idx_playback_last ON playback(last_played_at DESC);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_folder ON subscriptions(folder_id);
 
 CREATE INDEX IF NOT EXISTS idx_subscriptions_next_check ON subscriptions(next_check_at);
-
-CREATE TABLE IF NOT EXISTS feed_settings (
-	key TEXT PRIMARY KEY,
-	value TEXT NOT NULL DEFAULT ''
-);
