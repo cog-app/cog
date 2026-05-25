@@ -2,7 +2,9 @@ package feed
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -1062,4 +1064,110 @@ func (s *Store) ItemTags(itemID int64) ([]string, error) {
 		return nil, fmt.Errorf("item tags rows: %w", err)
 	}
 	return tags, nil
+}
+
+// DB returns the underlying database handle.
+func (s *Store) DB() *sql.DB { return s.db }
+
+// --- Settings ---
+
+// GetSetting returns a setting value from feed_settings, or the default.
+func (s *Store) GetSetting(key, defaultValue string) string {
+	var v string
+	err := s.db.QueryRow(`SELECT value FROM feed_settings WHERE key = ?`, key).Scan(&v)
+	if err != nil {
+		return defaultValue
+	}
+	return v
+}
+
+// SetSetting upserts a setting value into feed_settings.
+func (s *Store) SetSetting(key, value string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO feed_settings(key, value) VALUES(?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+	if err != nil {
+		return fmt.Errorf("set setting %s: %w", key, err)
+	}
+	return nil
+}
+
+// --- Typed settings (mirrors plugin/gallery/store.go pattern) ---
+
+// Setting is a typed key/value setting backed by the feed_settings table.
+type Setting[T any] struct {
+	Key          string
+	DefaultValue T
+	Parse        func(s string) (T, error)
+	Stringify    func(v T) string
+}
+
+// Get reads the setting value from the database, returning the default if absent.
+func (s *Setting[T]) Get(db *sql.DB) (T, error) {
+	var zero T
+	var value string
+	err := db.QueryRow(`SELECT value FROM feed_settings WHERE key = ?`, s.Key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return s.DefaultValue, nil
+	}
+	if err != nil {
+		return zero, err
+	}
+	if value == "" {
+		return s.DefaultValue, nil
+	}
+	return s.Parse(value)
+}
+
+// Set writes the setting value to the database.
+func (s *Setting[T]) Set(db *sql.DB, value T) error {
+	str := fmt.Sprint(value)
+	if s.Stringify != nil {
+		str = s.Stringify(value)
+	}
+	_, err := db.Exec(
+		`INSERT INTO feed_settings(key, value) VALUES(?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, s.Key, str)
+	return err
+}
+
+// MustGet reads the setting value, returning the default on error.
+func (s *Setting[T]) MustGet(db *sql.DB) T {
+	v, err := s.Get(db)
+	if err != nil {
+		return s.DefaultValue
+	}
+	return v
+}
+
+// StringSetting creates a Setting for a string-based type.
+func StringSetting[T ~string](key string, defaultValue T) Setting[T] {
+	return Setting[T]{
+		Key: key, DefaultValue: defaultValue,
+		Parse:     func(s string) (T, error) { return T(s), nil },
+		Stringify: func(v T) string { return string(v) },
+	}
+}
+
+// IntSetting creates a Setting for an int value.
+func IntSetting(key string, defaultValue int) Setting[int] {
+	return Setting[int]{
+		Key: key, DefaultValue: defaultValue,
+		Parse:     strconv.Atoi,
+		Stringify: strconv.Itoa,
+	}
+}
+
+// BoolSetting creates a Setting for a bool value.
+func BoolSetting(key string, defaultValue bool) Setting[bool] {
+	return Setting[bool]{
+		Key: key, DefaultValue: defaultValue,
+		Parse: func(s string) (bool, error) { return s == "true", nil },
+		Stringify: func(v bool) string {
+			if v {
+				return "true"
+			}
+			return "false"
+		},
+	}
 }
