@@ -113,6 +113,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterPage("folder/{id}", http.HandlerFunc(pages.FolderView))
 	ctx.RegisterPage("starred", http.HandlerFunc(pages.StarredView))
 	ctx.RegisterPage("tag/{name}", http.HandlerFunc(pages.TagView))
+	ctx.RegisterPage("playlists/{id}", http.HandlerFunc(pages.PlaylistView))
 
 	// Bulk-mark and refresh actions
 	ctx.RegisterAction("POST", "items/read-all", http.HandlerFunc(pages.MarkAllRead))

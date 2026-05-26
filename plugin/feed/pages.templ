@@ -78,8 +78,8 @@ templ feedSidebar(sb sidebarData) {
 			<span class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-muted)">Playlists</span>
 			for _, pl := range sb.Playlists {
 				<a
-					href={ templ.SafeURL("/apps/feed/?q=" + url.QueryEscape(pl.Query)) }
-					class="sidebar-item"
+					href={ templ.SafeURL(fmt.Sprintf("/apps/feed/playlists/%d", pl.ID)) }
+					class={ feedSidebarClass(sb.ActivePath, fmt.Sprintf("/apps/feed/playlists/%d", pl.ID)) }
 					style="padding-left:1.5rem;font-size:0.9rem"
 				>{ pl.Name }</a>
 			}
@@ -181,7 +181,7 @@ templ feedSubscriptionPage(sb sidebarData, sub *Subscription, items []ItemWithSu
 				</div>
 			</div>
 			if sub.LastError != "" {
-				@ui.Alert("error", sub.LastError)
+				@ui.Alert("error", fmt.Sprintf("Last fetch failed: %s (errors in a row: %d)", sub.LastError, sub.ErrorCount))
 			}
 			if len(items) == 0 {
 				@ui.Card("") {
@@ -240,6 +240,25 @@ templ feedTagPage(sb sidebarData, tag string, items []ItemWithSubscription, csrf
 			if len(items) == 0 {
 				@ui.Card("") {
 					<p class="text-muted">No articles with this tag.</p>
+				}
+			} else {
+				@feedItemList(items, csrfToken)
+			}
+		</div>
+	</div>
+}
+
+templ feedPlaylistPage(sb sidebarData, pl Playlist, items []ItemWithSubscription, csrfToken string) {
+	<div class="sidebar-layout">
+		@feedSidebar(sb)
+		<div class="sidebar-content">
+			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+				<h1 style="margin:0">{ pl.Name }</h1>
+				<code class="text-muted" style="font-size:0.85rem">{ pl.Query }</code>
+			</div>
+			if len(items) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No items match this playlist's query.</p>
 				}
 			} else {
 				@feedItemList(items, csrfToken)

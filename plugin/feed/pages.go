@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -324,10 +325,25 @@ func (h *Pages) DeletePlaylist(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
 }
 
+// sortSubscriptionsForSidebar sorts subscriptions so those with errors appear
+// first, then alphabetically by display title (case-insensitive).
+func sortSubscriptionsForSidebar(subs []Subscription) {
+	sort.SliceStable(subs, func(i, j int) bool {
+		si, sj := subs[i], subs[j]
+		// Errors first
+		if (si.ErrorCount > 0) != (sj.ErrorCount > 0) {
+			return si.ErrorCount > 0
+		}
+		// Then by display title (case-insensitive)
+		return strings.ToLower(subscriptionDisplayTitle(si)) < strings.ToLower(subscriptionDisplayTitle(sj))
+	})
+}
+
 // buildSidebar assembles sidebar data for the given active path.
 func (h *Pages) buildSidebar(store *Store, activePath string) sidebarData {
 	folders, _ := store.ListFolders()
 	subs, _ := store.ListSubscriptions()
+	sortSubscriptionsForSidebar(subs)
 	tags, _ := store.ListTags()
 	playlists, _ := store.ListPlaylists()
 	unreadCounts, _ := store.CountUnreadBySubscription()
@@ -345,6 +361,30 @@ func (h *Pages) buildSidebar(store *Store, activePath string) sidebarData {
 		UnreadCounts:  unreadCounts,
 		FolderUnread:  folderUnread,
 	}
+}
+
+// PlaylistView renders items matching a saved playlist's query.
+func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	pl, err := store.GetPlaylist(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	sb := h.buildSidebar(store, fmt.Sprintf("/apps/feed/playlists/%d", id))
+	items, _ := store.ListItemsForView(ViewSpec{All: true}, 500)
+	items = applyQueryFilter(store, items, pl.Query)
+	plugin.SetTitle(w, "Feed — "+pl.Name)
+	feedPlaylistPage(sb, pl, items, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // applyQueryFilter filters an ItemWithSubscription slice using the query engine.

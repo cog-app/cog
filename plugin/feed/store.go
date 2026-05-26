@@ -1011,6 +1011,16 @@ func (s *Store) UpdatePlaylist(p Playlist) error {
 	return nil
 }
 
+// GetPlaylist returns a single playlist by ID.
+func (s *Store) GetPlaylist(id int64) (Playlist, error) {
+	var p Playlist
+	row := s.db.QueryRow(`SELECT id, name, query, sort_order, created_at FROM playlists WHERE id = ?`, id)
+	if err := row.Scan(&p.ID, &p.Name, &p.Query, &p.SortOrder, &p.CreatedAt); err != nil {
+		return p, fmt.Errorf("get playlist: %w", err)
+	}
+	return p, nil
+}
+
 // DeletePlaylist removes a playlist by ID.
 func (s *Store) DeletePlaylist(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM playlists WHERE id = ?`, id)
