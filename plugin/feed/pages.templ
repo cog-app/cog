@@ -37,6 +37,7 @@ templ feedSidebar(sb sidebarData) {
 				<span class="badge">{ strconv.Itoa(sb.StarredCount) }</span>
 			}
 		</a>
+		<a href="/apps/feed/history" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/history") }>History</a>
 		<div class="sidebar-divider"></div>
 		for _, folder := range sb.Folders {
 			<details class="sidebar-folder" data-folder-id={ strconv.FormatInt(folder.ID, 10) } open?={ isFeedFolderActive(folder, sb) }>
@@ -181,6 +182,7 @@ templ feedSubscriptionPage(sb sidebarData, sub *Subscription, items []ItemWithSu
 						<input type="hidden" name="csrf_token" value={ csrfToken }/>
 						<button class="btn btn-outline btn-sm" type="submit">Mark all read</button>
 					</form>
+					<a href={ templ.SafeURL(fmt.Sprintf("/apps/feed/subscription/%d/settings", sub.ID)) } class="btn btn-outline btn-sm">Settings</a>
 				</div>
 			</div>
 			if sub.LastError != "" {
@@ -936,6 +938,157 @@ templ feedSystemSettingsPage(model string, modelsDir string, cliPath string, fla
 			@ui.Button("primary", "Save")
 		</form>
 	}
+	@ui.Card("Admin") {
+		<p><a href="/apps/feed/admin/status" class="btn btn-outline btn-sm">Orchestrator Status &amp; Cache</a></p>
+	}
+}
+
+// feedHistoryPage renders the playback history list.
+templ feedHistoryPage(sb sidebarData, items []PlayedItem, csrfToken string) {
+	<div class="sidebar-layout">
+		@feedSidebar(sb)
+		<div class="sidebar-content">
+			<h1>History</h1>
+			if len(items) == 0 {
+				@ui.Card("") {
+					<p class="text-muted">No playback history yet.</p>
+				}
+			} else {
+				@ui.Card("") {
+					<table style="width:100%;border-collapse:collapse">
+						<thead>
+							<tr style="font-size:0.85rem;color:var(--color-muted);text-align:left">
+								<th style="padding:0.4rem 0.5rem">Title</th>
+								<th style="padding:0.4rem 0.5rem">Feed</th>
+								<th style="padding:0.4rem 0.5rem">Progress</th>
+								<th style="padding:0.4rem 0.5rem">Played</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, pi := range items {
+								<tr style="border-top:1px solid var(--color-border)">
+									<td style="padding:0.5rem">
+										<a href={ templ.SafeURL(fmt.Sprintf("/apps/feed/items/%d", pi.ID)) }>{ pi.Title }</a>
+									</td>
+									<td style="padding:0.5rem;font-size:0.85rem;color:var(--color-muted)">{ pi.SubscriptionTitle }</td>
+									<td style="padding:0.5rem;font-size:0.85rem">
+										if pi.Completed {
+											<span class="badge" style="background:var(--color-success,#22c55e)">Done</span>
+										} else if pi.ProgressSec > 0 {
+											{ feedFormatDuration(int64(pi.ProgressSec)) }
+										} else {
+											<span class="text-muted">—</span>
+										}
+									</td>
+									<td style="padding:0.5rem;font-size:0.85rem;color:var(--color-muted)">{ feedFormatTime(pi.LastPlayedAt) }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+			}
+		</div>
+	</div>
+}
+
+// feedSubscriptionSettingsPage renders per-subscription settings.
+templ feedSubscriptionSettingsPage(sub Subscription, folders []Folder, flashMsg string, flashKind string, csrfToken string) {
+	<div id="feed-sub-settings">
+		@ui.Alert(flashKind, flashMsg)
+		@ui.Card("Subscription settings") {
+			<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/feed/subscription/%d/settings", sub.ID)) }>
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<div class="form-group">
+					<label>
+						<input type="checkbox" name="paused" checked?={ sub.Paused }/>
+						{ " Paused" }
+					</label>
+					<small class="text-muted">When paused the subscription will not be polled.</small>
+				</div>
+				<div class="form-group">
+					<label for="poll_interval_sec">Poll interval (seconds)</label>
+					<input class="form-control" type="number" id="poll_interval_sec" name="poll_interval_sec" value={ strconv.FormatInt(sub.PollIntervalSec, 10) } min="60" style="max-width:160px"/>
+				</div>
+				<div class="form-group">
+					<label for="folder_id">Folder</label>
+					<select id="folder_id" name="folder_id" class="form-control">
+						<option value="" selected?={ !sub.FolderID.Valid }>(none)</option>
+						for _, f := range folders {
+							<option value={ strconv.FormatInt(f.ID, 10) } selected?={ sub.FolderID.Valid && sub.FolderID.Int64 == f.ID }>{ f.Name }</option>
+						}
+					</select>
+				</div>
+				@ui.Button("primary", "Save")
+			</form>
+		}
+		@ui.Card("Danger zone") {
+			<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/feed/subscriptions/%d/delete", sub.ID)) } onsubmit="return confirm('Delete this subscription and all its items?')">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				@ui.Button("danger", "Delete subscription")
+			</form>
+		}
+	</div>
+}
+
+// feedAdminStatusPage renders orchestrator status and cache controls.
+templ feedAdminStatusPage(snap OrchestratorStatusSnapshot, pendingDL int, pendingP int, pendingT int, flash *pageFlash, csrfToken string) {
+	<div id="feed-admin-status">
+		if flash != nil {
+			@ui.Alert(flash.Kind, flash.Message)
+		}
+		@ui.Card("Orchestrator") {
+			<table style="width:100%;border-collapse:collapse">
+				<tr>
+					<th style="text-align:left;padding:0.3rem 0.5rem;width:200px">Last tick</th>
+					<td style="padding:0.3rem 0.5rem">
+						if snap.LastTickAt.IsZero() {
+							<span class="text-muted">not yet</span>
+						} else {
+							{ snap.LastTickAt.Format("2006-01-02 15:04:05") }
+						}
+					</td>
+				</tr>
+				<tr>
+					<th style="text-align:left;padding:0.3rem 0.5rem">Pending downloads</th>
+					<td style="padding:0.3rem 0.5rem">{ strconv.Itoa(pendingDL) }</td>
+				</tr>
+				<tr>
+					<th style="text-align:left;padding:0.3rem 0.5rem">Pending profanity</th>
+					<td style="padding:0.3rem 0.5rem">{ strconv.Itoa(pendingP) }</td>
+				</tr>
+				<tr>
+					<th style="text-align:left;padding:0.3rem 0.5rem">Pending transcribe</th>
+					<td style="padding:0.3rem 0.5rem">{ strconv.Itoa(pendingT) }</td>
+				</tr>
+			</table>
+			if len(snap.LastUserMap) > 0 {
+				<h3 style="margin-top:1rem;font-size:1rem">Per-user</h3>
+				<table style="width:100%;border-collapse:collapse">
+					<thead>
+						<tr style="font-size:0.85rem;color:var(--color-muted);text-align:left">
+							<th style="padding:0.3rem 0.5rem">User</th>
+							<th style="padding:0.3rem 0.5rem">Last processed</th>
+						</tr>
+					</thead>
+					<tbody>
+						for user, t := range snap.LastUserMap {
+							<tr style="border-top:1px solid var(--color-border)">
+								<td style="padding:0.3rem 0.5rem">{ user }</td>
+								<td style="padding:0.3rem 0.5rem;font-size:0.85rem;color:var(--color-muted)">{ t.Format("2006-01-02 15:04:05") }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		}
+		@ui.Card("Cache") {
+			<p class="text-muted" style="font-size:0.9rem">Removes all downloaded media and caption files for your account. Downloads will be re-queued automatically.</p>
+			<form method="post" action="/apps/feed/admin/purge-cache" onsubmit="return confirm('Purge all downloaded media and captions? Downloads will be re-queued.')">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				@ui.Button("danger", "Purge cache")
+			</form>
+		}
+	</div>
 }
 
 // --- Template helpers ---

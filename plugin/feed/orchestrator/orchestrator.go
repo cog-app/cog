@@ -72,6 +72,7 @@ func processUserPoke(ctx context.Context, plug *feed.Plugin, prof *profanity.Plu
 }
 
 func tickOnce(ctx context.Context, plug *feed.Plugin, prof *profanity.Plugin, dataDir string, log *slog.Logger) {
+	feed.RecordTick()
 	entries, err := os.ReadDir(dataDir)
 	if err != nil {
 		log.Error("feed orchestrator: read data dir", "err", err)
@@ -94,6 +95,7 @@ func tickOnce(ctx context.Context, plug *feed.Plugin, prof *profanity.Plugin, da
 }
 
 func processUser(ctx context.Context, plug *feed.Plugin, prof *profanity.Plugin, dataDir, username string, log *slog.Logger) {
+	feed.RecordUserProcessed(username)
 	db, err := plug.DB(username)
 	if err != nil {
 		log.Error("feed orchestrator: open db", "user", username, "err", err)

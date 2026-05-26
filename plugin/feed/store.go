@@ -1462,3 +1462,107 @@ var (
 	SettingWhisperModelsDir = StringSetting[string]("whisper_models_dir", "") // empty means "auto: <plugin data>/whisper-models"
 	SettingWhisperCLIPath   = StringSetting[string]("whisper_cli_path", "")   // empty means "auto: lookup whisper-cli in PATH"
 )
+
+// --- Playback history ---
+
+// PlayedItem is an Item joined with subscription and playback for history display.
+type PlayedItem struct {
+	Item
+	SubscriptionTitle string
+	ProgressSec       float64
+	Completed         bool
+	LastPlayedAt      int64
+}
+
+// ListPlaybackHistory returns items with playback records, newest first.
+func (s *Store) ListPlaybackHistory(limit int) ([]PlayedItem, error) {
+	rows, err := s.db.Query(
+		`SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
+		        i.content_html, i.media_url, i.media_mime, i.duration_sec,
+		        i.thumbnail_url, i.published_at, i.fetched_at, i.is_read, i.is_starred,
+		        i.content_hash,
+		        COALESCE(sub.title, sub.url),
+		        pb.progress_sec, pb.completed, pb.last_played_at
+		 FROM playback pb
+		 JOIN items i ON i.id = pb.item_id
+		 JOIN subscriptions sub ON sub.id = i.subscription_id
+		 WHERE pb.last_played_at > 0
+		 ORDER BY pb.last_played_at DESC
+		 LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list playback history: %w", err)
+	}
+	defer rows.Close()
+	var out []PlayedItem
+	for rows.Next() {
+		var pi PlayedItem
+		var isRead, isStarred, completed int
+		if err := rows.Scan(
+			&pi.ID, &pi.SubscriptionID, &pi.GUID, &pi.Type, &pi.Title, &pi.Author, &pi.URL,
+			&pi.ContentHTML, &pi.MediaURL, &pi.MediaMIME, &pi.DurationSec,
+			&pi.ThumbnailURL, &pi.PublishedAt, &pi.FetchedAt, &isRead, &isStarred,
+			&pi.ContentHash, &pi.SubscriptionTitle,
+			&pi.ProgressSec, &completed, &pi.LastPlayedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan history: %w", err)
+		}
+		pi.IsRead = isRead != 0
+		pi.IsStarred = isStarred != 0
+		pi.Completed = completed != 0
+		out = append(out, pi)
+	}
+	return out, rows.Err()
+}
+
+// --- Per-subscription settings store helpers ---
+
+// UpdateSubscriptionPollInterval updates the poll_interval_sec for a subscription.
+func (s *Store) UpdateSubscriptionPollInterval(id, sec int64) error {
+	_, err := s.db.Exec(`UPDATE subscriptions SET poll_interval_sec = ? WHERE id = ?`, sec, id)
+	if err != nil {
+		return fmt.Errorf("update poll interval: %w", err)
+	}
+	return nil
+}
+
+// UpdateSubscriptionFolder sets the folder for a subscription (NULL clears it).
+func (s *Store) UpdateSubscriptionFolder(id int64, folderID sql.NullInt64) error {
+	_, err := s.db.Exec(`UPDATE subscriptions SET folder_id = ? WHERE id = ?`, folderID, id)
+	if err != nil {
+		return fmt.Errorf("update folder: %w", err)
+	}
+	return nil
+}
+
+// --- Auto-advance ---
+
+// NextUnplayedMedia returns the next playable audio/video item that is unread
+// and either has no playback record or has playback.completed = 0.
+// The item with excludeID is excluded.
+func (s *Store) NextUnplayedMedia(excludeID int64) (Item, error) {
+	row := s.db.QueryRow(
+		`SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
+		        i.content_html, i.media_url, i.media_mime, i.duration_sec,
+		        i.thumbnail_url, i.published_at, i.fetched_at, i.is_read, i.is_starred,
+		        i.content_hash
+		 FROM items i
+		 LEFT JOIN playback pb ON pb.item_id = i.id
+		 WHERE i.type IN ('audio','video')
+		   AND i.is_read = 0
+		   AND i.id != ?
+		   AND (pb.completed IS NULL OR pb.completed = 0)
+		 ORDER BY i.published_at ASC
+		 LIMIT 1`, excludeID)
+	var it Item
+	var isRead, isStarred int
+	if err := row.Scan(
+		&it.ID, &it.SubscriptionID, &it.GUID, &it.Type, &it.Title, &it.Author, &it.URL,
+		&it.ContentHTML, &it.MediaURL, &it.MediaMIME, &it.DurationSec, &it.ThumbnailURL,
+		&it.PublishedAt, &it.FetchedAt, &isRead, &isStarred, &it.ContentHash,
+	); err != nil {
+		return Item{}, err
+	}
+	it.IsRead = isRead != 0
+	it.IsStarred = isStarred != 0
+	return it, nil
+}

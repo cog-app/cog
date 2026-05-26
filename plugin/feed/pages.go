@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -671,7 +672,16 @@ func (h *Pages) MarkComplete(w http.ResponseWriter, r *http.Request) {
 	if err := store.MarkRead(id, true); err != nil {
 		slog.Error("feed: mark complete read", "id", id, "err", err)
 	}
-	// v1: return empty body; HTMX swaps the player away.
+	// Auto-advance: find the next unplayed media item and render its player.
+	next, err := store.NextUnplayedMedia(id)
+	if err == nil {
+		nextIP, err := store.GetItemPlayback(next.ID)
+		if err == nil {
+			feedPlayer(nextIP, plugin.CSRFToken(r)).Render(r.Context(), w)
+			return
+		}
+	}
+	// No next item — return empty body; HTMX swap removes the player.
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -1065,6 +1075,132 @@ func (h *Pages) ExportOPML(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.Header().Set("Content-Disposition", `attachment; filename="cog-feeds.opml"`)
 	_, _ = w.Write(data)
+}
+
+// HistoryView shows items the user has played, ordered by last_played_at DESC.
+func (h *Pages) HistoryView(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	items, _ := store.ListPlaybackHistory(200)
+	sb := h.buildSidebar(store, "/apps/feed/history")
+	plugin.SetTitle(w, "Feed — History")
+	feedHistoryPage(sb, items, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// SubscriptionSettings shows per-subscription options.
+func (h *Pages) SubscriptionSettings(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	sub, err := store.GetSubscription(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	folders, _ := store.ListFolders()
+	var flashMsg, flashKind string
+	if f := h.getFlash(w, r); f != nil {
+		flashMsg, flashKind = f.Message, f.Kind
+	}
+	plugin.SetTitle(w, "Feed — "+subscriptionDisplayTitle(sub))
+	feedSubscriptionSettingsPage(sub, folders, flashMsg, flashKind, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// SaveSubscriptionSettings handles POST of the per-subscription settings form.
+func (h *Pages) SaveSubscriptionSettings(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	paused := r.FormValue("paused") == "on"
+	if err := store.PauseSubscription(id, paused); err != nil {
+		h.setFlash(w, "error", err.Error())
+		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		return
+	}
+	if iv := r.FormValue("poll_interval_sec"); iv != "" {
+		if n, parseErr := strconv.ParseInt(iv, 10, 64); parseErr == nil && n > 0 {
+			if err := store.UpdateSubscriptionPollInterval(id, n); err != nil {
+				h.setFlash(w, "error", err.Error())
+				http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+				return
+			}
+		}
+	}
+	fv := r.FormValue("folder_id")
+	var folderID sql.NullInt64
+	if fv != "" {
+		if n, parseErr := strconv.ParseInt(fv, 10, 64); parseErr == nil {
+			folderID = sql.NullInt64{Int64: n, Valid: true}
+		}
+	}
+	if err := store.UpdateSubscriptionFolder(id, folderID); err != nil {
+		h.setFlash(w, "error", err.Error())
+		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		return
+	}
+	h.setFlash(w, "success", "Saved.")
+	http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+}
+
+// AdminStatus shows orchestrator activity and per-user queue counts.
+func (h *Pages) AdminStatus(w http.ResponseWriter, r *http.Request) {
+	status := orchestratorGetStatus()
+	store, _ := h.userStore(r)
+	var pendingDL, pendingP, pendingT int
+	if store != nil {
+		if dl, err := store.PendingDownloads(10_000); err == nil {
+			pendingDL = len(dl)
+		}
+		if p, err := store.PendingProfanityReady(10_000); err == nil {
+			pendingP = len(p)
+		}
+		if t, err := store.PendingTranscribeReady(10_000); err == nil {
+			pendingT = len(t)
+		}
+	}
+	flash := h.getFlash(w, r)
+	plugin.SetTitle(w, "Feed Admin Status")
+	feedAdminStatusPage(status, pendingDL, pendingP, pendingT, flash, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// PurgeCache removes all downloaded media and caption files for the current user.
+func (h *Pages) PurgeCache(w http.ResponseWriter, r *http.Request) {
+	u := plugin.UserFromContext(r.Context())
+	if u == nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+	root := filepath.Join(h.plugin.DataDir(), u.Username, "app_data", "feed", "media")
+	if err := os.RemoveAll(root); err != nil {
+		h.setFlash(w, "error", "Purge failed: "+err.Error())
+	} else {
+		h.setFlash(w, "success", "Purged downloaded media cache.")
+	}
+	captionsRoot := filepath.Join(h.plugin.DataDir(), u.Username, "app_data", "feed", "captions")
+	_ = os.RemoveAll(captionsRoot)
+	store, err := h.userStore(r)
+	if err == nil {
+		_, _ = store.DB().Exec(`UPDATE downloads SET local_path='', clean_audio_path='', captions_path='', state='queued'`)
+	}
+	http.Redirect(w, r, "/apps/feed/admin/status", http.StatusSeeOther)
 }
 
 // ToggleStar toggles the starred state of an item then redirects back.
