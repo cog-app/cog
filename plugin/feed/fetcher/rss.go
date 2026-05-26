@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/microcosm-cc/bluemonday"
@@ -76,6 +77,13 @@ func fetchRSS(ctx context.Context, sub feed.Subscription) (feed.FetchResult, err
 	}
 	if parsed.Image != nil && parsed.Image.URL != "" {
 		updates["image_url"] = parsed.Image.URL
+	}
+
+	// Derive favicon URL from the site URL when not already set.
+	if siteURL := updates["site_url"]; siteURL != "" {
+		if u, err := url.Parse(siteURL); err == nil && u.Host != "" {
+			updates["favicon_url"] = (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: "/favicon.ico"}).String()
+		}
 	}
 
 	var items []feed.Item

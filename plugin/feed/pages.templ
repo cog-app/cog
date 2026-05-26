@@ -121,6 +121,9 @@ templ feedSidebarSubLink(sub Subscription, sb sidebarData) {
 		class={ feedSidebarSubClass(sub, sb) }
 		style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem"
 	>
+		if sub.FaviconURL != "" {
+			<img src={ sub.FaviconURL } alt="" style="width:16px;height:16px;flex-shrink:0" onerror="this.style.display='none'"/>
+		}
 		<span class="sidebar-item-text">{ subscriptionDisplayTitle(sub) }</span>
 		if sub.LastError != "" {
 			<span class="text-danger" title={ sub.LastError }>!</span>
@@ -539,6 +542,30 @@ templ feedSettingsPage(subs []Subscription, folders []Folder, filters []Filter, 
 				@ui.Upload("/apps/feed/opml/import", "opml", ".opml,.xml,application/xml", csrfToken, "Import OPML", "btn-secondary btn-sm")
 				<a class="btn btn-secondary btn-sm" href="/apps/feed/opml/export">Export OPML</a>
 			</div>
+			<form method="post" action="/apps/feed/import" enctype="multipart/form-data" style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<label class="btn btn-secondary btn-sm" style="cursor:pointer">
+					Import AntennaPod
+					<input type="hidden" name="format" value="antennapod"/>
+					<input type="file" name="file" accept=".db,.sqlite" style="display:none" onchange="this.form.submit()"/>
+				</label>
+			</form>
+			<form method="post" action="/apps/feed/import" enctype="multipart/form-data" style="margin-top:0.5rem">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<label class="btn btn-secondary btn-sm" style="cursor:pointer">
+					Import NewPipe
+					<input type="hidden" name="format" value="newpipe"/>
+					<input type="file" name="file" accept=".zip" style="display:none" onchange="this.form.submit()"/>
+				</label>
+			</form>
+			<form method="post" action="/apps/feed/import" enctype="multipart/form-data" style="margin-top:0.5rem">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<label class="btn btn-secondary btn-sm" style="cursor:pointer">
+					Import YouTube Takeout
+					<input type="hidden" name="format" value="youtube-csv"/>
+					<input type="file" name="file" accept=".csv" style="display:none" onchange="this.form.submit()"/>
+				</label>
+			</form>
 		}
 		@ui.Card("Folders") {
 			<form id="add-folder" method="post" action="/apps/feed/folders" class="flex gap-1 items-center">

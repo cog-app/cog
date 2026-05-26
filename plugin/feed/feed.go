@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os/exec"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -131,6 +132,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "filters/{id}/delete", http.HandlerFunc(pages.DeleteFilter))
 	ctx.RegisterAction("POST", "playlists", http.HandlerFunc(pages.AddPlaylist))
 	ctx.RegisterAction("POST", "playlists/{id}/delete", http.HandlerFunc(pages.DeletePlaylist))
+	ctx.RegisterAction("POST", "import", http.HandlerFunc(pages.Import))
 	ctx.RegisterAction("POST", "opml/import", http.HandlerFunc(pages.ImportOPML))
 	ctx.RegisterAPI("opml/export", http.HandlerFunc(pages.ExportOPML))
 
@@ -238,3 +240,27 @@ func (p *Plugin) RenderWidget(ctx context.Context, w io.Writer, userID string) e
 
 // Profanity returns the discovered profanity plugin, or nil if not registered.
 func (p *Plugin) Profanity() *profanity.Plugin { return p.profanity }
+
+// DoctorChecks implements plugin.Doctor, reporting missing external tools.
+func (p *Plugin) DoctorChecks(_ context.Context) []plugin.CheckResult {
+	var out []plugin.CheckResult
+	if _, err := exec.LookPath("yt-dlp"); err != nil {
+		out = append(out, plugin.CheckResult{
+			Name:    "yt-dlp",
+			Status:  plugin.CheckWarn,
+			Message: "yt-dlp not found in PATH — required for YouTube subscriptions and auto-captions. Install from https://github.com/yt-dlp/yt-dlp",
+		})
+	} else {
+		out = append(out, plugin.CheckResult{Name: "yt-dlp", Status: plugin.CheckOK})
+	}
+	if _, err := exec.LookPath("whisper-cli"); err != nil {
+		out = append(out, plugin.CheckResult{
+			Name:    "whisper-cli",
+			Status:  plugin.CheckWarn,
+			Message: "whisper-cli not found in PATH — required for transcription of non-YouTube audio. Install whisper.cpp from https://github.com/ggerganov/whisper.cpp",
+		})
+	} else {
+		out = append(out, plugin.CheckResult{Name: "whisper-cli", Status: plugin.CheckOK})
+	}
+	return out
+}

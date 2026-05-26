@@ -955,6 +955,61 @@ func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
 }
 
+// Import handles POST /apps/feed/import with multipart form-data.
+// The form must include:
+//   - format: "antennapod", "newpipe", or "youtube-csv"
+//   - file:   the uploaded file
+func (h *Pages) Import(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := r.ParseMultipartForm(20 << 20); err != nil {
+		h.setFlash(w, "error", "Upload too large.")
+		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		return
+	}
+	format := r.FormValue("format")
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		h.setFlash(w, "error", "No file uploaded.")
+		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, 20<<20))
+	if err != nil {
+		h.setFlash(w, "error", "Failed to read file: "+err.Error())
+		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		return
+	}
+
+	var n int
+	switch format {
+	case "antennapod":
+		n, err = ImportAntennaPod(store, data)
+	case "newpipe":
+		n, err = ImportNewPipe(store, data)
+	case "youtube-csv":
+		n, err = ImportYouTubeTakeout(store, data)
+	default:
+		h.setFlash(w, "error", "Unknown import format: "+format)
+		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		return
+	}
+	if err != nil {
+		h.setFlash(w, "error", "Import failed: "+err.Error())
+	} else {
+		u := plugin.UserFromContext(r.Context())
+		go h.plugin.TriggerFetch(u.Username, 0)
+		h.setFlash(w, "success", fmt.Sprintf("Imported %d subscriptions.", n))
+	}
+	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+}
+
 // ImportOPML handles POST of an OPML file to bulk-add RSS subscriptions.
 func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
