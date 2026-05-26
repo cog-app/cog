@@ -122,9 +122,7 @@ templ feedSidebarSubLink(sub Subscription, sb sidebarData) {
 		class={ feedSidebarSubClass(sub, sb) }
 		style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem"
 	>
-		if sub.FaviconURL != "" {
-			<img src={ sub.FaviconURL } alt="" style="width:16px;height:16px;flex-shrink:0" onerror="this.style.display='none'"/>
-		}
+		@feedSubIcon(sub)
 		<span class="sidebar-item-text">{ subscriptionDisplayTitle(sub) }</span>
 		if sub.LastError != "" {
 			<span class="text-danger" title={ sub.LastError }>!</span>
@@ -172,7 +170,10 @@ templ feedSubscriptionPage(sb sidebarData, sub *Subscription, items []ItemWithSu
 		@feedSidebar(sb)
 		<div class="sidebar-content">
 			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-				<h1 style="margin:0">{ subscriptionDisplayTitle(*sub) }</h1>
+				<h1 style="margin:0;display:flex;align-items:center;gap:0.5rem">
+					@feedSubIcon(*sub)
+					{ subscriptionDisplayTitle(*sub) }
+				</h1>
 				<div class="flex gap-1">
 					<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/feed/subscriptions/%d/refresh", sub.ID)) }>
 						<input type="hidden" name="csrf_token" value={ csrfToken }/>
@@ -1098,6 +1099,49 @@ func subscriptionDisplayTitle(s Subscription) string {
 		return s.Title
 	}
 	return s.URL
+}
+
+// subscriptionIconURL returns the best available icon image URL for a
+// subscription: an explicit favicon, else the channel/feed image. Empty when
+// neither is present (caller falls back to a generic kind icon).
+func subscriptionIconURL(s Subscription) string {
+	if s.FaviconURL != "" {
+		return s.FaviconURL
+	}
+	return s.ImageURL
+}
+
+// feedSubIcon renders a 16x16 subscription icon. It prefers the remote image
+// (favicon or channel art); if that's absent or fails to load, a generic gray
+// icon for the subscription kind is shown.
+templ feedSubIcon(sub Subscription) {
+	<span class="feed-sub-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;align-items:center;justify-content:center">
+		if url := subscriptionIconURL(sub); url != "" {
+			<img
+				src={ url }
+				alt=""
+				style="width:16px;height:16px;border-radius:2px;object-fit:cover"
+				onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"
+			/>
+			<span style="display:none;align-items:center;justify-content:center">
+				@feedKindIcon(sub.Kind)
+			</span>
+		} else {
+			@feedKindIcon(sub.Kind)
+		}
+	</span>
+}
+
+// feedKindIcon renders a generic gray icon for a subscription kind.
+templ feedKindIcon(kind string) {
+	switch kind {
+		case "youtube":
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="#888" aria-hidden="true"><path d="M23 7a3 3 0 0 0-2.1-2.1C19 4.4 12 4.4 12 4.4s-7 0-8.9.5A3 3 0 0 0 1 7a31 31 0 0 0 0 10 3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5A3 3 0 0 0 23 17a31 31 0 0 0 0-10zM10 15.5v-7l6 3.5z"></path></svg>
+		case "url":
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"></path></svg>
+		default:
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="#888" aria-hidden="true"><path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z"></path><path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z"></path><circle cx="5.5" cy="18.5" r="2.5"></circle></svg>
+	}
 }
 
 func feedSidebarClass(activePath, itemPath string) string {
