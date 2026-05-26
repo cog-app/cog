@@ -623,8 +623,12 @@ func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := store.MarkRead(id, true); err != nil {
-		slog.Error("feed: mark read", "id", id, "err", err)
+	// Text items are "read" once viewed. Audio/video are only considered
+	// read when fully played (see MarkComplete).
+	if ip.Type == "text" {
+		if err := store.MarkRead(id, true); err != nil {
+			slog.Error("feed: mark read", "id", id, "err", err)
+		}
 	}
 	tags, _ := store.ItemTags(id)
 	plugin.SetTitle(w, ip.Title)

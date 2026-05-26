@@ -1459,8 +1459,8 @@ const (
 
 var (
 	SettingWhisperModel     = StringSetting("whisper_model", WhisperBaseEn)
-	SettingWhisperModelsDir = StringSetting[string]("whisper_models_dir", "") // empty means "auto: <plugin data>/whisper-models"
-	SettingWhisperCLIPath   = StringSetting[string]("whisper_cli_path", "")   // empty means "auto: lookup whisper-cli in PATH"
+	SettingWhisperModelsDir = StringSetting("whisper_models_dir", "") // empty means "auto: <plugin data>/whisper-models"
+	SettingWhisperCLIPath   = StringSetting("whisper_cli_path", "")   // empty means "auto: lookup whisper-cli in PATH"
 )
 
 // --- Playback history ---

@@ -380,13 +380,22 @@ templ feedTextItemRow(item ItemWithSubscription, csrfToken string) {
 		<div class="flex items-center gap-1" style="justify-content:space-between;cursor:pointer" onclick={ templ.ComponentScript{Call: fmt.Sprintf("toggleArticle(%d)", item.ID)} }>
 			<div style="min-width:0;flex:1">
 				<div class="flex items-center gap-1" style="flex-wrap:wrap">
-					<span class="text-muted" style="font-size:0.8rem">{ item.SubscriptionTitle }</span>
+					<a
+						href={ templ.SafeURL(fmt.Sprintf("/apps/feed/subscription/%d", item.SubscriptionID)) }
+						class="text-muted"
+						style="font-size:0.8rem"
+						onclick="event.stopPropagation()"
+					>{ item.SubscriptionTitle }</a>
 					if item.Author != "" {
 						<span class="text-muted" style="font-size:0.8rem">&middot; { item.Author }</span>
 					}
 					<span class="text-muted" style="font-size:0.8rem">&middot; { feedFormatTime(item.PublishedAt) }</span>
 				</div>
-				<div style="font-weight:500">{ item.Title }</div>
+				<a
+					href={ templ.SafeURL(fmt.Sprintf("/apps/feed/items/%d", item.ID)) }
+					style="font-weight:500;color:inherit;text-decoration:none"
+					onclick="event.stopPropagation()"
+				>{ item.Title }</a>
 				if feedItemSummary(item.ContentHTML) != "" {
 					<div id={ fmt.Sprintf("summary-%d", item.ID) } class="feed-item-summary-line">
 						{ feedItemSummary(item.ContentHTML) }
@@ -444,7 +453,11 @@ templ feedMediaItemRow(item ItemWithSubscription, csrfToken string) {
 		<div class="flex items-center gap-1" style="justify-content:space-between">
 			<div style="min-width:0;flex:1">
 				<div class="flex items-center gap-1" style="flex-wrap:wrap">
-					<span class="text-muted" style="font-size:0.8rem">{ item.SubscriptionTitle }</span>
+					<a
+						href={ templ.SafeURL(fmt.Sprintf("/apps/feed/subscription/%d", item.SubscriptionID)) }
+						class="text-muted"
+						style="font-size:0.8rem"
+					>{ item.SubscriptionTitle }</a>
 					if item.Author != "" {
 						<span class="text-muted" style="font-size:0.8rem">&middot; { item.Author }</span>
 					}
@@ -453,7 +466,10 @@ templ feedMediaItemRow(item ItemWithSubscription, csrfToken string) {
 						<span class="text-muted" style="font-size:0.8rem">&middot; { feedFormatDuration(item.DurationSec) }</span>
 					}
 				</div>
-				<div style="font-weight:500">{ item.Title }</div>
+				<a
+					href={ templ.SafeURL(fmt.Sprintf("/apps/feed/items/%d", item.ID)) }
+					style="font-weight:500;color:inherit;text-decoration:none"
+				>{ item.Title }</a>
 			</div>
 			<div class="flex gap-1" style="flex-shrink:0">
 				<a
