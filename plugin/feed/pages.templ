@@ -471,16 +471,9 @@ templ feedSettingsPage(subs []Subscription, folders []Folder, filters []Filter, 
 			<form id="add-subscription" method="post" action="/apps/feed/subscriptions">
 				<input type="hidden" name="csrf_token" value={ csrfToken }/>
 				<div class="form-group">
-					<label for="sub-kind">Kind</label>
-					<select id="sub-kind" name="kind" class="form-control">
-						<option value="rss">RSS / Atom (incl. podcasts)</option>
-						<option value="youtube">YouTube channel</option>
-						<option value="url">Single URL (polled)</option>
-					</select>
-				</div>
-				<div class="form-group">
 					<label for="sub-url">URL</label>
-					<input class="form-control" type="url" id="sub-url" name="url" required/>
+					<input class="form-control" type="url" id="sub-url" name="url" required placeholder="https://example.com/feed.xml"/>
+					<small class="text-muted">Type auto-detected from the URL (RSS / YouTube / generic page).</small>
 				</div>
 				<div class="form-group">
 					<label for="sub-folder">Folder</label>

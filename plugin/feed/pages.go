@@ -109,18 +109,17 @@ func (h *Pages) AddSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kind := r.FormValue("kind")
-	if !allowedKinds[kind] {
-		h.setFlash(w, "error", "Invalid subscription kind.")
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
-		return
-	}
-
 	rawURL := r.FormValue("url")
 	if rawURL == "" {
 		h.setFlash(w, "error", "URL is required.")
 		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
 		return
+	}
+
+	// Kind may be supplied (override); otherwise auto-detect from the URL.
+	kind := r.FormValue("kind")
+	if kind == "" || !allowedKinds[kind] {
+		kind = DetectKind(r.Context(), rawURL)
 	}
 
 	sub := Subscription{
