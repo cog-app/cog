@@ -47,8 +47,28 @@ func Run(ctx context.Context, plug *feed.Plugin, profPlugin *profanity.Plugin, d
 			return
 		case <-t.C:
 			tickOnce(ctx, plug, profPlugin, dataDir, log)
+		case poke := <-plug.Pokes():
+			if poke.Username != "" {
+				processUserPoke(ctx, plug, profPlugin, dataDir, poke, log)
+			}
 		}
 	}
+}
+
+func processUserPoke(ctx context.Context, plug *feed.Plugin, prof *profanity.Plugin, dataDir string, poke feed.PokeRequest, log *slog.Logger) {
+	db, err := plug.DB(poke.Username)
+	if err != nil {
+		log.Error("feed orchestrator: poke open db", "user", poke.Username, "err", err)
+		return
+	}
+	if poke.SubID != 0 {
+		// Set next_check_at=1 so the poller picks it up immediately.
+		store := feed.NewStore(db)
+		if err := store.UpdateSubscriptionNextCheck(poke.SubID, 1); err != nil {
+			log.Error("feed orchestrator: poke set next check", "user", poke.Username, "sub", poke.SubID, "err", err)
+		}
+	}
+	processUser(ctx, plug, prof, dataDir, poke.Username, log)
 }
 
 func tickOnce(ctx context.Context, plug *feed.Plugin, prof *profanity.Plugin, dataDir string, log *slog.Logger) {

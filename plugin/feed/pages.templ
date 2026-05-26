@@ -464,6 +464,23 @@ templ feedMediaItemRow(item ItemWithSubscription, csrfToken string) {
 	</div>
 }
 
+// feedFilterPreviewResults renders a short list of matched items for the filter preview API.
+templ feedFilterPreviewResults(items []ItemWithSubscription) {
+	if len(items) == 0 {
+		<p class="text-muted">No items match.</p>
+	} else {
+		<ul style="margin:0.5rem 0;padding-left:0;list-style:none">
+			for _, it := range items {
+				<li style="padding:0.2rem 0;font-size:0.9rem">
+					<span class="badge" style="margin-right:0.3rem">{ it.Type }</span>
+					{ it.Title }
+					<span class="text-muted" style="font-size:0.8rem"> &mdash; { it.SubscriptionTitle }</span>
+				</li>
+			}
+		</ul>
+	}
+}
+
 templ feedSettingsPage(subs []Subscription, folders []Folder, filters []Filter, playlists []Playlist, flashMsg string, flashKind string, csrfToken string) {
 	<div id="feed-settings">
 		@ui.Alert(flashKind, flashMsg)
@@ -527,7 +544,18 @@ templ feedSettingsPage(subs []Subscription, folders []Folder, filters []Filter, 
 				<input type="hidden" name="csrf_token" value={ csrfToken }/>
 				<div class="form-group">
 					<label for="filter-query">Query</label>
-					<input class="form-control" type="text" id="filter-query" name="query" required/>
+					<input
+						class="form-control"
+						type="text"
+						id="filter-query"
+						name="query"
+						required
+						hx-get="/apps/feed/filter-preview"
+						hx-target="#filter-preview-results"
+						hx-trigger="keyup changed delay:500ms"
+						hx-include="this"
+					/>
+					<div id="filter-preview-results" style="margin-top:0.5rem"></div>
 				</div>
 				<div class="form-group">
 					<label for="filter-action">Action</label>
@@ -584,6 +612,40 @@ templ feedSettingsPage(subs []Subscription, folders []Folder, filters []Filter, 
 	</div>
 }
 
+// feedItemTagRow renders the tag pills plus an add-tag form for HTMX swap.
+templ feedItemTagRow(itemID int64, tags []string, csrfToken string) {
+	<div id={ "item-tags-" + strconv.FormatInt(itemID, 10) } class="mb-2">
+		for _, tg := range tags {
+			<span class="badge" style="margin-right:0.25rem;display:inline-flex;align-items:center;gap:0.25rem">
+				{ tg }
+				<form
+					method="post"
+					action={ templ.SafeURL(fmt.Sprintf("/apps/feed/items/%d/tag/%s/delete", itemID, url.PathEscape(tg))) }
+					style="margin:0;display:inline"
+					hx-post={ fmt.Sprintf("/apps/feed/items/%d/tag/%s/delete", itemID, url.PathEscape(tg)) }
+					hx-target={ "#item-tags-" + strconv.FormatInt(itemID, 10) }
+					hx-swap="outerHTML"
+				>
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<button type="submit" style="background:none;border:none;cursor:pointer;padding:0;line-height:1;font-size:0.75rem;color:inherit;opacity:0.7" title="Remove tag">&times;</button>
+				</form>
+			</span>
+		}
+		<form
+			method="post"
+			action={ templ.SafeURL(fmt.Sprintf("/apps/feed/items/%d/tag", itemID)) }
+			style="display:inline-flex;align-items:center;gap:0.25rem;margin-left:0.25rem"
+			hx-post={ fmt.Sprintf("/apps/feed/items/%d/tag", itemID) }
+			hx-target={ "#item-tags-" + strconv.FormatInt(itemID, 10) }
+			hx-swap="outerHTML"
+		>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="text" name="tag" placeholder="add tag" style="width:7rem;font-size:0.8rem;padding:0.1rem 0.3rem;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg)"/>
+			<button type="submit" class="btn btn-outline btn-sm" style="padding:0.1rem 0.4rem;font-size:0.8rem">+</button>
+		</form>
+	</div>
+}
+
 templ feedItemDetail(ip ItemPlayback, tags []string, csrfToken string) {
 	@ui.Card(ip.Title) {
 		<div class="text-muted" style="font-size:0.85rem;margin-bottom:0.5rem">
@@ -592,11 +654,7 @@ templ feedItemDetail(ip ItemPlayback, tags []string, csrfToken string) {
 				&middot; { ip.Author }
 			}
 		</div>
-		<div class="mb-2">
-			for _, tg := range tags {
-				<span class="badge" style="margin-right:0.25rem">{ tg }</span>
-			}
-		</div>
+		@feedItemTagRow(ip.ID, tags, csrfToken)
 		if ip.Type == "text" {
 			<div class="note-content">
 				@templ.Raw(ip.ContentHTML)

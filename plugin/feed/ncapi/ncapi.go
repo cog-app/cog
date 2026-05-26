@@ -218,11 +218,22 @@ func (a *NewsAPI) createFeed(w http.ResponseWriter, r *http.Request, db *sql.DB,
 		return
 	}
 
+	// Attempt to resolve the URL to a concrete feed URL (auto-discover if HTML page).
+	feedURL, err := resolveToFeedURL(r.Context(), body.URL)
+	if err != nil {
+		plugin.WriteJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"error": "0",
+			"data":  nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
 	var folderID sql.NullInt64
 	if body.FolderID != nil {
 		folderID = sql.NullInt64{Int64: *body.FolderID, Valid: true}
 	}
-	sub, err := createRSSSubscription(db, body.URL, folderID)
+	sub, err := createRSSSubscription(db, feedURL, folderID)
 	if err != nil {
 		plugin.WriteJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return

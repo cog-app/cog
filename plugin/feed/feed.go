@@ -28,6 +28,13 @@ const PluginID = "feed"
 // without an import cycle (the orchestrator imports feed, not vice-versa).
 type OrchestratorRunner func(ctx context.Context, plug *Plugin, profPlugin *profanity.Plugin, dataDir string, tick time.Duration, log *slog.Logger)
 
+// PokeRequest asks the orchestrator to do an out-of-cycle fetch.
+// If SubID is 0, all subscriptions for Username are checked.
+type PokeRequest struct {
+	Username string
+	SubID    int64
+}
+
 // Plugin is the feed reader plugin.
 type Plugin struct {
 	plugin.Protected
@@ -38,12 +45,16 @@ type Plugin struct {
 	tickInterval time.Duration
 	profanity    *profanity.Plugin // discovered in Start; may be nil
 	runOrchestra OrchestratorRunner
+	pokes        chan PokeRequest
 }
 
 // New creates a new feed plugin instance.
 func New() *Plugin {
-	return &Plugin{tickInterval: 60 * time.Second}
+	return &Plugin{tickInterval: 60 * time.Second, pokes: make(chan PokeRequest, 32)}
 }
+
+// Pokes returns the receive end of the channel for the orchestrator.
+func (p *Plugin) Pokes() <-chan PokeRequest { return p.pokes }
 
 // WithTickInterval overrides the background-poll interval. Returns the receiver
 // for convenient chaining. Ignored if d <= 0.
@@ -91,6 +102,9 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "items/{id}/mark-read", http.HandlerFunc(pages.MarkItemRead))
 	ctx.RegisterAction("POST", "items/{id}/progress", http.HandlerFunc(pages.UpdateProgress))
 	ctx.RegisterAction("POST", "items/{id}/complete", http.HandlerFunc(pages.MarkComplete))
+	ctx.RegisterAction("POST", "items/{id}/tag", http.HandlerFunc(pages.AddItemTag))
+	ctx.RegisterAction("POST", "items/{id}/tag/{name}/delete", http.HandlerFunc(pages.RemoveItemTag))
+	ctx.RegisterAPI("filter-preview", http.HandlerFunc(pages.FilterPreview))
 	ctx.RegisterAPI("api/stream-url/{id}", http.HandlerFunc(pages.StreamURL))
 	ctx.RegisterAPI("api/clean-audio/{id}", http.HandlerFunc(pages.CleanAudio))
 
@@ -174,10 +188,17 @@ func (p *Plugin) DataDir() string {
 	return p.ctx.DataDir()
 }
 
-// TriggerFetch schedules an immediate background fetch for a subscription.
-// This is a no-op placeholder until the poller exposes an on-demand fetch API.
+// TriggerFetch nudges the orchestrator to process a user (or single subscription) before its next tick.
+// SubID=0 means "scan all subscriptions for this user".
 func (p *Plugin) TriggerFetch(username string, subID int64) {
-	p.log.Debug("feed: TriggerFetch requested", "username", username, "subID", subID)
+	select {
+	case p.pokes <- PokeRequest{Username: username, SubID: subID}:
+	default:
+		// Queue full; orchestrator will catch up on next tick.
+		if p.log != nil {
+			p.log.Debug("feed: TriggerFetch poke queue full", "username", username, "subID", subID)
+		}
+	}
 }
 
 // DB returns the feed plugin database for a user, running migrations if needed.

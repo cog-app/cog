@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/query"
@@ -764,6 +765,103 @@ func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, ref, http.StatusSeeOther)
 }
 
+// AddItemTag adds a tag to an item. POST /apps/feed/items/{id}/tag with form tag=NAME.
+func (h *Pages) AddItemTag(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	name := strings.TrimSpace(r.FormValue("tag"))
+	if name == "" {
+		h.setFlash(w, "error", "Tag name is required.")
+		http.Redirect(w, r, r.Header.Get("Referer"), http.StatusSeeOther)
+		return
+	}
+	if err := store.AddTag(id, name); err != nil {
+		h.setFlash(w, "error", "Could not add tag: "+err.Error())
+		http.Redirect(w, r, r.Header.Get("Referer"), http.StatusSeeOther)
+		return
+	}
+	if r.Header.Get("HX-Request") == "true" {
+		tags, _ := store.ItemTags(id)
+		feedItemTagRow(id, tags, plugin.CSRFToken(r)).Render(r.Context(), w)
+		return
+	}
+	http.Redirect(w, r, r.Header.Get("Referer"), http.StatusSeeOther)
+}
+
+// RemoveItemTag removes a tag from an item. POST /apps/feed/items/{id}/tag/{name}/delete.
+func (h *Pages) RemoveItemTag(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	name := r.PathValue("name")
+	if err := store.RemoveTag(id, name); err != nil {
+		h.setFlash(w, "error", "Could not remove tag: "+err.Error())
+		http.Redirect(w, r, r.Header.Get("Referer"), http.StatusSeeOther)
+		return
+	}
+	if r.Header.Get("HX-Request") == "true" {
+		tags, _ := store.ItemTags(id)
+		feedItemTagRow(id, tags, plugin.CSRFToken(r)).Render(r.Context(), w)
+		return
+	}
+	http.Redirect(w, r, r.Header.Get("Referer"), http.StatusSeeOther)
+}
+
+// FilterPreview returns a preview of items matching a filter query (HTMX partial).
+func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	q := r.URL.Query().Get("query")
+	if len(q) > 200 {
+		q = q[:200]
+	}
+	if q == "" {
+		// Empty query: render empty results without error.
+		feedFilterPreviewResults(nil).Render(r.Context(), w)
+		return
+	}
+	expr, err := query.Parse(q)
+	if err != nil {
+		http.Error(w, "Parse error: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	items, err := store.ListItemsForView(ViewSpec{All: true}, 200)
+	if err != nil {
+		http.Error(w, "Could not load items: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var matched []ItemWithSubscription
+	for _, it := range items {
+		if len(matched) >= 10 {
+			break
+		}
+		sub, _ := store.GetSubscription(it.SubscriptionID)
+		folder := ""
+		if sub.FolderID.Valid {
+			if f, ferr := store.GetFolder(sub.FolderID.Int64); ferr == nil {
+				folder = f.Name
+			}
+		}
+		tagsList, _ := store.ItemTags(it.ID)
+		dl, _ := store.GetDownload(it.ID)
+		rec := BuildRecord(it.Item, sub, folder, tagsList, !it.IsRead, it.IsStarred, dl.State == "ready")
+		if expr.Match(rec) {
+			matched = append(matched, it)
+		}
+	}
+	feedFilterPreviewResults(matched).Render(r.Context(), w)
+}
+
 // SystemSettings renders the admin-only feed system settings page.
 func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
@@ -851,6 +949,8 @@ func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
 		return
 	}
+	u := plugin.UserFromContext(r.Context())
+	go h.plugin.TriggerFetch(u.Username, 0)
 	h.setFlash(w, "success", fmt.Sprintf("Imported %d subscriptions.", n))
 	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
 }
