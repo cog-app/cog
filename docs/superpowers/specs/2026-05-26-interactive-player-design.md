@@ -34,6 +34,12 @@ built in vanilla JS to fit the templ/HTMX codebase (no JS build pipeline).
 - No JS player library (Plyr/Vidstack/video.js) — wrong fit for the codebase.
 - No per-subscription preference overrides — global per-user defaults only.
 - No new file/data migration — greenfield additions only.
+- No persistent/cross-navigation mini-player — per-page player only.
+- **Follow-ups, separate specs:**
+  - Clickable transcript / caption subtitle track (reuses existing VTT).
+  - Volume normalization via `ffmpeg loudnorm` — designed as a **filter
+    action** (alongside `mute_profanity` / `download` / `transcribe`), applied
+    at ingest, not as a player toggle.
 
 ## Architecture Decision
 
