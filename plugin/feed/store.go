@@ -112,6 +112,17 @@ func (s *Store) DeleteFolder(id int64) error {
 	return nil
 }
 
+// DeleteFolders deletes each folder by id, stopping at the first error.
+// Empty input is a no-op.
+func (s *Store) DeleteFolders(ids []int64) error {
+	for _, id := range ids {
+		if err := s.DeleteFolder(id); err != nil {
+			return fmt.Errorf("bulk delete folder %d: %w", id, err)
+		}
+	}
+	return nil
+}
+
 // --- Subscription methods ---
 
 // CreateSubscription inserts a new subscription and returns its ID.
@@ -287,6 +298,17 @@ func (s *Store) DeleteSubscription(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM subscriptions WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete subscription: %w", err)
+	}
+	return nil
+}
+
+// DeleteSubscriptions deletes each subscription by id, stopping at the first
+// error (which it wraps). Empty input is a no-op.
+func (s *Store) DeleteSubscriptions(ids []int64) error {
+	for _, id := range ids {
+		if err := s.DeleteSubscription(id); err != nil {
+			return fmt.Errorf("bulk delete subscription %d: %w", id, err)
+		}
 	}
 	return nil
 }

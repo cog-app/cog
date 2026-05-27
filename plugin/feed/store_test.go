@@ -457,3 +457,23 @@ func TestAdjacentMedia(t *testing.T) {
 		t.Error("invalid direction should error")
 	}
 }
+
+func TestBulkDelete(t *testing.T) {
+	s := newStore(t)
+	s1, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://1.test/f"})
+	require.NoError(t, err)
+	s2, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://2.test/f"})
+	require.NoError(t, err)
+	f1, err := s.CreateFolder("F1")
+	require.NoError(t, err)
+	require.NoError(t, s.DeleteSubscriptions([]int64{s1, s2}))
+	require.NoError(t, s.DeleteFolders([]int64{f1}))
+	subs, _ := s.ListSubscriptions()
+	if len(subs) != 0 {
+		t.Fatalf("subs not deleted: %+v", subs)
+	}
+	folders, _ := s.ListFolders()
+	if len(folders) != 0 {
+		t.Fatalf("folders not deleted: %+v", folders)
+	}
+}
