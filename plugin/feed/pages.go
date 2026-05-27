@@ -1197,8 +1197,9 @@ func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
 	if f := h.getFlash(w, r); f != nil {
 		flashMsg, flashKind = f.Message, f.Kind
 	}
+	sb := h.buildSidebar(store, "/apps/feed/settings")
 	plugin.SetTitle(w, "Feed System Settings")
-	feedSystemSettingsPage(model, modelsDir, cliPath, flashMsg, flashKind).Render(r.Context(), w)
+	feedSystemSettingsPage(sb, model, modelsDir, cliPath, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 // SaveSystemSettings persists model selection + paths.
@@ -1382,8 +1383,9 @@ func (h *Pages) SubscriptionSettings(w http.ResponseWriter, r *http.Request) {
 	if f := h.getFlash(w, r); f != nil {
 		flashMsg, flashKind = f.Message, f.Kind
 	}
+	sb := h.buildSidebar(store, fmt.Sprintf("/apps/feed/subscription/%d", id))
 	plugin.SetTitle(w, "Feed — "+subscriptionDisplayTitle(sub))
-	feedSubscriptionSettingsPage(sub, folders, flashMsg, flashKind, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedSubscriptionSettingsPage(sb, sub, folders, flashMsg, flashKind, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // SaveSubscriptionSettings handles POST of the per-subscription settings form.
@@ -1433,22 +1435,25 @@ func (h *Pages) SaveSubscriptionSettings(w http.ResponseWriter, r *http.Request)
 // AdminStatus shows orchestrator activity and per-user queue counts.
 func (h *Pages) AdminStatus(w http.ResponseWriter, r *http.Request) {
 	status := orchestratorGetStatus()
-	store, _ := h.userStore(r)
-	var pendingDL, pendingP, pendingT int
-	if store != nil {
-		if dl, err := store.PendingDownloads(10_000); err == nil {
-			pendingDL = len(dl)
-		}
-		if p, err := store.PendingProfanityReady(10_000); err == nil {
-			pendingP = len(p)
-		}
-		if t, err := store.PendingTranscribeReady(10_000); err == nil {
-			pendingT = len(t)
-		}
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+	var pendingDL, pendingP, pendingT int
+	if dl, err := store.PendingDownloads(10_000); err == nil {
+		pendingDL = len(dl)
+	}
+	if p, err := store.PendingProfanityReady(10_000); err == nil {
+		pendingP = len(p)
+	}
+	if t, err := store.PendingTranscribeReady(10_000); err == nil {
+		pendingT = len(t)
+	}
+	sb := h.buildSidebar(store, "/apps/feed/settings")
 	flash := h.getFlash(w, r)
 	plugin.SetTitle(w, "Feed Admin Status")
-	feedAdminStatusPage(status, pendingDL, pendingP, pendingT, flash, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedAdminStatusPage(sb, status, pendingDL, pendingP, pendingT, flash, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // PurgeCache removes all downloaded media and caption files for the current user.
