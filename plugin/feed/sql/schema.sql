@@ -9,7 +9,9 @@ CREATE TABLE IF NOT EXISTS downloads (
     started_at INTEGER NOT NULL DEFAULT 0,
     completed_at INTEGER NOT NULL DEFAULT 0,
     needs_profanity INTEGER NOT NULL DEFAULT 0,
-    needs_transcribe INTEGER NOT NULL DEFAULT 0
+    needs_transcribe INTEGER NOT NULL DEFAULT 0,
+    silence_ranges TEXT NOT NULL DEFAULT '',
+    silence_state TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS feed_settings (

@@ -2,6 +2,7 @@ package feed
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -534,6 +535,16 @@ type Download struct {
 	CompletedAt     int64
 	NeedsProfanity  bool
 	NeedsTranscribe bool
+	SilenceRanges   string // JSON array of Range (action="skip"); empty when unknown
+	SilenceState    string // "" = unknown, "done" = computed (may be empty result)
+}
+
+// Range is a time span within a media item with an associated player action.
+// Action is "mute" (drop volume during the span) or "skip" (seek past it).
+type Range struct {
+	Start  float64 `json:"start"`
+	End    float64 `json:"end"`
+	Action string  `json:"action"`
 }
 
 // --- Playback type ---
@@ -710,10 +721,12 @@ func (s *Store) GetDownload(itemID int64) (Download, error) {
 	var needsProf, needsTrans int
 	err := s.db.QueryRow(`
 		SELECT item_id, state, local_path, clean_audio_path, captions_path,
-		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe
+		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe,
+		       silence_ranges, silence_state
 		FROM downloads WHERE item_id = ?`, itemID).Scan(
 		&d.ItemID, &d.State, &d.LocalPath, &d.CleanAudioPath, &d.CaptionsPath,
 		&d.Bytes, &d.Error, &d.StartedAt, &d.CompletedAt, &needsProf, &needsTrans,
+		&d.SilenceRanges, &d.SilenceState,
 	)
 	if err != nil {
 		return Download{}, fmt.Errorf("get download: %w", err)
@@ -721,6 +734,37 @@ func (s *Store) GetDownload(itemID int64) (Download, error) {
 	d.NeedsProfanity = needsProf != 0
 	d.NeedsTranscribe = needsTrans != 0
 	return d, nil
+}
+
+// GetSilenceRanges decodes the cached silence ranges for an item.
+func (s *Store) GetSilenceRanges(itemID int64) ([]Range, error) {
+	d, err := s.GetDownload(itemID)
+	if err != nil {
+		return nil, err
+	}
+	if d.SilenceRanges == "" {
+		return nil, nil
+	}
+	var rs []Range
+	if err := json.Unmarshal([]byte(d.SilenceRanges), &rs); err != nil {
+		return nil, fmt.Errorf("decode silence ranges for item %d: %w", itemID, err)
+	}
+	return rs, nil
+}
+
+// SetSilenceRanges caches silence ranges for an item and marks detection done.
+func (s *Store) SetSilenceRanges(itemID int64, ranges []Range) error {
+	buf, err := json.Marshal(ranges)
+	if err != nil {
+		return fmt.Errorf("encode silence ranges: %w", err)
+	}
+	_, err = s.db.Exec(
+		`UPDATE downloads SET silence_ranges = ?, silence_state = 'done' WHERE item_id = ?`,
+		string(buf), itemID)
+	if err != nil {
+		return fmt.Errorf("save silence ranges for item %d: %w", itemID, err)
+	}
+	return nil
 }
 
 // EnqueueProfanity ensures a download row exists and sets needs_profanity=1.

@@ -374,3 +374,41 @@ func TestPlayerPrefsRoundTrip(t *testing.T) {
 		t.Errorf("got %+v want %+v", got, want)
 	}
 }
+
+func TestSilenceRangesRoundTrip(t *testing.T) {
+	s := newStore(t)
+
+	subID, err := s.CreateSubscription(feed.Subscription{URL: "http://x", Kind: "rss", Title: "X"})
+	require.NoError(t, err)
+	itemID, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g1", Type: "audio", Title: "Ep1", MediaURL: "http://x/1.mp3"})
+	require.NoError(t, err)
+	require.NoError(t, s.EnqueueDownload(itemID))
+	require.NoError(t, s.MarkDownloadReady(itemID, "/tmp/1.mp3", 0))
+
+	// Before computing: state is "unknown" (empty), no ranges.
+	d, err := s.GetDownload(itemID)
+	require.NoError(t, err)
+	if d.SilenceState != "" {
+		t.Fatalf("SilenceState = %q, want empty", d.SilenceState)
+	}
+
+	want := []feed.Range{{Start: 1.0, End: 2.5, Action: "skip"}, {Start: 10, End: 11, Action: "skip"}}
+	require.NoError(t, s.SetSilenceRanges(itemID, want))
+
+	d, err = s.GetDownload(itemID)
+	require.NoError(t, err)
+	if d.SilenceState != "done" {
+		t.Fatalf("SilenceState = %q, want done", d.SilenceState)
+	}
+
+	got, err := s.GetSilenceRanges(itemID)
+	require.NoError(t, err)
+	if len(got) != len(want) {
+		t.Fatalf("got %d ranges, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("range %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
