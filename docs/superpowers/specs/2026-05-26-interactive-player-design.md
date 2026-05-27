@@ -25,13 +25,14 @@ built in vanilla JS to fit the templ/HTMX codebase (no JS build pipeline).
 - Playback **speed** control.
 - **Skip-silence** toggle (trim quiet gaps).
 - **Auto-advance** to the next unplayed item on end.
+- **MediaSession** integration: device OS media controls (lock screen,
+  notification, hardware/Bluetooth media keys) with metadata + artwork.
 - Per-user persisted preferences.
 
 ## Non-Goals
 
 - No JS player library (Plyr/Vidstack/video.js) — wrong fit for the codebase.
 - No per-subscription preference overrides — global per-user defaults only.
-- No OS MediaSession / media-key integration (not requested; future work).
 - No new file/data migration — greenfield additions only.
 
 ## Architecture Decision
@@ -188,6 +189,28 @@ On the media element's `ended` event:
 
 If there is no next item, stop on the completed item (current behavior).
 
+## Section 5 — MediaSession (device OS controls)
+
+Client-side `navigator.mediaSession` integration so the device's OS surfaces the
+playing item: lock screen / notification controls, hardware and Bluetooth/headset
+media keys. Entirely in `player.js`; no server OS involvement.
+
+- **Metadata** (`navigator.mediaSession.metadata = new MediaMetadata(...)`):
+  `title` = item title, `artist` = subscription title, `artwork` = item image /
+  subscription icon (reuse the same URL the row icons use; provide it in the
+  config blob). Updated on each item load, including after auto-advance.
+- **Action handlers** (`setActionHandler`):
+  - `play` / `pause` → element play/pause (mirror the existing toggle).
+  - `seekbackward` / `seekforward` → use the configured skip intervals
+    (`skip_back_sec` / `skip_fwd_sec`).
+  - `seekto` → seek to `details.seekTime` (scrubbing from the OS UI).
+  - `nexttrack` → reuse the auto-advance path (load next unplayed item).
+  - `previoustrack` → restart current item, or seek to 0 (no history queue in v1).
+- **Position state** (`setPositionState({ duration, position, playbackRate })`)
+  updated on `timeupdate`/seek so the OS scrubber and elapsed time stay accurate.
+- Guard all calls behind an `if ('mediaSession' in navigator)` feature check;
+  degrade silently where unsupported.
+
 ## Data flow
 
 ```
@@ -239,7 +262,8 @@ Server endpoints (feed plugin):
 ## Open implementation notes
 
 - Keep `feedPlayer` markup minimal; all behavior in `player.js`. Pass config
-  (item id, type, source kind, resume sec, prefs, csrf token) via `data-*`.
+  (item id, type, source kind, resume sec, prefs, csrf token, title,
+  subscription title, artwork URL) via `data-*`.
 - `<` / `>` speed step and `,` / `.` may both map to speed; pick one canonical
   pair and document in the gear menu tooltip.
 - Audio vs video share the module; branch only on presence of the surface.
