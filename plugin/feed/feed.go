@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os/exec"
+	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -21,6 +22,9 @@ import (
 
 //go:embed sql
 var sqlFS embed.FS
+
+//go:embed static
+var staticFS embed.FS
 
 const PluginID = "feed"
 
@@ -108,6 +112,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAPI("filter-preview", http.HandlerFunc(pages.FilterPreview))
 	ctx.RegisterAPI("api/stream-url/{id}", http.HandlerFunc(pages.StreamURL))
 	ctx.RegisterAPI("api/ranges/{id}", http.HandlerFunc(pages.Ranges))
+	ctx.RegisterAPI("static/{file}", http.HandlerFunc(p.serveStatic))
 
 	// View pages
 	ctx.RegisterPage("subscription/{id}", http.HandlerFunc(pages.SubscriptionView))
@@ -246,6 +251,26 @@ func (p *Plugin) RenderWidget(ctx context.Context, w io.Writer, userID string) e
 
 // Profanity returns the discovered profanity plugin, or nil if not registered.
 func (p *Plugin) Profanity() *profanity.Plugin { return p.profanity }
+
+// serveStatic serves embedded static assets (e.g. player.js) with caching.
+func (p *Plugin) serveStatic(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("file")
+	data, err := staticFS.ReadFile("static/" + name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	switch {
+	case strings.HasSuffix(name, ".js"):
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	case strings.HasSuffix(name, ".css"):
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	}
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	if _, err := w.Write(data); err != nil {
+		slog.Error("feed: serve static", "file", name, "err", err)
+	}
+}
 
 // DoctorChecks implements plugin.Doctor, reporting missing external tools.
 func (p *Plugin) DoctorChecks(_ context.Context) []plugin.CheckResult {
