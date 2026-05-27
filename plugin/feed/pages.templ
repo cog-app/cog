@@ -105,7 +105,7 @@ templ feedSidebar(sb sidebarData) {
 			}
 		}
 		<div class="sidebar-divider"></div>
-		<a href="/apps/feed/settings" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/settings") }>Settings</a>
+		<a href="/apps/feed/settings" class={ feedSettingsActive(sb.ActivePath) }>Settings</a>
 	</nav>
 	<script>
 		// Preserve folder open/closed state across HTMX sidebar refreshes.
@@ -541,158 +541,236 @@ templ feedFilterPreviewResults(items []ItemWithSubscription) {
 	}
 }
 
-templ feedSettingsPage(subs []Subscription, folders []Folder, filters []Filter, playlists []Playlist, flashMsg string, flashKind string, csrfToken string) {
-	<div id="feed-settings">
-		@ui.Alert(flashKind, flashMsg)
-		@ui.Card("Subscriptions") {
-			<form id="add-subscription" method="post" action="/apps/feed/subscriptions">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<div class="form-group">
-					<label for="sub-url">URL</label>
-					<input class="form-control" type="url" id="sub-url" name="url" required placeholder="https://example.com/feed.xml"/>
-					<small class="text-muted">Type auto-detected from the URL (RSS / YouTube / generic page).</small>
+templ feedSettingsTabs(active string, isAdmin bool) {
+	<div class="feed-settings-tabs" style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
+		@feedSettingsTab("subscriptions", "Subscriptions", active)
+		@feedSettingsTab("bulk-delete", "Bulk Delete", active)
+		@feedSettingsTab("filters", "Filters", active)
+		@feedSettingsTab("playlists", "Playlists", active)
+		if isAdmin {
+			<a class="btn btn-outline btn-sm" href="/apps/feed/admin/system-settings">System</a>
+			<a class="btn btn-outline btn-sm" href="/apps/feed/admin/status">Status</a>
+		}
+	</div>
+}
+
+templ feedSettingsTab(key string, label string, active string) {
+	if key == active {
+		<span class="btn btn-sm" aria-current="page">{ label }</span>
+	} else {
+		<a class="btn btn-outline btn-sm" href={ templ.SafeURL("/apps/feed/settings/" + key) }>{ label }</a>
+	}
+}
+
+templ feedSettingsSubscriptionsPage(sb sidebarData, isAdmin bool, subs []Subscription, folders []Folder, flashMsg string, flashKind string, csrfToken string) {
+	<div class="sidebar-layout">
+		@feedSidebar(sb)
+		<div class="sidebar-content">
+			@feedSettingsTabs("subscriptions", isAdmin)
+			@ui.Alert(flashKind, flashMsg)
+			@ui.Card("Subscriptions") {
+				<form id="add-subscription" method="post" action="/apps/feed/subscriptions">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<div class="form-group">
+						<label for="sub-url">URL</label>
+						<input class="form-control" type="url" id="sub-url" name="url" required placeholder="https://example.com/feed.xml"/>
+						<small class="text-muted">Type auto-detected from the URL (RSS / YouTube / generic page).</small>
+					</div>
+					<div class="form-group">
+						<label for="sub-folder">Folder</label>
+						<select id="sub-folder" name="folder_id" class="form-control">
+							<option value="">(none)</option>
+							for _, f := range folders {
+								<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Name }</option>
+							}
+						</select>
+					</div>
+					@ui.Button("primary", "Add subscription")
+				</form>
+				<ul id="subscription-list" style="margin-top:1rem;padding-left:0;list-style:none">
+					for _, s := range subs {
+						<li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+							<span style="flex:1">{ subscriptionDisplayTitle(s) }</span>
+							<code>{ s.URL }</code>
+							<span class="badge">{ s.Kind }</span>
+							<form method="post" action={ templ.SafeURL("/apps/feed/subscriptions/" + strconv.FormatInt(s.ID, 10) + "/delete") } style="margin:0">
+								<input type="hidden" name="csrf_token" value={ csrfToken }/>
+								@ui.Button("danger", "Delete")
+							</form>
+						</li>
+					}
+				</ul>
+				<div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+					@ui.Upload("/apps/feed/opml/import", "opml", ".opml,.xml,application/xml", csrfToken, "Import OPML", "btn-secondary btn-sm")
+					<a class="btn btn-secondary btn-sm" href="/apps/feed/opml/export">Export OPML</a>
 				</div>
-				<div class="form-group">
-					<label for="sub-folder">Folder</label>
-					<select id="sub-folder" name="folder_id" class="form-control">
-						<option value="">(none)</option>
+				<form method="post" action="/apps/feed/import" enctype="multipart/form-data" style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<label class="btn btn-secondary btn-sm" style="cursor:pointer">
+						Import AntennaPod
+						<input type="hidden" name="format" value="antennapod"/>
+						<input type="file" name="file" accept=".db,.sqlite" style="display:none" onchange="this.form.submit()"/>
+					</label>
+				</form>
+				<form method="post" action="/apps/feed/import" enctype="multipart/form-data" style="margin-top:0.5rem">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<label class="btn btn-secondary btn-sm" style="cursor:pointer">
+						Import NewPipe
+						<input type="hidden" name="format" value="newpipe"/>
+						<input type="file" name="file" accept=".zip" style="display:none" onchange="this.form.submit()"/>
+					</label>
+				</form>
+				<form method="post" action="/apps/feed/import" enctype="multipart/form-data" style="margin-top:0.5rem">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<label class="btn btn-secondary btn-sm" style="cursor:pointer">
+						Import YouTube Takeout
+						<input type="hidden" name="format" value="youtube-csv"/>
+						<input type="file" name="file" accept=".csv" style="display:none" onchange="this.form.submit()"/>
+					</label>
+				</form>
+			}
+			@ui.Card("Folders") {
+				<form id="add-folder" method="post" action="/apps/feed/folders" class="flex gap-1 items-center">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<input class="form-control" type="text" id="folder-name" name="name" placeholder="Folder name" required style="max-width:300px"/>
+					@ui.Button("primary", "Add folder")
+				</form>
+				<ul style="margin-top:1rem;padding-left:0;list-style:none">
+					for _, f := range folders {
+						<li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+							<span style="flex:1">{ f.Name }</span>
+							<form method="post" action={ templ.SafeURL("/apps/feed/folders/" + strconv.FormatInt(f.ID, 10) + "/delete") } style="margin:0">
+								<input type="hidden" name="csrf_token" value={ csrfToken }/>
+								@ui.Button("danger", "Delete")
+							</form>
+						</li>
+					}
+				</ul>
+			}
+		</div>
+	</div>
+}
+
+templ feedSettingsFiltersPage(sb sidebarData, isAdmin bool, filters []Filter, flashMsg string, flashKind string, csrfToken string) {
+	<div class="sidebar-layout">
+		@feedSidebar(sb)
+		<div class="sidebar-content">
+			@feedSettingsTabs("filters", isAdmin)
+			@ui.Alert(flashKind, flashMsg)
+			@ui.Card("Filters") {
+				<form id="add-filter" method="post" action="/apps/feed/filters">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<div class="form-group">
+						<label for="filter-query">Query</label>
+						<input
+							class="form-control"
+							type="text"
+							id="filter-query"
+							name="query"
+							required
+							hx-get="/apps/feed/filter-preview"
+							hx-target="#filter-preview-results"
+							hx-trigger="keyup changed delay:500ms"
+							hx-include="this"
+						/>
+						<div id="filter-preview-results" style="margin-top:0.5rem"></div>
+					</div>
+					<div class="form-group">
+						<label for="filter-action">Action</label>
+						<select id="filter-action" name="action" class="form-control">
+							<option value="skip">Skip</option>
+							<option value="tag">Tag</option>
+							<option value="download">Download</option>
+							<option value="mute_profanity">Mute profanity</option>
+							<option value="transcribe">Transcribe</option>
+						</select>
+					</div>
+					<div class="form-group">
+						<label for="filter-action-value">Tag (for &ldquo;Tag&rdquo; action)</label>
+						<input class="form-control" type="text" id="filter-action-value" name="action_value"/>
+					</div>
+					@ui.Button("primary", "Add filter")
+				</form>
+				<ul style="margin-top:1rem;padding-left:0;list-style:none">
+					for _, fl := range filters {
+						<li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+							<code style="flex:1">{ fl.Query }</code>
+							<span>&#8594; { fl.Action }</span>
+							if fl.ActionValue != "" {
+								<span class="badge">{ fl.ActionValue }</span>
+							}
+							<form method="post" action={ templ.SafeURL("/apps/feed/filters/" + strconv.FormatInt(fl.ID, 10) + "/delete") } style="margin:0">
+								<input type="hidden" name="csrf_token" value={ csrfToken }/>
+								@ui.Button("danger", "Delete")
+							</form>
+						</li>
+					}
+				</ul>
+			}
+		</div>
+	</div>
+}
+
+templ feedSettingsPlaylistsPage(sb sidebarData, isAdmin bool, playlists []Playlist, flashMsg string, flashKind string, csrfToken string) {
+	<div class="sidebar-layout">
+		@feedSidebar(sb)
+		<div class="sidebar-content">
+			@feedSettingsTabs("playlists", isAdmin)
+			@ui.Alert(flashKind, flashMsg)
+			@ui.Card("Playlists") {
+				<form id="add-playlist" method="post" action="/apps/feed/playlists">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					@ui.FormField("Name", "name", "text", "", "Playlist name")
+					@ui.FormField("Query", "query", "text", "", "e.g. type:audio")
+					@ui.Button("primary", "Add playlist")
+				</form>
+				<ul style="margin-top:1rem;padding-left:0;list-style:none">
+					for _, pl := range playlists {
+						<li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+							<span style="flex:1">{ pl.Name }</span>
+							<code>{ pl.Query }</code>
+							<form method="post" action={ templ.SafeURL("/apps/feed/playlists/" + strconv.FormatInt(pl.ID, 10) + "/delete") } style="margin:0">
+								<input type="hidden" name="csrf_token" value={ csrfToken }/>
+								@ui.Button("danger", "Delete")
+							</form>
+						</li>
+					}
+				</ul>
+			}
+		</div>
+	</div>
+}
+
+templ feedSettingsBulkDeletePage(sb sidebarData, isAdmin bool, subs []Subscription, folders []Folder, flashMsg string, flashKind string, csrfToken string) {
+	<div class="sidebar-layout">
+		@feedSidebar(sb)
+		<div class="sidebar-content">
+			@feedSettingsTabs("bulk-delete", isAdmin)
+			@ui.Alert(flashKind, flashMsg)
+			@ui.Card("Bulk delete") {
+				<form method="post" action="/apps/feed/settings/bulk-delete">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<p class="text-muted">Select folders and subscriptions to delete.</p>
+					if len(folders) > 0 {
+						<h4>Folders</h4>
 						for _, f := range folders {
-							<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Name }</option>
+							<label style="display:block">
+								<input type="checkbox" name="folder_id" value={ strconv.FormatInt(f.ID, 10) }/>
+								{ f.Name }
+							</label>
 						}
-					</select>
-				</div>
-				@ui.Button("primary", "Add subscription")
-			</form>
-			<ul id="subscription-list" style="margin-top:1rem;padding-left:0;list-style:none">
-				for _, s := range subs {
-					<li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
-						<span style="flex:1">{ subscriptionDisplayTitle(s) }</span>
-						<code>{ s.URL }</code>
-						<span class="badge">{ s.Kind }</span>
-						<form method="post" action={ templ.SafeURL("/apps/feed/subscriptions/" + strconv.FormatInt(s.ID, 10) + "/delete") } style="margin:0">
-							<input type="hidden" name="csrf_token" value={ csrfToken }/>
-							@ui.Button("danger", "Delete")
-						</form>
-					</li>
-				}
-			</ul>
-			<div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap">
-				@ui.Upload("/apps/feed/opml/import", "opml", ".opml,.xml,application/xml", csrfToken, "Import OPML", "btn-secondary btn-sm")
-				<a class="btn btn-secondary btn-sm" href="/apps/feed/opml/export">Export OPML</a>
-			</div>
-			<form method="post" action="/apps/feed/import" enctype="multipart/form-data" style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<label class="btn btn-secondary btn-sm" style="cursor:pointer">
-					Import AntennaPod
-					<input type="hidden" name="format" value="antennapod"/>
-					<input type="file" name="file" accept=".db,.sqlite" style="display:none" onchange="this.form.submit()"/>
-				</label>
-			</form>
-			<form method="post" action="/apps/feed/import" enctype="multipart/form-data" style="margin-top:0.5rem">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<label class="btn btn-secondary btn-sm" style="cursor:pointer">
-					Import NewPipe
-					<input type="hidden" name="format" value="newpipe"/>
-					<input type="file" name="file" accept=".zip" style="display:none" onchange="this.form.submit()"/>
-				</label>
-			</form>
-			<form method="post" action="/apps/feed/import" enctype="multipart/form-data" style="margin-top:0.5rem">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<label class="btn btn-secondary btn-sm" style="cursor:pointer">
-					Import YouTube Takeout
-					<input type="hidden" name="format" value="youtube-csv"/>
-					<input type="file" name="file" accept=".csv" style="display:none" onchange="this.form.submit()"/>
-				</label>
-			</form>
-		}
-		@ui.Card("Folders") {
-			<form id="add-folder" method="post" action="/apps/feed/folders" class="flex gap-1 items-center">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<input class="form-control" type="text" id="folder-name" name="name" placeholder="Folder name" required style="max-width:300px"/>
-				@ui.Button("primary", "Add folder")
-			</form>
-			<ul style="margin-top:1rem;padding-left:0;list-style:none">
-				for _, f := range folders {
-					<li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
-						<span style="flex:1">{ f.Name }</span>
-						<form method="post" action={ templ.SafeURL("/apps/feed/folders/" + strconv.FormatInt(f.ID, 10) + "/delete") } style="margin:0">
-							<input type="hidden" name="csrf_token" value={ csrfToken }/>
-							@ui.Button("danger", "Delete")
-						</form>
-					</li>
-				}
-			</ul>
-		}
-		@ui.Card("Filters") {
-			<form id="add-filter" method="post" action="/apps/feed/filters">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<div class="form-group">
-					<label for="filter-query">Query</label>
-					<input
-						class="form-control"
-						type="text"
-						id="filter-query"
-						name="query"
-						required
-						hx-get="/apps/feed/filter-preview"
-						hx-target="#filter-preview-results"
-						hx-trigger="keyup changed delay:500ms"
-						hx-include="this"
-					/>
-					<div id="filter-preview-results" style="margin-top:0.5rem"></div>
-				</div>
-				<div class="form-group">
-					<label for="filter-action">Action</label>
-					<select id="filter-action" name="action" class="form-control">
-						<option value="skip">Skip</option>
-						<option value="tag">Tag</option>
-						<option value="download">Download</option>
-						<option value="mute_profanity">Mute profanity</option>
-						<option value="transcribe">Transcribe</option>
-					</select>
-				</div>
-				<div class="form-group">
-					<label for="filter-action-value">Tag (for &ldquo;Tag&rdquo; action)</label>
-					<input class="form-control" type="text" id="filter-action-value" name="action_value"/>
-				</div>
-				@ui.Button("primary", "Add filter")
-			</form>
-			<ul style="margin-top:1rem;padding-left:0;list-style:none">
-				for _, fl := range filters {
-					<li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
-						<code style="flex:1">{ fl.Query }</code>
-						<span>&#8594; { fl.Action }</span>
-						if fl.ActionValue != "" {
-							<span class="badge">{ fl.ActionValue }</span>
-						}
-						<form method="post" action={ templ.SafeURL("/apps/feed/filters/" + strconv.FormatInt(fl.ID, 10) + "/delete") } style="margin:0">
-							<input type="hidden" name="csrf_token" value={ csrfToken }/>
-							@ui.Button("danger", "Delete")
-						</form>
-					</li>
-				}
-			</ul>
-		}
-		@ui.Card("Playlists") {
-			<form id="add-playlist" method="post" action="/apps/feed/playlists">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				@ui.FormField("Name", "name", "text", "", "Playlist name")
-				@ui.FormField("Query", "query", "text", "", "e.g. type:audio")
-				@ui.Button("primary", "Add playlist")
-			</form>
-			<ul style="margin-top:1rem;padding-left:0;list-style:none">
-				for _, pl := range playlists {
-					<li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
-						<span style="flex:1">{ pl.Name }</span>
-						<code>{ pl.Query }</code>
-						<form method="post" action={ templ.SafeURL("/apps/feed/playlists/" + strconv.FormatInt(pl.ID, 10) + "/delete") } style="margin:0">
-							<input type="hidden" name="csrf_token" value={ csrfToken }/>
-							@ui.Button("danger", "Delete")
-						</form>
-					</li>
-				}
-			</ul>
-		}
+					}
+					<h4>Subscriptions</h4>
+					for _, s := range subs {
+						<label style="display:block">
+							<input type="checkbox" name="sub_id" value={ strconv.FormatInt(s.ID, 10) }/>
+							{ subscriptionDisplayTitle(s) }
+						</label>
+					}
+					@ui.Button("danger", "Delete selected")
+				</form>
+			}
+		</div>
 	</div>
 }
 
@@ -1308,6 +1386,15 @@ templ feedKindIcon(kind string) {
 
 func feedSidebarClass(activePath, itemPath string) string {
 	if activePath == itemPath {
+		return "sidebar-item active"
+	}
+	return "sidebar-item"
+}
+
+// feedSettingsActive returns the sidebar CSS class for the Settings link,
+// treating any /apps/feed/settings* path as active.
+func feedSettingsActive(activePath string) string {
+	if strings.HasPrefix(activePath, "/apps/feed/settings") {
 		return "sidebar-item active"
 	}
 	return "sidebar-item"

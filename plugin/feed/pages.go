@@ -76,26 +76,120 @@ func (h *Pages) userStore(r *http.Request) (*Store, error) {
 	return NewStore(db), nil
 }
 
-// Settings shows subscriptions, folders, filters, and playlists management.
+// SettingsRedirect sends the bare /settings path to the default tab.
+func (h *Pages) SettingsRedirect(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
+}
+
+// Settings is kept as an alias for SettingsRedirect for backwards compatibility.
 func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
+	h.SettingsRedirect(w, r)
+}
+
+func (h *Pages) SettingsSubscriptions(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
 	subs, _ := store.ListSubscriptions()
 	folders, _ := store.ListFolders()
-	filters, _ := store.ListFilters()
-	playlists, _ := store.ListPlaylists()
-
-	var flashMsg, flashKind string
-	if f := h.getFlash(w, r); f != nil {
-		flashMsg, flashKind = f.Message, f.Kind
-	}
-
+	msg, kind := h.flashParts(w, r)
+	sb := h.buildSidebar(store, "/apps/feed/settings/subscriptions")
 	plugin.SetTitle(w, "Feed Settings")
-	feedSettingsPage(subs, folders, filters, playlists, flashMsg, flashKind, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedSettingsSubscriptionsPage(sb, h.isAdmin(r), subs, folders, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+func (h *Pages) SettingsBulkDelete(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	subs, _ := store.ListSubscriptions()
+	folders, _ := store.ListFolders()
+	msg, kind := h.flashParts(w, r)
+	sb := h.buildSidebar(store, "/apps/feed/settings/bulk-delete")
+	feedSettingsBulkDeletePage(sb, h.isAdmin(r), subs, folders, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+func (h *Pages) SettingsFilters(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	filters, _ := store.ListFilters()
+	msg, kind := h.flashParts(w, r)
+	sb := h.buildSidebar(store, "/apps/feed/settings/filters")
+	feedSettingsFiltersPage(sb, h.isAdmin(r), filters, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+func (h *Pages) SettingsPlaylists(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	playlists, _ := store.ListPlaylists()
+	msg, kind := h.flashParts(w, r)
+	sb := h.buildSidebar(store, "/apps/feed/settings/playlists")
+	feedSettingsPlaylistsPage(sb, h.isAdmin(r), playlists, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
+}
+
+// BulkDelete deletes the selected folders and subscriptions, then redirects.
+func (h *Pages) BulkDelete(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	subIDs := parseIDs(r.Form["sub_id"])
+	folderIDs := parseIDs(r.Form["folder_id"])
+	var failed bool
+	if err := store.DeleteSubscriptions(subIDs); err != nil {
+		slog.Error("feed: bulk delete subs", "err", err)
+		failed = true
+	}
+	if err := store.DeleteFolders(folderIDs); err != nil {
+		slog.Error("feed: bulk delete folders", "err", err)
+		failed = true
+	}
+	if failed {
+		h.setFlash(w, "error", "Some items could not be deleted; see server logs.")
+	} else {
+		h.setFlash(w, "success", fmt.Sprintf("Deleted %d subscription(s), %d folder(s).", len(subIDs), len(folderIDs)))
+	}
+	http.Redirect(w, r, "/apps/feed/settings/bulk-delete", http.StatusSeeOther)
+}
+
+// parseIDs parses decimal id strings, skipping invalid entries.
+func parseIDs(ss []string) []int64 {
+	out := make([]int64, 0, len(ss))
+	for _, s := range ss {
+		if id, err := strconv.ParseInt(s, 10, 64); err == nil {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// flashParts reads the flash (if any) into message+kind for templates.
+func (h *Pages) flashParts(w http.ResponseWriter, r *http.Request) (msg, kind string) {
+	if f := h.getFlash(w, r); f != nil {
+		return f.Message, f.Kind
+	}
+	return "", ""
+}
+
+// isAdmin reports whether the request's user is an admin.
+func (h *Pages) isAdmin(r *http.Request) bool {
+	u := plugin.UserFromContext(r.Context())
+	return u != nil && u.IsAdmin
 }
 
 // allowedKinds is the set of subscription kinds accepted on the add form.
@@ -116,7 +210,7 @@ func (h *Pages) AddSubscription(w http.ResponseWriter, r *http.Request) {
 	rawURL := r.FormValue("url")
 	if rawURL == "" {
 		h.setFlash(w, "error", "URL is required.")
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 		return
 	}
 
@@ -142,14 +236,14 @@ func (h *Pages) AddSubscription(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.setFlash(w, "error", "Could not add subscription: "+err.Error())
 		slog.Error("feed: create subscription", "err", err)
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 		return
 	}
 
 	u := plugin.UserFromContext(r.Context())
 	go h.plugin.TriggerFetch(u.Username, subID)
 
-	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 }
 
 // DeleteSubscription handles POST /subscriptions/{id}/delete.
@@ -171,7 +265,7 @@ func (h *Pages) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 		slog.Error("feed: delete subscription", "id", id, "err", err)
 	}
 
-	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 }
 
 // AddFolder handles POST to create a new folder.
@@ -184,7 +278,7 @@ func (h *Pages) AddFolder(w http.ResponseWriter, r *http.Request) {
 
 	name := r.FormValue("name")
 	if name == "" {
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 		return
 	}
 
@@ -193,7 +287,7 @@ func (h *Pages) AddFolder(w http.ResponseWriter, r *http.Request) {
 		slog.Error("feed: create folder", "err", err)
 	}
 
-	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 }
 
 // DeleteFolder handles POST /folders/{id}/delete.
@@ -215,7 +309,7 @@ func (h *Pages) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 		slog.Error("feed: delete folder", "id", id, "err", err)
 	}
 
-	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 }
 
 // AddFilter handles POST to create a new filter.
@@ -233,7 +327,7 @@ func (h *Pages) AddFilter(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := ParseFilterQuery(queryStr); err != nil {
 		h.setFlash(w, "error", "Invalid query: "+err.Error())
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/feed/settings/filters", http.StatusSeeOther)
 		return
 	}
 
@@ -249,7 +343,7 @@ func (h *Pages) AddFilter(w http.ResponseWriter, r *http.Request) {
 		slog.Error("feed: create filter", "err", err)
 	}
 
-	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/apps/feed/settings/filters", http.StatusSeeOther)
 }
 
 // DeleteFilter handles POST /filters/{id}/delete.
@@ -271,7 +365,7 @@ func (h *Pages) DeleteFilter(w http.ResponseWriter, r *http.Request) {
 		slog.Error("feed: delete filter", "id", id, "err", err)
 	}
 
-	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/apps/feed/settings/filters", http.StatusSeeOther)
 }
 
 // AddPlaylist handles POST to create a new playlist.
@@ -287,13 +381,13 @@ func (h *Pages) AddPlaylist(w http.ResponseWriter, r *http.Request) {
 
 	if name == "" || queryStr == "" {
 		h.setFlash(w, "error", "Name and query are required.")
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/feed/settings/playlists", http.StatusSeeOther)
 		return
 	}
 
 	if _, err := ParseFilterQuery(queryStr); err != nil {
 		h.setFlash(w, "error", "Invalid query: "+err.Error())
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/feed/settings/playlists", http.StatusSeeOther)
 		return
 	}
 
@@ -302,7 +396,7 @@ func (h *Pages) AddPlaylist(w http.ResponseWriter, r *http.Request) {
 		slog.Error("feed: create playlist", "err", err)
 	}
 
-	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/apps/feed/settings/playlists", http.StatusSeeOther)
 }
 
 // DeletePlaylist handles POST /playlists/{id}/delete.
@@ -324,7 +418,7 @@ func (h *Pages) DeletePlaylist(w http.ResponseWriter, r *http.Request) {
 		slog.Error("feed: delete playlist", "id", id, "err", err)
 	}
 
-	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/apps/feed/settings/playlists", http.StatusSeeOther)
 }
 
 // sortSubscriptionsForSidebar sorts subscriptions so those with errors appear
@@ -1159,14 +1253,14 @@ func (h *Pages) Import(w http.ResponseWriter, r *http.Request) {
 
 	if err := r.ParseMultipartForm(20 << 20); err != nil {
 		h.setFlash(w, "error", "Upload too large.")
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 		return
 	}
 	format := r.FormValue("format")
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		h.setFlash(w, "error", "No file uploaded.")
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 		return
 	}
 	defer file.Close()
@@ -1174,7 +1268,7 @@ func (h *Pages) Import(w http.ResponseWriter, r *http.Request) {
 	data, err := io.ReadAll(io.LimitReader(file, 20<<20))
 	if err != nil {
 		h.setFlash(w, "error", "Failed to read file: "+err.Error())
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 		return
 	}
 
@@ -1188,7 +1282,7 @@ func (h *Pages) Import(w http.ResponseWriter, r *http.Request) {
 		n, err = ImportYouTubeTakeout(store, data)
 	default:
 		h.setFlash(w, "error", "Unknown import format: "+format)
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 		return
 	}
 	if err != nil {
@@ -1198,7 +1292,7 @@ func (h *Pages) Import(w http.ResponseWriter, r *http.Request) {
 		go h.plugin.TriggerFetch(u.Username, 0)
 		h.setFlash(w, "success", fmt.Sprintf("Imported %d subscriptions.", n))
 	}
-	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 }
 
 // ImportOPML handles POST of an OPML file to bulk-add RSS subscriptions.
@@ -1211,13 +1305,13 @@ func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
 
 	if err := r.ParseMultipartForm(2 << 20); err != nil {
 		h.setFlash(w, "error", "Upload too large or malformed.")
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 		return
 	}
 	file, _, err := r.FormFile("opml")
 	if err != nil {
 		h.setFlash(w, "error", "No OPML file uploaded.")
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 		return
 	}
 	defer file.Close()
@@ -1225,20 +1319,20 @@ func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
 	data, err := io.ReadAll(io.LimitReader(file, 2<<20))
 	if err != nil {
 		h.setFlash(w, "error", "Failed to read OPML: "+err.Error())
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 		return
 	}
 
 	n, err := store.ImportOPML(data)
 	if err != nil {
 		h.setFlash(w, "error", "OPML parse error: "+err.Error())
-		http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 		return
 	}
 	u := plugin.UserFromContext(r.Context())
 	go h.plugin.TriggerFetch(u.Username, 0)
 	h.setFlash(w, "success", fmt.Sprintf("Imported %d subscriptions.", n))
-	http.Redirect(w, r, "/apps/feed/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 }
 
 // ExportOPML returns the user's RSS subscriptions as an OPML file download.

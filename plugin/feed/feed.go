@@ -148,8 +148,13 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "admin/purge-cache", http.HandlerFunc(pages.PurgeCache))
 	ctx.RegisterAction("POST", "player/prefs", http.HandlerFunc(pages.SavePlayerPrefs))
 
-	// Settings page and resource actions
-	ctx.RegisterPage("settings", http.HandlerFunc(pages.Settings))
+	// Settings pages and resource actions
+	ctx.RegisterPage("settings", http.HandlerFunc(pages.SettingsRedirect))
+	ctx.RegisterPage("settings/subscriptions", http.HandlerFunc(pages.SettingsSubscriptions))
+	ctx.RegisterPage("settings/bulk-delete", http.HandlerFunc(pages.SettingsBulkDelete))
+	ctx.RegisterPage("settings/filters", http.HandlerFunc(pages.SettingsFilters))
+	ctx.RegisterPage("settings/playlists", http.HandlerFunc(pages.SettingsPlaylists))
+	ctx.RegisterAction("POST", "settings/bulk-delete", http.HandlerFunc(pages.BulkDelete))
 	ctx.RegisterAction("POST", "subscriptions", http.HandlerFunc(pages.AddSubscription))
 	ctx.RegisterAction("POST", "subscriptions/{id}/delete", http.HandlerFunc(pages.DeleteSubscription))
 	ctx.RegisterAction("POST", "folders", http.HandlerFunc(pages.AddFolder))
