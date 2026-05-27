@@ -671,22 +671,22 @@ func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 	// Only overwrite fields actually present in the form (partial updates).
 	if v := r.FormValue("speed"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			cur.Speed = clampFloat(f, 0.25, 4.0)
+			cur.Speed = min(max(f, 0.25), 4.0)
 		}
 	}
 	if v := r.FormValue("skip_back_sec"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
-			cur.SkipBackSec = clampInt(n, 1, 120)
+			cur.SkipBackSec = min(max(n, 1), 120)
 		}
 	}
 	if v := r.FormValue("skip_fwd_sec"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
-			cur.SkipFwdSec = clampInt(n, 1, 120)
+			cur.SkipFwdSec = min(max(n, 1), 120)
 		}
 	}
 	if v := r.FormValue("volume"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			cur.Volume = clampFloat(f, 0, 1)
+			cur.Volume = min(max(f, 0), 1)
 		}
 	}
 	if v := r.FormValue("autoplay_next"); v != "" {
@@ -701,26 +701,6 @@ func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func clampFloat(v, lo, hi float64) float64 {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
-}
-
-func clampInt(v, lo, hi int) int {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }
 ```
 
