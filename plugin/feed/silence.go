@@ -47,8 +47,8 @@ func parseSilenceDetect(stderr string) []Range {
 	sc := bufio.NewScanner(strings.NewReader(stderr))
 	for sc.Scan() {
 		line := sc.Text()
-		if i := strings.Index(line, "silence_start:"); i >= 0 {
-			field := strings.TrimSpace(line[i+len("silence_start:"):])
+		if _, after, ok := strings.Cut(line, "silence_start:"); ok {
+			field := strings.TrimSpace(after)
 			parts := strings.Fields(field)
 			if len(parts) > 0 {
 				if v, err := strconv.ParseFloat(parts[0], 64); err == nil {
@@ -57,8 +57,8 @@ func parseSilenceDetect(stderr string) []Range {
 			}
 			continue
 		}
-		if i := strings.Index(line, "silence_end:"); i >= 0 && haveStart {
-			field := strings.TrimSpace(line[i+len("silence_end:"):])
+		if _, after, ok := strings.Cut(line, "silence_end:"); ok && haveStart {
+			field := strings.TrimSpace(after)
 			parts := strings.Fields(field)
 			if len(parts) > 0 {
 				if v, err := strconv.ParseFloat(parts[0], 64); err == nil {

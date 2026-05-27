@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"maps"
 	"sync"
 	"time"
 )
@@ -44,8 +45,6 @@ func orchestratorGetStatus() OrchestratorStatusSnapshot {
 		LastTickAt:  globalOrchestratorStatus.LastTickAt,
 		LastUserMap: make(map[string]time.Time, len(globalOrchestratorStatus.LastUserMap)),
 	}
-	for k, v := range globalOrchestratorStatus.LastUserMap {
-		cp.LastUserMap[k] = v
-	}
+	maps.Copy(cp.LastUserMap, globalOrchestratorStatus.LastUserMap)
 	return cp
 }

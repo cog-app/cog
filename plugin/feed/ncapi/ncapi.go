@@ -222,8 +222,8 @@ func (a *NewsAPI) createFeed(w http.ResponseWriter, r *http.Request, db *sql.DB,
 	feedURL, err := resolveToFeedURL(r.Context(), body.URL)
 	if err != nil {
 		plugin.WriteJSON(w, http.StatusUnprocessableEntity, map[string]any{
-			"error": "0",
-			"data":  nil,
+			"error":   "0",
+			"data":    nil,
 			"message": err.Error(),
 		})
 		return
