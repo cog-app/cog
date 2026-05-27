@@ -339,3 +339,38 @@ func TestPendingProfanityWithCaptions(t *testing.T) {
 		t.Fatalf("got %v want [%d]", pending, id2)
 	}
 }
+
+func TestPlayerPrefsRoundTrip(t *testing.T) {
+	s := newStore(t)
+
+	// Defaults when unset.
+	got, err := s.LoadPlayerPrefs()
+	require.NoError(t, err)
+	if got.Speed != 1.0 {
+		t.Errorf("Speed: got %v want 1.0", got.Speed)
+	}
+	if got.SkipBackSec != 15 {
+		t.Errorf("SkipBackSec: got %v want 15", got.SkipBackSec)
+	}
+	if got.SkipFwdSec != 30 {
+		t.Errorf("SkipFwdSec: got %v want 30", got.SkipFwdSec)
+	}
+	if got.Volume != 1.0 {
+		t.Errorf("Volume: got %v want 1.0", got.Volume)
+	}
+	if !got.AutoplayNext {
+		t.Errorf("AutoplayNext: got false want true")
+	}
+	if got.SkipSilence {
+		t.Errorf("SkipSilence: got true want false")
+	}
+
+	// Persist and read back.
+	want := feed.PlayerPrefs{Speed: 1.5, SkipBackSec: 10, SkipFwdSec: 45, Volume: 0.8, AutoplayNext: false, SkipSilence: true}
+	require.NoError(t, s.SavePlayerPrefs(want))
+	got, err = s.LoadPlayerPrefs()
+	require.NoError(t, err)
+	if got != want {
+		t.Errorf("got %+v want %+v", got, want)
+	}
+}

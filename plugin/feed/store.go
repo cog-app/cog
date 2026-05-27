@@ -1443,6 +1443,70 @@ func BoolSetting(key string, defaultValue bool) Setting[bool] {
 	}
 }
 
+// FloatSetting creates a Setting for a float64 value.
+func FloatSetting(key string, defaultValue float64) Setting[float64] {
+	return Setting[float64]{
+		Key: key, DefaultValue: defaultValue,
+		Parse:     func(s string) (float64, error) { return strconv.ParseFloat(s, 64) },
+		Stringify: func(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) },
+	}
+}
+
+// Per-user player preferences (stored in feed_settings).
+var (
+	settingPlaybackSpeed = FloatSetting("playback_speed", 1.0)
+	settingSkipBackSec   = IntSetting("skip_back_sec", 15)
+	settingSkipFwdSec    = IntSetting("skip_fwd_sec", 30)
+	settingVolume        = FloatSetting("volume", 1.0)
+	settingAutoplayNext  = BoolSetting("autoplay_next", true)
+	settingSkipSilence   = BoolSetting("skip_silence", false)
+)
+
+// PlayerPrefs is the per-user set of media-player preferences.
+type PlayerPrefs struct {
+	Speed        float64 `json:"speed"`
+	SkipBackSec  int     `json:"skipBackSec"`
+	SkipFwdSec   int     `json:"skipFwdSec"`
+	Volume       float64 `json:"volume"`
+	AutoplayNext bool    `json:"autoplayNext"`
+	SkipSilence  bool    `json:"skipSilence"`
+}
+
+// LoadPlayerPrefs reads the per-user player preferences, falling back to defaults.
+func (s *Store) LoadPlayerPrefs() (PlayerPrefs, error) {
+	return PlayerPrefs{
+		Speed:        settingPlaybackSpeed.MustGet(s.db),
+		SkipBackSec:  settingSkipBackSec.MustGet(s.db),
+		SkipFwdSec:   settingSkipFwdSec.MustGet(s.db),
+		Volume:       settingVolume.MustGet(s.db),
+		AutoplayNext: settingAutoplayNext.MustGet(s.db),
+		SkipSilence:  settingSkipSilence.MustGet(s.db),
+	}, nil
+}
+
+// SavePlayerPrefs persists the per-user player preferences.
+func (s *Store) SavePlayerPrefs(p PlayerPrefs) error {
+	if err := settingPlaybackSpeed.Set(s.db, p.Speed); err != nil {
+		return fmt.Errorf("save playback_speed: %w", err)
+	}
+	if err := settingSkipBackSec.Set(s.db, p.SkipBackSec); err != nil {
+		return fmt.Errorf("save skip_back_sec: %w", err)
+	}
+	if err := settingSkipFwdSec.Set(s.db, p.SkipFwdSec); err != nil {
+		return fmt.Errorf("save skip_fwd_sec: %w", err)
+	}
+	if err := settingVolume.Set(s.db, p.Volume); err != nil {
+		return fmt.Errorf("save volume: %w", err)
+	}
+	if err := settingAutoplayNext.Set(s.db, p.AutoplayNext); err != nil {
+		return fmt.Errorf("save autoplay_next: %w", err)
+	}
+	if err := settingSkipSilence.Set(s.db, p.SkipSilence); err != nil {
+		return fmt.Errorf("save skip_silence: %w", err)
+	}
+	return nil
+}
+
 // --- Whisper model settings ---
 
 // WhisperModel identifies which whisper.cpp model the transcribe worker uses.
