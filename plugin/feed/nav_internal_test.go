@@ -81,7 +81,7 @@ func TestResolveViewItemsAllMatchesListItemsForView(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if _, _, err := s.UpsertItem(Item{
 			SubscriptionID: subID,
 			GUID:           "g" + strconv.Itoa(i),

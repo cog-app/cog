@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // viewCtx identifies the view ("playlist") an item was opened from, so the
@@ -44,11 +45,12 @@ func (c viewCtx) encode() string {
 	if c.Q != "" {
 		parts = append(parts, "cq="+url.QueryEscape(c.Q))
 	}
-	out := parts[0]
+	var out strings.Builder
+	out.WriteString(parts[0])
 	for _, p := range parts[1:] {
-		out += "&" + p
+		out.WriteString("&" + p)
 	}
-	return out
+	return out.String()
 }
 
 // label returns a human-readable name for the context, doing best-effort store
