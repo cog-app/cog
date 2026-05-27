@@ -1,6 +1,7 @@
 package feed_test
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -165,22 +166,70 @@ func TestAdjacentPlayerEndpoint(t *testing.T) {
 	second, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "b", Type: "audio", Title: "B", MediaURL: "https://cdn.example.com/b.mp3", PublishedAt: 200})
 	require.NoError(t, err)
 
-	// next of first → 200 with the second item's player.
-	resp := env.Get(t, "/apps/feed/items/"+strconv.FormatInt(first, 10)+"/adjacent?dir=next", u.Auth)
+	// The all-view lists items by published_at DESC: [second(200), first(100)].
+	// From second, dir=next → first (lower index+1 in DESC list = older item).
+	resp := env.Get(t, "/apps/feed/items/"+strconv.FormatInt(second, 10)+"/adjacent?dir=next&ctx=all", u.Auth)
 	resp.Status(http.StatusOK)
 	body := resp.ReadBody()
 	if !strings.Contains(body, "feed-player") {
 		t.Errorf("next player missing #feed-player markup; body len=%d", len(body))
 	}
-	if !strings.Contains(body, strconv.FormatInt(second, 10)) {
-		t.Errorf("next player should reference item %d", second)
+	if !strings.Contains(body, strconv.FormatInt(first, 10)) {
+		t.Errorf("next player should reference item %d", first)
 	}
 
-	// next of second → 204 (no neighbor).
-	env.Get(t, "/apps/feed/items/"+strconv.FormatInt(second, 10)+"/adjacent?dir=next", u.Auth).
+	// next of first → 204 (first is at the end of the DESC list, no newer-index neighbor).
+	env.Get(t, "/apps/feed/items/"+strconv.FormatInt(first, 10)+"/adjacent?dir=next&ctx=all", u.Auth).
 		Status(http.StatusNoContent)
 
 	// bad direction → 400.
 	env.Get(t, "/apps/feed/items/"+strconv.FormatInt(first, 10)+"/adjacent?dir=up", u.Auth).
 		Status(http.StatusBadRequest)
+}
+
+// seedTwoMedia creates a subscription with two audio items and returns their IDs
+// ordered as (older, newer) by published_at. In the "all" view (DESC order),
+// the list is [newer, older], so from newer dir=next reaches older.
+func seedTwoMedia(t *testing.T, env *cogtest.Env, username string) (older, newer int64) {
+	t.Helper()
+	store := feedStore(t, env, username)
+	subID, err := store.CreateSubscription(feed.Subscription{
+		Kind:  "rss",
+		URL:   "https://ctx-test.example.com/feed",
+		Title: "Ctx Test Podcast",
+	})
+	require.NoError(t, err)
+	older, _, err = store.UpsertItem(feed.Item{
+		SubscriptionID: subID,
+		GUID:           "ctx-ep1",
+		Type:           "audio",
+		Title:          "Old Episode",
+		MediaURL:       "https://cdn.example.com/old.mp3",
+		PublishedAt:    1000,
+	})
+	require.NoError(t, err)
+	newer, _, err = store.UpsertItem(feed.Item{
+		SubscriptionID: subID,
+		GUID:           "ctx-ep2",
+		Type:           "audio",
+		Title:          "New Episode",
+		MediaURL:       "https://cdn.example.com/new.mp3",
+		PublishedAt:    2000,
+	})
+	require.NoError(t, err)
+	return older, newer
+}
+
+// TestAdjacentPlayerCarriesCtx verifies that the adjacent player endpoint
+// respects the view context and carries ctx data attributes in the response.
+func TestAdjacentPlayerCarriesCtx(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "frank", "pass")
+	// all-view is DESC by published_at: [newer(2000), older(1000)]
+	// From newer, dir=next → older (higher index in DESC list).
+	older, newer := seedTwoMedia(t, env, u.Username)
+	resp := env.Get(t, fmt.Sprintf("/apps/feed/items/%d/adjacent?dir=next&ctx=all", newer), u.Auth)
+	resp.Status(200)
+	resp.Contains(`data-ctx="ctx=all"`)
+	resp.Contains(fmt.Sprintf(`data-item-id="%d"`, older))
 }

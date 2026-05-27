@@ -749,21 +749,25 @@ func (h *Pages) MarkComplete(w http.ResponseWriter, r *http.Request) {
 	if err := store.MarkRead(id, true); err != nil {
 		slog.Error("feed: mark complete read", "id", id, "err", err)
 	}
-	// Auto-advance: find the next unplayed media item and render its player.
-	next, err := store.NextUnplayedMedia(id)
-	if err == nil {
-		if renderPlayerFragment(w, r, store, next.ID) {
+	// Auto-advance: find the next media item within the current view context.
+	c := parseViewCtx(r)
+	items, rerr := h.resolveViewItems(store, c)
+	if rerr != nil {
+		slog.Error("feed: complete resolve", "err", rerr)
+	}
+	_, next := neighbors(items, id, true)
+	if next != nil {
+		if renderPlayerFragment(w, r, h, store, next.ID, c) {
 			return
 		}
 	}
-	// No next item — return empty body; HTMX swap removes the player.
 	w.WriteHeader(http.StatusOK)
 }
 
 // renderPlayerFragment renders the feedPlayer fragment for itemID, returning
 // true on success. On any error it writes nothing and returns false, leaving
 // the caller to send a fallback (empty body / 204).
-func renderPlayerFragment(w http.ResponseWriter, r *http.Request, store *Store, itemID int64) bool {
+func renderPlayerFragment(w http.ResponseWriter, r *http.Request, h *Pages, store *Store, itemID int64, c viewCtx) bool {
 	ip, err := store.GetItemPlayback(itemID)
 	if err != nil {
 		return false
@@ -772,7 +776,16 @@ func renderPlayerFragment(w http.ResponseWriter, r *http.Request, store *Store, 
 	if perr != nil {
 		prefs = PlayerPrefs{Speed: 1, SkipBackSec: 15, SkipFwdSec: 30, Volume: 1, AutoplayNext: true}
 	}
-	feedPlayer(ip, prefs, ip.ThumbnailURL, plugin.CSRFToken(r)).Render(r.Context(), w)
+	items, _ := h.resolveViewItems(store, c)
+	prev, next := neighbors(items, itemID, false) // any-type neighbors for the bar
+	nav := itemNav{Ctx: c.encode(), Label: c.label(store)}
+	if prev != nil {
+		nav.PrevID, nav.PrevTitle = prev.ID, prev.Title
+	}
+	if next != nil {
+		nav.NextID, nav.NextTitle = next.ID, next.Title
+	}
+	feedPlayer(ip, prefs, ip.ThumbnailURL, plugin.CSRFToken(r), nav).Render(r.Context(), w)
 	return true
 }
 
@@ -795,13 +808,23 @@ func (h *Pages) AdjacentPlayer(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	adj, err := store.AdjacentMedia(id, dir)
+	c := parseViewCtx(r)
+	items, err := h.resolveViewItems(store, c)
 	if err != nil {
-		// No neighbor (sql.ErrNoRows) or query error — nothing to advance to.
+		slog.Error("feed: adjacent resolve", "err", err)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if !renderPlayerFragment(w, r, store, adj.ID) {
+	prev, next := neighbors(items, id, true) // media-only for player nav
+	target := next
+	if dir == "prev" {
+		target = prev
+	}
+	if target == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if !renderPlayerFragment(w, r, h, store, target.ID, c) {
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

@@ -747,7 +747,7 @@ templ feedItemDetail(sb sidebarData, nav itemNav, ip ItemPlayback, tags []string
 						@templ.Raw(ip.ContentHTML)
 					</div>
 				} else {
-					@feedPlayer(ip, prefs, artwork, csrfToken)
+					@feedPlayer(ip, prefs, artwork, csrfToken, nav)
 				}
 				if ip.URL != "" {
 					<p style="margin-top:1rem">
@@ -759,7 +759,7 @@ templ feedItemDetail(sb sidebarData, nav itemNav, ip ItemPlayback, tags []string
 	</div>
 }
 
-templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken string) {
+templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken string, nav itemNav) {
 	<div
 		id="feed-player"
 		class="card feed-player"
@@ -777,6 +777,11 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 		data-volume={ strconv.FormatFloat(prefs.Volume, 'f', -1, 64) }
 		data-autoplay-next={ strconv.FormatBool(prefs.AutoplayNext) }
 		data-skip-silence={ strconv.FormatBool(prefs.SkipSilence) }
+		data-ctx={ nav.Ctx }
+		data-bar-prev-id={ strconv.FormatInt(nav.PrevID, 10) }
+		data-bar-prev-title={ nav.PrevTitle }
+		data-bar-next-id={ strconv.FormatInt(nav.NextID, 10) }
+		data-bar-next-title={ nav.NextTitle }
 	>
 		<style>
 			.feed-player .player-surface {
