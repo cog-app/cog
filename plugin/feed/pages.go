@@ -23,6 +23,10 @@ import (
 
 const flashCookieName = "cog_flash"
 
+// feedViewLimit is the max items rendered per view. resolveViewItems must use
+// the same value so prev/next neighbors match exactly what the user saw on screen.
+const feedViewLimit = 200
+
 // Pages holds the web UI handlers for the feed plugin.
 type Pages struct {
 	plugin *Plugin
@@ -474,7 +478,7 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sb := h.buildSidebar(store, fmt.Sprintf("/apps/feed/playlists/%d", id))
-	items, _ := store.ListItemsForView(ViewSpec{All: true}, 500)
+	items, _ := store.ListItemsForView(ViewSpec{All: true}, feedViewLimit)
 	items = applyQueryFilter(store, items, pl.Query)
 	c := viewCtx{Kind: "playlist", ID: id}
 	plugin.SetTitle(w, "Feed — "+pl.Name)
@@ -509,7 +513,7 @@ func applyQueryFilter(store *Store, items []ItemWithSubscription, q string) []It
 // resolveViewItems returns the same ordered item slice the originating view
 // rendered, so prev/next neighbors match exactly what the user saw.
 func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscription, error) {
-	const limit = 500
+	const limit = feedViewLimit
 	switch c.Kind {
 	case "starred":
 		return store.ListItemsForView(ViewSpec{Starred: true}, limit)
@@ -565,7 +569,7 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	sb := h.buildSidebar(store, "/apps/feed/")
 
-	items, err := store.ListItemsForView(ViewSpec{All: true}, 200)
+	items, err := store.ListItemsForView(ViewSpec{All: true}, feedViewLimit)
 	if err != nil {
 		http.Error(w, "could not list items: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -599,7 +603,7 @@ func (h *Pages) SubscriptionView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sb := h.buildSidebar(store, "/apps/feed/subscription/"+idStr)
-	items, _ := store.ListItemsForView(ViewSpec{SubscriptionID: sql.NullInt64{Int64: id, Valid: true}}, 200)
+	items, _ := store.ListItemsForView(ViewSpec{SubscriptionID: sql.NullInt64{Int64: id, Valid: true}}, feedViewLimit)
 
 	c := viewCtx{Kind: "sub", ID: id}
 	plugin.SetTitle(w, subscriptionDisplayTitle(sub))
@@ -625,7 +629,7 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sb := h.buildSidebar(store, "/apps/feed/folder/"+idStr)
-	items, _ := store.ListItemsForView(ViewSpec{FolderID: sql.NullInt64{Int64: id, Valid: true}}, 200)
+	items, _ := store.ListItemsForView(ViewSpec{FolderID: sql.NullInt64{Int64: id, Valid: true}}, feedViewLimit)
 
 	c := viewCtx{Kind: "folder", ID: id}
 	plugin.SetTitle(w, folder.Name)
@@ -640,7 +644,7 @@ func (h *Pages) StarredView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sb := h.buildSidebar(store, "/apps/feed/starred")
-	items, _ := store.ListItemsForView(ViewSpec{Starred: true}, 200)
+	items, _ := store.ListItemsForView(ViewSpec{Starred: true}, feedViewLimit)
 
 	c := viewCtx{Kind: "starred"}
 	plugin.SetTitle(w, "Starred")
@@ -656,7 +660,7 @@ func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
 	}
 	tagName := r.PathValue("name")
 	sb := h.buildSidebar(store, "/apps/feed/tag/"+tagName)
-	items, _ := store.ListItemsForView(ViewSpec{TagName: tagName}, 200)
+	items, _ := store.ListItemsForView(ViewSpec{TagName: tagName}, feedViewLimit)
 
 	c := viewCtx{Kind: "tag", Name: tagName}
 	plugin.SetTitle(w, "Tag: "+tagName)
@@ -1355,7 +1359,7 @@ func (h *Pages) HistoryView(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	items, _ := store.ListPlaybackHistory(200)
+	items, _ := store.ListPlaybackHistory(feedViewLimit)
 	sb := h.buildSidebar(store, "/apps/feed/history")
 	plugin.SetTitle(w, "Feed — History")
 	feedHistoryPage(sb, items, plugin.CSRFToken(r)).Render(r.Context(), w)

@@ -12,6 +12,35 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/feed"
 )
 
+// TestHideEmptyToggleViaHTTP posts the hide_empty toggle over HTTP with a valid
+// session and CSRF token, then asserts the pref persisted in the store.
+func TestHideEmptyToggleViaHTTP(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "u", "pass")
+
+	sess, err := env.Providers.Sessions.Create(u.ID)
+	require.NoError(t, err)
+	sessionCookie := cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID)
+	csrfToken := auth.CSRFToken(sess.ID, env.Providers.CSRFSecret)
+
+	form := url.Values{
+		"csrf_token": {csrfToken},
+		"hide_empty": {"1"},
+	}
+	// With HX-Target: feed-sidebar the handler returns the refreshed sidebar (200).
+	hxTarget := cogtest.Header("HX-Target", "feed-sidebar")
+	resp := env.PostForm(t, "/apps/feed/player/prefs", form, sessionCookie, hxTarget)
+	resp.Status(http.StatusOK)
+	resp.Contains("feed-sidebar")
+
+	store := feedStore(t, env, u.Username)
+	got, err := store.LoadPlayerPrefs()
+	require.NoError(t, err)
+	if !got.HideEmpty {
+		t.Fatal("hide_empty pref did not persist after HTTP toggle")
+	}
+}
+
 func TestSavePlayerPrefsEndpoint(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	u := env.CreateUser(t, "bob", "pass")
