@@ -50,3 +50,19 @@ func TestSavePlayerPrefsEndpoint(t *testing.T) {
 		t.Errorf("SkipSilence = false, want true")
 	}
 }
+
+func TestHideEmptyPrefRoundTrips(t *testing.T) {
+	s := newStore(t)
+	p, err := s.LoadPlayerPrefs()
+	require.NoError(t, err)
+	if p.HideEmpty {
+		t.Fatal("hide_empty should default to false")
+	}
+	p.HideEmpty = true
+	require.NoError(t, s.SavePlayerPrefs(p))
+	got, err := s.LoadPlayerPrefs()
+	require.NoError(t, err)
+	if !got.HideEmpty {
+		t.Fatal("hide_empty did not persist")
+	}
+}

@@ -1504,6 +1504,7 @@ var (
 	settingVolume        = FloatSetting("volume", 1.0)
 	settingAutoplayNext  = BoolSetting("autoplay_next", true)
 	settingSkipSilence   = BoolSetting("skip_silence", false)
+	settingHideEmpty     = BoolSetting("hide_empty", false)
 )
 
 // PlayerPrefs is the per-user set of media-player preferences.
@@ -1514,6 +1515,7 @@ type PlayerPrefs struct {
 	Volume       float64 `json:"volume"`
 	AutoplayNext bool    `json:"autoplayNext"`
 	SkipSilence  bool    `json:"skipSilence"`
+	HideEmpty    bool    `json:"hideEmpty"`
 }
 
 // LoadPlayerPrefs reads the per-user player preferences, falling back to defaults.
@@ -1538,6 +1540,9 @@ func (s *Store) LoadPlayerPrefs() (PlayerPrefs, error) {
 	if p.SkipSilence, err = settingSkipSilence.Get(s.db); err != nil {
 		return p, fmt.Errorf("load skip_silence: %w", err)
 	}
+	if p.HideEmpty, err = settingHideEmpty.Get(s.db); err != nil {
+		return p, fmt.Errorf("load hide_empty: %w", err)
+	}
 	return p, nil
 }
 
@@ -1560,6 +1565,9 @@ func (s *Store) SavePlayerPrefs(p PlayerPrefs) error {
 	}
 	if err := settingSkipSilence.Set(s.db, p.SkipSilence); err != nil {
 		return fmt.Errorf("save skip_silence: %w", err)
+	}
+	if err := settingHideEmpty.Set(s.db, p.HideEmpty); err != nil {
+		return fmt.Errorf("save hide_empty: %w", err)
 	}
 	return nil
 }
