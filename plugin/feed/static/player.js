@@ -55,6 +55,11 @@
 			volume: root.dataset.volume === "" ? 1 : parseFloat(root.dataset.volume),
 			autoplayNext: root.dataset.autoplayNext === "true",
 			skipSilence: root.dataset.skipSilence === "true",
+			ctx: root.dataset.ctx || "ctx=all",
+			barPrevId: root.dataset.barPrevId || "0",
+			barPrevTitle: root.dataset.barPrevTitle || "",
+			barNextId: root.dataset.barNextId || "0",
+			barNextTitle: root.dataset.barNextTitle || "",
 		};
 
 		// --- element refs (rendered by feedPlayer templ) ---
@@ -331,7 +336,7 @@
 		// --- ended: mark complete, then auto-advance or offer "Play next" ---
 		var pendingNextHTML = "";
 		el.addEventListener("ended", function () {
-			post("/apps/feed/items/" + cfg.itemID + "/complete", "", cfg.csrf)
+			post("/apps/feed/items/" + cfg.itemID + "/complete?" + cfg.ctx, "", cfg.csrf)
 				.then(function (r) { return r.text(); })
 				.then(function (html) {
 					var hasNext = html && html.indexOf("feed-player") !== -1;
@@ -357,8 +362,39 @@
 			var next = tmp.querySelector("#feed-player");
 			if (next && root.parentNode) {
 				root.parentNode.replaceChild(next, root);
+				var id = next.dataset.itemId;
+				var ctx = next.dataset.ctx || "ctx=all";
+				history.pushState({ itemId: id }, "", "/apps/feed/items/" + id + "?" + ctx);
+				updateContextBar(next);
 				init(); // bind the new player
 			}
+		}
+
+		// updateContextBar rewrites the page's context bar prev/next links from
+		// the freshly-swapped player fragment's data attributes.
+		function updateContextBar(playerEl) {
+			var bar = document.querySelector(".feed-context-bar");
+			if (!bar) return;
+			var ctx = playerEl.dataset.ctx || "ctx=all";
+			var links = bar.querySelectorAll(".btn");
+			// bar markup order: [0] = prev, [1] = next
+			rewireNavBtn(links[0], playerEl.dataset.barPrevId, playerEl.dataset.barPrevTitle, ctx, "← Prev");
+			rewireNavBtn(links[1], playerEl.dataset.barNextId, playerEl.dataset.barNextTitle, ctx, "Next →");
+		}
+
+		function rewireNavBtn(el, id, title, ctx, text) {
+			if (!el) return;
+			var tag = (id && id !== "0") ? "a" : "span";
+			var repl = document.createElement(tag);
+			repl.className = "btn btn-outline btn-sm";
+			repl.textContent = text;
+			if (id && id !== "0") {
+				repl.setAttribute("href", "/apps/feed/items/" + id + "?" + ctx);
+				if (title) repl.setAttribute("title", title);
+			} else {
+				repl.style.opacity = "0.5";
+			}
+			el.parentNode.replaceChild(repl, el);
 		}
 
 		// advance fetches the previous/next media item's player and swaps it in,
@@ -366,7 +402,7 @@
 		// and the OS media-key handlers.
 		function advance(dir) {
 			setBuffering(true);
-			fetch("/apps/feed/items/" + cfg.itemID + "/adjacent?dir=" + dir, {
+			fetch("/apps/feed/items/" + cfg.itemID + "/adjacent?dir=" + dir + "&" + cfg.ctx, {
 				headers: { "X-CSRF-Token": cfg.csrf },
 			})
 				.then(function (r) {
@@ -486,4 +522,8 @@
 	if (document.readyState !== "loading") init();
 	else document.addEventListener("DOMContentLoaded", init);
 	document.body.addEventListener("htmx:afterSwap", function () { init(); });
+	window.addEventListener("popstate", function () {
+		// Back/forward to a previous item: reload to render that item's page.
+		window.location.reload();
+	});
 })();
