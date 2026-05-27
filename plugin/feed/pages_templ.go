@@ -2011,7 +2011,7 @@ func feedSettingsTabs(active string, isAdmin bool) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if isAdmin {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 160, "<a class=\"btn btn-outline btn-sm\" href=\"/apps/feed/admin/system-settings\">System</a> <a class=\"btn btn-outline btn-sm\" href=\"/apps/feed/admin/status\">Status</a>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 160, "<a class=\"btn btn-outline btn-sm\" href=\"/admin/plugins/feed\">System</a> <a class=\"btn btn-outline btn-sm\" href=\"/apps/feed/admin/status\">Status</a>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
