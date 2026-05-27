@@ -63,7 +63,7 @@ func TestFeedPlayerLoadsForAudioItem(t *testing.T) {
 	if !strings.Contains(body, wantSrc) {
 		t.Errorf("detail page missing audio src %q; body len=%d", wantSrc, len(body))
 	}
-	if !strings.Contains(body, "player-play-btn") {
+	if !strings.Contains(body, "player-play") {
 		t.Errorf("detail page missing play button; body len=%d", len(body))
 	}
 	if !strings.Contains(body, "player-time") {

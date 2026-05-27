@@ -711,7 +711,7 @@ templ feedItemTagRow(itemID int64, tags []string, csrfToken string) {
 	</div>
 }
 
-templ feedItemDetail(ip ItemPlayback, tags []string, csrfToken string) {
+templ feedItemDetail(ip ItemPlayback, tags []string, prefs PlayerPrefs, artwork string, csrfToken string) {
 	@ui.Card(ip.Title) {
 		<div class="text-muted" style="font-size:0.85rem;margin-bottom:0.5rem">
 			{ ip.SubscriptionTitle }
@@ -725,7 +725,7 @@ templ feedItemDetail(ip ItemPlayback, tags []string, csrfToken string) {
 				@templ.Raw(ip.ContentHTML)
 			</div>
 		} else {
-			@feedPlayer(ip, csrfToken)
+			@feedPlayer(ip, prefs, artwork, csrfToken)
 		}
 		if ip.URL != "" {
 			<p style="margin-top:1rem">
@@ -735,204 +735,119 @@ templ feedItemDetail(ip ItemPlayback, tags []string, csrfToken string) {
 	}
 }
 
-templ feedPlayer(ip ItemPlayback, csrfToken string) {
+templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken string) {
 	<div
 		id="feed-player"
-		class="card"
-		style="padding:1rem"
+		class="card feed-player"
 		data-item-id={ strconv.FormatInt(ip.ID, 10) }
-		data-resume={ fmt.Sprintf("%.1f", ip.ProgressSec) }
 		data-media-type={ ip.Type }
 		data-source-kind={ ip.SourceKind }
+		data-resume={ strconv.FormatFloat(ip.ProgressSec, 'f', 1, 64) }
+		data-csrf={ csrfToken }
+		data-title={ ip.Title }
+		data-subscription={ ip.SubscriptionTitle }
+		data-artwork={ artwork }
+		data-speed={ strconv.FormatFloat(prefs.Speed, 'f', -1, 64) }
+		data-skip-back={ strconv.Itoa(prefs.SkipBackSec) }
+		data-skip-fwd={ strconv.Itoa(prefs.SkipFwdSec) }
+		data-volume={ strconv.FormatFloat(prefs.Volume, 'f', -1, 64) }
+		data-autoplay-next={ strconv.FormatBool(prefs.AutoplayNext) }
+		data-skip-silence={ strconv.FormatBool(prefs.SkipSilence) }
 	>
-		<div style="font-weight:600;margin-bottom:0.5rem">{ ip.Title }</div>
+		<style>
+			.feed-player .player-surface { position:relative; background:#000; border-radius:8px; overflow:hidden; margin-bottom:0.5rem; }
+			.feed-player .player-surface video { width:100%; max-height:480px; display:block; }
+			.feed-player .player-center { position:absolute; inset:0; margin:auto; width:72px; height:72px; border:0; border-radius:50%; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:opacity .2s; }
+			.feed-player .player-track { position:relative; height:5px; border-radius:3px; background:rgba(127,127,127,0.3); margin:0.25rem 0 0.75rem; cursor:pointer; }
+			.feed-player .player-track:hover { height:7px; }
+			.feed-player .player-buffered, .feed-player .player-played { position:absolute; left:0; top:0; bottom:0; border-radius:3px; }
+			.feed-player .player-buffered { width:0; background:rgba(127,127,127,0.5); }
+			.feed-player .player-played { width:0; background:var(--accent,#4a9eff); }
+			.feed-player .player-handle { position:absolute; left:0; top:50%; transform:translate(-50%,-50%); width:12px; height:12px; border-radius:50%; background:#fff; box-shadow:0 0 3px rgba(0,0,0,0.5); opacity:0; }
+			.feed-player .player-track:hover .player-handle { opacity:1; }
+			.feed-player .player-markers { position:absolute; inset:0; pointer-events:none; }
+			.feed-player .feed-marker-mute { background:rgba(220,80,80,0.7); }
+			.feed-player .feed-marker-skip { background:rgba(120,120,120,0.7); }
+			.feed-player .player-bar { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; }
+			.feed-player .player-round { width:36px; height:36px; padding:0; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; }
+			.feed-player .player-volume { width:80px; }
+			.feed-player .player-gear-menu { position:absolute; right:0; bottom:calc(100% + 4px); z-index:10; background:var(--card-bg,#fff); border:1px solid var(--border,#ddd); border-radius:8px; padding:0.5rem; min-width:180px; box-shadow:0 4px 16px rgba(0,0,0,0.15); }
+			.feed-player .player-gear-label { font-size:0.75rem; text-transform:uppercase; opacity:0.6; margin-bottom:0.25rem; }
+			.feed-player .player-gear-speeds { display:flex; gap:0.25rem; flex-wrap:wrap; margin-bottom:0.5rem; }
+			.feed-player .player-gear-toggle { display:block; width:100%; text-align:left; padding:0.35rem 0.5rem; border:0; background:none; cursor:pointer; border-radius:4px; }
+			.feed-player .player-gear-toggle[aria-pressed=true] { background:var(--accent,#4a9eff); color:#fff; }
+			.feed-player.controls-hidden .player-bar, .feed-player.controls-hidden .player-track { opacity:0; transition:opacity .3s; }
+			.feed-player.controls-hidden .player-center { opacity:0; }
+		</style>
+		<div style="font-weight:600;margin-bottom:0.25rem">{ ip.Title }</div>
 		<div class="text-muted" style="font-size:0.85rem;margin-bottom:0.5rem">{ ip.SubscriptionTitle }</div>
 		if ip.Type == "video" {
-			<video
-				id="player-el"
-				style="width:100%;max-height:480px;background:#000;margin-bottom:0.5rem"
-				preload="metadata"
-				if ip.SourceKind != "youtube" {
-					src={ "/apps/feed/items/" + strconv.FormatInt(ip.ID, 10) + "/media" }
-				}
-			></video>
+			<div id="player-surface" class="player-surface">
+				<video
+					id="player-el"
+					preload="metadata"
+					playsinline
+					if ip.SourceKind != "youtube" {
+						src={ "/apps/feed/items/" + strconv.FormatInt(ip.ID, 10) + "/media" }
+					}
+				></video>
+				<button id="player-center" class="player-center" title="Play/Pause" type="button">
+					<svg width="34" height="34" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+				</button>
+			</div>
 		} else {
 			<audio
 				id="player-el"
-				style="width:100%;margin-bottom:0.5rem"
 				preload="metadata"
 				if ip.SourceKind != "youtube" {
 					src={ "/apps/feed/items/" + strconv.FormatInt(ip.ID, 10) + "/media" }
 				}
 			></audio>
 		}
-		<div class="flex items-center gap-1" style="flex-wrap:wrap">
-			<button class="btn btn-outline btn-sm" onclick="playerSkip(-15)" title="Back 15s">
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
-			</button>
-			<button class="btn btn-primary btn-sm" id="player-play-btn" onclick="playerToggle()" title="Play" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border-radius:50%">
+		<div id="player-track" class="player-track">
+			<div id="player-buffered" class="player-buffered"></div>
+			<div id="player-played" class="player-played"></div>
+			<div id="player-markers" class="player-markers"></div>
+			<div id="player-handle" class="player-handle"></div>
+		</div>
+		<div class="player-bar">
+			<button id="player-play" class="btn btn-primary btn-sm player-round" title="Play/Pause" type="button">
 				<svg id="icon-play" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
 				<svg id="icon-pause" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
 			</button>
-			<button class="btn btn-outline btn-sm" onclick="playerSkip(30)" title="Forward 30s">
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+			<button id="player-back" class="btn btn-outline btn-sm" title="Skip back" type="button">&#8630;</button>
+			<button id="player-fwd" class="btn btn-outline btn-sm" title="Skip forward" type="button">&#8631;</button>
+			<span id="player-time" class="text-muted" style="font-size:0.85rem;font-variant-numeric:tabular-nums">0:00 / 0:00</span>
+			<span style="margin-left:auto"></span>
+			<button id="player-speed" class="btn btn-outline btn-sm" title="Speed" type="button">1&times;</button>
+			<button id="player-mute" class="btn btn-outline btn-sm" title="Mute" type="button">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
 			</button>
-			<span id="player-time" class="text-muted" style="font-size:0.85rem;margin-left:0.5rem">0:00 / 0:00</span>
-			<button
-				class="btn btn-outline btn-sm"
-				style="margin-left:auto"
-				hx-post={ fmt.Sprintf("/apps/feed/items/%d/complete", ip.ID) }
-				hx-target="#feed-player"
-				hx-swap="outerHTML"
-			>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-				Done
+			<input id="player-volume" class="player-volume" type="range" min="0" max="1" step="0.05" title="Volume"/>
+			<div style="position:relative">
+				<button id="player-gear" class="btn btn-outline btn-sm" title="Settings" type="button">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+				</button>
+				<div id="player-gear-menu" class="player-gear-menu" style="display:none">
+					<div class="player-gear-label">Speed</div>
+					<div class="player-gear-speeds">
+						<button class="btn btn-outline btn-sm" data-speed="0.75" type="button">0.75&times;</button>
+						<button class="btn btn-outline btn-sm" data-speed="1" type="button">1&times;</button>
+						<button class="btn btn-outline btn-sm" data-speed="1.25" type="button">1.25&times;</button>
+						<button class="btn btn-outline btn-sm" data-speed="1.5" type="button">1.5&times;</button>
+						<button class="btn btn-outline btn-sm" data-speed="2" type="button">2&times;</button>
+					</div>
+					<button class="player-gear-toggle" data-toggle="skip_silence" type="button" aria-pressed={ strconv.FormatBool(prefs.SkipSilence) }>Skip silence</button>
+					<button class="player-gear-toggle" data-toggle="autoplay_next" type="button" aria-pressed={ strconv.FormatBool(prefs.AutoplayNext) }>Autoplay next</button>
+				</div>
+			</div>
+			<button id="player-fullscreen" class="btn btn-outline btn-sm" title="Fullscreen" type="button">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
 			</button>
 		</div>
-		<input type="hidden" name="csrf_token" value={ csrfToken }/>
-		@feedPlayerScript()
+		<div id="player-upnext" class="text-muted" style="display:none;font-size:0.8rem;margin-top:0.5rem">Up next&hellip;</div>
+		<script src="/apps/feed/static/player.js" defer></script>
 	</div>
-}
-
-templ feedPlayerScript() {
-	<script>
-		(function () {
-			var player = document.getElementById("feed-player");
-			if (!player) return;
-			var el = document.getElementById("player-el");
-			if (!el) return;
-			var itemID = player.dataset.itemId;
-			var resume = parseFloat(player.dataset.resume) || 0;
-			var sourceKind = player.dataset.sourceKind;
-			var playBtn = document.getElementById("player-play-btn");
-			var timeSpan = document.getElementById("player-time");
-			var csrfToken = player.querySelector("[name=csrf_token]").value;
-			var lastSaved = 0;
-
-			function formatTime(sec) {
-				sec = Math.floor(sec);
-				var h = Math.floor(sec / 3600);
-				var m = Math.floor((sec % 3600) / 60);
-				var s = sec % 60;
-				if (h > 0)
-					return (
-						h + ":" + (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s
-					);
-				return m + ":" + (s < 10 ? "0" : "") + s;
-			}
-
-			if (sourceKind === "youtube") {
-				fetch("/apps/feed/api/stream-url/" + itemID, {
-					headers: { "X-CSRF-Token": csrfToken },
-				})
-					.then(function (r) {
-						return r.json();
-					})
-					.then(function (data) {
-						if (data.url) {
-							el.src = data.url;
-							if (resume > 0) el.currentTime = resume;
-							el.play().catch(function () {});
-						}
-					})
-					.catch(function () {});
-			} else {
-				el.addEventListener(
-					"loadedmetadata",
-					function () {
-						if (resume > 0) el.currentTime = resume;
-						el.play().catch(function () {});
-					},
-					{ once: true },
-				);
-			}
-
-			// Fetch clean audio ranges (profanity muting).
-			var muteRanges = [];
-			fetch("/apps/feed/api/clean-audio/" + itemID, {
-				headers: { "X-CSRF-Token": csrfToken },
-			})
-				.then(function (r) {
-					return r.json();
-				})
-				.then(function (data) {
-					if (data.ranges) muteRanges = data.ranges;
-				})
-				.catch(function () {});
-
-			var wasMuted = false;
-			var originalVolume = 1;
-
-			el.addEventListener("timeupdate", function () {
-				timeSpan.textContent =
-					formatTime(el.currentTime) + " / " + formatTime(el.duration || 0);
-
-				// Apply profanity muting.
-				var t = el.currentTime;
-				var shouldMute = false;
-				for (var i = 0; i < muteRanges.length; i++) {
-					if (t >= muteRanges[i].Start && t <= muteRanges[i].End) {
-						shouldMute = true;
-						break;
-					}
-				}
-				if (shouldMute && !wasMuted) {
-					originalVolume = el.volume;
-					el.volume = 0;
-					wasMuted = true;
-				} else if (!shouldMute && wasMuted) {
-					el.volume = originalVolume;
-					wasMuted = false;
-				}
-
-				// Save progress every 15 seconds of playback.
-				var now = el.currentTime;
-				if (Math.abs(now - lastSaved) >= 15) {
-					lastSaved = now;
-					fetch("/apps/feed/items/" + itemID + "/progress", {
-						method: "POST",
-						headers: {
-							"Content-Type": "application/x-www-form-urlencoded",
-							"X-CSRF-Token": csrfToken,
-						},
-						body: "progress=" + now.toFixed(1),
-					});
-				}
-			});
-
-			el.addEventListener("ended", function () {
-				// Mark complete; v1 returns empty body so the player stays until the user navigates.
-				fetch("/apps/feed/items/" + itemID + "/complete", {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/x-www-form-urlencoded",
-						"X-CSRF-Token": csrfToken,
-					},
-				}).catch(function () {});
-			});
-
-			var iconPlay = document.getElementById("icon-play");
-			var iconPause = document.getElementById("icon-pause");
-			el.addEventListener("play", function () {
-				if (iconPlay) iconPlay.style.display = "none";
-				if (iconPause) iconPause.style.display = "";
-				playBtn.title = "Pause";
-			});
-			el.addEventListener("pause", function () {
-				if (iconPlay) iconPlay.style.display = "";
-				if (iconPause) iconPause.style.display = "none";
-				playBtn.title = "Play";
-			});
-
-			window.playerToggle = function () {
-				if (el.paused) el.play();
-				else el.pause();
-			};
-			window.playerSkip = function (sec) {
-				el.currentTime = Math.max(0, el.currentTime + sec);
-			};
-		})();
-	</script>
 }
 
 templ feedSystemSettingsPage(model string, modelsDir string, cliPath string, flash string, flashKind string) {

@@ -631,9 +631,15 @@ func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
 			slog.Error("feed: mark read", "id", id, "err", err)
 		}
 	}
+	prefs, err := store.LoadPlayerPrefs()
+	if err != nil {
+		slog.Error("feed: load player prefs", "err", err)
+		prefs = PlayerPrefs{Speed: 1, SkipBackSec: 15, SkipFwdSec: 30, Volume: 1, AutoplayNext: true}
+	}
+	artwork := ip.ThumbnailURL
 	tags, _ := store.ItemTags(id)
 	plugin.SetTitle(w, ip.Title)
-	feedItemDetail(ip, tags, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedItemDetail(ip, tags, prefs, artwork, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // UpdateProgress handles POST to save playback position.
@@ -682,7 +688,11 @@ func (h *Pages) MarkComplete(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		nextIP, err := store.GetItemPlayback(next.ID)
 		if err == nil {
-			feedPlayer(nextIP, plugin.CSRFToken(r)).Render(r.Context(), w)
+			prefs, perr := store.LoadPlayerPrefs()
+			if perr != nil {
+				prefs = PlayerPrefs{Speed: 1, SkipBackSec: 15, SkipFwdSec: 30, Volume: 1, AutoplayNext: true}
+			}
+			feedPlayer(nextIP, prefs, nextIP.ThumbnailURL, plugin.CSRFToken(r)).Render(r.Context(), w)
 			return
 		}
 	}
