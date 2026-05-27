@@ -78,6 +78,9 @@
 		var iconPlay = root.querySelector("#icon-play");
 		var iconPause = root.querySelector("#icon-pause");
 		var upNext = root.querySelector("#player-upnext");
+		var prevBtn = root.querySelector("#player-prev");
+		var nextBtn = root.querySelector("#player-next");
+		var nextOverlay = root.querySelector("#player-next-overlay");
 
 		// --- initial element state ---
 		el.volume = isNaN(cfg.volume) ? 1 : cfg.volume;
@@ -105,6 +108,14 @@
 				el.play().catch(function () {});
 			}, { once: true });
 		}
+
+		// Re-apply the chosen rate every time media metadata loads. The browser
+		// resets playbackRate to 1 when a new source loads (e.g. after an
+		// auto-advance swap), which otherwise leaves the speed label out of sync
+		// with the actual rate.
+		el.addEventListener("loadedmetadata", function () {
+			el.playbackRate = cfg.speed;
+		});
 
 		// --- ranges (mute + skip) ---
 		var ranges = [];
@@ -143,13 +154,17 @@
 				navigator.mediaSession.playbackState = playing ? "playing" : "paused";
 			}
 		}
-		el.addEventListener("play", function () { reflectPlaying(true); });
+		el.addEventListener("play", function () {
+			reflectPlaying(true);
+			if (nextOverlay) nextOverlay.classList.remove("show");
+		});
 		el.addEventListener("pause", function () { reflectPlaying(false); });
 
 		function toggle() { if (el.paused) el.play(); else el.pause(); }
 		function seekBy(sec) { el.currentTime = Math.max(0, Math.min((el.duration || 1e9), el.currentTime + sec)); }
 		function setSpeed(rate) {
 			rate = Math.max(0.25, Math.min(4, rate));
+			cfg.speed = rate;
 			el.playbackRate = rate;
 			if (speedBtn) speedBtn.textContent = (Math.round(rate * 100) / 100) + "×";
 			savePrefs({ speed: rate });
@@ -287,18 +302,24 @@
 		});
 		el.addEventListener("loadedmetadata", renderMarkers);
 
-		// --- ended: complete + auto-advance ---
+		// --- ended: mark complete, then auto-advance or offer "Play next" ---
+		var pendingNextHTML = "";
 		el.addEventListener("ended", function () {
 			post("/apps/feed/items/" + cfg.itemID + "/complete", "", cfg.csrf)
 				.then(function (r) { return r.text(); })
 				.then(function (html) {
-					if (cfg.autoplayNext && html && html.indexOf("feed-player") !== -1) {
+					var hasNext = html && html.indexOf("feed-player") !== -1;
+					if (cfg.autoplayNext && hasNext) {
 						if (upNext) {
 							upNext.style.display = "block";
 							setTimeout(function () { swapPlayer(html); }, 1500);
 						} else {
 							swapPlayer(html);
 						}
+					} else if (nextOverlay) {
+						// Autoplay off (or no queued item): show a big manual button.
+						pendingNextHTML = hasNext ? html : "";
+						nextOverlay.classList.add("show");
 					}
 				})
 				.catch(function (e) { console.error("feed: complete", e); });
@@ -313,6 +334,31 @@
 				init(); // bind the new player
 			}
 		}
+
+		// advance fetches the previous/next media item's player and swaps it in,
+		// without changing playback state. Used by the toolbar prev/next buttons
+		// and the OS media-key handlers.
+		function advance(dir) {
+			fetch("/apps/feed/items/" + cfg.itemID + "/adjacent?dir=" + dir, {
+				headers: { "X-CSRF-Token": cfg.csrf },
+			})
+				.then(function (r) { return r.status === 204 ? "" : r.text(); })
+				.then(function (html) {
+					if (html && html.indexOf("feed-player") !== -1) swapPlayer(html);
+				})
+				.catch(function (e) { console.error("feed: advance " + dir, e); });
+		}
+
+		if (prevBtn) prevBtn.addEventListener("click", function () {
+			// Restart the current item if we're past the intro, else go back one.
+			if (el.currentTime > 3) el.currentTime = 0;
+			else advance("prev");
+		});
+		if (nextBtn) nextBtn.addEventListener("click", function () { advance("next"); });
+		if (nextOverlay) nextOverlay.addEventListener("click", function () {
+			if (pendingNextHTML) swapPlayer(pendingNextHTML);
+			else advance("next");
+		});
 
 		// --- controls auto-hide (video) ---
 		var hideTimer = null;
@@ -380,13 +426,12 @@
 				seekbackward: function () { seekBy(-cfg.skipBack); },
 				seekforward: function () { seekBy(cfg.skipFwd); },
 				seekto: function (d) { if (d.seekTime != null) el.currentTime = d.seekTime; },
-				previoustrack: function () { el.currentTime = 0; },
-				nexttrack: function () {
-					post("/apps/feed/items/" + cfg.itemID + "/complete", "", cfg.csrf)
-						.then(function (r) { return r.text(); })
-						.then(function (html) { if (html.indexOf("feed-player") !== -1) swapPlayer(html); })
-						.catch(function (e) { console.error("feed: nexttrack", e); });
+				// Explicit prev/next track always navigate (no autoplay gating).
+				previoustrack: function () {
+					if (el.currentTime > 3) el.currentTime = 0;
+					else advance("prev");
 				},
+				nexttrack: function () { advance("next"); },
 			};
 			Object.keys(handlers).forEach(function (action) {
 				try { navigator.mediaSession.setActionHandler(action, handlers[action]); }

@@ -412,3 +412,48 @@ func TestSilenceRangesRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestAdjacentMedia(t *testing.T) {
+	s := newStore(t)
+	subID, err := s.CreateSubscription(feed.Subscription{URL: "http://x", Kind: "rss", Title: "X"})
+	require.NoError(t, err)
+
+	// Three audio items with strictly increasing published_at.
+	var ids [3]int64
+	for i := 0; i < 3; i++ {
+		id, _, err := s.UpsertItem(feed.Item{
+			SubscriptionID: subID,
+			GUID:           fmt.Sprintf("g%d", i),
+			Type:           "audio",
+			Title:          fmt.Sprintf("Ep%d", i),
+			MediaURL:       fmt.Sprintf("http://x/%d.mp3", i),
+			PublishedAt:    int64(100 + i),
+		})
+		require.NoError(t, err)
+		ids[i] = id
+	}
+
+	next, err := s.AdjacentMedia(ids[1], "next")
+	require.NoError(t, err)
+	if next.ID != ids[2] {
+		t.Errorf("next of middle = %d, want %d", next.ID, ids[2])
+	}
+	prev, err := s.AdjacentMedia(ids[1], "prev")
+	require.NoError(t, err)
+	if prev.ID != ids[0] {
+		t.Errorf("prev of middle = %d, want %d", prev.ID, ids[0])
+	}
+
+	// No neighbor at the ends.
+	if _, err := s.AdjacentMedia(ids[2], "next"); err == nil {
+		t.Error("next of last should error (no neighbor)")
+	}
+	if _, err := s.AdjacentMedia(ids[0], "prev"); err == nil {
+		t.Error("prev of first should error (no neighbor)")
+	}
+
+	// Invalid direction.
+	if _, err := s.AdjacentMedia(ids[0], "sideways"); err == nil {
+		t.Error("invalid direction should error")
+	}
+}

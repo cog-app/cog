@@ -1687,3 +1687,44 @@ func (s *Store) NextUnplayedMedia(excludeID int64) (Item, error) {
 	it.IsStarred = isStarred != 0
 	return it, nil
 }
+
+// AdjacentMedia returns the audio/video item immediately before ("prev") or
+// after ("next") the item with id, ordered by (published_at, id). Unlike
+// NextUnplayedMedia this ignores read/played state, so the player's prev/next
+// buttons can navigate freely. Returns sql.ErrNoRows when there is no neighbor.
+func (s *Store) AdjacentMedia(id int64, dir string) (Item, error) {
+	var cmp, order string
+	switch dir {
+	case "next":
+		cmp, order = ">", "ASC"
+	case "prev":
+		cmp, order = "<", "DESC"
+	default:
+		return Item{}, fmt.Errorf("invalid direction %q", dir)
+	}
+	q := fmt.Sprintf(
+		`SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
+		        i.content_html, i.media_url, i.media_mime, i.duration_sec,
+		        i.thumbnail_url, i.published_at, i.fetched_at, i.is_read, i.is_starred,
+		        i.content_hash
+		 FROM items i
+		 WHERE i.type IN ('audio','video')
+		   AND (i.published_at, i.id) %s (
+		       SELECT published_at, id FROM items WHERE id = ?
+		   )
+		 ORDER BY i.published_at %s, i.id %s
+		 LIMIT 1`, cmp, order, order)
+	row := s.db.QueryRow(q, id)
+	var it Item
+	var isRead, isStarred int
+	if err := row.Scan(
+		&it.ID, &it.SubscriptionID, &it.GUID, &it.Type, &it.Title, &it.Author, &it.URL,
+		&it.ContentHTML, &it.MediaURL, &it.MediaMIME, &it.DurationSec, &it.ThumbnailURL,
+		&it.PublishedAt, &it.FetchedAt, &isRead, &isStarred, &it.ContentHash,
+	); err != nil {
+		return Item{}, err
+	}
+	it.IsRead = isRead != 0
+	it.IsStarred = isStarred != 0
+	return it, nil
+}

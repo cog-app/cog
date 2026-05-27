@@ -111,6 +111,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "items/{id}/tag/{name}/delete", http.HandlerFunc(pages.RemoveItemTag))
 	ctx.RegisterAPI("filter-preview", http.HandlerFunc(pages.FilterPreview))
 	ctx.RegisterAPI("api/stream-url/{id}", http.HandlerFunc(pages.StreamURL))
+	ctx.RegisterAPI("items/{id}/adjacent", http.HandlerFunc(pages.AdjacentPlayer))
 	ctx.RegisterAPI("api/ranges/{id}", http.HandlerFunc(pages.Ranges))
 	ctx.RegisterAPI("static/{file}", http.HandlerFunc(p.serveStatic))
 

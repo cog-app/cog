@@ -435,8 +435,6 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		items = applyQueryFilter(store, items, q)
 	}
 
-
-
 	plugin.SetTitle(w, "Feed")
 	feedIndexPage(sb, items, q, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
@@ -686,18 +684,58 @@ func (h *Pages) MarkComplete(w http.ResponseWriter, r *http.Request) {
 	// Auto-advance: find the next unplayed media item and render its player.
 	next, err := store.NextUnplayedMedia(id)
 	if err == nil {
-		nextIP, err := store.GetItemPlayback(next.ID)
-		if err == nil {
-			prefs, perr := store.LoadPlayerPrefs()
-			if perr != nil {
-				prefs = PlayerPrefs{Speed: 1, SkipBackSec: 15, SkipFwdSec: 30, Volume: 1, AutoplayNext: true}
-			}
-			feedPlayer(nextIP, prefs, nextIP.ThumbnailURL, plugin.CSRFToken(r)).Render(r.Context(), w)
+		if renderPlayerFragment(w, r, store, next.ID) {
 			return
 		}
 	}
 	// No next item — return empty body; HTMX swap removes the player.
 	w.WriteHeader(http.StatusOK)
+}
+
+// renderPlayerFragment renders the feedPlayer fragment for itemID, returning
+// true on success. On any error it writes nothing and returns false, leaving
+// the caller to send a fallback (empty body / 204).
+func renderPlayerFragment(w http.ResponseWriter, r *http.Request, store *Store, itemID int64) bool {
+	ip, err := store.GetItemPlayback(itemID)
+	if err != nil {
+		return false
+	}
+	prefs, perr := store.LoadPlayerPrefs()
+	if perr != nil {
+		prefs = PlayerPrefs{Speed: 1, SkipBackSec: 15, SkipFwdSec: 30, Volume: 1, AutoplayNext: true}
+	}
+	feedPlayer(ip, prefs, ip.ThumbnailURL, plugin.CSRFToken(r)).Render(r.Context(), w)
+	return true
+}
+
+// AdjacentPlayer renders the player for the media item before/after the given
+// one (?dir=prev|next), without changing playback state. Returns 204 when there
+// is no neighbor in that direction.
+func (h *Pages) AdjacentPlayer(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	dir := r.URL.Query().Get("dir")
+	if dir != "next" && dir != "prev" {
+		http.Error(w, "dir must be next or prev", http.StatusBadRequest)
+		return
+	}
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	adj, err := store.AdjacentMedia(id, dir)
+	if err != nil {
+		// No neighbor (sql.ErrNoRows) or query error — nothing to advance to.
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if !renderPlayerFragment(w, r, store, adj.ID) {
+		w.WriteHeader(http.StatusNoContent)
+	}
 }
 
 // StreamURL returns the direct stream URL for a YouTube item.

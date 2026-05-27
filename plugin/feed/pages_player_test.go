@@ -151,3 +151,36 @@ func TestFeedRangesReturnsEmptyWithoutProfanity(t *testing.T) {
 		t.Errorf("expected empty ranges without profanity/local file; body=%q", body)
 	}
 }
+
+// TestAdjacentPlayerEndpoint verifies prev/next navigation renders the neighbor
+// player, returns 204 at the ends, and 400 on bad direction.
+func TestAdjacentPlayerEndpoint(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "erin", "pass")
+	store := feedStore(t, env, u.Username)
+	subID, err := store.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://erin.example.com/feed", Title: "Erin"})
+	require.NoError(t, err)
+	first, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "a", Type: "audio", Title: "A", MediaURL: "https://cdn.example.com/a.mp3", PublishedAt: 100})
+	require.NoError(t, err)
+	second, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "b", Type: "audio", Title: "B", MediaURL: "https://cdn.example.com/b.mp3", PublishedAt: 200})
+	require.NoError(t, err)
+
+	// next of first → 200 with the second item's player.
+	resp := env.Get(t, "/apps/feed/items/"+strconv.FormatInt(first, 10)+"/adjacent?dir=next", u.Auth)
+	resp.Status(http.StatusOK)
+	body := resp.ReadBody()
+	if !strings.Contains(body, "feed-player") {
+		t.Errorf("next player missing #feed-player markup; body len=%d", len(body))
+	}
+	if !strings.Contains(body, strconv.FormatInt(second, 10)) {
+		t.Errorf("next player should reference item %d", second)
+	}
+
+	// next of second → 204 (no neighbor).
+	env.Get(t, "/apps/feed/items/"+strconv.FormatInt(second, 10)+"/adjacent?dir=next", u.Auth).
+		Status(http.StatusNoContent)
+
+	// bad direction → 400.
+	env.Get(t, "/apps/feed/items/"+strconv.FormatInt(first, 10)+"/adjacent?dir=up", u.Auth).
+		Status(http.StatusBadRequest)
+}

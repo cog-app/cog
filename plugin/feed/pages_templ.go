@@ -1919,7 +1919,7 @@ func feedFilterPreviewResults(items []ItemWithSubscription) templ.Component {
 				var templ_7745c5c3_Var98 string
 				templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.JoinStringErrs(it.SubscriptionTitle)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 518, Col: 86}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 518, Col: 85}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var98))
 				if templ_7745c5c3_Err != nil {
@@ -3044,14 +3044,14 @@ func feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken st
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 246, "\"><style>\n\t\t\t.feed-player .player-surface { position:relative; background:#000; border-radius:8px; overflow:hidden; margin-bottom:0.5rem; }\n\t\t\t.feed-player .player-surface video { width:100%; max-height:480px; display:block; }\n\t\t\t.feed-player .player-center { position:absolute; inset:0; margin:auto; width:72px; height:72px; border:0; border-radius:50%; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:opacity .2s; }\n\t\t\t.feed-player .player-track { position:relative; height:5px; border-radius:3px; background:rgba(127,127,127,0.3); margin:0.25rem 0 0.75rem; cursor:pointer; }\n\t\t\t.feed-player .player-track:hover { height:7px; }\n\t\t\t.feed-player .player-buffered, .feed-player .player-played { position:absolute; left:0; top:0; bottom:0; border-radius:3px; }\n\t\t\t.feed-player .player-buffered { width:0; background:rgba(127,127,127,0.5); }\n\t\t\t.feed-player .player-played { width:0; background:var(--accent,#4a9eff); }\n\t\t\t.feed-player .player-handle { position:absolute; left:0; top:50%; transform:translate(-50%,-50%); width:12px; height:12px; border-radius:50%; background:#fff; box-shadow:0 0 3px rgba(0,0,0,0.5); opacity:0; }\n\t\t\t.feed-player .player-track:hover .player-handle { opacity:1; }\n\t\t\t.feed-player .player-markers { position:absolute; inset:0; pointer-events:none; }\n\t\t\t.feed-player .feed-marker-mute { background:rgba(220,80,80,0.7); }\n\t\t\t.feed-player .feed-marker-skip { background:rgba(120,120,120,0.7); }\n\t\t\t.feed-player .player-bar { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; }\n\t\t\t.feed-player .player-round { width:36px; height:36px; padding:0; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; }\n\t\t\t.feed-player .player-volume { width:80px; }\n\t\t\t.feed-player .player-gear-menu { position:absolute; right:0; bottom:calc(100% + 4px); z-index:10; background:var(--card-bg,#fff); border:1px solid var(--border,#ddd); border-radius:8px; padding:0.5rem; min-width:180px; box-shadow:0 4px 16px rgba(0,0,0,0.15); }\n\t\t\t.feed-player .player-gear-label { font-size:0.75rem; text-transform:uppercase; opacity:0.6; margin-bottom:0.25rem; }\n\t\t\t.feed-player .player-gear-speeds { display:flex; gap:0.25rem; flex-wrap:wrap; margin-bottom:0.5rem; }\n\t\t\t.feed-player .player-gear-toggle { display:block; width:100%; text-align:left; padding:0.35rem 0.5rem; border:0; background:none; cursor:pointer; border-radius:4px; }\n\t\t\t.feed-player .player-gear-toggle[aria-pressed=true] { background:var(--accent,#4a9eff); color:#fff; }\n\t\t\t.feed-player.controls-hidden .player-bar, .feed-player.controls-hidden .player-track { opacity:0; transition:opacity .3s; }\n\t\t\t.feed-player.controls-hidden .player-center { opacity:0; }\n\t\t</style><div style=\"font-weight:600;margin-bottom:0.25rem\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 246, "\"><style>\n\t\t\t.feed-player .player-surface {\n\t\t\t\tposition: relative;\n\t\t\t\tbackground: #000;\n\t\t\t\tborder-radius: 8px;\n\t\t\t\toverflow: hidden;\n\t\t\t\tmargin-bottom: 0.5rem;\n\t\t\t}\n\t\t\t.feed-player .player-surface video {\n\t\t\t\twidth: 100%;\n\t\t\t\tmax-height: 480px;\n\t\t\t\tdisplay: block;\n\t\t\t}\n\t\t\t.feed-player .player-center {\n\t\t\t\tposition: absolute;\n\t\t\t\tinset: 0;\n\t\t\t\tmargin: auto;\n\t\t\t\twidth: 72px;\n\t\t\t\theight: 72px;\n\t\t\t\tborder: 0;\n\t\t\t\tborder-radius: 50%;\n\t\t\t\tbackground: rgba(0, 0, 0, 0.55);\n\t\t\t\tdisplay: flex;\n\t\t\t\talign-items: center;\n\t\t\t\tjustify-content: center;\n\t\t\t\tcursor: pointer;\n\t\t\t\ttransition: opacity 0.2s;\n\t\t\t}\n\t\t\t.feed-player .player-next-overlay {\n\t\t\t\tposition: absolute;\n\t\t\t\tinset: 0;\n\t\t\t\tmargin: auto;\n\t\t\t\tdisplay: none;\n\t\t\t\tflex-direction: column;\n\t\t\t\talign-items: center;\n\t\t\t\tjustify-content: center;\n\t\t\t\tgap: 0.5rem;\n\t\t\t\twidth: 140px;\n\t\t\t\theight: 96px;\n\t\t\t\tborder: 0;\n\t\t\t\tborder-radius: 12px;\n\t\t\t\tbackground: rgba(0, 0, 0, 0.7);\n\t\t\t\tcolor: #fff;\n\t\t\t\tfont-size: 0.85rem;\n\t\t\t\tcursor: pointer;\n\t\t\t}\n\t\t\t.feed-player .player-next-overlay.show {\n\t\t\t\tdisplay: flex;\n\t\t\t}\n\t\t\t.feed-player .player-nav {\n\t\t\t\tdisplay: inline-flex;\n\t\t\t\talign-items: center;\n\t\t\t\tjustify-content: center;\n\t\t\t}\n\t\t\t.feed-player .player-track {\n\t\t\t\tposition: relative;\n\t\t\t\theight: 7px;\n\t\t\t\tborder-radius: 3px;\n\t\t\t\tbackground: rgba(127, 127, 127, 0.3);\n\t\t\t\tmargin: 0.25rem 0 0.75rem;\n\t\t\t\tcursor: pointer;\n\t\t\t}\n\t\t\t.feed-player .player-buffered,\n\t\t\t.feed-player .player-played {\n\t\t\t\tposition: absolute;\n\t\t\t\tleft: 0;\n\t\t\t\ttop: 0;\n\t\t\t\tbottom: 0;\n\t\t\t\tborder-radius: 3px;\n\t\t\t}\n\t\t\t.feed-player .player-buffered {\n\t\t\t\twidth: 0;\n\t\t\t\tbackground: rgba(127, 127, 127, 0.5);\n\t\t\t}\n\t\t\t.feed-player .player-played {\n\t\t\t\twidth: 0;\n\t\t\t\tbackground: var(--accent, #4a9eff);\n\t\t\t}\n\t\t\t.feed-player .player-handle {\n\t\t\t\tposition: absolute;\n\t\t\t\tleft: 0;\n\t\t\t\ttop: 50%;\n\t\t\t\ttransform: translate(-50%, -50%);\n\t\t\t\twidth: 12px;\n\t\t\t\theight: 12px;\n\t\t\t\tborder-radius: 50%;\n\t\t\t\tbackground: #fff;\n\t\t\t\tbox-shadow: 0 0 3px rgba(0, 0, 0, 0.5);\n\t\t\t\topacity: 1;\n\t\t\t}\n\t\t\t.feed-player .player-markers {\n\t\t\t\tposition: absolute;\n\t\t\t\tinset: 0;\n\t\t\t\tpointer-events: none;\n\t\t\t}\n\t\t\t.feed-player .feed-marker-mute {\n\t\t\t\tbackground: rgba(220, 80, 80, 0.7);\n\t\t\t}\n\t\t\t.feed-player .feed-marker-skip {\n\t\t\t\tbackground: rgba(120, 120, 120, 0.7);\n\t\t\t}\n\t\t\t.feed-player .player-bar {\n\t\t\t\tdisplay: flex;\n\t\t\t\talign-items: center;\n\t\t\t\tgap: 0.5rem;\n\t\t\t\tflex-wrap: wrap;\n\t\t\t}\n\t\t\t.feed-player .player-round {\n\t\t\t\twidth: 36px;\n\t\t\t\theight: 36px;\n\t\t\t\tpadding: 0;\n\t\t\t\tborder-radius: 50%;\n\t\t\t\tdisplay: inline-flex;\n\t\t\t\talign-items: center;\n\t\t\t\tjustify-content: center;\n\t\t\t}\n\t\t\t.feed-player .player-volume {\n\t\t\t\twidth: 80px;\n\t\t\t}\n\t\t\t.feed-player .player-gear-menu {\n\t\t\t\tposition: absolute;\n\t\t\t\tright: 0;\n\t\t\t\tbottom: calc(100% + 4px);\n\t\t\t\tz-index: 10;\n\t\t\t\tbackground: var(--card-bg, #fff);\n\t\t\t\tborder: 1px solid var(--border, #ddd);\n\t\t\t\tborder-radius: 8px;\n\t\t\t\tpadding: 0.5rem;\n\t\t\t\tmin-width: 180px;\n\t\t\t\tbox-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);\n\t\t\t}\n\t\t\t.feed-player .player-gear-label {\n\t\t\t\tfont-size: 0.75rem;\n\t\t\t\ttext-transform: uppercase;\n\t\t\t\topacity: 0.6;\n\t\t\t\tmargin-bottom: 0.25rem;\n\t\t\t}\n\t\t\t.feed-player .player-gear-speeds {\n\t\t\t\tdisplay: flex;\n\t\t\t\tgap: 0.25rem;\n\t\t\t\tflex-wrap: wrap;\n\t\t\t\tmargin-bottom: 0.5rem;\n\t\t\t}\n\t\t\t.feed-player .player-gear-toggle {\n\t\t\t\tdisplay: block;\n\t\t\t\twidth: 100%;\n\t\t\t\ttext-align: left;\n\t\t\t\tpadding: 0.35rem 0.5rem;\n\t\t\t\tborder: 0;\n\t\t\t\tbackground: none;\n\t\t\t\tcursor: pointer;\n\t\t\t\tborder-radius: 4px;\n\t\t\t}\n\t\t\t.feed-player .player-gear-toggle[aria-pressed=\"true\"] {\n\t\t\t\tbackground: var(--accent, #4a9eff);\n\t\t\t\tcolor: #fff;\n\t\t\t}\n\t\t\t.feed-player.controls-hidden .player-bar,\n\t\t\t.feed-player.controls-hidden .player-track {\n\t\t\t\topacity: 0;\n\t\t\t\ttransition: opacity 0.3s;\n\t\t\t}\n\t\t\t.feed-player.controls-hidden .player-center {\n\t\t\t\topacity: 0;\n\t\t\t}\n\t\t</style><div style=\"font-weight:600;margin-bottom:0.25rem\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var161 string
 		templ_7745c5c3_Var161, templ_7745c5c3_Err = templ.JoinStringErrs(ip.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 782, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 923, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var161))
 		if templ_7745c5c3_Err != nil {
@@ -3064,7 +3064,7 @@ func feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken st
 		var templ_7745c5c3_Var162 string
 		templ_7745c5c3_Var162, templ_7745c5c3_Err = templ.JoinStringErrs(ip.SubscriptionTitle)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 783, Col: 95}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 924, Col: 95}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var162))
 		if templ_7745c5c3_Err != nil {
@@ -3087,7 +3087,7 @@ func feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken st
 				var templ_7745c5c3_Var163 string
 				templ_7745c5c3_Var163, templ_7745c5c3_Err = templ.JoinStringErrs("/apps/feed/items/" + strconv.FormatInt(ip.ID, 10) + "/media")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 791, Col: 73}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 932, Col: 73}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var163))
 				if templ_7745c5c3_Err != nil {
@@ -3098,7 +3098,7 @@ func feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken st
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 252, "></video><button id=\"player-center\" class=\"player-center\" title=\"Play/Pause\" type=\"button\"><svg width=\"34\" height=\"34\" viewBox=\"0 0 24 24\" fill=\"#fff\"><polygon points=\"5 3 19 12 5 21 5 3\"></polygon></svg></button></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 252, "></video><button id=\"player-center\" class=\"player-center\" title=\"Play/Pause\" type=\"button\"><svg width=\"34\" height=\"34\" viewBox=\"0 0 24 24\" fill=\"#fff\"><polygon points=\"5 3 19 12 5 21 5 3\"></polygon></svg></button> <button id=\"player-next-overlay\" class=\"player-next-overlay\" title=\"Play next\" type=\"button\"><svg width=\"32\" height=\"32\" viewBox=\"0 0 24 24\" fill=\"#fff\"><polygon points=\"5 4 15 12 5 20 5 4\"></polygon><rect x=\"17\" y=\"4\" width=\"3\" height=\"16\"></rect></svg> Play next</button></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -3115,7 +3115,7 @@ func feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken st
 				var templ_7745c5c3_Var164 string
 				templ_7745c5c3_Var164, templ_7745c5c3_Err = templ.JoinStringErrs("/apps/feed/items/" + strconv.FormatInt(ip.ID, 10) + "/media")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 803, Col: 72}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 948, Col: 72}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var164))
 				if templ_7745c5c3_Err != nil {
@@ -3131,14 +3131,14 @@ func feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken st
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 257, "<div id=\"player-track\" class=\"player-track\"><div id=\"player-buffered\" class=\"player-buffered\"></div><div id=\"player-played\" class=\"player-played\"></div><div id=\"player-markers\" class=\"player-markers\"></div><div id=\"player-handle\" class=\"player-handle\"></div></div><div class=\"player-bar\"><button id=\"player-play\" class=\"btn btn-primary btn-sm player-round\" title=\"Play/Pause\" type=\"button\"><svg id=\"icon-play\" width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><polygon points=\"5 3 19 12 5 21 5 3\"></polygon></svg> <svg id=\"icon-pause\" width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"currentColor\" style=\"display:none\"><rect x=\"6\" y=\"4\" width=\"4\" height=\"16\"></rect><rect x=\"14\" y=\"4\" width=\"4\" height=\"16\"></rect></svg></button> <button id=\"player-back\" class=\"btn btn-outline btn-sm\" title=\"Skip back\" type=\"button\">&#8630;</button> <button id=\"player-fwd\" class=\"btn btn-outline btn-sm\" title=\"Skip forward\" type=\"button\">&#8631;</button> <span id=\"player-time\" class=\"text-muted\" style=\"font-size:0.85rem;font-variant-numeric:tabular-nums\">0:00 / 0:00</span> <span style=\"margin-left:auto\"></span> <button id=\"player-speed\" class=\"btn btn-outline btn-sm\" title=\"Speed\" type=\"button\">1&times;</button> <button id=\"player-mute\" class=\"btn btn-outline btn-sm\" title=\"Mute\" type=\"button\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polygon points=\"11 5 6 9 2 9 2 15 6 15 11 19 11 5\"></polygon><path d=\"M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07\"></path></svg></button> <input id=\"player-volume\" class=\"player-volume\" type=\"range\" min=\"0\" max=\"1\" step=\"0.05\" title=\"Volume\"><div style=\"position:relative\"><button id=\"player-gear\" class=\"btn btn-outline btn-sm\" title=\"Settings\" type=\"button\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"3\"></circle><path d=\"M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z\"></path></svg></button><div id=\"player-gear-menu\" class=\"player-gear-menu\" style=\"display:none\"><div class=\"player-gear-label\">Speed</div><div class=\"player-gear-speeds\"><button class=\"btn btn-outline btn-sm\" data-speed=\"0.75\" type=\"button\">0.75&times;</button> <button class=\"btn btn-outline btn-sm\" data-speed=\"1\" type=\"button\">1&times;</button> <button class=\"btn btn-outline btn-sm\" data-speed=\"1.25\" type=\"button\">1.25&times;</button> <button class=\"btn btn-outline btn-sm\" data-speed=\"1.5\" type=\"button\">1.5&times;</button> <button class=\"btn btn-outline btn-sm\" data-speed=\"2\" type=\"button\">2&times;</button></div><button class=\"player-gear-toggle\" data-toggle=\"skip_silence\" type=\"button\" aria-pressed=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 257, "<div id=\"player-track\" class=\"player-track\"><div id=\"player-buffered\" class=\"player-buffered\"></div><div id=\"player-played\" class=\"player-played\"></div><div id=\"player-markers\" class=\"player-markers\"></div><div id=\"player-handle\" class=\"player-handle\"></div></div><div class=\"player-bar\"><button id=\"player-prev\" class=\"btn btn-outline btn-sm player-nav\" title=\"Previous\" type=\"button\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><polygon points=\"19 20 9 12 19 4 19 20\"></polygon><rect x=\"5\" y=\"4\" width=\"3\" height=\"16\"></rect></svg></button> <button id=\"player-play\" class=\"btn btn-primary btn-sm player-round\" title=\"Play/Pause\" type=\"button\"><svg id=\"icon-play\" width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><polygon points=\"5 3 19 12 5 21 5 3\"></polygon></svg> <svg id=\"icon-pause\" width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"currentColor\" style=\"display:none\"><rect x=\"6\" y=\"4\" width=\"4\" height=\"16\"></rect><rect x=\"14\" y=\"4\" width=\"4\" height=\"16\"></rect></svg></button> <button id=\"player-next\" class=\"btn btn-outline btn-sm player-nav\" title=\"Next\" type=\"button\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><polygon points=\"5 4 15 12 5 20 5 4\"></polygon><rect x=\"16\" y=\"4\" width=\"3\" height=\"16\"></rect></svg></button> <button id=\"player-back\" class=\"btn btn-outline btn-sm\" title=\"Skip back\" type=\"button\">&#8630;</button> <button id=\"player-fwd\" class=\"btn btn-outline btn-sm\" title=\"Skip forward\" type=\"button\">&#8631;</button> <span id=\"player-time\" class=\"text-muted\" style=\"font-size:0.85rem;font-variant-numeric:tabular-nums\">0:00 / 0:00</span> <span style=\"margin-left:auto\"></span> <button id=\"player-speed\" class=\"btn btn-outline btn-sm\" title=\"Speed\" type=\"button\">1&times;</button> <button id=\"player-mute\" class=\"btn btn-outline btn-sm\" title=\"Mute\" type=\"button\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polygon points=\"11 5 6 9 2 9 2 15 6 15 11 19 11 5\"></polygon><path d=\"M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07\"></path></svg></button> <input id=\"player-volume\" class=\"player-volume\" type=\"range\" min=\"0\" max=\"1\" step=\"0.05\" title=\"Volume\"><div style=\"position:relative\"><button id=\"player-gear\" class=\"btn btn-outline btn-sm\" title=\"Settings\" type=\"button\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"3\"></circle><path d=\"M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z\"></path></svg></button><div id=\"player-gear-menu\" class=\"player-gear-menu\" style=\"display:none\"><div class=\"player-gear-label\">Speed</div><div class=\"player-gear-speeds\"><button class=\"btn btn-outline btn-sm\" data-speed=\"0.75\" type=\"button\">0.75&times;</button> <button class=\"btn btn-outline btn-sm\" data-speed=\"1\" type=\"button\">1&times;</button> <button class=\"btn btn-outline btn-sm\" data-speed=\"1.25\" type=\"button\">1.25&times;</button> <button class=\"btn btn-outline btn-sm\" data-speed=\"1.5\" type=\"button\">1.5&times;</button> <button class=\"btn btn-outline btn-sm\" data-speed=\"2\" type=\"button\">2&times;</button></div><button class=\"player-gear-toggle\" data-toggle=\"skip_silence\" type=\"button\" aria-pressed=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var165 string
 		templ_7745c5c3_Var165, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatBool(prefs.SkipSilence))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 840, Col: 133}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 991, Col: 133}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var165))
 		if templ_7745c5c3_Err != nil {
@@ -3151,7 +3151,7 @@ func feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken st
 		var templ_7745c5c3_Var166 string
 		templ_7745c5c3_Var166, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatBool(prefs.AutoplayNext))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 841, Col: 135}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 992, Col: 135}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var166))
 		if templ_7745c5c3_Err != nil {
@@ -3396,7 +3396,7 @@ func feedHistoryPage(sb sidebarData, items []PlayedItem, csrfToken string) templ
 					var templ_7745c5c3_Var173 templ.SafeURL
 					templ_7745c5c3_Var173, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/feed/items/%d", pi.ID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 903, Col: 76}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1054, Col: 76}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var173))
 					if templ_7745c5c3_Err != nil {
@@ -3409,7 +3409,7 @@ func feedHistoryPage(sb sidebarData, items []PlayedItem, csrfToken string) templ
 					var templ_7745c5c3_Var174 string
 					templ_7745c5c3_Var174, templ_7745c5c3_Err = templ.JoinStringErrs(pi.Title)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 903, Col: 89}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1054, Col: 89}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var174))
 					if templ_7745c5c3_Err != nil {
@@ -3422,7 +3422,7 @@ func feedHistoryPage(sb sidebarData, items []PlayedItem, csrfToken string) templ
 					var templ_7745c5c3_Var175 string
 					templ_7745c5c3_Var175, templ_7745c5c3_Err = templ.JoinStringErrs(pi.SubscriptionTitle)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 905, Col: 101}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1056, Col: 101}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var175))
 					if templ_7745c5c3_Err != nil {
@@ -3441,7 +3441,7 @@ func feedHistoryPage(sb sidebarData, items []PlayedItem, csrfToken string) templ
 						var templ_7745c5c3_Var176 string
 						templ_7745c5c3_Var176, templ_7745c5c3_Err = templ.JoinStringErrs(feedFormatDuration(int64(pi.ProgressSec)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 910, Col: 54}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1061, Col: 54}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var176))
 						if templ_7745c5c3_Err != nil {
@@ -3460,7 +3460,7 @@ func feedHistoryPage(sb sidebarData, items []PlayedItem, csrfToken string) templ
 					var templ_7745c5c3_Var177 string
 					templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.JoinStringErrs(feedFormatTime(pi.LastPlayedAt))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 915, Col: 112}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1066, Col: 112}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var177))
 					if templ_7745c5c3_Err != nil {
@@ -3539,7 +3539,7 @@ func feedSubscriptionSettingsPage(sub Subscription, folders []Folder, flashMsg s
 			var templ_7745c5c3_Var180 templ.SafeURL
 			templ_7745c5c3_Var180, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/feed/subscription/%d/settings", sub.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 931, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1082, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var180))
 			if templ_7745c5c3_Err != nil {
@@ -3552,7 +3552,7 @@ func feedSubscriptionSettingsPage(sub Subscription, folders []Folder, flashMsg s
 			var templ_7745c5c3_Var181 string
 			templ_7745c5c3_Var181, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 932, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1083, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var181))
 			if templ_7745c5c3_Err != nil {
@@ -3575,7 +3575,7 @@ func feedSubscriptionSettingsPage(sub Subscription, folders []Folder, flashMsg s
 			var templ_7745c5c3_Var182 string
 			templ_7745c5c3_Var182, templ_7745c5c3_Err = templ.JoinStringErrs(" Paused")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 936, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1087, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var182))
 			if templ_7745c5c3_Err != nil {
@@ -3588,7 +3588,7 @@ func feedSubscriptionSettingsPage(sub Subscription, folders []Folder, flashMsg s
 			var templ_7745c5c3_Var183 string
 			templ_7745c5c3_Var183, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(sub.PollIntervalSec, 10))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 942, Col: 145}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1093, Col: 145}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var183))
 			if templ_7745c5c3_Err != nil {
@@ -3616,7 +3616,7 @@ func feedSubscriptionSettingsPage(sub Subscription, folders []Folder, flashMsg s
 				var templ_7745c5c3_Var184 string
 				templ_7745c5c3_Var184, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(f.ID, 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 949, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1100, Col: 50}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var184))
 				if templ_7745c5c3_Err != nil {
@@ -3639,7 +3639,7 @@ func feedSubscriptionSettingsPage(sub Subscription, folders []Folder, flashMsg s
 				var templ_7745c5c3_Var185 string
 				templ_7745c5c3_Var185, templ_7745c5c3_Err = templ.JoinStringErrs(f.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 949, Col: 124}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1100, Col: 124}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var185))
 				if templ_7745c5c3_Err != nil {
@@ -3687,7 +3687,7 @@ func feedSubscriptionSettingsPage(sub Subscription, folders []Folder, flashMsg s
 			var templ_7745c5c3_Var187 templ.SafeURL
 			templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/feed/subscriptions/%d/delete", sub.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 957, Col: 104}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1108, Col: 104}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var187))
 			if templ_7745c5c3_Err != nil {
@@ -3700,7 +3700,7 @@ func feedSubscriptionSettingsPage(sub Subscription, folders []Folder, flashMsg s
 			var templ_7745c5c3_Var188 string
 			templ_7745c5c3_Var188, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 958, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1109, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var188))
 			if templ_7745c5c3_Err != nil {
@@ -3789,7 +3789,7 @@ func feedAdminStatusPage(snap OrchestratorStatusSnapshot, pendingDL int, pending
 				var templ_7745c5c3_Var191 string
 				templ_7745c5c3_Var191, templ_7745c5c3_Err = templ.JoinStringErrs(snap.LastTickAt.Format("2006-01-02 15:04:05"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 979, Col: 54}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1130, Col: 54}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var191))
 				if templ_7745c5c3_Err != nil {
@@ -3803,7 +3803,7 @@ func feedAdminStatusPage(snap OrchestratorStatusSnapshot, pendingDL int, pending
 			var templ_7745c5c3_Var192 string
 			templ_7745c5c3_Var192, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(pendingDL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 985, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1136, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var192))
 			if templ_7745c5c3_Err != nil {
@@ -3816,7 +3816,7 @@ func feedAdminStatusPage(snap OrchestratorStatusSnapshot, pendingDL int, pending
 			var templ_7745c5c3_Var193 string
 			templ_7745c5c3_Var193, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(pendingP))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 989, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1140, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var193))
 			if templ_7745c5c3_Err != nil {
@@ -3829,7 +3829,7 @@ func feedAdminStatusPage(snap OrchestratorStatusSnapshot, pendingDL int, pending
 			var templ_7745c5c3_Var194 string
 			templ_7745c5c3_Var194, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(pendingT))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 993, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1144, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var194))
 			if templ_7745c5c3_Err != nil {
@@ -3852,7 +3852,7 @@ func feedAdminStatusPage(snap OrchestratorStatusSnapshot, pendingDL int, pending
 					var templ_7745c5c3_Var195 string
 					templ_7745c5c3_Var195, templ_7745c5c3_Err = templ.JoinStringErrs(user)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1008, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1159, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var195))
 					if templ_7745c5c3_Err != nil {
@@ -3865,7 +3865,7 @@ func feedAdminStatusPage(snap OrchestratorStatusSnapshot, pendingDL int, pending
 					var templ_7745c5c3_Var196 string
 					templ_7745c5c3_Var196, templ_7745c5c3_Err = templ.JoinStringErrs(t.Format("2006-01-02 15:04:05"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1009, Col: 118}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1160, Col: 118}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var196))
 					if templ_7745c5c3_Err != nil {
@@ -3906,7 +3906,7 @@ func feedAdminStatusPage(snap OrchestratorStatusSnapshot, pendingDL int, pending
 			var templ_7745c5c3_Var198 string
 			templ_7745c5c3_Var198, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1019, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1170, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var198))
 			if templ_7745c5c3_Err != nil {
@@ -3993,7 +3993,7 @@ func feedSubIcon(sub Subscription) templ.Component {
 			var templ_7745c5c3_Var200 string
 			templ_7745c5c3_Var200, templ_7745c5c3_Err = templ.JoinStringErrs(url)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1052, Col: 13}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1203, Col: 13}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var200))
 			if templ_7745c5c3_Err != nil {
