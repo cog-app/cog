@@ -414,6 +414,54 @@ func applyQueryFilter(store *Store, items []ItemWithSubscription, q string) []It
 	return filtered
 }
 
+// resolveViewItems returns the same ordered item slice the originating view
+// rendered, so prev/next neighbors match exactly what the user saw.
+func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscription, error) {
+	const limit = 500
+	switch c.Kind {
+	case "starred":
+		return store.ListItemsForView(ViewSpec{Starred: true}, limit)
+	case "folder":
+		return store.ListItemsForView(ViewSpec{FolderID: validID(c.ID)}, limit)
+	case "sub":
+		return store.ListItemsForView(ViewSpec{SubscriptionID: validID(c.ID)}, limit)
+	case "tag":
+		return store.ListItemsForView(ViewSpec{TagName: c.Name}, limit)
+	case "playlist":
+		pl, err := store.GetPlaylist(c.ID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve playlist %d: %w", c.ID, err)
+		}
+		items, err := store.ListItemsForView(ViewSpec{All: true}, limit)
+		if err != nil {
+			return nil, fmt.Errorf("resolve playlist items: %w", err)
+		}
+		return applyQueryFilter(store, items, pl.Query), nil
+	case "history":
+		played, err := store.ListPlaybackHistory(limit)
+		if err != nil {
+			return nil, fmt.Errorf("resolve history: %w", err)
+		}
+		out := make([]ItemWithSubscription, 0, len(played))
+		for _, p := range played {
+			out = append(out, ItemWithSubscription{Item: p.Item, SubscriptionTitle: p.SubscriptionTitle})
+		}
+		return out, nil
+	default: // all
+		items, err := store.ListItemsForView(ViewSpec{All: true}, limit)
+		if err != nil {
+			return nil, fmt.Errorf("resolve all items: %w", err)
+		}
+		if c.Q != "" {
+			items = applyQueryFilter(store, items, c.Q)
+		}
+		return items, nil
+	}
+}
+
+// validID wraps an int64 as a valid sql.NullInt64.
+func validID(id int64) sql.NullInt64 { return sql.NullInt64{Int64: id, Valid: true} }
+
 // Index shows the main feed item list with optional query filtering.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)

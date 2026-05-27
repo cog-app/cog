@@ -2,8 +2,26 @@ package feed
 
 import (
 	"net/http/httptest"
+	"strconv"
 	"testing"
+
+	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 )
+
+func newStoreInternal(t *testing.T) *Store {
+	t.Helper()
+	env := cogtest.New(t, New())
+	u := env.CreateUser(t, "u", "pass")
+	raw, ok := env.Providers.Plugins.Plugin(PluginID)
+	if !ok {
+		t.Fatal("feed plugin not registered")
+	}
+	db, err := raw.(*Plugin).DB(u.User.Username)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewStore(db)
+}
 
 func TestParseViewCtxAndEncode(t *testing.T) {
 	r := httptest.NewRequest("GET", "/apps/feed/items/5?ctx=folder&cid=3", nil)
@@ -54,5 +72,41 @@ func TestNeighborsBoundariesAndAbsent(t *testing.T) {
 	}
 	if p, n := neighbors(items, 99, false); p != nil || n != nil {
 		t.Fatal("absent id should have no neighbors")
+	}
+}
+
+func TestResolveViewItemsAllMatchesListItemsForView(t *testing.T) {
+	s := newStoreInternal(t)
+	subID, err := s.CreateSubscription(Subscription{Kind: "rss", URL: "https://x.test/f"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if _, _, err := s.UpsertItem(Item{
+			SubscriptionID: subID,
+			GUID:           "g" + strconv.Itoa(i),
+			Type:           "text",
+			Title:          "t" + strconv.Itoa(i),
+			PublishedAt:    int64(100 + i),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := &Pages{}
+	got, err := h.resolveViewItems(s, viewCtx{Kind: "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := s.ListItemsForView(ViewSpec{All: true}, 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(want) || len(got) != 3 {
+		t.Fatalf("got %d want %d", len(got), len(want))
+	}
+	for i := range got {
+		if got[i].ID != want[i].ID {
+			t.Fatalf("order mismatch at %d", i)
+		}
 	}
 }
