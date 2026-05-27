@@ -385,8 +385,9 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 	sb := h.buildSidebar(store, fmt.Sprintf("/apps/feed/playlists/%d", id))
 	items, _ := store.ListItemsForView(ViewSpec{All: true}, 500)
 	items = applyQueryFilter(store, items, pl.Query)
+	c := viewCtx{Kind: "playlist", ID: id}
 	plugin.SetTitle(w, "Feed — "+pl.Name)
-	feedPlaylistPage(sb, pl, items, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedPlaylistPage(sb, pl, items, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
 }
 
 // applyQueryFilter filters an ItemWithSubscription slice using the query engine.
@@ -483,8 +484,9 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		items = applyQueryFilter(store, items, q)
 	}
 
+	c := viewCtx{Kind: "all", Q: q}
 	plugin.SetTitle(w, "Feed")
-	feedIndexPage(sb, items, q, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedIndexPage(sb, items, q, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
 }
 
 // SubscriptionView shows items for a single subscription.
@@ -508,8 +510,9 @@ func (h *Pages) SubscriptionView(w http.ResponseWriter, r *http.Request) {
 	sb := h.buildSidebar(store, "/apps/feed/subscription/"+idStr)
 	items, _ := store.ListItemsForView(ViewSpec{SubscriptionID: sql.NullInt64{Int64: id, Valid: true}}, 200)
 
+	c := viewCtx{Kind: "sub", ID: id}
 	plugin.SetTitle(w, subscriptionDisplayTitle(sub))
-	feedSubscriptionPage(sb, &sub, items, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedSubscriptionPage(sb, &sub, items, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
 }
 
 // FolderView shows items for all subscriptions in a folder.
@@ -533,8 +536,9 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 	sb := h.buildSidebar(store, "/apps/feed/folder/"+idStr)
 	items, _ := store.ListItemsForView(ViewSpec{FolderID: sql.NullInt64{Int64: id, Valid: true}}, 200)
 
+	c := viewCtx{Kind: "folder", ID: id}
 	plugin.SetTitle(w, folder.Name)
-	feedFolderPage(sb, &folder, items, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedFolderPage(sb, &folder, items, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
 }
 
 // StarredView shows all starred items.
@@ -547,8 +551,9 @@ func (h *Pages) StarredView(w http.ResponseWriter, r *http.Request) {
 	sb := h.buildSidebar(store, "/apps/feed/starred")
 	items, _ := store.ListItemsForView(ViewSpec{Starred: true}, 200)
 
+	c := viewCtx{Kind: "starred"}
 	plugin.SetTitle(w, "Starred")
-	feedStarredPage(sb, items, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedStarredPage(sb, items, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
 }
 
 // TagView shows items with a specific tag.
@@ -562,8 +567,9 @@ func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
 	sb := h.buildSidebar(store, "/apps/feed/tag/"+tagName)
 	items, _ := store.ListItemsForView(ViewSpec{TagName: tagName}, 200)
 
+	c := viewCtx{Kind: "tag", Name: tagName}
 	plugin.SetTitle(w, "Tag: "+tagName)
-	feedTagPage(sb, tagName, items, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedTagPage(sb, tagName, items, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
 }
 
 // RefreshSubscription sets next_check_at=1 on a subscription to trigger immediate re-poll.
@@ -941,7 +947,7 @@ func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
 		}
 		sub, _ := store.GetSubscription(it.SubscriptionID)
 		iws := ItemWithSubscription{Item: it, SubscriptionTitle: subscriptionDisplayTitle(sub)}
-		feedItemRow(iws, plugin.CSRFToken(r)).Render(r.Context(), w)
+		feedItemRow(iws, plugin.CSRFToken(r), "").Render(r.Context(), w)
 		return
 	}
 	ref := r.Header.Get("Referer")

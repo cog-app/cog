@@ -531,7 +531,7 @@ func feedSidebarSubLink(sub Subscription, sb sidebarData) templ.Component {
 	})
 }
 
-func feedIndexPage(sb sidebarData, items []ItemWithSubscription, q string, csrfToken string) templ.Component {
+func feedIndexPage(sb sidebarData, items []ItemWithSubscription, q string, csrfToken string, vctx string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -624,7 +624,7 @@ func feedIndexPage(sb sidebarData, items []ItemWithSubscription, q string, csrfT
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = feedItemList(items, csrfToken).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = feedItemList(items, csrfToken, vctx).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -637,7 +637,7 @@ func feedIndexPage(sb sidebarData, items []ItemWithSubscription, q string, csrfT
 	})
 }
 
-func feedSubscriptionPage(sb sidebarData, sub *Subscription, items []ItemWithSubscription, csrfToken string) templ.Component {
+func feedSubscriptionPage(sb sidebarData, sub *Subscription, items []ItemWithSubscription, csrfToken string, vctx string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -782,7 +782,7 @@ func feedSubscriptionPage(sb sidebarData, sub *Subscription, items []ItemWithSub
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = feedItemList(items, csrfToken).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = feedItemList(items, csrfToken, vctx).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -795,7 +795,7 @@ func feedSubscriptionPage(sb sidebarData, sub *Subscription, items []ItemWithSub
 	})
 }
 
-func feedFolderPage(sb sidebarData, folder *Folder, items []ItemWithSubscription, csrfToken string) templ.Component {
+func feedFolderPage(sb sidebarData, folder *Folder, items []ItemWithSubscription, csrfToken string, vctx string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -891,7 +891,7 @@ func feedFolderPage(sb sidebarData, folder *Folder, items []ItemWithSubscription
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = feedItemList(items, csrfToken).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = feedItemList(items, csrfToken, vctx).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -904,7 +904,7 @@ func feedFolderPage(sb sidebarData, folder *Folder, items []ItemWithSubscription
 	})
 }
 
-func feedStarredPage(sb sidebarData, items []ItemWithSubscription, csrfToken string) templ.Component {
+func feedStarredPage(sb sidebarData, items []ItemWithSubscription, csrfToken string, vctx string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -961,7 +961,7 @@ func feedStarredPage(sb sidebarData, items []ItemWithSubscription, csrfToken str
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = feedItemList(items, csrfToken).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = feedItemList(items, csrfToken, vctx).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -974,7 +974,7 @@ func feedStarredPage(sb sidebarData, items []ItemWithSubscription, csrfToken str
 	})
 }
 
-func feedTagPage(sb sidebarData, tag string, items []ItemWithSubscription, csrfToken string) templ.Component {
+func feedTagPage(sb sidebarData, tag string, items []ItemWithSubscription, csrfToken string, vctx string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1044,7 +1044,7 @@ func feedTagPage(sb sidebarData, tag string, items []ItemWithSubscription, csrfT
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = feedItemList(items, csrfToken).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = feedItemList(items, csrfToken, vctx).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1057,7 +1057,7 @@ func feedTagPage(sb sidebarData, tag string, items []ItemWithSubscription, csrfT
 	})
 }
 
-func feedPlaylistPage(sb sidebarData, pl Playlist, items []ItemWithSubscription, csrfToken string) templ.Component {
+func feedPlaylistPage(sb sidebarData, pl Playlist, items []ItemWithSubscription, csrfToken string, vctx string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1140,7 +1140,7 @@ func feedPlaylistPage(sb sidebarData, pl Playlist, items []ItemWithSubscription,
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = feedItemList(items, csrfToken).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = feedItemList(items, csrfToken, vctx).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1153,7 +1153,7 @@ func feedPlaylistPage(sb sidebarData, pl Playlist, items []ItemWithSubscription,
 	})
 }
 
-func feedItemList(items []ItemWithSubscription, csrfToken string) templ.Component {
+func feedItemList(items []ItemWithSubscription, csrfToken string, vctx string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1179,7 +1179,7 @@ func feedItemList(items []ItemWithSubscription, csrfToken string) templ.Componen
 			return templ_7745c5c3_Err
 		}
 		for _, item := range items {
-			templ_7745c5c3_Err = feedItemRow(item, csrfToken).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = feedItemRow(item, csrfToken, vctx).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1192,7 +1192,7 @@ func feedItemList(items []ItemWithSubscription, csrfToken string) templ.Componen
 	})
 }
 
-func feedItemRow(item ItemWithSubscription, csrfToken string) templ.Component {
+func feedItemRow(item ItemWithSubscription, csrfToken string, vctx string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1214,12 +1214,12 @@ func feedItemRow(item ItemWithSubscription, csrfToken string) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		if item.Type == "audio" || item.Type == "video" {
-			templ_7745c5c3_Err = feedMediaItemRow(item, csrfToken).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = feedMediaItemRow(item, csrfToken, vctx).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = feedTextItemRow(item, csrfToken).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = feedTextItemRow(item, csrfToken, vctx).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1228,7 +1228,7 @@ func feedItemRow(item ItemWithSubscription, csrfToken string) templ.Component {
 	})
 }
 
-func feedTextItemRow(item ItemWithSubscription, csrfToken string) templ.Component {
+func feedTextItemRow(item ItemWithSubscription, csrfToken string, vctx string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1364,9 +1364,9 @@ func feedTextItemRow(item ItemWithSubscription, csrfToken string) templ.Componen
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var68 templ.SafeURL
-		templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/feed/items/%d", item.ID)))
+		templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(itemHref(item.ID, vctx)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 395, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 395, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 		if templ_7745c5c3_Err != nil {
@@ -1588,7 +1588,7 @@ func feedTextItemRow(item ItemWithSubscription, csrfToken string) templ.Componen
 	})
 }
 
-func feedMediaItemRow(item ItemWithSubscription, csrfToken string) templ.Component {
+func feedMediaItemRow(item ItemWithSubscription, csrfToken string, vctx string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1730,9 +1730,9 @@ func feedMediaItemRow(item ItemWithSubscription, csrfToken string) templ.Compone
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var88 templ.SafeURL
-		templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/feed/items/%d", item.ID)))
+		templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(itemHref(item.ID, vctx)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 470, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 470, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 		if templ_7745c5c3_Err != nil {
@@ -1756,9 +1756,9 @@ func feedMediaItemRow(item ItemWithSubscription, csrfToken string) templ.Compone
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var90 templ.SafeURL
-		templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/feed/items/%d", item.ID)))
+		templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(itemHref(item.ID, vctx)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 476, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 476, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
 		if templ_7745c5c3_Err != nil {
@@ -3953,6 +3953,14 @@ func feedAdminStatusPage(snap OrchestratorStatusSnapshot, pendingDL int, pending
 
 // --- Template helpers ---
 
+// itemHref builds an item-detail URL carrying the view context.
+func itemHref(id int64, ctx string) string {
+	if ctx == "" {
+		return fmt.Sprintf("/apps/feed/items/%d", id)
+	}
+	return fmt.Sprintf("/apps/feed/items/%d?%s", id, ctx)
+}
+
 func subscriptionDisplayTitle(s Subscription) string {
 	if s.Title != "" {
 		return s.Title
@@ -4006,7 +4014,7 @@ func feedSubIcon(sub Subscription) templ.Component {
 			var templ_7745c5c3_Var201 string
 			templ_7745c5c3_Var201, templ_7745c5c3_Err = templ.JoinStringErrs(url)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1227, Col: 13}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/feed/pages.templ`, Line: 1235, Col: 13}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var201))
 			if templ_7745c5c3_Err != nil {
