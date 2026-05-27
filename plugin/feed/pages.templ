@@ -711,28 +711,52 @@ templ feedItemTagRow(itemID int64, tags []string, csrfToken string) {
 	</div>
 }
 
-templ feedItemDetail(ip ItemPlayback, tags []string, prefs PlayerPrefs, artwork string, csrfToken string) {
-	@ui.Card(ip.Title) {
-		<div class="text-muted" style="font-size:0.85rem;margin-bottom:0.5rem">
-			{ ip.SubscriptionTitle }
-			if ip.Author != "" {
-				&middot; { ip.Author }
+templ feedItemContextBar(nav itemNav) {
+	<div class="feed-context-bar" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem">
+		<span class="text-muted">{ nav.Label }</span>
+		<div class="flex gap-1">
+			if nav.PrevID != 0 {
+				<a class="btn btn-outline btn-sm" href={ templ.SafeURL(itemHref(nav.PrevID, nav.Ctx)) } title={ nav.PrevTitle }>&#8592; Prev</a>
+			} else {
+				<span class="btn btn-outline btn-sm" style="opacity:0.5">&#8592; Prev</span>
+			}
+			if nav.NextID != 0 {
+				<a class="btn btn-outline btn-sm" href={ templ.SafeURL(itemHref(nav.NextID, nav.Ctx)) } title={ nav.NextTitle }>Next &#8594;</a>
+			} else {
+				<span class="btn btn-outline btn-sm" style="opacity:0.5">Next &#8594;</span>
 			}
 		</div>
-		@feedItemTagRow(ip.ID, tags, csrfToken)
-		if ip.Type == "text" {
-			<div class="note-content">
-				@templ.Raw(ip.ContentHTML)
-			</div>
-		} else {
-			@feedPlayer(ip, prefs, artwork, csrfToken)
-		}
-		if ip.URL != "" {
-			<p style="margin-top:1rem">
-				<a href={ templ.SafeURL(ip.URL) } target="_blank" rel="noopener">Original</a>
-			</p>
-		}
-	}
+	</div>
+}
+
+templ feedItemDetail(sb sidebarData, nav itemNav, ip ItemPlayback, tags []string, prefs PlayerPrefs, artwork string, csrfToken string) {
+	<div class="sidebar-layout">
+		@feedSidebar(sb)
+		<div class="sidebar-content">
+			@feedItemContextBar(nav)
+			@ui.Card(ip.Title) {
+				<div class="text-muted" style="font-size:0.85rem;margin-bottom:0.5rem">
+					{ ip.SubscriptionTitle }
+					if ip.Author != "" {
+						&middot; { ip.Author }
+					}
+				</div>
+				@feedItemTagRow(ip.ID, tags, csrfToken)
+				if ip.Type == "text" {
+					<div class="note-content">
+						@templ.Raw(ip.ContentHTML)
+					</div>
+				} else {
+					@feedPlayer(ip, prefs, artwork, csrfToken)
+				}
+				if ip.URL != "" {
+					<p style="margin-top:1rem">
+						<a href={ templ.SafeURL(ip.URL) } target="_blank" rel="noopener">Original</a>
+					</p>
+				}
+			}
+		</div>
+	</div>
 }
 
 templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken string) {

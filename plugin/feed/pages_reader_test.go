@@ -2,6 +2,7 @@ package feed_test
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -238,4 +239,15 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func TestItemDetailShowsContextBar(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "u", "pass")
+	textID, _ := seedFeedItems(t, env, u.Username)
+	resp := env.Get(t, fmt.Sprintf("/apps/feed/items/%d?ctx=all", textID), u.Auth)
+	resp.Status(200)
+	resp.Contains("feed-context-bar")
+	resp.Contains("All")
+	resp.Contains("feed-sidebar")
 }

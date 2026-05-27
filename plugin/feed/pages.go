@@ -690,8 +690,22 @@ func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	artwork := ip.ThumbnailURL
 	tags, _ := store.ItemTags(id)
+	c := parseViewCtx(r)
+	items, rerr := h.resolveViewItems(store, c)
+	if rerr != nil {
+		slog.Error("feed: resolve view items", "err", rerr)
+	}
+	prev, next := neighbors(items, id, false)
+	nav := itemNav{Ctx: c.encode(), Label: c.label(store)}
+	if prev != nil {
+		nav.PrevID, nav.PrevTitle = prev.ID, prev.Title
+	}
+	if next != nil {
+		nav.NextID, nav.NextTitle = next.ID, next.Title
+	}
+	sb := h.buildSidebar(store, c.path())
 	plugin.SetTitle(w, ip.Title)
-	feedItemDetail(ip, tags, prefs, artwork, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedItemDetail(sb, nav, ip, tags, prefs, artwork, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // UpdateProgress handles POST to save playback position.
