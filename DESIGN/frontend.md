@@ -138,3 +138,22 @@ Admins manage plugins at `/admin/plugins`. Disabling a plugin:
 - Routes automatically 404 via `RequirePluginEnabled()` middleware (applied by all `Register*` methods)
 
 Protected plugins (dashboard, files) cannot be disabled.
+
+## Static Assets & Caching
+
+Static files (CSS, JS, fonts, images) are served with **content-hash cache
+busting** via the `internal/assets` package. Asset URLs carry a `?v=<hash>`
+query string; matching requests get `Cache-Control: public, max-age=31536000,
+immutable`, while unversioned/stale requests get `no-cache` (revalidated via
+ETag). A rebuild changes the embedded bytes → new hash → new URL, so deploys are
+never served stale.
+
+**Rules:**
+- **Never hardcode `/static/...` paths in templates.** Reference assets through a
+  helper's `URL(name)` method so they get versioned.
+- **Core assets** (`ui/static/`): use `ui.Static.URL("style.css")` in templates.
+  The handler is mounted at `GET /static/` in `internal/web/routes.go`.
+- **Plugin assets**: embed a `static/` dir, then in `Register` (privileged
+  context) call `priv.RegisterAssets(subFS)` — it mounts `/apps/{id}/static/`
+  and returns an `*assets.Assets`. Reference files via that helper's `URL(name)`.
+  See `plugin/feed` for the reference implementation.

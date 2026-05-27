@@ -3,18 +3,17 @@ package feed
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"embed"
-	"encoding/hex"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os/exec"
-	"strings"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/assets"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/feed/ncapi"
 	"git.duckfam.us/jj-software/cog/plugin/profanity"
@@ -30,21 +29,18 @@ var staticFS embed.FS
 
 const PluginID = "feed"
 
-// playerJSVersion is a short content hash of player.js, appended to its URL as
-// a cache-buster so a far-future Cache-Control header never serves stale player
-// logic after a deploy.
-var playerJSVersion = func() string {
-	data, err := staticFS.ReadFile("static/player.js")
-	if err != nil {
-		return "0"
-	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])[:8]
-}()
+// pkgAssets serves the plugin's embedded static assets with content-hash cache
+// busting. Set in Register via the registrar's RegisterAssets helper.
+var pkgAssets *assets.Assets
 
 // playerAssetURL returns the versioned URL for player.js (used by the templ).
+// Falls back to the unversioned path if assets weren't registered (e.g. a
+// non-privileged context).
 func playerAssetURL() string {
-	return "/apps/feed/static/player.js?v=" + playerJSVersion
+	if pkgAssets != nil {
+		return pkgAssets.URL("player.js")
+	}
+	return "/apps/feed/static/player.js"
 }
 
 // OrchestratorRunner is a function that drives background workers until ctx is
@@ -132,7 +128,6 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAPI("api/stream-url/{id}", http.HandlerFunc(pages.StreamURL))
 	ctx.RegisterAPI("items/{id}/adjacent", http.HandlerFunc(pages.AdjacentPlayer))
 	ctx.RegisterAPI("api/ranges/{id}", http.HandlerFunc(pages.Ranges))
-	ctx.RegisterAPI("static/{file}", http.HandlerFunc(p.serveStatic))
 
 	// View pages
 	ctx.RegisterPage("subscription/{id}", http.HandlerFunc(pages.SubscriptionView))
@@ -172,10 +167,20 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		Action:  http.HandlerFunc(pages.SaveSystemSettings),
 	})
 
-	// NextCloud News API compatibility
+	// NextCloud News API compatibility + content-hashed static assets.
 	newsAPI := ncapi.New(p)
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		priv.RegisterRoute("/index.php/apps/news/api/", newsAPI)
+
+		sub, err := fs.Sub(staticFS, "static")
+		if err != nil {
+			return fmt.Errorf("feed: sub static: %w", err)
+		}
+		a, err := priv.RegisterAssets(sub)
+		if err != nil {
+			return err
+		}
+		pkgAssets = a
 	}
 
 	return nil
@@ -271,26 +276,6 @@ func (p *Plugin) RenderWidget(ctx context.Context, w io.Writer, userID string) e
 
 // Profanity returns the discovered profanity plugin, or nil if not registered.
 func (p *Plugin) Profanity() *profanity.Plugin { return p.profanity }
-
-// serveStatic serves embedded static assets (e.g. player.js) with caching.
-func (p *Plugin) serveStatic(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("file")
-	data, err := staticFS.ReadFile("static/" + name)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	switch {
-	case strings.HasSuffix(name, ".js"):
-		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-	case strings.HasSuffix(name, ".css"):
-		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	}
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	if _, err := w.Write(data); err != nil {
-		slog.Error("feed: serve static", "file", name, "err", err)
-	}
-}
 
 // DoctorChecks implements plugin.Doctor, reporting missing external tools.
 func (p *Plugin) DoctorChecks(_ context.Context) []plugin.CheckResult {

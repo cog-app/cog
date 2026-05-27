@@ -1295,7 +1295,20 @@ func sortableScript(listID int64, csrfToken string) templ.Component {
 			templ_7745c5c3_Var74 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "<script src=\"/static/vendor/sortable.min.js\"></script><script>\n\t\t(function () {\n\t\t\tconst csrfToken =\n\t\t\t\tdocument.querySelector('input[name=\"csrf_token\"]')?.value || \"\";\n\t\t\tconst listId = Number(\n\t\t\t\tdocument.querySelector(\"[data-list-id]\")?.dataset.listId || 0,\n\t\t\t);\n\t\t\tdocument.querySelectorAll(\".task-group\").forEach(function (el) {\n\t\t\t\tnew Sortable(el, {\n\t\t\t\t\tgroup: \"tasks\",\n\t\t\t\t\thandle: \".drag-handle\",\n\t\t\t\t\tanimation: 150,\n\t\t\t\t\tfallbackOnBody: true,\n\t\t\t\t\tswapThreshold: 0.65,\n\t\t\t\t\tonEnd: function (evt) {\n\t\t\t\t\t\tconst parentId = evt.to.dataset.parentId || null;\n\t\t\t\t\t\tconst ids = Array.from(evt.to.children)\n\t\t\t\t\t\t\t.filter(function (c) {\n\t\t\t\t\t\t\t\treturn c.dataset && c.dataset.taskId;\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t.map(function (c) {\n\t\t\t\t\t\t\t\treturn Number(c.dataset.taskId);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\tfetch(\"/apps/tasks/reorder\", {\n\t\t\t\t\t\t\tmethod: \"POST\",\n\t\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t\t\"Content-Type\": \"application/json\",\n\t\t\t\t\t\t\t\t\"X-CSRF-Token\": csrfToken,\n\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\tbody: JSON.stringify({\n\t\t\t\t\t\t\t\tlist_id: listId,\n\t\t\t\t\t\t\t\tparent_id: parentId ? Number(parentId) : null,\n\t\t\t\t\t\t\t\ttask_ids: ids,\n\t\t\t\t\t\t\t}),\n\t\t\t\t\t\t});\n\t\t\t\t\t},\n\t\t\t\t});\n\t\t\t});\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "<script src=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var75 string
+		templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(ui.Static.URL("vendor/sortable.min.js"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/tasks/pages.templ`, Line: 269, Col: 54}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "\"></script><script>\n\t\t(function () {\n\t\t\tconst csrfToken =\n\t\t\t\tdocument.querySelector('input[name=\"csrf_token\"]')?.value || \"\";\n\t\t\tconst listId = Number(\n\t\t\t\tdocument.querySelector(\"[data-list-id]\")?.dataset.listId || 0,\n\t\t\t);\n\t\t\tdocument.querySelectorAll(\".task-group\").forEach(function (el) {\n\t\t\t\tnew Sortable(el, {\n\t\t\t\t\tgroup: \"tasks\",\n\t\t\t\t\thandle: \".drag-handle\",\n\t\t\t\t\tanimation: 150,\n\t\t\t\t\tfallbackOnBody: true,\n\t\t\t\t\tswapThreshold: 0.65,\n\t\t\t\t\tonEnd: function (evt) {\n\t\t\t\t\t\tconst parentId = evt.to.dataset.parentId || null;\n\t\t\t\t\t\tconst ids = Array.from(evt.to.children)\n\t\t\t\t\t\t\t.filter(function (c) {\n\t\t\t\t\t\t\t\treturn c.dataset && c.dataset.taskId;\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t.map(function (c) {\n\t\t\t\t\t\t\t\treturn Number(c.dataset.taskId);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\tfetch(\"/apps/tasks/reorder\", {\n\t\t\t\t\t\t\tmethod: \"POST\",\n\t\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t\t\"Content-Type\": \"application/json\",\n\t\t\t\t\t\t\t\t\"X-CSRF-Token\": csrfToken,\n\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\tbody: JSON.stringify({\n\t\t\t\t\t\t\t\tlist_id: listId,\n\t\t\t\t\t\t\t\tparent_id: parentId ? Number(parentId) : null,\n\t\t\t\t\t\t\t\ttask_ids: ids,\n\t\t\t\t\t\t\t}),\n\t\t\t\t\t\t});\n\t\t\t\t\t},\n\t\t\t\t});\n\t\t\t});\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -420,7 +420,7 @@ func TestAdjacentMedia(t *testing.T) {
 
 	// Three audio items with strictly increasing published_at.
 	var ids [3]int64
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		id, _, err := s.UpsertItem(feed.Item{
 			SubscriptionID: subID,
 			GUID:           fmt.Sprintf("g%d", i),

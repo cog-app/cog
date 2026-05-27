@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"io/fs"
 	"net/http"
 	"net/http/pprof"
 
@@ -53,9 +52,8 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /admin/debug/pprof/symbol", pprofGate(http.HandlerFunc(pprof.Symbol)))
 	mux.Handle("GET /admin/debug/pprof/trace", pprofGate(http.HandlerFunc(pprof.Trace)))
 
-	// --- Static assets ---
-	staticSub, _ := fs.Sub(ui.StaticFS, "static")
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
+	// --- Static assets (content-hash cache busting via ui.Static) ---
+	mux.Handle("GET /static/", http.StripPrefix("/static/", ui.Static))
 
 	// Build quota checker for plugins.
 	var fp *filesPlugin.Plugin

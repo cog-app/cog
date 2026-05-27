@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"iter"
 	"log/slog"
 	"maps"
@@ -22,6 +23,7 @@ import (
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/vfs"
 
+	"git.duckfam.us/jj-software/cog/internal/assets"
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/db"
@@ -818,6 +820,16 @@ func (pr *pluginRegistrar) RegisterAction(method, path string, handler http.Hand
 
 func (pr *pluginRegistrar) RegisterRoute(pattern string, handler http.Handler) {
 	pr.mux.Handle(pattern, pr.wrap(handler))
+}
+
+func (pr *pluginRegistrar) RegisterAssets(fsys fs.FS) (*assets.Assets, error) {
+	prefix := "/apps/" + pr.pluginID + "/static"
+	a, err := assets.New(fsys, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("register assets for %s: %w", pr.pluginID, err)
+	}
+	pr.mux.Handle("GET "+prefix+"/", pr.wrap(auth.RequireAuth(http.StripPrefix(prefix+"/", a))))
+	return a, nil
 }
 
 func (pr *pluginRegistrar) PluginByID(id string) (Plugin, bool) {

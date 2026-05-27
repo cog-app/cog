@@ -235,8 +235,8 @@ templ inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, is
 				<meta charset="utf-8"/>
 				<meta name="viewport" content="width=device-width, initial-scale=1"/>
 				<title>Group Invitation — Cog</title>
-				<link rel="stylesheet" href="/static/style.css"/>
-				<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+				<link rel="stylesheet" href={ ui.Static.URL("style.css") }/>
+				<link rel="icon" href={ ui.Static.URL("favicon.svg") } type="image/svg+xml"/>
 			</head>
 			<body>
 				<div class="login-container">

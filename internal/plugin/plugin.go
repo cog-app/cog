@@ -11,6 +11,7 @@ import (
 	"iter"
 	"net/http"
 
+	"git.duckfam.us/jj-software/cog/internal/assets"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/vfs"
 )
@@ -118,6 +119,10 @@ type PrivilegedContext interface {
 	// RegisterRoute mounts a handler at an arbitrary pattern (Go 1.22 format).
 	// The handler is wrapped with auth (401) and plugin-enabled checks.
 	RegisterRoute(pattern string, handler http.Handler)
+	// RegisterAssets mounts an embedded asset filesystem at
+	// /apps/{plugin_id}/static/ and returns a helper for building versioned,
+	// content-hash cache-busted URLs to those assets via its URL(name) method.
+	RegisterAssets(fsys fs.FS) (*assets.Assets, error)
 	// PluginByID returns a registered plugin by its ID.
 	// Used by internal plugins that need direct access to other plugins.
 	PluginByID(id string) (cogplugin.Plugin, bool)

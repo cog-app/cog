@@ -16,10 +16,10 @@ templ Base(pd PageData) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
 			<title>{ pd.Title } — Cog</title>
-			<link rel="stylesheet" href="/static/style.css"/>
+			<link rel="stylesheet" href={ Static.URL("style.css") }/>
 			<link rel="icon" href={ templ.SafeURL(pd.FaviconURL()) } type="image/svg+xml"/>
-			<script src="/static/htmx.min.js"></script>
-			<script src="/static/cog-share.js" defer></script>
+			<script src={ Static.URL("htmx.min.js") }></script>
+			<script src={ Static.URL("cog-share.js") } defer></script>
 		</head>
 		<body hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, pd.CSRFToken) }>
 			<nav class="navbar" data-nav-count={ strconv.Itoa(len(pd.Nav)) }>
@@ -283,10 +283,10 @@ templ Shell(pd PageData, body templ.Component) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
 			<title>{ pd.Title } — Cog</title>
-			<link rel="stylesheet" href="/static/style.css"/>
+			<link rel="stylesheet" href={ Static.URL("style.css") }/>
 			<link rel="icon" href={ templ.SafeURL(pd.FaviconURL()) } type="image/svg+xml"/>
-			<script src="/static/htmx.min.js"></script>
-			<script src="/static/cog-share.js" defer></script>
+			<script src={ Static.URL("htmx.min.js") }></script>
+			<script src={ Static.URL("cog-share.js") } defer></script>
 		</head>
 		<body hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, pd.CSRFToken) }>
 			<nav class="navbar" data-nav-count={ strconv.Itoa(len(pd.Nav)) }>
@@ -653,8 +653,8 @@ templ LoginPage(flashMsg string, flashKind string, next string, registrationEnab
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
 			<title>Login — Cog</title>
-			<link rel="stylesheet" href="/static/style.css"/>
-			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+			<link rel="stylesheet" href={ Static.URL("style.css") }/>
+			<link rel="icon" href={ Static.URL("favicon.svg") } type="image/svg+xml"/>
 		</head>
 		<body>
 			<div class="login-container">
@@ -712,8 +712,8 @@ templ MFAPage(errMsg string, next string, mfaMethod string) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
 			<title>Verify Identity — Cog</title>
-			<link rel="stylesheet" href="/static/style.css"/>
-			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+			<link rel="stylesheet" href={ Static.URL("style.css") }/>
+			<link rel="icon" href={ Static.URL("favicon.svg") } type="image/svg+xml"/>
 		</head>
 		<body>
 			<div class="login-container">
@@ -848,8 +848,8 @@ templ ForgotPasswordPage(errMsg string, successMsg string) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
 			<title>Forgot Password — Cog</title>
-			<link rel="stylesheet" href="/static/style.css"/>
-			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+			<link rel="stylesheet" href={ Static.URL("style.css") }/>
+			<link rel="icon" href={ Static.URL("favicon.svg") } type="image/svg+xml"/>
 		</head>
 		<body>
 			<div class="login-container">
@@ -891,8 +891,8 @@ templ ResetPasswordPage(errMsg string, token string) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
 			<title>Reset Password — Cog</title>
-			<link rel="stylesheet" href="/static/style.css"/>
-			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+			<link rel="stylesheet" href={ Static.URL("style.css") }/>
+			<link rel="icon" href={ Static.URL("favicon.svg") } type="image/svg+xml"/>
 		</head>
 		<body>
 			<div class="login-container">
@@ -933,8 +933,8 @@ templ RegisterPage(errMsg string, next string) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
 			<title>Register — Cog</title>
-			<link rel="stylesheet" href="/static/style.css"/>
-			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+			<link rel="stylesheet" href={ Static.URL("style.css") }/>
+			<link rel="icon" href={ Static.URL("favicon.svg") } type="image/svg+xml"/>
 		</head>
 		<body>
 			<div class="login-container">

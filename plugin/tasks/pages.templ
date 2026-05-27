@@ -266,7 +266,7 @@ templ taskListSettingsPage(sb sidebarData, list *TaskList, csrfToken string) {
 }
 
 templ sortableScript(listID int64, csrfToken string) {
-	<script src="/static/vendor/sortable.min.js"></script>
+	<script src={ ui.Static.URL("vendor/sortable.min.js") }></script>
 	<script>
 		(function () {
 			const csrfToken =

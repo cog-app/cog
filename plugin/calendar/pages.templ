@@ -31,7 +31,7 @@ templ calSidebar(calendars []Calendar, activePath string, csrfToken string) {
 }
 
 templ calIndexPage(calendars []Calendar, csrfToken string) {
-	<script src="/static/vendor/fullcalendar.min.js"></script>
+	<script src={ ui.Static.URL("vendor/fullcalendar.min.js") }></script>
 	<div class="sidebar-layout">
 		@calSidebar(calendars, "/apps/calendar/", csrfToken)
 		<div class="sidebar-content">
