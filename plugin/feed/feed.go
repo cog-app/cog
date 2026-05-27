@@ -3,8 +3,10 @@ package feed
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,6 +29,23 @@ var sqlFS embed.FS
 var staticFS embed.FS
 
 const PluginID = "feed"
+
+// playerJSVersion is a short content hash of player.js, appended to its URL as
+// a cache-buster so a far-future Cache-Control header never serves stale player
+// logic after a deploy.
+var playerJSVersion = func() string {
+	data, err := staticFS.ReadFile("static/player.js")
+	if err != nil {
+		return "0"
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])[:8]
+}()
+
+// playerAssetURL returns the versioned URL for player.js (used by the templ).
+func playerAssetURL() string {
+	return "/apps/feed/static/player.js?v=" + playerJSVersion
+}
 
 // OrchestratorRunner is a function that drives background workers until ctx is
 // canceled. It is swappable so the orchestrator sub-package can be injected

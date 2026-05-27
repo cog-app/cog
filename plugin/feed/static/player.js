@@ -81,6 +81,8 @@
 		var prevBtn = root.querySelector("#player-prev");
 		var nextBtn = root.querySelector("#player-next");
 		var nextOverlay = root.querySelector("#player-next-overlay");
+		var spinner = root.querySelector("#player-spinner");
+		var iconSpinner = root.querySelector("#icon-spinner");
 
 		// --- initial element state ---
 		el.volume = isNaN(cfg.volume) ? 1 : cfg.volume;
@@ -155,10 +157,32 @@
 			}
 		}
 		el.addEventListener("play", function () {
+			// Re-assert the chosen rate: the browser resets playbackRate to 1
+			// when a new source starts (e.g. after an auto-advance swap), and
+			// that reset can land after loadedmetadata, so enforce it here too.
+			el.playbackRate = cfg.speed;
 			reflectPlaying(true);
 			if (nextOverlay) nextOverlay.classList.remove("show");
 		});
 		el.addEventListener("pause", function () { reflectPlaying(false); });
+
+		// --- buffering spinner ---
+		function setBuffering(b) {
+			if (spinner) spinner.style.display = b ? "flex" : "none";
+			if (b) {
+				if (iconSpinner) iconSpinner.style.display = "";
+				if (iconPlay) iconPlay.style.display = "none";
+				if (iconPause) iconPause.style.display = "none";
+			} else {
+				if (iconSpinner) iconSpinner.style.display = "none";
+				reflectPlaying(!el.paused);
+			}
+		}
+		el.addEventListener("loadstart", function () { setBuffering(true); });
+		el.addEventListener("waiting", function () { setBuffering(true); });
+		el.addEventListener("stalled", function () { setBuffering(true); });
+		el.addEventListener("canplay", function () { setBuffering(false); });
+		el.addEventListener("playing", function () { setBuffering(false); });
 
 		function toggle() { if (el.paused) el.play(); else el.pause(); }
 		function seekBy(sec) { el.currentTime = Math.max(0, Math.min((el.duration || 1e9), el.currentTime + sec)); }
@@ -193,6 +217,8 @@
 		// --- buttons ---
 		if (playBtn) playBtn.addEventListener("click", toggle);
 		if (centerBtn) centerBtn.addEventListener("click", toggle);
+		// Click anywhere on the video surface (outside the overlay buttons) toggles.
+		if (cfg.type === "video") el.addEventListener("click", toggle);
 		if (backBtn) backBtn.addEventListener("click", function () { seekBy(-cfg.skipBack); });
 		if (fwdBtn) fwdBtn.addEventListener("click", function () { seekBy(cfg.skipFwd); });
 		if (volBtn) volBtn.addEventListener("click", function () {
@@ -339,14 +365,28 @@
 		// without changing playback state. Used by the toolbar prev/next buttons
 		// and the OS media-key handlers.
 		function advance(dir) {
+			setBuffering(true);
 			fetch("/apps/feed/items/" + cfg.itemID + "/adjacent?dir=" + dir, {
 				headers: { "X-CSRF-Token": cfg.csrf },
 			})
-				.then(function (r) { return r.status === 204 ? "" : r.text(); })
+				.then(function (r) {
+					if (r.status === 204) {
+						console.warn("feed: no " + dir + " item");
+						setBuffering(false);
+						return "";
+					}
+					if (!r.ok) {
+						console.error("feed: advance " + dir + " HTTP " + r.status);
+						setBuffering(false);
+						return "";
+					}
+					return r.text();
+				})
 				.then(function (html) {
 					if (html && html.indexOf("feed-player") !== -1) swapPlayer(html);
+					else setBuffering(false);
 				})
-				.catch(function (e) { console.error("feed: advance " + dir, e); });
+				.catch(function (e) { setBuffering(false); console.error("feed: advance " + dir, e); });
 		}
 
 		if (prevBtn) prevBtn.addEventListener("click", function () {

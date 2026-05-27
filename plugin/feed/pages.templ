@@ -808,6 +808,26 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 				align-items: center;
 				justify-content: center;
 			}
+			.feed-player .player-spinner {
+				position: absolute;
+				inset: 0;
+				margin: auto;
+				width: 56px;
+				height: 56px;
+				display: none;
+				align-items: center;
+				justify-content: center;
+				pointer-events: none;
+			}
+			.feed-player .player-spinner svg,
+			.feed-player #icon-spinner {
+				animation: feed-spin 0.8s linear infinite;
+			}
+			@keyframes feed-spin {
+				to {
+					transform: rotate(360deg);
+				}
+			}
 			.feed-player .player-track {
 				position: relative;
 				height: 7px;
@@ -939,6 +959,9 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 					<svg width="32" height="32" viewBox="0 0 24 24" fill="#fff"><polygon points="5 4 15 12 5 20 5 4"></polygon><rect x="17" y="4" width="3" height="16"></rect></svg>
 					Play next
 				</button>
+				<div id="player-spinner" class="player-spinner">
+					<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
+				</div>
 			</div>
 		} else {
 			<audio
@@ -962,6 +985,7 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 			<button id="player-play" class="btn btn-primary btn-sm player-round" title="Play/Pause" type="button">
 				<svg id="icon-play" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
 				<svg id="icon-pause" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+				<svg id="icon-spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" style="display:none"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
 			</button>
 			<button id="player-next" class="btn btn-outline btn-sm player-nav" title="Next" type="button">
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"></polygon><rect x="16" y="4" width="3" height="16"></rect></svg>
@@ -997,7 +1021,7 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 			</button>
 		</div>
 		<div id="player-upnext" class="text-muted" style="display:none;font-size:0.8rem;margin-top:0.5rem">Up next&hellip;</div>
-		<script src="/apps/feed/static/player.js" defer></script>
+		<script src={ playerAssetURL() } defer></script>
 	</div>
 }
 
