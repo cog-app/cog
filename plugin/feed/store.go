@@ -1474,14 +1474,27 @@ type PlayerPrefs struct {
 
 // LoadPlayerPrefs reads the per-user player preferences, falling back to defaults.
 func (s *Store) LoadPlayerPrefs() (PlayerPrefs, error) {
-	return PlayerPrefs{
-		Speed:        settingPlaybackSpeed.MustGet(s.db),
-		SkipBackSec:  settingSkipBackSec.MustGet(s.db),
-		SkipFwdSec:   settingSkipFwdSec.MustGet(s.db),
-		Volume:       settingVolume.MustGet(s.db),
-		AutoplayNext: settingAutoplayNext.MustGet(s.db),
-		SkipSilence:  settingSkipSilence.MustGet(s.db),
-	}, nil
+	var p PlayerPrefs
+	var err error
+	if p.Speed, err = settingPlaybackSpeed.Get(s.db); err != nil {
+		return p, fmt.Errorf("load playback_speed: %w", err)
+	}
+	if p.SkipBackSec, err = settingSkipBackSec.Get(s.db); err != nil {
+		return p, fmt.Errorf("load skip_back_sec: %w", err)
+	}
+	if p.SkipFwdSec, err = settingSkipFwdSec.Get(s.db); err != nil {
+		return p, fmt.Errorf("load skip_fwd_sec: %w", err)
+	}
+	if p.Volume, err = settingVolume.Get(s.db); err != nil {
+		return p, fmt.Errorf("load volume: %w", err)
+	}
+	if p.AutoplayNext, err = settingAutoplayNext.Get(s.db); err != nil {
+		return p, fmt.Errorf("load autoplay_next: %w", err)
+	}
+	if p.SkipSilence, err = settingSkipSilence.Get(s.db); err != nil {
+		return p, fmt.Errorf("load skip_silence: %w", err)
+	}
+	return p, nil
 }
 
 // SavePlayerPrefs persists the per-user player preferences.
