@@ -81,11 +81,6 @@ func (h *Pages) SettingsRedirect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 }
 
-// Settings is kept as an alias for SettingsRedirect for backwards compatibility.
-func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
-	h.SettingsRedirect(w, r)
-}
-
 func (h *Pages) SettingsSubscriptions(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
