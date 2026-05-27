@@ -3,6 +3,7 @@ package feed_test
 import (
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -48,6 +49,40 @@ func TestSavePlayerPrefsEndpoint(t *testing.T) {
 	}
 	if !got.SkipSilence {
 		t.Errorf("SkipSilence = false, want true")
+	}
+}
+
+func TestSidebarHidesEmptyWhenEnabled(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "u", "pass")
+	raw, ok := env.Providers.Plugins.Plugin(feed.PluginID)
+	if !ok {
+		t.Fatal("feed plugin not registered")
+	}
+	db, err := raw.(*feed.Plugin).DB(u.User.Username)
+	require.NoError(t, err)
+	s := feed.NewStore(db)
+
+	withItems, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://a.test/f", Title: "HasUnread"})
+	require.NoError(t, err)
+	_, err = s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://b.test/f", Title: "EmptySub"})
+	require.NoError(t, err)
+	_, _, err = s.UpsertItem(feed.Item{SubscriptionID: withItems, GUID: "g1", Type: "text", Title: "x"})
+	require.NoError(t, err)
+
+	p, err := s.LoadPlayerPrefs()
+	require.NoError(t, err)
+	p.HideEmpty = true
+	require.NoError(t, s.SavePlayerPrefs(p))
+
+	resp := env.Get(t, "/apps/feed/", u.Auth)
+	resp.Status(200)
+	body := resp.ReadBody()
+	if !strings.Contains(body, "HasUnread") {
+		t.Fatal("subscription with items should appear in sidebar")
+	}
+	if strings.Contains(body, "EmptySub") {
+		t.Fatal("empty subscription should be hidden when hide_empty enabled")
 	}
 }
 

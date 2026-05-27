@@ -352,6 +352,7 @@ func (h *Pages) buildSidebar(store *Store, activePath string) sidebarData {
 	folderUnread, _ := store.CountUnreadByFolder()
 	totalUnread, _ := store.CountUnread()
 	starredCount, _ := store.CountStarred()
+	prefs, _ := store.LoadPlayerPrefs() // HideEmpty defaults false on error
 	return sidebarData{
 		Folders:       folders,
 		Subscriptions: subs,
@@ -362,6 +363,7 @@ func (h *Pages) buildSidebar(store *Store, activePath string) sidebarData {
 		StarredCount:  int(starredCount),
 		UnreadCounts:  unreadCounts,
 		FolderUnread:  folderUnread,
+		HideEmpty:     prefs.HideEmpty,
 	}
 }
 
@@ -1458,9 +1460,17 @@ func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 	if v := r.FormValue("skip_silence"); v != "" {
 		cur.SkipSilence = v == "true" || v == "1" || v == "on"
 	}
+	if v := r.FormValue("hide_empty"); v != "" {
+		cur.HideEmpty = v == "true" || v == "1" || v == "on"
+	}
 	if err := store.SavePlayerPrefs(cur); err != nil {
 		slog.Error("feed: save player prefs", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if r.Header.Get("HX-Target") == "feed-sidebar" {
+		sb := h.buildSidebar(store, "/apps/feed/")
+		feedSidebar(sb).Render(r.Context(), w)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

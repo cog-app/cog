@@ -21,10 +21,23 @@ type sidebarData struct {
 	StarredCount  int
 	UnreadCounts  map[int64]int // by subscription_id
 	FolderUnread  map[int64]int // by folder_id
+	HideEmpty     bool
 }
 
 templ feedSidebar(sb sidebarData) {
 	<nav class="sidebar" id="feed-sidebar">
+		<label class="sidebar-hide-empty" style="display:flex;align-items:center;gap:0.4rem;padding:0.25rem 0.5rem;font-size:0.8rem;color:var(--color-muted)">
+			<input
+				type="checkbox"
+				name="hide_empty"
+				checked?={ sb.HideEmpty }
+				hx-post="/apps/feed/player/prefs"
+				hx-vals={ `js:{hide_empty: event.target.checked ? "1" : "0"}` }
+				hx-target="#feed-sidebar"
+				hx-swap="outerHTML"
+			/>
+			Hide read
+		</label>
 		<a href="/apps/feed/" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/") }>
 			All
 			if sb.TotalUnread > 0 {
@@ -40,27 +53,33 @@ templ feedSidebar(sb sidebarData) {
 		<a href="/apps/feed/history" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/history") }>History</a>
 		<div class="sidebar-divider"></div>
 		for _, folder := range sb.Folders {
-			<details class="sidebar-folder" data-folder-id={ strconv.FormatInt(folder.ID, 10) } open?={ isFeedFolderActive(folder, sb) }>
-				<summary class="sidebar-group-label">
-					<a
-						href={ templ.SafeURL(fmt.Sprintf("/apps/feed/folder/%d", folder.ID)) }
-						style="color:inherit;text-decoration:none"
-						onclick="event.stopPropagation()"
-					>{ folder.Name }</a>
-					if sb.FolderUnread[folder.ID] > 0 {
-						<span class="badge">{ strconv.Itoa(sb.FolderUnread[folder.ID]) }</span>
+			if !sb.HideEmpty || sb.FolderUnread[folder.ID] > 0 {
+				<details class="sidebar-folder" data-folder-id={ strconv.FormatInt(folder.ID, 10) } open?={ isFeedFolderActive(folder, sb) }>
+					<summary class="sidebar-group-label">
+						<a
+							href={ templ.SafeURL(fmt.Sprintf("/apps/feed/folder/%d", folder.ID)) }
+							style="color:inherit;text-decoration:none"
+							onclick="event.stopPropagation()"
+						>{ folder.Name }</a>
+						if sb.FolderUnread[folder.ID] > 0 {
+							<span class="badge">{ strconv.Itoa(sb.FolderUnread[folder.ID]) }</span>
+						}
+					</summary>
+					for _, sub := range sb.Subscriptions {
+						if sub.FolderID.Valid && sub.FolderID.Int64 == folder.ID {
+							if !sb.HideEmpty || sb.UnreadCounts[sub.ID] > 0 {
+								@feedSidebarSubLink(sub, sb)
+							}
+						}
 					}
-				</summary>
-				for _, sub := range sb.Subscriptions {
-					if sub.FolderID.Valid && sub.FolderID.Int64 == folder.ID {
-						@feedSidebarSubLink(sub, sb)
-					}
-				}
-			</details>
+				</details>
+			}
 		}
 		for _, sub := range sb.Subscriptions {
 			if !sub.FolderID.Valid {
-				@feedSidebarSubLink(sub, sb)
+				if !sb.HideEmpty || sb.UnreadCounts[sub.ID] > 0 {
+					@feedSidebarSubLink(sub, sb)
+				}
 			}
 		}
 		if len(sb.Tags) > 0 {
