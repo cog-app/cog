@@ -1279,3 +1279,50 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, ref, http.StatusSeeOther)
 }
+
+// SavePlayerPrefs persists per-user player preferences (gear-menu changes).
+func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	cur, err := store.LoadPlayerPrefs()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Only overwrite fields actually present in the form (partial updates).
+	if v := r.FormValue("speed"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			cur.Speed = min(max(f, 0.25), 4.0)
+		}
+	}
+	if v := r.FormValue("skip_back_sec"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cur.SkipBackSec = min(max(n, 1), 120)
+		}
+	}
+	if v := r.FormValue("skip_fwd_sec"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cur.SkipFwdSec = min(max(n, 1), 120)
+		}
+	}
+	if v := r.FormValue("volume"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			cur.Volume = min(max(f, 0), 1)
+		}
+	}
+	if v := r.FormValue("autoplay_next"); v != "" {
+		cur.AutoplayNext = v == "true" || v == "1" || v == "on"
+	}
+	if v := r.FormValue("skip_silence"); v != "" {
+		cur.SkipSilence = v == "true" || v == "1" || v == "on"
+	}
+	if err := store.SavePlayerPrefs(cur); err != nil {
+		slog.Error("feed: save player prefs", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

@@ -126,6 +126,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "folders/{id}/read-all", http.HandlerFunc(pages.MarkFolderRead))
 	ctx.RegisterAction("POST", "subscription/{id}/settings", http.HandlerFunc(pages.SaveSubscriptionSettings))
 	ctx.RegisterAction("POST", "admin/purge-cache", http.HandlerFunc(pages.PurgeCache))
+	ctx.RegisterAction("POST", "player/prefs", http.HandlerFunc(pages.SavePlayerPrefs))
 
 	// Settings page and resource actions
 	ctx.RegisterPage("settings", http.HandlerFunc(pages.Settings))
