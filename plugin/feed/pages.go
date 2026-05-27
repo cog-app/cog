@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -714,8 +715,9 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": streamURL})
 }
 
-// CleanAudio returns mute ranges for profanity in an item's captions.
-func (h *Pages) CleanAudio(w http.ResponseWriter, r *http.Request) {
+// Ranges returns the unified mute (profanity) + skip (silence) ranges for an item.
+// Silence ranges are computed lazily on first request when a local file exists.
+func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
@@ -727,25 +729,59 @@ func (h *Pages) CleanAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d, err := store.GetDownload(id)
-	if err != nil || d.CaptionsPath == "" {
-		plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": []any{}})
-		return
-	}
-	prof := h.plugin.Profanity()
-	if prof == nil {
-		plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": []any{}})
-		return
-	}
-	f, err := os.Open(d.CaptionsPath)
 	if err != nil {
-		plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": []any{}})
+		// No download row yet — nothing to analyze.
+		plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": []Range{}})
 		return
 	}
-	defer f.Close()
-	u := plugin.UserFromContext(r.Context())
-	captions := profanity.ParseVTT(f)
-	ranges := prof.AudioRanges(u.Username, captions)
+
+	ranges := []Range{}
+
+	// Mute ranges from profanity captions (when captions + plugin present).
+	if d.CaptionsPath != "" {
+		if prof := h.plugin.Profanity(); prof != nil {
+			if f, ferr := os.Open(d.CaptionsPath); ferr == nil {
+				u := plugin.UserFromContext(r.Context())
+				captions := profanity.ParseVTT(f)
+				f.Close()
+				for _, ar := range prof.AudioRanges(u.Username, captions) {
+					ranges = append(ranges, Range{Start: ar.Start, End: ar.End, Action: "mute"})
+				}
+			} else {
+				slog.Error("feed: open captions", "id", id, "err", ferr)
+			}
+		}
+	}
+
+	// Skip ranges from silence detection (lazy, cached, requires local file).
+	if d.LocalPath != "" {
+		skips, derr := h.silenceRanges(r.Context(), store, id, d)
+		if derr != nil {
+			slog.Error("feed: silence ranges", "id", id, "err", derr)
+		}
+		ranges = append(ranges, skips...)
+	}
+
 	plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": ranges})
+}
+
+// silenceRanges returns cached silence ranges, computing them once if not yet done.
+func (h *Pages) silenceRanges(ctx context.Context, store *Store, id int64, d Download) ([]Range, error) {
+	if d.SilenceState == "done" {
+		return store.GetSilenceRanges(id)
+	}
+	rs, err := detectSilence(ctx, d.LocalPath)
+	if err != nil {
+		// Cache an empty "done" result so we don't recompute in a tight loop.
+		if serr := store.SetSilenceRanges(id, nil); serr != nil {
+			slog.Error("feed: cache empty silence ranges", "id", id, "err", serr)
+		}
+		return nil, err
+	}
+	if serr := store.SetSilenceRanges(id, rs); serr != nil {
+		return rs, serr
+	}
+	return rs, nil
 }
 
 // ItemMedia serves item media: prefers clean_audio_path, then local_path, then 302 to media_url.

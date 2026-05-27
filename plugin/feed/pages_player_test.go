@@ -132,23 +132,22 @@ func TestFeedPlayerCompleteEndpoint(t *testing.T) {
 	}
 }
 
-// TestFeedCleanAudioReturnsEmptyWithoutProfanity verifies that without the
-// profanity plugin registered, the endpoint returns {"ranges":[]}.
-func TestFeedCleanAudioReturnsEmptyWithoutProfanity(t *testing.T) {
-	// cogtest does not register the profanity plugin by default.
+// TestFeedRangesReturnsEmptyWithoutProfanity verifies that without the profanity
+// plugin and without a local file, the unified ranges endpoint returns {"ranges":[]}.
+func TestFeedRangesReturnsEmptyWithoutProfanity(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	u := env.CreateUser(t, "dave", "pass")
 	store := feedStore(t, env, u.Username)
 	itemID := seedAudioItem(t, store, "https://cdn.example.com/ep4.mp3")
 
-	resp := env.Get(t, "/apps/feed/api/clean-audio/"+strconv.FormatInt(itemID, 10), u.Auth)
+	resp := env.Get(t, "/apps/feed/api/ranges/"+strconv.FormatInt(itemID, 10), u.Auth)
 	resp.Status(http.StatusOK)
 	body := resp.ReadBody()
 	if !strings.Contains(body, `"ranges"`) {
-		t.Errorf("clean-audio response missing 'ranges' key; body=%q", body)
+		t.Errorf("ranges response missing 'ranges' key; body=%q", body)
 	}
-	// Ranges should be empty ([] or null).
-	if strings.Contains(body, `"Start"`) || strings.Contains(body, `"End"`) {
-		t.Errorf("clean-audio should return empty ranges without profanity plugin; body=%q", body)
+	// No profanity plugin + no local file → no ranges.
+	if strings.Contains(body, `"action"`) {
+		t.Errorf("expected empty ranges without profanity/local file; body=%q", body)
 	}
 }
