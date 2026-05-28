@@ -178,7 +178,7 @@ func (s *Store) ListSubscriptions() ([]Subscription, error) {
 		SELECT id, folder_id, kind, url, title, description, site_url, image_url,
 		       favicon_url, etag, last_modified, poll_interval_sec, next_check_at,
 		       last_checked_at, last_success_at, error_count, last_error, paused, created_at
-		FROM subscriptions ORDER BY title`)
+		FROM subscriptions ORDER BY (CASE WHEN error_count > 0 THEN 0 ELSE 1 END) ASC, LOWER(COALESCE(NULLIF(title, ''), url)) ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list subscriptions: %w", err)
 	}

@@ -475,3 +475,53 @@ func TestListItemsForViewWithQueryAndFolderJoin(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestListSubscriptionsOrdered(t *testing.T) {
+	s := newStore(t)
+	// Create subs in non-alphabetical order
+	_, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://z.test/f", Title: "Zeta"})
+	require.NoError(t, err)
+	_, err = s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://a.test/f", Title: "alpha"})
+	require.NoError(t, err)
+	_, err = s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://m.test/f", Title: ""})
+	require.NoError(t, err)
+
+	subs, err := s.ListSubscriptions()
+	require.NoError(t, err)
+	if len(subs) != 3 {
+		t.Fatalf("got %d", len(subs))
+	}
+	// Sorted alpha by LOWER(COALESCE(NULLIF(title,''), url)):
+	//   "alpha" < "https://m.test/f" < "zeta" (all lowercased)
+	if subs[0].Title != "alpha" || subs[1].URL != "https://m.test/f" || subs[2].Title != "Zeta" {
+		t.Fatalf("got %+v", subs)
+	}
+}
+
+func TestListSubscriptionsErrorsFirst(t *testing.T) {
+	s := newStore(t)
+	// Create sub with error first
+	errSubID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://e.test/f", Title: "Errored"})
+	require.NoError(t, err)
+	// Inject error into first sub
+	require.NoError(t, s.RecordSubscriptionError(errSubID, "connection failed", 9999999))
+
+	// Create normal subs
+	_, err = s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://z.test/f", Title: "Zeta"})
+	require.NoError(t, err)
+	_, err = s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://a.test/f", Title: "alpha"})
+	require.NoError(t, err)
+
+	subs, err := s.ListSubscriptions()
+	require.NoError(t, err)
+	if len(subs) != 3 {
+		t.Fatalf("got %d", len(subs))
+	}
+	// Errored sub should be first, then sorted alphabetically
+	if subs[0].Title != "Errored" || subs[0].ErrorCount == 0 {
+		t.Fatalf("first sub should be errored, got %+v", subs[0])
+	}
+	if subs[1].Title != "alpha" || subs[2].Title != "Zeta" {
+		t.Fatalf("got %+v", subs)
+	}
+}

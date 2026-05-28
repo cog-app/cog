@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -415,23 +414,10 @@ func (h *Pages) DeletePlaylist(w http.ResponseWriter, r *http.Request) {
 
 // sortSubscriptionsForSidebar sorts subscriptions so those with errors appear
 // first, then alphabetically by display title (case-insensitive).
-func sortSubscriptionsForSidebar(subs []Subscription) {
-	sort.SliceStable(subs, func(i, j int) bool {
-		si, sj := subs[i], subs[j]
-		// Errors first
-		if (si.ErrorCount > 0) != (sj.ErrorCount > 0) {
-			return si.ErrorCount > 0
-		}
-		// Then by display title (case-insensitive)
-		return strings.ToLower(subscriptionDisplayTitle(si)) < strings.ToLower(subscriptionDisplayTitle(sj))
-	})
-}
-
 // buildSidebar assembles sidebar data for the given active path.
 func (h *Pages) buildSidebar(store *Store, activePath string) sidebarData {
 	folders, _ := store.ListFolders()
 	subs, _ := store.ListSubscriptions()
-	sortSubscriptionsForSidebar(subs)
 	tags, _ := store.ListTags()
 	playlists, _ := store.ListPlaylists()
 	unreadCounts, _ := store.CountUnreadBySubscription()
