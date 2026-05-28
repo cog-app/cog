@@ -30,6 +30,27 @@ func Open(path string) (*Index, error) {
 	return &Index{idx: idx}, nil
 }
 
+// OpenWithSchemas opens or creates a bleve index whose mapping derives from
+// the given per-source schemas. Falls back to legacy Open(path) when schemas
+// is empty (preserves backward-compat for plugins not yet migrated).
+func OpenWithSchemas(path string, schemas map[string]*query.Schema) (*Index, error) {
+	if len(schemas) == 0 {
+		return Open(path)
+	}
+	m, err := buildSchemaMapping(schemas)
+	if err != nil {
+		return nil, fmt.Errorf("schema mapping: %w", err)
+	}
+	idx, err := bleve.New(path, m)
+	if err == bleve.ErrorIndexPathExists {
+		idx, err = bleve.Open(path)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open index: %w", err)
+	}
+	return &Index{idx: idx}, nil
+}
+
 // OpenMemory creates an in-memory Bleve index for testing.
 func OpenMemory() (*Index, error) {
 	idx, err := bleve.NewMemOnly(buildMapping())
