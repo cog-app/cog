@@ -114,13 +114,25 @@ func (s *Store) DeleteFolder(id int64) error {
 	return nil
 }
 
-// DeleteFolders deletes each folder by id, stopping at the first error.
-// Empty input is a no-op.
+// DeleteFolders deletes all folders with the given ids in a single statement.
+// Subscriptions in those folders have their folder_id set to NULL via the
+// ON DELETE SET NULL foreign-key constraint. Empty input is a no-op.
 func (s *Store) DeleteFolders(ids []int64) error {
-	for _, id := range ids {
-		if err := s.DeleteFolder(id); err != nil {
-			return fmt.Errorf("bulk delete folder %d: %w", id, err)
-		}
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	_, err := s.db.Exec(
+		`DELETE FROM folders WHERE id IN (`+strings.Join(placeholders, ",")+`)`,
+		args...,
+	)
+	if err != nil {
+		return fmt.Errorf("bulk delete folders: %w", err)
 	}
 	return nil
 }
@@ -304,13 +316,25 @@ func (s *Store) DeleteSubscription(id int64) error {
 	return nil
 }
 
-// DeleteSubscriptions deletes each subscription by id, stopping at the first
-// error (which it wraps). Empty input is a no-op.
+// DeleteSubscriptions deletes all subscriptions with the given ids in a single
+// statement. Child rows (items, playback, downloads, item_tags) are removed via
+// ON DELETE CASCADE foreign-key constraints. Empty input is a no-op.
 func (s *Store) DeleteSubscriptions(ids []int64) error {
-	for _, id := range ids {
-		if err := s.DeleteSubscription(id); err != nil {
-			return fmt.Errorf("bulk delete subscription %d: %w", id, err)
-		}
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	_, err := s.db.Exec(
+		`DELETE FROM subscriptions WHERE id IN (`+strings.Join(placeholders, ",")+`)`,
+		args...,
+	)
+	if err != nil {
+		return fmt.Errorf("bulk delete subscriptions: %w", err)
 	}
 	return nil
 }
