@@ -18,6 +18,10 @@ const (
 	tokBang
 	tokComma
 	tokStar
+	tokGt
+	tokGe
+	tokLt
+	tokLe
 )
 
 type token struct {
@@ -58,6 +62,18 @@ func (l *lexer) run() {
 			l.emit(tokComma, ",")
 		case ch == '*':
 			l.emit(tokStar, "*")
+		case ch == '>':
+			if l.pos+1 < len(l.input) && l.input[l.pos+1] == '=' {
+				l.emit(tokGe, ">=")
+			} else {
+				l.emit(tokGt, ">")
+			}
+		case ch == '<':
+			if l.pos+1 < len(l.input) && l.input[l.pos+1] == '=' {
+				l.emit(tokLe, "<=")
+			} else {
+				l.emit(tokLt, "<")
+			}
 		case ch == '"':
 			l.lexQuoted()
 		default:
@@ -94,7 +110,8 @@ func (l *lexer) lexWord() {
 		ch := rune(l.input[l.pos])
 		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' ||
 			ch == '(' || ch == ')' || ch == ':' || ch == '=' ||
-			ch == '!' || ch == ',' || ch == '"' {
+			ch == '!' || ch == ',' || ch == '"' ||
+			ch == '>' || ch == '<' {
 			break
 		}
 		if ch == '*' {

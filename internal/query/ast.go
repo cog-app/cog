@@ -2,7 +2,9 @@ package query
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Record is a multi-valued key-value map that expressions are matched against.
@@ -128,4 +130,94 @@ func (e *FieldInExpr) Match(r Record) bool {
 
 func (e *FieldInExpr) String() string {
 	return fmt.Sprintf(":%s IN (%s)", e.Field, strings.Join(e.Values, ", "))
+}
+
+// CompareOp is a range comparison operator.
+type CompareOp int
+
+const (
+	OpGt CompareOp = iota // >
+	OpGe                  // >=
+	OpLt                  // <
+	OpLe                  // <=
+)
+
+func (o CompareOp) String() string {
+	switch o {
+	case OpGt:
+		return ">"
+	case OpGe:
+		return ">="
+	case OpLt:
+		return "<"
+	case OpLe:
+		return "<="
+	default:
+		return "?"
+	}
+}
+
+// FieldCompareExpr matches when record[Field] compares against Value under Op.
+// Comparison is heuristic in the schemaless Go matcher: numeric first, then
+// RFC3339 time, then lexical string. The SQL and Bleve evaluators are
+// schema-typed and exact.
+type FieldCompareExpr struct {
+	Field string
+	Op    CompareOp
+	Value string
+}
+
+func (e *FieldCompareExpr) Match(r Record) bool {
+	for _, have := range r[e.Field] {
+		if compareValues(have, e.Value, e.Op) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *FieldCompareExpr) String() string {
+	return fmt.Sprintf(":%s%s%s", e.Field, e.Op, e.Value)
+}
+
+// compareValues compares two string values heuristically: numeric if both
+// parse as floats, else time if both parse as RFC3339, else lexical.
+func compareValues(have, want string, op CompareOp) bool {
+	if hf, err1 := strconv.ParseFloat(have, 64); err1 == nil {
+		if wf, err2 := strconv.ParseFloat(want, 64); err2 == nil {
+			return applyOrder(cmpFloat(hf, wf), op)
+		}
+	}
+	if ht, err1 := time.Parse(time.RFC3339, have); err1 == nil {
+		if wt, err2 := time.Parse(time.RFC3339, want); err2 == nil {
+			return applyOrder(ht.Compare(wt), op)
+		}
+	}
+	return applyOrder(strings.Compare(have, want), op)
+}
+
+func cmpFloat(a, b float64) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// applyOrder maps a -1/0/1 comparison result to the operator's truth.
+func applyOrder(cmp int, op CompareOp) bool {
+	switch op {
+	case OpGt:
+		return cmp > 0
+	case OpGe:
+		return cmp >= 0
+	case OpLt:
+		return cmp < 0
+	case OpLe:
+		return cmp <= 0
+	}
+	return false
 }

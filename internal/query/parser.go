@@ -145,6 +145,10 @@ func (p *parser) parsePrimary() (Expr, error) {
 				return p.parseFieldShorthand()
 			}
 		}
+		// field>value / field>=value / field<value / field<=value shorthand
+		if k := p.peekAt(1).kind; k == tokGt || k == tokGe || k == tokLt || k == tokLe {
+			return p.parseCompareShorthand()
+		}
 		t := p.next()
 		return &TextExpr{Value: t.val}, nil
 
@@ -171,14 +175,35 @@ func (p *parser) parseField() (Expr, error) {
 		}
 		return &FieldEqExpr{Field: field.val, Value: val}, nil
 
+	case tokGt, tokGe, tokLt, tokLe:
+		op := compareOpFor(p.next().kind)
+		val, err := p.parseValue()
+		if err != nil {
+			return nil, err
+		}
+		return &FieldCompareExpr{Field: field.val, Op: op, Value: val}, nil
+
 	case tokText:
 		if p.peek().val == "IN" {
 			return p.parseFieldIn(field.val)
 		}
-		return nil, fmt.Errorf("expected '=' or 'IN' after field name at position %d", p.peek().pos)
+		return nil, fmt.Errorf("expected '=', 'IN', or comparison operator after field name at position %d", p.peek().pos)
 
 	default:
-		return nil, fmt.Errorf("expected '=' or 'IN' after field name at position %d", p.peek().pos)
+		return nil, fmt.Errorf("expected '=', 'IN', or comparison operator after field name at position %d", p.peek().pos)
+	}
+}
+
+func compareOpFor(k tokenKind) CompareOp {
+	switch k {
+	case tokGt:
+		return OpGt
+	case tokGe:
+		return OpGe
+	case tokLt:
+		return OpLt
+	default:
+		return OpLe
 	}
 }
 
@@ -218,6 +243,17 @@ func (p *parser) parseFieldShorthand() (Expr, error) {
 		return nil, err
 	}
 	return &FieldEqExpr{Field: field.val, Value: val}, nil
+}
+
+// parseCompareShorthand parses "field>value" etc. as a FieldCompareExpr.
+func (p *parser) parseCompareShorthand() (Expr, error) {
+	field := p.next() // field name
+	op := compareOpFor(p.next().kind)
+	val, err := p.parseValue()
+	if err != nil {
+		return nil, err
+	}
+	return &FieldCompareExpr{Field: field.val, Op: op, Value: val}, nil
 }
 
 // parseValue returns a text or quoted string value.

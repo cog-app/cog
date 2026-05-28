@@ -328,3 +328,63 @@ func TestMatchAllExprInString(t *testing.T) {
 		t.Errorf("Parse(%q).String() = %q, want %q", "*", e.String(), "*")
 	}
 }
+
+func TestParseFieldCompareOps(t *testing.T) {
+	cases := []struct {
+		in    string
+		field string
+		op    CompareOp
+		val   string
+	}{
+		{":published>2026-01-01", "published", OpGt, "2026-01-01"},
+		{":published>=2026-01-01", "published", OpGe, "2026-01-01"},
+		{":published<2026-01-01", "published", OpLt, "2026-01-01"},
+		{":published<=2026-01-01", "published", OpLe, "2026-01-01"},
+		{":duration>600", "duration", OpGt, "600"},
+		{"published>-7d", "published", OpGt, "-7d"}, // shorthand form
+	}
+	for _, c := range cases {
+		expr, err := Parse(c.in)
+		if err != nil {
+			t.Fatalf("%s: %v", c.in, err)
+		}
+		fc, ok := expr.(*FieldCompareExpr)
+		if !ok {
+			t.Fatalf("%s: got %T, want *FieldCompareExpr", c.in, expr)
+		}
+		if fc.Field != c.field || fc.Op != c.op || fc.Value != c.val {
+			t.Fatalf("%s: got {%s %v %q}", c.in, fc.Field, fc.Op, fc.Value)
+		}
+	}
+}
+
+func TestParseCompareComposes(t *testing.T) {
+	// between: published >= A AND published < B
+	expr, err := Parse(":published>=2026-01-01 :published<2026-02-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := expr.(*AndExpr); !ok {
+		t.Fatalf("got %T, want *AndExpr", expr)
+	}
+}
+
+func TestFieldCompareMatchNumeric(t *testing.T) {
+	r := Record{"duration": {"600"}}
+	if !(&FieldCompareExpr{Field: "duration", Op: OpGt, Value: "300"}).Match(r) {
+		t.Fatal("600 > 300 should match")
+	}
+	if (&FieldCompareExpr{Field: "duration", Op: OpLt, Value: "300"}).Match(r) {
+		t.Fatal("600 < 300 should not match")
+	}
+}
+
+func TestFieldCompareMatchTime(t *testing.T) {
+	r := Record{"published": {"2026-05-28T00:00:00Z"}}
+	if !(&FieldCompareExpr{Field: "published", Op: OpGe, Value: "2026-01-01T00:00:00Z"}).Match(r) {
+		t.Fatal("May >= Jan should match")
+	}
+	if (&FieldCompareExpr{Field: "published", Op: OpLt, Value: "2026-01-01T00:00:00Z"}).Match(r) {
+		t.Fatal("May < Jan should not match")
+	}
+}
