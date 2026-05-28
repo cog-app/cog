@@ -275,7 +275,10 @@ func TestIndexSearchFindsItemsPastLimit(t *testing.T) {
 	require.NoError(t, err)
 	resp := env.Get(t, "/apps/feed/?q=UNIQUE-NEEDLE-XYZ", u.Auth)
 	resp.Status(200)
-	resp.Contains("UNIQUE-NEEDLE-XYZ")
+	// Title appears in the rendered row as `>UNIQUE-NEEDLE-XYZ<` (between
+	// tags). The search input echoes the query but as `value="..."`, so the
+	// `>...<` form is a robust signal the item was actually selected.
+	resp.Contains(">UNIQUE-NEEDLE-XYZ<")
 }
 
 func TestFeedIndex_Browser(t *testing.T) {
