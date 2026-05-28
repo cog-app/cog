@@ -97,19 +97,6 @@ func (h *Pages) SettingsSubscriptions(w http.ResponseWriter, r *http.Request) {
 	feedSettingsSubscriptionsPage(sb, subs, folders, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
-func (h *Pages) SettingsBulkDelete(w http.ResponseWriter, r *http.Request) {
-	store, err := h.userStore(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	subs, _ := store.ListSubscriptions()
-	folders, _ := store.ListFolders()
-	msg, kind := h.flashParts(w, r)
-	sb := h.buildSidebar(store, "/apps/feed/settings/bulk-delete")
-	feedSettingsBulkDeletePage(sb, subs, folders, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
-}
-
 func (h *Pages) SettingsFilters(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
@@ -132,47 +119,6 @@ func (h *Pages) SettingsPlaylists(w http.ResponseWriter, r *http.Request) {
 	msg, kind := h.flashParts(w, r)
 	sb := h.buildSidebar(store, "/apps/feed/settings/playlists")
 	feedSettingsPlaylistsPage(sb, playlists, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
-}
-
-// BulkDelete deletes the selected folders and subscriptions, then redirects.
-func (h *Pages) BulkDelete(w http.ResponseWriter, r *http.Request) {
-	store, err := h.userStore(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
-		return
-	}
-	subIDs := parseIDs(r.Form["sub_id"])
-	folderIDs := parseIDs(r.Form["folder_id"])
-	var failed bool
-	if err := store.DeleteSubscriptions(subIDs); err != nil {
-		slog.Error("feed: bulk delete subs", "err", err)
-		failed = true
-	}
-	if err := store.DeleteFolders(folderIDs); err != nil {
-		slog.Error("feed: bulk delete folders", "err", err)
-		failed = true
-	}
-	if failed {
-		h.setFlash(w, "error", "Some items could not be deleted; see server logs.")
-	} else {
-		h.setFlash(w, "success", fmt.Sprintf("Deleted %d subscription(s), %d folder(s).", len(subIDs), len(folderIDs)))
-	}
-	http.Redirect(w, r, "/apps/feed/settings/bulk-delete", http.StatusSeeOther)
-}
-
-// parseIDs parses decimal id strings, skipping invalid entries.
-func parseIDs(ss []string) []int64 {
-	out := make([]int64, 0, len(ss))
-	for _, s := range ss {
-		if id, err := strconv.ParseInt(s, 10, 64); err == nil {
-			out = append(out, id)
-		}
-	}
-	return out
 }
 
 // flashParts reads the flash (if any) into message+kind for templates.

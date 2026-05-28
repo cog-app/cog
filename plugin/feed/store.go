@@ -114,29 +114,6 @@ func (s *Store) DeleteFolder(id int64) error {
 	return nil
 }
 
-// DeleteFolders deletes all folders with the given ids in a single statement.
-// Subscriptions in those folders have their folder_id set to NULL via the
-// ON DELETE SET NULL foreign-key constraint. Empty input is a no-op.
-func (s *Store) DeleteFolders(ids []int64) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	placeholders := make([]string, len(ids))
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		placeholders[i] = "?"
-		args[i] = id
-	}
-	_, err := s.db.Exec(
-		`DELETE FROM folders WHERE id IN (`+strings.Join(placeholders, ",")+`)`,
-		args...,
-	)
-	if err != nil {
-		return fmt.Errorf("bulk delete folders: %w", err)
-	}
-	return nil
-}
-
 // --- Subscription methods ---
 
 // CreateSubscription inserts a new subscription and returns its ID.
@@ -312,29 +289,6 @@ func (s *Store) DeleteSubscription(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM subscriptions WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete subscription: %w", err)
-	}
-	return nil
-}
-
-// DeleteSubscriptions deletes all subscriptions with the given ids in a single
-// statement. Child rows (items, playback, downloads, item_tags) are removed via
-// ON DELETE CASCADE foreign-key constraints. Empty input is a no-op.
-func (s *Store) DeleteSubscriptions(ids []int64) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	placeholders := make([]string, len(ids))
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		placeholders[i] = "?"
-		args[i] = id
-	}
-	_, err := s.db.Exec(
-		`DELETE FROM subscriptions WHERE id IN (`+strings.Join(placeholders, ",")+`)`,
-		args...,
-	)
-	if err != nil {
-		return fmt.Errorf("bulk delete subscriptions: %w", err)
 	}
 	return nil
 }
@@ -1196,13 +1150,14 @@ type ViewSpec struct {
 
 // ListItemsForView returns items (with subscription title) according to the ViewSpec.
 func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscription, error) {
-	base := `
+	var base strings.Builder
+	base.WriteString(`
 		SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
 		       i.content_html, i.media_url, i.media_mime, i.duration_sec, i.thumbnail_url,
 		       i.published_at, i.fetched_at, i.is_read, i.is_starred, i.content_hash,
 		       COALESCE(s.title, s.url) AS subscription_title
 		FROM items i
-		JOIN subscriptions s ON i.subscription_id = s.id`
+		JOIN subscriptions s ON i.subscription_id = s.id`)
 
 	var where []string
 	var args []any
@@ -1217,7 +1172,7 @@ func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscripti
 		where = append(where, "s.folder_id = ?")
 		args = append(args, spec.FolderID.Int64)
 	case spec.TagName != "":
-		base += " JOIN item_tags it ON it.item_id = i.id JOIN tags t ON t.id = it.tag_id"
+		base.WriteString(" JOIN item_tags it ON it.item_id = i.id JOIN tags t ON t.id = it.tag_id")
 		where = append(where, "t.name = ?")
 		args = append(args, spec.TagName)
 	}
@@ -1236,7 +1191,7 @@ func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscripti
 			return nil, fmt.Errorf("list items for view: compile: %w", err)
 		}
 		for _, name := range joinNames {
-			base += " " + spec.Schema.Joins[name]
+			base.WriteString(" " + spec.Schema.Joins[name])
 		}
 		if w != "" {
 			where = append(where, w)
@@ -1244,7 +1199,7 @@ func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscripti
 		}
 	}
 
-	q := base
+	q := base.String()
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}

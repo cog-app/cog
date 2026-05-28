@@ -1,11 +1,8 @@
 package feed_test
 
 import (
-	"fmt"
-	"net/url"
 	"testing"
 
-	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
@@ -89,41 +86,9 @@ func TestSettingsRedirectsToSubscriptions(t *testing.T) {
 func TestSettingsPagesRender(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	u := env.CreateUser(t, "u", "pass")
-	for _, p := range []string{"subscriptions", "bulk-delete", "filters", "playlists"} {
+	for _, p := range []string{"subscriptions", "filters", "playlists"} {
 		resp := env.Get(t, "/apps/feed/settings/"+p, u.Auth)
 		resp.Status(200)
 		resp.Contains("feed-sidebar")
-		resp.Contains("Bulk Delete")
-	}
-}
-
-func TestBulkDeleteRemovesSelected(t *testing.T) {
-	env := cogtest.New(t, feed.New())
-	u := env.CreateUser(t, "u", "pass")
-	raw, ok := env.Providers.Plugins.Plugin(feed.PluginID)
-	if !ok {
-		t.Fatal("feed plugin not registered")
-	}
-	db, err := raw.(*feed.Plugin).DB(u.User.Username)
-	require.NoError(t, err)
-	s := feed.NewStore(db)
-	id, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/f"})
-	require.NoError(t, err)
-
-	// Create a session so CSRF validation passes.
-	sess, err := env.Providers.Sessions.Create(u.ID)
-	require.NoError(t, err)
-	sessionCookie := cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID)
-	csrfToken := auth.CSRFToken(sess.ID, env.Providers.CSRFSecret)
-
-	form := url.Values{
-		"sub_id":     {fmt.Sprint(id)},
-		"csrf_token": {csrfToken},
-	}
-	resp := env.PostForm(t, "/apps/feed/settings/bulk-delete", form, sessionCookie, cogtest.StopRedirect)
-	resp.Status(303)
-	subs, _ := s.ListSubscriptions()
-	if len(subs) != 0 {
-		t.Fatalf("subscription not bulk-deleted: %+v", subs)
 	}
 }

@@ -3,7 +3,6 @@ package feed_test
 import (
 	"database/sql"
 	"fmt"
-	"strconv"
 	"testing"
 	"time"
 
@@ -416,26 +415,6 @@ func TestSilenceRangesRoundTrip(t *testing.T) {
 	}
 }
 
-func TestBulkDelete(t *testing.T) {
-	s := newStore(t)
-	s1, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://1.test/f"})
-	require.NoError(t, err)
-	s2, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://2.test/f"})
-	require.NoError(t, err)
-	f1, err := s.CreateFolder("F1")
-	require.NoError(t, err)
-	require.NoError(t, s.DeleteSubscriptions([]int64{s1, s2}))
-	require.NoError(t, s.DeleteFolders([]int64{f1}))
-	subs, _ := s.ListSubscriptions()
-	if len(subs) != 0 {
-		t.Fatalf("subs not deleted: %+v", subs)
-	}
-	folders, _ := s.ListFolders()
-	if len(folders) != 0 {
-		t.Fatalf("folders not deleted: %+v", folders)
-	}
-}
-
 func TestListItemsForViewWithQuery(t *testing.T) {
 	s := newStore(t)
 	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/f", Title: "Site A"})
@@ -524,44 +503,6 @@ func TestListSubscriptionsErrorsFirst(t *testing.T) {
 	}
 	if subs[1].Title != "alpha" || subs[2].Title != "Zeta" {
 		t.Fatalf("got %+v", subs)
-	}
-}
-
-func TestDeleteSubscriptionsBulkClearsItems(t *testing.T) {
-	s := newStore(t)
-	var ids []int64
-	for i := 0; i < 5; i++ {
-		id, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: fmt.Sprintf("https://%d.test/f", i)})
-		require.NoError(t, err)
-		ids = append(ids, id)
-		// Each sub has one item so we can verify cascade.
-		_, _, err = s.UpsertItem(feed.Item{SubscriptionID: id, GUID: "g" + strconv.Itoa(i), Type: "text", Title: "t"})
-		require.NoError(t, err)
-	}
-	require.NoError(t, s.DeleteSubscriptions(ids))
-	subs, _ := s.ListSubscriptions()
-	if len(subs) != 0 {
-		t.Fatalf("subs not deleted: %+v", subs)
-	}
-	// Items should also be gone (cascade).
-	all, _ := s.ListItemsForView(feed.ViewSpec{All: true}, 100)
-	if len(all) != 0 {
-		t.Fatalf("items not cascaded: %+v", all)
-	}
-}
-
-func TestDeleteFoldersBulk(t *testing.T) {
-	s := newStore(t)
-	var ids []int64
-	for i := 0; i < 3; i++ {
-		id, err := s.CreateFolder(fmt.Sprintf("F%d", i))
-		require.NoError(t, err)
-		ids = append(ids, id)
-	}
-	require.NoError(t, s.DeleteFolders(ids))
-	folders, _ := s.ListFolders()
-	if len(folders) != 0 {
-		t.Fatalf("folders not deleted: %+v", folders)
 	}
 }
 

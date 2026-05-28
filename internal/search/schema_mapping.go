@@ -3,9 +3,9 @@ package search
 import (
 	"fmt"
 
+	"git.duckfam.us/jj-software/cog/internal/query"
 	"github.com/blevesearch/bleve/v2"
 	"github.com/blevesearch/bleve/v2/mapping"
-	"git.duckfam.us/jj-software/cog/internal/query"
 )
 
 // buildSchemaMapping turns one or more plugin Schemas into a single bleve

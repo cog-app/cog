@@ -15,9 +15,9 @@ func textSchema() Schema {
 			"type":   {Type: Keyword, Expr: "i.type"},
 			"folder": {Type: Keyword, Expr: "f.name", Joins: []string{"folders"}},
 			"tag": {
-				Type:        ManyToMany,
-				Join:        "item_tags", JoinFK: "item_id",
-				ValueTable:  "tags", ValueFK: "tag_id", ValueColumn: "name",
+				Type: ManyToMany,
+				Join: "item_tags", JoinFK: "item_id",
+				ValueTable: "tags", ValueFK: "tag_id", ValueColumn: "name",
 			},
 			"is": {
 				Type: EnumPredicate,

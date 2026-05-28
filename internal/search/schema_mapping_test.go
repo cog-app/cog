@@ -3,8 +3,8 @@ package search
 import (
 	"testing"
 
-	"github.com/blevesearch/bleve/v2/mapping"
 	"git.duckfam.us/jj-software/cog/internal/query"
+	"github.com/blevesearch/bleve/v2/mapping"
 )
 
 func TestBuildSchemaMappingMapsFields(t *testing.T) {

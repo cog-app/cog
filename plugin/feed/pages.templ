@@ -107,7 +107,6 @@ templ feedSidebar(sb sidebarData) {
 		<hr class="sidebar-divider"/>
 		<div class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-muted);padding:0.25rem 0.5rem">Settings</div>
 		<a href="/apps/feed/settings/subscriptions" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/settings/subscriptions") } style="padding-left:1.5rem;font-size:0.9rem">Subscriptions</a>
-		<a href="/apps/feed/settings/bulk-delete" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/settings/bulk-delete") } style="padding-left:1.5rem;font-size:0.9rem">Bulk Delete</a>
 		<a href="/apps/feed/settings/filters" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/settings/filters") } style="padding-left:1.5rem;font-size:0.9rem">Filters</a>
 		<a href="/apps/feed/settings/playlists" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/settings/playlists") } style="padding-left:1.5rem;font-size:0.9rem">Playlists</a>
 	</nav>
@@ -719,38 +718,6 @@ templ feedSettingsPlaylistsPage(sb sidebarData, playlists []Playlist, flashMsg s
 						</li>
 					}
 				</ul>
-			}
-		</div>
-	</div>
-}
-
-templ feedSettingsBulkDeletePage(sb sidebarData, subs []Subscription, folders []Folder, flashMsg string, flashKind string, csrfToken string) {
-	<div class="sidebar-layout">
-		@feedSidebar(sb)
-		<div class="sidebar-content">
-			@ui.Alert(flashKind, flashMsg)
-			@ui.Card("Bulk delete") {
-				<form method="post" action="/apps/feed/settings/bulk-delete">
-					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					<p class="text-muted">Select folders and subscriptions to delete.</p>
-					if len(folders) > 0 {
-						<h4>Folders</h4>
-						for _, f := range folders {
-							<label style="display:block">
-								<input type="checkbox" name="folder_id" value={ strconv.FormatInt(f.ID, 10) }/>
-								{ f.Name }
-							</label>
-						}
-					}
-					<h4>Subscriptions</h4>
-					for _, s := range subs {
-						<label style="display:block">
-							<input type="checkbox" name="sub_id" value={ strconv.FormatInt(s.ID, 10) }/>
-							{ subscriptionDisplayTitle(s) }
-						</label>
-					}
-					@ui.Button("danger", "Delete selected")
-				</form>
 			}
 		</div>
 	</div>

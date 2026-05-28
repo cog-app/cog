@@ -326,11 +326,11 @@ func TestItemDetailNavSurvivesReadAndHideRead(t *testing.T) {
 	require.NoError(t, err)
 	// Three items in the folder; opening the middle one in hide-read mode
 	// should still show a working prev/next.
-	id1, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "a", Type: "text", Title: "first",  PublishedAt: 1})
+	id1, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "a", Type: "text", Title: "first", PublishedAt: 1})
 	require.NoError(t, err)
 	id2, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "b", Type: "text", Title: "middle", PublishedAt: 2})
 	require.NoError(t, err)
-	id3, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "c", Type: "text", Title: "last",   PublishedAt: 3})
+	id3, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "c", Type: "text", Title: "last", PublishedAt: 3})
 	require.NoError(t, err)
 	p, err := s.LoadPlayerPrefs()
 	require.NoError(t, err)
@@ -362,9 +362,6 @@ func snippet(body, marker string) string {
 	if i < 0 {
 		return ""
 	}
-	end := i + 400
-	if end > len(body) {
-		end = len(body)
-	}
+	end := min(i+400, len(body))
 	return body[i:end]
 }
