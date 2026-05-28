@@ -1,10 +1,12 @@
 package feed_test
 
 import (
+	"database/sql"
 	"fmt"
 	"testing"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/query"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
@@ -430,5 +432,46 @@ func TestBulkDelete(t *testing.T) {
 	folders, _ := s.ListFolders()
 	if len(folders) != 0 {
 		t.Fatalf("folders not deleted: %+v", folders)
+	}
+}
+
+func TestListItemsForViewWithQuery(t *testing.T) {
+	s := newStore(t)
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/f", Title: "Site A"})
+	require.NoError(t, err)
+	_, _, err = s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g1", Type: "audio", Title: "alpha keep me"})
+	require.NoError(t, err)
+	_, _, err = s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g2", Type: "text", Title: "beta skip me"})
+	require.NoError(t, err)
+
+	expr, err := query.Parse("type:audio")
+	require.NoError(t, err)
+	got, err := s.ListItemsForView(feed.ViewSpec{All: true, Query: expr, Schema: feed.SearchSchema()}, 100)
+	require.NoError(t, err)
+	if len(got) != 1 || got[0].Title != "alpha keep me" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestListItemsForViewWithQueryAndFolderJoin(t *testing.T) {
+	s := newStore(t)
+	fid, err := s.CreateFolder("Dev")
+	require.NoError(t, err)
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/f", FolderID: sql.NullInt64{Int64: fid, Valid: true}})
+	require.NoError(t, err)
+	_, _, err = s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g1", Type: "text", Title: "hit"})
+	require.NoError(t, err)
+	// An item in a different (no) folder
+	sub2, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://y.test/f"})
+	require.NoError(t, err)
+	_, _, err = s.UpsertItem(feed.Item{SubscriptionID: sub2, GUID: "g2", Type: "text", Title: "miss"})
+	require.NoError(t, err)
+
+	expr, err := query.Parse(":folder=Dev")
+	require.NoError(t, err)
+	got, err := s.ListItemsForView(feed.ViewSpec{All: true, Query: expr, Schema: feed.SearchSchema()}, 100)
+	require.NoError(t, err)
+	if len(got) != 1 || got[0].Title != "hit" {
+		t.Fatalf("got %+v", got)
 	}
 }

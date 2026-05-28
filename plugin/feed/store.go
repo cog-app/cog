@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"git.duckfam.us/jj-software/cog/internal/query"
 )
 
 // Store provides access to the feed plugin's per-user database.
@@ -1179,6 +1181,8 @@ type ViewSpec struct {
 	SubscriptionID sql.NullInt64
 	TagName        string
 	HideRead       bool
+	Query          query.Expr    // optional cog-grammar filter; compiled to SQL.
+	Schema         *query.Schema // required when Query != nil.
 }
 
 // ListItemsForView returns items (with subscription title) according to the ViewSpec.
@@ -1212,6 +1216,23 @@ func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscripti
 
 	if spec.HideRead {
 		where = append(where, "i.is_read = 0")
+	}
+
+	if spec.Query != nil {
+		if spec.Schema == nil {
+			return nil, fmt.Errorf("list items for view: Query set but Schema is nil")
+		}
+		w, qArgs, joinNames, err := query.Compile(spec.Query, *spec.Schema)
+		if err != nil {
+			return nil, fmt.Errorf("list items for view: compile: %w", err)
+		}
+		for _, name := range joinNames {
+			base += " " + spec.Schema.Joins[name]
+		}
+		if w != "" {
+			where = append(where, w)
+			args = append(args, qArgs...)
+		}
 	}
 
 	q := base
