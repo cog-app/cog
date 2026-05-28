@@ -578,3 +578,39 @@ func TestPlaybackHistoryItemsJoined(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestLoadSidebarCounts(t *testing.T) {
+	s := newStore(t)
+	fid, err := s.CreateFolder("F")
+	require.NoError(t, err)
+	subInFolder, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://a.test/f", FolderID: sql.NullInt64{Int64: fid, Valid: true}})
+	require.NoError(t, err)
+	subLoose, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://b.test/f"})
+	require.NoError(t, err)
+	// 2 unread + 1 starred in folder-sub; 1 unread in loose sub.
+	_, _, err = s.UpsertItem(feed.Item{SubscriptionID: subInFolder, GUID: "a", Type: "text", Title: "x"})
+	require.NoError(t, err)
+	bID, _, err := s.UpsertItem(feed.Item{SubscriptionID: subInFolder, GUID: "b", Type: "text", Title: "y"})
+	require.NoError(t, err)
+	require.NoError(t, s.MarkStarred(bID, true))
+	_, _, err = s.UpsertItem(feed.Item{SubscriptionID: subLoose, GUID: "c", Type: "text", Title: "z"})
+	require.NoError(t, err)
+
+	sc, err := s.LoadSidebarCounts()
+	require.NoError(t, err)
+	if sc.TotalUnread != 3 {
+		t.Errorf("TotalUnread = %d, want 3", sc.TotalUnread)
+	}
+	if sc.StarredCount != 1 {
+		t.Errorf("StarredCount = %d, want 1", sc.StarredCount)
+	}
+	if sc.BySubscription[subInFolder] != 2 {
+		t.Errorf("BySubscription[folder-sub] = %d, want 2", sc.BySubscription[subInFolder])
+	}
+	if sc.BySubscription[subLoose] != 1 {
+		t.Errorf("BySubscription[loose-sub] = %d, want 1", sc.BySubscription[subLoose])
+	}
+	if sc.ByFolder[fid] != 2 {
+		t.Errorf("ByFolder[F] = %d, want 2", sc.ByFolder[fid])
+	}
+}

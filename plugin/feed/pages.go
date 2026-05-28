@@ -420,10 +420,10 @@ func (h *Pages) buildSidebar(store *Store, activePath string) sidebarData {
 	subs, _ := store.ListSubscriptions()
 	tags, _ := store.ListTags()
 	playlists, _ := store.ListPlaylists()
-	unreadCounts, _ := store.CountUnreadBySubscription()
-	folderUnread, _ := store.CountUnreadByFolder()
-	totalUnread, _ := store.CountUnread()
-	starredCount, _ := store.CountStarred()
+	counts, err := store.LoadSidebarCounts()
+	if err != nil {
+		slog.Error("feed: sidebar counts", "err", err)
+	}
 	prefs, _ := store.LoadPlayerPrefs() // HideEmpty defaults false on error
 	return sidebarData{
 		Folders:       folders,
@@ -431,10 +431,10 @@ func (h *Pages) buildSidebar(store *Store, activePath string) sidebarData {
 		Tags:          tags,
 		Playlists:     playlists,
 		ActivePath:    activePath,
-		TotalUnread:   int(totalUnread),
-		StarredCount:  int(starredCount),
-		UnreadCounts:  unreadCounts,
-		FolderUnread:  folderUnread,
+		TotalUnread:   counts.TotalUnread,
+		StarredCount:  counts.StarredCount,
+		UnreadCounts:  counts.BySubscription,
+		FolderUnread:  counts.ByFolder,
 		HideEmpty:     prefs.HideEmpty,
 	}
 }

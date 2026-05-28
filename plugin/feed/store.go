@@ -1131,64 +1131,49 @@ func (s *Store) CountUnread() (int64, error) {
 	return n, nil
 }
 
-// CountStarred returns the total number of starred items.
-func (s *Store) CountStarred() (int64, error) {
-	var n int64
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM items WHERE is_starred = 1`).Scan(&n); err != nil {
-		return 0, fmt.Errorf("count starred: %w", err)
-	}
-	return n, nil
+// SidebarCounts aggregates the sums buildSidebar needs in one pass.
+type SidebarCounts struct {
+	TotalUnread    int
+	StarredCount   int
+	BySubscription map[int64]int
+	ByFolder       map[int64]int
 }
 
-// CountUnreadBySubscription returns a map of subscription_id -> unread count.
-func (s *Store) CountUnreadBySubscription() (map[int64]int, error) {
+// LoadSidebarCounts returns per-subscription unread sums (and the derived
+// per-folder / total sums) plus a starred count, in one SQL pass + one
+// scalar query.
+func (s *Store) LoadSidebarCounts() (SidebarCounts, error) {
+	sc := SidebarCounts{BySubscription: map[int64]int{}, ByFolder: map[int64]int{}}
 	rows, err := s.db.Query(`
-		SELECT subscription_id, COUNT(*) FROM items WHERE is_read = 0
-		GROUP BY subscription_id`)
+		SELECT s.id, s.folder_id,
+		       COALESCE(SUM(CASE WHEN i.is_read = 0 THEN 1 ELSE 0 END), 0) AS unread
+		FROM subscriptions s
+		LEFT JOIN items i ON i.subscription_id = s.id
+		GROUP BY s.id, s.folder_id`)
 	if err != nil {
-		return nil, fmt.Errorf("count unread by subscription: %w", err)
+		return sc, fmt.Errorf("sidebar counts subs: %w", err)
 	}
 	defer rows.Close()
-	out := make(map[int64]int)
 	for rows.Next() {
-		var id int64
-		var n int
-		if err := rows.Scan(&id, &n); err != nil {
-			return nil, fmt.Errorf("count unread by subscription scan: %w", err)
+		var sid int64
+		var fid sql.NullInt64
+		var unread int
+		if err := rows.Scan(&sid, &fid, &unread); err != nil {
+			return sc, fmt.Errorf("sidebar counts scan: %w", err)
 		}
-		out[id] = n
+		sc.BySubscription[sid] = unread
+		sc.TotalUnread += unread
+		if fid.Valid {
+			sc.ByFolder[fid.Int64] += unread
+		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("count unread by subscription rows: %w", err)
+		return sc, fmt.Errorf("sidebar counts rows: %w", err)
 	}
-	return out, nil
-}
-
-// CountUnreadByFolder returns a map of folder_id -> unread count.
-func (s *Store) CountUnreadByFolder() (map[int64]int, error) {
-	rows, err := s.db.Query(`
-		SELECT s.folder_id, COUNT(*)
-		FROM items i
-		JOIN subscriptions s ON i.subscription_id = s.id
-		WHERE i.is_read = 0 AND s.folder_id IS NOT NULL
-		GROUP BY s.folder_id`)
-	if err != nil {
-		return nil, fmt.Errorf("count unread by folder: %w", err)
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM items WHERE is_starred = 1`).Scan(&sc.StarredCount); err != nil {
+		return sc, fmt.Errorf("sidebar starred count: %w", err)
 	}
-	defer rows.Close()
-	out := make(map[int64]int)
-	for rows.Next() {
-		var id int64
-		var n int
-		if err := rows.Scan(&id, &n); err != nil {
-			return nil, fmt.Errorf("count unread by folder scan: %w", err)
-		}
-		out[id] = n
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("count unread by folder rows: %w", err)
-	}
-	return out, nil
+	return sc, nil
 }
 
 // ItemWithSubscription is an Item joined with its subscription title.
