@@ -236,3 +236,59 @@ func TestCompileJoinsDedupedAndSorted(t *testing.T) {
 		t.Fatalf("joins=%v", joins)
 	}
 }
+
+func TestCompileDateRange(t *testing.T) {
+	w, args, _, err := Compile(&FieldCompareExpr{Field: "published", Op: OpGe, Value: "2026-01-01T00:00:00Z"}, compileTestSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w != "i.published_at >= ?" {
+		t.Fatalf("where=%q", w)
+	}
+	// Bound arg is unix seconds.
+	want := int64(1767225600) // 2026-01-01T00:00:00Z
+	if len(args) != 1 || args[0] != want {
+		t.Fatalf("args=%v want [%d]", args, want)
+	}
+}
+
+func TestCompileNumberRange(t *testing.T) {
+	w, args, _, err := Compile(&FieldCompareExpr{Field: "duration", Op: OpLt, Value: "600"}, compileTestSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w != "i.duration_sec < ?" {
+		t.Fatalf("where=%q", w)
+	}
+	if len(args) != 1 || args[0] != float64(600) {
+		t.Fatalf("args=%v", args)
+	}
+}
+
+func TestCompileRangeUnknownFieldMatchNothing(t *testing.T) {
+	w, _, _, err := Compile(&FieldCompareExpr{Field: "ghost", Op: OpGt, Value: "1"}, compileTestSchema)
+	if err != nil {
+		t.Fatalf("unknown field should not error: %v", err)
+	}
+	if w != "0" {
+		t.Fatalf("want match-nothing, got %q", w)
+	}
+}
+
+func TestCompileRangeOnTextFieldErrors(t *testing.T) {
+	// Range on a non-ordered field (title is Text) is a user error worth surfacing.
+	_, _, _, err := Compile(&FieldCompareExpr{Field: "title", Op: OpGt, Value: "x"}, compileTestSchema)
+	if err == nil {
+		t.Fatal("range on Text field should error")
+	}
+}
+
+func TestCompileDateRangeBadValueMatchNothing(t *testing.T) {
+	w, _, _, err := Compile(&FieldCompareExpr{Field: "published", Op: OpGt, Value: "not-a-date"}, compileTestSchema)
+	if err != nil {
+		t.Fatalf("bad date should not error: %v", err)
+	}
+	if w != "0" {
+		t.Fatalf("want match-nothing, got %q", w)
+	}
+}

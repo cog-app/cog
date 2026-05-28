@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Compile renders Expr into a parameterized WHERE fragment (no leading
@@ -66,6 +67,8 @@ func (c *sqlCompiler) expr(e Expr) (string, error) {
 		return c.fieldEq(x.Field, x.Value)
 	case *FieldInExpr:
 		return c.fieldIn(x.Field, x.Values)
+	case *FieldCompareExpr:
+		return c.fieldCompare(x.Field, x.Op, x.Value)
 	default:
 		return "", fmt.Errorf("query: unsupported expression %T", e)
 	}
@@ -173,6 +176,45 @@ func (c *sqlCompiler) fieldIn(field string, values []string) (string, error) {
 		return parts[0], nil
 	}
 	return "(" + strings.Join(parts, " OR ") + ")", nil
+}
+
+func (c *sqlCompiler) fieldCompare(field string, op CompareOp, value string) (string, error) {
+	f, ok := c.schema.Fields[field]
+	if !ok {
+		return "0", nil // unknown field -> match nothing
+	}
+	c.requireJoins(f.Joins)
+	switch f.Type {
+	case Number:
+		n, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return "0", nil // unparseable number -> match nothing
+		}
+		c.args = append(c.args, n)
+		return fmt.Sprintf("%s %s ?", f.Expr, op.String()), nil
+	case DateText:
+		// published_at is stored as unix seconds; bind the resolved unix value.
+		// Relative values are already resolved to RFC3339 by ResolveRelativeDates.
+		unix, ok := parseDateToUnix(value)
+		if !ok {
+			return "0", nil
+		}
+		c.args = append(c.args, unix)
+		return fmt.Sprintf("%s %s ?", f.Expr, op.String()), nil
+	default:
+		return "", fmt.Errorf("query: field %q (type %d) does not support range comparison", field, f.Type)
+	}
+}
+
+// parseDateToUnix accepts RFC3339 or date-only and returns unix seconds.
+func parseDateToUnix(s string) (int64, bool) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t.Unix(), true
+	}
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return t.UTC().Unix(), true
+	}
+	return 0, false
 }
 
 func (c *sqlCompiler) likeAcrossText(value string) (string, error) {
