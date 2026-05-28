@@ -13,7 +13,9 @@ import (
 
 // Index wraps a Bleve index with a standard mapping.
 type Index struct {
-	idx bleve.Index
+	idx        bleve.Index
+	reg        *schemaRegistry          // nil when opened via legacy Open()
+	regSchemas map[string]*query.Schema // kept alongside reg for field enumeration
 }
 
 // Open opens or creates a Bleve index at the given path.
@@ -48,7 +50,7 @@ func OpenWithSchemas(path string, schemas map[string]*query.Schema) (*Index, err
 	if err != nil {
 		return nil, fmt.Errorf("open index: %w", err)
 	}
-	return &Index{idx: idx}, nil
+	return &Index{idx: idx, reg: newSchemaRegistry(schemas), regSchemas: schemas}, nil
 }
 
 // OpenMemory creates an in-memory Bleve index for testing.
@@ -88,7 +90,11 @@ func (i *Index) Search(input string, limit, offset int) (*Result, error) {
 
 	var q bleveQuery.Query
 	if expr, err := query.Parse(input); err == nil {
-		q = toBleveQuery(expr)
+		if i.reg != nil {
+			q = toBleveQueryWithSchema(expr, i.reg)
+		} else {
+			q = toBleveQuery(expr)
+		}
 	} else {
 		// Fall back to simple match+prefix for unparseable input.
 		matchQ := bleve.NewMatchQuery(input)
@@ -101,7 +107,18 @@ func (i *Index) Search(input string, limit, offset int) (*Result, error) {
 
 func (i *Index) executeSearch(q bleveQuery.Query, limit, offset int) (*Result, error) {
 	req := bleve.NewSearchRequestOptions(q, limit, offset, false)
-	req.Fields = []string{"_id", "name", "subtext", "content", "source"}
+	if i.regSchemas != nil {
+		// Schema path: request the known per-source-prefixed fields explicitly.
+		fields := []string{"_id", "source"}
+		for src, sc := range i.regSchemas {
+			for name := range sc.Fields {
+				fields = append(fields, src+"."+name)
+			}
+		}
+		req.Fields = fields
+	} else {
+		req.Fields = []string{"_id", "name", "subtext", "content", "source"}
+	}
 	resp, err := i.idx.Search(req)
 	if err != nil {
 		return nil, fmt.Errorf("search: %w", err)

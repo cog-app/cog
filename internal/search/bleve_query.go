@@ -56,3 +56,70 @@ func toBleveQuery(expr query.Expr) bleveQuery.Query {
 		return bleve.NewMatchAllQuery()
 	}
 }
+
+// toBleveQueryWithSchema is the schema-aware variant of toBleveQuery. Field
+// references (FieldEqExpr / FieldInExpr) get fanned out across every source
+// that declares the field, since the bleve index uses <source>.<field>
+// keys. Bare-word and phrase queries continue to match against bleve's
+// default text fields (no SetField).
+func toBleveQueryWithSchema(expr query.Expr, reg *schemaRegistry) bleveQuery.Query {
+	switch e := expr.(type) {
+	case *query.TextExpr:
+		matchQ := bleve.NewMatchQuery(e.Value)
+		prefixQ := bleve.NewPrefixQuery(strings.ToLower(e.Value))
+		return bleve.NewDisjunctionQuery(matchQ, prefixQ)
+
+	case *query.PhraseExpr:
+		return bleve.NewMatchPhraseQuery(e.Value)
+
+	case *query.NotExpr:
+		inner := toBleveQueryWithSchema(e.Inner, reg)
+		matchAll := bleve.NewMatchAllQuery()
+		boolQ := bleve.NewBooleanQuery()
+		boolQ.AddMust(matchAll)
+		boolQ.AddMustNot(inner)
+		return boolQ
+
+	case *query.AndExpr:
+		return bleve.NewConjunctionQuery(toBleveQueryWithSchema(e.Left, reg), toBleveQueryWithSchema(e.Right, reg))
+
+	case *query.OrExpr:
+		return bleve.NewDisjunctionQuery(toBleveQueryWithSchema(e.Left, reg), toBleveQueryWithSchema(e.Right, reg))
+
+	case *query.FieldEqExpr:
+		srcs := reg.prefixed(e.Field)
+		if len(srcs) == 0 {
+			return bleve.NewMatchNoneQuery()
+		}
+		if len(srcs) == 1 {
+			q := bleve.NewTermQuery(strings.ToLower(e.Value))
+			q.SetField(srcs[0] + "." + e.Field)
+			return q
+		}
+		qs := make([]bleveQuery.Query, len(srcs))
+		for i, src := range srcs {
+			q := bleve.NewTermQuery(strings.ToLower(e.Value))
+			q.SetField(src + "." + e.Field)
+			qs[i] = q
+		}
+		return bleve.NewDisjunctionQuery(qs...)
+
+	case *query.FieldInExpr:
+		srcs := reg.prefixed(e.Field)
+		if len(srcs) == 0 {
+			return bleve.NewMatchNoneQuery()
+		}
+		var qs []bleveQuery.Query
+		for _, v := range e.Values {
+			for _, src := range srcs {
+				q := bleve.NewTermQuery(strings.ToLower(v))
+				q.SetField(src + "." + e.Field)
+				qs = append(qs, q)
+			}
+		}
+		return bleve.NewDisjunctionQuery(qs...)
+
+	default:
+		return bleve.NewMatchAllQuery()
+	}
+}
