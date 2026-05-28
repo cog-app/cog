@@ -109,7 +109,8 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	})
 	ctx.RegisterSearchSource(plugin.SearchSourceDef{
 		PrimaryTable: "items",
-		EnrichSQL:    "SELECT rowid, title, url, content_html FROM items WHERE rowid IN (?)",
+		Schema:       searchSchema,
+		Enricher:     feedEnricher{},
 	})
 
 	// Main app pages and item actions
