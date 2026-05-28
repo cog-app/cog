@@ -32,6 +32,7 @@ var searchSchema = &query.Schema{
 			},
 		},
 		"published": {Type: query.DateText, Expr: "i.published_at"},
+		"duration":  {Type: query.Number, Expr: "i.duration_sec"},
 	},
 	Joins: map[string]string{
 		"folders": "LEFT JOIN folders f ON f.id = s.folder_id",

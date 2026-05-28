@@ -36,7 +36,8 @@ func (feedEnricher) EnrichSchema(db *sql.DB, rowIDs []int64) ([]plugin.Document,
 			i.is_read, i.is_starred, i.published_at,
 			s.kind, s.title,
 			COALESCE(f.name, ''),
-			COALESCE(d.state, '')
+			COALESCE(d.state, ''),
+			i.duration_sec
 		FROM items i
 		LEFT JOIN subscriptions s ON s.id = i.subscription_id
 		LEFT JOIN folders f ON f.id = s.folder_id
@@ -62,6 +63,7 @@ func (feedEnricher) EnrichSchema(db *sql.DB, rowIDs []int64) ([]plugin.Document,
 		SubTitle      string
 		Folder        string
 		DownloadState string
+		Duration      int64
 	}
 	var loaded []row
 	for rows.Next() {
@@ -70,6 +72,7 @@ func (feedEnricher) EnrichSchema(db *sql.DB, rowIDs []int64) ([]plugin.Document,
 			&r.ID, &r.Title, &r.Author, &r.Content, &r.URL, &r.Type,
 			&r.IsRead, &r.IsStarred, &r.Published,
 			&r.Kind, &r.SubTitle, &r.Folder, &r.DownloadState,
+			&r.Duration,
 		); err != nil {
 			return nil, fmt.Errorf("feed enrich schema scan: %w", err)
 		}
@@ -124,6 +127,7 @@ func (feedEnricher) EnrichSchema(db *sql.DB, rowIDs []int64) ([]plugin.Document,
 			"kind":         strings.ToLower(r.Kind),
 			"subscription": strings.ToLower(r.SubTitle),
 			"published":    time.Unix(r.Published, 0).UTC().Format(time.RFC3339),
+			"duration":     float64(r.Duration),
 		}
 		if r.Folder != "" {
 			fields["folder"] = strings.ToLower(r.Folder)

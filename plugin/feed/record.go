@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"strconv"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/query"
@@ -24,6 +25,7 @@ func BuildRecord(it Item, sub Subscription, folderName string, tags []string, un
 		"subscription": {sub.Title},
 		"url":          {it.URL},
 		"published":    {time.Unix(it.PublishedAt, 0).UTC().Format(time.RFC3339)},
+		"duration":     {strconv.FormatInt(it.DurationSec, 10)},
 	}
 	if folderName != "" {
 		rec["folder"] = []string{folderName}

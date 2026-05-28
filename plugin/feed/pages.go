@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 
+	"time"
+
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/query"
 	"git.duckfam.us/jj-software/cog/plugin/profanity"
@@ -410,6 +412,9 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 			expr = e
 		}
 	}
+	if expr != nil {
+		expr = query.ResolveRelativeDates(expr, *SearchSchema(), time.Now())
+	}
 	items, _ := store.ListItemsForView(ViewSpec{
 		All:      true,
 		HideRead: prefs.HideEmpty,
@@ -451,6 +456,9 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 				expr = e
 			}
 		}
+		if expr != nil {
+			expr = query.ResolveRelativeDates(expr, *SearchSchema(), time.Now())
+		}
 		items, err = store.ListItemsForView(ViewSpec{
 			All: true, Query: expr, Schema: SearchSchema(),
 		}, limit)
@@ -468,6 +476,9 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 			if e, qerr := query.Parse(c.Q); qerr == nil {
 				expr = e
 			}
+		}
+		if expr != nil {
+			expr = query.ResolveRelativeDates(expr, *SearchSchema(), time.Now())
 		}
 		items, err = store.ListItemsForView(ViewSpec{
 			All: true, Query: expr, Schema: SearchSchema(),
@@ -501,6 +512,9 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		if e, perr := query.Parse(q); perr == nil {
 			expr = e
 		}
+	}
+	if expr != nil {
+		expr = query.ResolveRelativeDates(expr, *SearchSchema(), time.Now())
 	}
 
 	items, err := store.ListItemsForView(ViewSpec{
