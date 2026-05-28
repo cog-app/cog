@@ -1,7 +1,9 @@
 package search
 
 import (
+	"strconv"
 	"strings"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/query"
 	"github.com/blevesearch/bleve/v2"
@@ -119,7 +121,106 @@ func toBleveQueryWithSchema(expr query.Expr, reg *schemaRegistry) bleveQuery.Que
 		}
 		return bleve.NewDisjunctionQuery(qs...)
 
+	case *query.FieldCompareExpr:
+		srcs := reg.prefixed(e.Field)
+		if len(srcs) == 0 {
+			return bleve.NewMatchNoneQuery()
+		}
+		ft := reg.fieldType[e.Field]
+		qs := make([]bleveQuery.Query, 0, len(srcs))
+		for _, src := range srcs {
+			field := src + "." + e.Field
+			rq := compareRangeQuery(ft, e.Op, e.Value, field)
+			if rq == nil {
+				continue
+			}
+			qs = append(qs, rq)
+		}
+		if len(qs) == 0 {
+			return bleve.NewMatchNoneQuery()
+		}
+		if len(qs) == 1 {
+			return qs[0]
+		}
+		return bleve.NewDisjunctionQuery(qs...)
+
 	default:
 		return bleve.NewMatchAllQuery()
 	}
+}
+
+// compareRangeQuery builds a bleve range query for a compare expression on a
+// given prefixed field. Number -> NumericRangeQuery; DateText -> DateRangeQuery.
+// Returns nil for unsupported types or unparseable values (caller treats as
+// match-none).
+func compareRangeQuery(ft query.FieldType, op query.CompareOp, value, field string) bleveQuery.Query {
+	switch ft {
+	case query.Number:
+		n, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return nil
+		}
+		min, max, minInc, maxInc := numericBounds(n, op)
+		q := bleve.NewNumericRangeInclusiveQuery(min, max, minInc, maxInc)
+		q.SetField(field)
+		return q
+	case query.DateText:
+		// value is RFC3339 (relative already resolved upstream) or date-only.
+		ts, ok := parseDateForBleve(value)
+		if !ok {
+			return nil
+		}
+		min, max, minInc, maxInc := dateBounds(ts, op)
+		q := bleve.NewDateRangeInclusiveQuery(min, max, minInc, maxInc)
+		q.SetField(field)
+		return q
+	default:
+		return nil
+	}
+}
+
+func parseDateForBleve(s string) (time.Time, bool) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, true
+	}
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return t.UTC(), true
+	}
+	return time.Time{}, false
+}
+
+// numericBounds maps an operator+value to (min,max,minInclusive,maxInclusive)
+// for a NumericRangeInclusiveQuery. Unbounded sides use nil.
+func numericBounds(n float64, op query.CompareOp) (*float64, *float64, *bool, *bool) {
+	tru, fals := true, false
+	switch op {
+	case query.OpGt:
+		return &n, nil, &fals, nil
+	case query.OpGe:
+		return &n, nil, &tru, nil
+	case query.OpLt:
+		return nil, &n, nil, &fals
+	case query.OpLe:
+		return nil, &n, nil, &tru
+	}
+	return nil, nil, nil, nil
+}
+
+// dateBounds maps an operator+time to (start,end,startInclusive,endInclusive)
+// for a DateRangeInclusiveQuery. The unbounded side uses a zero time.Time,
+// which bleve interprets as open (no bound) via IsZero() checks in parseEndpoints.
+func dateBounds(t time.Time, op query.CompareOp) (time.Time, time.Time, *bool, *bool) {
+	tru, fals := true, false
+	var zero time.Time
+	switch op {
+	case query.OpGt:
+		return t, zero, &fals, nil
+	case query.OpGe:
+		return t, zero, &tru, nil
+	case query.OpLt:
+		return zero, t, nil, &fals
+	case query.OpLe:
+		return zero, t, nil, &tru
+	}
+	return zero, zero, nil, nil
 }

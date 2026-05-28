@@ -10,17 +10,24 @@ import (
 // declare them, used to fan a query like "is:downloaded" out to
 // "feed.is:downloaded OR other.is:downloaded" across the bleve index.
 type schemaRegistry struct {
-	fieldSources map[string][]string // field name -> sorted source names
+	fieldSources map[string][]string        // field name -> sorted source names
+	fieldType    map[string]query.FieldType // field -> type (first declarer wins; types should agree)
 }
 
 func newSchemaRegistry(schemas map[string]*query.Schema) *schemaRegistry {
-	r := &schemaRegistry{fieldSources: map[string][]string{}}
+	r := &schemaRegistry{
+		fieldSources: map[string][]string{},
+		fieldType:    map[string]query.FieldType{},
+	}
 	for src, sc := range schemas {
 		if sc == nil {
 			continue
 		}
-		for name := range sc.Fields {
+		for name, f := range sc.Fields {
 			r.fieldSources[name] = append(r.fieldSources[name], src)
+			if _, ok := r.fieldType[name]; !ok {
+				r.fieldType[name] = f.Type
+			}
 		}
 	}
 	for k := range r.fieldSources {

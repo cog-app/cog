@@ -61,6 +61,42 @@ func TestToBleveQueryWithSchemaUnknownFieldReturnsMatchNone(t *testing.T) {
 	}
 }
 
+func TestToBleveQueryCompareNumeric(t *testing.T) {
+	schemas := map[string]*query.Schema{
+		"feed": {Fields: map[string]query.FieldSpec{"duration": {Type: query.Number, Expr: "i.duration_sec"}}},
+	}
+	reg := newSchemaRegistry(schemas)
+	q := toBleveQueryWithSchema(&query.FieldCompareExpr{Field: "duration", Op: query.OpGt, Value: "600"}, reg)
+	s := stringifyBleveQuery(q)
+	if !strings.Contains(s, "feed.duration") {
+		t.Fatalf("expected feed.duration numeric range, got %q", s)
+	}
+}
+
+func TestToBleveQueryCompareDate(t *testing.T) {
+	schemas := map[string]*query.Schema{
+		"feed": {Fields: map[string]query.FieldSpec{"published": {Type: query.DateText, Expr: "i.published_at"}}},
+	}
+	reg := newSchemaRegistry(schemas)
+	q := toBleveQueryWithSchema(&query.FieldCompareExpr{Field: "published", Op: query.OpGe, Value: "2026-01-01T00:00:00Z"}, reg)
+	if q == nil {
+		t.Fatal("nil query")
+	}
+	s := stringifyBleveQuery(q)
+	if !strings.Contains(s, "feed.published") {
+		t.Fatalf("expected feed.published date range, got %q", s)
+	}
+}
+
+func TestToBleveQueryCompareUnknownFieldMatchNone(t *testing.T) {
+	reg := newSchemaRegistry(map[string]*query.Schema{})
+	q := toBleveQueryWithSchema(&query.FieldCompareExpr{Field: "ghost", Op: query.OpGt, Value: "1"}, reg)
+	s := stringifyBleveQuery(q)
+	if strings.Contains(s, "ghost") {
+		t.Fatalf("unknown field should not appear: %q", s)
+	}
+}
+
 // stringifyBleveQuery returns a debug-friendly representation using JSON,
 // which bleve queries marshal to reliably (field names are explicit JSON keys).
 func stringifyBleveQuery(q any) string {
