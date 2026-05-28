@@ -48,7 +48,8 @@ func (c viewCtx) encode() string {
 	var out strings.Builder
 	out.WriteString(parts[0])
 	for _, p := range parts[1:] {
-		out.WriteString("&" + p)
+		out.WriteByte('&')
+		out.WriteString(p)
 	}
 	return out.String()
 }

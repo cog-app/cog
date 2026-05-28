@@ -1,7 +1,6 @@
 package feed
 
 import (
-	"maps"
 	"sync"
 	"time"
 )
@@ -17,12 +16,6 @@ type OrchestratorStatus struct {
 // globalOrchestratorStatus is the singleton status updated by the orchestrator.
 var globalOrchestratorStatus = &OrchestratorStatus{LastUserMap: make(map[string]time.Time)}
 
-// OrchestratorStatusSnapshot is a lock-free copy returned to callers.
-type OrchestratorStatusSnapshot struct {
-	LastTickAt  time.Time
-	LastUserMap map[string]time.Time
-}
-
 // RecordTick updates the last tick time. Called by the orchestrator on each full pass.
 func RecordTick() {
 	globalOrchestratorStatus.mu.Lock()
@@ -35,16 +28,4 @@ func RecordUserProcessed(username string) {
 	globalOrchestratorStatus.mu.Lock()
 	defer globalOrchestratorStatus.mu.Unlock()
 	globalOrchestratorStatus.LastUserMap[username] = time.Now()
-}
-
-// orchestratorGetStatus returns a snapshot of the current orchestrator status.
-func orchestratorGetStatus() OrchestratorStatusSnapshot {
-	globalOrchestratorStatus.mu.RLock()
-	defer globalOrchestratorStatus.mu.RUnlock()
-	cp := OrchestratorStatusSnapshot{
-		LastTickAt:  globalOrchestratorStatus.LastTickAt,
-		LastUserMap: make(map[string]time.Time, len(globalOrchestratorStatus.LastUserMap)),
-	}
-	maps.Copy(cp.LastUserMap, globalOrchestratorStatus.LastUserMap)
-	return cp
 }

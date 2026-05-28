@@ -1191,7 +1191,8 @@ func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscripti
 			return nil, fmt.Errorf("list items for view: compile: %w", err)
 		}
 		for _, name := range joinNames {
-			base.WriteString(" " + spec.Schema.Joins[name])
+			base.WriteByte(' ')
+			base.WriteString(spec.Schema.Joins[name])
 		}
 		if w != "" {
 			where = append(where, w)
