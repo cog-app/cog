@@ -245,6 +245,39 @@ func TestHideReadAppliesInSQL(t *testing.T) {
 	resp.Contains("UNREAD-NEEDLE")
 }
 
+func TestIndexSearchFindsItemsPastLimit(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "u", "pass")
+	raw, _ := env.Providers.Plugins.Plugin(feed.PluginID)
+	db, err := raw.(*feed.Plugin).DB(u.User.Username)
+	require.NoError(t, err)
+	s := feed.NewStore(db)
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/f", Title: "S"})
+	require.NoError(t, err)
+	// 600 noise items (newer), 1 matching "needle" item (oldest).
+	for i := 0; i < 600; i++ {
+		_, _, err = s.UpsertItem(feed.Item{
+			SubscriptionID: subID,
+			GUID:           "n" + strconv.Itoa(i),
+			Type:           "text",
+			Title:          "noise " + strconv.Itoa(i),
+			PublishedAt:    int64(1000 + i),
+		})
+		require.NoError(t, err)
+	}
+	_, _, err = s.UpsertItem(feed.Item{
+		SubscriptionID: subID,
+		GUID:           "needle",
+		Type:           "text",
+		Title:          "UNIQUE-NEEDLE-XYZ",
+		PublishedAt:    1, // oldest — far past the 500-row newest-first cut
+	})
+	require.NoError(t, err)
+	resp := env.Get(t, "/apps/feed/?q=UNIQUE-NEEDLE-XYZ", u.Auth)
+	resp.Status(200)
+	resp.Contains("UNIQUE-NEEDLE-XYZ")
+}
+
 func TestFeedIndex_Browser(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	eng := webtest.New(env)

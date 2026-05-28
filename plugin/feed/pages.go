@@ -472,36 +472,21 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 	}
 	sb := h.buildSidebar(store, fmt.Sprintf("/apps/feed/playlists/%d", id))
 	prefs, _ := store.LoadPlayerPrefs()
-	items, _ := store.ListItemsForView(ViewSpec{All: true, HideRead: prefs.HideEmpty}, feedViewLimit)
-	items = applyQueryFilter(store, items, pl.Query)
+	var expr query.Expr
+	if pl.Query != "" {
+		if e, perr := query.Parse(pl.Query); perr == nil {
+			expr = e
+		}
+	}
+	items, _ := store.ListItemsForView(ViewSpec{
+		All:      true,
+		HideRead: prefs.HideEmpty,
+		Query:    expr,
+		Schema:   SearchSchema(),
+	}, feedViewLimit)
 	c := viewCtx{Kind: "playlist", ID: id}
 	plugin.SetTitle(w, "Feed — "+pl.Name)
 	feedPlaylistPage(sb, pl, items, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
-}
-
-// applyQueryFilter filters an ItemWithSubscription slice using the query engine.
-func applyQueryFilter(store *Store, items []ItemWithSubscription, q string) []ItemWithSubscription {
-	expr, err := query.Parse(q)
-	if err != nil {
-		return items
-	}
-	filtered := items[:0]
-	for _, it := range items {
-		sub, _ := store.GetSubscription(it.SubscriptionID)
-		folder := ""
-		if sub.FolderID.Valid {
-			if f, ferr := store.GetFolder(sub.FolderID.Int64); ferr == nil {
-				folder = f.Name
-			}
-		}
-		tagsList, _ := store.ItemTags(it.ID)
-		dl, _ := store.GetDownload(it.ID)
-		rec := BuildRecord(it.Item, sub, folder, tagsList, !it.IsRead, it.IsStarred, dl.State == "ready")
-		if expr.Match(rec) {
-			filtered = append(filtered, it)
-		}
-	}
-	return filtered
 }
 
 // resolveViewItems returns the same ordered item slice the originating view
@@ -530,9 +515,17 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 		if perr != nil {
 			return nil, fmt.Errorf("resolve playlist %d: %w", c.ID, perr)
 		}
-		items, err = store.ListItemsForView(ViewSpec{All: true, HideRead: hideRead}, limit)
-		if err == nil {
-			items = applyQueryFilter(store, items, pl.Query)
+		var expr query.Expr
+		if pl.Query != "" {
+			if e, qerr := query.Parse(pl.Query); qerr == nil {
+				expr = e
+			}
+		}
+		items, err = store.ListItemsForView(ViewSpec{
+			All: true, HideRead: hideRead, Query: expr, Schema: SearchSchema(),
+		}, limit)
+		if err != nil {
+			return nil, fmt.Errorf("resolve playlist items: %w", err)
 		}
 	case "history":
 		played, herr := store.ListPlaybackHistory(limit)
@@ -545,9 +538,17 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 		}
 		return out, nil
 	default: // all
-		items, err = store.ListItemsForView(ViewSpec{All: true, HideRead: hideRead}, limit)
-		if err == nil && c.Q != "" {
-			items = applyQueryFilter(store, items, c.Q)
+		var expr query.Expr
+		if c.Q != "" {
+			if e, qerr := query.Parse(c.Q); qerr == nil {
+				expr = e
+			}
+		}
+		items, err = store.ListItemsForView(ViewSpec{
+			All: true, HideRead: hideRead, Query: expr, Schema: SearchSchema(),
+		}, limit)
+		if err != nil {
+			return nil, fmt.Errorf("resolve all items: %w", err)
 		}
 	}
 	if err != nil {
@@ -568,19 +569,27 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query().Get("q")
-	sb := h.buildSidebar(store, "/apps/feed/")
-
 	prefs, _ := store.LoadPlayerPrefs()
-	items, err := store.ListItemsForView(ViewSpec{All: true, HideRead: prefs.HideEmpty}, feedViewLimit)
+
+	var expr query.Expr
+	if q != "" {
+		if e, perr := query.Parse(q); perr == nil {
+			expr = e
+		}
+	}
+
+	items, err := store.ListItemsForView(ViewSpec{
+		All:      true,
+		HideRead: prefs.HideEmpty,
+		Query:    expr,
+		Schema:   SearchSchema(),
+	}, feedViewLimit)
 	if err != nil {
 		http.Error(w, "could not list items: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	if q != "" {
-		items = applyQueryFilter(store, items, q)
-	}
-
+	sb := h.buildSidebar(store, "/apps/feed/")
 	c := viewCtx{Kind: "all", Q: q}
 	plugin.SetTitle(w, "Feed")
 	feedIndexPage(sb, items, q, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
