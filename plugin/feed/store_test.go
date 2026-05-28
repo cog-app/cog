@@ -564,3 +564,17 @@ func TestDeleteFoldersBulk(t *testing.T) {
 		t.Fatalf("folders not deleted: %+v", folders)
 	}
 }
+
+func TestPlaybackHistoryItemsJoined(t *testing.T) {
+	s := newStore(t)
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/f", Title: "SubT"})
+	require.NoError(t, err)
+	id, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g", Type: "audio", Title: "T"})
+	require.NoError(t, err)
+	require.NoError(t, s.SetPlayback(id, 5.0, true))
+	got, err := s.PlaybackHistoryItems(10)
+	require.NoError(t, err)
+	if len(got) != 1 || got[0].SubscriptionTitle != "SubT" || got[0].Title != "T" {
+		t.Fatalf("%+v", got)
+	}
+}

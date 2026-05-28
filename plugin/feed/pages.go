@@ -514,15 +514,10 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 			return nil, fmt.Errorf("resolve playlist items: %w", err)
 		}
 	case "history":
-		played, herr := store.ListPlaybackHistory(limit)
-		if herr != nil {
-			return nil, fmt.Errorf("resolve history: %w", herr)
+		items, err = store.PlaybackHistoryItems(limit)
+		if err != nil {
+			return nil, fmt.Errorf("resolve history: %w", err)
 		}
-		out := make([]ItemWithSubscription, 0, len(played))
-		for _, p := range played {
-			out = append(out, ItemWithSubscription{Item: p.Item, SubscriptionTitle: p.SubscriptionTitle})
-		}
-		return out, nil
 	default: // all
 		var expr query.Expr
 		if c.Q != "" {

@@ -1715,6 +1715,45 @@ func (s *Store) ListPlaybackHistory(limit int) ([]PlayedItem, error) {
 	return out, rows.Err()
 }
 
+// PlaybackHistoryItems returns played items joined with their subscription
+// title, ordered by last-played descending. Same shape as ListItemsForView's
+// return, so callers that need the view shape don't need to remap from
+// PlayedItem.
+func (s *Store) PlaybackHistoryItems(limit int) ([]ItemWithSubscription, error) {
+	rows, err := s.db.Query(`
+		SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
+		       i.content_html, i.media_url, i.media_mime, i.duration_sec,
+		       i.thumbnail_url, i.published_at, i.fetched_at, i.is_read, i.is_starred,
+		       i.content_hash,
+		       COALESCE(s.title, s.url) AS subscription_title
+		FROM playback p
+		JOIN items i ON i.id = p.item_id
+		JOIN subscriptions s ON s.id = i.subscription_id
+		ORDER BY p.last_played_at DESC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("playback history items: %w", err)
+	}
+	defer rows.Close()
+	var out []ItemWithSubscription
+	for rows.Next() {
+		var iws ItemWithSubscription
+		var isRead, isStarred int
+		if err := rows.Scan(
+			&iws.ID, &iws.SubscriptionID, &iws.GUID, &iws.Type, &iws.Title, &iws.Author,
+			&iws.URL, &iws.ContentHTML, &iws.MediaURL, &iws.MediaMIME, &iws.DurationSec,
+			&iws.ThumbnailURL, &iws.PublishedAt, &iws.FetchedAt, &isRead, &isStarred,
+			&iws.ContentHash, &iws.SubscriptionTitle,
+		); err != nil {
+			return nil, fmt.Errorf("playback history items scan: %w", err)
+		}
+		iws.IsRead = isRead != 0
+		iws.IsStarred = isStarred != 0
+		out = append(out, iws)
+	}
+	return out, rows.Err()
+}
+
 // --- Per-subscription settings store helpers ---
 
 // UpdateSubscriptionPollInterval updates the poll_interval_sec for a subscription.
