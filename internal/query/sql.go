@@ -14,7 +14,11 @@ func Compile(e Expr, s Schema) (string, []any, []string, error) {
 	if e == nil {
 		return "", nil, nil, nil
 	}
-	c := &sqlCompiler{schema: s, joins: map[string]struct{}{}}
+	alias := s.PrimaryAlias
+	if alias == "" {
+		alias = "i"
+	}
+	c := &sqlCompiler{schema: s, alias: alias, joins: map[string]struct{}{}}
 	w, err := c.expr(e)
 	if err != nil {
 		return "", nil, nil, err
@@ -32,6 +36,7 @@ func Compile(e Expr, s Schema) (string, []any, []string, error) {
 
 type sqlCompiler struct {
 	schema Schema
+	alias  string
 	args   []any
 	joins  map[string]struct{}
 }
@@ -125,8 +130,8 @@ func (c *sqlCompiler) fieldEq(field, value string) (string, error) {
 	case ManyToMany:
 		c.args = append(c.args, value)
 		return fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM %s j JOIN %s v ON v.id = j.%s WHERE j.%s = i.id AND LOWER(v.%s) = LOWER(?))",
-			f.Join, f.ValueTable, f.ValueFK, f.JoinFK, f.ValueColumn,
+			"EXISTS (SELECT 1 FROM %s j JOIN %s v ON v.id = j.%s WHERE j.%s = %s.id AND LOWER(v.%s) = LOWER(?))",
+			f.Join, f.ValueTable, f.ValueFK, f.JoinFK, c.alias, f.ValueColumn,
 		), nil
 	case EnumPredicate:
 		pred, ok := f.Values[value]
@@ -171,7 +176,7 @@ func (c *sqlCompiler) fieldIn(field string, values []string) (string, error) {
 }
 
 func (c *sqlCompiler) likeAcrossText(value string) (string, error) {
-	names := c.schema.DefaultTextFields()
+	names := c.schema.ScalarFields()
 	if len(names) == 0 {
 		return "0", nil
 	}

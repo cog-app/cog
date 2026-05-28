@@ -119,17 +119,21 @@ func (feedEnricher) EnrichSchema(db *sql.DB, rowIDs []int64) ([]plugin.Document,
 			"title":        r.Title,
 			"author":       r.Author,
 			"content":      r.Content,
-			"url":          r.URL,
-			"type":         r.Type,
-			"kind":         r.Kind,
-			"subscription": r.SubTitle,
+			"url":          strings.ToLower(r.URL),
+			"type":         strings.ToLower(r.Type),
+			"kind":         strings.ToLower(r.Kind),
+			"subscription": strings.ToLower(r.SubTitle),
 			"published":    time.Unix(r.Published, 0).UTC().Format(time.RFC3339),
 		}
 		if r.Folder != "" {
-			fields["folder"] = r.Folder
+			fields["folder"] = strings.ToLower(r.Folder)
 		}
 		if tags := tagsByItem[r.ID]; len(tags) > 0 {
-			fields["tag"] = tags
+			lower := make([]string, len(tags))
+			for i, tg := range tags {
+				lower[i] = strings.ToLower(tg)
+			}
+			fields["tag"] = lower
 		}
 		if len(isVals) > 0 {
 			fields["is"] = isVals

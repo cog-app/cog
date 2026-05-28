@@ -179,6 +179,50 @@ func TestCompileFieldInUnknownFieldYieldsMatchNothing(t *testing.T) {
 	}
 }
 
+func TestCompileTagUsesPrimaryAlias(t *testing.T) {
+	sc := compileTestSchema
+	sc.PrimaryAlias = "x"
+	w, _, _, err := Compile(&FieldEqExpr{Field: "tag", Value: "weekly"}, sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(w, "j.item_id = x.id") {
+		t.Fatalf("tag EXISTS should reference primary alias x.id: %q", w)
+	}
+}
+
+func TestCompileBareWordScansKeywordFields(t *testing.T) {
+	w, args, _, err := Compile(&TextExpr{Value: "audio"}, compileTestSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// type is Keyword (i.type) — must be in the bare-word OR scan now.
+	if !strings.Contains(w, "LOWER(i.type) LIKE ?") {
+		t.Fatalf("bare word should scan keyword field i.type: %q", w)
+	}
+	// still scans text fields
+	if !strings.Contains(w, "LOWER(i.title) LIKE ?") {
+		t.Fatalf("missing title: %q", w)
+	}
+	_ = args
+}
+
+func TestCompileBareWordPullsFolderJoin(t *testing.T) {
+	_, _, joins, err := Compile(&TextExpr{Value: "x"}, compileTestSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, j := range joins {
+		if j == "folders" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("bare word over folder(Keyword w/ join) must require folders join: %v", joins)
+	}
+}
+
 func TestCompileJoinsDedupedAndSorted(t *testing.T) {
 	e := &AndExpr{
 		Left:  &FieldEqExpr{Field: "folder", Value: "A"},

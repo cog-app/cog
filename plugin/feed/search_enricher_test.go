@@ -70,8 +70,8 @@ func TestFeedEnrichSchemaPopulatesFields(t *testing.T) {
 	if d.Fields["kind"] != "rss" {
 		t.Fatalf("kind = %v", d.Fields["kind"])
 	}
-	if d.Fields["subscription"] != "SubT" {
-		t.Fatalf("subscription = %v", d.Fields["subscription"])
+	if d.Fields["subscription"] != "subt" {
+		t.Fatalf("subscription = %v (want lowercased)", d.Fields["subscription"])
 	}
 	// New items start unread.
 	is, _ := d.Fields["is"].([]string)

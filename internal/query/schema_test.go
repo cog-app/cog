@@ -40,6 +40,21 @@ func TestSchemaValidateOK(t *testing.T) {
 	}
 }
 
+func TestSchemaScalarTextFields(t *testing.T) {
+	got := textSchema().ScalarFields()
+	// textSchema has: title(Text), author(Text), type(Keyword), folder(Keyword),
+	// tag(ManyToMany), is(EnumPredicate). Scalar = title, author, type, folder.
+	want := map[string]bool{"title": true, "author": true, "type": true, "folder": true}
+	if len(got) != len(want) {
+		t.Fatalf("got %v want keys %v", got, want)
+	}
+	for _, n := range got {
+		if !want[n] {
+			t.Fatalf("unexpected scalar field %q (got %v)", n, got)
+		}
+	}
+}
+
 func TestSchemaDefaultTextFields(t *testing.T) {
 	got := textSchema().DefaultTextFields()
 	want := []string{"author", "title"}
