@@ -104,8 +104,12 @@ templ feedSidebar(sb sidebarData) {
 				>{ pl.Name }</a>
 			}
 		}
-		<div class="sidebar-divider"></div>
-		<a href="/apps/feed/settings" class={ feedSettingsActive(sb.ActivePath) }>Settings</a>
+		<hr class="sidebar-divider"/>
+		<div class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-muted);padding:0.25rem 0.5rem">Settings</div>
+		<a href="/apps/feed/settings/subscriptions" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/settings/subscriptions") } style="padding-left:1.5rem;font-size:0.9rem">Subscriptions</a>
+		<a href="/apps/feed/settings/bulk-delete" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/settings/bulk-delete") } style="padding-left:1.5rem;font-size:0.9rem">Bulk Delete</a>
+		<a href="/apps/feed/settings/filters" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/settings/filters") } style="padding-left:1.5rem;font-size:0.9rem">Filters</a>
+		<a href="/apps/feed/settings/playlists" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/settings/playlists") } style="padding-left:1.5rem;font-size:0.9rem">Playlists</a>
 	</nav>
 	<script>
 		// Preserve folder open/closed state across HTMX sidebar refreshes.
@@ -541,32 +545,10 @@ templ feedFilterPreviewResults(items []ItemWithSubscription) {
 	}
 }
 
-templ feedSettingsTabs(active string, isAdmin bool) {
-	<div class="feed-settings-tabs" style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
-		@feedSettingsTab("subscriptions", "Subscriptions", active)
-		@feedSettingsTab("bulk-delete", "Bulk Delete", active)
-		@feedSettingsTab("filters", "Filters", active)
-		@feedSettingsTab("playlists", "Playlists", active)
-		if isAdmin {
-			<a class="btn btn-outline btn-sm" href="/admin/plugins/feed">System</a>
-			<a class="btn btn-outline btn-sm" href="/apps/feed/admin/status">Status</a>
-		}
-	</div>
-}
-
-templ feedSettingsTab(key string, label string, active string) {
-	if key == active {
-		<span class="btn btn-sm" aria-current="page">{ label }</span>
-	} else {
-		<a class="btn btn-outline btn-sm" href={ templ.SafeURL("/apps/feed/settings/" + key) }>{ label }</a>
-	}
-}
-
-templ feedSettingsSubscriptionsPage(sb sidebarData, isAdmin bool, subs []Subscription, folders []Folder, flashMsg string, flashKind string, csrfToken string) {
+templ feedSettingsSubscriptionsPage(sb sidebarData, subs []Subscription, folders []Folder, flashMsg string, flashKind string, csrfToken string) {
 	<div class="sidebar-layout">
 		@feedSidebar(sb)
 		<div class="sidebar-content">
-			@feedSettingsTabs("subscriptions", isAdmin)
 			@ui.Alert(flashKind, flashMsg)
 			@ui.Card("Subscriptions") {
 				<form id="add-subscription" method="post" action="/apps/feed/subscriptions">
@@ -651,11 +633,10 @@ templ feedSettingsSubscriptionsPage(sb sidebarData, isAdmin bool, subs []Subscri
 	</div>
 }
 
-templ feedSettingsFiltersPage(sb sidebarData, isAdmin bool, filters []Filter, flashMsg string, flashKind string, csrfToken string) {
+templ feedSettingsFiltersPage(sb sidebarData, filters []Filter, flashMsg string, flashKind string, csrfToken string) {
 	<div class="sidebar-layout">
 		@feedSidebar(sb)
 		<div class="sidebar-content">
-			@feedSettingsTabs("filters", isAdmin)
 			@ui.Alert(flashKind, flashMsg)
 			@ui.Card("Filters") {
 				<form id="add-filter" method="post" action="/apps/feed/filters">
@@ -711,11 +692,10 @@ templ feedSettingsFiltersPage(sb sidebarData, isAdmin bool, filters []Filter, fl
 	</div>
 }
 
-templ feedSettingsPlaylistsPage(sb sidebarData, isAdmin bool, playlists []Playlist, flashMsg string, flashKind string, csrfToken string) {
+templ feedSettingsPlaylistsPage(sb sidebarData, playlists []Playlist, flashMsg string, flashKind string, csrfToken string) {
 	<div class="sidebar-layout">
 		@feedSidebar(sb)
 		<div class="sidebar-content">
-			@feedSettingsTabs("playlists", isAdmin)
 			@ui.Alert(flashKind, flashMsg)
 			@ui.Card("Playlists") {
 				<form id="add-playlist" method="post" action="/apps/feed/playlists">
@@ -741,11 +721,10 @@ templ feedSettingsPlaylistsPage(sb sidebarData, isAdmin bool, playlists []Playli
 	</div>
 }
 
-templ feedSettingsBulkDeletePage(sb sidebarData, isAdmin bool, subs []Subscription, folders []Folder, flashMsg string, flashKind string, csrfToken string) {
+templ feedSettingsBulkDeletePage(sb sidebarData, subs []Subscription, folders []Folder, flashMsg string, flashKind string, csrfToken string) {
 	<div class="sidebar-layout">
 		@feedSidebar(sb)
 		<div class="sidebar-content">
-			@feedSettingsTabs("bulk-delete", isAdmin)
 			@ui.Alert(flashKind, flashMsg)
 			@ui.Card("Bulk delete") {
 				<form method="post" action="/apps/feed/settings/bulk-delete">
@@ -1155,7 +1134,6 @@ templ feedSystemSettingsPage(sb sidebarData, model string, modelsDir string, cli
 	<div class="sidebar-layout">
 		@feedSidebar(sb)
 		<div class="sidebar-content">
-			@feedSettingsTabs("", true)
 			@ui.Alert(flashKind, flash)
 			@ui.Card("Transcription (whisper.cpp)") {
 				<form method="post" action="">
@@ -1279,7 +1257,6 @@ templ feedAdminStatusPage(sb sidebarData, snap OrchestratorStatusSnapshot, pendi
 	<div class="sidebar-layout">
 		@feedSidebar(sb)
 		<div class="sidebar-content">
-			@feedSettingsTabs("", true)
 			<div id="feed-admin-status">
 				if flash != nil {
 					@ui.Alert(flash.Kind, flash.Message)
@@ -1403,15 +1380,6 @@ templ feedKindIcon(kind string) {
 
 func feedSidebarClass(activePath, itemPath string) string {
 	if activePath == itemPath {
-		return "sidebar-item active"
-	}
-	return "sidebar-item"
-}
-
-// feedSettingsActive returns the sidebar CSS class for the Settings link,
-// treating any /apps/feed/settings* path as active.
-func feedSettingsActive(activePath string) string {
-	if strings.HasPrefix(activePath, "/apps/feed/settings") {
 		return "sidebar-item active"
 	}
 	return "sidebar-item"

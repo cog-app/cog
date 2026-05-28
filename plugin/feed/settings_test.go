@@ -93,7 +93,7 @@ func TestSettingsPagesRender(t *testing.T) {
 		resp := env.Get(t, "/apps/feed/settings/"+p, u.Auth)
 		resp.Status(200)
 		resp.Contains("feed-sidebar")
-		resp.Contains("feed-settings-tabs")
+		resp.Contains("Bulk Delete")
 	}
 }
 

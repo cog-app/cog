@@ -96,7 +96,7 @@ func (h *Pages) SettingsSubscriptions(w http.ResponseWriter, r *http.Request) {
 	msg, kind := h.flashParts(w, r)
 	sb := h.buildSidebar(store, "/apps/feed/settings/subscriptions")
 	plugin.SetTitle(w, "Feed Settings")
-	feedSettingsSubscriptionsPage(sb, h.isAdmin(r), subs, folders, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedSettingsSubscriptionsPage(sb, subs, folders, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 func (h *Pages) SettingsBulkDelete(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +109,7 @@ func (h *Pages) SettingsBulkDelete(w http.ResponseWriter, r *http.Request) {
 	folders, _ := store.ListFolders()
 	msg, kind := h.flashParts(w, r)
 	sb := h.buildSidebar(store, "/apps/feed/settings/bulk-delete")
-	feedSettingsBulkDeletePage(sb, h.isAdmin(r), subs, folders, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedSettingsBulkDeletePage(sb, subs, folders, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 func (h *Pages) SettingsFilters(w http.ResponseWriter, r *http.Request) {
@@ -121,7 +121,7 @@ func (h *Pages) SettingsFilters(w http.ResponseWriter, r *http.Request) {
 	filters, _ := store.ListFilters()
 	msg, kind := h.flashParts(w, r)
 	sb := h.buildSidebar(store, "/apps/feed/settings/filters")
-	feedSettingsFiltersPage(sb, h.isAdmin(r), filters, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedSettingsFiltersPage(sb, filters, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 func (h *Pages) SettingsPlaylists(w http.ResponseWriter, r *http.Request) {
@@ -133,7 +133,7 @@ func (h *Pages) SettingsPlaylists(w http.ResponseWriter, r *http.Request) {
 	playlists, _ := store.ListPlaylists()
 	msg, kind := h.flashParts(w, r)
 	sb := h.buildSidebar(store, "/apps/feed/settings/playlists")
-	feedSettingsPlaylistsPage(sb, h.isAdmin(r), playlists, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
+	feedSettingsPlaylistsPage(sb, playlists, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // BulkDelete deletes the selected folders and subscriptions, then redirects.
@@ -183,12 +183,6 @@ func (h *Pages) flashParts(w http.ResponseWriter, r *http.Request) (msg, kind st
 		return f.Message, f.Kind
 	}
 	return "", ""
-}
-
-// isAdmin reports whether the request's user is an admin.
-func (h *Pages) isAdmin(r *http.Request) bool {
-	u := plugin.UserFromContext(r.Context())
-	return u != nil && u.IsAdmin
 }
 
 // allowedKinds is the set of subscription kinds accepted on the add form.
@@ -480,9 +474,26 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 	sb := h.buildSidebar(store, fmt.Sprintf("/apps/feed/playlists/%d", id))
 	items, _ := store.ListItemsForView(ViewSpec{All: true}, feedViewLimit)
 	items = applyQueryFilter(store, items, pl.Query)
+	prefs, _ := store.LoadPlayerPrefs()
+	items = filterReadItems(items, prefs.HideEmpty)
 	c := viewCtx{Kind: "playlist", ID: id}
 	plugin.SetTitle(w, "Feed — "+pl.Name)
 	feedPlaylistPage(sb, pl, items, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
+}
+
+// filterReadItems removes read items when hide is true. Used by views that
+// honor the user's "Hide read" preference.
+func filterReadItems(items []ItemWithSubscription, hide bool) []ItemWithSubscription {
+	if !hide {
+		return items
+	}
+	out := items[:0]
+	for _, it := range items {
+		if !it.IsRead {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 // applyQueryFilter filters an ItemWithSubscription slice using the query engine.
@@ -514,29 +525,30 @@ func applyQueryFilter(store *Store, items []ItemWithSubscription, q string) []It
 // rendered, so prev/next neighbors match exactly what the user saw.
 func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscription, error) {
 	const limit = feedViewLimit
+	var items []ItemWithSubscription
+	var err error
 	switch c.Kind {
 	case "starred":
-		return store.ListItemsForView(ViewSpec{Starred: true}, limit)
+		items, err = store.ListItemsForView(ViewSpec{Starred: true}, limit)
 	case "folder":
-		return store.ListItemsForView(ViewSpec{FolderID: validID(c.ID)}, limit)
+		items, err = store.ListItemsForView(ViewSpec{FolderID: validID(c.ID)}, limit)
 	case "sub":
-		return store.ListItemsForView(ViewSpec{SubscriptionID: validID(c.ID)}, limit)
+		items, err = store.ListItemsForView(ViewSpec{SubscriptionID: validID(c.ID)}, limit)
 	case "tag":
-		return store.ListItemsForView(ViewSpec{TagName: c.Name}, limit)
+		items, err = store.ListItemsForView(ViewSpec{TagName: c.Name}, limit)
 	case "playlist":
-		pl, err := store.GetPlaylist(c.ID)
-		if err != nil {
-			return nil, fmt.Errorf("resolve playlist %d: %w", c.ID, err)
+		pl, perr := store.GetPlaylist(c.ID)
+		if perr != nil {
+			return nil, fmt.Errorf("resolve playlist %d: %w", c.ID, perr)
 		}
-		items, err := store.ListItemsForView(ViewSpec{All: true}, limit)
-		if err != nil {
-			return nil, fmt.Errorf("resolve playlist items: %w", err)
+		items, err = store.ListItemsForView(ViewSpec{All: true}, limit)
+		if err == nil {
+			items = applyQueryFilter(store, items, pl.Query)
 		}
-		return applyQueryFilter(store, items, pl.Query), nil
 	case "history":
-		played, err := store.ListPlaybackHistory(limit)
-		if err != nil {
-			return nil, fmt.Errorf("resolve history: %w", err)
+		played, herr := store.ListPlaybackHistory(limit)
+		if herr != nil {
+			return nil, fmt.Errorf("resolve history: %w", herr)
 		}
 		out := make([]ItemWithSubscription, 0, len(played))
 		for _, p := range played {
@@ -544,15 +556,19 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 		}
 		return out, nil
 	default: // all
-		items, err := store.ListItemsForView(ViewSpec{All: true}, limit)
-		if err != nil {
-			return nil, fmt.Errorf("resolve all items: %w", err)
-		}
-		if c.Q != "" {
+		items, err = store.ListItemsForView(ViewSpec{All: true}, limit)
+		if err == nil && c.Q != "" {
 			items = applyQueryFilter(store, items, c.Q)
 		}
-		return items, nil
 	}
+	if err != nil {
+		return nil, fmt.Errorf("resolve view items: %w", err)
+	}
+	if c.Kind != "starred" && c.Kind != "history" {
+		prefs, _ := store.LoadPlayerPrefs()
+		items = filterReadItems(items, prefs.HideEmpty)
+	}
+	return items, nil
 }
 
 // validID wraps an int64 as a valid sql.NullInt64.
@@ -579,6 +595,9 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		items = applyQueryFilter(store, items, q)
 	}
 
+	prefs, _ := store.LoadPlayerPrefs()
+	items = filterReadItems(items, prefs.HideEmpty)
+
 	c := viewCtx{Kind: "all", Q: q}
 	plugin.SetTitle(w, "Feed")
 	feedIndexPage(sb, items, q, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
@@ -604,6 +623,8 @@ func (h *Pages) SubscriptionView(w http.ResponseWriter, r *http.Request) {
 	}
 	sb := h.buildSidebar(store, "/apps/feed/subscription/"+idStr)
 	items, _ := store.ListItemsForView(ViewSpec{SubscriptionID: sql.NullInt64{Int64: id, Valid: true}}, feedViewLimit)
+	prefs, _ := store.LoadPlayerPrefs()
+	items = filterReadItems(items, prefs.HideEmpty)
 
 	c := viewCtx{Kind: "sub", ID: id}
 	plugin.SetTitle(w, subscriptionDisplayTitle(sub))
@@ -630,6 +651,8 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 	}
 	sb := h.buildSidebar(store, "/apps/feed/folder/"+idStr)
 	items, _ := store.ListItemsForView(ViewSpec{FolderID: sql.NullInt64{Int64: id, Valid: true}}, feedViewLimit)
+	prefs, _ := store.LoadPlayerPrefs()
+	items = filterReadItems(items, prefs.HideEmpty)
 
 	c := viewCtx{Kind: "folder", ID: id}
 	plugin.SetTitle(w, folder.Name)
@@ -661,6 +684,8 @@ func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
 	tagName := r.PathValue("name")
 	sb := h.buildSidebar(store, "/apps/feed/tag/"+tagName)
 	items, _ := store.ListItemsForView(ViewSpec{TagName: tagName}, feedViewLimit)
+	prefs, _ := store.LoadPlayerPrefs()
+	items = filterReadItems(items, prefs.HideEmpty)
 
 	c := viewCtx{Kind: "tag", Name: tagName}
 	plugin.SetTitle(w, "Tag: "+tagName)

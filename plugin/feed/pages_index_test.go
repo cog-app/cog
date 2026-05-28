@@ -160,6 +160,35 @@ func TestFeedIndex_HTTP(t *testing.T) {
 	})
 }
 
+func TestHideReadFiltersIndexList(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "u", "pass")
+	raw, ok := env.Providers.Plugins.Plugin(feed.PluginID)
+	if !ok {
+		t.Fatal("feed plugin not registered")
+	}
+	db, err := raw.(*feed.Plugin).DB(u.User.Username)
+	require.NoError(t, err)
+	s := feed.NewStore(db)
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/f", Title: "TestFeed"})
+	require.NoError(t, err)
+	readID, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g-read", Type: "text", Title: "ALPHA-READ-TITLE"})
+	require.NoError(t, err)
+	require.NoError(t, s.MarkRead(readID, true))
+	_, _, err = s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g-unread", Type: "text", Title: "BETA-UNREAD-TITLE"})
+	require.NoError(t, err)
+	p, err := s.LoadPlayerPrefs()
+	require.NoError(t, err)
+	p.HideEmpty = true
+	require.NoError(t, s.SavePlayerPrefs(p))
+	resp := env.Get(t, "/apps/feed/", u.Auth)
+	resp.Status(200)
+	resp.Contains("BETA-UNREAD-TITLE")
+	if strings.Contains(resp.ReadBody(), "ALPHA-READ-TITLE") {
+		t.Fatal("read item should be hidden when HideEmpty enabled")
+	}
+}
+
 func TestFeedIndex_Browser(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	eng := webtest.New(env)
