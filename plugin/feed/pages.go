@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,7 +24,7 @@ const flashCookieName = "cog_flash"
 
 // feedViewLimit is the max items rendered per view. resolveViewItems must use
 // the same value so prev/next neighbors match exactly what the user saw on screen.
-const feedViewLimit = 200
+const feedViewLimit = 500
 
 // Pages holds the web UI handlers for the feed plugin.
 type Pages struct {
@@ -472,28 +471,12 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sb := h.buildSidebar(store, fmt.Sprintf("/apps/feed/playlists/%d", id))
-	items, _ := store.ListItemsForView(ViewSpec{All: true}, feedViewLimit)
-	items = applyQueryFilter(store, items, pl.Query)
 	prefs, _ := store.LoadPlayerPrefs()
-	items = filterReadItems(items, prefs.HideEmpty)
+	items, _ := store.ListItemsForView(ViewSpec{All: true, HideRead: prefs.HideEmpty}, feedViewLimit)
+	items = applyQueryFilter(store, items, pl.Query)
 	c := viewCtx{Kind: "playlist", ID: id}
 	plugin.SetTitle(w, "Feed — "+pl.Name)
 	feedPlaylistPage(sb, pl, items, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
-}
-
-// filterReadItems removes read items when hide is true. Used by views that
-// honor the user's "Hide read" preference.
-func filterReadItems(items []ItemWithSubscription, hide bool) []ItemWithSubscription {
-	if !hide {
-		return items
-	}
-	out := items[:0]
-	for _, it := range items {
-		if !it.IsRead {
-			out = append(out, it)
-		}
-	}
-	return out
 }
 
 // applyQueryFilter filters an ItemWithSubscription slice using the query engine.
@@ -527,21 +510,27 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 	const limit = feedViewLimit
 	var items []ItemWithSubscription
 	var err error
+	// Starred and history views do not honor HideRead.
+	hideRead := false
+	if c.Kind != "starred" && c.Kind != "history" {
+		prefs, _ := store.LoadPlayerPrefs()
+		hideRead = prefs.HideEmpty
+	}
 	switch c.Kind {
 	case "starred":
 		items, err = store.ListItemsForView(ViewSpec{Starred: true}, limit)
 	case "folder":
-		items, err = store.ListItemsForView(ViewSpec{FolderID: validID(c.ID)}, limit)
+		items, err = store.ListItemsForView(ViewSpec{FolderID: validID(c.ID), HideRead: hideRead}, limit)
 	case "sub":
-		items, err = store.ListItemsForView(ViewSpec{SubscriptionID: validID(c.ID)}, limit)
+		items, err = store.ListItemsForView(ViewSpec{SubscriptionID: validID(c.ID), HideRead: hideRead}, limit)
 	case "tag":
-		items, err = store.ListItemsForView(ViewSpec{TagName: c.Name}, limit)
+		items, err = store.ListItemsForView(ViewSpec{TagName: c.Name, HideRead: hideRead}, limit)
 	case "playlist":
 		pl, perr := store.GetPlaylist(c.ID)
 		if perr != nil {
 			return nil, fmt.Errorf("resolve playlist %d: %w", c.ID, perr)
 		}
-		items, err = store.ListItemsForView(ViewSpec{All: true}, limit)
+		items, err = store.ListItemsForView(ViewSpec{All: true, HideRead: hideRead}, limit)
 		if err == nil {
 			items = applyQueryFilter(store, items, pl.Query)
 		}
@@ -556,17 +545,13 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 		}
 		return out, nil
 	default: // all
-		items, err = store.ListItemsForView(ViewSpec{All: true}, limit)
+		items, err = store.ListItemsForView(ViewSpec{All: true, HideRead: hideRead}, limit)
 		if err == nil && c.Q != "" {
 			items = applyQueryFilter(store, items, c.Q)
 		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("resolve view items: %w", err)
-	}
-	if c.Kind != "starred" && c.Kind != "history" {
-		prefs, _ := store.LoadPlayerPrefs()
-		items = filterReadItems(items, prefs.HideEmpty)
 	}
 	return items, nil
 }
@@ -585,7 +570,8 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	sb := h.buildSidebar(store, "/apps/feed/")
 
-	items, err := store.ListItemsForView(ViewSpec{All: true}, feedViewLimit)
+	prefs, _ := store.LoadPlayerPrefs()
+	items, err := store.ListItemsForView(ViewSpec{All: true, HideRead: prefs.HideEmpty}, feedViewLimit)
 	if err != nil {
 		http.Error(w, "could not list items: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -594,9 +580,6 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	if q != "" {
 		items = applyQueryFilter(store, items, q)
 	}
-
-	prefs, _ := store.LoadPlayerPrefs()
-	items = filterReadItems(items, prefs.HideEmpty)
 
 	c := viewCtx{Kind: "all", Q: q}
 	plugin.SetTitle(w, "Feed")
@@ -622,9 +605,8 @@ func (h *Pages) SubscriptionView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sb := h.buildSidebar(store, "/apps/feed/subscription/"+idStr)
-	items, _ := store.ListItemsForView(ViewSpec{SubscriptionID: sql.NullInt64{Int64: id, Valid: true}}, feedViewLimit)
 	prefs, _ := store.LoadPlayerPrefs()
-	items = filterReadItems(items, prefs.HideEmpty)
+	items, _ := store.ListItemsForView(ViewSpec{SubscriptionID: sql.NullInt64{Int64: id, Valid: true}, HideRead: prefs.HideEmpty}, feedViewLimit)
 
 	c := viewCtx{Kind: "sub", ID: id}
 	plugin.SetTitle(w, subscriptionDisplayTitle(sub))
@@ -650,9 +632,8 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sb := h.buildSidebar(store, "/apps/feed/folder/"+idStr)
-	items, _ := store.ListItemsForView(ViewSpec{FolderID: sql.NullInt64{Int64: id, Valid: true}}, feedViewLimit)
 	prefs, _ := store.LoadPlayerPrefs()
-	items = filterReadItems(items, prefs.HideEmpty)
+	items, _ := store.ListItemsForView(ViewSpec{FolderID: sql.NullInt64{Int64: id, Valid: true}, HideRead: prefs.HideEmpty}, feedViewLimit)
 
 	c := viewCtx{Kind: "folder", ID: id}
 	plugin.SetTitle(w, folder.Name)
@@ -683,9 +664,8 @@ func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
 	}
 	tagName := r.PathValue("name")
 	sb := h.buildSidebar(store, "/apps/feed/tag/"+tagName)
-	items, _ := store.ListItemsForView(ViewSpec{TagName: tagName}, feedViewLimit)
 	prefs, _ := store.LoadPlayerPrefs()
-	items = filterReadItems(items, prefs.HideEmpty)
+	items, _ := store.ListItemsForView(ViewSpec{TagName: tagName, HideRead: prefs.HideEmpty}, feedViewLimit)
 
 	c := viewCtx{Kind: "tag", Name: tagName}
 	plugin.SetTitle(w, "Tag: "+tagName)
@@ -1226,9 +1206,8 @@ func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
 	if f := h.getFlash(w, r); f != nil {
 		flashMsg, flashKind = f.Message, f.Kind
 	}
-	sb := h.buildSidebar(store, "/apps/feed/settings")
 	plugin.SetTitle(w, "Feed System Settings")
-	feedSystemSettingsPage(sb, model, modelsDir, cliPath, flashMsg, flashKind).Render(r.Context(), w)
+	feedSystemSettingsPage(model, modelsDir, cliPath, flashMsg, flashKind).Render(r.Context(), w)
 }
 
 // SaveSystemSettings persists model selection + paths.
@@ -1459,52 +1438,6 @@ func (h *Pages) SaveSubscriptionSettings(w http.ResponseWriter, r *http.Request)
 	}
 	h.setFlash(w, "success", "Saved.")
 	http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
-}
-
-// AdminStatus shows orchestrator activity and per-user queue counts.
-func (h *Pages) AdminStatus(w http.ResponseWriter, r *http.Request) {
-	status := orchestratorGetStatus()
-	store, err := h.userStore(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	var pendingDL, pendingP, pendingT int
-	if dl, err := store.PendingDownloads(10_000); err == nil {
-		pendingDL = len(dl)
-	}
-	if p, err := store.PendingProfanityReady(10_000); err == nil {
-		pendingP = len(p)
-	}
-	if t, err := store.PendingTranscribeReady(10_000); err == nil {
-		pendingT = len(t)
-	}
-	sb := h.buildSidebar(store, "/apps/feed/settings")
-	flash := h.getFlash(w, r)
-	plugin.SetTitle(w, "Feed Admin Status")
-	feedAdminStatusPage(sb, status, pendingDL, pendingP, pendingT, flash, plugin.CSRFToken(r)).Render(r.Context(), w)
-}
-
-// PurgeCache removes all downloaded media and caption files for the current user.
-func (h *Pages) PurgeCache(w http.ResponseWriter, r *http.Request) {
-	u := plugin.UserFromContext(r.Context())
-	if u == nil {
-		http.Error(w, "not authenticated", http.StatusUnauthorized)
-		return
-	}
-	root := filepath.Join(h.plugin.DataDir(), u.Username, "app_data", "feed", "media")
-	if err := os.RemoveAll(root); err != nil {
-		h.setFlash(w, "error", "Purge failed: "+err.Error())
-	} else {
-		h.setFlash(w, "success", "Purged downloaded media cache.")
-	}
-	captionsRoot := filepath.Join(h.plugin.DataDir(), u.Username, "app_data", "feed", "captions")
-	_ = os.RemoveAll(captionsRoot)
-	store, err := h.userStore(r)
-	if err == nil {
-		_, _ = store.DB().Exec(`UPDATE downloads SET local_path='', clean_audio_path='', captions_path='', state='queued'`)
-	}
-	http.Redirect(w, r, "/apps/feed/admin/status", http.StatusSeeOther)
 }
 
 // ToggleStar toggles the starred state of an item then redirects back.

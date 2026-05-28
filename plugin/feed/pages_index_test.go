@@ -189,6 +189,62 @@ func TestHideReadFiltersIndexList(t *testing.T) {
 	}
 }
 
+// TestHideReadAppliesInSQL seeds 600 read items (newest published_at) and one
+// unread item with published_at=1 (oldest). With feedViewLimit=500 a Go-side
+// filter would only see the newest 500 rows — all read — and miss the unread
+// item. With the SQL-side "is_read=0" filter, SQLite skips the reads and
+// returns the unread item directly, so it must appear on the index page.
+func TestHideReadAppliesInSQL(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "u", "pass")
+	raw, ok := env.Providers.Plugins.Plugin(feed.PluginID)
+	if !ok {
+		t.Fatal("feed plugin not registered")
+	}
+	db, err := raw.(*feed.Plugin).DB(u.User.Username)
+	require.NoError(t, err)
+	s := feed.NewStore(db)
+
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/hideread", Title: "HideReadFeed"})
+	require.NoError(t, err)
+
+	// Insert 600 read items with descending published_at (newest first).
+	const readCount = 600
+	for i := readCount; i >= 1; i-- {
+		id, _, err := s.UpsertItem(feed.Item{
+			SubscriptionID: subID,
+			GUID:           "r" + strconv.Itoa(i),
+			Type:           "text",
+			Title:          "ReadItem-" + strconv.Itoa(i),
+			PublishedAt:    int64(i + 1), // published_at >= 2
+		})
+		require.NoError(t, err)
+		require.NoError(t, s.MarkRead(id, true))
+	}
+
+	// Insert the one unread item with the oldest published_at=1.
+	_, _, err = s.UpsertItem(feed.Item{
+		SubscriptionID: subID,
+		GUID:           "unread-oldest",
+		Type:           "text",
+		Title:          "UNREAD-NEEDLE",
+		PublishedAt:    1,
+	})
+	require.NoError(t, err)
+
+	// Enable HideEmpty (hide-read) preference.
+	p, err := s.LoadPlayerPrefs()
+	require.NoError(t, err)
+	p.HideEmpty = true
+	require.NoError(t, s.SavePlayerPrefs(p))
+
+	// GET /apps/feed/ — must contain the unread item despite it being beyond
+	// the feedViewLimit when reads are sorted first.
+	resp := env.Get(t, "/apps/feed/", u.Auth)
+	resp.Status(200)
+	resp.Contains("UNREAD-NEEDLE")
+}
+
 func TestFeedIndex_Browser(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	eng := webtest.New(env)

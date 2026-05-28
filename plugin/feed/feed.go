@@ -137,15 +137,12 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterPage("history", http.HandlerFunc(pages.HistoryView))
 	ctx.RegisterPage("tag/{name}", http.HandlerFunc(pages.TagView))
 	ctx.RegisterPage("playlists/{id}", http.HandlerFunc(pages.PlaylistView))
-	ctx.RegisterPage("admin/status", http.HandlerFunc(pages.AdminStatus))
-
 	// Bulk-mark and refresh actions
 	ctx.RegisterAction("POST", "items/read-all", http.HandlerFunc(pages.MarkAllRead))
 	ctx.RegisterAction("POST", "subscriptions/{id}/refresh", http.HandlerFunc(pages.RefreshSubscription))
 	ctx.RegisterAction("POST", "subscriptions/{id}/read-all", http.HandlerFunc(pages.MarkSubscriptionRead))
 	ctx.RegisterAction("POST", "folders/{id}/read-all", http.HandlerFunc(pages.MarkFolderRead))
 	ctx.RegisterAction("POST", "subscription/{id}/settings", http.HandlerFunc(pages.SaveSubscriptionSettings))
-	ctx.RegisterAction("POST", "admin/purge-cache", http.HandlerFunc(pages.PurgeCache))
 	ctx.RegisterAction("POST", "player/prefs", http.HandlerFunc(pages.SavePlayerPrefs))
 
 	// Settings pages and resource actions

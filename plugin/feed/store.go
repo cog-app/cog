@@ -1178,6 +1178,7 @@ type ViewSpec struct {
 	FolderID       sql.NullInt64
 	SubscriptionID sql.NullInt64
 	TagName        string
+	HideRead       bool
 }
 
 // ListItemsForView returns items (with subscription title) according to the ViewSpec.
@@ -1208,6 +1209,10 @@ func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscripti
 		args = append(args, spec.TagName)
 	}
 	// spec.All: no extra WHERE
+
+	if spec.HideRead {
+		where = append(where, "i.is_read = 0")
+	}
 
 	q := base
 	if len(where) > 0 {

@@ -9,16 +9,6 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/feed"
 )
 
-func TestAdminPagesHaveSidebar(t *testing.T) {
-	env := cogtest.New(t, feed.New())
-	u := env.CreateUser(t, "admin", "pass")
-	for _, p := range []string{"/apps/feed/admin/status", "/admin/plugins/feed"} {
-		resp := env.Get(t, p, u.Auth)
-		resp.Status(200)
-		resp.Contains("feed-sidebar")
-	}
-}
-
 func TestSubscriptionSettingsHasSidebar(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	u := env.CreateUser(t, "u", "pass")
