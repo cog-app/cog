@@ -3,6 +3,8 @@
 // to keep indices in sync with database changes.
 package search
 
+import "git.duckfam.us/jj-software/cog/plugin"
+
 // Op represents a database operation type from the SQLite update hook.
 type Op int
 
@@ -19,11 +21,10 @@ type Change struct {
 	RowID int64
 }
 
-// Document is an indexable unit fed into the Bleve index.
-type Document struct {
-	ID     string         // "{source}:{rowid}"
-	Fields map[string]any // name, subtext, content, etc.
-}
+// Document is an indexable unit fed into the Bleve index. Re-exported from
+// the public plugin contract so plugin-authored sources can produce values
+// without importing internal/search.
+type Document = plugin.Document
 
 // Hit is a single search result from the index.
 type Hit struct {

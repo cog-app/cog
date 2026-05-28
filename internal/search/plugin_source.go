@@ -28,6 +28,24 @@ func (s *PluginSearchSource) Enrich(db *sql.DB, rowIDs []int64) ([]Document, err
 	if len(rowIDs) == 0 {
 		return nil, nil
 	}
+	if s.def.Schema != nil && s.def.Enricher != nil {
+		docs, err := s.def.Enricher.EnrichSchema(db, rowIDs)
+		if err != nil {
+			return nil, fmt.Errorf("enrich schema %s: %w", s.pluginID, err)
+		}
+		// Prefix each field key with the source name so they slot into the
+		// namespaced bleve mapping built by buildSchemaMapping. Stamp the
+		// implicit "source" field too.
+		for i := range docs {
+			pref := make(map[string]any, len(docs[i].Fields)+1)
+			pref["source"] = s.pluginID
+			for k, v := range docs[i].Fields {
+				pref[s.pluginID+"."+k] = v
+			}
+			docs[i].Fields = pref
+		}
+		return docs, nil
+	}
 
 	placeholders := make([]string, len(rowIDs))
 	args := make([]any, len(rowIDs))
