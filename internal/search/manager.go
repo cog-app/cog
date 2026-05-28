@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"git.duckfam.us/jj-software/cog/internal/query"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
@@ -73,6 +74,23 @@ func (m *Manager) RegisterPluginSource(pluginID string, def plugin.SearchSourceD
 	m.pluginSources[pluginID] = append(m.pluginSources[pluginID], def)
 }
 
+// pluginSchemas extracts the per-plugin search schemas. Keys are plugin IDs;
+// nil entries are dropped. The system also registers internal sources
+// (UserSource/GroupSource/VolumeSource) — those have no Schema and are
+// served by the legacy bleve mapping path, so we only fan schemas in for
+// plugin defs that set one.
+func (m *Manager) pluginSchemas() map[string]*query.Schema {
+	out := map[string]*query.Schema{}
+	for id, defs := range m.pluginSources {
+		for _, def := range defs {
+			if def.Schema != nil {
+				out[id] = def.Schema
+			}
+		}
+	}
+	return out
+}
+
 // SystemHook returns a hook function for the system database that feeds
 // changes into the system collector.
 func (m *Manager) SystemHook() func(op int, db, table string, rowid int64) {
@@ -129,7 +147,8 @@ func (m *Manager) Start(ctx context.Context) error {
 
 	indexPath := filepath.Join(m.dataDir, ".search", "system.bleve")
 	var err error
-	m.systemIndex, err = Open(indexPath)
+	schemas := m.pluginSchemas()
+	m.systemIndex, err = OpenWithSchemas(indexPath, schemas)
 	if err != nil {
 		return fmt.Errorf("open system search index: %w", err)
 	}
@@ -219,7 +238,8 @@ func (m *Manager) ensureUserIndex(username string) (*userSearch, error) {
 	m.mu.Unlock()
 
 	indexPath := filepath.Join(m.dataDir, username, ".search", "user.bleve")
-	idx, err := Open(indexPath)
+	schemas := m.pluginSchemas()
+	idx, err := OpenWithSchemas(indexPath, schemas)
 	if err != nil {
 		return nil, fmt.Errorf("open user search index for %s: %w", username, err)
 	}
@@ -255,6 +275,16 @@ func (m *Manager) ensureUserIndex(username string) (*userSearch, error) {
 		m.log.Error("user full sync failed", "user", username, "err", err)
 	}
 	return us, nil
+}
+
+// FullSyncUser does a one-shot indexing pass for a user's per-plugin sources.
+// Used by tests and during initial setup.
+func (m *Manager) FullSyncUser(username string) error {
+	us, err := m.ensureUserIndex(username)
+	if err != nil {
+		return err
+	}
+	return us.collector.FullSync()
 }
 
 // userPluginSource wraps PluginSearchSource but fetches the DB per-user.
