@@ -477,25 +477,23 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 
 // resolveViewItems returns the same ordered item slice the originating view
 // rendered, so prev/next neighbors match exactly what the user saw.
+// Navigation must traverse the FULL context list regardless of HideRead so that
+// the current item (potentially just marked read) can always be found, and its
+// neighbors are stable. List-page handlers apply their own HideRead via their
+// own ViewSpec — this function intentionally omits it.
 func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscription, error) {
 	const limit = feedViewLimit
 	var items []ItemWithSubscription
 	var err error
-	// Starred and history views do not honor HideRead.
-	hideRead := false
-	if c.Kind != "starred" && c.Kind != "history" {
-		prefs, _ := store.LoadPlayerPrefs()
-		hideRead = prefs.HideEmpty
-	}
 	switch c.Kind {
 	case "starred":
 		items, err = store.ListItemsForView(ViewSpec{Starred: true}, limit)
 	case "folder":
-		items, err = store.ListItemsForView(ViewSpec{FolderID: validID(c.ID), HideRead: hideRead}, limit)
+		items, err = store.ListItemsForView(ViewSpec{FolderID: validID(c.ID)}, limit)
 	case "sub":
-		items, err = store.ListItemsForView(ViewSpec{SubscriptionID: validID(c.ID), HideRead: hideRead}, limit)
+		items, err = store.ListItemsForView(ViewSpec{SubscriptionID: validID(c.ID)}, limit)
 	case "tag":
-		items, err = store.ListItemsForView(ViewSpec{TagName: c.Name, HideRead: hideRead}, limit)
+		items, err = store.ListItemsForView(ViewSpec{TagName: c.Name}, limit)
 	case "playlist":
 		pl, perr := store.GetPlaylist(c.ID)
 		if perr != nil {
@@ -508,7 +506,7 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 			}
 		}
 		items, err = store.ListItemsForView(ViewSpec{
-			All: true, HideRead: hideRead, Query: expr, Schema: SearchSchema(),
+			All: true, Query: expr, Schema: SearchSchema(),
 		}, limit)
 		if err != nil {
 			return nil, fmt.Errorf("resolve playlist items: %w", err)
@@ -526,7 +524,7 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 			}
 		}
 		items, err = store.ListItemsForView(ViewSpec{
-			All: true, HideRead: hideRead, Query: expr, Schema: SearchSchema(),
+			All: true, Query: expr, Schema: SearchSchema(),
 		}, limit)
 		if err != nil {
 			return nil, fmt.Errorf("resolve all items: %w", err)

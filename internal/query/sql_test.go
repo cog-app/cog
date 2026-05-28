@@ -83,9 +83,12 @@ func TestCompileFieldEqIsDownloaded(t *testing.T) {
 }
 
 func TestCompileFieldEqIsUnknownValue(t *testing.T) {
-	_, _, _, err := Compile(&FieldEqExpr{Field: "is", Value: "weird"}, compileTestSchema)
-	if err == nil {
-		t.Fatal("expected error for unknown enum value")
+	w, _, _, err := Compile(&FieldEqExpr{Field: "is", Value: "weird"}, compileTestSchema)
+	if err != nil {
+		t.Fatalf("unknown enum should not error: %v", err)
+	}
+	if w != "0" {
+		t.Fatalf("want match-nothing predicate \"0\", got %q", w)
 	}
 }
 
@@ -131,9 +134,48 @@ func TestCompileMatchAllReturnsEmpty(t *testing.T) {
 }
 
 func TestCompileUnknownField(t *testing.T) {
-	_, _, _, err := Compile(&FieldEqExpr{Field: "ghost", Value: "x"}, compileTestSchema)
-	if err == nil {
-		t.Fatal("expected unknown-field error")
+	w, args, joins, err := Compile(&FieldEqExpr{Field: "ghost", Value: "x"}, compileTestSchema)
+	if err != nil {
+		t.Fatalf("unknown field should not error: %v", err)
+	}
+	if w != "0" {
+		t.Fatalf("want match-nothing predicate \"0\", got %q", w)
+	}
+	if args != nil || joins != nil {
+		t.Fatalf("args=%v joins=%v", args, joins)
+	}
+}
+
+func TestCompileUnknownFieldYieldsMatchNothing(t *testing.T) {
+	w, args, joins, err := Compile(&FieldEqExpr{Field: "ghost", Value: "x"}, compileTestSchema)
+	if err != nil {
+		t.Fatalf("unknown field should not error: %v", err)
+	}
+	if w != "0" {
+		t.Fatalf("want match-nothing predicate \"0\", got %q", w)
+	}
+	if args != nil || joins != nil {
+		t.Fatalf("args=%v joins=%v", args, joins)
+	}
+}
+
+func TestCompileUnknownEnumValueYieldsMatchNothing(t *testing.T) {
+	w, _, _, err := Compile(&FieldEqExpr{Field: "is", Value: "weird"}, compileTestSchema)
+	if err != nil {
+		t.Fatalf("unknown enum should not error: %v", err)
+	}
+	if w != "0" {
+		t.Fatalf("want \"0\", got %q", w)
+	}
+}
+
+func TestCompileFieldInUnknownFieldYieldsMatchNothing(t *testing.T) {
+	w, _, _, err := Compile(&FieldInExpr{Field: "ghost", Values: []string{"a", "b"}}, compileTestSchema)
+	if err != nil {
+		t.Fatalf("unknown field IN should not error: %v", err)
+	}
+	if w != "0" {
+		t.Fatalf("want \"0\", got %q", w)
 	}
 }
 

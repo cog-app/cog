@@ -98,7 +98,7 @@ func (c *sqlCompiler) requireJoins(j []string) {
 func (c *sqlCompiler) fieldEq(field, value string) (string, error) {
 	f, ok := c.schema.Fields[field]
 	if !ok {
-		return "", fmt.Errorf("query: unknown field %q", field)
+		return "0", nil // match nothing, like bleve MatchNone for unknown fields
 	}
 	c.requireJoins(f.Joins)
 	switch f.Type {
@@ -131,7 +131,7 @@ func (c *sqlCompiler) fieldEq(field, value string) (string, error) {
 	case EnumPredicate:
 		pred, ok := f.Values[value]
 		if !ok {
-			return "", fmt.Errorf("query: field %q has no value %q", field, value)
+			return "0", nil // unknown enum value -> match nothing
 		}
 		return pred, nil
 	default:
@@ -152,6 +152,9 @@ func parseBool(s string) (int, error) {
 func (c *sqlCompiler) fieldIn(field string, values []string) (string, error) {
 	if len(values) == 0 {
 		return "0", nil
+	}
+	if _, ok := c.schema.Fields[field]; !ok {
+		return "0", nil // unknown field -> match nothing
 	}
 	parts := make([]string, 0, len(values))
 	for _, v := range values {

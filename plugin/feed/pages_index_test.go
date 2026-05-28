@@ -1,6 +1,8 @@
 package feed_test
 
 import (
+	"database/sql"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -255,7 +257,7 @@ func TestIndexSearchFindsItemsPastLimit(t *testing.T) {
 	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/f", Title: "S"})
 	require.NoError(t, err)
 	// 600 noise items (newer), 1 matching "needle" item (oldest).
-	for i := 0; i < 600; i++ {
+	for i := range 600 {
 		_, _, err = s.UpsertItem(feed.Item{
 			SubscriptionID: subID,
 			GUID:           "n" + strconv.Itoa(i),
@@ -303,4 +305,66 @@ func TestFeedIndex_Browser(t *testing.T) {
 		b.WaitText(t, "AudioItem")
 		// TextItem should not appear in audio-filtered view.
 	})
+}
+
+func TestItemDetailNavSurvivesReadAndHideRead(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "u", "pass")
+	raw, ok := env.Providers.Plugins.Plugin(feed.PluginID)
+	if !ok {
+		t.Fatal("feed plugin not registered")
+	}
+	db, err := raw.(*feed.Plugin).DB(u.User.Username)
+	require.NoError(t, err)
+	s := feed.NewStore(db)
+	fid, err := s.CreateFolder("Dev")
+	require.NoError(t, err)
+	subID, err := s.CreateSubscription(feed.Subscription{
+		Kind: "rss", URL: "https://x.test/f", Title: "S",
+		FolderID: sql.NullInt64{Int64: fid, Valid: true},
+	})
+	require.NoError(t, err)
+	// Three items in the folder; opening the middle one in hide-read mode
+	// should still show a working prev/next.
+	id1, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "a", Type: "text", Title: "first",  PublishedAt: 1})
+	require.NoError(t, err)
+	id2, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "b", Type: "text", Title: "middle", PublishedAt: 2})
+	require.NoError(t, err)
+	id3, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "c", Type: "text", Title: "last",   PublishedAt: 3})
+	require.NoError(t, err)
+	p, err := s.LoadPlayerPrefs()
+	require.NoError(t, err)
+	p.HideEmpty = true
+	require.NoError(t, s.SavePlayerPrefs(p))
+
+	// Open the middle item from the folder context.
+	url := fmt.Sprintf("/apps/feed/items/%d?ctx=folder&cid=%d", id2, fid)
+	resp := env.Get(t, url, u.Auth)
+	resp.Status(200)
+	body := resp.ReadBody()
+	// Prev/Next must be enabled — i.e. the bar contains anchor links to the
+	// neighbor IDs, not the disabled spans (`opacity:0.5`).
+	// ItemHref shape is /apps/feed/items/{id}?ctx=...
+	prevHref := fmt.Sprintf(`href="/apps/feed/items/%d?ctx=folder`, id1)
+	nextHref := fmt.Sprintf(`href="/apps/feed/items/%d?ctx=folder`, id3)
+	if !strings.Contains(body, prevHref) {
+		t.Errorf("Prev link missing (%s); body excerpt: %q", prevHref, snippet(body, "feed-context-bar"))
+	}
+	if !strings.Contains(body, nextHref) {
+		t.Errorf("Next link missing (%s); body excerpt: %q", nextHref, snippet(body, "feed-context-bar"))
+	}
+	_, _ = id2, fid
+}
+
+// snippet returns ~300 chars of body around the first occurrence of marker, or "".
+func snippet(body, marker string) string {
+	i := strings.Index(body, marker)
+	if i < 0 {
+		return ""
+	}
+	end := i + 400
+	if end > len(body) {
+		end = len(body)
+	}
+	return body[i:end]
 }
