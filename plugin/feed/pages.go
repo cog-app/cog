@@ -1233,7 +1233,7 @@ func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 		tagsList, _ := store.ItemTags(it.ID)
 		dl, _ := store.GetDownload(it.ID)
 		rec := BuildRecord(it.Item, sub, folder, tagsList, !it.IsRead, it.IsStarred, dl.State == "ready")
-		if expr.Match(rec) {
+		if search.ExactMatch(expr, rec, *SearchSchema()) {
 			matched = append(matched, it)
 		}
 	}

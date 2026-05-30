@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"git.duckfam.us/jj-software/cog/internal/query"
+	"git.duckfam.us/jj-software/cog/internal/search"
 )
 
 // FilterEngine evaluates stored filters against newly-ingested items and
@@ -63,7 +64,7 @@ func (e *FilterEngine) Apply(itemID int64) error {
 		downloaded := dl.State == "ready"
 		rec := BuildRecord(it, sub, folder, tags, !it.IsRead, it.IsStarred, downloaded)
 
-		if !expr.Match(rec) {
+		if !search.ExactMatch(expr, rec, *SearchSchema()) {
 			continue
 		}
 		switch f.Action {
