@@ -555,3 +555,72 @@ func TestLoadSidebarCounts(t *testing.T) {
 		t.Errorf("ByFolder[F] = %d, want 2", sc.ByFolder[fid])
 	}
 }
+
+func TestTagsByItems(t *testing.T) {
+	s := newStore(t)
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/tagbatch"})
+	require.NoError(t, err)
+
+	idA, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "ta", Type: "text", Title: "A"})
+	require.NoError(t, err)
+	idB, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "tb", Type: "text", Title: "B"})
+	require.NoError(t, err)
+
+	require.NoError(t, s.AddTag(idA, "morning"))
+	require.NoError(t, s.AddTag(idA, "tech"))
+
+	// B has no tags.
+
+	m, err := s.TagsByItems([]int64{idA, idB})
+	require.NoError(t, err)
+
+	if len(m[idA]) != 2 {
+		t.Fatalf("idA tags = %v, want [morning tech]", m[idA])
+	}
+	if m[idA][0] != "morning" || m[idA][1] != "tech" {
+		t.Errorf("idA tags order = %v, want [morning tech]", m[idA])
+	}
+	if len(m[idB]) != 0 {
+		t.Errorf("idB should have no tags, got %v", m[idB])
+	}
+
+	// Empty input returns empty map, no error.
+	empty, err := s.TagsByItems(nil)
+	require.NoError(t, err)
+	if len(empty) != 0 {
+		t.Errorf("expected empty map for nil ids, got %v", empty)
+	}
+}
+
+func TestDownloadStateByItems(t *testing.T) {
+	s := newStore(t)
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/dlbatch"})
+	require.NoError(t, err)
+
+	idA, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "da", Type: "audio", Title: "A"})
+	require.NoError(t, err)
+	idB, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "db", Type: "audio", Title: "B"})
+	require.NoError(t, err)
+
+	// A has a ready download; B has no download row.
+	require.NoError(t, s.EnqueueDownload(idA))
+	require.NoError(t, s.MarkDownloadStart(idA))
+	require.NoError(t, s.MarkDownloadReady(idA, "/tmp/a.mp3", 1000))
+
+	m, err := s.DownloadStateByItems([]int64{idA, idB})
+	require.NoError(t, err)
+
+	if m[idA] != "ready" {
+		t.Errorf("idA state = %q, want ready", m[idA])
+	}
+	if m[idB] != "" {
+		t.Errorf("idB state = %q, want \"\" (no row)", m[idB])
+	}
+
+	// Empty input returns empty map, no error.
+	empty, err := s.DownloadStateByItems(nil)
+	require.NoError(t, err)
+	if len(empty) != 0 {
+		t.Errorf("expected empty map for nil ids, got %v", empty)
+	}
+}

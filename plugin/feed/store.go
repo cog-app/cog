@@ -1369,6 +1369,76 @@ func (s *Store) RemoveTag(itemID int64, tag string) error {
 	return nil
 }
 
+// TagsByItems returns tag names per item ID in one query.
+// Items with no tags are absent from the map.
+func (s *Store) TagsByItems(ids []int64) (map[int64][]string, error) {
+	if len(ids) == 0 {
+		return map[int64][]string{}, nil
+	}
+	placeholders := strings.Repeat("?,", len(ids))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := s.db.Query(`
+		SELECT it.item_id, t.name FROM item_tags it
+		JOIN tags t ON t.id = it.tag_id
+		WHERE it.item_id IN (`+placeholders+`)
+		ORDER BY it.item_id, t.name`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("tags by items: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[int64][]string)
+	for rows.Next() {
+		var itemID int64
+		var name string
+		if err := rows.Scan(&itemID, &name); err != nil {
+			return nil, fmt.Errorf("tags by items scan: %w", err)
+		}
+		out[itemID] = append(out[itemID], name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("tags by items rows: %w", err)
+	}
+	return out, nil
+}
+
+// DownloadStateByItems returns the download state per item ID in one query.
+// Items with no download row map to "".
+func (s *Store) DownloadStateByItems(ids []int64) (map[int64]string, error) {
+	if len(ids) == 0 {
+		return map[int64]string{}, nil
+	}
+	placeholders := strings.Repeat("?,", len(ids))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := s.db.Query(`
+		SELECT item_id, state FROM downloads
+		WHERE item_id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("download state by items: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[int64]string)
+	for rows.Next() {
+		var itemID int64
+		var state string
+		if err := rows.Scan(&itemID, &state); err != nil {
+			return nil, fmt.Errorf("download state by items scan: %w", err)
+		}
+		out[itemID] = state
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("download state by items rows: %w", err)
+	}
+	return out, nil
+}
+
 // ItemTags returns all tag names for an item, ordered by name.
 func (s *Store) ItemTags(itemID int64) ([]string, error) {
 	rows, err := s.db.Query(`

@@ -17,6 +17,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/query"
+	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/plugin/profanity"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -415,12 +416,24 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 	if expr != nil {
 		expr = query.ResolveRelativeDates(expr, *SearchSchema(), time.Now())
 	}
-	items, _ := store.ListItemsForView(ViewSpec{
+	items, plErr := store.ListItemsForView(ViewSpec{
 		All:      true,
 		HideRead: prefs.HideEmpty,
 		Query:    expr,
 		Schema:   SearchSchema(),
 	}, feedViewLimit)
+	if plErr != nil {
+		http.Error(w, "could not list items: "+plErr.Error(), http.StatusInternalServerError)
+		return
+	}
+	if expr != nil && queryNeedsRefine(expr) {
+		items, plErr = h.refineItems(store, items, expr)
+		if plErr != nil {
+			slog.Error("feed: playlist refine", "err", plErr)
+			http.Error(w, "could not refine items: "+plErr.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 	c := viewCtx{Kind: "playlist", ID: id}
 	plugin.SetTitle(w, "Feed — "+pl.Name)
 	feedPlaylistPage(sb, pl, items, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
@@ -465,6 +478,12 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 		if err != nil {
 			return nil, fmt.Errorf("resolve playlist items: %w", err)
 		}
+		if expr != nil && queryNeedsRefine(expr) {
+			items, err = h.refineItems(store, items, expr)
+			if err != nil {
+				return nil, fmt.Errorf("resolve playlist refine: %w", err)
+			}
+		}
 	case "history":
 		items, err = store.PlaybackHistoryItems(limit)
 		if err != nil {
@@ -486,6 +505,12 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 		if err != nil {
 			return nil, fmt.Errorf("resolve all items: %w", err)
 		}
+		if expr != nil && queryNeedsRefine(expr) {
+			items, err = h.refineItems(store, items, expr)
+			if err != nil {
+				return nil, fmt.Errorf("resolve all items refine: %w", err)
+			}
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("resolve view items: %w", err)
@@ -495,6 +520,74 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 
 // validID wraps an int64 as a valid sql.NullInt64.
 func validID(id int64) sql.NullInt64 { return sql.NullInt64{Int64: id, Valid: true} }
+
+// queryNeedsRefine reports whether e contains a TextExpr/PhraseExpr — the only
+// nodes the SQL compiler evaluates as a permissive superset. When false, the
+// SQL result is already exact and no Go refine is needed.
+func queryNeedsRefine(e query.Expr) bool {
+	switch x := e.(type) {
+	case *query.TextExpr, *query.PhraseExpr:
+		return true
+	case *query.NotExpr:
+		return queryNeedsRefine(x.Inner)
+	case *query.AndExpr:
+		return queryNeedsRefine(x.Left) || queryNeedsRefine(x.Right)
+	case *query.OrExpr:
+		return queryNeedsRefine(x.Left) || queryNeedsRefine(x.Right)
+	default:
+		return false
+	}
+}
+
+// refineItems filters the SQL-prefiltered rows down to an exact match of expr
+// using bleve-exact semantics. Caller guarantees queryNeedsRefine(expr)==true.
+// Builds a full query.Record per row (subscription/folder memoized by id;
+// tags + download-state batch-loaded) and keeps rows where search.ExactMatch
+// holds. Order preserved.
+func (h *Pages) refineItems(store *Store, items []ItemWithSubscription, expr query.Expr) ([]ItemWithSubscription, error) {
+	if len(items) == 0 {
+		return items, nil
+	}
+	ids := make([]int64, len(items))
+	for i, it := range items {
+		ids[i] = it.ID
+	}
+	tagsByItem, err := store.TagsByItems(ids)
+	if err != nil {
+		return nil, fmt.Errorf("refine tags: %w", err)
+	}
+	dlByItem, err := store.DownloadStateByItems(ids)
+	if err != nil {
+		return nil, fmt.Errorf("refine downloads: %w", err)
+	}
+	subCache := map[int64]Subscription{}
+	folderCache := map[int64]string{}
+	out := items[:0]
+	for _, it := range items {
+		sub, ok := subCache[it.SubscriptionID]
+		if !ok {
+			sub, _ = store.GetSubscription(it.SubscriptionID)
+			subCache[it.SubscriptionID] = sub
+		}
+		folderName := ""
+		if sub.FolderID.Valid {
+			fn, ok := folderCache[sub.FolderID.Int64]
+			if !ok {
+				if f, ferr := store.GetFolder(sub.FolderID.Int64); ferr == nil {
+					fn = f.Name
+				}
+				folderCache[sub.FolderID.Int64] = fn
+			}
+			folderName = fn
+		}
+		rec := BuildRecord(it.Item, sub, folderName, tagsByItem[it.ID],
+			!it.IsRead, it.IsStarred, dlByItem[it.ID] == "ready")
+		if search.ExactMatch(expr, rec, *SearchSchema()) {
+			out = append(out, it)
+		}
+	}
+	return out, nil
+}
 
 // Index shows the main feed item list with optional query filtering.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
@@ -526,6 +619,14 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "could not list items: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if expr != nil && queryNeedsRefine(expr) {
+		items, err = h.refineItems(store, items, expr)
+		if err != nil {
+			slog.Error("feed: index refine", "err", err)
+			http.Error(w, "could not refine items: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	sb := h.buildSidebar(store, "/apps/feed/")
