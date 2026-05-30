@@ -31,6 +31,10 @@ func TestCompileTextBareWordOROfLikes(t *testing.T) {
 	if !strings.Contains(w, "LOWER(i.title) LIKE ?") || !strings.Contains(w, "LOWER(i.author) LIKE ?") {
 		t.Fatalf("missing text-field LIKEs: %q", w)
 	}
+	// Keyword field (i.type) must NOT appear in bare-word scan.
+	if strings.Contains(w, "LOWER(i.type) LIKE") {
+		t.Fatalf("bare word should not scan keyword field i.type: %q", w)
+	}
 	if len(args) < 2 || args[0] != "%hello%" {
 		t.Fatalf("args=%v", args)
 	}
@@ -191,35 +195,65 @@ func TestCompileTagUsesPrimaryAlias(t *testing.T) {
 	}
 }
 
-func TestCompileBareWordScansKeywordFields(t *testing.T) {
-	w, args, _, err := Compile(&TextExpr{Value: "audio"}, compileTestSchema)
+func TestCompileBareWordTextFieldsOnly(t *testing.T) {
+	w, _, joins, err := Compile(&TextExpr{Value: "x"}, compileTestSchema)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// type is Keyword (i.type) — must be in the bare-word OR scan now.
-	if !strings.Contains(w, "LOWER(i.type) LIKE ?") {
-		t.Fatalf("bare word should scan keyword field i.type: %q", w)
-	}
-	// still scans text fields
+	// Must scan Text fields.
 	if !strings.Contains(w, "LOWER(i.title) LIKE ?") {
-		t.Fatalf("missing title: %q", w)
+		t.Fatalf("missing title in bare-word scan: %q", w)
 	}
-	_ = args
-}
-
-func TestCompileBareWordPullsFolderJoin(t *testing.T) {
-	_, _, joins, err := Compile(&TextExpr{Value: "x"}, compileTestSchema)
-	if err != nil {
-		t.Fatal(err)
+	if !strings.Contains(w, "LOWER(i.author) LIKE ?") {
+		t.Fatalf("missing author in bare-word scan: %q", w)
 	}
-	found := false
+	// Must NOT scan Keyword field (i.type).
+	if strings.Contains(w, "LOWER(i.type) LIKE") {
+		t.Fatalf("bare word should not scan keyword field i.type: %q", w)
+	}
+	// folder is Keyword (not Text) — no folders join expected.
 	for _, j := range joins {
 		if j == "folders" {
-			found = true
+			t.Fatalf("bare word should not require folders join (folder is Keyword, not Text): %v", joins)
 		}
 	}
-	if !found {
-		t.Fatalf("bare word over folder(Keyword w/ join) must require folders join: %v", joins)
+}
+
+func TestCompilePhraseAllWordsSuperset(t *testing.T) {
+	w, args, _, err := Compile(&PhraseExpr{Value: "hello world"}, compileTestSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Must use AND between per-word fragments.
+	if !strings.Contains(w, " AND ") {
+		t.Fatalf("phrase compile should AND per-word fragments: %q", w)
+	}
+	// Must NOT be a single %hello world% substring (exact phrase literal).
+	if strings.Contains(w, "%hello world%") {
+		t.Fatalf("phrase should not produce a single %%hello world%% literal: %q", w)
+	}
+	// compileTestSchema has 2 Text fields (title, author).
+	// 2 words × 2 text fields = 4 LIKE args, each %hello% or %world%.
+	if len(args) != 4 {
+		t.Fatalf("want 4 args (2 words × 2 text fields), got %d: %v", len(args), args)
+	}
+	helloCount, worldCount := 0, 0
+	for _, a := range args {
+		s, _ := a.(string)
+		if s == "%hello%" {
+			helloCount++
+		}
+		if s == "%world%" {
+			worldCount++
+		}
+	}
+	if helloCount != 2 || worldCount != 2 {
+		t.Fatalf("want 2×%%hello%% and 2×%%world%%, args=%v", args)
+	}
+	// Both LOWER(i.title) LIKE ? occurrences (one per word).
+	titleCount := strings.Count(w, "LOWER(i.title) LIKE ?")
+	if titleCount < 2 {
+		t.Fatalf("want at least 2 LOWER(i.title) LIKE ? (one per word), got %d in %q", titleCount, w)
 	}
 }
 

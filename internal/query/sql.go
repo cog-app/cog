@@ -47,9 +47,9 @@ func (c *sqlCompiler) expr(e Expr) (string, error) {
 	case nil, *MatchAllExpr:
 		return "", nil
 	case *TextExpr:
-		return c.likeAcrossText(x.Value)
+		return c.likeTerm(x.Value)
 	case *PhraseExpr:
-		return c.likeAcrossText(x.Value)
+		return c.likeAllWords(x.Value)
 	case *NotExpr:
 		inner, err := c.expr(x.Inner)
 		if err != nil {
@@ -217,8 +217,11 @@ func parseDateToUnix(s string) (int64, bool) {
 	return 0, false
 }
 
-func (c *sqlCompiler) likeAcrossText(value string) (string, error) {
-	names := c.schema.ScalarFields()
+// orLikeAcrossText ORs LOWER(<Expr>) LIKE ? over all Text-typed fields
+// (DefaultTextFields). Returns "0" if there are no text fields.
+// Single field → no wrapping parens.
+func (c *sqlCompiler) orLikeAcrossText(value string) (string, error) {
+	names := c.schema.DefaultTextFields()
 	if len(names) == 0 {
 		return "0", nil
 	}
@@ -234,4 +237,31 @@ func (c *sqlCompiler) likeAcrossText(value string) (string, error) {
 		return parts[0], nil
 	}
 	return "(" + strings.Join(parts, " OR ") + ")", nil
+}
+
+// likeTerm handles a bare-word TextExpr: OR-LIKE across Text fields only.
+func (c *sqlCompiler) likeTerm(value string) (string, error) {
+	return c.orLikeAcrossText(value)
+}
+
+// likeAllWords handles a PhraseExpr: AND of per-word OR-LIKE scans across
+// Text fields. Every word must match somewhere in the text fields (superset
+// of exact phrase match).
+func (c *sqlCompiler) likeAllWords(phrase string) (string, error) {
+	words := strings.Fields(phrase)
+	if len(words) == 0 {
+		return "0", nil
+	}
+	parts := make([]string, 0, len(words))
+	for _, word := range words {
+		frag, err := c.orLikeAcrossText(word)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, frag)
+	}
+	if len(parts) == 1 {
+		return parts[0], nil
+	}
+	return "(" + strings.Join(parts, " AND ") + ")", nil
 }

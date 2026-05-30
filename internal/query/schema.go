@@ -71,23 +71,6 @@ func (s Schema) DefaultTextFields() []string {
 	return out
 }
 
-// ScalarFields returns the names of fields backed by a single SQL column
-// expression (Text, Keyword, DateText), sorted. Used by the SQL compiler for
-// bare-word substring scans across all column-backed fields — matching the Go
-// matcher, which scans every record value. ManyToMany and EnumPredicate are
-// excluded (no scalar column to LIKE against).
-func (s Schema) ScalarFields() []string {
-	out := make([]string, 0, len(s.Fields))
-	for name, f := range s.Fields {
-		switch f.Type {
-		case Text, Keyword, DateText:
-			out = append(out, name)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
 var fieldNameRE = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 // Validate reports structural problems.
