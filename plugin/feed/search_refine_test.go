@@ -197,13 +197,7 @@ func snippetRefine(body, marker string) string {
 	if i < 0 {
 		return "(not found)"
 	}
-	start := i - 50
-	if start < 0 {
-		start = 0
-	}
-	end := i + 100
-	if end > len(body) {
-		end = len(body)
-	}
+	start := max(i-50, 0)
+	end := min(i+100, len(body))
 	return body[start:end]
 }

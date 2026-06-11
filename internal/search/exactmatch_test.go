@@ -1,6 +1,7 @@
 package search
 
 import (
+	"slices"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/query"
@@ -32,13 +33,7 @@ func TestStandardTokenize_StopWords(t *testing.T) {
 
 func TestStandardTokenize_Digits(t *testing.T) {
 	got := StandardTokenize("rss2 feed")
-	found := false
-	for _, tok := range got {
-		if tok == "rss2" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(got, "rss2")
 	iassert.True(t, found, "expected token 'rss2' in %v", got)
 }
 

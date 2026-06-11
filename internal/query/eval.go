@@ -1,5 +1,7 @@
 package query
 
+import "slices"
+
 import "strings"
 
 // Tokenizer splits a string into normalized tokens. Injected so internal/query
@@ -40,10 +42,8 @@ func matchTerm(term string, r Record, s Schema, tok Tokenizer) bool {
 			toks := tok(v)
 			// match: any analyzed term token present
 			for _, qt := range terms {
-				for _, dt := range toks {
-					if dt == qt {
-						return true
-					}
+				if slices.Contains(toks, qt) {
+					return true
 				}
 			}
 			// prefix: any doc token starts with the raw lowercased term

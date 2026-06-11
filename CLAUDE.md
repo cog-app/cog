@@ -71,7 +71,6 @@ WE DO NOT SWALLOW ERRORS. Errors should be handled by either wrapping and return
 
 ## Key Patterns
 
-- **Single-writer SQLite**: WAL mode, `MaxOpenConns=1`, foreign keys enabled
 - **Per-user plugin databases**: Each plugin gets its own SQLite DB per user
 - **Context-based auth**: Authenticated user propagated via request context
 - **Protected pattern**: Privileged plugins embed `internal/plugin.Protected`; auto-detected by registry (no `SetProtected` call)
