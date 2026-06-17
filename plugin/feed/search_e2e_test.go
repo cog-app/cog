@@ -3,6 +3,7 @@ package feed_test
 import (
 	"strconv"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -71,5 +72,83 @@ func TestIsDownloadedSearchableViaGlobalIndex(t *testing.T) {
 	}
 	if hasB {
 		t.Fatal("beta (no download) should not appear under is:downloaded")
+	}
+}
+
+func TestPublishedRangeSearchableViaGlobalIndex(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "u", "pass")
+	raw, ok := env.Providers.Plugins.Plugin(feed.PluginID)
+	require.True(t, ok)
+	db, err := raw.(*feed.Plugin).DB(u.User.Username)
+	require.NoError(t, err)
+	s := feed.NewStore(db)
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/f", Title: "S"})
+	require.NoError(t, err)
+
+	oldT := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+	newT := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC).Unix()
+	idOld, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "old", Type: "text", Title: "OLDONE", PublishedAt: oldT})
+	require.NoError(t, err)
+	idNew, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "new", Type: "text", Title: "NEWONE", PublishedAt: newT})
+	require.NoError(t, err)
+
+	require.NoError(t, env.Providers.Search.FullSyncUser(u.User.Username))
+
+	res, err := env.Providers.Search.SearchUser(u.User.Username, ":published>2026-01-01", 50, 0)
+	require.NoError(t, err)
+	newID := "feed:" + strconv.FormatInt(idNew, 10)
+	oldID := "feed:" + strconv.FormatInt(idOld, 10)
+	var hasNew, hasOld bool
+	for _, h := range res.Hits {
+		if h.ID == newID {
+			hasNew = true
+		}
+		if h.ID == oldID {
+			hasOld = true
+		}
+	}
+	if !hasNew {
+		t.Fatalf("published>2026 should include NEWONE; hits=%+v", res.Hits)
+	}
+	if hasOld {
+		t.Fatalf("published>2026 should exclude OLDONE; hits=%+v", res.Hits)
+	}
+}
+
+func TestDurationRangeSearchableViaGlobalIndex(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "u", "pass")
+	raw, ok := env.Providers.Plugins.Plugin(feed.PluginID)
+	require.True(t, ok)
+	db, err := raw.(*feed.Plugin).DB(u.User.Username)
+	require.NoError(t, err)
+	s := feed.NewStore(db)
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/f", Title: "S"})
+	require.NoError(t, err)
+	idShort, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "short", Type: "audio", Title: "SHORTONE", DurationSec: 60})
+	require.NoError(t, err)
+	idLong, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "long", Type: "audio", Title: "LONGONE", DurationSec: 3600})
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Search.FullSyncUser(u.User.Username))
+
+	res, err := env.Providers.Search.SearchUser(u.User.Username, ":duration>600", 50, 0)
+	require.NoError(t, err)
+	longID := "feed:" + strconv.FormatInt(idLong, 10)
+	shortID := "feed:" + strconv.FormatInt(idShort, 10)
+	var hasLong, hasShort bool
+	for _, h := range res.Hits {
+		if h.ID == longID {
+			hasLong = true
+		}
+		if h.ID == shortID {
+			hasShort = true
+		}
+	}
+	if !hasLong {
+		t.Fatalf("duration>600 should include LONGONE; hits=%+v", res.Hits)
+	}
+	if hasShort {
+		t.Fatalf("duration>600 should exclude SHORTONE; hits=%+v", res.Hits)
 	}
 }
