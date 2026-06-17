@@ -164,9 +164,29 @@ templ feedIndexPage(sb sidebarData, items []ItemWithSubscription, q string, csrf
 				<div class="flex gap-1 items-center">
 					<form method="get" action="/apps/feed/">
 						<div class="flex gap-1">
-							<input class="form-control" type="search" name="q" value={ q } placeholder="Search feeds…" style="max-width:280px"/>
+							<input class="form-control" type="search" name="q" value={ q } placeholder="Search feeds…" style="max-width:280px" title="Search — see ▾ for syntax"/>
 							<button class="btn btn-outline btn-sm" type="submit">Go</button>
 						</div>
+						<details class="feed-search-help" style="margin-top:0.25rem;font-size:0.8rem;color:var(--color-muted)">
+							<summary style="cursor:pointer;user-select:none">Search help</summary>
+							<div style="margin-top:0.4rem;line-height:1.6;background:var(--color-bg);border:1px solid var(--color-border);border-radius:4px;padding:0.5rem 0.75rem">
+								<code>term</code> — title / author / content
+								<br/>
+								<code>&ldquo;exact phrase&rdquo;</code> — phrase match
+								<br/>
+								<code>:type=audio</code> / <code>:type=video</code> / <code>:type=text</code>
+								<br/>
+								<code>is:unread</code> &nbsp;<code>is:starred</code> &nbsp;<code>is:downloaded</code>
+								<br/>
+								<code>:tag=name</code> &nbsp;<code>:folder=name</code> &nbsp;<code>:subscription=name</code>
+								<br/>
+								<code>:published&gt;2026-01-01</code> &nbsp;<code>:published&gt;-7d</code> &nbsp;<code>:published&lt;2026-06-01</code>
+								<br/>
+								<code>:duration&gt;600</code> — duration in seconds
+								<br/>
+								combine: <code>is:unread :type=audio &ldquo;deep dive&rdquo;</code> &nbsp;&bull;&nbsp; <code>OR</code> &nbsp;<code>NOT</code> &nbsp;<code>( )</code>
+							</div>
+						</details>
 					</form>
 					if sb.TotalUnread > 0 {
 						<form method="post" action="/apps/feed/items/read-all">
