@@ -316,6 +316,24 @@ templ feedPlaylistPage(sb sidebarData, pl Playlist, items []ItemWithSubscription
 }
 
 templ feedItemList(items []ItemWithSubscription, csrfToken string, vctx string) {
+	<style>
+		/* The head bleeds out to the row edges so a read item's tint spans the
+		   full width, while the expanded body keeps the surface background. */
+		.feed-item-head {
+			margin: -0.75rem -1rem;
+			padding: 0.75rem 1rem;
+		}
+		.feed-item-detail {
+			margin-top: 0.75rem;
+		}
+		.feed-item-read .feed-item-head {
+			background: rgba(0, 0, 0, 0.07);
+		}
+		.feed-item-read .feed-item-head a:not(.btn),
+		.feed-item-read .feed-item-head .feed-item-summary-line {
+			opacity: 0.75;
+		}
+	</style>
 	<div id="item-list">
 		for _, item := range items {
 			@feedItemRow(item, csrfToken, vctx)
@@ -419,7 +437,7 @@ templ feedItemRow(item ItemWithSubscription, csrfToken string, vctx string) {
 
 templ feedTextItemRow(item ItemWithSubscription, csrfToken string, vctx string) {
 	<div id={ fmt.Sprintf("item-%d", item.ID) } class={ feedItemRowClass(item.IsRead) } style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0)">
-		<div class="flex items-center gap-1" style="justify-content:space-between;cursor:pointer" onclick={ templ.ComponentScript{Call: fmt.Sprintf("toggleArticle(%d)", item.ID)} }>
+		<div class="feed-item-head flex items-center gap-1" style="justify-content:space-between;cursor:pointer" onclick={ templ.ComponentScript{Call: fmt.Sprintf("toggleArticle(%d)", item.ID)} }>
 			<div style="min-width:0;flex:1">
 				<div class="flex items-center gap-1" style="flex-wrap:wrap">
 					<a
@@ -492,7 +510,7 @@ templ feedTextItemRow(item ItemWithSubscription, csrfToken string, vctx string) 
 
 templ feedMediaItemRow(item ItemWithSubscription, csrfToken string, vctx string) {
 	<div id={ fmt.Sprintf("item-%d", item.ID) } class={ feedItemRowClass(item.IsRead) } style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0)">
-		<div class="flex items-center gap-1" style="justify-content:space-between">
+		<div class="feed-item-head flex items-center gap-1" style="justify-content:space-between">
 			<div style="min-width:0;flex:1">
 				<div class="flex items-center gap-1" style="flex-wrap:wrap">
 					<a
