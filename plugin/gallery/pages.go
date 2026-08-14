@@ -978,6 +978,7 @@ func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 		SetSetting(db, "recognition_url", r.FormValue("recognition_url"))
 		SetSetting(db, "recognition_api_key", r.FormValue("recognition_api_key"))
 		SetSetting(db, "recognition_model", r.FormValue("recognition_model"))
+		SetSetting(db, "kronk_processor", r.FormValue("kronk_processor"))
 	}
 
 	http.Redirect(w, r, "/admin/plugins/gallery", http.StatusSeeOther)

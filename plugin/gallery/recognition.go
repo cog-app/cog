@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"path/filepath"
 )
 
 // RecognizedTag is a tag produced by image recognition.
@@ -62,6 +63,16 @@ func (p *Plugin) resolveBackend(db *sql.DB, backendType RecognitionBackendType) 
 		return b, nil
 	case BackendPigo:
 		return &PigoBackend{}, nil
+	case BackendKronk:
+		b := &KronkBackend{
+			ModelSource: model,
+			CacheDir:    filepath.Join(p.ctx.DataDir(), "kronk"),
+			Processor:   SettingKronkProcessor.MustGet(db),
+		}
+		if !b.Available() {
+			return nil, fmt.Errorf("kronk backend not available: no model configured")
+		}
+		return b, nil
 	case BackendOnnx:
 		modelsDir := SettingOnnxModelsDir.MustGet(db)
 		if modelsDir == "" {

@@ -975,6 +975,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 				<select name="tag_backend" class="input">
 					<option value="none" selected?={ GetSetting(db, "tag_backend", "none") == "none" }>None (disabled)</option>
 					<option value="onnx" selected?={ GetSetting(db, "tag_backend", "none") == "onnx" }>ONNX (local)</option>
+					<option value="kronk" selected?={ GetSetting(db, "tag_backend", "none") == "kronk" }>Kronk (local vision model)</option>
 					<option value="ollama" selected?={ GetSetting(db, "tag_backend", "none") == "ollama" }>Ollama</option>
 					<option value="openai" selected?={ GetSetting(db, "tag_backend", "none") == "openai" }>OpenAI-compatible</option>
 				</select>
@@ -1109,6 +1110,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Ollama / OpenAI URL</label>
+				<!-- Unused by Kronk, which runs the model in-process. -->
 				<input type="text" name="recognition_url" class="input" value={ GetSetting(db, "recognition_url", "") } placeholder="http://localhost:11434"/>
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
@@ -1118,6 +1120,19 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Model</label>
 				<input type="text" name="recognition_model" class="input" value={ GetSetting(db, "recognition_model", "") } placeholder="llava:13b"/>
+				<small class="text-muted">For Kronk, a GGUF vision model id such as <code>unsloth/Qwen3.5-0.8B-Q8_0</code>. Weights and llama.cpp libraries download on first scan.</small>
+			</div>
+			<div class="form-group" style="margin-bottom:0.75rem">
+				<label>Kronk Processor</label>
+				<select name="kronk_processor" class="input">
+					<option value="" selected?={ GetSetting(db, "kronk_processor", "") == "" }>Auto-detect</option>
+					<option value="cpu" selected?={ GetSetting(db, "kronk_processor", "") == "cpu" }>CPU</option>
+					<option value="cuda" selected?={ GetSetting(db, "kronk_processor", "") == "cuda" }>CUDA</option>
+					<option value="vulkan" selected?={ GetSetting(db, "kronk_processor", "") == "vulkan" }>Vulkan</option>
+					<option value="metal" selected?={ GetSetting(db, "kronk_processor", "") == "metal" }>Metal</option>
+					<option value="hip" selected?={ GetSetting(db, "kronk_processor", "") == "hip" }>HIP / ROCm</option>
+				</select>
+				<small class="text-muted">Which llama.cpp build to download. Auto-detect falls back to CPU when a GPU is unsupported — pre-Turing NVIDIA cards are rejected by CUDA 13 but may still work under Vulkan. Forcing a GPU build that then runs out of video memory aborts the server process, so test a change before leaving it on.</small>
 			</div>
 			<button type="submit" class="btn btn-primary btn-sm">Save</button>
 		</form>

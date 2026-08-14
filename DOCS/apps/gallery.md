@@ -32,8 +32,21 @@ Optional AI-powered tagging and face detection. Configure from **Gallery > Setti
 
 | Backend | Description |
 |---------|-------------|
+| Kronk | In-process vision model (llama.cpp). No external service — the model and libraries download on first scan |
 | Ollama | Local or remote Ollama instance with a vision model |
 | OpenAI Vision | Any OpenAI-compatible API |
+
+Kronk takes a GGUF vision model id in the **Model** field, such as
+`unsloth/Qwen3.5-0.8B-Q8_0`. The matching mmproj file is discovered
+automatically, and the llama.cpp build is selected for the hardware present
+(CUDA, Vulkan, Metal, ROCm, or CPU). It produces tags only; face detection
+still requires the ONNX or Pigo backend.
+
+Because the model runs inside the server process, expect seconds per image
+rather than the milliseconds the ONNX taggers take, and note that a llama.cpp
+out-of-memory abort takes the whole server down with it. Leave **Kronk
+Processor** on auto-detect unless you know the card has enough free video
+memory for the model you picked.
 
 Recognition processes images in the background. Results appear as tags and face clusters that you can name and organize.
 
