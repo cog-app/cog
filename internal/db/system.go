@@ -20,6 +20,7 @@ func OpenSystem(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open system db: %w", err)
 	}
+	TunePool(db, path)
 
 	if err := Migrate(db); err != nil {
 		db.Close()

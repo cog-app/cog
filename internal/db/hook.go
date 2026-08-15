@@ -57,6 +57,7 @@ func OpenWithHooksMode(path, mode string, hooks ...ConnectHook) (*sql.DB, error)
 	if err != nil {
 		return nil, err
 	}
+	TunePool(db, dsn)
 	return db, nil
 }
 
