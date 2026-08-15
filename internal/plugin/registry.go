@@ -232,8 +232,30 @@ func (r *Registry) PluginDBWith(username, pluginID string, opts cogplugin.DBOpti
 		return nil, err
 	}
 
+	// Assert the change-capture triggers alongside the schema, so a database
+	// cannot exist in a state where writes go unrecorded.
+	if err := db.EnsureChangeCapture(pdb, r.searchTablesFor(pluginID)); err != nil {
+		pdb.Close()
+		return nil, err
+	}
+
 	r.dbs[key] = pdb
 	return pdb, nil
+}
+
+// searchTablesFor returns the tables a plugin's search sources watch.
+func (r *Registry) searchTablesFor(pluginID string) []string {
+	reg, ok := r.registrars[pluginID]
+	if !ok {
+		return nil
+	}
+	tables := make([]string, 0, len(reg.searchSources))
+	for _, src := range reg.searchSources {
+		if src.PrimaryTable != "" {
+			tables = append(tables, src.PrimaryTable)
+		}
+	}
+	return tables
 }
 
 // schemaFor returns the schema a plugin registered, or nil if it registered none.

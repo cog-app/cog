@@ -39,6 +39,9 @@ type Manager struct {
 
 	// Propagator handles indexing shared resources into recipients' indices.
 	Propagator *Propagator
+
+	// drainer moves captured row changes into the per-user collectors.
+	drainer *drainer
 }
 
 // NewManager creates a manager. Call SetSystemDB and Start to initialize.
@@ -108,21 +111,24 @@ func (m *Manager) SystemHook() func(op int, db, table string, rowid int64) {
 
 // UserDBHook returns a hook function for a per-user plugin database.
 //
-// The hook is invoked synchronously inside the SQLite write path; doing any
-// SQL here (via FullSync etc.) would deadlock the per-user DB. So this hook
-// only forwards changes when the user's index is already open. If it is not,
-// initialization is kicked off in a background goroutine — that init's
-// FullSync sweeps the same row we just dropped, so no change is lost.
+// The hook no longer carries the change. Triggers record it in the database's
+// own queue, inside the writing transaction, and the drainer moves it to the
+// index. All the hook does is say "there is something to drain, and it is
+// worth doing now" — which is why it is only an optimisation, and why nothing
+// breaks when the writer is a process without hooks or a backend without them.
+//
+// It is invoked synchronously inside the SQLite write path, so it must not
+// touch the database: the change it is about has not committed yet, and
+// querying the same connection would deadlock.
 func (m *Manager) UserDBHook(username, pluginID string) func(op int, db, table string, rowid int64) {
 	return func(op int, dbName, table string, rowid int64) {
 		m.mu.Lock()
-		us, ok := m.userIndices[username]
+		_, ok := m.userIndices[username]
 		m.mu.Unlock()
 
 		if !ok {
-			// Index not opened yet; init asynchronously and drop this change.
-			// ensureUserIndex performs a FullSync on first open, which will
-			// pick up the row we just saw.
+			// Index not open yet; open it in the background. Its full sync
+			// covers whatever is queued, so nothing is lost by returning here.
 			go func() {
 				if _, err := m.ensureUserIndex(username); err != nil {
 					m.log.Error("lazy open user index failed", "user", username, "err", err)
@@ -131,11 +137,9 @@ func (m *Manager) UserDBHook(username, pluginID string) func(op int, db, table s
 			return
 		}
 
-		us.collector.Send(Change{
-			Op:    sqliteOpToOp(op),
-			Table: table,
-			RowID: rowid,
-		})
+		if m.drainer != nil {
+			m.drainer.nudge(username, pluginID)
+		}
 	}
 }
 
@@ -167,6 +171,9 @@ func (m *Manager) Start(ctx context.Context) error {
 	if m.Propagator != nil {
 		m.Propagator.Start()
 	}
+
+	m.drainer = newDrainer(m)
+	go m.drainer.run(m.ctx)
 
 	return nil
 }
