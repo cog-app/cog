@@ -71,11 +71,18 @@ func (b *Browser) tp() *rod.Page {
 // It waits for the page to stabilise first to avoid stale element handles
 // from in-flight navigations.
 func (b *Browser) el(sel string) (*rod.Element, error) {
-	p := b.tp()
 	// Wait for the page to settle (no DOM mutations or network activity for
 	// 300ms) so we don't grab element handles from a page that is about to
 	// be replaced by a navigation redirect.
-	_ = p.WaitStable(300 * time.Millisecond)
+	//
+	// This gets its own budget. Sharing the action timeout means a page that
+	// never goes quiet — which is what a machine running the whole test suite
+	// in parallel looks like — burns the entire deadline here, leaving the
+	// lookup below to fail immediately with a context error even though the
+	// element was there all along.
+	_ = b.page.Timeout(2 * time.Second).WaitStable(300 * time.Millisecond)
+
+	p := b.tp()
 	if len(sel) > 1 && sel[:2] == "//" {
 		el, err := p.ElementX(sel)
 		if err != nil {
@@ -383,6 +390,9 @@ func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
 	if cfg.width > 0 && cfg.height > 0 {
 		b.page.MustSetViewport(cfg.width, cfg.height, 0, false)
 		defer b.page.MustSetViewport(1280, 720, 0, false)
+		// A resize reflows without mutating the DOM, so WaitStable below has
+		// nothing to observe and can return before the new layout is painted.
+		_ = b.page.Timeout(b.actionTimeout()).WaitRepaint()
 	}
 
 	// Wait for the page to settle before capturing.
