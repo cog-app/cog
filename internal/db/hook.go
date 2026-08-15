@@ -43,7 +43,7 @@ func OpenWithHooks(path string, hooks ...ConnectHook) (*sql.DB, error) {
 	if strings.Contains(path, "?") {
 		sep = "&"
 	}
-	dsn := path + sep + "_journal_mode=WAL&_foreign_keys=on"
+	dsn := path + sep + "_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000"
 	db, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, err

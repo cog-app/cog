@@ -27,6 +27,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/internal/migrate"
 	"git.duckfam.us/jj-software/cog/ui"
 	sqlite3 "github.com/mattn/go-sqlite3"
 )
@@ -213,6 +214,15 @@ func (r *Registry) PluginDB(username, pluginID string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open plugin db %s: %w", dbPath, err)
 	}
+
+	// Migrate before caching, so no caller can observe an unmigrated database.
+	if s, ok := r.plugins[pluginID].(cogplugin.Schemaed); ok {
+		if err := migrate.Migrate(pdb, s.SchemaFS()); err != nil {
+			pdb.Close()
+			return nil, fmt.Errorf("migrate plugin db %s: %w", dbPath, err)
+		}
+	}
+
 	r.dbs[key] = pdb
 	return pdb, nil
 }
@@ -282,7 +292,10 @@ func (r *Registry) openDB(path, username, pluginID string) (*sql.DB, error) {
 	if len(hooks) > 0 {
 		return db.OpenWithHooks(path, hooks...)
 	}
-	return sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=on")
+	// _busy_timeout makes a writer wait for a competing one rather than
+	// failing the query outright: a page load and its HTMX follow-ups arrive
+	// on separate connections and can write to the same per-user database.
+	return sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000")
 }
 
 // SetDBHookFactory sets a factory function for creating SQLite update hooks

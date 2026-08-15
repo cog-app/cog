@@ -36,10 +36,19 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	EnsureDefaultAddressBook(db)
+	// Without a book the create form has nothing to post to, so this failing
+	// silently turns every later create into "access denied".
+	if err := EnsureDefaultAddressBook(db); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	plugin.SetTitle(w, "Contacts")
-	books, _ := ListAddressBooks(db)
+	books, err := ListAddressBooks(db)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	var cards []CardWithBook
 	if bookIDStr := r.URL.Query().Get("book"); bookIDStr != "" {

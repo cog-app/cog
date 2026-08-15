@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -69,6 +70,9 @@ func New() *Plugin {
 }
 
 func (p *Plugin) ID() string { return PluginID }
+
+// SchemaFS lets the host migrate each per-user database as it opens it.
+func (p *Plugin) SchemaFS() fs.FS { return sqlFS }
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx

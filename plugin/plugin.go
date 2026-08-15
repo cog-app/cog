@@ -41,6 +41,20 @@ type Plugin interface {
 	Stop() error
 }
 
+// Schemaed is an optional interface. When a plugin implements it, the host
+// runs the plugin's migrations against every per-user database it opens,
+// before handing that database to anything.
+//
+// Without it, migrating is the plugin's own job, and every path that reaches a
+// user database — page handlers via UserDB, widgets, DAV endpoints — has to
+// remember to do it first. Missing one only shows up when that path happens to
+// run before the others, which is a race, not a bug you can see in review.
+type Schemaed interface {
+	// SchemaFS returns a filesystem holding sql/schema.sql and any
+	// sql/migration*.sql files.
+	SchemaFS() fs.FS
+}
+
 // Registrar is the host-provided interface that plugins use during registration
 // to declare their routes, resources, and hooks.
 type Registrar interface {
