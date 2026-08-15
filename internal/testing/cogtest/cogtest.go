@@ -113,10 +113,14 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	// Override unixepoch() in all per-user plugin DBs too.
 	p.Plugins.SetConnectHooks(clockHook)
 
-	// Wire search manager for tests (uses temp dir, no hooks).
+	// Wire the search manager the way services.New does, so tests exercise the
+	// same indexing path as a running server. Leaving the hook factory out
+	// used to mean nothing nudged the drainer, and the incremental indexing
+	// path went untested for exactly that reason.
 	mgr := search.NewManager(log, dataDir)
 	mgr.SetSystemDB(sysDB)
 	mgr.SetUserDBFunc(p.Plugins.PluginDB)
+	p.Plugins.SetDBHookFactory(mgr.UserDBHook)
 	p.Search = mgr
 
 	// Set up email capture via hook (no real SMTP needed).
@@ -132,11 +136,16 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	if err := p.StartSearch(context.Background()); err != nil {
 		t.Fatalf("cogtest: start search: %v", err)
 	}
-	t.Cleanup(func() { mgr.Stop() })
-	// Stop the plugin registry so external gRPC plugin subprocesses are
-	// terminated; without this, the test exits with child stdout/stderr
-	// pipes still open and the go test runner waits on them.
+	// Cleanups run last-registered-first, so these are in the reverse of the
+	// order they happen: the plugin registry is stopped after the search
+	// manager, matching services.Shutdown. Closing the databases first leaves
+	// the indexer querying handles that are already closed.
+	//
+	// Stopping the registry also terminates external gRPC plugin
+	// subprocesses; without it the test exits with child stdout/stderr pipes
+	// still open and the go test runner waits on them.
 	t.Cleanup(func() { p.Plugins.Stop() })
+	t.Cleanup(func() { mgr.Stop() })
 	ts.Config.Handler = handler
 
 	return &Env{

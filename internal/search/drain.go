@@ -42,6 +42,7 @@ type drainer struct {
 	mu    sync.Mutex
 	dirty map[dirtyKey]struct{}
 	wake  chan struct{}
+	done  chan struct{}
 }
 
 func newDrainer(m *Manager) *drainer {
@@ -49,6 +50,7 @@ func newDrainer(m *Manager) *drainer {
 		m:     m,
 		dirty: make(map[dirtyKey]struct{}),
 		wake:  make(chan struct{}, 1),
+		done:  make(chan struct{}),
 	}
 }
 
@@ -67,6 +69,8 @@ func (d *drainer) nudge(username, pluginID string) {
 }
 
 func (d *drainer) run(ctx context.Context) {
+	defer close(d.done)
+
 	ticker := time.NewTicker(DrainInterval)
 	defer ticker.Stop()
 
@@ -85,6 +89,13 @@ func (d *drainer) run(ctx context.Context) {
 			d.drainAll(ctx, d.take())
 		}
 	}
+}
+
+// wait blocks until the drain loop has exited. Callers stop it by cancelling
+// the context it was started with. Without this, a drain in flight keeps
+// querying databases the caller is busy closing.
+func (d *drainer) wait() {
+	<-d.done
 }
 
 // take returns the databases nudged since the last drain and clears the set.
