@@ -8,7 +8,6 @@ import (
 	"image"
 	"image/jpeg"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -101,11 +100,18 @@ func (p *Plugin) checkBookAccess(userID, ownerUsername, bookUID string, required
 
 func (p *Plugin) ID() string { return PluginID }
 
-// SchemaFS lets the host migrate each per-user database as it opens it.
-func (p *Plugin) SchemaFS() fs.FS { return sqlFS }
+// DB returns the user's database for this plugin.
+//
+// The host owns the database: where it lives, how it is opened, and applying
+// the schema registered in Register. This is a name for it, not a place that
+// does any of that work.
+func (p *Plugin) DB(username string) (*sql.DB, error) {
+	return p.ctx.PluginDB(username)
+}
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	ctx.RegisterSchema(sqlFS)
 	p.log = ctx.Logger()
 
 	ctx.RegisterNavItem(plugin.NavItem{Label: "Contacts", URL: "/apps/contacts", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>`})
@@ -218,15 +224,3 @@ func (p *Plugin) SetPhoto(username, cardUID string, img image.Image) error {
 
 func (p *Plugin) Start(ctx context.Context) error { return nil }
 func (p *Plugin) Stop() error                     { return nil }
-
-// DB returns the contacts plugin database for a user, running migrations if needed.
-func (p *Plugin) DB(username string) (*sql.DB, error) {
-	db, err := p.ctx.PluginDB(username)
-	if err != nil {
-		return nil, err
-	}
-	if err := plugin.Migrate(db, sqlFS); err != nil {
-		return nil, fmt.Errorf("migrate contacts db for %s: %w", username, err)
-	}
-	return db, nil
-}

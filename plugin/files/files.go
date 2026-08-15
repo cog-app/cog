@@ -14,7 +14,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -66,11 +65,18 @@ func New() *Plugin {
 
 func (p *Plugin) ID() string { return PluginID }
 
-// SchemaFS lets the host migrate each per-user database as it opens it.
-func (p *Plugin) SchemaFS() fs.FS { return sqlFS }
+// DB returns the user's database for this plugin.
+//
+// The host owns the database: where it lives, how it is opened, and applying
+// the schema registered in Register. This is a name for it, not a place that
+// does any of that work.
+func (p *Plugin) DB(username string) (*sql.DB, error) {
+	return p.ctx.PluginDB(username)
+}
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	ctx.RegisterSchema(sqlFS)
 	p.log = ctx.Logger()
 	ctx.RegisterNavItem(plugin.NavItem{Label: "Files", URL: "/apps/files", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`})
 	ctx.RegisterWidget(plugin.Widget{
@@ -173,18 +179,6 @@ func (p *Plugin) Stop() error { return nil }
 // userFS returns the mount-aware VFS for the given user.
 func (p *Plugin) userFS(username string) vfs.FS {
 	return p.ctx.UserVFS(username)
-}
-
-// DB returns the files plugin database for a user, running migrations if needed.
-func (p *Plugin) DB(username string) (*sql.DB, error) {
-	db, err := p.ctx.PluginDB(username)
-	if err != nil {
-		return nil, err
-	}
-	if err := plugin.Migrate(db, sqlFS); err != nil {
-		return nil, fmt.Errorf("migrate files db for %s: %w", username, err)
-	}
-	return db, nil
 }
 
 // EnsureRootDir creates the root directory metadata entry if it doesn't exist.

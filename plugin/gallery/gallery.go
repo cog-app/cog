@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -71,11 +70,18 @@ func New() *Plugin {
 
 func (p *Plugin) ID() string { return PluginID }
 
-// SchemaFS lets the host migrate each per-user database as it opens it.
-func (p *Plugin) SchemaFS() fs.FS { return sqlFS }
+// DB returns the user's database for this plugin.
+//
+// The host owns the database: where it lives, how it is opened, and applying
+// the schema registered in Register. This is a name for it, not a place that
+// does any of that work.
+func (p *Plugin) DB(username string) (*sql.DB, error) {
+	return p.ctx.PluginDB(username)
+}
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	ctx.RegisterSchema(sqlFS)
 	p.log = ctx.Logger()
 
 	// Obtain the concrete files plugin for operations not on FilesAccess
@@ -243,7 +249,7 @@ func (p *Plugin) contactsDB(username string) *sql.DB {
 	if p.contacts == nil {
 		return nil
 	}
-	db, err := p.contacts.DB(username)
+	db, err := p.ctx.PluginDB(username, plugin.OfPlugin("contacts"))
 	if err != nil {
 		p.log.Error("contacts db", "user", username, "err", err)
 		return nil
@@ -251,32 +257,11 @@ func (p *Plugin) contactsDB(username string) *sql.DB {
 	return db
 }
 
-// DB returns the gallery plugin database for a user, running migrations if needed.
-func (p *Plugin) DB(username string) (*sql.DB, error) {
-	db, err := p.ctx.PluginDB(username)
-	if err != nil {
-		return nil, err
-	}
-	if err := plugin.Migrate(db, sqlFS); err != nil {
-		return nil, fmt.Errorf("migrate gallery db for %s: %w", username, err)
-	}
-	return db, nil
-}
-
-// directDB opens the gallery database directly, bypassing the plugin registry's
-// search hooks that cause Bleve/bbolt file lock contention. Used by the scan
-// worker subprocess which runs in a separate process from the server.
+// directDB opens the gallery database without the search hooks, which would
+// otherwise contend with the server for the Bleve/bbolt index files. Used by
+// the scan worker, which runs as a separate process alongside the server.
 func (p *Plugin) directDB(username string) (*sql.DB, error) {
-	path := filepath.Join(p.ctx.DataDir(), username, "app_data", PluginID, "plugin.db")
-	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=on")
-	if err != nil {
-		return nil, err
-	}
-	if err := plugin.Migrate(db, sqlFS); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate gallery db for %s: %w", username, err)
-	}
-	return db, nil
+	return p.ctx.PluginDB(username, plugin.NoHooks)
 }
 
 // SystemDB returns the plugin-global database for system-level settings.

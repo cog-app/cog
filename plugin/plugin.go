@@ -41,20 +41,6 @@ type Plugin interface {
 	Stop() error
 }
 
-// Schemaed is an optional interface. When a plugin implements it, the host
-// runs the plugin's migrations against every per-user database it opens,
-// before handing that database to anything.
-//
-// Without it, migrating is the plugin's own job, and every path that reaches a
-// user database — page handlers via UserDB, widgets, DAV endpoints — has to
-// remember to do it first. Missing one only shows up when that path happens to
-// run before the others, which is a race, not a bug you can see in review.
-type Schemaed interface {
-	// SchemaFS returns a filesystem holding sql/schema.sql and any
-	// sql/migration*.sql files.
-	SchemaFS() fs.FS
-}
-
 // Registrar is the host-provided interface that plugins use during registration
 // to declare their routes, resources, and hooks.
 type Registrar interface {
@@ -87,6 +73,17 @@ type Registrar interface {
 	RegisterSettingsPage(page SettingsPage)
 	// RegisterCommand declares a user-facing CLI command available in the shell.
 	RegisterCommand(def CommandDef)
+	// RegisterSchema declares the plugin's database schema. The filesystem must
+	// hold sql/schema.sql and may hold sql/migration*.sql files.
+	//
+	// The host applies these to every per-user database before handing it out,
+	// so a plugin never migrates for itself and cannot be handed an unmigrated
+	// database no matter which code path opens it first.
+	//
+	// Registering is optional only in the sense that a plugin may manage its
+	// own schema with Migrate. Skip it and the host hands out an empty
+	// database, which is the ordering hazard this exists to remove.
+	RegisterSchema(fsys fs.FS)
 }
 
 // SettingsPage describes a settings page registered by a plugin.

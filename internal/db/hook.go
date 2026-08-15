@@ -28,6 +28,12 @@ func OpenHooked(path string, hook func(op int, db, table string, rowid int64)) (
 // The path may include query parameters; _journal_mode and _foreign_keys
 // are appended automatically.
 func OpenWithHooks(path string, hooks ...ConnectHook) (*sql.DB, error) {
+	return OpenWithHooksMode(path, "", hooks...)
+}
+
+// OpenWithHooksMode is OpenWithHooks with an explicit SQLite access mode,
+// e.g. "ro". An empty mode leaves it unset.
+func OpenWithHooksMode(path, mode string, hooks ...ConnectHook) (*sql.DB, error) {
 	driverName := fmt.Sprintf("sqlite3_cog_%d", hookSeq.Add(1))
 	sql.Register(driverName, &sqlite3.SQLiteDriver{
 		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
@@ -44,6 +50,9 @@ func OpenWithHooks(path string, hooks ...ConnectHook) (*sql.DB, error) {
 		sep = "&"
 	}
 	dsn := path + sep + "_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000"
+	if mode != "" {
+		dsn += "&mode=" + mode
+	}
 	db, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, err

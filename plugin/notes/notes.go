@@ -5,9 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -43,11 +41,18 @@ func New() *Plugin {
 
 func (p *Plugin) ID() string { return PluginID }
 
-// SchemaFS lets the host migrate each per-user database as it opens it.
-func (p *Plugin) SchemaFS() fs.FS { return sqlFS }
+// DB returns the user's database for this plugin.
+//
+// The host owns the database: where it lives, how it is opened, and applying
+// the schema registered in Register. This is a name for it, not a place that
+// does any of that work.
+func (p *Plugin) DB(username string) (*sql.DB, error) {
+	return p.ctx.PluginDB(username)
+}
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	ctx.RegisterSchema(sqlFS)
 	p.log = ctx.Logger()
 
 	ctx.RegisterNavItem(plugin.NavItem{Label: "Notes", URL: "/apps/notes", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>`})
@@ -100,18 +105,6 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 
 func (p *Plugin) Start(ctx context.Context) error { return nil }
 func (p *Plugin) Stop() error                     { return nil }
-
-// DB returns the notes plugin database for a user, running migrations if needed.
-func (p *Plugin) DB(username string) (*sql.DB, error) {
-	db, err := p.ctx.PluginDB(username)
-	if err != nil {
-		return nil, err
-	}
-	if err := plugin.Migrate(db, sqlFS); err != nil {
-		return nil, fmt.Errorf("migrate notes db for %s: %w", username, err)
-	}
-	return db, nil
-}
 
 // NotesDir returns the path to the user's Notes directory on disk.
 func (p *Plugin) NotesDir(username string) string {
