@@ -172,3 +172,112 @@ func TestEnsureChangeCaptureRejectsOddTableNames(t *testing.T) {
 		t.Fatal("expected an error for a table name that is not an identifier")
 	}
 }
+
+func TestEnsureChangeCaptureDropsStaleTriggers(t *testing.T) {
+	sdb := openWithTable(t)
+
+	if _, err := sdb.Exec(`CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)`); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := EnsureChangeCapture(sdb, []string{"items", "notes"}); err != nil {
+		t.Fatalf("ensure both: %v", err)
+	}
+
+	// The plugin stops indexing notes.
+	if err := EnsureChangeCapture(sdb, []string{"items"}); err != nil {
+		t.Fatalf("ensure one: %v", err)
+	}
+
+	if _, err := sdb.Exec(`INSERT INTO notes (body) VALUES ('unwatched')`); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if _, err := sdb.Exec(`INSERT INTO items (title) VALUES ('watched')`); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	changes, err := DrainChanges(context.Background(), sdb, 100)
+	if err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if len(changes) != 1 {
+		t.Fatalf("expected only the watched table to queue, got %+v", changes)
+	}
+	if changes[0].Table != "items" {
+		t.Fatalf("queued the wrong table: %+v", changes[0])
+	}
+}
+
+// TestDrainPreservesOrderAcrossRefills guards the rowid reuse that comes with
+// dropping AUTOINCREMENT: the queue must still drain oldest-first after it has
+// been emptied and refilled.
+func TestDrainPreservesOrderAcrossRefills(t *testing.T) {
+	sdb := openWithTable(t)
+
+	for range 2 {
+		if _, err := sdb.Exec(`INSERT INTO items (title) VALUES ('a')`); err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+		if _, err := sdb.Exec(`UPDATE items SET title = 'b' WHERE id = 1`); err != nil {
+			t.Fatalf("update: %v", err)
+		}
+		if _, err := sdb.Exec(`DELETE FROM items WHERE id = 1`); err != nil {
+			t.Fatalf("delete: %v", err)
+		}
+
+		changes, err := DrainChanges(context.Background(), sdb, 100)
+		if err != nil {
+			t.Fatalf("drain: %v", err)
+		}
+		want := []int{ChangeInsert, ChangeUpdate, ChangeDelete}
+		if len(changes) != len(want) {
+			t.Fatalf("got %d changes, want %d", len(changes), len(want))
+		}
+		for i, c := range changes {
+			if c.Op != want[i] {
+				t.Fatalf("change %d out of order: op=%d want %d", i, c.Op, want[i])
+			}
+		}
+	}
+}
+
+// TestPartialDrainKeepsOrder checks the case rowid reuse could actually break:
+// draining some rows while others remain must not reorder what follows.
+func TestPartialDrainKeepsOrder(t *testing.T) {
+	sdb := openWithTable(t)
+
+	for i := range 5 {
+		if _, err := sdb.Exec(`INSERT INTO items (title) VALUES (?)`, i); err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+	}
+
+	first, err := DrainChanges(context.Background(), sdb, 2)
+	if err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if len(first) != 2 || first[0].RowID != 1 || first[1].RowID != 2 {
+		t.Fatalf("expected the two oldest rows, got %+v", first)
+	}
+
+	if _, err := sdb.Exec(`INSERT INTO items (title) VALUES ('later')`); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	rest, err := DrainChanges(context.Background(), sdb, 100)
+	if err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	var ids []int64
+	for _, c := range rest {
+		ids = append(ids, c.RowID)
+	}
+	want := []int64{3, 4, 5, 6}
+	if len(ids) != len(want) {
+		t.Fatalf("got %v, want %v", ids, want)
+	}
+	for i := range want {
+		if ids[i] != want[i] {
+			t.Fatalf("out of order: got %v, want %v", ids, want)
+		}
+	}
+}

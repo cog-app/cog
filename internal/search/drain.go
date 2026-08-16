@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"database/sql"
 	"sync"
 	"time"
 
@@ -24,11 +25,14 @@ const (
 // from. Exported so tests do not have to wait for it.
 var DrainInterval = 15 * time.Second
 
-// dirtyKey identifies a database with changes waiting.
+// dirtyKey identifies a database with changes waiting. The zero value means
+// the system database, which has no user or plugin.
 type dirtyKey struct {
 	username string
 	pluginID string
 }
+
+func (k dirtyKey) isSystem() bool { return k.username == "" && k.pluginID == "" }
 
 // drainer moves queued row changes into the collectors that index them.
 //
@@ -66,6 +70,11 @@ func (d *drainer) nudge(username, pluginID string) {
 	case d.wake <- struct{}{}:
 	default:
 	}
+}
+
+// nudgeSystem marks the system database as worth draining soon.
+func (d *drainer) nudgeSystem() {
+	d.nudge("", "")
 }
 
 func (d *drainer) run(ctx context.Context) {
@@ -119,7 +128,7 @@ func (d *drainer) known() []dirtyKey {
 	d.m.mu.Lock()
 	defer d.m.mu.Unlock()
 
-	var keys []dirtyKey
+	keys := []dirtyKey{{}} // the system database
 	for username := range d.m.userIndices {
 		for pluginID := range d.m.pluginSources {
 			keys = append(keys, dirtyKey{username, pluginID})
@@ -141,22 +150,36 @@ func (d *drainer) drainAll(ctx context.Context, keys []dirtyKey) {
 }
 
 func (d *drainer) drainOne(ctx context.Context, k dirtyKey) error {
-	if d.m.userDBFunc == nil {
-		return nil
-	}
+	var (
+		sdb       *sql.DB
+		collector *Collector
+	)
 
-	d.m.mu.Lock()
-	us, open := d.m.userIndices[k.username]
-	d.m.mu.Unlock()
-	if !open {
-		// Nothing to feed. Changes stay queued until the index is opened,
-		// whose full sync covers them anyway.
-		return nil
-	}
+	if k.isSystem() {
+		sdb, collector = d.m.sysDB, d.m.systemCollector
+		if sdb == nil || collector == nil {
+			return nil
+		}
+	} else {
+		if d.m.userDBFunc == nil {
+			return nil
+		}
 
-	sdb, err := d.m.userDBFunc(k.username, k.pluginID)
-	if err != nil {
-		return err
+		d.m.mu.Lock()
+		us, open := d.m.userIndices[k.username]
+		d.m.mu.Unlock()
+		if !open {
+			// Nothing to feed. Changes stay queued until the index is opened,
+			// whose full sync covers them anyway.
+			return nil
+		}
+		collector = us.collector
+
+		var err error
+		sdb, err = d.m.userDBFunc(k.username, k.pluginID)
+		if err != nil {
+			return err
+		}
 	}
 
 	for {
@@ -165,7 +188,7 @@ func (d *drainer) drainOne(ctx context.Context, k dirtyKey) error {
 			return err
 		}
 		for _, c := range changes {
-			us.collector.Send(Change{
+			collector.Send(Change{
 				Op:    changeOpToOp(c.Op),
 				Table: c.Table,
 				RowID: c.RowID,

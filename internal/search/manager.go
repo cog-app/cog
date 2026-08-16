@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
+	cogdb "git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/internal/query"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
@@ -123,18 +124,15 @@ func (m *Manager) pluginSchemas() map[string]*query.Schema {
 	return out
 }
 
-// SystemHook returns a hook function for the system database that feeds
-// changes into the system collector.
+// SystemHook returns a hook function for the system database.
+//
+// Like the per-user hook it only nudges: the change itself is captured by a
+// trigger inside the writing transaction, and the drainer moves it.
 func (m *Manager) SystemHook() func(op int, db, table string, rowid int64) {
 	return func(op int, dbName, table string, rowid int64) {
-		if m.systemCollector == nil {
-			return
+		if m.drainer != nil {
+			m.drainer.nudgeSystem()
 		}
-		m.systemCollector.Send(Change{
-			Op:    sqliteOpToOp(op),
-			Table: table,
-			RowID: rowid,
-		})
 	}
 }
 
@@ -187,10 +185,20 @@ func (m *Manager) Start(ctx context.Context) error {
 	}
 
 	m.systemCollector = NewCollector(m.log, m.systemIndex, func() *sql.DB { return m.sysDB })
-	m.systemCollector.RegisterSource(UserSource{})
-	m.systemCollector.RegisterSource(GroupSource{})
-	m.systemCollector.RegisterSource(VolumeSource{})
+	sysSources := []SearchSource{UserSource{}, GroupSource{}, VolumeSource{}}
+	var sysTables []string
+	for _, src := range sysSources {
+		m.systemCollector.RegisterSource(src)
+		sysTables = append(sysTables, src.Tables()...)
+	}
 	m.systemCollector.Start(ctx)
+
+	// The system database goes through the same queue as the per-user ones, so
+	// its index survives a crash between write and index, and a second replica
+	// can pick up writes this one did not make.
+	if err := cogdb.EnsureChangeCapture(m.sysDB, sysTables); err != nil {
+		return fmt.Errorf("system change capture: %w", err)
+	}
 
 	// Full sync on startup.
 	if err := m.systemCollector.FullSync(); err != nil {

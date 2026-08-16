@@ -42,9 +42,15 @@ func EnsureChangeCapture(sdb *sql.DB, tables []string) error {
 		return nil
 	}
 
+	// seq is a plain rowid alias, deliberately not AUTOINCREMENT: that keeps a
+	// separate sequence table updated on every insert, and this table takes an
+	// insert for every row written anywhere in the database. Rowids are only
+	// reused after the highest row is deleted, and draining takes the lowest
+	// rows first, so the ordering the drain relies on holds — and once the
+	// queue empties there is nothing left to order.
 	var b strings.Builder
 	fmt.Fprintf(&b, `CREATE TABLE IF NOT EXISTS %s (
-		seq INTEGER PRIMARY KEY AUTOINCREMENT,
+		seq INTEGER PRIMARY KEY,
 		tbl TEXT NOT NULL,
 		rid INTEGER NOT NULL,
 		op  INTEGER NOT NULL
@@ -74,6 +80,53 @@ func EnsureChangeCapture(sdb *sql.DB, tables []string) error {
 
 	if _, err := sdb.Exec(b.String()); err != nil {
 		return fmt.Errorf("change capture: %w", err)
+	}
+
+	return dropStaleTriggers(sdb, tables)
+}
+
+// dropStaleTriggers removes capture triggers for tables no longer watched.
+//
+// A plugin that stops indexing a table would otherwise keep paying to queue
+// changes nothing consumes, and the queue would grow until something else
+// drained it away.
+func dropStaleTriggers(sdb *sql.DB, tables []string) error {
+	wanted := make(map[string]struct{}, len(tables)*3)
+	for _, table := range tables {
+		for _, suffix := range []string{"ai", "au", "ad"} {
+			wanted[fmt.Sprintf("_cog_chg_%s_%s", table, suffix)] = struct{}{}
+		}
+	}
+
+	// GLOB rather than LIKE: in LIKE, the leading underscore is a wildcard.
+	rows, err := sdb.Query(`SELECT name FROM sqlite_master WHERE type = 'trigger' AND name GLOB '_cog_chg_*'`)
+	if err != nil {
+		return fmt.Errorf("change capture: list triggers: %w", err)
+	}
+
+	var stale []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return fmt.Errorf("change capture: scan trigger: %w", err)
+		}
+		if _, ok := wanted[name]; !ok {
+			stale = append(stale, name)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("change capture: list triggers: %w", err)
+	}
+
+	for _, name := range stale {
+		if !safeIdent(name) {
+			continue
+		}
+		if _, err := sdb.Exec("DROP TRIGGER IF EXISTS " + name); err != nil {
+			return fmt.Errorf("change capture: drop %s: %w", name, err)
+		}
 	}
 
 	return nil
