@@ -1088,7 +1088,6 @@ const (
 	BackendOllama RecognitionBackendType = "ollama"
 	BackendOpenAI RecognitionBackendType = "openai"
 	BackendOnnx   RecognitionBackendType = "onnx"
-	BackendKronk  RecognitionBackendType = "kronk"
 )
 
 // TagModel identifies which ONNX model to use for image tagging.
@@ -1128,7 +1127,6 @@ var (
 	SettingRecognitionURL    = stringSetting("recognition_url", "")
 	SettingRecognitionAPIKey = stringSetting("recognition_api_key", "")
 	SettingRecognitionModel  = stringSetting("recognition_model", "")
-	SettingKronkProcessor    = stringSetting[string]("kronk_processor", "")
 	SettingOnnxLibraryPath   = stringSetting("onnx_library_path", "")
 	SettingOnnxModelsDir     = stringSetting("onnx_models_dir", "")
 

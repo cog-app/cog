@@ -13,8 +13,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
-//go:fix inline
-func strPtr(s string) *string { return new(s) }
+func strPtr(s string) *string { return &s }
 
 func TestSettingsShowSecurity(t *testing.T) {
 	env := cogtest.New(t)
@@ -220,7 +219,7 @@ func TestEmailOTPEnableDisable(t *testing.T) {
 	alice := env.CreateUser(t, "alice", "pass")
 
 	// Set email first (required for email OTP).
-	err := env.Providers.Users.Update(alice.ID, user.UpdateOpts{Email: new("alice@example.com")})
+	err := env.Providers.Users.Update(alice.ID, user.UpdateOpts{Email: strPtr("alice@example.com")})
 	require.NoError(t, err)
 
 	cookie, token := sessionAndCSRF(t, env, alice.ID)
@@ -264,7 +263,7 @@ func TestEmailOTPRequiresEmail(t *testing.T) {
 func TestForgotPasswordFlow(t *testing.T) {
 	env := cogtest.New(t)
 	alice := env.CreateUser(t, "alice", "pass")
-	err := env.Providers.Users.Update(alice.ID, user.UpdateOpts{Email: new("alice@example.com")})
+	err := env.Providers.Users.Update(alice.ID, user.UpdateOpts{Email: strPtr("alice@example.com")})
 	require.NoError(t, err)
 
 	// Show forgot password page.
