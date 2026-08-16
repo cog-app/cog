@@ -18,10 +18,16 @@ type ConnectHook = func(*sqlite3.SQLiteConn) error
 // The hook fires on INSERT, UPDATE, DELETE with the operation, database name, table name, and rowid.
 // Each call registers a unique driver to avoid sql.Register panics.
 func OpenHooked(path string, hook func(op int, db, table string, rowid int64)) (*sql.DB, error) {
-	return OpenWithHooks(path, func(conn *sqlite3.SQLiteConn) error {
+	return OpenWithHooks(path, UpdateHook(hook))
+}
+
+// UpdateHook adapts a row-change callback to a ConnectHook, so it can be
+// combined with others on one database.
+func UpdateHook(hook func(op int, db, table string, rowid int64)) ConnectHook {
+	return func(conn *sqlite3.SQLiteConn) error {
 		conn.RegisterUpdateHook(hook)
 		return nil
-	})
+	}
 }
 
 // OpenWithHooks opens a SQLite database with one or more connect hooks.

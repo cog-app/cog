@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -89,14 +90,27 @@ func New(log *slog.Logger, cfg config.Config, plugins ...plugin.Plugin) (*Provid
 	mgr.SetSystemDB(sysDB)
 
 	p := NewFromDB(log, cfg, sysDB, clock.System(), plugins...)
+	WireSearch(log, p, mgr)
+
+	return p, nil
+}
+
+// WireSearch connects a search manager to the providers it needs: the hook
+// that nudges indexing, the accessors for per-user databases and files, and
+// the propagator that pushes shared resources into recipients' indices.
+//
+// Both the server and the test harness call this. They used to wire it
+// separately, and the differences were invisible until something depended on
+// one of them — hooks that were never installed meant the incremental indexing
+// path went untested, and an unset files directory silently disabled content
+// indexing.
+func WireSearch(log *slog.Logger, p *Providers, mgr *search.Manager) {
 	p.Search = mgr
 
-	// Wire the DB hook factory so per-user plugin DBs get update hooks.
 	p.Plugins.SetDBHookFactory(mgr.UserDBHook)
 	mgr.SetUserDBFunc(p.Plugins.PluginDB)
 	mgr.SetFilesDirFunc(p.Plugins.UserFilesDir)
 
-	// Wire search propagator for shared resource indexing.
 	prop := search.NewPropagator(log, mgr)
 	prop.LookupUsername = func(userID string) (string, error) {
 		u, err := p.Users.GetByID(userID)
@@ -140,9 +154,19 @@ func New(log *slog.Logger, cfg config.Config, plugins ...plugin.Plugin) (*Provid
 			return nil
 		}
 	}
-	mgr.Propagator = prop
+	prop.ResolveSourceName = func(resourceType string) (string, bool) {
+		def, ok := p.Plugins.ResourceDefByType(resourceType)
+		if !ok || def.Table == "" {
+			return "", false
+		}
+		pluginID, _, found := strings.Cut(resourceType, ":")
+		if !found {
+			return "", false
+		}
+		return pluginID + ":" + def.Table, true
+	}
 
-	return p, nil
+	mgr.Propagator = prop
 }
 
 // NewFromDB constructs providers from an existing database connection.

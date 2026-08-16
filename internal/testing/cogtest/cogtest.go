@@ -86,7 +86,15 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	dbName := url.PathEscape(t.Name())
 	tc := clock.NewTest(time.Date(2026, time.March, 14, 6, 0, 0, 0, time.Local))
 	clockHook := db.ClockHook(func() int64 { return tc.Now().Unix() })
-	sysDB, err := db.OpenWithHooks("file:"+dbName+"?mode=memory&cache=shared", clockHook)
+
+	// The manager is built before the system database so the database can be
+	// opened with its update hook, as the server does.
+	dataDir := t.TempDir()
+	log := slog.New(slog.NewTextHandler(t.Output(), nil))
+	mgr := search.NewManager(log, dataDir)
+
+	sysDB, err := db.OpenWithHooks("file:"+dbName+"?mode=memory&cache=shared",
+		clockHook, db.UpdateHook(mgr.SystemHook()))
 	if err != nil {
 		t.Fatalf("cogtest: open db: %v", err)
 	}
@@ -95,8 +103,6 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 		t.Fatalf("cogtest: migrate db: %v", err)
 	}
 	t.Cleanup(func() { sysDB.Close() })
-
-	dataDir := t.TempDir()
 
 	// Start with a placeholder URL; replace once we know the real one.
 	ts := httptest.NewServer(http.NotFoundHandler())
@@ -107,21 +113,15 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 		DataDir: dataDir,
 	}
 
-	log := slog.New(slog.NewTextHandler(t.Output(), nil))
 	p := services.NewFromDB(log, cfg, sysDB, tc.Clock(), plugins...)
 
 	// Override unixepoch() in all per-user plugin DBs too.
 	p.Plugins.SetConnectHooks(clockHook)
 
-	// Wire the search manager the way services.New does, so tests exercise the
-	// same indexing path as a running server. Leaving the hook factory out
-	// used to mean nothing nudged the drainer, and the incremental indexing
-	// path went untested for exactly that reason.
-	mgr := search.NewManager(log, dataDir)
+	// Wire search exactly as the server does. Anything the harness leaves out
+	// here is a path no test can reach.
 	mgr.SetSystemDB(sysDB)
-	mgr.SetUserDBFunc(p.Plugins.PluginDB)
-	p.Plugins.SetDBHookFactory(mgr.UserDBHook)
-	p.Search = mgr
+	services.WireSearch(log, p, mgr)
 
 	// Set up email capture via hook (no real SMTP needed).
 	mbox := maildev.New()
