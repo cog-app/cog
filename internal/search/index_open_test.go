@@ -7,11 +7,11 @@ import (
 	"time"
 )
 
-// TestConcurrentIndexOpenDoesNotWedge covers a deadlock that a burst of writes
-// used to cause. Every write whose user index is not open yet spawns a
-// goroutine to open it, and bleve takes a file lock it then keeps: whichever
-// goroutine won held the lock forever, and every other one — including any
-// later search for that user — blocked on it for good.
+// TestConcurrentIndexOpenDoesNotWedge guards the index open against a burst of
+// writes. Every write whose user index is not open spawns a goroutine to open
+// it, and bleve takes a file lock it then keeps: unless the opens are collapsed
+// into one, the goroutine that wins holds the lock and every other one —
+// including any later search for that user — blocks on it for good.
 func TestConcurrentIndexOpenDoesNotWedge(t *testing.T) {
 	m := NewManager(slog.Default(), t.TempDir())
 	t.Cleanup(m.Stop)

@@ -39,9 +39,10 @@ func widgets() *fstest.MapFS {
 	}
 }
 
-// TestPluginDBIsMigratedOnOpen is the regression test for the ordering bug:
-// the first thing to touch a user's database used to decide whether it had a
-// schema, so a page handler could arrive before whatever ran the migrations.
+// TestPluginDBIsMigratedOnOpen asserts a database is usable as soon as it is
+// handed out. Which code path opens it first is not something a plugin
+// controls — a page handler, a widget, or a DAV request can each be the one —
+// so none of them may find it unmigrated.
 func TestPluginDBIsMigratedOnOpen(t *testing.T) {
 	p := &schemaPlugin{id: "widgetplugin", schema: widgets()}
 	env := cogtest.New(t, p)

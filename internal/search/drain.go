@@ -101,8 +101,8 @@ func (d *drainer) run(ctx context.Context) {
 }
 
 // wait blocks until the drain loop has exited. Callers stop it by cancelling
-// the context it was started with. Without this, a drain in flight keeps
-// querying databases the caller is busy closing.
+// the context it was started with, then wait here before closing anything the
+// drain queries — a drain in flight holds a database handle and a collector.
 func (d *drainer) wait() {
 	<-d.done
 }

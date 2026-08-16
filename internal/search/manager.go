@@ -138,15 +138,15 @@ func (m *Manager) SystemHook() func(op int, db, table string, rowid int64) {
 
 // UserDBHook returns a hook function for a per-user plugin database.
 //
-// The hook no longer carries the change. Triggers record it in the database's
-// own queue, inside the writing transaction, and the drainer moves it to the
-// index. All the hook does is say "there is something to drain, and it is
-// worth doing now" — which is why it is only an optimisation, and why nothing
-// breaks when the writer is a process without hooks or a backend without them.
+// The hook carries no data: it only tells the drainer there is something worth
+// draining now. What changed is already recorded in the database's own queue
+// by a trigger, inside the writing transaction. That makes the hook an
+// optimisation on drain latency, so indexing still works for a writer in
+// another process or a backend with no hooks at all.
 //
-// It is invoked synchronously inside the SQLite write path, so it must not
-// touch the database: the change it is about has not committed yet, and
-// querying the same connection would deadlock.
+// It runs synchronously inside the SQLite write path and must not touch the
+// database: the change it is about has not committed yet, and querying the
+// same connection would deadlock.
 func (m *Manager) UserDBHook(username, pluginID string) func(op int, db, table string, rowid int64) {
 	return func(op int, dbName, table string, rowid int64) {
 		m.mu.Lock()

@@ -61,8 +61,8 @@ func TestMemoryDatabaseSurvivesIdle(t *testing.T) {
 	}
 
 	// database/sql sweeps expired connections about once a second, so a short
-	// sleep proves nothing: wait long enough that an unguarded pool would have
-	// dropped the last connection and taken the database with it.
+	// sleep proves nothing: wait long enough that an unguarded pool drops the
+	// last connection, which would take the database with it.
 	waitForIdle(t, sdb, 3*time.Second)
 
 	if _, err := sdb.Exec(`INSERT INTO t (id) VALUES (1)`); err != nil {

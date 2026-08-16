@@ -589,8 +589,8 @@ func (pr *pluginRegistrar) PluginDB(username string, opts ...cogplugin.DBOption)
 	if o.PluginID != "" && o.PluginID != pr.pluginID {
 		// Reading another plugin's data is an in-process capability: an
 		// out-of-process plugin has no database access at all. It is no wider
-		// than what a plugin holding a reference to another plugin could
-		// already do, but it no longer requires knowing where the file lives.
+		// than what a plugin holding a reference to another plugin can do
+		// directly, and it saves the caller knowing where the file lives.
 		if _, ok := pr.registry.registrars[o.PluginID]; !ok {
 			return nil, fmt.Errorf("plugin %q: no such plugin %q", pr.pluginID, o.PluginID)
 		}

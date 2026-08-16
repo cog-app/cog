@@ -29,12 +29,11 @@ type RowChange struct {
 
 // EnsureChangeCapture creates the change queue and the triggers that fill it.
 //
-// Triggers replace connection-level update hooks, which only exist when the
-// database is a local file opened by the process doing the indexing. A trigger
-// runs inside the writer's transaction instead, so the change is committed
-// with the write that caused it — it cannot be lost by a crash, and it is
-// visible to whichever process gets there first rather than only to the one
-// that happened to hold the connection.
+// A trigger runs inside the writer's transaction, so the change commits with
+// the write that caused it: a crash between the two cannot lose it, and a
+// rolled-back write leaves nothing queued. It is also visible to any process
+// that reads the queue, not only to the one holding the connection — which is
+// what connection-level update hooks are limited to.
 //
 // Safe to call on every open: everything is IF NOT EXISTS.
 func EnsureChangeCapture(sdb *sql.DB, tables []string) error {
@@ -85,11 +84,10 @@ func EnsureChangeCapture(sdb *sql.DB, tables []string) error {
 	return dropStaleTriggers(sdb, tables)
 }
 
-// dropStaleTriggers removes capture triggers for tables no longer watched.
+// dropStaleTriggers removes capture triggers for tables outside the given set.
 //
-// A plugin that stops indexing a table would otherwise keep paying to queue
-// changes nothing consumes, and the queue would grow until something else
-// drained it away.
+// Capture costs a write per row, so a table nobody indexes should not have a
+// trigger: the changes it queued would be drained and discarded.
 func dropStaleTriggers(sdb *sql.DB, tables []string) error {
 	wanted := make(map[string]struct{}, len(tables)*3)
 	for _, table := range tables {

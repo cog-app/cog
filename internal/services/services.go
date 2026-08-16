@@ -99,11 +99,10 @@ func New(log *slog.Logger, cfg config.Config, plugins ...plugin.Plugin) (*Provid
 // that nudges indexing, the accessors for per-user databases and files, and
 // the propagator that pushes shared resources into recipients' indices.
 //
-// Both the server and the test harness call this. They used to wire it
-// separately, and the differences were invisible until something depended on
-// one of them — hooks that were never installed meant the incremental indexing
-// path went untested, and an unset files directory silently disabled content
-// indexing.
+// Both the server and the test harness call this, so a path one has is a path
+// the other can reach. Each piece fails quietly when missing: no hook factory
+// means indexing waits for the periodic sweep, and no files directory means
+// content that lives on disk is skipped.
 func WireSearch(log *slog.Logger, p *Providers, mgr *search.Manager) {
 	p.Search = mgr
 
