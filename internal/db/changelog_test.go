@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 func openWithTable(t *testing.T) *sql.DB {
@@ -279,5 +280,42 @@ func TestPartialDrainKeepsOrder(t *testing.T) {
 		if ids[i] != want[i] {
 			t.Fatalf("out of order: got %v, want %v", ids, want)
 		}
+	}
+}
+
+// TestEmptyDrainDoesNotWaitForWriters pins the reason the drain looks before
+// it claims. The drainer visits every open database on a timer, and taking a
+// write transaction to discover an empty queue puts it behind whoever is
+// writing — for as long as the busy timeout allows.
+func TestEmptyDrainDoesNotWaitForWriters(t *testing.T) {
+	sdb := openWithTable(t)
+
+	// Hold the write lock, as an ordinary request would while it works.
+	tx, err := sdb.Begin()
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO items (title) VALUES ('in flight')`); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		_, err := DrainChanges(context.Background(), sdb, 500)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("drain against a busy database: %v", err)
+		}
+		if waited := time.Since(start); waited > 2*time.Second {
+			t.Fatalf("drain waited %v for a writer holding an unrelated lock", waited)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("drain blocked behind a writer")
 	}
 }

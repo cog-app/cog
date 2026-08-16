@@ -137,16 +137,31 @@ func dropStaleTriggers(sdb *sql.DB, tables []string) error {
 // lost — the caller crashing before it indexes — is not recovered here; the
 // periodic full sync is what covers that.
 func DrainChanges(ctx context.Context, sdb *sql.DB, limit int) ([]RowChange, error) {
+	// Look before claiming. An idle database is the common case — the drainer
+	// visits every open one on a timer — and the delete below takes a write
+	// transaction to discover the same emptiness, holding off other writers
+	// while it does.
+	var queued int
+	err := sdb.QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s)`, ChangeTable)).Scan(&queued)
+	if err != nil {
+		// No queue means nothing has been captured for this database.
+		if strings.Contains(err.Error(), "no such table") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("drain changes: %w", err)
+	}
+	if queued == 0 {
+		return nil, nil
+	}
+
+	// Between the check and the claim another drainer may take the work, which
+	// costs an empty claim and nothing else.
 	query := fmt.Sprintf(`DELETE FROM %[1]s WHERE seq IN (
 		SELECT seq FROM %[1]s ORDER BY seq LIMIT %[2]d
 	) RETURNING tbl, rid, op`, ChangeTable, limit)
 
 	rows, err := sdb.QueryContext(ctx, query)
 	if err != nil {
-		// No queue yet means nothing has been captured for this database.
-		if strings.Contains(err.Error(), "no such table") {
-			return nil, nil
-		}
 		return nil, fmt.Errorf("drain changes: %w", err)
 	}
 	defer rows.Close()
