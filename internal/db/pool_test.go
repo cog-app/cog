@@ -30,21 +30,26 @@ func TestIdleConnectionsAreReleased(t *testing.T) {
 		t.Fatal("expected a live connection after a query")
 	}
 
+	// MaxIdleTimeClosed counts connections the pool retired for sitting idle,
+	// which is the behaviour under test. OpenConnections is not, because it
+	// also counts a connection handed out to a concurrent caller, and this
+	// package's tests share a process.
+	//
 	// database/sql sweeps expired connections about once a second.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if sdb.Stats().OpenConnections == 0 {
+		if sdb.Stats().MaxIdleTimeClosed > 0 {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	t.Fatalf("idle connection still open after %v, stats: %+v", IdleConnTimeout, sdb.Stats())
+	t.Fatalf("no connection retired after idling %v, stats: %+v", IdleConnTimeout, sdb.Stats())
 }
 
 // TestMemoryDatabaseSurvivesIdle guards the trap in the setting above: a
 // shared-cache in-memory database is destroyed when its last connection
-// closes, and the test harness runs the whole system on one.
+// closes, so expiring it would take the data with it.
 func TestMemoryDatabaseSurvivesIdle(t *testing.T) {
 	old := IdleConnTimeout
 	IdleConnTimeout = 50 * time.Millisecond

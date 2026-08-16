@@ -92,7 +92,8 @@ db, err := ctx.PluginDB(username, plugin.OfPlugin("files"), plugin.ReadOnly, plu
 ### SQLite specifics
 
 - Every DSN sets `_busy_timeout`. Without it a writer that finds the database locked fails its query instead of waiting, and a page load plus its HTMX follow-ups arrive on separate connections.
-- `internal/db.TunePool` sets the idle-connection timeout so per-user handles do not hold file descriptors forever. **It deliberately skips in-memory databases**: a shared-cache in-memory database is destroyed when its last connection closes, and the test harness runs the whole system on one.
+- `internal/db.TunePool` sets the idle-connection timeout so per-user handles do not hold file descriptors forever. **It deliberately skips in-memory databases**: a shared-cache in-memory database is destroyed when its last connection closes, so expiring the last connection deletes the data rather than freeing a resource.
+- **Nothing runs on a shared-cache in-memory database, including tests.** In shared-cache mode two connections contend for table-level locks, and SQLite reports that as `SQLITE_LOCKED` ("database table is locked") *without* invoking the busy handler — so `_busy_timeout` does not apply and a concurrent writer fails outright. Change-capture triggers make every write touch `_cog_row_changes`, which the search drainer writes to as well, so that contention is guaranteed rather than rare. The harness therefore puts the system database on a file in its temp data directory, as the server does.
 - Never `SetMaxOpenConns(1)`. It deadlocks any code that reads while a write transaction is open on another connection.
 - Search indexing is driven by SQLite update hooks registered per connection (`internal/search` ← `registry.connectHooksFor`). This only works in-process against a local file: it will not survive multiple replicas or a remote backend, and replacing it with triggers into a changes table is a prerequisite for either.
 
@@ -109,7 +110,7 @@ db, err := ctx.PluginDB(username, plugin.OfPlugin("files"), plugin.ReadOnly, plu
 
 ## Testing
 
-Tests use the `internal/testing/cogtest` package which spins up a full server with in-memory SQLite and temp data directory. Requests route directly through the handler (no network).
+Tests use the `internal/testing/cogtest` package which spins up a full server with a SQLite database in a temp data directory. Requests route directly through the handler (no network).
 
 Key helpers:
 

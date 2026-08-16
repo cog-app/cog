@@ -1,6 +1,6 @@
 // Package cogtest provides an integration test harness for Cog.
 //
-// It spins up a full server with an in-memory database, wired through
+// It spins up a full server on a throwaway data directory, wired through
 // an http.Client whose transport calls the handler directly (no network).
 package cogtest
 
@@ -14,6 +14,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -75,15 +76,11 @@ type Env struct {
 // Now returns the current virtual time from the test clock.
 func (e *Env) Now() time.Time { return e.Clock.Now() }
 
-// New creates a fresh test environment with an in-memory DB and temp data dir.
+// New creates a fresh test environment with its own DB and temp data dir.
 // The returned Client routes requests through the server handler directly.
 func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	t.Helper()
 
-	// Use a named shared-cache in-memory DB so multiple connections share the same data.
-	// Plain ":memory:" gives each connection its own empty database, which breaks
-	// browser tests where Chrome goroutines open concurrent connections.
-	dbName := url.PathEscape(t.Name())
 	tc := clock.NewTest(time.Date(2026, time.March, 14, 6, 0, 0, 0, time.Local))
 	clockHook := db.ClockHook(func() int64 { return tc.Now().Unix() })
 
@@ -93,7 +90,14 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	log := slog.New(slog.NewTextHandler(t.Output(), nil))
 	mgr := search.NewManager(log, dataDir)
 
-	sysDB, err := db.OpenWithHooks("file:"+dbName+"?mode=memory&cache=shared",
+	// The system database is a file in the temp data directory, the same as the
+	// server's and the same as every per-user plugin database the harness
+	// already creates. It gives WAL journalling and a working busy timeout, so
+	// two connections writing at once queue instead of failing.
+	//
+	// A plain path, not a file: URI: t.TempDir() builds the directory name out
+	// of the test's name, which may contain characters a URI reads as syntax.
+	sysDB, err := db.OpenWithHooks(filepath.Join(dataDir, "system.db"),
 		clockHook, db.UpdateHook(mgr.SystemHook()))
 	if err != nil {
 		t.Fatalf("cogtest: open db: %v", err)
