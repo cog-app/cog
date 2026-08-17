@@ -10,7 +10,11 @@ test:
   image: golang:1.26-alpine
   stage: test
   before_script:
-    - apk add --no-cache gcc musl-dev
+    # chromium runs the browser tests, which otherwise skip themselves and
+    # leave every page in the app untested here. Safe to run in CI because a
+    # snapshot asserts on the DOM: the runner's browser build no longer has to
+    # match the one that produced the goldens.
+    - apk add --no-cache gcc musl-dev chromium
   script:
     - CGO_ENABLED=1 go generate ./...
     - CGO_ENABLED=1 go test ./...
