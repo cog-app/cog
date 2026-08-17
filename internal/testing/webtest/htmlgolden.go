@@ -42,6 +42,14 @@ func normalizeDOM(raw string) (string, error) {
 	return out, nil
 }
 
+// voidElements have no closing tag in HTML, so they are always written in the
+// self-closing form.
+var voidElements = map[string]bool{
+	"area": true, "base": true, "br": true, "col": true, "embed": true,
+	"hr": true, "img": true, "input": true, "link": true, "meta": true,
+	"param": true, "source": true, "track": true, "wbr": true,
+}
+
 // writeNode renders one element per line so a diff points at what changed
 // rather than at a single enormous line.
 func writeNode(b *strings.Builder, n *html.Node, depth int) {
@@ -63,8 +71,23 @@ func writeNode(b *strings.Builder, n *html.Node, depth int) {
 	case html.CommentNode:
 		return
 
+	case html.ElementNode:
+		// Scripts are dropped. The DOM is captured once the page has settled,
+		// so whatever a script did to the page is already in the tree around
+		// it; the element itself only adds noise, and its src carries an asset
+		// hash that would churn every golden on a library upgrade that changed
+		// nothing anyone can see.
+		if n.Data == "script" {
+			return
+		}
+
 	case html.DoctypeNode:
 		fmt.Fprintf(b, "%s<!doctype %s>\n", indent(depth), n.Data)
+		return
+	}
+
+	if n.FirstChild == nil || voidElements[n.Data] {
+		fmt.Fprintf(b, "%s<%s%s />\n", indent(depth), n.Data, attrs(n))
 		return
 	}
 
@@ -72,6 +95,7 @@ func writeNode(b *strings.Builder, n *html.Node, depth int) {
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		writeNode(b, c, depth+1)
 	}
+	fmt.Fprintf(b, "%s</%s>\n", indent(depth), n.Data)
 }
 
 // attrs renders attributes in name order. Serialisation order is an

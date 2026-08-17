@@ -1,317 +1,474 @@
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport" />
     <title>
       Contacts — Cog
-    <link href="/static/style.css?v=014e31a1dbda" rel="stylesheet">
-    <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xNyAyMXYtMmE0IDQgMCAwIDAtNC00SDVhNCA0IDAgMCAwLTQgNHYyIj48L3BhdGg+PGNpcmNsZSBjeD0iOSIgY3k9IjciIHI9IjQiPjwvY2lyY2xlPjxwYXRoIGQ9Ik0yMyAyMXYtMmE0IDQgMCAwIDAtMy0zLjg3Ij48L3BhdGg+PHBhdGggZD0iTTE2IDMuMTNhNCA0IDAgMCAxIDAgNy43NSI+PC9wYXRoPjwvc3ZnPg==" rel="icon" type="image/svg+xml">
-    <script src="/static/htmx.min.js?v=e209dda5c823">
-    <script defer="" src="/static/cog-share.js?v=8487780b4cef">
+    </title>
+    <link href="/static/style.css?v=014e31a1dbda" rel="stylesheet" />
+    <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xNyAyMXYtMmE0IDQgMCAwIDAtNC00SDVhNCA0IDAgMCAwLTQgNHYyIj48L3BhdGg+PGNpcmNsZSBjeD0iOSIgY3k9IjciIHI9IjQiPjwvY2lyY2xlPjxwYXRoIGQ9Ik0yMyAyMXYtMmE0IDQgMCAwIDAtMy0zLjg3Ij48L3BhdGg+PHBhdGggZD0iTTE2IDMuMTNhNCA0IDAgMCAxIDAgNy43NSI+PC9wYXRoPjwvc3ZnPg==" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
   <body hx-headers="{\"X-CSRF-Token\":\"«hex»\"}">
     <nav class="navbar" data-nav-count="3">
       <a class="navbar-brand" href="/">
         <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" style="vertical-align:middle" viewBox="0 0 24 24" width="20">
-          <circle cx="12" cy="12" r="3">
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
         <span class="brand-text">
           Cog
+        </span>
+      </a>
       <ul class="navbar-nav">
         <li>
           <a class="active" href="/apps/contacts" title="Contacts">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2">
-              <circle cx="9" cy="7" r="4">
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87">
-              <path d="M16 3.13a4 4 0 0 1 0 7.75">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
             <span class="nav-label">
               Contacts
+            </span>
+          </a>
+        </li>
         <li>
           <a href="/" title="Dashboard">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z">
-              <polyline points="9 22 9 12 15 12 15 22">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
             <span class="nav-label">
               Dashboard
+            </span>
+          </a>
+        </li>
         <li>
           <a href="/apps/files" title="Files">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
             <span class="nav-label">
               Files
+            </span>
+          </a>
+        </li>
+      </ul>
       <div class="navbar-apps-dropdown dropdown" tabindex="0">
         <button class="apps-toggle" type="button">
           <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
-            <rect height="7" width="7" x="3" y="3">
-            <rect height="7" width="7" x="14" y="3">
-            <rect height="7" width="7" x="3" y="14">
-            <rect height="7" width="7" x="14" y="14">
+            <rect height="7" width="7" x="3" y="3" />
+            <rect height="7" width="7" x="14" y="3" />
+            <rect height="7" width="7" x="3" y="14" />
+            <rect height="7" width="7" x="14" y="14" />
+          </svg>
+        </button>
         <div class="dropdown-menu apps-menu">
           <a class="active" href="/apps/contacts">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2">
-              <circle cx="9" cy="7" r="4">
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87">
-              <path d="M16 3.13a4 4 0 0 1 0 7.75">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
             Contacts
+          </a>
           <a class="" href="/">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z">
-              <polyline points="9 22 9 12 15 12 15 22">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
             Dashboard
+          </a>
           <a class="" href="/apps/files">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
             Files
+          </a>
+        </div>
+      </div>
       <div class="navbar-search">
-        <input autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)..." type="search">
-        <div class="search-results" id="search-results">
+        <input autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)..." type="search" />
+        <div class="search-results" id="search-results" />
+      </div>
       <div class="navbar-end">
         <div id="notif-bell" onclick="toggleNotifPanel()" style="position:relative;cursor:pointer;padding:0 0.5rem;display:none" title="Notifications">
           <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9">
-            <path d="M13.73 21a2 2 0 0 1-3.46 0">
-          <span class="notif-badge" id="notif-badge" style="display:none">
-        <div class="dropdown-menu" id="notif-panel" style="display:none;position:absolute;right:4rem;top:3rem;min-width:280px;max-height:300px;overflow:auto;z-index:100">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          <span class="notif-badge" id="notif-badge" style="display:none" />
+        </div>
+        <div class="dropdown-menu" id="notif-panel" style="display:none;position:absolute;right:4rem;top:3rem;min-width:280px;max-height:300px;overflow:auto;z-index:100" />
         <div class="dropdown" tabindex="0">
           <button class="dropdown-toggle" type="button">
-            <img class="avatar-sm" src="/avatar/«hex»">
+            <img class="avatar-sm" src="/avatar/«hex»" />
             <span class="dropdown-username">
               edit
+            </span>
             <span class="dropdown-caret">
               ▾
+            </span>
+          </button>
           <div class="dropdown-menu">
             <a class="" href="/settings/profile">
               Profile
+            </a>
             <a class="" href="/settings/security">
               Security
+            </a>
             <a class="" href="/settings/storage">
               Storage
+            </a>
             <a class="" href="/settings/groups">
               Groups
-            <div class="dropdown-divider">
+            </a>
+            <div class="dropdown-divider" />
             <form action="/logout" method="post">
-              <input name="csrf_token" type="hidden" value="«hex»">
+              <input name="csrf_token" type="hidden" value="«hex»" />
               <button onmousedown="this.closest('form').submit()" type="submit">
                 Log out
-    <script>
-      // Adaptive navbar collapse based on item count and available width. (function () { var nb = document.querySelector(".navbar"); if (!nb) return; var n = parseInt(nb.getAttribute("data-nav-count"), 10) || 0; if (n === 0) return; // Per-item widths at each stage: var FULL = 85, COMPACT = 55, ICON = 34; // Fixed overhead differs per stage (brand+search+end+padding): // full/compact: brand(70)+search(280)+end(80)+pad(32)=462 // icon-only: brand(55)+search(140)+end(40)+pad(16)=251 // collapsed (no nav, no search): brand(24)+apps-btn(36)+end(40)+pad(16)=116 var FX = 462, FX_I = 251, FX_C = 116; function u() { var w = nb.offsetWidth; nb.classList.remove( "navbar--compact", "navbar--icon-only", "navbar--collapsed", ); if (n * FULL + FX <= w) return; if (n * COMPACT + FX <= w) { nb.classList.add("navbar--compact"); return; } if (n * ICON + FX_I <= w) { nb.classList.add("navbar--icon-only"); return; } nb.classList.add("navbar--collapsed"); } u(); if (window.ResizeObserver) new ResizeObserver(u).observe(nb); else window.addEventListener("resize", u); })();
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </nav>
     <main class="content" data-plugin="contacts">
       <div class="sidebar-layout">
         <nav class="sidebar">
           <a class="sidebar-item active" href="/apps/contacts/">
             All Contacts
+          </a>
           <a class="sidebar-item" href="/apps/contacts/starred">
             ★ Starred
-          <div class="sidebar-divider">
+          </a>
+          <div class="sidebar-divider" />
           <div style="padding:0.25rem 0.75rem;font-size:0.8rem;font-weight:600;text-transform:uppercase;color:var(--color-muted, #888)">
             Address Books
+          </div>
           <a class="sidebar-item" href="/apps/contacts/?book=1" style="display:flex;align-items:center;gap:0.5rem">
-            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;" />
             Contacts
-          <div class="sidebar-divider">
+          </a>
+          <div class="sidebar-divider" />
           <a class="sidebar-item" href="/apps/contacts/settings">
             Settings
+          </a>
+        </nav>
         <div class="sidebar-content">
           <div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
             <h1 style="margin:0">
               Contacts
+            </h1>
             <button class="btn btn-primary" onclick="document.getElementById('create-contact-modal').style.display='flex'">
               New Contact
+            </button>
+          </div>
           <div id="contacts-list">
             <table class="table">
               <thead>
                 <tr>
-                  <th>
+                  <th />
                   <th>
                     Name
+                  </th>
                   <th class="hide-mobile">
                     Email
+                  </th>
                   <th class="hide-mobile">
                     Phone
+                  </th>
                   <th class="hide-mobile">
                     Org
+                  </th>
                   <th>
                     Book
+                  </th>
+                </tr>
+              </thead>
               <tbody>
                 <tr id="contact-1" onclick="showContactDetail(1)" style="cursor:pointer">
                   <td>
                     <span class="avatar-initials" style="background:#0082c9;">
                       ET
+                    </span>
+                  </td>
                   <td style="font-weight:500">
                     Edit Target
-                  <td class="hide-mobile">
-                  <td class="hide-mobile">
-                  <td class="hide-mobile">
+                  </td>
+                  <td class="hide-mobile" />
+                  <td class="hide-mobile" />
+                  <td class="hide-mobile" />
                   <td>
-                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#0082c9;vertical-align:middle;margin-right:4px;">
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#0082c9;vertical-align:middle;margin-right:4px;" />
                     Contacts
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
       <div class="modal-overlay" id="contact-modal" onclick="if(event.target===this)this.style.display='none'" style="display: flex;">
         <div class="modal-content" id="contact-modal-body">
           <span class="avatar-initials" style="width:80px;height:80px;font-size:1.5rem;margin-bottom:0.75rem;display:inline-flex;background:#0082c9;">
             ET
+          </span>
           <div class="flex items-center gap-1" style="margin-bottom:0.5rem">
             <h2 style="margin:0">
               Edit Target
+            </h2>
             <button class="btn-star" hx-post="/apps/contacts/contacts/1/star" hx-swap="outerHTML" title="Toggle star">
               <svg fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+            </button>
+          </div>
           <p class="text-muted" style="font-size:0.85rem">
-            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;vertical-align:middle;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;vertical-align:middle;" />
             Contacts
-          <div class="sidebar-divider" style="margin:1rem 0">
+          </p>
+          <div class="sidebar-divider" style="margin:1rem 0" />
           <h3>
             Edit Contact
+          </h3>
           <div class="form-group">
             <label>
               Photo
+            </label>
             <form action="/apps/contacts/contacts/1/photo" enctype="multipart/form-data" method="post" style="display:inline">
-              <input name="csrf_token" type="hidden" value="«hex»">
+              <input name="csrf_token" type="hidden" value="«hex»" />
               <label class="btn btn-outline btn-sm" style="cursor:pointer">
                 Upload Photo
-                <input accept="image/*" multiple="" name="photo" onchange="this.form.submit()" style="display:none" type="file">
+                <input accept="image/*" multiple="" name="photo" onchange="this.form.submit()" style="display:none" type="file" />
+              </label>
+            </form>
+          </div>
           <form action="/apps/contacts/contacts/1" method="post">
-            <input name="csrf_token" type="hidden" value="«hex»">
+            <input name="csrf_token" type="hidden" value="«hex»" />
             <div class="form-group">
               <label for="em-book">
                 Address Book
+              </label>
               <select class="form-control" id="em-book" name="address_book_id">
                 <option selected="" value="1">
                   Contacts
+                </option>
+              </select>
+            </div>
             <div class="form-group">
               <label for="em-fn">
                 Name
-              <input class="form-control" id="em-fn" name="fn" required="" type="text" value="Edit Target">
+              </label>
+              <input class="form-control" id="em-fn" name="fn" required="" type="text" value="Edit Target" />
+            </div>
             <fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
               <legend style="font-weight:500;font-size:0.9rem">
                 Emails
+              </legend>
               <div id="em-emails">
                 <div class="flex gap-1 items-end mb-1">
                   <select class="form-control" name="email_type" style="width:100px">
                     <option value="INTERNET">
                       Personal
+                    </option>
                     <option value="WORK">
                       Work
+                    </option>
                     <option value="HOME">
                       Home
-                  <input class="form-control" name="email_value" style="flex:1" type="email" value="">
+                    </option>
+                  </select>
+                  <input class="form-control" name="email_value" style="flex:1" type="email" value="" />
+                </div>
+              </div>
               <button class="btn btn-outline btn-sm" onclick="addField('em-emails','email')" type="button">
                 + Add email
+              </button>
+            </fieldset>
             <fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
               <legend style="font-weight:500;font-size:0.9rem">
                 Phones
+              </legend>
               <div id="em-phones">
                 <div class="flex gap-1 items-end mb-1">
                   <select class="form-control" name="phone_type" style="width:100px">
                     <option value="CELL">
                       Cell
+                    </option>
                     <option value="WORK">
                       Work
+                    </option>
                     <option value="HOME">
                       Home
+                    </option>
                     <option value="FAX">
                       Fax
-                  <input class="form-control" name="phone_value" style="flex:1" type="tel" value="">
+                    </option>
+                  </select>
+                  <input class="form-control" name="phone_value" style="flex:1" type="tel" value="" />
+                </div>
+              </div>
               <button class="btn btn-outline btn-sm" onclick="addField('em-phones','phone')" type="button">
                 + Add phone
+              </button>
+            </fieldset>
             <fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
               <legend style="font-weight:500;font-size:0.9rem">
                 Work
+              </legend>
               <div class="form-group">
                 <label for="em-org">
                   Organization
-                <input class="form-control" id="em-org" name="org" type="text" value="">
+                </label>
+                <input class="form-control" id="em-org" name="org" type="text" value="" />
+              </div>
               <div class="form-group">
                 <label for="em-title">
                   Title
-                <input class="form-control" id="em-title" name="title" type="text" value="">
+                </label>
+                <input class="form-control" id="em-title" name="title" type="text" value="" />
+              </div>
+            </fieldset>
             <div class="form-group">
               <label for="em-note">
                 Note
-              <textarea class="form-control" id="em-note" name="note" rows="3">
+              </label>
+              <textarea class="form-control" id="em-note" name="note" rows="3" />
+            </div>
             <div class="flex gap-1" style="justify-content:space-between">
               <button class="btn btn-danger" hx-confirm="Delete this contact?" hx-delete="/apps/contacts/contacts/1" hx-on::after-request="document.getElementById('contact-modal').style.display='none';location.reload()" type="button">
                 Delete
+              </button>
               <div class="flex gap-1">
                 <button class="btn" onclick="document.getElementById('contact-modal').style.display='none'" type="button">
                   Cancel
+                </button>
                 <button class="btn btn-primary" type="submit">
                   Save
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
       <div class="modal-overlay" id="create-contact-modal" onclick="if(event.target===this)this.style.display='none'" style="display:none">
         <div class="modal-content">
           <h2 style="margin-top:0">
             New Contact
+          </h2>
           <form action="/apps/contacts/contacts" method="post">
-            <input name="csrf_token" type="hidden" value="«hex»">
+            <input name="csrf_token" type="hidden" value="«hex»" />
             <div class="form-group">
               <label for="cc-book">
                 Address Book
+              </label>
               <select class="form-control" id="cc-book" name="address_book_id">
                 <option value="1">
                   Contacts
+                </option>
+              </select>
+            </div>
             <div class="form-group">
               <label for="cc-fn">
                 Name
-              <input class="form-control" id="cc-fn" name="fn" required="" type="text">
+              </label>
+              <input class="form-control" id="cc-fn" name="fn" required="" type="text" />
+            </div>
             <fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
               <legend style="font-weight:500;font-size:0.9rem">
                 Emails
+              </legend>
               <div id="cc-emails">
                 <div class="flex gap-1 items-end mb-1">
                   <select class="form-control" name="email_type" style="width:100px">
                     <option value="INTERNET">
                       Personal
+                    </option>
                     <option value="WORK">
                       Work
+                    </option>
                     <option value="HOME">
                       Home
-                  <input class="form-control" name="email_value" placeholder="email@example.com" style="flex:1" type="email">
+                    </option>
+                  </select>
+                  <input class="form-control" name="email_value" placeholder="email@example.com" style="flex:1" type="email" />
+                </div>
+              </div>
               <button class="btn btn-outline btn-sm" onclick="addField('cc-emails','email')" type="button">
                 + Add email
+              </button>
+            </fieldset>
             <fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
               <legend style="font-weight:500;font-size:0.9rem">
                 Phones
+              </legend>
               <div id="cc-phones">
                 <div class="flex gap-1 items-end mb-1">
                   <select class="form-control" name="phone_type" style="width:100px">
                     <option value="CELL">
                       Cell
+                    </option>
                     <option value="WORK">
                       Work
+                    </option>
                     <option value="HOME">
                       Home
+                    </option>
                     <option value="FAX">
                       Fax
-                  <input class="form-control" name="phone_value" placeholder="+1 555-1234" style="flex:1" type="tel">
+                    </option>
+                  </select>
+                  <input class="form-control" name="phone_value" placeholder="+1 555-1234" style="flex:1" type="tel" />
+                </div>
+              </div>
               <button class="btn btn-outline btn-sm" onclick="addField('cc-phones','phone')" type="button">
                 + Add phone
+              </button>
+            </fieldset>
             <fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
               <legend style="font-weight:500;font-size:0.9rem">
                 Work
+              </legend>
               <div class="form-group">
                 <label for="cc-org">
                   Organization
-                <input class="form-control" id="cc-org" name="org" type="text">
+                </label>
+                <input class="form-control" id="cc-org" name="org" type="text" />
+              </div>
               <div class="form-group">
                 <label for="cc-title">
                   Title
-                <input class="form-control" id="cc-title" name="title" type="text">
+                </label>
+                <input class="form-control" id="cc-title" name="title" type="text" />
+              </div>
+            </fieldset>
             <div class="form-group">
               <label for="cc-note">
                 Note
-              <textarea class="form-control" id="cc-note" name="note" rows="3">
+              </label>
+              <textarea class="form-control" id="cc-note" name="note" rows="3" />
+            </div>
             <div class="flex gap-1" style="justify-content:flex-end">
               <button class="btn" onclick="document.getElementById('create-contact-modal').style.display='none'" type="button">
                 Cancel
+              </button>
               <button class="btn btn-primary" type="submit">
                 Create
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
       <style>
         .avatar-initials { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; font-weight: 600; font-size: 0.8rem; } .typed-label { font-size: 0.75rem; color: var(--color-muted, #888); text-transform: uppercase; }
-      <script>
-        function showContactDetail(id) { fetch("/apps/contacts/contacts/" + id, { headers: { "X-CSRF-Token": document.querySelector("[name=csrf_token]").value, }, }) .then(function (r) { return r.text(); }) .then(function (html) { var el = document.getElementById("contact-modal-body"); el.innerHTML = html; htmx.process(el); document.getElementById("contact-modal").style.display = "flex"; }); } function addField(containerId, kind) { var container = document.getElementById(containerId); var row = document.createElement("div"); row.className = "flex gap-1 items-end mb-1"; if (kind === "email") { row.innerHTML = '<select class="form-control" name="email_type" style="width:100px">' + '<option value="INTERNET">Personal</option><option value="WORK">Work</option><option value="HOME">Home</option>' + "</select>" + '<input class="form-control" type="email" name="email_value" placeholder="email@example.com" style="flex:1"/>' + '<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>'; } else { row.innerHTML = '<select class="form-control" name="phone_type" style="width:100px">' + '<option value="CELL">Cell</option><option value="WORK">Work</option><option value="HOME">Home</option><option value="FAX">Fax</option>' + "</select>" + '<input class="form-control" type="tel" name="phone_value" placeholder="+1 555-1234" style="flex:1"/>' + '<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>'; } container.appendChild(row); }
-    <script>
-      // Notification polling (function () { var bell = document.getElementById("notif-bell"); var badge = document.getElementById("notif-badge"); var panel = document.getElementById("notif-panel"); if (!bell) return; var pending = []; function checkNotifications() { fetch("/apps/calendar/notifications") .then(function (r) { return r.ok ? r.json() : []; }) .then(function (data) { if (!data || !data.length) return; pending = pending.concat(data); bell.style.display = ""; badge.style.display = ""; badge.textContent = pending.length; // Show browser notification if permitted if (Notification.permission === "granted") { data.forEach(function (n) { new Notification("Reminder: " + n.summary, { body: "Starting " + new Date(n.start).toLocaleString(), }); }); } else if (Notification.permission !== "denied") { Notification.requestPermission(); } }) .catch(function () {}); } window.toggleNotifPanel = function () { if (panel.style.display === "none") { panel.style.display = "block"; panel.innerHTML = ""; if (!pending.length) { panel.innerHTML = '<div style="padding:0.75rem;color:var(--color-text-muted)">No notifications</div>'; } else { pending.forEach(function (n) { var d = document.createElement("a"); d.href = "/apps/calendar/?date=" + n.start.slice(0, 10); d.className = "search-hit"; d.innerHTML = '<span class="search-hit-name">' + n.summary + '</span><span class="search-hit-sub">' + new Date(n.start).toLocaleString() + "</span>"; panel.appendChild(d); }); } } else { panel.style.display = "none"; } }; // Poll every 60 seconds setInterval(checkNotifications, 60000); // Initial check after 5 seconds setTimeout(checkNotifications, 5000); })();
-    <script>
-      (function () { var box = document.getElementById("search-box"); if (!box) return; var results = document.getElementById("search-results"); document.addEventListener("keydown", function (e) { if ( e.key === "/" && !e.ctrlKey && !e.metaKey && !["INPUT", "TEXTAREA", "SELECT"].includes( document.activeElement.tagName, ) && !document.activeElement.isContentEditable ) { e.preventDefault(); box.focus(); box.select(); } }); box.addEventListener("keydown", function (e) { var hits = results.querySelectorAll(".search-hit"); if (!hits.length) { if (e.key === "Escape") { box.blur(); } return; } var cur = results.querySelector(".search-hit-active"); var idx = cur ? Array.prototype.indexOf.call(hits, cur) : -1; if (e.key === "ArrowDown") { e.preventDefault(); if (cur) cur.classList.remove("search-hit-active"); idx = (idx + 1) % hits.length; hits[idx].classList.add("search-hit-active"); hits[idx].scrollIntoView({ block: "nearest" }); } else if (e.key === "ArrowUp") { e.preventDefault(); if (cur) cur.classList.remove("search-hit-active"); idx = idx <= 0 ? hits.length - 1 : idx - 1; hits[idx].classList.add("search-hit-active"); hits[idx].scrollIntoView({ block: "nearest" }); } else if (e.key === "Enter") { if (cur) { e.preventDefault(); cur.click(); } } else if (e.key === "Escape") { box.blur(); } }); new MutationObserver(function () { var hits = results.querySelectorAll(".search-hit"); hits.forEach(function (h) { h.classList.remove("search-hit-active"); }); if (hits.length) hits[0].classList.add("search-hit-active"); }).observe(results, { childList: true }); })();
+      </style>
+    </main>
+  </body>
+</html>

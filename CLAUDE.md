@@ -136,4 +136,6 @@ A failing snapshot writes `<TestName>.actual.html` and `.actual.png` next to the
 
 CSRF tokens and user identifiers are masked in the golden — they differ per run. Nothing else does, so a golden that changes between runs means the page is genuinely nondeterministic, which is worth fixing rather than masking.
 
+`<script>` elements are dropped. The DOM is captured once the page has settled, so what a script did to the page is already in the tree; keeping the element would only churn every golden when a library's content hash changed. Stylesheets stay, because their hash is what makes a CSS edit reach the golden.
+
 When a browser test fails, read the saved page source before assuming a timing problem — `webtest` writes the DOM and a screenshot to the cache dir on failure, and a server-side error (`no such table`, `access denied`) looks exactly like a flaky wait from the test output alone.

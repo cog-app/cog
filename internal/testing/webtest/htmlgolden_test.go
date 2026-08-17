@@ -100,3 +100,56 @@ func TestGoldenIsLineOriented(t *testing.T) {
 		t.Fatalf("expected content indented inside its element (<p> at %d, text at %d):\n%s", paraIndent, textIndent, out)
 	}
 }
+
+// TestScriptsAreDropped keeps library upgrades out of the goldens. The DOM is
+// captured after the page settles, so what a script did is already in the tree
+// around it — the element itself only carries an asset hash that would change
+// every golden when nothing visible changed.
+func TestScriptsAreDropped(t *testing.T) {
+	out := normalize(t, `<html><head><script src="/static/htmx.min.js?v=e209dda5c823"></script>`+
+		`<script>window.x = 1</script></head><body><p>hi</p></body></html>`)
+
+	if strings.Contains(out, "script") || strings.Contains(out, "htmx.min.js") {
+		t.Fatalf("script survived normalisation:\n%s", out)
+	}
+	if !strings.Contains(out, "hi") {
+		t.Fatalf("dropping scripts took the page with it:\n%s", out)
+	}
+}
+
+// TestStylesSurvive guards the other half: stylesheets are the visual
+// mechanism, and their content hash is what makes a CSS edit reach the golden.
+func TestStylesSurvive(t *testing.T) {
+	out := normalize(t, `<html><head><link rel="stylesheet" href="/static/style.css?v=014e31a1dbda">`+
+		`<style>.a{color:red}</style></head><body></body></html>`)
+
+	if !strings.Contains(out, "014e31a1dbda") {
+		t.Errorf("stylesheet link was dropped:\n%s", out)
+	}
+	if !strings.Contains(out, "color:red") {
+		t.Errorf("inline style was dropped:\n%s", out)
+	}
+}
+
+func TestElementsAreClosed(t *testing.T) {
+	out := normalize(t, `<html><body><div class="a"><p>text</p></div></body></html>`)
+
+	for _, want := range []string{"<div class=\"a\">", "</div>", "<p>", "</p>"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}
+
+func TestChildlessAndVoidElementsSelfClose(t *testing.T) {
+	out := normalize(t, `<html><body><div class="empty"></div><br><img src="/a.png"></body></html>`)
+
+	for _, want := range []string{`<div class="empty" />`, "<br />", `<img src="/a.png" />`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "</br>") || strings.Contains(out, "</img>") {
+		t.Errorf("void element was given a closing tag:\n%s", out)
+	}
+}

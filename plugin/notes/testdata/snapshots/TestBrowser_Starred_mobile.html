@@ -1,103 +1,144 @@
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport" />
     <title>
       Starred Notes — Cog
-    <link href="/static/style.css?v=014e31a1dbda" rel="stylesheet">
-    <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xNCAySDZhMiAyIDAgMCAwLTIgMnYxNmEyIDIgMCAwIDAgMiAyaDEyYTIgMiAwIDAgMCAyLTJWOHoiPjwvcGF0aD48cG9seWxpbmUgcG9pbnRzPSIxNCAyIDE0IDggMjAgOCI+PC9wb2x5bGluZT48bGluZSB4MT0iMTYiIHkxPSIxMyIgeDI9IjgiIHkyPSIxMyI+PC9saW5lPjxsaW5lIHgxPSIxNiIgeTE9IjE3IiB4Mj0iOCIgeTI9IjE3Ij48L2xpbmU+PC9zdmc+" rel="icon" type="image/svg+xml">
-    <script src="/static/htmx.min.js?v=e209dda5c823">
-    <script defer="" src="/static/cog-share.js?v=8487780b4cef">
+    </title>
+    <link href="/static/style.css?v=014e31a1dbda" rel="stylesheet" />
+    <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xNCAySDZhMiAyIDAgMCAwLTIgMnYxNmEyIDIgMCAwIDAgMiAyaDEyYTIgMiAwIDAgMCAyLTJWOHoiPjwvcGF0aD48cG9seWxpbmUgcG9pbnRzPSIxNCAyIDE0IDggMjAgOCI+PC9wb2x5bGluZT48bGluZSB4MT0iMTYiIHkxPSIxMyIgeDI9IjgiIHkyPSIxMyI+PC9saW5lPjxsaW5lIHgxPSIxNiIgeTE9IjE3IiB4Mj0iOCIgeTI9IjE3Ij48L2xpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
   <body hx-headers="{\"X-CSRF-Token\":\"«hex»\"}">
     <nav class="navbar navbar--icon-only" data-nav-count="3">
       <a class="navbar-brand" href="/">
         <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" style="vertical-align:middle" viewBox="0 0 24 24" width="20">
-          <circle cx="12" cy="12" r="3">
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
         <span class="brand-text">
           Cog
+        </span>
+      </a>
       <ul class="navbar-nav">
         <li>
           <a class="active" href="/apps/notes" title="Notes">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z">
-              <polyline points="14 2 14 8 20 8">
-              <line x1="16" x2="8" y1="13" y2="13">
-              <line x1="16" x2="8" y1="17" y2="17">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" x2="8" y1="13" y2="13" />
+              <line x1="16" x2="8" y1="17" y2="17" />
+            </svg>
             <span class="nav-label">
               Notes
+            </span>
+          </a>
+        </li>
         <li>
           <a href="/" title="Dashboard">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z">
-              <polyline points="9 22 9 12 15 12 15 22">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
             <span class="nav-label">
               Dashboard
+            </span>
+          </a>
+        </li>
         <li>
           <a href="/apps/files" title="Files">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
             <span class="nav-label">
               Files
+            </span>
+          </a>
+        </li>
+      </ul>
       <div class="navbar-apps-dropdown dropdown" tabindex="0">
         <button class="apps-toggle" type="button">
           <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
-            <rect height="7" width="7" x="3" y="3">
-            <rect height="7" width="7" x="14" y="3">
-            <rect height="7" width="7" x="3" y="14">
-            <rect height="7" width="7" x="14" y="14">
+            <rect height="7" width="7" x="3" y="3" />
+            <rect height="7" width="7" x="14" y="3" />
+            <rect height="7" width="7" x="3" y="14" />
+            <rect height="7" width="7" x="14" y="14" />
+          </svg>
+        </button>
         <div class="dropdown-menu apps-menu">
           <a class="active" href="/apps/notes">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z">
-              <polyline points="14 2 14 8 20 8">
-              <line x1="16" x2="8" y1="13" y2="13">
-              <line x1="16" x2="8" y1="17" y2="17">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" x2="8" y1="13" y2="13" />
+              <line x1="16" x2="8" y1="17" y2="17" />
+            </svg>
             Notes
+          </a>
           <a class="" href="/">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z">
-              <polyline points="9 22 9 12 15 12 15 22">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
             Dashboard
+          </a>
           <a class="" href="/apps/files">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
             Files
+          </a>
+        </div>
+      </div>
       <div class="navbar-search">
-        <input autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)..." type="search">
-        <div class="search-results" id="search-results">
+        <input autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)..." type="search" />
+        <div class="search-results" id="search-results" />
+      </div>
       <div class="navbar-end">
         <div id="notif-bell" onclick="toggleNotifPanel()" style="position:relative;cursor:pointer;padding:0 0.5rem;display:none" title="Notifications">
           <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9">
-            <path d="M13.73 21a2 2 0 0 1-3.46 0">
-          <span class="notif-badge" id="notif-badge" style="display:none">
-        <div class="dropdown-menu" id="notif-panel" style="display:none;position:absolute;right:4rem;top:3rem;min-width:280px;max-height:300px;overflow:auto;z-index:100">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          <span class="notif-badge" id="notif-badge" style="display:none" />
+        </div>
+        <div class="dropdown-menu" id="notif-panel" style="display:none;position:absolute;right:4rem;top:3rem;min-width:280px;max-height:300px;overflow:auto;z-index:100" />
         <div class="dropdown" tabindex="0">
           <button class="dropdown-toggle" type="button">
-            <img class="avatar-sm" src="/avatar/«hex»">
+            <img class="avatar-sm" src="/avatar/«hex»" />
             <span class="dropdown-username">
               starred
+            </span>
             <span class="dropdown-caret">
               ▾
+            </span>
+          </button>
           <div class="dropdown-menu">
             <a class="" href="/settings/profile">
               Profile
+            </a>
             <a class="" href="/settings/security">
               Security
+            </a>
             <a class="" href="/settings/storage">
               Storage
+            </a>
             <a class="" href="/settings/groups">
               Groups
-            <div class="dropdown-divider">
+            </a>
+            <div class="dropdown-divider" />
             <form action="/logout" method="post">
-              <input name="csrf_token" type="hidden" value="«hex»">
+              <input name="csrf_token" type="hidden" value="«hex»" />
               <button onmousedown="this.closest('form').submit()" type="submit">
                 Log out
-    <script>
-      // Adaptive navbar collapse based on item count and available width. (function () { var nb = document.querySelector(".navbar"); if (!nb) return; var n = parseInt(nb.getAttribute("data-nav-count"), 10) || 0; if (n === 0) return; // Per-item widths at each stage: var FULL = 85, COMPACT = 55, ICON = 34; // Fixed overhead differs per stage (brand+search+end+padding): // full/compact: brand(70)+search(280)+end(80)+pad(32)=462 // icon-only: brand(55)+search(140)+end(40)+pad(16)=251 // collapsed (no nav, no search): brand(24)+apps-btn(36)+end(40)+pad(16)=116 var FX = 462, FX_I = 251, FX_C = 116; function u() { var w = nb.offsetWidth; nb.classList.remove( "navbar--compact", "navbar--icon-only", "navbar--collapsed", ); if (n * FULL + FX <= w) return; if (n * COMPACT + FX <= w) { nb.classList.add("navbar--compact"); return; } if (n * ICON + FX_I <= w) { nb.classList.add("navbar--icon-only"); return; } nb.classList.add("navbar--collapsed"); } u(); if (window.ResizeObserver) new ResizeObserver(u).observe(nb); else window.addEventListener("resize", u); })();
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </nav>
     <main class="content" data-plugin="notes">
       <div class="sidebar-layout">
         <nav class="sidebar" id="notes-sidebar">
@@ -105,31 +146,49 @@
             All Notes
             <span class="badge">
               1
+            </span>
+          </a>
           <a class="sidebar-item active" href="/apps/notes/starred">
             Starred
             <span class="badge">
               1
-          <div class="sidebar-divider">
+            </span>
+          </a>
+          <div class="sidebar-divider" />
           <a class="sidebar-item" href="/apps/notes/new">
             + New Note
+          </a>
+        </nav>
         <div class="sidebar-content">
           <h1>
             Starred Notes
+          </h1>
           <div id="note-list">
             <div id="note-1" style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0);display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
               <div style="min-width:0;flex:1">
                 <div class="flex items-center gap-1" style="flex-wrap:wrap">
                   <a href="/apps/notes/note/1" style="font-weight:500">
                     Starred Note
+                  </a>
+                </div>
                 <div class="text-muted" style="font-size:0.85rem">
                   Mar 14
+                </div>
+              </div>
               <div class="flex gap-1" style="flex-shrink:0">
                 <button class="btn-star active" hx-post="/apps/notes/notes/1/star" hx-swap="outerHTML" title="Toggle star">
                   <svg fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
-                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                  </svg>
+                </button>
                 <button class="btn btn-danger btn-sm" hx-confirm="Delete this note?" hx-delete="/apps/notes/notes/1" hx-swap="outerHTML" hx-target="#note-1">
                   ✕
-    <script>
-      // Notification polling (function () { var bell = document.getElementById("notif-bell"); var badge = document.getElementById("notif-badge"); var panel = document.getElementById("notif-panel"); if (!bell) return; var pending = []; function checkNotifications() { fetch("/apps/calendar/notifications") .then(function (r) { return r.ok ? r.json() : []; }) .then(function (data) { if (!data || !data.length) return; pending = pending.concat(data); bell.style.display = ""; badge.style.display = ""; badge.textContent = pending.length; // Show browser notification if permitted if (Notification.permission === "granted") { data.forEach(function (n) { new Notification("Reminder: " + n.summary, { body: "Starting " + new Date(n.start).toLocaleString(), }); }); } else if (Notification.permission !== "denied") { Notification.requestPermission(); } }) .catch(function () {}); } window.toggleNotifPanel = function () { if (panel.style.display === "none") { panel.style.display = "block"; panel.innerHTML = ""; if (!pending.length) { panel.innerHTML = '<div style="padding:0.75rem;color:var(--color-text-muted)">No notifications</div>'; } else { pending.forEach(function (n) { var d = document.createElement("a"); d.href = "/apps/calendar/?date=" + n.start.slice(0, 10); d.className = "search-hit"; d.innerHTML = '<span class="search-hit-name">' + n.summary + '</span><span class="search-hit-sub">' + new Date(n.start).toLocaleString() + "</span>"; panel.appendChild(d); }); } } else { panel.style.display = "none"; } }; // Poll every 60 seconds setInterval(checkNotifications, 60000); // Initial check after 5 seconds setTimeout(checkNotifications, 5000); })();
-    <script>
-      (function () { var box = document.getElementById("search-box"); if (!box) return; var results = document.getElementById("search-results"); document.addEventListener("keydown", function (e) { if ( e.key === "/" && !e.ctrlKey && !e.metaKey && !["INPUT", "TEXTAREA", "SELECT"].includes( document.activeElement.tagName, ) && !document.activeElement.isContentEditable ) { e.preventDefault(); box.focus(); box.select(); } }); box.addEventListener("keydown", function (e) { var hits = results.querySelectorAll(".search-hit"); if (!hits.length) { if (e.key === "Escape") { box.blur(); } return; } var cur = results.querySelector(".search-hit-active"); var idx = cur ? Array.prototype.indexOf.call(hits, cur) : -1; if (e.key === "ArrowDown") { e.preventDefault(); if (cur) cur.classList.remove("search-hit-active"); idx = (idx + 1) % hits.length; hits[idx].classList.add("search-hit-active"); hits[idx].scrollIntoView({ block: "nearest" }); } else if (e.key === "ArrowUp") { e.preventDefault(); if (cur) cur.classList.remove("search-hit-active"); idx = idx <= 0 ? hits.length - 1 : idx - 1; hits[idx].classList.add("search-hit-active"); hits[idx].scrollIntoView({ block: "nearest" }); } else if (e.key === "Enter") { if (cur) { e.preventDefault(); cur.click(); } } else if (e.key === "Escape") { box.blur(); } }); new MutationObserver(function () { var hits = results.querySelectorAll(".search-hit"); hits.forEach(function (h) { h.classList.remove("search-hit-active"); }); if (hits.length) hits[0].classList.add("search-hit-active"); }).observe(results, { childList: true }); })();
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>
