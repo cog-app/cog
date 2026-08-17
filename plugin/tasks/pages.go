@@ -58,9 +58,18 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	EnsureDefaultList(db)
+	// A user with no list has nothing to put a task in, so this failing
+	// silently leaves them on a page that cannot do anything.
+	if err := EnsureDefaultList(db); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-	lists, _ := ListTaskLists(db)
+	lists, err := ListTaskLists(db)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	if len(lists) > 0 {
 		http.Redirect(w, r, "/apps/tasks/list/"+strconv.FormatInt(lists[0].ID, 10), http.StatusSeeOther)
 		return

@@ -124,12 +124,18 @@ Custom assertion packages at `internal/testing/assert` (non-fatal) and `internal
 
 ### Browser snapshots
 
-`internal/testing/webtest` drives whatever Chromium `launcher.LookPath()` finds, so the golden PNGs are pinned to the machine's browser. A browser update shifts form-control metrics and fails snapshots that no code change touched — check that before hunting for a regression.
+A snapshot is a pair in `testdata/snapshots`: `<TestName>.html` holds the normalised DOM and is what the test asserts on, and the `.png` beside it renders that DOM for a human to look at in review. Pixels are never compared — they depend on whichever Chromium `launcher.LookPath()` finds, so asserting on them makes a browser update indistinguishable from an application change.
+
+A screenshot is only captured when the DOM golden does not match, which keeps the image in step with the markup without ever comparing it. CSS is covered by the same mechanism: stylesheets are served with a content hash in their URL (`internal/assets`), so editing one changes the DOM.
 
 ```bash
-WEBTEST_UPDATE=1 go test ./plugin/calendar/    # rewrites goldens
+WEBTEST_UPDATE=1 go test ./plugin/calendar/    # accept DOM changes, refresh images
 ```
 
-Update rewrites *every* snapshot in the package, including ones whose differences are under the threshold. Revert the ones that were not failing, or the real change disappears into the churn.
+A failing snapshot writes `<TestName>.actual.html` and `.actual.png` next to the golden. Diff the HTML to see what changed; the image is there to look at.
+
+CSRF tokens and user identifiers are masked in the golden — they differ per run. Nothing else does, so a golden that changes between runs means the page is genuinely nondeterministic, which is worth fixing rather than masking.
+
+`<script>` elements are dropped. The DOM is captured once the page has settled, so what a script did to the page is already in the tree; keeping the element would only churn every golden when a library's content hash changed. Stylesheets stay, because their hash is what makes a CSS edit reach the golden.
 
 When a browser test fails, read the saved page source before assuming a timing problem — `webtest` writes the DOM and a screenshot to the cache dir on failure, and a server-side error (`no such table`, `access denied`) looks exactly like a flaky wait from the test output alone.

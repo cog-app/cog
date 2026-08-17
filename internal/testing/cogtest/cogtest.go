@@ -14,6 +14,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -76,12 +77,25 @@ type Env struct {
 // Now returns the current virtual time from the test clock.
 func (e *Env) Now() time.Time { return e.Clock.Now() }
 
+// Tests run in UTC. A time rendered into a page otherwise depends on the
+// machine's timezone, so a snapshot golden would agree only with developers
+// sharing that offset, and never with CI.
+//
+// TZ covers everything this process starts — the browser, which formats dates
+// itself, and plugin subprocesses, which render their own pages. The
+// assignment covers this process, whose time.Local may already have been
+// resolved from the old TZ before this runs.
+func init() {
+	os.Setenv("TZ", "UTC")
+	time.Local = time.UTC
+}
+
 // New creates a fresh test environment with its own DB and temp data dir.
 // The returned Client routes requests through the server handler directly.
 func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	t.Helper()
 
-	tc := clock.NewTest(time.Date(2026, time.March, 14, 6, 0, 0, 0, time.Local))
+	tc := clock.NewTest(time.Date(2026, time.March, 14, 6, 0, 0, 0, time.UTC))
 	clockHook := db.ClockHook(func() int64 { return tc.Now().Unix() })
 
 	// The manager is built before the system database so the database can be
