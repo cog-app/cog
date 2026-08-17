@@ -94,4 +94,12 @@ Place compiled plugin binaries in `/var/lib/cog/plugins/`. The Cog host discover
 
 ## Process isolation
 
-gRPC plugins run in separate processes. If a plugin crashes, the main Cog server continues running. Plugin routes will return errors until the plugin is restarted.
+gRPC plugins run in separate processes, so a plugin that dies cannot take the Cog server with it.
+
+**Panics are contained.** `plugcmd.Run` installs gRPC recovery interceptors: a panic in one of your handlers is logged with its stack, returned to the host as `codes.Internal`, and rendered to the user as a 500. The process keeps serving its other routes. This does **not** cover panics in goroutines you start yourself — nothing outside the goroutine can recover those, and one will kill the plugin. Recover in your own goroutines.
+
+**A dead process is restarted.** The host reaps the process and relaunches it on a fresh socket, backing off from 1s to a maximum of 30s between attempts, and keeps trying until the server shuts down. While the plugin is down its routes answer 503 with a short "temporarily unavailable" page rather than leaking a dial error to the browser.
+
+Routes are mounted on the host's mux once, at load, and cannot be remounted. A restart therefore re-runs `Register` against the plugin process only, to rebuild its own route table, and checks that the route keys match the ones the host already mounted. Register the same things in the same order every time: a plugin whose registrations depend on external state can come back with different route keys, and the host will refuse to adopt it (logged as "restart rejected") instead of routing requests to the wrong handlers.
+
+**Output is captured.** The host reads your stdout and stderr and re-emits them line by line through its own logger, attributed to your plugin ID — stdout at INFO, stderr at ERROR. That means a panic trace shows up in the admin log viewer (Admin → Logs) and not only on the host's stderr. Note the level mapping: if you log with slog's default handler, which writes to stderr, your INFO lines are recorded as ERROR. Write ordinary logs to stdout if that matters to you.

@@ -25,6 +25,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/maildev"
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
@@ -101,7 +102,11 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	// The manager is built before the system database so the database can be
 	// opened with its update hook, as the server does.
 	dataDir := t.TempDir()
-	log := slog.New(slog.NewTextHandler(t.Output(), nil))
+	// Logs go through the same tee the server uses, so the ring buffer behind
+	// the admin log viewer is filled in tests too — including whatever a plugin
+	// subprocess writes to its stdout or stderr.
+	logBuf := logbuf.New(logbuf.DefaultCapacity)
+	log := slog.New(logbuf.NewTeeHandler(slog.NewTextHandler(t.Output(), nil), logBuf))
 	mgr := search.NewManager(log, dataDir)
 
 	// The system database is a file in the temp data directory, the same as the
@@ -132,6 +137,7 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	}
 
 	p := services.NewFromDB(log, cfg, sysDB, tc.Clock(), plugins...)
+	p.LogBuffer = logBuf
 
 	// Override unixepoch() in all per-user plugin DBs too.
 	p.Plugins.SetConnectHooks(clockHook)
