@@ -1,6 +1,6 @@
 module git.duckfam.us/jj-software/cog
 
-go 1.25.0
+go 1.26.0
 
 tool (
 	git.duckfam.us/jj-software/cog/internal/cmd/dev
