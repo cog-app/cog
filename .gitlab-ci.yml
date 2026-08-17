@@ -3,6 +3,13 @@ stages:
   - build
   - deploy
 
+# interruptible below only takes effect if pipelines are actually
+# auto-cancelled. Declared in-file rather than relying on the project's
+# "Auto-cancel redundant pipelines" toggle, so it is version controlled.
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+
 default:
   interruptible: true
 
