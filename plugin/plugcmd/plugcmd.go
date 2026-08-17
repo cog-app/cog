@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -24,6 +25,8 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/plugpb"
 	"git.duckfam.us/jj-software/cog/vfs"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Run starts a gRPC server for the given plugin on the unix socket path
@@ -40,12 +43,52 @@ func Run(p cogplugin.Plugin) {
 		log.Fatalf("listen %s: %v", socketPath, err)
 	}
 
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(recoverUnary),
+		grpc.ChainStreamInterceptor(recoverStream),
+	)
 	plugpb.RegisterPluginServiceServer(srv, &pluginServer{plugin: p})
 
 	if err := srv.Serve(lis); err != nil {
 		log.Fatalf("grpc serve: %v", err)
 	}
+}
+
+// recoverUnary turns a panic in a plugin handler into an error for the host.
+//
+// Without it the panic unwinds out of the gRPC handler and kills the plugin
+// process. The host is still holding the socket path that process was listening
+// on, so every later request fails with "connection refused" until the whole
+// server restarts — one bad request takes the app down for good. The host gives
+// in-process plugins the same protection; this is the out-of-process half.
+//
+// A panic in a goroutine the plugin starts itself is still fatal: nothing here
+// can see it. Plugins must recover in their own goroutines.
+func recoverUnary(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			logPanic(info.FullMethod, rec)
+			err = status.Errorf(codes.Internal, "plugin panic: %v", rec)
+		}
+	}()
+	return handler(ctx, req)
+}
+
+// recoverStream is recoverUnary for the streaming methods (Register).
+func recoverStream(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			logPanic(info.FullMethod, rec)
+			err = status.Errorf(codes.Internal, "plugin panic: %v", rec)
+		}
+	}()
+	return handler(srv, ss)
+}
+
+// logPanic writes the panic and its stack to stderr, which the host captures
+// into its own log.
+func logPanic(method string, rec any) {
+	log.Printf("panic in plugin handler %s: %v\n%s", method, rec, debug.Stack())
 }
 
 // pluginServer implements plugpb.PluginServiceServer by delegating to a cogplugin.Plugin.
