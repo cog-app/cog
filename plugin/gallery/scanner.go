@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/vfs"
 
 	_ "golang.org/x/image/webp"
@@ -105,15 +106,15 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	}
 	var filesDB *sql.DB
 	if p.isWorker {
-		// Worker: open files DB directly (read-only for scan, avoids search hooks).
-		filesPath := filepath.Join(p.ctx.DataDir(), username, "app_data", "files", "plugin.db")
-		filesDB, err = sql.Open("sqlite3", filesPath+"?_journal_mode=WAL&_foreign_keys=on&mode=ro")
+		// The worker only reads the file index, and must not take the search
+		// hooks: it runs beside the server, which holds the index files.
+		filesDB, err = p.ctx.PluginDB(username, plugin.OfPlugin("files"), plugin.ReadOnly, plugin.NoHooks)
 		if err != nil {
 			return nil, fmt.Errorf("files db: %w", err)
 		}
 		defer filesDB.Close()
 	} else {
-		filesDB, err = p.files.DB(username)
+		filesDB, err = p.ctx.PluginDB(username, plugin.OfPlugin("files"))
 		if err != nil {
 			return nil, fmt.Errorf("files db: %w", err)
 		}

@@ -97,7 +97,7 @@ func (h *Pages) PhotoView(w http.ResponseWriter, r *http.Request) {
 	isFavorite := false
 	if h.plugin.files != nil {
 		username := plugin.Username(r)
-		if filesDB, err := h.plugin.files.DB(username); err == nil {
+		if filesDB, err := h.plugin.ctx.PluginDB(username, plugin.OfPlugin("files")); err == nil {
 			var fav int
 			filesDB.QueryRow(`SELECT favorite FROM files WHERE id = ?`, m.FileID).Scan(&fav)
 			isFavorite = fav == 1
@@ -830,7 +830,7 @@ func (h *Pages) SaveScanFolders(w http.ResponseWriter, r *http.Request) {
 // ScanFoldersPreview returns an HTMX partial showing which folders match the given patterns.
 func (h *Pages) ScanFoldersPreview(w http.ResponseWriter, r *http.Request) {
 	username := plugin.Username(r)
-	filesDB, err := h.plugin.files.DB(username)
+	filesDB, err := h.plugin.ctx.PluginDB(username, plugin.OfPlugin("files"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -996,7 +996,7 @@ func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
 	var media []Media
 	starredCount := 0
 	if h.plugin.files != nil {
-		if filesDB, err := h.plugin.files.DB(username); err == nil {
+		if filesDB, err := h.plugin.ctx.PluginDB(username, plugin.OfPlugin("files")); err == nil {
 			fileIDs, _ := StarredFileIDs(filesDB)
 			media, _ = StarredMedia(db, fileIDs)
 			starredCount = len(media)
@@ -1028,7 +1028,7 @@ func (h *Pages) TogglePhotoStar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	username := plugin.Username(r)
-	filesDB, err := h.plugin.files.DB(username)
+	filesDB, err := h.plugin.ctx.PluginDB(username, plugin.OfPlugin("files"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

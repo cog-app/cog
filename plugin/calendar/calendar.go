@@ -36,8 +36,18 @@ func New() *Plugin {
 
 func (p *Plugin) ID() string { return PluginID }
 
+// DB returns the user's database for this plugin.
+//
+// The host owns the database: where it lives, how it is opened, and applying
+// the schema registered in Register. This is a name for it, not a place that
+// does any of that work.
+func (p *Plugin) DB(username string) (*sql.DB, error) {
+	return p.ctx.PluginDB(username)
+}
+
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	ctx.RegisterSchema(sqlFS)
 	p.log = ctx.Logger()
 
 	ctx.RegisterNavItem(plugin.NavItem{Label: "Calendar", URL: "/apps/calendar", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`})
@@ -166,18 +176,6 @@ func (p *Plugin) CheckCalendarAccess(userID, calendarUID string) (uint32, string
 		return decision.EffectivePerms, decision.OwnerUserID, nil
 	}
 	return 0, "", nil
-}
-
-// DB returns the calendar plugin database for a user, running migrations if needed.
-func (p *Plugin) DB(username string) (*sql.DB, error) {
-	db, err := p.ctx.PluginDB(username)
-	if err != nil {
-		return nil, err
-	}
-	if err := plugin.Migrate(db, sqlFS); err != nil {
-		return nil, fmt.Errorf("migrate calendar db for %s: %w", username, err)
-	}
-	return db, nil
 }
 
 // Notification represents a pending or fired reminder notification.

@@ -74,6 +74,9 @@ const (
 // Re-export functions from the public plugin package.
 var (
 	Migrate              = cogplugin.Migrate
+	ReadOnly             = cogplugin.ReadOnly
+	NoHooks              = cogplugin.NoHooks
+	OfPlugin             = cogplugin.OfPlugin
 	CSRFTokenFromContext = cogplugin.CSRFTokenFromContext
 	UserFromContext      = cogplugin.UserFromContext
 	WithCSRFToken        = cogplugin.WithCSRFToken

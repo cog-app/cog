@@ -49,8 +49,18 @@ func New() *Plugin {
 
 func (p *Plugin) ID() string { return PluginID }
 
+// DB returns the user's database for this plugin.
+//
+// The host owns the database: where it lives, how it is opened, and applying
+// the schema registered in Register. This is a name for it, not a place that
+// does any of that work.
+func (p *Plugin) DB(username string) (*sql.DB, error) {
+	return p.ctx.PluginDB(username)
+}
+
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	ctx.RegisterSchema(sqlFS)
 	p.log = ctx.Logger()
 
 	ctx.RegisterNavItem(plugin.NavItem{
@@ -119,18 +129,6 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 
 func (p *Plugin) Start(ctx context.Context) error { return nil }
 func (p *Plugin) Stop() error                     { return nil }
-
-// DB returns the recipes plugin database for a user, running migrations if needed.
-func (p *Plugin) DB(username string) (*sql.DB, error) {
-	db, err := p.ctx.PluginDB(username)
-	if err != nil {
-		return nil, err
-	}
-	if err := plugin.Migrate(db, sqlFS); err != nil {
-		return nil, fmt.Errorf("migrate recipes db for %s: %w", username, err)
-	}
-	return db, nil
-}
 
 // imagesDir returns the path to the recipe images directory for a user.
 func (p *Plugin) imagesDir(username string) string {

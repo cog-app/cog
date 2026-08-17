@@ -3,12 +3,13 @@ package plugcmd
 import (
 	"database/sql"
 	"encoding/base64"
-	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
 
+	"git.duckfam.us/jj-software/cog/internal/db"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -46,40 +47,44 @@ func newTrustedRegistrar(base *capturingRegistrar) *trustedRegistrar {
 	}
 }
 
-func (t *trustedRegistrar) openDB(path string) (*sql.DB, error) {
+// openDB opens a database using the same layout, connection settings, and
+// migrations the in-process host uses. A trusted plugin runs in its own
+// process, so it cannot be handed the host's handle — sharing the
+// implementation is the most that can be shared, and it is what keeps an
+// out-of-process plugin from drifting into a different set of rules.
+func (t *trustedRegistrar) openDB(path string, schema fs.FS, opts cogplugin.DBOptions) (*sql.DB, error) {
+	if opts.ReadOnly || opts.NoHooks {
+		return db.OpenPluginDB(path, schema, opts.ReadOnly)
+	}
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if db, ok := t.dbs[path]; ok {
-		return db, nil
+	if cached, ok := t.dbs[path]; ok {
+		return cached, nil
 	}
 
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, fmt.Errorf("create db dir: %w", err)
-	}
-
-	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000")
-	if err != nil {
-		return nil, fmt.Errorf("open db %s: %w", path, err)
-	}
-
-	t.dbs[path] = db
-	return db, nil
-}
-
-func (t *trustedRegistrar) PluginDB(username string) (*sql.DB, error) {
-	path := filepath.Join(t.dataDir, username, "app_data", t.pluginID, "plugin.db")
-	db, err := t.openDB(path)
+	sdb, err := db.OpenPluginDB(path, schema, false)
 	if err != nil {
 		return nil, err
 	}
-	return db, nil
+
+	t.dbs[path] = sdb
+	return sdb, nil
+}
+
+func (t *trustedRegistrar) PluginDB(username string, opts ...cogplugin.DBOption) (*sql.DB, error) {
+	o := cogplugin.ApplyDBOptions(opts)
+	pluginID := t.pluginID
+	if o.PluginID != "" {
+		pluginID = o.PluginID
+	}
+	return t.openDB(db.PluginDBPath(t.dataDir, username, pluginID), t.schema, o)
 }
 
 func (t *trustedRegistrar) RootDB() (*sql.DB, error) {
 	path := filepath.Join(t.dataDir, "app_data", t.pluginID, "root.db")
-	return t.openDB(path)
+	return t.openDB(path, nil, cogplugin.DBOptions{})
 }
 
 func (t *trustedRegistrar) UserFilesDir(username string) string {

@@ -20,8 +20,13 @@ var ErrQuotaExceeded = errors.New("quota exceeded")
 type PluginContext interface {
 	Registrar
 
-	// PluginDB returns the per-user plugin database, auto-scoped to the current plugin ID.
-	PluginDB(username string) (*sql.DB, error)
+	// PluginDB returns the per-user plugin database, auto-scoped to the current
+	// plugin ID, migrated to the schema given to RegisterSchema.
+	//
+	// The host owns where the database lives and how it is opened. Plugins that
+	// build their own path or connection string are betting on the database
+	// being a local SQLite file, which is only true for some deployments.
+	PluginDB(username string, opts ...DBOption) (*sql.DB, error)
 	// UserFilesDir returns the path to the user's files directory on the local
 	// filesystem. Deprecated: prefer UserVFS for mount-aware file access.
 	UserFilesDir(username string) string

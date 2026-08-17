@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"sync"
 
+	"golang.org/x/sync/singleflight"
+
+	cogdb "git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/internal/query"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
@@ -39,6 +42,36 @@ type Manager struct {
 
 	// Propagator handles indexing shared resources into recipients' indices.
 	Propagator *Propagator
+
+	// drainer moves captured row changes into the per-user collectors.
+	drainer *drainer
+
+	// opening collapses concurrent opens of the same user index into one.
+	opening singleflight.Group
+
+	// background tracks work started on the manager's behalf — currently the
+	// lazy index opens kicked off by write hooks. Stop waits for it: an
+	// untracked open goes on creating index files and querying databases
+	// after everything it depends on has been torn down.
+	background sync.WaitGroup
+	stopped    bool
+}
+
+// goBackground runs f unless the manager is stopping, and keeps Stop waiting
+// for it if it is not.
+func (m *Manager) goBackground(f func()) {
+	m.mu.Lock()
+	if m.stopped {
+		m.mu.Unlock()
+		return
+	}
+	m.background.Add(1)
+	m.mu.Unlock()
+
+	go func() {
+		defer m.background.Done()
+		f()
+	}()
 }
 
 // NewManager creates a manager. Call SetSystemDB and Start to initialize.
@@ -91,51 +124,49 @@ func (m *Manager) pluginSchemas() map[string]*query.Schema {
 	return out
 }
 
-// SystemHook returns a hook function for the system database that feeds
-// changes into the system collector.
+// SystemHook returns a hook function for the system database.
+//
+// Like the per-user hook it only nudges: the change itself is captured by a
+// trigger inside the writing transaction, and the drainer moves it.
 func (m *Manager) SystemHook() func(op int, db, table string, rowid int64) {
 	return func(op int, dbName, table string, rowid int64) {
-		if m.systemCollector == nil {
-			return
+		if m.drainer != nil {
+			m.drainer.nudgeSystem()
 		}
-		m.systemCollector.Send(Change{
-			Op:    sqliteOpToOp(op),
-			Table: table,
-			RowID: rowid,
-		})
 	}
 }
 
 // UserDBHook returns a hook function for a per-user plugin database.
 //
-// The hook is invoked synchronously inside the SQLite write path; doing any
-// SQL here (via FullSync etc.) would deadlock the per-user DB. So this hook
-// only forwards changes when the user's index is already open. If it is not,
-// initialization is kicked off in a background goroutine — that init's
-// FullSync sweeps the same row we just dropped, so no change is lost.
+// The hook carries no data: it only tells the drainer there is something worth
+// draining now. What changed is already recorded in the database's own queue
+// by a trigger, inside the writing transaction. That makes the hook an
+// optimisation on drain latency, so indexing still works for a writer in
+// another process or a backend with no hooks at all.
+//
+// It runs synchronously inside the SQLite write path and must not touch the
+// database: the change it is about has not committed yet, and querying the
+// same connection would deadlock.
 func (m *Manager) UserDBHook(username, pluginID string) func(op int, db, table string, rowid int64) {
 	return func(op int, dbName, table string, rowid int64) {
 		m.mu.Lock()
-		us, ok := m.userIndices[username]
+		_, ok := m.userIndices[username]
 		m.mu.Unlock()
 
 		if !ok {
-			// Index not opened yet; init asynchronously and drop this change.
-			// ensureUserIndex performs a FullSync on first open, which will
-			// pick up the row we just saw.
-			go func() {
+			// Index not open yet; open it in the background. Its full sync
+			// covers whatever is queued, so nothing is lost by returning here.
+			m.goBackground(func() {
 				if _, err := m.ensureUserIndex(username); err != nil {
 					m.log.Error("lazy open user index failed", "user", username, "err", err)
 				}
-			}()
+			})
 			return
 		}
 
-		us.collector.Send(Change{
-			Op:    sqliteOpToOp(op),
-			Table: table,
-			RowID: rowid,
-		})
+		if m.drainer != nil {
+			m.drainer.nudge(username, pluginID)
+		}
 	}
 }
 
@@ -154,10 +185,20 @@ func (m *Manager) Start(ctx context.Context) error {
 	}
 
 	m.systemCollector = NewCollector(m.log, m.systemIndex, func() *sql.DB { return m.sysDB })
-	m.systemCollector.RegisterSource(UserSource{})
-	m.systemCollector.RegisterSource(GroupSource{})
-	m.systemCollector.RegisterSource(VolumeSource{})
+	sysSources := []SearchSource{UserSource{}, GroupSource{}, VolumeSource{}}
+	var sysTables []string
+	for _, src := range sysSources {
+		m.systemCollector.RegisterSource(src)
+		sysTables = append(sysTables, src.Tables()...)
+	}
 	m.systemCollector.Start(ctx)
+
+	// The system database goes through the same queue as the per-user ones, so
+	// its index survives a crash between write and index, and a second replica
+	// can pick up writes this one did not make.
+	if err := cogdb.EnsureChangeCapture(m.sysDB, sysTables); err != nil {
+		return fmt.Errorf("system change capture: %w", err)
+	}
 
 	// Full sync on startup.
 	if err := m.systemCollector.FullSync(); err != nil {
@@ -168,6 +209,9 @@ func (m *Manager) Start(ctx context.Context) error {
 		m.Propagator.Start()
 	}
 
+	m.drainer = newDrainer(m)
+	go m.drainer.run(m.ctx)
+
 	return nil
 }
 
@@ -176,7 +220,18 @@ func (m *Manager) Stop() {
 	if m.Propagator != nil {
 		m.Propagator.Stop()
 	}
+	m.mu.Lock()
+	m.stopped = true
+	m.mu.Unlock()
 	m.cancel()
+
+	// The drainer feeds the collectors and queries the plugin databases, and a
+	// lazy open creates index files and runs a full sync. Both have to be
+	// finished before any of that is torn down.
+	if m.drainer != nil {
+		m.drainer.wait()
+	}
+	m.background.Wait()
 
 	if m.systemCollector != nil {
 		m.systemCollector.Stop()
@@ -228,14 +283,46 @@ func (m *Manager) DeleteSharedDocument(username, docID string) error {
 	return us.index.Batch(nil, []string{docID})
 }
 
+// ensureUserIndex opens a user's index, or returns the open one.
+//
+// Opening is done one caller at a time per user. Bleve takes a file lock on
+// the index and holds it, so two goroutines opening the same index do not race
+// and lose — the loser blocks on the lock forever, and so does everything that
+// asks for that index afterwards. It is easy to arrive here concurrently: a
+// burst of writes to a user with no open index gives every write's hook its
+// own goroutine, all headed for the same file.
 func (m *Manager) ensureUserIndex(username string) (*userSearch, error) {
-	// Fast path: lock just to read.
 	m.mu.Lock()
 	if us, ok := m.userIndices[username]; ok {
 		m.mu.Unlock()
 		return us, nil
 	}
 	m.mu.Unlock()
+
+	us, err, _ := m.opening.Do(username, func() (any, error) {
+		return m.openUserIndex(username)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return us.(*userSearch), nil
+}
+
+func (m *Manager) openUserIndex(username string) (*userSearch, error) {
+	// Re-check: a caller that shared an in-flight open returns above, but a
+	// caller that arrives just after one finishes gets its own turn here.
+	m.mu.Lock()
+	if us, ok := m.userIndices[username]; ok {
+		m.mu.Unlock()
+		return us, nil
+	}
+	stopped := m.stopped
+	m.mu.Unlock()
+
+	if stopped {
+		return nil, fmt.Errorf("search manager is stopped")
+	}
 
 	indexPath := filepath.Join(m.dataDir, username, ".search", "user.bleve")
 	schemas := m.pluginSchemas()

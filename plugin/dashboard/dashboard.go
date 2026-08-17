@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -34,8 +33,18 @@ func New() *Plugin {
 
 func (p *Plugin) ID() string { return PluginID }
 
+// DB returns the user's database for this plugin.
+//
+// The host owns the database: where it lives, how it is opened, and applying
+// the schema registered in Register. This is a name for it, not a place that
+// does any of that work.
+func (p *Plugin) DB(username string) (*sql.DB, error) {
+	return p.ctx.PluginDB(username)
+}
+
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	ctx.RegisterSchema(sqlFS)
 	ctx.RegisterNavItem(plugin.NavItem{Label: "Dashboard", URL: "/", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>`})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Your Groups",
@@ -83,21 +92,6 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, username string)
 
 func (p *Plugin) Start(ctx context.Context) error { return nil }
 func (p *Plugin) Stop() error                     { return nil }
-
-// DB returns the dashboard plugin database for a user, running migrations if needed.
-func (p *Plugin) DB(username string) (*sql.DB, error) {
-	if p.ctx == nil {
-		return nil, fmt.Errorf("no context")
-	}
-	db, err := p.ctx.PluginDB(username)
-	if err != nil {
-		return nil, err
-	}
-	if err := plugin.Migrate(db, sqlFS); err != nil {
-		return nil, fmt.Errorf("migrate dashboard db for %s: %w", username, err)
-	}
-	return db, nil
-}
 
 // pageData builds the common PageData for dashboard pages.
 func (p *Plugin) pageData(r *http.Request, title string) ui.PageData {

@@ -73,6 +73,17 @@ type Registrar interface {
 	RegisterSettingsPage(page SettingsPage)
 	// RegisterCommand declares a user-facing CLI command available in the shell.
 	RegisterCommand(def CommandDef)
+	// RegisterSchema declares the plugin's database schema. The filesystem must
+	// hold sql/schema.sql and may hold sql/migration*.sql files.
+	//
+	// The host applies these to every per-user database before handing it out,
+	// so a plugin never migrates for itself and cannot be handed an unmigrated
+	// database no matter which code path opens it first.
+	//
+	// Registering is optional only in the sense that a plugin may manage its
+	// own schema with Migrate. Skip it and the host hands out an empty
+	// database, which is the ordering hazard this exists to remove.
+	RegisterSchema(fsys fs.FS)
 }
 
 // SettingsPage describes a settings page registered by a plugin.

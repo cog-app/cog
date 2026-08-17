@@ -94,8 +94,18 @@ func (p *Plugin) WithOrchestrator(fn OrchestratorRunner) *Plugin {
 
 func (p *Plugin) ID() string { return PluginID }
 
+// DB returns the user's database for this plugin.
+//
+// The host owns the database: where it lives, how it is opened, and applying
+// the schema registered in Register. This is a name for it, not a place that
+// does any of that work.
+func (p *Plugin) DB(username string) (*sql.DB, error) {
+	return p.ctx.PluginDB(username)
+}
+
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	ctx.RegisterSchema(sqlFS)
 	p.log = ctx.Logger()
 	ctx.RegisterNavItem(plugin.NavItem{
 		Label: "Feed",
@@ -169,7 +179,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	})
 
 	// NextCloud News API compatibility + content-hashed static assets.
-	newsAPI := ncapi.New(p)
+	newsAPI := ncapi.New(ncapiBackend{p})
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		priv.RegisterRoute("/index.php/apps/news/api/", newsAPI)
 
@@ -228,6 +238,16 @@ func (p *Plugin) DataDir() string {
 	return p.ctx.DataDir()
 }
 
+// ncapiBackend adapts the plugin to the narrow interface the NextCloud News
+// API needs, so ncapi depends on two methods rather than the whole plugin.
+type ncapiBackend struct{ p *Plugin }
+
+func (b ncapiBackend) DB(username string) (*sql.DB, error) { return b.p.DB(username) }
+
+func (b ncapiBackend) TriggerFetch(username string, subID int64) {
+	b.p.TriggerFetch(username, subID)
+}
+
 // TriggerFetch nudges the orchestrator to process a user (or single subscription) before its next tick.
 // SubID=0 means "scan all subscriptions for this user".
 func (p *Plugin) TriggerFetch(username string, subID int64) {
@@ -239,18 +259,6 @@ func (p *Plugin) TriggerFetch(username string, subID int64) {
 			p.log.Debug("feed: TriggerFetch poke queue full", "username", username, "subID", subID)
 		}
 	}
-}
-
-// DB returns the feed plugin database for a user, running migrations if needed.
-func (p *Plugin) DB(username string) (*sql.DB, error) {
-	db, err := p.ctx.PluginDB(username)
-	if err != nil {
-		return nil, err
-	}
-	if err := plugin.Migrate(db, sqlFS); err != nil {
-		return nil, fmt.Errorf("migrate feed db for %s: %w", username, err)
-	}
-	return db, nil
 }
 
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {

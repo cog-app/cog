@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"fmt"
 	"io"
 	"log/slog"
 
@@ -31,8 +30,18 @@ func New() *Plugin {
 
 func (p *Plugin) ID() string { return PluginID }
 
+// DB returns the user's database for this plugin.
+//
+// The host owns the database: where it lives, how it is opened, and applying
+// the schema registered in Register. This is a name for it, not a place that
+// does any of that work.
+func (p *Plugin) DB(username string) (*sql.DB, error) {
+	return p.ctx.PluginDB(username)
+}
+
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
+	ctx.RegisterSchema(sqlFS)
 	p.log = ctx.Logger()
 
 	ctx.RegisterNavItem(plugin.NavItem{Label: "Tasks", URL: "/apps/tasks", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>`})
@@ -90,16 +99,4 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) e
 	}
 	tasks, _ := UpcomingTasks(db, 5)
 	return upcomingTasksWidget(tasks).Render(ctx, w)
-}
-
-// DB returns the tasks plugin database for a user, running migrations if needed.
-func (p *Plugin) DB(username string) (*sql.DB, error) {
-	db, err := p.ctx.PluginDB(username)
-	if err != nil {
-		return nil, err
-	}
-	if err := plugin.Migrate(db, sqlFS); err != nil {
-		return nil, fmt.Errorf("migrate tasks db for %s: %w", username, err)
-	}
-	return db, nil
 }

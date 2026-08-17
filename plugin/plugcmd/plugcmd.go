@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"log/slog"
 	"net"
@@ -149,6 +150,14 @@ type capturingRegistrar struct {
 	stream   grpc.ServerStreamingServer[plugpb.RegistrationEvent]
 	server   *pluginServer
 	keySeq   int
+	schema   fs.FS
+}
+
+// RegisterSchema records the plugin's schema. A trusted plugin applies it when
+// opening a database; an untrusted one has no database access at all, so the
+// registration is kept but unused until the protocol can carry it host-side.
+func (r *capturingRegistrar) RegisterSchema(fsys fs.FS) {
+	r.schema = fsys
 }
 
 func (r *capturingRegistrar) nextKey(prefix string) string {
@@ -260,7 +269,7 @@ func (r *capturingRegistrar) RegisterSearchSource(def cogplugin.SearchSourceDef)
 
 // --- PluginContext service stubs (not available for gRPC plugins) ---
 
-func (r *capturingRegistrar) PluginDB(username string) (*sql.DB, error) {
+func (r *capturingRegistrar) PluginDB(username string, opts ...cogplugin.DBOption) (*sql.DB, error) {
 	return nil, fmt.Errorf("PluginDB not available for gRPC plugins")
 }
 func (r *capturingRegistrar) UserFilesDir(username string) string { return "" }

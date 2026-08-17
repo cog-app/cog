@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync/atomic"
+	"time"
 )
 
 // ShareRecord is a minimal representation of a share for propagation purposes,
@@ -36,12 +37,33 @@ type Propagator struct {
 	ResolveRecipientUsernames func(rec *ShareRecord) []string
 	// LookupUsername maps a user ID to a username.
 	LookupUsername func(userID string) (string, error)
+	// ResolveSourceName maps a share's resource type ("notes:note") to the
+	// name the indexer files its documents under ("notes:notes"). The two are
+	// not the same string: a share names a resource type, while a document is
+	// named after the table the rows live in. Without this the propagator
+	// looks up a document ID nothing ever wrote.
+	ResolveSourceName func(resourceType string) (string, bool)
 }
 
 type propagateEvent struct {
-	Kind   string // "create", "delete"
-	Record *ShareRecord
+	Kind    string // "create", "delete"
+	Record  *ShareRecord
+	attempt int
 }
+
+// RetryDelay is how long propagation waits before looking again for a
+// document that was not in the owner's index yet. Exported for tests.
+var RetryDelay = 250 * time.Millisecond
+
+// maxPropagateAttempts bounds those retries.
+//
+// This is defensive rather than demonstrated: indexing is asynchronous, so a
+// share created moments after its resource can in principle be processed
+// before the document exists, and nothing revisits a share afterwards — the
+// recipient would simply never get it. Attempts to reproduce that ordering in
+// tests did not manage it, so treat this as insurance against a miss under
+// load rather than a fix for an observed failure.
+const maxPropagateAttempts = 8
 
 // NewPropagator creates a propagator wired to the search manager.
 func NewPropagator(log *slog.Logger, mgr *Manager) *Propagator {
@@ -106,7 +128,7 @@ func (p *Propagator) run() {
 		case ev := <-p.ch:
 			switch ev.Kind {
 			case "create":
-				p.handleCreate(ev.Record)
+				p.handleCreate(ev)
 			case "delete":
 				p.handleDelete(ev.Record)
 			}
@@ -117,7 +139,7 @@ func (p *Propagator) run() {
 				case ev := <-p.ch:
 					switch ev.Kind {
 					case "create":
-						p.handleCreate(ev.Record)
+						p.handleCreate(ev)
 					case "delete":
 						p.handleDelete(ev.Record)
 					}
@@ -129,7 +151,8 @@ func (p *Propagator) run() {
 	}
 }
 
-func (p *Propagator) handleCreate(rec *ShareRecord) {
+func (p *Propagator) handleCreate(ev propagateEvent) {
+	rec := ev.Record
 	if p.ResolveRecipientUsernames == nil || p.LookupUsername == nil {
 		return
 	}
@@ -150,7 +173,7 @@ func (p *Propagator) handleCreate(rec *ShareRecord) {
 	// Try to fetch an existing document from the owner's index.
 	ownerDoc, err := p.fetchOwnerDocument(ownerUsername, rec.ResourceType, rec.ResourceID)
 	if err != nil {
-		p.log.Debug("propagate create: no owner document", "resource", rec.ResourceType+":"+rec.ResourceID, "err", err)
+		p.retryCreate(ev, err)
 		return
 	}
 
@@ -166,6 +189,33 @@ func (p *Propagator) handleCreate(rec *ShareRecord) {
 			p.log.Error("propagate create: index", "user", username, "err", err)
 		}
 	}
+}
+
+// retryCreate looks again shortly, up to a limit. A share created in the same
+// breath as the resource itself arrives before indexing has caught up.
+func (p *Propagator) retryCreate(ev propagateEvent, cause error) {
+	resource := ev.Record.ResourceType + ":" + ev.Record.ResourceID
+	if ev.attempt+1 >= maxPropagateAttempts {
+		p.log.Warn("propagate create: giving up on owner document",
+			"resource", resource, "attempts", ev.attempt+1, "err", cause)
+		return
+	}
+
+	ev.attempt++
+	p.log.Debug("propagate create: owner document not indexed yet, retrying",
+		"resource", resource, "attempt", ev.attempt)
+
+	time.AfterFunc(RetryDelay, func() {
+		if p.stopped.Load() {
+			return
+		}
+		select {
+		case p.ch <- ev:
+		case <-p.quit:
+		default:
+			p.log.Warn("propagator channel full, dropping retry", "resource", resource)
+		}
+	})
 }
 
 func (p *Propagator) handleDelete(rec *ShareRecord) {
@@ -203,7 +253,14 @@ func (p *Propagator) fetchOwnerDocument(ownerUsername, resourceType, resourceID 
 		return nil, err
 	}
 
-	docID := resourceType + ":" + resourceID
+	source := resourceType
+	if p.ResolveSourceName != nil {
+		if name, ok := p.ResolveSourceName(resourceType); ok {
+			source = name
+		}
+	}
+
+	docID := source + ":" + resourceID
 	doc, err := us.index.GetDocument(docID)
 	if err != nil {
 		return nil, fmt.Errorf("document not found: %s", docID)

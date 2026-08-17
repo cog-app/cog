@@ -192,29 +192,78 @@ func (r *Registry) Stop() {
 	}
 }
 
-// PluginDB returns (or opens) the per-user plugin database.
-// Path: {dataDir}/{username}/app_data/{pluginID}/plugin.db
+// PluginDB returns (or opens) the per-user plugin database, migrated to the
+// schema the plugin registered.
+//
+// Handles for the default options are cached and shared. Handles opened with
+// options are not: they are for one-off work such as a bulk read, and caching
+// them would hand the next caller a database with the wrong instrumentation.
+// Those are the caller's to close.
 func (r *Registry) PluginDB(username, pluginID string) (*sql.DB, error) {
+	return r.PluginDBWith(username, pluginID, cogplugin.DBOptions{})
+}
+
+// PluginDBWith is PluginDB with explicit open options.
+func (r *Registry) PluginDBWith(username, pluginID string, opts cogplugin.DBOptions) (*sql.DB, error) {
+	if opts.PluginID != "" {
+		pluginID = opts.PluginID
+	}
+	dbPath := db.PluginDBPath(r.dataDir, username, pluginID)
+	schema := r.schemaFor(pluginID)
+
+	if opts.ReadOnly || opts.NoHooks {
+		var hooks []db.ConnectHook
+		if !opts.NoHooks {
+			hooks = r.connectHooksFor(username, pluginID)
+		}
+		return db.OpenPluginDB(dbPath, schema, opts.ReadOnly, hooks...)
+	}
+
 	key := username + ":" + pluginID
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if db, ok := r.dbs[key]; ok {
-		return db, nil
+	if cached, ok := r.dbs[key]; ok {
+		return cached, nil
 	}
 
-	dir := filepath.Join(r.dataDir, username, "app_data", pluginID)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return nil, fmt.Errorf("create plugin data dir: %w", err)
-	}
-
-	dbPath := filepath.Join(dir, "plugin.db")
-	pdb, err := r.openDB(dbPath, username, pluginID)
+	pdb, err := db.OpenPluginDB(dbPath, schema, false, r.connectHooksFor(username, pluginID)...)
 	if err != nil {
-		return nil, fmt.Errorf("open plugin db %s: %w", dbPath, err)
+		return nil, err
 	}
+
+	// Assert the change-capture triggers alongside the schema, so a database
+	// cannot exist in a state where writes go unrecorded.
+	if err := db.EnsureChangeCapture(pdb, r.searchTablesFor(pluginID)); err != nil {
+		pdb.Close()
+		return nil, err
+	}
+
 	r.dbs[key] = pdb
 	return pdb, nil
+}
+
+// searchTablesFor returns the tables a plugin's search sources watch.
+func (r *Registry) searchTablesFor(pluginID string) []string {
+	reg, ok := r.registrars[pluginID]
+	if !ok {
+		return nil
+	}
+	tables := make([]string, 0, len(reg.searchSources))
+	for _, src := range reg.searchSources {
+		if src.PrimaryTable != "" {
+			tables = append(tables, src.PrimaryTable)
+		}
+	}
+	return tables
+}
+
+// schemaFor returns the schema a plugin registered, or nil if it registered none.
+func (r *Registry) schemaFor(pluginID string) fs.FS {
+	if reg, ok := r.registrars[pluginID]; ok {
+		return reg.schema
+	}
+	return nil
 }
 
 // UserDB returns (or opens) the per-user database.
@@ -267,11 +316,11 @@ func migrateUserDB(db *sql.DB) error {
 	return err
 }
 
-// openDB opens a SQLite database, composing connect hooks (clock override etc.)
-// with the optional update hook from dbHookFactory.
-func (r *Registry) openDB(path, username, pluginID string) (*sql.DB, error) {
-	var hooks []db.ConnectHook
-	hooks = append(hooks, r.connectHooks...)
+// connectHooksFor returns the per-connection instrumentation for a database:
+// the registry-wide hooks (the test clock) plus search indexing when a user
+// owns the database.
+func (r *Registry) connectHooksFor(username, pluginID string) []db.ConnectHook {
+	hooks := append([]db.ConnectHook(nil), r.connectHooks...)
 	if r.dbHookFactory != nil && username != "" {
 		hook := r.dbHookFactory(username, pluginID)
 		hooks = append(hooks, func(conn *sqlite3.SQLiteConn) error {
@@ -279,10 +328,12 @@ func (r *Registry) openDB(path, username, pluginID string) (*sql.DB, error) {
 			return nil
 		})
 	}
-	if len(hooks) > 0 {
-		return db.OpenWithHooks(path, hooks...)
-	}
-	return sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=on")
+	return hooks
+}
+
+// openDB opens a SQLite database with the standard instrumentation.
+func (r *Registry) openDB(path, username, pluginID string) (*sql.DB, error) {
+	return db.OpenWithHooks(path, r.connectHooksFor(username, pluginID)...)
 }
 
 // SetDBHookFactory sets a factory function for creating SQLite update hooks
@@ -528,12 +579,23 @@ type pluginRegistrar struct {
 	commands      []CommandDef
 	adminCommands []CommandDef
 	settingsPages []SettingsPage
+	schema        fs.FS
 }
 
 // --- PluginContext service methods ---
 
-func (pr *pluginRegistrar) PluginDB(username string) (*sql.DB, error) {
-	return pr.registry.PluginDB(username, pr.pluginID)
+func (pr *pluginRegistrar) PluginDB(username string, opts ...cogplugin.DBOption) (*sql.DB, error) {
+	o := cogplugin.ApplyDBOptions(opts)
+	if o.PluginID != "" && o.PluginID != pr.pluginID {
+		// Reading another plugin's data is an in-process capability: an
+		// out-of-process plugin has no database access at all. It is no wider
+		// than what a plugin holding a reference to another plugin can do
+		// directly, and it saves the caller knowing where the file lives.
+		if _, ok := pr.registry.registrars[o.PluginID]; !ok {
+			return nil, fmt.Errorf("plugin %q: no such plugin %q", pr.pluginID, o.PluginID)
+		}
+	}
+	return pr.registry.PluginDBWith(username, pr.pluginID, o)
 }
 
 func (pr *pluginRegistrar) UserFilesDir(username string) string {
@@ -882,6 +944,10 @@ func (pr *pluginRegistrar) RegisterCommand(def CommandDef) {
 
 func (pr *pluginRegistrar) RegisterAdminCommand(def CommandDef) {
 	pr.adminCommands = append(pr.adminCommands, def)
+}
+
+func (pr *pluginRegistrar) RegisterSchema(fsys fs.FS) {
+	pr.schema = fsys
 }
 
 func (pr *pluginRegistrar) RootDB() (*sql.DB, error) {

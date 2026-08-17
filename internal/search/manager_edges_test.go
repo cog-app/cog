@@ -40,14 +40,22 @@ func TestSystemHook_RoutesIntoSystemCollector(t *testing.T) {
 	sysDB.Exec(`INSERT INTO users (id, username, display_name) VALUES ('u1', 'eve', 'Eve')`)
 	hook(18 /*SQLITE_INSERT*/, "main", "users", 1)
 
-	time.Sleep(300 * time.Millisecond)
-	res, err := mgr.SearchSystem("eve", 10, 0)
-	if err != nil {
-		t.Fatal(err)
+	// The hook only nudges; the row travels through the queue and then a
+	// collector batch, so wait for the outcome rather than for a duration that
+	// happens to match the sum of both.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		res, err := mgr.SearchSystem("eve", 10, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Total > 0 {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
-	if res.Total == 0 {
-		t.Fatal("expected eve to be searchable after hook fired")
-	}
+
+	t.Fatal("expected eve to be searchable after hook fired")
 }
 
 func TestSystemHook_NilCollectorSafe(t *testing.T) {

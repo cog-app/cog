@@ -1,6 +1,6 @@
 module git.duckfam.us/jj-software/cog
 
-go 1.25.0
+go 1.26.0
 
 tool (
 	git.duckfam.us/jj-software/cog/internal/cmd/dev
@@ -37,6 +37,8 @@ require (
 	github.com/yuin/goldmark-highlighting/v2 v2.0.0-20230729083705-37449abec8cc
 	golang.org/x/crypto v0.49.0
 	golang.org/x/image v0.36.0
+	golang.org/x/net v0.51.0
+	golang.org/x/sync v0.22.0
 	google.golang.org/grpc v1.79.1
 	google.golang.org/protobuf v1.36.11
 	mvdan.cc/sh/v3 v3.13.0
@@ -122,8 +124,6 @@ require (
 	github.com/ysmood/leakless v0.9.0 // indirect
 	go.etcd.io/bbolt v1.4.0 // indirect
 	golang.org/x/mod v0.33.0 // indirect
-	golang.org/x/net v0.51.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/term v0.41.0 // indirect
 	golang.org/x/text v0.35.0 // indirect

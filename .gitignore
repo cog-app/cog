@@ -4,6 +4,7 @@
 *.db
 *.db-*
 **/testdata/snapshots/*.actual.png
+**/testdata/snapshots/*.actual.html
 **/testdata/snapshots/*.diff.png
 /verify
 
