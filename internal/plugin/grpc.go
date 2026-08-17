@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"html"
 	"io"
 	"log/slog"
 	"net"
@@ -21,6 +20,7 @@ import (
 
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/plugpb"
+	"git.duckfam.us/jj-software/cog/ui"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -39,6 +39,10 @@ type grpcPlugin struct {
 
 	// spawn starts a fresh process. Held so the supervisor can restart one.
 	spawn func() (*procHandle, error)
+
+	// name resolves the plugin's display name for the error page. It is a
+	// function because the nav label it reads is registered after this exists.
+	name func() string
 
 	quitOnce sync.Once
 	quit     chan struct{} // closed by Stop to end supervision
@@ -223,7 +227,7 @@ func (g *grpcPlugin) proxy(w http.ResponseWriter, r *http.Request, routeKey, res
 	if link == nil {
 		g.log.Warn("request for plugin whose process is down",
 			"plugin", g.id, "method", r.Method, "path", r.URL.Path)
-		g.errorPage(w, http.StatusServiceUnavailable)
+		g.errorPage(w, r, http.StatusServiceUnavailable)
 		return
 	}
 
@@ -231,7 +235,7 @@ func (g *grpcPlugin) proxy(w http.ResponseWriter, r *http.Request, routeKey, res
 	if err != nil {
 		g.log.Error("read request body for plugin",
 			"plugin", g.id, "method", r.Method, "path", r.URL.Path, "err", err)
-		g.errorPage(w, http.StatusBadRequest)
+		g.errorPage(w, r, http.StatusBadRequest)
 		return
 	}
 	headers := make(map[string]*plugpb.HeaderValues, len(r.Header))
@@ -251,7 +255,7 @@ func (g *grpcPlugin) proxy(w http.ResponseWriter, r *http.Request, routeKey, res
 	if err != nil {
 		g.log.Error("plugin request failed",
 			"plugin", g.id, "method", r.Method, "path", r.URL.Path, "err", err)
-		g.errorPage(w, statusForRPCError(err))
+		g.errorPage(w, r, statusForRPCError(err))
 		return
 	}
 
@@ -280,25 +284,48 @@ func statusForRPCError(err error) int {
 // errorPage reports a plugin failure to whoever opened the page. The underlying
 // error is logged rather than rendered: a unix socket path and a gRPC dial
 // message tell a user nothing and leak host layout into the browser.
-func (g *grpcPlugin) errorPage(w http.ResponseWriter, code int) {
-	msg := "This app hit an internal error. Nothing was saved."
-	if code == http.StatusServiceUnavailable {
-		msg = "This app is temporarily unavailable. It is being restarted — try again in a moment."
+func (g *grpcPlugin) errorPage(w http.ResponseWriter, r *http.Request, code int) {
+	name := g.displayName()
+
+	var heading, message, retry string
+	switch code {
+	case http.StatusServiceUnavailable:
 		w.Header().Set("Retry-After", "5")
-	} else if code == http.StatusBadRequest {
-		msg = "This request could not be read."
+		heading = name + " is temporarily unavailable"
+		message = "The app stopped running and is being restarted. This usually takes a few seconds."
+		retry = r.URL.Path
+	case http.StatusBadRequest:
+		heading = name + " could not read that request"
+		message = "Something went wrong sending the request. Try again from the page you came from."
+	default:
+		heading = name + " hit an error"
+		message = "The app failed to handle this request. The details are in the server log."
+		retry = r.URL.Path
 	}
+
+	// Only a GET is safe to offer as a retry link; repeating anything else
+	// would resubmit whatever the user just did.
+	if r.Method != http.MethodGet {
+		retry = ""
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(code)
-	fmt.Fprintf(w, `<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>%[1]s unavailable</title></head>
-<body>
-<h1>%[1]s</h1>
-<p>%[2]s</p>
-</body>
-</html>
-`, html.EscapeString(g.id), html.EscapeString(msg))
+	if err := ui.AppErrorPage(name, heading, message, retry).Render(r.Context(), w); err != nil {
+		g.log.Error("render plugin error page", "plugin", g.id, "err", err)
+	}
+}
+
+// displayName is the plugin's nav label, falling back to its ID. It is resolved
+// on each call because a plugin's nav item is registered after the plugin is
+// built.
+func (g *grpcPlugin) displayName() string {
+	if g.name != nil {
+		if n := g.name(); n != "" {
+			return n
+		}
+	}
+	return g.id
 }
 
 // widgetRenderer returns a Widget.Render function that renders via gRPC.
@@ -353,6 +380,7 @@ func (r *Registry) loadProcessPlugin(binaryPath string, trusted bool) error {
 		id:    idResp.Id,
 		log:   r.log,
 		spawn: spawn,
+		name:  func() string { return r.pluginDisplayName(idResp.Id) },
 		quit:  make(chan struct{}),
 		done:  make(chan struct{}),
 		proc:  proc,
