@@ -684,13 +684,11 @@ type HTTPRequest struct {
 	UserId   string `protobuf:"bytes,7,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Username string `protobuf:"bytes,8,opt,name=username,proto3" json:"username,omitempty"`
 	// resource_id is set for resource handler dispatches.
-	ResourceId string `protobuf:"bytes,9,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
-	// The rest of the authenticated user, so the plugin can rebuild the same
-	// request context an in-process plugin is handed.
+	ResourceId  string `protobuf:"bytes,9,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
 	DisplayName string `protobuf:"bytes,10,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	IsAdmin     bool   `protobuf:"varint,11,opt,name=is_admin,json=isAdmin,proto3" json:"is_admin,omitempty"`
-	// csrf_token is the plugin-scoped token the host minted for this session.
-	// A plugin renders it into its forms; it cannot derive it itself.
+	// csrf_token is minted by the host from its secret; a plugin renders it into
+	// its forms but cannot derive it.
 	CsrfToken     string `protobuf:"bytes,12,opt,name=csrf_token,json=csrfToken,proto3" json:"csrf_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

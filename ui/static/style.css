@@ -277,6 +277,11 @@ a:hover {
   margin-bottom: 1.5rem;
 }
 
+/* A card laid out by a grid takes its spacing from the gap, not its own margin. */
+[style*="display:grid"] > .card {
+  margin-bottom: 0;
+}
+
 .card-title {
   font-size: 1.1rem;
   font-weight: 600;
@@ -986,8 +991,10 @@ a:hover {
     height: 20px;
   }
 
-  /* Force widget grid to single column */
-  [style*="grid-template-columns"] {
+  /* Force fixed-column grids (dashboard widgets, recipe form rows) to one
+     column. auto-fill grids are exempt: they already fit themselves to the
+     viewport, and collapsing them gave the gallery one photo per row. */
+  [style*="grid-template-columns"]:not([style*="auto-fill"]) {
     grid-template-columns: 1fr !important;
   }
 

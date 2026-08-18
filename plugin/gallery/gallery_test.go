@@ -192,6 +192,34 @@ func TestGalleryPeoplePage(t *testing.T) {
 	env.Get(t, "/apps/gallery/people", alice.Auth).Status(200)
 }
 
+func TestGalleryPeopleUnnamedFilter(t *testing.T) {
+	env := cogtest.New(t, gallery.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	db, err := env.Providers.Plugins.PluginDB(alice.Username, "gallery")
+	require.NoError(t, err)
+
+	now := time.Now().Unix()
+	_, err = db.Exec(`INSERT INTO media (file_id, file_path, file_etag, mime_type, width, height, date_indexed)
+		VALUES (1, '/Photos/a.jpg', 'etag', 'image/jpeg', 1920, 1080, ?)`, now)
+	require.NoError(t, err)
+
+	// A person only appears in the list once they have a face, so give each one.
+	_, err = db.Exec(`INSERT INTO people (name, visible) VALUES ('Dieter', 1), ('', 1)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO faces (media_id, person_id, x, y, w, h, confidence)
+		VALUES (1, 1, 0.1, 0.1, 0.2, 0.2, 5.0), (1, 2, 0.5, 0.5, 0.2, 0.2, 5.0)`)
+	require.NoError(t, err)
+
+	env.Get(t, "/apps/gallery/people", alice.Auth).Status(200).
+		Contains("All (2)").Contains("Unnamed (1)").
+		Contains("Dieter").Contains("Unknown")
+
+	env.Get(t, "/apps/gallery/people?filter=unnamed", alice.Auth).Status(200).
+		Contains("All (2)").Contains("Unnamed (1)").
+		NotContains("Dieter").Contains("Unknown")
+}
+
 func TestGalleryTagsPage(t *testing.T) {
 	env := cogtest.New(t, gallery.New())
 	alice := env.CreateUser(t, "alice", "pass")
