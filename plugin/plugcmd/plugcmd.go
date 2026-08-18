@@ -96,10 +96,11 @@ type pluginServer struct {
 	plugpb.UnimplementedPluginServiceServer
 	plugin cogplugin.Plugin
 
-	mu       sync.Mutex
-	handlers map[string]http.Handler     // route_key -> handler
-	widgets  map[string]cogplugin.Widget // widget_key -> widget
-	hooks    map[string][]cogplugin.HookCallback
+	mu        sync.Mutex
+	handlers  map[string]http.Handler     // route_key -> handler
+	widgets   map[string]cogplugin.Widget // widget_key -> widget
+	hooks     map[string][]cogplugin.HookCallback
+	registrar cogplugin.PluginContext // the context Register ran with
 }
 
 func (s *pluginServer) GetID(_ context.Context, _ *plugpb.Empty) (*plugpb.IDResponse, error) {
@@ -127,6 +128,10 @@ func (s *pluginServer) Register(_ *plugpb.Empty, stream grpc.ServerStreamingServ
 		reg = base
 	}
 
+	s.mu.Lock()
+	s.registrar = reg
+	s.mu.Unlock()
+
 	return s.plugin.Register(reg)
 }
 
@@ -138,15 +143,17 @@ func (s *pluginServer) Stop(_ context.Context, _ *plugpb.Empty) (*plugpb.Empty, 
 	return &plugpb.Empty{}, s.plugin.Stop()
 }
 
-func (s *pluginServer) HandleHTTPRequest(_ context.Context, req *plugpb.HTTPRequest) (*plugpb.HTTPResponse, error) {
+func (s *pluginServer) HandleHTTPRequest(ctx context.Context, req *plugpb.HTTPRequest) (*plugpb.HTTPResponse, error) {
 	s.mu.Lock()
 	handler, ok := s.handlers[req.RouteKey]
+	reg := s.registrar
 	s.mu.Unlock()
 	if !ok {
 		return &plugpb.HTTPResponse{StatusCode: 404, Body: []byte("handler not found")}, nil
 	}
 
-	// Reconstruct http.Request.
+	// Reconstruct http.Request, context included: a request rebuilt from the
+	// wire alone carries none, and handlers read the user out of it.
 	httpReq := &http.Request{
 		Method: req.Method,
 		URL:    &url.URL{Path: req.Path, RawQuery: req.Query},
@@ -156,6 +163,7 @@ func (s *pluginServer) HandleHTTPRequest(_ context.Context, req *plugpb.HTTPRequ
 	for k, vals := range req.Headers {
 		httpReq.Header[k] = vals.Values
 	}
+	httpReq = httpReq.WithContext(s.requestContext(ctx, req, reg))
 
 	rec := &responseCapture{header: make(http.Header), statusCode: 200}
 	handler.ServeHTTP(rec, httpReq)
@@ -170,6 +178,28 @@ func (s *pluginServer) HandleHTTPRequest(_ context.Context, req *plugpb.HTTPRequ
 		Headers:    respHeaders,
 		Body:       rec.body.Bytes(),
 	}, nil
+}
+
+// requestContext rebuilds what the host's injectPluginContext puts on an
+// in-process request. The database provider is the registrar the plugin
+// registered with, so a trusted plugin gets a real handle and an untrusted one
+// gets the error saying it has none.
+func (s *pluginServer) requestContext(ctx context.Context, req *plugpb.HTTPRequest, reg cogplugin.PluginContext) context.Context {
+	ctx = cogplugin.WithCSRFToken(ctx, req.CsrfToken)
+	if req.Username != "" {
+		ctx = cogplugin.WithUserInfo(ctx, &cogplugin.UserInfo{
+			ID:          req.UserId,
+			Username:    req.Username,
+			DisplayName: req.DisplayName,
+			IsAdmin:     req.IsAdmin,
+		})
+	}
+	if reg != nil {
+		ctx = cogplugin.WithPluginDB(ctx, func(username string) (*sql.DB, error) {
+			return reg.PluginDB(username)
+		})
+	}
+	return ctx
 }
 
 func (s *pluginServer) RenderWidget(_ context.Context, req *plugpb.RenderWidgetRequest) (*plugpb.RenderWidgetResponse, error) {

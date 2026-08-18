@@ -684,7 +684,14 @@ type HTTPRequest struct {
 	UserId   string `protobuf:"bytes,7,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Username string `protobuf:"bytes,8,opt,name=username,proto3" json:"username,omitempty"`
 	// resource_id is set for resource handler dispatches.
-	ResourceId    string `protobuf:"bytes,9,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	ResourceId string `protobuf:"bytes,9,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	// The rest of the authenticated user, so the plugin can rebuild the same
+	// request context an in-process plugin is handed.
+	DisplayName string `protobuf:"bytes,10,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	IsAdmin     bool   `protobuf:"varint,11,opt,name=is_admin,json=isAdmin,proto3" json:"is_admin,omitempty"`
+	// csrf_token is the plugin-scoped token the host minted for this session.
+	// A plugin renders it into its forms; it cannot derive it itself.
+	CsrfToken     string `protobuf:"bytes,12,opt,name=csrf_token,json=csrfToken,proto3" json:"csrf_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -778,6 +785,27 @@ func (x *HTTPRequest) GetUsername() string {
 func (x *HTTPRequest) GetResourceId() string {
 	if x != nil {
 		return x.ResourceId
+	}
+	return ""
+}
+
+func (x *HTTPRequest) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *HTTPRequest) GetIsAdmin() bool {
+	if x != nil {
+		return x.IsAdmin
+	}
+	return false
+}
+
+func (x *HTTPRequest) GetCsrfToken() string {
+	if x != nil {
+		return x.CsrfToken
 	}
 	return ""
 }
@@ -1028,7 +1056,7 @@ const file_plugin_proto_rawDesc = "" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12\x1a\n" +
 	"\bpriority\x18\x02 \x01(\x05R\bpriority\x12\x1d\n" +
 	"\n" +
-	"widget_key\x18\x03 \x01(\tR\twidgetKey\"\xe4\x02\n" +
+	"widget_key\x18\x03 \x01(\tR\twidgetKey\"\xc1\x03\n" +
 	"\vHTTPRequest\x12\x1b\n" +
 	"\troute_key\x18\x01 \x01(\tR\brouteKey\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x12\n" +
@@ -1039,7 +1067,12 @@ const file_plugin_proto_rawDesc = "" +
 	"\auser_id\x18\a \x01(\tR\x06userId\x12\x1a\n" +
 	"\busername\x18\b \x01(\tR\busername\x12\x1f\n" +
 	"\vresource_id\x18\t \x01(\tR\n" +
-	"resourceId\x1aP\n" +
+	"resourceId\x12!\n" +
+	"\fdisplay_name\x18\n" +
+	" \x01(\tR\vdisplayName\x12\x19\n" +
+	"\bis_admin\x18\v \x01(\bR\aisAdmin\x12\x1d\n" +
+	"\n" +
+	"csrf_token\x18\f \x01(\tR\tcsrfToken\x1aP\n" +
 	"\fHeadersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
 	"\x05value\x18\x02 \x01(\v2\x14.plugpb.HeaderValuesR\x05value:\x028\x01\"&\n" +

@@ -96,6 +96,11 @@ message HTTPRequest {
   string username = 8;
   // resource_id is set for resource handler dispatches.
   string resource_id = 9;
+  string display_name = 10;
+  bool is_admin = 11;
+  // csrf_token is minted by the host from its secret; a plugin renders it into
+  // its forms but cannot derive it.
+  string csrf_token = 12;
 }
 
 // HeaderValues holds multiple values for a single HTTP header key.
