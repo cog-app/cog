@@ -36,13 +36,12 @@ templ AlertWithCopy(kind string, msg string, url string) {
 	}
 }
 
+// copyAlertURL and copyShareLink both hand a server-known string to cogCopy in
+// cog-share.js, which owns the one clipboard implementation: the secure-context
+// check, the plain-HTTP fallback, and the button feedback.
+
 script copyAlertURL(text string) {
-	navigator.clipboard.writeText(text).then(function() {
-		var btn = event.currentTarget;
-		var orig = btn.textContent;
-		btn.textContent = "Copied!";
-		setTimeout(function() { btn.textContent = orig; }, 1500);
-	});
+	cogCopy(event.currentTarget, text);
 }
 
 // Button renders a styled button. Kind can be "primary", "danger", or "secondary" (default).
@@ -96,12 +95,7 @@ templ ShareLink(url, displayText string) {
 }
 
 script copyShareLink(text string) {
-	navigator.clipboard.writeText(text).then(function() {
-		var btn = event.currentTarget;
-		var orig = btn.textContent;
-		btn.textContent = "Copied!";
-		setTimeout(function() { btn.textContent = orig; }, 1500);
-	});
+	cogCopy(event.currentTarget, text);
 }
 
 // Star renders a favorite star button. The postURL receives a POST when clicked;

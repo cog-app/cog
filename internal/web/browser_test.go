@@ -498,3 +498,52 @@ func TestBrowserAcceptInvite(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, got.MemberCount)
 }
+
+// The log table shows newest first, which prints a stack trace backwards. The
+// copy button reverses that, so what lands on the clipboard reads in the order
+// the events happened.
+func TestBrowserAdminLogsCopy(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+
+	env.Providers.Log.Info("copytest first entry")
+	env.Providers.Log.Info("copytest second entry")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+	b.Navigate(t, "/admin/logs")
+	b.WaitVisible(t, "#log-copy")
+
+	// The button calls the shared helper from cog-share.js, which the admin
+	// layout has to be loading for any of this to work.
+	require.Equal(t, "function", b.Eval(t, `typeof cogCopy`),
+		"cogCopy is not defined on the admin logs page")
+
+	// On screen, newest is on top.
+	firstRow, ok := b.Eval(t, `document.querySelector('#log-tbody tr').innerText`).(string)
+	require.True(t, ok, "row text is not a string")
+	require.True(t, strings.Contains(firstRow, "copytest second entry"),
+		"top row = %q, want the newest entry", firstRow)
+
+	// Copied, the same rows read oldest first.
+	copied, ok := b.Eval(t, `logEntriesText()`).(string)
+	require.True(t, ok, "copied text is not a string")
+
+	first := strings.Index(copied, "copytest first entry")
+	second := strings.Index(copied, "copytest second entry")
+	require.True(t, first >= 0 && second >= 0,
+		"copied text is missing an entry: %q", copied)
+	require.True(t, first < second,
+		"copied text has the entries newest first:\n%s", copied)
+
+	// Each line carries the time and level beside the message, tab separated.
+	for _, line := range strings.Split(copied, "\n") {
+		if strings.Contains(line, "copytest first entry") {
+			require.Equal(t, 3, len(strings.Split(line, "\t")),
+				"line is not time/level/message: %q", line)
+		}
+	}
+}

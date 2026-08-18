@@ -425,6 +425,7 @@ templ adminLogsPage(pd ui.PageData, entries []logbuf.Entry, sources []string) {
 			</select>
 			<input type="text" name="regex" class="form-control" placeholder="Filter (regex)..." style="max-width:16rem;font-size:0.85rem"/>
 			<button type="button" class="btn btn-outline btn-sm" hx-get="/admin/logs/entries" hx-include="#log-filters" hx-target="#log-tbody" hx-swap="innerHTML">Refresh</button>
+			<button type="button" id="log-copy" class="btn btn-outline btn-sm" onclick="cogCopy(this, logEntriesText)" title="Copy the entries shown, oldest first">Copy</button>
 		</div>
 		@ui.Card("") {
 			<div style="max-height:600px;overflow-y:auto">
@@ -442,7 +443,33 @@ templ adminLogsPage(pd ui.PageData, entries []logbuf.Entry, sources []string) {
 				</table>
 			</div>
 		}
+		@logEntriesScript()
 	}
+}
+
+// logEntriesScript defines how this page turns its rows into text. The copying
+// itself belongs to cogCopy in cog-share.js; only the scraping is specific to
+// the log table.
+//
+// It reads the DOM rather than re-fetching, so what is copied is what is on the
+// screen, filters and all, and it reverses the rows on the way out: the table
+// shows newest first, which prints a stack trace spanning thirty entries
+// backwards. Chronological is what anyone pasting it elsewhere wants.
+templ logEntriesScript() {
+	<script>
+		function logEntriesText() {
+			const rows = Array.from(
+				document.querySelectorAll("#log-tbody tr"),
+			).reverse();
+			return rows
+				.map((row) =>
+					Array.from(row.querySelectorAll("td"))
+						.map((c) => c.innerText.trim())
+						.join("\t"),
+				)
+				.join("\n");
+		}
+	</script>
 }
 
 templ logEntriesPartial(entries []logbuf.Entry) {
