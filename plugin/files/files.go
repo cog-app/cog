@@ -130,9 +130,9 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 
 func (p *Plugin) registerRoutes(priv plugin.PrivilegedContext) {
 	pages := NewPages(p)
-	csrfSecret := p.ctx.CSRFSecret()
+	csrf := auth.CSRF{Secret: p.ctx.CSRFSecret(), Cookies: p.ctx.Cookies(), Log: p.ctx.Logger()}
 	csrfWrap := func(h http.Handler) http.Handler {
-		return auth.RequireAuthWeb(auth.RequireCSRF(csrfSecret, h))
+		return auth.RequireAuthWeb(csrf.Require(h))
 	}
 
 	// Files browser UI

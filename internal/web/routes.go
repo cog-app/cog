@@ -95,8 +95,9 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /avatar/{id}/initials", http.HandlerFunc(avatarH.ServeInitials))
 
 	// Settings
+	csrf := auth.CSRF{Secret: p.CSRFSecret, Cookies: p.Cookies, Log: p.Log}
 	csrfWeb := func(h http.Handler) http.Handler {
-		return auth.RequireAuthWeb(auth.RequireCSRF(p.CSRFSecret, h))
+		return auth.RequireAuthWeb(csrf.Require(h))
 	}
 
 	mux.Handle("GET /settings/{$}", auth.RequireAuthWeb(http.HandlerFunc(settingsH.RedirectToProfile)))
@@ -143,7 +144,7 @@ func New(p *services.Providers) http.Handler {
 		return auth.RequireAuthWeb(auth.RequireAdmin(h))
 	}
 	adminMut := func(h http.Handler) http.Handler {
-		return auth.RequireAuthWeb(auth.RequireAdmin(auth.RequireCSRF(p.CSRFSecret, h)))
+		return auth.RequireAuthWeb(auth.RequireAdmin(csrf.Require(h)))
 	}
 
 	mux.Handle("GET /admin/{$}", adminAuth(http.HandlerFunc(adminH.Index)))

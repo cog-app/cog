@@ -53,9 +53,9 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	})
 
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
-		csrfSecret := p.ctx.CSRFSecret()
+		csrf := auth.CSRF{Secret: p.ctx.CSRFSecret(), Cookies: p.ctx.Cookies(), Log: p.ctx.Logger()}
 		csrfWrap := func(h http.Handler) http.Handler {
-			return auth.RequireAuthWeb(auth.RequireCSRF(csrfSecret, h))
+			return auth.RequireAuthWeb(csrf.Require(h))
 		}
 
 		// Dashboard (root route from dashboard plugin)

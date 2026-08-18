@@ -662,6 +662,12 @@ func (pr *pluginRegistrar) Cookies() CookieConfig {
 	return pr.registry.services.Cookies
 }
 
+// csrf is the token check every action route this plugin registers goes
+// through, reporting rejections against the plugin that owns the route.
+func (pr *pluginRegistrar) csrf() auth.CSRF {
+	return auth.CSRF{Secret: pr.csrfSecret, Cookies: pr.Cookies(), Log: pr.Logger()}
+}
+
 func (pr *pluginRegistrar) QuotaCheck(username string, additionalBytes int64) error {
 	if pr.registry.services.QuotaChecker == nil {
 		return nil
@@ -792,6 +798,7 @@ func (pr *pluginRegistrar) shellMiddleware(handler http.Handler) http.Handler {
 			IsAdmin:     u != nil && u.IsAdmin,
 			PluginID:    pr.pluginID,
 			Favicon:     favicon,
+			Flash:       pr.Cookies().TakeFlash(w, r),
 		}
 
 		// Copy any content headers set by the fragment (except those we override).
@@ -855,6 +862,7 @@ func (pr *pluginRegistrar) adminSettingsShellMiddleware(handler http.Handler) ht
 			RequestPath:       r.URL.Path,
 			IsAdmin:           u != nil && u.IsAdmin,
 			PluginSettingsNav: pluginItems,
+			Flash:             pr.Cookies().TakeFlash(w, r),
 		}
 
 		for k, v := range rec.Header() {
@@ -876,7 +884,7 @@ func (pr *pluginRegistrar) RegisterAPI(path string, handler http.Handler) {
 
 func (pr *pluginRegistrar) RegisterAction(method, path string, handler http.Handler) {
 	pattern := fmt.Sprintf("%s /apps/%s/%s", method, pr.pluginID, path)
-	wrapped := auth.RequireAuthWeb(pr.injectPluginContext(auth.RequireCSRF(pr.csrfSecret, handler)))
+	wrapped := auth.RequireAuthWeb(pr.injectPluginContext(pr.csrf().Require(handler)))
 	pr.mux.Handle(pattern, pr.wrap(wrapped))
 }
 
@@ -975,7 +983,7 @@ func (pr *pluginRegistrar) RegisterSettingsPage(page SettingsPage) {
 	}
 	if page.Action != nil {
 		postHandler := auth.RequireAuthWeb(auth.RequireAdmin(
-			pr.injectPluginContext(auth.RequireCSRF(pr.csrfSecret, page.Action))))
+			pr.injectPluginContext(pr.csrf().Require(page.Action))))
 		pr.mux.Handle("POST "+basePath, pr.wrap(postHandler))
 	}
 }
