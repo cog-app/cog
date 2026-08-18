@@ -2,9 +2,11 @@ package auth
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -162,5 +164,25 @@ func TestRequireCSRFFor(t *testing.T) {
 	handler.ServeHTTP(rec, withSession(req))
 	if rec.Code == http.StatusOK {
 		t.Fatal("POST with wrong CSRF token should be rejected")
+	}
+}
+
+// Checking the token must not consume the body: a handler downstream (the gRPC
+// bridge, which forwards raw bytes) still has to be able to read it.
+func TestValidateCSRFLeavesBodyReadable(t *testing.T) {
+	secret := []byte("test-secret")
+	form := url.Values{"csrf_token": {CSRFToken("sess1", secret)}, "field": {"kept"}}.Encode()
+
+	r := httptest.NewRequest("POST", "/", strings.NewReader(form))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if !ValidateCSRF(r, "sess1", secret) {
+		t.Fatal("expected valid CSRF token to pass")
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if string(body) != form {
+		t.Fatalf("body after CSRF check = %q, want %q", body, form)
 	}
 }

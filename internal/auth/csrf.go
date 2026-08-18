@@ -1,9 +1,11 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,6 +14,11 @@ import (
 // maxCSRFMultipartMem caps in-memory parsing of multipart bodies during
 // CSRF extraction. Files larger than this spill to disk.
 const maxCSRFMultipartMem = 32 << 20
+
+// maxCSRFFormBody caps the urlencoded body buffered for rewinding. It matches
+// net/http's own ParseForm limit, so nothing that ParseForm would have
+// accepted is rejected here.
+const maxCSRFFormBody = 10 << 20
 
 // CSRFToken generates a CSRF token from the session ID and a secret.
 func CSRFToken(sessionID string, secret []byte) string {
@@ -47,7 +54,21 @@ func extractCSRFToken(r *http.Request) string {
 		if err := r.ParseMultipartForm(maxCSRFMultipartMem); err != nil {
 			return ""
 		}
-	} else if err := r.ParseForm(); err != nil {
+		return r.PostForm.Get("csrf_token")
+	}
+	// ParseForm drains r.Body. An in-process handler never notices, because it
+	// reads the parsed PostForm — but the gRPC bridge forwards the raw body to
+	// an out-of-process plugin, and would send it nothing. Buffer and put it
+	// back so parsing here stays invisible to whatever handles the request.
+	if r.PostForm == nil && r.Body != nil {
+		body, err := io.ReadAll(io.LimitReader(r.Body, maxCSRFFormBody+1))
+		if err != nil || len(body) > maxCSRFFormBody {
+			return ""
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		defer func() { r.Body = io.NopCloser(bytes.NewReader(body)) }()
+	}
+	if err := r.ParseForm(); err != nil {
 		return ""
 	}
 	return r.PostForm.Get("csrf_token")
