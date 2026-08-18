@@ -1460,7 +1460,7 @@ func adminLogsPage(pd ui.PageData, entries []logbuf.Entry, sources []string) tem
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "</select> <input type=\"text\" name=\"regex\" class=\"form-control\" placeholder=\"Filter (regex)...\" style=\"max-width:16rem;font-size:0.85rem\"> <button type=\"button\" class=\"btn btn-outline btn-sm\" hx-get=\"/admin/logs/entries\" hx-include=\"#log-filters\" hx-target=\"#log-tbody\" hx-swap=\"innerHTML\">Refresh</button> <button type=\"button\" id=\"log-copy\" class=\"btn btn-outline btn-sm\" onclick=\"copyLogEntries(this)\" title=\"Copy the entries shown, oldest first\">Copy</button></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "</select> <input type=\"text\" name=\"regex\" class=\"form-control\" placeholder=\"Filter (regex)...\" style=\"max-width:16rem;font-size:0.85rem\"> <button type=\"button\" class=\"btn btn-outline btn-sm\" hx-get=\"/admin/logs/entries\" hx-include=\"#log-filters\" hx-target=\"#log-tbody\" hx-swap=\"innerHTML\">Refresh</button> <button type=\"button\" id=\"log-copy\" class=\"btn btn-outline btn-sm\" onclick=\"cogCopy(this, logEntriesText)\" title=\"Copy the entries shown, oldest first\">Copy</button></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1498,7 +1498,7 @@ func adminLogsPage(pd ui.PageData, entries []logbuf.Entry, sources []string) tem
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = logCopyScript().Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = logEntriesScript().Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1512,15 +1512,15 @@ func adminLogsPage(pd ui.PageData, entries []logbuf.Entry, sources []string) tem
 	})
 }
 
-// logCopyScript copies the rows currently in the table — whatever the filters
-// left — as plain text.
+// logEntriesScript defines how this page turns its rows into text. The copying
+// itself belongs to cogCopy in cog-share.js; only the scraping is specific to
+// the log table.
 //
-// It reads the DOM rather than re-fetching, so what lands on the clipboard is
-// what is on the screen, and it reverses the rows on the way out: the table
-// shows newest first, which turns a stack trace spanning thirty entries into a
-// stack trace printed backwards. Chronological order is what anyone pasting it
-// somewhere else wants.
-func logCopyScript() templ.Component {
+// It reads the DOM rather than re-fetching, so what is copied is what is on the
+// screen, filters and all, and it reverses the rows on the way out: the table
+// shows newest first, which prints a stack trace spanning thirty entries
+// backwards. Chronological is what anyone pasting it elsewhere wants.
+func logEntriesScript() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1541,7 +1541,7 @@ func logCopyScript() templ.Component {
 			templ_7745c5c3_Var70 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "<script>\n\t\t// logEntriesText renders the rows now in the table as tab-separated\n\t\t// lines, oldest first. Split out from the button so a test can call it\n\t\t// and assert on what would have been copied.\n\t\tfunction logEntriesText() {\n\t\t\tconst rows = Array.from(\n\t\t\t\tdocument.querySelectorAll(\"#log-tbody tr\"),\n\t\t\t).reverse();\n\t\t\treturn rows\n\t\t\t\t.map((row) => {\n\t\t\t\t\tconst cells = row.querySelectorAll(\"td\");\n\t\t\t\t\treturn Array.from(cells)\n\t\t\t\t\t\t.map((c) => c.innerText.trim())\n\t\t\t\t\t\t.join(\"\\t\");\n\t\t\t\t})\n\t\t\t\t.join(\"\\n\");\n\t\t}\n\n\t\tfunction copyLogEntries(btn) {\n\t\t\tconst text = logEntriesText();\n\n\t\t\tconst done = (ok) => {\n\t\t\t\tconst label = btn.textContent;\n\t\t\t\tbtn.textContent = ok ? \"Copied\" : \"Copy failed\";\n\t\t\t\tsetTimeout(() => {\n\t\t\t\t\tbtn.textContent = label;\n\t\t\t\t}, 1500);\n\t\t\t};\n\n\t\t\tif (navigator.clipboard && window.isSecureContext) {\n\t\t\t\tnavigator.clipboard.writeText(text).then(\n\t\t\t\t\t() => done(true),\n\t\t\t\t\t() => done(false),\n\t\t\t\t);\n\t\t\t\treturn;\n\t\t\t}\n\t\t\t// Clipboard API needs a secure context; a plain-HTTP deployment\n\t\t\t// falls back to the old selection trick.\n\t\t\tconst ta = document.createElement(\"textarea\");\n\t\t\tta.value = text;\n\t\t\tta.style.position = \"fixed\";\n\t\t\tta.style.opacity = \"0\";\n\t\t\tdocument.body.appendChild(ta);\n\t\t\tta.select();\n\t\t\tlet ok = false;\n\t\t\ttry {\n\t\t\t\tok = document.execCommand(\"copy\");\n\t\t\t} catch (e) {\n\t\t\t\tok = false;\n\t\t\t}\n\t\t\tdocument.body.removeChild(ta);\n\t\t\tdone(ok);\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "<script>\n\t\tfunction logEntriesText() {\n\t\t\tconst rows = Array.from(\n\t\t\t\tdocument.querySelectorAll(\"#log-tbody tr\"),\n\t\t\t).reverse();\n\t\t\treturn rows\n\t\t\t\t.map((row) =>\n\t\t\t\t\tArray.from(row.querySelectorAll(\"td\"))\n\t\t\t\t\t\t.map((c) => c.innerText.trim())\n\t\t\t\t\t\t.join(\"\\t\"),\n\t\t\t\t)\n\t\t\t\t.join(\"\\n\");\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1578,7 +1578,7 @@ func logEntriesPartial(entries []logbuf.Entry) templ.Component {
 			var templ_7745c5c3_Var72 string
 			templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(entries[i].Time.Format("15:04:05.000"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 518, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 478, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 			if templ_7745c5c3_Err != nil {
@@ -1613,7 +1613,7 @@ func logEntriesPartial(entries []logbuf.Entry) templ.Component {
 			var templ_7745c5c3_Var75 string
 			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(logLevelLabel(entries[i].Level))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 519, Col: 93}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 479, Col: 93}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 			if templ_7745c5c3_Err != nil {
@@ -1626,7 +1626,7 @@ func logEntriesPartial(entries []logbuf.Entry) templ.Component {
 			var templ_7745c5c3_Var76 string
 			templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(entries[i].Message)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 520, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 480, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 			if templ_7745c5c3_Err != nil {
@@ -1703,7 +1703,7 @@ func adminPluginsPage(pd ui.PageData, plugins []PluginInfo) templ.Component {
 					var templ_7745c5c3_Var80 string
 					templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(p.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 543, Col: 17}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 503, Col: 17}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 					if templ_7745c5c3_Err != nil {
@@ -1742,7 +1742,7 @@ func adminPluginsPage(pd ui.PageData, plugins []PluginInfo) templ.Component {
 						var templ_7745c5c3_Var81 templ.SafeURL
 						templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/admin/plugins/" + p.ID + "/toggle"))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 556, Col: 89}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 516, Col: 89}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 						if templ_7745c5c3_Err != nil {
@@ -1755,7 +1755,7 @@ func adminPluginsPage(pd ui.PageData, plugins []PluginInfo) templ.Component {
 						var templ_7745c5c3_Var82 string
 						templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 557, Col: 69}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin.templ`, Line: 517, Col: 69}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
 						if templ_7745c5c3_Err != nil {

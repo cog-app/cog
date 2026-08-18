@@ -78,3 +78,48 @@ class CogShareButton extends HTMLElement {
 
 customElements.define('cog-share', CogShare);
 customElements.define('cog-share-button', CogShareButton);
+
+// cogCopy writes text to the clipboard and reports the outcome on the button
+// that asked for it.
+//
+// source is either the text itself or a function returning it, which is what
+// lets a caller copy something assembled at click time (the log viewer builds
+// its text from the rows currently on screen) as well as a fixed string.
+//
+// The Clipboard API is only available in a secure context, so a deployment
+// served over plain HTTP falls back to the old select-a-textarea trick rather
+// than failing silently.
+function cogCopy(btn, source) {
+    var text = typeof source === 'function' ? source() : source;
+
+    var done = function(ok) {
+        if (!btn) return;
+        var label = btn.getAttribute('data-copy-label') || btn.textContent;
+        btn.setAttribute('data-copy-label', label);
+        btn.textContent = ok ? 'Copied' : 'Copy failed';
+        setTimeout(function() { btn.textContent = label; }, 1500);
+    };
+
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(
+            function() { done(true); },
+            function() { done(false); }
+        );
+        return;
+    }
+
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try {
+        ok = document.execCommand('copy');
+    } catch (e) {
+        ok = false;
+    }
+    document.body.removeChild(ta);
+    done(ok);
+}

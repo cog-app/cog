@@ -517,6 +517,11 @@ func TestBrowserAdminLogsCopy(t *testing.T) {
 	b.Navigate(t, "/admin/logs")
 	b.WaitVisible(t, "#log-copy")
 
+	// The button calls the shared helper from cog-share.js, which the admin
+	// layout has to be loading for any of this to work.
+	require.Equal(t, "function", b.Eval(t, `typeof cogCopy`),
+		"cogCopy is not defined on the admin logs page")
+
 	// On screen, newest is on top.
 	firstRow, ok := b.Eval(t, `document.querySelector('#log-tbody tr').innerText`).(string)
 	require.True(t, ok, "row text is not a string")
