@@ -2,10 +2,12 @@ package plugin_test
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
@@ -168,4 +170,26 @@ func TestGRPCBridge_TrustedDBOpens(t *testing.T) {
 
 	body := env.Get(t, "/apps/grpcwhoami/db", alice.Auth).Status(200).ReadBody()
 	assert.Equal(t, "ok=1", body)
+}
+
+// A browser form POST carries its CSRF token in the body, so the host has to
+// parse the body to check it. The body still has to reach the plugin: reading
+// it here once left the plugin with nothing and every form field empty.
+func TestGRPCBridge_FormBodySurvivesCSRFCheck(t *testing.T) {
+	binPath := testplugins.Build(t, "grpcform")
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+
+	require.NoError(t, env.Providers.Plugins.LoadExternal(binPath))
+
+	sess, err := env.Providers.Sessions.Create(alice.ID)
+	require.NoError(t, err)
+	cookie := cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID)
+
+	form := url.Values{
+		"csrf_token": {auth.CSRFToken(sess.ID, env.Providers.CSRFSecret)},
+		"field":      {"kept"},
+	}
+	body := env.PostForm(t, "/apps/grpcform/echo", form, cookie).Status(200).ReadBody()
+	assert.Equal(t, `field="kept"`, body)
 }
