@@ -1,0 +1,47 @@
+package ui
+
+// AppErrorPage renders a standalone page for an app that could not serve a
+// request: a process plugin that is down, or one that reported a fault.
+//
+// It is a whole document rather than a fragment for the shell to wrap, because
+// the shell passes any response of 300 or more straight through — and because
+// the app this page stands in for is the broken thing, so the less of it this
+// page depends on, the better. Only the stylesheet is shared.
+//
+// The layout is inline rather than a set of classes in style.css. Every browser
+// snapshot golden carries the stylesheet's content hash, so a rule added for one
+// page rewrites all hundred of them; the login and MFA pages style themselves the
+// same way for the same reason.
+//
+// retryURL is the path to offer as "Try again", usually the one that failed.
+// Leave it empty for a failure that repeating will not fix.
+templ AppErrorPage(appName, heading, message, retryURL string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+			<title>{ appName } — Cog</title>
+			<link rel="stylesheet" href={ Static.URL("style.css") }/>
+			<link rel="icon" href={ Static.URL("favicon.svg") } type="image/svg+xml"/>
+		</head>
+		<body>
+			<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;padding:1rem">
+				<div class="card" style="width:100%;max-width:420px;padding:2rem;text-align:center;margin-bottom:0">
+					<a href="/" style="display:inline-flex;align-items:center;gap:0.5rem;font-size:1.25rem;font-weight:700;text-decoration:none;color:inherit">
+						@CogIcon(24)
+						Cog
+					</a>
+					<h1 style="font-size:1.125rem;margin:1.5rem 0 0.5rem">{ heading }</h1>
+					<p style="color:var(--color-text-muted);margin-bottom:1.5rem">{ message }</p>
+					<div style="display:flex;gap:0.5rem;justify-content:center">
+						if retryURL != "" {
+							<a class="btn btn-primary" href={ templ.SafeURL(retryURL) }>Try again</a>
+						}
+						<a class="btn btn-outline" href="/">Back to Cog</a>
+					</div>
+				</div>
+			</div>
+		</body>
+	</html>
+}
