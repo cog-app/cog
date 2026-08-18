@@ -868,9 +868,9 @@ func (h *Pages) ScanFoldersPreview(w http.ResponseWriter, r *http.Request) {
 		if matchScanFolders(p, patterns) {
 			total++
 			// Extract top-level folder.
-			dir := p
-			if idx := strings.Index(p, "/"); idx >= 0 {
-				dir = p[:idx+1]
+			dir := TrimScanPath(p)
+			if idx := strings.Index(dir, "/"); idx >= 0 {
+				dir = dir[:idx+1]
 			}
 			folderSet[dir]++
 		}
