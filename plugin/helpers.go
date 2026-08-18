@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -17,9 +18,20 @@ func CSRFToken(r *http.Request) string {
 
 // UserDB returns the per-user plugin database from the request context.
 // The plugin DB provider must be injected via WithPluginDB.
+//
+// Both halves are reported as errors rather than dereferenced. A request whose
+// context is missing either is a wiring fault — an unauthenticated route, or a
+// transport that dropped the context — and a handler returning 500 says so far
+// better than a nil-pointer panic in a stack trace.
 func UserDB(r *http.Request) (*sql.DB, error) {
 	u := UserFromContext(r.Context())
+	if u == nil {
+		return nil, errors.New("plugin: request has no authenticated user")
+	}
 	fn := pluginDBFromContext(r.Context())
+	if fn == nil {
+		return nil, errors.New("plugin: request has no plugin database provider")
+	}
 	return fn(u.Username)
 }
 
@@ -28,9 +40,14 @@ func SetTitle(w http.ResponseWriter, title string) {
 	w.Header().Set("X-Page-Title", title)
 }
 
-// Username returns the authenticated user's username from the request context.
+// Username returns the authenticated user's username from the request context,
+// or "" if the request carries no user.
 func Username(r *http.Request) string {
-	return UserFromContext(r.Context()).Username
+	u := UserFromContext(r.Context())
+	if u == nil {
+		return ""
+	}
+	return u.Username
 }
 
 // WriteJSON encodes v as JSON and writes it to w with the given status code.

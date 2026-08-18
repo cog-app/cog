@@ -96,6 +96,13 @@ message HTTPRequest {
   string username = 8;
   // resource_id is set for resource handler dispatches.
   string resource_id = 9;
+  // The rest of the authenticated user, so the plugin can rebuild the same
+  // request context an in-process plugin is handed.
+  string display_name = 10;
+  bool is_admin = 11;
+  // csrf_token is the plugin-scoped token the host minted for this session.
+  // A plugin renders it into its forms; it cannot derive it itself.
+  string csrf_token = 12;
 }
 
 // HeaderValues holds multiple values for a single HTTP header key.

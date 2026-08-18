@@ -243,7 +243,11 @@ func (g *grpcPlugin) proxy(w http.ResponseWriter, r *http.Request, routeKey, res
 		headers[k] = &plugpb.HeaderValues{Values: v}
 	}
 
-	resp, err := link.client.HandleHTTPRequest(r.Context(), &plugpb.HTTPRequest{
+	// The host wrapped this handler in injectPluginContext, so the request
+	// context already holds who is asking and their CSRF token. None of it
+	// crosses a socket by itself: send it, or the plugin serves every request
+	// as though nobody were logged in.
+	req := &plugpb.HTTPRequest{
 		RouteKey:   routeKey,
 		Method:     r.Method,
 		Path:       r.URL.Path,
@@ -251,7 +255,16 @@ func (g *grpcPlugin) proxy(w http.ResponseWriter, r *http.Request, routeKey, res
 		Headers:    headers,
 		Body:       body,
 		ResourceId: resourceID,
-	})
+		CsrfToken:  cogplugin.CSRFTokenFromContext(r.Context()),
+	}
+	if u := cogplugin.UserFromContext(r.Context()); u != nil {
+		req.UserId = u.ID
+		req.Username = u.Username
+		req.DisplayName = u.DisplayName
+		req.IsAdmin = u.IsAdmin
+	}
+
+	resp, err := link.client.HandleHTTPRequest(r.Context(), req)
 	if err != nil {
 		g.log.Error("plugin request failed",
 			"plugin", g.id, "method", r.Method, "path", r.URL.Path, "err", err)

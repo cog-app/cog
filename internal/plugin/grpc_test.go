@@ -261,3 +261,97 @@ func waitForLogEntry(t *testing.T, env *cogtest.Env, substr string) logbuf.Entry
 	t.Fatalf("no log entry containing %q", substr)
 	return logbuf.Entry{}
 }
+
+// identityPluginSrc is an external plugin that reports what its request context
+// carried. A process plugin used to be handed a request rebuilt from the wire
+// with no context at all, so every one of these was empty or nil.
+const identityPluginSrc = `package main
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+
+	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/plugin/plugcmd"
+)
+
+type identityPlugin struct{}
+
+func (p *identityPlugin) ID() string { return "grpcwhoami" }
+
+func (p *identityPlugin) Register(ctx plugin.PluginContext) error {
+	ctx.RegisterAPI("whoami", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := plugin.UserFromContext(r.Context())
+		if u == nil {
+			fmt.Fprint(w, "no user")
+			return
+		}
+		fmt.Fprintf(w, "id=%s username=%s display=%s admin=%t helper=%s",
+			u.ID, u.Username, u.DisplayName, u.IsAdmin, plugin.Username(r))
+	}))
+	ctx.RegisterAPI("db", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		db, err := plugin.UserDB(r)
+		if err != nil {
+			fmt.Fprintf(w, "err=%v", err)
+			return
+		}
+		var n int
+		if err := db.QueryRow("SELECT 1").Scan(&n); err != nil {
+			fmt.Fprintf(w, "query err=%v", err)
+			return
+		}
+		fmt.Fprintf(w, "ok=%d", n)
+	}))
+	return nil
+}
+
+func (p *identityPlugin) Start(_ context.Context) error { return nil }
+func (p *identityPlugin) Stop() error                   { return nil }
+
+func main() { plugcmd.Run(&identityPlugin{}) }
+`
+
+// TestGRPCBridge_CarriesUser asserts the authenticated user crosses the socket.
+// It did not, which is what made recipes panic on every page load: the handler
+// called plugin.UserDB, the context held no user, and the nil dereference took
+// the process down.
+func TestGRPCBridge_CarriesUser(t *testing.T) {
+	binPath := buildPlugin(t, "grpcwhoami", identityPluginSrc)
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+
+	require.NoError(t, env.Providers.Plugins.LoadExternal(binPath))
+
+	body := env.Get(t, "/apps/grpcwhoami/whoami", alice.Auth).Status(200).ReadBody()
+	assert.Contains(t, body, "username=alice")
+	assert.Contains(t, body, "id="+alice.ID)
+	assert.Contains(t, body, "helper=alice")
+}
+
+// An untrusted process plugin has no database. It must be told so, not left to
+// dereference a provider that was never injected.
+func TestGRPCBridge_UntrustedDBReportsError(t *testing.T) {
+	binPath := buildPlugin(t, "grpcwhoami", identityPluginSrc)
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+
+	require.NoError(t, env.Providers.Plugins.LoadExternal(binPath))
+
+	body := env.Get(t, "/apps/grpcwhoami/db", alice.Auth).Status(200).ReadBody()
+	assert.Contains(t, body, "err=")
+	assert.Contains(t, body, "not available for gRPC plugins")
+}
+
+// A trusted process plugin opens the user's database through the same layout
+// and settings the host uses.
+func TestGRPCBridge_TrustedDBOpens(t *testing.T) {
+	binPath := buildPlugin(t, "grpcwhoami", identityPluginSrc)
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+
+	require.NoError(t, env.Providers.Plugins.LoadExternalTrusted(binPath))
+
+	body := env.Get(t, "/apps/grpcwhoami/db", alice.Auth).Status(200).ReadBody()
+	assert.Equal(t, "ok=1", body)
+}
