@@ -2,9 +2,6 @@ package plugin_test
 
 import (
 	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,134 +10,12 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
+	"git.duckfam.us/jj-software/cog/internal/testing/testplugins"
 )
-
-// pingPluginSrc is a self-contained external plugin used to smoke-test the
-// gRPC plugin bridge. It registers GET /apps/grpcping/ping and returns "pong".
-const pingPluginSrc = `package main
-
-import (
-	"context"
-	"net/http"
-
-	"git.duckfam.us/jj-software/cog/plugin"
-	"git.duckfam.us/jj-software/cog/plugin/plugcmd"
-)
-
-type pingPlugin struct{}
-
-func (p *pingPlugin) ID() string { return "grpcping" }
-
-func (p *pingPlugin) Register(ctx plugin.PluginContext) error {
-	ctx.RegisterAPI("ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte("pong"))
-	}))
-	return nil
-}
-
-func (p *pingPlugin) Start(_ context.Context) error { return nil }
-func (p *pingPlugin) Stop() error                   { return nil }
-
-func main() { plugcmd.Run(&pingPlugin{}) }
-`
-
-// crashPluginSrc is an external plugin with routes that fail in the two ways a
-// process plugin can take itself down: a panic in a handler, and an outright
-// exit. /ping reports the process ID so a test can tell a restarted process
-// from the original.
-const crashPluginSrc = `package main
-
-import (
-	"context"
-	"fmt"
-	"net/http"
-	"os"
-
-	"git.duckfam.us/jj-software/cog/plugin"
-	"git.duckfam.us/jj-software/cog/plugin/plugcmd"
-)
-
-type crashPlugin struct{}
-
-func (p *crashPlugin) ID() string { return "grpccrash" }
-
-func (p *crashPlugin) Register(ctx plugin.PluginContext) error {
-	ctx.RegisterAPI("ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprintf(w, "pong %d", os.Getpid())
-	}))
-	ctx.RegisterAPI("panic", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		panic("handler exploded")
-	}))
-	ctx.RegisterAPI("exit", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(os.Stderr, "plugin is about to exit")
-		os.Exit(7)
-	}))
-	return nil
-}
-
-func (p *crashPlugin) Start(_ context.Context) error { return nil }
-func (p *crashPlugin) Stop() error                   { return nil }
-
-func main() { plugcmd.Run(&crashPlugin{}) }
-`
-
-// buildPingPlugin builds the ping plugin binary. See buildPlugin.
-func buildPingPlugin(t *testing.T) string {
-	t.Helper()
-	return buildPlugin(t, "grpcping", pingPluginSrc)
-}
-
-// buildPlugin writes src to a temp package under the module root and runs
-// `go build`, returning the binary path. Skips the test if `go` isn't on PATH.
-func buildPlugin(t *testing.T, id, src string) string {
-	t.Helper()
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("go toolchain not in PATH")
-	}
-
-	// Place the source under the module root so it sees the same go.mod.
-	repoRoot := findRepoRoot(t)
-	pkgDir := filepath.Join(repoRoot, "internal", "plugin", ".grpctest-tmp-"+id)
-	require.NoError(t, os.MkdirAll(pkgDir, 0o755))
-	t.Cleanup(func() { os.RemoveAll(pkgDir) })
-
-	srcPath := filepath.Join(pkgDir, "main.go")
-	require.NoError(t, os.WriteFile(srcPath, []byte(src), 0o644))
-
-	binDir := t.TempDir()
-	binPath := filepath.Join(binDir, "cog-plugin-"+id)
-
-	cmd := exec.Command("go", "build", "-o", binPath, "./internal/plugin/"+filepath.Base(pkgDir))
-	cmd.Dir = repoRoot
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("build %s plugin: %v\n%s", id, err, out)
-	}
-	return binPath
-}
-
-// findRepoRoot walks up from the current working directory looking for go.mod.
-func findRepoRoot(t *testing.T) string {
-	t.Helper()
-	dir, err := os.Getwd()
-	require.NoError(t, err)
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("go.mod not found above %s", dir)
-		}
-		dir = parent
-	}
-}
 
 func TestGRPCBridge_RouteServes(t *testing.T) {
 	// Build the external plugin binary.
-	binPath := buildPingPlugin(t)
+	binPath := testplugins.Build(t, "grpcping")
 
 	// Spin up a cogtest server. We need to load the external plugin BEFORE
 	// the test server starts handling — the registry mux is shared, but
@@ -157,7 +32,7 @@ func TestGRPCBridge_RouteServes(t *testing.T) {
 }
 
 func TestGRPCBridge_UnauthRoute(t *testing.T) {
-	binPath := buildPingPlugin(t)
+	binPath := testplugins.Build(t, "grpcping")
 	env := cogtest.New(t)
 	env.CreateUser(t, "alice", "pass")
 
@@ -173,7 +48,7 @@ func TestGRPCBridge_UnauthRoute(t *testing.T) {
 // plugin's routes failed with a connection-refused dial error until the host was
 // restarted.
 func TestGRPCBridge_PanicIsContained(t *testing.T) {
-	binPath := buildPlugin(t, "grpccrash", crashPluginSrc)
+	binPath := testplugins.Build(t, "grpccrash")
 	env := cogtest.New(t)
 	alice := env.CreateUser(t, "alice", "pass")
 
@@ -201,7 +76,7 @@ func TestGRPCBridge_PanicIsContained(t *testing.T) {
 // its own is reaped, restarted, and serving again, and that requests arriving
 // while it is down get an outage page rather than a dial error.
 func TestGRPCBridge_RestartsAfterExit(t *testing.T) {
-	binPath := buildPlugin(t, "grpccrash", crashPluginSrc)
+	binPath := testplugins.Build(t, "grpccrash")
 	env := cogtest.New(t)
 	alice := env.CreateUser(t, "alice", "pass")
 
@@ -262,62 +137,12 @@ func waitForLogEntry(t *testing.T, env *cogtest.Env, substr string) logbuf.Entry
 	return logbuf.Entry{}
 }
 
-// identityPluginSrc is an external plugin that reports what its request context
-// carried. A process plugin used to be handed a request rebuilt from the wire
-// with no context at all, so every one of these was empty or nil.
-const identityPluginSrc = `package main
-
-import (
-	"context"
-	"fmt"
-	"net/http"
-
-	"git.duckfam.us/jj-software/cog/plugin"
-	"git.duckfam.us/jj-software/cog/plugin/plugcmd"
-)
-
-type identityPlugin struct{}
-
-func (p *identityPlugin) ID() string { return "grpcwhoami" }
-
-func (p *identityPlugin) Register(ctx plugin.PluginContext) error {
-	ctx.RegisterAPI("whoami", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		u := plugin.UserFromContext(r.Context())
-		if u == nil {
-			fmt.Fprint(w, "no user")
-			return
-		}
-		fmt.Fprintf(w, "id=%s username=%s display=%s admin=%t helper=%s",
-			u.ID, u.Username, u.DisplayName, u.IsAdmin, plugin.Username(r))
-	}))
-	ctx.RegisterAPI("db", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		db, err := plugin.UserDB(r)
-		if err != nil {
-			fmt.Fprintf(w, "err=%v", err)
-			return
-		}
-		var n int
-		if err := db.QueryRow("SELECT 1").Scan(&n); err != nil {
-			fmt.Fprintf(w, "query err=%v", err)
-			return
-		}
-		fmt.Fprintf(w, "ok=%d", n)
-	}))
-	return nil
-}
-
-func (p *identityPlugin) Start(_ context.Context) error { return nil }
-func (p *identityPlugin) Stop() error                   { return nil }
-
-func main() { plugcmd.Run(&identityPlugin{}) }
-`
-
 // TestGRPCBridge_CarriesUser asserts the authenticated user crosses the socket.
 // It did not, which is what made recipes panic on every page load: the handler
 // called plugin.UserDB, the context held no user, and the nil dereference took
 // the process down.
 func TestGRPCBridge_CarriesUser(t *testing.T) {
-	binPath := buildPlugin(t, "grpcwhoami", identityPluginSrc)
+	binPath := testplugins.Build(t, "grpcwhoami")
 	env := cogtest.New(t)
 	alice := env.CreateUser(t, "alice", "pass")
 
@@ -332,7 +157,7 @@ func TestGRPCBridge_CarriesUser(t *testing.T) {
 // An untrusted process plugin has no database. It must be told so, not left to
 // dereference a provider that was never injected.
 func TestGRPCBridge_UntrustedDBReportsError(t *testing.T) {
-	binPath := buildPlugin(t, "grpcwhoami", identityPluginSrc)
+	binPath := testplugins.Build(t, "grpcwhoami")
 	env := cogtest.New(t)
 	alice := env.CreateUser(t, "alice", "pass")
 
@@ -346,7 +171,7 @@ func TestGRPCBridge_UntrustedDBReportsError(t *testing.T) {
 // A trusted process plugin opens the user's database through the same layout
 // and settings the host uses.
 func TestGRPCBridge_TrustedDBOpens(t *testing.T) {
-	binPath := buildPlugin(t, "grpcwhoami", identityPluginSrc)
+	binPath := testplugins.Build(t, "grpcwhoami")
 	env := cogtest.New(t)
 	alice := env.CreateUser(t, "alice", "pass")
 
