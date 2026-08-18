@@ -17,12 +17,8 @@ func CSRFToken(r *http.Request) string {
 }
 
 // UserDB returns the per-user plugin database from the request context.
-// The plugin DB provider must be injected via WithPluginDB.
-//
-// Both halves are reported as errors rather than dereferenced. A request whose
-// context is missing either is a wiring fault — an unauthenticated route, or a
-// transport that dropped the context — and a handler returning 500 says so far
-// better than a nil-pointer panic in a stack trace.
+// The plugin DB provider must be injected via WithPluginDB. A request missing
+// either half is a wiring fault, reported rather than dereferenced.
 func UserDB(r *http.Request) (*sql.DB, error) {
 	u := UserFromContext(r.Context())
 	if u == nil {

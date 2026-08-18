@@ -243,10 +243,8 @@ func (g *grpcPlugin) proxy(w http.ResponseWriter, r *http.Request, routeKey, res
 		headers[k] = &plugpb.HeaderValues{Values: v}
 	}
 
-	// The host wrapped this handler in injectPluginContext, so the request
-	// context already holds who is asking and their CSRF token. None of it
-	// crosses a socket by itself: send it, or the plugin serves every request
-	// as though nobody were logged in.
+	// injectPluginContext put the user and CSRF token on the context; neither
+	// crosses a socket unless it is sent.
 	req := &plugpb.HTTPRequest{
 		RouteKey:   routeKey,
 		Method:     r.Method,

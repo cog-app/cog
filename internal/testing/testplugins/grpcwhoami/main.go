@@ -1,6 +1,5 @@
 // Command cog-plugin-grpcwhoami is a process plugin that reports what its
-// request context carried. A process plugin used to be handed a request rebuilt
-// from the wire with no context at all, so every one of these was empty or nil.
+// request context carried.
 package main
 
 import (

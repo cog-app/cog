@@ -128,8 +128,6 @@ func (s *pluginServer) Register(_ *plugpb.Empty, stream grpc.ServerStreamingServ
 		reg = base
 	}
 
-	// Kept so a proxied request can be given the same database access the
-	// plugin was registered with.
 	s.mu.Lock()
 	s.registrar = reg
 	s.mu.Unlock()
@@ -154,10 +152,8 @@ func (s *pluginServer) HandleHTTPRequest(ctx context.Context, req *plugpb.HTTPRe
 		return &plugpb.HTTPResponse{StatusCode: 404, Body: []byte("handler not found")}, nil
 	}
 
-	// Reconstruct http.Request, including the context a handler expects to
-	// find: who is asking, their CSRF token, and how to reach their database.
-	// A request rebuilt from the wire alone carries none of it, and a handler
-	// that calls plugin.UserDB on one is dereferencing nothing.
+	// Reconstruct http.Request, context included: a request rebuilt from the
+	// wire alone carries none, and handlers read the user out of it.
 	httpReq := &http.Request{
 		Method: req.Method,
 		URL:    &url.URL{Path: req.Path, RawQuery: req.Query},
@@ -185,10 +181,9 @@ func (s *pluginServer) HandleHTTPRequest(ctx context.Context, req *plugpb.HTTPRe
 }
 
 // requestContext rebuilds what the host's injectPluginContext puts on an
-// in-process request: the authenticated user, the plugin-scoped CSRF token, and
-// a database provider. The provider is the registrar the plugin registered
-// with, so a trusted plugin gets a real handle and an untrusted one gets the
-// error that says it has no database access — rather than a nil function.
+// in-process request. The database provider is the registrar the plugin
+// registered with, so a trusted plugin gets a real handle and an untrusted one
+// gets the error saying it has none.
 func (s *pluginServer) requestContext(ctx context.Context, req *plugpb.HTTPRequest, reg cogplugin.PluginContext) context.Context {
 	ctx = cogplugin.WithCSRFToken(ctx, req.CsrfToken)
 	if req.Username != "" {

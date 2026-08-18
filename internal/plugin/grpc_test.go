@@ -14,19 +14,15 @@ import (
 )
 
 func TestGRPCBridge_RouteServes(t *testing.T) {
-	// Build the external plugin binary.
 	binPath := testplugins.Build(t, "grpcping")
 
-	// Spin up a cogtest server. We need to load the external plugin BEFORE
-	// the test server starts handling — the registry mux is shared, but
-	// LoadExternal also calls plugin.Register which mounts routes on the
-	// same mux as web.New, so loading after cogtest.New is acceptable.
+	// LoadExternal mounts routes on the mux web.New already has, so loading
+	// after cogtest.New still serves them.
 	env := cogtest.New(t)
 	alice := env.CreateUser(t, "alice", "pass")
 
 	require.NoError(t, env.Providers.Plugins.LoadExternal(binPath))
 
-	// Hit the plugin's API route.
 	resp := env.Get(t, "/apps/grpcping/ping", alice.Auth)
 	resp.Status(200).Equals("pong")
 }
@@ -42,11 +38,8 @@ func TestGRPCBridge_UnauthRoute(t *testing.T) {
 	env.Get(t, "/apps/grpcping/ping").Status(401)
 }
 
-// TestGRPCBridge_PanicIsContained asserts that a panicking handler no longer
-// takes the plugin process with it. Before the recovery interceptor, one request
-// to a panicking route killed the process and every later request to any of the
-// plugin's routes failed with a connection-refused dial error until the host was
-// restarted.
+// A panicking handler must not take the plugin process with it, which would
+// leave every other route dialing a socket with no listener.
 func TestGRPCBridge_PanicIsContained(t *testing.T) {
 	binPath := testplugins.Build(t, "grpccrash")
 	env := cogtest.New(t)
@@ -65,16 +58,14 @@ func TestGRPCBridge_PanicIsContained(t *testing.T) {
 	after := env.Get(t, "/apps/grpccrash/ping", alice.Auth).Status(200).ReadBody()
 	assert.Equal(t, before, after)
 
-	// The trace is in the host's log buffer, which is what the admin log page
-	// reads — it used to go only to the host's stderr.
+	// The log buffer is what the admin log page reads.
 	entry := waitForLogEntry(t, env, "panic in plugin handler")
 	assert.Equal(t, "grpccrash", entry.Source)
 	assert.Contains(t, entry.Message, "handler exploded")
 }
 
-// TestGRPCBridge_RestartsAfterExit asserts that a process plugin which exits on
-// its own is reaped, restarted, and serving again, and that requests arriving
-// while it is down get an outage page rather than a dial error.
+// A plugin that exits on its own is reaped, restarted, and serving again, and
+// requests arriving while it is down get an outage page rather than a dial error.
 func TestGRPCBridge_RestartsAfterExit(t *testing.T) {
 	binPath := testplugins.Build(t, "grpccrash")
 	env := cogtest.New(t)
@@ -137,10 +128,8 @@ func waitForLogEntry(t *testing.T, env *cogtest.Env, substr string) logbuf.Entry
 	return logbuf.Entry{}
 }
 
-// TestGRPCBridge_CarriesUser asserts the authenticated user crosses the socket.
-// It did not, which is what made recipes panic on every page load: the handler
-// called plugin.UserDB, the context held no user, and the nil dereference took
-// the process down.
+// The authenticated user has to cross the socket: a handler that asks who is
+// calling gets nil otherwise.
 func TestGRPCBridge_CarriesUser(t *testing.T) {
 	binPath := testplugins.Build(t, "grpcwhoami")
 	env := cogtest.New(t)

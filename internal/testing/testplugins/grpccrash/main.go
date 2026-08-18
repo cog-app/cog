@@ -27,8 +27,7 @@ func (p *crashPlugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAPI("panic", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		panic("handler exploded")
 	}))
-	// The line on stderr is deliberate: it is the last thing a dying process
-	// writes, and the host has to capture it.
+	// The stderr line is what the host has to capture from a dying process.
 	ctx.RegisterAPI("exit", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(os.Stderr, "plugin is about to exit")
 		os.Exit(7)
