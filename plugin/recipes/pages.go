@@ -272,17 +272,26 @@ func (h *Pages) ImportFromURL(w http.ResponseWriter, r *http.Request) {
 	}
 	rawURL := r.FormValue("url")
 	if rawURL == "" {
-		http.Error(w, "URL is required", http.StatusBadRequest)
+		importFailed(w, r, "Enter the address of a recipe page to import.")
 		return
 	}
 
 	result, err := h.plugin.FetchAndImport(db, plugin.Username(r), rawURL)
 	if err != nil {
-		http.Error(w, "Import failed: "+err.Error(), http.StatusBadRequest)
+		h.plugin.log.Warn("recipe import failed", "url", rawURL, "err", err)
+		importFailed(w, r, "Could not import that page: "+err.Error())
 		return
 	}
 
 	http.Redirect(w, r, "/apps/recipes/recipe/"+strconv.FormatInt(result.RecipeID, 10), http.StatusSeeOther)
+}
+
+// importFailed sends the reason back to the import form. Answering the POST
+// with an error page instead would render the message without the surrounding
+// page, and leave the browser offering to re-submit the form on reload.
+func importFailed(w http.ResponseWriter, r *http.Request, message string) {
+	plugin.SetFlash(w, plugin.Flash{Kind: "error", Message: message})
+	http.Redirect(w, r, "/apps/recipes/import", http.StatusSeeOther)
 }
 
 func splitLines(s string) []string {

@@ -23,17 +23,54 @@ type Flash struct {
 	URL     string `json:"u,omitempty"` // rendered as a copyable link
 }
 
+// FlashHeader is how a plugin hands a message to the host. A plugin does not
+// write the cookie itself: an out-of-process one is not told the deployment's
+// cookie settings, so its cookie would come out without Secure on an HTTPS
+// site. The host moves the header onto the cookie on the way out, the same way
+// it turns X-Page-Title into the page title.
+const FlashHeader = "X-Flash"
+
+// SetFlash asks the host to show a message on whichever page this request
+// redirects to. Set it before writing the redirect.
+func SetFlash(w http.ResponseWriter, f Flash) {
+	if v := encodeFlash(f); v != "" {
+		w.Header().Set(FlashHeader, v)
+	}
+}
+
 // SetFlash stores a message for the next GET request to render.
 func (c CookieConfig) SetFlash(w http.ResponseWriter, f Flash) {
-	data, err := json.Marshal(f)
-	if err != nil {
+	if v := encodeFlash(f); v != "" {
+		c.setFlashValue(w, v)
+	}
+}
+
+// TakeFlashHeader moves a plugin's FlashHeader onto the flash cookie and
+// removes the header. The header value is already the cookie's encoding, so
+// nothing is decoded and re-encoded in between.
+func (c CookieConfig) TakeFlashHeader(w http.ResponseWriter) {
+	v := w.Header().Get(FlashHeader)
+	if v == "" {
 		return
 	}
+	w.Header().Del(FlashHeader)
+	c.setFlashValue(w, v)
+}
+
+func (c CookieConfig) setFlashValue(w http.ResponseWriter, value string) {
 	c.Set(w, &http.Cookie{
 		Name:   FlashCookieName,
-		Value:  url.QueryEscape(string(data)),
+		Value:  value,
 		MaxAge: flashMaxAge,
 	})
+}
+
+func encodeFlash(f Flash) string {
+	data, err := json.Marshal(f)
+	if err != nil {
+		return ""
+	}
+	return url.QueryEscape(string(data))
 }
 
 // TakeFlash reads the pending message and clears it, so a reload does not show
