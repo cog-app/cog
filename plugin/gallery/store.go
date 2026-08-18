@@ -1184,11 +1184,21 @@ func ParseScanFolders(db *sql.DB) []string {
 	return patterns
 }
 
+// TrimScanPath strips the leading slash the files plugin stores on every path
+// ("/Photos/a.jpg"), so it can be compared against a scan pattern the user wrote
+// either way round.
+func TrimScanPath(p string) string { return strings.TrimPrefix(p, "/") }
+
 // matchScanFolders checks if a file path matches any configured scan folder pattern.
 // Patterns ending in "/" are prefix matches. Others use path.Match against each
 // path segment up to the pattern depth.
 func matchScanFolders(filePath string, patterns []string) bool {
+	filePath = TrimScanPath(filePath)
 	for _, p := range patterns {
+		p = TrimScanPath(p)
+		if p == "" {
+			return true // "/" — everything
+		}
 		if strings.HasSuffix(p, "/") {
 			// Prefix match: "Photos/" matches "Photos/foo.jpg", "Photos/sub/bar.jpg"
 			if strings.HasPrefix(filePath, p) {

@@ -666,11 +666,12 @@ func (p *Plugin) FolderIcon(username, folderPath string) (string, bool) {
 		return "", false
 	}
 	patterns := ParseScanFolders(db)
-	path := folderPath
+	path := TrimScanPath(folderPath)
 	if !strings.HasSuffix(path, "/") {
 		path += "/"
 	}
 	for _, pat := range patterns {
+		pat = TrimScanPath(pat)
 		if !strings.HasSuffix(pat, "/") {
 			continue // only match folder patterns
 		}
