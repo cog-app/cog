@@ -477,14 +477,34 @@ templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face, csrfT
 }
 
 // --- People Page ---
-templ peoplePage(activePath string, people []Person) {
+templ peoplePage(activePath string, people []Person, allCount, unnamedCount int, unnamedOnly bool) {
 	<div class="sidebar-layout">
 		@gallerySidebar(activePath, 0, 0)
 		<div class="sidebar-content">
 			<h1>People</h1>
+			if allCount > 0 {
+				<div class="flex gap-1 mb-2">
+					<a
+						href="/apps/gallery/people"
+						class={ "btn btn-sm", templ.KV("btn-primary", !unnamedOnly), templ.KV("btn-outline", unnamedOnly) }
+					>
+						All ({ strconv.Itoa(allCount) })
+					</a>
+					<a
+						href="/apps/gallery/people?filter=unnamed"
+						class={ "btn btn-sm", templ.KV("btn-primary", unnamedOnly), templ.KV("btn-outline", !unnamedOnly) }
+					>
+						Unnamed ({ strconv.Itoa(unnamedCount) })
+					</a>
+				</div>
+			}
 			if len(people) == 0 {
 				@ui.Card("") {
-					<p class="text-muted">No people recognized yet. Enable image recognition in settings.</p>
+					if unnamedOnly {
+						<p class="text-muted">Everyone has a name. Nothing left to categorize.</p>
+					} else {
+						<p class="text-muted">No people recognized yet. Enable image recognition in settings.</p>
+					}
 				}
 			} else {
 				<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">

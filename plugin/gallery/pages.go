@@ -115,8 +115,19 @@ func (h *Pages) People(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	people, _ := ListPeople(db)
+	unnamed := make([]Person, 0, len(people))
+	for _, p := range people {
+		if p.Name == "" {
+			unnamed = append(unnamed, p)
+		}
+	}
+	unnamedOnly := r.URL.Query().Get("filter") == "unnamed"
+	shown := people
+	if unnamedOnly {
+		shown = unnamed
+	}
 	plugin.SetTitle(w, "People")
-	peoplePage(r.URL.Path, people).Render(r.Context(), w)
+	peoplePage(r.URL.Path, shown, len(people), len(unnamed), unnamedOnly).Render(r.Context(), w)
 }
 
 // PersonView renders faces for a specific person.

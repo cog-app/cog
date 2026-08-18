@@ -414,6 +414,18 @@ func (r *Response) Contains(substr string) *Response {
 	return r
 }
 
+// NotContains asserts the response body does not contain the given substring.
+// Returns r for chaining.
+func (r *Response) NotContains(substr string) *Response {
+	r.t.Helper()
+	body := r.ReadBody()
+	if strings.Contains(body, substr) {
+		r.t.Fatalf("%s %s body unexpectedly contains %q\nbody: %s",
+			r.Request.Method, r.Request.URL.Path, substr, body)
+	}
+	return r
+}
+
 // Equals asserts the response body equals the given string exactly.
 // Returns r for chaining.
 func (r *Response) Equals(want string) *Response {
