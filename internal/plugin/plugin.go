@@ -32,6 +32,7 @@ type ResourceRef = cogplugin.ResourceRef
 type SearchSourceDef = cogplugin.SearchSourceDef
 type PermissionLevel = cogplugin.PermissionLevel
 type CookieConfig = cogplugin.CookieConfig
+type Flash = cogplugin.Flash
 type ShareStore = cogplugin.ShareStore
 type ShareRecord = cogplugin.ShareRecord
 type AccessDecision = cogplugin.AccessDecision
@@ -85,6 +86,7 @@ var (
 	CSRFToken            = cogplugin.CSRFToken
 	UserDB               = cogplugin.UserDB
 	SetTitle             = cogplugin.SetTitle
+	SetFlash             = cogplugin.SetFlash
 	Username             = cogplugin.Username
 	WriteJSON            = cogplugin.WriteJSON
 	PathID               = cogplugin.PathID

@@ -13,6 +13,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/recipes"
 )
 
@@ -434,10 +435,12 @@ func TestRecipesImportValidation(t *testing.T) {
 	postAction(t, env, "/apps/recipes/api/import",
 		map[string]string{"url": ""}, cookie, csrf).Status(400)
 
-	// Empty URL via form
-	postFormAction(t, env, "/apps/recipes/recipes/import-url", url.Values{
+	// Empty URL via form: back to the form with the reason, not an error page.
+	resp := postFormAction(t, env, "/apps/recipes/recipes/import-url", url.Values{
 		"url": {""},
-	}, cookie, csrf).Status(400)
+	}, cookie, csrf)
+	resp.Status(303)
+	require.Equal(t, "/apps/recipes/import", resp.Header.Get("Location"))
 
 	// Invalid scheme
 	postAction(t, env, "/apps/recipes/api/import",
@@ -466,4 +469,41 @@ func TestRecipesUserIsolation(t *testing.T) {
 	env.Get(t, "/apps/recipes/api/recipes", alice.Auth).
 		Status(200).JSON(&aliceList)
 	require.Equal(t, 1, len(aliceList))
+}
+
+// A page that is not a recipe has to say so on the import form. Answering the
+// POST with an error page dropped the layout and left the browser offering to
+// re-submit on reload.
+func TestRecipesImportFailureReturnsToTheForm(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!DOCTYPE html><html><body><p>an article, not a recipe</p></body></html>`)
+	}))
+	t.Cleanup(srv.Close)
+
+	env := cogtest.New(t, recipes.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	ensureMigrated(t, env, alice.Username)
+	cookie, csrf := sessionAuth(t, env, alice)
+
+	resp := postFormAction(t, env, "/apps/recipes/recipes/import-url", url.Values{
+		"url": {srv.URL},
+	}, cookie, csrf)
+	resp.Status(303)
+	require.Equal(t, "/apps/recipes/import", resp.Header.Get("Location"))
+
+	var flash *http.Cookie
+	for _, ck := range resp.Cookies() {
+		if ck.Name == cogplugin.FlashCookieName {
+			flash = ck
+		}
+	}
+	require.NotNil(t, flash)
+
+	// The form comes back with the reason on it, inside the page.
+	env.Get(t, "/apps/recipes/import", alice.Auth,
+		cogtest.Header("Cookie", flash.Name+"="+flash.Value)).
+		Status(200).
+		Contains("Could not import that page").
+		Contains("Recipe URL")
 }

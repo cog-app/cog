@@ -884,8 +884,44 @@ func (pr *pluginRegistrar) RegisterAPI(path string, handler http.Handler) {
 
 func (pr *pluginRegistrar) RegisterAction(method, path string, handler http.Handler) {
 	pattern := fmt.Sprintf("%s /apps/%s/%s", method, pr.pluginID, path)
-	wrapped := auth.RequireAuthWeb(pr.injectPluginContext(pr.csrf().Require(handler)))
+	wrapped := auth.RequireAuthWeb(pr.injectPluginContext(pr.csrf().Require(pr.carryFlash(handler))))
 	pr.mux.Handle(pattern, pr.wrap(wrapped))
+}
+
+// carryFlash turns the flash header a plugin sets into the flash cookie. It
+// wraps the handler rather than living inside plugin.SetFlash because only the
+// host knows the deployment's cookie settings — an out-of-process plugin is
+// handed a zero CookieConfig, and would drop Secure on an HTTPS site.
+func (pr *pluginRegistrar) carryFlash(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(&flashWriter{ResponseWriter: w, cookies: pr.Cookies()}, r)
+	})
+}
+
+// flashWriter moves the header across before the response head is committed,
+// which is the last moment a Set-Cookie can still be added.
+type flashWriter struct {
+	http.ResponseWriter
+	cookies CookieConfig
+	moved   bool
+}
+
+func (f *flashWriter) WriteHeader(code int) {
+	f.move()
+	f.ResponseWriter.WriteHeader(code)
+}
+
+func (f *flashWriter) Write(b []byte) (int, error) {
+	f.move()
+	return f.ResponseWriter.Write(b)
+}
+
+func (f *flashWriter) move() {
+	if f.moved {
+		return
+	}
+	f.moved = true
+	f.cookies.TakeFlashHeader(f.ResponseWriter)
 }
 
 func (pr *pluginRegistrar) RegisterRoute(pattern string, handler http.Handler) {
