@@ -276,7 +276,7 @@ func (h *Pages) ImportFromURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.plugin.FetchAndImport(db, plugin.Username(r), rawURL)
+	result, err := h.plugin.FetchAndImport(db, plugin.Username(r), rawURL, r.UserAgent())
 	if err != nil {
 		h.plugin.log.Warn("recipe import failed", "url", rawURL, "err", err)
 		importFailed(w, r, "Could not import that page: "+err.Error())
