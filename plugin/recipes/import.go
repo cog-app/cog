@@ -11,9 +11,28 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const maxBodySize = 5 * 1024 * 1024 // 5 MB
+
+// acceptHTML and acceptImage are what a browser asks for on a navigation and
+// on an <img>, which is what the importer is standing in for.
+const (
+	acceptHTML  = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+	acceptImage = "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
+)
+
+// A bot wall answers a share of requests with a challenge rather than all of
+// them: Cloudflare scores the Go client on its TLS and HTTP/2 fingerprint, not
+// its User-Agent, and challenged roughly half of cold connections to
+// allrecipes.com in testing. Retrying on the same client rides the connection
+// that was already admitted, which clears most of them. No header we can set
+// clears the rest.
+const (
+	maxFetchAttempts = 3
+	fetchRetryDelay  = 300 * time.Millisecond
+)
 
 // defaultUserAgent identifies the importer when the request that asked for the
 // import carried no usable one of its own.
@@ -39,23 +58,12 @@ func (p *Plugin) FetchAndImport(db *sql.DB, username, rawURL, userAgent string) 
 		return nil, err
 	}
 
-	req, err := http.NewRequest("GET", rawURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
 	ua := sanitizeUserAgent(userAgent)
-	req.Header.Set("User-Agent", ua)
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-
-	resp, err := p.client.Do(req)
+	resp, err := p.fetch(rawURL, ua, acceptHTML)
 	if err != nil {
-		return nil, fmt.Errorf("fetch URL: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
-	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodySize))
 	if err != nil {
@@ -88,27 +96,67 @@ func (p *Plugin) FetchAndImport(db *sql.DB, username, rawURL, userAgent string) 
 	return &ImportFromURLResult{RecipeID: id}, nil
 }
 
+// fetch GETs a URL as the importing browser would, retrying a bot-wall
+// challenge. Returns a response with an unread body on success only; every
+// other outcome has already closed what it opened.
+func (p *Plugin) fetch(rawURL, ua, accept string) (*http.Response, error) {
+	var lastStatus int
+	for attempt := 1; ; attempt++ {
+		req, err := http.NewRequest("GET", rawURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("build request: %w", err)
+		}
+		req.Header.Set("User-Agent", ua)
+		req.Header.Set("Accept", accept)
+		req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+
+		resp, err := p.client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("fetch URL: %w", err)
+		}
+		if resp.StatusCode == http.StatusOK {
+			return resp, nil
+		}
+		lastStatus = resp.StatusCode
+		retryable := isBotWall(resp)
+		// Draining is what lets the retry reuse this connection, and reusing
+		// it is the whole point.
+		io.Copy(io.Discard, io.LimitReader(resp.Body, maxBodySize))
+		resp.Body.Close()
+
+		if !retryable {
+			return nil, fmt.Errorf("unexpected status: %d", lastStatus)
+		}
+		if attempt == maxFetchAttempts {
+			return nil, fmt.Errorf("blocked by the site's bot protection after %d attempts (status %d)", maxFetchAttempts, lastStatus)
+		}
+		time.Sleep(fetchRetryDelay)
+	}
+}
+
+// isBotWall reports whether a response looks like an anti-bot challenge rather
+// than a considered refusal. Cloudflare labels its own; for anything else a
+// 403 or 503 on a page a browser can open is the only signal available.
+func isBotWall(resp *http.Response) bool {
+	switch resp.StatusCode {
+	case http.StatusForbidden, http.StatusServiceUnavailable:
+		return true
+	default:
+		return resp.Header.Get("cf-mitigated") == "challenge"
+	}
+}
+
 // downloadImage fetches an image and saves it to the recipes images directory.
 func (p *Plugin) downloadImage(username string, recipeID int64, imageURL, userAgent string) error {
 	if err := validateURL(imageURL); err != nil {
 		return err
 	}
 
-	req, err := http.NewRequest("GET", imageURL, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("User-Agent", sanitizeUserAgent(userAgent))
-
-	resp, err := p.client.Do(req)
+	resp, err := p.fetch(imageURL, sanitizeUserAgent(userAgent), acceptImage)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("image fetch status: %d", resp.StatusCode)
-	}
 
 	ct := resp.Header.Get("Content-Type")
 	if !strings.HasPrefix(ct, "image/") {

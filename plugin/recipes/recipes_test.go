@@ -508,6 +508,73 @@ func TestRecipesImportFailureReturnsToTheForm(t *testing.T) {
 		Contains("Recipe URL")
 }
 
+// Cloudflare challenges a share of requests on fingerprints no header can
+// change, so a 403 is a coin toss rather than a refusal. Retrying it is the
+// only thing that gets the import through.
+func TestRecipesImportRetriesABotWallChallenge(t *testing.T) {
+	var attempts int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.Header().Set("cf-mitigated", "challenge")
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!DOCTYPE html><html><head>
+			<script type="application/ld+json">
+			{"@type":"Recipe","name":"Challenged Soup"}
+			</script>
+			</head><body></body></html>`)
+	}))
+	t.Cleanup(srv.Close)
+
+	env := cogtest.New(t, recipes.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	ensureMigrated(t, env, alice.Username)
+	cookie, csrf := sessionAuth(t, env, alice)
+
+	env.PostForm(t, "/apps/recipes/recipes/import-url", url.Values{"url": {srv.URL}},
+		cookie, csrf, cogtest.StopRedirect).
+		Status(303)
+
+	require.Equal(t, 2, attempts)
+}
+
+// Retrying is bounded, and what comes back names the wall rather than a bare
+// status code — the person importing can only act on the former.
+func TestRecipesImportGivesUpOnAPersistentBotWall(t *testing.T) {
+	var attempts int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	t.Cleanup(srv.Close)
+
+	env := cogtest.New(t, recipes.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	ensureMigrated(t, env, alice.Username)
+	cookie, csrf := sessionAuth(t, env, alice)
+
+	resp := env.PostForm(t, "/apps/recipes/recipes/import-url", url.Values{"url": {srv.URL}},
+		cookie, csrf, cogtest.StopRedirect).
+		Status(303)
+
+	require.Equal(t, 3, attempts)
+
+	var flash *http.Cookie
+	for _, ck := range resp.Cookies() {
+		if ck.Name == cogplugin.FlashCookieName {
+			flash = ck
+		}
+	}
+	require.NotNil(t, flash)
+	env.Get(t, "/apps/recipes/import", alice.Auth,
+		cogtest.Header("Cookie", flash.Name+"="+flash.Value)).
+		Status(200).
+		Contains("bot protection")
+}
+
 // Recipe sites serve a 403 to anything that does not look like a browser. The
 // person importing is using one, so its User-Agent is what goes out.
 func TestRecipesImportForwardsTheRequestersUserAgent(t *testing.T) {
