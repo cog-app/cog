@@ -133,10 +133,12 @@ templ Base(pd PageData) {
 			</script>
 			if pd.PluginID != "" {
 				<main class="content" data-plugin={ pd.PluginID }>
+					@pageFlash(pd)
 					{ children... }
 				</main>
 			} else {
 				<main class="content">
+					@pageFlash(pd)
 					{ children... }
 				</main>
 			}
@@ -400,10 +402,12 @@ templ Shell(pd PageData, body templ.Component) {
 			</script>
 			if pd.PluginID != "" {
 				<main class="content" data-plugin={ pd.PluginID }>
+					@pageFlash(pd)
 					@body
 				</main>
 			} else {
 				<main class="content">
+					@pageFlash(pd)
 					@body
 				</main>
 			}
@@ -1072,6 +1076,19 @@ templ SearchResults(pages []PageLink, userHits, systemHits []search.Hit, isAdmin
 				<span class="search-hit-name">{ hitName(hit) }</span>
 				<span class="badge badge-admin">{ hit.Source }</span>
 			</a>
+		}
+	}
+}
+
+// pageFlash renders the message a redirect carried, if any. A page that reads
+// the flash itself and renders it in its own layout leaves PageData.Flash nil,
+// so nothing shows twice.
+templ pageFlash(pd PageData) {
+	if pd.Flash != nil {
+		if pd.Flash.URL != "" {
+			@AlertWithCopy(pd.Flash.Kind, pd.Flash.Message, pd.Flash.URL)
+		} else {
+			@Alert(pd.Flash.Kind, pd.Flash.Message)
 		}
 	}
 }

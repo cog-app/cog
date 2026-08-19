@@ -6,9 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
+
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 )
 
 // maxCSRFMultipartMem caps in-memory parsing of multipart bodies during
@@ -94,13 +97,24 @@ func ValidateCSRFFor(r *http.Request, sessionID, pluginID string, secret []byte)
 	return hmac.Equal([]byte(token), []byte(expected))
 }
 
-// RequireCSRFFor wraps a handler and enforces plugin-scoped CSRF on state-changing methods.
-func RequireCSRFFor(pluginID string, secret []byte, next http.Handler) http.Handler {
+// CSRF enforces the token on state-changing requests. The three things it
+// needs travel together, which is why they are a struct and not three
+// parameters: the secret a token is verified against, the cookie settings a
+// rejection's flash is written under, and the logger a rejection is reported
+// to. A zero Log falls back to the default logger.
+type CSRF struct {
+	Secret  []byte
+	Cookies cogplugin.CookieConfig
+	Log     *slog.Logger
+}
+
+// Require wraps a handler and enforces CSRF on state-changing methods.
+func (c CSRF) Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE" || r.Method == "PATCH" {
+		if isMutation(r.Method) {
 			sessID := SessionIDFromContext(r.Context())
-			if sessID == "" || !ValidateCSRFFor(r, sessID, pluginID, secret) {
-				csrfReject(w, r)
+			if sessID == "" || !ValidateCSRF(r, sessID, c.Secret) {
+				c.reject(w, r)
 				return
 			}
 		}
@@ -108,13 +122,13 @@ func RequireCSRFFor(pluginID string, secret []byte, next http.Handler) http.Hand
 	})
 }
 
-// RequireCSRF wraps a handler and enforces CSRF on state-changing methods.
-func RequireCSRF(secret []byte, next http.Handler) http.Handler {
+// RequireFor wraps a handler and enforces a plugin-scoped token.
+func (c CSRF) RequireFor(pluginID string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE" || r.Method == "PATCH" {
+		if isMutation(r.Method) {
 			sessID := SessionIDFromContext(r.Context())
-			if sessID == "" || !ValidateCSRF(r, sessID, secret) {
-				csrfReject(w, r)
+			if sessID == "" || !ValidateCSRFFor(r, sessID, pluginID, c.Secret) {
+				c.reject(w, r)
 				return
 			}
 		}
@@ -122,17 +136,37 @@ func RequireCSRF(secret []byte, next http.Handler) http.Handler {
 	})
 }
 
-// csrfReject responds to a CSRF failure. For HTMX requests it sends
-// HX-Refresh to trigger a full page reload (which fetches a new token).
-// For regular form POSTs it redirects back to the page via GET.
+func isMutation(method string) bool {
+	switch method {
+	case "POST", "PUT", "DELETE", "PATCH":
+		return true
+	}
+	return false
+}
+
+// reject responds to a CSRF failure. For HTMX requests it sends HX-Refresh to
+// trigger a full page reload (which fetches a new token). For regular form
+// POSTs it redirects back to the page via GET.
 //
-// The Referer-based redirect is sanitized to same-origin only — without
-// this, an attacker could induce a CSRF-failing request from evil.com and
-// the Referer header (attacker-controlled) would land the victim on a
-// phishing page. Cross-origin or unparseable Referers fall back to the
-// current path.
-func csrfReject(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("HX-Request") == "true" {
+// The Referer-based redirect is sanitized to same-origin only — without this,
+// an attacker could induce a CSRF-failing request from evil.com and the Referer
+// header (attacker-controlled) would land the victim on a phishing page.
+// Cross-origin or unparseable Referers fall back to the current path.
+//
+// A flash goes with the redirect, and the rejection is logged. Neither is
+// decoration: a bare 303 back to the form is indistinguishable from the browser
+// doing nothing, which is how a page left open past its session expiry reads to
+// whoever is submitting it.
+func (c CSRF) reject(w http.ResponseWriter, r *http.Request) {
+	log := c.Log
+	if log == nil {
+		log = slog.Default()
+	}
+	htmx := r.Header.Get("HX-Request") == "true"
+	log.Warn("rejected request with invalid CSRF token",
+		"method", r.Method, "path", r.URL.Path, "htmx", htmx)
+
+	if htmx {
 		w.Header().Set("HX-Refresh", "true")
 		http.Error(w, "Forbidden — invalid CSRF token", http.StatusForbidden)
 		return
@@ -141,6 +175,10 @@ func csrfReject(w http.ResponseWriter, r *http.Request) {
 	if target == "" {
 		target = r.URL.Path
 	}
+	c.Cookies.SetFlash(w, cogplugin.Flash{
+		Kind:    "error",
+		Message: "That form had expired, so nothing was submitted. Please try again.",
+	})
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 

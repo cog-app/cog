@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/plugin"
 	"github.com/microcosm-cc/bluemonday"
 )
 
@@ -47,6 +48,7 @@ type PageData struct {
 	PluginID          string        // owning plugin; rendered as data-plugin on <main> for web components
 	PluginSettingsNav []SidebarItem // plugin-registered admin settings items (shown below divider)
 	Favicon           string        // favicon URL; empty uses default /static/favicon.svg
+	Flash             *plugin.Flash // message carried by a redirect; rendered above the page body
 }
 
 // FaviconURL returns the favicon URL, defaulting to /static/favicon.svg.

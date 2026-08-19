@@ -125,7 +125,7 @@ func TestRequireCSRFFor(t *testing.T) {
 	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	handler := RequireCSRFFor(pluginID, secret, ok)
+	handler := CSRF{Secret: secret}.RequireFor(pluginID, ok)
 
 	// Inject session ID into context.
 	withSession := func(r *http.Request) *http.Request {

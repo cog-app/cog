@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -57,7 +58,7 @@ func TestSanitizeReferer_NoHost(t *testing.T) {
 
 func TestRequireCSRF_RejectRedirectsSameOrigin(t *testing.T) {
 	secret := []byte("test-secret")
-	h := RequireCSRF(secret, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := CSRF{Secret: secret}.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -83,7 +84,7 @@ func TestRequireCSRF_RejectRedirectsSameOrigin(t *testing.T) {
 
 func TestRequireCSRF_RejectIgnoresCrossOriginReferer(t *testing.T) {
 	secret := []byte("test-secret")
-	h := RequireCSRF(secret, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := CSRF{Secret: secret}.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -108,7 +109,7 @@ func TestRequireCSRF_RejectIgnoresCrossOriginReferer(t *testing.T) {
 
 func TestRequireCSRF_HTMXRejectionGives403(t *testing.T) {
 	secret := []byte("test-secret")
-	h := RequireCSRF(secret, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := CSRF{Secret: secret}.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -131,7 +132,7 @@ func TestRequireCSRF_HTMXRejectionGives403(t *testing.T) {
 func TestRequireCSRF_GETPassesThrough(t *testing.T) {
 	secret := []byte("test-secret")
 	called := false
-	h := RequireCSRF(secret, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := CSRF{Secret: secret}.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 	}))
 
@@ -146,7 +147,7 @@ func TestRequireCSRF_GETPassesThrough(t *testing.T) {
 
 func TestRequireCSRF_MissingSessionRejected(t *testing.T) {
 	secret := []byte("test-secret")
-	h := RequireCSRF(secret, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := CSRF{Secret: secret}.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -397,5 +398,49 @@ func TestValidateCSRF_QueryStringIgnored(t *testing.T) {
 	// Body has nothing, header has nothing, only query string.
 	if ValidateCSRF(req, "sess1", secret) {
 		t.Fatal("CSRF token in query string must not be accepted")
+	}
+}
+
+// A rejection the user cannot see reads as the browser doing nothing at all,
+// which is how the recipes import page behaved for a form left open too long.
+func TestRequireCSRF_RejectFlashesAndLogs(t *testing.T) {
+	var logged bytes.Buffer
+	h := CSRF{
+		Secret:  []byte("test-secret"),
+		Cookies: cogplugin.CookieConfig{Secure: true},
+		Log:     slog.New(slog.NewTextHandler(&logged, nil)),
+	}.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler ran despite a rejected token")
+	}))
+
+	req := httptest.NewRequest("POST", "/apps/recipes/recipes/import-url", nil)
+	req.Host = "cog.example.com"
+	req.Header.Set("Referer", "https://cog.example.com/apps/recipes/import")
+	req = req.WithContext(context.WithValue(req.Context(), sessionContextKey, "sess1"))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusSeeOther)
+	}
+	var flash *cogplugin.Flash
+	for _, ck := range rec.Result().Cookies() {
+		if ck.Name == cogplugin.FlashCookieName {
+			flash = (cogplugin.CookieConfig{}).TakeFlash(httptest.NewRecorder(),
+				&http.Request{Header: http.Header{"Cookie": {ck.String()}}})
+			if !ck.Secure {
+				t.Error("flash cookie is not Secure under an https deployment")
+			}
+		}
+	}
+	if flash == nil {
+		t.Fatal("rejection set no flash message")
+	}
+	if flash.Kind != "error" || !strings.Contains(flash.Message, "expired") {
+		t.Fatalf("flash = %+v, want an error about the form expiring", flash)
+	}
+	if !strings.Contains(logged.String(), "invalid CSRF token") {
+		t.Fatalf("rejection was not logged, got: %s", logged.String())
 	}
 }
