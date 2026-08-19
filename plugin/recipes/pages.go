@@ -276,7 +276,7 @@ func (h *Pages) ImportFromURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.plugin.FetchAndImport(db, plugin.Username(r), rawURL)
+	result, err := h.plugin.FetchAndImport(db, plugin.Username(r), rawURL, r.UserAgent())
 	if err != nil {
 		http.Error(w, "Import failed: "+err.Error(), http.StatusBadRequest)
 		return

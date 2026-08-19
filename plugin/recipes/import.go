@@ -15,13 +15,26 @@ import (
 
 const maxBodySize = 5 * 1024 * 1024 // 5 MB
 
+// defaultUserAgent identifies the importer when the request that asked for the
+// import carried no usable one of its own.
+const defaultUserAgent = "Cog/1.0 (Recipe Importer)"
+
+// maxUserAgentLen bounds a forwarded User-Agent. Real ones are well under this;
+// anything longer is not a browser and does not need to be passed on.
+const maxUserAgentLen = 256
+
 // ImportFromURLResult holds the result of importing a recipe from a URL.
 type ImportFromURLResult struct {
 	RecipeID int64
 }
 
 // FetchAndImport fetches a URL, extracts recipe JSON-LD, and stores it.
-func (p *Plugin) FetchAndImport(db *sql.DB, username, rawURL string) (*ImportFromURLResult, error) {
+//
+// userAgent is the one from the request that asked for the import — recipe
+// sites routinely serve a 403 to anything that does not look like a browser,
+// and the person importing is sitting in front of a browser that the site
+// would have served. It is sanitized, not trusted: it reaches a third party.
+func (p *Plugin) FetchAndImport(db *sql.DB, username, rawURL, userAgent string) (*ImportFromURLResult, error) {
 	if err := validateURL(rawURL); err != nil {
 		return nil, err
 	}
@@ -30,7 +43,8 @@ func (p *Plugin) FetchAndImport(db *sql.DB, username, rawURL string) (*ImportFro
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
-	req.Header.Set("User-Agent", "Cog/1.0 (Recipe Importer)")
+	ua := sanitizeUserAgent(userAgent)
+	req.Header.Set("User-Agent", ua)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
 	resp, err := p.client.Do(req)
@@ -62,7 +76,7 @@ func (p *Plugin) FetchAndImport(db *sql.DB, username, rawURL string) (*ImportFro
 
 	// Try to download the image
 	if recipe.ImageURL != "" {
-		if err := p.downloadImage(username, id, recipe.ImageURL); err != nil {
+		if err := p.downloadImage(username, id, recipe.ImageURL, ua); err != nil {
 			p.log.Warn("failed to download recipe image", "url", recipe.ImageURL, "err", err)
 		} else {
 			ext := imageExtFromURL(recipe.ImageURL)
@@ -75,7 +89,7 @@ func (p *Plugin) FetchAndImport(db *sql.DB, username, rawURL string) (*ImportFro
 }
 
 // downloadImage fetches an image and saves it to the recipes images directory.
-func (p *Plugin) downloadImage(username string, recipeID int64, imageURL string) error {
+func (p *Plugin) downloadImage(username string, recipeID int64, imageURL, userAgent string) error {
 	if err := validateURL(imageURL); err != nil {
 		return err
 	}
@@ -84,7 +98,7 @@ func (p *Plugin) downloadImage(username string, recipeID int64, imageURL string)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "Cog/1.0 (Recipe Importer)")
+	req.Header.Set("User-Agent", sanitizeUserAgent(userAgent))
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -147,6 +161,22 @@ func imageExtFromContentType(ct string) string {
 	default:
 		return ".jpg"
 	}
+}
+
+// sanitizeUserAgent returns a User-Agent safe to put on an outbound request.
+// A header value is only allowed printable ASCII, and a caller controls this
+// one, so anything else — or anything absurdly long — falls back to naming the
+// importer rather than being repaired into something unrecognisable.
+func sanitizeUserAgent(ua string) string {
+	if ua == "" || len(ua) > maxUserAgentLen {
+		return defaultUserAgent
+	}
+	for i := 0; i < len(ua); i++ {
+		if ua[i] < 0x20 || ua[i] > 0x7e {
+			return defaultUserAgent
+		}
+	}
+	return ua
 }
 
 func validateURL(rawURL string) error {

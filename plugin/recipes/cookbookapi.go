@@ -283,7 +283,7 @@ func (a *CookbookAPI) ImportFromURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := a.plugin.FetchAndImport(db, a.username(r), req.URL)
+	result, err := a.plugin.FetchAndImport(db, a.username(r), req.URL, r.UserAgent())
 	if err != nil {
 		http.Error(w, "import failed: "+err.Error(), http.StatusBadRequest)
 		return

@@ -467,3 +467,64 @@ func TestRecipesUserIsolation(t *testing.T) {
 		Status(200).JSON(&aliceList)
 	require.Equal(t, 1, len(aliceList))
 }
+
+// Recipe sites serve a 403 to anything that does not look like a browser. The
+// person importing is using one, so its User-Agent is what goes out.
+func TestRecipesImportForwardsTheRequestersUserAgent(t *testing.T) {
+	const browserUA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/141.0 Safari/537.36"
+
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.UserAgent())
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!DOCTYPE html><html><head>
+			<script type="application/ld+json">
+			{"@type":"Recipe","name":"UA Soup"}
+			</script>
+			</head><body></body></html>`)
+	}))
+	t.Cleanup(srv.Close)
+
+	env := cogtest.New(t, recipes.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	ensureMigrated(t, env, alice.Username)
+	cookie, csrf := sessionAuth(t, env, alice)
+
+	env.PostForm(t, "/apps/recipes/recipes/import-url", url.Values{"url": {srv.URL}},
+		cookie, csrf, cogtest.Header("User-Agent", browserUA), cogtest.StopRedirect).
+		Status(303)
+
+	require.Equal(t, 1, len(seen))
+	require.Equal(t, browserUA, seen[0])
+}
+
+// A User-Agent is caller-controlled and goes to a third party. One that could
+// not legally sit in a header is replaced, not repaired.
+func TestRecipesImportRejectsAnUnusableUserAgent(t *testing.T) {
+	var seen string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.UserAgent()
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!DOCTYPE html><html><head>
+			<script type="application/ld+json">
+			{"@type":"Recipe","name":"Fallback Soup"}
+			</script>
+			</head><body></body></html>`)
+	}))
+	t.Cleanup(srv.Close)
+
+	env := cogtest.New(t, recipes.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	ensureMigrated(t, env, alice.Username)
+	cookie, csrf := sessionAuth(t, env, alice)
+
+	// The API path takes the same route to the fetch, and a JSON client is
+	// where an odd User-Agent would come from.
+	req := cogtest.NewRequest(t, "POST", env.Providers.Config.BaseURL+"/apps/recipes/api/import",
+		strings.NewReader(`{"url":"`+srv.URL+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "curl/8.0 ééé"+strings.Repeat("x", 300))
+	env.Do(t, req, cookie, csrf).Status(200)
+
+	require.Equal(t, "Cog/1.0 (Recipe Importer)", seen)
+}
