@@ -209,7 +209,9 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	}
 
 	// Discover and load process plugins from PATH.
-	registry.DiscoverProcessPlugins()
+	if !cfg.DisableProcessPlugins {
+		registry.DiscoverProcessPlugins()
+	}
 
 	// Wire mount resolver into plugin registry.
 	resolver := mount.NewResolver(users, mounts, volumes)

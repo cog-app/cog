@@ -30,4 +30,8 @@ type Config struct {
 	SSHAddr        string `json:"ssh_addr"`          // env COG_SSH_ADDR, default ":2222"
 	SSHEnabled     bool   `json:"ssh_enabled"`       // env COG_SSH_ENABLED, default true
 	SSHHostKeyPath string `json:"ssh_host_key_path"` // env COG_SSH_HOST_KEY, default ""
+
+	// DisableProcessPlugins skips loading cog-plugin-* binaries from PATH.
+	// Tests set this so they don't depend on what's installed on the machine.
+	DisableProcessPlugins bool `json:"disable_process_plugins"`
 }

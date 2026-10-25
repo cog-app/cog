@@ -132,8 +132,9 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	t.Cleanup(ts.Close)
 
 	cfg := config.Config{
-		BaseURL: ts.URL,
-		DataDir: dataDir,
+		BaseURL:               ts.URL,
+		DataDir:               dataDir,
+		DisableProcessPlugins: true,
 	}
 
 	p := services.NewFromDB(log, cfg, sysDB, tc.Clock(), plugins...)

@@ -30,13 +30,15 @@ func TestSSHInteractiveShell(t *testing.T) {
 
 	dataDir := t.TempDir()
 	cfg := config.Config{
-		DataDir:    dataDir,
-		SSHEnabled: true,
-		SSHAddr:    "127.0.0.1:0",
+		DataDir:               dataDir,
+		SSHEnabled:            true,
+		SSHAddr:               "127.0.0.1:0",
+		DisableProcessPlugins: true,
 	}
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	p := services.NewFromDB(log, cfg, sysDB, clock.System())
+	t.Cleanup(p.Plugins.Stop)
 	require.NoError(t, p.Plugins.Start(context.Background()))
 	_, err = p.Users.Create("testuser", "testpass")
 	require.NoError(t, err)
