@@ -40,13 +40,15 @@ func newTestEnv(t *testing.T) *testEnv {
 
 	dataDir := t.TempDir()
 	cfg := config.Config{
-		DataDir:    dataDir,
-		SSHEnabled: true,
-		SSHAddr:    "127.0.0.1:0",
+		DataDir:               dataDir,
+		SSHEnabled:            true,
+		SSHAddr:               "127.0.0.1:0",
+		DisableProcessPlugins: true,
 	}
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	p := services.NewFromDB(log, cfg, sysDB, clock.System())
+	t.Cleanup(p.Plugins.Stop)
 	if err := p.Plugins.Start(context.Background()); err != nil {
 		t.Fatalf("start plugins: %v", err)
 	}
