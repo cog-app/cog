@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS calendars (
 	sort_order INTEGER NOT NULL DEFAULT 0,
 	ctag INTEGER NOT NULL DEFAULT 1,
 	sync_token INTEGER NOT NULL DEFAULT 0,
+	timezone TEXT NOT NULL DEFAULT '',
 	created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 	updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
@@ -44,6 +45,11 @@ CREATE TABLE IF NOT EXISTS events (
 	created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 	updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
 	UNIQUE(calendar_id, uid)
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS notifications (

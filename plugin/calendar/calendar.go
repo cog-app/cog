@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -23,10 +24,11 @@ const PluginID = "calendar"
 
 // Plugin is the calendar plugin.
 type Plugin struct {
-	ctx    plugin.PluginContext
-	log    *slog.Logger
-	cancel context.CancelFunc
-	done   chan struct{}
+	ctx      plugin.PluginContext
+	log      *slog.Logger
+	cancel   context.CancelFunc
+	done     chan struct{}
+	repaired sync.Map // username -> struct{}: RepairEventTimes ran this process
 }
 
 // New creates a new Calendar plugin instance.
@@ -43,6 +45,32 @@ func (p *Plugin) ID() string { return PluginID }
 // does any of that work.
 func (p *Plugin) DB(username string) (*sql.DB, error) {
 	return p.ctx.PluginDB(username)
+}
+
+// userDB is DB plus repairOnce. Use it wherever event times are read.
+func (p *Plugin) userDB(username string) (*sql.DB, error) {
+	db, err := p.DB(username)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.repairOnce(username, db); err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+// repairOnce brings a user's indexed event times up to date with the current
+// parser the first time their database is used in this process. Plugin
+// migrations are SQL-only, and re-deriving times needs the ICS parser.
+func (p *Plugin) repairOnce(username string, db *sql.DB) error {
+	if _, done := p.repaired.Load(username); done {
+		return nil
+	}
+	if err := RepairEventTimes(db); err != nil {
+		return fmt.Errorf("repair event times for %s: %w", username, err)
+	}
+	p.repaired.Store(username, struct{}{})
+	return nil
 }
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
@@ -83,6 +111,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("DELETE", "events/{id}", http.HandlerFunc(pages.DeleteEvent))
 	ctx.RegisterAction("POST", "events/{id}/respond", http.HandlerFunc(pages.RespondToInvite))
 	ctx.RegisterAction("POST", "calendars", http.HandlerFunc(pages.CreateCalendar))
+	ctx.RegisterAction("POST", "calendars/{id}", http.HandlerFunc(pages.UpdateCalendarHandler))
 	ctx.RegisterAction("DELETE", "calendars/{id}", http.HandlerFunc(pages.DeleteCalendarHandler))
 	ctx.RegisterAPI("notifications", http.HandlerFunc(pages.Notifications))
 	ctx.RegisterAPI("rrule-preview", http.HandlerFunc(pages.RRulePreview))
@@ -111,7 +140,7 @@ func (p *Plugin) Stop() error {
 }
 
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
-	db, err := p.DB(userID)
+	db, err := p.userDB(userID)
 	if err != nil {
 		return nil
 	}
@@ -144,7 +173,7 @@ func (p *Plugin) SharedCalendars(username string) ([]SharedCalendar, error) {
 		}
 		// rec.OwnerUserID is the username of the calendar owner.
 		// rec.ResourceID is the calendar UID in the owner's DB.
-		ownerDB, err := p.DB(rec.OwnerUserID)
+		ownerDB, err := p.userDB(rec.OwnerUserID)
 		if err != nil {
 			continue
 		}
@@ -217,13 +246,16 @@ func (p *Plugin) processReminders() {
 
 // EnsureNotifications creates notification records for an event's alarms.
 // Call this when creating or updating an event.
-func EnsureNotifications(db *sql.DB, eventID int64, dtstart int64, icsData string) {
+func EnsureNotifications(db *sql.DB, eventID int64, dtstart int64, icsData string) error {
 	// Clear old notifications for this event.
-	db.Exec(`DELETE FROM notifications WHERE event_id = ?`, eventID)
+	if _, err := db.Exec(`DELETE FROM notifications WHERE event_id = ?`, eventID); err != nil {
+		return fmt.Errorf("clear notifications: %w", err)
+	}
 
+	// Only VALARM triggers are needed here; times come from dtstart.
 	fields, err := ParseVEvent(icsData)
 	if err != nil || len(fields.Alarms) == 0 {
-		return
+		return nil
 	}
 
 	for _, alarm := range fields.Alarms {
@@ -231,9 +263,12 @@ func EnsureNotifications(db *sql.DB, eventID int64, dtstart int64, icsData strin
 		if triggerAt <= 0 {
 			continue
 		}
-		db.Exec(`INSERT INTO notifications (event_id, trigger_at) VALUES (?, ?)`,
-			eventID, triggerAt)
+		if _, err := db.Exec(`INSERT INTO notifications (event_id, trigger_at) VALUES (?, ?)`,
+			eventID, triggerAt); err != nil {
+			return fmt.Errorf("insert notification: %w", err)
+		}
 	}
+	return nil
 }
 
 // DueNotifications returns unfired notifications that are due (trigger_at <= now).

@@ -182,6 +182,12 @@
                 </label>
                 <input class="form-control" id="color" name="color" type="color" value="#0082c9" />
               </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label for="timezone">
+                  Timezone
+                </label>
+                <input class="form-control" data-browser-tz="" id="timezone" list="cal-timezones" name="timezone" placeholder="America/Denver" type="text" />
+              </div>
               <button class="btn btn-primary" type="submit">
                 Create
               </button>
@@ -195,6 +201,27 @@
               No calendars.
             </p>
           </div>
+          <datalist id="cal-timezones">
+            <option value="UTC" />
+            <option value="Pacific/Honolulu" />
+            <option value="America/Anchorage" />
+            <option value="America/Los_Angeles" />
+            <option value="America/Phoenix" />
+            <option value="America/Denver" />
+            <option value="America/Chicago" />
+            <option value="America/New_York" />
+            <option value="America/Halifax" />
+            <option value="America/Sao_Paulo" />
+            <option value="Europe/London" />
+            <option value="Europe/Berlin" />
+            <option value="Europe/Paris" />
+            <option value="Europe/Helsinki" />
+            <option value="Asia/Kolkata" />
+            <option value="Asia/Shanghai" />
+            <option value="Asia/Tokyo" />
+            <option value="Australia/Sydney" />
+            <option value="Pacific/Auckland" />
+          </datalist>
           <div class="card">
             <div class="card-title">
               CalDAV Access

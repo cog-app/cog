@@ -1,6 +1,7 @@
 package calendar
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -23,9 +24,21 @@ func NewPages(p *Plugin) *Pages {
 	return &Pages{plugin: p}
 }
 
+// userDB returns the request user's database with event times repaired.
+func (h *Pages) userDB(r *http.Request) (*sql.DB, error) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.plugin.repairOnce(plugin.Username(r), db); err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
 // Index shows the FullCalendar UI.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	db, err := h.userDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -39,7 +52,7 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 
 // Settings shows calendar management.
 func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	db, err := h.userDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -51,7 +64,7 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 
 // EventsJSON returns events as JSON for FullCalendar.
 func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	db, err := h.userDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -80,9 +93,10 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			for _, ev := range raw {
 				events = append(events, EventWithCalendar{
-					Event:         ev,
-					CalendarName:  cal.Name,
-					CalendarColor: cal.Color,
+					Event:            ev,
+					CalendarName:     cal.Name,
+					CalendarColor:    cal.Color,
+					CalendarTimezone: cal.Timezone,
 				})
 			}
 		}
@@ -92,7 +106,7 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 		// Also include events from calendars shared with this user.
 		shared, _ := h.plugin.SharedCalendars(u.Username)
 		for _, sc := range shared {
-			ownerDB, err := h.plugin.DB(sc.OwnerUsername)
+			ownerDB, err := h.plugin.userDB(sc.OwnerUsername)
 			if err != nil {
 				continue
 			}
@@ -169,7 +183,7 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 
 // EventDetail returns an event detail partial for the modal.
 func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	db, err := h.userDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -193,7 +207,7 @@ func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
 
 // UpdateEvent handles POST to update an existing event.
 func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	db, err := h.userDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -219,19 +233,10 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		calID = ev.CalendarID
 	}
 
-	var dtstart, dtend time.Time
-	if isAllDay {
-		dtstart, _ = time.Parse("2006-01-02", r.FormValue("date_start"))
-		dtend, _ = time.Parse("2006-01-02", r.FormValue("date_end"))
-		if dtend.IsZero() {
-			dtend = dtstart.AddDate(0, 0, 1)
-		}
-	} else {
-		dtstart, _ = time.Parse("2006-01-02T15:04", r.FormValue("datetime_start"))
-		dtend, _ = time.Parse("2006-01-02T15:04", r.FormValue("datetime_end"))
-		if dtend.IsZero() {
-			dtend = dtstart.Add(time.Hour)
-		}
+	dtstart, dtend, err := h.formTimes(db, r, calID, isAllDay)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	eventColor := r.FormValue("color")
@@ -243,9 +248,15 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The form doesn't edit reminders; carry them over from the stored ICS.
+	var alarms []VAlarm
+	if old, err := ParseVEvent(ev.ICSData); err == nil {
+		alarms = old.Alarms
+	}
+
 	// Parse attendees from form
 	attendeeFields := parseAttendeeForm(r)
-	icsData := GenerateICSFull(ev.UID, summary, description, location, dtstart, dtend, isAllDay, rrule, nil, attendeeFields, h.plugin.ctx.Now())
+	icsData := GenerateICSFull(ev.UID, summary, description, location, dtstart, dtend, isAllDay, rrule, alarms, attendeeFields, h.plugin.ctx.Now())
 	fields := VEventFields{
 		UID: ev.UID, Summary: summary, Description: description, Location: location,
 		DTStart: dtstart, DTEnd: dtend, IsAllDay: isAllDay, Color: eventColor, RRule: rrule,
@@ -257,10 +268,18 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Moving to another calendar: the upsert created the event there, so
+	// remove it from the old one (recording the deletion for DAV sync).
+	if calID != ev.CalendarID {
+		if err := DeleteEvent(db, ev.CalendarID, ev.UID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 
 	// Create alarm notifications.
-	if updated != nil {
-		EnsureNotifications(db, updated.ID, updated.DTStart, icsData)
+	if err := EnsureNotifications(db, updated.ID, updated.DTStart, icsData); err != nil {
+		h.plugin.log.Error("update event reminders", "id", updated.ID, "err", err)
 	}
 
 	// Replace attendees and send updated invitations
@@ -279,31 +298,26 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 
 // CreateEvent handles POST to create a new event.
 func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	db, err := h.userDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	calID, _ := strconv.ParseInt(r.FormValue("calendar_id"), 10, 64)
+	calID, err := strconv.ParseInt(r.FormValue("calendar_id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid calendar", http.StatusBadRequest)
+		return
+	}
 	summary := r.FormValue("summary")
 	location := r.FormValue("location")
 	description := r.FormValue("description")
 	isAllDay := r.FormValue("all_day") == "on"
 
-	var dtstart, dtend time.Time
-	if isAllDay {
-		dtstart, _ = time.Parse("2006-01-02", r.FormValue("date_start"))
-		dtend, _ = time.Parse("2006-01-02", r.FormValue("date_end"))
-		if dtend.IsZero() {
-			dtend = dtstart.AddDate(0, 0, 1)
-		}
-	} else {
-		dtstart, _ = time.Parse("2006-01-02T15:04", r.FormValue("datetime_start"))
-		dtend, _ = time.Parse("2006-01-02T15:04", r.FormValue("datetime_end"))
-		if dtend.IsZero() {
-			dtend = dtstart.Add(time.Hour)
-		}
+	dtstart, dtend, err := h.formTimes(db, r, calID, isAllDay)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	eventColor := r.FormValue("color")
@@ -332,8 +346,8 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create alarm notifications.
-	if ev != nil {
-		EnsureNotifications(db, ev.ID, ev.DTStart, icsData)
+	if err := EnsureNotifications(db, ev.ID, ev.DTStart, icsData); err != nil {
+		h.plugin.log.Error("create event reminders", "id", ev.ID, "err", err)
 	}
 
 	// Save attendees to DB and send invitations
@@ -349,7 +363,7 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 
 // DeleteEvent handles DELETE to remove an event (HTMX).
 func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	db, err := h.userDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -386,7 +400,7 @@ func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 
 // CreateCalendar handles POST to create a new calendar.
 func (h *Pages) CreateCalendar(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	db, err := h.userDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -397,10 +411,103 @@ func (h *Pages) CreateCalendar(w http.ResponseWriter, r *http.Request) {
 	if uid == "" {
 		uid = name
 	}
+	tz := r.FormValue("timezone")
+	if tz != "" && LoadTimezone(tz) == nil {
+		http.Error(w, "unknown timezone "+tz, http.StatusBadRequest)
+		return
+	}
 	if name != "" {
-		CreateCalendar(db, uid, name, color, "")
+		if _, err := CreateCalendar(db, uid, name, color, "", tz); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 	http.Redirect(w, r, "/apps/calendar/settings", http.StatusSeeOther)
+}
+
+// UpdateCalendarHandler handles POST to rename, recolor or rezone a calendar.
+func (h *Pages) UpdateCalendarHandler(w http.ResponseWriter, r *http.Request) {
+	db, err := h.userDB(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	cal, err := GetCalendar(db, id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		name = cal.Name
+	}
+	color := r.FormValue("color")
+	if color == "" {
+		color = cal.Color
+	}
+	tz := r.FormValue("timezone")
+	if tz != "" && LoadTimezone(tz) == nil {
+		http.Error(w, "unknown timezone "+tz, http.StatusBadRequest)
+		return
+	}
+	if err := UpdateCalendar(db, id, name, color, cal.Description); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := SetCalendarTimezone(db, id, tz); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Name and color are DAV properties; bump the ctag so clients refetch.
+	if err := BumpCTag(db, id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/apps/calendar/settings", http.StatusSeeOther)
+}
+
+// formTimes parses an event form's start and end. Date-times are read in the
+// form's tz field (the browser's zone), falling back to the calendar's zone,
+// and keep that zone so the ICS records it as TZID.
+func (h *Pages) formTimes(db *sql.DB, r *http.Request, calID int64, isAllDay bool) (time.Time, time.Time, error) {
+	if isAllDay {
+		start, err := time.Parse("2006-01-02", r.FormValue("date_start"))
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid start date")
+		}
+		end := start.AddDate(0, 0, 1)
+		if v := r.FormValue("date_end"); v != "" {
+			if end, err = time.Parse("2006-01-02", v); err != nil {
+				return time.Time{}, time.Time{}, fmt.Errorf("invalid end date")
+			}
+		}
+		return start, end, nil
+	}
+
+	loc := time.UTC
+	if tz := r.FormValue("tz"); tz != "" {
+		if loc = LoadTimezone(tz); loc == nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("unknown timezone %q", tz)
+		}
+	} else if cal, err := GetCalendar(db, calID); err == nil {
+		loc = cal.Zone()
+	}
+	start, err := time.ParseInLocation("2006-01-02T15:04", r.FormValue("datetime_start"), loc)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid start time")
+	}
+	end := start.Add(time.Hour)
+	if v := r.FormValue("datetime_end"); v != "" {
+		if end, err = time.ParseInLocation("2006-01-02T15:04", v, loc); err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid end time")
+		}
+	}
+	return start, end, nil
 }
 
 func buildRRule(r *http.Request) string {
@@ -633,7 +740,7 @@ func (h *Pages) sendInvitations(method string, ev *Event, summary, description, 
 
 // RespondToInvite handles POST to accept/decline an event invitation.
 func (h *Pages) RespondToInvite(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	db, err := h.userDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -654,7 +761,7 @@ func (h *Pages) RespondToInvite(w http.ResponseWriter, r *http.Request) {
 }
 
 func expandRRule(ev EventWithCalendar, rangeStart, rangeEnd time.Time) []EventWithCalendar {
-	fields, err := ParseVEvent(ev.ICSData)
+	fields, err := ParseVEventIn(ev.ICSData, ev.Zone())
 	if err != nil || fields.RRule == "" {
 		return []EventWithCalendar{ev}
 	}
@@ -663,10 +770,17 @@ func expandRRule(ev EventWithCalendar, rangeStart, rangeEnd time.Time) []EventWi
 	if err != nil {
 		return []EventWithCalendar{ev}
 	}
+	// DTSTART keeps its zone, so occurrences land on the same local time
+	// across DST changes.
 	rule.DTStart(fields.DTStart)
+	var set rrulelib.Set
+	set.RRule(rule)
+	for _, ex := range fields.ExDates {
+		set.ExDate(ex)
+	}
 
 	duration := time.Unix(ev.DTEnd, 0).Sub(time.Unix(ev.DTStart, 0))
-	occurrences := rule.Between(rangeStart.Add(-duration), rangeEnd, true)
+	occurrences := set.Between(rangeStart.Add(-duration), rangeEnd, true)
 
 	var result []EventWithCalendar
 	for _, occ := range occurrences {
@@ -679,16 +793,12 @@ func expandRRule(ev EventWithCalendar, rangeStart, rangeEnd time.Time) []EventWi
 		e.DTEnd = occEnd.Unix()
 		result = append(result, e)
 	}
-
-	if len(result) == 0 {
-		return []EventWithCalendar{ev}
-	}
 	return result
 }
 
 // DeleteCalendarHandler handles DELETE to remove a calendar (HTMX).
 func (h *Pages) DeleteCalendarHandler(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	db, err := h.userDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -698,14 +808,17 @@ func (h *Pages) DeleteCalendarHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	DeleteCalendar(db, id)
+	if err := DeleteCalendar(db, id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
 // Notifications returns due (unfired) reminder notifications as JSON.
 // GET /apps/calendar/notifications
 func (h *Pages) Notifications(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	db, err := h.userDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

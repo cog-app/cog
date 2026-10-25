@@ -859,6 +859,7 @@
           </h2>
           <form action="/apps/calendar/events" id="create-event-form" method="post" onsubmit="clearColorIfUnchecked('ce-color-enable','ce-color')">
             <input name="csrf_token" type="hidden" value="«hex»" />
+            <input data-browser-tz="" name="tz" type="hidden" value="UTC" />
             <div class="form-group">
               <label for="ce-calendar">
                 Calendar

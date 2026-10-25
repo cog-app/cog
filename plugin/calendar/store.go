@@ -3,7 +3,9 @@ package calendar
 import (
 	"crypto/md5"
 	"database/sql"
+	"errors"
 	"fmt"
+	"time"
 )
 
 // Calendar is a user's named calendar collection.
@@ -16,8 +18,17 @@ type Calendar struct {
 	SortOrder   int
 	CTag        int64
 	SyncToken   int64
+	Timezone    string // IANA zone for floating times and new events; "" = UTC
 	CreatedAt   int64
 	UpdatedAt   int64
+}
+
+// Zone returns the calendar's timezone, or UTC when unset or unknown.
+func (c *Calendar) Zone() *time.Location {
+	if loc := LoadTimezone(c.Timezone); loc != nil {
+		return loc
+	}
+	return time.UTC
 }
 
 // Event is a single calendar event with indexed fields and raw ICS blob.
@@ -41,14 +52,23 @@ type Event struct {
 // EventWithCalendar extends Event with calendar metadata for display.
 type EventWithCalendar struct {
 	Event
-	CalendarName  string
-	CalendarColor string
+	CalendarName     string
+	CalendarColor    string
+	CalendarTimezone string
+}
+
+// Zone returns the owning calendar's timezone, used for floating times.
+func (e *EventWithCalendar) Zone() *time.Location {
+	if loc := LoadTimezone(e.CalendarTimezone); loc != nil {
+		return loc
+	}
+	return time.UTC
 }
 
 // --- Calendar CRUD ---
 
 func ListCalendars(db *sql.DB) ([]Calendar, error) {
-	rows, err := db.Query(`SELECT id, uid, name, color, description, sort_order, ctag, sync_token, created_at, updated_at FROM calendars ORDER BY sort_order, name`)
+	rows, err := db.Query(`SELECT id, uid, name, color, description, sort_order, ctag, sync_token, timezone, created_at, updated_at FROM calendars ORDER BY sort_order, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +76,7 @@ func ListCalendars(db *sql.DB) ([]Calendar, error) {
 	var cals []Calendar
 	for rows.Next() {
 		var c Calendar
-		if err := rows.Scan(&c.ID, &c.UID, &c.Name, &c.Color, &c.Description, &c.SortOrder, &c.CTag, &c.SyncToken, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.UID, &c.Name, &c.Color, &c.Description, &c.SortOrder, &c.CTag, &c.SyncToken, &c.Timezone, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, err
 		}
 		cals = append(cals, c)
@@ -66,8 +86,8 @@ func ListCalendars(db *sql.DB) ([]Calendar, error) {
 
 func GetCalendar(db *sql.DB, id int64) (*Calendar, error) {
 	var c Calendar
-	err := db.QueryRow(`SELECT id, uid, name, color, description, sort_order, ctag, sync_token, created_at, updated_at FROM calendars WHERE id = ?`, id).
-		Scan(&c.ID, &c.UID, &c.Name, &c.Color, &c.Description, &c.SortOrder, &c.CTag, &c.SyncToken, &c.CreatedAt, &c.UpdatedAt)
+	err := db.QueryRow(`SELECT id, uid, name, color, description, sort_order, ctag, sync_token, timezone, created_at, updated_at FROM calendars WHERE id = ?`, id).
+		Scan(&c.ID, &c.UID, &c.Name, &c.Color, &c.Description, &c.SortOrder, &c.CTag, &c.SyncToken, &c.Timezone, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -76,19 +96,19 @@ func GetCalendar(db *sql.DB, id int64) (*Calendar, error) {
 
 func GetCalendarByUID(db *sql.DB, uid string) (*Calendar, error) {
 	var c Calendar
-	err := db.QueryRow(`SELECT id, uid, name, color, description, sort_order, ctag, sync_token, created_at, updated_at FROM calendars WHERE uid = ?`, uid).
-		Scan(&c.ID, &c.UID, &c.Name, &c.Color, &c.Description, &c.SortOrder, &c.CTag, &c.SyncToken, &c.CreatedAt, &c.UpdatedAt)
+	err := db.QueryRow(`SELECT id, uid, name, color, description, sort_order, ctag, sync_token, timezone, created_at, updated_at FROM calendars WHERE uid = ?`, uid).
+		Scan(&c.ID, &c.UID, &c.Name, &c.Color, &c.Description, &c.SortOrder, &c.CTag, &c.SyncToken, &c.Timezone, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &c, nil
 }
 
-func CreateCalendar(db *sql.DB, uid, name, color, description string) (*Calendar, error) {
+func CreateCalendar(db *sql.DB, uid, name, color, description, timezone string) (*Calendar, error) {
 	if color == "" {
 		color = "#0082c9"
 	}
-	res, err := db.Exec(`INSERT INTO calendars (uid, name, color, description) VALUES (?, ?, ?, ?)`, uid, name, color, description)
+	res, err := db.Exec(`INSERT INTO calendars (uid, name, color, description, timezone) VALUES (?, ?, ?, ?, ?)`, uid, name, color, description, timezone)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +119,15 @@ func CreateCalendar(db *sql.DB, uid, name, color, description string) (*Calendar
 func UpdateCalendar(db *sql.DB, id int64, name, color, description string) error {
 	_, err := db.Exec(`UPDATE calendars SET name = ?, color = ?, description = ?, updated_at = unixepoch() WHERE id = ?`, name, color, description, id)
 	return err
+}
+
+// SetCalendarTimezone changes a calendar's zone and recomputes its events'
+// indexed times, since floating times are read in that zone.
+func SetCalendarTimezone(db *sql.DB, id int64, timezone string) error {
+	if _, err := db.Exec(`UPDATE calendars SET timezone = ?, updated_at = unixepoch() WHERE id = ? AND timezone != ?`, timezone, id, timezone); err != nil {
+		return err
+	}
+	return RecomputeEventTimes(db, id)
 }
 
 func DeleteCalendar(db *sql.DB, id int64) error {
@@ -118,7 +147,7 @@ func EnsureDefaultCalendar(db *sql.DB) error {
 		return err
 	}
 	if count == 0 {
-		_, err := CreateCalendar(db, "personal", "Personal", "#0082c9", "")
+		_, err := CreateCalendar(db, "personal", "Personal", "#0082c9", "", "")
 		return err
 	}
 	return nil
@@ -161,14 +190,7 @@ func GetEvent(db *sql.DB, id int64) (*Event, error) {
 // UpsertEvent inserts or updates an event, bumps the calendar's ctag.
 func UpsertEvent(db *sql.DB, calendarID int64, uid, icsData string, fields VEventFields) (*Event, error) {
 	etag := fmt.Sprintf("%x", md5.Sum([]byte(icsData)))
-	dtstart := fields.DTStart.Unix()
-	dtend := fields.DTEnd.Unix()
-	if fields.DTStart.IsZero() {
-		dtstart = 0
-	}
-	if fields.DTEnd.IsZero() {
-		dtend = 0
-	}
+	dtstart, dtend := eventUnix(fields)
 
 	_, err := db.Exec(`INSERT INTO events (calendar_id, uid, etag, summary, location, description, dtstart, dtend, is_all_day, color, ics_data)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -229,7 +251,7 @@ func DeleteEventByID(db *sql.DB, id int64) error {
 func UpcomingEvents(db *sql.DB, now int64, limit int) ([]EventWithCalendar, error) {
 	rows, err := db.Query(`SELECT e.id, e.calendar_id, e.uid, e.etag, e.summary, e.location, e.description,
 		e.dtstart, e.dtend, e.is_all_day, e.color, e.ics_data, e.created_at, e.updated_at,
-		c.name, c.color
+		c.name, c.color, c.timezone
 		FROM events e JOIN calendars c ON e.calendar_id = c.id
 		WHERE e.dtstart >= ? OR e.dtend >= ?
 		ORDER BY e.dtstart LIMIT ?`, now, now, limit)
@@ -242,7 +264,7 @@ func UpcomingEvents(db *sql.DB, now int64, limit int) ([]EventWithCalendar, erro
 		var ev EventWithCalendar
 		if err := rows.Scan(&ev.ID, &ev.CalendarID, &ev.UID, &ev.ETag, &ev.Summary, &ev.Location, &ev.Description,
 			&ev.DTStart, &ev.DTEnd, &ev.IsAllDay, &ev.Color, &ev.ICSData, &ev.CreatedAt, &ev.UpdatedAt,
-			&ev.CalendarName, &ev.CalendarColor); err != nil {
+			&ev.CalendarName, &ev.CalendarColor, &ev.CalendarTimezone); err != nil {
 			return nil, err
 		}
 		events = append(events, ev)
@@ -254,7 +276,7 @@ func UpcomingEvents(db *sql.DB, now int64, limit int) ([]EventWithCalendar, erro
 func AllEvents(db *sql.DB, limit int) ([]EventWithCalendar, error) {
 	rows, err := db.Query(`SELECT e.id, e.calendar_id, e.uid, e.etag, e.summary, e.location, e.description,
 		e.dtstart, e.dtend, e.is_all_day, e.color, e.ics_data, e.created_at, e.updated_at,
-		c.name, c.color
+		c.name, c.color, c.timezone
 		FROM events e JOIN calendars c ON e.calendar_id = c.id
 		ORDER BY e.dtstart LIMIT ?`, limit)
 	if err != nil {
@@ -266,7 +288,7 @@ func AllEvents(db *sql.DB, limit int) ([]EventWithCalendar, error) {
 		var ev EventWithCalendar
 		if err := rows.Scan(&ev.ID, &ev.CalendarID, &ev.UID, &ev.ETag, &ev.Summary, &ev.Location, &ev.Description,
 			&ev.DTStart, &ev.DTEnd, &ev.IsAllDay, &ev.Color, &ev.ICSData, &ev.CreatedAt, &ev.UpdatedAt,
-			&ev.CalendarName, &ev.CalendarColor); err != nil {
+			&ev.CalendarName, &ev.CalendarColor, &ev.CalendarTimezone); err != nil {
 			return nil, err
 		}
 		events = append(events, ev)
@@ -278,7 +300,7 @@ func AllEvents(db *sql.DB, limit int) ([]EventWithCalendar, error) {
 func EventsInRange(db *sql.DB, start, end int64) ([]EventWithCalendar, error) {
 	rows, err := db.Query(`SELECT e.id, e.calendar_id, e.uid, e.etag, e.summary, e.location, e.description,
 		e.dtstart, e.dtend, e.is_all_day, e.color, e.ics_data, e.created_at, e.updated_at,
-		c.name, c.color
+		c.name, c.color, c.timezone
 		FROM events e JOIN calendars c ON e.calendar_id = c.id
 		WHERE e.dtstart < ? AND (e.dtend > ? OR e.ics_data LIKE '%RRULE:%')
 		ORDER BY e.dtstart`, end, start)
@@ -291,7 +313,7 @@ func EventsInRange(db *sql.DB, start, end int64) ([]EventWithCalendar, error) {
 		var ev EventWithCalendar
 		if err := rows.Scan(&ev.ID, &ev.CalendarID, &ev.UID, &ev.ETag, &ev.Summary, &ev.Location, &ev.Description,
 			&ev.DTStart, &ev.DTEnd, &ev.IsAllDay, &ev.Color, &ev.ICSData, &ev.CreatedAt, &ev.UpdatedAt,
-			&ev.CalendarName, &ev.CalendarColor); err != nil {
+			&ev.CalendarName, &ev.CalendarColor, &ev.CalendarTimezone); err != nil {
 			return nil, err
 		}
 		events = append(events, ev)
@@ -330,7 +352,7 @@ func DeletedEventsSince(db *sql.DB, calendarID, sinceToken int64) ([]string, err
 // EventsInRangeForCalendar returns events in a calendar overlapping the given time range.
 func EventsInRangeForCalendar(db *sql.DB, calendarID, start, end int64) ([]Event, error) {
 	rows, err := db.Query(`SELECT id, calendar_id, uid, etag, summary, location, description,
-		dtstart, dtend, is_all_day, ics_data, created_at, updated_at
+		dtstart, dtend, is_all_day, color, ics_data, created_at, updated_at
 		FROM events WHERE calendar_id = ? AND dtstart < ? AND (dtend > ? OR ics_data LIKE '%RRULE:%')
 		ORDER BY dtstart`, calendarID, end, start)
 	if err != nil {
@@ -402,4 +424,95 @@ func scanEvents(rows *sql.Rows) ([]Event, error) {
 		events = append(events, e)
 	}
 	return events, rows.Err()
+}
+
+// eventTimesVersion is bumped when the way dtstart/dtend are derived from
+// ics_data changes, so RepairEventTimes recomputes existing rows once.
+// v1: honour TZID and the calendar's zone instead of reading local times as UTC.
+const eventTimesVersion = "1"
+
+// RepairEventTimes recomputes every event's indexed times if they were derived
+// by an older parser. It is a no-op once the database is current.
+func RepairEventTimes(db *sql.DB) error {
+	var v string
+	err := db.QueryRow(`SELECT value FROM meta WHERE key = 'event_times_version'`).Scan(&v)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("read event times version: %w", err)
+	}
+	if v == eventTimesVersion {
+		return nil
+	}
+	if err := RecomputeEventTimes(db, 0); err != nil {
+		return err
+	}
+	_, err = db.Exec(`INSERT INTO meta (key, value) VALUES ('event_times_version', ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, eventTimesVersion)
+	return err
+}
+
+// RecomputeEventTimes re-derives dtstart, dtend and reminder times from
+// ics_data for one calendar, or all calendars when calendarID is 0. The ICS
+// itself is untouched, so etags and DAV clients are unaffected.
+func RecomputeEventTimes(db *sql.DB, calendarID int64) error {
+	cals, err := ListCalendars(db)
+	if err != nil {
+		return fmt.Errorf("list calendars: %w", err)
+	}
+	locs := make(map[int64]*time.Location, len(cals))
+	for i := range cals {
+		locs[cals[i].ID] = cals[i].Zone()
+	}
+
+	rows, err := db.Query(`SELECT id, calendar_id, dtstart, dtend, ics_data FROM events WHERE ? = 0 OR calendar_id = ?`, calendarID, calendarID)
+	if err != nil {
+		return fmt.Errorf("list events: %w", err)
+	}
+	type change struct {
+		id, start, end int64
+		ics            string
+	}
+	var changes []change
+	for rows.Next() {
+		var id, calID, start, end int64
+		var ics string
+		if err := rows.Scan(&id, &calID, &start, &end, &ics); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan event: %w", err)
+		}
+		fields, err := ParseVEventIn(ics, locs[calID])
+		if err != nil {
+			continue // unparseable ICS was stored as-is; nothing to derive
+		}
+		newStart, newEnd := eventUnix(fields)
+		if newStart != start || newEnd != end {
+			changes = append(changes, change{id, newStart, newEnd, ics})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("iterate events: %w", err)
+	}
+	rows.Close()
+
+	for _, c := range changes {
+		if _, err := db.Exec(`UPDATE events SET dtstart = ?, dtend = ? WHERE id = ?`, c.start, c.end, c.id); err != nil {
+			return fmt.Errorf("update event %d times: %w", c.id, err)
+		}
+		if err := EnsureNotifications(db, c.id, c.start, c.ics); err != nil {
+			return fmt.Errorf("update event %d reminders: %w", c.id, err)
+		}
+	}
+	return nil
+}
+
+// eventUnix returns the indexed start and end for parsed fields, using 0 for
+// missing values.
+func eventUnix(f VEventFields) (start, end int64) {
+	if !f.DTStart.IsZero() {
+		start = f.DTStart.Unix()
+	}
+	if !f.DTEnd.IsZero() {
+		end = f.DTEnd.Unix()
+	}
+	return start, end
 }

@@ -86,7 +86,7 @@ func TestCalendarCreateCalendar(t *testing.T) {
 	db, err := cp.DB(alice.Username)
 	require.NoError(t, err)
 
-	_, err = calendar.CreateCalendar(db, "work-cal", "Work", "#ff0000", "Work events")
+	_, err = calendar.CreateCalendar(db, "work-cal", "Work", "#ff0000", "Work events", "")
 	require.NoError(t, err)
 
 	cals, err := calendar.ListCalendars(db)
