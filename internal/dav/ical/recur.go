@@ -20,7 +20,7 @@ var ErrNoStart = errors.New("ical: no DTSTART")
 type Instance struct {
 	// Event describes the occurrence: the master, or the override that
 	// replaces it.
-	Event *Event
+	Event *Component
 	Start time.Time
 	End   time.Time
 	// RecurrenceID is the master occurrence this is; zero for an event that
@@ -28,14 +28,25 @@ type Instance struct {
 	RecurrenceID time.Time
 }
 
-// Span returns a component's own start and end. Without DTEND or DURATION, an
-// all-day event lasts one day and a timed one is an instant (RFC 5545
-// §3.6.1).
-func (e *Event) Span(z Zones) (time.Time, time.Time, error) {
-	if e.Start.IsZero() {
+// anchor returns the value a component's occurrences are counted from:
+// DTSTART, or for a task without one, DUE, as clients that recur tasks by
+// their due date write them.
+func (e *Component) anchor() DateTime {
+	if e.Start.IsZero() && e.Kind == VTODO {
+		return e.Due
+	}
+	return e.Start
+}
+
+// Span returns a component's own start and end. Without DTEND, DUE or
+// DURATION, an all-day event lasts one day and anything else is an instant
+// (RFC 5545 §3.6.1). A task with only a DUE is an instant at it.
+func (e *Component) Span(z Zones) (time.Time, time.Time, error) {
+	a := e.anchor()
+	if a.IsZero() {
 		return time.Time{}, time.Time{}, ErrNoStart
 	}
-	start, err := e.Start.Time(z)
+	start, err := a.Time(z)
 	if err != nil {
 		return time.Time{}, time.Time{}, err
 	}
@@ -43,41 +54,54 @@ func (e *Event) Span(z Zones) (time.Time, time.Time, error) {
 	return start, end, err
 }
 
+// endValue returns the value that ends the component's span exactly: DTEND,
+// or a task's DUE when it has a DTSTART.
+func (e *Component) endValue() DateTime {
+	if e.Kind == VTODO {
+		if e.Start.IsZero() {
+			return DateTime{}
+		}
+		return e.Due
+	}
+	return e.End
+}
+
 // endFor returns the end of an occurrence starting at start: DURATION is
-// nominal, so it is added in the occurrence's zone; DTEND gives an exact
-// length.
-func (e *Event) endFor(start time.Time, z Zones) (time.Time, error) {
-	switch {
+// nominal, so it is added in the occurrence's zone; DTEND or DUE gives an
+// exact length.
+func (e *Component) endFor(start time.Time, z Zones) (time.Time, error) {
+	a := e.anchor()
+	switch endV := e.endValue(); {
 	case e.Duration != "":
 		d, err := ParseDuration(e.Duration)
 		if err != nil {
 			return start, err
 		}
 		return d.Add(start), nil
-	case !e.End.IsZero():
-		first, err := e.Start.Time(z)
+	case !endV.IsZero():
+		first, err := a.Time(z)
 		if err != nil {
 			return start, err
 		}
-		end, err := e.End.Time(z)
+		end, err := endV.Time(z)
 		if err != nil {
 			return start, err
 		}
 		if end.Before(first) {
 			return start, nil
 		}
-		if e.Start.IsDate {
+		if a.IsDate {
 			return start.AddDate(0, 0, int(end.Sub(first).Hours()/24)), nil
 		}
 		return start.Add(end.Sub(first)), nil
-	case e.Start.IsDate:
+	case a.IsDate && e.Kind != VTODO:
 		return start.AddDate(0, 0, 1), nil
 	}
 	return start, nil
 }
 
 // Recurs reports whether the component has a recurrence rule or dates.
-func (e *Event) Recurs() bool { return e.RRule != "" || len(e.RDates) > 0 }
+func (e *Component) Recurs() bool { return e.RRule != "" || len(e.RDates) > 0 }
 
 // exclusions holds a master's EXDATEs: instants, and whole days for DATE
 // values on a DATE-TIME event, which some clients send.
@@ -90,10 +114,10 @@ func (x exclusions) has(t time.Time) bool {
 	return x.at[t.Unix()] || x.days[t.Format(layoutDate)]
 }
 
-func excluded(m *Event, z Zones) (exclusions, error) {
+func excluded(m *Component, z Zones) (exclusions, error) {
 	x := exclusions{at: map[int64]bool{}, days: map[string]bool{}}
 	for _, d := range m.ExDates {
-		if d.IsDate && !m.Start.IsDate {
+		if d.IsDate && !m.anchor().IsDate {
 			x.days[d.Local] = true
 			continue
 		}
@@ -107,8 +131,8 @@ func excluded(m *Event, z Zones) (exclusions, error) {
 }
 
 // recurrence builds the master's occurrence set, DTSTART included.
-func recurrence(m *Event, z Zones) (*rrule.Set, *rrule.ROption, error) {
-	start, err := m.Start.Time(z)
+func recurrence(m *Component, z Zones) (*rrule.Set, *rrule.ROption, error) {
+	start, err := m.anchor().Time(z)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -146,8 +170,8 @@ func (o *Object) walk(z Zones, until time.Time, yield func(Instance)) (bool, err
 	m := o.Master()
 	var x exclusions
 	overrides := map[int64]bool{}
-	var future []*Event // RANGE=THISANDFUTURE, by recurrence ID
-	for _, e := range o.Events {
+	var future []*Component // RANGE=THISANDFUTURE, by recurrence ID
+	for _, e := range o.Components {
 		if !e.IsOverride() {
 			continue
 		}
@@ -160,14 +184,14 @@ func (o *Object) walk(z Zones, until time.Time, yield func(Instance)) (bool, err
 			future = append(future, e)
 		}
 	}
-	slices.SortFunc(future, func(a, b *Event) int {
+	slices.SortFunc(future, func(a, b *Component) int {
 		ta, _ := a.RecurrenceID.Time(z)
 		tb, _ := b.RecurrenceID.Time(z)
 		return ta.Compare(tb)
 	})
 
 	complete := true
-	if m != nil && !m.Start.IsZero() {
+	if m != nil && !m.anchor().IsZero() {
 		var err error
 		if x, err = excluded(m, z); err != nil {
 			return false, err
@@ -204,7 +228,7 @@ func (o *Object) walk(z Zones, until time.Time, yield func(Instance)) (bool, err
 			}
 		}
 	}
-	for _, e := range o.Events {
+	for _, e := range o.Components {
 		if !e.IsOverride() {
 			continue
 		}
@@ -217,7 +241,7 @@ func (o *Object) walk(z Zones, until time.Time, yield func(Instance)) (bool, err
 			continue
 		}
 		start, end := rid, rid
-		if !e.Start.IsZero() {
+		if !e.anchor().IsZero() {
 			if start, end, err = e.Span(z); err != nil {
 				return false, err
 			}
@@ -233,8 +257,8 @@ func (o *Object) walk(z Zones, until time.Time, yield func(Instance)) (bool, err
 
 // applyFuture returns the occurrence at occ, as changed by the latest
 // THISANDFUTURE override before it: its properties, and its shift in time.
-func applyFuture(m *Event, future []*Event, occ time.Time, z Zones) (Instance, error) {
-	var by *Event
+func applyFuture(m *Component, future []*Component, occ time.Time, z Zones) (Instance, error) {
+	var by *Component
 	var rid time.Time
 	for _, f := range future {
 		t, err := f.RecurrenceID.Time(z)
@@ -243,11 +267,11 @@ func applyFuture(m *Event, future []*Event, occ time.Time, z Zones) (Instance, e
 		}
 		by, rid = f, t
 	}
-	if by == nil || by.Start.IsZero() {
+	if by == nil || by.anchor().IsZero() {
 		end, err := m.endFor(occ, z)
 		return Instance{Event: m, Start: occ, End: end, RecurrenceID: occ}, err
 	}
-	fs, err := by.Start.Time(z)
+	fs, err := by.anchor().Time(z)
 	if err != nil {
 		return Instance{}, err
 	}
@@ -280,7 +304,7 @@ func (o *Object) Bounds(z Zones) (start, end time.Time, unbounded bool, err erro
 	}
 	if unbounded {
 		// Still find the earliest start, from DTSTART and the overrides.
-		for _, e := range o.Events {
+		for _, e := range o.Components {
 			s, _, err := e.Span(z)
 			if err == nil && (start.IsZero() || s.Before(start)) {
 				start = s

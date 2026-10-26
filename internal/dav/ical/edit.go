@@ -16,25 +16,13 @@ var ErrNotRecurring = errors.New("ical: not a recurring event")
 // ErrNoOccurrence is returned when an object has no instance at a time.
 var ErrNoOccurrence = errors.New("ical: no such occurrence")
 
-// At writes t the way the component's DTSTART is written: a DATE, a UTC
-// time, a floating time, or wall time in the same zone.
-func (e *Event) At(t time.Time, z Zones) DateTime {
-	switch {
-	case e.Start.IsDate:
-		return DateTime{Local: t.UTC().Format(layoutDate), IsDate: true}
-	case e.Start.TZID == "UTC":
-		return DateTime{Local: t.UTC().Format(layoutDateTime), TZID: "UTC"}
-	}
-	return DateTime{Local: t.In(z.Location(e.Start.TZID)).Format(layoutDateTime), TZID: e.Start.TZID}
-}
+// At writes t the way the component's DTSTART (or a task's DUE, without
+// one) is written: a DATE, a UTC time, a floating time, or wall time in the
+// same zone.
+func (e *Component) At(t time.Time, z Zones) DateTime { return like(e.anchor(), t, z) }
 
-// shifted returns d moved by delta, written in its own zone and type.
-func shifted(d DateTime, delta time.Duration, z Zones) DateTime {
-	t, err := d.Time(z)
-	if err != nil || d.IsZero() {
-		return d
-	}
-	t = t.Add(delta)
+// like writes t the way d is written.
+func like(d DateTime, t time.Time, z Zones) DateTime {
 	switch {
 	case d.IsDate:
 		return DateTime{Local: t.UTC().Format(layoutDate), IsDate: true}
@@ -44,14 +32,47 @@ func shifted(d DateTime, delta time.Duration, z Zones) DateTime {
 	return DateTime{Local: t.In(z.Location(d.TZID)).Format(layoutDateTime), TZID: d.TZID}
 }
 
+// shifted returns d moved by delta, written in its own zone and type.
+func shifted(d DateTime, delta time.Duration, z Zones) DateTime {
+	t, err := d.Time(z)
+	if err != nil || d.IsZero() {
+		return d
+	}
+	return like(d, t.Add(delta), z)
+}
+
+// placeAt sets c's times to the master's occurrence at rid: its start, and
+// its DTEND or DUE, each written as the master writes it.
+func (c *Component) placeAt(m *Component, rid time.Time, z Zones) error {
+	end, err := m.endFor(rid, z)
+	if err != nil {
+		return err
+	}
+	if !m.Start.IsZero() {
+		c.Start = like(m.Start, rid, z)
+	}
+	if !m.End.IsZero() {
+		c.End = like(m.End, end, z)
+	}
+	if !m.Due.IsZero() {
+		if m.Start.IsZero() {
+			c.Due = like(m.Due, rid, z)
+		} else {
+			c.Due = like(m.Due, end, z)
+		}
+	}
+	return nil
+}
+
 // Clone returns a copy of the component that shares nothing it could
 // modify.
-func (e *Event) Clone() *Event {
+func (e *Component) Clone() *Component {
 	c := *e
 	c.RDates = slices.Clone(e.RDates)
 	c.ExDates = slices.Clone(e.ExDates)
 	c.Attendees = slices.Clone(e.Attendees)
 	c.Categories = slices.Clone(e.Categories)
+	c.Relations = slices.Clone(e.Relations)
 	c.Alarms = make([]Alarm, len(e.Alarms))
 	for i, a := range e.Alarms {
 		a.Leftovers = a.Leftovers.clone()
@@ -62,15 +83,19 @@ func (e *Event) Clone() *Event {
 		o := *e.Organizer
 		c.Organizer = &o
 	}
-	if e.Sequence != nil {
-		n := *e.Sequence
-		c.Sequence = &n
-	}
-	if e.Priority != nil {
-		n := *e.Priority
-		c.Priority = &n
-	}
+	c.Sequence = cloneInt(e.Sequence)
+	c.Priority = cloneInt(e.Priority)
+	c.PercentComplete = cloneInt(e.PercentComplete)
+	c.SortOrder = cloneInt(e.SortOrder)
 	return &c
+}
+
+func cloneInt(n *int) *int {
+	if n == nil {
+		return nil
+	}
+	v := *n
+	return &v
 }
 
 func (l Leftovers) clone() Leftovers {
@@ -95,7 +120,7 @@ func (o *Object) InstanceAt(rid time.Time, z Zones) (Instance, error) {
 	return *found, nil
 }
 
-func (o *Object) recurringMaster() (*Event, error) {
+func (o *Object) recurringMaster() (*Component, error) {
 	m := o.Master()
 	if m == nil || !m.Recurs() {
 		return nil, ErrNotRecurring
@@ -104,8 +129,8 @@ func (o *Object) recurringMaster() (*Event, error) {
 }
 
 // overrideAt returns the override of the occurrence at rid, or nil.
-func (o *Object) overrideAt(rid time.Time, z Zones) *Event {
-	for _, e := range o.Events {
+func (o *Object) overrideAt(rid time.Time, z Zones) *Component {
+	for _, e := range o.Components {
 		if t, err := e.RecurrenceID.Time(z); e.IsOverride() && err == nil && t.Equal(rid) {
 			return e
 		}
@@ -116,7 +141,7 @@ func (o *Object) overrideAt(rid time.Time, z Zones) *Event {
 // Override returns the component that describes the occurrence at rid,
 // creating it, as a copy of the master without its recurrence, when the
 // occurrence has none yet.
-func (o *Object) Override(rid time.Time, z Zones) (*Event, error) {
+func (o *Object) Override(rid time.Time, z Zones) (*Component, error) {
 	if e := o.overrideAt(rid, z); e != nil {
 		return e, nil
 	}
@@ -130,29 +155,24 @@ func (o *Object) Override(rid time.Time, z Zones) (*Event, error) {
 	c := m.Clone()
 	c.RRule, c.RDates, c.ExDates, c.ThisAndFuture = "", nil, nil, false
 	c.RecurrenceID = m.At(rid, z)
-	c.Start = m.At(rid, z)
-	if !m.End.IsZero() {
-		end, err := m.endFor(rid, z)
-		if err != nil {
-			return nil, err
-		}
-		c.End = m.At(end, z)
+	if err := c.placeAt(m, rid, z); err != nil {
+		return nil, err
 	}
-	o.Events = append(o.Events, c)
+	o.Components = append(o.Components, c)
 	return c, nil
 }
 
 // Exclude removes the occurrence at rid: its override, and an EXDATE on the
 // master. It reports whether the object still has components.
 func (o *Object) Exclude(rid time.Time, z Zones) bool {
-	o.Events = slices.DeleteFunc(o.Events, func(e *Event) bool {
+	o.Components = slices.DeleteFunc(o.Components, func(e *Component) bool {
 		t, err := e.RecurrenceID.Time(z)
 		return e.IsOverride() && err == nil && t.Equal(rid)
 	})
 	if m := o.Master(); m != nil && m.Recurs() {
 		m.ExDates = append(m.ExDates, DateValue{DateTime: m.At(rid, z)})
 	}
-	return len(o.Events) > 0
+	return len(o.Components) > 0
 }
 
 // before reports whether d is earlier than t; unreadable values are kept.
@@ -169,7 +189,7 @@ func (o *Object) Truncate(rid time.Time, z Zones) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	start, err := m.Start.Time(z)
+	start, err := m.anchor().Time(z)
 	if err != nil {
 		return false, err
 	}
@@ -181,7 +201,7 @@ func (o *Object) Truncate(rid time.Time, z Zones) (bool, error) {
 	}
 	m.RDates = slices.DeleteFunc(m.RDates, func(d DateValue) bool { return !before(d.DateTime, rid, z) })
 	m.ExDates = slices.DeleteFunc(m.ExDates, func(d DateValue) bool { return !before(d.DateTime, rid, z) })
-	o.Events = slices.DeleteFunc(o.Events, func(e *Event) bool {
+	o.Components = slices.DeleteFunc(o.Components, func(e *Component) bool {
 		return e.IsOverride() && !before(e.RecurrenceID, rid, z)
 	})
 	return true, nil
@@ -190,11 +210,11 @@ func (o *Object) Truncate(rid time.Time, z Zones) (bool, error) {
 // untilBefore returns an UNTIL value for the last moment before rid, in the
 // type RFC 5545 requires for the master's DTSTART: a DATE for a DATE, floating
 // for floating, otherwise UTC.
-func (e *Event) untilBefore(rid time.Time, z Zones) string {
-	switch {
-	case e.Start.IsDate:
+func (e *Component) untilBefore(rid time.Time, z Zones) string {
+	switch a := e.anchor(); {
+	case a.IsDate:
 		return rid.UTC().AddDate(0, 0, -1).Format(layoutDate)
-	case e.Start.TZID == "":
+	case a.TZID == "":
 		return rid.Add(-time.Second).In(z.Location("")).Format(layoutDateTime)
 	}
 	return rid.Add(-time.Second).UTC().Format(layoutDateTime) + "Z"
@@ -229,13 +249,8 @@ func (o *Object) Split(rid time.Time, z Zones, uid string) (*Object, error) {
 		return nil, err
 	}
 	nm := m.Clone()
-	nm.Start = m.At(rid, z)
-	if !m.End.IsZero() {
-		end, err := m.endFor(rid, z)
-		if err != nil {
-			return nil, err
-		}
-		nm.End = m.At(end, z)
+	if err := nm.placeAt(m, rid, z); err != nil {
+		return nil, err
 	}
 	if nm.RRule != "" {
 		set, opt, err := recurrence(m, z)
@@ -253,10 +268,10 @@ func (o *Object) Split(rid time.Time, z Zones, uid string) (*Object, error) {
 	}
 	nm.RDates = slices.DeleteFunc(nm.RDates, func(d DateValue) bool { return before(d.DateTime, rid, z) })
 	nm.ExDates = slices.DeleteFunc(nm.ExDates, func(d DateValue) bool { return before(d.DateTime, rid, z) })
-	n := &Object{UID: uid, Props: slices.Clone(o.Props), Comps: slices.Clone(o.Comps), Zones: o.Zones, Events: []*Event{nm}}
-	for _, e := range o.Events {
+	n := &Object{UID: uid, Props: slices.Clone(o.Props), Others: slices.Clone(o.Others), Zones: o.Zones, Components: []*Component{nm}}
+	for _, e := range o.Components {
 		if e.IsOverride() && !before(e.RecurrenceID, rid, z) {
-			n.Events = append(n.Events, e.Clone())
+			n.Components = append(n.Components, e.Clone())
 		}
 	}
 	if _, err := o.Truncate(rid, z); err != nil {
@@ -272,7 +287,7 @@ func (o *Object) ShiftExceptions(delta time.Duration, z Zones) {
 	if delta == 0 {
 		return
 	}
-	for _, e := range o.Events {
+	for _, e := range o.Components {
 		if e.IsOverride() {
 			e.RecurrenceID = shifted(e.RecurrenceID, delta, z)
 			continue
@@ -284,4 +299,43 @@ func (o *Object) ShiftExceptions(delta time.Duration, z Zones) {
 			e.ExDates[i].DateTime = shifted(e.ExDates[i].DateTime, delta, z)
 		}
 	}
+}
+
+// Advance moves a recurring series on to its next occurrence, which is how
+// Cog completes one occurrence of a recurring task, as tasks.org does: the
+// first occurrence goes, and with it the overrides, exceptions and extra
+// dates before the next one; a COUNT counts one less, and DTSTART and DUE
+// move to the next occurrence. It reports false, changing nothing, when no
+// occurrence follows the first.
+func (o *Object) Advance(z Zones) (bool, error) {
+	m, err := o.recurringMaster()
+	if err != nil {
+		return false, err
+	}
+	set, _, err := recurrence(m, z)
+	if err != nil {
+		return false, err
+	}
+	x, err := excluded(m, z)
+	if err != nil {
+		return false, err
+	}
+	seen := false
+	next := set.Iterator()
+	for t, ok := next(); ok; t, ok = next() {
+		if x.has(t) {
+			continue
+		}
+		if !seen {
+			seen = true
+			continue
+		}
+		n, err := o.Split(t, z, o.UID)
+		if err != nil {
+			return false, err
+		}
+		*o = *n
+		return true, nil
+	}
+	return false, nil
 }

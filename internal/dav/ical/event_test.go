@@ -16,7 +16,7 @@ func decode(t *testing.T, lines ...string) *Object {
 	t.Helper()
 	comps, err := contentline.Parse(strings.NewReader(strings.Join(lines, "\r\n") + "\r\n"))
 	require.NoError(t, err)
-	o, err := DecodeEvents(comps[0])
+	o, err := Decode(comps[0], VEVENT)
 	require.NoError(t, err)
 	return o
 }
@@ -75,8 +75,8 @@ func TestDecodeModelsAndLeftovers(t *testing.T) {
 		"END:VALARM",
 		"END:VEVENT",
 	)...)
-	require.Equal(t, 1, len(o.Events))
-	e := o.Events[0]
+	require.Equal(t, 1, len(o.Components))
+	e := o.Components[0]
 	assert.Equal(t, "a@example.com", o.UID)
 	assert.Equal(t, "Besprechung, wichtig", e.Summary)
 	assert.Equal(t, "LANGUAGE", e.Leftovers.Params["SUMMARY"][0].Name)
@@ -137,13 +137,13 @@ func TestCustomZoneKept(t *testing.T) {
 		"DTSTART;TZID=My Office:20261025T090000",
 		"END:VEVENT",
 	)...)
-	assert.Equal(t, "My Office", o.Events[0].Start.TZID)
+	assert.Equal(t, "My Office", o.Components[0].Start.TZID)
 	require.Equal(t, 1, len(o.Zones))
 	loc, err := tz.FromRules(o.Zones["My Office"])
 	require.NoError(t, err)
 	z := zones
 	z.Custom = map[string]*time.Location{"My Office": loc}
-	start, _, err := o.Events[0].Span(z)
+	start, _, err := o.Components[0].Span(z)
 	require.NoError(t, err)
 	assert.Equal(t, time.Date(2026, 10, 25, 6, 0, 0, 0, time.UTC), start.UTC())
 }
@@ -156,7 +156,7 @@ func TestChangedDropsDependents(t *testing.T) {
 		"X-MOZ-GENERATION:3", "X-MOZ-SNOOZE-TIME-1234:20261025T083000Z", "X-KEEP:me",
 		"END:VEVENT",
 	)...)
-	e := o.Events[0]
+	e := o.Components[0]
 	e.Changed("SUMMARY")
 	assert.Equal(t, 5, len(e.Leftovers.Props))
 	e.Changed("LOCATION", "TIME")
@@ -248,7 +248,7 @@ func TestInstancesAllDayAndDates(t *testing.T) {
 	o = decode(t, cal("BEGIN:VEVENT", "UID:f", "SUMMARY:F", "DTSTART:20261005T090000", "END:VEVENT")...)
 	z := zones
 	z.Floating = tz.Load("America/Denver")
-	start, _, err := o.Events[0].Span(z)
+	start, _, err := o.Components[0].Span(z)
 	require.NoError(t, err)
 	assert.Equal(t, time.Date(2026, 10, 5, 15, 0, 0, 0, time.UTC), start.UTC())
 }
@@ -292,8 +292,8 @@ func TestDecodeTZIDForms(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			o := decode(t, cal("BEGIN:VEVENT", "UID:x", prop, "END:VEVENT")...)
-			assert.Equal(t, "America/Denver", o.Events[0].Start.TZID)
-			start, _, err := o.Events[0].Span(zones)
+			assert.Equal(t, "America/Denver", o.Components[0].Start.TZID)
+			start, _, err := o.Components[0].Span(zones)
 			require.NoError(t, err)
 			assert.Equal(t, want, start.UTC())
 		})
@@ -302,15 +302,15 @@ func TestDecodeTZIDForms(t *testing.T) {
 	// Thunderbird names its zone and points at IANA with X-LIC-LOCATION.
 	o := decode(t, cal("BEGIN:VTIMEZONE", "TZID:Custom Mountain", "X-LIC-LOCATION:America/Denver", "END:VTIMEZONE",
 		"BEGIN:VEVENT", "UID:a", "DTSTART;TZID=Custom Mountain:20261025T090000", "END:VEVENT")...)
-	assert.Equal(t, "America/Denver", o.Events[0].Start.TZID)
+	assert.Equal(t, "America/Denver", o.Components[0].Start.TZID)
 	assert.Equal(t, 0, len(o.Zones))
 
 	// A TZID with no definition stays as sent and reads in the floating zone.
 	o = decode(t, cal("BEGIN:VEVENT", "UID:a", "DTSTART;TZID=Nowhere/Special:20261025T090000", "END:VEVENT")...)
-	assert.Equal(t, "Nowhere/Special", o.Events[0].Start.TZID)
+	assert.Equal(t, "Nowhere/Special", o.Components[0].Start.TZID)
 	z := zones
 	z.Floating = tz.Load("America/Denver")
-	start, _, err := o.Events[0].Span(z)
+	start, _, err := o.Components[0].Span(z)
 	require.NoError(t, err)
 	assert.Equal(t, want, start.UTC())
 }

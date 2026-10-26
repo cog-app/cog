@@ -15,6 +15,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
 	"git.duckfam.us/jj-software/cog/internal/dav/ical"
+	"git.duckfam.us/jj-software/cog/internal/dav/icalsql"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"github.com/google/uuid"
 	rrulelib "github.com/teambition/rrule-go"
@@ -240,7 +241,7 @@ type Attendee struct {
 
 // attendeesOf returns a component's attendees that have an email address;
 // the form cannot show others, and saving keeps them.
-func attendeesOf(e *ical.Event) []Attendee {
+func attendeesOf(e *ical.Component) []Attendee {
 	var out []Attendee
 	for _, a := range e.Attendees {
 		if email := ical.Email(a.Address); email != "" {
@@ -301,12 +302,12 @@ func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	in, err := occurrenceOf(r, ev, zonesFor(ev.Object, cal.Zone()))
+	in, err := occurrenceOf(r, ev, icalsql.ZonesFor(ev.Object, cal.Zone()))
 	if err != nil {
 		http.Error(w, err.Error(), occurrenceStatus(err))
 		return
 	}
-	view, comp := *ev, ev.Object.Events[0]
+	view, comp := *ev, ev.Object.Components[0]
 	if in != nil {
 		comp = in.Event
 		view.Summary, view.Location, view.Description = comp.Summary, comp.Location, comp.Description
@@ -388,7 +389,7 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	o := ev.Object
-	z := zonesFor(o, oldCal.Zone())
+	z := icalsql.ZonesFor(o, oldCal.Zone())
 	in, err := occurrenceOf(r, ev, z)
 	if err != nil {
 		http.Error(w, err.Error(), occurrenceStatus(err))
@@ -402,7 +403,7 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	scope := r.FormValue("scope")
 	switch {
 	case in == nil:
-		applyForm(o, o.Events[0], f, z, now, true)
+		applyForm(o, o.Components[0], f, z, now, true)
 
 	case scope == "this":
 		if cal.ID != ev.CalendarID {
@@ -425,7 +426,7 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		stamp(o.Master(), now, true)
+		o.Master().Stamp(now, true)
 		delta := f.start.Sub(in.Start)
 		g := f.movedTo(in.RecurrenceID.Add(delta))
 		if sameRule(rule, f.rrule) {
@@ -434,7 +435,7 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 			// occurrences before the split).
 			g.rrule = n.Master().RRule
 		}
-		applyForm(n, n.Events[0], g, z, now, true)
+		applyForm(n, n.Components[0], g, z, now, true)
 		n.ShiftExceptions(delta, z)
 		saves[0].Cal = oldCal
 		saves = append(saves, Save{Cal: cal, Object: n})
@@ -484,7 +485,7 @@ func seriesStart(o *ical.Object, z ical.Zones) time.Time {
 // bookkeeping of an organizer's edit (stamp). Vendor copies of a changed
 // field are dropped. rule says whether the form's recurrence applies: it
 // does not to one occurrence.
-func applyForm(o *ical.Object, e *ical.Event, f *eventForm, z ical.Zones, now time.Time, rule bool) {
+func applyForm(o *ical.Object, e *ical.Component, f *eventForm, z ical.Zones, now time.Time, rule bool) {
 	scheduling := false
 	text := func(field *string, v, prop string, sched bool) {
 		if *field != v {
@@ -513,29 +514,14 @@ func applyForm(o *ical.Object, e *ical.Event, f *eventForm, z ical.Zones, now ti
 		if f.rrule == "" && len(e.RDates) == 0 && !e.IsOverride() {
 			// No longer recurring: its exceptions describe nothing.
 			e.ExDates = nil
-			o.Events = []*ical.Event{e}
+			o.Components = []*ical.Component{e}
 		}
 	}
 
 	if mergeAttendees(e, f.attendees) {
 		scheduling = true
 	}
-	stamp(e, now, scheduling)
-}
-
-// stamp records an organizer's edit as RFC 5545 asks: DTSTAMP and
-// LAST-MODIFIED always, and SEQUENCE when a scheduling field changed, so
-// clients and invitees take the new version.
-func stamp(e *ical.Event, now time.Time, scheduling bool) {
-	t := ical.DateTimeOf(now.UTC(), false)
-	e.DTStamp, e.LastModified = t, t
-	if scheduling {
-		seq := 1
-		if e.Sequence != nil {
-			seq = *e.Sequence + 1
-		}
-		e.Sequence = &seq
-	}
+	e.Stamp(now, scheduling)
 }
 
 // sameRule compares two RRULEs as the form sees them: the same parts in any
@@ -563,7 +549,7 @@ func sameRule(a, b string) bool {
 // mergeAttendees replaces e's mailto attendees with the form's, keeping what
 // the form cannot show (their other parameters, and attendees with other
 // addresses), and reports whether who attends, or in what role, changed.
-func mergeAttendees(e *ical.Event, form []ical.Attendee) bool {
+func mergeAttendees(e *ical.Component, form []ical.Attendee) bool {
 	byEmail := map[string]ical.Attendee{}
 	var out []ical.Attendee
 	var before, after []string
@@ -631,7 +617,8 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	o := &ical.Object{
 		UID:   uuid.NewString(),
 		Props: []contentline.Property{{Name: "PRODID", Value: ical.ProdID}},
-		Events: []*ical.Event{{
+		Components: []*ical.Component{{
+			Kind:    ical.VEVENT,
 			Summary: f.summary, Description: f.description, Location: f.location,
 			Start: ical.DateTimeOf(f.start, f.allDay), End: ical.DateTimeOf(f.end, f.allDay),
 			RRule: f.rrule, Attendees: f.attendees, Sequence: &seq,
@@ -664,14 +651,14 @@ func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	o := ev.Object
-	z := zonesFor(o, cal.Zone())
+	z := icalsql.ZonesFor(o, cal.Zone())
 	in, err := occurrenceOf(r, ev, z)
 	if err != nil {
 		http.Error(w, err.Error(), occurrenceStatus(err))
 		return
 	}
 	var attendees []ical.Attendee
-	for _, a := range o.Events[0].Attendees {
+	for _, a := range o.Components[0].Attendees {
 		if ical.Email(a.Address) != "" {
 			attendees = append(attendees, a)
 		}
@@ -701,7 +688,7 @@ func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	stamp(o.Events[0], now, true)
+	o.Components[0].Stamp(now, true)
 	saved, err := SaveEvent(db, cal, ev, o, now)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -975,11 +962,11 @@ func inviteICS(ev *Event, method string) ([]byte, error) {
 	o := *ev.Object
 	o.Props = append([]contentline.Property{{Name: "METHOD", Value: method}}, o.Props...)
 	if method == "CANCEL" {
-		o.Events = make([]*ical.Event, len(ev.Object.Events))
-		for i, e := range ev.Object.Events {
+		o.Components = make([]*ical.Component, len(ev.Object.Components))
+		for i, e := range ev.Object.Components {
 			c := *e
 			c.Status = "CANCELLED"
-			o.Events[i] = &c
+			o.Components[i] = &c
 		}
 	}
 	var b bytes.Buffer
@@ -1047,7 +1034,7 @@ func (h *Pages) RespondToInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	found := false
-	for _, e := range ev.Object.Events {
+	for _, e := range ev.Object.Components {
 		for i := range e.Attendees {
 			if strings.EqualFold(ical.Email(e.Attendees[i].Address), email) {
 				e.Attendees[i].PartStat = answer

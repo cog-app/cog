@@ -3,6 +3,7 @@ package calendar
 import (
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/dav/icalsql"
 	"git.duckfam.us/jj-software/cog/internal/dav/tz"
 )
 
@@ -24,10 +25,10 @@ var commonTimezones = []string{
 // DTSTART names, the calendar's for a floating time, or nil for UTC times,
 // which the form shows in the browser's zone instead.
 func eventEditZone(ev *Event, cal *Calendar) *time.Location {
-	if ev.Object == nil || len(ev.Object.Events) == 0 {
+	if ev.Object == nil || len(ev.Object.Components) == 0 {
 		return nil
 	}
-	start := ev.Object.Events[0].Start
+	start := ev.Object.Components[0].Start
 	if start.IsZero() || start.IsDate || start.TZID == "UTC" {
 		return nil
 	}
@@ -35,5 +36,5 @@ func eventEditZone(ev *Event, cal *Calendar) *time.Location {
 	if cal != nil {
 		floating = cal.Zone()
 	}
-	return zonesFor(ev.Object, floating).Location(start.TZID)
+	return icalsql.ZonesFor(ev.Object, floating).Location(start.TZID)
 }

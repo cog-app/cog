@@ -30,7 +30,7 @@ func (p *Plugin) SetDAV(s *dav.Server) { p.dav = s }
 
 // DAVBackends implements dav.Provider: tasks and journals in any calendar
 // collection.
-func (p *Plugin) DAVBackends() []dav.Backend { return []dav.Backend{&backend{p: p}} }
+func (p *Plugin) DAVBackends() []dav.Backend { return []dav.Backend{newBackend(p)} }
 
 // New creates a new Tasks plugin instance.
 func New() *Plugin {
@@ -60,8 +60,8 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		Render:   p.renderWidget,
 	})
 	ctx.RegisterSearchSource(plugin.SearchSourceDef{
-		PrimaryTable: "tasks",
-		EnrichSQL:    "SELECT rowid, summary, description FROM tasks WHERE rowid IN (?)",
+		PrimaryTable: "task_components",
+		EnrichSQL:    "SELECT rowid, summary, description FROM task_components WHERE rowid IN (?)",
 	})
 
 	// Web UI routes

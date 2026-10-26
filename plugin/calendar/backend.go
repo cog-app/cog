@@ -2,7 +2,6 @@ package calendar
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"time"
 
@@ -21,7 +20,9 @@ type backend struct {
 
 func newBackend(p *Plugin) *backend {
 	b := &backend{p: p}
-	b.Table = dav.Table{Name: "events", Component: dav.VEVENT, DB: p.DB, Render: b.render}
+	b.Table = dav.Table{Name: "events", Component: dav.VEVENT, DB: p.DB, Render: func(q davsql.Querier, _ *dav.Collection, ids []int64) (map[int64][]byte, error) {
+		return tables.RenderIDs(q, ids)
+	}}
 	return b
 }
 
@@ -42,27 +43,12 @@ func zoneOf(c *dav.Collection) *time.Location {
 	return time.UTC
 }
 
-// render generates the text of stored events.
-func (b *backend) render(q davsql.Querier, _ *dav.Collection, ids []int64) (map[int64][]byte, error) {
-	objs, err := loadObjects(q, ids)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[int64][]byte, len(objs))
-	for id, o := range objs {
-		if out[id], err = render(o); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
-}
-
 func (b *backend) Put(owner string, c *dav.Collection, req *dav.PutRequest) (*dav.PutResult, error) {
 	db, err := b.p.DB(owner)
 	if err != nil {
 		return nil, err
 	}
-	o, err := ical.DecodeEvents(req.Object)
+	o, err := ical.Decode(req.Object, ical.VEVENT)
 	if err != nil {
 		return nil, fmt.Errorf("decode event %s: %w", req.URI, err)
 	}
@@ -71,18 +57,14 @@ func (b *backend) Put(owner string, c *dav.Collection, req *dav.PutRequest) (*da
 		return nil, fmt.Errorf("put event: %w", err)
 	}
 	defer tx.Rollback()
-	st, err := storeObject(tx, int64(c.ID), zoneOf(c), req.URI, o, req.Conditions, b.p.ctx.Now().Unix())
-	var conflict *errUIDConflict
-	if errors.As(err, &conflict) {
-		return nil, &dav.UIDConflict{URI: conflict.uri}
-	}
+	st, err := tables.Store(tx, int64(c.ID), zoneOf(c), req.URI, o, req.Conditions, b.p.ctx.Now().Unix())
 	if err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("put event: %w", err)
 	}
-	return &dav.PutResult{Version: st.version, Created: st.created, Data: st.data}, nil
+	return &dav.PutResult{Version: st.Version, Created: st.Created, Data: st.Data}, nil
 }
 
 func (b *backend) Delete(owner string, c *dav.Collection, uri string, cond davsql.Conditions) error {
@@ -95,7 +77,7 @@ func (b *backend) Delete(owner string, c *dav.Collection, uri string, cond davsq
 		return fmt.Errorf("delete event: %w", err)
 	}
 	defer tx.Rollback()
-	if err := deleteEvent(tx, int64(c.ID), uri, cond, b.p.ctx.Now().Unix()); err != nil {
+	if err := tables.Delete(tx, int64(c.ID), uri, cond, b.p.ctx.Now().Unix()); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -125,7 +107,7 @@ func (b *backend) Redact(c *dav.Collection, r *dav.Resource) error {
 	if err != nil {
 		return fmt.Errorf("redact event %s: %w", r.URI, err)
 	}
-	o, err := ical.DecodeEvents(comps[0])
+	o, err := ical.Decode(comps[0], ical.VEVENT)
 	if err != nil {
 		return fmt.Errorf("redact event %s: %w", r.URI, err)
 	}
@@ -152,18 +134,5 @@ func (b *backend) Purge(owner string, id dav.CollectionID) error {
 	if err != nil {
 		return err
 	}
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("purge calendar: %w", err)
-	}
-	defer tx.Rollback()
-	for _, table := range []string{"events", "vtimezones"} {
-		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE collection_id = ?`, id); err != nil {
-			return fmt.Errorf("purge %s: %w", table, err)
-		}
-	}
-	if err := davsql.Purge(tx, int64(id)); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return tables.Purge(db, int64(id))
 }

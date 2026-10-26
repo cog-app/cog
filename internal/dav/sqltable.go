@@ -19,8 +19,10 @@ import (
 // stores rows and generates the text, from Render, with its length stored in
 // a size column.
 type Table struct {
-	Name      string // table name
-	Data      string // column holding the resource text, when not rendered
+	Name string // table name
+	Data string // column holding the resource text, when not rendered
+	// Component is the type of every resource, or "" for a table whose
+	// component column names each one's.
 	Component Component
 	DB        func(owner string) (*sql.DB, error)
 	// Render generates the text of the rows with these IDs, in collection c,
@@ -29,14 +31,18 @@ type Table struct {
 }
 
 func (t *Table) columns(withData bool) string {
+	comp := "'" + string(t.Component) + "'"
+	if t.Component == "" {
+		comp = "component"
+	}
 	if t.Render != nil {
-		return "id, uri, uid, version, size, NULL"
+		return "id, uri, uid, version, size, NULL, " + comp
 	}
 	data := "NULL"
 	if withData {
 		data = t.Data
 	}
-	return "id, uri, uid, version, length(" + t.Data + "), " + data
+	return "id, uri, uid, version, length(" + t.Data + "), " + data + ", " + comp
 }
 
 func (t *Table) scan(rows *sql.Rows) ([]Resource, []int64, error) {
@@ -44,10 +50,10 @@ func (t *Table) scan(rows *sql.Rows) ([]Resource, []int64, error) {
 	var out []Resource
 	var ids []int64
 	for rows.Next() {
-		r := Resource{Component: t.Component}
+		var r Resource
 		var id int64
 		var data sql.NullString
-		if err := rows.Scan(&id, &r.URI, &r.UID, &r.Version, &r.Size, &data); err != nil {
+		if err := rows.Scan(&id, &r.URI, &r.UID, &r.Version, &r.Size, &data, &r.Component); err != nil {
 			return nil, nil, fmt.Errorf("scan %s: %w", t.Name, err)
 		}
 		if data.Valid {

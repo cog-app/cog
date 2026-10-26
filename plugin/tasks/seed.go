@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -40,73 +41,60 @@ func (p *Plugin) Seed(username string) error {
 	p.log.Info("seeded task lists", "lists", "Personal, Work")
 
 	now := p.ctx.Now().UTC()
-	tomorrow := now.AddDate(0, 0, 1).Unix()
-	nextWeek := now.AddDate(0, 0, 7).Unix()
-	yesterday := now.AddDate(0, 0, -1).Unix()
+	tomorrow := now.AddDate(0, 0, 1)
+	nextWeek := now.AddDate(0, 0, 7)
+	yesterday := now.AddDate(0, 0, -1)
 
 	type seedTask struct {
-		listID   int64
-		parentID *int64
+		list     *TaskList
 		summary  string
 		desc     string
 		priority int
-		dueAt    *int64
-		status   string
+		due      *time.Time
+		done     bool
+		subtasks []string
 	}
-
 	tasks := []seedTask{
-		{personal.ID, nil, "Buy groceries", "Milk, bread, eggs, cheese", 0, &tomorrow, "NEEDS-ACTION"},
-		{personal.ID, nil, "Clean the house", "", 5, nil, "NEEDS-ACTION"},
-		{personal.ID, nil, "Read a book", "Finish chapter 7", 0, &nextWeek, "IN-PROCESS"},
-		{personal.ID, nil, "Exercise", "30 min jog", 1, &tomorrow, "NEEDS-ACTION"},
-		{personal.ID, nil, "Call dentist", "Schedule checkup", 0, &yesterday, "COMPLETED"},
-		{work.ID, nil, "Project Alpha", "Main project deliverable", 1, &nextWeek, "IN-PROCESS"},
-		{work.ID, nil, "Review PRs", "", 5, &tomorrow, "NEEDS-ACTION"},
-		{work.ID, nil, "Update documentation", "API docs need refresh", 9, nil, "NEEDS-ACTION"},
-		{work.ID, nil, "Team meeting prep", "Prepare slides for Friday", 0, &nextWeek, "NEEDS-ACTION"},
+		{&personal, "Buy groceries", "Milk, bread, eggs, cheese", 0, &tomorrow, false, nil},
+		{&personal, "Clean the house", "", 5, nil, false, nil},
+		{&personal, "Read a book", "Finish chapter 7", 0, &nextWeek, false, nil},
+		{&personal, "Exercise", "30 min jog", 1, &tomorrow, false, nil},
+		{&personal, "Call dentist", "Schedule checkup", 0, &yesterday, true, nil},
+		{work, "Project Alpha", "Main project deliverable", 1, &nextWeek, false, []string{"Design mockups", "Implement backend", "Write tests"}},
+		{work, "Review PRs", "", 5, &tomorrow, false, nil},
+		{work, "Update documentation", "API docs need refresh", 9, nil, false, nil},
+		{work, "Team meeting prep", "Prepare slides for Friday", 0, &nextWeek, false, nil},
 	}
 
-	var projectAlphaID int64
-	for _, st := range tasks {
-		uid := uuid.New().String()
-		t, err := CreateTask(db, st.listID, uid, st.parentID, st.summary, st.desc, st.priority, st.dueAt, nil, p.ctx.Now())
+	create := func(list *TaskList, nt NewTask) (*Task, error) {
+		t, err := CreateTask(db, list, uuid.New().String(), nt, p.ctx.Now())
 		if err != nil {
-			return fmt.Errorf("seed task %q: %w", st.summary, err)
+			return nil, fmt.Errorf("seed task %q: %w", nt.Summary, err)
 		}
-		if st.status == "COMPLETED" {
-			if _, err := ToggleTask(db, t.ID, p.ctx.Now()); err != nil {
+		return t, nil
+	}
+	for _, st := range tasks {
+		t, err := create(st.list, NewTask{Summary: st.summary, Description: st.desc, Priority: st.priority, Due: st.due})
+		if err != nil {
+			return err
+		}
+		if st.done {
+			if _, err := ToggleTask(db, st.list, t, p.ctx.Now()); err != nil {
 				return fmt.Errorf("seed task %q: %w", st.summary, err)
 			}
 		}
-		if st.summary == "Project Alpha" {
-			projectAlphaID = t.ID
-		}
-		p.log.Info("seeded task", "summary", st.summary)
-	}
-
-	// Create subtasks for Project Alpha.
-	if projectAlphaID > 0 {
-		subtasks := []string{"Design mockups", "Implement backend", "Write tests"}
-		for _, summary := range subtasks {
-			uid := uuid.New().String()
-			st, err := CreateTask(db, work.ID, uid, &projectAlphaID, summary, "", 0, nil, nil, p.ctx.Now())
+		for _, summary := range st.subtasks {
+			sub, err := create(st.list, NewTask{Summary: summary, ParentUID: t.UID})
 			if err != nil {
-				p.log.Error("seed subtask failed", "summary", summary, "error", err)
-				continue
+				return err
 			}
-			p.log.Info("seeded subtask", "summary", summary)
-			// Add a nested subtask under "Implement backend".
 			if summary == "Implement backend" {
-				uid2 := uuid.New().String()
-				_, err := CreateTask(db, work.ID, uid2, &st.ID, "Set up database schema", "", 0, nil, nil, p.ctx.Now())
-				if err != nil {
-					p.log.Error("seed nested subtask failed", "error", err)
-				} else {
-					p.log.Info("seeded nested subtask", "summary", "Set up database schema")
+				if _, err := create(st.list, NewTask{Summary: "Set up database schema", ParentUID: sub.UID}); err != nil {
+					return err
 				}
 			}
 		}
 	}
-
+	p.log.Info("seeded tasks", "count", len(tasks))
 	return nil
 }

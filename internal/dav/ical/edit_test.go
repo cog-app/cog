@@ -56,13 +56,13 @@ func TestOverrideCopiesMaster(t *testing.T) {
 	again, err := o.Override(berlin(19), zones)
 	require.NoError(t, err)
 	assert.Equal(t, "Moved", again.Summary)
-	assert.Equal(t, 3, len(o.Events))
+	assert.Equal(t, 3, len(o.Components))
 }
 
 func TestExclude(t *testing.T) {
 	o := weekly(t, "FREQ=WEEKLY;COUNT=6")
 	assert.True(t, o.Exclude(berlin(19), zones))
-	assert.Equal(t, 1, len(o.Events), "the override went with its occurrence")
+	assert.Equal(t, 1, len(o.Components), "the override went with its occurrence")
 	out := text(t, o)
 	assert.True(t, strings.Contains(out, "EXDATE;TZID=Europe/Berlin:20261026T090000,20261019T090000\r\n"), out)
 	assert.Equal(t, []string{"10-05T07 Standup", "10-12T07 Standup", "11-02T08 Standup", "11-09T08 Standup"},
@@ -76,7 +76,7 @@ func TestTruncate(t *testing.T) {
 	assert.True(t, left)
 	assert.Equal(t, "FREQ=WEEKLY;UNTIL=20261019T065959Z", o.Master().RRule)
 	assert.Equal(t, 0, len(o.Master().ExDates))
-	assert.Equal(t, 1, len(o.Events))
+	assert.Equal(t, 1, len(o.Components))
 	assert.Equal(t, []string{"10-05T07 Standup", "10-12T07 Standup"}, instants(t, o, "2026-10-01T00:00:00Z", "2026-12-01T00:00:00Z"))
 
 	left, err = o.Truncate(berlin(5), zones)
@@ -112,7 +112,7 @@ func TestShiftExceptions(t *testing.T) {
 	m.End = shifted(m.End, time.Hour, zones)
 	o.ShiftExceptions(time.Hour, zones)
 	assert.Equal(t, DateTime{Local: "20261026T100000", TZID: "Europe/Berlin"}, m.ExDates[0].DateTime)
-	assert.Equal(t, DateTime{Local: "20261019T100000", TZID: "Europe/Berlin"}, o.Events[1].RecurrenceID)
+	assert.Equal(t, DateTime{Local: "20261019T100000", TZID: "Europe/Berlin"}, o.Components[1].RecurrenceID)
 	got := instants(t, o, "2026-10-01T00:00:00Z", "2026-12-01T00:00:00Z")
 	assert.Equal(t, []string{"10-05T08 Standup", "10-12T08 Standup", "10-19T08 Moved", "11-02T09 Standup", "11-09T09 Standup"}, got)
 }

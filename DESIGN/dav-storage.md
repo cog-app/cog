@@ -128,9 +128,9 @@ Some extensions duplicate a modelled field. Keeping them after that field is edi
 |---|---|
 | LOCATION | `X-APPLE-STRUCTURED-LOCATION` (its `X-TITLE` parameter goes with it) |
 | DESCRIPTION | `X-ALT-DESC` (Outlook's HTML copy) |
-| DTSTART/DTEND/DURATION/RRULE, all-day | `X-MICROSOFT-CDO-ALLDAYEVENT`, `X-FUNAMBOL-ALLDAY`, `X-MOZ-GENERATION`, `X-MOZ-LASTACK`, `X-MOZ-SNOOZE-TIME*`, `X-NSCP-ORIGINAL-DTSTART`, `X-NSCP-DTSTART-TZID` |
+| DTSTART/DTEND/DUE/DURATION/RRULE, all-day | `X-MICROSOFT-CDO-ALLDAYEVENT`, `X-FUNAMBOL-ALLDAY`, `X-MOZ-GENERATION`, `X-MOZ-LASTACK`, `X-MOZ-SNOOZE-TIME*`, `X-NSCP-ORIGINAL-DTSTART`, `X-NSCP-DTSTART-TZID` |
 | an alarm's TRIGGER | that alarm's `X-MOZ-LASTACK`, `X-MOZ-SNOOZE-TIME`, `X-APPLE-DEFAULT-ALARM`, `ACKNOWLEDGED` |
-| STATUS (task) | `X-APPLE-COMPLETED`-style shadows (check fixtures) |
+| STATUS (task) | none: no client in the corpus shadows STATUS, COMPLETED or PERCENT-COMPLETE |
 | FN/N (contact) | `X-PHONETIC-*` |
 
 The table is code (`ical.dependents`), grown from fixtures. A web edit that changes a field applies its rows. A DAV PUT replaces the component wholesale, so it doesn't need them.
@@ -212,7 +212,7 @@ event_alarms(id, vevent_id, position, action, trigger, related, absolute, repeat
 vtimezones(collection_id, tzid, vtimezone)
 ```
 
-The codec is `internal/dav/ical` (`DecodeEvents`, `Object.Encode`); it holds no SQL, so tasks (VTODO) reuse its values, leftovers, alarms and recurrence in milestone 4. One resource is one `events` row and its `vevents`, master first.
+The codec is `internal/dav/ical` (`Decode(cal, kind)`, `Object.Encode`); it holds no SQL and models VEVENT, VTODO and VJOURNAL with one `Component` type, claiming per kind only the properties RFC 5545 allows in it. The rows are written and read by `internal/dav/icalsql`, shared with tasks: the component, attendee and alarm tables have the same columns in both plugins (task columns stay empty for events). One resource is one `events` row and its `vevents`, master first.
 
 - **Overrides are whole components**, stored like the master in `vevents`, not as nullable "inherit" columns: RFC 5545 makes an override replace its occurrence, and a property absent from an override is absent from that occurrence. Inheriting would invent data on output.
 - **What the codec claims**: a property is modelled only when it fits the model exactly; anything else is a leftover and written back in its original order. So a second SUMMARY, an empty one, a DTSTART Cog cannot read, a CATEGORIES with parameters, or a property with a group stays as received. Parameters Cog does not model on a modelled property are kept with it (`SUMMARY;LANGUAGE=de`, `ATTENDEE;X-NUM-GUESTS=2`, an attendee's whole parameter list in order).
@@ -224,30 +224,35 @@ The codec is `internal/dav/ical` (`DecodeEvents`, `Object.Encode`); it holds no 
 - **Reminders**: `notifications` are derived from the alarms of the first instance that has not ended, on every write.
 - ATTACH, GEO, COMMENT, CONTACT, RESOURCES, RELATED-TO, COLOR and CONFERENCE are leftovers for now; managed attachments (milestone 7) will model ATTACH.
 
-### 4.3 Tasks (CalDAV, VTODO)
+### 4.3 Tasks and journals (CalDAV, VTODO and VJOURNAL)
 
-Task lists are calendar collections that include VTODO; the default `personal` calendar is one.
+Task lists are calendar collections that include VTODO; the default `personal` calendar is one. Journal entries live in collections that include VJOURNAL. Both are stored by the tasks plugin, with the same layout as events (`internal/dav/icalsql`):
 
 ```
-tasks(
-  id, collection_id, uid, uri, version,
-  summary, description, location, url, status, priority, percent_complete, class,
-  dtstart_local, dtstart_tzid, dtstart_utc, dtstart_is_date,
-  due_local,     due_tzid,     due_utc,     due_is_date,
-  completed_utc,
-  rrule, sequence, dtstamp, created, last_modified,
-  categories_json,
-  sort_order,          -- maps to X-APPLE-SORT-ORDER, so modelled, not a leftover
-  leftovers
-)
+tasks(                                 -- one row per CalDAV resource, VTODO or VJOURNAL
+  id, collection_id, component, uid, uri, version, size,
+  start_utc, range_end_utc, props, comps, created_at, updated_at)
 
-task_relations(task_id, reltype, related_uid, params)  -- RELATED-TO; PARENT drives the tree
-task_exdates / task_overrides / task_alarms            -- same shapes as events
+task_components(                       -- same columns as vevents: the master and each override
+  id, object_id, position, recurrence_id_*, this_and_future,
+  summary, description, location, url, status, class, priority, sequence, percent_complete,
+  dtstart_*, due_local, due_tzid, due_is_date, due_utc, end_utc, duration,
+  completed, completed_utc,             -- COMPLETED (JSON) and its instant
+  rrule, rdates, exdates, dtstamp, created, last_modified, organizer, categories,
+  sort_order,                           -- X-APPLE-SORT-ORDER, so modelled, not a leftover
+  leftovers)
+
+task_relations(id, component_id, position, reltype, related_uid, is_parent, params)  -- RELATED-TO
+task_attendees / task_alarms / vtimezones                                          -- as for events
 ```
 
-- Today's `parent_id` becomes a view over `RELATED-TO;RELTYPE=PARENT`. Store the UID, not the row id, because the parent may arrive later in a sync, or may live in another list.
-- Completing a recurring task follows RFC 5545 (the client usually creates a COMPLETED override or advances DTSTART). Mirror what Apple Reminders and tasks.org send; capture fixtures.
-- The existing tasks web UI and the JSON tasks API (task #32, agent tokens) both go through this store.
+- **What each kind claims.** VTODO adds DUE, COMPLETED, PERCENT-COMPLETE, RELATED-TO and X-APPLE-SORT-ORDER to what events model, and leaves DTEND and TRANSP as leftovers. VJOURNAL models the common properties and RELATED-TO; LOCATION, PRIORITY, a second DESCRIPTION and VALARMs (none of which RFC 5545 allows there, or allows once) are leftovers. RELATED-TO stays a leftover on events.
+- **The tree.** `parent_id` is gone. A task's parent is its first `RELATED-TO` with `RELTYPE=PARENT` or no RELTYPE (RFC 5545's default), stored by UID with `is_parent` set, because the parent may arrive later in a sync or live in another list. The web UI resolves it within the list; a parent elsewhere leaves the task a root there, and a cycle sent by a client shows its first task as a root rather than hiding both. Deleting a task in the web UI deletes its subtasks in the same list, each with a tombstone; over DAV a subtask is its own resource and stays.
+- **Order.** `X-APPLE-SORT-ORDER` orders a list (tasks without one follow, by creation). Dragging in the web UI writes it, and RELATED-TO when the task changes parent, so DAV clients see the same order and tree; each moved task is a new version.
+- **Recurrence.** Occurrences count from DTSTART, or from DUE for a task without one (clients that recur tasks by due date). With both, each occurrence lasts DUE − DTSTART; with DUE only, it is an instant.
+- **Completing a recurring task.** RFC 5545 leaves it to clients. Cog follows tasks.org: the series moves on to its next occurrence (`Object.Advance`: DTSTART and DUE move, COUNT counts one less, overrides and exceptions before it go) and stays open; completing the last occurrence completes the task. No fixture from Apple Reminders or tasks.org exists yet (testdata/dav/README.md), so this is from their documented behaviour, not captured traffic. Clients that complete an occurrence with a COMPLETED override (Thunderbird) are stored as sent.
+- **Web edits** (`plugin/tasks/edit.go`) change only what the form shows, compared with what it was shown: summary, description, priority, status, percent, due, start, parent. Times are shown and read in the list's zone; a due date (DATE) stays a date unless edited. Changed fields drop their dependent leftovers; DTSTAMP and LAST-MODIFIED always move, SEQUENCE when times or STATUS changed (RFC 5545 §3.8.7.4 lists STATUS for tasks). Moving the start of a recurring task moves its exceptions with it.
+- The JSON tasks API (task #32, agent tokens) will go through the same store.
 
 ### 4.4 Contacts (CardDAV, VCARD)
 
@@ -353,7 +358,7 @@ Everything below is in scope for the MR.
 
 ### Journals (VJOURNAL)
 
-- Journal collections (`supported-calendar-component-set` = VJOURNAL), owned by the tasks plugin and modelled like tasks without due/status-completion fields.
+- Journal collections (`supported-calendar-component-set` = VJOURNAL), owned by the tasks plugin and stored in the same tables as tasks (section 4.3), modelled without due/completion fields. A collection may hold both, as jtx Board's do.
 - Not mapped to the notes plugin (section 12). Round-trip storage and sync, so jtx Board journals work.
 
 ### Out of scope
@@ -399,6 +404,8 @@ Each milestone is a run of commits that builds and passes tests on its own.
 - **Collections**: user-level, in the system database, owned by the DAV core; plugins supply resources by component type, and a calendar collection may mix components (section 3.0). Sync tokens are composite (section 6).
 - **Migration**: none. Fresh schema; production data is exported and imported again (section 8).
 - **Import and export**: a page in the user's settings (`/settings/data`) over the `Backend` interface, in milestone 2 (section 8.1).
+- **Row storage**: one shared package, `internal/dav/icalsql`, for every plugin holding calendar components; the component tables have the same columns everywhere.
+- **Completing a recurring task** from Cog advances the series to its next occurrence, as tasks.org does (section 4.3).
 - **Recurrence expansion**: `github.com/teambition/rrule-go`, already a dependency, behind `internal/dav/ical` and `internal/dav/tz`; only RRULE arithmetic, not iCalendar parsing. Two limits are worked around or accepted: it stops about 292 years after DTSTART (its offsets are `time.Duration`s), so `FromRules` starts a 1601-based Outlook observance at 1900 in the same phase; and an event series is not expanded beyond that span. When DTSTART does not match the rule, it is counted as an occurrence on top of COUNT rather than as one of them.
 
 ## 13. Open questions
@@ -414,7 +421,8 @@ Branch `design-dav-storage`, one draft MR to master. Update this section at the 
 | 1. contentline + fixtures | Done. `internal/dav/contentline`; `testdata/dav` (see its README); `go tool davfixtures` for the local-only GPL corpus and personal exports. |
 | 2. DAV core | Done. `internal/dav` (collections in the system database, `Server` for root/principals/homes, PROPFIND/PROPPATCH/REPORT/MKCALENDAR/extended MKCOL, composite sync tokens, privilege sets, import/export); `internal/dav/davsql` (counters and tombstones in each plugin DB); `internal/dav/tz`. Calendar, tasks (VTODO and VJOURNAL, blob-backed) and contacts are backends; their web UIs read collections from the core. `/settings/data` imports and exports; the tombstone retention is an admin setting. Protocol tests in `internal/dav/protocol_test.go`. |
 | 3. Events | Done. `internal/dav/ical` (values, leftovers, VEVENT codec, recurrence with overrides); `internal/dav/tz` generates VTIMEZONEs from Go's zone data and evaluates clients' own; the calendar plugin stores rows (section 4.2) and renders text on read through `dav.Table.Render`; the web UI edits rows; RFC 7809. |
-| 4. Tasks and journals | Next. |
+| 4. Tasks and journals | Done. `internal/dav/ical` models VTODO and VJOURNAL with the event codec (one `Component` type, properties claimed per kind); `internal/dav/icalsql` stores calendar objects as rows for both the calendar and the tasks plugin; tasks and journals are rows (section 4.3), with RELATED-TO by UID and X-APPLE-SORT-ORDER; recurring tasks complete by advancing; the tasks web UI edits rows. |
+| 5. Contacts | Next. |
 
 How milestone 2 differs from the plan it started with:
 
@@ -474,6 +482,29 @@ After milestone 3:
 - **Editing one occurrence.** Clicking an instance of a series opens it with "Apply to": *this event* creates or updates its override (a copy of the master without its recurrence, then the form); *this and following* splits the series (`Object.Split`: the old one ends with an UNTIL just before, the new one, with a new UID, carries the rest of a COUNT, the later overrides, exceptions and extra dates, and the form, moved by however much the occurrence was moved); *all events* edits the master and moves it, its exceptions and its overrides' recurrence IDs by as much as the occurrence moved. Deleting offers the same: an EXDATE (and the override goes), an UNTIL, or the whole event. A split is saved in one transaction. Only a whole series may move to another calendar.
 - **Redefined zones.** A PUT whose VTIMEZONE for a client's own TZID is new or differs from the stored one recomputes, in the same transaction, the derived times and reminders of the other events in the calendar that use that TZID.
 - **Browser tests under load.** At most `WEBTEST_PARALLEL` test binaries (default a quarter of the CPUs) run Chrome at once, by lock files in the temp directory; the action timeout is 30s (`WEBTEST_TIMEOUT`). `Login` and `Count` now wait for the page load: `TestBrowserCore/Dashboard`'s old "6 app cards" was a count of a page that had not finished arriving.
+
+How milestone 4 differs from the plan:
+
+- No separate `task_exdates` / `task_overrides` tables: tasks use the event layout (overrides as full component rows, RDATE/EXDATE as JSON). Rather than copying the calendar's row code, it moved to `internal/dav/icalsql`, and the calendar's tables took the shared column names (`object_id`, `component_id`, a `component` column, and the task columns, empty for events).
+- Tasks and journals share one resource table (`tasks.component` says which), so UIDs are unique across both in a collection, relations can link a journal entry to a task (jtx Board does), and `dav.Table` serves both (a `Component` of "" reads the column).
+- `ical.Event` became `ical.Component` (with `Kind`), `Object.Events` `Object.Components`, `Object.Comps` `Object.Others`, `DecodeEvents` `Decode(cal, kind)`; the calendar's `stamp` is `Component.Stamp`.
+- A PUT may change a URI's component type (a task replaced by a journal entry); before, the tasks backend refused it. Nothing in RFC 4791 forbids it.
+- Tasks have no reminders yet (the old plugin had none); their alarms are stored and served.
+- Tasks do not narrow `calendar-query` time ranges in SQL (RFC 4791 §9.9's VTODO rules are not implemented); clients get every task and filter.
+
+Adjacent bugs fixed in milestone 4:
+
+- Dragging a task into another task's group in the web UI only reordered it: the parent the client sent was ignored, so the task jumped back on reload. Reordering now sets the parent.
+- Reordering and reparenting did not change a task's version, so DAV clients never saw them.
+- The edit form read due and start times as UTC whatever the user's zone, and wrote every time as UTC; they are shown and read in the list's zone, and a due date stays a date.
+- A web edit regenerated the whole VTODO from the form, losing alarms, recurrence, relations, sort order and everything Cog did not model, and never bumped SEQUENCE.
+- Due badges for date-only tasks used the server's zone and could show the previous day; an all-day task was overdue from midnight of its due day.
+- Seeding logged and skipped failed subtasks instead of reporting the error.
+
+Open after milestone 4:
+
+- Completing a recurring task in Apple Reminders reportedly also keeps a completed copy as a separate reminder; Cog does not. Capture fixtures from Reminders and tasks.org to confirm both behaviours.
+- `DESIGN/database.md` still describes the old `ics_data` blobs for events and tasks.
 
 Fixed after milestone 2 (pre-existing, found through the `webtest` fix):
 

@@ -175,9 +175,10 @@ func TestWebEditsReachSync(t *testing.T) {
 	tplug, _ := env.Providers.Plugins.Plugin("tasks")
 	tdb, err := tplug.(*tasks.Plugin).DB(alice.Username)
 	require.NoError(t, err)
-	parent, err := tasks.CreateTask(tdb, c.ID, "parent", nil, "Parent", "", 0, nil, nil, env.Now())
+	list := &tasks.TaskList{ID: c.ID}
+	parent, err := tasks.CreateTask(tdb, list, "parent", tasks.NewTask{Summary: "Parent"}, env.Now())
 	require.NoError(t, err)
-	_, err = tasks.CreateTask(tdb, c.ID, "child", &parent.ID, "Child", "", 0, nil, nil, env.Now())
+	_, err = tasks.CreateTask(tdb, list, "child", tasks.NewTask{Summary: "Child", ParentUID: parent.UID}, env.Now())
 	require.NoError(t, err)
 	_, token = syncReport(t, env, alice, path, token)
 	require.NoError(t, tasks.DeleteTask(tdb, parent.ID, env.Now()))

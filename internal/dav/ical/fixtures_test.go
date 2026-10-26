@@ -22,9 +22,9 @@ var fixtureRoots = []string{
 	"../../../tmp/dav-fixtures-gpl",
 }
 
-// eventResources splits every fixture into resources the way a client would
-// PUT them: the VEVENTs of one UID with the file's VTIMEZONEs.
-func eventResources(t *testing.T) map[string]*contentline.Component {
+// resources splits every fixture into resources the way a client would PUT
+// them: the components of one kind and UID with the file's VTIMEZONEs.
+func resources(t *testing.T, kind Kind) map[string]*contentline.Component {
 	t.Helper()
 	out := map[string]*contentline.Component{}
 	for _, root := range fixtureRoots {
@@ -57,7 +57,7 @@ func eventResources(t *testing.T) map[string]*contentline.Component {
 					switch {
 					case sub.Is("VTIMEZONE"):
 						zones = append(zones, sub)
-					case sub.Is("VEVENT"):
+					case sub.Is(string(kind)):
 						uid := ""
 						if p := sub.Prop("UID"); p != nil {
 							uid = p.Value
@@ -93,40 +93,50 @@ func encode(t *testing.T, o *Object) []byte {
 	return b.Bytes()
 }
 
-// TestFixturesEventsRoundTrip checks, for every event resource in the
-// corpus, that decoding what Cog writes gives back exactly what it decoded,
-// that writing is deterministic, and that no property name the client sent
-// is missing from the output.
-func TestFixturesEventsRoundTrip(t *testing.T) {
-	res := eventResources(t)
-	if len(res) < 50 {
-		t.Fatalf("only %d event resources found in the corpus", len(res))
-	}
-	for name, cal := range res {
-		t.Run(name, func(t *testing.T) {
-			o, err := DecodeEvents(cal)
-			require.NoError(t, err)
-			out := encode(t, o)
-			require.Equal(t, string(out), string(encode(t, o)), "encoding is not deterministic")
-
-			comps, err := contentline.Parse(bytes.NewReader(out))
-			require.NoError(t, err)
-			again, err := DecodeEvents(comps[0])
-			require.NoError(t, err)
-			if !hasProp(o.Props, "PRODID") {
-				o.Props = append([]contentline.Property{{Name: "PRODID", Value: ProdID}}, o.Props...)
+// TestFixturesRoundTrip checks, for every event, task and journal resource
+// in the corpus, that decoding what Cog writes gives back exactly what it
+// decoded, that writing is deterministic, and that no property name the
+// client sent is missing from the output.
+func TestFixturesRoundTrip(t *testing.T) {
+	for _, k := range []struct {
+		kind Kind
+		min  int // the committed corpus alone has at least this many
+	}{{VEVENT, 500}, {VTODO, 20}, {VJOURNAL, 5}} {
+		t.Run(string(k.kind), func(t *testing.T) {
+			res := resources(t, k.kind)
+			if len(res) < k.min {
+				t.Fatalf("only %d %s resources found in the corpus", len(res), k.kind)
 			}
-			if !reflect.DeepEqual(o, again) {
-				t.Fatalf("decode(encode(x)) != x\nencoded:\n%s", out)
-			}
-			require.Equal(t, string(out), string(encode(t, again)), "not a fixed point")
-
-			// Every property name a client sent survives somewhere in its
-			// component.
-			for i, ev := range cal.Components[len(cal.Components)-len(o.Events):] {
-				missing(t, ev, comps[0].Components[len(comps[0].Components)-len(o.Events)+i], out)
+			for name, cal := range res {
+				t.Run(name, func(t *testing.T) { roundTrip(t, cal, k.kind) })
 			}
 		})
+	}
+}
+
+func roundTrip(t *testing.T, cal *contentline.Component, kind Kind) {
+	o, err := Decode(cal, kind)
+	require.NoError(t, err)
+	out := encode(t, o)
+	require.Equal(t, string(out), string(encode(t, o)), "encoding is not deterministic")
+
+	comps, err := contentline.Parse(bytes.NewReader(out))
+	require.NoError(t, err)
+	again, err := Decode(comps[0], kind)
+	require.NoError(t, err)
+	if !hasProp(o.Props, "PRODID") {
+		o.Props = append([]contentline.Property{{Name: "PRODID", Value: ProdID}}, o.Props...)
+	}
+	if !reflect.DeepEqual(o, again) {
+		t.Fatalf("decode(encode(x)) != x\nencoded:\n%s", out)
+	}
+	require.Equal(t, string(out), string(encode(t, again)), "not a fixed point")
+
+	// Every property name a client sent survives somewhere in its
+	// component.
+	n := len(o.Components)
+	for i, ev := range cal.Components[len(cal.Components)-n:] {
+		missing(t, ev, comps[0].Components[len(comps[0].Components)-n+i], out)
 	}
 }
 
