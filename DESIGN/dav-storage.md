@@ -338,7 +338,8 @@ WebDAV locking for CalDAV/CardDAV (file WebDAV has it), GroupDAV, TZDIST RFC 780
   - Invalidation: editing a field drops exactly the listed leftovers.
 - **Protocol tests** (cogtest): PUT/GET/ETag rules, sync tokens with tombstones, privilege sets on shared collections, free/busy-only shares, scheduling inbox delivery, MKCOL, timezone-by-reference negotiation, managed attachment add/update/remove, push subscription and delivery, ICS feed auth and revocation, subscription polling (with SSRF blocks), birthday calendar regeneration.
 - **JSON tests**: JSCalendar/JSContact output validated against the RFC examples; JMAP `get/set/changes` round-trips against the same rows as DAV, and a change made over one protocol is visible over the other.
-- **Client smoke test** (manual, per release): DAVx5 and iOS against a dev server; edit in Cog, verify on the device, and the reverse.
+- **Client smoke test** (manual, per release): DAVx5 (with jtx Board and tasks.org) and Thunderbird against a dev server; edit in Cog, verify on the client, and the reverse.
+- **Apple and Microsoft clients are best effort.** No devices are available to capture from, so support rests on the public corpus (Outlook 2003–2016, Exchange/O365, iCal 1–4, macOS 10.8–11, iOS 26, older iOS/macOS Contacts), the RFCs, and leftovers preserving whatever isn't modelled. Newer behaviour (Reminders' `X-APPLE-SORT-ORDER`, iOS 17+ contacts) is fixed as reports come in.
 
 ## 11. Milestones (within the one MR)
 
@@ -382,6 +383,7 @@ Findings so far:
 
 - Production data (cog.duckfam.us, 2026-10-25): 3 calendars, 186 events, all from one Fossify import, no VTODO, 9 minimal contacts. No DAV client has written to it yet, so the migration's verification (section 8) will mostly exercise import-shaped ICS. One stored DESCRIPTION has a broken fold, kept as a malformed property.
 - Tasks have no CalDAV yet, so they cannot be exported over DAV until milestone 4.
+- Development needs no production credentials: tests use cogtest and the fixture corpus. For the migration check in milestone 3, run `go tool davfixtures export` locally or copy a production database into local dev.
 
 Adjacent bugs found, to fix in milestone 2 while porting:
 
