@@ -277,11 +277,21 @@ card_members(card_id, member_uri)                     -- groups (v4 MEMBER, v3 X
 Per plugin, behind the same "repair once per database" mechanism MR !22 introduced (`meta` table + `repairOnce`), since plugin migrations are SQL-only:
 
 1. SQL migration adds the new tables and columns; the old blob columns stay.
-2. On first open, decode each existing blob into rows + leftovers. Record failures (bad ICS) in a `migration_errors` table and keep the blob for those rows.
-3. **Verification period**: writes go to rows; the blob column is regenerated from rows on every write. A background check (or test fixture run) compares `encode(rows)` with the original blob, normalised, and logs differences.
+2. On first open, decode each existing blob into rows + leftovers through the same codec as import (section 8.1). Record failures (bad ICS) in a `migration_errors` table and keep the blob for those rows.
+3. **Verification period** (tasks and contacts): writes go to rows; the blob column is regenerated from rows on every write. A background check (or test fixture run) compares `encode(rows)` with the original blob, normalised, and logs differences.
 4. When the comparison is clean on real data, a later migration drops the blob columns.
 
+**Events skip the verification period.** The only deployment's calendar data is a single Fossify import (section 14) that can be imported again, so events are decoded once and the web UI and DAV read rows from then on. The old `ics_data` column is no longer written but stays, untouched, until the owner confirms the migrated calendars and says to drop it. If a migrated calendar is wrong, the fix is to delete it and import the original file again, not to repair rows by hand.
+
 Order: calendar events first (most data, most bugs), then tasks (needs CalDAV anyway), then contacts (already works; lowest urgency).
+
+### 8.1 Import and export in the web UI
+
+An **Import and export** page in each user's own settings (`/settings/data`, beside Profile, Security and Storage; not the admin-only plugin settings pages), built on the DAV core's `Backend` interface, so it covers every registered backend without per-plugin UI.
+
+- **Import**: upload `.ics` or `.vcf` (size-limited); choose an existing collection or create one. The file is split into resources the way a client would PUT them: VEVENT/VTODO/VJOURNAL grouped by UID (overrides with RECURRENCE-ID stay with their master) together with the VTIMEZONEs they reference, and one resource per VCARD. Each resource goes through `Backend.Put`, so UID/`uri` rules, collection kind checks and leftovers are the same as over DAV. A resource whose UID already exists in the collection replaces it, which makes re-importing the same file idempotent. Components that don't belong to the collection's kind are counted as skipped. The result (imported, replaced, skipped, failed with reasons) is reported via flash after a redirect (PRG).
+- **Export**: one collection as a single `.ics` (one VCALENDAR, VTIMEZONEs deduplicated) or `.vcf`; or everything as a zip with one file per collection. Generated from rows through the same path as GET, so export and DAV always agree.
+- Lands in milestone 2 against the blob-backed backends and picks up the row-backed codecs as milestones 3–5 replace them. ICS feeds and remote subscriptions (section 9) remain separate.
 
 ## 9. Protocol scope
 
@@ -346,8 +356,8 @@ WebDAV locking for CalDAV/CardDAV (file WebDAV has it), GroupDAV, TZDIST RFC 780
 Each milestone is a run of commits that builds and passes tests on its own.
 
 1. **`contentline` + fixture corpus + round-trip tests.** No behaviour change.
-2. **DAV core**: shared collections, version/tombstone sync, privilege sets, PUT ETag rules, Extended MKCOL. Port the existing CalDAV and CardDAV handlers onto it.
-3. **Events**: model, codec, migration with verification, web UI on rows (fixes lossy edits; overrides visible), VTIMEZONE generation, timezones by reference.
+2. **DAV core**: shared collections, version/tombstone sync, privilege sets, PUT ETag rules, Extended MKCOL. Port the existing CalDAV and CardDAV handlers onto it. Import and export in user settings (section 8.1).
+3. **Events**: model, codec, one-shot migration (no verification period; section 8), web UI on rows (fixes lossy edits; overrides visible), VTIMEZONE generation, timezones by reference.
 4. **Tasks and journals**: VTODO and VJOURNAL models + CalDAV (replaces the stub); tasks web UI on rows.
 5. **Contacts**: model + migration from `vcard_data` and `*_json`.
 6. **Scheduling + free/busy**: inbox/outbox, iTIP processing, free/busy queries and the FreeBusy share.
@@ -355,7 +365,7 @@ Each milestone is a run of commits that builds and passes tests on its own.
 8. **Feeds**: ICS export, ICS subscriptions, birthday calendar.
 9. **WebDAV-Push** (subscription store, VAPID, delivery on version bumps).
 10. **JSCalendar/JSContact encoders and JMAP** on the same rows; the agent API (task #32) uses these shapes.
-11. **Drop blob columns** once verification (section 8) is clean on real data. This can trail the MR as a follow-up migration if production verification needs time.
+11. **Drop blob columns** once verification (section 8) is clean on real data; for events, once the owner has checked the migrated calendars. This can trail the MR as a follow-up migration if production verification needs time.
 
 ## 12. Decisions (were open questions)
 
@@ -365,6 +375,8 @@ Each milestone is a run of commits that builds and passes tests on its own.
 - **VJOURNAL and notes**: notes are markdown files and don't fit VJOURNAL (several DESCRIPTIONs, DTSTART, STATUS, RELATED-TO, ATTACH). Journals are stored separately, in the tasks plugin, sync-only for now; a notes view of them can come later.
 - **JMAP**: contacts (RFC 9610) first; calendars track the latest draft behind a flag.
 - **Tasks plugin**: stays separate and also owns journals; single-kind collections (section 3.0).
+- **Events migration**: no verification period; the production calendars came from one Fossify import and can be re-imported (section 8).
+- **Import and export**: a page in the user's settings (`/settings/data`) over the `Backend` interface, in milestone 2 (section 8.1).
 
 ## 13. Open questions
 
@@ -381,7 +393,7 @@ Branch `design-dav-storage`, one draft MR to master. Update this section at the 
 
 Findings so far:
 
-- Production data (cog.duckfam.us, 2026-10-25): 3 calendars, 186 events, all from one Fossify import, no VTODO, 9 minimal contacts. No DAV client has written to it yet, so the migration's verification (section 8) will mostly exercise import-shaped ICS. One stored DESCRIPTION has a broken fold, kept as a malformed property.
+- Production data (cog.duckfam.us, 2026-10-25): 3 calendars, 186 events, all from one Fossify import, no VTODO over DAV, 9 minimal contacts. No DAV client has written to it yet. The calendars can be re-imported, so events skip the verification period (section 8). One stored DESCRIPTION has a broken fold, kept as a malformed property.
 - Tasks have no CalDAV yet, so they cannot be exported over DAV until milestone 4.
 - Development needs no production credentials: tests use cogtest and the fixture corpus. For the migration check in milestone 3, run `go tool davfixtures export` locally or copy a production database into local dev.
 
