@@ -1,0 +1,311 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport" />
+    <title>
+      Email — Cog
+    </title>
+    <link href="/static/style.css?v=896ce6a8a2ed" rel="stylesheet" />
+    <link href="/static/favicon.svg" rel="icon" type="image/svg+xml" />
+    <style>
+      .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
+  <body hx-headers="{\"X-CSRF-Token\":\"«hex»\"}">
+    <nav class="navbar" data-nav-count="2">
+      <a class="navbar-brand" href="/">
+        <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" style="vertical-align:middle" viewBox="0 0 24 24" width="20">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        <span class="brand-text">
+          Cog
+        </span>
+      </a>
+      <ul class="navbar-nav">
+        <li>
+          <a href="/" title="Dashboard">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            <span class="nav-label">
+              Dashboard
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="/apps/files" title="Files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <span class="nav-label">
+              Files
+            </span>
+          </a>
+        </li>
+      </ul>
+      <div class="navbar-apps-dropdown dropdown" tabindex="0">
+        <button class="apps-toggle" type="button">
+          <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+            <rect height="7" width="7" x="3" y="3" />
+            <rect height="7" width="7" x="14" y="3" />
+            <rect height="7" width="7" x="3" y="14" />
+            <rect height="7" width="7" x="14" y="14" />
+          </svg>
+        </button>
+        <div class="dropdown-menu apps-menu">
+          <a class="" href="/">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            Dashboard
+          </a>
+          <a class="" href="/apps/files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            Files
+          </a>
+        </div>
+      </div>
+      <div class="navbar-search">
+        <input autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)..." type="search" />
+        <div class="search-results" id="search-results" />
+      </div>
+      <div class="navbar-end">
+        <div id="notif-bell" onclick="toggleNotifPanel()" style="position:relative;cursor:pointer;padding:0 0.5rem;display:none" title="Notifications">
+          <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          <span class="notif-badge" id="notif-badge" style="display:none" />
+        </div>
+        <div class="dropdown-menu" id="notif-panel" style="display:none;position:absolute;right:4rem;top:3rem;min-width:280px;max-height:300px;overflow:auto;z-index:100" />
+        <div class="dropdown" tabindex="0">
+          <button class="dropdown-toggle" type="button">
+            <img class="avatar-sm" src="/avatar/«hex»" />
+            <span class="dropdown-username">
+              admin
+            </span>
+            <span class="dropdown-caret">
+              ▾
+            </span>
+          </button>
+          <div class="dropdown-menu">
+            <a class="" href="/settings/profile">
+              Profile
+            </a>
+            <a class="" href="/settings/security">
+              Security
+            </a>
+            <a class="" href="/settings/storage">
+              Storage
+            </a>
+            <a class="" href="/settings/groups">
+              Groups
+            </a>
+            <div class="dropdown-divider" />
+            <a class="active" href="/admin/">
+              Admin
+            </a>
+            <div class="dropdown-divider" />
+            <form action="/logout" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <button onmousedown="this.closest('form').submit()" type="submit">
+                Log out
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <main class="content">
+      <div class="sidebar-layout">
+        <nav class="sidebar">
+          <a class="sidebar-item" href="/admin/settings">
+            General
+          </a>
+          <a class="sidebar-item active" href="/admin/email">
+            Email
+          </a>
+          <a class="sidebar-item" href="/admin/users">
+            Users
+          </a>
+          <a class="sidebar-item" href="/admin/groups">
+            Groups
+          </a>
+          <a class="sidebar-item" href="/admin/volumes">
+            Volumes
+          </a>
+          <a class="sidebar-item" href="/admin/plugins">
+            Plugins
+          </a>
+          <a class="sidebar-item" href="/admin/logs">
+            Logs
+          </a>
+        </nav>
+        <div class="sidebar-content">
+          <h1 style="margin-bottom:1rem">
+            Email Settings
+          </h1>
+          <div class="alert alert-success" style="position:relative">
+            <button aria-label="Close" class="alert-dismiss" onclick="this.parentElement.remove()" type="button">
+              ×
+            </button>
+            Email settings saved.
+          </div>
+          <form action="/admin/email" method="post">
+            <input name="csrf_token" type="hidden" value="«hex»" />
+            <div class="card">
+              <div class="card-title">
+                SMTP Configuration
+              </div>
+              <p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">
+                Configure SMTP for sending invitation and notification emails.
+              </p>
+              <div class="form-group">
+                <label for="smtp_host">
+                  SMTP Host
+                </label>
+                <input class="form-control" id="smtp_host" name="smtp_host" placeholder="smtp.example.com" type="text" value="mail.example.com" />
+              </div>
+              <div class="form-group">
+                <label for="smtp_port">
+                  SMTP Port
+                </label>
+                <input class="form-control" id="smtp_port" max="65535" min="1" name="smtp_port" style="max-width:200px" type="number" value="465" />
+              </div>
+              <div class="form-group">
+                <label for="smtp_user">
+                  SMTP Username
+                </label>
+                <input class="form-control" id="smtp_user" name="smtp_user" placeholder="" type="text" value="" />
+              </div>
+              <div class="form-group">
+                <label for="smtp_pass">
+                  SMTP Password
+                </label>
+                <input class="form-control" id="smtp_pass" name="smtp_pass" placeholder="" type="password" value="" />
+              </div>
+              <div class="form-group">
+                <label for="smtp_from">
+                  From Address
+                </label>
+                <input class="form-control" id="smtp_from" name="smtp_from" placeholder="noreply@example.com" type="email" value="noreply@example.com" />
+              </div>
+              <button class="btn btn-outline btn-sm" hx-headers="{\"X-CSRF-Token\":\"«hex»\"}" hx-post="/admin/email/test-smtp" hx-swap="innerHTML" hx-target="#smtp-test-result" style="margin-top:0.75rem" type="button">
+                Test Connection
+              </button>
+              <div id="smtp-test-result" />
+            </div>
+            <div class="card">
+              <div class="card-title">
+                HTML Template Override
+              </div>
+              <p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">
+                Override the default HTML email templates using Go
+                <code>
+                  html/template
+                </code>
+                syntax. Define blocks to replace:
+                <code>
+                  layout
+                </code>
+                ,
+                <code>
+                  group_invite
+                </code>
+                ,
+                <code>
+                  password_reset
+                </code>
+                ,
+                <code>
+                  otp
+                </code>
+                . The layout uses
+                <code>
+                  {{content}}
+                </code>
+                to render the email body.
+              </p>
+              <details style="margin-bottom:0.75rem">
+                <summary class="text-muted" style="cursor:pointer;font-size:0.85rem">
+                  View default HTML template
+                </summary>
+                <pre style="background:var(--color-bg-alt);padding:0.75rem;border-radius:4px;font-size:0.8rem;margin-top:0.5rem;max-height:300px;overflow:auto">
+                  {{define "layout"}}<!DOCTYPE html> <html><head><meta charset="utf-8"></head> <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#333"> <div style="margin-bottom:1.5rem"> <a href="{{.BaseURL}}" target="_blank" style="text-decoration:none;color:#333;display:inline-flex;align-items:center;gap:0.4rem"> <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg> <span style="font-size:1.1rem;font-weight:600">{{.InstanceName}}</span> </a> </div> {{content}} <hr style="border:none;border-top:1px solid #eee;margin:2rem 0"> <p style="color:#999;font-size:0.85rem">Sent by <a href="{{.BaseURL}}" target="_blank" style="color:#999">{{.InstanceName}}</a></p> </body></html>{{end}} {{define "group_invite"}}<h2 style="margin-top:0">Group Invitation</h2> <p>{{.Inviter.DisplayName}} has invited you to join <strong>{{.GroupName}}</strong>.</p> <p><a href="{{.InviteURL}}" target="_blank" style="display:inline-block;padding:0.6rem 1.2rem;background:#0066cc;color:#fff;border-radius:4px;text-decoration:none;font-weight:600">Accept Invitation</a></p> <p style="color:#666;font-size:0.85rem">This invitation expires in 7 days.</p>{{end}} {{define "password_reset"}}<h2 style="margin-top:0">Password Reset</h2> <p>A password reset was requested for your account ({{.User.Username}}).</p> <p><a href="{{.ResetURL}}" target="_blank" style="display:inline-block;padding:0.6rem 1.2rem;background:#0066cc;color:#fff;border-radius:4px;text-decoration:none;font-weight:600">Reset Password</a></p> <p style="color:#666;font-size:0.85rem">This link expires in 1 hour. If you didn't request this, you can safely ignore this email.</p>{{end}} {{define "otp"}}<h2 style="margin-top:0">Verification Code</h2> <p>Your verification code is:</p> <p style="font-size:1.75rem;font-weight:bold;letter-spacing:0.3rem;padding:0.75rem 1rem;background:#f5f5f5;display:inline-block;border-radius:6px;font-family:monospace">{{.Code}}</p> <p style="color:#666;font-size:0.85rem">This code expires in 10 minutes. If you didn't request this, you can safely ignore this email.</p>{{end}}
+                </pre>
+              </details>
+              <textarea class="form-control" id="override-html" name="override_html" oninput="schedulePreview()" placeholder="Leave empty to use defaults" rows="10" style="font-family:monospace;font-size:0.85rem" />
+              <details style="margin-top:0.75rem">
+                <summary style="cursor:pointer;font-size:0.85rem;font-weight:600">
+                  Preview
+                </summary>
+                <div style="margin-top:0.5rem">
+                  <div class="flex gap-1" style="margin-bottom:0.5rem">
+                    <button class="btn btn-outline btn-sm" onclick="showHTMLPreview('group_invite')" type="button">
+                      Group Invite
+                    </button>
+                    <button class="btn btn-outline btn-sm" onclick="showHTMLPreview('password_reset')" type="button">
+                      Password Reset
+                    </button>
+                    <button class="btn btn-outline btn-sm" onclick="showHTMLPreview('otp')" type="button">
+                      OTP Code
+                    </button>
+                  </div>
+                  <iframe id="preview-html" style="width:100%;height:400px;border:1px solid var(--color-border);border-radius:4px;background:#fff" />
+                </div>
+              </details>
+            </div>
+            <div class="card">
+              <div class="card-title">
+                Text Template Override
+              </div>
+              <p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">
+                Override the default plain-text email templates using Go
+                <code>
+                  text/template
+                </code>
+                syntax. Same block names as HTML.
+              </p>
+              <details style="margin-bottom:0.75rem">
+                <summary class="text-muted" style="cursor:pointer;font-size:0.85rem">
+                  View default text template
+                </summary>
+                <pre style="background:var(--color-bg-alt);padding:0.75rem;border-radius:4px;font-size:0.8rem;margin-top:0.5rem;max-height:300px;overflow:auto">
+                  {{define "layout"}}{{content}} -- Sent by {{.InstanceName}} ({{.BaseURL}}) {{end}} {{define "group_invite"}}{{.Inviter.DisplayName}} has invited you to join "{{.GroupName}}". Accept the invitation: {{.InviteURL}} This invitation expires in 7 days. {{end}} {{define "password_reset"}}A password reset was requested for your account ({{.User.Username}}). Reset your password: {{.ResetURL}} This link expires in 1 hour. If you didn't request this, you can safely ignore this email. {{end}} {{define "otp"}}Your verification code is: {{.Code}} This code expires in 10 minutes. If you didn't request this, you can safely ignore this email. {{end}}
+                </pre>
+              </details>
+              <textarea class="form-control" id="override-text" name="override_text" oninput="schedulePreview()" placeholder="Leave empty to use defaults" rows="8" style="font-family:monospace;font-size:0.85rem" />
+              <details style="margin-top:0.75rem">
+                <summary style="cursor:pointer;font-size:0.85rem;font-weight:600">
+                  Preview
+                </summary>
+                <div style="margin-top:0.5rem">
+                  <div class="flex gap-1" style="margin-bottom:0.5rem">
+                    <button class="btn btn-outline btn-sm" onclick="showTextPreview('group_invite')" type="button">
+                      Group Invite
+                    </button>
+                    <button class="btn btn-outline btn-sm" onclick="showTextPreview('password_reset')" type="button">
+                      Password Reset
+                    </button>
+                    <button class="btn btn-outline btn-sm" onclick="showTextPreview('otp')" type="button">
+                      OTP Code
+                    </button>
+                  </div>
+                  <iframe id="preview-text" style="width:100%;height:300px;border:1px solid var(--color-border);border-radius:4px;background:#fff" />
+                </div>
+              </details>
+            </div>
+            <button class="btn btn-primary" type="submit">
+              Save Email Settings
+            </button>
+          </form>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

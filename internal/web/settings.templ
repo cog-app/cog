@@ -2,6 +2,7 @@ package web
 
 import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/ui"
@@ -16,6 +17,7 @@ func settingsSidebar(active string) []ui.SidebarItem {
 		{Label: "Security", URL: "/settings/security", Active: active == "security"},
 		{Label: "Storage", URL: "/settings/storage", Active: active == "storage"},
 		{Label: "Groups", URL: "/settings/groups", Active: active == "groups"},
+		{Label: "Import and export", URL: "/settings/data", Active: active == "data"},
 	}
 }
 
@@ -499,4 +501,67 @@ templ appPasswordCreatedFragment(plaintext string, ap auth.AppPassword) {
 // appPasswordErrorFragment renders an inline error alert for the HTMX path.
 templ appPasswordErrorFragment(msg string) {
 	@ui.Alert("error", msg)
+}
+
+templ settingsDataPage(pd ui.PageData, flash string, flashKind string, collections []dataCollection, homes []dav.Home) {
+	@ui.SidebarPage(pd, settingsSidebar("data")) {
+		<h1 style="margin-bottom:1rem">Import and export</h1>
+		if flash != "" {
+			@ui.Alert(flashKind, flash)
+		}
+		@ui.Card("Export") {
+			<p class="text-muted">Download a calendar, task list or address book as one .ics or .vcf file, or everything as a zip.</p>
+			<table class="table">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Holds</th>
+						<th class="text-right">Download</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, c := range collections {
+						<tr>
+							<td>{ c.Name }</td>
+							<td>{ c.Kind }</td>
+							<td class="text-right">
+								<a class="btn btn-sm" href={ templ.SafeURL("/settings/data/export/" + strconv.FormatInt(c.ID, 10)) }>{ c.Filename }</a>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+			<a class="btn btn-primary" href="/settings/data/export.zip">Export everything</a>
+		}
+		@ui.Card("Import") {
+			<p class="text-muted">Upload an .ics or .vcf file. Entries whose UID is already in the collection are replaced, so importing the same file again changes nothing.</p>
+			<form method="post" action="/settings/data/import" enctype="multipart/form-data">
+				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+				<div class="form-group">
+					<label for="import-file">File</label>
+					<input class="form-control" type="file" id="import-file" name="file" accept=".ics,.vcf,text/calendar,text/vcard" required/>
+				</div>
+				<div class="form-group">
+					<label for="import-target">Into</label>
+					<select class="form-control" id="import-target" name="target">
+						for _, c := range collections {
+							<option value={ strconv.FormatInt(c.ID, 10) }>{ c.Name } ({ c.Kind })</option>
+						}
+						for _, h := range homes {
+							if h == dav.HomeCalendars {
+								<option value="new:calendars">New calendar…</option>
+							} else {
+								<option value="new:addressbooks">New address book…</option>
+							}
+						}
+					</select>
+				</div>
+				<div class="form-group">
+					<label for="import-name">Name for a new one</label>
+					<input class="form-control" type="text" id="import-name" name="name" placeholder="Imported"/>
+				</div>
+				<button class="btn btn-primary" type="submit">Import</button>
+			</form>
+		}
+	}
 }

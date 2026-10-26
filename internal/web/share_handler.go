@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/search"
@@ -32,6 +33,8 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 	levels := defaultPermissionLevels()
 	if def, ok := h.p.Plugins.ResourceDefByType(resType); ok && len(def.PermissionLevels) > 0 {
 		levels = def.PermissionLevels
+	} else if resType == dav.ShareType {
+		levels = davPermissionLevels
 	}
 
 	// Convert to UI types.

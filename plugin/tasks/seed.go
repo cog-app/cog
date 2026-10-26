@@ -13,19 +13,29 @@ func (p *Plugin) Seed(username string) error {
 		return fmt.Errorf("seed tasks: %w", err)
 	}
 
+	userID, err := p.userID(username)
+	if err != nil {
+		return fmt.Errorf("seed tasks: %w", err)
+	}
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM lists`).Scan(&count)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM tasks`).Scan(&count); err != nil {
+		return fmt.Errorf("seed tasks: %w", err)
+	}
 	if count > 0 {
 		return nil
 	}
 
-	personal, err := CreateTaskList(db, "personal", "Personal", "#0082c9")
+	lists, err := p.Lists(userID)
 	if err != nil {
-		return err
+		return fmt.Errorf("seed tasks: %w", err)
 	}
-	work, err := CreateTaskList(db, "work", "Work", "#e64a19")
+	if len(lists) == 0 {
+		return fmt.Errorf("seed tasks: no default list")
+	}
+	personal := lists[0]
+	work, err := p.CreateList(userID, "Work Tasks", "#e64a19")
 	if err != nil {
-		return err
+		return fmt.Errorf("seed tasks: %w", err)
 	}
 	p.log.Info("seeded task lists", "lists", "Personal, Work")
 
@@ -61,11 +71,12 @@ func (p *Plugin) Seed(username string) error {
 		uid := uuid.New().String()
 		t, err := CreateTask(db, st.listID, uid, st.parentID, st.summary, st.desc, st.priority, st.dueAt, nil, p.ctx.Now())
 		if err != nil {
-			p.log.Error("seed task failed", "summary", st.summary, "error", err)
-			continue
+			return fmt.Errorf("seed task %q: %w", st.summary, err)
 		}
 		if st.status == "COMPLETED" {
-			ToggleTask(db, t.ID, p.ctx.Now())
+			if _, err := ToggleTask(db, t.ID, p.ctx.Now()); err != nil {
+				return fmt.Errorf("seed task %q: %w", st.summary, err)
+			}
 		}
 		if st.summary == "Project Alpha" {
 			projectAlphaID = t.ID

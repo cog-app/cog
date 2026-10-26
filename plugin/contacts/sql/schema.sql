@@ -1,22 +1,9 @@
-CREATE TABLE IF NOT EXISTS address_books (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	uid TEXT NOT NULL UNIQUE,
-	name TEXT NOT NULL DEFAULT 'Contacts',
-	description TEXT NOT NULL DEFAULT '',
-	color TEXT NOT NULL DEFAULT '#0082c9',
-	sort_order INTEGER NOT NULL DEFAULT 0,
-	sync_token INTEGER NOT NULL DEFAULT 0,
-	ctag INTEGER NOT NULL DEFAULT 1,
-	created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-	updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-
 CREATE TABLE IF NOT EXISTS cards (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	address_book_id INTEGER NOT NULL REFERENCES address_books(id) ON DELETE CASCADE,
+	collection_id INTEGER NOT NULL,
 	uid TEXT NOT NULL,
 	uri TEXT NOT NULL,
-	etag TEXT NOT NULL,
+	version INTEGER NOT NULL,
 	fn TEXT NOT NULL DEFAULT '',
 	email TEXT NOT NULL DEFAULT '',
 	tel TEXT NOT NULL DEFAULT '',
@@ -32,19 +19,26 @@ CREATE TABLE IF NOT EXISTS cards (
 	is_starred INTEGER NOT NULL DEFAULT 0,
 	created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 	updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-	UNIQUE(address_book_id, uid)
+	UNIQUE(collection_id, uri),
+	UNIQUE(collection_id, uid)
 );
 
-CREATE TABLE IF NOT EXISTS deleted_cards (
-	address_book_id INTEGER NOT NULL,
-	uid TEXT NOT NULL,
-	deleted_at_token INTEGER NOT NULL
+CREATE TABLE IF NOT EXISTS dav_sync (
+	collection_id INTEGER PRIMARY KEY,
+	token INTEGER NOT NULL DEFAULT 0,
+	floor INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_cards_book ON cards(address_book_id);
+CREATE TABLE IF NOT EXISTS dav_tombstones (
+	collection_id INTEGER NOT NULL,
+	uri TEXT NOT NULL,
+	version INTEGER NOT NULL,
+	deleted_at INTEGER NOT NULL,
+	PRIMARY KEY (collection_id, uri)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cards_collection_version ON cards(collection_id, version);
 
 CREATE INDEX IF NOT EXISTS idx_cards_uid ON cards(uid);
 
-CREATE INDEX IF NOT EXISTS idx_cards_uri ON cards(uri);
-
-CREATE INDEX IF NOT EXISTS idx_deleted_cards_book ON deleted_cards(address_book_id, deleted_at_token);
+CREATE INDEX IF NOT EXISTS idx_dav_tombstones_version ON dav_tombstones(collection_id, version);

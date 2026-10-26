@@ -9,16 +9,9 @@ import (
 )
 
 func TestBrowser(t *testing.T) {
-	env := cogtest.New(t, tasks.New())
-	eng := webtest.New(env)
-	t.Cleanup(eng.Close)
-
-	env.CreateUser(t, "create", "pass")
-	env.CreateUser(t, "toggle", "pass")
-	env.CreateUser(t, "delete-task", "pass")
-	env.CreateUser(t, "delete-list", "pass")
 
 	t.Run("CreateListAndTask", func(t *testing.T) {
+		eng := browserEnv(t, "create")
 		b := eng.Start(t)
 		b.Login(t, "create", "pass")
 		b.Navigate(t, "/apps/tasks/")
@@ -32,6 +25,7 @@ func TestBrowser(t *testing.T) {
 	})
 
 	t.Run("ToggleComplete", func(t *testing.T) {
+		eng := browserEnv(t, "toggle")
 		b := eng.Start(t)
 		b.Login(t, "toggle", "pass")
 		b.Navigate(t, "/apps/tasks/")
@@ -46,6 +40,7 @@ func TestBrowser(t *testing.T) {
 	})
 
 	t.Run("DeleteTask", func(t *testing.T) {
+		eng := browserEnv(t, "delete-task")
 		b := eng.Start(t)
 		b.Login(t, "delete-task", "pass")
 		b.Navigate(t, "/apps/tasks/")
@@ -62,6 +57,7 @@ func TestBrowser(t *testing.T) {
 	})
 
 	t.Run("DeleteList", func(t *testing.T) {
+		eng := browserEnv(t, "delete-list")
 		b := eng.Start(t)
 		b.Login(t, "delete-list", "pass")
 		b.Navigate(t, "/apps/tasks/")
@@ -76,4 +72,18 @@ func TestBrowser(t *testing.T) {
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
+}
+
+// browserEnv starts a server and browser of its own for one subtest, with one
+// user. Collection IDs are global, so a shared server would give a subtest
+// different IDs, and a different golden, depending on which others ran.
+func browserEnv(t *testing.T, username string) *webtest.Engine {
+	t.Helper()
+	env := cogtest.New(t, tasks.New())
+	// The first user is made an admin; the one under test is not.
+	env.CreateUser(t, "admin", "pass")
+	env.CreateUser(t, username, "pass")
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+	return eng
 }

@@ -29,37 +29,34 @@ func itoa(id int64) string { return strconv.FormatInt(id, 10) }
 
 func TestCreateListAndGet(t *testing.T) {
 	_, tp, alice := setupDB(t)
-	db, err := tp.DB(alice.Username)
-	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "test-uid", "Test List", "#ff0000")
+	list, err := tp.CreateList(alice.ID, "Test List", "#ff0000")
 	require.NoError(t, err)
 	require.Equal(t, "Test List", list.Name)
 	require.Equal(t, "#ff0000", list.Color)
+	require.Equal(t, "test-list", list.UID)
 
-	got, err := tasks.GetTaskList(db, list.ID)
+	got, err := tp.List(alice.ID, list.ID)
 	require.NoError(t, err)
 	require.Equal(t, "Test List", got.Name)
 
-	byUID, err := tasks.GetTaskListByUID(db, "test-uid")
+	// Names are unique per home.
+	again, err := tp.CreateList(alice.ID, "Test List", "")
 	require.NoError(t, err)
-	require.Equal(t, list.ID, byUID.ID)
+	require.Equal(t, "test-list-2", again.UID)
 }
 
-func TestEnsureDefaultList(t *testing.T) {
+func TestDefaultListIsSharedPersonalCalendar(t *testing.T) {
 	_, tp, alice := setupDB(t)
-	db, err := tp.DB(alice.Username)
-	require.NoError(t, err)
 
-	require.NoError(t, tasks.EnsureDefaultList(db))
-	lists, err := tasks.ListTaskLists(db)
+	lists, err := tp.Lists(alice.ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(lists))
 	require.Equal(t, "Personal", lists[0].Name)
+	require.Equal(t, "personal", lists[0].UID)
 
 	// Calling again should not create another.
-	require.NoError(t, tasks.EnsureDefaultList(db))
-	lists, err = tasks.ListTaskLists(db)
+	lists, err = tp.Lists(alice.ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(lists))
 }
@@ -69,7 +66,7 @@ func TestCreateTaskAndToggle(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "list1", "My List", "")
+	list, err := tp.CreateList(alice.ID, "My List", "")
 	require.NoError(t, err)
 
 	task, err := tasks.CreateTask(db, list.ID, "task-uid-1", nil, "Buy milk", "From store", 1, nil, nil, time.Now())
@@ -96,13 +93,13 @@ func TestDeleteTask(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "list1", "List", "")
+	list, err := tp.CreateList(alice.ID, "List", "")
 	require.NoError(t, err)
 
 	task, err := tasks.CreateTask(db, list.ID, "del-uid", nil, "Delete me", "", 0, nil, nil, time.Now())
 	require.NoError(t, err)
 
-	require.NoError(t, tasks.DeleteTask(db, task.ID))
+	require.NoError(t, tasks.DeleteTask(db, task.ID, time.Now()))
 	_, err = tasks.GetTask(db, task.ID)
 	require.True(t, err != nil)
 }
@@ -112,7 +109,7 @@ func TestHierarchy_CreateAndCascadeDelete(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "list1", "List", "")
+	list, err := tp.CreateList(alice.ID, "List", "")
 	require.NoError(t, err)
 
 	parent, err := tasks.CreateTask(db, list.ID, "parent-uid", nil, "Parent Task", "", 0, nil, nil, time.Now())
@@ -145,7 +142,7 @@ func TestHierarchy_CreateAndCascadeDelete(t *testing.T) {
 	require.Equal(t, 1, len(grandchildren))
 
 	// Delete parent — cascade deletes all children.
-	require.NoError(t, tasks.DeleteTask(db, parent.ID))
+	require.NoError(t, tasks.DeleteTask(db, parent.ID, time.Now()))
 	allTasks, err = tasks.ListTasks(db, list.ID)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(allTasks))
@@ -156,7 +153,7 @@ func TestReorderTasks(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "list1", "List", "")
+	list, err := tp.CreateList(alice.ID, "List", "")
 	require.NoError(t, err)
 
 	t1, err := tasks.CreateTask(db, list.ID, "t1", nil, "First", "", 0, nil, nil, time.Now())
@@ -182,7 +179,7 @@ func TestReparentTask(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "list1", "List", "")
+	list, err := tp.CreateList(alice.ID, "List", "")
 	require.NoError(t, err)
 
 	parent, err := tasks.CreateTask(db, list.ID, "p1", nil, "Parent", "", 0, nil, nil, time.Now())
@@ -247,10 +244,8 @@ func TestTasksIndexPage(t *testing.T) {
 
 func TestTasksListPage(t *testing.T) {
 	env, tp, alice := setupDB(t)
-	db, err := tp.DB(alice.Username)
-	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "test-list", "Test", "")
+	list, err := tp.CreateList(alice.ID, "Test", "")
 	require.NoError(t, err)
 
 	env.Get(t, "/apps/tasks/list/"+itoa(list.ID), alice.Auth).
@@ -262,7 +257,7 @@ func TestTasksTaskDetailPage(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "detail-list", "Detail", "")
+	list, err := tp.CreateList(alice.ID, "Detail", "")
 	require.NoError(t, err)
 	task, err := tasks.CreateTask(db, list.ID, "detail-uid", nil, "Detail Task", "A description", 5, nil, nil, time.Now())
 	require.NoError(t, err)
@@ -273,10 +268,8 @@ func TestTasksTaskDetailPage(t *testing.T) {
 
 func TestTasksListSettingsPage(t *testing.T) {
 	env, tp, alice := setupDB(t)
-	db, err := tp.DB(alice.Username)
-	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "settings-list", "Settings", "#ff0000")
+	list, err := tp.CreateList(alice.ID, "Settings", "#ff0000")
 	require.NoError(t, err)
 
 	env.Get(t, "/apps/tasks/list/"+itoa(list.ID)+"/settings", alice.Auth).
@@ -288,7 +281,7 @@ func TestUpcomingTasks(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "upcoming-list", "Upcoming", "")
+	list, err := tp.CreateList(alice.ID, "Upcoming", "")
 	require.NoError(t, err)
 
 	// Task with a due date.
@@ -300,7 +293,7 @@ func TestUpcomingTasks(t *testing.T) {
 	_, err = tasks.CreateTask(db, list.ID, "nodue-uid", nil, "No Due", "", 0, nil, nil, time.Now())
 	require.NoError(t, err)
 
-	upcoming, err := tasks.UpcomingTasks(db, 10)
+	upcoming, err := tasks.UpcomingTasks(db, map[int64]tasks.TaskList{list.ID: *list}, 10)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(upcoming))
 	require.Equal(t, "Due Task", upcoming[0].Summary)
@@ -326,7 +319,7 @@ func TestTasksUpdateTask(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "update-list", "Update List", "")
+	list, err := tp.CreateList(alice.ID, "Update List", "")
 	require.NoError(t, err)
 
 	task, err := tasks.CreateTask(db, list.ID, "update-uid", nil, "Original", "old desc", 1, nil, nil, time.Now())
@@ -357,7 +350,7 @@ func TestTasksReorder(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "reorder-list", "Reorder", "")
+	list, err := tp.CreateList(alice.ID, "Reorder", "")
 	require.NoError(t, err)
 
 	t1, err := tasks.CreateTask(db, list.ID, "r1", nil, "First", "", 0, nil, nil, time.Now())
@@ -389,10 +382,8 @@ func TestTasksReorder(t *testing.T) {
 
 func TestTasksUpdateList(t *testing.T) {
 	env, tp, alice := setupDB(t)
-	db, err := tp.DB(alice.Username)
-	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "rename-list", "Old Name", "#000000")
+	list, err := tp.CreateList(alice.ID, "Old Name", "#000000")
 	require.NoError(t, err)
 
 	cookie, csrf := sessionAuth(t, env, alice)
@@ -403,7 +394,7 @@ func TestTasksUpdateList(t *testing.T) {
 	}, cookie, csrf, cogtest.StopRedirect).Status(303)
 
 	// Verify.
-	updated, err := tasks.GetTaskList(db, list.ID)
+	updated, err := tp.List(alice.ID, list.ID)
 	require.NoError(t, err)
 	require.Equal(t, "New Name", updated.Name)
 	require.Equal(t, "#ff0000", updated.Color)

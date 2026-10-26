@@ -409,19 +409,40 @@ Branch `design-dav-storage`, one draft MR to master. Update this section at the 
 | Milestone | State |
 |---|---|
 | 1. contentline + fixtures | Done. `internal/dav/contentline`; `testdata/dav` (see its README); `go tool davfixtures` for the local-only GPL corpus and personal exports. |
-| 2. DAV core | In progress. |
+| 2. DAV core | Done. `internal/dav` (collections in the system database, `Server` for root/principals/homes, PROPFIND/PROPPATCH/REPORT/MKCALENDAR/extended MKCOL, composite sync tokens, privilege sets, import/export); `internal/dav/davsql` (counters and tombstones in each plugin DB); `internal/dav/tz`. Calendar, tasks (VTODO and VJOURNAL, blob-backed) and contacts are backends; their web UIs read collections from the core. `/settings/data` imports and exports; the tombstone retention is an admin setting. Protocol tests in `internal/dav/protocol_test.go`. |
+| 3. Events | Next. |
+
+How milestone 2 differs from the plan it started with:
+
+- Plugins no longer call `RegisterDAVHandler` (two plugins cannot both register `calendars`). They implement `dav.Provider`; the host injects the `dav.Server` before registration and mounts it, checking per request which plugins are enabled. `RegisterDAVHandler` stays in the public API, unused.
+- Collections moved to the system database and may mix components (section 3.0); the default `personal` calendar holds events and tasks. Calendars, task lists and address books in the web UIs are views of these collections; new ones get a name slugged from the display name.
+- Shares use one type, `dav:collection`, keyed by collection ID, for every plugin; the web share buttons and the DAV core agree on it.
+- A request for an owner's default collection name creates it if the home is empty, as the old handlers did on any request.
+- Dead properties are stored per collection (`dead_props`) instead of being dropped; `calendar-order` maps to `sort_order`. `calendar-timezone` with a zone Cog cannot resolve is accepted and ignored until the VTIMEZONE evaluator (milestone 3).
+- Calendar and contacts backends share `dav.Table`, the read side for a one-table plugin.
 
 Findings so far:
-
 - Production data (cog.duckfam.us, 2026-10-25): 3 calendars, 186 events, all from one Fossify import, no VTODO over DAV, 9 minimal contacts. No DAV client has written to it yet. Everything can be exported and imported again, so the MR starts from a fresh schema (section 8). One stored DESCRIPTION has a broken fold, kept as a malformed property.
 - The old server has no CalDAV for tasks, so tasks made in its web UI cannot be exported over DAV. Check the production task count before deploying; if there are any, export them from the old database first.
 - Development needs no production credentials: tests use cogtest and the fixture corpus. To test with real data, run `go tool davfixtures export` and import the result into a dev server.
 
-Adjacent bugs found, to fix in milestone 2 while porting:
+Adjacent bugs fixed in milestone 2 (each covered by a test):
 
-- Calendar sharing mixes user IDs and usernames: `SharedCalendars` passes a username to `ListBySubject` (expects a user ID) and opens `userDB(rec.OwnerUserID)` with an ID; `CheckCalendarAccess` likewise. Contacts does it right via `UserLookup`.
-- CalDAV derives the event UID from the request path, so a PUT to `a.ics` containing `UID:b` stores mismatched data; resources need a `uri` column.
-- DELETE on a shared calendar collection needs only Write and deletes the owner's calendar; it should be owner-only.
-- `addressBookCollectionShared` returns 405 for writers instead of performing the operation, and checks permission in the wrong place.
-- CardDAV `sync-collection` returns every card even with a token.
-- Swallowed errors: `MarkNotificationFired`, `renderWidget` (calendar, tasks), and `ListCalendars`/`ListEvents`/`ListCards`/`SharedCalendars` in PROPFIND/REPORT paths.
+- Calendar sharing mixed user IDs and usernames (`SharedCalendars`, `CheckCalendarAccess`); the web share button used row IDs and CalDAV used UIDs, so the two never matched.
+- Share checks ignored the owner: a share of `personal` by one user granted access to every user's `personal`. Access now requires a share made by the collection's owner.
+- CalDAV and CardDAV derived the UID from the request path; resources now have a `uri`, and a UID conflict is a `no-uid-conflict` error.
+- DELETE (and PROPPATCH) on a shared collection needed only Write; they are owner-only.
+- Shared address books returned 405 to writers.
+- CardDAV and CalDAV `sync-collection` returned every resource whatever the token.
+- Deleting an event in the web UI left no tombstone; deleting a task left none for its subtasks; moving a task or contact to another list left none in the old one. Moving a contact to another book also left a copy behind.
+- Web-made UIDs were `<nanoseconds>-<summary>`, leaking the summary and allowing `/`; they are UUIDs.
+- Swallowed errors: `MarkNotificationFired`, every plugin's `renderWidget`, invitation emails, contact photo updates, `UpsertCard`/`DeleteCardByID`/`DeleteAddressBook` in the contacts pages, list queries in PROPFIND/REPORT, gallery's contact search, `registry.Add` at startup.
+- `SeedPlugins` ignored its username and always seeded `admin`.
+- `webtest` closed the shared browser when an engine closed and never relaunched it, so every browser test after the first in a package skipped silently. With it fixed, about thirty tests in `internal/web` and `cmd/cog` run for the first time; their DOM goldens are committed. `TestBrowserVolumeBrowse` had live file times in its golden (fixed); the feed settings tests were stale after the settings split (fixed).
+
+Open, not fixed (pre-existing, found through the `webtest` fix, skipped with a reason in the code):
+
+- `TestBrowserAdminCreateVolume`: its golden shows the run's temp directory.
+- `cmd/cog` `TestBrowserCore/Dashboard`: expects 8 app cards; the build has 6.
+- `cmd/cog` `TestBrowserCore/Navigation`: its DOM differs between runs (htmx style element, dashboard card contents).
+- Gallery's `idx_media_fingerprint` is never created on new databases: the guarded migration that adds it is skipped once `schema.sql` has the column.

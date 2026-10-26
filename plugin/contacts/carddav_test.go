@@ -210,93 +210,72 @@ func TestCardDAV_ReportQuery(t *testing.T) {
 	require.Contains(t, body, "Query Person")
 }
 
+// syncReport sends a sync-collection REPORT with token and returns the body
+// and the new token.
+func syncReport(t *testing.T, env *cogtest.Env, u *cogtest.User, path, token string) (string, string) {
+	t.Helper()
+	body := carddavReq(t, env, "REPORT", path, `<?xml version="1.0" encoding="UTF-8"?>
+<D:sync-collection xmlns:D="DAV:">
+  <D:sync-token>`+token+`</D:sync-token>
+  <D:prop><D:getetag/></D:prop>
+</D:sync-collection>`, u.Auth, cogtest.Header("Content-Type", "application/xml")).Status(207).ReadBody()
+	_, rest, ok := strings.Cut(body, "<D:sync-token>")
+	require.True(t, ok, body)
+	next, _, _ := strings.Cut(rest, "</D:sync-token>")
+	return body, next
+}
+
 func TestCardDAV_SyncCollection(t *testing.T) {
 	env := cogtest.New(t, contacts.New())
 	alice := env.CreateUser(t, "alice", "pass")
-
-	plug, _ := env.Providers.Plugins.Plugin("contacts")
-	cp := plug.(*contacts.Plugin)
-	_, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-
 	basePath := "/remote.php/dav/addressbooks/" + alice.Username + "/contacts/"
 
-	// Initial sync (empty token) should return all cards.
-	syncXML := `<?xml version="1.0" encoding="UTF-8"?>
-<D:sync-collection xmlns:D="DAV:">
-  <D:sync-token/>
-  <D:prop>
-    <D:getetag/>
-  </D:prop>
-</D:sync-collection>`
+	first := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:first-card\r\nFN:First\r\nEND:VCARD\r\n"
+	carddavReq(t, env, "PUT", basePath+"first-card.vcf", first, alice.Auth).Status(201)
 
-	resp := carddavReq(t, env, "REPORT", basePath, syncXML,
-		alice.Auth, cogtest.Header("Content-Type", "application/xml"))
-	resp.Status(207)
-	body := resp.ReadBody()
-	require.Contains(t, body, "sync-token")
+	// Initial sync (empty token) returns every card.
+	body, token := syncReport(t, env, alice, basePath, "")
+	require.Contains(t, body, "first-card")
 
-	// Add a contact and sync again with a token.
+	// Add a contact and sync again with the token: only the change comes back.
 	vcf := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:sync-card\r\nFN:Sync Person\r\nREV:20260314T060000Z\r\nEND:VCARD\r\n"
 	carddavReq(t, env, "PUT", basePath+"sync-card.vcf", vcf, alice.Auth).Status(201)
-
-	// Sync with token "0" should return the new card.
-	syncXML2 := `<?xml version="1.0" encoding="UTF-8"?>
-<D:sync-collection xmlns:D="DAV:">
-  <D:sync-token>http://cog/ns/sync/0</D:sync-token>
-  <D:prop>
-    <D:getetag/>
-  </D:prop>
-</D:sync-collection>`
-
-	resp = carddavReq(t, env, "REPORT", basePath, syncXML2,
-		alice.Auth, cogtest.Header("Content-Type", "application/xml"))
-	resp.Status(207)
-	body = resp.ReadBody()
+	body, next := syncReport(t, env, alice, basePath, token)
 	require.Contains(t, body, "sync-card")
-	require.Contains(t, body, "sync-token")
+	require.NotContains(t, body, "first-card")
+
+	// Nothing changed since: an empty delta.
+	body, _ = syncReport(t, env, alice, basePath, next)
+	require.NotContains(t, body, "<D:response>")
 }
 
 func TestCardDAV_SyncCollectionDeletedCards(t *testing.T) {
 	env := cogtest.New(t, contacts.New())
 	alice := env.CreateUser(t, "alice", "pass")
-
-	plug, _ := env.Providers.Plugins.Plugin("contacts")
-	cp := plug.(*contacts.Plugin)
-	_, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-
 	basePath := "/remote.php/dav/addressbooks/" + alice.Username + "/contacts/"
 
-	// Create a card, then delete it.
 	vcf := "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:del-sync-card\r\nFN:Delete Me\r\nREV:20260314T060000Z\r\nEND:VCARD\r\n"
 	carddavReq(t, env, "PUT", basePath+"del-sync-card.vcf", vcf, alice.Auth).Status(201)
+	_, token := syncReport(t, env, alice, basePath, "")
 
-	// Record token before deletion (token should be 1 after the PUT bumped it).
-	syncXMLBefore := `<?xml version="1.0" encoding="UTF-8"?>
-<D:sync-collection xmlns:D="DAV:">
-  <D:sync-token/>
-  <D:prop><D:getetag/></D:prop>
-</D:sync-collection>`
-	resp := carddavReq(t, env, "REPORT", basePath, syncXMLBefore,
-		alice.Auth, cogtest.Header("Content-Type", "application/xml"))
-	resp.Status(207)
-
-	// Delete the card.
 	carddavReq(t, env, "DELETE", basePath+"del-sync-card.vcf", "", alice.Auth).Status(204)
 
-	// Sync with token 1 should show deleted card as 404.
-	syncXMLAfter := `<?xml version="1.0" encoding="UTF-8"?>
-<D:sync-collection xmlns:D="DAV:">
-  <D:sync-token>http://cog/ns/sync/1</D:sync-token>
-  <D:prop><D:getetag/></D:prop>
-</D:sync-collection>`
-	resp = carddavReq(t, env, "REPORT", basePath, syncXMLAfter,
-		alice.Auth, cogtest.Header("Content-Type", "application/xml"))
-	resp.Status(207)
-	body := resp.ReadBody()
+	// The deletion shows as a 404 response.
+	body, _ := syncReport(t, env, alice, basePath, token)
 	require.Contains(t, body, "del-sync-card")
 	require.Contains(t, body, "404")
+}
+
+func TestCardDAV_SyncCollectionOldTokenRefused(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	basePath := "/remote.php/dav/addressbooks/" + alice.Username + "/contacts/"
+	carddavReq(t, env, "PROPFIND", basePath, "", alice.Auth).Status(207)
+
+	// A token from before the composite format makes the client resync.
+	carddavReq(t, env, "REPORT", basePath, `<?xml version="1.0" encoding="UTF-8"?>
+<D:sync-collection xmlns:D="DAV:"><D:sync-token>http://cog/ns/sync/1</D:sync-token><D:prop><D:getetag/></D:prop></D:sync-collection>`,
+		alice.Auth).Status(403).Contains("valid-sync-token")
 }
 
 func TestCardDAV_MKCOL(t *testing.T) {
@@ -368,11 +347,11 @@ func TestCardDAV_DeleteAddressBook(t *testing.T) {
 
 	plug, _ := env.Providers.Plugins.Plugin("contacts")
 	cp := plug.(*contacts.Plugin)
-	db, err := cp.DB(alice.Username)
+	_, err := cp.Books(alice.ID)
 	require.NoError(t, err)
 
 	// Create a second address book to delete.
-	_, err = contacts.CreateAddressBook(db, "deleteme", "Delete Me", "", "#000")
+	_, err = cp.CreateBook(alice.ID, "deleteme", "Delete Me", "", "#000")
 	require.NoError(t, err)
 
 	resp := carddavReq(t, env, "DELETE",

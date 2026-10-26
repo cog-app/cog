@@ -515,7 +515,7 @@ func (h *Pages) linkOrCreateContact(username string, galleryDB *sql.DB, personID
 		return
 	}
 	// Search for an exact name match.
-	cards, err := contacts.SearchCards(cdb, name, 10)
+	cards, err := contacts.SearchCards(cdb, nil, name, 10)
 	if err != nil {
 		h.plugin.log.Error("search contacts", "err", err)
 		return
@@ -783,7 +783,10 @@ func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 	// Include matching contacts if the contacts plugin is available.
 	username := plugin.Username(r)
 	if cdb := h.plugin.contactsDB(username); cdb != nil {
-		cards, _ := contacts.SearchCards(cdb, q, 5)
+		cards, err := contacts.SearchCards(cdb, nil, q, 5)
+		if err != nil {
+			h.plugin.log.Error("search contacts", "err", err)
+		}
 		for _, card := range cards {
 			// Skip contacts already linked to a gallery person.
 			if _, err := PersonByContactUID(db, card.UID); err == nil {

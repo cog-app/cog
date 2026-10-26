@@ -223,7 +223,7 @@ func (b *Browser) WaitReady(t testing.TB, sel string) {
 // WaitText waits for text to appear in a visible element within <body>.
 func (b *Browser) WaitText(t testing.TB, text string) {
 	t.Helper()
-	sel := fmt.Sprintf(`//body//*[contains(text(),"%s")]`, text)
+	sel := fmt.Sprintf(`//body//*[text()[contains(.,"%s")]]`, text)
 	if _, err := b.el(sel); err != nil {
 		t.Fatalf("webtest: wait text %q: %v", text, err)
 	}

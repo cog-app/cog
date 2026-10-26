@@ -185,7 +185,6 @@ func firstDiff(want, got []string) string {
 	return "line count: want " + strconv.Itoa(len(want)) + ", got " + strconv.Itoa(len(got))
 }
 
-
 // TestFixturesInvalid checks that files under an "invalid" directory are
 // rejected rather than silently misread.
 func TestFixturesInvalid(t *testing.T) {

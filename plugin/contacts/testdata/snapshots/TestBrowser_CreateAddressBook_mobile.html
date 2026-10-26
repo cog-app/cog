@@ -154,6 +154,10 @@
           </div>
           <a class="sidebar-item" href="/apps/contacts/?book=1" style="display:flex;align-items:center;gap:0.5rem">
             <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;" />
+            Contacts
+          </a>
+          <a class="sidebar-item" href="/apps/contacts/?book=2" style="display:flex;align-items:center;gap:0.5rem">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;" />
             Work Contacts
           </a>
           <div class="sidebar-divider" />
@@ -210,9 +214,6 @@
                   <th>
                     UID
                   </th>
-                  <th>
-                    CTag
-                  </th>
                   <th class="text-right">
                     Actions
                   </th>
@@ -224,21 +225,39 @@
                     <span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#0082c9;" />
                   </td>
                   <td>
-                    Work Contacts
+                    Contacts
                   </td>
                   <td>
-                    Work Contacts
-                  </td>
-                  <td>
-                    1
+                    contacts
                   </td>
                   <td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
-                    <cog-share-button resource-id="1" resource="address_book">
+                    <cog-share-button resource-id="1" resource="dav:collection">
                       <button class="btn btn-outline btn-sm">
                         Share
                       </button>
                     </cog-share-button>
                     <button class="btn btn-danger btn-sm" hx-confirm="Delete this address book and all its contacts?" hx-delete="/apps/contacts/books/1" hx-swap="outerHTML" hx-target="#book-1">
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+                <tr id="book-2">
+                  <td>
+                    <span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#0082c9;" />
+                  </td>
+                  <td>
+                    Work Contacts
+                  </td>
+                  <td>
+                    work-contacts
+                  </td>
+                  <td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
+                    <cog-share-button resource-id="2" resource="dav:collection">
+                      <button class="btn btn-outline btn-sm">
+                        Share
+                      </button>
+                    </cog-share-button>
+                    <button class="btn btn-danger btn-sm" hx-confirm="Delete this address book and all its contacts?" hx-delete="/apps/contacts/books/2" hx-swap="outerHTML" hx-target="#book-2">
                       Delete
                     </button>
                   </td>

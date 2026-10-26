@@ -95,12 +95,12 @@ func TestParseBlankLinesAndBOM(t *testing.T) {
 
 func TestParseErrors(t *testing.T) {
 	for name, in := range map[string]string{
-		"unclosed":         "BEGIN:VEVENT\r\nSUMMARY:x\r\n",
-		"mismatched end":   "BEGIN:VEVENT\r\nEND:VTODO\r\n",
-		"stray end":        "END:VEVENT\r\n",
-		"prop before":      "SUMMARY:x\r\nBEGIN:VEVENT\r\nEND:VEVENT\r\n",
-		"junk before":      "junk\r\nBEGIN:VEVENT\r\nEND:VEVENT\r\n",
-		"leading fold":     " x\r\n",
+		"unclosed":       "BEGIN:VEVENT\r\nSUMMARY:x\r\n",
+		"mismatched end": "BEGIN:VEVENT\r\nEND:VTODO\r\n",
+		"stray end":      "END:VEVENT\r\n",
+		"prop before":    "SUMMARY:x\r\nBEGIN:VEVENT\r\nEND:VEVENT\r\n",
+		"junk before":    "junk\r\nBEGIN:VEVENT\r\nEND:VEVENT\r\n",
+		"leading fold":   " x\r\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Parse(strings.NewReader(in))

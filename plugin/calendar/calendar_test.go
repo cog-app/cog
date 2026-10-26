@@ -34,30 +34,13 @@ func TestCalendarEventsJSON_Empty(t *testing.T) {
 }
 
 func TestCalendarEventsJSON_WithEvent(t *testing.T) {
-	env := cogtest.New(t, calendar.New())
-	alice := env.CreateUser(t, "alice", "pass")
-
-	// Seed an event directly via the store.
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-
-	calendar.EnsureDefaultCalendar(db)
-	cals, err := calendar.ListCalendars(db)
-	require.NoError(t, err)
-	require.True(t, len(cals) > 0)
+	env, alice, _, db, cal := calEnv(t)
 
 	now := time.Now()
 	dtstart := now.Add(1 * time.Hour)
 	dtend := now.Add(2 * time.Hour)
-
-	ics := calendar.GenerateICS("test-uid-1", "Team Meeting", "Weekly sync", "Room 42",
-		dtstart, dtend, false, time.Now())
-	fields, err := calendar.ParseVEvent(ics)
-	require.NoError(t, err)
-	_, err = calendar.UpsertEvent(db, cals[0].ID, "test-uid-1", ics, fields)
-	require.NoError(t, err)
+	saveICS(t, env, db, cal, calendar.GenerateICS("test-uid-1", "Team Meeting", "Weekly sync", "Room 42",
+		dtstart, dtend, false, time.Now()))
 
 	// Fetch via JSON API.
 	start := now.AddDate(0, -1, 0).Format(time.RFC3339)
@@ -78,18 +61,12 @@ func TestCalendarSettings(t *testing.T) {
 }
 
 func TestCalendarCreateCalendar(t *testing.T) {
-	env := cogtest.New(t, calendar.New())
-	alice := env.CreateUser(t, "alice", "pass")
+	_, alice, cp, _, _ := calEnv(t)
 
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	db, err := cp.DB(alice.Username)
+	_, err := cp.CreateCalendar(alice.ID, "work-cal", "Work", "#ff0000", "Work events", "")
 	require.NoError(t, err)
 
-	_, err = calendar.CreateCalendar(db, "work-cal", "Work", "#ff0000", "Work events", "")
-	require.NoError(t, err)
-
-	cals, err := calendar.ListCalendars(db)
+	cals, err := cp.Calendars(alice.ID)
 	require.NoError(t, err)
 
 	found := false
@@ -117,42 +94,19 @@ func sessionAuth(t testing.TB, env *cogtest.Env, userID string) (cogtest.HTTPOpt
 }
 
 func TestCalendarEventDetail(t *testing.T) {
-	env := cogtest.New(t, calendar.New())
-	alice := env.CreateUser(t, "alice", "pass")
-
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-	calendar.EnsureDefaultCalendar(db)
-
-	cals, err := calendar.ListCalendars(db)
-	require.NoError(t, err)
+	env, alice, _, db, cal := calEnv(t)
 
 	now := time.Now()
-	ics := calendar.GenerateICS("detail-uid", "Detail Event", "Details here", "Room 5",
-		now.Add(1*time.Hour), now.Add(2*time.Hour), false, now)
-	fields, err := calendar.ParseVEvent(ics)
-	require.NoError(t, err)
-	ev, err := calendar.UpsertEvent(db, cals[0].ID, "detail-uid", ics, fields)
-	require.NoError(t, err)
+	ev := saveICS(t, env, db, cal, calendar.GenerateICS("detail-uid", "Detail Event", "Details here", "Room 5",
+		now.Add(1*time.Hour), now.Add(2*time.Hour), false, now))
 
 	path := fmt.Sprintf("/apps/calendar/events/%d", ev.ID)
 	env.Get(t, path, alice.Auth).Status(200).Contains("Detail Event")
 }
 
 func TestCalendarCreateUpdateDeleteEvent(t *testing.T) {
-	env := cogtest.New(t, calendar.New())
-	alice := env.CreateUser(t, "alice", "pass")
-
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-	calendar.EnsureDefaultCalendar(db)
-
-	cals, err := calendar.ListCalendars(db)
-	require.NoError(t, err)
+	env, alice, _, db, cal := calEnv(t)
+	cals := []calendar.Calendar{*cal}
 
 	cookie, csrf := sessionAuth(t, env, alice.ID)
 
@@ -194,13 +148,7 @@ func TestCalendarCreateUpdateDeleteEvent(t *testing.T) {
 }
 
 func TestCalendarCreateDeleteCalendarHTTP(t *testing.T) {
-	env := cogtest.New(t, calendar.New())
-	alice := env.CreateUser(t, "alice", "pass")
-
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	_, err := cp.DB(alice.Username)
-	require.NoError(t, err)
+	env, alice, cp, _, _ := calEnv(t)
 
 	cookie, csrf := sessionAuth(t, env, alice.ID)
 
@@ -213,9 +161,7 @@ func TestCalendarCreateDeleteCalendarHTTP(t *testing.T) {
 	env.PostForm(t, "/apps/calendar/calendars", form, cookie, csrf, cogtest.StopRedirect).Status(303)
 
 	// Verify via store.
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-	cal, err := calendar.GetCalendarByUID(db, "test-cal")
+	cal, err := cp.CalendarByName(alice.ID, "test-cal")
 	require.NoError(t, err)
 	require.Equal(t, "Test Calendar", cal.Name)
 	require.Equal(t, "#123456", cal.Color)
@@ -224,7 +170,7 @@ func TestCalendarCreateDeleteCalendarHTTP(t *testing.T) {
 	env.Delete(t, fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID), cookie, csrf).Status(200)
 
 	// Verify it's gone.
-	_, err = calendar.GetCalendarByUID(db, "test-cal")
+	_, err = cp.CalendarByName(alice.ID, "test-cal")
 	require.True(t, err != nil)
 }
 
@@ -253,36 +199,20 @@ func TestCalendarRRulePreview(t *testing.T) {
 }
 
 func TestCalendarNotifications(t *testing.T) {
-	env := cogtest.New(t, calendar.New())
-	alice := env.CreateUser(t, "alice", "pass")
-
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
+	env, alice, _, db, cal := calEnv(t)
 
 	// With no events, notifications should be an empty array.
 	var notifs []map[string]any
 	env.Get(t, "/apps/calendar/notifications", alice.Auth).Status(200).JSON(&notifs)
 	require.Equal(t, 0, len(notifs))
 
-	// Create an event with a VALARM, then manually insert a due notification.
-	calendar.EnsureDefaultCalendar(db)
-	cals, err := calendar.ListCalendars(db)
-	require.NoError(t, err)
-
+	// Create an event, then manually insert a due notification.
 	now := env.Now()
-	dtstart := now.Add(1 * time.Hour)
-	dtend := now.Add(2 * time.Hour)
-	ics := calendar.GenerateICS("notif-uid", "Notify Event", "", "",
-		dtstart, dtend, false, now)
-	fields, err := calendar.ParseVEvent(ics)
-	require.NoError(t, err)
-	ev, err := calendar.UpsertEvent(db, cals[0].ID, "notif-uid", ics, fields)
-	require.NoError(t, err)
+	ev := saveICS(t, env, db, cal, calendar.GenerateICS("notif-uid", "Notify Event", "", "",
+		now.Add(1*time.Hour), now.Add(2*time.Hour), false, now))
 
 	// Insert a notification that's already due (trigger_at in the past).
-	_, err = db.Exec(`INSERT INTO notifications (event_id, trigger_at) VALUES (?, ?)`,
+	_, err := db.Exec(`INSERT INTO notifications (event_id, trigger_at) VALUES (?, ?)`,
 		ev.ID, now.Unix()-60)
 	require.NoError(t, err)
 

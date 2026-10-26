@@ -147,7 +147,7 @@ templ adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashK
 }
 
 // --- Settings ---
-templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, env envConfigData, status statusData, flash string, flashKind string, mfaRequired string) {
+templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, davTombstoneDays string, env envConfigData, status statusData, flash string, flashKind string, mfaRequired string) {
 	@ui.AdminSidebarPage(pd, "settings") {
 		<h1 style="margin-bottom:1rem">System Settings</h1>
 		if flash != "" {
@@ -193,6 +193,11 @@ templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHou
 					<label class="form-label" for="invite_expiry_hours">Invite link expiry (hours)</label>
 					<input class="form-control" type="number" id="invite_expiry_hours" name="invite_expiry_hours" value={ inviteExpiryHours } min="1" style="max-width:200px"/>
 					<p class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">How long group invitation links remain valid. Default: 72 hours.</p>
+				</div>
+				<div class="form-group">
+					<label class="form-label" for="dav_tombstone_days">Calendar and contact sync history (days)</label>
+					<input class="form-control" type="number" id="dav_tombstone_days" name="dav_tombstone_days" value={ davTombstoneDays } min="1" style="max-width:200px"/>
+					<p class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">How long deletions are remembered for CalDAV and CardDAV clients. A client that has not synced for longer downloads everything again. Default: 90 days.</p>
 				</div>
 			}
 			@ui.Card("Security") {

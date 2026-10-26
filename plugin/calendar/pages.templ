@@ -712,13 +712,13 @@ templ calSettingsPage(calendars []Calendar, csrfToken string) {
 											<input type="hidden" name="csrf_token" value={ csrfToken }/>
 											<button class="btn btn-sm btn-primary" type="submit">Save</button>
 										</form>
-										<cog-share-button resource="calendar" resource-id={ strconv.FormatInt(cal.ID, 10) }>Share</cog-share-button>
+										<cog-share-button resource="dav:collection" resource-id={ strconv.FormatInt(cal.ID, 10) }>Share</cog-share-button>
 										<button
 											class="btn btn-sm"
 											hx-delete={ fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID) }
 											hx-target={ fmt.Sprintf("#cal-%d", cal.ID) }
 											hx-swap="outerHTML"
-											hx-confirm="Delete this calendar and all its events?"
+											hx-confirm="Delete this calendar and everything in it, tasks included?"
 										>Delete</button>
 									</td>
 								</tr>

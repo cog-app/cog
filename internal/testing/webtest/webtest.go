@@ -20,47 +20,46 @@ import (
 // sharedBrowser is a process-wide Chrome instance reused by all Engines.
 // This avoids launching dozens of Chrome processes when go test ./...
 // runs multiple packages concurrently.
+// sharedBrowser is one Chrome process for every engine in the test binary.
+// It is launched when the first engine needs it and closed when the last one
+// closes; a later engine launches it again. (It used to launch once, so every
+// engine created after the first one closed got a dead browser and its tests
+// skipped.)
 var sharedBrowser struct {
-	once    sync.Once
-	browser *rod.Browser
-	err     error
-
 	mu       sync.Mutex
+	browser  *rod.Browser
 	refCount int
 }
 
 func acquireBrowser() (*rod.Browser, error) {
-	sharedBrowser.once.Do(func() {
+	sharedBrowser.mu.Lock()
+	defer sharedBrowser.mu.Unlock()
+	if sharedBrowser.browser == nil {
 		path, found := launcher.LookPath()
 		if !found {
-			sharedBrowser.err = launcher.ErrAlreadyLaunched
-			return
+			return nil, launcher.ErrAlreadyLaunched
 		}
-		u := launcher.New().Bin(path).Headless(true).NoSandbox(true).MustLaunch()
+		u, err := launcher.New().Bin(path).Headless(true).NoSandbox(true).Launch()
+		if err != nil {
+			return nil, err
+		}
 		b := rod.New().ControlURL(u)
 		if err := b.Connect(); err != nil {
-			sharedBrowser.err = err
-			return
+			return nil, err
 		}
 		sharedBrowser.browser = b
-	})
-	if sharedBrowser.err != nil {
-		return nil, sharedBrowser.err
 	}
-	sharedBrowser.mu.Lock()
 	sharedBrowser.refCount++
-	sharedBrowser.mu.Unlock()
 	return sharedBrowser.browser, nil
 }
 
 func releaseBrowser() {
 	sharedBrowser.mu.Lock()
+	defer sharedBrowser.mu.Unlock()
 	sharedBrowser.refCount--
-	last := sharedBrowser.refCount == 0
-	sharedBrowser.mu.Unlock()
-
-	if last && sharedBrowser.browser != nil {
+	if sharedBrowser.refCount == 0 && sharedBrowser.browser != nil {
 		sharedBrowser.browser.Close()
+		sharedBrowser.browser = nil
 	}
 }
 

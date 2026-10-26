@@ -149,6 +149,11 @@
           <div style="padding:0.25rem 0.75rem;font-size:0.8rem;font-weight:600;text-transform:uppercase;color:var(--color-muted, #888)">
             Calendars
           </div>
+          <label class="sidebar-item" style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+            <input checked="" class="cal-toggle" data-calendar-id="1" style="accent-color:var(--cal-color);--cal-color:inherit" type="checkbox" />
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;flex-shrink:0;" />
+            Personal
+          </label>
           <div class="sidebar-divider" />
           <a class="sidebar-item active" href="/apps/calendar/settings">
             Settings
@@ -197,9 +202,62 @@
             <div class="card-title">
               Calendars
             </div>
-            <p class="text-muted">
-              No calendars.
-            </p>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>
+                    Color
+                  </th>
+                  <th>
+                    Name
+                  </th>
+                  <th>
+                    Timezone
+                  </th>
+                  <th>
+                    UID
+                  </th>
+                  <th class="text-right">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr id="cal-1">
+                  <td>
+                    <input aria-label="Color" class="form-control" form="cal-edit-1" name="color" style="width:3rem;padding:0.1rem" type="color" value="#0082c9" />
+                  </td>
+                  <td>
+                    <input aria-label="Name" class="form-control" form="cal-edit-1" name="name" required="" type="text" value="Personal" />
+                  </td>
+                  <td>
+                    <input aria-label="Timezone" class="form-control" form="cal-edit-1" list="cal-timezones" name="timezone" placeholder="UTC" type="text" value="" />
+                  </td>
+                  <td>
+                    personal
+                  </td>
+                  <td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
+                    <form action="/apps/calendar/calendars/1" id="cal-edit-1" method="post">
+                      <input name="csrf_token" type="hidden" value="«hex»" />
+                      <button class="btn btn-sm btn-primary" type="submit">
+                        Save
+                      </button>
+                    </form>
+                    <cog-share-button resource-id="1" resource="dav:collection">
+                      <button class="btn btn-outline btn-sm">
+                        Share
+                      </button>
+                    </cog-share-button>
+                    <button class="btn btn-sm" hx-confirm="Delete this calendar and everything in it, tasks included?" hx-delete="/apps/calendar/calendars/1" hx-swap="outerHTML" hx-target="#cal-1">
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="5" id="cal-share-1" />
+                </tr>
+              </tbody>
+            </table>
           </div>
           <datalist id="cal-timezones">
             <option value="UTC" />

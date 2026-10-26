@@ -1,12 +1,12 @@
 package tasks
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"github.com/google/uuid"
 )
@@ -43,39 +43,38 @@ type sidebarData struct {
 	ActiveList int64
 }
 
-func (h *Pages) buildSidebar(db *sql.DB, activeListID int64) sidebarData {
-	lists, _ := ListTaskLists(db)
+func (h *Pages) buildSidebar(r *http.Request, activeListID int64) (sidebarData, error) {
+	lists, err := h.plugin.Lists(plugin.UserFromContext(r.Context()).ID)
+	if err != nil {
+		return sidebarData{}, err
+	}
 	return sidebarData{
 		Lists:      lists,
 		ActiveList: activeListID,
+	}, nil
+}
+
+// list returns the request user's list named by a form or path value.
+func (h *Pages) list(r *http.Request, value string) (*TaskList, error) {
+	id, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return nil, dav.ErrNotFound
 	}
+	return h.plugin.List(plugin.UserFromContext(r.Context()).ID, id)
 }
 
 // Index redirects to the first list or shows an empty state.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	sb, err := h.buildSidebar(r, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// A user with no list has nothing to put a task in, so this failing
-	// silently leaves them on a page that cannot do anything.
-	if err := EnsureDefaultList(db); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	lists, err := ListTaskLists(db)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if len(lists) > 0 {
-		http.Redirect(w, r, "/apps/tasks/list/"+strconv.FormatInt(lists[0].ID, 10), http.StatusSeeOther)
+	if len(sb.Lists) > 0 {
+		http.Redirect(w, r, "/apps/tasks/list/"+strconv.FormatInt(sb.Lists[0].ID, 10), http.StatusSeeOther)
 		return
 	}
 	plugin.SetTitle(w, "Tasks")
-	sb := h.buildSidebar(db, 0)
 	tasksIndexPage(sb, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
@@ -86,24 +85,23 @@ func (h *Pages) ListView(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	listID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid list id", http.StatusBadRequest)
-		return
-	}
-	list, err := GetTaskList(db, listID)
+	list, err := h.list(r, r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "list not found", http.StatusNotFound)
 		return
 	}
 
-	_, allTasks, err := ChildMap(db, listID)
+	allTasks, err := ListTasks(db, list.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	sb := h.buildSidebar(db, listID)
+	sb, err := h.buildSidebar(r, list.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	plugin.SetTitle(w, list.Name)
 	tasksListPage(sb, list, allTasks, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
@@ -125,12 +123,18 @@ func (h *Pages) TaskDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "task not found", http.StatusNotFound)
 		return
 	}
-	lists, _ := ListTaskLists(db)
-	allTasks, _ := ListTasks(db, task.ListID)
-
-	sb := h.buildSidebar(db, task.ListID)
+	allTasks, err := ListTasks(db, task.ListID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	sb, err := h.buildSidebar(r, task.ListID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	plugin.SetTitle(w, task.Summary)
-	taskDetailPage(sb, task, lists, allTasks, plugin.CSRFToken(r)).Render(r.Context(), w)
+	taskDetailPage(sb, task, sb.Lists, allTasks, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // CreateTask handles POST to create a new task.
@@ -141,7 +145,12 @@ func (h *Pages) CreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	listID, _ := strconv.ParseInt(r.FormValue("list_id"), 10, 64)
+	list, err := h.list(r, r.FormValue("list_id"))
+	if err != nil {
+		http.Error(w, "list not found", http.StatusBadRequest)
+		return
+	}
+	listID := list.ID
 	summary := r.FormValue("summary")
 	if summary == "" {
 		http.Error(w, "summary required", http.StatusBadRequest)
@@ -203,7 +212,12 @@ func (h *Pages) UpdateTask(w http.ResponseWriter, r *http.Request) {
 		status = "NEEDS-ACTION"
 	}
 	percentComplete, _ := strconv.Atoi(r.FormValue("percent_complete"))
-	listID, _ := strconv.ParseInt(r.FormValue("list_id"), 10, 64)
+	list, err := h.list(r, r.FormValue("list_id"))
+	if err != nil {
+		http.Error(w, "list not found", http.StatusBadRequest)
+		return
+	}
+	listID := list.ID
 
 	var parentID *int64
 	if pid := r.FormValue("parent_id"); pid != "" {
@@ -249,7 +263,11 @@ func (h *Pages) ToggleTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allTasks, _ := ListTasks(db, task.ListID)
+	allTasks, err := ListTasks(db, task.ListID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	taskItem(task, allTasks, 0, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
@@ -265,7 +283,7 @@ func (h *Pages) DeleteTask(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid task id", http.StatusBadRequest)
 		return
 	}
-	if err := DeleteTask(db, taskID); err != nil {
+	if err := DeleteTask(db, taskID, h.plugin.ctx.Now()); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -299,20 +317,11 @@ func (h *Pages) Reorder(w http.ResponseWriter, r *http.Request) {
 
 // CreateList handles POST to create a new task list.
 func (h *Pages) CreateList(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
 	name := r.FormValue("name")
 	if name == "" {
 		name = "New List"
 	}
-	color := r.FormValue("color")
-	uid := uuid.New().String()
-
-	list, err := CreateTaskList(db, uid, name, color)
+	list, err := h.plugin.CreateList(plugin.UserFromContext(r.Context()).ID, name, r.FormValue("color"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -323,11 +332,6 @@ func (h *Pages) CreateList(w http.ResponseWriter, r *http.Request) {
 
 // UpdateList handles POST to update a task list.
 func (h *Pages) UpdateList(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 	listID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid list id", http.StatusBadRequest)
@@ -336,7 +340,7 @@ func (h *Pages) UpdateList(w http.ResponseWriter, r *http.Request) {
 
 	name := r.FormValue("name")
 	color := r.FormValue("color")
-	if err := UpdateTaskList(db, listID, name, color); err != nil {
+	if err := h.plugin.UpdateList(plugin.UserFromContext(r.Context()).ID, listID, name, color); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -346,17 +350,13 @@ func (h *Pages) UpdateList(w http.ResponseWriter, r *http.Request) {
 
 // DeleteList handles DELETE for a task list.
 func (h *Pages) DeleteList(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 	listID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid list id", http.StatusBadRequest)
 		return
 	}
-	if err := DeleteTaskList(db, listID); err != nil {
+	u := plugin.UserFromContext(r.Context())
+	if err := h.plugin.DeleteList(u.Username, u.ID, listID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -366,22 +366,16 @@ func (h *Pages) DeleteList(w http.ResponseWriter, r *http.Request) {
 
 // ListSettings shows the settings page for a list.
 func (h *Pages) ListSettings(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	listID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid list id", http.StatusBadRequest)
-		return
-	}
-	list, err := GetTaskList(db, listID)
+	list, err := h.list(r, r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "list not found", http.StatusNotFound)
 		return
 	}
-	sb := h.buildSidebar(db, listID)
+	sb, err := h.buildSidebar(r, list.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	plugin.SetTitle(w, list.Name+" Settings")
 	taskListSettingsPage(sb, list, plugin.CSRFToken(r)).Render(r.Context(), w)
 }

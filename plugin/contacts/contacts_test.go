@@ -35,15 +35,12 @@ func TestContactsCreateAndView(t *testing.T) {
 	db, err := cp.DB(alice.Username)
 	require.NoError(t, err)
 
-	contacts.EnsureDefaultAddressBook(db)
-	books, err := contacts.ListAddressBooks(db)
+	books, err := cp.Books(alice.ID)
 	require.NoError(t, err)
 	require.True(t, len(books) > 0)
 
 	vcard := contacts.GenerateVCard("test-uid-1", "Jane Doe", "jane@example.com", "+1234567890", time.Now())
-	fields, err := contacts.ParseVCard(vcard)
-	require.NoError(t, err)
-	card, err := contacts.UpsertCard(db, books[0].ID, "test-uid-1", "test-uid-1.vcf", vcard, fields)
+	card, err := contacts.SaveCard(db, books[0].ID, nil, vcard, time.Now())
 	require.NoError(t, err)
 	require.Equal(t, "Jane Doe", card.FN)
 
@@ -60,14 +57,13 @@ func TestContactsCreateAddressBook(t *testing.T) {
 
 	plug, _ := env.Providers.Plugins.Plugin("contacts")
 	cp := plug.(*contacts.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
 
-	book, err := contacts.CreateAddressBook(db, "work-contacts", "Work Contacts", "Colleagues", "#0000ff")
+	book, err := cp.CreateBook(alice.ID, "", "Work Contacts", "Colleagues", "#0000ff")
 	require.NoError(t, err)
 	require.Equal(t, "Work Contacts", book.Name)
+	require.Equal(t, "work-contacts", book.UID)
 
-	books, err := contacts.ListAddressBooks(db)
+	books, err := cp.Books(alice.ID)
 	require.NoError(t, err)
 
 	found := false
@@ -88,19 +84,17 @@ func TestContactsStar(t *testing.T) {
 	db, err := cp.DB(alice.Username)
 	require.NoError(t, err)
 
-	contacts.EnsureDefaultAddressBook(db)
-	books, _ := contacts.ListAddressBooks(db)
+	books, err := cp.Books(alice.ID)
+	require.NoError(t, err)
 
 	vcard := contacts.GenerateVCard("star-uid", "Bob Star", "bob@example.com", "", time.Now())
-	fields, err := contacts.ParseVCard(vcard)
-	require.NoError(t, err)
-	card, err := contacts.UpsertCard(db, books[0].ID, "star-uid", "star-uid.vcf", vcard, fields)
+	card, err := contacts.SaveCard(db, books[0].ID, nil, vcard, time.Now())
 	require.NoError(t, err)
 
 	err = contacts.SetStarred(db, card.ID, true)
 	require.NoError(t, err)
 
-	starred, err := contacts.StarredContacts(db, 10)
+	starred, err := contacts.StarredContacts(db, map[int64]contacts.AddressBook{books[0].ID: books[0]}, 10)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(starred))
 	require.Equal(t, "Bob Star", starred[0].FN)
@@ -131,13 +125,11 @@ func TestContactsUpdateContact(t *testing.T) {
 	db, err := cp.DB(alice.Username)
 	require.NoError(t, err)
 
-	contacts.EnsureDefaultAddressBook(db)
-	books, _ := contacts.ListAddressBooks(db)
+	books, err := cp.Books(alice.ID)
+	require.NoError(t, err)
 
 	vcard := contacts.GenerateVCard("update-uid", "Old Name", "old@example.com", "", time.Now())
-	fields, err := contacts.ParseVCard(vcard)
-	require.NoError(t, err)
-	card, err := contacts.UpsertCard(db, books[0].ID, "update-uid", "update-uid.vcf", vcard, fields)
+	card, err := contacts.SaveCard(db, books[0].ID, nil, vcard, time.Now())
 	require.NoError(t, err)
 
 	// Create session and CSRF token for the POST action.
@@ -188,9 +180,7 @@ func TestContactsCreateDeleteAddressBookHandler(t *testing.T) {
 	require.True(t, resp.StatusCode == 303 || resp.StatusCode == 200)
 
 	// Verify the book was created.
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-	books, err := contacts.ListAddressBooks(db)
+	books, err := cp.Books(alice.ID)
 	require.NoError(t, err)
 	var bookID int64
 	found := false
@@ -207,7 +197,7 @@ func TestContactsCreateDeleteAddressBookHandler(t *testing.T) {
 	resp.Status(200)
 
 	// Verify it was deleted.
-	books, err = contacts.ListAddressBooks(db)
+	books, err = cp.Books(alice.ID)
 	require.NoError(t, err)
 	for _, b := range books {
 		require.True(t, b.UID != "test-book")
@@ -223,13 +213,11 @@ func TestContactsToggleStar(t *testing.T) {
 	db, err := cp.DB(alice.Username)
 	require.NoError(t, err)
 
-	contacts.EnsureDefaultAddressBook(db)
-	books, _ := contacts.ListAddressBooks(db)
+	books, err := cp.Books(alice.ID)
+	require.NoError(t, err)
 
 	vcard := contacts.GenerateVCard("toggle-uid", "Toggle Star", "toggle@example.com", "", time.Now())
-	fields, err := contacts.ParseVCard(vcard)
-	require.NoError(t, err)
-	card, err := contacts.UpsertCard(db, books[0].ID, "toggle-uid", "toggle-uid.vcf", vcard, fields)
+	card, err := contacts.SaveCard(db, books[0].ID, nil, vcard, time.Now())
 	require.NoError(t, err)
 	require.Equal(t, false, card.IsStarred)
 

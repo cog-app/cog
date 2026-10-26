@@ -9,19 +9,9 @@ import (
 )
 
 func TestBrowser(t *testing.T) {
-	env := cogtest.New(t, contacts.New())
-	eng := webtest.New(env)
-	t.Cleanup(eng.Close)
-
-	env.CreateUser(t, "empty", "pass")
-	env.CreateUser(t, "create", "pass")
-	env.CreateUser(t, "delete", "pass")
-	env.CreateUser(t, "settings", "pass")
-	env.CreateUser(t, "edit", "pass")
-	env.CreateUser(t, "starred", "pass")
-	env.CreateUser(t, "newbook", "pass")
 
 	t.Run("EmptyState", func(t *testing.T) {
+		eng := browserEnv(t, "empty")
 		b := eng.Start(t)
 		b.Login(t, "empty", "pass")
 		b.Navigate(t, "/apps/contacts/")
@@ -31,6 +21,7 @@ func TestBrowser(t *testing.T) {
 	})
 
 	t.Run("Create", func(t *testing.T) {
+		eng := browserEnv(t, "create")
 		b := eng.Start(t)
 		b.Login(t, "create", "pass")
 		b.Navigate(t, "/apps/contacts/")
@@ -44,6 +35,7 @@ func TestBrowser(t *testing.T) {
 	})
 
 	t.Run("Delete", func(t *testing.T) {
+		eng := browserEnv(t, "delete")
 		b := eng.Start(t)
 		b.Login(t, "delete", "pass")
 		b.Navigate(t, "/apps/contacts/")
@@ -63,6 +55,7 @@ func TestBrowser(t *testing.T) {
 	})
 
 	t.Run("SettingsPage", func(t *testing.T) {
+		eng := browserEnv(t, "settings")
 		b := eng.Start(t)
 		b.Login(t, "settings", "pass")
 		b.Navigate(t, "/apps/contacts/settings")
@@ -72,6 +65,7 @@ func TestBrowser(t *testing.T) {
 	})
 
 	t.Run("EditContact", func(t *testing.T) {
+		eng := browserEnv(t, "edit")
 		b := eng.Start(t)
 		b.Login(t, "edit", "pass")
 		b.Navigate(t, "/apps/contacts/")
@@ -89,6 +83,7 @@ func TestBrowser(t *testing.T) {
 	})
 
 	t.Run("StarredPage", func(t *testing.T) {
+		eng := browserEnv(t, "starred")
 		b := eng.Start(t)
 		b.Login(t, "starred", "pass")
 		b.Navigate(t, "/apps/contacts/starred")
@@ -98,6 +93,7 @@ func TestBrowser(t *testing.T) {
 	})
 
 	t.Run("CreateAddressBook", func(t *testing.T) {
+		eng := browserEnv(t, "newbook")
 		b := eng.Start(t)
 		b.Login(t, "newbook", "pass")
 		b.Navigate(t, "/apps/contacts/settings")
@@ -108,4 +104,18 @@ func TestBrowser(t *testing.T) {
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
+}
+
+// browserEnv starts a server and browser of its own for one subtest, with one
+// user. Collection IDs are global, so a shared server would give a subtest
+// different IDs, and a different golden, depending on which others ran.
+func browserEnv(t *testing.T, username string) *webtest.Engine {
+	t.Helper()
+	env := cogtest.New(t, contacts.New())
+	// The first user is made an admin; the one under test is not.
+	env.CreateUser(t, "admin", "pass")
+	env.CreateUser(t, username, "pass")
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+	return eng
 }

@@ -18,6 +18,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/config"
+	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/internal/email"
 	"git.duckfam.us/jj-software/cog/internal/federation"
@@ -62,6 +63,7 @@ type Providers struct {
 	WebAuthn       *auth.WebAuthnStore
 	PasswordResets *auth.PasswordResetStore
 	Activities     *activity.Store
+	DAV            *dav.Server
 	Federation     *federation.Store
 	FedClient      *federation.Client
 	EmailHook      email.SendHook // if set, all email goes through this instead of SMTP
@@ -203,9 +205,18 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	federation.SetPeerAllowlist(cfg.FederationPeers)
 	plugin.SetTrustedProcessPlugins(cfg.TrustedProcessPlugins)
 
+	// The DAV core owns collections; plugins that hold DAV resources get it
+	// before they register. web.New finishes wiring it.
+	davServer := &dav.Server{Collections: dav.NewStore(sysDB, c), Clock: c, Log: log.With("component", "dav")}
+
 	registry := plugin.NewRegistry(log, cfg.DataDir, http.NewServeMux(), sysDB, secret, c)
 	for _, p := range plugins {
-		registry.Add(p)
+		if dp, ok := p.(dav.Provider); ok {
+			dp.SetDAV(davServer)
+		}
+		if err := registry.Add(p); err != nil {
+			log.Error("register plugin", "plugin", p.ID(), "err", err)
+		}
 	}
 
 	// Discover and load process plugins from PATH.
@@ -246,6 +257,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		WebAuthn:       newWebAuthnStore(sysDB, c, cfg.BaseURL, secret, log),
 		RateLimiter:    ratelimit.New(10, 15*time.Minute, c),
 		Activities:     activities,
+		DAV:            davServer,
 		Federation:     fedStore,
 		FedClient:      fedClient,
 		CSRFSecret:     secret,
@@ -275,7 +287,7 @@ func (p *Providers) SeedPlugins(username string) error {
 			continue
 		}
 		wg.Go(func() {
-			if err := s.Seed("admin"); err != nil {
+			if err := s.Seed(username); err != nil {
 				errs[i] = fmt.Errorf("seed: plugin failed id=%v: %w", id, err)
 			}
 		})

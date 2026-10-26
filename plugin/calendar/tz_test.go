@@ -110,10 +110,3 @@ func TestExpandRRuleKeepsLocalTimeAcrossDST(t *testing.T) {
 	// Mar 9 is excluded; Mar 16 is after DST and still 09:00 local.
 	assert.Equal(t, "Mar 2 09:00,Mar 16 09:00", strings.Join(got, ","))
 }
-
-func TestTimezoneFromDAV(t *testing.T) {
-	assert.Equal(t, "America/Denver", timezoneFromDAV(`<C:calendar-timezone-id>America/Denver</C:calendar-timezone-id>`))
-	vtz := "<C:calendar-timezone>BEGIN:VCALENDAR&#13;\nBEGIN:VTIMEZONE&#13;\nTZID:America/Chicago&#13;\nEND:VTIMEZONE&#13;\nEND:VCALENDAR</C:calendar-timezone>"
-	assert.Equal(t, "America/Chicago", timezoneFromDAV(vtz))
-	assert.Equal(t, "", timezoneFromDAV(`<D:displayname>x</D:displayname>`))
-}

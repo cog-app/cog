@@ -13,6 +13,11 @@ const DefaultInviteExpiryHours = 72
 // MFA enforcement: "" (disabled), "all" (all users), "admins" (admin users only).
 const KeyMFARequired = "mfa_required"
 
+// KeyDAVTombstoneDays is how many days CalDAV/CardDAV deletions are kept for
+// incremental sync; older sync tokens make clients resync fully.
+const KeyDAVTombstoneDays = "dav_tombstone_days"
+const DefaultDAVTombstoneDays = 90
+
 // Email template override keys. Each stores a Go template string that is
 // parsed on top of the embedded defaults, replacing matching {{define}} blocks.
 const (

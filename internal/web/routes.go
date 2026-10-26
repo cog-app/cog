@@ -12,7 +12,6 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/share"
-	"git.duckfam.us/jj-software/cog/plugin/calendar"
 	filesPlugin "git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -69,6 +68,7 @@ func New(p *services.Providers) http.Handler {
 	h := handler{p}
 	loginH := loginHandler{h}
 	settingsH := settingsHandler{h}
+	dataH := dataHandler{h}
 	adminH := adminHandler{h}
 	adminVolH := adminVolumeHandler{h}
 	volBrowserH := volumeBrowserHandler{h}
@@ -104,6 +104,10 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /settings/profile", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowProfile)))
 	mux.Handle("GET /settings/security", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowSecurity)))
 	mux.Handle("GET /settings/storage", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowStorage)))
+	mux.Handle("GET /settings/data", auth.RequireAuthWeb(http.HandlerFunc(dataH.ShowData)))
+	mux.Handle("GET /settings/data/export/{id}", auth.RequireAuthWeb(http.HandlerFunc(dataH.Export)))
+	mux.Handle("GET /settings/data/export.zip", auth.RequireAuthWeb(http.HandlerFunc(dataH.ExportAll)))
+	mux.Handle("POST /settings/data/import", csrfWeb(http.HandlerFunc(dataH.Import)))
 	mux.Handle("POST /settings/profile", csrfWeb(http.HandlerFunc(settingsH.UpdateProfile)))
 	mux.Handle("POST /settings/password", csrfWeb(http.HandlerFunc(settingsH.UpdatePassword)))
 	mux.Handle("POST /settings/mounts", csrfWeb(http.HandlerFunc(settingsH.CreateMount)))
@@ -287,9 +291,9 @@ func New(p *services.Providers) http.Handler {
 		}
 	}
 
-	// CalDAV/CardDAV discovery: PROPFIND on /remote.php/dav/ returns current-user-principal.
-	mux.Handle("PROPFIND /remote.php/dav/{$}", auth.RequireAuth(http.HandlerFunc(calendar.HandleDAVRoot)))
-	mux.Handle("PROPFIND /remote.php/dav", auth.RequireAuth(http.HandlerFunc(calendar.HandleDAVRoot)))
+	// CalDAV/CardDAV: the root, principals and homes, over the plugins'
+	// backends.
+	mountDAV(mux, p, &shareStoreAdapter{p.Shares})
 
 	// WebDAV stub for non-file DAV paths (presence check, HEAD/OPTIONS/GET)
 	mux.HandleFunc("/remote.php/dav", compat.HandleWebDAVStub)

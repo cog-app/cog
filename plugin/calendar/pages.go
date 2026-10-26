@@ -2,7 +2,7 @@ package calendar
 
 import (
 	"database/sql"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"github.com/google/uuid"
 	rrulelib "github.com/teambition/rrule-go"
 )
 
@@ -24,47 +26,46 @@ func NewPages(p *Plugin) *Pages {
 	return &Pages{plugin: p}
 }
 
-// userDB returns the request user's database with event times repaired.
-func (h *Pages) userDB(r *http.Request) (*sql.DB, error) {
-	db, err := plugin.UserDB(r)
+// userDB returns the request user's database and ID.
+func (h *Pages) userDB(r *http.Request) (*sql.DB, string, error) {
+	u := plugin.UserFromContext(r.Context())
+	if u == nil {
+		return nil, "", errors.New("calendar: request has no user")
+	}
+	db, err := h.plugin.DB(u.Username)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	if err := h.plugin.repairOnce(plugin.Username(r), db); err != nil {
-		return nil, err
-	}
-	return db, nil
+	return db, u.ID, nil
 }
 
 // Index shows the FullCalendar UI.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	u := plugin.UserFromContext(r.Context())
+	calendars, err := h.plugin.Calendars(u.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	EnsureDefaultCalendar(db)
-
 	plugin.SetTitle(w, "Calendar")
-	calendars, _ := ListCalendars(db)
 	calIndexPage(calendars, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // Settings shows calendar management.
 func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	u := plugin.UserFromContext(r.Context())
+	calendars, err := h.plugin.Calendars(u.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	plugin.SetTitle(w, "Calendar Settings")
-	calendars, _ := ListCalendars(db)
 	calSettingsPage(calendars, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // EventsJSON returns events as JSON for FullCalendar.
 func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, userID, err := h.userDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -83,48 +84,58 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 		end = h.plugin.ctx.Now().AddDate(0, 2, 0)
 	}
 
-	u := plugin.UserFromContext(r.Context())
-
-	var events []EventWithCalendar
+	cals, err := h.plugin.calendarMap(userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	if calIDStr != "" {
-		calID, _ := strconv.ParseInt(calIDStr, 10, 64)
-		raw, _ := EventsInRangeForCalendar(db, calID, start.Unix(), end.Unix())
-		cal, err := GetCalendar(db, calID)
-		if err == nil {
-			for _, ev := range raw {
-				events = append(events, EventWithCalendar{
-					Event:            ev,
-					CalendarName:     cal.Name,
-					CalendarColor:    cal.Color,
-					CalendarTimezone: cal.Timezone,
-				})
-			}
+		calID, err := strconv.ParseInt(calIDStr, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid calendar", http.StatusBadRequest)
+			return
 		}
-	} else {
-		events, _ = EventsInRange(db, start.Unix(), end.Unix())
+		cal, ok := cals[calID]
+		if !ok {
+			http.Error(w, "calendar not found", http.StatusNotFound)
+			return
+		}
+		cals = map[int64]Calendar{calID: cal}
+	}
+	events, err := EventsInRange(db, cals, start.Unix(), end.Unix())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
+	if calIDStr == "" {
 		// Also include events from calendars shared with this user.
-		shared, _ := h.plugin.SharedCalendars(u.Username)
+		shared, err := h.plugin.SharedCalendars(userID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		for _, sc := range shared {
-			ownerDB, err := h.plugin.userDB(sc.OwnerUsername)
+			ownerDB, err := h.plugin.DB(sc.OwnerUsername)
 			if err != nil {
-				continue
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
 			}
-			sharedEvents, _ := EventsInRange(ownerDB, start.Unix(), end.Unix())
+			sharedEvents, err := EventsInRange(ownerDB, map[int64]Calendar{sc.ID: sc.Calendar}, start.Unix(), end.Unix())
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 			for _, ev := range sharedEvents {
-				if ev.CalendarID != sc.ID {
-					continue
-				}
-				if sc.Permissions&plugin.PermRead != 0 {
-					// Full read access: include all details.
-					ev.CalendarName = sc.Name + " (" + sc.OwnerUsername + ")"
+				ev.CalendarName = sc.Name + " (" + sc.OwnerUsername + ")"
+				switch {
+				case sc.Permissions&plugin.PermRead != 0:
 					events = append(events, ev)
-				} else if sc.Permissions&plugin.PermFreeBusy != 0 {
+				case sc.Permissions&plugin.PermFreeBusy != 0:
 					// Free/Busy only: strip sensitive details.
 					ev.Summary = "Busy"
 					ev.Description = ""
 					ev.Location = ""
-					ev.CalendarName = sc.Name + " (" + sc.OwnerUsername + ")"
 					events = append(events, ev)
 				}
 			}
@@ -177,50 +188,63 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 		result = append(result, fc)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	plugin.WriteJSON(w, http.StatusOK, result)
+}
+
+// ownEvent returns the request user's event by path ID, with its calendar.
+// Events of a calendar the user does not own (or that no longer exists) are
+// not found.
+func (h *Pages) ownEvent(r *http.Request) (*sql.DB, string, *Event, *Calendar, int, error) {
+	db, userID, err := h.userDB(r)
+	if err != nil {
+		return nil, "", nil, nil, http.StatusInternalServerError, err
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		return nil, "", nil, nil, http.StatusBadRequest, errors.New("invalid id")
+	}
+	ev, err := GetEvent(db, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", nil, nil, http.StatusNotFound, errors.New("not found")
+	}
+	if err != nil {
+		return nil, "", nil, nil, http.StatusInternalServerError, err
+	}
+	cal, err := h.plugin.Calendar(userID, ev.CalendarID)
+	if errors.Is(err, dav.ErrNotFound) {
+		return nil, "", nil, nil, http.StatusNotFound, errors.New("not found")
+	}
+	if err != nil {
+		return nil, "", nil, nil, http.StatusInternalServerError, err
+	}
+	return db, userID, ev, cal, 0, nil
 }
 
 // EventDetail returns an event detail partial for the modal.
 func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, userID, ev, cal, status, err := h.ownEvent(r)
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
+	calendars, err := h.plugin.Calendars(userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	attendees, err := ListAttendees(db, ev.ID)
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	ev, err := GetEvent(db, id)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	cal, _ := GetCalendar(db, ev.CalendarID)
-	calendars, _ := ListCalendars(db)
-	attendees, _ := ListAttendees(db, ev.ID)
-
 	calEventModal(plugin.CSRFToken(r), ev, cal, calendars, attendees).Render(r.Context(), w)
 }
 
 // UpdateEvent handles POST to update an existing event.
 func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, userID, ev, _, status, err := h.ownEvent(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
-		return
-	}
-	ev, err := GetEvent(db, id)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		http.Error(w, err.Error(), status)
 		return
 	}
 
@@ -232,14 +256,18 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	if calID == 0 {
 		calID = ev.CalendarID
 	}
+	cal, err := h.plugin.Calendar(userID, calID)
+	if err != nil {
+		http.Error(w, "invalid calendar", http.StatusBadRequest)
+		return
+	}
 
-	dtstart, dtend, err := h.formTimes(db, r, calID, isAllDay)
+	dtstart, dtend, err := formTimes(cal, r, isAllDay)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	eventColor := r.FormValue("color")
 	rrule := buildRRule(r)
 	if rrule != "" {
 		if _, err := rrulelib.StrToRRule(rrule); err != nil {
@@ -254,43 +282,23 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		alarms = old.Alarms
 	}
 
-	// Parse attendees from form
 	attendeeFields := parseAttendeeForm(r)
 	icsData := GenerateICSFull(ev.UID, summary, description, location, dtstart, dtend, isAllDay, rrule, alarms, attendeeFields, h.plugin.ctx.Now())
-	fields := VEventFields{
-		UID: ev.UID, Summary: summary, Description: description, Location: location,
-		DTStart: dtstart, DTEnd: dtend, IsAllDay: isAllDay, Color: eventColor, RRule: rrule,
-		Attendees: attendeeFields,
-	}
-
-	updated, err := UpsertEvent(db, calID, ev.UID, icsData, fields)
+	updated, err := SaveEvent(db, cal, ev, icsData, h.plugin.ctx.Now())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// Moving to another calendar: the upsert created the event there, so
-	// remove it from the old one (recording the deletion for DAV sync).
-	if calID != ev.CalendarID {
-		if err := DeleteEvent(db, ev.CalendarID, ev.UID); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+	if err := SetEventColor(db, updated.ID, r.FormValue("color")); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-
-	// Create alarm notifications.
-	if err := EnsureNotifications(db, updated.ID, updated.DTStart, icsData); err != nil {
-		h.plugin.log.Error("update event reminders", "id", updated.ID, "err", err)
+	if err := ReplaceAttendees(db, updated.ID, attendeeFields); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-
-	// Replace attendees and send updated invitations
-	if updated != nil {
-		DeleteAttendees(db, updated.ID)
-		for _, af := range attendeeFields {
-			AddAttendee(db, updated.ID, af.Email, "", af.CN, af.Role)
-		}
-		if len(attendeeFields) > 0 {
-			h.sendInvitations("REQUEST", updated, summary, description, location, dtstart, dtend, isAllDay, attendeeFields)
-		}
+	if len(attendeeFields) > 0 {
+		h.sendInvitations("REQUEST", updated, summary, description, location, dtstart, dtend, isAllDay, attendeeFields)
 	}
 
 	http.Redirect(w, r, "/apps/calendar/", http.StatusSeeOther)
@@ -298,7 +306,7 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 
 // CreateEvent handles POST to create a new event.
 func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, userID, err := h.userDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -309,19 +317,23 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid calendar", http.StatusBadRequest)
 		return
 	}
+	cal, err := h.plugin.Calendar(userID, calID)
+	if err != nil {
+		http.Error(w, "invalid calendar", http.StatusBadRequest)
+		return
+	}
 	summary := r.FormValue("summary")
 	location := r.FormValue("location")
 	description := r.FormValue("description")
 	isAllDay := r.FormValue("all_day") == "on"
 
-	dtstart, dtend, err := h.formTimes(db, r, calID, isAllDay)
+	dtstart, dtend, err := formTimes(cal, r, isAllDay)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	eventColor := r.FormValue("color")
-	uid := fmt.Sprintf("%d-%s", h.plugin.ctx.Now().UnixNano(), summary)
+	uid := uuid.NewString()
 	rrule := buildRRule(r)
 	if rrule != "" {
 		if _, err := rrulelib.StrToRRule(rrule); err != nil {
@@ -330,30 +342,21 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Parse attendees from form
 	attendeeFields := parseAttendeeForm(r)
 	icsData := GenerateICSFull(uid, summary, description, location, dtstart, dtend, isAllDay, rrule, nil, attendeeFields, h.plugin.ctx.Now())
-	fields := VEventFields{
-		UID: uid, Summary: summary, Description: description, Location: location,
-		DTStart: dtstart, DTEnd: dtend, IsAllDay: isAllDay, Color: eventColor, RRule: rrule,
-		Attendees: attendeeFields,
-	}
-
-	ev, err := UpsertEvent(db, calID, uid, icsData, fields)
+	ev, err := SaveEvent(db, cal, nil, icsData, h.plugin.ctx.Now())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	// Create alarm notifications.
-	if err := EnsureNotifications(db, ev.ID, ev.DTStart, icsData); err != nil {
-		h.plugin.log.Error("create event reminders", "id", ev.ID, "err", err)
+	if err := SetEventColor(db, ev.ID, r.FormValue("color")); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-
-	// Save attendees to DB and send invitations
-	if ev != nil && len(attendeeFields) > 0 {
-		for _, af := range attendeeFields {
-			AddAttendee(db, ev.ID, af.Email, "", af.CN, af.Role)
+	if len(attendeeFields) > 0 {
+		if err := ReplaceAttendees(db, ev.ID, attendeeFields); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		h.sendInvitations("REQUEST", ev, summary, description, location, dtstart, dtend, isAllDay, attendeeFields)
 	}
@@ -363,61 +366,51 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 
 // DeleteEvent handles DELETE to remove an event (HTMX).
 func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, _, ev, _, status, err := h.ownEvent(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		http.Error(w, err.Error(), status)
 		return
 	}
 
 	// Send cancellation emails before deleting
-	ev, err := GetEvent(db, id)
-	if err == nil {
-		attendees, _ := ListAttendees(db, ev.ID)
-		if len(attendees) > 0 {
-			dtstart := time.Unix(ev.DTStart, 0).UTC()
-			dtend := time.Unix(ev.DTEnd, 0).UTC()
-			var afs []AttendeeField
-			for _, a := range attendees {
-				afs = append(afs, AttendeeField{
-					Email:    a.Email,
-					CN:       a.DisplayName,
-					PartStat: a.Status,
-					Role:     a.Role,
-				})
-			}
-			h.sendInvitations("CANCEL", ev, ev.Summary, ev.Description, ev.Location, dtstart, dtend, ev.IsAllDay, afs)
+	attendees, err := ListAttendees(db, ev.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if len(attendees) > 0 {
+		dtstart := time.Unix(ev.DTStart, 0).UTC()
+		dtend := time.Unix(ev.DTEnd, 0).UTC()
+		var afs []AttendeeField
+		for _, a := range attendees {
+			afs = append(afs, AttendeeField{
+				Email:    a.Email,
+				CN:       a.DisplayName,
+				PartStat: a.Status,
+				Role:     a.Role,
+			})
 		}
+		h.sendInvitations("CANCEL", ev, ev.Summary, ev.Description, ev.Location, dtstart, dtend, ev.IsAllDay, afs)
 	}
 
-	DeleteEventByID(db, id)
+	if err := DeleteEventByID(db, ev.ID, h.plugin.ctx.Now()); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
 // CreateCalendar handles POST to create a new calendar.
 func (h *Pages) CreateCalendar(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	uid := r.FormValue("uid")
-	name := r.FormValue("name")
-	color := r.FormValue("color")
-	if uid == "" {
-		uid = name
-	}
+	u := plugin.UserFromContext(r.Context())
+	name := strings.TrimSpace(r.FormValue("name"))
 	tz := r.FormValue("timezone")
 	if tz != "" && LoadTimezone(tz) == nil {
 		http.Error(w, "unknown timezone "+tz, http.StatusBadRequest)
 		return
 	}
 	if name != "" {
-		if _, err := CreateCalendar(db, uid, name, color, "", tz); err != nil {
+		if _, err := h.plugin.CreateCalendar(u.ID, r.FormValue("uid"), name, r.FormValue("color"), "", tz); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -427,17 +420,13 @@ func (h *Pages) CreateCalendar(w http.ResponseWriter, r *http.Request) {
 
 // UpdateCalendarHandler handles POST to rename, recolor or rezone a calendar.
 func (h *Pages) UpdateCalendarHandler(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	u := plugin.UserFromContext(r.Context())
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	cal, err := GetCalendar(db, id)
+	cal, err := h.plugin.Calendar(u.ID, id)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -455,16 +444,7 @@ func (h *Pages) UpdateCalendarHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown timezone "+tz, http.StatusBadRequest)
 		return
 	}
-	if err := UpdateCalendar(db, id, name, color, cal.Description); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := SetCalendarTimezone(db, id, tz); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	// Name and color are DAV properties; bump the ctag so clients refetch.
-	if err := BumpCTag(db, id); err != nil {
+	if err := h.plugin.UpdateCalendar(u.Username, u.ID, id, name, color, tz); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -474,7 +454,7 @@ func (h *Pages) UpdateCalendarHandler(w http.ResponseWriter, r *http.Request) {
 // formTimes parses an event form's start and end. Date-times are read in the
 // form's tz field (the browser's zone), falling back to the calendar's zone,
 // and keep that zone so the ICS records it as TZID.
-func (h *Pages) formTimes(db *sql.DB, r *http.Request, calID int64, isAllDay bool) (time.Time, time.Time, error) {
+func formTimes(cal *Calendar, r *http.Request, isAllDay bool) (time.Time, time.Time, error) {
 	if isAllDay {
 		start, err := time.Parse("2006-01-02", r.FormValue("date_start"))
 		if err != nil {
@@ -494,7 +474,7 @@ func (h *Pages) formTimes(db *sql.DB, r *http.Request, calID int64, isAllDay boo
 		if loc = LoadTimezone(tz); loc == nil {
 			return time.Time{}, time.Time{}, fmt.Errorf("unknown timezone %q", tz)
 		}
-	} else if cal, err := GetCalendar(db, calID); err == nil {
+	} else {
 		loc = cal.Zone()
 	}
 	start, err := time.ParseInLocation("2006-01-02T15:04", r.FormValue("datetime_start"), loc)
@@ -724,7 +704,7 @@ func (h *Pages) sendInvitations(method string, ev *Event, summary, description, 
 	}
 
 	for _, att := range attendees {
-		_ = emailSender.SendWithAttachments(
+		err := emailSender.SendWithAttachments(
 			att.Email,
 			subject,
 			body,
@@ -735,28 +715,29 @@ func (h *Pages) sendInvitations(method string, ev *Event, summary, description, 
 				Data:        []byte(icsData),
 			}},
 		)
+		if err != nil {
+			h.plugin.log.Error("send invitation", "method", method, "uid", ev.UID, "to", att.Email, "err", err)
+		}
 	}
 }
 
 // RespondToInvite handles POST to accept/decline an event invitation.
 func (h *Pages) RespondToInvite(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, _, ev, _, status, err := h.ownEvent(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		http.Error(w, err.Error(), status)
 		return
 	}
 	responseEmail := r.FormValue("email")
-	status := r.FormValue("status")
-	if status != "ACCEPTED" && status != "DECLINED" && status != "TENTATIVE" {
+	answer := r.FormValue("status")
+	if answer != "ACCEPTED" && answer != "DECLINED" && answer != "TENTATIVE" {
 		http.Error(w, "invalid status", http.StatusBadRequest)
 		return
 	}
-	UpdateAttendeeStatus(db, id, responseEmail, status)
+	if err := UpdateAttendeeStatus(db, ev.ID, responseEmail, answer); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -798,17 +779,17 @@ func expandRRule(ev EventWithCalendar, rangeStart, rangeEnd time.Time) []EventWi
 
 // DeleteCalendarHandler handles DELETE to remove a calendar (HTMX).
 func (h *Pages) DeleteCalendarHandler(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	u := plugin.UserFromContext(r.Context())
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	if err := DeleteCalendar(db, id); err != nil {
+	if err := h.plugin.DeleteCalendar(u.Username, u.ID, id); err != nil {
+		if errors.Is(err, dav.ErrNotFound) {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -818,7 +799,7 @@ func (h *Pages) DeleteCalendarHandler(w http.ResponseWriter, r *http.Request) {
 // Notifications returns due (unfired) reminder notifications as JSON.
 // GET /apps/calendar/notifications
 func (h *Pages) Notifications(w http.ResponseWriter, r *http.Request) {
-	db, err := h.userDB(r)
+	db, _, err := h.userDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -837,26 +818,24 @@ func (h *Pages) Notifications(w http.ResponseWriter, r *http.Request) {
 		Start   string `json:"start"`
 	}
 
-	var result []notifJSON
+	result := []notifJSON{}
 	for _, n := range notifications {
 		ev, err := GetEvent(db, n.EventID)
 		if err != nil {
-			continue
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-		start := time.Unix(ev.DTStart, 0).UTC()
 		result = append(result, notifJSON{
 			ID:      n.ID,
 			EventID: n.EventID,
 			Summary: ev.Summary,
-			Start:   start.Format(time.RFC3339),
+			Start:   time.Unix(ev.DTStart, 0).UTC().Format(time.RFC3339),
 		})
-		MarkNotificationFired(db, n.ID)
+		if err := MarkNotificationFired(db, n.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
-	if result == nil {
-		result = []notifJSON{}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	plugin.WriteJSON(w, http.StatusOK, result)
 }

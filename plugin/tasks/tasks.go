@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 
+	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
@@ -21,7 +22,15 @@ const PluginID = "tasks"
 type Plugin struct {
 	ctx plugin.PluginContext
 	log *slog.Logger
+	dav *dav.Server
 }
+
+// SetDAV implements dav.Provider.
+func (p *Plugin) SetDAV(s *dav.Server) { p.dav = s }
+
+// DAVBackends implements dav.Provider: tasks and journals in any calendar
+// collection.
+func (p *Plugin) DAVBackends() []dav.Backend { return []dav.Backend{&backend{p: p}} }
 
 // New creates a new Tasks plugin instance.
 func New() *Plugin {
@@ -54,15 +63,6 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		PrimaryTable: "tasks",
 		EnrichSQL:    "SELECT rowid, summary, description FROM tasks WHERE rowid IN (?)",
 	})
-	ctx.RegisterResource(plugin.ResourceDef{
-		Type:     "list",
-		Table:    "lists",
-		IDColumn: "uid",
-		PermissionLevels: []plugin.PermissionLevel{
-			{Label: "Read-only", Permissions: plugin.PermRead},
-			{Label: "Read/Write", Permissions: plugin.PermRead | plugin.PermWrite},
-		},
-	})
 
 	// Web UI routes
 	pages := NewPages(p)
@@ -79,10 +79,6 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("DELETE", "list/{id}", pages.wrap(pages.DeleteList))
 	ctx.RegisterAction("POST", "reorder", pages.wrap(pages.Reorder))
 
-	// TODO: CalDAV VTODO handler — not mounted yet.
-	// Integration with the calendar plugin's calendar-home-set is a follow-up.
-	// caldav := NewCalDAVHandler(p)
-
 	// TODO: calendar:get_events hook for showing tasks with due dates on the calendar.
 	// ctx.RegisterHook("calendar:get_events", p.calendarHook)
 
@@ -92,11 +88,22 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 func (p *Plugin) Start(ctx context.Context) error { return nil }
 func (p *Plugin) Stop() error                     { return nil }
 
-func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
-	db, err := p.DB(userID)
+func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, username string) error {
+	db, err := p.DB(username)
 	if err != nil {
-		return nil
+		return err
 	}
-	tasks, _ := UpcomingTasks(db, 5)
+	userID, err := p.userID(username)
+	if err != nil {
+		return err
+	}
+	lists, err := p.listMap(userID)
+	if err != nil {
+		return err
+	}
+	tasks, err := UpcomingTasks(db, lists, 5)
+	if err != nil {
+		return err
+	}
 	return upcomingTasksWidget(tasks).Render(ctx, w)
 }

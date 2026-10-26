@@ -1,8 +1,10 @@
 package contacts
 
 import (
-	"crypto/md5"
+	"errors"
 	"fmt"
+
+	"git.duckfam.us/jj-software/cog/internal/dav"
 )
 
 // Seed creates sample address books and contacts for a user.
@@ -11,16 +13,33 @@ func (p *Plugin) Seed(username string) error {
 	if err != nil {
 		return fmt.Errorf("seed contacts: %w", err)
 	}
+	userID, err := p.userID(username)
+	if err != nil {
+		return fmt.Errorf("seed contacts: %w", err)
+	}
 
 	// Check if already seeded.
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM address_books`).Scan(&count)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM cards`).Scan(&count); err != nil {
+		return fmt.Errorf("seed contacts: %w", err)
+	}
 	if count > 0 {
 		return nil
 	}
 
-	db.Exec(`INSERT INTO address_books (uid, name, color) VALUES ('contacts', 'Contacts', '#0082c9')`)
-	db.Exec(`INSERT INTO address_books (uid, name, color) VALUES ('work', 'Work', '#e64a19')`)
+	books, err := p.Books(userID)
+	if err != nil {
+		return fmt.Errorf("seed contacts: %w", err)
+	}
+	ids := map[string]int64{"contacts": books[0].ID}
+	work, err := p.BookByName(userID, "work")
+	if errors.Is(err, dav.ErrNotFound) {
+		work, err = p.CreateBook(userID, "work", "Work", "", "#e64a19")
+	}
+	if err != nil {
+		return fmt.Errorf("seed contacts: %w", err)
+	}
+	ids["work"] = work.ID
 
 	type seedCard struct {
 		bookUID string
@@ -41,22 +60,10 @@ func (p *Plugin) Seed(username string) error {
 	}
 
 	for _, c := range cards {
-		vc := vcard(c.uid, c.fn, c.email, c.tel)
-		etag := fmt.Sprintf("%x", md5.Sum([]byte(vc)))
-		uri := c.uid + ".vcf"
-		var bookID int64
-		db.QueryRow(`SELECT id FROM address_books WHERE uid = ?`, c.bookUID).Scan(&bookID)
-		_, err := db.Exec(`INSERT INTO cards (address_book_id, uid, uri, etag, fn, email, tel, vcard_data)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			bookID, c.uid, uri, etag, c.fn, c.email, c.tel, vc)
-		if err != nil {
-			p.log.Error("seed contact", "uid", c.uid, "err", err)
-		} else {
-			p.log.Info("seeded contact", "name", c.fn)
+		if _, err := SaveCard(db, ids[c.bookUID], nil, vcard(c.uid, c.fn, c.email, c.tel), p.ctx.Now()); err != nil {
+			return fmt.Errorf("seed contact %s: %w", c.uid, err)
 		}
 	}
-
-	db.Exec(`UPDATE address_books SET ctag = (SELECT COUNT(*) FROM cards WHERE address_book_id = address_books.id)`)
 	return nil
 }
 
