@@ -1,11 +1,15 @@
 package dav
 
 import (
+	"bytes"
+	"errors"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
 )
 
 func (q *request) report(c *Collection, owner *User, a access) {
@@ -21,7 +25,7 @@ func (q *request) report(c *Collection, owner *User, a access) {
 	case n.is(caldav("calendar-query")) && c.Home == HomeCalendars:
 		q.calendarQuery(c, owner, a, n)
 	case n.is(carddav("addressbook-query")) && c.Home == HomeAddressBooks:
-		q.all(c, owner, a, propsFrom(n))
+		q.addressbookQuery(c, owner, a, n)
 	case n.is(dav("sync-collection")):
 		q.syncCollection(c, owner, a, n)
 	default:
@@ -95,24 +99,80 @@ func (q *request) multiget(c *Collection, owner *User, a access, n *node) {
 	ms.write(q.w)
 }
 
-// all answers a query with every resource; used for addressbook-query, whose
-// filters Cog does not evaluate (clients filter the superset).
-func (q *request) all(c *Collection, owner *User, a access, pf *propfind) {
+// addressbookQuery answers RFC 6352 addressbook-query: the cards matching
+// the filter, at most nresults of them. When the limit cuts the answer
+// short, the collection gets a 507 with number-of-matches-within-limits
+// (RFC 6352 §8.6.1).
+func (q *request) addressbookQuery(c *Collection, owner *User, a access, n *node) {
+	pf := propsFrom(n)
+	f, err := parseCardFilter(n)
+	switch {
+	case errors.Is(err, errCollation):
+		writeError(q.w, http.StatusForbidden, carddav("supported-collation"), "")
+		return
+	case err != nil:
+		writeError(q.w, http.StatusForbidden, carddav("supported-filter"), "")
+		return
+	}
 	withData := pf.wants(dataName(c.Home))
 	var ms multistatus
+	truncated := false
 	for _, b := range q.backends(c) {
-		list, err := b.List(owner.Username, c, withData)
+		limit := 0
+		if f.Limit > 0 {
+			if limit = f.Limit - len(ms.Responses); limit <= 0 {
+				truncated = true
+				break
+			}
+		}
+		bf := *f
+		bf.Limit = limit
+		list, more, err := q.queryCards(b, owner, c, &bf, withData)
 		if err != nil {
 			q.fail(err)
 			return
 		}
+		truncated = truncated || more
 		for i := range list {
 			if resp, ok := q.resourceResponse(c, owner, a, b, &list[i], pf); ok {
 				ms.Responses = append(ms.Responses, resp)
 			}
 		}
 	}
+	if truncated {
+		ms.Responses = append(ms.Responses, response{
+			Href: collectionHref(c, owner.Username), Status: http.StatusInsufficientStorage,
+			Error: el(dav("number-of-matches-within-limits"), ""),
+		})
+	}
 	ms.write(q.w)
+}
+
+// queryCards asks a backend for the cards matching f, or lists its cards
+// and matches them here.
+func (q *request) queryCards(b Backend, owner *User, c *Collection, f *CardFilter, withData bool) ([]Resource, bool, error) {
+	if cq, ok := b.(CardQuerier); ok {
+		return cq.QueryCards(owner.Username, c, f, withData)
+	}
+	all, err := b.List(owner.Username, c, true)
+	if err != nil {
+		return nil, false, err
+	}
+	var out []Resource
+	for _, r := range all {
+		comps, err := contentline.Parse(bytes.NewReader(r.Data))
+		if err != nil || len(comps) != 1 || !f.Match(comps[0]) {
+			continue
+		}
+		if f.Limit > 0 && len(out) == f.Limit {
+			return out, true, nil
+		}
+		if !withData {
+			r.Data = nil
+		}
+		out = append(out, r)
+	}
+	return out, false, nil
 }
 
 // parseUTC parses a CalDAV time-range bound (RFC 4791 §9.9).

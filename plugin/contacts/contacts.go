@@ -12,13 +12,13 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
 	"git.duckfam.us/jj-software/cog/internal/dav/vcard"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
 	"github.com/google/uuid"
 )
 
@@ -34,14 +34,13 @@ type Plugin struct {
 	ctx plugin.PluginContext
 	log *slog.Logger
 	dav *dav.Server
-	// photoMu serializes card writes with the removal of photo files nothing
-	// uses (photoStore).
-	photoMu sync.Mutex
+	// fetch gets photos cards give by URL (safehttp).
+	fetch *http.Client
 }
 
 // New creates a new Contacts plugin instance.
 func New() *Plugin {
-	return &Plugin{}
+	return &Plugin{fetch: safehttp.Client(10 * time.Second)}
 }
 
 // SetDAV implements dav.Provider.

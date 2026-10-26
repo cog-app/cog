@@ -467,7 +467,13 @@ func (h *Pages) ServePhoto(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	data, ct, err := s.Photo(c)
+	data, ct, err := s.Photo(r.Context(), c)
+	var remote *remoteError
+	if errors.As(err, &remote) {
+		h.plugin.log.Warn("contact photo unavailable", "card", c.ID, "err", err)
+		http.NotFound(w, r)
+		return
+	}
 	if err != nil {
 		httpError(w, err)
 		return
@@ -476,12 +482,13 @@ func (h *Pages) ServePhoto(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if ct == "" {
-		ct = http.DetectContentType(data)
-	}
 	w.Header().Set("Content-Type", ct)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, max-age=3600")
-	w.Header().Set("ETag", `"`+c.PhotoHash+`"`)
+	if c.PhotoURI == "" {
+		// A stored photo's name is its content; a cached one can change.
+		w.Header().Set("ETag", `"`+c.PhotoHash+`"`)
+	}
 	if _, err := w.Write(data); err != nil {
 		h.plugin.log.Error("serve photo", "card", c.ID, "err", err)
 	}

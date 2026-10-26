@@ -1,4 +1,8 @@
-package federation
+// Package safehttp is an HTTP client for URLs that users or remote servers
+// supply: it dials only public addresses, checked after resolution and pinned
+// to the address checked, so neither a hostile URL nor DNS rebinding reaches
+// loopback, private networks or cloud metadata services.
+package safehttp
 
 import (
 	"context"
@@ -10,7 +14,7 @@ import (
 	"time"
 )
 
-// blockedPrefixes are address ranges that the federation client refuses to dial,
+// blockedPrefixes are address ranges the client refuses to dial,
 // to prevent SSRF into internal networks, loopback, and cloud metadata services.
 var blockedPrefixes = mustPrefixes(
 	// IPv4
@@ -48,12 +52,15 @@ var allowPrivate bool
 // tests only; must not be true in production.
 func SetAllowPrivate(b bool) { allowPrivate = b }
 
+// AllowPrivate reports whether SetAllowPrivate is on.
+func AllowPrivate() bool { return allowPrivate }
+
 func mustPrefixes(specs ...string) []netip.Prefix {
 	out := make([]netip.Prefix, 0, len(specs))
 	for _, s := range specs {
 		p, err := netip.ParsePrefix(s)
 		if err != nil {
-			panic("federation: bad prefix " + s + ": " + err.Error())
+			panic("safehttp: bad prefix " + s + ": " + err.Error())
 		}
 		out = append(out, p)
 	}
@@ -62,7 +69,7 @@ func mustPrefixes(specs ...string) []netip.Prefix {
 
 // ErrBlockedIP is returned by the safe dialer when the resolved address is in
 // a blocked range.
-var ErrBlockedIP = errors.New("blocked IP for federation request")
+var ErrBlockedIP = errors.New("safehttp: blocked IP")
 
 // addressBlocked reports whether ip is in a blocked range.
 func addressBlocked(ip netip.Addr) bool {
@@ -80,10 +87,10 @@ func addressBlocked(ip netip.Addr) bool {
 	return false
 }
 
-// safeDialContext resolves and dials only if the resolved IP is not in a
+// DialContext resolves and dials only if the resolved IP is not in a
 // blocked range. The dial target is pinned to the IP that was validated, so
 // DNS rebinding between lookup and dial is impossible.
-func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+func DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
@@ -117,10 +124,10 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 	return nil, fmt.Errorf("dial %s: no usable address", host)
 }
 
-// safeTransport is the http.Transport used by the federation client.
-func safeTransport() *http.Transport {
+// Transport returns an http.Transport that dials through DialContext.
+func Transport() *http.Transport {
 	return &http.Transport{
-		DialContext:           safeDialContext,
+		DialContext:           DialContext,
 		ResponseHeaderTimeout: 10 * time.Second,
 		TLSHandshakeTimeout:   5 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
@@ -129,7 +136,27 @@ func safeTransport() *http.Transport {
 	}
 }
 
-// noRedirect refuses all HTTP redirects.
-func noRedirect(req *http.Request, via []*http.Request) error {
+// NoRedirect refuses all HTTP redirects.
+func NoRedirect(req *http.Request, via []*http.Request) error {
 	return http.ErrUseLastResponse
+}
+
+// Client returns a client through Transport with a timeout for the whole
+// request. It follows up to five redirects to http or https URLs; each hop is
+// dialed through DialContext, so a redirect cannot reach a blocked address
+// either.
+func Client(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: Transport(),
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return errors.New("safehttp: too many redirects")
+			}
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return fmt.Errorf("safehttp: redirect to %s URL", req.URL.Scheme)
+			}
+			return nil
+		},
+	}
 }

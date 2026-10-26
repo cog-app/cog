@@ -1,11 +1,13 @@
 package contacts
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
@@ -46,7 +48,7 @@ type Card struct {
 	Org           string
 	Title         string
 	PhotoHash     string // "" without a photo
-	PhotoType     string
+	PhotoURI      string // the photo's URL, when it is given by one
 	IsStarred     bool
 	CreatedAt     int64
 	UpdatedAt     int64
@@ -70,7 +72,7 @@ type CardWithBook struct {
 type Store struct {
 	DB     *sql.DB
 	photos *photoStore
-	mu     *sync.Mutex // the plugin's photoMu
+	fetch  *http.Client // for photos given by URL
 	log    *slog.Logger
 }
 
@@ -80,7 +82,7 @@ func (p *Plugin) Store(username string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{DB: db, photos: p.photoStore(username), mu: &p.photoMu, log: p.log}, nil
+	return &Store{DB: db, photos: p.photoStore(username), fetch: p.fetch, log: p.log}, nil
 }
 
 // preferred orders a card's values: by PREF, then TYPE=pref, then as
@@ -91,13 +93,13 @@ const preferred = `ORDER BY CASE WHEN pref > 0 THEN pref ELSE 101 END, instr(low
 const cardColumns = `c.id, c.collection_id, c.uid, c.uri, c.version, c.fn, c.n_given, c.n_family, c.org, c.title,
 	coalesce((SELECT value FROM card_emails WHERE card_id = c.id ` + preferred + `), ''),
 	coalesce((SELECT value FROM card_phones WHERE card_id = c.id ` + preferred + `), ''),
-	c.photo_hash, c.photo_type, c.is_starred, c.created_at, c.updated_at`
+	c.photo_hash, c.photo_uri, c.is_starred, c.created_at, c.updated_at`
 
 func scanCard(row interface{ Scan(...any) error }) (*Card, error) {
 	var c Card
 	var given, family sql.NullString
 	if err := row.Scan(&c.ID, &c.AddressBookID, &c.UID, &c.URI, &c.Version, &c.FN, &given, &family, &c.Org, &c.Title,
-		&c.Email, &c.Tel, &c.PhotoHash, &c.PhotoType, &c.IsStarred, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		&c.Email, &c.Tel, &c.PhotoHash, &c.PhotoURI, &c.IsStarred, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if c.FN == "" {
@@ -227,24 +229,29 @@ func (s *Store) SetStarred(cardID int64, starred bool) error {
 	return nil
 }
 
-// Photo returns a card's photo bytes and MIME type.
-func (s *Store) Photo(c *Card) ([]byte, string, error) {
-	data, err := s.photos.read(c.PhotoHash)
-	if err != nil || data == nil {
+// Photo returns a card's photo and its MIME type, sniffed from the bytes:
+// nil when it has none, or none that is an image. A photo given by URL is
+// fetched (and cached); when that fails the error is a *remoteError.
+func (s *Store) Photo(ctx context.Context, c *Card) ([]byte, string, error) {
+	var data []byte
+	var err error
+	if c.PhotoURI != "" {
+		data, err = s.photos.remote(ctx, s.fetch, c.PhotoHash, c.PhotoURI)
+	} else {
+		data, err = s.photos.read(c.PhotoHash)
+	}
+	if err != nil || data == nil || !isImage(data) {
 		return nil, "", err
 	}
-	return data, (&vcard.Photo{Type: c.PhotoType}).MediaType(), nil
+	return data, http.DetectContentType(data), nil
 }
 
 // --- Writes ---
 
-// write runs fn in a transaction, holding the photo lock, then removes the
-// photo files fn reports no card may use any more. The rows are committed
-// whether or not that cleanup succeeds; a failure is logged, and leaves a
-// file behind.
+// write runs fn in a transaction, then removes the photo files fn reports
+// no card may use any more. The rows are committed whether or not that
+// cleanup succeeds; a failure is logged, and leaves a file behind.
 func (s *Store) write(fn func(tx *sql.Tx) (garbage []string, err error)) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	tx, err := s.DB.Begin()
 	if err != nil {
 		return fmt.Errorf("write contacts: %w", err)
@@ -257,10 +264,34 @@ func (s *Store) write(fn func(tx *sql.Tx) (garbage []string, err error)) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("write contacts: %w", err)
 	}
-	if err := s.photos.collect(s.DB, garbage...); err != nil {
+	if err := s.collect(garbage); err != nil {
 		s.log.Error("remove unused contact photos", "err", err)
 	}
 	return nil
+}
+
+// collect removes the files of photos no card uses, holding the database's
+// write lock while it checks and removes them. A card write stores its photo
+// file only once it holds that lock too (storeCard), so the two never
+// interleave, whichever process or replica runs them.
+func (s *Store) collect(hashes []string) error {
+	hashes = slices.DeleteFunc(slices.Clone(hashes), func(h string) bool { return h == "" })
+	if len(hashes) == 0 {
+		return nil
+	}
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// A write that changes nothing still takes the write lock.
+	if _, err := tx.Exec(`UPDATE cards SET photo_hash = photo_hash WHERE 0`); err != nil {
+		return err
+	}
+	if err := s.photos.collect(tx, hashes...); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // put stores a card from DAV.

@@ -131,7 +131,7 @@ func renderCard(c *vcard.Card) ([]byte, error) {
 const loadChunk = 500
 
 // loadCards reads cards by row ID, in a fixed number of queries per chunk of
-// IDs, with their photos.
+// IDs, with their photos; with ph nil, an inline photo has no Data.
 func loadCards(q davsql.Querier, ph *photoStore, ids []int64) (map[int64]*vcard.Card, error) {
 	out := make(map[int64]*vcard.Card, len(ids))
 	for chunk := range slices.Chunk(ids, loadChunk) {
@@ -157,7 +157,7 @@ func loadChunkOf(q davsql.Querier, ph *photoStore, ids []int64, out map[int64]*v
 	args := anys(ids)
 	rows, err := q.Query(`SELECT id, uid, vcard_version, kind, fn, n_family, n_given, n_additional, n_prefix, n_suffix,
 			nickname, org, org_units, title, role, note, bday, anniversary, gender, rev, categories,
-			photo_hash, photo_type, photo_encoding, photo_params, leftovers
+			photo_hash, photo_uri, photo_type, photo_encoding, photo_params, leftovers
 		FROM cards WHERE id IN (`+in+`)`, args...)
 	if err != nil {
 		return fmt.Errorf("load cards: %w", err)
@@ -172,10 +172,10 @@ func loadChunkOf(q davsql.Querier, ph *photoStore, ids []int64, out map[int64]*v
 		var c vcard.Card
 		var n [5]sql.NullString
 		var nickname, orgUnits, categories sql.NullString
-		var org, hash, photoType, photoEnc, photoParams, left string
+		var org, hash, photoURI, photoType, photoEnc, photoParams, left string
 		if err := rows.Scan(&id, &c.UID, &c.Version, &c.Kind, &c.FN, &n[0], &n[1], &n[2], &n[3], &n[4],
 			&nickname, &org, &orgUnits, &c.Title, &c.Role, &c.Note, &c.Birthday, &c.Anniversary, &c.Gender, &c.Rev, &categories,
-			&hash, &photoType, &photoEnc, &photoParams, &left); err != nil {
+			&hash, &photoURI, &photoType, &photoEnc, &photoParams, &left); err != nil {
 			rows.Close()
 			return fmt.Errorf("scan card: %w", err)
 		}
@@ -206,12 +206,14 @@ func loadChunkOf(q davsql.Querier, ph *photoStore, ids []int64, out map[int64]*v
 			}
 		}
 		if hash != "" {
-			c.Photo = &vcard.Photo{Type: photoType, Encoding: photoEnc}
+			c.Photo = &vcard.Photo{URI: photoURI, Type: photoType, Encoding: photoEnc}
 			if err := unmarshalList(photoParams, &c.Photo.Params); err != nil {
 				rows.Close()
 				return fmt.Errorf("card %d photo: %w", id, err)
 			}
-			photos = append(photos, photoRef{&c, hash})
+			if photoURI == "" {
+				photos = append(photos, photoRef{&c, hash})
+			}
 		}
 		if err := json.Unmarshal([]byte(left), &c.Leftovers); err != nil {
 			rows.Close()
@@ -224,6 +226,9 @@ func loadChunkOf(q davsql.Querier, ph *photoStore, ids []int64, out map[int64]*v
 		return fmt.Errorf("load cards: %w", err)
 	}
 	for _, p := range photos {
+		if ph == nil {
+			break
+		}
 		data, err := ph.read(p.hash)
 		if err != nil {
 			return err
@@ -325,6 +330,24 @@ func loadChunkOf(q davsql.Querier, ph *photoStore, ids []int64, out map[int64]*v
 	return nil
 }
 
+// cardIDs returns the row IDs of a collection's cards, by URI.
+func cardIDs(q davsql.Querier, collID dav.CollectionID) ([]int64, error) {
+	rows, err := q.Query(`SELECT id FROM cards WHERE collection_id = ? ORDER BY uri`, collID)
+	if err != nil {
+		return nil, fmt.Errorf("list cards: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("list cards: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // renderIDs generates the text of stored cards, for dav.Table.Render.
 func renderIDs(q davsql.Querier, ph *photoStore, ids []int64) (map[int64][]byte, error) {
 	cards, err := loadCards(q, ph, ids)
@@ -388,11 +411,12 @@ func storeCard(tx *sql.Tx, ph *photoStore, collID int64, uri string, c *vcard.Ca
 	if err != nil {
 		return nil, err
 	}
-	var hash, photoType, photoEnc string
+	var hash, photoURI, photoType, photoEnc string
 	photoParams := "[]"
 	if c.Photo != nil {
-		if hash, err = ph.put(c.Photo.Data); err != nil {
-			return nil, err
+		hash = hashOf(c.Photo.Data)
+		if c.Photo.URI != "" {
+			hash, photoURI = urlHash(c.Photo.URI), c.Photo.URI
 		}
 		photoType, photoEnc = c.Photo.Type, c.Photo.Encoding
 		if photoParams, err = paramsColumn(c.Photo.Params); err != nil {
@@ -430,12 +454,19 @@ func storeCard(tx *sql.Tx, ph *photoStore, collID int64, uri string, c *vcard.Ca
 	if err != nil {
 		return nil, err
 	}
+	// The photo file is stored only now that the transaction holds the
+	// write lock, which collect takes to remove files (Store.collect).
+	if c.Photo != nil && c.Photo.URI == "" {
+		if err := ph.put(hash, c.Photo.Data); err != nil {
+			return nil, err
+		}
+	}
 	var id int64
 	err = tx.QueryRow(`INSERT INTO cards (collection_id, uid, uri, version, size, vcard_version, kind, fn,
 			n_family, n_given, n_additional, n_prefix, n_suffix, nickname, org, org_units, title, role, note,
-			bday, anniversary, gender, rev, categories, photo_hash, photo_type, photo_encoding, photo_params,
+			bday, anniversary, gender, rev, categories, photo_hash, photo_uri, photo_type, photo_encoding, photo_params,
 			leftovers, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(collection_id, uri) DO UPDATE SET
 			uid = excluded.uid, version = excluded.version, size = excluded.size,
 			vcard_version = excluded.vcard_version, kind = excluded.kind, fn = excluded.fn,
@@ -443,13 +474,13 @@ func storeCard(tx *sql.Tx, ph *photoStore, collID int64, uri string, c *vcard.Ca
 			n_prefix = excluded.n_prefix, n_suffix = excluded.n_suffix, nickname = excluded.nickname,
 			org = excluded.org, org_units = excluded.org_units, title = excluded.title, role = excluded.role,
 			note = excluded.note, bday = excluded.bday, anniversary = excluded.anniversary, gender = excluded.gender,
-			rev = excluded.rev, categories = excluded.categories, photo_hash = excluded.photo_hash,
+			rev = excluded.rev, categories = excluded.categories, photo_hash = excluded.photo_hash, photo_uri = excluded.photo_uri,
 			photo_type = excluded.photo_type, photo_encoding = excluded.photo_encoding,
 			photo_params = excluded.photo_params, leftovers = excluded.leftovers, updated_at = excluded.updated_at
 		RETURNING id`,
 		collID, c.UID, uri, version, len(data), c.Version, c.Kind, c.FN,
 		n[0], n[1], n[2], n[3], n[4], nickname, org, orgUnits, c.Title, c.Role, c.Note,
-		c.Birthday, c.Anniversary, c.Gender, c.Rev, categories, hash, photoType, photoEnc, photoParams,
+		c.Birthday, c.Anniversary, c.Gender, c.Rev, categories, hash, photoURI, photoType, photoEnc, photoParams,
 		string(left), now, now).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("store card %s: %w", uri, err)

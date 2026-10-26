@@ -1,14 +1,19 @@
 package contacts
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
 )
@@ -20,10 +25,9 @@ import (
 // the file on read.
 //
 // Files live outside the database, so no transaction covers them. A write
-// stores the file before the transaction that refers to it commits, and
-// files nothing refers to are removed after it; Store serializes both
-// (photoMu), so a file is never removed while a write that refers to it is
-// still in flight.
+// stores the file while its transaction holds the database's write lock, and
+// files no card refers to are removed under that lock too (Store.collect), so
+// a file is never removed while a write that refers to it is in flight.
 type photoStore struct {
 	dir string
 	log *slog.Logger
@@ -36,35 +40,118 @@ func hashOf(data []byte) string {
 
 func (s *photoStore) path(hash string) string { return filepath.Join(s.dir, hash) }
 
-// put stores a photo and returns its hash.
-func (s *photoStore) put(data []byte) (string, error) {
-	hash := hashOf(data)
+// urlHash names the cached copy of a photo given by URL.
+func urlHash(uri string) string { return "u-" + hashOf([]byte(uri)) }
+
+// put stores a photo under its hash (hashOf).
+func (s *photoStore) put(hash string, data []byte) error {
 	if _, err := os.Stat(s.path(hash)); err == nil {
-		return hash, nil
+		return nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("store photo: %w", err)
+		return fmt.Errorf("store photo: %w", err)
 	}
+	return s.write(hash, data)
+}
+
+// write replaces the file named hash with data.
+func (s *photoStore) write(hash string, data []byte) error {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
-		return "", fmt.Errorf("store photo: %w", err)
+		return fmt.Errorf("store photo: %w", err)
 	}
 	f, err := os.CreateTemp(s.dir, ".tmp-*")
 	if err != nil {
-		return "", fmt.Errorf("store photo: %w", err)
+		return fmt.Errorf("store photo: %w", err)
 	}
 	if _, err := f.Write(data); err != nil {
 		f.Close()
 		os.Remove(f.Name())
-		return "", fmt.Errorf("store photo: %w", err)
+		return fmt.Errorf("store photo: %w", err)
 	}
 	if err := f.Close(); err != nil {
 		os.Remove(f.Name())
-		return "", fmt.Errorf("store photo: %w", err)
+		return fmt.Errorf("store photo: %w", err)
 	}
 	if err := os.Rename(f.Name(), s.path(hash)); err != nil {
 		os.Remove(f.Name())
-		return "", fmt.Errorf("store photo: %w", err)
+		return fmt.Errorf("store photo: %w", err)
 	}
-	return hash, nil
+	return nil
+}
+
+// Remote photos: a card's PHOTO may be a URL (Google exports, FullContact).
+// The web UI shows it through Cog, fetched with safehttp so a URL cannot
+// reach the server's own network, and cached for a day under urlHash.
+
+const (
+	remotePhotoTTL = 24 * time.Hour
+	maxPhotoSize   = 5 << 20
+)
+
+// remoteError is a photo URL that could not be fetched: the remote's
+// problem, not the server's.
+type remoteError struct{ err error }
+
+func (e *remoteError) Error() string { return "fetch contact photo: " + e.err.Error() }
+func (e *remoteError) Unwrap() error { return e.err }
+
+// remote returns the photo at uri, from the cache when it is fresh. A stale
+// copy is served when fetching fails.
+func (s *photoStore) remote(ctx context.Context, client *http.Client, hash, uri string) ([]byte, error) {
+	path := s.path(hash)
+	cached, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("read photo %s: %w", hash, err)
+	}
+	if cached != nil {
+		if fi, err := os.Stat(path); err == nil && time.Since(fi.ModTime()) < remotePhotoTTL {
+			return cached, nil
+		}
+	}
+	data, err := fetchPhoto(ctx, client, uri)
+	if err != nil {
+		if cached != nil {
+			s.log.Warn("contact photo refresh failed; serving the cached copy", "url", uri, "err", err)
+			return cached, nil
+		}
+		return nil, &remoteError{err}
+	}
+	if err := s.write(hash, data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func fetchPhoto(ctx context.Context, client *http.Client, uri string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s: %s", uri, resp.Status)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxPhotoSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxPhotoSize {
+		return nil, fmt.Errorf("%s: larger than %d bytes", uri, maxPhotoSize)
+	}
+	if !isImage(data) {
+		return nil, fmt.Errorf("%s: not an image", uri)
+	}
+	return data, nil
+}
+
+// isImage reports whether data sniffs as a raster image. Photos are served
+// from Cog's origin, so anything else (HTML, SVG with script) is refused
+// rather than trusted to a type a client wrote.
+func isImage(data []byte) bool {
+	return strings.HasPrefix(http.DetectContentType(data), "image/")
 }
 
 // read returns a photo's bytes. A missing file is logged and read as no

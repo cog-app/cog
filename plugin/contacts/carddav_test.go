@@ -424,3 +424,41 @@ func TestCardDAV_Unauthorized(t *testing.T) {
 		"/remote.php/dav/addressbooks/alice/", "")
 	resp.Status(401)
 }
+
+// TestCardDAV_ReportQueryFilter sends the query a client sends to search
+// for an email address: only matching cards come back, and a limit is
+// reported with a 507 on the collection (RFC 6352 §8.6.1).
+func TestCardDAV_ReportQueryFilter(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	base := "/remote.php/dav/addressbooks/alice/contacts/"
+	for _, c := range []struct{ uid, fn, email string }{
+		{"a", "Ann Example", "ann@example.org"},
+		{"b", "Bob Example", "bob@example.org"},
+		{"c", "Cy Other", "cy@other.net"},
+	} {
+		carddavReq(t, env, "PUT", base+c.uid+".vcf", "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:"+c.uid+"\r\nFN:"+c.fn+
+			"\r\nEMAIL:"+c.email+"\r\nPHOTO;ENCODING=b;TYPE=JPEG:AQID\r\nEND:VCARD\r\n", alice.Auth).Status(201)
+	}
+	query := func(filter, limit string) string {
+		return carddavReq(t, env, "REPORT", base, `<CR:addressbook-query xmlns:D="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
+  <D:prop><D:getetag/><CR:address-data/></D:prop>`+filter+limit+`</CR:addressbook-query>`,
+			alice.Auth, cogtest.Header("Depth", "1")).Status(207).ReadBody()
+	}
+	byEmail := `<CR:filter><CR:prop-filter name="EMAIL"><CR:text-match collation="i;unicode-casemap" match-type="ends-with">EXAMPLE.ORG</CR:text-match></CR:prop-filter></CR:filter>`
+	body := query(byEmail, "")
+	require.Contains(t, body, "a.vcf")
+	require.Contains(t, body, "b.vcf")
+	require.NotContains(t, body, "c.vcf")
+	require.Contains(t, body, "PHOTO;ENCODING=b;TYPE=JPEG:AQID", "matches are served with their photos")
+
+	body = query(byEmail, `<CR:limit><CR:nresults>1</CR:nresults></CR:limit>`)
+	require.Contains(t, body, "a.vcf")
+	require.NotContains(t, body, "b.vcf")
+	require.Contains(t, body, "507")
+	require.Contains(t, body, "number-of-matches-within-limits")
+
+	carddavReq(t, env, "REPORT", base, `<CR:addressbook-query xmlns:D="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
+  <D:prop><D:getetag/></D:prop><CR:filter><CR:prop-filter name="FN"><CR:text-match collation="i;nope">x</CR:text-match></CR:prop-filter></CR:filter></CR:addressbook-query>`,
+		alice.Auth).Status(403).Contains("supported-collation")
+}

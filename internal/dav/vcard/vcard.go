@@ -12,6 +12,7 @@ package vcard
 
 import (
 	"encoding/base64"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -116,10 +117,14 @@ type Member struct {
 	Params []contentline.Param `json:"params,omitempty"`
 }
 
-// Photo is an inline PHOTO: base64 with ENCODING in 2.1 and 3.0, a data: URI
-// in 4.0. A photo given by URL is a leftover.
+// Photo is a PHOTO: inline (base64 with ENCODING in 2.1 and 3.0, a data: URI
+// in 4.0), or given by an http or https URL, which Cog keeps as written. Any
+// other form is a leftover.
 type Photo struct {
 	Data []byte
+	// URI is the photo's http or https URL; Data, Type and Encoding are then
+	// empty, and the parameters (VALUE, TYPE) are all in Params.
+	URI string
 	// Type is the media type as written: TYPE ("JPEG") in 2.1 and 3.0, the
 	// data: URI's ("image/jpeg") in 4.0.
 	Type string
@@ -651,6 +656,12 @@ func (c *Card) meta(params []contentline.Param) Meta {
 // photo reads an inline PHOTO in the form the card's version writes it, or
 // reports false.
 func (c *Card) photo(p *contentline.Property) (*Photo, bool) {
+	if IsWebURL(p.Value) {
+		if p.Param("ENCODING") != "" {
+			return nil, false
+		}
+		return &Photo{URI: p.Value, Params: p.Params}, true
+	}
 	ph := &Photo{}
 	if c.is40() {
 		rest, ok := strings.CutPrefix(p.Value, "data:")
@@ -690,6 +701,12 @@ func (c *Card) photo(p *contentline.Property) (*Photo, bool) {
 		return nil, false
 	}
 	return ph, true
+}
+
+// IsWebURL reports whether s is an absolute http or https URL with a host.
+func IsWebURL(s string) bool {
+	u, err := url.Parse(s)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
 func decodeBase64(s string) ([]byte, bool) {
@@ -842,6 +859,9 @@ func (c *Card) metaParams(m *Meta) []contentline.Param {
 }
 
 func (c *Card) photoProperty(ph *Photo) contentline.Property {
+	if ph.URI != "" {
+		return contentline.Property{Name: "PHOTO", Params: ph.Params, Value: ph.URI}
+	}
 	data := base64.StdEncoding.EncodeToString(ph.Data)
 	if c.is40() {
 		return contentline.Property{Name: "PHOTO", Params: ph.Params, Value: "data:" + ph.Type + ";base64," + data}

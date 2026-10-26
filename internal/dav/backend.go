@@ -108,6 +108,14 @@ type TimeRangeQuerier interface {
 	InRange(owner string, c *Collection, comp Component, start, end time.Time, withData bool) ([]Resource, error)
 }
 
+// CardQuerier is implemented by backends that answer an addressbook-query
+// themselves: they return the cards matching f, at most f.Limit when it is
+// set, and whether more matched. Others have every card listed and matched
+// by the core.
+type CardQuerier interface {
+	QueryCards(owner string, c *Collection, f *CardFilter, withData bool) (list []Resource, truncated bool, err error)
+}
+
 // BusyRedactor is implemented by backends whose resources a free/busy-only
 // share may see in reduced form. Redact replaces r.Data with a version that
 // shows only when the owner is busy.

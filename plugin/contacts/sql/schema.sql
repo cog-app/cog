@@ -129,8 +129,10 @@ CREATE TABLE IF NOT EXISTS cards (
 	categories TEXT,
 	-- An inline PHOTO, stored as a file named by the SHA-256 of its bytes;
 	-- '' for none. type and encoding are as written, params the parameters
-	-- Cog does not model (JSON).
+	-- Cog does not model (JSON). A photo given by URL has photo_uri, and
+	-- photo_hash names its cached copy ('u-' and the SHA-256 of the URL).
 	photo_hash TEXT NOT NULL DEFAULT '',
+	photo_uri TEXT NOT NULL DEFAULT '',
 	photo_type TEXT NOT NULL DEFAULT '',
 	photo_encoding TEXT NOT NULL DEFAULT '',
 	photo_params TEXT NOT NULL DEFAULT '[]',

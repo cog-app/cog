@@ -2,12 +2,15 @@ package contacts_test
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"io/fs"
 	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
 	"net/textproto"
 	"net/url"
 	"os"
@@ -15,11 +18,13 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
 	"git.duckfam.us/jj-software/cog/internal/dav/vcard"
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
 	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -274,4 +279,66 @@ func TestCreateFromForm(t *testing.T) {
 	cards, err = s.List(books[0].ID)
 	require.NoError(t, err)
 	assert.Equal(t, 1, len(cards))
+}
+
+// TestRemotePhoto shows a photo a card gives by URL: fetched once through
+// the SSRF-safe client, cached, and written back to DAV clients unchanged. A
+// URL that does not serve an image is not shown.
+func TestRemotePhoto(t *testing.T) {
+	safehttp.SetAllowPrivate(true) // the test server is on loopback
+	t.Cleanup(func() { safehttp.SetAllowPrivate(false) })
+	var pngData bytes.Buffer
+	require.NoError(t, png.Encode(&pngData, image.NewRGBA(image.Rect(0, 0, 2, 2))))
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		if r.URL.Path == "/page" {
+			w.Write([]byte("<html><script>alert(1)</script></html>"))
+			return
+		}
+		w.Write(pngData.Bytes())
+	}))
+	t.Cleanup(srv.Close)
+
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	_, s := store(t, env, alice.Username)
+	card := func(uid, url string) string {
+		return "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:" + uid + "\r\nFN:" + uid + "\r\nPHOTO;VALUE=uri:" + url + "\r\nEND:VCARD\r\n"
+	}
+	carddavReq(t, env, "PUT", davPath("alice", "r.vcf"), card("r", srv.URL+"/face.png"), alice.Auth).Status(201)
+	carddavReq(t, env, "PUT", davPath("alice", "h.vcf"), card("h", srv.URL+"/page"), alice.Auth).Status(201)
+	_, body := getCard(t, env, alice, "r.vcf")
+	assert.Contains(t, body, "PHOTO;VALUE=uri:"+srv.URL+"/face.png\r\n")
+
+	cookie, _ := sessionAuth(t, env, alice.ID)
+	r, err := s.FindByUID("r")
+	require.NoError(t, err)
+	require.True(t, r.HasPhoto())
+	for range 2 {
+		resp := env.Get(t, fmt.Sprintf("/apps/contacts/photos/%d", r.ID), cookie).Status(200)
+		assert.Equal(t, "image/png", resp.Header.Get("Content-Type"))
+	}
+	assert.Equal(t, int32(1), hits.Load(), "the second request is served from the cache")
+
+	h, err := s.FindByUID("h")
+	require.NoError(t, err)
+	env.Get(t, fmt.Sprintf("/apps/contacts/photos/%d", h.ID), cookie).Status(404)
+}
+
+// TestPhotoNotAnImage stores a client's PHOTO whose bytes are HTML: it is
+// written back to DAV clients, but never served from Cog's origin.
+func TestPhotoNotAnImage(t *testing.T) {
+	env := cogtest.New(t, contacts.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	_, s := store(t, env, alice.Username)
+	html := base64.StdEncoding.EncodeToString([]byte("<html><script>alert(1)</script></html>"))
+	carddavReq(t, env, "PUT", davPath("alice", "x.vcf"),
+		"BEGIN:VCARD\r\nVERSION:3.0\r\nUID:x\r\nFN:X\r\nPHOTO;ENCODING=b;TYPE=JPEG:"+html+"\r\nEND:VCARD\r\n", alice.Auth).Status(201)
+	_, body := getCard(t, env, alice, "x.vcf")
+	assert.Contains(t, body, "PHOTO;ENCODING=b;TYPE=JPEG:")
+	c, err := s.FindByUID("x")
+	require.NoError(t, err)
+	cookie, _ := sessionAuth(t, env, alice.ID)
+	env.Get(t, fmt.Sprintf("/apps/contacts/photos/%d", c.ID), cookie).Status(404)
 }

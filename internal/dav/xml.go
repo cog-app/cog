@@ -269,7 +269,8 @@ type propstat struct {
 
 type response struct {
 	Href      string
-	Status    int // for a response with no properties, e.g. a 404 in a sync report
+	Status    int    // for a response with no properties, e.g. a 404 in a sync report
+	Error     string // with Status: the DAV:error's content
 	Propstats []propstat
 }
 
@@ -291,6 +292,9 @@ func (m *multistatus) write(w http.ResponseWriter) {
 		b.WriteString(hrefEl(r.Href))
 		if len(r.Propstats) == 0 {
 			b.WriteString(el(dav("status"), statusLine(r.Status)))
+			if r.Error != "" {
+				b.WriteString(el(dav("error"), r.Error))
+			}
 		}
 		for _, ps := range r.Propstats {
 			b.WriteString(`<D:propstat><D:prop>`)

@@ -114,12 +114,18 @@ func TestPhotoByVersion(t *testing.T) {
 	require.True(t, v21.Photo != nil)
 	assert.Equal(t, "PHOTO;ENCODING=BASE64;TYPE=JPEG:AQID", lines(t, v21)[1])
 
-	// A URL, or a data: URI in 3.0, is kept as received.
-	url := parse(t, "VERSION:4.0", "PHOTO:https://example.com/a.jpg")
-	assert.True(t, url.Photo == nil)
-	assert.True(t, url.Leftovers.Has("PHOTO"))
+	// A URL is modelled and written as received.
+	url := parse(t, "VERSION:3.0", "PHOTO;VALUE=uri;TYPE=JPEG:https://example.com/a.jpg")
+	require.True(t, url.Photo != nil)
+	assert.Equal(t, "https://example.com/a.jpg", url.Photo.URI)
+	assert.Equal(t, "PHOTO;VALUE=uri;TYPE=JPEG:https://example.com/a.jpg", lines(t, url)[1])
+
+	// A data: URI in 3.0, or a file: URL, is kept as a leftover.
 	odd := parse(t, "VERSION:3.0", "PHOTO;ENCODING=b;TYPE=png:data:image/png;base64,AQID")
 	assert.True(t, odd.Photo == nil)
+	file := parse(t, "VERSION:2.1", "PHOTO;VALUE=URL:file:///jqpublic.gif")
+	assert.True(t, file.Photo == nil)
+	assert.True(t, file.Leftovers.Has("PHOTO"))
 }
 
 func TestVersion21(t *testing.T) {

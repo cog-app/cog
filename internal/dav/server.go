@@ -620,6 +620,8 @@ func (q *request) collectionProps(c *Collection, a access, ownerName string, tok
 				`<CR:address-data-type content-type="text/vcard" version="3.0"/><CR:address-data-type content-type="text/vcard" version="4.0"/>`},
 			prop{carddav("max-resource-size"), maxSize},
 			prop{carddav("addressbook-description"), escape(c.Description)},
+			prop{carddav("supported-collation-set"),
+				`<CR:supported-collation>i;unicode-casemap</CR:supported-collation><CR:supported-collation>i;ascii-casemap</CR:supported-collation><CR:supported-collation>i;octet</CR:supported-collation>`},
 		)
 	}
 	for _, d := range c.DeadProps {
