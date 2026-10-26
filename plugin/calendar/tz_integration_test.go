@@ -58,7 +58,10 @@ func TestCreateEventUsesBrowserZone(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(events))
 	assert.Equal(t, denverStart, events[0].DTStart)
-	assert.True(t, strings.Contains(events[0].ICSData, "DTSTART;TZID=America/Denver:20261025T090000"), events[0].ICSData)
+	full, err := calendar.GetEvent(db, events[0].ID)
+	require.NoError(t, err)
+	ics := rendered(t, full)
+	assert.True(t, strings.Contains(ics, "DTSTART;TZID=America/Denver:20261025T090000"), ics)
 
 	// The edit modal shows the event in its own zone.
 	env.Get(t, fmt.Sprintf("/apps/calendar/events/%d", events[0].ID), alice.Auth).Status(200).
@@ -93,7 +96,9 @@ func TestUpdateEventKeepsAlarmsAndMovesCalendar(t *testing.T) {
 	moved, err := calendar.ListEvents(db, work.ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(moved))
-	assert.True(t, strings.Contains(moved[0].ICSData, "TRIGGER:-PT15M"), "alarm dropped on edit")
+	full, err := calendar.GetEvent(db, moved[0].ID)
+	require.NoError(t, err)
+	assert.True(t, strings.Contains(rendered(t, full), "TRIGGER:-PT15M"), "alarm dropped on edit")
 }
 
 func TestUpdateCalendarSettings(t *testing.T) {

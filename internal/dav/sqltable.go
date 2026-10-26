@@ -11,48 +11,74 @@ import (
 )
 
 // Table implements the read side of a Backend, and purging, for a plugin
-// that keeps one component type in one table with collection_id, uid, uri,
-// version and a data column. Plugins embed it and add Put and Delete, which
-// need their own columns.
+// that keeps one component type in one table with id, collection_id, uid,
+// uri and version. Plugins embed it and add Put and Delete, which need their
+// own columns.
+//
+// The resource text comes either from a column (Data), or, for a plugin that
+// stores rows and generates the text, from Render, with its length stored in
+// a size column.
 type Table struct {
 	Name      string // table name
-	Data      string // column holding the resource text
+	Data      string // column holding the resource text, when not rendered
 	Component Component
 	DB        func(owner string) (*sql.DB, error)
+	// Render generates the text of the rows with these IDs, in collection c,
+	// reading through q. Set it instead of Data.
+	Render func(q davsql.Querier, c *Collection, ids []int64) (map[int64][]byte, error)
 }
 
 func (t *Table) columns(withData bool) string {
+	if t.Render != nil {
+		return "id, uri, uid, version, size, NULL"
+	}
 	data := "NULL"
 	if withData {
 		data = t.Data
 	}
-	return "uri, uid, version, length(" + t.Data + "), " + data
+	return "id, uri, uid, version, length(" + t.Data + "), " + data
 }
 
-func (t *Table) scan(rows *sql.Rows) ([]Resource, error) {
+func (t *Table) scan(rows *sql.Rows) ([]Resource, []int64, error) {
 	defer rows.Close()
 	var out []Resource
+	var ids []int64
 	for rows.Next() {
 		r := Resource{Component: t.Component}
+		var id int64
 		var data sql.NullString
-		if err := rows.Scan(&r.URI, &r.UID, &r.Version, &r.Size, &data); err != nil {
-			return nil, fmt.Errorf("scan %s: %w", t.Name, err)
+		if err := rows.Scan(&id, &r.URI, &r.UID, &r.Version, &r.Size, &data); err != nil {
+			return nil, nil, fmt.Errorf("scan %s: %w", t.Name, err)
 		}
 		if data.Valid {
 			r.Data = []byte(data.String)
 		}
 		out = append(out, r)
+		ids = append(ids, id)
 	}
-	return out, rows.Err()
+	return out, ids, rows.Err()
 }
 
-// Query returns the resources matching a condition on the table.
-func (t *Table) Query(q davsql.Querier, withData bool, where string, args ...any) ([]Resource, error) {
+// Query returns the resources in collection c matching a condition on the
+// table.
+func (t *Table) Query(q davsql.Querier, c *Collection, withData bool, where string, args ...any) ([]Resource, error) {
 	rows, err := q.Query(`SELECT `+t.columns(withData)+` FROM `+t.Name+` WHERE `+where+` ORDER BY uri`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query %s: %w", t.Name, err)
 	}
-	return t.scan(rows)
+	out, ids, err := t.scan(rows)
+	if err != nil || !withData || t.Render == nil || len(out) == 0 {
+		return out, err
+	}
+	data, err := t.Render(q, c, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Data = data[ids[i]]
+		out[i].Size = int64(len(out[i].Data))
+	}
+	return out, nil
 }
 
 func (t *Table) Components() []Component { return []Component{t.Component} }
@@ -62,7 +88,7 @@ func (t *Table) List(owner string, c *Collection, withData bool) ([]Resource, er
 	if err != nil {
 		return nil, err
 	}
-	return t.Query(db, withData, "collection_id = ?", c.ID)
+	return t.Query(db, c, withData, "collection_id = ?", c.ID)
 }
 
 func (t *Table) Get(owner string, c *Collection, uris []string, withData bool) ([]Resource, error) {
@@ -77,7 +103,7 @@ func (t *Table) Get(owner string, c *Collection, uris []string, withData bool) (
 	for _, u := range uris {
 		args = append(args, u)
 	}
-	return t.Query(db, withData, "collection_id = ? AND uri IN (?"+strings.Repeat(",?", len(uris)-1)+")", args...)
+	return t.Query(db, c, withData, "collection_id = ? AND uri IN (?"+strings.Repeat(",?", len(uris)-1)+")", args...)
 }
 
 func (t *Table) FindUID(owner string, c *Collection, uid string) (string, error) {
@@ -110,7 +136,7 @@ func (t *Table) Changes(owner string, c *Collection, since int64, withData bool)
 	if err != nil {
 		return nil, err
 	}
-	changed, err := t.Query(tx, withData, "collection_id = ? AND version > ?", c.ID, since)
+	changed, err := t.Query(tx, c, withData, "collection_id = ? AND version > ?", c.ID, since)
 	if err != nil {
 		return nil, err
 	}

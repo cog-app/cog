@@ -133,7 +133,7 @@ func (p *Plugin) UpdateCalendar(username, userID string, id int64, displayName, 
 	if err != nil {
 		return err
 	}
-	return RecomputeEventTimes(db, cal.ID, cal.Zone())
+	return RecomputeEventTimes(db, cal.ID, cal.Zone(), p.ctx.Now())
 }
 
 // DeleteCalendar deletes one of a user's calendars, with everything in it:

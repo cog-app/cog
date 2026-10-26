@@ -126,13 +126,14 @@ Some extensions duplicate a modelled field. Keeping them after that field is edi
 
 | When this changes | Drop these leftovers |
 |---|---|
-| LOCATION | `X-APPLE-STRUCTURED-LOCATION`, `X-TITLE` param |
-| DTSTART/DTEND/DURATION/RRULE | `X-MICROSOFT-CDO-*` time copies, `X-MOZ-GENERATION` |
+| LOCATION | `X-APPLE-STRUCTURED-LOCATION` (its `X-TITLE` parameter goes with it) |
+| DESCRIPTION | `X-ALT-DESC` (Outlook's HTML copy) |
+| DTSTART/DTEND/DURATION/RRULE, all-day | `X-MICROSOFT-CDO-ALLDAYEVENT`, `X-FUNAMBOL-ALLDAY`, `X-MOZ-GENERATION`, `X-MOZ-LASTACK`, `X-MOZ-SNOOZE-TIME*`, `X-NSCP-ORIGINAL-DTSTART`, `X-NSCP-DTSTART-TZID` |
 | an alarm's TRIGGER | that alarm's `X-MOZ-LASTACK`, `X-MOZ-SNOOZE-TIME`, `X-APPLE-DEFAULT-ALARM`, `ACKNOWLEDGED` |
 | STATUS (task) | `X-APPLE-COMPLETED`-style shadows (check fixtures) |
 | FN/N (contact) | `X-PHONETIC-*` |
 
-The table is code, grown from fixtures. A web edit that changes a field applies its rows. A DAV PUT replaces the component wholesale, so it doesn't need them.
+The table is code (`ical.dependents`), grown from fixtures. A web edit that changes a field applies its rows. A DAV PUT replaces the component wholesale, so it doesn't need them.
 
 #### Edit bookkeeping
 
@@ -179,48 +180,49 @@ Times are stored as **local wall time + zone**, never only as a UTC instant, bec
 
 ### 4.1 Timezones
 
-- A TZID that resolves to IANA (directly, via a Windows map, X-LIC-LOCATION, or a path suffix; see `resolveTZID` in `plugin/calendar/tz.go`) is stored as the IANA name.
-- A TZID that doesn't resolve keeps its **original VTIMEZONE text** in a `vtimezones` table (`collection_id`, `tzid`, `vtimezone`), so its meaning survives and it can be written back out. Its `*_utc` values are computed from that VTIMEZONE's STANDARD/DAYLIGHT rules (needs a small rule evaluator) or, until that exists, from the collection's zone, with a warning.
-- Output includes a VTIMEZONE for every non-UTC TZID used, unless the client asked for timezones by reference (RFC 7809). For IANA zones, generate VTIMEZONE from Go's zone data: probe transitions per year and emit STANDARD/DAYLIGHT with RRULEs where the pattern is regular. This replaces MR !22's TZID-without-VTIMEZONE output.
+- A TZID that resolves to IANA (directly, via the Windows map, X-LIC-LOCATION, or a path suffix; `tz.Resolve`) is stored as the IANA name, and written back as that name with a generated VTIMEZONE.
+- A TZID that doesn't resolve keeps its name, and the client's **VTIMEZONE is stored** per collection in `vtimezones` (`collection_id`, `tzid`, the component as JSON). Its `*_utc` values come from that VTIMEZONE's own rules: `tz.FromRules` expands its STANDARD/DAYLIGHT observances (RRULE, RDATE) to 2100 and builds a `*time.Location` from them (TZif data for `time.LoadLocationFromTZData`), so everything downstream treats it like any other zone. A later PUT may name the zone without defining it again; the stored definition is written back out.
+- A TZID with no definition at all reads in the collection's zone and is written back as received, without a VTIMEZONE (as the client sent it).
+- Output includes a VTIMEZONE for every non-UTC TZID used, unless the client asked for timezones by reference (RFC 7809: `CalDAV-Timezones: F`; the server advertises `calendar-no-timezone`), in which case only clients' own definitions are sent. For IANA zones `tz.VTimezone` builds the component from Go's zone data, starting at the earliest year the resource uses: transitions are probed up to 2037, runs of the same yearly rule become RRULEs (the last open-ended, so it covers later years), and irregular changes become RDATEs. The output depends only on the zone data, never on the current date. A test generates every common kind of zone (northern and southern DST, half-hour offsets, abolished DST, Morocco's Ramadan changes) and reads it back through `FromRules` hour by hour.
 
 ### 4.2 Events (CalDAV, VEVENT)
 
 ```
-events(
+events(                                -- one row per CalDAV resource
   id, collection_id, uid, uri, version,
-  summary, description, location, url, status, class, transp, priority,
-  dtstart_local, dtstart_tzid, dtstart_utc, dtstart_is_date,
-  dtend_local,   dtend_tzid,   dtend_utc,          -- or duration
-  duration,                                        -- ISO 8601, when DTEND absent
-  rrule,                                           -- canonical RRULE text
-  sequence, dtstamp, created, last_modified,
-  organizer_email, organizer_params,
-  color, categories_json,
-  leftovers,
-  range_end_utc   -- last occurrence end, or NULL for infinite; for range queries
-)
+  size,                                -- length of the text served, for getcontentlength
+  color,                               -- Cog's own colour; not part of the iCalendar data
+  start_utc, range_end_utc,            -- first instance start, last instance end (NULL = unbounded)
+  props, comps,                        -- VCALENDAR leftovers (JSON)
+  created_at, updated_at)
 
-event_rdates(event_id, value_local, tzid, is_date, is_period, period_end_local)
-event_exdates(event_id, value_local, tzid, is_date)
+vevents(                               -- one row per VEVENT: the master and each override
+  id, event_id, position,
+  recurrence_id_local, recurrence_id_tzid, recurrence_id_is_date, this_and_future,
+  summary, description, location, url, status, class, transp, priority, sequence,
+  dtstart_local, dtstart_tzid, dtstart_is_date, dtstart_utc,
+  dtend_local, dtend_tzid, dtend_is_date, end_utc, duration,
+  rrule, rdates, exdates,              -- RDATE/EXDATE values as JSON, each with its zone and parameters
+  dtstamp, created, last_modified, organizer, categories,  -- JSON
+  leftovers)                           -- JSON: properties, components, and parameters on modelled properties
 
-event_overrides(                                   -- RECURRENCE-ID components
-  id, event_id, recurrence_id_local, recurrence_id_tzid, range_this_and_future,
-  <same field set as events, all nullable = inherit>,
-  sequence, leftovers
-)
-
-event_attendees(id, event_id, override_id NULL, email, cn, partstat, role, rsvp, cutype, params)
-event_alarms(id, event_id, override_id NULL, action, trigger, trigger_related, trigger_abs_utc,
-             repeat, duration, description, summary, attach, leftovers)
-event_attachments(id, event_id, override_id NULL, uri, fmttype, filename, managed_id, params)
+event_attendees(id, vevent_id, position, address, email, cn, partstat, role, rsvp, cutype, params)
+event_alarms(id, vevent_id, position, action, trigger, related, absolute, repeat, repeat_duration,
+             description, summary, leftovers)
+vtimezones(collection_id, tzid, vtimezone)
 ```
 
-One CalDAV resource is one `events` row plus its overrides. Rules to settle when implementing:
+The codec is `internal/dav/ical` (`DecodeEvents`, `Object.Encode`); it holds no SQL, so tasks (VTODO) reuse its values, leftovers, alarms and recurrence in milestone 4. One resource is one `events` row and its `vevents`, master first.
 
-- **Orphaned overrides** (a RECURRENCE-ID that no longer matches the RRULE after an edit): RFC 5545 allows them; keep them, and display them as standalone instances.
-- **Override plus EXDATE on the same instance**: EXDATE wins for display; keep both for round-trip.
-- **RANGE=THISANDFUTURE**: store the flag. Web "edit this and future" should instead split the series (end the old RRULE with UNTIL and create a new event); that is what most clients do.
-- Range queries use `dtstart_utc < end AND (range_end_utc IS NULL OR range_end_utc > start)`, then expand in Go. This replaces the current `ics_data LIKE '%RRULE:%'`.
+- **Overrides are whole components**, stored like the master in `vevents`, not as nullable "inherit" columns: RFC 5545 makes an override replace its occurrence, and a property absent from an override is absent from that occurrence. Inheriting would invent data on output.
+- **What the codec claims**: a property is modelled only when it fits the model exactly; anything else is a leftover and written back in its original order. So a second SUMMARY, an empty one, a DTSTART Cog cannot read, a CATEGORIES with parameters, or a property with a group stays as received. Parameters Cog does not model on a modelled property are kept with it (`SUMMARY;LANGUAGE=de`, `ATTENDEE;X-NUM-GUESTS=2`, an attendee's whole parameter list in order).
+- **Output** is canonical: modelled properties in a fixed order, then leftovers in received order; RDATE and EXDATE values are regrouped by zone and type; text is re-escaped (`Room 1, Floor 2` gains its missing backslash). `TestFixturesEventsRoundTrip` checks, for all 1471 event resources in the corpus (with the GPL set present), that decode(encode(x)) equals x, that encoding is deterministic and a fixed point, and that no property name a client sent is missing.
+- **Orphaned overrides** are shown as standalone instances. **Override plus EXDATE**: EXDATE wins for display; both are kept. **RANGE=THISANDFUTURE**: stored; later occurrences take the override's properties and its shift in time. A DATE EXDATE on a timed series removes that day, as some clients mean it.
+- **Range queries** use `start_utc < end AND (range_end_utc IS NULL OR range_end_utc >= start)`, then expand in Go (`Object.Instances`). A series with more than 100 000 instances, or none it can count, is unbounded.
+- A recurrence rule Cog cannot read leaves the event as its first occurrence; the rule is kept and written back.
+- **Web edits** (`applyForm`) change only what the form shows, on the first component: overrides, exceptions, alarms, attendees' other parameters, attendees without a mailto address and all leftovers stay. Changed fields drop their dependent leftovers (section 3.2; `X-ALT-DESC` joined the table for DESCRIPTION), DTSTAMP and LAST-MODIFIED always move, and SEQUENCE is bumped when times, the rule, the location or the attendees changed. Times that did not change keep their TZID. Removing the recurrence drops the overrides and exceptions.
+- **Reminders**: `notifications` are derived from the alarms of the first instance that has not ended, on every write.
+- ATTACH, GEO, COMMENT, CONTACT, RESOURCES, RELATED-TO, COLOR and CONFERENCE are leftovers for now; managed attachments (milestone 7) will model ATTACH.
 
 ### 4.3 Tasks (CalDAV, VTODO)
 
@@ -276,7 +278,7 @@ card_members(card_id, member_uri)                     -- groups (v4 MEMBER, v3 X
 
 - **Deterministic output.** Encoders write properties in a fixed canonical order, then leftovers in original order; `contentline.Write` folds deterministically. A test asserts that encoding the same rows twice yields identical bytes.
 - **ETag = `"<collection_id>-<version>"`** (opaque to clients). There's no hashing on read, and any write bumps it.
-- **PUT responses** (RFC 4791 §5.3.4, RFC 6352 §6.3.2.3): the stored resource is regenerated, so it usually differs from the request bytes. When it does, **don't return an ETag** in the PUT response; clients then re-fetch. Compare a byte-normalised request (unfolded, CRLF) against the generated output to decide. Never return an ETag for bytes we won't serve.
+- **PUT responses** (RFC 4791 §5.3.4, RFC 6352 §6.3.2.3): the stored resource is regenerated, so it usually differs from the request bytes. When it does, **don't return an ETag** in the PUT response; clients then re-fetch. The core compares the request, re-written with Cog's folding and line endings, against the generated output. Never return an ETag for bytes we won't serve. A client that PUTs back exactly what it fetched gets one.
 - **If-Match / If-None-Match** use the version-based ETag.
 - **Caching** (optional, only if profiling shows it's needed): cache generated text keyed by `(resource id, version)`. Not a source of truth; safe to drop.
 
@@ -328,7 +330,7 @@ Everything below is in scope for the MR.
 | Extended MKCOL RFC 5689 | CardDAV clients create address books with it |
 | Scheduling RFC 6638 | schedule inbox/outbox, server-side iTIP; replaces email-only invites (email stays for external attendees); uses SEQUENCE |
 | Free/busy query (RFC 4791 §7.10, RFC 6638 outbox POST) | FreeBusy share permission, scheduling |
-| Timezones by reference RFC 7809 | `calendar-timezone-id`; clients may omit VTIMEZONE; pairs with section 4.1 |
+| Timezones by reference RFC 7809 | `calendar-timezone-id`; clients may omit VTIMEZONE; `CalDAV-Timezones: F` leaves out standard VTIMEZONEs (section 4.1). No `timezone-service-set`: TZDIST is out of scope |
 | Managed attachments RFC 8607 | attachments stored as Cog files instead of inline base64 |
 | WebDAV-Push (draft-bitfire-webdav-push; DAVx5) | push instead of polling; subscriptions per collection; Web Push (VAPID) transport |
 | CalendarServer sharing extensions (`CS:invite`, `CS:shared-url`) | show and accept shares in Apple clients and DAVx5 |
@@ -397,6 +399,7 @@ Each milestone is a run of commits that builds and passes tests on its own.
 - **Collections**: user-level, in the system database, owned by the DAV core; plugins supply resources by component type, and a calendar collection may mix components (section 3.0). Sync tokens are composite (section 6).
 - **Migration**: none. Fresh schema; production data is exported and imported again (section 8).
 - **Import and export**: a page in the user's settings (`/settings/data`) over the `Backend` interface, in milestone 2 (section 8.1).
+- **Recurrence expansion**: `github.com/teambition/rrule-go`, already a dependency, behind `internal/dav/ical` and `internal/dav/tz`; only RRULE arithmetic, not iCalendar parsing. Two limits are worked around or accepted: it stops about 292 years after DTSTART (its offsets are `time.Duration`s), so `FromRules` starts a 1601-based Outlook observance at 1900 in the same phase; and an event series is not expanded beyond that span. When DTSTART does not match the rule, it is counted as an occurrence on top of COUNT rather than as one of them.
 
 ## 13. Open questions
 
@@ -410,7 +413,8 @@ Branch `design-dav-storage`, one draft MR to master. Update this section at the 
 |---|---|
 | 1. contentline + fixtures | Done. `internal/dav/contentline`; `testdata/dav` (see its README); `go tool davfixtures` for the local-only GPL corpus and personal exports. |
 | 2. DAV core | Done. `internal/dav` (collections in the system database, `Server` for root/principals/homes, PROPFIND/PROPPATCH/REPORT/MKCALENDAR/extended MKCOL, composite sync tokens, privilege sets, import/export); `internal/dav/davsql` (counters and tombstones in each plugin DB); `internal/dav/tz`. Calendar, tasks (VTODO and VJOURNAL, blob-backed) and contacts are backends; their web UIs read collections from the core. `/settings/data` imports and exports; the tombstone retention is an admin setting. Protocol tests in `internal/dav/protocol_test.go`. |
-| 3. Events | Next. |
+| 3. Events | Done. `internal/dav/ical` (values, leftovers, VEVENT codec, recurrence with overrides); `internal/dav/tz` generates VTIMEZONEs from Go's zone data and evaluates clients' own; the calendar plugin stores rows (section 4.2) and renders text on read through `dav.Table.Render`; the web UI edits rows; RFC 7809. |
+| 4. Tasks and journals | Next. |
 
 How milestone 2 differs from the plan it started with:
 
@@ -439,6 +443,34 @@ Adjacent bugs fixed in milestone 2 (each covered by a test):
 - Swallowed errors: `MarkNotificationFired`, every plugin's `renderWidget`, invitation emails, contact photo updates, `UpsertCard`/`DeleteCardByID`/`DeleteAddressBook` in the contacts pages, list queries in PROPFIND/REPORT, gallery's contact search, `registry.Add` at startup.
 - `SeedPlugins` ignored its username and always seeded `admin`.
 - `webtest` closed the shared browser when an engine closed and never relaunched it, so every browser test after the first in a package skipped silently. With it fixed, about thirty tests in `internal/web` and `cmd/cog` run for the first time; their DOM goldens are committed. `TestBrowserVolumeBrowse` had live file times in its golden (fixed); the feed settings tests were stale after the settings split (fixed).
+
+How milestone 3 differs from the plan:
+
+- Overrides are full rows in `vevents` beside the master, not an `event_overrides` table of nullable inherited columns (section 4.2). Attendees and alarms hang off `vevents`, so an override's own attendees and alarms need no `override_id`.
+- RDATE, EXDATE, DTSTAMP/CREATED/LAST-MODIFIED, ORGANIZER and CATEGORIES are JSON columns on `vevents`, not child tables: nothing queries them on their own, and loading stays at five queries per batch of events. Attendees and alarms are tables, for scheduling and reminders.
+- ATTACH stays a leftover until managed attachments (milestone 7); `event_attachments` is not created yet.
+- Clients' VTIMEZONEs are stored per collection (`vtimezones`), keyed by TZID.
+- `events.size` keeps the length of the generated text, so PROPFIND without calendar-data need not render.
+- Invitations are the stored event with METHOD (and STATUS:CANCELLED for a cancellation), VTIMEZONEs included, instead of a separately built UTC-only copy.
+
+Adjacent bugs fixed in milestone 3:
+
+- A web edit regenerated the whole event from the form: overrides, EXDATEs, unknown properties, attendee parameters and attendees without a mailto address were lost, and SEQUENCE never changed, so clients and invitees ignored edits.
+- Overrides (RECURRENCE-ID) were invisible in the web UI; only the first VEVENT was read.
+- `UpcomingEvents` and the dashboard widget never showed the next occurrence of a series that started in the past.
+- Range queries matched every event whose text contained `RRULE:`.
+- Accepting or declining an invitation changed a side table only, so the PARTSTAT never reached the event or DAV clients.
+- Reminders came only from the first instance of a series, even when it was over.
+- `RRulePreview` ignored the error from writing its response.
+- `webtest` snapshots could capture a page that had not finished loading: the element a test waited for can appear long before the rest of the document on a busy machine, which is what made `cmd/cog` `TestBrowserCore/Navigation` differ between runs (a truncated dashboard, no htmx style). `Snapshot` now waits for the load event and fails if it never comes.
+- Gallery dereferenced the files plugin without checking it was registered (thumbnails, renames, seeding), so a server without it panicked on every thumbnail. The seed also ignored its count query's error.
+
+Open after milestone 3:
+
+- With every package's browser tests at once (`go test ./...` on a 16-thread machine), some navigations exceed `webtest`'s action timeout; `go test -p 4 ./...` passes. Pre-existing; not addressed.
+- Redefining a client's own TZID (a PUT with a different VTIMEZONE of the same name) replaces it for the collection, but the derived times of other events using it are only recomputed when they are next written or the calendar's zone changes.
+- REPORT `calendar-data` with `expand` or `limit-recurrence-set` (RFC 4791 §9.6.5–6) is not implemented; clients that ask get the stored series.
+- The web UI edits a series as a whole. Editing or deleting one occurrence (an override, or an EXDATE) and "this and future" splitting are not in the form yet.
 
 Fixed after milestone 2 (pre-existing, found through the `webtest` fix):
 

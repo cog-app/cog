@@ -62,7 +62,7 @@ func TestCalDAV_PutGetDeleteEvent(t *testing.T) {
 	now := time.Now().UTC()
 	dtstart := now.Add(1 * time.Hour)
 	dtend := now.Add(2 * time.Hour)
-	ics := calendar.GenerateICS("caldav-test-uid", "CalDAV Meeting", "Room 101", "Office",
+	ics := genICS("caldav-test-uid", "CalDAV Meeting", "Room 101", "Office",
 		dtstart, dtend, false, now)
 
 	eventURL := env.Providers.Config.BaseURL + "/remote.php/dav/calendars/alice/personal/caldav-test-uid.ics"
@@ -71,15 +71,25 @@ func TestCalDAV_PutGetDeleteEvent(t *testing.T) {
 	putReq := cogtest.NewRequest(t, "PUT", eventURL, strings.NewReader(ics))
 	putReq.Header.Set("Content-Type", "text/calendar; charset=utf-8")
 	putResp := env.Do(t, putReq, alice.Auth).Status(201)
-	etag := putResp.Header.Get("ETag")
-	require.True(t, etag != "")
+	// Cog stores rows and writes its own text, which differs from the
+	// request, so the PUT has no ETag and the client fetches the event
+	// (RFC 4791 §5.3.4).
+	require.Equal(t, "", putResp.Header.Get("ETag"))
 
 	// GET the event back.
 	getReq := cogtest.NewRequest(t, "GET", eventURL, nil)
 	resp := env.Do(t, getReq, alice.Auth).Status(200)
+	etag := resp.Header.Get("ETag")
 	body := resp.ReadBody()
 	require.True(t, strings.Contains(body, "CalDAV Meeting"))
 	require.True(t, strings.Contains(body, "caldav-test-uid"))
+
+	// PUT back exactly what was served: now the stored text is the
+	// request, and the response carries the new ETag.
+	again := cogtest.NewRequest(t, "PUT", eventURL, strings.NewReader(body))
+	again.Header.Set("If-Match", etag)
+	newTag := env.Do(t, again, alice.Auth).Status(204).Header.Get("ETag")
+	require.True(t, newTag != "" && newTag != etag, "ETag %q after %q", newTag, etag)
 
 	// DELETE the event.
 	delReq := cogtest.NewRequest(t, "DELETE", eventURL, nil)
@@ -100,7 +110,7 @@ func TestCalDAV_ReportMultiget(t *testing.T) {
 
 	// PUT two events via CalDAV.
 	for _, uid := range []string{"multiget-1", "multiget-2"} {
-		ics := calendar.GenerateICS(uid, "Event "+uid, "", "",
+		ics := genICS(uid, "Event "+uid, "", "",
 			now.Add(1*time.Hour), now.Add(2*time.Hour), false, now)
 		putReq := cogtest.NewRequest(t, "PUT",
 			env.Providers.Config.BaseURL+"/remote.php/dav/calendars/alice/personal/"+uid+".ics",
@@ -141,7 +151,7 @@ func TestCalDAV_SyncCollection(t *testing.T) {
 	now := time.Now().UTC()
 
 	// PUT an event.
-	ics := calendar.GenerateICS("sync-uid-1", "Sync Event", "", "",
+	ics := genICS("sync-uid-1", "Sync Event", "", "",
 		now.Add(1*time.Hour), now.Add(2*time.Hour), false, now)
 	putReq := cogtest.NewRequest(t, "PUT",
 		env.Providers.Config.BaseURL+"/remote.php/dav/calendars/alice/personal/sync-uid-1.ics",
@@ -303,7 +313,7 @@ func TestCalDAV_EventPropfind(t *testing.T) {
 	ensurePersonal(t, env, alice)
 
 	now := time.Now().UTC()
-	ics := calendar.GenerateICS("propfind-uid", "Propfind Event", "", "",
+	ics := genICS("propfind-uid", "Propfind Event", "", "",
 		now.Add(1*time.Hour), now.Add(2*time.Hour), false, now)
 
 	// PUT the event first.

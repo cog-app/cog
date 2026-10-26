@@ -3,6 +3,7 @@ package gallery
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -13,6 +14,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/vfs"
 
 	_ "golang.org/x/image/webp"
@@ -598,7 +600,24 @@ func (p *Plugin) PreviewPath(username string, m *Media, size int) (*os.File, err
 	if m.IsVideo() {
 		return p.videoThumbnail(username, m, size)
 	}
-	return p.files.Preview(username, m.FilePath, size)
+	fp, err := p.filesPlugin()
+	if err != nil {
+		return nil, err
+	}
+	return fp.Preview(username, m.FilePath, size)
+}
+
+// errNoFiles reports that the files plugin, which holds the media, is not
+// registered.
+var errNoFiles = errors.New("gallery: files plugin unavailable")
+
+// filesPlugin returns the files plugin, or errNoFiles when it is not
+// registered.
+func (p *Plugin) filesPlugin() (*files.Plugin, error) {
+	if p.files == nil {
+		return nil, errNoFiles
+	}
+	return p.files, nil
 }
 
 // videoThumbnail returns a cached video thumbnail, generating it if needed.

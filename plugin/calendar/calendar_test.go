@@ -39,7 +39,7 @@ func TestCalendarEventsJSON_WithEvent(t *testing.T) {
 	now := time.Now()
 	dtstart := now.Add(1 * time.Hour)
 	dtend := now.Add(2 * time.Hour)
-	saveICS(t, env, db, cal, calendar.GenerateICS("test-uid-1", "Team Meeting", "Weekly sync", "Room 42",
+	saveICS(t, env, db, cal, genICS("test-uid-1", "Team Meeting", "Weekly sync", "Room 42",
 		dtstart, dtend, false, time.Now()))
 
 	// Fetch via JSON API.
@@ -97,7 +97,7 @@ func TestCalendarEventDetail(t *testing.T) {
 	env, alice, _, db, cal := calEnv(t)
 
 	now := time.Now()
-	ev := saveICS(t, env, db, cal, calendar.GenerateICS("detail-uid", "Detail Event", "Details here", "Room 5",
+	ev := saveICS(t, env, db, cal, genICS("detail-uid", "Detail Event", "Details here", "Room 5",
 		now.Add(1*time.Hour), now.Add(2*time.Hour), false, now))
 
 	path := fmt.Sprintf("/apps/calendar/events/%d", ev.ID)
@@ -208,7 +208,7 @@ func TestCalendarNotifications(t *testing.T) {
 
 	// Create an event, then manually insert a due notification.
 	now := env.Now()
-	ev := saveICS(t, env, db, cal, calendar.GenerateICS("notif-uid", "Notify Event", "", "",
+	ev := saveICS(t, env, db, cal, genICS("notif-uid", "Notify Event", "", "",
 		now.Add(1*time.Hour), now.Add(2*time.Hour), false, now))
 
 	// Insert a notification that's already due (trigger_at in the past).

@@ -480,7 +480,10 @@ func TestImportAndExport(t *testing.T) {
 	// The override stays with its master, with the zone it uses and no METHOD.
 	body := req(t, env, alice, "GET", cal+"alice/personal/series.ics", "").Status(200).ReadBody()
 	assert.Contains(t, body, "RECURRENCE-ID")
-	assert.Contains(t, body, "TZID:Custom/Zone")
+	// The zone named by X-LIC-LOCATION is stored and written as IANA, with a
+	// generated VTIMEZONE.
+	assert.Contains(t, body, "TZID:America/Denver\r\n")
+	assert.Contains(t, body, "RECURRENCE-ID;TZID=America/Denver:20261012T090000")
 	assert.Contains(t, body, "X-WR-TIMEZONE:America/Denver")
 	assert.NotContains(t, body, "METHOD")
 

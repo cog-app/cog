@@ -1,14 +1,21 @@
 package calendar
 
 import (
+	"bytes"
+	"cmp"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
+	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
 	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
+	"git.duckfam.us/jj-software/cog/internal/dav/ical"
+	"git.duckfam.us/jj-software/cog/internal/dav/tz"
 )
 
 // Calendar is a DAV collection that holds events, as the calendar UI shows it.
@@ -39,23 +46,28 @@ func (c *Calendar) Zone() *time.Location {
 	return time.UTC
 }
 
-// Event is a single calendar event with indexed fields and raw ICS blob.
+// Event is a stored event resource as the web UI shows it: the fields of its
+// first component, which is the master when there is one, and the whole
+// object when it was loaded.
 type Event struct {
-	ID          int64
-	CalendarID  int64 // dav.CollectionID
-	UID         string
-	URI         string // resource name in the collection
-	Version     int64
+	ID         int64
+	CalendarID int64 // dav.CollectionID
+	UID        string
+	URI        string // resource name in the collection
+	Version    int64
+	Color      string // Cog's own colour; not part of the iCalendar data
+
 	Summary     string
 	Location    string
 	Description string
-	DTStart     int64
+	DTStart     int64 // the component's own span; all-day values at UTC midnight
 	DTEnd       int64
 	IsAllDay    bool
-	Color       string
-	ICSData     string
+	RRule       string
 	CreatedAt   int64
 	UpdatedAt   int64
+
+	Object *ical.Object // nil unless loaded
 }
 
 // EventWithCalendar extends Event with calendar metadata for display.
@@ -74,20 +86,40 @@ func (e *EventWithCalendar) Zone() *time.Location {
 	return time.UTC
 }
 
-const eventColumns = `id, collection_id, uid, uri, version, summary, location, description,
-	dtstart, dtend, is_all_day, color, ics_data, created_at, updated_at`
+// zonesFor returns how an object's TZIDs map to locations: its own
+// VTIMEZONEs for TZIDs Cog cannot resolve, and floating times in the
+// calendar's zone. A VTIMEZONE whose rules cannot be read leaves its TZID in
+// the floating zone.
+func zonesFor(o *ical.Object, floating *time.Location) ical.Zones {
+	z := ical.Zones{Floating: floating, Load: tz.Load}
+	for id, vtz := range o.Zones {
+		if loc, err := tz.FromRules(vtz); err == nil {
+			if z.Custom == nil {
+				z.Custom = map[string]*time.Location{}
+			}
+			z.Custom[id] = loc
+		}
+	}
+	return z
+}
+
+// eventColumns selects an Event: the resource row and its first component.
+const eventColumns = `e.id, e.collection_id, e.uid, e.uri, e.version, e.color, e.created_at, e.updated_at,
+	v.summary, v.location, v.description, coalesce(v.dtstart_utc, 0), coalesce(v.end_utc, 0), v.dtstart_is_date, v.rrule`
+
+const eventFrom = ` FROM events e JOIN vevents v ON v.event_id = e.id AND v.position = 0`
 
 func scanEvent(row interface{ Scan(...any) error }) (*Event, error) {
 	var e Event
-	if err := row.Scan(&e.ID, &e.CalendarID, &e.UID, &e.URI, &e.Version, &e.Summary, &e.Location, &e.Description,
-		&e.DTStart, &e.DTEnd, &e.IsAllDay, &e.Color, &e.ICSData, &e.CreatedAt, &e.UpdatedAt); err != nil {
+	if err := row.Scan(&e.ID, &e.CalendarID, &e.UID, &e.URI, &e.Version, &e.Color, &e.CreatedAt, &e.UpdatedAt,
+		&e.Summary, &e.Location, &e.Description, &e.DTStart, &e.DTEnd, &e.IsAllDay, &e.RRule); err != nil {
 		return nil, err
 	}
 	return &e, nil
 }
 
-func queryEvents(q davsql.Querier, query string, args ...any) ([]Event, error) {
-	rows, err := q.Query(query, args...)
+func queryEvents(q davsql.Querier, where string, args ...any) ([]Event, error) {
+	rows, err := q.Query(`SELECT `+eventColumns+eventFrom+` WHERE `+where, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query events: %w", err)
 	}
@@ -105,17 +137,30 @@ func queryEvents(q davsql.Querier, query string, args ...any) ([]Event, error) {
 
 // ListEvents returns a calendar's events in start order.
 func ListEvents(db *sql.DB, calendarID int64) ([]Event, error) {
-	return queryEvents(db, `SELECT `+eventColumns+` FROM events WHERE collection_id = ? ORDER BY dtstart`, calendarID)
+	return queryEvents(db, `e.collection_id = ? ORDER BY e.start_utc, e.id`, calendarID)
 }
 
-// GetEvent returns an event by row ID.
+// GetEvent returns an event by row ID, with its object.
 func GetEvent(db *sql.DB, id int64) (*Event, error) {
-	return scanEvent(db.QueryRow(`SELECT `+eventColumns+` FROM events WHERE id = ?`, id))
+	return getEvent(db, `e.id = ?`, id)
 }
 
-// GetEventByUID returns a calendar's event with this UID.
+// GetEventByUID returns a calendar's event with this UID, with its object.
 func GetEventByUID(db *sql.DB, calendarID int64, uid string) (*Event, error) {
-	return scanEvent(db.QueryRow(`SELECT `+eventColumns+` FROM events WHERE collection_id = ? AND uid = ?`, calendarID, uid))
+	return getEvent(db, `e.collection_id = ? AND e.uid = ?`, calendarID, uid)
+}
+
+func getEvent(db *sql.DB, where string, args ...any) (*Event, error) {
+	ev, err := scanEvent(db.QueryRow(`SELECT `+eventColumns+eventFrom+` WHERE `+where, args...))
+	if err != nil {
+		return nil, err
+	}
+	objs, err := loadObjects(db, []int64{ev.ID})
+	if err != nil {
+		return nil, err
+	}
+	ev.Object = objs[ev.ID]
+	return ev, nil
 }
 
 // inCalendars returns " AND <col> IN (...)" and its arguments, limiting a
@@ -141,35 +186,336 @@ func withCalendars(events []Event, cals map[int64]Calendar) []EventWithCalendar 
 	return out
 }
 
-// UpcomingEvents returns events in cals starting or ending from now.
-func UpcomingEvents(db *sql.DB, cals map[int64]Calendar, now int64, limit int) ([]EventWithCalendar, error) {
-	in, args := inCalendars("collection_id", cals)
-	events, err := queryEvents(db, `SELECT `+eventColumns+` FROM events WHERE (dtstart >= ? OR dtend >= ?)`+in+`
-		ORDER BY dtstart LIMIT ?`, append(append([]any{now, now}, args...), limit)...)
-	if err != nil {
-		return nil, err
-	}
-	return withCalendars(events, cals), nil
-}
-
-// EventsInRange returns events in cals overlapping [start, end), plus every
-// recurring event that starts before end, for the caller to expand.
+// EventsInRange returns the events in cals with an instance that may overlap
+// [start, end), with their objects loaded for expansion.
 func EventsInRange(db *sql.DB, cals map[int64]Calendar, start, end int64) ([]EventWithCalendar, error) {
-	in, args := inCalendars("collection_id", cals)
-	events, err := queryEvents(db, `SELECT `+eventColumns+` FROM events
-		WHERE dtstart < ? AND (dtend > ? OR ics_data LIKE '%RRULE:%')`+in+` ORDER BY dtstart`,
-		append([]any{end, start}, args...)...)
+	in, args := inCalendars("e.collection_id", cals)
+	events, err := queryEvents(db, `e.start_utc < ? AND (e.range_end_utc IS NULL OR e.range_end_utc >= ?)`+in+`
+		ORDER BY e.start_utc, e.id`, append([]any{end, start}, args...)...)
 	if err != nil {
+		return nil, err
+	}
+	if err := attachObjects(db, events); err != nil {
 		return nil, err
 	}
 	return withCalendars(events, cals), nil
 }
 
-// EventsInRangeForCalendar is EventsInRange for one calendar.
-func EventsInRangeForCalendar(db *sql.DB, calendarID, start, end int64) ([]Event, error) {
-	return queryEvents(db, `SELECT `+eventColumns+` FROM events
-		WHERE collection_id = ? AND dtstart < ? AND (dtend > ? OR ics_data LIKE '%RRULE:%') ORDER BY dtstart`,
-		calendarID, end, start)
+func attachObjects(db *sql.DB, events []Event) error {
+	ids := make([]int64, len(events))
+	for i := range events {
+		ids[i] = events[i].ID
+	}
+	objs, err := loadObjects(db, ids)
+	if err != nil {
+		return err
+	}
+	for i := range events {
+		events[i].Object = objs[events[i].ID]
+	}
+	return nil
+}
+
+// Instances returns an event's instances overlapping [start, end), each as
+// a copy of the event with that instance's fields and times.
+func Instances(ev EventWithCalendar, start, end time.Time) ([]EventWithCalendar, error) {
+	if ev.Object == nil {
+		return nil, fmt.Errorf("event %d: object not loaded", ev.ID)
+	}
+	ins, err := ev.Object.Instances(zonesFor(ev.Object, ev.Zone()), start, end)
+	if err != nil {
+		return nil, fmt.Errorf("expand event %s: %w", ev.UID, err)
+	}
+	out := make([]EventWithCalendar, 0, len(ins))
+	for _, in := range ins {
+		e := ev
+		e.Summary, e.Location, e.Description = in.Event.Summary, in.Event.Location, in.Event.Description
+		e.DTStart, e.DTEnd = in.Start.Unix(), in.End.Unix()
+		e.IsAllDay = in.Event.Start.IsDate
+		out = append(out, e)
+	}
+	return out, nil
+}
+
+// upcomingHorizon bounds how far ahead UpcomingEvents looks.
+const upcomingHorizon = 366 * 24 * time.Hour
+
+// UpcomingEvents returns the next instances in cals that have not ended.
+func UpcomingEvents(db *sql.DB, cals map[int64]Calendar, now int64, limit int) ([]EventWithCalendar, error) {
+	from := time.Unix(now, 0)
+	to := from.Add(upcomingHorizon)
+	events, err := EventsInRange(db, cals, from.Unix(), to.Unix())
+	if err != nil {
+		return nil, err
+	}
+	var out []EventWithCalendar
+	for _, ev := range events {
+		ins, err := Instances(ev, from, to)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ins...)
+	}
+	slices.SortStableFunc(out, func(a, b EventWithCalendar) int { return cmp.Compare(a.DTStart, b.DTStart) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// --- Loading objects ---
+
+func placeholders(n int) string { return "?" + strings.Repeat(",?", n-1) }
+
+func anys[T any](xs []T) []any {
+	out := make([]any, len(xs))
+	for i, x := range xs {
+		out[i] = x
+	}
+	return out
+}
+
+// loadChunk bounds the IDs in one IN list.
+const loadChunk = 500
+
+// loadObjects reads the objects of events by ID, in a fixed number of
+// queries per chunk of IDs. Each object's Zones holds its calendar's stored
+// VTIMEZONEs.
+func loadObjects(q davsql.Querier, ids []int64) (map[int64]*ical.Object, error) {
+	out := make(map[int64]*ical.Object, len(ids))
+	for chunk := range slices.Chunk(ids, loadChunk) {
+		if err := loadChunkInto(q, chunk, out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func loadChunkInto(q davsql.Querier, ids []int64, out map[int64]*ical.Object) error {
+	in := placeholders(len(ids))
+	args := anys(ids)
+
+	calOf := map[int64]int64{}
+	rows, err := q.Query(`SELECT id, collection_id, uid, props, comps FROM events WHERE id IN (`+in+`)`, args...)
+	if err != nil {
+		return fmt.Errorf("load events: %w", err)
+	}
+	for rows.Next() {
+		var id, calID int64
+		var o ical.Object
+		var props, comps string
+		if err := rows.Scan(&id, &calID, &o.UID, &props, &comps); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan event: %w", err)
+		}
+		if err := unmarshal(props, &o.Props); err != nil {
+			rows.Close()
+			return fmt.Errorf("event %d props: %w", id, err)
+		}
+		if err := unmarshal(comps, &o.Comps); err != nil {
+			rows.Close()
+			return fmt.Errorf("event %d comps: %w", id, err)
+		}
+		out[id] = &o
+		calOf[id] = calID
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("load events: %w", err)
+	}
+
+	zones, err := storedZones(q, calOf)
+	if err != nil {
+		return err
+	}
+	for id, o := range out {
+		o.Zones = zones[calOf[id]]
+	}
+
+	byVevent := map[int64]*ical.Event{}
+	rows, err = q.Query(`SELECT `+veventColumns+` FROM vevents WHERE event_id IN (`+in+`) ORDER BY event_id, position`, args...)
+	if err != nil {
+		return fmt.Errorf("load vevents: %w", err)
+	}
+	for rows.Next() {
+		id, eventID, e, err := scanVevent(rows)
+		if err != nil {
+			rows.Close()
+			return err
+		}
+		if o := out[eventID]; o != nil {
+			o.Events = append(o.Events, e)
+			byVevent[id] = e
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("load vevents: %w", err)
+	}
+
+	rows, err = q.Query(`SELECT a.vevent_id, a.address, a.cn, a.partstat, a.role, a.rsvp, a.cutype, a.params
+		FROM event_attendees a JOIN vevents v ON v.id = a.vevent_id
+		WHERE v.event_id IN (`+in+`) ORDER BY a.vevent_id, a.position`, args...)
+	if err != nil {
+		return fmt.Errorf("load attendees: %w", err)
+	}
+	for rows.Next() {
+		var vid int64
+		var a ical.Attendee
+		var params string
+		if err := rows.Scan(&vid, &a.Address, &a.CN, &a.PartStat, &a.Role, &a.RSVP, &a.CUType, &params); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan attendee: %w", err)
+		}
+		if err := unmarshal(params, &a.Params); err != nil {
+			rows.Close()
+			return fmt.Errorf("attendee params: %w", err)
+		}
+		if e := byVevent[vid]; e != nil {
+			e.Attendees = append(e.Attendees, a)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("load attendees: %w", err)
+	}
+
+	rows, err = q.Query(`SELECT a.vevent_id, a.action, a.trigger, a.related, a.absolute, a.repeat, a.repeat_duration,
+			a.description, a.summary, a.leftovers
+		FROM event_alarms a JOIN vevents v ON v.id = a.vevent_id
+		WHERE v.event_id IN (`+in+`) ORDER BY a.vevent_id, a.position`, args...)
+	if err != nil {
+		return fmt.Errorf("load alarms: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var vid int64
+		var a ical.Alarm
+		var repeat sql.NullInt64
+		var left string
+		if err := rows.Scan(&vid, &a.Action, &a.Trigger, &a.Related, &a.Absolute, &repeat, &a.RepeatDuration,
+			&a.Description, &a.Summary, &left); err != nil {
+			return fmt.Errorf("scan alarm: %w", err)
+		}
+		if repeat.Valid {
+			n := int(repeat.Int64)
+			a.Repeat = &n
+		}
+		if err := unmarshal(left, &a.Leftovers); err != nil {
+			return fmt.Errorf("alarm leftovers: %w", err)
+		}
+		if e := byVevent[vid]; e != nil {
+			e.Alarms = append(e.Alarms, a)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("load alarms: %w", err)
+	}
+	return nil
+}
+
+// storedZones reads the stored VTIMEZONEs of the calendars events belong to,
+// by calendar.
+func storedZones(q davsql.Querier, calOf map[int64]int64) (map[int64]map[string]*contentline.Component, error) {
+	var cals []int64
+	for _, c := range calOf {
+		if !slices.Contains(cals, c) {
+			cals = append(cals, c)
+		}
+	}
+	out := map[int64]map[string]*contentline.Component{}
+	if len(cals) == 0 {
+		return out, nil
+	}
+	rows, err := q.Query(`SELECT collection_id, tzid, vtimezone FROM vtimezones WHERE collection_id IN (`+placeholders(len(cals))+`)`, anys(cals)...)
+	if err != nil {
+		return nil, fmt.Errorf("load time zones: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var calID int64
+		var id, data string
+		if err := rows.Scan(&calID, &id, &data); err != nil {
+			return nil, fmt.Errorf("scan time zone: %w", err)
+		}
+		var vtz contentline.Component
+		if err := json.Unmarshal([]byte(data), &vtz); err != nil {
+			return nil, fmt.Errorf("time zone %s: %w", id, err)
+		}
+		if out[calID] == nil {
+			out[calID] = map[string]*contentline.Component{}
+		}
+		out[calID][id] = &vtz
+	}
+	return out, rows.Err()
+}
+
+const veventColumns = `id, event_id, recurrence_id_local, recurrence_id_tzid, recurrence_id_is_date, this_and_future,
+	summary, description, location, url, status, class, transp, priority, sequence,
+	dtstart_local, dtstart_tzid, dtstart_is_date, dtend_local, dtend_tzid, dtend_is_date, duration, rrule,
+	rdates, exdates, dtstamp, created, last_modified, organizer, categories, leftovers`
+
+func scanVevent(rows *sql.Rows) (int64, int64, *ical.Event, error) {
+	var id, eventID int64
+	var e ical.Event
+	var priority, sequence sql.NullInt64
+	var rdates, exdates, dtstamp, created, lastMod, organizer, categories, left string
+	if err := rows.Scan(&id, &eventID, &e.RecurrenceID.Local, &e.RecurrenceID.TZID, &e.RecurrenceID.IsDate, &e.ThisAndFuture,
+		&e.Summary, &e.Description, &e.Location, &e.URL, &e.Status, &e.Class, &e.Transp, &priority, &sequence,
+		&e.Start.Local, &e.Start.TZID, &e.Start.IsDate, &e.End.Local, &e.End.TZID, &e.End.IsDate, &e.Duration, &e.RRule,
+		&rdates, &exdates, &dtstamp, &created, &lastMod, &organizer, &categories, &left); err != nil {
+		return 0, 0, nil, fmt.Errorf("scan vevent: %w", err)
+	}
+	if priority.Valid {
+		n := int(priority.Int64)
+		e.Priority = &n
+	}
+	if sequence.Valid {
+		n := int(sequence.Int64)
+		e.Sequence = &n
+	}
+	for _, f := range []struct {
+		src string
+		dst any
+	}{
+		{rdates, &e.RDates}, {exdates, &e.ExDates}, {dtstamp, &e.DTStamp}, {created, &e.Created},
+		{lastMod, &e.LastModified}, {organizer, &e.Organizer}, {categories, &e.Categories}, {left, &e.Leftovers},
+	} {
+		if err := unmarshal(f.src, f.dst); err != nil {
+			return 0, 0, nil, fmt.Errorf("vevent %d: %w", id, err)
+		}
+	}
+	return id, eventID, &e, nil
+}
+
+// unmarshal reads a JSON column; "" is the absent value.
+func unmarshal(s string, v any) error {
+	if s == "" {
+		return nil
+	}
+	return json.Unmarshal([]byte(s), v)
+}
+
+// marshal writes a JSON column, with "" for an absent value.
+func marshal(v any) (string, error) {
+	switch x := v.(type) {
+	case ical.DateTime:
+		if x.IsZero() {
+			return "", nil
+		}
+	case *ical.Organizer:
+		if x == nil {
+			return "", nil
+		}
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	if s := string(b); s != "null" {
+		return s, nil
+	}
+	return "", nil
 }
 
 // --- Writes ---
@@ -183,53 +529,212 @@ type errUIDConflict struct{ uri string }
 
 func (e *errUIDConflict) Error() string { return "UID already used by " + e.uri }
 
-// putEvent stores ics at uri in a calendar, inside tx, and returns the row ID,
-// its new version and whether it was created. fields must be parsed from ics.
-func putEvent(tx *sql.Tx, calID int64, uri, uid, ics string, fields VEventFields, cond davsql.Conditions, now int64) (id, version int64, created bool, err error) {
+// stored reports a written event.
+type stored struct {
+	id      int64
+	version int64
+	created bool
+	data    []byte // the text served for this version
+}
+
+// render writes an object as the text Cog serves.
+func render(o *ical.Object) ([]byte, error) {
+	var b bytes.Buffer
+	if err := contentline.Write(&b, []*contentline.Component{o.Encode(o.IANAZones)}); err != nil {
+		return nil, fmt.Errorf("write event %s: %w", o.UID, err)
+	}
+	return b.Bytes(), nil
+}
+
+// storeObject writes o at uri in a calendar, inside tx, after checking cond.
+// floating is the calendar's zone. The colour, a Cog extension, is kept.
+func storeObject(tx *sql.Tx, calID int64, floating *time.Location, uri string, o *ical.Object, cond davsql.Conditions, now int64) (*stored, error) {
 	var cur *int64
 	var curID, curVersion int64
 	switch err := tx.QueryRow(`SELECT id, version FROM events WHERE collection_id = ? AND uri = ?`, calID, uri).Scan(&curID, &curVersion); {
 	case err == nil:
 		cur = &curVersion
 	case !errors.Is(err, sql.ErrNoRows):
-		return 0, 0, false, fmt.Errorf("read event %s: %w", uri, err)
+		return nil, fmt.Errorf("read event %s: %w", uri, err)
 	}
 	if err := cond.Check(cur); err != nil {
-		return 0, 0, false, dav.ErrPrecondition
+		return nil, dav.ErrPrecondition
 	}
 	var other string
-	switch err := tx.QueryRow(`SELECT uri FROM events WHERE collection_id = ? AND uid = ? AND uri != ?`, calID, uid, uri).Scan(&other); {
+	switch err := tx.QueryRow(`SELECT uri FROM events WHERE collection_id = ? AND uid = ? AND uri != ?`, calID, o.UID, uri).Scan(&other); {
 	case err == nil:
-		return 0, 0, false, &errUIDConflict{other}
+		return nil, &errUIDConflict{other}
 	case !errors.Is(err, sql.ErrNoRows):
-		return 0, 0, false, fmt.Errorf("check UID %s: %w", uid, err)
+		return nil, fmt.Errorf("check UID %s: %w", o.UID, err)
 	}
-	version, err = davsql.Bump(tx, calID)
+
+	// Zones the object names without defining, defined by an earlier write.
+	known, err := storedZones(tx, map[int64]int64{0: calID})
 	if err != nil {
-		return 0, 0, false, err
+		return nil, err
 	}
-	start, end := eventUnix(fields)
-	err = tx.QueryRow(`INSERT INTO events (collection_id, uid, uri, version, summary, location, description,
-			dtstart, dtend, is_all_day, color, ics_data, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	sent := o.Zones
+	o.Zones = map[string]*contentline.Component{}
+	for id, vtz := range known[calID] {
+		o.Zones[id] = vtz
+	}
+	for id, vtz := range sent {
+		o.Zones[id] = vtz
+	}
+	z := zonesFor(o, floating)
+
+	// The master first: the web UI reads position 0.
+	slices.SortStableFunc(o.Events, func(a, b *ical.Event) int {
+		switch {
+		case a.IsOverride() == b.IsOverride():
+			return 0
+		case !a.IsOverride():
+			return -1
+		}
+		return 1
+	})
+	var startUTC, endUTC any
+	if start, end, unbounded, err := o.Bounds(z); err == nil {
+		startUTC = start.Unix()
+		if !unbounded {
+			endUTC = end.Unix()
+		}
+	}
+	data, err := render(o)
+	if err != nil {
+		return nil, err
+	}
+	props, err := marshal(o.Props)
+	if err != nil {
+		return nil, err
+	}
+	comps, err := marshal(o.Comps)
+	if err != nil {
+		return nil, err
+	}
+
+	version, err := davsql.Bump(tx, calID)
+	if err != nil {
+		return nil, err
+	}
+	var id int64
+	err = tx.QueryRow(`INSERT INTO events (collection_id, uid, uri, version, size, start_utc, range_end_utc, props, comps, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(collection_id, uri) DO UPDATE SET
-			uid = excluded.uid, version = excluded.version, summary = excluded.summary,
-			location = excluded.location, description = excluded.description,
-			dtstart = excluded.dtstart, dtend = excluded.dtend, is_all_day = excluded.is_all_day,
-			ics_data = excluded.ics_data, updated_at = excluded.updated_at
+			uid = excluded.uid, version = excluded.version, size = excluded.size,
+			start_utc = excluded.start_utc, range_end_utc = excluded.range_end_utc,
+			props = excluded.props, comps = excluded.comps, updated_at = excluded.updated_at
 		RETURNING id`,
-		calID, uid, uri, version, fields.Summary, fields.Location, fields.Description,
-		start, end, fields.IsAllDay, fields.Color, ics, now, now).Scan(&id)
+		calID, o.UID, uri, version, len(data), startUTC, endUTC, orEmpty(props, "[]"), orEmpty(comps, "[]"), now, now).Scan(&id)
 	if err != nil {
-		return 0, 0, false, fmt.Errorf("store event %s: %w", uri, err)
+		return nil, fmt.Errorf("store event %s: %w", uri, err)
+	}
+	if _, err := tx.Exec(`DELETE FROM vevents WHERE event_id = ?`, id); err != nil {
+		return nil, fmt.Errorf("replace event %s: %w", uri, err)
+	}
+	for pos, e := range o.Events {
+		if err := insertVevent(tx, id, pos, e, z); err != nil {
+			return nil, fmt.Errorf("store event %s: %w", uri, err)
+		}
+	}
+	for tzid, vtz := range sent {
+		js, err := json.Marshal(vtz)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec(`INSERT INTO vtimezones (collection_id, tzid, vtimezone) VALUES (?, ?, ?)
+			ON CONFLICT(collection_id, tzid) DO UPDATE SET vtimezone = excluded.vtimezone`, calID, tzid, string(js)); err != nil {
+			return nil, fmt.Errorf("store time zone %s: %w", tzid, err)
+		}
 	}
 	if err := davsql.Revive(tx, calID, uri); err != nil {
-		return 0, 0, false, err
+		return nil, err
 	}
-	if err := EnsureNotifications(tx, id, start, ics); err != nil {
-		return 0, 0, false, err
+	if err := ensureNotifications(tx, id, o, z, now); err != nil {
+		return nil, err
 	}
-	return id, version, cur == nil, nil
+	return &stored{id: id, version: version, created: cur == nil, data: data}, nil
+}
+
+func orEmpty(s, empty string) string {
+	if s == "" {
+		return empty
+	}
+	return s
+}
+
+func utcOf(d ical.DateTime, z ical.Zones) any {
+	if d.IsZero() {
+		return nil
+	}
+	t, err := d.Time(z)
+	if err != nil {
+		return nil
+	}
+	return t.Unix()
+}
+
+func insertVevent(tx *sql.Tx, eventID int64, pos int, e *ical.Event, z ical.Zones) error {
+	var endUTC any
+	if _, end, err := e.Span(z); err == nil {
+		endUTC = end.Unix()
+	}
+	js := make([]string, 0, 8)
+	for _, v := range []any{e.RDates, e.ExDates, e.DTStamp, e.Created, e.LastModified, e.Organizer, e.Categories, e.Leftovers} {
+		s, err := marshal(v)
+		if err != nil {
+			return err
+		}
+		js = append(js, s)
+	}
+	var priority, sequence any
+	if e.Priority != nil {
+		priority = *e.Priority
+	}
+	if e.Sequence != nil {
+		sequence = *e.Sequence
+	}
+	var vid int64
+	err := tx.QueryRow(`INSERT INTO vevents (event_id, position, recurrence_id_local, recurrence_id_tzid, recurrence_id_is_date, this_and_future,
+			summary, description, location, url, status, class, transp, priority, sequence,
+			dtstart_local, dtstart_tzid, dtstart_is_date, dtstart_utc, dtend_local, dtend_tzid, dtend_is_date, end_utc, duration, rrule,
+			rdates, exdates, dtstamp, created, last_modified, organizer, categories, leftovers)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		RETURNING id`,
+		eventID, pos, e.RecurrenceID.Local, e.RecurrenceID.TZID, e.RecurrenceID.IsDate, e.ThisAndFuture,
+		e.Summary, e.Description, e.Location, e.URL, e.Status, e.Class, e.Transp, priority, sequence,
+		e.Start.Local, e.Start.TZID, e.Start.IsDate, utcOf(e.Start, z), e.End.Local, e.End.TZID, e.End.IsDate, endUTC, e.Duration, e.RRule,
+		orEmpty(js[0], "[]"), orEmpty(js[1], "[]"), js[2], js[3], js[4], js[5], orEmpty(js[6], "[]"), orEmpty(js[7], "{}")).Scan(&vid)
+	if err != nil {
+		return fmt.Errorf("insert vevent: %w", err)
+	}
+	for i, a := range e.Attendees {
+		params, err := marshal(a.Params)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO event_attendees (vevent_id, position, address, email, cn, partstat, role, rsvp, cutype, params)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			vid, i, a.Address, strings.ToLower(ical.Email(a.Address)), a.CN, a.PartStat, a.Role, a.RSVP, a.CUType, orEmpty(params, "[]")); err != nil {
+			return fmt.Errorf("insert attendee: %w", err)
+		}
+	}
+	for i, a := range e.Alarms {
+		left, err := marshal(a.Leftovers)
+		if err != nil {
+			return err
+		}
+		var repeat any
+		if a.Repeat != nil {
+			repeat = *a.Repeat
+		}
+		if _, err := tx.Exec(`INSERT INTO event_alarms (vevent_id, position, action, trigger, related, absolute, repeat, repeat_duration, description, summary, leftovers)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			vid, i, a.Action, a.Trigger, a.Related, a.Absolute, repeat, a.RepeatDuration, a.Description, a.Summary, orEmpty(left, "{}")); err != nil {
+			return fmt.Errorf("insert alarm: %w", err)
+		}
+	}
+	return nil
 }
 
 // deleteEvent removes the event at uri inside tx and leaves a tombstone.
@@ -252,15 +757,30 @@ func deleteEvent(tx *sql.Tx, calID int64, uri string, cond davsql.Conditions, no
 	return err
 }
 
-// SaveEvent stores an event written by Cog (web UI, seeds, tests) in cal.
-// from is the event being edited, or nil for a new one; moving it to another
-// calendar deletes it from the old one in the same transaction.
-func SaveEvent(db *sql.DB, cal *Calendar, from *Event, ics string, now time.Time) (*Event, error) {
-	fields, err := ParseVEventIn(ics, cal.Zone())
+// ParseObject reads one event resource from iCalendar text.
+func ParseObject(ics string) (*ical.Object, error) {
+	comps, err := contentline.Parse(strings.NewReader(ics))
 	if err != nil {
 		return nil, err
 	}
-	uri := fields.UID + ".ics"
+	if len(comps) != 1 || !comps[0].Is("VCALENDAR") {
+		return nil, errors.New("not one VCALENDAR")
+	}
+	o, err := ical.DecodeEvents(comps[0])
+	if err != nil {
+		return nil, err
+	}
+	if o.UID == "" {
+		return nil, errors.New("VEVENT missing UID")
+	}
+	return o, nil
+}
+
+// SaveEvent stores an event written by Cog (web UI, seeds, tests) in cal.
+// from is the event being edited, or nil for a new one; moving it to another
+// calendar deletes it from the old one in the same transaction.
+func SaveEvent(db *sql.DB, cal *Calendar, from *Event, o *ical.Object, now time.Time) (*Event, error) {
+	uri := o.UID + ".ics"
 	if from != nil {
 		uri = from.URI
 	}
@@ -274,14 +794,37 @@ func SaveEvent(db *sql.DB, cal *Calendar, from *Event, ics string, now time.Time
 			return nil, err
 		}
 	}
-	id, _, _, err := putEvent(tx, cal.ID, uri, fields.UID, ics, fields, davsql.Conditions{}, now.Unix())
+	st, err := storeObject(tx, cal.ID, cal.Zone(), uri, o, davsql.Conditions{}, now.Unix())
 	if err != nil {
 		return nil, err
+	}
+	if from != nil && from.Color != "" {
+		if _, err := tx.Exec(`UPDATE events SET color = ? WHERE id = ?`, from.Color, st.id); err != nil {
+			return nil, fmt.Errorf("keep event colour: %w", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("save event: %w", err)
 	}
-	return GetEvent(db, id)
+	return GetEvent(db, st.id)
+}
+
+// SaveICS parses ics and stores it as a new event in cal.
+func SaveICS(db *sql.DB, cal *Calendar, ics string, now time.Time) (*Event, error) {
+	o, err := ParseObject(ics)
+	if err != nil {
+		return nil, err
+	}
+	return SaveEvent(db, cal, nil, o, now)
+}
+
+// RenderEvent returns the iCalendar text Cog serves for an event.
+func RenderEvent(ev *Event) (string, error) {
+	if ev.Object == nil {
+		return "", fmt.Errorf("event %d: object not loaded", ev.ID)
+	}
+	data, err := render(ev.Object)
+	return string(data), err
 }
 
 // SetEventColor sets the per-event color, a Cog extension that is not part
@@ -310,70 +853,15 @@ func DeleteEventByID(db *sql.DB, id int64, now time.Time) error {
 	return tx.Commit()
 }
 
-// Attendee represents an event attendee.
-type Attendee struct {
-	ID          int64
-	EventID     int64
-	Email       string
-	CogUser     string
-	DisplayName string
-	Status      string // NEEDS-ACTION, ACCEPTED, DECLINED, TENTATIVE
-	Role        string // REQ-PARTICIPANT, OPT-PARTICIPANT, CHAIR
-}
-
-// ReplaceAttendees replaces an event's attendees.
-func ReplaceAttendees(db *sql.DB, eventID int64, attendees []AttendeeField) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("replace attendees: %w", err)
-	}
-	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM event_attendees WHERE event_id = ?`, eventID); err != nil {
-		return fmt.Errorf("clear attendees: %w", err)
-	}
-	for _, a := range attendees {
-		role := a.Role
-		if role == "" {
-			role = "REQ-PARTICIPANT"
-		}
-		if _, err := tx.Exec(`INSERT INTO event_attendees (event_id, email, display_name, role) VALUES (?, ?, ?, ?)`,
-			eventID, a.Email, a.CN, role); err != nil {
-			return fmt.Errorf("add attendee: %w", err)
-		}
-	}
-	return tx.Commit()
-}
-
-// ListAttendees returns all attendees for an event.
-func ListAttendees(db *sql.DB, eventID int64) ([]Attendee, error) {
-	rows, err := db.Query(`SELECT id, event_id, email, cog_user, display_name, status, role FROM event_attendees WHERE event_id = ? ORDER BY id`, eventID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var attendees []Attendee
-	for rows.Next() {
-		var a Attendee
-		if err := rows.Scan(&a.ID, &a.EventID, &a.Email, &a.CogUser, &a.DisplayName, &a.Status, &a.Role); err != nil {
-			return nil, err
-		}
-		attendees = append(attendees, a)
-	}
-	return attendees, rows.Err()
-}
-
-// UpdateAttendeeStatus updates the status of an attendee by event ID and email.
-func UpdateAttendeeStatus(db *sql.DB, eventID int64, email, status string) error {
-	_, err := db.Exec(`UPDATE event_attendees SET status = ? WHERE event_id = ? AND email = ?`, status, eventID, email)
-	return err
-}
-
-// RecomputeEventTimes re-derives a calendar's indexed times and reminders from
-// ics_data after its zone changes, since floating times are read in that
-// zone. The ICS is untouched, so versions and DAV clients are unaffected.
-func RecomputeEventTimes(db *sql.DB, calendarID int64, zone *time.Location) error {
+// RecomputeEventTimes re-derives a calendar's indexed times and reminders
+// after its zone changes, since floating times are read in that zone. The
+// iCalendar data is unchanged, so versions and DAV clients are unaffected.
+func RecomputeEventTimes(db *sql.DB, calendarID int64, zone *time.Location, now time.Time) error {
 	events, err := ListEvents(db, calendarID)
 	if err != nil {
+		return err
+	}
+	if err := attachObjects(db, events); err != nil {
 		return err
 	}
 	tx, err := db.Begin()
@@ -382,34 +870,51 @@ func RecomputeEventTimes(db *sql.DB, calendarID int64, zone *time.Location) erro
 	}
 	defer tx.Rollback()
 	for _, ev := range events {
-		fields, err := ParseVEventIn(ev.ICSData, zone)
-		if err != nil {
-			// Stored as received; DAV PUT validated the syntax, so this is a
-			// value the parser cannot read. Its times stay as they were.
-			continue
+		o := ev.Object
+		z := zonesFor(o, zone)
+		var startUTC, endUTC any
+		if start, end, unbounded, err := o.Bounds(z); err == nil {
+			startUTC = start.Unix()
+			if !unbounded {
+				endUTC = end.Unix()
+			}
 		}
-		start, end := eventUnix(fields)
-		if start == ev.DTStart && end == ev.DTEnd {
-			continue
-		}
-		if _, err := tx.Exec(`UPDATE events SET dtstart = ?, dtend = ? WHERE id = ?`, start, end, ev.ID); err != nil {
+		if _, err := tx.Exec(`UPDATE events SET start_utc = ?, range_end_utc = ? WHERE id = ?`, startUTC, endUTC, ev.ID); err != nil {
 			return fmt.Errorf("update event %d times: %w", ev.ID, err)
 		}
-		if err := EnsureNotifications(tx, ev.ID, start, ev.ICSData); err != nil {
+		rows, err := tx.Query(`SELECT id FROM vevents WHERE event_id = ? ORDER BY position`, ev.ID)
+		if err != nil {
+			return fmt.Errorf("event %d components: %w", ev.ID, err)
+		}
+		var vids []int64
+		for rows.Next() {
+			var vid int64
+			if err := rows.Scan(&vid); err != nil {
+				rows.Close()
+				return fmt.Errorf("event %d components: %w", ev.ID, err)
+			}
+			vids = append(vids, vid)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("event %d components: %w", ev.ID, err)
+		}
+		for i, vid := range vids {
+			if i >= len(o.Events) {
+				break
+			}
+			e := o.Events[i]
+			var end any
+			if _, t, err := e.Span(z); err == nil {
+				end = t.Unix()
+			}
+			if _, err := tx.Exec(`UPDATE vevents SET dtstart_utc = ?, end_utc = ? WHERE id = ?`, utcOf(e.Start, z), end, vid); err != nil {
+				return fmt.Errorf("update event %d times: %w", ev.ID, err)
+			}
+		}
+		if err := ensureNotifications(tx, ev.ID, o, z, now.Unix()); err != nil {
 			return fmt.Errorf("update event %d reminders: %w", ev.ID, err)
 		}
 	}
 	return tx.Commit()
-}
-
-// eventUnix returns the indexed start and end for parsed fields, using 0 for
-// missing values.
-func eventUnix(f VEventFields) (start, end int64) {
-	if !f.DTStart.IsZero() {
-		start = f.DTStart.Unix()
-	}
-	if !f.DTEnd.IsZero() {
-		end = f.DTEnd.Unix()
-	}
-	return start, end
 }

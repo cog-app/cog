@@ -1,16 +1,20 @@
 package calendar
 
 import (
+	"bytes"
 	"database/sql"
 	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
+	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
+	"git.duckfam.us/jj-software/cog/internal/dav/ical"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"github.com/google/uuid"
 	rrulelib "github.com/teambition/rrule-go"
@@ -132,22 +136,26 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 				case sc.Permissions&plugin.PermRead != 0:
 					events = append(events, ev)
 				case sc.Permissions&plugin.PermFreeBusy != 0:
-					// Free/Busy only: strip sensitive details.
-					ev.Summary = "Busy"
-					ev.Description = ""
-					ev.Location = ""
+					// Free/Busy only: times, nothing else.
+					ev.Object = ev.Object.Busy()
+					ev.Summary, ev.Description, ev.Location = "Busy", "", ""
 					events = append(events, ev)
 				}
 			}
 		}
 	}
 
-	// Expand recurring events
+	// One entry per instance: recurrences expanded, overrides in place of the
+	// occurrences they replace.
 	var expanded []EventWithCalendar
 	for _, ev := range events {
-		expanded = append(expanded, expandRRule(ev, start, end)...)
+		ins, err := Instances(ev, start, end)
+		if err != nil {
+			h.plugin.log.Warn("expand event", "uid", ev.UID, "err", err)
+			continue
+		}
+		expanded = append(expanded, ins...)
 	}
-	events = expanded
 
 	type fcEvent struct {
 		ID            int64  `json:"id"`
@@ -163,8 +171,8 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 		} `json:"extendedProps"`
 	}
 
-	result := make([]fcEvent, 0)
-	for _, ev := range events {
+	result := make([]fcEvent, 0, len(expanded))
+	for _, ev := range expanded {
 		color := ev.CalendarColor
 		if ev.Color != "" {
 			color = ev.Color
@@ -191,9 +199,9 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 	plugin.WriteJSON(w, http.StatusOK, result)
 }
 
-// ownEvent returns the request user's event by path ID, with its calendar.
-// Events of a calendar the user does not own (or that no longer exists) are
-// not found.
+// ownEvent returns the request user's event by path ID, with its object and
+// calendar. Events of a calendar the user does not own (or that no longer
+// exists) are not found.
 func (h *Pages) ownEvent(r *http.Request) (*sql.DB, string, *Event, *Calendar, int, error) {
 	db, userID, err := h.userDB(r)
 	if err != nil {
@@ -220,9 +228,29 @@ func (h *Pages) ownEvent(r *http.Request) (*sql.DB, string, *Event, *Calendar, i
 	return db, userID, ev, cal, 0, nil
 }
 
+// Attendee is an attendee as the event modal shows one.
+type Attendee struct {
+	Email       string
+	DisplayName string
+	Status      string // NEEDS-ACTION, ACCEPTED, DECLINED, TENTATIVE
+	Role        string // REQ-PARTICIPANT, OPT-PARTICIPANT, CHAIR
+}
+
+// attendeesOf returns the attendees of an event's first component that have
+// an email address; the form cannot show others, and saving keeps them.
+func attendeesOf(ev *Event) []Attendee {
+	var out []Attendee
+	for _, a := range ev.Object.Events[0].Attendees {
+		if email := ical.Email(a.Address); email != "" {
+			out = append(out, Attendee{Email: email, DisplayName: a.CN, Status: a.PartStat, Role: a.Role})
+		}
+	}
+	return out
+}
+
 // EventDetail returns an event detail partial for the modal.
 func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
-	db, userID, ev, cal, status, err := h.ownEvent(r)
+	_, userID, ev, cal, status, err := h.ownEvent(r)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
@@ -232,26 +260,52 @@ func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	attendees, err := ListAttendees(db, ev.ID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	calEventModal(plugin.CSRFToken(r), ev, cal, calendars, attendees).Render(r.Context(), w)
+	calEventModal(plugin.CSRFToken(r), ev, cal, calendars, attendeesOf(ev)).Render(r.Context(), w)
 }
 
-// UpdateEvent handles POST to update an existing event.
+// eventForm is what the event form edits.
+type eventForm struct {
+	summary, location, description string
+	allDay                         bool
+	start, end                     time.Time
+	rrule                          string
+	attendees                      []ical.Attendee // mailto attendees only
+}
+
+func parseEventForm(cal *Calendar, r *http.Request) (*eventForm, error) {
+	if err := r.ParseForm(); err != nil {
+		return nil, err
+	}
+	f := &eventForm{
+		summary:     r.FormValue("summary"),
+		location:    r.FormValue("location"),
+		description: r.FormValue("description"),
+		allDay:      r.FormValue("all_day") == "on",
+		rrule:       buildRRule(r),
+		attendees:   parseAttendeeForm(r),
+	}
+	var err error
+	if f.start, f.end, err = formTimes(cal, r, f.allDay); err != nil {
+		return nil, err
+	}
+	if f.rrule != "" {
+		if _, err := rrulelib.StrToRRule(f.rrule); err != nil {
+			return nil, fmt.Errorf("Invalid recurrence rule: %w", err)
+		}
+	}
+	return f, nil
+}
+
+// UpdateEvent handles POST to update an existing event. Only what the form
+// shows changes; everything else in the event, including its overrides,
+// exceptions, alarms and whatever a client stored that Cog does not model,
+// is kept.
 func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
-	db, userID, ev, _, status, err := h.ownEvent(r)
+	db, userID, ev, oldCal, status, err := h.ownEvent(r)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
-
-	summary := r.FormValue("summary")
-	location := r.FormValue("location")
-	description := r.FormValue("description")
-	isAllDay := r.FormValue("all_day") == "on"
 	calID, _ := strconv.ParseInt(r.FormValue("calendar_id"), 10, 64)
 	if calID == 0 {
 		calID = ev.CalendarID
@@ -261,30 +315,17 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid calendar", http.StatusBadRequest)
 		return
 	}
-
-	dtstart, dtend, err := formTimes(cal, r, isAllDay)
+	f, err := parseEventForm(cal, r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	rrule := buildRRule(r)
-	if rrule != "" {
-		if _, err := rrulelib.StrToRRule(rrule); err != nil {
-			http.Error(w, "Invalid recurrence rule: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-	}
+	now := h.plugin.ctx.Now()
+	o := ev.Object
+	applyForm(o, f, zonesFor(o, oldCal.Zone()), now)
 
-	// The form doesn't edit reminders; carry them over from the stored ICS.
-	var alarms []VAlarm
-	if old, err := ParseVEvent(ev.ICSData); err == nil {
-		alarms = old.Alarms
-	}
-
-	attendeeFields := parseAttendeeForm(r)
-	icsData := GenerateICSFull(ev.UID, summary, description, location, dtstart, dtend, isAllDay, rrule, alarms, attendeeFields, h.plugin.ctx.Now())
-	updated, err := SaveEvent(db, cal, ev, icsData, h.plugin.ctx.Now())
+	updated, err := SaveEvent(db, cal, ev, o, now)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -293,15 +334,127 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := ReplaceAttendees(db, updated.ID, attendeeFields); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if len(attendeeFields) > 0 {
-		h.sendInvitations("REQUEST", updated, summary, description, location, dtstart, dtend, isAllDay, attendeeFields)
+	if len(f.attendees) > 0 {
+		h.sendInvitations("REQUEST", updated, f.attendees)
 	}
 
 	http.Redirect(w, r, "/apps/calendar/", http.StatusSeeOther)
+}
+
+// applyForm writes a submitted form into an event's first component, with
+// the bookkeeping RFC 5545 asks of an organizer's edit: DTSTAMP and
+// LAST-MODIFIED always, SEQUENCE when a scheduling field changed. Vendor
+// copies of a changed field are dropped.
+func applyForm(o *ical.Object, f *eventForm, z ical.Zones, now time.Time) {
+	e := o.Events[0]
+	scheduling := false
+	text := func(field *string, v, prop string, sched bool) {
+		if *field != v {
+			*field = v
+			e.Changed(prop)
+			scheduling = scheduling || sched
+		}
+	}
+	text(&e.Summary, f.summary, "SUMMARY", false)
+	text(&e.Description, f.description, "DESCRIPTION", false)
+	text(&e.Location, f.location, "LOCATION", true)
+
+	oldStart, oldEnd, err := e.Span(z)
+	if err != nil || !oldStart.Equal(f.start) || !oldEnd.Equal(f.end) || e.Start.IsDate != f.allDay {
+		e.Start = ical.DateTimeOf(f.start, f.allDay)
+		e.End = ical.DateTimeOf(f.end, f.allDay)
+		e.Duration = ""
+		e.Changed("TIME")
+		scheduling = true
+	}
+
+	if !sameRule(e.RRule, f.rrule) {
+		e.RRule = f.rrule
+		e.Changed("TIME")
+		scheduling = true
+		if f.rrule == "" && len(e.RDates) == 0 && !e.IsOverride() {
+			// No longer recurring: its exceptions describe nothing.
+			e.ExDates = nil
+			o.Events = o.Events[:1]
+		}
+	}
+
+	if mergeAttendees(e, f.attendees) {
+		scheduling = true
+	}
+
+	stamp := ical.DateTimeOf(now.UTC(), false)
+	e.DTStamp, e.LastModified = stamp, stamp
+	if scheduling {
+		seq := 1
+		if e.Sequence != nil {
+			seq = *e.Sequence + 1
+		}
+		e.Sequence = &seq
+	}
+}
+
+// sameRule compares two RRULEs as the form sees them: the same parts in any
+// order, and an UNTIL on the same date, since the form only edits the date.
+func sameRule(a, b string) bool {
+	pa, pb := rruleParams(a), rruleParams(b)
+	if len(pa) != len(pb) {
+		return false
+	}
+	for k, v := range pa {
+		w, ok := pb[k]
+		if !ok {
+			return false
+		}
+		if k == "UNTIL" && len(v) >= 8 && len(w) >= 8 {
+			v, w = v[:8], w[:8]
+		}
+		if !strings.EqualFold(v, w) {
+			return false
+		}
+	}
+	return true
+}
+
+// mergeAttendees replaces e's mailto attendees with the form's, keeping what
+// the form cannot show (their other parameters, and attendees with other
+// addresses), and reports whether who attends, or in what role, changed.
+func mergeAttendees(e *ical.Event, form []ical.Attendee) bool {
+	byEmail := map[string]ical.Attendee{}
+	var out []ical.Attendee
+	var before, after []string
+	for _, a := range e.Attendees {
+		if email := ical.Email(a.Address); email != "" {
+			key := strings.ToLower(email)
+			byEmail[key] = a
+			before = append(before, key+" "+roleOf(a))
+		} else {
+			out = append(out, a)
+		}
+	}
+	for _, a := range form {
+		key := strings.ToLower(ical.Email(a.Address))
+		if cur, ok := byEmail[key]; ok {
+			cur.CN = a.CN
+			if a.Role != roleOf(cur) {
+				cur.Role = a.Role
+			}
+			a = cur
+		}
+		after = append(after, key+" "+roleOf(a))
+		out = append(out, a)
+	}
+	e.Attendees = out
+	return !slices.Equal(before, after)
+}
+
+// roleOf returns an attendee's role; absent means REQ-PARTICIPANT (RFC 5545
+// §3.2.16).
+func roleOf(a ical.Attendee) string {
+	if a.Role == "" {
+		return "REQ-PARTICIPANT"
+	}
+	return a.Role
 }
 
 // CreateEvent handles POST to create a new event.
@@ -322,29 +475,26 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid calendar", http.StatusBadRequest)
 		return
 	}
-	summary := r.FormValue("summary")
-	location := r.FormValue("location")
-	description := r.FormValue("description")
-	isAllDay := r.FormValue("all_day") == "on"
-
-	dtstart, dtend, err := formTimes(cal, r, isAllDay)
+	f, err := parseEventForm(cal, r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	uid := uuid.NewString()
-	rrule := buildRRule(r)
-	if rrule != "" {
-		if _, err := rrulelib.StrToRRule(rrule); err != nil {
-			http.Error(w, "Invalid recurrence rule: "+err.Error(), http.StatusBadRequest)
-			return
-		}
+	now := h.plugin.ctx.Now()
+	stamp := ical.DateTimeOf(now.UTC(), false)
+	seq := 0
+	o := &ical.Object{
+		UID:   uuid.NewString(),
+		Props: []contentline.Property{{Name: "PRODID", Value: ical.ProdID}},
+		Events: []*ical.Event{{
+			Summary: f.summary, Description: f.description, Location: f.location,
+			Start: ical.DateTimeOf(f.start, f.allDay), End: ical.DateTimeOf(f.end, f.allDay),
+			RRule: f.rrule, Attendees: f.attendees, Sequence: &seq,
+			DTStamp: stamp, Created: stamp, LastModified: stamp,
+		}},
 	}
-
-	attendeeFields := parseAttendeeForm(r)
-	icsData := GenerateICSFull(uid, summary, description, location, dtstart, dtend, isAllDay, rrule, nil, attendeeFields, h.plugin.ctx.Now())
-	ev, err := SaveEvent(db, cal, nil, icsData, h.plugin.ctx.Now())
+	ev, err := SaveEvent(db, cal, nil, o, now)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -353,12 +503,8 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if len(attendeeFields) > 0 {
-		if err := ReplaceAttendees(db, ev.ID, attendeeFields); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		h.sendInvitations("REQUEST", ev, summary, description, location, dtstart, dtend, isAllDay, attendeeFields)
+	if len(f.attendees) > 0 {
+		h.sendInvitations("REQUEST", ev, f.attendees)
 	}
 
 	http.Redirect(w, r, "/apps/calendar/", http.StatusSeeOther)
@@ -371,28 +517,15 @@ func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
-
-	// Send cancellation emails before deleting
-	attendees, err := ListAttendees(db, ev.ID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	var attendees []ical.Attendee
+	for _, a := range ev.Object.Events[0].Attendees {
+		if ical.Email(a.Address) != "" {
+			attendees = append(attendees, a)
+		}
 	}
 	if len(attendees) > 0 {
-		dtstart := time.Unix(ev.DTStart, 0).UTC()
-		dtend := time.Unix(ev.DTEnd, 0).UTC()
-		var afs []AttendeeField
-		for _, a := range attendees {
-			afs = append(afs, AttendeeField{
-				Email:    a.Email,
-				CN:       a.DisplayName,
-				PartStat: a.Status,
-				Role:     a.Role,
-			})
-		}
-		h.sendInvitations("CANCEL", ev, ev.Summary, ev.Description, ev.Location, dtstart, dtend, ev.IsAllDay, afs)
+		h.sendInvitations("CANCEL", ev, attendees)
 	}
-
 	if err := DeleteEventByID(db, ev.ID, h.plugin.ctx.Now()); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -453,7 +586,7 @@ func (h *Pages) UpdateCalendarHandler(w http.ResponseWriter, r *http.Request) {
 
 // formTimes parses an event form's start and end. Date-times are read in the
 // form's tz field (the browser's zone), falling back to the calendar's zone,
-// and keep that zone so the ICS records it as TZID.
+// and keep that zone so the event records it as TZID.
 func formTimes(cal *Calendar, r *http.Request, isAllDay bool) (time.Time, time.Time, error) {
 	if isAllDay {
 		start, err := time.Parse("2006-01-02", r.FormValue("date_start"))
@@ -491,7 +624,6 @@ func formTimes(cal *Calendar, r *http.Request, isAllDay bool) (time.Time, time.T
 }
 
 func buildRRule(r *http.Request) string {
-	r.ParseForm()
 	freq := r.FormValue("rrule_freq")
 	if freq == "CUSTOM" {
 		v := strings.TrimSpace(r.FormValue("rrule"))
@@ -523,40 +655,29 @@ func (h *Pages) RRulePreview(w http.ResponseWriter, r *http.Request) {
 	raw := strings.TrimSpace(r.URL.Query().Get("rrule"))
 	raw = strings.TrimPrefix(raw, "RRULE:")
 	if raw == "" {
-		w.Write([]byte(""))
 		return
 	}
-	_, err := rrulelib.StrToRRule(raw)
-	if err != nil {
-		fmt.Fprintf(w, `<span style="color:var(--color-danger,red)">Invalid RRULE: %s</span>`, template.HTMLEscapeString(err.Error()))
-		return
+	var msg string
+	if _, err := rrulelib.StrToRRule(raw); err != nil {
+		msg = fmt.Sprintf(`<span style="color:var(--color-danger,red)">Invalid RRULE: %s</span>`, template.HTMLEscapeString(err.Error()))
+	} else {
+		msg = fmt.Sprintf(`<span>%s</span>`, template.HTMLEscapeString(FormatRRule(raw)))
 	}
-	desc := FormatRRule(raw)
-	fmt.Fprintf(w, `<span>%s</span>`, template.HTMLEscapeString(desc))
+	if _, err := w.Write([]byte(msg)); err != nil {
+		h.plugin.log.Debug("write rrule preview", "err", err)
+	}
 }
 
-func eventRRule(ev *Event) string {
-	fields, err := ParseVEvent(ev.ICSData)
-	if err != nil || fields.RRule == "" {
-		return ""
-	}
-	return FormatRRule(fields.RRule)
-}
+func eventRRule(ev *Event) string { return FormatRRule(ev.RRule) }
 
-func eventRRuleRaw(ev *Event) string {
-	fields, err := ParseVEvent(ev.ICSData)
-	if err != nil {
-		return ""
-	}
-	return fields.RRule
-}
+func eventRRuleRaw(ev *Event) string { return ev.RRule }
 
 // rruleParams parses an RRULE string into key=value pairs.
 func rruleParams(rrule string) map[string]string {
 	m := make(map[string]string)
 	for part := range strings.SplitSeq(rrule, ";") {
 		if kv := strings.SplitN(part, "=", 2); len(kv) == 2 {
-			m[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+			m[strings.ToUpper(strings.TrimSpace(kv[0]))] = strings.TrimSpace(kv[1])
 		}
 	}
 	return m
@@ -636,16 +757,14 @@ func hasByDay(days map[string]bool, day string) bool {
 	return days[day]
 }
 
-// parseAttendeeForm extracts attendee fields from form data.
-// Expects parallel arrays: attendee_email[], attendee_name[], attendee_role[]
-func parseAttendeeForm(r *http.Request) []AttendeeField {
-	if err := r.ParseForm(); err != nil {
-		return nil
-	}
+// parseAttendeeForm extracts attendees from form data: parallel arrays
+// attendee_email[], attendee_name[], attendee_role[]. The form has been
+// parsed.
+func parseAttendeeForm(r *http.Request) []ical.Attendee {
 	emails := r.Form["attendee_email"]
 	names := r.Form["attendee_name"]
 	roles := r.Form["attendee_role"]
-	var result []AttendeeField
+	var result []ical.Attendee
 	for i, email := range emails {
 		email = strings.TrimSpace(email)
 		if email == "" {
@@ -659,122 +778,112 @@ func parseAttendeeForm(r *http.Request) []AttendeeField {
 		if i < len(roles) && roles[i] != "" {
 			role = roles[i]
 		}
-		result = append(result, AttendeeField{
-			Email:    email,
+		result = append(result, ical.Attendee{
+			Address:  "mailto:" + email,
 			CN:       name,
 			PartStat: "NEEDS-ACTION",
 			Role:     role,
+			RSVP:     "TRUE",
 		})
 	}
 	return result
 }
 
+// inviteICS writes an event as an iTIP message (RFC 5546): the stored event
+// with METHOD, and for a cancellation, STATUS:CANCELLED.
+func inviteICS(ev *Event, method string) ([]byte, error) {
+	o := *ev.Object
+	o.Props = append([]contentline.Property{{Name: "METHOD", Value: method}}, o.Props...)
+	if method == "CANCEL" {
+		o.Events = make([]*ical.Event, len(ev.Object.Events))
+		for i, e := range ev.Object.Events {
+			c := *e
+			c.Status = "CANCELLED"
+			o.Events[i] = &c
+		}
+	}
+	var b bytes.Buffer
+	if err := contentline.Write(&b, []*contentline.Component{o.Encode(o.IANAZones)}); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
 // sendInvitations sends email invitations/cancellations to attendees.
-func (h *Pages) sendInvitations(method string, ev *Event, summary, description, location string, dtstart, dtend time.Time, isAllDay bool, attendees []AttendeeField) {
+func (h *Pages) sendInvitations(method string, ev *Event, attendees []ical.Attendee) {
 	emailSender := h.plugin.ctx.EmailSender()
 	if emailSender == nil || len(attendees) == 0 {
 		return
 	}
-	icsData := GenerateICSInvite(method, ev.UID, summary, description, location, dtstart, dtend, isAllDay, attendees, h.plugin.ctx.Now())
+	data, err := inviteICS(ev, method)
+	if err != nil {
+		h.plugin.log.Error("build invitation", "method", method, "uid", ev.UID, "err", err)
+		return
+	}
 
 	var subject string
 	switch method {
 	case "CANCEL":
-		subject = fmt.Sprintf("Event Cancelled: %s", summary)
+		subject = fmt.Sprintf("Event Cancelled: %s", ev.Summary)
 	default:
-		subject = fmt.Sprintf("Invitation: %s", summary)
+		subject = fmt.Sprintf("Invitation: %s", ev.Summary)
 	}
 
-	var timeStr string
-	if isAllDay {
-		timeStr = dtstart.Format("Mon, Jan 2 2006")
-	} else {
-		timeStr = fmt.Sprintf("%s - %s", dtstart.Format("Mon, Jan 2 2006 15:04"), dtend.Format("15:04"))
+	body := fmt.Sprintf("Event: %s\nWhen: %s\n", ev.Summary, formatEventTime(ev.DTStart, ev.DTEnd, ev.IsAllDay))
+	if ev.Location != "" {
+		body += fmt.Sprintf("Where: %s\n", ev.Location)
 	}
-
-	body := fmt.Sprintf("Event: %s\nWhen: %s\n", summary, timeStr)
-	if location != "" {
-		body += fmt.Sprintf("Where: %s\n", location)
-	}
-	if description != "" {
-		body += fmt.Sprintf("\n%s\n", description)
+	if ev.Description != "" {
+		body += fmt.Sprintf("\n%s\n", ev.Description)
 	}
 	if method == "CANCEL" {
 		body += "\nThis event has been cancelled.\n"
 	}
 
 	for _, att := range attendees {
-		err := emailSender.SendWithAttachments(
-			att.Email,
-			subject,
-			body,
-			"",
-			[]plugin.EmailAttachment{{
-				Filename:    "invite.ics",
-				ContentType: "text/calendar; method=" + method,
-				Data:        []byte(icsData),
-			}},
-		)
+		to := ical.Email(att.Address)
+		err := emailSender.SendWithAttachments(to, subject, body, "", []plugin.EmailAttachment{{
+			Filename:    "invite.ics",
+			ContentType: "text/calendar; method=" + method,
+			Data:        data,
+		}})
 		if err != nil {
-			h.plugin.log.Error("send invitation", "method", method, "uid", ev.UID, "to", att.Email, "err", err)
+			h.plugin.log.Error("send invitation", "method", method, "uid", ev.UID, "to", to, "err", err)
 		}
 	}
 }
 
 // RespondToInvite handles POST to accept/decline an event invitation.
 func (h *Pages) RespondToInvite(w http.ResponseWriter, r *http.Request) {
-	db, _, ev, _, status, err := h.ownEvent(r)
+	db, _, ev, cal, status, err := h.ownEvent(r)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
-	responseEmail := r.FormValue("email")
+	email := r.FormValue("email")
 	answer := r.FormValue("status")
 	if answer != "ACCEPTED" && answer != "DECLINED" && answer != "TENTATIVE" {
 		http.Error(w, "invalid status", http.StatusBadRequest)
 		return
 	}
-	if err := UpdateAttendeeStatus(db, ev.ID, responseEmail, answer); err != nil {
+	found := false
+	for _, e := range ev.Object.Events {
+		for i := range e.Attendees {
+			if strings.EqualFold(ical.Email(e.Attendees[i].Address), email) {
+				e.Attendees[i].PartStat = answer
+				found = true
+			}
+		}
+	}
+	if !found {
+		http.Error(w, "not an attendee", http.StatusNotFound)
+		return
+	}
+	if _, err := SaveEvent(db, cal, ev, ev.Object, h.plugin.ctx.Now()); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-}
-
-func expandRRule(ev EventWithCalendar, rangeStart, rangeEnd time.Time) []EventWithCalendar {
-	fields, err := ParseVEventIn(ev.ICSData, ev.Zone())
-	if err != nil || fields.RRule == "" {
-		return []EventWithCalendar{ev}
-	}
-
-	rule, err := rrulelib.StrToRRule(fields.RRule)
-	if err != nil {
-		return []EventWithCalendar{ev}
-	}
-	// DTSTART keeps its zone, so occurrences land on the same local time
-	// across DST changes.
-	rule.DTStart(fields.DTStart)
-	var set rrulelib.Set
-	set.RRule(rule)
-	for _, ex := range fields.ExDates {
-		set.ExDate(ex)
-	}
-
-	duration := time.Unix(ev.DTEnd, 0).Sub(time.Unix(ev.DTStart, 0))
-	occurrences := set.Between(rangeStart.Add(-duration), rangeEnd, true)
-
-	var result []EventWithCalendar
-	for _, occ := range occurrences {
-		occEnd := occ.Add(duration)
-		if occEnd.Before(rangeStart) {
-			continue
-		}
-		e := ev
-		e.DTStart = occ.Unix()
-		e.DTEnd = occEnd.Unix()
-		result = append(result, e)
-	}
-	return result
 }
 
 // DeleteCalendarHandler handles DELETE to remove a calendar (HTMX).

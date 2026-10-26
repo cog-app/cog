@@ -237,7 +237,7 @@ func (q *request) depth() int {
 
 func (q *request) options(allow string) {
 	q.w.Header().Set("Allow", allow)
-	q.w.Header().Set("DAV", "1, 3, access-control, calendar-access, addressbook, extended-mkcol")
+	q.w.Header().Set("DAV", "1, 3, access-control, calendar-access, calendar-no-timezone, addressbook, extended-mkcol")
 	q.w.WriteHeader(http.StatusOK)
 }
 

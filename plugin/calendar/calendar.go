@@ -13,6 +13,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
+	"git.duckfam.us/jj-software/cog/internal/dav/ical"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
@@ -66,8 +67,8 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		Render:   p.renderWidget,
 	})
 	ctx.RegisterSearchSource(plugin.SearchSourceDef{
-		PrimaryTable: "events",
-		EnrichSQL:    "SELECT rowid, summary, location, description FROM events WHERE rowid IN (?)",
+		PrimaryTable: "vevents",
+		EnrichSQL:    "SELECT rowid, summary, location, description FROM vevents WHERE rowid IN (?)",
 	})
 
 	// Web UI routes
@@ -161,31 +162,47 @@ func (p *Plugin) processReminders() {
 	// A production system would iterate over all users with calendar DBs.
 }
 
-// EnsureNotifications creates notification records for an event's alarms.
-// Call it in the transaction that writes the event.
-func EnsureNotifications(db davsql.Querier, eventID int64, dtstart int64, icsData string) error {
-	// Clear old notifications for this event.
-	if _, err := db.Exec(`DELETE FROM notifications WHERE event_id = ?`, eventID); err != nil {
+// ensureNotifications replaces an event's reminder records with those of
+// its first instance that has not ended, in the transaction that writes it.
+func ensureNotifications(q davsql.Querier, eventID int64, o *ical.Object, z ical.Zones, now int64) error {
+	if _, err := q.Exec(`DELETE FROM notifications WHERE event_id = ?`, eventID); err != nil {
 		return fmt.Errorf("clear notifications: %w", err)
 	}
-
-	// Only VALARM triggers are needed here; times come from dtstart.
-	fields, err := ParseVEvent(icsData)
-	if err != nil || len(fields.Alarms) == 0 {
+	from := time.Unix(now, 0)
+	ins, err := o.Instances(z, from, from.Add(upcomingHorizon))
+	if err != nil || len(ins) == 0 {
+		// Nothing ahead to remind about; a recurrence Cog cannot expand
+		// has no reminders either.
 		return nil
 	}
-
-	for _, alarm := range fields.Alarms {
-		triggerAt := parseTriggerTime(dtstart, alarm.Trigger)
-		if triggerAt <= 0 {
+	in := ins[0]
+	for _, a := range in.Event.Alarms {
+		at, ok := triggerTime(a, in)
+		if !ok {
 			continue
 		}
-		if _, err := db.Exec(`INSERT INTO notifications (event_id, trigger_at) VALUES (?, ?)`,
-			eventID, triggerAt); err != nil {
+		if _, err := q.Exec(`INSERT INTO notifications (event_id, trigger_at) VALUES (?, ?)`, eventID, at.Unix()); err != nil {
 			return fmt.Errorf("insert notification: %w", err)
 		}
 	}
 	return nil
+}
+
+// triggerTime returns when an alarm fires for an instance.
+func triggerTime(a ical.Alarm, in ical.Instance) (time.Time, bool) {
+	if a.Absolute {
+		t, err := time.Parse("20060102T150405Z", a.Trigger)
+		return t, err == nil
+	}
+	d, err := ical.ParseDuration(a.Trigger)
+	if err != nil {
+		return time.Time{}, false
+	}
+	base := in.Start
+	if strings.EqualFold(a.Related, "END") {
+		base = in.End
+	}
+	return d.Add(base), true
 }
 
 // DueNotifications returns unfired notifications that are due (trigger_at <= now).
@@ -217,75 +234,4 @@ func MarkNotificationFired(db *sql.DB, id int64) error {
 		return fmt.Errorf("mark notification %d fired: %w", id, err)
 	}
 	return nil
-}
-
-// parseTriggerTime converts a VALARM trigger (e.g. "-PT15M") to a unix timestamp
-// relative to the event start.
-func parseTriggerTime(dtstart int64, trigger string) int64 {
-	if trigger == "" {
-		return 0
-	}
-
-	negative := false
-	s := trigger
-	if s[0] == '-' {
-		negative = true
-		s = s[1:]
-	}
-
-	// Parse ISO 8601 duration: PT15M, PT1H, P1D, PT30S, etc.
-	if len(s) < 2 {
-		return 0
-	}
-
-	var totalSeconds int64
-
-	// Skip leading P
-	if s[0] == 'P' {
-		s = s[1:]
-	}
-
-	// Check for days before T
-	if idx := strings.IndexByte(s, 'D'); idx > 0 {
-		if d, err := fmt.Sscanf(s[:idx], "%d", new(int)); d == 1 && err == nil {
-			var days int
-			fmt.Sscanf(s[:idx], "%d", &days)
-			totalSeconds += int64(days) * 86400
-		}
-		s = s[idx+1:]
-	}
-
-	// Skip T
-	if len(s) > 0 && s[0] == 'T' {
-		s = s[1:]
-	}
-
-	// Parse H, M, S
-	for len(s) > 0 {
-		var num int
-		var unit byte
-		n, err := fmt.Sscanf(s, "%d%c", &num, &unit)
-		if n < 2 || err != nil {
-			break
-		}
-		switch unit {
-		case 'H':
-			totalSeconds += int64(num) * 3600
-		case 'M':
-			totalSeconds += int64(num) * 60
-		case 'S':
-			totalSeconds += int64(num)
-		}
-		// Advance past the parsed portion.
-		idx := strings.IndexByte(s, unit)
-		if idx < 0 {
-			break
-		}
-		s = s[idx+1:]
-	}
-
-	if negative {
-		return dtstart - totalSeconds
-	}
-	return dtstart + totalSeconds
 }

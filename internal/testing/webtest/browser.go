@@ -396,6 +396,13 @@ func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
 		}
 	}
 
+	// A page still loading has a truncated DOM and no scripts run yet; on a
+	// loaded machine an element the test waited for can appear well before
+	// the rest of the document. Capturing that would record a page nobody
+	// sees, so it is an error, not a golden.
+	if err := b.tp().WaitLoad(); err != nil {
+		t.Fatalf("webtest: snapshot: page did not finish loading: %v", err)
+	}
 	// Wait for the page to settle before capturing. A page that never
 	// settles is still captured, and the golden will say what moved.
 	if err := b.tp().WaitStable(300 * time.Millisecond); err != nil {

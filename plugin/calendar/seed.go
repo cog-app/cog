@@ -111,7 +111,7 @@ func (p *Plugin) Seed(username string) error {
 			icsData = ics(ev.uid, ev.summary, ev.desc, ev.loc,
 				ev.start.Format("20060102T150405Z"), ev.end.Format("20060102T150405Z"))
 		}
-		if _, err := SaveEvent(db, cals[ev.calUID], nil, icsData, now); err != nil {
+		if _, err := SaveICS(db, cals[ev.calUID], icsData, now); err != nil {
 			return fmt.Errorf("seed event %s: %w", ev.uid, err)
 		}
 	}

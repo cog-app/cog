@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
 	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
+	"git.duckfam.us/jj-software/cog/internal/dav/tz"
 )
 
 // maxResourceSize bounds one calendar object or vCard.
@@ -108,6 +110,46 @@ func visible(c *Collection, a access, b Backend, r *Resource) (bool, error) {
 	return true, red.Redact(c, r)
 }
 
+// byReference reports whether the client asked for time zones by reference
+// (RFC 7809): calendar data without the VTIMEZONEs of standard zones, which
+// it knows already.
+func (q *request) byReference() bool {
+	return strings.EqualFold(strings.TrimSpace(q.r.Header.Get("CalDAV-Timezones")), "F")
+}
+
+// served prepares a resource's data for this request: redacted for a
+// free/busy-only sharee, and without standard VTIMEZONEs when the client
+// asked for time zones by reference. It reports false when the user may not
+// see the resource.
+func (q *request) served(c *Collection, a access, b Backend, r *Resource) (bool, error) {
+	ok, err := visible(c, a, b, r)
+	if err != nil || !ok || r.Data == nil || r.Component == VCARD || !q.byReference() {
+		return ok, err
+	}
+	r.Data, err = withoutStandardZones(r.Data)
+	return true, err
+}
+
+// withoutStandardZones removes the VTIMEZONEs of zones a client can look up
+// by name; a client's own definitions stay, since nothing else defines them.
+func withoutStandardZones(data []byte) ([]byte, error) {
+	comps, err := contentline.Parse(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	for _, cal := range comps {
+		cal.Components = slices.DeleteFunc(cal.Components, func(sub *contentline.Component) bool {
+			id := sub.Prop("TZID")
+			return sub.Is("VTIMEZONE") && id != nil && tz.Load(id.Value) != nil
+		})
+	}
+	var b bytes.Buffer
+	if err := contentline.Write(&b, comps); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
 func (q *request) get(c *Collection, owner *User, a access, uri string) {
 	b, r, err := q.find(c, owner.Username, uri, true)
 	if errors.Is(err, ErrNotFound) {
@@ -118,7 +160,7 @@ func (q *request) get(c *Collection, owner *User, a access, uri string) {
 		q.fail(err)
 		return
 	}
-	ok, err := visible(c, a, b, r)
+	ok, err := q.served(c, a, b, r)
 	if err != nil {
 		q.fail(err)
 		return
@@ -129,6 +171,7 @@ func (q *request) get(c *Collection, owner *User, a access, uri string) {
 	}
 	etag := r.ETag(c.ID)
 	q.w.Header().Set("ETag", etag)
+	q.w.Header().Set("Vary", "CalDAV-Timezones")
 	q.w.Header().Set("Content-Type", contentType(r.Component))
 	if inm := q.r.Header.Get("If-None-Match"); inm != "" {
 		for t := range strings.SplitSeq(inm, ",") {
@@ -211,8 +254,10 @@ func (q *request) put(c *Collection, owner *User, uri string) {
 		return
 	}
 	// Return an ETag only for the bytes that will be served (RFC 4791
-	// §5.3.4); otherwise the client fetches the stored version.
-	if bytes.Equal(res.Data, data) {
+	// §5.3.4); otherwise the client fetches the stored version. The request
+	// is compared with its folding and line endings normalised, which a
+	// client cannot rely on anyway.
+	if bytes.Equal(res.Data, data) || bytes.Equal(res.Data, normalise(obj)) {
 		q.w.Header().Set("ETag", ETag(c.ID, res.Version))
 	}
 	if res.Created {
@@ -220,6 +265,16 @@ func (q *request) put(c *Collection, owner *User, uri string) {
 	} else {
 		q.w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// normalise writes a parsed request back out, with Cog's folding and line
+// endings.
+func normalise(obj *contentline.Component) []byte {
+	var b bytes.Buffer
+	if err := contentline.Write(&b, []*contentline.Component{obj}); err != nil {
+		return nil
+	}
+	return b.Bytes()
 }
 
 // put stores a resource through the backend for its component, after
@@ -355,7 +410,7 @@ func (q *request) propfindResource(c *Collection, owner *User, a access, uri str
 // resourceResponse answers pf for one resource, or reports false when the
 // user may not see it.
 func (q *request) resourceResponse(c *Collection, owner *User, a access, b Backend, r *Resource, pf *propfind) (response, bool) {
-	ok, err := visible(c, a, b, r)
+	ok, err := q.served(c, a, b, r)
 	if err != nil {
 		q.s.Log.Error("dav: redact resource", "uri", r.URI, "err", err)
 		return response{}, false

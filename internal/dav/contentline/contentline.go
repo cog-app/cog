@@ -24,9 +24,9 @@ import (
 
 // Component is a BEGIN/END block, such as VCALENDAR, VEVENT or VCARD.
 type Component struct {
-	Name       string
-	Props      []Property   // in input order
-	Components []*Component // nested, in input order
+	Name       string       `json:"name"`
+	Props      []Property   `json:"props,omitempty"`      // in input order
+	Components []*Component `json:"components,omitempty"` // nested, in input order
 }
 
 // Property is one content line.
@@ -36,10 +36,10 @@ type Component struct {
 // Write emits it unchanged, so a client's data survives even when Cog cannot
 // read it.
 type Property struct {
-	Group  string  // vCard group, e.g. "item1" in "item1.EMAIL"; "" when absent
-	Name   string  // as received
-	Params []Param // in input order
-	Value  string  // raw value text, still escaped
+	Group  string  `json:"group,omitempty"`  // vCard group, e.g. "item1" in "item1.EMAIL"; "" when absent
+	Name   string  `json:"name,omitempty"`   // as received
+	Params []Param `json:"params,omitempty"` // in input order
+	Value  string  `json:"value"`            // raw value text, still escaped
 }
 
 // Param is one property parameter. Values are unquoted and RFC 6868 caret
@@ -48,8 +48,8 @@ type Property struct {
 // A parameter written without a name, as vCard 2.1 does ("TEL;HOME;VOICE:"),
 // has Name "" and its token as the only value.
 type Param struct {
-	Name   string
-	Values []string // multi-valued, e.g. MEMBER="a","b" or TYPE=WORK,VOICE
+	Name   string   `json:"name,omitempty"`
+	Values []string `json:"values"` // multi-valued, e.g. MEMBER="a","b" or TYPE=WORK,VOICE
 }
 
 // Is reports whether the component is named name, ignoring case.

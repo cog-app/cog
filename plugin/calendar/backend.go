@@ -1,23 +1,28 @@
 package calendar
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
+	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
 	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
+	"git.duckfam.us/jj-software/cog/internal/dav/ical"
 )
 
-// backend serves events to the DAV core. The ICS is stored and served
-// verbatim; the indexed columns are derived from it on write.
+// backend serves events to the DAV core. Events are stored as rows
+// (internal/dav/ical models) and their iCalendar text is generated on read.
 type backend struct {
 	dav.Table
 	p *Plugin
 }
 
 func newBackend(p *Plugin) *backend {
-	return &backend{Table: dav.Table{Name: "events", Data: "ics_data", Component: dav.VEVENT, DB: p.DB}, p: p}
+	b := &backend{p: p}
+	b.Table = dav.Table{Name: "events", Component: dav.VEVENT, DB: p.DB, Render: b.render}
+	return b
 }
 
 var (
@@ -37,22 +42,36 @@ func zoneOf(c *dav.Collection) *time.Location {
 	return time.UTC
 }
 
+// render generates the text of stored events.
+func (b *backend) render(q davsql.Querier, _ *dav.Collection, ids []int64) (map[int64][]byte, error) {
+	objs, err := loadObjects(q, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64][]byte, len(objs))
+	for id, o := range objs {
+		if out[id], err = render(o); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 func (b *backend) Put(owner string, c *dav.Collection, req *dav.PutRequest) (*dav.PutResult, error) {
 	db, err := b.p.DB(owner)
 	if err != nil {
 		return nil, err
 	}
-	ics := string(req.Data)
-	fields, err := ParseVEventIn(ics, zoneOf(c))
+	o, err := ical.DecodeEvents(req.Object)
 	if err != nil {
-		return nil, fmt.Errorf("parse event %s: %w", req.URI, err)
+		return nil, fmt.Errorf("decode event %s: %w", req.URI, err)
 	}
 	tx, err := db.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("put event: %w", err)
 	}
 	defer tx.Rollback()
-	_, version, created, err := putEvent(tx, int64(c.ID), req.URI, req.UID, ics, fields, req.Conditions, b.p.ctx.Now().Unix())
+	st, err := storeObject(tx, int64(c.ID), zoneOf(c), req.URI, o, req.Conditions, b.p.ctx.Now().Unix())
 	var conflict *errUIDConflict
 	if errors.As(err, &conflict) {
 		return nil, &dav.UIDConflict{URI: conflict.uri}
@@ -63,7 +82,7 @@ func (b *backend) Put(owner string, c *dav.Collection, req *dav.PutRequest) (*da
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("put event: %w", err)
 	}
-	return &dav.PutResult{Version: version, Created: created, Data: req.Data}, nil
+	return &dav.PutResult{Version: st.version, Created: st.created, Data: st.data}, nil
 }
 
 func (b *backend) Delete(owner string, c *dav.Collection, uri string, cond davsql.Conditions) error {
@@ -82,6 +101,8 @@ func (b *backend) Delete(owner string, c *dav.Collection, uri string, cond davsq
 	return tx.Commit()
 }
 
+// InRange narrows a time-range query to events whose instances may overlap
+// it, from the indexed bounds; the client filters instances exactly.
 func (b *backend) InRange(owner string, c *dav.Collection, comp dav.Component, start, end time.Time, withData bool) ([]dav.Resource, error) {
 	db, err := b.p.DB(owner)
 	if err != nil {
@@ -95,17 +116,25 @@ func (b *backend) InRange(owner string, c *dav.Collection, comp dav.Component, s
 	if !end.IsZero() {
 		hi = end.Unix()
 	}
-	return b.Query(db, withData, `collection_id = ? AND dtstart < ?
-		AND (dtend > ? OR ics_data LIKE '%RRULE:%' OR ics_data LIKE '%RDATE%')`, c.ID, hi, lo)
+	return b.Query(db, c, withData, `collection_id = ? AND start_utc < ? AND (range_end_utc IS NULL OR range_end_utc >= ?)`, c.ID, hi, lo)
 }
 
 // Redact shows a free/busy-only sharee when the owner is busy, nothing else.
 func (b *backend) Redact(c *dav.Collection, r *dav.Resource) error {
-	f, err := ParseVEventIn(string(r.Data), zoneOf(c))
+	comps, err := contentline.Parse(bytes.NewReader(r.Data))
 	if err != nil {
 		return fmt.Errorf("redact event %s: %w", r.URI, err)
 	}
-	r.Data = []byte(GenerateICSFull(f.UID, "Busy", "", "", f.DTStart, f.DTEnd, f.IsAllDay, f.RRule, nil, nil, time.Unix(0, 0).UTC()))
+	o, err := ical.DecodeEvents(comps[0])
+	if err != nil {
+		return fmt.Errorf("redact event %s: %w", r.URI, err)
+	}
+	busy := o.Busy()
+	var out bytes.Buffer
+	if err := contentline.Write(&out, []*contentline.Component{busy.Encode(busy.IANAZones)}); err != nil {
+		return fmt.Errorf("redact event %s: %w", r.URI, err)
+	}
+	r.Data = out.Bytes()
 	return nil
 }
 
@@ -114,5 +143,27 @@ func (b *backend) TimezoneChanged(owner string, c *dav.Collection) error {
 	if err != nil {
 		return err
 	}
-	return RecomputeEventTimes(db, int64(c.ID), zoneOf(c))
+	return RecomputeEventTimes(db, int64(c.ID), zoneOf(c), b.p.ctx.Now())
+}
+
+// Purge removes a deleted calendar's events and the time zones they used.
+func (b *backend) Purge(owner string, id dav.CollectionID) error {
+	db, err := b.p.DB(owner)
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("purge calendar: %w", err)
+	}
+	defer tx.Rollback()
+	for _, table := range []string{"events", "vtimezones"} {
+		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE collection_id = ?`, id); err != nil {
+			return fmt.Errorf("purge %s: %w", table, err)
+		}
+	}
+	if err := davsql.Purge(tx, int64(id)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
