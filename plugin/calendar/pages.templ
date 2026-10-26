@@ -254,8 +254,11 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 				},
 				eventClick: function (info) {
 					info.jsEvent.preventDefault();
-					var id = info.event.id;
-					fetch("/apps/calendar/events/" + id, {
+					var url = "/apps/calendar/events/" + info.event.id;
+					if (info.event.extendedProps.occurrence) {
+						url += "?occurrence=" + info.event.extendedProps.occurrence;
+					}
+					fetch(url, {
 						headers: {
 							"X-CSRF-Token": document.querySelector("[name=csrf_token]").value,
 						},
@@ -384,6 +387,17 @@ templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Cale
 	<h3>Edit Event</h3>
 	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d", ev.ID)) } onsubmit="clearColorIfUnchecked('em-color-enable','em-color')">
 		<input type="hidden" name="csrf_token" value={ csrfToken }/>
+		if ev.Occurrence != 0 {
+			<input type="hidden" name="occurrence" value={ strconv.FormatInt(ev.Occurrence, 10) }/>
+			<div class="form-group">
+				<label for="em-scope">Apply to</label>
+				<select class="form-control" id="em-scope" name="scope">
+					<option value="this" selected>This event</option>
+					<option value="following">This and following events</option>
+					<option value="all">All events</option>
+				</select>
+			</div>
+		}
 		<div class="form-group">
 			<label for="em-calendar">Calendar</label>
 			<select class="form-control" id="em-calendar" name="calendar_id">
@@ -610,7 +624,10 @@ templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Cale
 			<button
 				type="button"
 				class="btn btn-danger"
-				hx-delete={ fmt.Sprintf("/apps/calendar/events/%d", ev.ID) }
+				hx-delete={ deleteURL(ev) }
+				if ev.Occurrence != 0 {
+					hx-include="#em-scope"
+				}
 				hx-confirm="Delete this event?"
 				hx-on::after-request="document.getElementById('event-modal').style.display='none';location.reload()"
 			>Delete</button>
@@ -638,6 +655,15 @@ templ emByDayCheckbox(prefix, day, label string, checked bool) {
 			<input type="checkbox" name="rrule_byday" value={ day }/> { label }
 		}
 	</label>
+}
+
+// deleteURL deletes the event, or with the scope chosen in the form, part of
+// a series.
+func deleteURL(ev *Event) string {
+	if ev.Occurrence != 0 {
+		return fmt.Sprintf("/apps/calendar/events/%d?occurrence=%d", ev.ID, ev.Occurrence)
+	}
+	return fmt.Sprintf("/apps/calendar/events/%d", ev.ID)
 }
 
 func eventColorOrDefault(ev *Event, cal *Calendar) string {

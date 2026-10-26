@@ -132,6 +132,8 @@ A screenshot is only captured when the DOM golden does not match, which keeps th
 WEBTEST_UPDATE=1 go test ./plugin/calendar/    # accept DOM changes, refresh images
 ```
 
+At most `WEBTEST_PARALLEL` test binaries (default: a quarter of the CPUs) run Chrome at once; the others wait for a slot, which is a lock file in the temp directory. Each browser action may take `WEBTEST_TIMEOUT` (default 30s). Both exist because `go test ./...` runs every package's browser tests in parallel, and on a loaded machine pages outlast short timeouts.
+
 A failing snapshot writes `<TestName>.actual.html` and `.actual.png` next to the golden. Diff the HTML to see what changed; the image is there to look at.
 
 CSRF tokens, user identifiers and the test's temp directory (`«tmp»`) are masked in the golden — they differ per run. Nothing else does, so a golden that changes between runs means the page is genuinely nondeterministic, which is worth fixing rather than masking.

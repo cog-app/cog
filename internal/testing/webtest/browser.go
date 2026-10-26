@@ -36,9 +36,20 @@ type Browser struct {
 	timeout time.Duration
 }
 
-const defaultTimeout = 10 * time.Second
+// defaultTimeout bounds one action: a navigation, a wait, a click. It is
+// generous because a whole test suite running beside the browser makes
+// pages slow; a test that is merely slow still passes, and one waiting for
+// something that never comes still fails. WEBTEST_TIMEOUT overrides it.
+var defaultTimeout = timeoutFromEnv(30 * time.Second)
 
-// SetTimeout overrides the default action timeout (10s).
+func timeoutFromEnv(d time.Duration) time.Duration {
+	if v, err := time.ParseDuration(os.Getenv("WEBTEST_TIMEOUT")); err == nil && v > 0 {
+		return v
+	}
+	return d
+}
+
+// SetTimeout overrides the default action timeout.
 func (b *Browser) SetTimeout(d time.Duration) {
 	b.timeout = d
 }
@@ -68,7 +79,7 @@ func (b *Browser) el(sel string) (*rod.Element, error) {
 	// in parallel looks like — burns the entire deadline here, leaving the
 	// lookup below to fail immediately with a context error even though the
 	// element was there all along.
-	_ = b.page.Timeout(2 * time.Second).WaitStable(300 * time.Millisecond)
+	_ = b.page.Timeout(5 * time.Second).WaitStable(300 * time.Millisecond)
 
 	p := b.tp()
 	if len(sel) > 1 && sel[:2] == "//" {
@@ -311,6 +322,10 @@ func (b *Browser) HasElement(t testing.TB, sel string) bool {
 func (b *Browser) Count(t testing.TB, sel string) int {
 	t.Helper()
 	p := b.tp()
+	// Counting a page that is still loading counts part of it.
+	if err := p.WaitLoad(); err != nil {
+		t.Fatalf("webtest: count %s: page did not load: %v", sel, err)
+	}
 	els, err := p.Elements(sel)
 	if err != nil {
 		t.Fatalf("webtest: count %s: %v", sel, err)
@@ -359,6 +374,11 @@ func (b *Browser) Login(t testing.TB, user, pass string) {
 	b.Type(t, "#password", pass)
 	b.Click(t, `button[type="submit"]`)
 	b.WaitNotVisible(t, "#password")
+	// The page logged in to may still be arriving; a test that counts or
+	// snapshots it next would see part of it.
+	if err := b.tp().WaitLoad(); err != nil {
+		t.Fatalf("webtest: login: page after login did not load: %v", err)
+	}
 }
 
 // Snapshot compares the page against a golden pair in testdata/snapshots,

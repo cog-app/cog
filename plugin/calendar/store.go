@@ -64,8 +64,11 @@ type Event struct {
 	DTEnd       int64
 	IsAllDay    bool
 	RRule       string
-	CreatedAt   int64
-	UpdatedAt   int64
+	// Occurrence is the start of the master occurrence an instance is, as
+	// Unix time; 0 for an event that does not recur.
+	Occurrence int64
+	CreatedAt  int64
+	UpdatedAt  int64
 
 	Object *ical.Object // nil unless loaded
 }
@@ -232,6 +235,9 @@ func Instances(ev EventWithCalendar, start, end time.Time) ([]EventWithCalendar,
 		e.Summary, e.Location, e.Description = in.Event.Summary, in.Event.Location, in.Event.Description
 		e.DTStart, e.DTEnd = in.Start.Unix(), in.End.Unix()
 		e.IsAllDay = in.Event.Start.IsDate
+		if !in.RecurrenceID.IsZero() {
+			e.Occurrence = in.RecurrenceID.Unix()
+		}
 		out = append(out, e)
 	}
 	return out, nil
@@ -776,37 +782,70 @@ func ParseObject(ics string) (*ical.Object, error) {
 	return o, nil
 }
 
-// SaveEvent stores an event written by Cog (web UI, seeds, tests) in cal.
-// from is the event being edited, or nil for a new one; moving it to another
-// calendar deletes it from the old one in the same transaction.
+// Save is one event written by Cog: an object stored in a calendar. From
+// is the event being edited, or nil for a new one; moving it to another
+// calendar deletes it from the old one. Color, when set, is the new
+// event's Cog colour; an edited event keeps its own.
+type Save struct {
+	Cal    *Calendar
+	From   *Event
+	Object *ical.Object
+	Color  string
+}
+
+// SaveEvent stores one event written by Cog (web UI, seeds, tests).
 func SaveEvent(db *sql.DB, cal *Calendar, from *Event, o *ical.Object, now time.Time) (*Event, error) {
-	uri := o.UID + ".ics"
-	if from != nil {
-		uri = from.URI
+	evs, err := SaveEvents(db, now, Save{Cal: cal, From: from, Object: o})
+	if err != nil {
+		return nil, err
 	}
+	return evs[0], nil
+}
+
+// SaveEvents stores events written by Cog in one transaction, so a series
+// split in two is never seen half done.
+func SaveEvents(db *sql.DB, now time.Time, saves ...Save) ([]*Event, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("save event: %w", err)
 	}
 	defer tx.Rollback()
-	if from != nil && from.CalendarID != cal.ID {
-		if err := deleteEvent(tx, from.CalendarID, from.URI, davsql.Conditions{}, now.Unix()); err != nil {
+	ids := make([]int64, len(saves))
+	for i, sv := range saves {
+		uri := sv.Object.UID + ".ics"
+		if sv.From != nil {
+			uri = sv.From.URI
+			if sv.From.CalendarID != sv.Cal.ID {
+				if err := deleteEvent(tx, sv.From.CalendarID, sv.From.URI, davsql.Conditions{}, now.Unix()); err != nil {
+					return nil, err
+				}
+			}
+		}
+		st, err := storeObject(tx, sv.Cal.ID, sv.Cal.Zone(), uri, sv.Object, davsql.Conditions{}, now.Unix())
+		if err != nil {
 			return nil, err
 		}
-	}
-	st, err := storeObject(tx, cal.ID, cal.Zone(), uri, o, davsql.Conditions{}, now.Unix())
-	if err != nil {
-		return nil, err
-	}
-	if from != nil && from.Color != "" {
-		if _, err := tx.Exec(`UPDATE events SET color = ? WHERE id = ?`, from.Color, st.id); err != nil {
-			return nil, fmt.Errorf("keep event colour: %w", err)
+		color := sv.Color
+		if sv.From != nil {
+			color = sv.From.Color
 		}
+		if color != "" {
+			if _, err := tx.Exec(`UPDATE events SET color = ? WHERE id = ?`, color, st.id); err != nil {
+				return nil, fmt.Errorf("set event colour: %w", err)
+			}
+		}
+		ids[i] = st.id
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("save event: %w", err)
 	}
-	return GetEvent(db, st.id)
+	out := make([]*Event, len(ids))
+	for i, id := range ids {
+		if out[i], err = GetEvent(db, id); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // SaveICS parses ics and stores it as a new event in cal.

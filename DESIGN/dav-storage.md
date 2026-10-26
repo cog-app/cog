@@ -467,10 +467,13 @@ Adjacent bugs fixed in milestone 3:
 
 Open after milestone 3:
 
-- With every package's browser tests at once (`go test ./...` on a 16-thread machine), some navigations exceed `webtest`'s action timeout; `go test -p 4 ./...` passes. Pre-existing; not addressed.
 - Redefining a client's own TZID (a PUT with a different VTIMEZONE of the same name) replaces it for the collection, but the derived times of other events using it are only recomputed when they are next written or the calendar's zone changes.
 - REPORT `calendar-data` with `expand` or `limit-recurrence-set` (RFC 4791 §9.6.5–6) is not implemented; clients that ask get the stored series.
-- The web UI edits a series as a whole. Editing or deleting one occurrence (an override, or an EXDATE) and "this and future" splitting are not in the form yet.
+
+After milestone 3:
+
+- **Editing one occurrence.** Clicking an instance of a series opens it with "Apply to": *this event* creates or updates its override (a copy of the master without its recurrence, then the form); *this and following* splits the series (`Object.Split`: the old one ends with an UNTIL just before, the new one, with a new UID, carries the rest of a COUNT, the later overrides, exceptions and extra dates, and the form, moved by however much the occurrence was moved); *all events* edits the master and moves it, its exceptions and its overrides' recurrence IDs by as much as the occurrence moved. Deleting offers the same: an EXDATE (and the override goes), an UNTIL, or the whole event. A split is saved in one transaction. Only a whole series may move to another calendar.
+- **Browser tests under load.** At most `WEBTEST_PARALLEL` test binaries (default a quarter of the CPUs) run Chrome at once, by lock files in the temp directory; the action timeout is 30s (`WEBTEST_TIMEOUT`). `Login` and `Count` now wait for the page load: `TestBrowserCore/Dashboard`'s old "6 app cards" was a count of a page that had not finished arriving.
 
 Fixed after milestone 2 (pre-existing, found through the `webtest` fix):
 

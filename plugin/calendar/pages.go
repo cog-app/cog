@@ -168,6 +168,7 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 			Location    string `json:"location"`
 			Description string `json:"description"`
 			CalendarID  int64  `json:"calendarId"`
+			Occurrence  int64  `json:"occurrence,omitempty"`
 		} `json:"extendedProps"`
 	}
 
@@ -193,6 +194,7 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 		fc.ExtendedProps.Location = ev.Location
 		fc.ExtendedProps.Description = ev.Description
 		fc.ExtendedProps.CalendarID = ev.CalendarID
+		fc.ExtendedProps.Occurrence = ev.Occurrence
 		result = append(result, fc)
 	}
 
@@ -236,11 +238,11 @@ type Attendee struct {
 	Role        string // REQ-PARTICIPANT, OPT-PARTICIPANT, CHAIR
 }
 
-// attendeesOf returns the attendees of an event's first component that have
-// an email address; the form cannot show others, and saving keeps them.
-func attendeesOf(ev *Event) []Attendee {
+// attendeesOf returns a component's attendees that have an email address;
+// the form cannot show others, and saving keeps them.
+func attendeesOf(e *ical.Event) []Attendee {
 	var out []Attendee
-	for _, a := range ev.Object.Events[0].Attendees {
+	for _, a := range e.Attendees {
 		if email := ical.Email(a.Address); email != "" {
 			out = append(out, Attendee{Email: email, DisplayName: a.CN, Status: a.PartStat, Role: a.Role})
 		}
@@ -248,7 +250,46 @@ func attendeesOf(ev *Event) []Attendee {
 	return out
 }
 
-// EventDetail returns an event detail partial for the modal.
+// errBadOccurrence is a malformed occurrence parameter.
+var errBadOccurrence = errors.New("invalid occurrence")
+
+// occurrenceOf returns the instance of a recurring event that the request's
+// occurrence parameter (the Unix start of a master occurrence) names, or nil
+// when the request is about the event as a whole. An event without a
+// recurring master has no occurrences to choose.
+func occurrenceOf(r *http.Request, ev *Event, z ical.Zones) (*ical.Instance, error) {
+	v := r.FormValue("occurrence")
+	if v == "" || v == "0" {
+		return nil, nil
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return nil, errBadOccurrence
+	}
+	if m := ev.Object.Master(); m == nil || !m.Recurs() {
+		return nil, nil
+	}
+	in, err := ev.Object.InstanceAt(time.Unix(n, 0), z)
+	if err != nil {
+		return nil, err
+	}
+	return &in, nil
+}
+
+// occurrenceStatus maps an occurrenceOf error to a status code.
+func occurrenceStatus(err error) int {
+	if errors.Is(err, ical.ErrNoOccurrence) {
+		return http.StatusNotFound
+	}
+	if errors.Is(err, errBadOccurrence) {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
+}
+
+// EventDetail returns an event detail partial for the modal: the event, or
+// with ?occurrence= one instance of a series, with a choice of what an edit
+// applies to.
 func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
 	_, userID, ev, cal, status, err := h.ownEvent(r)
 	if err != nil {
@@ -260,7 +301,19 @@ func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	calEventModal(plugin.CSRFToken(r), ev, cal, calendars, attendeesOf(ev)).Render(r.Context(), w)
+	in, err := occurrenceOf(r, ev, zonesFor(ev.Object, cal.Zone()))
+	if err != nil {
+		http.Error(w, err.Error(), occurrenceStatus(err))
+		return
+	}
+	view, comp := *ev, ev.Object.Events[0]
+	if in != nil {
+		comp = in.Event
+		view.Summary, view.Location, view.Description = comp.Summary, comp.Location, comp.Description
+		view.DTStart, view.DTEnd, view.IsAllDay = in.Start.Unix(), in.End.Unix(), comp.Start.IsDate
+		view.Occurrence = in.RecurrenceID.Unix()
+	}
+	calEventModal(plugin.CSRFToken(r), &view, cal, calendars, attendeesOf(comp)).Render(r.Context(), w)
 }
 
 // eventForm is what the event form edits.
@@ -296,10 +349,24 @@ func parseEventForm(cal *Calendar, r *http.Request) (*eventForm, error) {
 	return f, nil
 }
 
+// movedTo returns the form with its times moved to start, keeping their
+// length.
+func (f *eventForm) movedTo(start time.Time) *eventForm {
+	g := *f
+	g.start = start
+	g.end = start.Add(f.end.Sub(f.start))
+	return &g
+}
+
 // UpdateEvent handles POST to update an existing event. Only what the form
 // shows changes; everything else in the event, including its overrides,
 // exceptions, alarms and whatever a client stored that Cog does not model,
 // is kept.
+//
+// For one instance of a series (occurrence), scope says what the edit
+// applies to: "this" occurrence (an override), "following" ones (the series
+// is split in two at it), or "all" (the master, moved by as much as the
+// instance was).
 func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	db, userID, ev, oldCal, status, err := h.ownEvent(r)
 	if err != nil {
@@ -320,33 +387,104 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	o := ev.Object
+	z := zonesFor(o, oldCal.Zone())
+	in, err := occurrenceOf(r, ev, z)
+	if err != nil {
+		http.Error(w, err.Error(), occurrenceStatus(err))
+		return
+	}
 
 	now := h.plugin.ctx.Now()
-	o := ev.Object
-	applyForm(o, f, zonesFor(o, oldCal.Zone()), now)
+	color := r.FormValue("color")
+	saves := []Save{{Cal: cal, From: ev, Object: o}}
+	edited := 0 // which save the form's colour and invitations belong to
+	scope := r.FormValue("scope")
+	switch {
+	case in == nil:
+		applyForm(o, o.Events[0], f, z, now, true)
 
-	updated, err := SaveEvent(db, cal, ev, o, now)
+	case scope == "this":
+		if cal.ID != ev.CalendarID {
+			http.Error(w, "Only a whole series can move to another calendar.", http.StatusBadRequest)
+			return
+		}
+		e, err := o.Override(in.RecurrenceID, z)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		applyForm(o, e, f, z, now, false)
+		// The series' own colour is not the occurrence's to change.
+		color = ev.Color
+
+	case scope == "following" && in.RecurrenceID.After(seriesStart(o, z)):
+		rule := o.Master().RRule
+		n, err := o.Split(in.RecurrenceID, z, uuid.NewString())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		stamp(o.Master(), now, true)
+		delta := f.start.Sub(in.Start)
+		g := f.movedTo(in.RecurrenceID.Add(delta))
+		if sameRule(rule, f.rrule) {
+			// The form shows the whole series' rule; unchanged, the new
+			// series keeps what is left of it (a COUNT less the
+			// occurrences before the split).
+			g.rrule = n.Master().RRule
+		}
+		applyForm(n, n.Events[0], g, z, now, true)
+		n.ShiftExceptions(delta, z)
+		saves[0].Cal = oldCal
+		saves = append(saves, Save{Cal: cal, Object: n})
+		edited = 1
+
+	default: // "all", or "following" from the first occurrence
+		m := o.Master()
+		delta := f.start.Sub(in.Start)
+		start, _, err := m.Span(z)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		applyForm(o, m, f.movedTo(start.Add(delta)), z, now, true)
+		o.ShiftExceptions(delta, z)
+	}
+
+	saved, err := SaveEvents(db, now, saves...)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := SetEventColor(db, updated.ID, r.FormValue("color")); err != nil {
+	if err := SetEventColor(db, saved[edited].ID, color); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if len(f.attendees) > 0 {
-		h.sendInvitations("REQUEST", updated, f.attendees)
+		for _, s := range saved {
+			h.sendInvitations("REQUEST", s, f.attendees)
+		}
 	}
 
 	http.Redirect(w, r, "/apps/calendar/", http.StatusSeeOther)
 }
 
-// applyForm writes a submitted form into an event's first component, with
-// the bookkeeping RFC 5545 asks of an organizer's edit: DTSTAMP and
-// LAST-MODIFIED always, SEQUENCE when a scheduling field changed. Vendor
-// copies of a changed field are dropped.
-func applyForm(o *ical.Object, f *eventForm, z ical.Zones, now time.Time) {
-	e := o.Events[0]
+// seriesStart returns when a series' master starts.
+func seriesStart(o *ical.Object, z ical.Zones) time.Time {
+	if m := o.Master(); m != nil {
+		if t, _, err := m.Span(z); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
+// applyForm writes a submitted form into component e of o, with the
+// bookkeeping of an organizer's edit (stamp). Vendor copies of a changed
+// field are dropped. rule says whether the form's recurrence applies: it
+// does not to one occurrence.
+func applyForm(o *ical.Object, e *ical.Event, f *eventForm, z ical.Zones, now time.Time, rule bool) {
 	scheduling := false
 	text := func(field *string, v, prop string, sched bool) {
 		if *field != v {
@@ -368,23 +506,29 @@ func applyForm(o *ical.Object, f *eventForm, z ical.Zones, now time.Time) {
 		scheduling = true
 	}
 
-	if !sameRule(e.RRule, f.rrule) {
+	if rule && !sameRule(e.RRule, f.rrule) {
 		e.RRule = f.rrule
 		e.Changed("TIME")
 		scheduling = true
 		if f.rrule == "" && len(e.RDates) == 0 && !e.IsOverride() {
 			// No longer recurring: its exceptions describe nothing.
 			e.ExDates = nil
-			o.Events = o.Events[:1]
+			o.Events = []*ical.Event{e}
 		}
 	}
 
 	if mergeAttendees(e, f.attendees) {
 		scheduling = true
 	}
+	stamp(e, now, scheduling)
+}
 
-	stamp := ical.DateTimeOf(now.UTC(), false)
-	e.DTStamp, e.LastModified = stamp, stamp
+// stamp records an organizer's edit as RFC 5545 asks: DTSTAMP and
+// LAST-MODIFIED always, and SEQUENCE when a scheduling field changed, so
+// clients and invitees take the new version.
+func stamp(e *ical.Event, now time.Time, scheduling bool) {
+	t := ical.DateTimeOf(now.UTC(), false)
+	e.DTStamp, e.LastModified = t, t
 	if scheduling {
 		seq := 1
 		if e.Sequence != nil {
@@ -510,25 +654,61 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/apps/calendar/", http.StatusSeeOther)
 }
 
-// DeleteEvent handles DELETE to remove an event (HTMX).
+// DeleteEvent handles DELETE to remove an event (HTMX). For one instance
+// of a series, scope says what goes: "this" occurrence (an EXDATE), the
+// "following" ones (the series ends before it), or "all" of it.
 func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
-	db, _, ev, _, status, err := h.ownEvent(r)
+	db, _, ev, cal, status, err := h.ownEvent(r)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
+	o := ev.Object
+	z := zonesFor(o, cal.Zone())
+	in, err := occurrenceOf(r, ev, z)
+	if err != nil {
+		http.Error(w, err.Error(), occurrenceStatus(err))
+		return
+	}
 	var attendees []ical.Attendee
-	for _, a := range ev.Object.Events[0].Attendees {
+	for _, a := range o.Events[0].Attendees {
 		if ical.Email(a.Address) != "" {
 			attendees = append(attendees, a)
 		}
 	}
-	if len(attendees) > 0 {
-		h.sendInvitations("CANCEL", ev, attendees)
+	now := h.plugin.ctx.Now()
+
+	remains := false
+	switch scope := r.FormValue("scope"); {
+	case in == nil || scope == "all":
+	case scope == "following":
+		if remains, err = o.Truncate(in.RecurrenceID, z); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	default:
+		remains = o.Exclude(in.RecurrenceID, z)
 	}
-	if err := DeleteEventByID(db, ev.ID, h.plugin.ctx.Now()); err != nil {
+
+	if !remains {
+		if len(attendees) > 0 {
+			h.sendInvitations("CANCEL", ev, attendees)
+		}
+		if err := DeleteEventByID(db, ev.ID, now); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	stamp(o.Events[0], now, true)
+	saved, err := SaveEvent(db, cal, ev, o, now)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if len(attendees) > 0 {
+		h.sendInvitations("REQUEST", saved, attendees)
 	}
 	w.WriteHeader(http.StatusOK)
 }

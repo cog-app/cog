@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -17,18 +18,16 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
-// sharedBrowser is a process-wide Chrome instance reused by all Engines.
-// This avoids launching dozens of Chrome processes when go test ./...
-// runs multiple packages concurrently.
 // sharedBrowser is one Chrome process for every engine in the test binary.
 // It is launched when the first engine needs it and closed when the last one
 // closes; a later engine launches it again. (It used to launch once, so every
 // engine created after the first one closed got a dead browser and its tests
-// skipped.)
+// skipped.) While it runs, the binary holds a browser slot (slot.go).
 var sharedBrowser struct {
 	mu       sync.Mutex
 	browser  *rod.Browser
 	refCount int
+	release  func() // frees this binary's browser slot
 }
 
 func acquireBrowser() (*rod.Browser, error) {
@@ -39,15 +38,21 @@ func acquireBrowser() (*rod.Browser, error) {
 		if !found {
 			return nil, launcher.ErrAlreadyLaunched
 		}
+		release, err := acquireSlot()
+		if err != nil {
+			return nil, err
+		}
 		u, err := launcher.New().Bin(path).Headless(true).NoSandbox(true).Launch()
 		if err != nil {
+			release()
 			return nil, err
 		}
 		b := rod.New().ControlURL(u)
 		if err := b.Connect(); err != nil {
+			release()
 			return nil, err
 		}
-		sharedBrowser.browser = b
+		sharedBrowser.browser, sharedBrowser.release = b, release
 	}
 	sharedBrowser.refCount++
 	return sharedBrowser.browser, nil
@@ -58,8 +63,11 @@ func releaseBrowser() {
 	defer sharedBrowser.mu.Unlock()
 	sharedBrowser.refCount--
 	if sharedBrowser.refCount == 0 && sharedBrowser.browser != nil {
-		sharedBrowser.browser.Close()
+		if err := sharedBrowser.browser.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "webtest: close browser: %v\n", err)
+		}
 		sharedBrowser.browser = nil
+		sharedBrowser.release()
 	}
 }
 
