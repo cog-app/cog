@@ -217,3 +217,22 @@ func TestDeleteOccurrences(t *testing.T) {
 	del("2026-10-26T09:00", "all")
 	assert.Equal(t, "", instancesJSON(t, env, alice))
 }
+
+// TestRedefinedZoneMovesOtherEvents: a PUT that redefines a client's own
+// TZID changes the times of the events already using it.
+func TestRedefinedZoneMovesOtherEvents(t *testing.T) {
+	env, alice, _, _, _ := calEnv(t)
+	put := func(uid, offset string) {
+		ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n" +
+			"BEGIN:VTIMEZONE\r\nTZID:Office Time\r\nBEGIN:STANDARD\r\nDTSTART:19700101T000000\r\nTZOFFSETFROM:" + offset +
+			"\r\nTZOFFSETTO:" + offset + "\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\n" +
+			"BEGIN:VEVENT\r\nUID:" + uid + "\r\nSUMMARY:" + uid + "\r\nDTSTART;TZID=Office Time:20261005T090000\r\nDURATION:PT1H\r\n" +
+			"END:VEVENT\r\nEND:VCALENDAR\r\n"
+		req := cogtest.NewRequest(t, "PUT", env.Providers.Config.BaseURL+"/remote.php/dav/calendars/alice/personal/"+uid+".ics", strings.NewReader(ics))
+		env.Do(t, req, alice.Auth).Status(201)
+	}
+	put("a", "+0300")
+	assert.Equal(t, "10-05T06 a", instancesJSON(t, env, alice))
+	put("b", "+0500")
+	assert.Equal(t, "10-05T04 a, 10-05T04 b", instancesJSON(t, env, alice))
+}

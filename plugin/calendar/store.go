@@ -643,14 +643,30 @@ func storeObject(tx *sql.Tx, calID int64, floating *time.Location, uri string, o
 			return nil, fmt.Errorf("store event %s: %w", uri, err)
 		}
 	}
+	var redefined []string
 	for tzid, vtz := range sent {
 		js, err := json.Marshal(vtz)
 		if err != nil {
 			return nil, err
 		}
+		// A definition that is new or different changes the times of the
+		// other events naming this TZID, which were read with the old one
+		// (or, with none, in the calendar's zone).
+		if old, ok := known[calID][tzid]; !ok || !sameJSON(old, js) {
+			redefined = append(redefined, tzid)
+		}
 		if _, err := tx.Exec(`INSERT INTO vtimezones (collection_id, tzid, vtimezone) VALUES (?, ?, ?)
 			ON CONFLICT(collection_id, tzid) DO UPDATE SET vtimezone = excluded.vtimezone`, calID, tzid, string(js)); err != nil {
 			return nil, fmt.Errorf("store time zone %s: %w", tzid, err)
+		}
+	}
+	if len(redefined) > 0 {
+		others, err := usersOf(tx, calID, id, redefined)
+		if err != nil {
+			return nil, err
+		}
+		if err := recomputeTimes(tx, others, floating, now); err != nil {
+			return nil, err
 		}
 	}
 	if err := davsql.Revive(tx, calID, uri); err != nil {
@@ -660,6 +676,12 @@ func storeObject(tx *sql.Tx, calID int64, floating *time.Location, uri string, o
 		return nil, err
 	}
 	return &stored{id: id, version: version, created: cur == nil, data: data}, nil
+}
+
+// sameJSON reports whether a stored component encodes to js.
+func sameJSON(c *contentline.Component, js []byte) bool {
+	old, err := json.Marshal(c)
+	return err == nil && bytes.Equal(old, js)
 }
 
 func orEmpty(s, empty string) string {
@@ -896,21 +918,51 @@ func DeleteEventByID(db *sql.DB, id int64, now time.Time) error {
 // after its zone changes, since floating times are read in that zone. The
 // iCalendar data is unchanged, so versions and DAV clients are unaffected.
 func RecomputeEventTimes(db *sql.DB, calendarID int64, zone *time.Location, now time.Time) error {
-	events, err := ListEvents(db, calendarID)
-	if err != nil {
-		return err
-	}
-	if err := attachObjects(db, events); err != nil {
-		return err
-	}
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("recompute event times: %w", err)
 	}
 	defer tx.Rollback()
-	for _, ev := range events {
-		o := ev.Object
-		z := zonesFor(o, zone)
+	ids, err := eventIDs(tx, `SELECT id FROM events WHERE collection_id = ?`, calendarID)
+	if err != nil {
+		return err
+	}
+	if err := recomputeTimes(tx, ids, zone, now.Unix()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func eventIDs(q davsql.Querier, query string, args ...any) ([]int64, error) {
+	rows, err := q.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("find events: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("find events: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// recomputeTimes re-derives the indexed times and reminders of events, all
+// in one calendar whose zone is floating, from their stored rows.
+func recomputeTimes(tx *sql.Tx, ids []int64, floating *time.Location, now int64) error {
+	objs, err := loadObjects(tx, ids)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		o := objs[id]
+		if o == nil {
+			continue
+		}
+		z := zonesFor(o, floating)
 		var startUTC, endUTC any
 		if start, end, unbounded, err := o.Bounds(z); err == nil {
 			startUTC = start.Unix()
@@ -918,25 +970,12 @@ func RecomputeEventTimes(db *sql.DB, calendarID int64, zone *time.Location, now 
 				endUTC = end.Unix()
 			}
 		}
-		if _, err := tx.Exec(`UPDATE events SET start_utc = ?, range_end_utc = ? WHERE id = ?`, startUTC, endUTC, ev.ID); err != nil {
-			return fmt.Errorf("update event %d times: %w", ev.ID, err)
+		if _, err := tx.Exec(`UPDATE events SET start_utc = ?, range_end_utc = ? WHERE id = ?`, startUTC, endUTC, id); err != nil {
+			return fmt.Errorf("update event %d times: %w", id, err)
 		}
-		rows, err := tx.Query(`SELECT id FROM vevents WHERE event_id = ? ORDER BY position`, ev.ID)
+		vids, err := eventIDs(tx, `SELECT id FROM vevents WHERE event_id = ? ORDER BY position`, id)
 		if err != nil {
-			return fmt.Errorf("event %d components: %w", ev.ID, err)
-		}
-		var vids []int64
-		for rows.Next() {
-			var vid int64
-			if err := rows.Scan(&vid); err != nil {
-				rows.Close()
-				return fmt.Errorf("event %d components: %w", ev.ID, err)
-			}
-			vids = append(vids, vid)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return fmt.Errorf("event %d components: %w", ev.ID, err)
+			return err
 		}
 		for i, vid := range vids {
 			if i >= len(o.Events) {
@@ -948,12 +987,32 @@ func RecomputeEventTimes(db *sql.DB, calendarID int64, zone *time.Location, now 
 				end = t.Unix()
 			}
 			if _, err := tx.Exec(`UPDATE vevents SET dtstart_utc = ?, end_utc = ? WHERE id = ?`, utcOf(e.Start, z), end, vid); err != nil {
-				return fmt.Errorf("update event %d times: %w", ev.ID, err)
+				return fmt.Errorf("update event %d times: %w", id, err)
 			}
 		}
-		if err := ensureNotifications(tx, ev.ID, o, z, now.Unix()); err != nil {
-			return fmt.Errorf("update event %d reminders: %w", ev.ID, err)
+		if err := ensureNotifications(tx, id, o, z, now); err != nil {
+			return fmt.Errorf("update event %d reminders: %w", id, err)
 		}
 	}
-	return tx.Commit()
+	return nil
+}
+
+// usersOf returns the other events in a calendar that use any of tzids, in
+// their times or their RDATE and EXDATE values.
+func usersOf(tx *sql.Tx, calID, except int64, tzids []string) ([]int64, error) {
+	var conds []string
+	var args []any
+	args = append(args, calID, except)
+	for _, id := range tzids {
+		needle, err := json.Marshal(id)
+		if err != nil {
+			return nil, err
+		}
+		conds = append(conds, `v.dtstart_tzid = ? OR v.dtend_tzid = ? OR v.recurrence_id_tzid = ?
+			OR instr(v.rdates, ?) > 0 OR instr(v.exdates, ?) > 0`)
+		tag := `"tz":` + string(needle)
+		args = append(args, id, id, id, tag, tag)
+	}
+	return eventIDs(tx, `SELECT DISTINCT v.event_id FROM vevents v JOIN events e ON e.id = v.event_id
+		WHERE e.collection_id = ? AND e.id != ? AND (`+strings.Join(conds, " OR ")+`)`, args...)
 }
