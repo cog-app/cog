@@ -1,7 +1,6 @@
 package calendar
 
 import (
-	"bytes"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -15,7 +14,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
 	"git.duckfam.us/jj-software/cog/internal/dav/ical"
-	"git.duckfam.us/jj-software/cog/internal/dav/icalsql"
+	"git.duckfam.us/jj-software/cog/internal/dav/itip"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"github.com/google/uuid"
 	rrulelib "github.com/teambition/rrule-go"
@@ -251,6 +250,25 @@ func attendeesOf(e *ical.Component) []Attendee {
 	return out
 }
 
+// myStatus returns the user's PARTSTAT on an event someone else organizes
+// ("NEEDS-ACTION" when they have not answered), or "" when it is not theirs
+// to answer.
+func myStatus(e *ical.Component, me *dav.User) string {
+	mine := dav.Addresses(me)
+	if e.Organizer == nil || slices.Contains(mine, itip.Normalize(e.Organizer.Address)) {
+		return ""
+	}
+	for _, a := range e.Attendees {
+		if slices.Contains(mine, itip.Normalize(a.Address)) {
+			if a.PartStat == "" {
+				return "NEEDS-ACTION"
+			}
+			return strings.ToUpper(a.PartStat)
+		}
+	}
+	return ""
+}
+
 // errBadOccurrence is a malformed occurrence parameter.
 var errBadOccurrence = errors.New("invalid occurrence")
 
@@ -302,7 +320,7 @@ func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	in, err := occurrenceOf(r, ev, icalsql.ZonesFor(ev.Object, cal.Zone()))
+	in, err := occurrenceOf(r, ev, ical.ZonesFor(ev.Object, cal.Zone()))
 	if err != nil {
 		http.Error(w, err.Error(), occurrenceStatus(err))
 		return
@@ -314,7 +332,14 @@ func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
 		view.DTStart, view.DTEnd, view.IsAllDay = in.Start.Unix(), in.End.Unix(), comp.Start.IsDate
 		view.Occurrence = in.RecurrenceID.Unix()
 	}
-	calEventModal(plugin.CSRFToken(r), &view, cal, calendars, attendeesOf(comp)).Render(r.Context(), w)
+	me, err := h.plugin.me(userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := calEventModal(plugin.CSRFToken(r), &view, cal, calendars, attendeesOf(comp), myStatus(comp, me)).Render(r.Context(), w); err != nil {
+		h.plugin.log.Error("render event", "id", ev.ID, "err", err)
+	}
 }
 
 // eventForm is what the event form edits.
@@ -324,6 +349,7 @@ type eventForm struct {
 	start, end                     time.Time
 	rrule                          string
 	attendees                      []ical.Attendee // mailto attendees only
+	organizer                      *dav.User       // who becomes ORGANIZER when inviting
 }
 
 func parseEventForm(cal *Calendar, r *http.Request) (*eventForm, error) {
@@ -389,12 +415,19 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	o := ev.Object
-	z := icalsql.ZonesFor(o, oldCal.Zone())
+	before := o.Clone()
+	z := ical.ZonesFor(o, oldCal.Zone())
 	in, err := occurrenceOf(r, ev, z)
 	if err != nil {
 		http.Error(w, err.Error(), occurrenceStatus(err))
 		return
 	}
+	me, err := h.plugin.me(userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	f.organizer = me
 
 	now := h.plugin.ctx.Now()
 	color := r.FormValue("color")
@@ -453,6 +486,17 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		o.ShiftExceptions(delta, z)
 	}
 
+	// The first save is the event as it was; a split adds a new series.
+	olds := []*ical.Object{before, nil}
+	var deliveries []*dav.Delivery
+	for i, sv := range saves {
+		d, err := h.plugin.plan(userID, olds[i], sv.Object)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		deliveries = append(deliveries, d)
+	}
 	saved, err := SaveEvents(db, now, saves...)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -462,10 +506,8 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if len(f.attendees) > 0 {
-		for _, s := range saved {
-			h.sendInvitations("REQUEST", s, f.attendees)
-		}
+	for _, d := range deliveries {
+		d.Send()
 	}
 
 	http.Redirect(w, r, "/apps/calendar/", http.StatusSeeOther)
@@ -520,6 +562,11 @@ func applyForm(o *ical.Object, e *ical.Component, f *eventForm, z ical.Zones, no
 
 	if mergeAttendees(e, f.attendees) {
 		scheduling = true
+	}
+	if e.Organizer == nil && len(e.Attendees) > 0 && f.organizer != nil {
+		// Inviting someone makes the user the organizer (RFC 5545 requires
+		// one with attendees), so the invitation can be scheduled.
+		e.Organizer = organizerOf(f.organizer)
 	}
 	e.Stamp(now, scheduling)
 }
@@ -614,6 +661,15 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	now := h.plugin.ctx.Now()
 	stamp := ical.DateTimeOf(now.UTC(), false)
 	seq := 0
+	var organizer *ical.Organizer
+	if len(f.attendees) > 0 {
+		me, err := h.plugin.me(userID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		organizer = organizerOf(me)
+	}
 	o := &ical.Object{
 		UID:   uuid.NewString(),
 		Props: []contentline.Property{{Name: "PRODID", Value: ical.ProdID}},
@@ -621,9 +677,14 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 			Kind:    ical.VEVENT,
 			Summary: f.summary, Description: f.description, Location: f.location,
 			Start: ical.DateTimeOf(f.start, f.allDay), End: ical.DateTimeOf(f.end, f.allDay),
-			RRule: f.rrule, Attendees: f.attendees, Sequence: &seq,
+			RRule: f.rrule, Organizer: organizer, Attendees: f.attendees, Sequence: &seq,
 			DTStamp: stamp, Created: stamp, LastModified: stamp,
 		}},
+	}
+	d, err := h.plugin.plan(userID, nil, o)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	ev, err := SaveEvent(db, cal, nil, o, now)
 	if err != nil {
@@ -634,9 +695,7 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if len(f.attendees) > 0 {
-		h.sendInvitations("REQUEST", ev, f.attendees)
-	}
+	d.Send()
 
 	http.Redirect(w, r, "/apps/calendar/", http.StatusSeeOther)
 }
@@ -645,23 +704,18 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 // of a series, scope says what goes: "this" occurrence (an EXDATE), the
 // "following" ones (the series ends before it), or "all" of it.
 func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
-	db, _, ev, cal, status, err := h.ownEvent(r)
+	db, userID, ev, cal, status, err := h.ownEvent(r)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 	o := ev.Object
-	z := icalsql.ZonesFor(o, cal.Zone())
+	before := o.Clone()
+	z := ical.ZonesFor(o, cal.Zone())
 	in, err := occurrenceOf(r, ev, z)
 	if err != nil {
 		http.Error(w, err.Error(), occurrenceStatus(err))
 		return
-	}
-	var attendees []ical.Attendee
-	for _, a := range o.Components[0].Attendees {
-		if ical.Email(a.Address) != "" {
-			attendees = append(attendees, a)
-		}
 	}
 	now := h.plugin.ctx.Now()
 
@@ -678,25 +732,30 @@ func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !remains {
-		if len(attendees) > 0 {
-			h.sendInvitations("CANCEL", ev, attendees)
+		d, err := h.plugin.plan(userID, before, nil)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		if err := DeleteEventByID(db, ev.ID, now); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		d.Send()
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 	o.Components[0].Stamp(now, true)
-	saved, err := SaveEvent(db, cal, ev, o, now)
+	d, err := h.plugin.plan(userID, before, o)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if len(attendees) > 0 {
-		h.sendInvitations("REQUEST", saved, attendees)
+	if _, err := SaveEvent(db, cal, ev, o, now); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+	d.Send()
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -956,87 +1015,31 @@ func parseAttendeeForm(r *http.Request) []ical.Attendee {
 	return result
 }
 
-// inviteICS writes an event as an iTIP message (RFC 5546): the stored event
-// with METHOD, and for a cancellation, STATUS:CANCELLED.
-func inviteICS(ev *Event, method string) ([]byte, error) {
-	o := *ev.Object
-	o.Props = append([]contentline.Property{{Name: "METHOD", Value: method}}, o.Props...)
-	if method == "CANCEL" {
-		o.Components = make([]*ical.Component, len(ev.Object.Components))
-		for i, e := range ev.Object.Components {
-			c := *e
-			c.Status = "CANCELLED"
-			o.Components[i] = &c
-		}
-	}
-	var b bytes.Buffer
-	if err := contentline.Write(&b, []*contentline.Component{o.Encode(o.IANAZones)}); err != nil {
-		return nil, err
-	}
-	return b.Bytes(), nil
-}
-
-// sendInvitations sends email invitations/cancellations to attendees.
-func (h *Pages) sendInvitations(method string, ev *Event, attendees []ical.Attendee) {
-	emailSender := h.plugin.ctx.EmailSender()
-	if emailSender == nil || len(attendees) == 0 {
-		return
-	}
-	data, err := inviteICS(ev, method)
-	if err != nil {
-		h.plugin.log.Error("build invitation", "method", method, "uid", ev.UID, "err", err)
-		return
-	}
-
-	var subject string
-	switch method {
-	case "CANCEL":
-		subject = fmt.Sprintf("Event Cancelled: %s", ev.Summary)
-	default:
-		subject = fmt.Sprintf("Invitation: %s", ev.Summary)
-	}
-
-	body := fmt.Sprintf("Event: %s\nWhen: %s\n", ev.Summary, formatEventTime(ev.DTStart, ev.DTEnd, ev.IsAllDay))
-	if ev.Location != "" {
-		body += fmt.Sprintf("Where: %s\n", ev.Location)
-	}
-	if ev.Description != "" {
-		body += fmt.Sprintf("\n%s\n", ev.Description)
-	}
-	if method == "CANCEL" {
-		body += "\nThis event has been cancelled.\n"
-	}
-
-	for _, att := range attendees {
-		to := ical.Email(att.Address)
-		err := emailSender.SendWithAttachments(to, subject, body, "", []plugin.EmailAttachment{{
-			Filename:    "invite.ics",
-			ContentType: "text/calendar; method=" + method,
-			Data:        data,
-		}})
-		if err != nil {
-			h.plugin.log.Error("send invitation", "method", method, "uid", ev.UID, "to", to, "err", err)
-		}
-	}
-}
-
-// RespondToInvite handles POST to accept/decline an event invitation.
+// RespondToInvite handles POST to accept, decline or tentatively accept an
+// invitation in the user's calendar: their PARTSTAT changes on every
+// occurrence, and the organizer gets the REPLY.
 func (h *Pages) RespondToInvite(w http.ResponseWriter, r *http.Request) {
-	db, _, ev, cal, status, err := h.ownEvent(r)
+	db, userID, ev, cal, status, err := h.ownEvent(r)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
-	email := r.FormValue("email")
 	answer := r.FormValue("status")
 	if answer != "ACCEPTED" && answer != "DECLINED" && answer != "TENTATIVE" {
 		http.Error(w, "invalid status", http.StatusBadRequest)
 		return
 	}
+	me, err := h.plugin.me(userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	mine := dav.Addresses(me)
+	before := ev.Object.Clone()
 	found := false
 	for _, e := range ev.Object.Components {
 		for i := range e.Attendees {
-			if strings.EqualFold(ical.Email(e.Attendees[i].Address), email) {
+			if slices.Contains(mine, itip.Normalize(e.Attendees[i].Address)) {
 				e.Attendees[i].PartStat = answer
 				found = true
 			}
@@ -1046,10 +1049,20 @@ func (h *Pages) RespondToInvite(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not an attendee", http.StatusNotFound)
 		return
 	}
-	if _, err := SaveEvent(db, cal, ev, ev.Object, h.plugin.ctx.Now()); err != nil {
+	now := h.plugin.ctx.Now()
+	for _, e := range ev.Object.Components {
+		e.Stamp(now, false)
+	}
+	d, err := h.plugin.plan(userID, before, ev.Object)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if _, err := SaveEvent(db, cal, ev, ev.Object, now); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	d.Send()
 	w.WriteHeader(http.StatusOK)
 }
 

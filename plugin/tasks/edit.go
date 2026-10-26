@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav/ical"
-	"git.duckfam.us/jj-software/cog/internal/dav/icalsql"
 )
 
 // layoutInput is the value of a datetime-local input.
@@ -92,7 +91,7 @@ func formInt(r *http.Request, name string, lo, hi int) (int, error) {
 // (Complete).
 func applyForm(o *ical.Object, f *taskForm, zone *time.Location, now time.Time) error {
 	e := o.Components[0]
-	z := icalsql.ZonesFor(o, zone)
+	z := ical.ZonesFor(o, zone)
 	scheduling := false
 
 	shownPercent := 0

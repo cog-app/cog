@@ -31,6 +31,9 @@ type User struct {
 type Users interface {
 	ByUsername(name string) (*User, error) // ErrNotFound when unknown
 	ByID(id string) (*User, error)         // ErrNotFound when unknown
+	// ByEmails finds users by email, ignoring case, keyed by the
+	// lower-cased address. Unknown addresses are absent.
+	ByEmails(emails []string) (map[string]*User, error)
 }
 
 // DefaultRetention is how long tombstones are kept unless an admin changes it.
@@ -48,6 +51,9 @@ type Server struct {
 	Retention func() time.Duration
 	Clock     clock.Clock
 	Log       *slog.Logger
+	// Mail returns the sender for iMIP messages to external calendar users,
+	// or nil when email is not configured. Mail itself may be nil.
+	Mail func() plugin.EmailSender
 }
 
 func (s *Server) retention() time.Duration {
@@ -105,6 +111,11 @@ func (a access) read() bool     { return a.owner || a.perms&plugin.PermRead != 0
 func (a access) write() bool    { return a.owner || a.perms&plugin.PermWrite != 0 }
 func (a access) freeBusy() bool { return a.read() || a.perms&plugin.PermFreeBusy != 0 }
 func (a access) busyOnly() bool { return !a.read() && a.freeBusy() }
+
+// schedule reports whether the user's writes schedule for the owner: a
+// sharee needs the Schedule permission to send invitations and replies in
+// the owner's name.
+func (a access) schedule() bool { return a.owner || a.perms&plugin.PermSchedule != 0 }
 
 // --- Requests ---
 
@@ -191,8 +202,15 @@ func (q *request) backendFor(comp Component) Backend {
 	return nil
 }
 
-// backends returns the enabled backends that hold resources of c.
+// backends returns the enabled backends that hold resources of c; for an
+// inbox, the store that keeps it.
 func (q *request) backends(c *Collection) []Backend {
+	if c.ID == InboxID {
+		if ib := q.s.inbox(q.bes); ib != nil {
+			return []Backend{ib}
+		}
+		return nil
+	}
 	var out []Backend
 	for _, b := range q.bes {
 		if slices.ContainsFunc(b.Components(), c.Has) {
@@ -237,7 +255,7 @@ func (q *request) depth() int {
 
 func (q *request) options(allow string) {
 	q.w.Header().Set("Allow", allow)
-	q.w.Header().Set("DAV", "1, 3, access-control, calendar-access, calendar-no-timezone, addressbook, extended-mkcol")
+	q.w.Header().Set("DAV", "1, 3, access-control, calendar-access, calendar-auto-schedule, calendar-no-timezone, addressbook, extended-mkcol")
 	q.w.WriteHeader(http.StatusOK)
 }
 
@@ -371,6 +389,12 @@ func (q *request) principalProps(u *User) []prop {
 			prop{caldav("calendar-user-address-set"), addrs},
 			prop{caldav("calendar-user-type"), "INDIVIDUAL"},
 		)
+		if q.s.inbox(q.bes) != nil {
+			props = append(props,
+				prop{caldav("schedule-inbox-URL"), hrefEl(homeHref(HomeCalendars, u.Username) + inboxName + "/")},
+				prop{caldav("schedule-outbox-URL"), hrefEl(outboxHref(u.Username))},
+			)
+		}
 	}
 	if q.hasHome(HomeAddressBooks) {
 		props = append(props, prop{carddav("addressbook-home-set"), hrefEl(homeHref(HomeAddressBooks, u.Username))})
@@ -403,6 +427,8 @@ func (q *request) home(home Home, rest string) {
 	switch {
 	case name == "":
 		q.homeCollection(home, owner)
+	case reserved(home, name):
+		q.scheduling(owner, name, uri)
 	case uri == "":
 		q.collection(home, owner, name)
 	default:
@@ -452,6 +478,18 @@ func (q *request) homeCollection(home Home, owner *User) {
 				Href: collectionHref(&l.Collection, l.owner), Propstats: pf.evaluate(props, nil),
 			})
 		}
+		if home == HomeCalendars && q.s.inbox(q.bes) != nil {
+			inbox := inboxCollection(owner)
+			tok, err := q.token(inbox, owner.Username)
+			if err != nil {
+				q.fail(err)
+				return
+			}
+			ms.Responses = append(ms.Responses,
+				response{Href: collectionHref(inbox, owner.Username), Propstats: pf.evaluate(q.inboxProps(inbox, owner.Username, tok), nil)},
+				response{Href: outboxHref(owner.Username), Propstats: pf.evaluate(q.outboxProps(owner), nil)},
+			)
+		}
 	}
 	ms.write(q.w)
 }
@@ -493,21 +531,19 @@ func (q *request) listHome(home Home) ([]listed, error) {
 func (q *request) fillTokens(cols []listed) error {
 	type key struct {
 		owner string
-		be    int
+		be    Backend
 	}
 	ids := map[key][]CollectionID{}
 	for i := range cols {
 		cols[i].token = SyncToken{}
-		for bi, b := range q.bes {
-			if slices.ContainsFunc(b.Components(), cols[i].Has) {
-				k := key{cols[i].owner, bi}
-				ids[k] = append(ids[k], cols[i].ID)
-				cols[i].token[b.Key()] = 0
-			}
+		for _, b := range q.backends(&cols[i].Collection) {
+			k := key{cols[i].owner, b}
+			ids[k] = append(ids[k], cols[i].ID)
+			cols[i].token[b.Key()] = 0
 		}
 	}
 	for k, list := range ids {
-		b := q.bes[k.be]
+		b := k.be
 		states, err := b.States(k.owner, list)
 		if err != nil {
 			return fmt.Errorf("sync states from %s: %w", b.Key(), err)
@@ -533,18 +569,21 @@ func (q *request) token(c *Collection, ownerName string) (SyncToken, error) {
 	return l[0].token, nil
 }
 
-func privileges(a access, home Home) string {
-	priv := func(n ...string) string {
-		var b strings.Builder
-		for _, x := range n {
-			name := dav(x)
-			if x == "read-free-busy" {
-				name = caldav(x)
-			}
-			b.WriteString(el(dav("privilege"), el(name, "")))
+// privilegeSet writes privileges for current-user-privilege-set; the
+// free/busy and scheduling ones are CalDAV's.
+func privilegeSet(names []string) string {
+	var b strings.Builder
+	for _, x := range names {
+		name := dav(x)
+		if x == "read-free-busy" || strings.HasPrefix(x, "schedule-") {
+			name = caldav(x)
 		}
-		return b.String()
+		b.WriteString(el(dav("privilege"), el(name, "")))
 	}
+	return b.String()
+}
+
+func privileges(a access, home Home) string {
 	var names []string
 	switch {
 	case a.owner:
@@ -564,11 +603,18 @@ func privileges(a access, home Home) string {
 			// write-properties stays with the owner: sharees cannot PROPPATCH.
 			names = append(names, "write", "write-content", "bind", "unbind")
 		}
+		if a.perms&plugin.PermSchedule != 0 && home == HomeCalendars {
+			// Writes by this sharee send invitations and replies as the owner.
+			names = append(names, "schedule-send", "schedule-send-invite", "schedule-send-reply")
+		}
 	}
-	return priv(names...)
+	return privilegeSet(names)
 }
 
 func (q *request) collectionProps(c *Collection, a access, ownerName string, tok SyncToken) []prop {
+	if c.ID == InboxID {
+		return q.inboxProps(c, ownerName, tok)
+	}
 	kind := el(caldav("calendar"), "")
 	reports := []xml.Name{caldav("calendar-multiget"), caldav("calendar-query"), dav("sync-collection")}
 	if c.Home == HomeAddressBooks {

@@ -22,7 +22,6 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
 	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
 	"git.duckfam.us/jj-software/cog/internal/dav/ical"
-	"git.duckfam.us/jj-software/cog/internal/dav/tz"
 )
 
 // Tables names one plugin's tables. Every plugin also has vtimezones, which
@@ -39,23 +38,6 @@ type Tables struct {
 	// stored or its derived times are recomputed; the calendar keeps its
 	// reminders with it.
 	AfterWrite func(tx *sql.Tx, id int64, o *ical.Object, z ical.Zones, now int64) error
-}
-
-// ZonesFor returns how an object's TZIDs map to locations: its own
-// VTIMEZONEs for TZIDs Cog cannot resolve, and floating times in the
-// collection's zone. A VTIMEZONE whose rules cannot be read leaves its TZID
-// in the floating zone.
-func ZonesFor(o *ical.Object, floating *time.Location) ical.Zones {
-	z := ical.Zones{Floating: floating, Load: tz.Load}
-	for id, vtz := range o.Zones {
-		if loc, err := tz.FromRules(vtz); err == nil {
-			if z.Custom == nil {
-				z.Custom = map[string]*time.Location{}
-			}
-			z.Custom[id] = loc
-		}
-	}
-	return z
 }
 
 // Render writes an object as the text Cog serves.
@@ -454,7 +436,7 @@ func (t *Tables) Store(tx *sql.Tx, collID int64, floating *time.Location, uri st
 	for id, vtz := range sent {
 		o.Zones[id] = vtz
 	}
-	z := ZonesFor(o, floating)
+	z := ical.ZonesFor(o, floating)
 
 	// The master first: web UIs read position 0.
 	o.SortMaster()
@@ -714,7 +696,7 @@ func (t *Tables) Recompute(tx *sql.Tx, ids []int64, floating *time.Location, now
 		if o == nil {
 			continue
 		}
-		z := ZonesFor(o, floating)
+		z := ical.ZonesFor(o, floating)
 		startUTC, endUTC := bounds(o, z)
 		if _, err := tx.Exec(`UPDATE `+t.Objects+` SET start_utc = ?, range_end_utc = ? WHERE id = ?`, startUTC, endUTC, id); err != nil {
 			return fmt.Errorf("update %d times: %w", id, err)

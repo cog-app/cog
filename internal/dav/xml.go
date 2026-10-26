@@ -198,7 +198,11 @@ func (n *node) text() string {
 	return strings.TrimSpace(b.String())
 }
 
+// attr returns an attribute's value; "" when absent or n is nil.
 func (n *node) attr(local string) string {
+	if n == nil {
+		return ""
+	}
 	for _, a := range n.Attr {
 		if a.Name.Local == local {
 			return a.Value

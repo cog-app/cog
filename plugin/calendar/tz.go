@@ -3,7 +3,7 @@ package calendar
 import (
 	"time"
 
-	"git.duckfam.us/jj-software/cog/internal/dav/icalsql"
+	"git.duckfam.us/jj-software/cog/internal/dav/ical"
 	"git.duckfam.us/jj-software/cog/internal/dav/tz"
 )
 
@@ -36,5 +36,5 @@ func eventEditZone(ev *Event, cal *Calendar) *time.Location {
 	if cal != nil {
 		floating = cal.Zone()
 	}
-	return icalsql.ZonesFor(ev.Object, floating).Location(start.TZID)
+	return ical.ZonesFor(ev.Object, floating).Location(start.TZID)
 }

@@ -214,7 +214,7 @@ func Instances(ev EventWithCalendar, start, end time.Time) ([]EventWithCalendar,
 	if ev.Object == nil {
 		return nil, fmt.Errorf("event %d: object not loaded", ev.ID)
 	}
-	ins, err := ev.Object.Instances(icalsql.ZonesFor(ev.Object, ev.Zone()), start, end)
+	ins, err := ev.Object.Instances(ical.ZonesFor(ev.Object, ev.Zone()), start, end)
 	if err != nil {
 		return nil, fmt.Errorf("expand event %s: %w", ev.UID, err)
 	}

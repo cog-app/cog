@@ -409,7 +409,7 @@ func DeleteTask(db *sql.DB, id int64, now time.Time) error {
 // (Complete).
 func ToggleTask(db *sql.DB, list *TaskList, t *Task, now time.Time) (*Task, error) {
 	o := t.Object
-	z := icalsql.ZonesFor(o, list.Zone())
+	z := ical.ZonesFor(o, list.Zone())
 	e := o.Components[0]
 	if e.Status == "COMPLETED" {
 		setStatus(e, "NEEDS-ACTION", now)

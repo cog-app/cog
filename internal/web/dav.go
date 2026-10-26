@@ -29,12 +29,24 @@ func davUser(u *user.User, err error) (*dav.User, error) {
 func (a davUsers) ByUsername(name string) (*dav.User, error) { return davUser(a.s.GetByUsername(name)) }
 func (a davUsers) ByID(id string) (*dav.User, error)         { return davUser(a.s.GetByID(id)) }
 
+func (a davUsers) ByEmails(emails []string) (map[string]*dav.User, error) {
+	found, err := a.s.GetByEmails(emails)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]*dav.User, len(found))
+	for k, u := range found {
+		out[k] = &dav.User{ID: u.ID, Username: u.Username, DisplayName: u.DisplayName, Email: u.Email}
+	}
+	return out, nil
+}
+
 // davPermissionLevels are the presets the share panel offers for collections.
 var davPermissionLevels = []plugin.PermissionLevel{
 	{Label: "Read-only", Permissions: plugin.PermRead},
 	{Label: "Read/Write", Permissions: plugin.PermRead | plugin.PermWrite},
 	{Label: "Free/Busy only", Permissions: plugin.PermFreeBusy},
-	{Label: "Appointment Scheduling", Permissions: plugin.PermRead | plugin.PermFreeBusy | plugin.PermSchedule},
+	{Label: "Delegate (read/write, schedules as owner)", Permissions: plugin.PermRead | plugin.PermWrite | plugin.PermFreeBusy | plugin.PermSchedule},
 }
 
 // mountDAV finishes wiring the DAV core and mounts it under /remote.php/dav/.
@@ -63,6 +75,12 @@ func mountDAV(mux *http.ServeMux, p *services.Providers, shares plugin.ShareStor
 			}
 		}
 		return out
+	}
+	srv.Mail = func() plugin.EmailSender {
+		if p.EmailSender() == nil {
+			return nil
+		}
+		return &emailSenderAdapter{p.EmailSender}
 	}
 	srv.Retention = func() time.Duration {
 		days := settings.DefaultDAVTombstoneDays

@@ -35,7 +35,7 @@ const seriesICS = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Client//EN\r\n" +
 // checks that only what the form shows changed: the override, exception,
 // alarm, attendee parameters, the attendee the form cannot show and unknown
 // properties stay; vendor copies of the edited fields go; SEQUENCE and
-// DTSTAMP move on.
+// DTSTAMP move on, and the attendees are scheduled.
 func TestWebEditKeepsClientData(t *testing.T) {
 	env, alice, _, db, cal := calEnv(t)
 	cookie, csrf := sessionAuth(t, env, alice.ID)
@@ -68,8 +68,11 @@ func TestWebEditKeepsClientData(t *testing.T) {
 		"DTSTART;TZID=America/Denver:20261005T090000\r\n",
 		"RRULE:FREQ=WEEKLY;COUNT=6\r\n",
 		"EXDATE;TZID=America/Denver:20261019T090000\r\n",
-		"X-NUM-GUESTS=1:mailto:bob@example.com\r\n",
-		"ATTENDEE;CUTYPE=ROOM:urn:uuid:room-1\r\n",
+		// Inviting makes the user the organizer; the invitation went by
+		// email, and the room has no address Cog can deliver to.
+		"ORGANIZER:/remote.php/dav/principals/users/alice/\r\n",
+		"X-NUM-GUESTS=1;SCHEDULE-STATUS=1.1:mailto\r\n :bob@example.com\r\n",
+		"ATTENDEE;CUTYPE=ROOM;SCHEDULE-STATUS=3.7:urn:uuid:room-1\r\n",
 		"X-KEEP-ME:yes\r\n",
 		"X-ALT-DESC;FMTTYPE=text/html:<b>Agenda</b>\r\n",
 		"X-WR-ALARMUID:A1\r\n",

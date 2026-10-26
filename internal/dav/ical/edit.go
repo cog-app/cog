@@ -89,6 +89,20 @@ func (e *Component) Clone() *Component {
 	return &c
 }
 
+// Clone returns a copy of the object whose components and calendar
+// properties can be changed without touching o. Other components and time
+// zones are shared: nothing edits them.
+func (o *Object) Clone() *Object {
+	c := *o
+	c.Props = slices.Clone(o.Props)
+	c.Others = slices.Clone(o.Others)
+	c.Components = make([]*Component, len(o.Components))
+	for i, e := range o.Components {
+		c.Components[i] = e.Clone()
+	}
+	return &c
+}
+
 func cloneInt(n *int) *int {
 	if n == nil {
 		return nil

@@ -335,7 +335,7 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 	</script>
 }
 
-templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee) {
+templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee, myStatus string) {
 	<h2 style="margin-top:0">{ ev.Summary }</h2>
 	<div class="text-muted" style="margin-bottom:1rem">
 		{ formatEventTime(ev.DTStart, ev.DTEnd, ev.IsAllDay) }
@@ -381,6 +381,26 @@ templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Cale
 					</li>
 				}
 			</ul>
+		</div>
+	}
+	if myStatus != "" {
+		<div class="flex gap-1" style="margin-top:0.75rem;align-items:center">
+			<strong style="font-size:0.85rem">Going?</strong>
+			for _, opt := range []struct{ status, label string }{{"ACCEPTED", "Yes"}, {"TENTATIVE", "Maybe"}, {"DECLINED", "No"}} {
+				<button
+					type="button"
+					if myStatus == opt.status {
+						class="btn btn-sm btn-primary"
+					} else {
+						class="btn btn-sm"
+					}
+					hx-post={ fmt.Sprintf("/apps/calendar/events/%d/respond", ev.ID) }
+					hx-vals={ fmt.Sprintf(`{"status":%q}`, opt.status) }
+					hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":%q}`, csrfToken) }
+					hx-swap="none"
+					hx-on::after-request="document.getElementById('event-modal').style.display='none';location.reload()"
+				>{ opt.label }</button>
+			}
 		</div>
 	}
 	<div class="sidebar-divider" style="margin:1rem 0"></div>

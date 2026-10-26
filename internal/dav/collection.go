@@ -243,6 +243,9 @@ func (s *Store) Create(c *Collection) error {
 	if len(c.Components) == 0 {
 		return fmt.Errorf("collection %q has no components", c.Name)
 	}
+	if reserved(c.Home, c.Name) {
+		return ErrExists // the inbox and outbox live there
+	}
 	for _, comp := range c.Components {
 		if comp.Home() != c.Home {
 			return fmt.Errorf("%s collection %q cannot hold %s", c.Home, c.Name, comp)

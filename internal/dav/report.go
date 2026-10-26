@@ -26,6 +26,8 @@ func (q *request) report(c *Collection, owner *User, a access) {
 		q.calendarQuery(c, owner, a, n)
 	case n.is(carddav("addressbook-query")) && c.Home == HomeAddressBooks:
 		q.addressbookQuery(c, owner, a, n)
+	case n.is(caldav("free-busy-query")) && c.Home == HomeCalendars && c.ID != InboxID:
+		q.freeBusyQuery(c, owner, n)
 	case n.is(dav("sync-collection")):
 		q.syncCollection(c, owner, a, n)
 	default:

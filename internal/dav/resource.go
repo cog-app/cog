@@ -13,6 +13,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
 	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
+	"git.duckfam.us/jj-software/cog/internal/dav/ical"
 	"git.duckfam.us/jj-software/cog/internal/dav/tz"
 )
 
@@ -64,13 +65,13 @@ func (q *request) resource(home Home, owner *User, name, uri string) {
 			writeError(q.w, http.StatusForbidden, dav("need-privileges"), "")
 			return
 		}
-		q.put(c, owner, uri)
+		q.put(c, owner, a, uri)
 	case http.MethodDelete:
 		if !a.write() {
 			writeError(q.w, http.StatusForbidden, dav("need-privileges"), "")
 			return
 		}
-		q.delete(c, owner, uri)
+		q.delete(c, owner, a, uri)
 	case "PROPFIND":
 		q.propfindResource(c, owner, a, uri)
 	case http.MethodOptions:
@@ -213,7 +214,7 @@ func conditions(r *http.Request, c CollectionID) davsql.Conditions {
 // type, which would move it to another backend.
 var errResourceKind = errors.New("dav: a resource of another component type exists at this URI")
 
-func (q *request) put(c *Collection, owner *User, uri string) {
+func (q *request) put(c *Collection, owner *User, a access, uri string) {
 	data, err := io.ReadAll(io.LimitReader(q.r.Body, maxResourceSize+1))
 	if err != nil {
 		http.Error(q.w, "read body", http.StatusBadRequest)
@@ -237,7 +238,13 @@ func (q *request) put(c *Collection, owner *User, uri string) {
 		return
 	}
 	req := &PutRequest{URI: uri, UID: uid, Component: comp, Data: data, Object: obj, Conditions: conditions(q.r, c.ID)}
-	res, err := q.s.put(q.backends(c), owner.Username, c, req)
+	var res *PutResult
+	var delivery *Delivery
+	if comp == VEVENT {
+		res, delivery, err = q.putScheduled(c, owner, a, req)
+	} else {
+		res, err = q.s.put(q.backends(c), owner.Username, c, req)
+	}
 	if conflict, ok := IsUIDConflict(err); ok {
 		writeError(q.w, http.StatusForbidden, ns("no-uid-conflict"), hrefEl(resourceHref(c, owner.Username, conflict.URI)))
 		return
@@ -260,10 +267,73 @@ func (q *request) put(c *Collection, owner *User, uri string) {
 	if bytes.Equal(res.Data, data) || bytes.Equal(res.Data, normalise(obj)) {
 		q.w.Header().Set("ETag", ETag(c.ID, res.Version))
 	}
+	delivery.Send()
 	if res.Created {
 		q.w.WriteHeader(http.StatusCreated)
 	} else {
 		q.w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// unconditional reports whether a request named no ETag to match.
+func unconditional(c davsql.Conditions) bool {
+	return len(c.IfMatch) == 0 && !c.IfMatchAny && !c.IfMatchNone && !c.IfNoneMatchAny
+}
+
+// putScheduled stores an event and works out what the change sends
+// (Server.Plan), from the stored copy it replaces. When the client named no
+// ETag, the write is made conditional on that copy, and retried if another
+// write came between, so the messages always describe the change made.
+func (q *request) putScheduled(c *Collection, owner *User, a access, req *PutRequest) (*PutResult, *Delivery, error) {
+	o, err := ical.Decode(req.Object, ical.VEVENT)
+	if err != nil {
+		return nil, nil, err
+	}
+	for attempt := 0; ; attempt++ {
+		cond := req.Conditions
+		var old *ical.Object
+		_, r, err := q.find(c, owner.Username, req.URI, true)
+		switch {
+		case errors.Is(err, ErrNotFound):
+			if unconditional(cond) {
+				cond = davsql.Conditions{IfNoneMatchAny: true}
+			}
+		case err != nil:
+			return nil, nil, err
+		case r.Component == VEVENT:
+			if old, err = decodeEvent(r.Data); err != nil {
+				return nil, nil, fmt.Errorf("read %s: %w", r.URI, err)
+			}
+			if unconditional(cond) {
+				cond = davsql.Conditions{IfMatch: []int64{r.Version}}
+			}
+		}
+		cur := o.Clone()
+		_, before, err := encodeObject(cur)
+		if err != nil {
+			return nil, nil, err
+		}
+		d, err := q.s.Plan(ScheduleChange{Owner: owner, Old: old, New: cur, MaySend: a.schedule()})
+		if err != nil {
+			return nil, nil, err
+		}
+		rq := *req
+		rq.Conditions = cond
+		obj, data, err := encodeObject(cur)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !bytes.Equal(before, data) {
+			rq.Object, rq.Data = obj, data
+		}
+		res, err := q.s.put(q.backends(c), owner.Username, c, &rq)
+		if errors.Is(err, ErrPrecondition) && unconditional(req.Conditions) && attempt < 2 {
+			continue
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		return res, d, nil
 	}
 }
 
@@ -360,17 +430,8 @@ func parseObject(home Home, data []byte) (*contentline.Component, Component, str
 	return cal, comp, uid, xml.Name{}
 }
 
-func (q *request) delete(c *Collection, owner *User, uri string) {
-	b, _, err := q.find(c, owner.Username, uri, false)
-	if errors.Is(err, ErrNotFound) {
-		http.NotFound(q.w, q.r)
-		return
-	}
-	if err != nil {
-		q.fail(err)
-		return
-	}
-	err = b.Delete(owner.Username, c, uri, conditions(q.r, c.ID))
+func (q *request) delete(c *Collection, owner *User, a access, uri string) {
+	d, err := q.deleteScheduled(c, owner, a, uri)
 	switch {
 	case errors.Is(err, ErrNotFound):
 		http.NotFound(q.w, q.r)
@@ -379,7 +440,40 @@ func (q *request) delete(c *Collection, owner *User, uri string) {
 	case err != nil:
 		q.fail(err)
 	default:
+		d.Send()
 		q.w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// deleteScheduled deletes a resource; for an event, it works out what the
+// deletion sends, as putScheduled does for a write.
+func (q *request) deleteScheduled(c *Collection, owner *User, a access, uri string) (*Delivery, error) {
+	cal := c.Home == HomeCalendars && c.ID != InboxID
+	noReply := strings.EqualFold(strings.TrimSpace(q.r.Header.Get("Schedule-Reply")), "F")
+	for attempt := 0; ; attempt++ {
+		b, r, err := q.find(c, owner.Username, uri, cal)
+		if err != nil {
+			return nil, err
+		}
+		cond := conditions(q.r, c.ID)
+		var d *Delivery
+		if cal && r.Component == VEVENT {
+			old, err := decodeEvent(r.Data)
+			if err != nil {
+				return nil, fmt.Errorf("read %s: %w", r.URI, err)
+			}
+			if d, err = q.s.Plan(ScheduleChange{Owner: owner, Old: old, MaySend: a.schedule(), NoReply: noReply}); err != nil {
+				return nil, err
+			}
+			if unconditional(cond) {
+				cond = davsql.Conditions{IfMatch: []int64{r.Version}}
+			}
+		}
+		err = b.Delete(owner.Username, c, uri, cond)
+		if errors.Is(err, ErrPrecondition) && d != nil && unconditional(conditions(q.r, c.ID)) && attempt < 2 {
+			continue
+		}
+		return d, err
 	}
 }
 

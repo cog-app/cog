@@ -15,11 +15,12 @@ import (
 // (internal/dav/ical models) and their iCalendar text is generated on read.
 type backend struct {
 	dav.Table
-	p *Plugin
+	p     *Plugin
+	inbox *inbox
 }
 
 func newBackend(p *Plugin) *backend {
-	b := &backend{p: p}
+	b := &backend{p: p, inbox: newInbox(p)}
 	b.Table = dav.Table{Name: "events", Component: dav.VEVENT, DB: p.DB, Render: func(q davsql.Querier, _ *dav.Collection, ids []int64) (map[int64][]byte, error) {
 		return tables.RenderIDs(q, ids)
 	}}
@@ -31,7 +32,13 @@ var (
 	_ dav.TimeRangeQuerier = (*backend)(nil)
 	_ dav.BusyRedactor     = (*backend)(nil)
 	_ dav.TimezoneObserver = (*backend)(nil)
+	_ dav.InboxProvider    = (*backend)(nil)
+	_ dav.UIDLocator       = (*backend)(nil)
+	_ dav.FreeBusyQuerier  = (*backend)(nil)
 )
+
+// Inbox implements dav.InboxProvider: schedule inboxes live with events.
+func (b *backend) Inbox() dav.InboxStore { return b.inbox }
 
 func (b *backend) Key() string                 { return "e" }
 func (b *backend) Components() []dav.Component { return []dav.Component{dav.VEVENT} }

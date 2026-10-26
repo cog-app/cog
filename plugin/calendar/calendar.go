@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -47,6 +48,28 @@ func (p *Plugin) ID() string { return PluginID }
 // does any of that work.
 func (p *Plugin) DB(username string) (*sql.DB, error) {
 	return p.ctx.PluginDB(username)
+}
+
+// me returns the user as the DAV core knows them, with their email.
+func (p *Plugin) me(userID string) (*dav.User, error) {
+	if p.dav == nil {
+		return nil, errors.New("calendar: no DAV server")
+	}
+	return p.dav.Users.ByID(userID)
+}
+
+// plan works out what storing new in place of old sends (old nil for a new
+// event, new nil for a deleted one); the caller sends it once stored.
+func (p *Plugin) plan(userID string, old, new *ical.Object) (*dav.Delivery, error) {
+	if p.dav == nil {
+		return nil, nil
+	}
+	return p.dav.PlanFor(userID, old, new)
+}
+
+// organizerOf is the ORGANIZER Cog writes for a user.
+func organizerOf(u *dav.User) *ical.Organizer {
+	return &ical.Organizer{Address: dav.CalendarAddress(u), CN: u.DisplayName}
 }
 
 // SetDAV implements dav.Provider.

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
+	"git.duckfam.us/jj-software/cog/internal/dav/tz"
 )
 
 const (
@@ -26,6 +27,23 @@ type DateTime struct {
 	Local  string `json:"v"`            // 20261025T090000, or 20261025 for a DATE
 	TZID   string `json:"tz,omitempty"` // "" floating, "UTC", an IANA name, or a client's own TZID
 	IsDate bool   `json:"d,omitempty"`
+}
+
+// ZonesFor returns how an object's TZIDs map to locations: its own
+// VTIMEZONEs for TZIDs Cog cannot resolve, and floating times in the
+// collection's zone. A VTIMEZONE whose rules cannot be read leaves its TZID
+// in the floating zone.
+func ZonesFor(o *Object, floating *time.Location) Zones {
+	z := Zones{Floating: floating, Load: tz.Load}
+	for id, vtz := range o.Zones {
+		if loc, err := tz.FromRules(vtz); err == nil {
+			if z.Custom == nil {
+				z.Custom = map[string]*time.Location{}
+			}
+			z.Custom[id] = loc
+		}
+	}
+	return z
 }
 
 // IsZero reports whether the value is absent.

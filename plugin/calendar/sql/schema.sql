@@ -81,6 +81,22 @@ CREATE TABLE IF NOT EXISTS notifications (
 	created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
+CREATE TABLE IF NOT EXISTS schedule_inbox (
+	-- The user's schedule inbox (RFC 6638): iTIP messages delivered to them,
+	-- as the text Cog wrote, versioned like a calendar whose collection ID is
+	-- 0 (dav.InboxID).
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	collection_id INTEGER NOT NULL,
+	uid TEXT NOT NULL,
+	uri TEXT NOT NULL,
+	version INTEGER NOT NULL,
+	size INTEGER NOT NULL,
+	method TEXT NOT NULL,
+	data TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	UNIQUE (collection_id, uri)
+);
+
 CREATE TABLE IF NOT EXISTS vevents (
 	-- One VEVENT: the master (recurrence_id_local = '') or an override of one
 	-- occurrence. Times are wall time plus zone; *_utc are derived. The
@@ -159,5 +175,9 @@ CREATE INDEX IF NOT EXISTS idx_events_range ON events(collection_id, start_utc);
 CREATE INDEX IF NOT EXISTS idx_notifications_event ON notifications(event_id);
 
 CREATE INDEX IF NOT EXISTS idx_notifications_fire ON notifications(fired, trigger_at);
+
+CREATE INDEX IF NOT EXISTS idx_schedule_inbox_created ON schedule_inbox(collection_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_schedule_inbox_version ON schedule_inbox(collection_id, version);
 
 CREATE INDEX IF NOT EXISTS idx_vevents_event ON vevents(object_id);

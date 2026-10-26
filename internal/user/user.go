@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
@@ -119,6 +120,39 @@ func (s *Store) GetByEmail(email string) (*User, error) {
 	return s.scanUser(s.db.QueryRow(
 		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method FROM users WHERE email = ?`, email,
 	))
+}
+
+// GetByEmails looks users up by email, ignoring case, in one query. The
+// result is keyed by the lower-cased address; when several users share one,
+// the first by username wins. Empty addresses match nobody.
+func (s *Store) GetByEmails(emails []string) (map[string]*User, error) {
+	var args []any
+	for _, e := range emails {
+		if e != "" {
+			args = append(args, strings.ToLower(e))
+		}
+	}
+	out := map[string]*User{}
+	if len(args) == 0 {
+		return out, nil
+	}
+	rows, err := s.db.Query(`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method
+		FROM users WHERE email != '' AND lower(email) IN (?`+strings.Repeat(",?", len(args)-1)+`) ORDER BY username`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("users by email: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		u, err := s.scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		key := strings.ToLower(u.Email)
+		if _, ok := out[key]; !ok {
+			out[key] = u
+		}
+	}
+	return out, rows.Err()
 }
 
 // dummyBcryptHash is a pre-computed bcrypt hash for the empty password.
@@ -271,7 +305,7 @@ func (s *Store) Delete(id string) error {
 	return nil
 }
 
-func (s *Store) scanUser(row *sql.Row) (*User, error) {
+func (s *Store) scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var createdAt int64
 	var isAdmin int

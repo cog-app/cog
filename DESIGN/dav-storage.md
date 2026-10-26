@@ -77,6 +77,8 @@ Because a collection's resources can span databases, its sync token is **composi
 
 Deleting a collection removes its row first (clients discover collections through it, so they never see a half-deleted one), then asks each backend to drop its rows. A backend that fails or is disabled leaves orphans keyed by a collection ID that no longer exists; they are invisible and are removed the next time the backend purges.
 
+Each calendar home also holds the user's **schedule inbox and outbox** (RFC 6638) at `inbox/` and `outbox/`; the names are reserved, so no calendar can take them. They are not rows in `dav_collections` (no UI lists them as calendars): the inbox is collection ID 0 (`dav.InboxID`, which `AUTOINCREMENT` never hands out), and its messages live in the calendar plugin's database (section 4.2). The outbox has no resources; it answers free/busy requests.
+
 Considered and rejected: one collection table per plugin, with single-component collections. Every plugin's default `personal` collided in the shared calendar home, and Nextcloud-style mixed collections, which clients expect, were impossible.
 
 ### 3.1 `contentline` (no library)
@@ -224,6 +226,11 @@ The codec is `internal/dav/ical` (`Decode(cal, kind)`, `Object.Encode`); it hold
 - **Range queries** use `start_utc < end AND (range_end_utc IS NULL OR range_end_utc >= start)`, then expand in Go (`Object.Instances`). A series with more than 100 000 instances, or none it can count, is unbounded.
 - A recurrence rule Cog cannot read leaves the event as its first occurrence; the rule is kept and written back.
 - **Web edits** (`applyForm`) change only what the form shows, on the first component: overrides, exceptions, alarms, attendees' other parameters, attendees without a mailto address and all leftovers stay. Changed fields drop their dependent leftovers (section 3.2; `X-ALT-DESC` joined the table for DESCRIPTION), DTSTAMP and LAST-MODIFIED always move, and SEQUENCE is bumped when times, the rule, the location or the attendees changed. Times that did not change keep their TZID. Removing the recurrence drops the overrides and exceptions.
+- **Scheduling** (RFC 6638, `internal/dav/itip` and `internal/dav/schedule.go`): a write to an event with an ORGANIZER and attendees, over DAV or from the web UI, is compared with the copy it replaces. When the calendar's owner is the organizer, each attendee the server schedules for (SCHEDULE-AGENT absent or SERVER) gets a REQUEST when they are new or what they are invited to changed in a way that matters (times, recurrence, text, status, who attends, SEQUENCE), or SCHEDULE-FORCE-SEND asks; a CANCEL when they were removed, everything they are invited to was cancelled, or the event was deleted. Each attendee gets their own view: the master and the overrides listing them, with an EXDATE for an override that leaves them out (the series ends before a RANGE=THISANDFUTURE one), without the organizer's alarms or the scheduling parameters. When the owner is an attendee, a PARTSTAT change on any occurrence is a REPLY to the organizer, and deleting the event declines it (unless `Schedule-Reply: F`).
+- **Delivery**: a recipient who is a Cog user (by email, ignoring case, or by principal URL) has the message applied to their calendar at once and kept in their inbox: a REQUEST replaces their copy (unless its SEQUENCE is older) or lands in their default calendar, keeping their own alarms and TRANSP; a CANCEL of the whole event marks every component cancelled, so they see it; of occurrences, excludes them (truncating the series for THISANDFUTURE); a REPLY records the sender's PARTSTAT on the occurrences answered, creating an override for one that had none. Anyone else gets the message by email (iMIP) when SMTP is configured. The outcome is recorded on the stored copy as SCHEDULE-STATUS before it is stored (1.2 delivered, 1.1 emailed, 3.7 no address Cog can use, 3.8 no permission, 5.1 no email configured); a client's own SCHEDULE-STATUS gives way to the server's, and SCHEDULE-FORCE-SEND is never stored. Messages are sent after the write commits; a delivery that fails is logged, since the change is already stored.
+- **Inbox**: `schedule_inbox` in the calendar database holds each message as the text Cog wrote, versioned with `davsql` under collection 0, so the inbox syncs like a calendar. Clients delete what they have seen; messages older than the tombstone retention are dropped on the next delivery, since a web-only user never deletes any.
+- **Web**: inviting someone makes the user the ORGANIZER (as `mailto:` their email, or their principal URL without one); the event modal shows Yes/Maybe/No to an attendee of someone else's event, which sets their PARTSTAT on every occurrence and replies.
+- **Free/busy**: busy time comes from instances (`Object.Instances`): TRANSP:TRANSPARENT, STATUS:CANCELLED and instances the owner declined are free; STATUS:TENTATIVE and instances the owner has not answered or accepted tentatively are BUSY-TENTATIVE; an all-day instance is busy for its days in the calendar's zone. Periods of one type that overlap or touch are merged and clipped to the range.
 - **Reminders**: `notifications` are derived from the alarms of the first instance that has not ended, on every write.
 - ATTACH, GEO, COMMENT, CONTACT, RESOURCES, RELATED-TO, COLOR and CONFERENCE are leftovers for now; managed attachments (milestone 7) will model ATTACH.
 
@@ -299,6 +306,7 @@ The codec is `internal/dav/vcard` (`Decode`, `Card.Encode`), beside `ical` and s
 - **ETag = `"<collection_id>-<version>"`** (opaque to clients). There's no hashing on read, and any write bumps it.
 - **PUT responses** (RFC 4791 §5.3.4, RFC 6352 §6.3.2.3): the stored resource is regenerated, so it usually differs from the request bytes. When it does, **don't return an ETag** in the PUT response; clients then re-fetch. The core compares the request, re-written with Cog's folding and line endings, against the generated output. Never return an ETag for bytes we won't serve. A client that PUTs back exactly what it fetched gets one.
 - **If-Match / If-None-Match** use the version-based ETag.
+- **Scheduling on PUT and DELETE**: an event write reads the copy it replaces to work out what it sends (section 4.2). When the client sent no If-Match or If-None-Match, the write is made conditional on that copy and retried if another write came between, so the messages always describe the change that was made. Recording SCHEDULE-STATUS changes the stored copy, so such a PUT returns no ETag and the client fetches it again, as RFC 6638 expects.
 - **Caching** (optional, only if profiling shows it's needed): cache generated text keyed by `(resource id, version)`. Not a source of truth; safe to drop.
 
 ## 6. Sync (RFC 6578) and change tracking
@@ -316,6 +324,9 @@ The codec is `internal/dav/vcard` (`Decode`, `Card.Encode`), beside `ical` and s
 - Report it to clients via `DAV:current-user-privilege-set` (a subset of RFC 3744): `read`, `write`, `write-content`, `bind`, `unbind`, `read-free-busy`, `schedule-*`. Without it clients show read-only shares as editable. The owner has `all`.
 - Only the owner may PROPPATCH or delete a collection, or create one in their home.
 - Free/busy-only shares expose only `read-free-busy` and answer `free-busy-query` REPORTs (RFC 4791 §7.10); events are not readable.
+- **Free/busy through the outbox** (RFC 6638 §5): a user may see the busy time of all their own calendars, and of someone else's calendars those that person shared with them with FreeBusy or Read; for anyone else the answer is `3.8;No authority`, and for an address that is not a Cog user `3.7`. A calendar whose owner set `schedule-calendar-transp` to transparent never makes them busy there.
+- **Schedule** (bit 16) lets a sharee act as the owner in scheduling: a write they make in the owner's calendar sends invitations and replies in the owner's name, as the owner's own write would, and the collection reports `schedule-send`, `schedule-send-invite` and `schedule-send-reply`. Without it, a sharee's write is stored but sends nothing, and the attendees (or the organizer) it would have reached get SCHEDULE-STATUS 3.8, so the client can see why. Anyone may invite any Cog user; delivery needs no share. The share panel's presets are Read-only, Read/Write, Free/Busy only and Delegate (Read, Write, FreeBusy and Schedule).
+- The owner's inbox reports `read`, `unbind` and `schedule-deliver` (with `-invite`, `-reply` and `schedule-query-freebusy`); the outbox `read` and `schedule-send` (with `-invite`, `-reply` and `-freebusy`). Nobody else may open either.
 - Shared collections appear under the sharee's calendar home (as today), with `CS:shared-url` / `invite` properties for clients that show sharing info.
 
 ## 8. No migration
@@ -347,7 +358,7 @@ Everything below is in scope for the MR.
 | Collection sync RFC 6578 | section 6 |
 | ACL subset RFC 3744 | section 7 (`current-user-privilege-set`, `owner`) |
 | Extended MKCOL RFC 5689 | CardDAV clients create address books with it |
-| Scheduling RFC 6638 | schedule inbox/outbox, server-side iTIP; replaces email-only invites (email stays for external attendees); uses SEQUENCE |
+| Scheduling RFC 6638 | schedule inbox/outbox, server-side iTIP; replaces email-only invites (email stays for external attendees); uses SEQUENCE. Events only: no client Cog targets assigns tasks by iTIP, so VTODO is not scheduled |
 | Free/busy query (RFC 4791 §7.10, RFC 6638 outbox POST) | FreeBusy share permission, scheduling |
 | Timezones by reference RFC 7809 | `calendar-timezone-id`; clients may omit VTIMEZONE; `CalDAV-Timezones: F` leaves out standard VTIMEZONEs (section 4.1). No `timezone-service-set`: TZDIST is out of scope |
 | Managed attachments RFC 8607 | attachments stored as Cog files instead of inline base64 |
@@ -424,11 +435,17 @@ Each milestone is a run of commits that builds and passes tests on its own.
 - **vCard 2.1** is stored and written back as 2.1, with 2.1's escaping and quoted-printable; never converted (section 4.4).
 - **Contact photos** are files named by their hash, not Files-plugin files or blobs in the database (section 4.4).
 - **addressbook-query** is matched in Go on loaded models, not translated to SQL: the default collation is not expressible in SQLite (section 4.4).
+- **Schedule inbox**: in the calendar plugin's database, beside the events the messages are about, versioned with `davsql` like a calendar (collection 0), not in the system database, which has no sync state and would hold every user's messages. Messages are stored as the text Cog wrote: they are never edited, so rows would add nothing (section 4.2).
+- **Implicit scheduling decides what is news by comparing views**, not by SEQUENCE alone: a client that forgets to bump SEQUENCE still gets its attendees told, and a bumped SEQUENCE is itself a change. A PARTSTAT change of one attendee is not news to the others.
+- **A REPLY updates the organizer's copy only.** The other attendees are not sent the event again for it, as SabreDAV does not: it would send every attendee a message per answer. Their copies show the answers as of the last invitation they got.
+- **A cancellation marks the recipient's copy cancelled** rather than deleting it, so they see that it was cancelled, as SabreDAV does.
+- **Sharees schedule as the owner only with the Schedule permission** (section 7).
+- **Free/busy of other users** is visible only through a share (section 7); see section 13.
 - **Recurrence expansion**: `github.com/teambition/rrule-go`, already a dependency, behind `internal/dav/ical` and `internal/dav/tz`; only RRULE arithmetic, not iCalendar parsing. Two limits are worked around or accepted: it stops about 292 years after DTSTART (its offsets are `time.Duration`s), so `FromRules` starts a 1601-based Outlook observance at 1900 in the same phase; and an event series is not expanded beyond that span. When DTSTART does not match the rule, it is counted as an occurrence on top of COUNT rather than as one of them.
 
 ## 13. Open questions
 
-- None yet.
+- **Free/busy across the server.** A user sees someone else's busy time only for calendars that person shared with them (section 7), so a scheduling assistant shows nothing for colleagues who shared nothing. Nextcloud shows every user's free/busy to every other user by default. Should Cog do the same, perhaps as an admin setting, or keep it opt-in per calendar?
 
 ## 14. Progress
 
@@ -441,6 +458,7 @@ Branch `design-dav-storage`, one draft MR to master. Update this section at the 
 | 3. Events | Done. `internal/dav/ical` (values, leftovers, VEVENT codec, recurrence with overrides); `internal/dav/tz` generates VTIMEZONEs from Go's zone data and evaluates clients' own; the calendar plugin stores rows (section 4.2) and renders text on read through `dav.Table.Render`; the web UI edits rows; RFC 7809. |
 | 4. Tasks and journals | Done. `internal/dav/ical` models VTODO and VJOURNAL with the event codec (one `Component` type, properties claimed per kind); `internal/dav/icalsql` stores calendar objects as rows for both the calendar and the tasks plugin; tasks and journals are rows (section 4.3), with RELATED-TO by UID and X-APPLE-SORT-ORDER; recurring tasks complete by advancing; the tasks web UI edits rows. |
 | 5. Contacts | Done. `internal/dav/vcard` models vCard 2.1, 3.0 and 4.0 (labels by group, groups and members, inline photos) with leftovers; `internal/dav/codec` holds what it shares with `ical`; the contacts plugin stores cards as rows (section 4.4), photos as hashed files, and renders text on read; the contacts web UI edits rows. |
+| 6. Scheduling and free/busy | Done. `internal/dav/itip` works out iTIP messages (RFC 5546) from a change and applies received ones; `internal/dav/schedule.go` has the inbox and outbox, implicit scheduling on DAV PUT/DELETE and web edits, delivery between Cog users and iMIP email to others, SCHEDULE-AGENT/-STATUS/-FORCE-SEND, the free-busy-query REPORT and outbox free/busy, and the Schedule permission (sections 4.2, 5 and 7). Inboxes live in the calendar plugin's database (`schedule_inbox`). Fixtures: RFC 5546's examples in `testdata/dav/ics/rfc5546/` and its broken ones in `quirks/rfc5546/`. |
 
 How milestone 2 differs from the plan it started with:
 
@@ -549,6 +567,26 @@ Resolved after milestone 5 (listed as open in its first status):
 - A photo given by URL was a leftover the web UI could not show; it is modelled and fetched through `internal/safehttp` (section 4.4). The safe dialer moved there from `internal/federation`, so ICS subscriptions (milestone 8) can use it.
 - Photo garbage collection relied on a mutex in the process; it uses SQLite's write lock (section 4.4), so replicas sharing a database are safe.
 - Found on the way: photos from DAV clients were served with the type the card claimed, so a card could put HTML on Cog's origin; only bytes that sniff as an image are served.
+
+How milestone 6 differs from the plan:
+
+- Events only: VTODO is not scheduled (section 9).
+- Email invitations are gone from the calendar plugin; the DAV core sends iMIP, for external attendees and for replies to external organizers, which the old code never sent. Milestone 3's invitation (the stored event with METHOD) became the per-attendee view of section 4.2.
+- The inbox and outbox are virtual collections of the core, not rows in `dav_collections`; their names are reserved in every calendar home (section 3.0).
+- `dav.Users` gained `ByEmails` (one query for every recipient), and `ical.ZonesFor` moved from `icalsql` so the core can use it without an import cycle; `ical.Object.Clone` is new.
+- The share preset "Appointment Scheduling" (Read, FreeBusy, Schedule, no Write) granted nothing Schedule could use, since scheduling for the owner needs a write; it is now "Delegate" (Read, Write, FreeBusy, Schedule).
+
+Adjacent bugs fixed in milestone 6:
+
+- Every web save of an event with attendees emailed every attendee a new invitation, even when nothing changed; Cog users were emailed instead of finding the event in their calendar.
+- Web-made events with attendees had no ORGANIZER, which RFC 5545 requires of a meeting, so no client could treat them as one.
+- `RespondToInvite` changed the PARTSTAT of whichever attendee the form's `email` named, did not move DTSTAMP or LAST-MODIFIED, told nobody, and no page used it; it answers for the user's own addresses, replies to the organizer, and the event modal has Yes/Maybe/No.
+- The event modal ignored its render error.
+
+Open after milestone 6:
+
+- Free/busy across the server (section 13).
+- Not built, and not part of this MR: a web view of the inbox (a notification list of invitations and replies).
 
 Fixed after milestone 2 (pre-existing, found through the `webtest` fix):
 

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
-	"git.duckfam.us/jj-software/cog/internal/dav/icalsql"
+	"git.duckfam.us/jj-software/cog/internal/dav/ical"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"github.com/google/uuid"
 )
@@ -126,7 +126,7 @@ func (h *Pages) TaskDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	z := icalsql.ZonesFor(task.Object, list.Zone())
+	z := ical.ZonesFor(task.Object, list.Zone())
 	m := task.Object.Components[0]
 	times := formTimes{Due: inputValue(m.Due, z, list.Zone()), Start: inputValue(m.Start, z, list.Zone()), Zone: list.Zone().String()}
 	plugin.SetTitle(w, task.Summary)

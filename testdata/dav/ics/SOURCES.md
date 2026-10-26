@@ -295,6 +295,23 @@ Moved to `invalid/golang-ical/thunderbird.ics`: upstream appended prose ("Disabl
 | icaljs-issue-285.ics | macOS 10.12.2 Calendar | RECURRENCE-ID override, X-APPLE-* |
 | all-day.ics | macOS 10.13.3 Calendar | All-day recurring events |
 
+## rfc5546/
+
+- Upstream: RFC 5546 (iTIP), section 4, https://www.rfc-editor.org/rfc/rfc5546.txt
+- Licence: `BSD-2-Clause` — code components of an IETF RFC (IETF Trust Legal Provisions, section 4.e)
+- Extracted byte for byte from the text: the six-space indentation and page breaks removed, lines joined with CRLF. Synthetic, like the other RFC examples here, but they are what the scheduling code (`internal/dav/itip`) is written against.
+
+| File | Section | Exercises |
+|---|---|---|
+| 4.2.2-reply.ics | 4.2.2 | REPLY accepting a group event, REQUEST-STATUS |
+| 4.2.3-update.ics | 4.2.3 | REQUEST moving an event (SEQUENCE 1), folded ATTENDEE parameters |
+| 4.4.1-recurring-request.ics | 4.4.1 | Recurring REQUEST with a client's own VTIMEZONE, RDATE and EXDATE; attendee addresses without a scheme |
+| 4.4.2-request.ics | 4.4.2 | Monthly series REQUEST with UNTIL |
+| 4.4.2-modify-instance.ics | 4.4.2 | REQUEST of one override (RECURRENCE-ID) of that series |
+| 4.4.3-cancel-instance.ics | 4.4.3 | CANCEL of one instance |
+| 4.4.4-cancel-series.ics | 4.4.4 | CANCEL of the whole series |
+| 4.4.5-this-and-future-range.ics | 4.4.5 | REQUEST changing all future instances: the RFC's example with `RANGE=` added to `RECURRENCE-ID;THISANDFUTURE`, as RFC 5545 §3.8.4.4 spells it (the original is under `quirks/rfc5546/`) |
+
 ---
 
 ## quirks/
@@ -349,6 +366,14 @@ above (see the matching section for repo, commit and licence file).
 |---|---|---|
 | icaljs-issue-257.ics | InfCloud 0.12.1 (from Thunderbird data, X-MOZ-GENERATION) | Blank lines between components; PRODID after the components |
 | invalid_dates.ics | InfCloud 0.12.1 | Blank lines between components; `DTSTART;TZID=America/Chicago:20170325` (DATE value with TZID, no VALUE=DATE) |
+
+### quirks/rfc5546/ (BSD-2-Clause, RFC 5546 section 4)
+
+| File | Section | Quirk |
+|---|---|---|
+| 4.2.1-request.ics | 4.2.1 | `DTEND:19970701T2100000Z` has seven time digits; a room attendee without a scheme |
+| 4.2.9-cancel.ics | 4.2.9 | `ATTENDEE;CUTYPE=INDIVIDUAL;mailto:a@example.com`: the value's colon is missing, so the address reads as a parameter |
+| 4.4.5-this-and-future.ics | 4.4.5 | `RECURRENCE-ID;THISANDFUTURE`: a bare parameter where RFC 5545 has `RANGE=THISANDFUTURE` |
 
 ## cog-production
 
