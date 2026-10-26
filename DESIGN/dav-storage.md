@@ -53,9 +53,25 @@ Problems with the blob-plus-index model:
 
 Three layers, each owned by Cog:
 
-1. **`contentline`**: a small generic package for the shared RFC 5545 / RFC 6350 line format.
+1. **`contentline`** (`internal/dav/contentline`): a small generic package for the shared RFC 5545 / RFC 6350 line format.
 2. **Per-type models and codecs**: events, tasks and contacts map between the generic tree and SQL rows plus leftovers.
-3. **DAV core**: collections, sync, permissions and discovery, shared by CalDAV and CardDAV.
+3. **DAV core** (`internal/dav`, SQL helpers in `internal/dav/davsql`): collections, sync, permissions and discovery, shared by CalDAV and CardDAV. Plugins implement a backend interface over their own store; the core owns `/remote.php/dav/`, principals and the homes' layout.
+
+These live under `internal/` because every DAV plugin is in-module; they can move to `plugin/` if an out-of-process plugin ever needs them.
+
+### 3.0 Plugin and collection layout
+
+Each plugin keeps its own database and owns one kind of resource:
+
+| Plugin | Collections | Components |
+|---|---|---|
+| calendar | calendars | VEVENT |
+| tasks | task lists, journals | VTODO, VJOURNAL |
+| contacts | address books | VCARD |
+
+The DAV core assembles one **calendar home** per user from the calendar and tasks plugins' collections; address books have their own home. A collection's `sync_token` must change in the same transaction as its resources, so a collection lives in exactly one database, and therefore **every calendar collection holds a single component type**. `supported-calendar-component-set` is always one of VEVENT, VTODO or VJOURNAL. MKCALENDAR is routed by the requested set (absent means VEVENT); a request for a mixed set fails the `supported-calendar-component-set` precondition, and collection names are unique across the plugins sharing a home. Cog never stored mixed collections, so this needs no data migration.
+
+Considered and rejected: one database for every CalDAV kind (owned by the calendar plugin, or by a new neutral plugin), which would allow mixed collections at the cost of moving task data and widening one plugin's ownership.
 
 ### 3.1 `contentline` (no library)
 
@@ -69,8 +85,9 @@ type Component struct {
 }
 
 type Property struct {
-	Name   string  // upper-cased
-	Params []Param // in input order; values unescaped and unquoted
+	Group  string  // vCard group: "item1" in "item1.EMAIL"
+	Name   string  // as received; compare with EqualFold
+	Params []Param // in input order; values unquoted, RFC 6868 carets decoded
 	Value  string  // raw value text (escaping is type-specific; codecs decode it)
 }
 
@@ -80,10 +97,12 @@ type Param struct {
 }
 ```
 
-- `Parse(r) ([]*Component, error)` handles unfolding, CRLF/LF, quoting, multi-valued params, vCard 3/4 quirks (`TYPE=a,b`, unparameterised `ENCODING=b`), and preserves order.
-- `Write(w, []*Component)` handles folding at 75 octets (not runes), CRLF, and quoting params when needed. It is deterministic: the same tree always produces the same bytes.
+- `Parse(r) ([]*Component, error)` handles unfolding, CRLF/LF (and iOS 6's CR CR LF), quoting, multi-valued params, vCard quirks (`TYPE=a,b`, vCard 2.1 nameless params such as `TEL;HOME;VOICE`, quoted-printable soft line breaks, blank lines after base64), UTF-16 input, and preserves order.
+- Names keep the spelling they were received with (`X-ABLabel`), so leftovers are written back exactly as sent.
+- Real clients send broken lines (Apple's bare `X-APPLE-RADIUS=…`, Outlook's `TZID="Zone:20200609T090000"`). A line that is not valid syntax inside a component is kept as a **malformed property** (`Name == ""`, the whole line in `Value`) and written back verbatim, so it is preserved as a leftover. A property after the last `END` joins the component before it. Unbalanced BEGIN/END and content before the first BEGIN are errors.
+- `Write(w, []*Component)` handles folding at 75 octets (not splitting UTF-8 sequences), CRLF, quoted-printable soft breaks for `ENCODING=QUOTED-PRINTABLE` values, and quoting params when needed. Within a component it writes properties before subcomponents, as the RFC grammars require. It is deterministic: the same tree always produces the same bytes.
 - Text value escaping (`\,` `\;` `\n`) is applied by codecs per property type, not here, because it depends on the value type (TEXT vs URI vs structured N/ADR).
-- **Round-trip property:** `Write(Parse(x))` equals `x` up to line endings and folding, for every fixture. This is tested before anything else is built on it.
+- **Round-trip property:** `Write(Parse(x))` equals `x` up to line endings, folding, blank lines, redundant parameter quoting and caret escapes, and properties that followed a subcomponent moving ahead of it, for every fixture. `Parse(Write(t))` equals `t` exactly. This is tested before anything else is built on it.
 
 ### 3.2 Leftovers
 
@@ -303,8 +322,8 @@ Everything below is in scope for the MR.
 
 ### Journals (VJOURNAL)
 
-- Journal collections (`supported-calendar-component-set` = VJOURNAL), modelled like tasks without due/status-completion fields.
-- Mapping to the notes plugin: open question (section 12). The minimum is round-trip storage and sync, so jtx Board journals work.
+- Journal collections (`supported-calendar-component-set` = VJOURNAL), owned by the tasks plugin and modelled like tasks without due/status-completion fields.
+- Not mapped to the notes plugin (section 12). Round-trip storage and sync, so jtx Board journals work.
 
 ### Out of scope
 
@@ -337,11 +356,15 @@ Each milestone is a run of commits that builds and passes tests on its own.
 10. **JSCalendar/JSContact encoders and JMAP** on the same rows; the agent API (task #32) uses these shapes.
 11. **Drop blob columns** once verification (section 8) is clean on real data. This can trail the MR as a follow-up migration if production verification needs time.
 
-## 12. Open questions
+## 12. Decisions (were open questions)
 
-- Leftovers as JSON columns vs a generic `props(owner_kind, owner_id, ord, name, params, value)` table. JSON is simpler and keeps order; a table is queryable. Start with JSON.
-- VTIMEZONE rule evaluation for non-IANA zones: write one, or accept collection-zone fallback with a warning?
-- Tombstone retention window (30 days? 1000 versions?).
-- VJOURNAL ↔ notes plugin: store journals separately and only sync, or back notes with VJOURNAL?
-- JMAP calendars is still a draft: track its latest version, or ship contacts (RFC 9610) first and calendars behind a flag?
-- Does the tasks plugin merge into the calendar plugin (one CalDAV home, VTODO collections alongside VEVENT ones), or stay a separate plugin sharing the DAV core? Clients see one calendar home per user either way.
+- **Leftovers**: JSON columns.
+- **VTIMEZONE rules for non-IANA zones**: write a small evaluator (yearly BYMONTH/BYDAY rules plus RDATE), sharing the RRULE expander.
+- **Tombstone retention**: 90 days by default, admin-configurable. Each collection records the highest pruned version; a sync token below it gets `valid-sync-token` and the client resyncs.
+- **VJOURNAL and notes**: notes are markdown files and don't fit VJOURNAL (several DESCRIPTIONs, DTSTART, STATUS, RELATED-TO, ATTACH). Journals are stored separately, in the tasks plugin, sync-only for now; a notes view of them can come later.
+- **JMAP**: contacts (RFC 9610) first; calendars track the latest draft behind a flag.
+- **Tasks plugin**: stays separate and also owns journals; single-kind collections (section 3.0).
+
+## 13. Open questions
+
+- None yet.
