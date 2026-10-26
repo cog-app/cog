@@ -7,10 +7,34 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/dav/vcard"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/contacts"
 )
+
+// newCard returns a vCard 3.0 Cog would create, with a name, an email and
+// a phone.
+func newCard(uid, fn, email, tel string) *vcard.Card {
+	c := contacts.NewCard(time.Now())
+	c.UID, c.FN = uid, fn
+	if email != "" {
+		c.Emails = []vcard.Value{{Meta: vcard.Meta{Types: []string{"INTERNET"}}, Value: email}}
+	}
+	if tel != "" {
+		c.Phones = []vcard.Value{{Meta: vcard.Meta{Types: []string{"CELL"}}, Value: tel}}
+	}
+	return c
+}
+
+func store(t *testing.T, env *cogtest.Env, username string) (*contacts.Plugin, *contacts.Store) {
+	t.Helper()
+	plug, _ := env.Providers.Plugins.Plugin("contacts")
+	cp := plug.(*contacts.Plugin)
+	s, err := cp.Store(username)
+	require.NoError(t, err)
+	return cp, s
+}
 
 func TestContactsPage(t *testing.T) {
 	env := cogtest.New(t, contacts.New())
@@ -30,17 +54,13 @@ func TestContactsCreateAndView(t *testing.T) {
 	env := cogtest.New(t, contacts.New())
 	alice := env.CreateUser(t, "alice", "pass")
 
-	plug, _ := env.Providers.Plugins.Plugin("contacts")
-	cp := plug.(*contacts.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
+	cp, s := store(t, env, alice.Username)
 
 	books, err := cp.Books(alice.ID)
 	require.NoError(t, err)
 	require.True(t, len(books) > 0)
 
-	vcard := contacts.GenerateVCard("test-uid-1", "Jane Doe", "jane@example.com", "+1234567890", time.Now())
-	card, err := contacts.SaveCard(db, books[0].ID, nil, vcard, time.Now())
+	card, err := s.Save(books[0].ID, nil, newCard("test-uid-1", "Jane Doe", "jane@example.com", "+1234567890"), time.Now())
 	require.NoError(t, err)
 	require.Equal(t, "Jane Doe", card.FN)
 
@@ -79,22 +99,18 @@ func TestContactsStar(t *testing.T) {
 	env := cogtest.New(t, contacts.New())
 	alice := env.CreateUser(t, "alice", "pass")
 
-	plug, _ := env.Providers.Plugins.Plugin("contacts")
-	cp := plug.(*contacts.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
+	cp, s := store(t, env, alice.Username)
 
 	books, err := cp.Books(alice.ID)
 	require.NoError(t, err)
 
-	vcard := contacts.GenerateVCard("star-uid", "Bob Star", "bob@example.com", "", time.Now())
-	card, err := contacts.SaveCard(db, books[0].ID, nil, vcard, time.Now())
+	card, err := s.Save(books[0].ID, nil, newCard("star-uid", "Bob Star", "bob@example.com", ""), time.Now())
 	require.NoError(t, err)
 
-	err = contacts.SetStarred(db, card.ID, true)
+	err = s.SetStarred(card.ID, true)
 	require.NoError(t, err)
 
-	starred, err := contacts.StarredContacts(db, map[int64]contacts.AddressBook{books[0].ID: books[0]}, 10)
+	starred, err := s.Starred(map[int64]contacts.AddressBook{books[0].ID: books[0]}, 10)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(starred))
 	require.Equal(t, "Bob Star", starred[0].FN)
@@ -120,16 +136,12 @@ func TestContactsUpdateContact(t *testing.T) {
 	env := cogtest.New(t, contacts.New())
 	alice := env.CreateUser(t, "alice", "pass")
 
-	plug, _ := env.Providers.Plugins.Plugin("contacts")
-	cp := plug.(*contacts.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
+	cp, s := store(t, env, alice.Username)
 
 	books, err := cp.Books(alice.ID)
 	require.NoError(t, err)
 
-	vcard := contacts.GenerateVCard("update-uid", "Old Name", "old@example.com", "", time.Now())
-	card, err := contacts.SaveCard(db, books[0].ID, nil, vcard, time.Now())
+	card, err := s.Save(books[0].ID, nil, newCard("update-uid", "Old Name", "old@example.com", ""), time.Now())
 	require.NoError(t, err)
 
 	// Create session and CSRF token for the POST action.
@@ -140,7 +152,8 @@ func TestContactsUpdateContact(t *testing.T) {
 	csrf := cogtest.Header("X-CSRF-Token", token)
 
 	form := url.Values{
-		"fn":    {"New Name"},
+		"fn":          {"New Name"},
+		"email_index": {"0"}, "email_type": {"INTERNET"}, "email_value": {"old@example.com"},
 		"org":   {"Acme Corp"},
 		"title": {"Engineer"},
 	}
@@ -149,7 +162,7 @@ func TestContactsUpdateContact(t *testing.T) {
 	require.True(t, resp.StatusCode == 303 || resp.StatusCode == 200)
 
 	// Verify the card was updated.
-	updated, err := contacts.GetCard(db, card.ID)
+	updated, err := s.Get(card.ID)
 	require.NoError(t, err)
 	require.Equal(t, "New Name", updated.FN)
 	require.Equal(t, "Acme Corp", updated.Org)
@@ -208,16 +221,12 @@ func TestContactsToggleStar(t *testing.T) {
 	env := cogtest.New(t, contacts.New())
 	alice := env.CreateUser(t, "alice", "pass")
 
-	plug, _ := env.Providers.Plugins.Plugin("contacts")
-	cp := plug.(*contacts.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
+	cp, s := store(t, env, alice.Username)
 
 	books, err := cp.Books(alice.ID)
 	require.NoError(t, err)
 
-	vcard := contacts.GenerateVCard("toggle-uid", "Toggle Star", "toggle@example.com", "", time.Now())
-	card, err := contacts.SaveCard(db, books[0].ID, nil, vcard, time.Now())
+	card, err := s.Save(books[0].ID, nil, newCard("toggle-uid", "Toggle Star", "toggle@example.com", ""), time.Now())
 	require.NoError(t, err)
 	require.Equal(t, false, card.IsStarred)
 
@@ -231,7 +240,7 @@ func TestContactsToggleStar(t *testing.T) {
 	resp := env.Post(t, fmt.Sprintf("/apps/contacts/contacts/%d/star", card.ID), cookie, csrf)
 	resp.Status(200)
 
-	updated, err := contacts.GetCard(db, card.ID)
+	updated, err := s.Get(card.ID)
 	require.NoError(t, err)
 	require.Equal(t, true, updated.IsStarred)
 
@@ -239,7 +248,7 @@ func TestContactsToggleStar(t *testing.T) {
 	resp = env.Post(t, fmt.Sprintf("/apps/contacts/contacts/%d/star", card.ID), cookie, csrf)
 	resp.Status(200)
 
-	updated, err = contacts.GetCard(db, card.ID)
+	updated, err = s.Get(card.ID)
 	require.NoError(t, err)
 	require.Equal(t, false, updated.IsStarred)
 }

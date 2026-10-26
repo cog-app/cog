@@ -11,38 +11,27 @@ import (
 )
 
 // Table implements the read side of a Backend, and purging, for a plugin
-// that keeps one component type in one table with id, collection_id, uid,
-// uri and version. Plugins embed it and add Put and Delete, which need their
-// own columns.
-//
-// The resource text comes either from a column (Data), or, for a plugin that
-// stores rows and generates the text, from Render, with its length stored in
-// a size column.
+// that keeps its resources in one table with id, collection_id, uid, uri,
+// version and size columns, and generates their text from rows (Render).
+// Plugins embed it and add Put and Delete, which need their own columns.
 type Table struct {
 	Name string // table name
-	Data string // column holding the resource text, when not rendered
 	// Component is the type of every resource, or "" for a table whose
 	// component column names each one's.
 	Component Component
 	DB        func(owner string) (*sql.DB, error)
 	// Render generates the text of the rows with these IDs, in collection c,
-	// reading through q. Set it instead of Data.
+	// reading through q. size holds the length of what it generates, so
+	// listings without data need not render.
 	Render func(q davsql.Querier, c *Collection, ids []int64) (map[int64][]byte, error)
 }
 
-func (t *Table) columns(withData bool) string {
+func (t *Table) columns() string {
 	comp := "'" + string(t.Component) + "'"
 	if t.Component == "" {
 		comp = "component"
 	}
-	if t.Render != nil {
-		return "id, uri, uid, version, size, NULL, " + comp
-	}
-	data := "NULL"
-	if withData {
-		data = t.Data
-	}
-	return "id, uri, uid, version, length(" + t.Data + "), " + data + ", " + comp
+	return "id, uri, uid, version, size, " + comp
 }
 
 func (t *Table) scan(rows *sql.Rows) ([]Resource, []int64, error) {
@@ -52,12 +41,8 @@ func (t *Table) scan(rows *sql.Rows) ([]Resource, []int64, error) {
 	for rows.Next() {
 		var r Resource
 		var id int64
-		var data sql.NullString
-		if err := rows.Scan(&id, &r.URI, &r.UID, &r.Version, &r.Size, &data, &r.Component); err != nil {
+		if err := rows.Scan(&id, &r.URI, &r.UID, &r.Version, &r.Size, &r.Component); err != nil {
 			return nil, nil, fmt.Errorf("scan %s: %w", t.Name, err)
-		}
-		if data.Valid {
-			r.Data = []byte(data.String)
 		}
 		out = append(out, r)
 		ids = append(ids, id)
@@ -68,12 +53,12 @@ func (t *Table) scan(rows *sql.Rows) ([]Resource, []int64, error) {
 // Query returns the resources in collection c matching a condition on the
 // table.
 func (t *Table) Query(q davsql.Querier, c *Collection, withData bool, where string, args ...any) ([]Resource, error) {
-	rows, err := q.Query(`SELECT `+t.columns(withData)+` FROM `+t.Name+` WHERE `+where+` ORDER BY uri`, args...)
+	rows, err := q.Query(`SELECT `+t.columns()+` FROM `+t.Name+` WHERE `+where+` ORDER BY uri`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query %s: %w", t.Name, err)
 	}
 	out, ids, err := t.scan(rows)
-	if err != nil || !withData || t.Render == nil || len(out) == 0 {
+	if err != nil || !withData || len(out) == 0 {
 		return out, err
 	}
 	data, err := t.Render(q, c, ids)

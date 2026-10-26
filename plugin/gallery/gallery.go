@@ -243,20 +243,6 @@ func (p *Plugin) Stop() error {
 	return nil
 }
 
-// contactsDB returns the contacts plugin database for a user, or nil if the
-// contacts plugin is not installed or the database cannot be opened.
-func (p *Plugin) contactsDB(username string) *sql.DB {
-	if p.contacts == nil {
-		return nil
-	}
-	db, err := p.ctx.PluginDB(username, plugin.OfPlugin("contacts"))
-	if err != nil {
-		p.log.Error("contacts db", "user", username, "err", err)
-		return nil
-	}
-	return db
-}
-
 // directDB opens the gallery database without the search hooks, which would
 // otherwise contend with the server for the Bleve/bbolt index files. Used by
 // the scan worker, which runs as a separate process alongside the server.

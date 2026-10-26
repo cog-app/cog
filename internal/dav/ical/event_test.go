@@ -27,15 +27,6 @@ func cal(lines ...string) []string {
 
 var zones = Zones{Floating: time.UTC, Load: tz.Load}
 
-func TestTextEscaping(t *testing.T) {
-	for _, s := range []string{"plain", "a, b; c\\d\nline", ""} {
-		assert.Equal(t, s, UnescapeText(EscapeText(s)))
-	}
-	assert.Equal(t, "Room 1, Floor 2", UnescapeText("Room 1, Floor 2"))
-	assert.Equal(t, `a\x`, UnescapeText(`a\x`))
-	assert.Equal(t, "a\nb", UnescapeText(`a\Nb`))
-}
-
 func TestDuration(t *testing.T) {
 	for in, want := range map[string]string{"-PT15M": "-PT15M", "P1D": "P1D", "P2W": "P2W", "PT1H30M": "PT1H30M", "P1DT2H": "P1DT2H", "PT0S": "PT0S"} {
 		d, err := ParseDuration(in)

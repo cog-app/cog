@@ -3,7 +3,9 @@ package contacts
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
+	"git.duckfam.us/jj-software/cog/internal/dav/vcard"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
@@ -61,7 +63,7 @@ templ contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken str
 									onclick={ templ.ComponentScript{Call: fmt.Sprintf("showContactDetail(%d)", c.ID)} }
 								>
 									<td>
-										if c.PhotoPath != "" {
+										if c.HasPhoto() {
 											<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover"/>
 										} else {
 											<span class="avatar-initials" style={ fmt.Sprintf("background:%s", c.BookColor) }>{ contactInitials(c.FN) }</span>
@@ -108,22 +110,25 @@ templ contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken str
 						}
 					</select>
 				</div>
+				<div class="flex gap-1">
+					<div class="form-group" style="flex:1">
+						<label for="cc-given">First name</label>
+						<input class="form-control" type="text" id="cc-given" name="given"/>
+					</div>
+					<div class="form-group" style="flex:1">
+						<label for="cc-family">Last name</label>
+						<input class="form-control" type="text" id="cc-family" name="family"/>
+					</div>
+				</div>
 				<div class="form-group">
-					<label for="cc-fn">Name</label>
-					<input class="form-control" type="text" id="cc-fn" name="fn" required/>
+					<label for="cc-fn">Display name</label>
+					<input class="form-control" type="text" id="cc-fn" name="fn" placeholder="First and last name"/>
 				</div>
 				<!-- Emails -->
 				<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
 					<legend style="font-weight:500;font-size:0.9rem">Emails</legend>
 					<div id="cc-emails">
-						<div class="flex gap-1 items-end mb-1">
-							<select class="form-control" name="email_type" style="width:100px">
-								<option value="INTERNET">Personal</option>
-								<option value="WORK">Work</option>
-								<option value="HOME">Home</option>
-							</select>
-							<input class="form-control" type="email" name="email_value" placeholder="email@example.com" style="flex:1"/>
-						</div>
+						@valueRow("email", -1, "INTERNET", "", emailTypes)
 					</div>
 					<button type="button" class="btn btn-outline btn-sm" onclick="addField('cc-emails','email')">+ Add email</button>
 				</fieldset>
@@ -131,15 +136,7 @@ templ contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken str
 				<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
 					<legend style="font-weight:500;font-size:0.9rem">Phones</legend>
 					<div id="cc-phones">
-						<div class="flex gap-1 items-end mb-1">
-							<select class="form-control" name="phone_type" style="width:100px">
-								<option value="CELL">Cell</option>
-								<option value="WORK">Work</option>
-								<option value="HOME">Home</option>
-								<option value="FAX">Fax</option>
-							</select>
-							<input class="form-control" type="tel" name="phone_value" placeholder="+1 555-1234" style="flex:1"/>
-						</div>
+						@valueRow("phone", -1, "CELL", "", phoneTypes)
 					</div>
 					<button type="button" class="btn btn-outline btn-sm" onclick="addField('cc-phones','phone')">+ Add phone</button>
 				</fieldset>
@@ -207,6 +204,7 @@ templ contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken str
 			row.className = "flex gap-1 items-end mb-1";
 			if (kind === "email") {
 				row.innerHTML =
+					'<input type="hidden" name="email_index" value="new"/>' +
 					'<select class="form-control" name="email_type" style="width:100px">' +
 					'<option value="INTERNET">Personal</option><option value="WORK">Work</option><option value="HOME">Home</option>' +
 					"</select>" +
@@ -214,6 +212,7 @@ templ contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken str
 					'<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>';
 			} else {
 				row.innerHTML =
+					'<input type="hidden" name="phone_index" value="new"/>' +
 					'<select class="form-control" name="phone_type" style="width:100px">' +
 					'<option value="CELL">Cell</option><option value="WORK">Work</option><option value="HOME">Home</option><option value="FAX">Fax</option>' +
 					"</select>" +
@@ -255,7 +254,7 @@ templ contactsStarredPage(books []AddressBook, cards []CardWithBook) {
 									onclick={ templ.ComponentScript{Call: fmt.Sprintf("showContactDetail(%d)", c.ID)} }
 								>
 									<td>
-										if c.PhotoPath != "" {
+										if c.HasPhoto() {
 											<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover"/>
 										} else {
 											<span class="avatar-initials" style={ fmt.Sprintf("background:%s", c.BookColor) }>{ contactInitials(c.FN) }</span>
@@ -321,8 +320,34 @@ templ contactsStarredPage(books []AddressBook, cards []CardWithBook) {
 	</script>
 }
 
+templ valueRow(kind string, index int, typ, value string, options []typeOption) {
+	<div class="flex gap-1 items-end mb-1">
+		if index < 0 {
+			<input type="hidden" name={ kind + "_index" } value="new"/>
+		} else {
+			<input type="hidden" name={ kind + "_index" } value={ strconv.Itoa(index) }/>
+		}
+		<select class="form-control" name={ kind + "_type" } style="width:100px">
+			for _, o := range options {
+				<option value={ o.Type } selected?={ o.Type == typ }>{ o.Label }</option>
+			}
+			if index >= 0 {
+				<option value="" selected?={ typ == "" }>Other</option>
+			}
+		</select>
+		if kind == "email" {
+			<input class="form-control" type="email" name="email_value" value={ value } placeholder="email@example.com" style="flex:1"/>
+		} else {
+			<input class="form-control" type="tel" name="phone_value" value={ value } placeholder="+1 555-1234" style="flex:1"/>
+		}
+		if index >= 0 {
+			<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>
+		}
+	</div>
+}
+
 templ contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfToken string) {
-	if c.PhotoPath != "" {
+	if c.HasPhoto() {
 		<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:80px;height:80px;border-radius:50%;object-fit:cover;margin-bottom:0.75rem;display:block"/>
 	} else {
 		<span class="avatar-initials" style={ fmt.Sprintf("width:80px;height:80px;font-size:1.5rem;margin-bottom:0.75rem;display:inline-flex;background:%s", contactColor(c, book)) }>{ contactInitials(c.FN) }</span>
@@ -331,58 +356,46 @@ templ contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTo
 		<h2 style="margin:0">{ c.FN }</h2>
 		@ui.Star(c.IsStarred, fmt.Sprintf("/apps/contacts/contacts/%d/star", c.ID))
 	</div>
-	<!-- Display all emails -->
-	for _, e := range ParseEmailsJSON(c.EmailsJSON) {
+	for _, e := range c.VCard.Emails {
 		<p>
-			<span class="typed-label">{ e.Type }</span>
+			<span class="typed-label">{ displayLabel(&e.Meta) }</span>
 			<br/>
 			<a href={ templ.SafeURL("mailto:" + e.Value) }>{ e.Value }</a>
 		</p>
 	}
-	if len(ParseEmailsJSON(c.EmailsJSON)) == 0 && c.Email != "" {
-		<p><strong>Email:</strong> <a href={ templ.SafeURL("mailto:" + c.Email) }>{ c.Email }</a></p>
-	}
-	<!-- Display all phones -->
-	for _, p := range ParsePhonesJSON(c.PhonesJSON) {
+	for _, p := range c.VCard.Phones {
 		<p>
-			<span class="typed-label">{ p.Type }</span>
+			<span class="typed-label">{ displayLabel(&p.Meta) }</span>
 			<br/>
 			<a href={ templ.SafeURL("tel:" + p.Value) }>{ p.Value }</a>
 		</p>
 	}
-	if len(ParsePhonesJSON(c.PhonesJSON)) == 0 && c.Tel != "" {
-		<p><strong>Phone:</strong> <a href={ templ.SafeURL("tel:" + c.Tel) }>{ c.Tel }</a></p>
-	}
-	<!-- Business fields -->
 	if c.Org != "" {
 		<p><strong>Organization:</strong> { c.Org }</p>
 	}
-	if c.Title != "" {
-		<p><strong>Title:</strong> { c.Title }</p>
+	if c.VCard.Title != "" {
+		<p><strong>Title:</strong> { c.VCard.Title }</p>
 	}
-	if c.Note != "" {
-		<p><strong>Note:</strong> { c.Note }</p>
+	if c.VCard.Birthday != "" {
+		<p><strong>Birthday:</strong> { c.VCard.Birthday }</p>
 	}
-	<!-- Addresses -->
-	for _, a := range ParseAddressesJSON(c.AddressesJSON) {
+	if c.VCard.Note != "" {
+		<p style="white-space:pre-line"><strong>Note:</strong> { c.VCard.Note }</p>
+	}
+	for _, a := range c.VCard.Addresses {
 		<p>
-			<span class="typed-label">{ a.Type } Address</span>
+			<span class="typed-label">{ displayLabel(&a.Meta) } Address</span>
+			for _, line := range addressLines(&a) {
+				<br/>
+				{ line }
+			}
+		</p>
+	}
+	for _, u := range c.VCard.URLs {
+		<p>
+			<span class="typed-label">{ displayLabel(&u.Meta) } Website</span>
 			<br/>
-			if a.Street != "" {
-				{ a.Street }
-				<br/>
-			}
-			if a.City != "" || a.State != "" || a.Zip != "" {
-				{ a.City }
-				if a.City != "" && a.State != "" {
-					{ ", " }
-				}
-				{ a.State } { a.Zip }
-				<br/>
-			}
-			if a.Country != "" {
-				{ a.Country }
-			}
+			{ u.Value }
 		</p>
 	}
 	if book != nil {
@@ -412,34 +425,29 @@ templ contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTo
 				}
 			</select>
 		</div>
+		<div class="flex gap-1">
+			<div class="form-group" style="flex:1">
+				<label for="em-given">First name</label>
+				<input class="form-control" type="text" id="em-given" name="given" value={ givenName(c.VCard) }/>
+			</div>
+			<div class="form-group" style="flex:1">
+				<label for="em-family">Last name</label>
+				<input class="form-control" type="text" id="em-family" name="family" value={ familyName(c.VCard) }/>
+			</div>
+		</div>
 		<div class="form-group">
-			<label for="em-fn">Name</label>
-			<input class="form-control" type="text" id="em-fn" name="fn" value={ c.FN } required/>
+			<label for="em-fn">Display name</label>
+			<input class="form-control" type="text" id="em-fn" name="fn" value={ c.VCard.FN } placeholder="First and last name"/>
 		</div>
 		<!-- Edit emails -->
 		<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
 			<legend style="font-weight:500;font-size:0.9rem">Emails</legend>
 			<div id="em-emails">
-				for _, e := range ParseEmailsJSON(c.EmailsJSON) {
-					<div class="flex gap-1 items-end mb-1">
-						<select class="form-control" name="email_type" style="width:100px">
-							<option value="INTERNET" selected?={ e.Type == "INTERNET" || e.Type == "" }>Personal</option>
-							<option value="WORK" selected?={ e.Type == "WORK" }>Work</option>
-							<option value="HOME" selected?={ e.Type == "HOME" }>Home</option>
-						</select>
-						<input class="form-control" type="email" name="email_value" value={ e.Value } style="flex:1"/>
-						<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>
-					</div>
+				for i, e := range c.VCard.Emails {
+					@valueRow("email", i, shownType(&e.Meta, emailTypes), e.Value, emailTypes)
 				}
-				if len(ParseEmailsJSON(c.EmailsJSON)) == 0 {
-					<div class="flex gap-1 items-end mb-1">
-						<select class="form-control" name="email_type" style="width:100px">
-							<option value="INTERNET">Personal</option>
-							<option value="WORK">Work</option>
-							<option value="HOME">Home</option>
-						</select>
-						<input class="form-control" type="email" name="email_value" value={ c.Email } style="flex:1"/>
-					</div>
+				if len(c.VCard.Emails) == 0 {
+					@valueRow("email", -1, "INTERNET", "", emailTypes)
 				}
 			</div>
 			<button type="button" class="btn btn-outline btn-sm" onclick="addField('em-emails','email')">+ Add email</button>
@@ -448,28 +456,11 @@ templ contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTo
 		<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
 			<legend style="font-weight:500;font-size:0.9rem">Phones</legend>
 			<div id="em-phones">
-				for _, p := range ParsePhonesJSON(c.PhonesJSON) {
-					<div class="flex gap-1 items-end mb-1">
-						<select class="form-control" name="phone_type" style="width:100px">
-							<option value="CELL" selected?={ p.Type == "CELL" || p.Type == "" }>Cell</option>
-							<option value="WORK" selected?={ p.Type == "WORK" }>Work</option>
-							<option value="HOME" selected?={ p.Type == "HOME" }>Home</option>
-							<option value="FAX" selected?={ p.Type == "FAX" }>Fax</option>
-						</select>
-						<input class="form-control" type="tel" name="phone_value" value={ p.Value } style="flex:1"/>
-						<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>
-					</div>
+				for i, p := range c.VCard.Phones {
+					@valueRow("phone", i, shownType(&p.Meta, phoneTypes), p.Value, phoneTypes)
 				}
-				if len(ParsePhonesJSON(c.PhonesJSON)) == 0 {
-					<div class="flex gap-1 items-end mb-1">
-						<select class="form-control" name="phone_type" style="width:100px">
-							<option value="CELL">Cell</option>
-							<option value="WORK">Work</option>
-							<option value="HOME">Home</option>
-							<option value="FAX">Fax</option>
-						</select>
-						<input class="form-control" type="tel" name="phone_value" value={ c.Tel } style="flex:1"/>
-					</div>
+				if len(c.VCard.Phones) == 0 {
+					@valueRow("phone", -1, "CELL", "", phoneTypes)
 				}
 			</div>
 			<button type="button" class="btn btn-outline btn-sm" onclick="addField('em-phones','phone')">+ Add phone</button>
@@ -483,12 +474,12 @@ templ contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfTo
 			</div>
 			<div class="form-group">
 				<label for="em-title">Title</label>
-				<input class="form-control" type="text" id="em-title" name="title" value={ c.Title }/>
+				<input class="form-control" type="text" id="em-title" name="title" value={ c.VCard.Title }/>
 			</div>
 		</fieldset>
 		<div class="form-group">
 			<label for="em-note">Note</label>
-			<textarea class="form-control" id="em-note" name="note" rows="3">{ c.Note }</textarea>
+			<textarea class="form-control" id="em-note" name="note" rows="3">{ c.VCard.Note }</textarea>
 		</div>
 		<div class="flex gap-1" style="justify-content:space-between">
 			<button
@@ -590,6 +581,47 @@ func contactColor(c *Card, book *AddressBook) string {
 		return book.Color
 	}
 	return "#888"
+}
+
+func givenName(c *vcard.Card) string {
+	if c.N == nil {
+		return ""
+	}
+	return joined(c.N.Given)
+}
+
+func familyName(c *vcard.Card) string {
+	if c.N == nil {
+		return ""
+	}
+	return joined(c.N.Family)
+}
+
+// addressLines is how an address reads: street lines, the town line, the
+// country.
+func addressLines(a *vcard.Address) []string {
+	var lines []string
+	add := func(parts ...[]string) {
+		var words []string
+		for _, p := range parts {
+			for _, v := range p {
+				if v = strings.TrimSpace(v); v != "" {
+					words = append(words, v)
+				}
+			}
+		}
+		if len(words) > 0 {
+			lines = append(lines, strings.Join(words, " "))
+		}
+	}
+	for _, v := range append(append(append([]string{}, a.POBox...), a.Ext...), a.Street...) {
+		for _, l := range strings.Split(v, "\n") {
+			add([]string{l})
+		}
+	}
+	add(a.Locality, a.Region, a.Code)
+	add(a.Country)
+	return lines
 }
 
 func contactInitials(fn string) string {

@@ -150,60 +150,9 @@ To support full-text search without bloating the main metadata database, Cog mai
 - **Location:** `app_data/system/search/`
 - **Isolation:** Independent of `user.db` to allow for easy reconstruction and specialized optimization.
 
-### Calendar Plugin Metadata (`app_data/calendar/plugin.db`)
+### Calendar and Tasks Plugins
 
-**Table: `calendars`**
-
-- `id` (UUID PK)
-- `name` (Text)
-- `color` (Text, Hex)
-- `description` (Text)
-- `order` (Integer)
-- `sync_token` (Text, for CalDAV)
-
-**Table: `calendar_objects`**
-
-- `id` (UUID PK)
-- `calendar_id` (UUID FK)
-- `ics_data` (Text, Full RFC 5545 blob)
-- `uid` (Text, Unique ID from iCal)
-- `etag` (Text, for sync)
-- `start_time` (Integer, Indexed)
-- `end_time` (Integer, Indexed)
-- `summary` (Text)
-- `is_recurring` (Boolean)
-
-**Table: `calendar_exceptions`**
-
-- `id` (UUID PK)
-- `object_id` (UUID FK, Parent event)
-- `recurrence_id` (Text, Instance date)
-- `ics_data` (Text, Override data)
-
-### Tasks Plugin Metadata (`app_data/tasks/plugin.db`)
-
-**Table: `task_lists`**
-
-- `id` (UUID PK)
-- `name` (Text)
-- `color` (Text, Hex)
-- `order` (Integer)
-
-**Table: `tasks`**
-
-- `id` (UUID PK)
-- `list_id` (UUID FK)
-- `parent_id` (UUID FK, Nullable for subtasks)
-- `ics_data` (Text, Full RFC 5545 VTODO blob)
-- `uid` (Text, Unique ID from iCal)
-- `etag` (Text, for sync)
-- `summary` (Text)
-- `description` (Text)
-- `priority` (Integer)
-- `percent_complete` (Integer)
-- `completed_at` (Integer)
-- `due_at` (Integer, Indexed)
-- `start_at` (Integer, Indexed)
+Calendars, task lists and journals are DAV collections in the system database (`dav_collections`); events, tasks and journal entries are rows in each plugin's database, one per resource plus one per component, with the iCalendar text generated on read. See [dav-storage.md](dav-storage.md) sections 4, 4.2 and 4.3, and each plugin's `sql/schema.sql`.
 
 ### RSS Plugin Metadata (`app_data/rss/plugin.db`)
 
@@ -277,31 +226,6 @@ To support full-text search without bloating the main metadata database, Cog mai
 - `tag_id` (UUID FK)
 - _Primary Key: (`note_id`, `tag_id`)_
 
-### Contacts (CardDAV) - Core Plugin Schema
+### Contacts (CardDAV)
 
-**Table: `address_books`**
-
-- `id` (UUID PK)
-- `name` (Text)
-- `description` (Text)
-- `color` (Text, Hex)
-- `order` (Integer)
-- `sync_token` (Text)
-- `created_at` (Integer)
-- `updated_at` (Integer)
-
-**Table: `cards`**
-
-- `id` (UUID PK)
-- `address_book_id` (UUID FK)
-- `uri` (Text, Indexed)
-- `vcard_data` (Text)
-- `uid` (Text, Indexed)
-- `etag` (Text, Indexed)
-- `fn` (Text)
-- `email` (Text, Indexed)
-- `tel` (Text, Indexed)
-- `rev` (Text)
-- `created_at` (Integer)
-- `updated_at` (Integer)
-- _Unique: (`address_book_id`, `uid`)_
+Address books are DAV collections in the system database (`dav_collections`). Cards are rows in the contacts plugin's database: `cards` for each card and its single-valued properties, and `card_emails`, `card_phones`, `card_addresses`, `card_urls`, `card_impp`, `card_related` and `card_members` for the rest; the vCard text is generated on read and photos are files named by their hash. See [dav-storage.md](dav-storage.md) section 4.4 and `plugin/contacts/sql/schema.sql`.

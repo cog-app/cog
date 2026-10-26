@@ -2,6 +2,7 @@ package contentline
 
 import (
 	"bytes"
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -81,6 +82,15 @@ func TestFixturesRoundTrip(t *testing.T) {
 			require.NoError(t, Write(&out2, again))
 			if !bytes.Equal(out.Bytes(), out2.Bytes()) {
 				t.Fatal("Write is not deterministic")
+			}
+
+			// Codecs store leftovers as JSON, which must keep every byte.
+			js, err := json.Marshal(comps)
+			require.NoError(t, err)
+			var stored []*Component
+			require.NoError(t, json.Unmarshal(js, &stored))
+			if !reflect.DeepEqual(comps, stored) {
+				t.Fatal("the JSON form differs from the tree")
 			}
 		})
 	}

@@ -263,33 +263,11 @@ func (e *Env) Do(t testing.TB, req *http.Request, opts ...HTTPOpt) *Response {
 	for _, opt := range opts {
 		opt(o)
 	}
-	if o.noRedirect {
-		old := e.Client.CheckRedirect
-		e.Client.CheckRedirect = func(*http.Request, []*http.Request) error {
-			t.Fatalf("cogtest: unexpected redirect from %s %s", req.Method, req.URL)
-			return nil
-		}
-		defer func() { e.Client.CheckRedirect = old }()
-	}
-	resp, err := e.Client.Do(req)
-	if err != nil {
-		t.Fatalf("cogtest: %s %s: %v", req.Method, req.URL, err)
-	}
-	return &Response{Response: resp, t: t}
-}
-
-func (e *Env) doReq(t testing.TB, method, path string, body io.Reader, opts []HTTPOpt) *Response {
-	t.Helper()
-	req, _ := http.NewRequest(method, e.Providers.Config.BaseURL+path, body)
-	o := &reqOpts{req: req}
-	for _, opt := range opts {
-		opt(o)
-	}
 	if o.noRedirect || o.stopRedirect {
 		old := e.Client.CheckRedirect
 		if o.noRedirect {
 			e.Client.CheckRedirect = func(*http.Request, []*http.Request) error {
-				t.Fatalf("cogtest: unexpected redirect from %s %s", method, path)
+				t.Fatalf("cogtest: unexpected redirect from %s %s", req.Method, req.URL)
 				return nil
 			}
 		} else {
@@ -301,9 +279,18 @@ func (e *Env) doReq(t testing.TB, method, path string, body io.Reader, opts []HT
 	}
 	resp, err := e.Client.Do(req)
 	if err != nil && !errors.Is(err, http.ErrUseLastResponse) {
-		t.Fatalf("cogtest: %s %s: %v", method, path, err)
+		t.Fatalf("cogtest: %s %s: %v", req.Method, req.URL, err)
 	}
 	return &Response{Response: resp, t: t}
+}
+
+func (e *Env) doReq(t testing.TB, method, path string, body io.Reader, opts []HTTPOpt) *Response {
+	t.Helper()
+	req, err := http.NewRequest(method, e.Providers.Config.BaseURL+path, body)
+	if err != nil {
+		t.Fatalf("cogtest: %s %s: %v", method, path, err)
+	}
+	return e.Do(t, req, opts...)
 }
 
 // PostJSON performs a POST request with a JSON body.

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/dav/codec"
 	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
 	"git.duckfam.us/jj-software/cog/internal/dav/tz"
 )
@@ -51,59 +52,6 @@ var models = map[Kind]map[string]bool{
 // hasAlarms reports whether a kind may hold VALARMs; in a VJOURNAL one is a
 // leftover.
 func (k Kind) hasAlarms() bool { return k == VEVENT || k == VTODO }
-
-// Leftovers is what a codec did not model in one component, kept so it can
-// be written back.
-type Leftovers struct {
-	Props []contentline.Property   `json:"props,omitempty"` // in received order
-	Comps []*contentline.Component `json:"comps,omitempty"` // in received order
-	// Params holds parameters Cog does not model on properties it does,
-	// keyed by the property's upper-case name: SUMMARY;LANGUAGE=de.
-	Params map[string][]contentline.Param `json:"params,omitempty"`
-}
-
-// IsZero reports whether nothing was left over.
-func (l *Leftovers) IsZero() bool {
-	return len(l.Props) == 0 && len(l.Comps) == 0 && len(l.Params) == 0
-}
-
-func (l *Leftovers) keepParams(name string, params []contentline.Param, modelled ...string) {
-	var unknown []contentline.Param
-	for _, p := range params {
-		if p.Name != "" && slices.ContainsFunc(modelled, func(m string) bool { return strings.EqualFold(m, p.Name) }) {
-			continue
-		}
-		unknown = append(unknown, p)
-	}
-	if len(unknown) == 0 {
-		return
-	}
-	if l.Params == nil {
-		l.Params = map[string][]contentline.Param{}
-	}
-	l.Params[name] = unknown
-}
-
-// Drop removes leftover properties by name. A name ending in "*" is a prefix.
-func (l *Leftovers) Drop(names ...string) {
-	l.Props = slices.DeleteFunc(l.Props, func(p contentline.Property) bool {
-		for _, n := range names {
-			if prefix, ok := strings.CutSuffix(n, "*"); ok {
-				if len(p.Name) >= len(prefix) && strings.EqualFold(p.Name[:len(prefix)], prefix) {
-					return true
-				}
-			} else if p.Is(n) {
-				return true
-			}
-		}
-		return false
-	})
-}
-
-// Has reports whether a leftover property has the name.
-func (l *Leftovers) Has(name string) bool {
-	return slices.ContainsFunc(l.Props, func(p contentline.Property) bool { return p.Is(name) })
-}
 
 // Attendee is an ATTENDEE property.
 type Attendee struct {
@@ -155,7 +103,7 @@ type Alarm struct {
 	RepeatDuration string // DURATION
 	Description    string
 	Summary        string
-	Leftovers      Leftovers
+	Leftovers      codec.Leftovers
 }
 
 // DateValue is one value of an RDATE or EXDATE property.
@@ -211,7 +159,7 @@ type Component struct {
 	Relations  []Relation // tasks and journals
 	Alarms     []Alarm
 
-	Leftovers Leftovers
+	Leftovers codec.Leftovers
 }
 
 // IsOverride reports whether the component overrides one occurrence.
@@ -394,8 +342,8 @@ func claimProp(e *Component, p *contentline.Property, claimed claimer, tzid func
 		if p.Value == "" || !claimed.once(name) {
 			return false
 		}
-		*field = UnescapeText(p.Value)
-		l.keepParams(name, p.Params)
+		*field = codec.UnescapeText(p.Value)
+		l.KeepParams(name, p.Params)
 		return true
 	}
 	raw := func(field *string) bool {
@@ -403,7 +351,7 @@ func claimProp(e *Component, p *contentline.Property, claimed claimer, tzid func
 			return false
 		}
 		*field = p.Value
-		l.keepParams(name, p.Params)
+		l.KeepParams(name, p.Params)
 		return true
 	}
 	date := func(field *DateTime, extra ...string) bool {
@@ -416,7 +364,7 @@ func claimProp(e *Component, p *contentline.Property, claimed claimer, tzid func
 		}
 		claimed[name] = true
 		*field = d
-		l.keepParams(name, p.Params, append(extra, "VALUE", "TZID")...)
+		l.KeepParams(name, p.Params, append(extra, "VALUE", "TZID")...)
 		return true
 	}
 	number := func(field **int) bool {
@@ -425,7 +373,7 @@ func claimProp(e *Component, p *contentline.Property, claimed claimer, tzid func
 			return false
 		}
 		*field = &n
-		l.keepParams(name, p.Params)
+		l.KeepParams(name, p.Params)
 		return true
 	}
 	switch name {
@@ -434,7 +382,7 @@ func claimProp(e *Component, p *contentline.Property, claimed claimer, tzid func
 		if !claimed.once(name) {
 			return false
 		}
-		l.keepParams(name, p.Params)
+		l.KeepParams(name, p.Params)
 		return true
 	case "SUMMARY":
 		return text(&e.Summary)
@@ -500,14 +448,14 @@ func claimProp(e *Component, p *contentline.Property, claimed claimer, tzid func
 		if p.Value == "" || !claimed.once(name) {
 			return false
 		}
-		m, other := takeParams(p.Params, "CN")
+		m, other := codec.TakeParams(p.Params, "CN")
 		e.Organizer = &Organizer{Address: p.Value, CN: m["CN"], Params: other}
 		return true
 	case "ATTENDEE":
 		if p.Value == "" {
 			return false
 		}
-		m, other := takeParams(p.Params, "CN", "PARTSTAT", "ROLE", "RSVP", "CUTYPE")
+		m, other := codec.TakeParams(p.Params, "CN", "PARTSTAT", "ROLE", "RSVP", "CUTYPE")
 		e.Attendees = append(e.Attendees, Attendee{
 			Address: p.Value, CN: m["CN"], PartStat: m["PARTSTAT"], Role: m["ROLE"],
 			RSVP: m["RSVP"], CUType: m["CUTYPE"], Params: other,
@@ -517,34 +465,17 @@ func claimProp(e *Component, p *contentline.Property, claimed claimer, tzid func
 		if p.Value == "" {
 			return false
 		}
-		m, other := takeParams(p.Params, "RELTYPE")
+		m, other := codec.TakeParams(p.Params, "RELTYPE")
 		e.Relations = append(e.Relations, Relation{Type: m["RELTYPE"], UID: p.Value, Params: other})
 		return true
 	case "CATEGORIES":
 		if len(p.Params) > 0 || p.Value == "" {
 			return false
 		}
-		e.Categories = append(e.Categories, splitText(p.Value)...)
+		e.Categories = append(e.Categories, codec.SplitText(p.Value)...)
 		return true
 	}
 	return false
-}
-
-// takeParams splits params into the first single-valued occurrence of each
-// modelled name, and the rest in order. A modelled parameter given twice, or
-// with several values, keeps its other copies among the rest.
-func takeParams(params []contentline.Param, modelled ...string) (map[string]string, []contentline.Param) {
-	var out []contentline.Param
-	m := map[string]string{}
-	for _, p := range params {
-		up := strings.ToUpper(p.Name)
-		if _, seen := m[up]; p.Name != "" && !seen && slices.Contains(modelled, up) && len(p.Values) == 1 {
-			m[up] = p.Values[0]
-			continue
-		}
-		out = append(out, p)
-	}
-	return m, out
 }
 
 // dateList reads an RDATE or EXDATE property, or reports false when a value
@@ -555,7 +486,7 @@ func dateList(p *contentline.Property, tzid func(string) string, periods bool) (
 	if isPeriod && !periods {
 		return nil, false
 	}
-	_, other := takeParams(p.Params, "VALUE", "TZID")
+	_, other := codec.TakeParams(p.Params, "VALUE", "TZID")
 	var out []DateValue
 	for v := range strings.SplitSeq(p.Value, ",") {
 		var rest string
@@ -589,7 +520,7 @@ func decodeAlarm(c *contentline.Component) Alarm {
 			switch name {
 			case "ACTION":
 				a.Action = p.Value
-				l.keepParams(name, p.Params)
+				l.KeepParams(name, p.Params)
 			case "TRIGGER":
 				a.Absolute = strings.EqualFold(p.Param("VALUE"), "DATE-TIME")
 				if !a.Absolute {
@@ -600,7 +531,7 @@ func decodeAlarm(c *contentline.Component) Alarm {
 				}
 				a.Trigger = p.Value
 				a.Related = p.Param("RELATED")
-				l.keepParams(name, p.Params, "VALUE", "RELATED")
+				l.KeepParams(name, p.Params, "VALUE", "RELATED")
 			case "REPEAT":
 				n, err := strconv.Atoi(p.Value)
 				if err != nil {
@@ -608,16 +539,16 @@ func decodeAlarm(c *contentline.Component) Alarm {
 					break
 				}
 				a.Repeat = &n
-				l.keepParams(name, p.Params)
+				l.KeepParams(name, p.Params)
 			case "DURATION":
 				a.RepeatDuration = p.Value
-				l.keepParams(name, p.Params)
+				l.KeepParams(name, p.Params)
 			case "DESCRIPTION":
-				a.Description = UnescapeText(p.Value)
-				l.keepParams(name, p.Params)
+				a.Description = codec.UnescapeText(p.Value)
+				l.KeepParams(name, p.Params)
 			case "SUMMARY":
-				a.Summary = UnescapeText(p.Value)
-				l.keepParams(name, p.Params)
+				a.Summary = codec.UnescapeText(p.Value)
+				l.KeepParams(name, p.Params)
 			default:
 				ok = false
 			}
@@ -715,7 +646,7 @@ func (e *Component) encode(uid string) *contentline.Component {
 	}
 	text := func(name, v string) {
 		if v != "" {
-			add(name, EscapeText(v))
+			add(name, codec.EscapeText(v))
 		}
 	}
 	raw := func(name, v string) {
@@ -774,7 +705,7 @@ func (e *Component) encode(uid string) *contentline.Component {
 	if len(e.Categories) > 0 {
 		vals := make([]string, len(e.Categories))
 		for i, v := range e.Categories {
-			vals[i] = EscapeText(v)
+			vals[i] = codec.EscapeText(v)
 		}
 		c.Props = append(c.Props, contentline.Property{Name: "CATEGORIES", Value: strings.Join(vals, ",")})
 	}
@@ -815,7 +746,7 @@ func appendDateList(props []contentline.Property, name string, vals []DateValue)
 	for i := 0; i < len(vals); {
 		j := i + 1
 		for j < len(vals) && vals[j].sameKind(vals[i].DateTime) && (vals[j].Period == "") == (vals[i].Period == "") &&
-			slices.EqualFunc(vals[j].Params, vals[i].Params, paramEqual) {
+			slices.EqualFunc(vals[j].Params, vals[i].Params, codec.ParamEqual) {
 			j++
 		}
 		strs := make([]string, 0, j-i)
@@ -831,10 +762,6 @@ func appendDateList(props []contentline.Property, name string, vals []DateValue)
 		i = j
 	}
 	return props
-}
-
-func paramEqual(a, b contentline.Param) bool {
-	return a.Name == b.Name && slices.Equal(a.Values, b.Values)
 }
 
 func (a *Alarm) encode() *contentline.Component {
@@ -858,8 +785,8 @@ func (a *Alarm) encode() *contentline.Component {
 		add("REPEAT", strconv.Itoa(*a.Repeat))
 	}
 	add("DURATION", a.RepeatDuration)
-	add("DESCRIPTION", EscapeText(a.Description))
-	add("SUMMARY", EscapeText(a.Summary))
+	add("DESCRIPTION", codec.EscapeText(a.Description))
+	add("SUMMARY", codec.EscapeText(a.Summary))
 	c.Props = append(c.Props, l.Props...)
 	c.Components = append(c.Components, l.Comps...)
 	return c

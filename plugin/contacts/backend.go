@@ -1,15 +1,13 @@
 package contacts
 
 import (
-	"errors"
-	"fmt"
-
 	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
+	"git.duckfam.us/jj-software/cog/internal/dav/vcard"
 )
 
-// backend serves cards to the DAV core. The vCard is stored and served
-// verbatim; the indexed columns are derived from it on write.
+// backend serves cards to the DAV core. Cards are stored as rows and their
+// text is generated on read (rows.go).
 type backend struct {
 	dav.Table
 	p *Plugin
@@ -18,52 +16,46 @@ type backend struct {
 var _ dav.Backend = (*backend)(nil)
 
 func newBackend(p *Plugin) *backend {
-	return &backend{Table: dav.Table{Name: "cards", Data: "vcard_data", Component: dav.VCARD, DB: p.DB}, p: p}
+	b := &backend{p: p}
+	b.Table = dav.Table{Name: "cards", Component: dav.VCARD, DB: p.DB, Render: b.render}
+	return b
 }
 
 func (b *backend) Key() string { return "c" }
 
+func (b *backend) render(q davsql.Querier, c *dav.Collection, ids []int64) (map[int64][]byte, error) {
+	owner, err := b.p.username(c.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	return renderIDs(q, b.p.photoStore(owner), ids)
+}
+
 func (b *backend) Put(owner string, c *dav.Collection, req *dav.PutRequest) (*dav.PutResult, error) {
-	db, err := b.p.DB(owner)
+	s, err := b.p.Store(owner)
 	if err != nil {
 		return nil, err
 	}
-	vcard := string(req.Data)
-	fields, err := ParseVCard(vcard)
-	if err != nil {
-		return nil, fmt.Errorf("parse card %s: %w", req.URI, err)
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("put card: %w", err)
-	}
-	defer tx.Rollback()
-	_, version, created, err := putCard(tx, int64(c.ID), req.URI, req.UID, vcard, fields, req.Conditions, b.p.ctx.Now().Unix())
-	var conflict *errUIDConflict
-	if errors.As(err, &conflict) {
-		return nil, &dav.UIDConflict{URI: conflict.uri}
-	}
+	st, err := s.put(int64(c.ID), req.URI, vcard.Decode(req.Object), req.Conditions, b.p.ctx.Now())
 	if err != nil {
 		return nil, err
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("put card: %w", err)
-	}
-	return &dav.PutResult{Version: version, Created: created, Data: req.Data}, nil
+	return &dav.PutResult{Version: st.Version, Created: st.Created, Data: st.Data}, nil
 }
 
 func (b *backend) Delete(owner string, c *dav.Collection, uri string, cond davsql.Conditions) error {
-	db, err := b.p.DB(owner)
+	s, err := b.p.Store(owner)
 	if err != nil {
 		return err
 	}
-	tx, err := db.Begin()
+	return s.remove(int64(c.ID), uri, cond, b.p.ctx.Now())
+}
+
+// Purge removes a deleted collection's cards and the photos only they used.
+func (b *backend) Purge(owner string, id dav.CollectionID) error {
+	s, err := b.p.Store(owner)
 	if err != nil {
-		return fmt.Errorf("delete card: %w", err)
-	}
-	defer tx.Rollback()
-	if err := deleteCard(tx, int64(c.ID), uri, cond, b.p.ctx.Now().Unix()); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return s.purge(int64(id))
 }

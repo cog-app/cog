@@ -3,6 +3,7 @@ package gallery
 import (
 	"bytes"
 	"database/sql"
+	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -446,14 +447,18 @@ func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
 
 	// If contact_uid is set, link this person to an existing contact.
 	if contactUID := r.FormValue("contact_uid"); contactUID != "" && h.plugin.contacts != nil {
-		cdb := h.plugin.contactsDB(username)
-		if cdb == nil {
-			http.Error(w, "contacts unavailable", http.StatusInternalServerError)
+		cs, err := h.plugin.contacts.Store(username)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		card, err := contacts.FindCardByUID(cdb, contactUID)
-		if err != nil {
+		card, err := cs.FindByUID(contactUID)
+		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "contact not found", http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if err := LinkPersonToContact(db, id, contactUID); err != nil {
@@ -464,7 +469,7 @@ func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if card.PhotoPath == "" {
+		if !card.HasPhoto() {
 			h.setContactPhotoFromFace(username, contactUID, db, id)
 		}
 		http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", id), http.StatusSeeOther)
@@ -510,12 +515,13 @@ func (h *Pages) MergePeople(w http.ResponseWriter, r *http.Request) {
 // linkOrCreateContact links a gallery person to an existing contact by exact name match,
 // or creates a new contact if none exists. Errors are logged but not fatal.
 func (h *Pages) linkOrCreateContact(username string, galleryDB *sql.DB, personID int64, name string) {
-	cdb := h.plugin.contactsDB(username)
-	if cdb == nil {
+	cs, err := h.plugin.contacts.Store(username)
+	if err != nil {
+		h.plugin.log.Error("contacts store", "user", username, "err", err)
 		return
 	}
 	// Search for an exact name match.
-	cards, err := contacts.SearchCards(cdb, nil, name, 10)
+	cards, err := cs.Search(nil, name, 10)
 	if err != nil {
 		h.plugin.log.Error("search contacts", "err", err)
 		return
@@ -528,7 +534,7 @@ func (h *Pages) linkOrCreateContact(username string, galleryDB *sql.DB, personID
 		if err := LinkPersonToContact(galleryDB, personID, card.UID); err != nil {
 			h.plugin.log.Error("link person to contact", "err", err)
 		}
-		if card.PhotoPath == "" {
+		if !card.HasPhoto() {
 			h.setContactPhotoFromFace(username, card.UID, galleryDB, personID)
 		}
 		return
@@ -782,10 +788,14 @@ func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 
 	// Include matching contacts if the contacts plugin is available.
 	username := plugin.Username(r)
-	if cdb := h.plugin.contactsDB(username); cdb != nil {
-		cards, err := contacts.SearchCards(cdb, nil, q, 5)
+	if h.plugin.contacts != nil {
+		var cards []contacts.CardWithBook
+		cs, err := h.plugin.contacts.Store(username)
+		if err == nil {
+			cards, err = cs.Search(nil, q, 5)
+		}
 		if err != nil {
-			h.plugin.log.Error("search contacts", "err", err)
+			h.plugin.log.Error("search contacts", "user", username, "err", err)
 		}
 		for _, card := range cards {
 			// Skip contacts already linked to a gallery person.
@@ -797,8 +807,8 @@ func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 				Name: card.FN,
 				Sub:  "Contact",
 			}
-			if card.PhotoPath != "" {
-				item.AvatarURL = fmt.Sprintf("/apps/contacts/api/photos/%d", card.ID)
+			if card.HasPhoto() {
+				item.AvatarURL = fmt.Sprintf("/apps/contacts/photos/%d", card.ID)
 			}
 			items = append(items, item)
 		}

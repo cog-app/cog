@@ -131,9 +131,12 @@ Some extensions duplicate a modelled field. Keeping them after that field is edi
 | DTSTART/DTEND/DUE/DURATION/RRULE, all-day | `X-MICROSOFT-CDO-ALLDAYEVENT`, `X-FUNAMBOL-ALLDAY`, `X-MOZ-GENERATION`, `X-MOZ-LASTACK`, `X-MOZ-SNOOZE-TIME*`, `X-NSCP-ORIGINAL-DTSTART`, `X-NSCP-DTSTART-TZID` |
 | an alarm's TRIGGER | that alarm's `X-MOZ-LASTACK`, `X-MOZ-SNOOZE-TIME`, `X-APPLE-DEFAULT-ALARM`, `ACKNOWLEDGED` |
 | STATUS (task) | none: no client in the corpus shadows STATUS, COMPLETED or PERCENT-COMPLETE |
-| FN/N (contact) | `X-PHONETIC-*` |
+| FN/N (contact) | `X-PHONETIC-FIRST-NAME`, `-MIDDLE-NAME`, `-LAST-NAME`, `SORT-STRING`, and N's `SORT-AS` parameter |
+| ORG (contact) | `X-PHONETIC-ORG` and ORG's `SORT-AS` parameter |
 
-The table is code (`ical.dependents`), grown from fixtures. A web edit that changes a field applies its rows. A DAV PUT replaces the component wholesale, so it doesn't need them.
+The tables are code (`ical.dependents`, `vcard.dependents`), grown from fixtures. A web edit that changes a field applies its rows. A DAV PUT replaces the component wholesale, so it doesn't need them.
+
+`Leftovers` and TEXT escaping live in `internal/dav/codec`, which both codecs use; neither codec imports the other. Leftovers are stored as JSON, and `contentline` writes text that is not UTF-8 (a `CHARSET=SHIFT_JIS` value, a Latin-1 export) as base64 there, because `encoding/json` would replace those bytes.
 
 #### Edit bookkeeping
 
@@ -257,27 +260,35 @@ task_attendees / task_alarms / vtimezones                                       
 ### 4.4 Contacts (CardDAV, VCARD)
 
 ```
-cards(
-  id, collection_id, uid, uri, version, vcard_version,  -- '3.0' or '4.0'
-  fn, n_family, n_given, n_additional, n_prefix, n_suffix, nickname,
-  org, org_units, title, role, note, bday, anniversary, gender,
-  kind,                 -- individual/group/org/location (v4) or X-ADDRESSBOOKSERVER-KIND (v3)
-  photo_file_id,        -- photo stored as a Cog file; inline data or URI regenerated
-  rev, categories_json, is_starred,
-  leftovers
-)
+cards(                                 -- one row per CardDAV resource
+  id, collection_id, uid, uri, version, size,
+  vcard_version,                       -- '2.1', '3.0' or '4.0', as received
+  kind,                                -- KIND (4.0) or X-ADDRESSBOOKSERVER-KIND (3.0)
+  fn, n_family, n_given, n_additional, n_prefix, n_suffix,   -- N's lists; NULL without N
+  nickname, org, org_units, title, role, note,               -- lists as JSON
+  bday, anniversary, gender, rev,      -- as written: their syntax differs by version
+  categories,
+  photo_hash, photo_type, photo_encoding, photo_params,       -- an inline PHOTO, kept as a file
+  is_starred,                          -- Cog's own
+  leftovers, created_at, updated_at)
 
-card_emails(card_id, value, types, pref, label, params)
-card_phones(card_id, value, types, pref, label, params)
-card_addresses(card_id, pobox, ext, street, locality, region, code, country, types, pref, label, params)
-card_urls / card_impp / card_related                  -- same shape
-card_members(card_id, member_uri)                     -- groups (v4 MEMBER, v3 X-ADDRESSBOOKSERVER-MEMBER)
+card_emails(card_id, position, value, types, pref, group_name, label, params)
+card_phones / card_urls / card_impp / card_related                    -- same columns
+card_addresses(card_id, position, pobox, ext, street, locality, region, code, country,
+               types, pref, group_name, label, params)
+card_members(card_id, position, uri, params)   -- groups: MEMBER (4.0), X-ADDRESSBOOKSERVER-MEMBER (3.0)
 ```
 
-- **Labels**: Apple writes `item1.EMAIL` + `item1.X-ABLabel:Work`. Property groups (`item1.`) must be modelled: `contentline` keeps the group prefix, and the codec pairs `X-ABLabel` with its sibling into `label`. Losing the group breaks custom labels in iOS.
-- **Version**: store the version received and write the same one back. Clients that sent 3.0 expect 3.0. Never convert silently.
-- **Photos**: decoded into the files plugin (as `photo_path` does today); output inlines them for v3 and uses `data:` URIs for v4.
-- Today's `*_json` columns become child tables (no migration; section 8).
+The codec is `internal/dav/vcard` (`Decode`, `Card.Encode`), beside `ical` and sharing `internal/dav/codec` with it. The rows are written and read in the contacts plugin (`plugin/contacts/rows.go`): `icalsql` is a package because two plugins store calendar components, and only one stores cards. A load is eight queries per batch of cards (the card rows, then one per child table), and the text is generated on read through `dav.Table.Render`, with `size` kept for PROPFIND.
+
+- **Version**: the card keeps the version it was received in and is written back in it; nothing converts. The version decides escaping, how parameters are written, and the names of KIND and MEMBER. **vCard 2.1** (46 cards in the corpus, from Android, Outlook and BlackBerry exports) is stored and written back as 2.1: values escape only `;`, line breaks travel in quoted-printable, a quoted-printable value is decoded to model it and encoded again on output (the `ENCODING` and `CHARSET` parameters stay with it), and types are bare parameters (`TEL;CELL;PREF`). A value in a charset other than UTF-8, or whose bytes are not UTF-8, is not modelled and stays a leftover byte for byte. CardDAV clients send 3.0 or 4.0; 2.1 arrives by import.
+- **What the codec claims**: as for events, a property is modelled only when it fits exactly. FN, N, NICKNAME, ORG, TITLE, ROLE, NOTE, BDAY, ANNIVERSARY, GENDER, REV, CATEGORIES and the photo are claimed once and without a group; EMAIL, TEL, ADR, URL, IMPP and RELATED every time, groups included. A second ORG, a grouped FN, an N with too many components, a 2.1 component ending in a backslash (2.1 cannot escape it) stay leftovers.
+- **Values**: N and ADR components are lists (RFC 6350; in 2.1 one value each), so `Richter,James` and `Richter\, James` both survive; the columns hold the list comma-separated with commas in a value escaped. Empty components past the last are dropped (Tine 2.0 adds one). EMAIL, TEL, URL, IMPP and RELATED values are kept as written: they are addresses and URIs, and TEXT escaping a `tel:` URI breaks it. Types are kept as written, in order (`type=INTERNET;type=pref` is written back `TYPE=INTERNET,pref`), and `PREF=n` is modelled.
+- **Labels**: Apple writes `item1.EMAIL` + `item1.X-ABLabel:Work`. A child property keeps its group; when the group holds just it and one label without parameters, the label is modelled with it and written right after it. Any other group (two labels, `item2.ADR` + `item2.X-ABADR` + a label, `X-ABRELATEDNAMES` and its label) is left as received, group names included, so iOS keeps its custom labels and the country code stays with its address. A label added in the web UI gets the next free `itemN`.
+- **Groups**: KIND:group with MEMBER in 4.0, X-ADDRESSBOOKSERVER-KIND and -MEMBER in 3.0, into `kind` and `card_members`; the other version's spelling is a leftover.
+- **Photos**: an inline PHOTO in the version's own form (base64 with ENCODING in 2.1 and 3.0, a `data:` URI in 4.0) is decoded and stored as a file named by the SHA-256 of its bytes (`contacts/<user>/photos/`), with its type, ENCODING token and other parameters (Apple's `X-ABCROP-RECTANGLE`) in columns; it is written back inline. A photo given by URL, or a `data:` URI in a 3.0 card, is a leftover. Files are written before the transaction that refers to them commits and removed once no card does; card writes are serialized in the process so a removal never races a write.
+- **Web edits** (`plugin/contacts/edit.go`) change only what the form shows, compared with what it was shown: first and last name (N's given and family), display name, organisation (its units stay), title, note, and emails and phones row by row. A changed type swaps that type and drops the label; other types, parameters and groups stay; a removed row goes. FN follows N when it did before. Changed fields drop their dependent leftovers and REV always moves. A new card is 3.0 and gets an N from its display name when it has none. Uploading a photo makes it the card's PHOTO, so DAV clients see it.
+- `TestFixturesRoundTrip` (`internal/dav/vcard`) checks, for every card in the corpus (104 committed, 134 with the GPL set), that decode(encode(x)) equals x, that encoding is deterministic and a fixed point, that the version is kept and that no property name or group is lost; `TestFixturesThroughRows` (`plugin/contacts`) PUTs every one and checks the card served back decodes to the same model, through the rows, the JSON and the photo files.
 
 ## 5. Generation, ETags and PUT semantics
 
@@ -406,6 +417,9 @@ Each milestone is a run of commits that builds and passes tests on its own.
 - **Import and export**: a page in the user's settings (`/settings/data`) over the `Backend` interface, in milestone 2 (section 8.1).
 - **Row storage**: one shared package, `internal/dav/icalsql`, for every plugin holding calendar components; the component tables have the same columns everywhere.
 - **Completing a recurring task** from Cog advances the series to its next occurrence, as tasks.org does (section 4.3).
+- **Contact rows** live in the contacts plugin, not a shared package: only one plugin stores cards (section 4.4).
+- **vCard 2.1** is stored and written back as 2.1, with 2.1's escaping and quoted-printable; never converted (section 4.4).
+- **Contact photos** are files named by their hash, not Files-plugin files or blobs in the database (section 4.4).
 - **Recurrence expansion**: `github.com/teambition/rrule-go`, already a dependency, behind `internal/dav/ical` and `internal/dav/tz`; only RRULE arithmetic, not iCalendar parsing. Two limits are worked around or accepted: it stops about 292 years after DTSTART (its offsets are `time.Duration`s), so `FromRules` starts a 1601-based Outlook observance at 1900 in the same phase; and an event series is not expanded beyond that span. When DTSTART does not match the rule, it is counted as an occurrence on top of COUNT rather than as one of them.
 
 ## 13. Open questions
@@ -422,7 +436,7 @@ Branch `design-dav-storage`, one draft MR to master. Update this section at the 
 | 2. DAV core | Done. `internal/dav` (collections in the system database, `Server` for root/principals/homes, PROPFIND/PROPPATCH/REPORT/MKCALENDAR/extended MKCOL, composite sync tokens, privilege sets, import/export); `internal/dav/davsql` (counters and tombstones in each plugin DB); `internal/dav/tz`. Calendar, tasks (VTODO and VJOURNAL, blob-backed) and contacts are backends; their web UIs read collections from the core. `/settings/data` imports and exports; the tombstone retention is an admin setting. Protocol tests in `internal/dav/protocol_test.go`. |
 | 3. Events | Done. `internal/dav/ical` (values, leftovers, VEVENT codec, recurrence with overrides); `internal/dav/tz` generates VTIMEZONEs from Go's zone data and evaluates clients' own; the calendar plugin stores rows (section 4.2) and renders text on read through `dav.Table.Render`; the web UI edits rows; RFC 7809. |
 | 4. Tasks and journals | Done. `internal/dav/ical` models VTODO and VJOURNAL with the event codec (one `Component` type, properties claimed per kind); `internal/dav/icalsql` stores calendar objects as rows for both the calendar and the tasks plugin; tasks and journals are rows (section 4.3), with RELATED-TO by UID and X-APPLE-SORT-ORDER; recurring tasks complete by advancing; the tasks web UI edits rows. |
-| 5. Contacts | Next. |
+| 5. Contacts | Done. `internal/dav/vcard` models vCard 2.1, 3.0 and 4.0 (labels by group, groups and members, inline photos) with leftovers; `internal/dav/codec` holds what it shares with `ical`; the contacts plugin stores cards as rows (section 4.4), photos as hashed files, and renders text on read; the contacts web UI edits rows. |
 
 How milestone 2 differs from the plan it started with:
 
@@ -504,7 +518,32 @@ Adjacent bugs fixed in milestone 4:
 Open after milestone 4:
 
 - Completing a recurring task in Apple Reminders reportedly also keeps a completed copy as a separate reminder; Cog does not. Capture fixtures from Reminders and tasks.org to confirm both behaviours.
-- `DESIGN/database.md` still describes the old `ics_data` blobs for events and tasks.
+- ~~`DESIGN/database.md` still describes the old `ics_data` blobs for events and tasks.~~ It points to this document since milestone 5.
+
+How milestone 5 differs from the plan:
+
+- The rows live in the contacts plugin, not a sibling of `icalsql` (section 4.4).
+- `photo_file_id` became `photo_hash`: photos are files under the plugin's data directory named by their SHA-256, as `photo_path` was, not files in the user's Files. Their type, ENCODING token and other parameters are columns.
+- Child rows carry `position` and `group_name` besides the planned columns; ADR components and N are lists (comma-separated in their columns), NICKNAME, ORG's units and CATEGORIES JSON. `card_related` holds RELATED (4.0); Apple's `X-ABRELATEDNAMES` stays a leftover with its label.
+- BDAY, ANNIVERSARY and GENDER are stored as written, not parsed: their syntax differs by version (`--0203`, `2012-06-06`, `19950415`). The birthday calendar (milestone 8) will read them.
+- vCard 2.1 is modelled rather than left whole: it is stored and written back as 2.1 (section 4.4).
+- The edit form gained first and last name fields (N), so a name edited in Cog reaches clients that show N, as iOS does.
+- `dav.Table` lost its `Data` mode: no table stores resource text any more.
+
+Adjacent bugs fixed in milestone 5:
+
+- A web edit regenerated the whole card as 3.0 from the form: a 4.0 card became 3.0, and labels, groups, addresses (the form did not show them), photos, every other property and every parameter were lost. REV was the only bookkeeping, and it stayed.
+- A photo uploaded in the web UI, or set from a gallery face, was only a file beside the card: DAV clients never saw it, and the card's own PHOTO was ignored by the web UI.
+- The old parser took the first TYPE only, read ROLE as the title, split ADR on escaped semicolons, kept ORG's separators in the organisation's name, did not unfold files with bare LF line ends, decoded no 2.1 quoted-printable value, and did not read N or NICKNAME at all.
+- The gallery's contact picker linked avatars to `/apps/contacts/api/photos/{id}`, which does not exist; it is `/apps/contacts/photos/{id}`.
+- Toggling a contact's star answered 404 for any error, a database failure included.
+- `cogtest.Env.Do` ignored `StopRedirect` (only the form helpers honoured it).
+
+Open after milestone 5:
+
+- `addressbook-query` returns every card (as before); its filters (RFC 6352 §8.6) are not applied in SQL. `address-data` with a `version` attribute is answered with the stored version: Cog does not convert.
+- A photo given by URL stays a leftover, so the web UI shows initials for it. Fetching remote photos would need the SSRF rules of section 9.
+- Card writes are serialized per process for photo garbage collection; a deployment with several replicas writing one user's contacts would need that lock in the database instead.
 
 Fixed after milestone 2 (pre-existing, found through the `webtest` fix):
 

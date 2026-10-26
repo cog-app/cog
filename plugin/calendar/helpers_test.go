@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"git.duckfam.us/jj-software/cog/internal/dav/ical"
+	"git.duckfam.us/jj-software/cog/internal/dav/codec"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -48,7 +48,7 @@ func genICS(uid, summary, description, location string, start, end time.Time, al
 	}
 	for _, p := range [][2]string{{"SUMMARY", summary}, {"DESCRIPTION", description}, {"LOCATION", location}} {
 		if p[1] != "" {
-			b.WriteString(p[0] + ":" + ical.EscapeText(p[1]) + "\r\n")
+			b.WriteString(p[0] + ":" + codec.EscapeText(p[1]) + "\r\n")
 		}
 	}
 	b.WriteString("DTSTAMP:" + stamp.UTC().Format("20060102T150405Z") + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")

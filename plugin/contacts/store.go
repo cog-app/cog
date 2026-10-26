@@ -2,13 +2,15 @@ package contacts
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
+	"git.duckfam.us/jj-software/cog/internal/dav/vcard"
 )
 
 // AddressBook is a DAV address book collection, as the contacts UI shows it.
@@ -30,29 +32,30 @@ func bookFrom(c *dav.Collection) AddressBook {
 	}
 }
 
-// Card is a single contact card with indexed fields and raw vCard blob.
+// Card is one contact as lists show it, from its rows; VCard holds the
+// whole card when it was loaded.
 type Card struct {
 	ID            int64
 	AddressBookID int64 // dav.CollectionID
 	UID           string
 	URI           string
 	Version       int64
-	FN            string
-	Email         string
-	Tel           string
+	FN            string // the name shown: FN, or N, or the organisation
+	Email         string // the preferred email, or the first
+	Tel           string // the preferred phone, or the first
 	Org           string
 	Title         string
-	Note          string
-	EmailsJSON    string
-	PhonesJSON    string
-	AddressesJSON string
-	PhotoPath     string
+	PhotoHash     string // "" without a photo
+	PhotoType     string
 	IsStarred     bool
-	VCardData     string
-	Rev           string
 	CreatedAt     int64
 	UpdatedAt     int64
+
+	VCard *vcard.Card // nil unless loaded
 }
+
+// HasPhoto reports whether the card has a photo.
+func (c *Card) HasPhoto() bool { return c.PhotoHash != "" }
 
 // CardWithBook extends Card with address book metadata for display.
 type CardWithBook struct {
@@ -62,21 +65,53 @@ type CardWithBook struct {
 	OwnerUsername string // non-empty when from a shared address book
 }
 
-// cardColumns is the list of columns selected for card queries.
-const cardColumns = `id, collection_id, uid, uri, version, fn, email, tel, org, title, note, emails_json, phones_json, addresses_json, photo_path, is_starred, vcard_data, rev, created_at, updated_at`
+// Store is one user's contacts: their database and their photo files. Every
+// write goes through it, so the photo files follow the rows.
+type Store struct {
+	DB     *sql.DB
+	photos *photoStore
+	mu     *sync.Mutex // the plugin's photoMu
+	log    *slog.Logger
+}
+
+// Store returns a user's contacts.
+func (p *Plugin) Store(username string) (*Store, error) {
+	db, err := p.DB(username)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{DB: db, photos: p.photoStore(username), mu: &p.photoMu, log: p.log}, nil
+}
+
+// preferred orders a card's values: by PREF, then TYPE=pref, then as
+// written.
+const preferred = `ORDER BY CASE WHEN pref > 0 THEN pref ELSE 101 END, instr(lower(types), '"pref"') = 0, position LIMIT 1`
+
+// cardColumns are the columns of Card, from cards c.
+const cardColumns = `c.id, c.collection_id, c.uid, c.uri, c.version, c.fn, c.n_given, c.n_family, c.org, c.title,
+	coalesce((SELECT value FROM card_emails WHERE card_id = c.id ` + preferred + `), ''),
+	coalesce((SELECT value FROM card_phones WHERE card_id = c.id ` + preferred + `), ''),
+	c.photo_hash, c.photo_type, c.is_starred, c.created_at, c.updated_at`
 
 func scanCard(row interface{ Scan(...any) error }) (*Card, error) {
 	var c Card
-	if err := row.Scan(&c.ID, &c.AddressBookID, &c.UID, &c.URI, &c.Version, &c.FN, &c.Email, &c.Tel,
-		&c.Org, &c.Title, &c.Note, &c.EmailsJSON, &c.PhonesJSON, &c.AddressesJSON,
-		&c.PhotoPath, &c.IsStarred, &c.VCardData, &c.Rev, &c.CreatedAt, &c.UpdatedAt); err != nil {
+	var given, family sql.NullString
+	if err := row.Scan(&c.ID, &c.AddressBookID, &c.UID, &c.URI, &c.Version, &c.FN, &given, &family, &c.Org, &c.Title,
+		&c.Email, &c.Tel, &c.PhotoHash, &c.PhotoType, &c.IsStarred, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, err
+	}
+	if c.FN == "" {
+		n := vcard.Name{Given: listOf(given.String), Family: listOf(family.String)}
+		c.FN = n.Formatted()
+	}
+	if c.FN == "" {
+		c.FN = c.Org
 	}
 	return &c, nil
 }
 
-func queryCards(db *sql.DB, query string, args ...any) ([]Card, error) {
-	rows, err := db.Query(query, args...)
+func queryCards(q davsql.Querier, where string, args ...any) ([]Card, error) {
+	rows, err := q.Query(`SELECT `+cardColumns+` FROM cards c WHERE `+where, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query cards: %w", err)
 	}
@@ -94,25 +129,42 @@ func queryCards(db *sql.DB, query string, args ...any) ([]Card, error) {
 
 // --- Card queries ---
 
-func ListCards(db *sql.DB, bookID int64) ([]Card, error) {
-	return queryCards(db, `SELECT `+cardColumns+` FROM cards WHERE collection_id = ? ORDER BY fn`, bookID)
+// List returns the cards in an address book, by name.
+func (s *Store) List(bookID int64) ([]Card, error) {
+	return queryCards(s.DB, `c.collection_id = ? ORDER BY c.fn, c.id`, bookID)
 }
 
-func GetCardByUID(db *sql.DB, bookID int64, uid string) (*Card, error) {
-	return scanCard(db.QueryRow(`SELECT `+cardColumns+` FROM cards WHERE collection_id = ? AND uid = ?`, bookID, uid))
+// Get returns a card by row ID, with its vCard. It returns sql.ErrNoRows
+// when there is none.
+func (s *Store) Get(id int64) (*Card, error) {
+	c, err := s.Row(id)
+	if err != nil {
+		return nil, err
+	}
+	return c, s.Load(c)
 }
 
-func GetCardByURI(db *sql.DB, bookID int64, uri string) (*Card, error) {
-	return scanCard(db.QueryRow(`SELECT `+cardColumns+` FROM cards WHERE collection_id = ? AND uri = ?`, bookID, uri))
+// Row returns a card by row ID, without its vCard.
+func (s *Store) Row(id int64) (*Card, error) {
+	return scanCard(s.DB.QueryRow(`SELECT `+cardColumns+` FROM cards c WHERE c.id = ?`, id))
 }
 
-func GetCard(db *sql.DB, id int64) (*Card, error) {
-	return scanCard(db.QueryRow(`SELECT `+cardColumns+` FROM cards WHERE id = ?`, id))
+// FindByUID returns a card by its vCard UID in any address book, without
+// its vCard.
+func (s *Store) FindByUID(uid string) (*Card, error) {
+	return scanCard(s.DB.QueryRow(`SELECT `+cardColumns+` FROM cards c WHERE c.uid = ? ORDER BY c.id LIMIT 1`, uid))
 }
 
-// FindCardByUID returns a card by its vCard UID across all address books.
-func FindCardByUID(db *sql.DB, uid string) (*Card, error) {
-	return scanCard(db.QueryRow(`SELECT `+cardColumns+` FROM cards WHERE uid = ? LIMIT 1`, uid))
+// Load reads a card's vCard, photo included.
+func (s *Store) Load(c *Card) error {
+	cards, err := loadCards(s.DB, s.photos, []int64{c.ID})
+	if err != nil {
+		return err
+	}
+	if c.VCard = cards[c.ID]; c.VCard == nil {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // inBooks limits a query to the given address books; nil means every card in
@@ -129,7 +181,7 @@ func inBooks(books map[int64]AddressBook) (string, []any) {
 	for id := range books {
 		args = append(args, id)
 	}
-	return " AND collection_id IN (?" + strings.Repeat(",?", len(args)-1) + ")", args
+	return " AND c.collection_id IN (?" + strings.Repeat(",?", len(args)-1) + ")", args
 }
 
 func withBooks(cards []Card, books map[int64]AddressBook) []CardWithBook {
@@ -141,176 +193,168 @@ func withBooks(cards []Card, books map[int64]AddressBook) []CardWithBook {
 	return out
 }
 
-// CardsIn returns the cards in books, by name; filter is an extra SQL
-// condition on cards ("" for none) with its arguments.
-func CardsIn(db *sql.DB, books map[int64]AddressBook, filter string, limit int, args ...any) ([]CardWithBook, error) {
+// In returns the cards in books, by name; filter is an extra SQL condition
+// on cards c ("" for none) with its arguments.
+func (s *Store) In(books map[int64]AddressBook, filter string, limit int, args ...any) ([]CardWithBook, error) {
 	in, inArgs := inBooks(books)
 	where := "1"
 	if filter != "" {
 		where = filter
 	}
-	cards, err := queryCards(db, `SELECT `+cardColumns+` FROM cards WHERE `+where+in+` ORDER BY fn LIMIT ?`,
-		append(append(args, inArgs...), limit)...)
+	cards, err := queryCards(s.DB, where+in+` ORDER BY c.fn, c.id LIMIT ?`, append(append(args, inArgs...), limit)...)
 	if err != nil {
 		return nil, err
 	}
 	return withBooks(cards, books), nil
 }
 
-// StarredContacts returns starred contacts in books.
-func StarredContacts(db *sql.DB, books map[int64]AddressBook, limit int) ([]CardWithBook, error) {
-	return CardsIn(db, books, "is_starred = 1", limit)
+// Starred returns starred contacts in books.
+func (s *Store) Starred(books map[int64]AddressBook, limit int) ([]CardWithBook, error) {
+	return s.In(books, "c.is_starred = 1", limit)
 }
 
-// SearchCards returns cards in books (nil for all) matching a name query.
-func SearchCards(db *sql.DB, books map[int64]AddressBook, query string, limit int) ([]CardWithBook, error) {
-	return CardsIn(db, books, "fn LIKE '%' || ? || '%'", limit, query)
+// Search returns cards in books (nil for all) whose name matches a query.
+func (s *Store) Search(books map[int64]AddressBook, query string, limit int) ([]CardWithBook, error) {
+	return s.In(books, "c.fn LIKE '%' || ? || '%'", limit, query)
 }
 
 // SetStarred sets or clears the starred flag on a contact. Starring is Cog's
 // own and not in the vCard, so it does not change the card's version.
-func SetStarred(db *sql.DB, cardID int64, starred bool) error {
-	_, err := db.Exec(`UPDATE cards SET is_starred = ? WHERE id = ?`, starred, cardID)
-	return err
-}
-
-// SetPhotoPath records where a contact's photo is stored. The photo is not in
-// the stored vCard yet, so it does not change the card's version.
-func SetPhotoPath(db *sql.DB, cardID int64, path string) error {
-	if _, err := db.Exec(`UPDATE cards SET photo_path = ? WHERE id = ?`, path, cardID); err != nil {
-		return fmt.Errorf("set photo path: %w", err)
+func (s *Store) SetStarred(cardID int64, starred bool) error {
+	if _, err := s.DB.Exec(`UPDATE cards SET is_starred = ? WHERE id = ?`, starred, cardID); err != nil {
+		return fmt.Errorf("star card: %w", err)
 	}
 	return nil
 }
 
+// Photo returns a card's photo bytes and MIME type.
+func (s *Store) Photo(c *Card) ([]byte, string, error) {
+	data, err := s.photos.read(c.PhotoHash)
+	if err != nil || data == nil {
+		return nil, "", err
+	}
+	return data, (&vcard.Photo{Type: c.PhotoType}).MediaType(), nil
+}
+
 // --- Writes ---
-//
-// Every write to a vCard bumps the collection's version in the same
-// transaction (davsql), whether it comes from DAV or the web UI.
 
-// errUIDConflict is returned when another card in the book has the UID.
-type errUIDConflict struct{ uri string }
-
-func (e *errUIDConflict) Error() string { return "UID already used by " + e.uri }
-
-// putCard stores a vCard at uri inside tx and returns its ID, version and
-// whether it was created. fields must be parsed from vcard.
-func putCard(tx *sql.Tx, bookID int64, uri, uid, vcard string, fields VCardFields, cond davsql.Conditions, now int64) (id, version int64, created bool, err error) {
-	var cur *int64
-	var curVersion int64
-	switch err := tx.QueryRow(`SELECT version FROM cards WHERE collection_id = ? AND uri = ?`, bookID, uri).Scan(&curVersion); {
-	case err == nil:
-		cur = &curVersion
-	case !errors.Is(err, sql.ErrNoRows):
-		return 0, 0, false, fmt.Errorf("read card %s: %w", uri, err)
-	}
-	if err := cond.Check(cur); err != nil {
-		return 0, 0, false, dav.ErrPrecondition
-	}
-	var other string
-	switch err := tx.QueryRow(`SELECT uri FROM cards WHERE collection_id = ? AND uid = ? AND uri != ?`, bookID, uid, uri).Scan(&other); {
-	case err == nil:
-		return 0, 0, false, &errUIDConflict{other}
-	case !errors.Is(err, sql.ErrNoRows):
-		return 0, 0, false, fmt.Errorf("check UID %s: %w", uid, err)
-	}
-	version, err = davsql.Bump(tx, bookID)
+// write runs fn in a transaction, holding the photo lock, then removes the
+// photo files fn reports no card may use any more. The rows are committed
+// whether or not that cleanup succeeds; a failure is logged, and leaves a
+// file behind.
+func (s *Store) write(fn func(tx *sql.Tx) (garbage []string, err error)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tx, err := s.DB.Begin()
 	if err != nil {
-		return 0, 0, false, err
-	}
-	err = tx.QueryRow(`INSERT INTO cards (collection_id, uid, uri, version, fn, email, tel, org, title, note,
-			emails_json, phones_json, addresses_json, vcard_data, rev, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(collection_id, uri) DO UPDATE SET
-			uid = excluded.uid, version = excluded.version, fn = excluded.fn, email = excluded.email,
-			tel = excluded.tel, org = excluded.org, title = excluded.title, note = excluded.note,
-			emails_json = excluded.emails_json, phones_json = excluded.phones_json,
-			addresses_json = excluded.addresses_json, vcard_data = excluded.vcard_data,
-			rev = excluded.rev, updated_at = excluded.updated_at
-		RETURNING id`,
-		bookID, uid, uri, version, fields.FN, fields.Email, fields.Tel, fields.Org, fields.Title, fields.Note,
-		fields.EmailsJSON, fields.PhonesJSON, fields.AddressesJSON, vcard, fields.Rev, now, now).Scan(&id)
-	if err != nil {
-		return 0, 0, false, fmt.Errorf("store card %s: %w", uri, err)
-	}
-	if err := davsql.Revive(tx, bookID, uri); err != nil {
-		return 0, 0, false, err
-	}
-	return id, version, cur == nil, nil
-}
-
-// deleteCard removes the card at uri inside tx and leaves a tombstone.
-func deleteCard(tx *sql.Tx, bookID int64, uri string, cond davsql.Conditions, now int64) error {
-	var version int64
-	err := tx.QueryRow(`SELECT version FROM cards WHERE collection_id = ? AND uri = ?`, bookID, uri).Scan(&version)
-	if errors.Is(err, sql.ErrNoRows) {
-		return dav.ErrNotFound
-	}
-	if err != nil {
-		return fmt.Errorf("read card %s: %w", uri, err)
-	}
-	if err := cond.Check(&version); err != nil {
-		return dav.ErrPrecondition
-	}
-	if _, err := tx.Exec(`DELETE FROM cards WHERE collection_id = ? AND uri = ?`, bookID, uri); err != nil {
-		return fmt.Errorf("delete card %s: %w", uri, err)
-	}
-	_, err = davsql.Delete(tx, bookID, uri, now)
-	return err
-}
-
-// SaveCard stores a vCard written by Cog (web UI, other plugins, tests) in
-// an address book. from is the card being edited, or nil for a new one;
-// moving it to another book deletes it from the old one in the same
-// transaction.
-func SaveCard(db *sql.DB, bookID int64, from *Card, vcard string, now time.Time) (*Card, error) {
-	fields, err := ParseVCard(vcard)
-	if err != nil {
-		return nil, err
-	}
-	uri := fields.UID + ".vcf"
-	if from != nil {
-		uri = from.URI
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("save card: %w", err)
+		return fmt.Errorf("write contacts: %w", err)
 	}
 	defer tx.Rollback()
-	if from != nil && from.AddressBookID != bookID {
-		if err := deleteCard(tx, from.AddressBookID, from.URI, davsql.Conditions{}, now.Unix()); err != nil {
-			return nil, err
-		}
-	}
-	id, _, _, err := putCard(tx, bookID, uri, fields.UID, vcard, fields, davsql.Conditions{}, now.Unix())
+	garbage, err := fn(tx)
 	if err != nil {
-		return nil, err
-	}
-	if from != nil && from.AddressBookID != bookID {
-		// Cog's own columns follow the card.
-		if _, err := tx.Exec(`UPDATE cards SET is_starred = ?, photo_path = ? WHERE id = ?`, from.IsStarred, from.PhotoPath, id); err != nil {
-			return nil, fmt.Errorf("move card: %w", err)
-		}
+		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("save card: %w", err)
+		return fmt.Errorf("write contacts: %w", err)
 	}
-	return GetCard(db, id)
+	if err := s.photos.collect(s.DB, garbage...); err != nil {
+		s.log.Error("remove unused contact photos", "err", err)
+	}
+	return nil
 }
 
-// DeleteCardByID removes a card and leaves a tombstone for DAV clients.
-func DeleteCardByID(db *sql.DB, id int64, now time.Time) error {
-	c, err := GetCard(db, id)
+// put stores a card from DAV.
+func (s *Store) put(collID int64, uri string, c *vcard.Card, cond davsql.Conditions, now time.Time) (*storedCard, error) {
+	var st *storedCard
+	err := s.write(func(tx *sql.Tx) ([]string, error) {
+		var err error
+		st, err = storeCard(tx, s.photos, collID, uri, c, cond, now.Unix())
+		if err != nil {
+			return nil, err
+		}
+		return []string{st.Garbage}, nil
+	})
+	return st, err
+}
+
+// Save stores a card written by Cog (web UI, other plugins, tests) in an
+// address book. from is the card being edited, or nil for a new one; moving
+// it to another book deletes it from the old one in the same transaction,
+// and Cog's own columns follow it.
+func (s *Store) Save(bookID int64, from *Card, c *vcard.Card, now time.Time) (*Card, error) {
+	if c.UID == "" {
+		return nil, fmt.Errorf("card has no UID")
+	}
+	uri := c.UID + ".vcf"
+	cond := davsql.Conditions{IfNoneMatchAny: true}
+	if from != nil {
+		uri, cond = from.URI, davsql.Conditions{}
+	}
+	var id int64
+	err := s.write(func(tx *sql.Tx) ([]string, error) {
+		var garbage []string
+		if from != nil && from.AddressBookID != bookID {
+			old, err := deleteCard(tx, from.AddressBookID, from.URI, davsql.Conditions{}, now.Unix())
+			if err != nil {
+				return nil, err
+			}
+			garbage = append(garbage, old)
+		}
+		st, err := storeCard(tx, s.photos, bookID, uri, c, cond, now.Unix())
+		if err != nil {
+			return nil, err
+		}
+		id = st.ID
+		if from != nil && from.AddressBookID != bookID {
+			if _, err := tx.Exec(`UPDATE cards SET is_starred = ? WHERE id = ?`, from.IsStarred, id); err != nil {
+				return nil, fmt.Errorf("move card: %w", err)
+			}
+		}
+		return append(garbage, st.Garbage), nil
+	})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("delete card: %w", err)
-	}
-	defer tx.Rollback()
-	if err := deleteCard(tx, c.AddressBookID, c.URI, davsql.Conditions{}, now.Unix()); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.Get(id)
+}
+
+// remove deletes a card from DAV and leaves a tombstone.
+func (s *Store) remove(collID int64, uri string, cond davsql.Conditions, now time.Time) error {
+	return s.write(func(tx *sql.Tx) ([]string, error) {
+		photo, err := deleteCard(tx, collID, uri, cond, now.Unix())
+		return []string{photo}, err
+	})
+}
+
+// Delete removes a card and leaves a tombstone for DAV clients.
+func (s *Store) Delete(c *Card, now time.Time) error {
+	return s.remove(c.AddressBookID, c.URI, davsql.Conditions{}, now)
+}
+
+// purge removes every card of a deleted collection, and the photos only
+// they used.
+func (s *Store) purge(collID int64) error {
+	return s.write(func(tx *sql.Tx) ([]string, error) {
+		rows, err := tx.Query(`SELECT DISTINCT photo_hash FROM cards WHERE collection_id = ? AND photo_hash != ''`, collID)
+		if err != nil {
+			return nil, fmt.Errorf("purge cards: %w", err)
+		}
+		var photos []string
+		for rows.Next() {
+			var h string
+			if err := rows.Scan(&h); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("purge cards: %w", err)
+			}
+			photos = append(photos, h)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("purge cards: %w", err)
+		}
+		if _, err := tx.Exec(`DELETE FROM cards WHERE collection_id = ?`, collID); err != nil {
+			return nil, fmt.Errorf("purge cards: %w", err)
+		}
+		return photos, davsql.Purge(tx, collID)
+	})
 }

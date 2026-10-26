@@ -2,7 +2,6 @@ package ical
 
 import (
 	"errors"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -75,10 +74,10 @@ func (e *Component) Clone() *Component {
 	c.Relations = slices.Clone(e.Relations)
 	c.Alarms = make([]Alarm, len(e.Alarms))
 	for i, a := range e.Alarms {
-		a.Leftovers = a.Leftovers.clone()
+		a.Leftovers = a.Leftovers.Clone()
 		c.Alarms[i] = a
 	}
-	c.Leftovers = e.Leftovers.clone()
+	c.Leftovers = e.Leftovers.Clone()
 	if e.Organizer != nil {
 		o := *e.Organizer
 		c.Organizer = &o
@@ -96,10 +95,6 @@ func cloneInt(n *int) *int {
 	}
 	v := *n
 	return &v
-}
-
-func (l Leftovers) clone() Leftovers {
-	return Leftovers{Props: slices.Clone(l.Props), Comps: slices.Clone(l.Comps), Params: maps.Clone(l.Params)}
 }
 
 // InstanceAt returns the instance that is the master's occurrence at rid:
