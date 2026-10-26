@@ -440,9 +440,10 @@ Adjacent bugs fixed in milestone 2 (each covered by a test):
 - `SeedPlugins` ignored its username and always seeded `admin`.
 - `webtest` closed the shared browser when an engine closed and never relaunched it, so every browser test after the first in a package skipped silently. With it fixed, about thirty tests in `internal/web` and `cmd/cog` run for the first time; their DOM goldens are committed. `TestBrowserVolumeBrowse` had live file times in its golden (fixed); the feed settings tests were stale after the settings split (fixed).
 
-Open, not fixed (pre-existing, found through the `webtest` fix, skipped with a reason in the code):
+Fixed after milestone 2 (pre-existing, found through the `webtest` fix):
 
-- `TestBrowserAdminCreateVolume`: its golden shows the run's temp directory.
-- `cmd/cog` `TestBrowserCore/Dashboard`: expects 8 app cards; the build has 6.
-- `cmd/cog` `TestBrowserCore/Navigation`: its DOM differs between runs (htmx style element, dashboard card contents).
-- Gallery's `idx_media_fingerprint` is never created on new databases: the guarded migration that adds it is skipped once `schema.sql` has the column.
+- `TestBrowserAdminCreateVolume`'s golden showed the run's temp directory. `webtest` now masks the per-test temp root (`«tmp»`), an environment value like the CSRF token.
+- `cmd/cog` `TestBrowserCore/Dashboard` and `/Navigation` were skipped as failing during milestone 2 (6 app cards; DOM differing between runs). Re-run against the fixed `webtest` they pass ten runs out of ten with 8 cards and identical DOM; the failures did not reproduce, so they are unskipped with fresh goldens. `Snapshot` now logs when a page does not settle instead of discarding the error, so a recurrence says why.
+- Gallery's `idx_media_fingerprint` was never created on new databases: the guarded migration that adds it is skipped once `schema.sql` has the column. `migration007` creates it unguarded; `TestFreshSchemaHasMigrations` checks every column and index the migrations add reaches a fresh database. `people.contact_uid` is now in `schema.sql` as well.
+- Gallery recognition dropped database errors (storing tags and faces, marking media done or failed); a failed write now ends the pass with the error.
+- Gallery's clustering tests and the SSH tests ran on shared-cache in-memory databases, which CLAUDE.md rules out; they use files in the test's temp directory.

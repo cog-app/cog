@@ -391,11 +391,16 @@ func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
 		defer b.page.MustSetViewport(1280, 720, 0, false)
 		// A resize reflows without mutating the DOM, so WaitStable below has
 		// nothing to observe and can return before the new layout is painted.
-		_ = b.page.Timeout(b.actionTimeout()).WaitRepaint()
+		if err := b.page.Timeout(b.actionTimeout()).WaitRepaint(); err != nil {
+			t.Logf("webtest: snapshot: repaint after resize: %v", err)
+		}
 	}
 
-	// Wait for the page to settle before capturing.
-	_ = b.tp().WaitStable(300 * time.Millisecond)
+	// Wait for the page to settle before capturing. A page that never
+	// settles is still captured, and the golden will say what moved.
+	if err := b.tp().WaitStable(300 * time.Millisecond); err != nil {
+		t.Logf("webtest: snapshot: page did not settle: %v", err)
+	}
 
 	raw, err := b.page.HTML()
 	if err != nil {

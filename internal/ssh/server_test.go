@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,8 +31,7 @@ type testEnv struct {
 
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
-	dbName := url.PathEscape(t.Name())
-	sysDB, err := sql.Open("sqlite3", "file:"+dbName+"?mode=memory&cache=shared&_journal_mode=WAL&_foreign_keys=on")
+	sysDB, err := sql.Open("sqlite3", "file:"+filepath.Join(t.TempDir(), "system.db")+"?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=on")
 	require.NoError(t, err)
 	require.NoError(t, db.Migrate(sysDB))
 	t.Cleanup(func() { sysDB.Close() })

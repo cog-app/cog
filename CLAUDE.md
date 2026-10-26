@@ -134,7 +134,7 @@ WEBTEST_UPDATE=1 go test ./plugin/calendar/    # accept DOM changes, refresh ima
 
 A failing snapshot writes `<TestName>.actual.html` and `.actual.png` next to the golden. Diff the HTML to see what changed; the image is there to look at.
 
-CSRF tokens and user identifiers are masked in the golden — they differ per run. Nothing else does, so a golden that changes between runs means the page is genuinely nondeterministic, which is worth fixing rather than masking.
+CSRF tokens, user identifiers and the test's temp directory (`«tmp»`) are masked in the golden — they differ per run. Nothing else does, so a golden that changes between runs means the page is genuinely nondeterministic, which is worth fixing rather than masking.
 
 `<script>` elements are dropped. The DOM is captured once the page has settled, so what a script did to the page is already in the tree; keeping the element would only churn every golden when a library's content hash changed. Stylesheets stay, because their hash is what makes a CSS edit reach the golden.
 

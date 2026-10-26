@@ -172,7 +172,6 @@ func TestBrowserAdminCreateVolume(t *testing.T) {
 	b := eng.Start(t)
 	b.Login(t, "admin", "pass")
 
-	t.Skip("golden shows the run's temp directory, so it never matches; this was hidden by webtest skipping every engine after the first (see DESIGN/dav-storage.md section 14)")
 	b.Navigate(t, "/admin/volumes/new")
 	b.WaitVisible(t, `input[name="name"]`)
 

@@ -85,7 +85,8 @@ CREATE TABLE IF NOT EXISTS people (
     name TEXT NOT NULL DEFAULT '',
     representative_face_id INTEGER,
     visible INTEGER NOT NULL DEFAULT 1,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    contact_uid TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS faces (

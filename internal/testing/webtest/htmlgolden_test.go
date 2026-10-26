@@ -1,6 +1,8 @@
 package webtest
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -50,6 +52,21 @@ func TestVolatileValuesAreMasked(t *testing.T) {
 	}
 	if strings.Contains(first, "2384570768") {
 		t.Error("csrf token was not masked")
+	}
+}
+
+// TestTempDirsAreMasked keeps the test's temp directory, which has a random
+// suffix, out of pages that show a path.
+func TestTempDirsAreMasked(t *testing.T) {
+	page := func(dir string) string {
+		return normalize(t, `<html><body><td>file://`+filepath.Join(os.TempDir(), dir, "001")+`</td></body></html>`)
+	}
+	first, second := page("TestBrowserAdminCreateVolume2382680420"), page("TestBrowserAdminCreateVolume117")
+	if first != second {
+		t.Fatalf("temp directory reached the golden:\n%s\n---\n%s", first, second)
+	}
+	if !strings.Contains(first, "file://«tmp»/001") {
+		t.Fatalf("the path under the temp directory was not kept:\n%s", first)
 	}
 }
 

@@ -74,7 +74,6 @@ func TestBrowserCore(t *testing.T) {
 	})
 
 	t.Run("Dashboard", func(t *testing.T) {
-		t.Skip("stale: expects 8 app cards, the build has 6; hidden by webtest skipping every engine after the first (see DESIGN/dav-storage.md section 14)")
 		b := eng.Start(t)
 		b.Login(t, "dash", "pass")
 		b.WaitVisible(t, ".app-grid")
@@ -85,7 +84,6 @@ func TestBrowserCore(t *testing.T) {
 	})
 
 	t.Run("Navigation", func(t *testing.T) {
-		t.Skip("golden differs between runs (htmx style element, dashboard card contents); hidden by webtest skipping every engine after the first (see DESIGN/dav-storage.md section 14)")
 		b := eng.Start(t)
 		b.Login(t, "nav", "pass")
 		b.WaitVisible(t, ".navbar-nav")

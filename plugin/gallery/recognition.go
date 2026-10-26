@@ -174,11 +174,17 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 			result, analyzeErr := tagBackend.Analyze(ctx, imagePath)
 			if analyzeErr != nil {
 				p.log.Error("recognize", "path", m.FilePath, "err", analyzeErr)
-				db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ?, recognition_error = ? WHERE id = ?`, now, analyzeErr.Error(), m.ID)
+				if err := markFailed(db, m.ID, now, analyzeErr); err != nil {
+					return err
+				}
 				continue
 			}
-			storeTags(db, m.ID, result.Tags, tagMinConf)
-			storeFaces(db, m.ID, result.Faces, faceMinConf)
+			if err := storeTags(db, m.ID, result.Tags, tagMinConf); err != nil {
+				return err
+			}
+			if err := storeFaces(db, m.ID, result.Faces, faceMinConf); err != nil {
+				return err
+			}
 		} else {
 			// Different backends — call each independently.
 			var anyErr error
@@ -186,26 +192,30 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 				result, err := tagBackend.Analyze(ctx, imagePath)
 				if err != nil {
 					anyErr = err
-				} else {
-					storeTags(db, m.ID, result.Tags, tagMinConf)
+				} else if err := storeTags(db, m.ID, result.Tags, tagMinConf); err != nil {
+					return err
 				}
 			}
 			if faceBackend != nil {
 				result, err := faceBackend.Analyze(ctx, imagePath)
 				if err != nil {
 					anyErr = err
-				} else {
-					storeFaces(db, m.ID, result.Faces, faceMinConf)
+				} else if err := storeFaces(db, m.ID, result.Faces, faceMinConf); err != nil {
+					return err
 				}
 			}
 			if anyErr != nil {
 				p.log.Error("recognize", "path", m.FilePath, "err", anyErr)
-				db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ?, recognition_error = ? WHERE id = ?`, now, anyErr.Error(), m.ID)
+				if err := markFailed(db, m.ID, now, anyErr); err != nil {
+					return err
+				}
 				continue
 			}
 		}
 
-		db.Exec(`UPDATE media SET recognition_state = 1, recognition_at = ? WHERE id = ?`, now, m.ID)
+		if _, err := db.Exec(`UPDATE media SET recognition_state = 1, recognition_at = ? WHERE id = ?`, now, m.ID); err != nil {
+			return fmt.Errorf("mark %s recognized: %w", m.FilePath, err)
+		}
 		processed++
 		if processed%50 == 0 {
 			p.log.Info("recognition progress", "user", username, "processed", processed)
@@ -217,30 +227,46 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 	return nil
 }
 
-func storeTags(db *sql.DB, mediaID int64, tags []RecognizedTag, minConf float64) {
+// markFailed records that recognition failed for a media item, so the pass
+// does not retry it.
+func markFailed(db *sql.DB, mediaID, now int64, cause error) error {
+	if _, err := db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ?, recognition_error = ? WHERE id = ?`,
+		now, cause.Error(), mediaID); err != nil {
+		return fmt.Errorf("mark media %d failed: %w", mediaID, err)
+	}
+	return nil
+}
+
+func storeTags(db *sql.DB, mediaID int64, tags []RecognizedTag, minConf float64) error {
 	for _, tag := range tags {
 		if tag.Confidence < minConf {
 			continue
 		}
 		tagID, err := UpsertTag(db, tag.Name, tag.Type)
 		if err != nil {
-			continue
+			return fmt.Errorf("store tag %q: %w", tag.Name, err)
 		}
-		AddMediaTag(db, mediaID, tagID, tag.Confidence)
+		if err := AddMediaTag(db, mediaID, tagID, tag.Confidence); err != nil {
+			return fmt.Errorf("tag media %d: %w", mediaID, err)
+		}
 	}
+	return nil
 }
 
-func storeFaces(db *sql.DB, mediaID int64, faces []DetectedFace, minConf float64) {
+func storeFaces(db *sql.DB, mediaID int64, faces []DetectedFace, minConf float64) error {
 	for i := range faces {
 		if faces[i].Confidence < minConf {
 			continue
 		}
-		storeFace(db, mediaID, &faces[i])
+		if err := storeFace(db, mediaID, &faces[i]); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // storeFace inserts a detected face into the database.
-func storeFace(db *sql.DB, mediaID int64, face *DetectedFace) {
+func storeFace(db *sql.DB, mediaID int64, face *DetectedFace) error {
 	// Clamp bounding box.
 	x := clamp(face.X, 0, 1)
 	y := clamp(face.Y, 0, 1)
@@ -252,9 +278,12 @@ func storeFace(db *sql.DB, mediaID int64, face *DetectedFace) {
 		embeddingBlob = float32SliceToBytes(face.Embedding)
 	}
 
-	db.Exec(`INSERT INTO faces (media_id, x, y, w, h, embedding, confidence, estimated_age)
+	if _, err := db.Exec(`INSERT INTO faces (media_id, x, y, w, h, embedding, confidence, estimated_age)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		mediaID, x, y, w, h, embeddingBlob, face.Confidence, face.EstimatedAge)
+		mediaID, x, y, w, h, embeddingBlob, face.Confidence, face.EstimatedAge); err != nil {
+		return fmt.Errorf("store face on media %d: %w", mediaID, err)
+	}
+	return nil
 }
 
 func clamp(v, min, max float64) float64 {
