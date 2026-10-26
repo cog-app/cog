@@ -29,14 +29,27 @@ type VEventFields struct {
 	DTStart     time.Time
 	DTEnd       time.Time
 	IsAllDay    bool
-	Color       string // per-event color (Cog extension, not stored in ICS)
-	RRule       string // raw RRULE value, e.g. "FREQ=WEEKLY;BYDAY=MO,WE,FR"
+	Color       string      // per-event color (Cog extension, not stored in ICS)
+	RRule       string      // raw RRULE value, e.g. "FREQ=WEEKLY;BYDAY=MO,WE,FR"
+	ExDates     []time.Time // EXDATE values, in their own zones
 	Alarms      []VAlarm
 	Attendees   []AttendeeField
 }
 
 // ParseVEvent extracts fields from an iCalendar blob containing a VEVENT.
+// Floating times (no Z, no TZID) are read as UTC; use ParseVEventIn when the
+// owning calendar's timezone is known.
 func ParseVEvent(icsData string) (VEventFields, error) {
+	return ParseVEventIn(icsData, time.UTC)
+}
+
+// ParseVEventIn is ParseVEvent with floating times, and TZIDs that can't be
+// resolved, read in loc. DTSTART keeps its zone so recurrences expand in
+// local wall-clock time across DST changes.
+func ParseVEventIn(icsData string, loc *time.Location) (VEventFields, error) {
+	if loc == nil {
+		loc = time.UTC
+	}
 	// Unfold continuation lines (RFC 5545 §3.1).
 	icsData = strings.ReplaceAll(icsData, "\r\n ", "")
 	icsData = strings.ReplaceAll(icsData, "\r\n\t", "")
@@ -51,6 +64,10 @@ func ParseVEvent(icsData string) (VEventFields, error) {
 	var f VEventFields
 	var curAlarm VAlarm
 	found := false
+	aliases := vtimezoneAliases(lines)
+	parseDT := func(propFull, value string) (time.Time, bool) {
+		return parseDateTime(propFull, value, loc, aliases)
+	}
 
 	for _, line := range lines {
 		if line == "BEGIN:VEVENT" {
@@ -104,16 +121,22 @@ func ParseVEvent(icsData string) (VEventFields, error) {
 		case "LOCATION":
 			f.Location = unescapeICS(value)
 		case "DTSTART":
-			t, allDay := parseDateTime(propFull, value)
+			t, allDay := parseDT(propFull, value)
 			f.DTStart = t
 			if allDay {
 				f.IsAllDay = true
 			}
 		case "DTEND":
-			t, _ := parseDateTime(propFull, value)
+			t, _ := parseDT(propFull, value)
 			f.DTEnd = t
 		case "RRULE":
 			f.RRule = strings.TrimPrefix(value, "RRULE:")
+		case "EXDATE":
+			for v := range strings.SplitSeq(value, ",") {
+				if t, _ := parseDT(propFull, v); !t.IsZero() {
+					f.ExDates = append(f.ExDates, t)
+				}
+			}
 		case "ATTENDEE":
 			af := AttendeeField{}
 			// Extract email from MAILTO: value
@@ -156,7 +179,9 @@ func ParseVEvent(icsData string) (VEventFields, error) {
 
 // parseDateTime parses an iCalendar date or datetime value.
 // Returns the parsed time and whether it's an all-day (DATE) value.
-func parseDateTime(propFull, value string) (time.Time, bool) {
+// Local times use the TZID parameter's zone when it resolves, else floating.
+// All-day dates stay at UTC midnight, which is how they're stored and shown.
+func parseDateTime(propFull, value string, floating *time.Location, aliases map[string]string) (time.Time, bool) {
 	// Check for VALUE=DATE parameter.
 	upper := strings.ToUpper(propFull)
 	if strings.Contains(upper, "VALUE=DATE") && !strings.Contains(upper, "VALUE=DATE-TIME") {
@@ -171,9 +196,15 @@ func parseDateTime(propFull, value string) (time.Time, bool) {
 	if t, err := time.Parse("20060102T150405Z", value); err == nil {
 		return t, false
 	}
-	// YYYYMMDDTHHMMSS (floating, treat as UTC)
-	if t, err := time.Parse("20060102T150405", value); err == nil {
-		return t.UTC(), false
+	// YYYYMMDDTHHMMSS: in TZID's zone, or floating.
+	loc := floating
+	if tzid := paramValue(propFull, "TZID"); tzid != "" {
+		if l := resolveTZID(tzid, aliases); l != nil {
+			loc = l
+		}
+	}
+	if t, err := time.ParseInLocation("20060102T150405", value, loc); err == nil {
+		return t, false
 	}
 	// DATE only (8 digits, no T)
 	if len(value) == 8 {
@@ -221,8 +252,8 @@ func GenerateICSFull(uid, summary, description, location string, dtstart, dtend 
 		fmt.Fprintf(&b, "DTSTART;VALUE=DATE:%s\r\n", dtstart.Format("20060102"))
 		fmt.Fprintf(&b, "DTEND;VALUE=DATE:%s\r\n", dtend.Format("20060102"))
 	} else {
-		fmt.Fprintf(&b, "DTSTART:%s\r\n", dtstart.UTC().Format("20060102T150405Z"))
-		fmt.Fprintf(&b, "DTEND:%s\r\n", dtend.UTC().Format("20060102T150405Z"))
+		fmt.Fprintf(&b, "%s\r\n", formatICSTime("DTSTART", dtstart))
+		fmt.Fprintf(&b, "%s\r\n", formatICSTime("DTEND", dtend))
 	}
 
 	if summary != "" {
@@ -279,6 +310,8 @@ func GenerateICSInvite(method, uid, summary, description, location string, dtsta
 		fmt.Fprintf(&b, "DTSTART;VALUE=DATE:%s\r\n", dtstart.Format("20060102"))
 		fmt.Fprintf(&b, "DTEND;VALUE=DATE:%s\r\n", dtend.Format("20060102"))
 	} else {
+		// UTC: invites go to arbitrary mail clients, and a TZID would need a
+		// VTIMEZONE block to be portable.
 		fmt.Fprintf(&b, "DTSTART:%s\r\n", dtstart.UTC().Format("20060102T150405Z"))
 		fmt.Fprintf(&b, "DTEND:%s\r\n", dtend.UTC().Format("20060102T150405Z"))
 	}

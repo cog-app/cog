@@ -15,17 +15,19 @@ templ eventsWidget(events []EventWithCalendar) {
 					{ ev.Summary }
 				</a>
 				<div class="text-muted" style="font-size:0.85rem">
-					{ widgetEventTime(ev.Event) }
+					{ widgetEventTime(ev) }
 				</div>
 			</div>
 		}
 	}
 }
 
-func widgetEventTime(ev Event) string {
-	start := time.Unix(ev.DTStart, 0).UTC()
+// widgetEventTime formats an event's start in its calendar's zone. All-day
+// dates are stored at UTC midnight, so they're formatted in UTC.
+func widgetEventTime(ev EventWithCalendar) string {
+	start := time.Unix(ev.DTStart, 0)
 	if ev.IsAllDay {
-		return start.Format("Mon, Jan 2")
+		return start.UTC().Format("Mon, Jan 2")
 	}
-	return start.Format("Mon, Jan 2 15:04")
+	return start.In(ev.Zone()).Format("Mon, Jan 2 15:04")
 }

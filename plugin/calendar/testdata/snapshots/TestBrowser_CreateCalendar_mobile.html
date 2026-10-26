@@ -187,6 +187,12 @@
                 </label>
                 <input class="form-control" id="color" name="color" type="color" value="#0082c9" />
               </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label for="timezone">
+                  Timezone
+                </label>
+                <input class="form-control" data-browser-tz="" id="timezone" list="cal-timezones" name="timezone" placeholder="America/Denver" type="text" />
+              </div>
               <button class="btn btn-primary" type="submit">
                 Create
               </button>
@@ -206,10 +212,10 @@
                     Name
                   </th>
                   <th>
-                    UID
+                    Timezone
                   </th>
                   <th>
-                    CTag
+                    UID
                   </th>
                   <th class="text-right">
                     Actions
@@ -219,24 +225,30 @@
               <tbody>
                 <tr id="cal-1">
                   <td>
-                    <span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#0082c9;" />
+                    <input aria-label="Color" class="form-control" form="cal-edit-1" name="color" style="width:3rem;padding:0.1rem" type="color" value="#0082c9" />
+                  </td>
+                  <td>
+                    <input aria-label="Name" class="form-control" form="cal-edit-1" name="name" required="" type="text" value="Work Calendar" />
+                  </td>
+                  <td>
+                    <input aria-label="Timezone" class="form-control" form="cal-edit-1" list="cal-timezones" name="timezone" placeholder="UTC" type="text" value="UTC" />
                   </td>
                   <td>
                     Work Calendar
-                  </td>
-                  <td>
-                    Work Calendar
-                  </td>
-                  <td>
-                    1
                   </td>
                   <td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
+                    <form action="/apps/calendar/calendars/1" id="cal-edit-1" method="post">
+                      <input name="csrf_token" type="hidden" value="«hex»" />
+                      <button class="btn btn-sm btn-primary" type="submit">
+                        Save
+                      </button>
+                    </form>
                     <cog-share-button resource-id="1" resource="calendar">
                       <button class="btn btn-outline btn-sm">
                         Share
                       </button>
                     </cog-share-button>
-                    <button hx-confirm="Delete this calendar and all its events?" hx-swap="outerHTML">
+                    <button class="btn btn-sm" hx-confirm="Delete this calendar and all its events?" hx-delete="/apps/calendar/calendars/1" hx-swap="outerHTML" hx-target="#cal-1">
                       Delete
                     </button>
                   </td>
@@ -247,6 +259,27 @@
               </tbody>
             </table>
           </div>
+          <datalist id="cal-timezones">
+            <option value="UTC" />
+            <option value="Pacific/Honolulu" />
+            <option value="America/Anchorage" />
+            <option value="America/Los_Angeles" />
+            <option value="America/Phoenix" />
+            <option value="America/Denver" />
+            <option value="America/Chicago" />
+            <option value="America/New_York" />
+            <option value="America/Halifax" />
+            <option value="America/Sao_Paulo" />
+            <option value="Europe/London" />
+            <option value="Europe/Berlin" />
+            <option value="Europe/Paris" />
+            <option value="Europe/Helsinki" />
+            <option value="Asia/Kolkata" />
+            <option value="Asia/Shanghai" />
+            <option value="Asia/Tokyo" />
+            <option value="Australia/Sydney" />
+            <option value="Pacific/Auckland" />
+          </datalist>
           <div class="card">
             <div class="card-title">
               CalDAV Access

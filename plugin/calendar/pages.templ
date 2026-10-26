@@ -48,6 +48,7 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 			<h2 style="margin-top:0">New Event</h2>
 			<form method="post" action="/apps/calendar/events" id="create-event-form" onsubmit="clearColorIfUnchecked('ce-color-enable','ce-color')">
 				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<input type="hidden" name="tz" data-browser-tz/>
 				<div class="form-group">
 					<label for="ce-calendar">Calendar</label>
 					<select class="form-control" id="ce-calendar" name="calendar_id" onchange="syncCalColor(this,'ce-color','ce-color-enable')">
@@ -185,6 +186,26 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 				if (byday) byday.style.display = freq === "WEEKLY" ? "" : "none";
 			}
 		}
+		// Fill fields that depend on the browser's zone: [data-browser-tz] gets
+		// the IANA zone name, [data-unix] datetime inputs get local wall time.
+		function fillBrowserTimes(root) {
+			var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+			root.querySelectorAll("[data-browser-tz]").forEach(function (el) {
+				if (!el.value) el.value = tz;
+			});
+			root.querySelectorAll("input[data-unix]").forEach(function (el) {
+				var d = new Date(Number(el.dataset.unix) * 1000);
+				var pad = function (n) {
+					return String(n).padStart(2, "0");
+				};
+				el.value =
+					d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+					"T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+			});
+		}
+		// The markup above is already parsed; this also works after an
+		// hx-boost navigation, when DOMContentLoaded has long since fired.
+		fillBrowserTimes(document);
 		function clearColorIfUnchecked(cbId, colorId) {
 			var cb = document.getElementById(cbId);
 			if (cb && !cb.checked) document.getElementById(colorId).value = "";
@@ -245,6 +266,7 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 						.then(function (html) {
 							var body = document.getElementById("event-modal-body");
 							body.innerHTML = html;
+							fillBrowserTimes(body);
 							htmx.process(body);
 							document.getElementById("event-modal").style.display = "flex";
 						});
@@ -397,14 +419,28 @@ templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Cale
 				<input class="form-control" type="date" id="em-date-end" name="date_end" value={ time.Unix(ev.DTEnd, 0).UTC().Format("2006-01-02") }/>
 			</div>
 		} else {
-			<div class="form-group">
-				<label for="em-start">Start</label>
-				<input class="form-control" type="datetime-local" id="em-start" name="datetime_start" value={ time.Unix(ev.DTStart, 0).UTC().Format("2006-01-02T15:04") }/>
-			</div>
-			<div class="form-group">
-				<label for="em-end">End</label>
-				<input class="form-control" type="datetime-local" id="em-end" name="datetime_end" value={ time.Unix(ev.DTEnd, 0).UTC().Format("2006-01-02T15:04") }/>
-			</div>
+			if z := eventEditZone(ev, cal); z != nil {
+				<input type="hidden" name="tz" value={ z.String() }/>
+				<div class="form-group">
+					<label for="em-start">Start</label>
+					<input class="form-control" type="datetime-local" id="em-start" name="datetime_start" value={ time.Unix(ev.DTStart, 0).In(z).Format("2006-01-02T15:04") }/>
+				</div>
+				<div class="form-group">
+					<label for="em-end">End</label>
+					<input class="form-control" type="datetime-local" id="em-end" name="datetime_end" value={ time.Unix(ev.DTEnd, 0).In(z).Format("2006-01-02T15:04") }/>
+				</div>
+				<p class="text-muted" style="font-size:0.85rem;margin-top:-0.5rem">Times in { z.String() }</p>
+			} else {
+				<input type="hidden" name="tz" data-browser-tz/>
+				<div class="form-group">
+					<label for="em-start">Start</label>
+					<input class="form-control" type="datetime-local" id="em-start" name="datetime_start" data-unix={ strconv.FormatInt(ev.DTStart, 10) }/>
+				</div>
+				<div class="form-group">
+					<label for="em-end">End</label>
+					<input class="form-control" type="datetime-local" id="em-end" name="datetime_end" data-unix={ strconv.FormatInt(ev.DTEnd, 10) }/>
+				</div>
+			}
 		}
 		<div class="form-group">
 			<label for="em-location">Location</label>
@@ -637,6 +673,10 @@ templ calSettingsPage(calendars []Calendar, csrfToken string) {
 						<label for="color">Color</label>
 						<input class="form-control" type="color" id="color" name="color" value="#0082c9"/>
 					</div>
+					<div class="form-group" style="margin-bottom:0">
+						<label for="timezone">Timezone</label>
+						<input class="form-control" type="text" id="timezone" name="timezone" list="cal-timezones" placeholder="America/Denver" data-browser-tz/>
+					</div>
 					<button class="btn btn-primary" type="submit">Create</button>
 				</form>
 			}
@@ -649,21 +689,34 @@ templ calSettingsPage(calendars []Calendar, csrfToken string) {
 							<tr>
 								<th>Color</th>
 								<th>Name</th>
+								<th>Timezone</th>
 								<th>UID</th>
-								<th>CTag</th>
 								<th class="text-right">Actions</th>
 							</tr>
 						</thead>
 						<tbody>
 							for _, cal := range calendars {
 								<tr id={ fmt.Sprintf("cal-%d", cal.ID) }>
-									<td><span style={ fmt.Sprintf("display:inline-block;width:16px;height:16px;border-radius:50%%;background:%s", cal.Color) }></span></td>
-									<td>{ cal.Name }</td>
+									<td>
+										<input class="form-control" type="color" name="color" value={ cal.Color } form={ fmt.Sprintf("cal-edit-%d", cal.ID) } aria-label="Color" style="width:3rem;padding:0.1rem"/>
+									</td>
+									<td>
+										<input class="form-control" type="text" name="name" value={ cal.Name } form={ fmt.Sprintf("cal-edit-%d", cal.ID) } aria-label="Name" required/>
+									</td>
+									<td>
+										<input class="form-control" type="text" name="timezone" value={ cal.Timezone } list="cal-timezones" placeholder="UTC" form={ fmt.Sprintf("cal-edit-%d", cal.ID) } aria-label="Timezone"/>
+									</td>
 									<td>{ cal.UID }</td>
-									<td>{ strconv.FormatInt(cal.CTag, 10) }</td>
 									<td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
+										<form id={ fmt.Sprintf("cal-edit-%d", cal.ID) } method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID)) }>
+											<input type="hidden" name="csrf_token" value={ csrfToken }/>
+											<button class="btn btn-sm btn-primary" type="submit">Save</button>
+										</form>
 										<cog-share-button resource="calendar" resource-id={ strconv.FormatInt(cal.ID, 10) }>Share</cog-share-button>
 										<button
+											class="btn btn-sm"
+											hx-delete={ fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID) }
+											hx-target={ fmt.Sprintf("#cal-%d", cal.ID) }
 											hx-swap="outerHTML"
 											hx-confirm="Delete this calendar and all its events?"
 										>Delete</button>
@@ -677,6 +730,19 @@ templ calSettingsPage(calendars []Calendar, csrfToken string) {
 					</table>
 				}
 			}
+			<datalist id="cal-timezones">
+				for _, tz := range commonTimezones {
+					<option value={ tz }></option>
+				}
+			</datalist>
+			<script>
+				(function () {
+					var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+					document.querySelectorAll("[data-browser-tz]").forEach(function (el) {
+						if (!el.value) el.value = tz;
+					});
+				})();
+			</script>
 			@ui.Card("CalDAV Access") {
 				<p class="text-muted">
 					Configure your CalDAV client with:

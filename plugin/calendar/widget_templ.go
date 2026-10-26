@@ -72,9 +72,9 @@ func eventsWidget(events []EventWithCalendar) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var4 string
-				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(widgetEventTime(ev.Event))
+				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(widgetEventTime(ev))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/widget.templ`, Line: 18, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/widget.templ`, Line: 18, Col: 26}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -90,12 +90,14 @@ func eventsWidget(events []EventWithCalendar) templ.Component {
 	})
 }
 
-func widgetEventTime(ev Event) string {
-	start := time.Unix(ev.DTStart, 0).UTC()
+// widgetEventTime formats an event's start in its calendar's zone. All-day
+// dates are stored at UTC midnight, so they're formatted in UTC.
+func widgetEventTime(ev EventWithCalendar) string {
+	start := time.Unix(ev.DTStart, 0)
 	if ev.IsAllDay {
-		return start.Format("Mon, Jan 2")
+		return start.UTC().Format("Mon, Jan 2")
 	}
-	return start.Format("Mon, Jan 2 15:04")
+	return start.In(ev.Zone()).Format("Mon, Jan 2 15:04")
 }
 
 var _ = templruntime.GeneratedTemplate

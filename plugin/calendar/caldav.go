@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/xml"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"strconv"
@@ -49,7 +50,7 @@ func (h *CalDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			targetUser = u.Username
 		}
 
-		db, err := h.plugin.DB(targetUser)
+		db, err := h.plugin.userDB(targetUser)
 		if err != nil {
 			h.plugin.log.Error("db error", "user", targetUser, "err", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -249,7 +250,7 @@ func (h *CalDAVHandler) mkCalendar(w http.ResponseWriter, r *http.Request, db *s
 		}
 	}
 
-	_, err := CreateCalendar(db, calUID, name, color, description)
+	_, err := CreateCalendar(db, calUID, name, color, description, timezoneFromDAV(string(body)))
 	if err != nil {
 		h.plugin.log.Error("create calendar", "uid", calUID, "err", err)
 		http.Error(w, "Conflict", http.StatusConflict)
@@ -333,7 +334,7 @@ func (h *CalDAVHandler) event(w http.ResponseWriter, r *http.Request, db *sql.DB
 			}
 		}
 
-		fields, err := ParseVEvent(icsData)
+		fields, err := ParseVEventIn(icsData, cal.Zone())
 		if err != nil {
 			http.Error(w, "invalid ICS: "+err.Error(), http.StatusBadRequest)
 			return
@@ -558,6 +559,14 @@ func (h *CalDAVHandler) handleProppatch(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	tz := timezoneFromDAV(bodyStr)
+	if tz != "" {
+		if err := SetCalendarTimezone(db, cal.ID, tz); err != nil {
+			h.plugin.log.Error("set calendar timezone", "id", cal.ID, "tz", tz, "err", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+	}
 
 	// Return 207 with success for each property.
 	calHref := "/remote.php/dav/calendars/" + username + "/" + cal.UID + "/"
@@ -570,6 +579,13 @@ func (h *CalDAVHandler) handleProppatch(w http.ResponseWriter, r *http.Request, 
 	}
 	if extractXMLElement(bodyStr, "calendar-description") != "" {
 		propNames = append(propNames, "C:calendar-description")
+	}
+	if tz != "" {
+		if extractXMLElement(bodyStr, "calendar-timezone-id") != "" {
+			propNames = append(propNames, "C:calendar-timezone-id")
+		} else {
+			propNames = append(propNames, "C:calendar-timezone")
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
@@ -774,6 +790,35 @@ func extractXMLElement(xmlData, localName string) string {
 		return ""
 	}
 	return strings.TrimSpace(xmlData[idx : idx+endIdx])
+}
+
+// timezoneFromDAV returns the IANA zone named by a calendar-timezone-id
+// (RFC 7809) or calendar-timezone (a VCALENDAR holding a VTIMEZONE) property
+// in a MKCALENDAR or PROPPATCH body, or "" when absent or unrecognized.
+func timezoneFromDAV(body string) string {
+	if id := extractXMLElement(body, "calendar-timezone-id"); id != "" {
+		if loc := resolveTZID(html.UnescapeString(id), nil); loc != nil {
+			return loc.String()
+		}
+	}
+	vtz := extractXMLElement(body, "calendar-timezone")
+	if vtz == "" {
+		return ""
+	}
+	vtz = strings.TrimSuffix(strings.TrimPrefix(vtz, "<![CDATA["), "]]>")
+	lines := strings.Split(strings.ReplaceAll(html.UnescapeString(vtz), "\r", ""), "\n")
+	for i := range lines {
+		lines[i] = strings.TrimSpace(lines[i])
+	}
+	aliases := vtimezoneAliases(lines)
+	for _, line := range lines {
+		if tzid, ok := strings.CutPrefix(line, "TZID:"); ok {
+			if loc := resolveTZID(tzid, aliases); loc != nil {
+				return loc.String()
+			}
+		}
+	}
+	return ""
 }
 
 // HandleDAVRoot responds to PROPFIND on /remote.php/dav/ with current-user-principal.
