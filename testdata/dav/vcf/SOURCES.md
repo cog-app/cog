@@ -203,3 +203,11 @@ Copyleft sources with real-client output, kept for local experiments only:
   `lib/src/test/resources/`): DAVdroid 1.3.4 `strange-rev.vcf`, all-fields 3.0, unknown properties with labels.
 - `radicale/` (GPL-3.0, https://github.com/Kozea/Radicale @ `4d3887e0fe5f4d3cf815d65e2a4d8bf9b0ca5b75`,
   `radicale/tests/static/`): DAVx5 3.3.5 and 4.2.6, CardBook 105.3, SOGo Connector, and data: URI photos (3.0 and 4.0).
+
+## cog-production
+
+Anonymised samples of the address book on cog.duckfam.us (2026-10-25), via `go tool davfixtures export` and `anonymise`. Production contacts are minimal (VERSION 3.0, UID, FN, REV). Licence: same as this repository.
+
+| File | Exercises |
+|---|---|
+| contact-01.vcf, contact-02.vcf | minimal v3 cards as Cog stores them today |

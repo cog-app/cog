@@ -349,3 +349,13 @@ above (see the matching section for repo, commit and licence file).
 |---|---|---|
 | icaljs-issue-257.ics | InfCloud 0.12.1 (from Thunderbird data, X-MOZ-GENERATION) | Blank lines between components; PRODID after the components |
 | invalid_dates.ics | InfCloud 0.12.1 | Blank lines between components; `DTSTART;TZID=America/Chicago:20170325` (DATE value with TZID, no VALUE=DATE) |
+
+## cog-production
+
+Anonymised samples of the calendars on cog.duckfam.us (2026-10-25), produced with `go tool davfixtures export` and `anonymise`. Text, names and contact details are placeholders; structure, times, recurrence, VTIMEZONEs and alarms are as stored. Licence: same as this repository.
+
+All 186 production events came from one import (`PRODID:-//duckfam//fossify-import//EN`), not from a DAV client, so they share one shape. One stored DESCRIPTION has a continuation line without a leading space (a broken fold); `contentline` keeps it as a malformed property, and it is kept here (as `\nMalformed continuation N`) as a real example.
+
+| File | Exercises |
+|---|---|
+| event-01.ics … event-05.ics | RRULE with BYDAY/UNTIL/COUNT, long EXDATE lists, VALARM, all-day VALUE=DATE, America/Denver VTIMEZONE, LOCATION/DESCRIPTION, the broken fold |

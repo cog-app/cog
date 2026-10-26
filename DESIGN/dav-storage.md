@@ -368,3 +368,26 @@ Each milestone is a run of commits that builds and passes tests on its own.
 ## 13. Open questions
 
 - None yet.
+
+## 14. Progress
+
+Branch `design-dav-storage`, one draft MR to master. Update this section at the end of each milestone.
+
+| Milestone | State |
+|---|---|
+| 1. contentline + fixtures | Done. `internal/dav/contentline`; `testdata/dav` (see its README); `go tool davfixtures` for the local-only GPL corpus and personal exports. |
+| 2. DAV core | Next. |
+
+Findings so far:
+
+- Production data (cog.duckfam.us, 2026-10-25): 3 calendars, 186 events, all from one Fossify import, no VTODO, 9 minimal contacts. No DAV client has written to it yet, so the migration's verification (section 8) will mostly exercise import-shaped ICS. One stored DESCRIPTION has a broken fold, kept as a malformed property.
+- Tasks have no CalDAV yet, so they cannot be exported over DAV until milestone 4.
+
+Adjacent bugs found, to fix in milestone 2 while porting:
+
+- Calendar sharing mixes user IDs and usernames: `SharedCalendars` passes a username to `ListBySubject` (expects a user ID) and opens `userDB(rec.OwnerUserID)` with an ID; `CheckCalendarAccess` likewise. Contacts does it right via `UserLookup`.
+- CalDAV derives the event UID from the request path, so a PUT to `a.ics` containing `UID:b` stores mismatched data; resources need a `uri` column.
+- DELETE on a shared calendar collection needs only Write and deletes the owner's calendar; it should be owner-only.
+- `addressBookCollectionShared` returns 405 for writers instead of performing the operation, and checks permission in the wrong place.
+- CardDAV `sync-collection` returns every card even with a token.
+- Swallowed errors: `MarkNotificationFired`, `renderWidget` (calendar, tasks), and `ListCalendars`/`ListEvents`/`ListCards`/`SharedCalendars` in PROPFIND/REPORT paths.

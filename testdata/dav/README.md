@@ -7,8 +7,22 @@ Real iCalendar and vCard output from real clients, for the tests in `DESIGN/dav-
 | `ics/<source>/`, `vcf/<source>/` | Output that follows the RFCs, more or less |
 | `ics/quirks/`, `vcf/quirks/` | Real output that breaks the RFCs in a way clients actually do; `SOURCES.md` says how |
 | `ics/invalid/` | Files that must be rejected; `TestFixturesInvalid` checks they are |
+| `ics/cog-production/`, `vcf/cog-production/` | Anonymised samples of the data on cog.duckfam.us |
 
-Only permissively licensed sources are committed (BSD, MIT, Apache-2.0, MPL-2.0). GPL, LGPL and AGPL test data (Radicale, ical4android, vcard4android, Tine 2.0, Roundcube, Nextcloud via calcard) is useful but stays local: put it in `tmp/dav-fixtures-gpl/{ics,vcf}/` and the round-trip tests pick it up. Personal exports go in `tmp/dav-export/` the same way; only anonymised copies are committed.
+Only permissively licensed sources are committed (BSD, MIT, Apache-2.0, MPL-2.0). GPL, LGPL and AGPL test data (Radicale, ical4android, vcard4android, Tine 2.0, Roundcube, Nextcloud via calcard) is useful but stays local. Fetch it, pinned by commit in `internal/cmd/davfixtures/gpl-manifest.txt`, with:
+
+```bash
+go tool davfixtures gpl          # 326 files into tmp/dav-fixtures-gpl/
+```
+
+Personal exports stay local too; only anonymised copies (`*/cog-production/`) are committed:
+
+```bash
+COG_USER=jonathan COG_PASS="$(pass show cog.duckfam.us/jonathan | head -n1)" go tool davfixtures export   # into tmp/dav-export/
+go tool davfixtures anonymise -out testdata/dav/ics/cog-production -prefix event tmp/dav-export/calendars/jonathan/*/X.ics ...
+```
+
+The round-trip tests pick up `tmp/dav-fixtures-gpl/` and `tmp/dav-export/` when present. Read anonymised output before committing it: the anonymiser only replaces the properties it knows.
 
 ## Clients with no real output here yet
 
