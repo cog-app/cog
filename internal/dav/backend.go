@@ -71,6 +71,9 @@ type PutRequest struct {
 	Data       []byte
 	Object     *contentline.Component // the parsed VCALENDAR or VCARD
 	Conditions davsql.Conditions
+	// Attachments are managed attachments to store with the resource,
+	// which names them (AttachmentStore).
+	Attachments []NewAttachment
 }
 
 // PutResult reports a stored resource.

@@ -43,7 +43,7 @@ const DefaultRetention = 90 * 24 * time.Hour
 type Server struct {
 	Collections *Store
 	Users       Users
-	Shares      plugin.ShareStore
+	Shares      Shares
 	// Backends returns the backends of the plugins enabled now.
 	Backends func() []Backend
 	// Retention returns how long to keep tombstones; nil means
@@ -54,6 +54,11 @@ type Server struct {
 	// Mail returns the sender for iMIP messages to external calendar users,
 	// or nil when email is not configured. Mail itself may be nil.
 	Mail func() plugin.EmailSender
+	// BaseURL is the server's external URL, for the absolute URLs of
+	// managed attachments.
+	BaseURL string
+	// Secret signs the attachment URLs sent to external attendees.
+	Secret []byte
 }
 
 func (s *Server) retention() time.Duration {
@@ -125,12 +130,23 @@ type request struct {
 	w      http.ResponseWriter
 	r      *http.Request
 	user   *User
-	shared shareMap // shares that reach user, loaded on first use
+	shared shareMap                  // shares that reach user, loaded on first use
+	owned  map[CollectionID][]sharee // users the user's collections are shared with, loaded on first use
 	bes    []Backend
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	au := auth.UserFromContext(r.Context())
+	if rest, ok := strings.CutPrefix(r.URL.Path, Root+attachmentsPath+"/"); ok {
+		// An external attendee fetches an attachment with a token instead
+		// of credentials.
+		var u *User
+		if au != nil {
+			u = &User{ID: au.ID, Username: au.Username, DisplayName: au.DisplayName, Email: au.Email}
+		}
+		s.serveAttachment(w, r, u, rest)
+		return
+	}
 	if au == nil {
 		w.Header().Set("WWW-Authenticate", `Basic realm="Cog"`)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -255,15 +271,15 @@ func (q *request) depth() int {
 
 func (q *request) options(allow string) {
 	q.w.Header().Set("Allow", allow)
-	q.w.Header().Set("DAV", "1, 3, access-control, calendar-access, calendar-auto-schedule, calendar-no-timezone, addressbook, extended-mkcol")
+	q.w.Header().Set("DAV", "1, 3, access-control, calendar-access, calendar-auto-schedule, calendar-no-timezone, calendar-managed-attachments, calendarserver-sharing, addressbook, extended-mkcol")
 	q.w.WriteHeader(http.StatusOK)
 }
 
 const (
 	allowRoot       = "OPTIONS, PROPFIND"
-	allowHome       = "OPTIONS, PROPFIND, MKCOL, MKCALENDAR"
-	allowCollection = "OPTIONS, PROPFIND, PROPPATCH, REPORT, DELETE"
-	allowResource   = "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND"
+	allowHome       = "OPTIONS, PROPFIND, MKCOL, MKCALENDAR, POST"
+	allowCollection = "OPTIONS, PROPFIND, PROPPATCH, REPORT, DELETE, POST"
+	allowResource   = "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, POST"
 )
 
 func (q *request) methodNotAllowed(allow string) {
@@ -446,6 +462,9 @@ func (q *request) homeCollection(home Home, owner *User) {
 	}
 	switch q.r.Method {
 	case "PROPFIND":
+	case http.MethodPost:
+		q.homePost()
+		return
 	case http.MethodOptions:
 		q.options(allowHome)
 		return
@@ -465,7 +484,13 @@ func (q *request) homeCollection(home Home, owner *User) {
 		{dav("current-user-principal"), hrefEl(principalHref(q.user.Username))},
 		{dav("current-user-privilege-set"), privileges(access{owner: true}, home)},
 	}
-	ms := multistatus{Responses: []response{{Href: homeHref(home, owner.Username), Propstats: pf.evaluate(homeProps, nil)}}}
+	var homeExtra []prop
+	if home == HomeCalendars && q.s.attachments(q.bes) != nil {
+		// Empty: attachments are on this server, reached however the client
+		// reaches its home (RFC 8607 section 6.1).
+		homeExtra = append(homeExtra, prop{caldav("managed-attachments-server-URL"), ""})
+	}
+	ms := multistatus{Responses: []response{{Href: homeHref(home, owner.Username), Propstats: pf.evaluate(homeProps, homeExtra)}}}
 	if q.depth() == 1 {
 		listed, err := q.listHome(home)
 		if err != nil {
@@ -473,9 +498,13 @@ func (q *request) homeCollection(home Home, owner *User) {
 			return
 		}
 		for _, l := range listed {
-			props := q.collectionProps(&l.Collection, l.access, l.owner, l.token)
+			props, extra, err := q.collectionProps(&l.Collection, l.access, l.owner, l.token)
+			if err != nil {
+				q.fail(err)
+				return
+			}
 			ms.Responses = append(ms.Responses, response{
-				Href: collectionHref(&l.Collection, l.owner), Propstats: pf.evaluate(props, nil),
+				Href: collectionHref(&l.Collection, l.owner), Propstats: pf.evaluate(props, extra),
 			})
 		}
 		if home == HomeCalendars && q.s.inbox(q.bes) != nil {
@@ -611,9 +640,15 @@ func privileges(a access, home Home) string {
 	return privilegeSet(names)
 }
 
-func (q *request) collectionProps(c *Collection, a access, ownerName string, tok SyncToken) []prop {
+// collectionProps returns a collection's live properties, and those given
+// only when asked for by name.
+func (q *request) collectionProps(c *Collection, a access, ownerName string, tok SyncToken) ([]prop, []prop, error) {
 	if c.ID == InboxID {
-		return q.inboxProps(c, ownerName, tok)
+		return q.inboxProps(c, ownerName, tok), nil, nil
+	}
+	shared, sharing, err := q.sharingProps(c, a, ownerName)
+	if err != nil {
+		return nil, nil, err
 	}
 	kind := el(caldav("calendar"), "")
 	reports := []xml.Name{caldav("calendar-multiget"), caldav("calendar-query"), dav("sync-collection")}
@@ -621,8 +656,11 @@ func (q *request) collectionProps(c *Collection, a access, ownerName string, tok
 		kind = el(carddav("addressbook"), "")
 		reports = []xml.Name{carddav("addressbook-multiget"), carddav("addressbook-query"), dav("sync-collection")}
 	}
-	if !a.owner {
+	switch {
+	case !a.owner:
 		kind += el(cs("shared"), "")
+	case shared:
+		kind += el(cs("shared-owner"), "")
 	}
 	var rs strings.Builder
 	for _, r := range reports {
@@ -670,8 +708,16 @@ func (q *request) collectionProps(c *Collection, a access, ownerName string, tok
 				`<CR:supported-collation>i;unicode-casemap</CR:supported-collation><CR:supported-collation>i;ascii-casemap</CR:supported-collation><CR:supported-collation>i;octet</CR:supported-collation>`},
 		)
 	}
+	props = append(props, sharing...)
 	for _, d := range c.DeadProps {
 		props = append(props, prop{xml.Name{Space: d.Space, Local: d.Local}, d.Inner})
 	}
-	return props
+	var extra []prop
+	if c.Home == HomeCalendars && c.Has(VEVENT) && q.s.attachments(q.bes) != nil {
+		extra = append(extra,
+			prop{caldav("max-attachment-size"), fmt.Sprint(MaxAttachmentSize)},
+			prop{caldav("max-attachments-per-resource"), fmt.Sprint(MaxAttachmentsPerResource)},
+		)
+	}
+	return props, extra, nil
 }

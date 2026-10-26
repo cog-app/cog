@@ -119,6 +119,12 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, username string)
 	return starredContactsWidget(cards).Render(ctx, w)
 }
 
+// StorageUsage implements plugin.StorageUser: contact photos count toward
+// the user's quota.
+func (p *Plugin) StorageUsage(username string) (int64, error) {
+	return p.photoStore(username).usage()
+}
+
 // photoStore returns where a user's contact photos are kept.
 func (p *Plugin) photoStore(username string) *photoStore {
 	return &photoStore{dir: filepath.Join(p.ctx.DataDir(), "contacts", username, "photos"), log: p.log}

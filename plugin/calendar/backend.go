@@ -59,18 +59,34 @@ func (b *backend) Put(owner string, c *dav.Collection, req *dav.PutRequest) (*da
 	if err != nil {
 		return nil, fmt.Errorf("decode event %s: %w", req.URI, err)
 	}
+	var added int64
+	for _, a := range req.Attachments {
+		added += int64(len(a.Data))
+	}
+	if added > 0 {
+		if err := b.p.ctx.QuotaCheck(owner, added); err != nil {
+			return nil, err
+		}
+	}
+	now := b.p.ctx.Now().Unix()
 	tx, err := db.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("put event: %w", err)
 	}
 	defer tx.Rollback()
-	st, err := tables.Store(tx, int64(c.ID), zoneOf(c), req.URI, o, req.Conditions, b.p.ctx.Now().Unix())
+	st, err := tables.Store(tx, int64(c.ID), zoneOf(c), req.URI, o, req.Conditions, now)
 	if err != nil {
+		return nil, err
+	}
+	// Store has bumped the version, so tx holds the write lock that
+	// collectAttachments takes to remove files.
+	if err := storeAttachments(tx, b.p.attachmentDir(owner), req.Attachments, now); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("put event: %w", err)
 	}
+	b.p.collected(owner)
 	return &dav.PutResult{Version: st.Version, Created: st.Created, Data: st.Data}, nil
 }
 
@@ -87,7 +103,11 @@ func (b *backend) Delete(owner string, c *dav.Collection, uri string, cond davsq
 	if err := tables.Delete(tx, int64(c.ID), uri, cond, b.p.ctx.Now().Unix()); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("delete event: %w", err)
+	}
+	b.p.collected(owner)
+	return nil
 }
 
 // InRange narrows a time-range query to events whose instances may overlap
@@ -135,11 +155,16 @@ func (b *backend) TimezoneChanged(owner string, c *dav.Collection) error {
 	return RecomputeEventTimes(db, int64(c.ID), zoneOf(c), b.p.ctx.Now())
 }
 
-// Purge removes a deleted calendar's events and the time zones they used.
+// Purge removes a deleted calendar's events, the time zones they used and
+// the attachments only they named.
 func (b *backend) Purge(owner string, id dav.CollectionID) error {
 	db, err := b.p.DB(owner)
 	if err != nil {
 		return err
 	}
-	return tables.Purge(db, int64(id))
+	if err := tables.Purge(db, int64(id)); err != nil {
+		return err
+	}
+	b.p.collected(owner)
+	return nil
 }

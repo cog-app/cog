@@ -187,3 +187,30 @@ func (s *photoStore) collect(q davsql.Querier, hashes ...string) error {
 	}
 	return nil
 }
+
+// usage is the bytes the user's photos take. Cached copies of photos given
+// by URL are not theirs and do not count.
+func (s *photoStore) usage() (int64, error) {
+	entries, err := os.ReadDir(s.dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("photo usage: %w", err)
+	}
+	var n int64
+	for _, e := range entries {
+		if e.IsDir() || strings.HasPrefix(e.Name(), "u-") || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		fi, err := e.Info()
+		if errors.Is(err, fs.ErrNotExist) {
+			continue // collected meanwhile
+		}
+		if err != nil {
+			return 0, fmt.Errorf("photo usage: %w", err)
+		}
+		n += fi.Size()
+	}
+	return n, nil
+}

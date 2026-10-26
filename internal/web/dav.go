@@ -2,6 +2,7 @@ package web
 
 import (
 	"errors"
+	"iter"
 	"net/http"
 	"time"
 
@@ -41,6 +42,46 @@ func (a davUsers) ByEmails(emails []string) (map[string]*dav.User, error) {
 	return out, nil
 }
 
+// davShares adapts *share.Store to dav.Shares. Shares made over DAV are
+// indexed for search like those made in the share panel.
+type davShares struct {
+	*shareStoreAdapter
+	p *services.Providers
+}
+
+func (a davShares) ListByOwner(ownerID string) iter.Seq2[plugin.ShareRecord, error] {
+	return func(yield func(plugin.ShareRecord, error) bool) {
+		for rec, err := range a.s.ListByOwner(ownerID) {
+			if !yield(pluginShare(&rec), err) {
+				return
+			}
+		}
+	}
+}
+
+func (a davShares) Create(ownerUserID, resourceType, resourceID, subjectType, subjectID string, permissions uint32) (*plugin.ShareRecord, error) {
+	rec, err := a.s.Create(ownerUserID, resourceType, resourceID, subjectType, subjectID, permissions)
+	if err != nil {
+		return nil, err
+	}
+	propagateShareCreate(a.p, rec)
+	out := pluginShare(rec)
+	return &out, nil
+}
+
+func (a davShares) UpdatePermissions(id string, permissions uint32) error {
+	return a.s.Update(id, &permissions, nil)
+}
+
+func (a davShares) Delete(id string) error {
+	rec, err := a.s.Get(id)
+	if err != nil {
+		return err
+	}
+	propagateShareDelete(a.p, rec)
+	return a.s.Delete(id)
+}
+
 // davPermissionLevels are the presets the share panel offers for collections.
 var davPermissionLevels = []plugin.PermissionLevel{
 	{Label: "Read-only", Permissions: plugin.PermRead},
@@ -53,7 +94,7 @@ var davPermissionLevels = []plugin.PermissionLevel{
 // The host owns the root, the principals and the homes; plugins supply
 // resources through dav.Provider, and a disabled plugin's backends drop out
 // per request.
-func mountDAV(mux *http.ServeMux, p *services.Providers, shares plugin.ShareStore) {
+func mountDAV(mux *http.ServeMux, p *services.Providers, shares dav.Shares) {
 	type provided struct {
 		pluginID string
 		backends []dav.Backend
@@ -67,6 +108,8 @@ func mountDAV(mux *http.ServeMux, p *services.Providers, shares plugin.ShareStor
 	srv := p.DAV
 	srv.Users = davUsers{p.Users}
 	srv.Shares = shares
+	srv.BaseURL = p.Config.BaseURL
+	srv.Secret = p.CSRFSecret
 	srv.Backends = func() []dav.Backend {
 		var out []dav.Backend
 		for _, pr := range all {
@@ -99,4 +142,7 @@ func mountDAV(mux *http.ServeMux, p *services.Providers, shares plugin.ShareStor
 	mux.Handle("/remote.php/dav/principals/", h)
 	mux.Handle("/remote.php/dav/calendars/", h)
 	mux.Handle("/remote.php/dav/addressbooks/", h)
+	// Attachments check access themselves: an external attendee has a token
+	// rather than an account.
+	mux.Handle("/remote.php/dav/attachments/", srv)
 }

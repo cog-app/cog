@@ -28,6 +28,21 @@ CREATE TABLE IF NOT EXISTS event_alarms (
 	leftovers TEXT NOT NULL DEFAULT '{}'
 );
 
+CREATE TABLE IF NOT EXISTS event_attachments (
+	-- ATTACH: a URI, a managed attachment (a URI Cog serves, RFC 8607), or
+	-- inline data kept as the base64 text sent.
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	component_id INTEGER NOT NULL REFERENCES vevents(id) ON DELETE CASCADE,
+	position INTEGER NOT NULL,
+	value TEXT NOT NULL,
+	inline INTEGER NOT NULL DEFAULT 0,
+	managed_id TEXT NOT NULL DEFAULT '',
+	fmttype TEXT NOT NULL DEFAULT '',
+	size INTEGER,
+	filename TEXT NOT NULL DEFAULT '',
+	params TEXT NOT NULL DEFAULT '[]'
+);
+
 CREATE TABLE IF NOT EXISTS event_attendees (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	component_id INTEGER NOT NULL REFERENCES vevents(id) ON DELETE CASCADE,
@@ -71,6 +86,19 @@ CREATE TABLE IF NOT EXISTS events (
 	updated_at INTEGER NOT NULL,
 	UNIQUE (collection_id, uri),
 	UNIQUE (collection_id, uid)
+);
+
+CREATE TABLE IF NOT EXISTS managed_attachments (
+	-- This user's managed attachments (RFC 8607). The bytes are a file under
+	-- the plugin's data directory named by their SHA-256 (hash), so the same
+	-- bytes are stored once. A row lives while an ATTACH in this database
+	-- names it.
+	managed_id TEXT PRIMARY KEY,
+	hash TEXT NOT NULL,
+	size INTEGER NOT NULL,
+	fmttype TEXT NOT NULL DEFAULT '',
+	filename TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS notifications (
@@ -162,6 +190,10 @@ CREATE TABLE IF NOT EXISTS vtimezones (
 
 CREATE INDEX IF NOT EXISTS idx_alarms_vevent ON event_alarms(component_id);
 
+CREATE INDEX IF NOT EXISTS idx_attachments_managed ON event_attachments(managed_id);
+
+CREATE INDEX IF NOT EXISTS idx_attachments_vevent ON event_attachments(component_id);
+
 CREATE INDEX IF NOT EXISTS idx_attendees_email ON event_attendees(email);
 
 CREATE INDEX IF NOT EXISTS idx_attendees_vevent ON event_attendees(component_id);
@@ -171,6 +203,8 @@ CREATE INDEX IF NOT EXISTS idx_dav_tombstones_version ON dav_tombstones(collecti
 CREATE INDEX IF NOT EXISTS idx_events_collection_version ON events(collection_id, version);
 
 CREATE INDEX IF NOT EXISTS idx_events_range ON events(collection_id, start_utc);
+
+CREATE INDEX IF NOT EXISTS idx_managed_attachments_hash ON managed_attachments(hash);
 
 CREATE INDEX IF NOT EXISTS idx_notifications_event ON notifications(event_id);
 

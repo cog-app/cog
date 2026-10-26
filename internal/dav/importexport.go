@@ -105,6 +105,9 @@ func (s *Server) importOne(owner string, c *Collection, bes []Backend, obj *cont
 			obj.Props = append(obj.Props, contentline.Property{Name: "UID", Value: uid})
 		}
 	}
+	if comp != VCARD {
+		stripManaged(obj)
+	}
 	var buf bytes.Buffer
 	if err := contentline.Write(&buf, []*contentline.Component{obj}); err != nil {
 		res.fail("%s: %v", uid, err)
@@ -294,6 +297,7 @@ func (s *Server) Export(w io.Writer, ownerUsername string, c *Collection) error 
 				out.Components = append(out.Components, sub)
 				continue
 			}
+			stripManaged(sub)
 			objects = append(objects, sub)
 		}
 	}

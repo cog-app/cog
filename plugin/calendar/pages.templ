@@ -234,9 +234,35 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 				picker.value = picker.getAttribute("data-default") || "#0082c9";
 			}
 		}
+		function openEventModal(url) {
+			fetch(url, {
+				headers: {
+					"X-CSRF-Token": document.querySelector("[name=csrf_token]").value,
+				},
+			})
+				.then(function (r) {
+					if (!r.ok) throw new Error(r.status);
+					return r.text();
+				})
+				.then(function (html) {
+					var body = document.getElementById("event-modal-body");
+					body.innerHTML = html;
+					fillBrowserTimes(body);
+					htmx.process(body);
+					document.getElementById("event-modal").style.display = "flex";
+				})
+				.catch(function (err) {
+					console.error("open event", url, err);
+				});
+		}
 		(function () {
 			var calEl = document.getElementById("calendar");
 			var params = new URLSearchParams(window.location.search);
+			// A form about an event redirects back with ?event=<id>, so its
+			// modal opens again.
+			if (/^[0-9]+$/.test(params.get("event") || "")) {
+				openEventModal("/apps/calendar/events/" + params.get("event"));
+			}
 			var initDate = params.get("date");
 			var calOpts = {
 				initialView: "dayGridMonth",
@@ -258,21 +284,7 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 					if (info.event.extendedProps.occurrence) {
 						url += "?occurrence=" + info.event.extendedProps.occurrence;
 					}
-					fetch(url, {
-						headers: {
-							"X-CSRF-Token": document.querySelector("[name=csrf_token]").value,
-						},
-					})
-						.then(function (r) {
-							return r.text();
-						})
-						.then(function (html) {
-							var body = document.getElementById("event-modal-body");
-							body.innerHTML = html;
-							fillBrowserTimes(body);
-							htmx.process(body);
-							document.getElementById("event-modal").style.display = "flex";
-						});
+					openEventModal(url);
 				},
 				dateClick: function (info) {
 					var modal = document.getElementById("create-modal");
@@ -335,7 +347,7 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 	</script>
 }
 
-templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee, myStatus string) {
+templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee, myStatus string, attachments []AttachmentView) {
 	<h2 style="margin-top:0">{ ev.Summary }</h2>
 	<div class="text-muted" style="margin-bottom:1rem">
 		{ formatEventTime(ev.DTStart, ev.DTEnd, ev.IsAllDay) }
@@ -403,6 +415,37 @@ templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Cale
 			}
 		</div>
 	}
+	<div style="margin-top:0.75rem" id="em-attachments">
+		<strong style="font-size:0.85rem">Attachments</strong>
+		if len(attachments) > 0 {
+			<ul style="list-style:none;padding:0;margin:0.25rem 0">
+				for _, att := range attachments {
+					<li class="flex gap-1 items-center" style="padding:0.25rem 0;font-size:0.85rem">
+						if att.URL != "" {
+							<a href={ templ.SafeURL(att.URL) } download?={ att.Local() } target="_blank" rel="noopener noreferrer">{ att.Name }</a>
+						} else {
+							<span>{ att.Name }</span>
+						}
+						if att.Size != "" {
+							<span class="text-muted">({ att.Size })</span>
+						}
+						if att.ManagedID != "" {
+							<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d/attachments/remove", ev.ID)) } style="display:inline">
+								<input type="hidden" name="csrf_token" value={ csrfToken }/>
+								<input type="hidden" name="managed_id" value={ att.ManagedID }/>
+								<button type="submit" class="btn btn-sm">Remove</button>
+							</form>
+						}
+					</li>
+				}
+			</ul>
+		}
+		<form method="post" enctype="multipart/form-data" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d/attachments", ev.ID)) } class="flex gap-1 items-center" style="margin-top:0.25rem">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="file" name="file" required/>
+			<button type="submit" class="btn btn-sm">Attach</button>
+		</form>
+	</div>
 	<div class="sidebar-divider" style="margin:1rem 0"></div>
 	<h3>Edit Event</h3>
 	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d", ev.ID)) } onsubmit="clearColorIfUnchecked('em-color-enable','em-color')">

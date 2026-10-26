@@ -90,6 +90,7 @@ func (e *EventWithCalendar) Zone() *time.Location {
 // tables are where events are stored; AfterWrite keeps their reminders.
 var tables = &icalsql.Tables{
 	Objects: "events", Components: "vevents", Attendees: "event_attendees", Alarms: "event_alarms",
+	Attachments: "event_attachments",
 	AfterWrite: func(tx *sql.Tx, id int64, o *ical.Object, z ical.Zones, now int64) error {
 		return ensureNotifications(tx, id, o, z, now)
 	},

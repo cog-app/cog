@@ -62,6 +62,17 @@ func (q *request) collection(home Home, owner *User, name string) {
 			return
 		}
 		q.deleteCollection(c, owner)
+	case http.MethodPost:
+		if !a.owner {
+			writeError(q.w, http.StatusForbidden, dav("need-privileges"), "")
+			return
+		}
+		n, err := readXML(q.r)
+		if err != nil || !n.is(cs("share")) {
+			http.Error(q.w, "expected CS:share", http.StatusBadRequest)
+			return
+		}
+		q.sharePost(c, owner, n)
 	case "MKCALENDAR", "MKCOL":
 		writeError(q.w, http.StatusMethodNotAllowed, dav("resource-must-be-null"), "")
 	case http.MethodOptions:
@@ -82,8 +93,13 @@ func (q *request) propfindCollection(c *Collection, owner *User, a access) {
 		q.fail(err)
 		return
 	}
+	props, extra, err := q.collectionProps(c, a, owner.Username, tok)
+	if err != nil {
+		q.fail(err)
+		return
+	}
 	ms := multistatus{Responses: []response{{
-		Href: collectionHref(c, owner.Username), Propstats: pf.evaluate(q.collectionProps(c, a, owner.Username, tok), nil),
+		Href: collectionHref(c, owner.Username), Propstats: pf.evaluate(props, extra),
 	}}}
 	if q.depth() == 1 {
 		withData := pf.wants(dataName(c.Home))

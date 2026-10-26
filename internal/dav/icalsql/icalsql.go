@@ -34,6 +34,9 @@ type Tables struct {
 	// Relations holds RELATED-TO; "" for a plugin that keeps it among the
 	// leftovers.
 	Relations string
+	// Attachments holds ATTACH; "" for a plugin that keeps it among the
+	// leftovers.
+	Attachments string
 	// AfterWrite, when set, runs in the transaction after an object is
 	// stored or its derived times are recomputed; the calendar keeps its
 	// reminders with it.
@@ -260,6 +263,37 @@ func (t *Tables) loadChunk(q davsql.Querier, ids []int64, out map[int64]*ical.Ob
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("load alarms: %w", err)
+	}
+
+	if t.Attachments != "" {
+		rows, err = child(t.Attachments, `a.value, a.inline, a.managed_id, a.fmttype, a.size, a.filename, a.params`)
+		if err != nil {
+			return fmt.Errorf("load attachments: %w", err)
+		}
+		for rows.Next() {
+			var cid int64
+			var a ical.Attachment
+			var size sql.NullInt64
+			var params string
+			if err := rows.Scan(&cid, &a.Value, &a.Inline, &a.ManagedID, &a.FmtType, &size, &a.Filename, &params); err != nil {
+				rows.Close()
+				return fmt.Errorf("scan attachment: %w", err)
+			}
+			if size.Valid {
+				a.Size = &size.Int64
+			}
+			if err := Unmarshal(params, &a.Params); err != nil {
+				rows.Close()
+				return fmt.Errorf("attachment params: %w", err)
+			}
+			if e := byComp[cid]; e != nil {
+				e.Attachments = append(e.Attachments, a)
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("load attachments: %w", err)
+		}
 	}
 
 	if t.Relations == "" {
@@ -591,6 +625,23 @@ func (t *Tables) insertComponent(tx *sql.Tx, objID int64, pos int, e *ical.Compo
 			return fmt.Errorf("insert alarm: %w", err)
 		}
 	}
+	if t.Attachments != "" {
+		for i, a := range e.Attachments {
+			params, err := marshal(a.Params)
+			if err != nil {
+				return err
+			}
+			var size any
+			if a.Size != nil {
+				size = *a.Size
+			}
+			if _, err := tx.Exec(`INSERT INTO `+t.Attachments+` (component_id, position, value, inline, managed_id, fmttype, size, filename, params)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				cid, i, a.Value, a.Inline, a.ManagedID, a.FmtType, size, a.Filename, orEmpty(params, "[]")); err != nil {
+				return fmt.Errorf("insert attachment: %w", err)
+			}
+		}
+	}
 	if t.Relations == "" {
 		return nil
 	}
@@ -663,6 +714,24 @@ func IDs(q davsql.Querier, query string, args ...any) ([]int64, error) {
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// Strings runs a query returning one string per row.
+func Strings(q davsql.Querier, query string, args ...any) ([]string, error) {
+	rows, err := q.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 // RecomputeCollection re-derives a collection's indexed times after its zone

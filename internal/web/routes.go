@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/pprof"
 
@@ -12,6 +13,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/share"
+	"git.duckfam.us/jj-software/cog/plugin"
 	filesPlugin "git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -293,7 +295,7 @@ func New(p *services.Providers) http.Handler {
 
 	// CalDAV/CardDAV: the root, principals and homes, over the plugins'
 	// backends.
-	mountDAV(mux, p, &shareStoreAdapter{p.Shares})
+	mountDAV(mux, p, davShares{&shareStoreAdapter{p.Shares}, p})
 
 	// WebDAV stub for non-file DAV paths (presence check, HEAD/OPTIONS/GET)
 	mux.HandleFunc("/remote.php/dav", compat.HandleWebDAVStub)
@@ -385,8 +387,12 @@ func buildOCSQuotaFunc(p *services.Providers, fp *filesPlugin.Plugin) compat.Quo
 	if fp == nil || p.Quotas == nil || p.Mounts == nil {
 		return nil
 	}
+	usage := storageUsage(p, fp)
 	return func(username string) (used, total int64) {
-		used, _ = fp.Usage(username)
+		used, err := usage(username)
+		if err != nil {
+			p.Log.Error("storage usage", "user", username, "err", err)
+		}
 		u, err := p.Users.GetByUsername(username)
 		if err != nil {
 			return used, -1
@@ -407,6 +413,29 @@ func buildOCSQuotaFunc(p *services.Providers, fp *filesPlugin.Plugin) compat.Quo
 	}
 }
 
+// storageUsage is what a user stores: their files, and what enabled plugins
+// keep for them elsewhere (plugin.StorageUser).
+func storageUsage(p *services.Providers, fp *filesPlugin.Plugin) quota.UsageFunc {
+	return func(username string) (int64, error) {
+		total, err := fp.Usage(username)
+		if err != nil {
+			return 0, err
+		}
+		for plug := range p.Plugins.Plugins() {
+			su, ok := plug.(plugin.StorageUser)
+			if !ok || !p.Plugins.IsEnabled(plug.ID()) {
+				continue
+			}
+			n, err := su.StorageUsage(username)
+			if err != nil {
+				return 0, fmt.Errorf("%s storage usage: %w", plug.ID(), err)
+			}
+			total += n
+		}
+		return total, nil
+	}
+}
+
 // buildQuotaChecker creates a QuotaChecker wired to the services layer.
 func buildQuotaChecker(p *services.Providers, fp *filesPlugin.Plugin) *quota.Checker {
 	if fp == nil || p.Quotas == nil || p.Mounts == nil {
@@ -414,7 +443,7 @@ func buildQuotaChecker(p *services.Providers, fp *filesPlugin.Plugin) *quota.Che
 	}
 	return &quota.Checker{
 		Quotas: p.Quotas,
-		Usage:  fp.Usage,
+		Usage:  storageUsage(p, fp),
 		RootVolume: func(username string) (string, error) {
 			u, err := p.Users.GetByUsername(username)
 			if err != nil {

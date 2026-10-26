@@ -72,6 +72,15 @@ func (e *Component) Clone() *Component {
 	c.Attendees = slices.Clone(e.Attendees)
 	c.Categories = slices.Clone(e.Categories)
 	c.Relations = slices.Clone(e.Relations)
+	c.Attachments = slices.Clone(e.Attachments)
+	for i, a := range c.Attachments {
+		if a.Size != nil {
+			n := *a.Size
+			a.Size = &n
+		}
+		a.Params = slices.Clone(a.Params)
+		c.Attachments[i] = a
+	}
 	c.Alarms = make([]Alarm, len(e.Alarms))
 	for i, a := range e.Alarms {
 		a.Leftovers = a.Leftovers.Clone()

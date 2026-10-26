@@ -214,6 +214,8 @@ vevents(                               -- one row per VEVENT: the master and eac
 event_attendees(id, vevent_id, position, address, email, cn, partstat, role, rsvp, cutype, params)
 event_alarms(id, vevent_id, position, action, trigger, related, absolute, repeat, repeat_duration,
              description, summary, leftovers)
+event_attachments(id, vevent_id, position, value, inline, managed_id, fmttype, size, filename, params)
+managed_attachments(managed_id, hash, size, fmttype, filename, created_at)   -- this user's RFC 8607 files
 vtimezones(collection_id, tzid, vtimezone)
 ```
 
@@ -232,7 +234,13 @@ The codec is `internal/dav/ical` (`Decode(cal, kind)`, `Object.Encode`); it hold
 - **Web**: inviting someone makes the user the ORGANIZER (as `mailto:` their email, or their principal URL without one); the event modal shows Yes/Maybe/No to an attendee of someone else's event, which sets their PARTSTAT on every occurrence and replies.
 - **Free/busy**: busy time comes from instances (`Object.Instances`): TRANSP:TRANSPARENT, STATUS:CANCELLED and instances the owner declined are free; STATUS:TENTATIVE and instances the owner has not answered or accepted tentatively are BUSY-TENTATIVE; an all-day instance is busy for its days in the calendar's zone. Periods of one type that overlap or touch are merged and clipped to the range.
 - **Reminders**: `notifications` are derived from the alarms of the first instance that has not ended, on every write.
-- ATTACH, GEO, COMMENT, CONTACT, RESOURCES, RELATED-TO, COLOR and CONFERENCE are leftovers for now; managed attachments (milestone 7) will model ATTACH.
+- **Attachments** (`event_attachments`): every ATTACH on an event is modelled, in one of three forms. A URI (Apple's old dropbox links, Google Drive links) and inline data (`VALUE=BINARY;ENCODING=BASE64`, kept as the base64 text sent) are written back as received; a **managed attachment** (RFC 8607) is a URI Cog serves, with its MANAGED-ID, FMTTYPE, SIZE and FILENAME. An ATTACH that does not fit (no value, a SIZE that is not a number, inline data in another encoding or with a MANAGED-ID) stays a leftover. Tasks and journals keep ATTACH among their leftovers.
+- **Managed attachments** (RFC 8607, `internal/dav/attach.go`): a POST to an event with `?action=attachment-add`, `-update` or `-remove` (and `rid=M,<RECURRENCE-ID>…` to name instances, an occurrence without an override getting one) changes its ATTACH, bumps SEQUENCE and is scheduled like any other change, so attendees get it. Only the event's organizer (or its owner, for an event without one) may; a sharee needs Write. The response carries `Cal-Managed-ID`, the new ETag, and the event with `Prefer: return=representation`. An update gets a new MANAGED-ID and URL. Preconditions are RFC 8607's (`valid-action`, `valid-rid`, `valid-managed-id`, `max-attachment-size` 25 MB, `max-attachments-per-resource` 20, `DAV:quota-not-exceeded`).
+- **Attachment files**: the bytes are files under the calendar plugin's data directory (`calendar/<user>/attachments/`), named by their SHA-256, like contact photos; `managed_attachments` maps each MANAGED-ID to its file. The file and row are written in the transaction that stores the event, once it holds the write lock; a row no ATTACH names any more is removed after the write, and its file when no row uses it, under the same lock (`collectAttachments`). They count toward the user's quota with their Files (`plugin.StorageUser`; contact photos count too).
+- **Serving**: `/remote.php/dav/attachments/<owner>/<managed-id>`, absolute from the configured base URL; the home's `managed-attachments-server-URL` is empty, so clients behind another host name substitute their own. The owner, anyone the event's calendar is shared with for reading, and the attendees of a component carrying it may fetch it; it is sent as a download with `Content-Security-Policy: sandbox`, never rendered on Cog's origin. An attachment that is gone answers 410. It cannot be PUT or DELETEd.
+- **Attachments and scheduling**: a Cog attendee's copy names the organizer's attachment by its URL and MANAGED-ID, and may be written back with it; their access follows the invitation. An external attendee's email carries the URL with a token signed for their address, valid while they are an attendee of a component carrying it, and no MANAGED-ID.
+- **A PUT naming a managed attachment** (RFC 8607 section 3.7) is accepted for the owner's own, with the URL and SIZE corrected from what is stored, and for one the stored copy already had (an invitation's); any other is `valid-managed-id-parameter`. Import and export drop MANAGED-ID (section 3.12.7), leaving the URL.
+- GEO, COMMENT, CONTACT, RESOURCES, RELATED-TO, COLOR and CONFERENCE are leftovers.
 
 ### 4.3 Tasks and journals (CalDAV, VTODO and VJOURNAL)
 
@@ -328,6 +336,8 @@ The codec is `internal/dav/vcard` (`Decode`, `Card.Encode`), beside `ical` and s
 - **Schedule** (bit 16) lets a sharee act as the owner in scheduling: a write they make in the owner's calendar sends invitations and replies in the owner's name, as the owner's own write would, and the collection reports `schedule-send`, `schedule-send-invite` and `schedule-send-reply`. Without it, a sharee's write is stored but sends nothing, and the attendees (or the organizer) it would have reached get SCHEDULE-STATUS 3.8, so the client can see why. Anyone may invite any Cog user; delivery needs no share. The share panel's presets are Read-only, Read/Write, Free/Busy only and Delegate (Read, Write, FreeBusy and Schedule).
 - The owner's inbox reports `read`, `unbind` and `schedule-deliver` (with `-invite`, `-reply` and `schedule-query-freebusy`); the outbox `read` and `schedule-send` (with `-invite`, `-reply` and `-freebusy`). Nobody else may open either.
 - Shared collections appear under the sharee's calendar home (as today), with `CS:shared-url` / `invite` properties for clients that show sharing info.
+- **CalendarServer sharing** (`internal/dav/sharing.go`, `calendarserver-sharing` in DAV): the owner's collection lists its sharees in `CS:invite` (by mailto address or principal, with `CS:read` or `CS:read-write`) and is `CS:shared-owner` once shared; `CS:allowed-sharing-modes` says it `can-be-shared`. A sharee sees `CS:shared`, `CS:shared-url` (the owner's collection URL, where shared collections already live) and `CS:invite` with the owner as `CS:organizer` and only their own entry. A `CS:share` POST by the owner sets or removes user shares, resolving `mailto:` addresses and principal URLs to Cog users; it changes the same `dav:collection` rows the web share panel makes (`read` is Read, `read-write` Read and Write; FreeBusy is kept, and Schedule while the share can write), so either side sees what the other made, and is applied whole or not at all.
+- **Shares take effect at once**, as they always have from the web UI: there are no pending invitations or notification collection, and `CS:invite` reports every sharee as `invite-accepted`. A `CS:invite-reply` POSTed to the sharee's home is accepted for clients that send one: accepting answers `CS:shared-as`; declining removes the sharee's own share. Group, link and everyone shares, and free/busy-only shares, are not listed in `CS:invite`, which has no way to say them; they work as before.
 
 ## 8. No migration
 
@@ -361,9 +371,9 @@ Everything below is in scope for the MR.
 | Scheduling RFC 6638 | schedule inbox/outbox, server-side iTIP; replaces email-only invites (email stays for external attendees); uses SEQUENCE. Events only: no client Cog targets assigns tasks by iTIP, so VTODO is not scheduled |
 | Free/busy query (RFC 4791 §7.10, RFC 6638 outbox POST) | FreeBusy share permission, scheduling |
 | Timezones by reference RFC 7809 | `calendar-timezone-id`; clients may omit VTIMEZONE; `CalDAV-Timezones: F` leaves out standard VTIMEZONEs (section 4.1). No `timezone-service-set`: TZDIST is out of scope |
-| Managed attachments RFC 8607 | attachments stored as Cog files instead of inline base64 |
+| Managed attachments RFC 8607 | attachments stored as Cog files instead of inline base64; per-instance (`rid`) supported (section 4.2) |
 | WebDAV-Push (draft-bitfire-webdav-push; DAVx5) | push instead of polling; subscriptions per collection; Web Push (VAPID) transport |
-| CalendarServer sharing extensions (`CS:invite`, `CS:shared-url`) | show and accept shares in Apple clients and DAVx5 |
+| CalendarServer sharing extensions (`CS:invite`, `CS:shared-url`, `CS:share`, `CS:invite-reply`) | show, make and answer shares in Apple clients and DAVx5 (section 7) |
 
 ### Feeds and derived collections
 
@@ -441,6 +451,9 @@ Each milestone is a run of commits that builds and passes tests on its own.
 - **A cancellation marks the recipient's copy cancelled** rather than deleting it, so they see that it was cancelled, as SabreDAV does.
 - **Sharees schedule as the owner only with the Schedule permission** (section 7).
 - **Free/busy of other users** is visible only through a share (section 7); see section 13.
+- **Managed attachment files** are hashed files under the calendar plugin's data directory, as contact photos are, not files in the user's Files. An attachment lives and dies with the ATTACH that names it, its access follows the event's calendar and invitations rather than a file share, the calendar keeps working with the Files plugin disabled, and nothing a user does in Files (moving, renaming, deleting, editing) can break an event or change an attachment behind its MANAGED-ID. What Files gives for free, counting toward the quota, is kept by plugins reporting their storage (`plugin.StorageUser`). The ATTACH value is an absolute URL under the DAV root, not a plugin route, so clients fetch it with the credentials they already use for CalDAV.
+- **CalendarServer shares need no acceptance**: a share made over DAV takes effect at once, like one made in the web panel, and `CS:invite-reply` is accepted but only declining changes anything (section 7). Pending invitations would need a notification collection and a state Cog's shares do not have, for clients that mostly show them as accepted anyway.
+- **External attendees fetch attachments with a token** signed for their address (HMAC with the server secret) and checked against the event's current attendees, so removing them from the event revokes it.
 - **Recurrence expansion**: `github.com/teambition/rrule-go`, already a dependency, behind `internal/dav/ical` and `internal/dav/tz`; only RRULE arithmetic, not iCalendar parsing. Two limits are worked around or accepted: it stops about 292 years after DTSTART (its offsets are `time.Duration`s), so `FromRules` starts a 1601-based Outlook observance at 1900 in the same phase; and an event series is not expanded beyond that span. When DTSTART does not match the rule, it is counted as an occurrence on top of COUNT rather than as one of them.
 
 ## 13. Open questions
@@ -459,6 +472,7 @@ Branch `design-dav-storage`, one draft MR to master. Update this section at the 
 | 4. Tasks and journals | Done. `internal/dav/ical` models VTODO and VJOURNAL with the event codec (one `Component` type, properties claimed per kind); `internal/dav/icalsql` stores calendar objects as rows for both the calendar and the tasks plugin; tasks and journals are rows (section 4.3), with RELATED-TO by UID and X-APPLE-SORT-ORDER; recurring tasks complete by advancing; the tasks web UI edits rows. |
 | 5. Contacts | Done. `internal/dav/vcard` models vCard 2.1, 3.0 and 4.0 (labels by group, groups and members, inline photos) with leftovers; `internal/dav/codec` holds what it shares with `ical`; the contacts plugin stores cards as rows (section 4.4), photos as hashed files, and renders text on read; the contacts web UI edits rows. |
 | 6. Scheduling and free/busy | Done. `internal/dav/itip` works out iTIP messages (RFC 5546) from a change and applies received ones; `internal/dav/schedule.go` has the inbox and outbox, implicit scheduling on DAV PUT/DELETE and web edits, delivery between Cog users and iMIP email to others, SCHEDULE-AGENT/-STATUS/-FORCE-SEND, the free-busy-query REPORT and outbox free/busy, and the Schedule permission (sections 4.2, 5 and 7). Inboxes live in the calendar plugin's database (`schedule_inbox`). Fixtures: RFC 5546's examples in `testdata/dav/ics/rfc5546/` and its broken ones in `quirks/rfc5546/`. |
+| 7. Sharing extensions, managed attachments | Done. `internal/dav/sharing.go` serves CalendarServer sharing (`CS:invite`, `CS:shared-url`, `CS:share`, `CS:invite-reply`) on the `dav:collection` shares (section 7); `internal/dav/attach.go` serves RFC 8607 managed attachments, with ATTACH modelled in `event_attachments` and the files kept by the calendar plugin (section 4.2); the event modal lists, downloads, uploads and removes attachments. Fixtures: RFC 8607's examples in `testdata/dav/ics/rfc8607/`, CalendarServer's managed and dropbox forms in `calendarserver/`. |
 
 How milestone 2 differs from the plan it started with:
 
@@ -492,7 +506,7 @@ How milestone 3 differs from the plan:
 
 - Overrides are full rows in `vevents` beside the master, not an `event_overrides` table of nullable inherited columns (section 4.2). Attendees and alarms hang off `vevents`, so an override's own attendees and alarms need no `override_id`.
 - RDATE, EXDATE, DTSTAMP/CREATED/LAST-MODIFIED, ORGANIZER and CATEGORIES are JSON columns on `vevents`, not child tables: nothing queries them on their own, and loading stays at five queries per batch of events. Attendees and alarms are tables, for scheduling and reminders.
-- ATTACH stays a leftover until managed attachments (milestone 7); `event_attachments` is not created yet.
+- ATTACH stayed a leftover until managed attachments; `event_attachments` arrived in milestone 7.
 - Clients' VTIMEZONEs are stored per collection (`vtimezones`), keyed by TZID.
 - `events.size` keeps the length of the generated text, so PROPFIND without calendar-data need not render.
 - Invitations are the stored event with METHOD (and STATUS:CANCELLED for a cancellation), VTIMEZONEs included, instead of a separately built UTC-only copy.
@@ -587,6 +601,20 @@ Open after milestone 6:
 
 - Free/busy across the server (section 13).
 - Not built, and not part of this MR: a web view of the inbox (a notification list of invitations and replies).
+
+How milestone 7 differs from the plan:
+
+- `event_attachments` models every ATTACH, not only managed ones: URIs and inline data are rows too, written back as received, so the web UI can list and download them. Their columns are on `icalsql.Tables` like relations; tasks and journals keep ATTACH as a leftover.
+- The bytes live with the calendar plugin, not the Files plugin (section 12). The DAV core owns the protocol (POST, serving, access, scheduling) through `dav.AttachmentStore`; `PutRequest.Attachments` carries new files into the write that names them.
+- `dav.Server.Shares` is a `dav.Shares` (listing by owner and changing permissions as well), and the server has `BaseURL` and `Secret` for attachment URLs and tokens.
+- Quota counts what plugins store outside Files (`plugin.StorageUser`): calendar attachments and contact photos.
+- Shares need no acceptance (section 12); there is no notification collection.
+- `itip` treats a changed attachment as news to attendees, and an attachment POST bumps SEQUENCE.
+
+Adjacent bugs fixed in milestone 7:
+
+- The quota check allowed any upload when the usage could not be read; it fails with the error.
+- The share panel stopped listing shares at the first error, and showed a share with a user it could not look up without a name; user search and the picker did the same with their lists, and two renders ignored their errors. Errors are logged and answered with 500; a share with a deleted user says so.
 
 Fixed after milestone 2 (pre-existing, found through the `webtest` fix):
 

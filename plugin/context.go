@@ -14,6 +14,13 @@ import (
 // ErrQuotaExceeded is returned when a file upload would exceed the user's quota.
 var ErrQuotaExceeded = errors.New("quota exceeded")
 
+// StorageUser is implemented by plugins that keep a user's bytes outside
+// Files (calendar attachments, contact photos). They count toward the user's
+// quota with Files.
+type StorageUser interface {
+	StorageUsage(username string) (int64, error)
+}
+
 // PluginContext is the combined registration and service interface passed to
 // Plugin.Register(). It embeds Registrar for route/resource/hook registration
 // and adds service accessors that plugins use at runtime.

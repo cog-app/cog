@@ -283,6 +283,8 @@ Moved to `invalid/golang-ical/thunderbird.ics`: upstream appended prose ("Disabl
 | Holidays.ics | Apple iCal 2.0 | 47-event US holiday calendar, yearly RRULEs |
 | OneEvent.ics | Apple iCal 4.0.4 | Single event with VTIMEZONE |
 | TruncatedApr01.ics | Apple iCal 3.0 | METHOD:PUBLISH, X-WR-* |
+| dropbox-attachment.ics | Apple iCal 4.0.1 | Apple's legacy "dropbox" attachments: X-APPLE-DROPBOX and a relative `ATTACH;VALUE=URI`. Path upstream: `txdav/caldav/datastore/test/calendar_store/ho/me/home_attachments/calendar_1/1.ics`; the upstream's `%(now)s` year placeholder is replaced by `2009`, nothing else changed |
+| managed-attachment.ics | CalendarServer | A managed attachment (RFC 8607) as CalendarServer writes it for Apple clients: `ATTACH;FILENAME;FMTTYPE;MANAGED-ID;SIZE`. Extracted from the `data_attach_1` template in `txdav/caldav/datastore/test/test_sql.py` with its placeholders filled in (times, a MANAGED-ID and a URL); LF endings as upstream |
 
 ## ical-expander/
 
@@ -311,6 +313,20 @@ Moved to `invalid/golang-ical/thunderbird.ics`: upstream appended prose ("Disabl
 | 4.4.3-cancel-instance.ics | 4.4.3 | CANCEL of one instance |
 | 4.4.4-cancel-series.ics | 4.4.4 | CANCEL of the whole series |
 | 4.4.5-this-and-future-range.ics | 4.4.5 | REQUEST changing all future instances: the RFC's example with `RANGE=` added to `RECURRENCE-ID;THISANDFUTURE`, as RFC 5545 §3.8.4.4 spells it (the original is under `quirks/rfc5546/`) |
+
+## rfc8607/
+
+- Upstream: RFC 8607 (CalDAV Managed Attachments), https://www.rfc-editor.org/rfc/rfc8607.txt
+- Licence: `BSD-2-Clause` — code components of an IETF RFC (IETF Trust Legal Provisions, section 4.e)
+- Extracted as `rfc5546/` was: indentation and page breaks removed, lines joined with CRLF. The managed attachment code (`internal/dav/attach.go`) is written against them.
+
+| File | Section | Exercises |
+|---|---|---|
+| 3.4-add.ics | 3.4 | Event after `attachment-add`: ATTACH with MANAGED-ID, FMTTYPE, SIZE and FILENAME, folded |
+| 3.5-update.ics | 3.5 | The same after `attachment-update`: a new MANAGED-ID and SIZE |
+| A-precondition-failed.ics | Appendix A | Weekly series with a client's own VTIMEZONE, before any attachment |
+| A-add-recurring.ics | Appendix A | The series with an attachment on the master |
+| A-add-instance.ics | Appendix A | An override created by `rid=20120220T100000`, carrying its own attachment |
 
 ---
 

@@ -41,10 +41,10 @@ var common = []string{
 
 // models lists the properties each kind claims, as RFC 5545 allows them in
 // it; anything else, including a property another kind would claim, is a
-// leftover. RELATED-TO is a leftover on events for now (DESIGN/dav-storage.md
-// section 4.2).
+// leftover. RELATED-TO is a leftover on events, and ATTACH on tasks and
+// journals (DESIGN/dav-storage.md sections 4.2 and 4.3).
 var models = map[Kind]map[string]bool{
-	VEVENT:   names(append(common, "LOCATION", "TRANSP", "PRIORITY", "DTEND", "DURATION")...),
+	VEVENT:   names(append(common, "LOCATION", "TRANSP", "PRIORITY", "DTEND", "DURATION", "ATTACH")...),
 	VTODO:    names(append(common, "LOCATION", "PRIORITY", "DUE", "DURATION", "COMPLETED", "PERCENT-COMPLETE", "RELATED-TO", "X-APPLE-SORT-ORDER")...),
 	VJOURNAL: names(append(common, "RELATED-TO")...),
 }
@@ -91,6 +91,19 @@ type Relation struct {
 
 // IsParent reports whether the relation names the component's parent.
 func (r *Relation) IsParent() bool { return r.Type == "" || strings.EqualFold(r.Type, "PARENT") }
+
+// Attachment is an ATTACH property: a URI, or inline data kept as the base64
+// text that was sent (VALUE=BINARY with ENCODING=BASE64). A managed
+// attachment (RFC 8607) is a URI Cog serves, named by its MANAGED-ID.
+type Attachment struct {
+	Value     string              `json:"value"` // the URI, or the base64 text when Inline
+	Inline    bool                `json:"inline,omitempty"`
+	ManagedID string              `json:"managed_id,omitempty"`
+	FmtType   string              `json:"fmttype,omitempty"`
+	Size      *int64              `json:"size,omitempty"` // SIZE, in octets
+	Filename  string              `json:"filename,omitempty"`
+	Params    []contentline.Param `json:"params,omitempty"` // others, in order
+}
 
 // Alarm is a VALARM component.
 type Alarm struct {
@@ -157,7 +170,9 @@ type Component struct {
 	Attendees  []Attendee
 	Categories []string
 	Relations  []Relation // tasks and journals
-	Alarms     []Alarm
+	// Attachments holds ATTACH (events).
+	Attachments []Attachment
+	Alarms      []Alarm
 
 	Leftovers codec.Leftovers
 }
@@ -468,6 +483,12 @@ func claimProp(e *Component, p *contentline.Property, claimed claimer, tzid func
 		m, other := codec.TakeParams(p.Params, "RELTYPE")
 		e.Relations = append(e.Relations, Relation{Type: m["RELTYPE"], UID: p.Value, Params: other})
 		return true
+	case "ATTACH":
+		a, ok := decodeAttachment(p)
+		if ok {
+			e.Attachments = append(e.Attachments, a)
+		}
+		return ok
 	case "CATEGORIES":
 		if len(p.Params) > 0 || p.Value == "" {
 			return false
@@ -476,6 +497,59 @@ func claimProp(e *Component, p *contentline.Property, claimed claimer, tzid func
 		return true
 	}
 	return false
+}
+
+// decodeAttachment reads an ATTACH property, or reports false when it does
+// not fit the model: no value, a SIZE that is not a number, or inline data
+// other than base64 (RFC 5545 allows no other encoding).
+func decodeAttachment(p *contentline.Property) (Attachment, bool) {
+	if p.Value == "" {
+		return Attachment{}, false
+	}
+	m, other := codec.TakeParams(p.Params, "VALUE", "ENCODING", "FMTTYPE", "MANAGED-ID", "SIZE", "FILENAME")
+	a := Attachment{Value: p.Value, ManagedID: m["MANAGED-ID"], FmtType: m["FMTTYPE"], Filename: m["FILENAME"]}
+	value, hasValue := m["VALUE"]
+	enc, hasEnc := m["ENCODING"]
+	switch {
+	case strings.EqualFold(value, "BINARY") || hasEnc:
+		if !strings.EqualFold(value, "BINARY") || !strings.EqualFold(enc, "BASE64") || a.ManagedID != "" {
+			return Attachment{}, false
+		}
+		a.Inline = true
+	case hasValue:
+		// VALUE=URI, the default, written as sent.
+		other = append([]contentline.Param{{Name: "VALUE", Values: []string{value}}}, other...)
+	}
+	if s, ok := m["SIZE"]; ok {
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || n < 0 {
+			return Attachment{}, false
+		}
+		a.Size = &n
+	}
+	a.Params = other
+	return a, true
+}
+
+// property writes the attachment as an ATTACH property.
+func (a *Attachment) property() contentline.Property {
+	var params []contentline.Param
+	add := func(name, v string) {
+		if v != "" {
+			params = append(params, contentline.Param{Name: name, Values: []string{v}})
+		}
+	}
+	if a.Inline {
+		add("VALUE", "BINARY")
+		add("ENCODING", "BASE64")
+	}
+	add("FMTTYPE", a.FmtType)
+	add("MANAGED-ID", a.ManagedID)
+	if a.Size != nil {
+		add("SIZE", strconv.FormatInt(*a.Size, 10))
+	}
+	add("FILENAME", a.Filename)
+	return contentline.Property{Name: "ATTACH", Params: append(params, a.Params...), Value: a.Value}
 }
 
 // dateList reads an RDATE or EXDATE property, or reports false when a value
@@ -701,6 +775,9 @@ func (e *Component) encode(uid string) *contentline.Component {
 	}
 	for _, a := range e.Attendees {
 		c.Props = append(c.Props, a.property())
+	}
+	for i := range e.Attachments {
+		c.Props = append(c.Props, e.Attachments[i].property())
 	}
 	if len(e.Categories) > 0 {
 		vals := make([]string, len(e.Categories))

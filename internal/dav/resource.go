@@ -74,6 +74,12 @@ func (q *request) resource(home Home, owner *User, name, uri string) {
 		q.delete(c, owner, a, uri)
 	case "PROPFIND":
 		q.propfindResource(c, owner, a, uri)
+	case http.MethodPost:
+		if !a.write() {
+			writeError(q.w, http.StatusForbidden, dav("need-privileges"), "")
+			return
+		}
+		q.attachmentPost(c, owner, a, uri)
 	case http.MethodOptions:
 		q.options(allowResource)
 	default:
@@ -249,7 +255,11 @@ func (q *request) put(c *Collection, owner *User, a access, uri string) {
 		writeError(q.w, http.StatusForbidden, ns("no-uid-conflict"), hrefEl(resourceHref(c, owner.Username, conflict.URI)))
 		return
 	}
+	var pe *PreconditionError
 	switch {
+	case errors.As(err, &pe):
+		writeError(q.w, pe.Status, pe.Name, "")
+		return
 	case errors.Is(err, ErrPrecondition):
 		http.Error(q.w, "Precondition Failed", http.StatusPreconditionFailed)
 		return
@@ -308,9 +318,14 @@ func (q *request) putScheduled(c *Collection, owner *User, a access, req *PutReq
 				cond = davsql.Conditions{IfMatch: []int64{r.Version}}
 			}
 		}
-		cur := o.Clone()
-		_, before, err := encodeObject(cur)
+		// The request as decoded: when nothing below changes it, the client's
+		// own text is stored.
+		_, before, err := encodeObject(o)
 		if err != nil {
+			return nil, nil, err
+		}
+		cur := o.Clone()
+		if err := q.s.checkManaged(owner.Username, old, cur); err != nil {
 			return nil, nil, err
 		}
 		d, err := q.s.Plan(ScheduleChange{Owner: owner, Old: old, New: cur, MaySend: a.schedule()})

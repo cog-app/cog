@@ -289,6 +289,7 @@ func significant(v *ical.Object) string {
 		Sequence                       int
 		Organizer                      string
 		Attendees                      []att
+		Attachments                    []string
 	}
 	var cs []comp
 	for _, e := range v.Components {
@@ -302,6 +303,10 @@ func significant(v *ical.Object) string {
 		}
 		for _, a := range e.Attendees {
 			c.Attendees = append(c.Attendees, att{Normalize(a.Address), strings.ToUpper(a.Role), strings.ToUpper(a.CUType)})
+		}
+		for _, a := range e.Attachments {
+			// A managed attachment's update changes its MANAGED-ID.
+			c.Attachments = append(c.Attachments, a.ManagedID+" "+a.Value)
 		}
 		cs = append(cs, c)
 	}

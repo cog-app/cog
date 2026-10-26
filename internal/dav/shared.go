@@ -1,6 +1,7 @@
 package dav
 
 import (
+	"iter"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,9 +16,26 @@ type shareMap map[CollectionID]map[string]uint32
 // name a collection they do not own and grant nothing.
 func (m shareMap) perms(c *Collection) uint32 { return m[c.ID][c.OwnerID] }
 
+// subjectShares lists the shares that reach a user.
+type subjectShares interface {
+	ListBySubject(subjectID string) iter.Seq2[plugin.ShareRecord, error]
+}
+
+// collectionShare returns the collection a share names, if it names one.
+func collectionShare(rec plugin.ShareRecord) (CollectionID, bool) {
+	if rec.ResourceType != ShareType {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(rec.ResourceID, 10, 64)
+	if err != nil {
+		return 0, false // not a collection ID; the share names nothing
+	}
+	return CollectionID(n), true
+}
+
 // sharesFor returns the collection shares that reach userID. A share names a
 // resource ID, not a path, so it only counts together with its owner.
-func sharesFor(shares plugin.ShareStore, userID string) (shareMap, error) {
+func sharesFor(shares subjectShares, userID string) (shareMap, error) {
 	out := shareMap{}
 	if shares == nil {
 		return out, nil
@@ -26,14 +44,10 @@ func sharesFor(shares plugin.ShareStore, userID string) (shareMap, error) {
 		if err != nil {
 			return nil, err
 		}
-		if rec.ResourceType != ShareType {
+		id, ok := collectionShare(rec)
+		if !ok {
 			continue
 		}
-		n, err := strconv.ParseInt(rec.ResourceID, 10, 64)
-		if err != nil {
-			continue // not a collection ID; the share names nothing
-		}
-		id := CollectionID(n)
 		if out[id] == nil {
 			out[id] = map[string]uint32{}
 		}
@@ -51,7 +65,7 @@ type SharedCollection struct {
 
 // Shared returns the collections shared with userID by their owners that
 // hold any of comps, sorted by title. username names a user ID.
-func (s *Store) Shared(shares plugin.ShareStore, username func(userID string) (string, error), userID string, comps ...Component) ([]SharedCollection, error) {
+func (s *Store) Shared(shares subjectShares, username func(userID string) (string, error), userID string, comps ...Component) ([]SharedCollection, error) {
 	byID, err := sharesFor(shares, userID)
 	if err != nil {
 		return nil, err

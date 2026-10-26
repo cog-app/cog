@@ -337,7 +337,13 @@ func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := calEventModal(plugin.CSRFToken(r), &view, cal, calendars, attendeesOf(comp), myStatus(comp, me)).Render(r.Context(), w); err != nil {
+	compAt := slices.Index(ev.Object.Components, comp)
+	if compAt < 0 {
+		// An occurrence without an override shows the master's attachments.
+		compAt = 0
+	}
+	atts := h.attachmentsOf(ev, compAt, me.Username)
+	if err := calEventModal(plugin.CSRFToken(r), &view, cal, calendars, attendeesOf(comp), myStatus(comp, me), atts).Render(r.Context(), w); err != nil {
 		h.plugin.log.Error("render event", "id", ev.ID, "err", err)
 	}
 }
@@ -741,6 +747,7 @@ func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		h.plugin.collected(plugin.UserFromContext(r.Context()).Username)
 		d.Send()
 		w.WriteHeader(http.StatusOK)
 		return
@@ -755,6 +762,8 @@ func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// The occurrence's override may have carried attachments.
+	h.plugin.collected(plugin.UserFromContext(r.Context()).Username)
 	d.Send()
 	w.WriteHeader(http.StatusOK)
 }

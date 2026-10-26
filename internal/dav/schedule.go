@@ -196,6 +196,7 @@ func (s *Server) Plan(ch ScheduleChange) (*Delivery, error) {
 			status = itip.StatusUnavailable
 		default:
 			status = itip.StatusSent
+			m.Object = s.forExternal(ch.Owner.Username, m.Object, m.Recipient)
 			d.sends = append(d.sends, send{msg: m, email: ical.Email(m.Recipient)})
 		}
 		switch {
