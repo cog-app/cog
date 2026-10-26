@@ -55,23 +55,29 @@ Three layers, each owned by Cog:
 
 1. **`contentline`** (`internal/dav/contentline`): a small generic package for the shared RFC 5545 / RFC 6350 line format.
 2. **Per-type models and codecs**: events, tasks and contacts map between the generic tree and SQL rows plus leftovers.
-3. **DAV core** (`internal/dav`, SQL helpers in `internal/dav/davsql`): collections, sync, permissions and discovery, shared by CalDAV and CardDAV. Plugins implement a backend interface over their own store; the core owns `/remote.php/dav/`, principals and the homes' layout.
+3. **DAV core** (`internal/dav`, SQL helpers in `internal/dav/davsql`): collections, sync, permissions and discovery, shared by CalDAV and CardDAV. The core owns `/remote.php/dav/`, principals, the homes and the collections themselves; plugins implement a backend interface that supplies the resources inside them.
 
 These live under `internal/` because every DAV plugin is in-module; they can move to `plugin/` if an out-of-process plugin ever needs them.
 
-### 3.0 Plugin and collection layout
+### 3.0 Collections and plugins
 
-Each plugin keeps its own database and owns one kind of resource:
+**Collections belong to the user, not to a plugin.** The core keeps them in the system database (`dav_collections`, section 4); a plugin supplies the resources of the component types it handles:
 
-| Plugin | Collections | Components |
+| Plugin | Components | Resources live in |
 |---|---|---|
-| calendar | calendars | VEVENT |
-| tasks | task lists, journals | VTODO, VJOURNAL |
-| contacts | address books | VCARD |
+| calendar | VEVENT | calendar plugin DB |
+| tasks | VTODO, VJOURNAL | tasks plugin DB |
+| contacts | VCARD | contacts plugin DB |
 
-The DAV core assembles one **calendar home** per user from the calendar and tasks plugins' collections; address books have their own home. A collection's `sync_token` must change in the same transaction as its resources, so a collection lives in exactly one database, and therefore **every calendar collection holds a single component type**. `supported-calendar-component-set` is always one of VEVENT, VTODO or VJOURNAL. MKCALENDAR is routed by the requested set (absent means VEVENT); a request for a mixed set fails the `supported-calendar-component-set` precondition, and collection names are unique across the plugins sharing a home. Cog never stored mixed collections, so this needs no data migration.
+Each user has a **calendar home** and an **address book home**. A calendar collection may hold any set of calendar components (RFC 4791 allows it; it is what Nextcloud and SabreDAV do), so the default `personal` calendar holds VEVENT and VTODO and shows up in both the calendar and the tasks UI. A *resource* still holds exactly one component type (plus its VTIMEZONEs), as CalDAV requires, so every resource belongs to exactly one plugin. `supported-calendar-component-set` advertises the collection's set intersected with the components of the enabled backends; MKCALENDAR accepts any set that has a backend for each type (absent means VEVENT and VTODO).
 
-Considered and rejected: one database for every CalDAV kind (owned by the calendar plugin, or by a new neutral plugin), which would allow mixed collections at the cost of moving task data and widening one plugin's ownership.
+The plugins discover collections through the core (the calendar UI lists collections that include VEVENT, the tasks UI those with VTODO or VJOURNAL) and key their rows by the collection's ID. Names are unique per home by a constraint in one table, so plugins can't collide.
+
+Because a collection's resources can span databases, its sync token is **composite** (section 6). A URI or UID is unique within a collection across backends; the core checks the other backends before a PUT. Two concurrent PUTs of the same new URI with different component types could both succeed; that needs a client racing itself with different content, and is accepted.
+
+Deleting a collection removes its row first (clients discover collections through it, so they never see a half-deleted one), then asks each backend to drop its rows. A backend that fails or is disabled leaves orphans keyed by a collection ID that no longer exists; they are invisible and are removed the next time the backend purges.
+
+Considered and rejected: one collection table per plugin, with single-component collections. Every plugin's default `personal` collided in the shared calendar home, and Nextcloud-style mixed collections, which clients expect, were impossible.
 
 ### 3.1 `contentline` (no library)
 
@@ -134,10 +140,33 @@ Any change made by Cog (web, agent, API), not a DAV PUT, must bump `SEQUENCE` wh
 
 ## 4. Data model
 
+Collections, in the system database:
+
+```
+dav_collections(
+  id, owner_user_id, home,           -- home: 'calendars' | 'addressbooks'
+  name,                              -- path segment, UNIQUE(owner_user_id, home, name)
+  components,                        -- 'VEVENT,VTODO', 'VCARD', ...
+  display_name, description, color, sort_order,
+  timezone,                          -- IANA; floating times and new events
+  dead_props,                        -- JSON: PROPPATCHed properties Cog doesn't model
+  props_version,                     -- bumped by PROPPATCH; part of getctag
+  created_at, updated_at
+)
+```
+
+Sync state, in every plugin database that holds resources (`internal/dav/davsql` runs the SQL in the caller's transaction):
+
+```
+dav_sync(collection_id PRIMARY KEY, token, floor)   -- floor: highest pruned tombstone version
+dav_tombstones(collection_id, uri, version, deleted_at, PRIMARY KEY(collection_id, uri))
+```
+
 Common to every resource table:
 
-- `uid` and `uri` (resource name in the collection; usually `<uid>.ics` or `.vcf`, but clients choose it and it must be kept).
-- `version INTEGER`, a per-collection monotonic counter set from the collection's `sync_token` on every write (section 6).
+- `collection_id`, the `dav_collections` ID (no foreign key; it is in another database).
+- `uid` and `uri` (resource name in the collection; usually `<uid>.ics` or `.vcf`, but clients choose it and it must be kept). Both unique per collection.
+- `version INTEGER`, set from the plugin's `dav_sync.token` for the collection on every write (section 6).
 - `created_at`, `updated_at`.
 - `leftovers TEXT` (JSON).
 
@@ -157,10 +186,8 @@ Times are stored as **local wall time + zone**, never only as a UTC instant, bec
 ### 4.2 Events (CalDAV, VEVENT)
 
 ```
-calendars(id, uid, name, color, description, timezone, sort_order, sync_token, ctag, ...)
-
 events(
-  id, calendar_id, uid, uri, version,
+  id, collection_id, uid, uri, version,
   summary, description, location, url, status, class, transp, priority,
   dtstart_local, dtstart_tzid, dtstart_utc, dtstart_is_date,
   dtend_local,   dtend_tzid,   dtend_utc,          -- or duration
@@ -197,13 +224,11 @@ One CalDAV resource is one `events` row plus its overrides. Rules to settle when
 
 ### 4.3 Tasks (CalDAV, VTODO)
 
-Same collection model as calendars (task lists are calendar collections with `supported-calendar-component-set` = VTODO).
+Task lists are calendar collections that include VTODO; the default `personal` calendar is one.
 
 ```
-task_lists(id, uid, name, color, timezone, sort_order, sync_token, ctag, ...)
-
 tasks(
-  id, list_id, uid, uri, version,
+  id, collection_id, uid, uri, version,
   summary, description, location, url, status, priority, percent_complete, class,
   dtstart_local, dtstart_tzid, dtstart_utc, dtstart_is_date,
   due_local,     due_tzid,     due_utc,     due_is_date,
@@ -225,10 +250,8 @@ task_exdates / task_overrides / task_alarms            -- same shapes as events
 ### 4.4 Contacts (CardDAV, VCARD)
 
 ```
-address_books(id, uid, name, description, sync_token, ctag, ...)
-
 cards(
-  id, address_book_id, uid, uri, version, vcard_version,  -- '3.0' or '4.0'
+  id, collection_id, uid, uri, version, vcard_version,  -- '3.0' or '4.0'
   fn, n_family, n_given, n_additional, n_prefix, n_suffix, nickname,
   org, org_units, title, role, note, bday, anniversary, gender,
   kind,                 -- individual/group/org/location (v4) or X-ADDRESSBOOKSERVER-KIND (v3)
@@ -247,7 +270,7 @@ card_members(card_id, member_uri)                     -- groups (v4 MEMBER, v3 X
 - **Labels**: Apple writes `item1.EMAIL` + `item1.X-ABLabel:Work`. Property groups (`item1.`) must be modelled: `contentline` keeps the group prefix, and the codec pairs `X-ABLabel` with its sibling into `label`. Losing the group breaks custom labels in iOS.
 - **Version**: store the version received and write the same one back. Clients that sent 3.0 expect 3.0. Never convert silently.
 - **Photos**: decoded into the files plugin (as `photo_path` does today); output inlines them for v3 and uses `data:` URIs for v4.
-- Migrate today's `*_json` columns into child tables.
+- Today's `*_json` columns become child tables (no migration; section 8).
 
 ## 5. Generation, ETags and PUT semantics
 
@@ -259,38 +282,34 @@ card_members(card_id, member_uri)                     -- groups (v4 MEMBER, v3 X
 
 ## 6. Sync (RFC 6578) and change tracking
 
-- Every collection has `sync_token` (monotonic). Every write to a resource sets `version = ++sync_token` in the same transaction.
-- Deletions insert into `tombstones(collection_id, uri, version)`.
-- `sync-collection` with token *t* returns resources with `version > t`, plus tombstones with `version > t`. Tokens older than the tombstone retention window get `valid-sync-token` errors, which make clients do a full resync.
-- `getctag` (CalendarServer) = `sync_token`.
-- This replaces `EventsChangedSince`, `deleted_events`, `deleted_tasks` and `deleted_cards` with one shared mechanism in the DAV core.
+- Each plugin database keeps a counter per collection (`dav_sync.token`). Every write to a resource sets `version = ++token` in the same transaction, so a change and its version can never be seen apart.
+- Deletions insert into `dav_tombstones(collection_id, uri, version, deleted_at)` in the same transaction; a later PUT to the same URI removes the tombstone. Deleting a task deletes its subtasks, and each gets a tombstone; moving a resource to another collection is a delete in one and a create in the other.
+- **Composite tokens.** A collection's resources may live in several plugin databases, and no transaction spans them, so the collection's sync token is the list of its backends' counters: `http://cog/ns/sync/v2-e42-t17` (backend keys: `e` events, `t` tasks and journals, `c` contacts). RFC 6578 tokens are opaque, so this is legal. `sync-collection` hands each backend its part (absent means 0, a full sync of that backend) and merges the results. `getctag` is the same string plus `props_version`, so CalendarServer clients also notice PROPPATCH changes. JMAP state strings use the same form.
+- A token below a backend's `floor`, above its counter, or not in this format gets a `valid-sync-token` error, which makes clients do a full resync. Old single-number tokens fall in that case.
+- **Retention**: tombstones older than the admin setting (default 90 days) are pruned for a collection when a client next syncs it (a read first; a write only if something has expired), raising `floor` to the highest pruned version.
+- ETags are per resource, `"<collection_id>-<version>"`. Versions from different backends can coincide, which is harmless: an ETag only has to change when its own resource changes.
 
 ## 7. Permissions
 
-- Collections carry the share bitmask from `internal/share` (Read=1, Write=2, Reshare=4, FreeBusy=8, Schedule=16).
-- Report it to clients via `DAV:current-user-privilege-set` (a subset of RFC 3744): `read`, `write`, `write-content`, `bind`, `unbind`, `read-free-busy`, `schedule-*`. Without it clients show read-only shares as editable.
+- Collections are shared as one resource type, `dav:collection`, whose ID is the collection's ID, with the bitmask from `internal/share` (Read=1, Write=2, Reshare=4, FreeBusy=8, Schedule=16). Sharing `personal` from the calendar UI shares its tasks too: the share is on the collection. Access requires a share whose owner is the collection's owner; the resource ID alone is not enough.
+- Report it to clients via `DAV:current-user-privilege-set` (a subset of RFC 3744): `read`, `write`, `write-content`, `bind`, `unbind`, `read-free-busy`, `schedule-*`. Without it clients show read-only shares as editable. The owner has `all`.
+- Only the owner may PROPPATCH or delete a collection, or create one in their home.
 - Free/busy-only shares expose only `read-free-busy` and answer `free-busy-query` REPORTs (RFC 4791 §7.10); events are not readable.
 - Shared collections appear under the sharee's calendar home (as today), with `CS:shared-url` / `invite` properties for clients that show sharing info.
 
-## 8. Migration
+## 8. No migration
 
-Per plugin, behind the same "repair once per database" mechanism MR !22 introduced (`meta` table + `repairOnce`), since plugin migrations are SQL-only:
+The only deployment's data came from one Fossify import and a few hand-made contacts, all of which can be exported and imported again (section 14). So the MR **starts from a fresh schema** rather than migrating: no backfills, no legacy tables or columns, no verification period, and the schema may still change freely until the MR merges.
 
-1. SQL migration adds the new tables and columns; the old blob columns stay.
-2. On first open, decode each existing blob into rows + leftovers through the same codec as import (section 8.1). Record failures (bad ICS) in a `migration_errors` table and keep the blob for those rows.
-3. **Verification period** (tasks and contacts): writes go to rows; the blob column is regenerated from rows on every write. A background check (or test fixture run) compares `encode(rows)` with the original blob, normalised, and logs differences.
-4. When the comparison is clean on real data, a later migration drops the blob columns.
-
-**Events skip the verification period.** The only deployment's calendar data is a single Fossify import (section 14) that can be imported again, so events are decoded once and the web UI and DAV read rows from then on. The old `ics_data` column is no longer written but stays, untouched, until the owner confirms the migrated calendars and says to drop it. If a migrated calendar is wrong, the fix is to delete it and import the original file again, not to repair rows by hand.
-
-Order: calendar events first (most data, most bugs), then tasks (needs CalDAV anyway), then contacts (already works; lowest urgency).
+Deploying: export everything (`go tool davfixtures export`, or the CalDAV/CardDAV of the old server), stop the server, move the calendar, tasks and contacts `app_data` directories aside (not delete; they stay as a backup), start the new version, and import through `/settings/data`. Shares of calendars and address books have to be made again; the old ones name resources that no longer exist. An old database left in place fails to open with a schema error rather than being reused.
 
 ### 8.1 Import and export in the web UI
 
 An **Import and export** page in each user's own settings (`/settings/data`, beside Profile, Security and Storage; not the admin-only plugin settings pages), built on the DAV core's `Backend` interface, so it covers every registered backend without per-plugin UI.
 
-- **Import**: upload `.ics` or `.vcf` (size-limited); choose an existing collection or create one. The file is split into resources the way a client would PUT them: VEVENT/VTODO/VJOURNAL grouped by UID (overrides with RECURRENCE-ID stay with their master) together with the VTIMEZONEs they reference, and one resource per VCARD. Each resource goes through `Backend.Put`, so UID/`uri` rules, collection kind checks and leftovers are the same as over DAV. A resource whose UID already exists in the collection replaces it, which makes re-importing the same file idempotent. Components that don't belong to the collection's kind are counted as skipped. The result (imported, replaced, skipped, failed with reasons) is reported via flash after a redirect (PRG).
+- **Import**: upload `.ics` or `.vcf` (size-limited); choose an existing collection or create one. The file is split into resources the way a client would PUT them: VEVENT/VTODO/VJOURNAL grouped by UID (overrides with RECURRENCE-ID stay with their master) together with the VTIMEZONEs they reference, and one resource per VCARD. Each resource goes through `Backend.Put`, so UID/`uri` rules, collection kind checks and leftovers are the same as over DAV. A resource whose UID already exists in the collection replaces it, which makes re-importing the same file idempotent. The result (imported, replaced, skipped, failed with reasons) is reported via flash after a redirect (PRG).
 - **Export**: one collection as a single `.ics` (one VCALENDAR, VTIMEZONEs deduplicated) or `.vcf`; or everything as a zip with one file per collection. Generated from rows through the same path as GET, so export and DAV always agree.
+- Each resource lands in exactly the collection chosen, whatever backend holds it; a file mixing events and tasks imported into `personal` keeps both. Components with no backend in the collection's set are counted as skipped.
 - Lands in milestone 2 against the blob-backed backends and picks up the row-backed codecs as milestones 3–5 replace them. ICS feeds and remote subscriptions (section 9) remain separate.
 
 ## 9. Protocol scope
@@ -356,16 +375,16 @@ WebDAV locking for CalDAV/CardDAV (file WebDAV has it), GroupDAV, TZDIST RFC 780
 Each milestone is a run of commits that builds and passes tests on its own.
 
 1. **`contentline` + fixture corpus + round-trip tests.** No behaviour change.
-2. **DAV core**: shared collections, version/tombstone sync, privilege sets, PUT ETag rules, Extended MKCOL. Port the existing CalDAV and CardDAV handlers onto it. Import and export in user settings (section 8.1).
-3. **Events**: model, codec, one-shot migration (no verification period; section 8), web UI on rows (fixes lossy edits; overrides visible), VTIMEZONE generation, timezones by reference.
+2. **DAV core**: user-level collections, version/tombstone sync with composite tokens, privilege sets, PUT ETag rules, Extended MKCOL. Port the existing CalDAV and CardDAV handlers onto it and mount tasks and journals through it (blob-backed). Fresh schema (section 8). Import and export in user settings (section 8.1).
+3. **Events**: model, codec, web UI on rows (fixes lossy edits; overrides visible), VTIMEZONE generation, timezones by reference.
 4. **Tasks and journals**: VTODO and VJOURNAL models + CalDAV (replaces the stub); tasks web UI on rows.
-5. **Contacts**: model + migration from `vcard_data` and `*_json`.
+5. **Contacts**: model, replacing `vcard_data` and the `*_json` columns.
 6. **Scheduling + free/busy**: inbox/outbox, iTIP processing, free/busy queries and the FreeBusy share.
 7. **Sharing extensions, managed attachments.**
 8. **Feeds**: ICS export, ICS subscriptions, birthday calendar.
 9. **WebDAV-Push** (subscription store, VAPID, delivery on version bumps).
 10. **JSCalendar/JSContact encoders and JMAP** on the same rows; the agent API (task #32) uses these shapes.
-11. **Drop blob columns** once verification (section 8) is clean on real data; for events, once the owner has checked the migrated calendars. This can trail the MR as a follow-up migration if production verification needs time.
+11. **Deploy**: export, fresh start, import (section 8). There are no blob columns to drop: milestones 3–5 replace them in the fresh schema.
 
 ## 12. Decisions (were open questions)
 
@@ -374,8 +393,9 @@ Each milestone is a run of commits that builds and passes tests on its own.
 - **Tombstone retention**: 90 days by default, admin-configurable. Each collection records the highest pruned version; a sync token below it gets `valid-sync-token` and the client resyncs.
 - **VJOURNAL and notes**: notes are markdown files and don't fit VJOURNAL (several DESCRIPTIONs, DTSTART, STATUS, RELATED-TO, ATTACH). Journals are stored separately, in the tasks plugin, sync-only for now; a notes view of them can come later.
 - **JMAP**: contacts (RFC 9610) first; calendars track the latest draft behind a flag.
-- **Tasks plugin**: stays separate and also owns journals; single-kind collections (section 3.0).
-- **Events migration**: no verification period; the production calendars came from one Fossify import and can be re-imported (section 8).
+- **Tasks plugin**: stays separate and also owns journals.
+- **Collections**: user-level, in the system database, owned by the DAV core; plugins supply resources by component type, and a calendar collection may mix components (section 3.0). Sync tokens are composite (section 6).
+- **Migration**: none. Fresh schema; production data is exported and imported again (section 8).
 - **Import and export**: a page in the user's settings (`/settings/data`) over the `Backend` interface, in milestone 2 (section 8.1).
 
 ## 13. Open questions
@@ -389,13 +409,13 @@ Branch `design-dav-storage`, one draft MR to master. Update this section at the 
 | Milestone | State |
 |---|---|
 | 1. contentline + fixtures | Done. `internal/dav/contentline`; `testdata/dav` (see its README); `go tool davfixtures` for the local-only GPL corpus and personal exports. |
-| 2. DAV core | Next. |
+| 2. DAV core | In progress. |
 
 Findings so far:
 
-- Production data (cog.duckfam.us, 2026-10-25): 3 calendars, 186 events, all from one Fossify import, no VTODO over DAV, 9 minimal contacts. No DAV client has written to it yet. The calendars can be re-imported, so events skip the verification period (section 8). One stored DESCRIPTION has a broken fold, kept as a malformed property.
-- Tasks have no CalDAV yet, so they cannot be exported over DAV until milestone 4.
-- Development needs no production credentials: tests use cogtest and the fixture corpus. For the migration check in milestone 3, run `go tool davfixtures export` locally or copy a production database into local dev.
+- Production data (cog.duckfam.us, 2026-10-25): 3 calendars, 186 events, all from one Fossify import, no VTODO over DAV, 9 minimal contacts. No DAV client has written to it yet. Everything can be exported and imported again, so the MR starts from a fresh schema (section 8). One stored DESCRIPTION has a broken fold, kept as a malformed property.
+- The old server has no CalDAV for tasks, so tasks made in its web UI cannot be exported over DAV. Check the production task count before deploying; if there are any, export them from the old database first.
+- Development needs no production credentials: tests use cogtest and the fixture corpus. To test with real data, run `go tool davfixtures export` and import the result into a dev server.
 
 Adjacent bugs found, to fix in milestone 2 while porting:
 
