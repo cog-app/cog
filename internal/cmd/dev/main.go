@@ -7,6 +7,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -124,19 +125,26 @@ func startMaildev(dbPath string) *maildev.Server {
 		log.Fatalf("maildev: open db: %v", err)
 	}
 	store := settings.NewStore(db)
-	store.Set(settings.KeySMTPHost, "localhost")
-	store.SetInt(settings.KeySMTPPort, 2525)
-	store.Set(settings.KeySMTPFrom, "cog@localhost")
-	// Clear auth — maildev doesn't require it.
-	store.Set(settings.KeySMTPUser, "")
-	store.Set(settings.KeySMTPPass, "")
+	err = errors.Join(
+		store.Set(settings.KeySMTPHost, "localhost"),
+		store.SetInt(settings.KeySMTPPort, 2525),
+		store.Set(settings.KeySMTPFrom, "cog@localhost"),
+		// Clear auth — maildev doesn't require it.
+		store.Set(settings.KeySMTPUser, ""),
+		store.Set(settings.KeySMTPPass, ""),
+	)
+	if err != nil {
+		log.Fatalf("maildev: configure SMTP: %v", err)
+	}
 
 	// Set admin email so email features (password reset, OTP) work out of the box.
 	if _, err := db.Exec(`UPDATE users SET email = ? WHERE username = ?`, "admin@localhost", testUser); err != nil {
 		log.Printf("maildev: set admin email: %v", err)
 	}
 
-	db.Close()
+	if err := db.Close(); err != nil {
+		log.Fatalf("maildev: close db: %v", err)
+	}
 
 	return srv
 }

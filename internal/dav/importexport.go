@@ -75,6 +75,13 @@ func (s *Server) Import(ownerUsername string, c *Collection, r io.Reader) (*Impo
 	}
 	res := &ImportResult{}
 	for _, top := range comps {
+		if c, ok := ParseComponent(top.Name); ok && c != VCARD {
+			// A component without its VCALENDAR, which servers before the
+			// DAV storage rewrite stored as sent.
+			top = &contentline.Component{Name: "VCALENDAR", Props: []contentline.Property{
+				{Name: "VERSION", Value: "2.0"}, {Name: "PRODID", Value: "-//Cog//Import//EN"},
+			}, Components: []*contentline.Component{top}}
+		}
 		switch {
 		case top.Is("VCARD"):
 			if !stored[VCARD] {
@@ -175,6 +182,13 @@ func uriFor(uid string, comp Component) string {
 // the calendar's properties, except METHOD, and the VTIMEZONEs they use. Each
 // returned VCALENDAR ends with one of its own components, which names its
 // type.
+//
+// A component of a type no backend stores (X-EVENT-SERIES, VFREEBUSY) is not
+// dropped: it goes with the resource of its UID, or with the first resource
+// when it has no UID, where the codec keeps it among the object's other
+// components, as it would from a PUT of the whole file. One with a UID no
+// resource has is returned on its own, ending with itself, so callers count
+// it as skipped.
 func splitCalendar(cal *contentline.Component) []*contentline.Component {
 	var props []contentline.Property
 	for _, p := range cal.Props {
@@ -186,6 +200,11 @@ func splitCalendar(cal *contentline.Component) []*contentline.Component {
 	type key struct{ name, uid string }
 	groups := map[key][]*contentline.Component{}
 	var order []key
+	type other struct {
+		uid string
+		c   *contentline.Component
+	}
+	var others []other
 	for _, sub := range cal.Components {
 		if sub.Is("VTIMEZONE") {
 			if id := sub.Prop("TZID"); id != nil {
@@ -193,10 +212,16 @@ func splitCalendar(cal *contentline.Component) []*contentline.Component {
 			}
 			continue
 		}
-		k := key{strings.ToUpper(sub.Name), ""}
-		if uid := sub.Prop("UID"); uid != nil && uid.Value != "" {
-			k.uid = uid.Value
-		} else {
+		uid := ""
+		if p := sub.Prop("UID"); p != nil {
+			uid = p.Value
+		}
+		if _, ok := ParseComponent(sub.Name); !ok {
+			others = append(others, other{uid, sub})
+			continue
+		}
+		k := key{strings.ToUpper(sub.Name), uid}
+		if uid == "" {
 			// Without a UID each component is its own resource.
 			k.uid = fmt.Sprintf("\x00%d", len(order))
 		}
@@ -205,14 +230,28 @@ func splitCalendar(cal *contentline.Component) []*contentline.Component {
 		}
 		groups[k] = append(groups[k], sub)
 	}
-	var out []*contentline.Component
-	for _, k := range order {
-		if _, ok := ParseComponent(k.name); !ok {
+	attached := map[key][]*contentline.Component{}
+	for _, o := range others {
+		i := 0
+		if o.uid != "" {
+			i = slices.IndexFunc(order, func(k key) bool { return k.uid == o.uid })
+		}
+		if i < 0 || len(order) == 0 {
+			k := key{strings.ToUpper(o.c.Name), fmt.Sprintf("\x00%d", len(order))}
+			order = append(order, k)
+			groups[k] = []*contentline.Component{o.c}
 			continue
 		}
+		attached[order[i]] = append(attached[order[i]], o.c)
+	}
+	var out []*contentline.Component
+	for _, k := range order {
 		obj := &contentline.Component{Name: cal.Name, Props: slices.Clone(props)}
 		used := map[string]bool{}
 		for _, sub := range groups[k] {
+			collectTZIDs(sub, used)
+		}
+		for _, sub := range attached[k] {
 			collectTZIDs(sub, used)
 		}
 		for _, id := range slices.Sorted(func(yield func(string) bool) {
@@ -226,6 +265,7 @@ func splitCalendar(cal *contentline.Component) []*contentline.Component {
 				obj.Components = append(obj.Components, z)
 			}
 		}
+		obj.Components = append(obj.Components, attached[k]...)
 		obj.Components = append(obj.Components, groups[k]...)
 		out = append(out, obj)
 	}
@@ -363,8 +403,8 @@ func ComponentsIn(r io.Reader) ([]Component, error) {
 	}
 	seen := map[Component]bool{}
 	for _, top := range comps {
-		if top.Is("VCARD") {
-			seen[VCARD] = true
+		if c, ok := ParseComponent(top.Name); ok {
+			seen[c] = true // a VCARD, or a component without its VCALENDAR
 			continue
 		}
 		for _, sub := range top.Components {

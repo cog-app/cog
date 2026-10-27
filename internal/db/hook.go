@@ -11,6 +11,15 @@ import (
 
 var hookSeq atomic.Int64
 
+// TxLockImmediate makes every transaction on a writable handle begin with
+// BEGIN IMMEDIATE, taking the write lock up front. A deferred transaction
+// that reads and then writes cannot wait for the lock: when another
+// connection commits between its read and its write, WAL cannot upgrade the
+// stale snapshot and SQLite fails it at once with "database is locked",
+// whatever _busy_timeout says. Taking the lock at BEGIN makes it wait there
+// instead. Read-only handles leave it out; they never write.
+const TxLockImmediate = "_txlock=immediate"
+
 // ConnectHook is a function called on every new SQLite connection.
 type ConnectHook = func(*sqlite3.SQLiteConn) error
 
@@ -58,6 +67,8 @@ func OpenWithHooksMode(path, mode string, hooks ...ConnectHook) (*sql.DB, error)
 	dsn := path + sep + "_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000"
 	if mode != "" {
 		dsn += "&mode=" + mode
+	} else {
+		dsn += "&" + TxLockImmediate
 	}
 	db, err := sql.Open(driverName, dsn)
 	if err != nil {

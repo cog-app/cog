@@ -13,6 +13,7 @@ package migrate
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"io/fs"
 	"sort"
@@ -25,8 +26,12 @@ func Migrate(db *sql.DB, fsys fs.FS) error {
 	if err != nil {
 		return fmt.Errorf("read schema.sql: %w", err)
 	}
-	if _, err := db.Exec(string(schema)); err != nil {
-		return fmt.Errorf("exec schema.sql: %w", err)
+	if err := execTx(db, string(schema)); err != nil {
+		var se scriptError
+		if errors.As(err, &se) {
+			return fmt.Errorf("%w: schema.sql: %w", ErrIncompatible, err)
+		}
+		return fmt.Errorf("schema.sql: %w", err)
 	}
 
 	entries, err := fs.Glob(fsys, "sql/migration*.sql")
@@ -53,7 +58,7 @@ func Migrate(db *sql.DB, fsys fs.FS) error {
 			}
 		}
 
-		if _, err := db.Exec(body); err != nil {
+		if err := execTx(db, body); err != nil {
 			return fmt.Errorf("exec %s: %w", path, err)
 		}
 	}
@@ -61,6 +66,35 @@ func Migrate(db *sql.DB, fsys fs.FS) error {
 }
 
 // parseColumnGuard looks for "-- IF COLUMN table.column NOT EXIST" in the SQL text.
+// ErrIncompatible is a database whose tables the current schema cannot be
+// applied to: one made by a version with a different schema, such as a
+// calendar, tasks or contacts database from before the DAV storage rewrite
+// (DESIGN/dav-storage.md section 8). Nothing has been changed in it.
+var ErrIncompatible = errors.New("the database was made by an incompatible version of Cog; move it aside and start from an empty one")
+
+// scriptError is a statement of a script that failed, as opposed to the
+// transaction around it.
+type scriptError struct{ err error }
+
+func (e scriptError) Error() string { return e.err.Error() }
+func (e scriptError) Unwrap() error { return e.err }
+
+// execTx runs a script in one transaction, so a script that fails part way
+// leaves the database as it was rather than half changed.
+func execTx(db *sql.DB, script string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(script); err != nil {
+		if rerr := tx.Rollback(); rerr != nil {
+			return errors.Join(scriptError{err}, fmt.Errorf("rollback: %w", rerr))
+		}
+		return scriptError{err}
+	}
+	return tx.Commit()
+}
+
 func parseColumnGuard(sql string) (table, column string, ok bool) {
 	const prefix = "-- IF COLUMN "
 	const suffix = " NOT EXIST"

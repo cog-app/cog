@@ -2,7 +2,9 @@
 // corpus (testdata/dav/README.md). Usage:
 //
 //	go tool davfixtures gpl [-out tmp/dav-fixtures-gpl]
-//	go tool davfixtures export [-base https://cog.duckfam.us] [-out tmp/dav-export]
+//	go tool davfixtures export [-base https://cog.duckfam.us] [-out tmp/dav-export] [-import tmp/dav-import]
+//	go tool davfixtures tasks -db path/to/tasks/plugin.db [-import tmp/dav-import]
+//	go tool davfixtures compare [-v] -got dir want-path...
 //	go tool davfixtures anonymise -out dir -prefix name file...
 //
 // gpl fetches copyleft-licensed client output, pinned by commit in
@@ -13,6 +15,16 @@
 // never appear on a command line:
 //
 //	COG_USER=jonathan COG_PASS="$(pass show cog.duckfam.us/jonathan | head -n1)" go tool davfixtures export
+//
+// It also writes each collection as one file under -import, ready to upload
+// to /settings/data, which takes one file per collection.
+//
+// tasks reads the task lists of a server from before the DAV storage rewrite,
+// which had no CalDAV for tasks, from its tasks database and writes each list
+// as one .ics file under -import (DESIGN/dav-storage.md section 8).
+//
+// compare checks a server's export after an import against what was
+// imported: the same UIDs, components and properties.
 //
 // anonymise rewrites personal text in exported files with placeholders,
 // keeping structure, parameters, times and X- properties, so the result can be
@@ -44,7 +56,7 @@ var gplManifest string
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: davfixtures gpl|export|anonymise [flags]")
+		fmt.Fprintln(os.Stderr, "usage: davfixtures gpl|export|tasks|compare|anonymise [flags]")
 		os.Exit(2)
 	}
 	var err error
@@ -53,6 +65,10 @@ func main() {
 		err = runGPL(os.Args[2:])
 	case "export":
 		err = runExport(os.Args[2:])
+	case "tasks":
+		err = runTasks(os.Args[2:])
+	case "compare":
+		err = runCompare(os.Args[2:])
 	case "anonymise":
 		err = runAnonymise(os.Args[2:])
 	default:
@@ -153,16 +169,20 @@ type multistatus struct {
 	} `xml:"response"`
 }
 
-type davClient struct{ base, user, pass string }
+type davClient struct {
+	base, user, pass string
+	imp              string // where collections are written whole
+}
 
 func runExport(args []string) error {
 	fs := flag.NewFlagSet("export", flag.ExitOnError)
 	base := fs.String("base", "https://cog.duckfam.us", "server base URL")
-	out := fs.String("out", "tmp/dav-export", "output directory")
+	out := fs.String("out", "tmp/dav-export", "output directory, one file per resource")
+	imp := fs.String("import", "tmp/dav-import", "output directory, one file per collection")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	c := &davClient{base: *base, user: os.Getenv("COG_USER"), pass: os.Getenv("COG_PASS")}
+	c := &davClient{base: *base, user: os.Getenv("COG_USER"), pass: os.Getenv("COG_PASS"), imp: *imp}
 	if c.user == "" || c.pass == "" {
 		return fmt.Errorf("COG_USER and COG_PASS are required")
 	}
@@ -230,8 +250,9 @@ func (c *davClient) exportHome(out, kind, home, ext string) error {
 		if err != nil {
 			return err
 		}
-		dir := filepath.Join(out, kind, strings.Trim(strings.TrimPrefix(href, "/remote.php/dav/"+kind+"/"), "/"))
-		if err := c.exportCollection(r.Href, dir, ext); err != nil {
+		rel := strings.Trim(strings.TrimPrefix(href, "/remote.php/dav/"+kind+"/"), "/")
+		dir := filepath.Join(out, kind, rel)
+		if err := c.exportCollection(r.Href, dir, filepath.Join(c.imp, kind, rel+ext), ext); err != nil {
 			return fmt.Errorf("%s: %w", href, err)
 		}
 	}
@@ -239,8 +260,10 @@ func (c *davClient) exportHome(out, kind, home, ext string) error {
 }
 
 // exportCollection lists with PROPFIND, then GETs each resource: XML parsers
-// normalise CRLF, and the point is the exact bytes.
-func (c *davClient) exportCollection(href, dir, ext string) error {
+// normalise CRLF, and the point is the exact bytes. Each resource is a file
+// in dir, and all of them one after another are the file whole: the import
+// splits a file into resources by UID (VCALENDARs) or by VCARD.
+func (c *davClient) exportCollection(href, dir, whole, ext string) error {
 	ms, err := c.propfind(href, "getetag")
 	if err != nil {
 		return err
@@ -248,6 +271,7 @@ func (c *davClient) exportCollection(href, dir, ext string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	var all bytes.Buffer
 	n := 0
 	for _, r := range ms.Responses {
 		if strings.HasSuffix(r.Href, "/") {
@@ -267,9 +291,19 @@ func (c *davClient) exportCollection(href, dir, ext string) error {
 		if err := os.WriteFile(filepath.Join(dir, filepath.Base(name)), data, 0o600); err != nil {
 			return err
 		}
+		all.Write(data)
+		if !bytes.HasSuffix(data, []byte("\n")) {
+			all.WriteString("\r\n")
+		}
 		n++
 	}
-	fmt.Printf("%s: %d resources\n", dir, n)
+	if err := os.MkdirAll(filepath.Dir(whole), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(whole, all.Bytes(), 0o600); err != nil {
+		return err
+	}
+	fmt.Printf("%s: %d resources (%s)\n", dir, n, whole)
 	return nil
 }
 

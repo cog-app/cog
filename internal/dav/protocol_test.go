@@ -503,6 +503,46 @@ func TestImportAndExport(t *testing.T) {
 	assert.Contains(t, exported, "X-WR-CALNAME:Personal")
 }
 
+// Components no backend stores are kept with the resource they belong to,
+// as a PUT of the file would keep them, or counted as skipped; never
+// dropped unreported.
+func TestImportKeepsUnknownComponents(t *testing.T) {
+	env := davEnv(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	c := personal(t, env, alice)
+
+	file := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n" +
+		"BEGIN:VEVENT\r\nUID:a\r\nSUMMARY:A\r\nDTSTART:20261001T090000Z\r\nEND:VEVENT\r\n" +
+		"BEGIN:X-EVENT-SERIES\r\nX-NAME:no uid\r\nEND:X-EVENT-SERIES\r\n" +
+		"BEGIN:VEVENT\r\nUID:b\r\nSUMMARY:B\r\nDTSTART:20261002T090000Z\r\nEND:VEVENT\r\n" +
+		"BEGIN:X-SIDECAR\r\nUID:b\r\nX-NAME:with b\r\nEND:X-SIDECAR\r\n" +
+		"BEGIN:VFREEBUSY\r\nUID:fb\r\nDTSTART:20261001T000000Z\r\nEND:VFREEBUSY\r\n" +
+		"END:VCALENDAR\r\n"
+	res, err := env.Providers.DAV.Import(alice.Username, c, strings.NewReader(file))
+	require.NoError(t, err)
+	assert.Equal(t, 2, res.Imported)
+	assert.Equal(t, 1, res.Skipped) // the VFREEBUSY, whose UID no resource has
+	assert.Equal(t, 0, res.Failed)
+
+	a := req(t, env, alice, "GET", cal+"alice/personal/a.ics", "").Status(200).ReadBody()
+	assert.Contains(t, a, "BEGIN:X-EVENT-SERIES\r\nX-NAME:no uid\r\nEND:X-EVENT-SERIES\r\n")
+	assert.NotContains(t, a, "X-SIDECAR")
+	b := req(t, env, alice, "GET", cal+"alice/personal/b.ics", "").Status(200).ReadBody()
+	assert.Contains(t, b, "BEGIN:X-SIDECAR\r\nUID:b\r\nX-NAME:with b\r\nEND:X-SIDECAR\r\n")
+	assert.NotContains(t, b, "X-EVENT-SERIES")
+
+	// A VEVENT without its VCALENDAR, as servers before the DAV storage
+	// rewrite stored it, is imported as if it had one.
+	bare := "BEGIN:VEVENT\r\nUID:bare\r\nSUMMARY:Bare\r\nDTSTART:20261003T090000Z\r\nEND:VEVENT\r\n"
+	comps, err := dav.ComponentsIn(strings.NewReader(bare))
+	require.NoError(t, err)
+	assert.Equal(t, []dav.Component{dav.VEVENT}, comps)
+	res, err = env.Providers.DAV.Import(alice.Username, c, strings.NewReader(bare))
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Imported)
+	req(t, env, alice, "GET", cal+"alice/personal/bare.ics", "").Status(200).Contains("SUMMARY:Bare")
+}
+
 func TestImportExportPage(t *testing.T) {
 	env := davEnv(t)
 	alice := env.CreateUser(t, "alice", "pass")
