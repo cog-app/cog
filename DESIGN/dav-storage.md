@@ -296,7 +296,7 @@ task_attendees / task_alarms / vtimezones                                       
 - **Recurrence.** Occurrences count from DTSTART, or from DUE for a task without one (clients that recur tasks by due date). With both, each occurrence lasts DUE − DTSTART; with DUE only, it is an instant.
 - **Completing a recurring task.** RFC 5545 leaves it to clients. Cog follows tasks.org: the series moves on to its next occurrence (`Object.Advance`: DTSTART and DUE move, COUNT counts one less, overrides and exceptions before it go) and stays open; completing the last occurrence completes the task. No fixture from Apple Reminders or tasks.org exists yet (testdata/dav/README.md), so this is from their documented behaviour, not captured traffic. Clients that complete an occurrence with a COMPLETED override (Thunderbird) are stored as sent.
 - **Web edits** (`plugin/tasks/edit.go`) change only what the form shows, compared with what it was shown: summary, description, priority, status, percent, due, start, parent. Times are shown and read in the list's zone; a due date (DATE) stays a date unless edited. Changed fields drop their dependent leftovers; DTSTAMP and LAST-MODIFIED always move, SEQUENCE when times or STATUS changed (RFC 5545 §3.8.7.4 lists STATUS for tasks). Moving the start of a recurring task moves its exceptions with it.
-- The JSON tasks API (task #32, agent tokens) will go through the same store.
+- Agents (task #32) and the planned mobile API reach tasks through `dav.Session`, the same store (section 9.3).
 
 ### 4.4 Contacts (CardDAV, VCARD)
 
@@ -475,7 +475,7 @@ Everything below is in scope for the MR.
 
 | Spec | Notes |
 |---|---|
-| JSCalendar RFC 8984 | JSON form of events, tasks and journals, from the same models as iCalendar (`internal/dav/jscal`, section 9.3); the agent API (task #32) uses it |
+| JSCalendar RFC 8984 | JSON form of events, tasks and journals, from the same models as iCalendar (`internal/dav/jscal`, section 9.3) |
 | JSContact RFC 9553 | JSON form of contacts, same rules (`internal/dav/jscontact`) |
 | JMAP core RFC 8620 | `/.well-known/jmap`, the session resource, the API with batching and back-references, `Core/echo`, PushSubscription and EventSource (`internal/jmap`) |
 | JMAP for Contacts RFC 9610 | `AddressBook/get|changes|set`, `ContactCard/get|changes|query|set` |
@@ -497,14 +497,12 @@ Everything below is in scope for the MR.
 - **Scheduling** happens only when `CalendarEvent/set` has `sendSchedulingMessages: true`, as the draft asks; otherwise the event is stored as sent.
 - **Push**: `PushSubscription` keeps a JMAP subscription in the WebDAV-Push store (section 9.2), resource `user/<id>`: a `PushVerification` is pushed first, and `StateChange` only once the client has set the code it carried. At each push round the DAV core tells JMAP whose collections changed (`dav.UserListener`: the owners and the users they are shared with), which marks those users' subscriptions and wakes their EventSource connections (`/jmap/eventsource`). A StateChange carries the current states of every account the user has, for the types asked for.
 
-**Agent API** (task #32, not built): agents use these shapes through the same `dav.Session`, as a REST facade a token can be scoped to, and with tasks, which JMAP does not have:
+**Agents and the mobile app** (task #32, not in this MR): no separate REST API. Two interfaces are planned, both over `dav.Session` (`internal/dav/api.go`), so an agent's change goes through the same access checks, UID rules, counters, push and edit bookkeeping as a DAV or JMAP one:
 
-| Route | |
-|---|---|
-| `GET /api/v1/collections?component=VEVENT\|VTODO\|VJOURNAL\|VCARD` | collections the token's user sees, with rights (the JMAP collection objects) |
-| `GET /api/v1/collections/{c<id>}/items?since=<state>` | JSCalendar or JSContact records, or what changed since a state (JMAP's ids and states) |
-| `POST /api/v1/collections/{c<id>}/items` | create a record |
-| `GET`, `PATCH` (a PatchObject), `DELETE /api/v1/items/{id}` | one record; `?send=1` schedules |
+- **SSH CLI.** An agent gets its own SSH key (section 2 of `DESIGN/ssh.md`) and runs plugin commands (`ssh user@host 'calendar …'`, namespaced `<plugin> <subcommand>`, through the same interpreter as the shell). The calendar, tasks and contacts plugins register no commands yet; theirs would read and write the JSCalendar and JSContact shapes above, and include tasks, which JMAP lacks.
+- **gRPC (or similar) API**, planned for a mobile app and Cog-specific features JMAP has no place for. A CLI client tool over it offers the same commands as the SSH CLI without an SSH connection per command.
+
+What a key or token may reach (one collection, read only) is decided with those interfaces, not here.
 
 ### Journals (VJOURNAL)
 
@@ -540,7 +538,7 @@ Each milestone is a run of commits that builds and passes tests on its own.
 7. **Sharing extensions, managed attachments.**
 8. **Feeds**: ICS export, ICS subscriptions, birthday calendar.
 9. **WebDAV-Push** (subscription store, VAPID, delivery on version bumps).
-10. **JSCalendar/JSContact encoders and JMAP** on the same rows; the agent API (task #32) uses these shapes.
+10. **JSCalendar/JSContact encoders and JMAP** on the same rows.
 11. **Deploy**: export, fresh start, import (section 8). There are no blob columns to drop: milestones 3–5 replace them in the fresh schema.
 
 ## 12. Decisions (were open questions)
@@ -585,11 +583,11 @@ Each milestone is a run of commits that builds and passes tests on its own.
 - **Write transactions begin IMMEDIATE** (`_txlock=immediate` on every writable handle, plugin and system databases; `db.TxLockImmediate`): a deferred transaction that reads and then writes cannot wait for the write lock and fails with `database is locked` when another connection commits in between. Taking the lock at BEGIN makes it wait under `_busy_timeout` instead. Read-only handles leave it out. Transactions that only read take the write lock too; there are few, and they are short.
 - **A JMAP record does not move between collections**: changing `addressBookIds` or `calendarIds` stays `invalidProperties`. Clients destroy and create; ids keep naming the resource, and no id table is needed (section 9.3).
 - **Schema scripts run in a transaction**: `migrate` applies `schema.sql` and each migration in one transaction, so a database from an incompatible version is refused unchanged with `migrate.ErrIncompatible` instead of being half migrated (section 8).
+- **No REST API for agents** (task #32): agents use the SSH CLI with a key of their own, and later a CLI client over the gRPC API planned for the mobile app, both over `dav.Session` (section 9.3). The REST routes proposed in milestone 10 are dropped. Neither interface is part of this MR.
 - **JMAP push needs encryption keys**: every push is RFC 8291-encrypted, as WebDAV-Push's are; a subscription without keys is refused rather than pushed in the clear.
 
 ## 13. Open questions
 
-- **Agent API routes** (section 9.3): agree them before task #32 builds them.
 - **Free/busy across the server.** A user sees someone else's busy time only for calendars that person shared with them (section 7), so a scheduling assistant shows nothing for colleagues who shared nothing. Nextcloud shows every user's free/busy to every other user by default. Should Cog do the same, perhaps as an admin setting, or keep it opt-in per calendar?
 
 ## 14. Progress
@@ -608,7 +606,7 @@ Branch `design-dav-storage`, one draft MR to master. Update this section at the 
 | 8. Feeds | Done. `internal/dav/feed.go` serves ICS feeds from public link shares, with a free/busy-only variant, conditional GETs and feed-bound attachment tokens; `internal/dav/subscribe.go` keeps subscription calendars filled from remote feeds through `internal/safehttp`, polled by the calendar plugin; `internal/dav/birthday.go` derives the birthday calendar from the contacts' dates (`vcard.ParseDate`); collections have a kind, and those Cog fills are read-only (sections 3.0, 7, 9.1). The calendar settings page manages all three. |
 | 9. WebDAV-Push | Done. `internal/webpush` encrypts (RFC 8291) and signs (VAPID, RFC 8292) Web Push messages with the standard library only; `internal/push` keeps subscriptions in the system database and delivers them; `internal/dav/push.go` serves discovery, registration and unregistration on collections, inboxes and homes, notices changes through a connection observer on `dav_sync`, and honours Push-Dont-Notify (section 9.2). |
 | 10. JSCalendar, JSContact and JMAP | Done. `internal/dav/jscal` and `internal/dav/jscontact` (with `internal/dav/jsobj`) map the models to RFC 8984 and RFC 9553 and back, losslessly both ways (section 9.3); `internal/dav/api.go` is the DAV core outside DAV requests (`dav.Session`: collections with rights, models, changes, scheduled writes); `internal/jmap` serves JMAP core, JMAP for Contacts, JMAP for Calendars behind `COG_JMAP_CALENDARS`, PushSubscription over the push store and EventSource. |
-| 11. Deploy | Prepared and rehearsed; not run against production. The runbook is section 8.2. `go tool davfixtures` gained `tasks` (the old server's task lists from its database), `compare` (an export after an import against the one before) and a whole-collection file per collection from `export`. Rehearsed end to end: a server built from `master`, filled over CalDAV/CardDAV with 150 corpus files in three calendars and an address book, tasks made in its web UI and calendar and address book shares, then exported, stopped, its `app_data` moved aside, started as this branch on the same system database, imported through `/settings/data` (and again into a `go tool dev -reset` server), compared over DAV and JMAP, and re-shared. Old databases left in place are refused unchanged. Write transactions begin IMMEDIATE (section 12). |
+| 11. Deploy | Prepared and rehearsed; not run against production. The runbook is section 8.2. `go tool davfixtures` gained `tasks` (the old server's task lists from its database), `compare` (an export after an import against the one before) and a whole-collection file per collection from `export`. Rehearsed end to end: a server built from `master`, filled over CalDAV/CardDAV with 150 corpus files in three calendars and an address book, tasks made in its web UI and calendar and address book shares, then exported, stopped, its `app_data` moved aside, started as this branch on the same system database, imported through `/settings/data` (and again into a `go tool dev -reset` server), compared over DAV and JMAP, and re-shared. Old databases left in place are refused unchanged. Write transactions begin IMMEDIATE, JMAP records still do not move, and agents get no REST API (section 12). |
 
 How milestone 2 differs from the plan it started with:
 
@@ -798,7 +796,7 @@ How milestone 10 differs from the plan:
 - `putScheduled` and `deleteScheduled` moved from the DAV request to the server, with a switch to store without scheduling, so `dav.Session` writes as a PUT does.
 - The DAV core reports whose collections changed at each push round (`dav.UserListener`); JMAP marks its subscriptions from that rather than having resources of its own in the push store.
 - Not offered: blobs (photos are `data:` URIs, so no method needs upload or download; the URLs answer 404), `expandRecurrences` and `utcStart`/`utcEnd` in CalendarEvent queries, moving a record between collections (section 12), `shareWith` (no Principals capability), keyless push subscriptions, JMAP for Tasks. `isSubscribed` and the calendars' display preferences are accepted and not kept.
-- The agent API's routes are proposed (section 9.3), not built.
+- The agent API's routes were proposed (section 9.3), not built; milestone 11 dropped them for the SSH CLI and a gRPC client (section 12).
 
 Adjacent bugs fixed in milestone 10:
 
@@ -810,6 +808,7 @@ How milestone 11 differs from the plan:
 
 - The cut-over is not a step after merging but the merge itself: CI deploys every commit on `master`, so the runbook (section 8.2) does the export before merging and moves the old databases aside as the deploy starts.
 - The export was rehearsed against a stand-in, not production, which this milestone does not touch: the production export and the pre-flight counts (tasks, web-only photos and stars) are for the operator to run (section 8.2, steps 1–3).
+- Section 13's agent API question was answered by dropping the REST facade: agents will use the SSH CLI, and later a CLI client over the gRPC API planned for the mobile app (sections 9.3 and 12). Neither is built here.
 - What the old server held that no export carries, found by reading its schema: contact photos uploaded in its web UI and stars (columns beside the card), per-event colours, and calendar colours and names (the import names a new collection after what is typed). The runbook lists them in its pre-flight queries to set again by hand; with nine contacts and three calendars in production, a tool was not worth it.
 
 Rehearsal results (old server built from `master` at `b39e940`; 127 calendar resources, 23 cards, 6 tasks in two lists, two shares):
