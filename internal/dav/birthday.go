@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -12,8 +13,10 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
+	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
 	"git.duckfam.us/jj-software/cog/internal/dav/ical"
 	"git.duckfam.us/jj-software/cog/internal/dav/vcard"
+	"git.duckfam.us/jj-software/cog/plugin"
 )
 
 // The birthday calendar: one read-only calendar per user, derived from the
@@ -103,7 +106,7 @@ func (s *Server) EnableBirthdays(owner *User) (*Collection, error) {
 	if err := s.Collections.CreateNamed(c); err != nil {
 		return nil, err
 	}
-	if err := s.CardsChanged(owner.Username); err != nil {
+	if err := s.syncBirthdaysOf(owner); err != nil {
 		return c, err
 	}
 	return c, nil
@@ -118,36 +121,121 @@ func (s *Server) DisableBirthdays(owner *User) error {
 	return s.DeleteCollection(owner.Username, c)
 }
 
-// CardsChanged brings the owner's birthday calendar, if they have one, up to
-// date with their address books. Backends call it after every card write
-// they commit, from DAV, the web UI or an import.
+// CardsChanged follows a write to the owner's cards, from DAV, the web UI or
+// an import: their birthday calendar, if they have one, and every other
+// user's that reads one of their address books (shared with them) catch
+// up. Backends call it after every card write they commit.
 func (s *Server) CardsChanged(ownerUsername string) error {
-	st := s.birthdays(ownerUsername)
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.held > 0 {
+	if !s.mounted() {
 		return nil
 	}
-	return s.syncBirthdays(ownerUsername)
-}
-
-// birthdayBook is one address book's part of a sync.
-type birthdayBook struct {
-	id     CollectionID
-	full   bool // every card read: events of cards not among them go
-	cards  []CardDates
-	gone   []string // URIs of cards deleted since the cursor
-	cursor int64    // the version read
-}
-
-func (s *Server) syncBirthdays(owner string) error {
-	u, err := s.Users.ByUsername(owner)
+	u, err := s.Users.ByUsername(ownerUsername)
 	if errors.Is(err, ErrNotFound) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
+	st := s.birthdays(u.Username)
+	st.mu.Lock()
+	held := st.held > 0
+	st.mu.Unlock()
+	if held {
+		return nil // the import syncs once it is done
+	}
+	errs := []error{s.syncBirthdaysOf(u)}
+	readers, err := s.Collections.birthdayReaders(u.ID)
+	if err != nil {
+		return errors.Join(append(errs, err)...)
+	}
+	for _, id := range readers {
+		errs = append(errs, s.SyncBirthdays(id))
+	}
+	return errors.Join(errs...)
+}
+
+// SyncBirthdays brings one user's birthday calendar, if they have one, up
+// to date with the address books they own and those shared with them.
+func (s *Server) SyncBirthdays(userID string) error {
+	if !s.mounted() {
+		return nil
+	}
+	u, err := s.Users.ByID(userID)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return s.syncBirthdaysOf(u)
+}
+
+// SweepBirthdays brings every birthday calendar up to date. Shares reach
+// users through groups, whose members change without any card or share
+// changing; the calendar plugin sweeps now and then for them.
+func (s *Server) SweepBirthdays() error {
+	cols, err := s.Collections.query(selectCollections+` WHERE c.kind = ? ORDER BY c.id`, KindBirthdays)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, c := range cols {
+		errs = append(errs, s.SyncBirthdays(c.OwnerID))
+	}
+	return errors.Join(errs...)
+}
+
+// ShareChanged follows a share of collection id made, changed or deleted:
+// the birthday calendars of the users it reaches, when it shares an
+// address book. A share with one user syncs theirs; a group's or
+// everyone's, all of them.
+func (s *Server) ShareChanged(subjectType, subjectID string, id CollectionID) error {
+	c, err := s.Collections.ByID(id)
+	if errors.Is(err, ErrNotFound) {
+		// A deleted book: purging it already told its readers.
+		return nil
+	}
+	if err != nil || c.Home != HomeAddressBooks {
+		return err
+	}
+	switch subjectType {
+	case "USER":
+		return s.SyncBirthdays(subjectID)
+	case "PUBLIC":
+		return nil // a link reaches no user's calendar
+	}
+	return s.SweepBirthdays()
+}
+
+// mounted reports whether the host has wired the server: without it no
+// plugin stores DAV data.
+func (s *Server) mounted() bool { return s.Users != nil && s.Backends != nil }
+
+func (s *Server) syncBirthdaysOf(u *User) error {
+	st := s.birthdays(u.Username)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return s.syncBirthdays(u)
+}
+
+// birthdayBook is one address book's part of a sync.
+type birthdayBook struct {
+	id      CollectionID
+	ownerID string // the book's owner
+	full    bool   // every card read: events of cards not among them go
+	cards   []CardDates
+	gone    []string // URIs of cards deleted since the cursor
+	cursor  int64    // the version read
+}
+
+// readable is an address book the birthday calendar reads, with its
+// owner's username, which names the database its cards are in.
+type readable struct {
+	Collection
+	owner string
+}
+
+func (s *Server) syncBirthdays(u *User) error {
 	bc, err := s.Birthdays(u.ID)
 	if err != nil || bc == nil {
 		return err
@@ -165,21 +253,39 @@ func (s *Server) syncBirthdays(owner string) error {
 	if events == nil || cards == nil {
 		return nil // caught up when both are enabled again
 	}
-	books, err := s.Collections.List(u.ID, HomeAddressBooks)
+	own, err := s.Collections.List(u.ID, HomeAddressBooks)
 	if err != nil {
 		return err
+	}
+	var books []readable
+	for _, c := range own {
+		books = append(books, readable{c, u.Username})
+	}
+	shared, err := s.Collections.Shared(s.Shares, s.username, u.ID, VCARD)
+	if err != nil {
+		return err
+	}
+	for _, sc := range shared {
+		if sc.Permissions&plugin.PermRead != 0 {
+			books = append(books, readable{sc.Collection, sc.OwnerUsername})
+		}
 	}
 	cursors, err := s.Collections.birthdayCursors(bc.ID)
 	if err != nil {
 		return err
 	}
-	ids := make([]CollectionID, len(books))
-	for i := range books {
-		ids[i] = books[i].ID
+	// One query per owner of the books read.
+	byOwner := map[string][]CollectionID{}
+	for _, b := range books {
+		byOwner[b.owner] = append(byOwner[b.owner], b.ID)
 	}
-	states, err := cards.States(owner, ids)
-	if err != nil {
-		return err
+	states := map[CollectionID]davsql.State{}
+	for owner, ids := range byOwner {
+		st, err := cards.States(owner, ids)
+		if err != nil {
+			return err
+		}
+		maps.Copy(states, st)
 	}
 
 	var work []birthdayBook
@@ -191,14 +297,14 @@ func (s *Server) syncBirthdays(owner string) error {
 		if had && cur == st.Token {
 			continue
 		}
-		bb := birthdayBook{id: book.ID, cursor: st.Token}
+		bb := birthdayBook{id: book.ID, ownerID: book.OwnerID, cursor: st.Token}
 		if !had || cur < st.Floor || cur > st.Token {
 			bb.full = true
-			if bb.cards, err = dates.CardDates(owner, book, nil); err != nil {
+			if bb.cards, err = dates.CardDates(book.owner, &book.Collection, nil); err != nil {
 				return err
 			}
 		} else {
-			ch, err := cards.Changes(owner, book, cur, false)
+			ch, err := cards.Changes(book.owner, &book.Collection, cur, false)
 			if err != nil {
 				return err
 			}
@@ -208,7 +314,7 @@ func (s *Server) syncBirthdays(owner string) error {
 				uris[i] = r.URI
 			}
 			if len(uris) > 0 {
-				if bb.cards, err = dates.CardDates(owner, book, uris); err != nil {
+				if bb.cards, err = dates.CardDates(book.owner, &book.Collection, uris); err != nil {
 					return err
 				}
 			}
@@ -221,11 +327,13 @@ func (s *Server) syncBirthdays(owner string) error {
 		}
 		work = append(work, bb)
 	}
-	// Books that are gone take their events with them.
+	// Books that are gone, or no longer shared, take their events with
+	// them.
 	var removed []CollectionID
 	for id := range cursors {
 		removed = append(removed, id)
 	}
+	owner := u.Username
 	if len(work) == 0 && len(removed) == 0 {
 		return nil
 	}
@@ -321,6 +429,27 @@ func (s *Store) birthdayCursors(id CollectionID) (map[CollectionID]int64, error)
 	return out, rows.Err()
 }
 
+// birthdayReaders returns the users other than ownerID whose birthday
+// calendars read one of ownerID's address books.
+func (s *Store) birthdayReaders(ownerID string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT c.owner_user_id FROM dav_birthday_cursors b
+		JOIN dav_collections c ON c.id = b.collection_id
+		WHERE b.book_owner_id = ? AND c.owner_user_id != ?`, ownerID, ownerID)
+	if err != nil {
+		return nil, fmt.Errorf("birthday readers: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("birthday readers: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) saveBirthdayCursors(id CollectionID, work []birthdayBook, removed []CollectionID) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -328,8 +457,8 @@ func (s *Store) saveBirthdayCursors(id CollectionID, work []birthdayBook, remove
 	}
 	defer tx.Rollback()
 	for _, bb := range work {
-		if _, err := tx.Exec(`INSERT INTO dav_birthday_cursors (collection_id, book_id, version) VALUES (?, ?, ?)
-			ON CONFLICT(collection_id, book_id) DO UPDATE SET version = excluded.version`, id, bb.id, bb.cursor); err != nil {
+		if _, err := tx.Exec(`INSERT INTO dav_birthday_cursors (collection_id, book_id, book_owner_id, version) VALUES (?, ?, ?, ?)
+			ON CONFLICT(collection_id, book_id) DO UPDATE SET version = excluded.version`, id, bb.id, bb.ownerID, bb.cursor); err != nil {
 			return fmt.Errorf("save birthday cursor: %w", err)
 		}
 	}

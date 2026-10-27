@@ -9,6 +9,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/dav/codec"
+	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
 	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
 	"git.duckfam.us/jj-software/cog/internal/dav/vcard"
 )
@@ -116,6 +117,34 @@ func (b *backend) QueryCards(owner string, c *dav.Collection, f *dav.CardFilter,
 // in, which has no property of its own before 4.0.
 var vendorAnniversaries = []string{"X-ANNIVERSARY", "X-EVOLUTION-ANNIVERSARY", "X-MS-ANNIVERSARY", "X-WAB-WEDDING_ANNIVERSARY"}
 
+// appleAnniversary is the label Apple Contacts gives an X-ABDATE that is
+// the anniversary: item1.X-ABDATE:1995-05-21 with item1.X-ABLabel of it.
+const appleAnniversary = "_$!<Anniversary>!$_"
+
+// vendorAnniversary returns the anniversary a card without ANNIVERSARY
+// keeps among its leftovers, as one of vendorAnniversaries or Apple's
+// labelled X-ABDATE.
+func vendorAnniversary(l *codec.Leftovers) (*contentline.Property, bool) {
+	for i := range l.Props {
+		p := &l.Props[i]
+		if p.Group == "" && slices.ContainsFunc(vendorAnniversaries, func(n string) bool { return strings.EqualFold(n, p.Name) }) {
+			return p, true
+		}
+	}
+	for i := range l.Props {
+		p := &l.Props[i]
+		if p.Group == "" || !strings.EqualFold(p.Name, "X-ABDATE") {
+			continue
+		}
+		for _, label := range l.Props {
+			if strings.EqualFold(label.Group, p.Group) && strings.EqualFold(label.Name, "X-ABLabel") && label.Value == appleAnniversary {
+				return p, true
+			}
+		}
+	}
+	return nil, false
+}
+
 // CardDates implements dav.DateSource for the birthday calendar: the dates
 // of the cards among uris (all when nil), read from their columns and
 // leftovers in one query per chunk, without rendering a card.
@@ -159,11 +188,8 @@ func cardDates(q davsql.Querier, query string, args ...any) ([]dav.CardDates, er
 		}
 		d.BirthdayParams, d.AnniversaryParams = l.Params["BDAY"], l.Params["ANNIVERSARY"]
 		if d.Anniversary == "" {
-			for _, p := range l.Props {
-				if p.Group == "" && slices.ContainsFunc(vendorAnniversaries, func(n string) bool { return strings.EqualFold(n, p.Name) }) {
-					d.Anniversary, d.AnniversaryParams = p.Value, p.Params
-					break
-				}
+			if p, ok := vendorAnniversary(&l); ok {
+				d.Anniversary, d.AnniversaryParams = p.Value, p.Params
 			}
 		}
 		if d.Name == "" {

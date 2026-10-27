@@ -28,7 +28,7 @@ func davUser(t *testing.T, env *cogtest.Env, u *cogtest.User) *dav.User {
 
 // feedPath is the path of a link's feed.
 func feedPath(env *cogtest.Env, l *dav.Link) string {
-	return strings.TrimPrefix(env.Providers.DAV.FeedURL(l.Token), env.Providers.Config.BaseURL)
+	return strings.TrimPrefix(env.Providers.DAV.FeedURL(l.Token, dav.HomeCalendars), env.Providers.Config.BaseURL)
 }
 
 func anonymousWith(t *testing.T, env *cogtest.Env, method, path string, headers ...string) *cogtest.Response {
@@ -127,6 +127,22 @@ func TestICSFeed(t *testing.T) {
 	anonymous(t, env, feedPath(env, panel)).Status(200).Contains("SUMMARY:Dentist")
 	require.NoError(t, srv.Links.DeleteLink(panel.ID))
 	anonymous(t, env, feedPath(env, panel)).Status(404)
+
+	// An address book's public link serves its cards, as one vCard file.
+	req(t, env, alice, "PUT", "/remote.php/dav/addressbooks/alice/contacts/a.vcf", vcard("a", "Ann Example")).Status(201)
+	book, err := srv.Collections.GetOrDefault(alice.ID, dav.HomeAddressBooks, "contacts")
+	require.NoError(t, err)
+	cards, err := srv.Links.CreateLink(alice.ID, book.ID, plugin.PermRead)
+	require.NoError(t, err)
+	cardsPath := strings.TrimPrefix(srv.FeedURL(cards.Token, dav.HomeAddressBooks), env.Providers.Config.BaseURL)
+	require.True(t, strings.HasSuffix(cardsPath, ".vcf"))
+	got = anonymous(t, env, cardsPath).Status(200)
+	assert.Contains(t, got.Header.Get("Content-Type"), "text/vcard")
+	assert.Contains(t, got.ReadBody(), "FN:Ann Example")
+	anonymous(t, env, strings.TrimSuffix(cardsPath, ".vcf")+".ics").Status(404)
+	busyCards, err := srv.Links.CreateLink(alice.ID, book.ID, plugin.PermFreeBusy)
+	require.NoError(t, err)
+	anonymous(t, env, strings.TrimPrefix(srv.FeedURL(busyCards.Token, dav.HomeAddressBooks), env.Providers.Config.BaseURL)).Status(404)
 
 	// A deleted calendar's feed is gone with it.
 	again, err := srv.RenewFeed(c, false)
@@ -436,6 +452,12 @@ func TestSubscriptionFixtures(t *testing.T) {
 		require.NoError(t, err, file)
 		assert.Equal(t, len(uids)+noUID, res.Added, file)
 		assert.Equal(t, 0, res.Skipped, file)
+		if strings.Contains(string(data), "BEGIN:VALARM") {
+			// The feed's alarms are not the subscriber's reminders.
+			var out strings.Builder
+			require.NoError(t, srv.Export(&out, alice.Username, c))
+			assert.NotContains(t, out.String(), "BEGIN:VALARM", file)
+		}
 		if file == "ical4j/google_aus_holidays.ics" {
 			// Floating times read in the zone the feed names.
 			assert.Equal(t, "US/Pacific", c.Timezone)

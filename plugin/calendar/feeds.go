@@ -55,10 +55,10 @@ func (p *Plugin) settingsView(userID string, cals []Calendar) (*settingsView, er
 	for id, f := range feeds {
 		var fv feedView
 		if f.Full != nil {
-			fv.Full = p.dav.FeedURL(f.Full.Token)
+			fv.Full = p.dav.FeedURL(f.Full.Token, dav.HomeCalendars)
 		}
 		if f.Busy != nil {
-			fv.Busy = p.dav.FeedURL(f.Busy.Token)
+			fv.Busy = p.dav.FeedURL(f.Busy.Token, dav.HomeCalendars)
 		}
 		v.Feeds[int64(id)] = fv
 	}
@@ -127,7 +127,7 @@ func (h *Pages) Feed(w http.ResponseWriter, r *http.Request) {
 			h.failed(w, r, "make the feed", err)
 			return
 		}
-		back(w, r, plugin.Flash{Kind: "success", Message: fmt.Sprintf("The %s of %s is at this address; an earlier one no longer works.", label, c.Title()), URL: h.plugin.dav.FeedURL(l.Token)})
+		back(w, r, plugin.Flash{Kind: "success", Message: fmt.Sprintf("The %s of %s is at this address; an earlier one no longer works.", label, c.Title()), URL: h.plugin.dav.FeedURL(l.Token, dav.HomeCalendars)})
 	case "revoke":
 		if err := h.plugin.dav.RevokeFeed(c, busy); err != nil {
 			h.failed(w, r, "revoke the feed", err)
@@ -222,17 +222,24 @@ func (h *Pages) Birthdays(w http.ResponseWriter, r *http.Request) {
 	back(w, r, plugin.Flash{Kind: "success", Message: "The birthday calendar shows your contacts' birthdays and anniversaries."})
 }
 
-// subscriptionLoop fetches the subscriptions that are due, every minute.
+// subscriptionLoop fetches the subscriptions that are due, every minute,
+// and sweeps the birthday calendars every hour, for shares that reach
+// users through groups whose members changed.
 func (p *Plugin) subscriptionLoop(ctx context.Context) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
-	for {
+	for tick := 1; ; tick++ {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			if err := p.dav.PollDue(ctx); err != nil {
 				p.log.Error("poll calendar subscriptions", "err", err)
+			}
+			if tick%60 == 0 {
+				if err := p.dav.SweepBirthdays(); err != nil {
+					p.log.Error("sweep birthday calendars", "err", err)
+				}
 			}
 		}
 	}

@@ -47,6 +47,26 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get existing shares for this resource.
+	// A collection's public link is its feed, whose name says what it holds.
+	feedHome := dav.HomeCalendars
+	if resType == dav.ShareType {
+		id, err := strconv.ParseInt(resID, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid collection", http.StatusBadRequest)
+			return
+		}
+		c, err := h.p.DAV.Collections.ByID(dav.CollectionID(id))
+		switch {
+		case errors.Is(err, dav.ErrNotFound):
+			http.NotFound(w, r)
+			return
+		case err != nil:
+			h.p.Log.Error("share panel: look up collection", "id", resID, "err", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		feedHome = c.Home
+	}
 	var shares []ui.ShareDisplayItem
 	for rec, err := range h.p.Shares.ListByResource(resType, resID) {
 		if err != nil {
@@ -86,9 +106,10 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 				sd.Token = *rec.Token
 				sd.LinkPath = "/s/" + sd.Token
 				if resType == dav.ShareType {
-					// A calendar's public link is its ICS feed.
+					// A calendar's public link is its ICS feed, an
+					// address book's a vCard file of its cards.
 					sd.SubjectName = "Feed"
-					sd.LinkPath = strings.TrimPrefix(h.p.DAV.FeedURL(sd.Token), strings.TrimSuffix(h.p.Config.BaseURL, "/"))
+					sd.LinkPath = strings.TrimPrefix(h.p.DAV.FeedURL(sd.Token, feedHome), strings.TrimSuffix(h.p.Config.BaseURL, "/"))
 				}
 			}
 		case "INSTANCE":

@@ -1147,12 +1147,21 @@ func (h *Pages) Notifications(w http.ResponseWriter, r *http.Request) {
 		Start   string `json:"start"`
 	}
 
+	// The events in one query, not one per reminder.
+	ids := make([]int64, len(notifications))
+	for i, n := range notifications {
+		ids[i] = n.EventID
+	}
+	events, err := EventsByID(db, ids)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	result := []notifJSON{}
 	for _, n := range notifications {
-		ev, err := GetEvent(db, n.EventID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+		ev, ok := events[n.EventID]
+		if !ok {
+			continue // deleted since; its reminders went with it
 		}
 		result = append(result, notifJSON{
 			ID:      n.ID,

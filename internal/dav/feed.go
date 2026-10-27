@@ -18,7 +18,8 @@ import (
 
 // ICS feeds: a secret, revocable URL that serves a whole calendar as one
 // iCalendar file, for subscribers that poll it (webcal) rather than speak
-// CalDAV. DESIGN/dav-storage.md section 9.
+// CalDAV. DESIGN/dav-storage.md section 9.1. A public link to an address
+// book serves its cards the same way, as one vCard file.
 //
 // The secret is a public link share of the collection (Links): the share
 // table already keeps revocable tokens, the share panel lists and revokes
@@ -54,9 +55,14 @@ type Links interface {
 
 const feedsPath = "feeds"
 
-// FeedURL is where the feed of a link's token is served.
-func (s *Server) FeedURL(token string) string {
-	return strings.TrimSuffix(s.BaseURL, "/") + Root + feedsPath + "/" + token + ".ics"
+// FeedURL is where the feed of a link's token to a collection in home is
+// served: an .ics file for a calendar, a .vcf one for an address book.
+func (s *Server) FeedURL(token string, home Home) string {
+	ext := ".ics"
+	if home == HomeAddressBooks {
+		ext = ".vcf"
+	}
+	return strings.TrimSuffix(s.BaseURL, "/") + Root + feedsPath + "/" + token + ext
 }
 
 // Feed is a collection's feeds: the one serving it and the one serving
@@ -192,7 +198,7 @@ func (s *Server) serveFeed(w http.ResponseWriter, r *http.Request, rest string) 
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	token := strings.TrimSuffix(rest, ".ics")
+	token, ext, _ := strings.Cut(rest, ".")
 	fail := func(err error) {
 		s.Log.Error("dav: feed", "err", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -221,7 +227,16 @@ func (s *Server) serveFeed(w http.ResponseWriter, r *http.Request, rest string) 
 	}
 	// Like any share, a link counts only when the collection's owner made
 	// it.
-	if c.OwnerID != link.OwnerID || c.Home != HomeCalendars ||
+	wantExt := "ics"
+	if c.Home == HomeAddressBooks {
+		// Busy times mean nothing for cards.
+		wantExt = "vcf"
+		if link.BusyOnly() {
+			http.NotFound(w, r)
+			return
+		}
+	}
+	if c.OwnerID != link.OwnerID || ext != wantExt ||
 		link.Permissions&(plugin.PermRead|plugin.PermFreeBusy) == 0 {
 		http.NotFound(w, r)
 		return
@@ -243,7 +258,10 @@ func (s *Server) serveFeed(w http.ResponseWriter, r *http.Request, rest string) 
 	h.Set("Last-Modified", modified.Format(http.TimeFormat))
 	h.Set("Cache-Control", "private, no-cache")
 	h.Set("Content-Type", "text/calendar; charset=utf-8")
-	h.Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": c.Name + ".ics"}))
+	if c.Home == HomeAddressBooks {
+		h.Set("Content-Type", "text/vcard; charset=utf-8")
+	}
+	h.Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": c.Name + "." + ext}))
 	if notModified(r, etag, modified) {
 		w.WriteHeader(http.StatusNotModified)
 		return

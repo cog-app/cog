@@ -429,6 +429,13 @@ func TestBrowserVolumeBrowse(t *testing.T) {
 	b := eng.Start(t)
 	b.Login(t, "admin", "pass")
 
+	// The volume is the data directory, so the listing shows the system
+	// database's write-ahead log, whose size would follow the schema and
+	// every write before now. Empty it, so the golden shows only what this
+	// page's own request writes.
+	_, err = env.Providers.DB.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+	require.NoError(t, err)
+
 	// Modification times are shown; fix them, after logging in has written
 	// whatever it writes, so the golden is stable.
 	entries, err := os.ReadDir(dir)

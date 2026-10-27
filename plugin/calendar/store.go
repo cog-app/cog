@@ -132,6 +132,22 @@ func queryEvents(q davsql.Querier, where string, args ...any) ([]Event, error) {
 	return events, rows.Err()
 }
 
+// EventsByID returns the events among ids, by ID, without their objects.
+func EventsByID(db *sql.DB, ids []int64) (map[int64]*Event, error) {
+	list := slices.Compact(slices.Sorted(slices.Values(ids)))
+	out := make(map[int64]*Event, len(list))
+	for chunk := range slices.Chunk(list, 500) {
+		events, err := queryEvents(db, `e.id IN (`+icalsql.Placeholders(len(chunk))+`)`, icalsql.Anys(chunk)...)
+		if err != nil {
+			return nil, err
+		}
+		for i := range events {
+			out[events[i].ID] = &events[i]
+		}
+	}
+	return out, nil
+}
+
 // ListEvents returns a calendar's events in start order.
 func ListEvents(db *sql.DB, calendarID int64) ([]Event, error) {
 	return queryEvents(db, `e.collection_id = ? ORDER BY e.start_utc, e.id`, calendarID)

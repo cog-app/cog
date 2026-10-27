@@ -213,5 +213,6 @@ CREATE TABLE IF NOT EXISTS dav_birthday_cursors (
 	collection_id INTEGER NOT NULL REFERENCES dav_collections(id) ON DELETE CASCADE,
 	book_id INTEGER NOT NULL,
 	version INTEGER NOT NULL,
+	book_owner_id TEXT NOT NULL DEFAULT '',
 	PRIMARY KEY (collection_id, book_id)
 );

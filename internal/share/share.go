@@ -49,6 +49,17 @@ type AccessDecision struct {
 type Store struct {
 	db    *sql.DB
 	clock clock.Clock
+	// OnChange, when set, runs after a share is created, changed or
+	// deleted, with the share as it was. What it derives from shares (the
+	// birthday calendars of the users a shared address book reaches)
+	// follows them; it handles its own errors.
+	OnChange func(Record)
+}
+
+func (s *Store) changed(rec *Record) {
+	if s.OnChange != nil && rec != nil {
+		s.OnChange(*rec)
+	}
 }
 
 // NewStore creates a new share store backed by the system database.
@@ -75,7 +86,7 @@ func (s *Store) Create(ownerUserID, resourceType, resourceID, subjectType, subje
 		return nil, fmt.Errorf("insert share: %w", err)
 	}
 
-	return &Record{
+	rec := &Record{
 		ID:           id,
 		OwnerUserID:  ownerUserID,
 		ResourceType: resourceType,
@@ -85,7 +96,9 @@ func (s *Store) Create(ownerUserID, resourceType, resourceID, subjectType, subje
 		Permissions:  permissions,
 		CreatedAt:    now,
 		UpdatedAt:    now,
-	}, nil
+	}
+	s.changed(rec)
+	return rec, nil
 }
 
 // CreatePublicLink creates a share with a public token.
@@ -205,17 +218,17 @@ func (s *Store) GetByToken(token string) (*Record, error) {
 
 // Delete removes a share record.
 func (s *Store) Delete(id string) error {
-	res, err := s.db.Exec(`DELETE FROM shares WHERE id = ?`, id)
+	rec := Record{ID: id}
+	err := s.db.QueryRow(`DELETE FROM shares WHERE id = ?
+		RETURNING owner_user_id, resource_type, resource_id, subject_type, subject_id, permissions`, id).
+		Scan(&rec.OwnerUserID, &rec.ResourceType, &rec.ResourceID, &rec.SubjectType, &rec.SubjectID, &rec.Permissions)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
 	if err != nil {
 		return fmt.Errorf("delete share: %w", err)
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("delete share rows affected: %w", err)
-	}
-	if n == 0 {
-		return ErrNotFound
-	}
+	s.changed(&rec)
 	return nil
 }
 
@@ -399,6 +412,13 @@ func (s *Store) Update(id string, permissions *uint32, expiration **int64) error
 			*expiration, now, id); err != nil {
 			return fmt.Errorf("update share expiration: %w", err)
 		}
+	}
+	if s.OnChange != nil {
+		rec, err := s.Get(id)
+		if err != nil {
+			return fmt.Errorf("read updated share: %w", err)
+		}
+		s.changed(rec)
 	}
 	return nil
 }

@@ -402,6 +402,7 @@ func (s *Server) fetchAndStore(ctx context.Context, owner string, c *Collection,
 				continue
 			}
 			stripManaged(obj)
+			stripAlarms(obj)
 			o, err := ical.Decode(obj, ical.VEVENT)
 			if err != nil {
 				res.Skipped++
@@ -541,6 +542,16 @@ func feedRefresh(cal *contentline.Component) (time.Duration, bool) {
 		return min(max(total, minRefresh), maxRefresh), true
 	}
 	return 0, false
+}
+
+// stripAlarms removes a feed's VALARMs: a feed's author does not decide
+// when its subscribers are reminded (Apple Calendar removes them from
+// subscriptions too), and Cog's reminders would otherwise fire for every
+// match of a team's season.
+func stripAlarms(obj *contentline.Component) {
+	for _, sub := range obj.Components {
+		sub.Components = slices.DeleteFunc(sub.Components, func(c *contentline.Component) bool { return c.Is("VALARM") })
+	}
 }
 
 // ensureUID returns the UID of a calendar object from splitCalendar, and

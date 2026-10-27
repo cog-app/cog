@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -229,6 +230,19 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	registry.SetMountResolver(resolver)
 
 	shares := share.NewStore(sysDB, c)
+	// A shared address book's cards reach its sharees' birthday calendars.
+	shares.OnChange = func(rec share.Record) {
+		if rec.ResourceType != dav.ShareType {
+			return
+		}
+		id, err := strconv.ParseInt(rec.ResourceID, 10, 64)
+		if err != nil {
+			return // names no collection
+		}
+		if err := davServer.ShareChanged(rec.SubjectType, rec.SubjectID, dav.CollectionID(id)); err != nil {
+			log.Error("birthday calendars after a share change", "share", rec.ID, "err", err)
+		}
+	}
 	quotas := quota.NewStore(sysDB, c)
 	activities := activity.NewStore(sysDB, c)
 	fedStore := federation.NewStore(sysDB, c)

@@ -1,6 +1,7 @@
 package dav_test
 
 import (
+	"html"
 	"os"
 	"regexp"
 	"slices"
@@ -8,9 +9,11 @@ import (
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
+	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
+	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/contacts"
 )
 
@@ -29,7 +32,7 @@ func birthdayEvents(t *testing.T, env *cogtest.Env, u *cogtest.User) []string {
 		return m[1]
 	}
 	var out []string
-	body = unfold(strings.NewReplacer("&#xD;", "\r", "&#xA;", "\n").Replace(body))
+	body = unfold(html.UnescapeString(body))
 	for _, part := range strings.Split(body, "<C:calendar-data>")[1:] {
 		ev, _, _ := strings.Cut(part, "</C:calendar-data>")
 		out = append(out, field(ev, "SUMMARY")+"|"+field(ev, "DTSTART")+"|"+field(ev, "RRULE"))
@@ -51,9 +54,21 @@ var birthdayCards = []string{
 	"ical.js/escape_semicolon.vcf",                                   // 3.0: date-time without zone, X-ANNIVERSARY
 	"ez-vcard/John_Doe_EVOLUTION.vcf",                                // 3.0: X-EVOLUTION-ANNIVERSARY
 	"aosp-vcard/v21_x_android_custom_after_photo.vcf",                // 2.1: extended date, no FN
+	"ccs-caldavtester/vcardput-10.vcf",                               // Apple: item3.X-ABDATE labelled anniversary
+	"ez-vcard/gmail-single.vcf",                                      // Google's Apple-style anniversary
+	"ez-vcard/gmail-single2.vcf",                                     // a labelled anniversary among other dates
+	"ez-vcard/John_Doe_GMAIL.vcf",                                    // the same
 }
 
 var birthdaysWanted = []string{
+	"🎂 All Custom Fields Here (1999)|VALUE=DATE:19990318|FREQ=YEARLY",
+	"🎂 Greg Dartmouth (1960)|VALUE=DATE:19600910|FREQ=YEARLY",
+	"🎂 Mr. John Richter\\, James Doe Sr. (1980)|VALUE=DATE:19800322|FREQ=YEARLY",
+	"🎂 VCard Test (1912)|VALUE=DATE:19120623|FREQ=YEARLY",
+	"💍 All Custom Fields Here (1995)|VALUE=DATE:19950521|FREQ=YEARLY",
+	"💍 Greg Dartmouth (1970)|VALUE=DATE:19700602|FREQ=YEARLY",
+	"💍 Mr. John Richter\\, James Doe Sr. (1975)|VALUE=DATE:19750301|FREQ=YEARLY",
+	"💍 VCard Test (1930)|VALUE=DATE:19300320|FREQ=YEARLY",
 	"🎂 First Last NextCloud (2019)|VALUE=DATE:20190210|FREQ=YEARLY",
 	"🎂 John Doe (1970)|VALUE=DATE:19700921|FREQ=YEARLY",
 	"🎂 Maxl (1972)|VALUE=DATE:19720131|FREQ=YEARLY",
@@ -101,7 +116,8 @@ func TestBirthdayCalendar(t *testing.T) {
 		require.NoError(t, err, f)
 		assert.Equal(t, 0, res.Failed, f)
 	}
-	assert.Equal(t, birthdaysWanted, birthdayEvents(t, env, alice))
+	want := slices.Sorted(slices.Values(birthdaysWanted))
+	assert.Equal(t, want, birthdayEvents(t, env, alice))
 
 	// Read-only to everyone.
 	bpath := cal + "alice/" + dav.BirthdaysName + "/"
@@ -166,7 +182,7 @@ func TestBirthdayCalendar(t *testing.T) {
 	req(t, env, alice, "DELETE", books+"leap.vcf", "").Status(204)
 	body, _ = syncReport(t, env, alice, bpath, token)
 	assert.Contains(t, body, leap+"</D:href><D:status>HTTP/1.1 404 Not Found")
-	assert.Equal(t, birthdaysWanted, birthdayEvents(t, env, alice))
+	assert.Equal(t, want, birthdayEvents(t, env, alice))
 
 	// A second address book adds its own; deleting a book takes its
 	// events with it.
@@ -183,8 +199,43 @@ func TestBirthdayCalendar(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, len(birthdayEvents(t, env, alice)))
 
-	// Another user's cards never reach alice's calendar.
+	// Another user's cards reach alice's calendar only through a share
+	// that lets her read them, and follow it.
 	bob := env.CreateUser(t, "bob", "pass")
-	req(t, env, bob, "PUT", "/remote.php/dav/addressbooks/bob/contacts/leap.vcf", apple).Status(201)
+	bobCard := strings.NewReplacer("UID:leap", "UID:bobs", "Leap Kid", "Bob's Mum", "1604-02-29", "1950-05-01").Replace(apple)
+	req(t, env, bob, "PUT", "/remote.php/dav/addressbooks/bob/contacts/mum.vcf", bobCard).Status(201)
+	assert.Equal(t, 1, len(birthdayEvents(t, env, alice)))
+	bobBook, err := srv.Collections.GetOrDefault(bob.ID, dav.HomeAddressBooks, "contacts")
+	require.NoError(t, err)
+	share(t, env, bob, alice, bobBook.ID, plugin.PermFreeBusy) // reads nothing
+	assert.Equal(t, 1, len(birthdayEvents(t, env, alice)))
+	rec, err := env.Providers.Shares.Create(bob.ID, dav.ShareType, bobBook.ID.String(), "USER", alice.ID, plugin.PermRead)
+	require.NoError(t, err)
+	assert.Contains(t, strings.Join(birthdayEvents(t, env, alice), "\n"), "🎂 Bob's Mum (1950)|VALUE=DATE:19500501")
+	// Bob's edits reach her calendar, though she wrote nothing.
+	req(t, env, bob, "PUT", "/remote.php/dav/addressbooks/bob/contacts/mum.vcf", strings.Replace(bobCard, "1950-05-01", "1950-05-02", 1)).Status(204)
+	assert.Contains(t, strings.Join(birthdayEvents(t, env, alice), "\n"), "🎂 Bob's Mum (1950)|VALUE=DATE:19500502")
+	// Revoking the share takes the events away at once.
+	require.NoError(t, env.Providers.Shares.Delete(rec.ID))
+	assert.Equal(t, 1, len(birthdayEvents(t, env, alice)))
+
+	// Through a group: sharing with it reaches its members; one who
+	// leaves loses the events at the next sweep.
+	grp, err := env.Providers.Groups.Create("family", nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, alice.ID, group.User))
+	_, err = env.Providers.Shares.Create(bob.ID, dav.ShareType, bobBook.ID.String(), "GROUP", grp.ID, plugin.PermRead)
+	require.NoError(t, err)
+	assert.Equal(t, 2, len(birthdayEvents(t, env, alice)))
+	require.NoError(t, env.Providers.Groups.RemoveMember(grp.ID, alice.ID))
+	require.NoError(t, srv.SweepBirthdays())
+	assert.Equal(t, 1, len(birthdayEvents(t, env, alice)))
+
+	// Deleting a shared book removes its events from the sharee's
+	// calendar.
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, alice.ID, group.User))
+	require.NoError(t, srv.SweepBirthdays())
+	assert.Equal(t, 2, len(birthdayEvents(t, env, alice)))
+	req(t, env, bob, "DELETE", "/remote.php/dav/addressbooks/bob/contacts/", "").Status(204)
 	assert.Equal(t, 1, len(birthdayEvents(t, env, alice)))
 }
