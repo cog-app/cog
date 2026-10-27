@@ -522,7 +522,7 @@ func inboxCollection(owner *User) *Collection {
 func outboxHref(username string) string { return homeHref(HomeCalendars, username) + outboxName + "/" }
 
 const (
-	allowInbox   = "OPTIONS, PROPFIND, REPORT"
+	allowInbox   = "OPTIONS, PROPFIND, REPORT, POST"
 	allowOutbox  = "OPTIONS, PROPFIND, POST"
 	allowMessage = "OPTIONS, GET, HEAD, DELETE, PROPFIND"
 )
@@ -567,6 +567,13 @@ func (q *request) scheduling(owner *User, name, uri string) {
 			q.propfindCollection(c, owner, a)
 		case "REPORT":
 			q.report(c, owner, a)
+		case http.MethodPost:
+			n, err := readXML(q.r)
+			if err != nil || !n.is(pushName("push-register")) {
+				http.Error(q.w, "expected push-register", http.StatusBadRequest)
+				return
+			}
+			q.pushRegister(n, inboxResource(owner.ID), false)
 		case http.MethodOptions:
 			q.options(allowInbox)
 		default:
@@ -578,6 +585,14 @@ func (q *request) scheduling(owner *User, name, uri string) {
 	case http.MethodGet, http.MethodHead:
 		q.get(c, owner, a, uri)
 	case http.MethodDelete:
+		done, err := q.suppressPush(pushKey{inboxOf: owner.Username})
+		if err != nil {
+			q.fail(err)
+			return
+		}
+		if done != nil {
+			defer done()
+		}
 		q.delete(c, owner, a, uri)
 	case "PROPFIND":
 		q.propfindResource(c, owner, a, uri)

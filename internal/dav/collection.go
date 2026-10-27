@@ -135,6 +135,15 @@ var (
 type Store struct {
 	db    *sql.DB
 	clock clock.Clock
+	// observe hears of collections created, changed and deleted, for
+	// WebDAV-Push (Server.EnablePush).
+	observe func(*Collection, collectionEvent)
+}
+
+func (s *Store) changed(c *Collection, ev collectionEvent) {
+	if s.observe != nil {
+		s.observe(c, ev)
+	}
 }
 
 // NewStore returns a collection store over the system database.
@@ -301,6 +310,7 @@ func (s *Store) Create(c *Collection) error {
 		return fmt.Errorf("create collection %q: %w", c.Name, err)
 	}
 	c.ID, c.CreatedAt, c.UpdatedAt = CollectionID(id), now, now
+	s.changed(c, collectionCreated)
 	return nil
 }
 
@@ -323,22 +333,32 @@ func (s *Store) Update(c *Collection) error {
 		return fmt.Errorf("update collection %d: %w", c.ID, err)
 	}
 	c.UpdatedAt = now
+	s.changed(c, collectionUpdated)
 	return nil
 }
 
 // Delete removes a collection. Its resources live in plugin databases;
 // Server.DeleteCollection purges them.
 func (s *Store) Delete(id CollectionID) error {
-	res, err := s.db.Exec(`DELETE FROM dav_collections WHERE id = ?`, id)
-	if err != nil {
-		return fmt.Errorf("delete collection %d: %w", id, err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("delete collection %d: %w", id, err)
-	}
-	if n == 0 {
+	c := Collection{ID: id}
+	err := s.db.QueryRow(`DELETE FROM dav_collections WHERE id = ? RETURNING owner_user_id, home`, id).Scan(&c.OwnerID, &c.Home)
+	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("delete collection %d: %w", id, err)
+	}
+	s.changed(&c, collectionDeleted)
+	return nil
+}
+
+// dropOrphanPushes removes WebDAV-Push subscriptions to collections that no
+// longer exist, once they owe nothing: they were told of the deletion.
+func (s *Store) dropOrphanPushes() error {
+	if _, err := s.db.Exec(`DELETE FROM push_subscriptions WHERE protocol = 'webdav' AND pending = 0
+		AND resource LIKE 'collection/%'
+		AND CAST(substr(resource, 12) AS INTEGER) NOT IN (SELECT id FROM dav_collections)`); err != nil {
+		return fmt.Errorf("drop push subscriptions of deleted collections: %w", err)
 	}
 	return nil
 }

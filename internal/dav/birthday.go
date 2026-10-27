@@ -186,17 +186,24 @@ func (s *Server) SweepBirthdays() error {
 }
 
 // ShareChanged follows a share of collection id made, changed or deleted:
-// the birthday calendars of the users it reaches, when it shares an
-// address book. A share with one user syncs theirs; a group's or
-// everyone's, all of them.
+// push subscribers learn that the collection's privileges and the homes it
+// appears in changed; and when it shares an address book, the birthday
+// calendars of the users it reaches follow. A share with one user syncs
+// theirs; a group's or everyone's, all of them.
 func (s *Server) ShareChanged(subjectType, subjectID string, id CollectionID) error {
 	c, err := s.Collections.ByID(id)
 	if errors.Is(err, ErrNotFound) {
-		// A deleted book: purging it already told its readers.
+		// A deleted collection: deleting it already told its readers.
 		return nil
 	}
-	if err != nil || c.Home != HomeAddressBooks {
+	if err != nil {
 		return err
+	}
+	if subjectType != "PUBLIC" {
+		s.sharePushChanged(subjectType, subjectID, c)
+	}
+	if c.Home != HomeAddressBooks {
+		return nil
 	}
 	switch subjectType {
 	case "USER":

@@ -14,6 +14,8 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
+	"git.duckfam.us/jj-software/cog/internal/push"
+	"git.duckfam.us/jj-software/cog/internal/webpush"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
@@ -67,6 +69,14 @@ type Server struct {
 	// safehttp's, which reaches only public addresses.
 	Fetch *http.Client
 
+	// Push keeps WebDAV-Push subscriptions, Pusher delivers to them, and
+	// VAPID identifies the server to push services; WebDAV-Push is offered
+	// only with all three (EnablePush).
+	Push   *push.Store
+	Pusher *push.Deliverer
+	VAPID  *webpush.VAPID
+
+	pushQ     pushQueue
 	fetchOnce sync.Once
 	fetch     *http.Client
 	// birthdayStates holds a *birthdayState per owner's username.
@@ -201,6 +211,8 @@ func (q *request) dispatch() {
 		q.root()
 	case "principals":
 		q.principals(rest)
+	case pushPath:
+		q.pushRegistration(rest)
 	case string(HomeCalendars), string(HomeAddressBooks):
 		home := Home(first)
 		if !q.hasHome(home) {
@@ -298,7 +310,11 @@ func (q *request) depth() int {
 
 func (q *request) options(allow string) {
 	q.w.Header().Set("Allow", allow)
-	q.w.Header().Set("DAV", "1, 3, access-control, calendar-access, calendar-auto-schedule, calendar-no-timezone, calendar-managed-attachments, calendarserver-sharing, addressbook, extended-mkcol")
+	dav := "1, 3, access-control, calendar-access, calendar-auto-schedule, calendar-no-timezone, calendar-managed-attachments, calendarserver-sharing, addressbook, extended-mkcol"
+	if q.s.pushEnabled() {
+		dav += ", webdav-push"
+	}
+	q.w.Header().Set("DAV", dav)
 	q.w.WriteHeader(http.StatusOK)
 }
 
@@ -490,7 +506,7 @@ func (q *request) homeCollection(home Home, owner *User) {
 	switch q.r.Method {
 	case "PROPFIND":
 	case http.MethodPost:
-		q.homePost()
+		q.homePost(home)
 		return
 	case http.MethodOptions:
 		q.options(allowHome)
@@ -517,6 +533,7 @@ func (q *request) homeCollection(home Home, owner *User) {
 		// reaches its home (RFC 8607 section 6.1).
 		homeExtra = append(homeExtra, prop{caldav("managed-attachments-server-URL"), ""})
 	}
+	homeExtra = append(homeExtra, q.s.pushProps(homeResource(owner.ID, home), false)...)
 	ms := multistatus{Responses: []response{{Href: homeHref(home, owner.Username), Propstats: pf.evaluate(homeProps, homeExtra)}}}
 	if q.depth() == 1 {
 		listed, err := q.listHome(home)
@@ -542,7 +559,7 @@ func (q *request) homeCollection(home Home, owner *User) {
 				return
 			}
 			ms.Responses = append(ms.Responses,
-				response{Href: collectionHref(inbox, owner.Username), Propstats: pf.evaluate(q.inboxProps(inbox, owner.Username, tok), nil)},
+				response{Href: collectionHref(inbox, owner.Username), Propstats: pf.evaluate(q.inboxProps(inbox, owner.Username, tok), q.s.pushProps(inboxResource(owner.ID), false))},
 				response{Href: outboxHref(owner.Username), Propstats: pf.evaluate(q.outboxProps(owner), nil)},
 			)
 		}
@@ -678,7 +695,7 @@ func privileges(a access, home Home) string {
 // only when asked for by name.
 func (q *request) collectionProps(c *Collection, a access, ownerName string, tok SyncToken) ([]prop, []prop, error) {
 	if c.ID == InboxID {
-		return q.inboxProps(c, ownerName, tok), nil, nil
+		return q.inboxProps(c, ownerName, tok), q.s.pushProps(inboxResource(c.OwnerID), false), nil
 	}
 	shared, sharing, err := q.sharingProps(c, a, ownerName)
 	if err != nil {
@@ -759,6 +776,9 @@ func (q *request) collectionProps(c *Collection, a access, ownerName string, tok
 			prop{caldav("max-attachment-size"), fmt.Sprint(MaxAttachmentSize)},
 			prop{caldav("max-attachments-per-resource"), fmt.Sprint(MaxAttachmentsPerResource)},
 		)
+	}
+	if a.read() {
+		extra = append(extra, q.s.pushProps(collectionResource(c.ID), true)...)
 	}
 	return props, extra, nil
 }

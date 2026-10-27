@@ -57,6 +57,16 @@ func (q *request) resource(home Home, owner *User, name, uri string) {
 		http.Error(q.w, "Forbidden", http.StatusForbidden)
 		return
 	}
+	if q.r.Method == http.MethodPut || q.r.Method == http.MethodDelete || q.r.Method == http.MethodPost {
+		done, err := q.suppressPush(pushKey{collection: c.ID})
+		if err != nil {
+			q.fail(err)
+			return
+		}
+		if done != nil {
+			defer done()
+		}
+	}
 	switch q.r.Method {
 	case http.MethodGet, http.MethodHead:
 		q.get(c, owner, a, uri)

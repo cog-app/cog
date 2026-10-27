@@ -173,6 +173,17 @@ dav_subscriptions(                   -- a subscription's feed (section 9.1)
   skipped)                           -- components of the last fetch a subscription does not hold
 
 dav_birthday_cursors(collection_id, book_id, version)   -- how far the birthday calendar has read each address book
+
+push_subscriptions(                  -- a client's Web Push endpoint and what it watches (section 9.2); JMAP push reuses it
+  id PRIMARY KEY,                    -- random; the registration URL ends with it
+  user_id,                           -- who registered it; ON DELETE CASCADE
+  protocol,                          -- 'webdav' (JMAP: 'jmap')
+  resource,                          -- what it watches: 'collection/<id>', 'inbox/<user id>', 'home/<user id>/<home>'
+  endpoint, p256dh, auth,            -- the push resource and its RFC 8291 keys; UNIQUE(protocol, resource, endpoint)
+  options,                           -- the protocol's own, JSON: WebDAV's triggers
+  expires_at,
+  pending, seq,                      -- bits owed (content, property) and a counter of marks, so a push clears only what it carried
+  next_attempt_at, failures, last_error, last_success_at)
 ```
 
 Sync state, in every plugin database that holds resources (`internal/dav/davsql` runs the SQL in the caller's transaction):
@@ -346,6 +357,7 @@ The codec is `internal/dav/vcard` (`Decode`, `Card.Encode`), beside `ical` and s
 - Report it to clients via `DAV:current-user-privilege-set` (a subset of RFC 3744): `read`, `write`, `write-content`, `bind`, `unbind`, `read-free-busy`, `schedule-*`. Without it clients show read-only shares as editable. The owner has `all`.
 - Only the owner may PROPPATCH or delete a collection, or create one in their home.
 - Free/busy-only shares expose only `read-free-busy` and answer `free-busy-query` REPORTs (RFC 4791 §7.10); events are not readable.
+- **Push subscriptions** (section 9.2) need read access to what they watch: the owner, or a share with Read. A free/busy-only share has no push properties and cannot subscribe. A sharee's subscription is dropped at the first change after their access ends.
 - **Read-only collections** (a subscription, the birthday calendar; section 3.0): the owner has `read`, `write-properties`, `read-acl`, `read-current-user-privilege-set` and `read-free-busy`, not `all`; a sharee's Write grants nothing there, and Schedule nothing with it. They are transparent for free/busy unless the owner marks them opaque.
 - **Feeds** are public link shares (`PUBLIC` with a token) of a `dav:collection`, made by its owner: Read serves the calendar, FreeBusy only its busy times (section 9.1). The share panel lists them as "Feed" and revoking one there revokes the feed.
 - **Free/busy through the outbox** (RFC 6638 §5): a user may see the busy time of all their own calendars, and of someone else's calendars those that person shared with them with FreeBusy or Read; for anyone else the answer is `3.8;No authority`, and for an address that is not a Cog user `3.7`. A calendar whose owner set `schedule-calendar-transp` to transparent never makes them busy there.
@@ -388,7 +400,7 @@ Everything below is in scope for the MR.
 | Free/busy query (RFC 4791 §7.10, RFC 6638 outbox POST) | FreeBusy share permission, scheduling |
 | Timezones by reference RFC 7809 | `calendar-timezone-id`; clients may omit VTIMEZONE; `CalDAV-Timezones: F` leaves out standard VTIMEZONEs (section 4.1). No `timezone-service-set`: TZDIST is out of scope |
 | Managed attachments RFC 8607 | attachments stored as Cog files instead of inline base64; per-instance (`rid`) supported (section 4.2) |
-| WebDAV-Push (draft-bitfire-webdav-push; DAVx5) | push instead of polling; subscriptions per collection; Web Push (VAPID) transport |
+| WebDAV-Push (draft-bitfire-webdav-push; DAVx5) | push instead of polling; subscriptions per collection, inbox and home; Web Push transport with VAPID and RFC 8291 encryption (section 9.2) |
 | CalendarServer sharing extensions (`CS:invite`, `CS:shared-url`, `CS:share`, `CS:invite-reply`) | show, make and answer shares in Apple clients and DAVx5 (section 7) |
 
 ### Feeds and derived collections
@@ -424,6 +436,17 @@ Everything below is in scope for the MR.
 - **Events**: one yearly all-day event per BDAY and per ANNIVERSARY (or, in a 3.0 card without one, the vendor property clients use: X-ANNIVERSARY, X-EVOLUTION-ANNIVERSARY, X-MS-ANNIVERSARY, X-WAB-WEDDING_ANNIVERSARY, or Apple's and Google's `itemN.X-ABDATE` labelled `_$!<Anniversary>!$_`; other labelled dates are neither), `🎂 Name (1990)` or `💍 Name (2010)`, transparent. Dates are read as written in every version (`vcard.ParseDate`): `19950415`, `1995-04-15`, `--0415`, `--04-15`, date-times with or without zones, and Apple's yearless `1604-04-15` with X-APPLE-OMIT-YEAR; forms without a day, free text and impossible dates make no event. A series starts in the birth year (1900 at the earliest), or 1970 without one; February 29 recurs on the last day of February. The URI and UID are the address book and a hash of the card's URI, never its content, so an edit replaces the event in place; DTSTAMP is fixed, so regenerating an unchanged card writes nothing.
 - **Following the cards**: the contacts store calls `Server.CardsChanged` after every write it commits (DAV, the web UI, an import, a deleted book). The calendar keeps, per address book, the version it has read (`dav_birthday_cursors`), and catches up from the cards changed and deleted since (`Backend.Changes`, then `DateSource.CardDates`, which reads the date columns and leftovers without rendering a card), the events those cards may have, and one batch write: a fixed number of queries however large the book. An import holds the sync until its last card. A cursor below the book's floor, a new book or a deleted one is read whole. A sync that fails (or is skipped while a plugin is disabled) is made good by the next.
 - **Shared books**: each cursor records the book's owner, so a write to a book also syncs the calendars of the other users that read it. A share made, changed or deleted (`share.Store.OnChange`) syncs the calendar of the user it names, or every birthday calendar for a group or everyone's share; group membership changes without either, so the calendar plugin sweeps every birthday calendar hourly (`SweepBirthdays`). A book no longer readable, deleted or unshared, takes its events with it.
+
+### 9.2 WebDAV-Push
+
+**Subscriptions** (`internal/push`, `internal/dav/push.go`) live in the system database (`push_subscriptions`, section 4), beside `dav_collections`: every replica sees them and any replica can deliver, a sharee's subscription is to the owner's collection whatever database holds its resources, and nothing per user has to be opened to find who to tell. The store knows nothing of DAV: a subscription names a protocol and a resource in that protocol's terms, so JMAP push (milestone 10) adds a protocol, not a table.
+
+- **Discovery**: `DAV: webdav-push` in OPTIONS; `transports` (Web Push with the VAPID public key), `topic` and `supported-triggers` on collections (content updates at depth 1, property updates at depth 0), the schedule inbox and the calendar and address book homes (content updates only), when asked for by name. The topic is an HMAC of the resource with the server secret: stable, unique, and opaque to the push service, which sees it in the `Topic` header.
+- **Registration**: a `push-register` POST to anything the user can read (a free/busy-only share cannot subscribe: `push-not-available`). The push resource must be https; the subscription's P-256 key and auth secret are required, since every message is encrypted; triggers are downgraded rather than refused, and none left is `no-supported-trigger`. The same endpoint again updates that registration, as the draft asks; another user's endpoint is `invalid-subscription`. The answer is 204 with the registration URL (`/remote.php/dav/push/<id>`) in `Location` and the expiry in `Expires`: as asked, within an hour and a week, a week by default. Its owner DELETEs it to unsubscribe; anyone else gets 404.
+- **Noticing changes**: every resource write and delete bumps its collection's row in `dav_sync` (section 6). The host gives every connection to a user's plugin database an observer (`db.TxObserver`, through `plugin.Registry.SetTxObserverFactory`): SQLite's update hook records the collections whose row changed, and the commit hook reports them, the rollback hook drops them. So DAV, the web UIs, imports, subscription polls, birthday syncs and scheduling deliveries are all covered without any of them knowing about push, and a write path added later is too. The inbox's row (collection 0) reports the owner's inbox. The `Store` reports collections created and deleted (their home changes; a deleted collection's subscribers are told) and properties changed (PROPPATCH, web renames); `ShareChanged` reports shares, which change a collection's privileges and the sharee's home.
+- **Coalescing**: reports gather in memory (`pushQueue`) and wake the deliverer, which waits a second (`push.Debounce`) and then marks: the subscriptions to what changed whose triggers match, and, for a sharee, who can still read the collection (one who cannot is removed). A mark sets a bit on the subscription, so however many writes come before a delivery — an import committed resource by resource, a feed's batch — each subscriber gets one push.
+- **Delivery** (`push.Deliverer`): due subscriptions are claimed with a two-minute lease, so replicas do not both send; the message is content-free, `<push-message>` with the topic and an empty `content-update` and/or `property-update`, no sync token; it is encrypted (RFC 8291, aes128gcm) and signed (VAPID, RFC 8292, ES256 with the key generated once and kept in `system_settings` like the server secret; the contact claim is the server's URL, which push services that require one get from any https deployment), sent with a day's TTL and the topic, through `internal/safehttp`. A change marked while its push was in flight stays owed (`seq`). 404 or 410 removes the subscription; any other failure is logged and retried after 30 seconds, doubling to at most six hours (or the service's Retry-After). Expired subscriptions get nothing and are pruned hourly with the subscriptions of deleted collections.
+- **Push-Dont-Notify** is honoured for writes to resources, PROPPATCH and inbox deletions: the registrations it names (the current user's only; others and junk are ignored), or `*`, are not told of the request's own change. It is counted per change, so another client's write in the same second still reaches them; a request that changed nothing silences nothing.
 
 ### JSON representations and API
 
@@ -503,6 +526,9 @@ Each milestone is a run of commits that builds and passes tests on its own.
 - **Subscriptions are stored, not proxied**: the server fetches the feed and keeps its events as rows, so every client syncs them (and the web UI shows them) with Cog's own ETags and tombstones; the collection is a `calendar` with `CS:source`, not CalendarServer's `CS:subscribed`, which makes Apple clients fetch the feed themselves. They hold events only.
 - **The birthday calendar is per user and a real collection**, derived incrementally from the address books' sync state (section 9.1).
 - **Collections Cog fills are read-only to their owner too** (section 3.0): a client's edit would be overwritten by the next fetch or card change.
+- **Push subscriptions live in the system database**, generic over protocols (`internal/push`), not per user beside the resources: any replica can find and deliver them, sharees subscribe to the owner's collection, and JMAP push reuses the store (section 9.2).
+- **Changes are noticed by a connection observer on `dav_sync`**, not by calls at each write path: every write already bumps that row in its transaction, so watching it covers every path, present and future, and reports only committed changes. It is SQLite-specific, like the search drainer's update hooks, and like them only a hint: a lost push costs a client a poll, never data. A backend without connection hooks would report from `davsql.Bump`'s callers instead.
+- **Pushes are content-free** (topic and kind of update, no sync token) and **owed, not queued**: a bit per subscription, so a burst of writes is one push and a failing endpoint holds one owed push, not a backlog.
 
 ## 13. Open questions
 
@@ -522,6 +548,7 @@ Branch `design-dav-storage`, one draft MR to master. Update this section at the 
 | 6. Scheduling and free/busy | Done. `internal/dav/itip` works out iTIP messages (RFC 5546) from a change and applies received ones; `internal/dav/schedule.go` has the inbox and outbox, implicit scheduling on DAV PUT/DELETE and web edits, delivery between Cog users and iMIP email to others, SCHEDULE-AGENT/-STATUS/-FORCE-SEND, the free-busy-query REPORT and outbox free/busy, and the Schedule permission (sections 4.2, 5 and 7). Inboxes live in the calendar plugin's database (`schedule_inbox`). Fixtures: RFC 5546's examples in `testdata/dav/ics/rfc5546/` and its broken ones in `quirks/rfc5546/`. |
 | 7. Sharing extensions, managed attachments | Done. `internal/dav/sharing.go` serves CalendarServer sharing (`CS:invite`, `CS:shared-url`, `CS:share`, `CS:invite-reply`) on the `dav:collection` shares (section 7); `internal/dav/attach.go` serves RFC 8607 managed attachments, with ATTACH modelled in `event_attachments` and the files kept by the calendar plugin (section 4.2); the event modal lists, downloads, uploads and removes attachments. Fixtures: RFC 8607's examples in `testdata/dav/ics/rfc8607/`, CalendarServer's managed and dropbox forms in `calendarserver/`. |
 | 8. Feeds | Done. `internal/dav/feed.go` serves ICS feeds from public link shares, with a free/busy-only variant, conditional GETs and feed-bound attachment tokens; `internal/dav/subscribe.go` keeps subscription calendars filled from remote feeds through `internal/safehttp`, polled by the calendar plugin; `internal/dav/birthday.go` derives the birthday calendar from the contacts' dates (`vcard.ParseDate`); collections have a kind, and those Cog fills are read-only (sections 3.0, 7, 9.1). The calendar settings page manages all three. |
+| 9. WebDAV-Push | Done. `internal/webpush` encrypts (RFC 8291) and signs (VAPID, RFC 8292) Web Push messages with the standard library only; `internal/push` keeps subscriptions in the system database and delivers them; `internal/dav/push.go` serves discovery, registration and unregistration on collections, inboxes and homes, notices changes through a connection observer on `dav_sync`, and honours Push-Dont-Notify (section 9.2). |
 
 How milestone 2 differs from the plan it started with:
 
@@ -681,6 +708,27 @@ Adjacent bugs fixed in milestone 8:
 - An address book's public link served nothing; it serves the book's cards as a vCard file.
 - The reminders endpoint (`/apps/calendar/notifications`) loaded each due reminder's event with its own query; it loads them in one.
 - `TestBrowserVolumeBrowse` browses the data directory, so its golden showed the size of `system.db-wal`, which followed the system schema and every write before the page. The test empties the log first.
+
+How milestone 9 differs from the plan:
+
+- Subscriptions are to collections, the schedule inbox and the two homes (the draft's SHOULD list), not collections only; principals are not offered push, since nothing a client shows of a principal changes in Cog.
+- Changes are noticed by observing `dav_sync` on every plugin connection (section 12), not by notifying from each write path. `db.ObserveHook` shares SQLite's one update hook per connection between search and the observer.
+- Messages carry no sync token, by decision (content-free); the draft's SHOULD is for clients that skip a push they already know, which a sync with the token they hold does cheaply anyway.
+- Registration always answers 204: the draft's 201 is for registrations that return extra information, which Cog has none of.
+- PROPPATCH and share changes are property updates; a collection deleted is a content update to its subscribers and to its owner's home.
+- `internal/safehttp` gained `ClientWith` and `Options.Allow`, a private-address allowance for one client, which the push tests use for their TLS push service; the process-wide `SetAllowPrivate` stays for the older tests.
+- `services.NewFromDB` returns an error (the server secret and the VAPID key can fail to load); `Providers` has `Push` and `Pusher`, and `StartPush` runs delivery beside the plugins.
+
+Adjacent bugs fixed in milestone 9:
+
+- The server secret swallowed its errors: a failed random read or a failed write of a new secret went unnoticed, and a secret that could not be stored was regenerated on every start, invalidating sessions' CSRF tokens and every signed attachment URL. Loading it (and the VAPID key) now fails startup with the error, and two processes starting at once agree on the stored key.
+- `safehttp`'s private-address override was a plain variable read by dialing goroutines while tests toggled it (a data race); it is atomic.
+
+Accepted in milestone 9:
+
+- Pruning tombstones raises a collection's `floor` in `dav_sync`, which the observer cannot tell from a write, so it sends one push. It happens once per expired batch (default 90 days), after a client's sync.
+- Push-Dont-Notify is matched to a request's change after the request ends; a delivery round that starts between the commit and the end of the request (a second after the change at the earliest) sends the push anyway.
+- External (gRPC) plugins open their databases in their own process, outside the observer; none holds DAV resources.
 
 Fixed after milestone 2 (pre-existing, found through the `webtest` fix):
 

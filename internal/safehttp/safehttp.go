@@ -6,11 +6,13 @@ package safehttp
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
+	"sync/atomic"
 	"time"
 )
 
@@ -46,14 +48,15 @@ var blockedPrefixes = mustPrefixes(
 
 // allowPrivate, when true, permits dialing private/loopback/link-local IPs.
 // Set via SetAllowPrivate for integration tests against httptest servers.
-var allowPrivate bool
+var allowPrivate atomic.Bool
 
-// SetAllowPrivate enables dialing into normally-blocked ranges. Intended for
-// tests only; must not be true in production.
-func SetAllowPrivate(b bool) { allowPrivate = b }
+// SetAllowPrivate enables dialing into normally-blocked ranges for every
+// client in the process. Intended for tests only; must not be true in
+// production. Prefer Options.Allow, which reaches only one client.
+func SetAllowPrivate(b bool) { allowPrivate.Store(b) }
 
 // AllowPrivate reports whether SetAllowPrivate is on.
-func AllowPrivate() bool { return allowPrivate }
+func AllowPrivate() bool { return allowPrivate.Load() }
 
 func mustPrefixes(specs ...string) []netip.Prefix {
 	out := make([]netip.Prefix, 0, len(specs))
@@ -71,13 +74,18 @@ func mustPrefixes(specs ...string) []netip.Prefix {
 // a blocked range.
 var ErrBlockedIP = errors.New("safehttp: blocked IP")
 
-// addressBlocked reports whether ip is in a blocked range.
-func addressBlocked(ip netip.Addr) bool {
-	if allowPrivate {
+// addressBlocked reports whether ip is in a blocked range and not in allow.
+func addressBlocked(ip netip.Addr, allow []netip.Prefix) bool {
+	if allowPrivate.Load() {
 		return false
 	}
 	if ip.Is4In6() {
 		ip = ip.Unmap()
+	}
+	for _, p := range allow {
+		if p.Contains(ip) {
+			return false
+		}
 	}
 	for _, p := range blockedPrefixes {
 		if p.Contains(ip) {
@@ -91,6 +99,13 @@ func addressBlocked(ip netip.Addr) bool {
 // blocked range. The dial target is pinned to the IP that was validated, so
 // DNS rebinding between lookup and dial is impossible.
 func DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	return dialer{}.DialContext(ctx, network, addr)
+}
+
+// dialer is DialContext with ranges it may dial although they are blocked.
+type dialer struct{ allow []netip.Prefix }
+
+func (dl dialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
@@ -104,7 +119,7 @@ func DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 		if !ok {
 			continue
 		}
-		if addressBlocked(ip) {
+		if addressBlocked(ip, dl.allow) {
 			return nil, fmt.Errorf("%w: %s resolves to %s", ErrBlockedIP, host, ip)
 		}
 	}
@@ -125,9 +140,12 @@ func DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 }
 
 // Transport returns an http.Transport that dials through DialContext.
-func Transport() *http.Transport {
+func Transport() *http.Transport { return transport(Options{}) }
+
+func transport(o Options) *http.Transport {
 	return &http.Transport{
-		DialContext:           DialContext,
+		DialContext:           dialer{o.Allow}.DialContext,
+		TLSClientConfig:       o.TLS,
 		ResponseHeaderTimeout: 10 * time.Second,
 		TLSHandshakeTimeout:   5 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
@@ -145,10 +163,23 @@ func NoRedirect(req *http.Request, via []*http.Request) error {
 // request. It follows up to five redirects to http or https URLs; each hop is
 // dialed through DialContext, so a redirect cannot reach a blocked address
 // either.
-func Client(timeout time.Duration) *http.Client {
+func Client(timeout time.Duration) *http.Client { return ClientWith(timeout, Options{}) }
+
+// Options loosen one client, for a test that talks to a server of its own:
+// the rest of the process keeps every check.
+type Options struct {
+	// Allow lists ranges the client may dial although they are blocked,
+	// such as the loopback address of an httptest server.
+	Allow []netip.Prefix
+	// TLS configures the client's TLS, such as an httptest server's roots.
+	TLS *tls.Config
+}
+
+// ClientWith is Client with options.
+func ClientWith(timeout time.Duration, o Options) *http.Client {
 	return &http.Client{
 		Timeout:   timeout,
-		Transport: Transport(),
+		Transport: transport(o),
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return errors.New("safehttp: too many redirects")

@@ -333,12 +333,16 @@ func (q *request) collectionAt(href string) (*Collection, string, bool, error) {
 	return c, owner.Username, true, nil
 }
 
-// homePost answers a POST to the current user's home: CS:invite-reply.
-func (q *request) homePost() {
+// homePost answers a POST to the current user's home: CS:invite-reply,
+// or a WebDAV-Push registration.
+func (q *request) homePost(home Home) {
 	n, err := readXML(q.r)
-	if err != nil || !n.is(cs("invite-reply")) {
-		http.Error(q.w, "expected CS:invite-reply", http.StatusBadRequest)
-		return
+	switch {
+	case err == nil && n.is(pushName("push-register")):
+		q.pushRegister(n, homeResource(q.user.ID, home), false)
+	case err == nil && n.is(cs("invite-reply")):
+		q.inviteReply(n)
+	default:
+		http.Error(q.w, "expected CS:invite-reply or push-register", http.StatusBadRequest)
 	}
-	q.inviteReply(n)
 }

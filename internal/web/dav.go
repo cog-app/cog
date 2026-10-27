@@ -217,6 +217,7 @@ func mountDAV(mux *http.ServeMux, p *services.Providers, shares dav.Shares) {
 	mux.Handle("/remote.php/dav/principals/", h)
 	mux.Handle("/remote.php/dav/calendars/", h)
 	mux.Handle("/remote.php/dav/addressbooks/", h)
+	mux.Handle("/remote.php/dav/push/", h)
 	// Attachments check access themselves: an external attendee has a token
 	// rather than an account.
 	mux.Handle("/remote.php/dav/attachments/", srv)

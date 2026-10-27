@@ -75,3 +75,48 @@ func ClockHook(nowFunc func() int64) ConnectHook {
 		return conn.RegisterFunc("unixepoch", nowFunc, false)
 	}
 }
+
+// TxObserver follows one connection's writes and learns whether the
+// transaction that made them committed. Its methods run inside SQLite's
+// hooks, on the writing goroutine: they must not use the database.
+type TxObserver interface {
+	// Change is a row written by the transaction in progress.
+	Change(op int, db, table string, rowid int64)
+	// Commit is called as the transaction commits. Act on what it changed
+	// asynchronously: the commit is not durable until the hook returns.
+	Commit()
+	// Rollback discards what the transaction changed.
+	Rollback()
+}
+
+// ObserveHook returns a ConnectHook that gives each connection the update
+// hook (nil for none) and an observer of its own from newObserver (nil for
+// none). SQLite keeps one update hook per connection, so everything that
+// watches rows has to share it.
+func ObserveHook(update func(op int, db, table string, rowid int64), newObserver func() TxObserver) ConnectHook {
+	return func(conn *sqlite3.SQLiteConn) error {
+		var obs TxObserver
+		if newObserver != nil {
+			obs = newObserver()
+		}
+		switch {
+		case obs == nil && update == nil:
+			return nil
+		case obs == nil:
+			conn.RegisterUpdateHook(update)
+			return nil
+		}
+		conn.RegisterUpdateHook(func(op int, db, table string, rowid int64) {
+			if update != nil {
+				update(op, db, table, rowid)
+			}
+			obs.Change(op, db, table, rowid)
+		})
+		conn.RegisterCommitHook(func() int {
+			obs.Commit()
+			return 0
+		})
+		conn.RegisterRollbackHook(obs.Rollback)
+		return nil
+	}
+}

@@ -28,7 +28,6 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/ui"
-	sqlite3 "github.com/mattn/go-sqlite3"
 )
 
 // MountResolver resolves user file paths via the mount system.
@@ -84,6 +83,9 @@ type Registry struct {
 
 	// dbHookFactory creates update hooks for per-user plugin databases.
 	dbHookFactory func(username, pluginID string) func(int, string, string, int64)
+	// txObserverFactory creates transaction observers for per-user plugin
+	// databases, one per connection.
+	txObserverFactory func(username, pluginID string) db.TxObserver
 
 	// connectHooks are applied to every new SQLite connection (e.g. clock override).
 	connectHooks []db.ConnectHook
@@ -317,18 +319,22 @@ func migrateUserDB(db *sql.DB) error {
 }
 
 // connectHooksFor returns the per-connection instrumentation for a database:
-// the registry-wide hooks (the test clock) plus search indexing when a user
-// owns the database.
+// the registry-wide hooks (the test clock) plus, when a user owns the
+// database, search indexing and the transaction observers.
 func (r *Registry) connectHooksFor(username, pluginID string) []db.ConnectHook {
 	hooks := append([]db.ConnectHook(nil), r.connectHooks...)
-	if r.dbHookFactory != nil && username != "" {
-		hook := r.dbHookFactory(username, pluginID)
-		hooks = append(hooks, func(conn *sqlite3.SQLiteConn) error {
-			conn.RegisterUpdateHook(hook)
-			return nil
-		})
+	if username == "" {
+		return hooks
 	}
-	return hooks
+	var update func(int, string, string, int64)
+	if r.dbHookFactory != nil {
+		update = r.dbHookFactory(username, pluginID)
+	}
+	var observer func() db.TxObserver
+	if r.txObserverFactory != nil {
+		observer = func() db.TxObserver { return r.txObserverFactory(username, pluginID) }
+	}
+	return append(hooks, db.ObserveHook(update, observer))
 }
 
 // openDB opens a SQLite database with the standard instrumentation.
@@ -340,6 +346,13 @@ func (r *Registry) openDB(path, username, pluginID string) (*sql.DB, error) {
 // on per-user plugin databases.
 func (r *Registry) SetDBHookFactory(f func(username, pluginID string) func(int, string, string, int64)) {
 	r.dbHookFactory = f
+}
+
+// SetTxObserverFactory sets a factory for the observers of transactions on
+// per-user plugin databases: one per connection. Set it before any database
+// is opened; handles opened earlier keep their hooks.
+func (r *Registry) SetTxObserverFactory(f func(username, pluginID string) db.TxObserver) {
+	r.txObserverFactory = f
 }
 
 // SetConnectHooks sets hooks applied to every new SQLite connection opened

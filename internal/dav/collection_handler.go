@@ -55,6 +55,12 @@ func (q *request) collection(home Home, owner *User, name string) {
 			writeError(q.w, http.StatusForbidden, dav("need-privileges"), "")
 			return
 		}
+		if done, err := q.suppressPush(pushKey{collection: c.ID}); err != nil {
+			q.fail(err)
+			return
+		} else if done != nil {
+			defer done()
+		}
 		q.proppatch(c, owner)
 	case http.MethodDelete:
 		if !a.owner {
@@ -63,16 +69,23 @@ func (q *request) collection(home Home, owner *User, name string) {
 		}
 		q.deleteCollection(c, owner)
 	case http.MethodPost:
-		if !a.owner {
-			writeError(q.w, http.StatusForbidden, dav("need-privileges"), "")
-			return
-		}
 		n, err := readXML(q.r)
-		if err != nil || !n.is(cs("share")) {
-			http.Error(q.w, "expected CS:share", http.StatusBadRequest)
-			return
+		switch {
+		case err == nil && n.is(pushName("push-register")):
+			if !a.read() {
+				writeError(q.w, http.StatusForbidden, pushName("push-not-available"), "")
+				return
+			}
+			q.pushRegister(n, collectionResource(c.ID), true)
+		case err == nil && n.is(cs("share")):
+			if !a.owner {
+				writeError(q.w, http.StatusForbidden, dav("need-privileges"), "")
+				return
+			}
+			q.sharePost(c, owner, n)
+		default:
+			http.Error(q.w, "expected CS:share or push-register", http.StatusBadRequest)
 		}
-		q.sharePost(c, owner, n)
 	case "MKCALENDAR", "MKCOL":
 		writeError(q.w, http.StatusMethodNotAllowed, dav("resource-must-be-null"), "")
 	case http.MethodOptions:

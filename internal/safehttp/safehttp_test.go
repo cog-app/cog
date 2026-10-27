@@ -31,7 +31,7 @@ func TestAddressBlocked_PrivateRanges(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse %s: %v", s, err)
 		}
-		if !addressBlocked(ip) {
+		if !addressBlocked(ip, nil) {
 			t.Errorf("%s should be blocked", s)
 		}
 	}
@@ -49,7 +49,7 @@ func TestAddressBlocked_PublicRangesAllowed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse %s: %v", s, err)
 		}
-		if addressBlocked(ip) {
+		if addressBlocked(ip, nil) {
 			t.Errorf("%s should be allowed", s)
 		}
 	}
@@ -62,7 +62,7 @@ func TestAddressBlocked_IPv4MappedIPv6(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !addressBlocked(ip) {
+	if !addressBlocked(ip, nil) {
 		t.Fatal("IPv4-mapped IPv6 loopback should be blocked")
 	}
 }
@@ -72,7 +72,7 @@ func TestAddressBlocked_AllowPrivateOverride(t *testing.T) {
 	t.Cleanup(func() { SetAllowPrivate(false) })
 
 	ip := netip.MustParseAddr("127.0.0.1")
-	if addressBlocked(ip) {
+	if addressBlocked(ip, nil) {
 		t.Fatal("SetAllowPrivate(true) should permit loopback")
 	}
 }
@@ -158,5 +158,28 @@ func TestSafeTransport_HasDialContextAndTimeouts(t *testing.T) {
 	}
 	if tr.TLSHandshakeTimeout == 0 {
 		t.Fatal("TLSHandshakeTimeout not set")
+	}
+}
+
+// TestClientWithAllow reaches a loopback server through one client while
+// every other client is still refused.
+func TestClientWithAllow(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	tlsConf := srv.Client().Transport.(*http.Transport).TLSClientConfig
+
+	allowed := ClientWith(5*time.Second, Options{Allow: []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}, TLS: tlsConf})
+	resp, err := allowed.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("allowed client: %v", err)
+	}
+	resp.Body.Close()
+
+	if _, err := Client(5 * time.Second).Get(srv.URL); !errors.Is(err, ErrBlockedIP) {
+		t.Fatalf("plain client: expected ErrBlockedIP, got %v", err)
+	}
+	other := ClientWith(5*time.Second, Options{Allow: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}, TLS: tlsConf})
+	if _, err := other.Get(srv.URL); !errors.Is(err, ErrBlockedIP) {
+		t.Fatalf("client allowed elsewhere: expected ErrBlockedIP, got %v", err)
 	}
 }

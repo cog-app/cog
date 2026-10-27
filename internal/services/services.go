@@ -27,13 +27,16 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/push"
 	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/ratelimit"
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/internal/webpush"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/dashboard"
 	"git.duckfam.us/jj-software/cog/plugin/files"
@@ -65,6 +68,8 @@ type Providers struct {
 	PasswordResets *auth.PasswordResetStore
 	Activities     *activity.Store
 	DAV            *dav.Server
+	Push           *push.Store     // push subscriptions (WebDAV-Push; JMAP push)
+	Pusher         *push.Deliverer // delivers to them; StartPush runs it
 	Federation     *federation.Store
 	FedClient      *federation.Client
 	EmailHook      email.SendHook // if set, all email goes through this instead of SMTP
@@ -92,7 +97,11 @@ func New(log *slog.Logger, cfg config.Config, plugins ...plugin.Plugin) (*Provid
 
 	mgr.SetSystemDB(sysDB)
 
-	p := NewFromDB(log, cfg, sysDB, clock.System(), plugins...)
+	p, err := NewFromDB(log, cfg, sysDB, clock.System(), plugins...)
+	if err != nil {
+		sysDB.Close()
+		return nil, err
+	}
 	WireSearch(log, p, mgr)
 
 	return p, nil
@@ -173,7 +182,7 @@ func WireSearch(log *slog.Logger, p *Providers, mgr *search.Manager) {
 
 // NewFromDB constructs providers from an existing database connection.
 // Useful for tests that use :memory: databases.
-func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock, plugins ...plugin.Plugin) *Providers {
+func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock, plugins ...plugin.Plugin) (*Providers, error) {
 	// Ensure dashboard and files plugins are always present.
 	var hasFiles, hasDash bool
 	for _, p := range plugins {
@@ -200,7 +209,22 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		log.Warn("mount bootstrap failed", "err", err)
 	}
 
-	secret := loadOrCreateSecret(sysDB)
+	secret, err := loadOrCreateKey(sysDB, secretSettingKey, func() ([]byte, error) {
+		b := make([]byte, 32)
+		_, err := rand.Read(b)
+		return b, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	vapidKey, err := loadOrCreateKey(sysDB, vapidSettingKey, webpush.GenerateVAPIDKey)
+	if err != nil {
+		return nil, err
+	}
+	vapid, err := webpush.ParseVAPID(vapidKey, vapidSubject(cfg.BaseURL))
+	if err != nil {
+		return nil, fmt.Errorf("VAPID key in system settings: %w", err)
+	}
 
 	ratelimit.SetTrustedProxies(cfg.TrustedProxies)
 	federation.SetPeerAllowlist(cfg.FederationPeers)
@@ -211,6 +235,21 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	davServer := &dav.Server{Collections: dav.NewStore(sysDB, c), Clock: c, Log: log.With("component", "dav")}
 
 	registry := plugin.NewRegistry(log, cfg.DataDir, http.NewServeMux(), sysDB, secret, c)
+
+	// WebDAV-Push: every committed write to a collection's sync state, in
+	// any plugin database, is noticed by the DAV core; the deliverer turns
+	// what it noticed into pushes.
+	pushStore := push.NewStore(sysDB, c)
+	pusher := &push.Deliverer{
+		Store:    pushStore,
+		Sender:   &webpush.Sender{Client: safehttp.Client(30 * time.Second), VAPID: vapid, Now: c},
+		Messages: map[push.Protocol]push.Messenger{push.WebDAV: davServer.PushMessage},
+		Sources:  []func(context.Context) error{davServer.MarkPush},
+		Cleanups: []func(context.Context) error{davServer.PushCleanup},
+		Log:      log.With("component", "push"),
+	}
+	davServer.EnablePush(pushStore, pusher, vapid)
+	registry.SetTxObserverFactory(davServer.SyncObserver)
 	for _, p := range plugins {
 		if dp, ok := p.(dav.Provider); ok {
 			dp.SetDAV(davServer)
@@ -272,13 +311,15 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		RateLimiter:    ratelimit.New(10, 15*time.Minute, c),
 		Activities:     activities,
 		DAV:            davServer,
+		Push:           pushStore,
+		Pusher:         pusher,
 		Federation:     fedStore,
 		FedClient:      fedClient,
 		CSRFSecret:     secret,
 		Cookies:        cogplugin.CookieConfigFromBaseURL(cfg.BaseURL),
 		Clock:          c,
 		StartedAt:      c(),
-	}
+	}, nil
 }
 
 func (p *Providers) SeedPlugins(username string) error {
@@ -359,23 +400,57 @@ func newWebAuthnStore(db *sql.DB, c clock.Clock, baseURL string, secret []byte, 
 	return wa
 }
 
-const secretSettingKey = "csrf_secret"
+// Keys kept in system_settings, hex-encoded.
+const (
+	secretSettingKey = "csrf_secret"
+	// vapidSettingKey holds the VAPID private key (RFC 8292). Push
+	// subscriptions are bound to its public key, so replacing it breaks
+	// every client's until they register again.
+	vapidSettingKey = "vapid_private_key"
+)
 
-// loadOrCreateSecret returns the persisted CSRF secret from the system_settings
-// table, generating and storing a new one on first run.
-func loadOrCreateSecret(db *sql.DB) []byte {
+// loadOrCreateKey returns a key persisted in system_settings, generating
+// and storing one with gen on first run. Two processes starting at once
+// both generate; the first to store wins, and both use what was stored.
+func loadOrCreateKey(db *sql.DB, name string, gen func() ([]byte, error)) ([]byte, error) {
 	var hexVal string
-	err := db.QueryRow(`SELECT value FROM system_settings WHERE key = ?`, secretSettingKey).Scan(&hexVal)
-	if err == nil {
-		if b, err := hex.DecodeString(hexVal); err == nil && len(b) == 32 {
-			return b
+	err := db.QueryRow(`SELECT value FROM system_settings WHERE key = ?`, name).Scan(&hexVal)
+	switch {
+	case err == nil:
+		b, err := hex.DecodeString(hexVal)
+		if err != nil || len(b) == 0 {
+			return nil, fmt.Errorf("system setting %s is not a hex key", name)
 		}
+		return b, nil
+	case !errors.Is(err, sql.ErrNoRows):
+		return nil, fmt.Errorf("read system setting %s: %w", name, err)
 	}
+	key, err := gen()
+	if err != nil {
+		return nil, fmt.Errorf("generate %s: %w", name, err)
+	}
+	if _, err := db.Exec(`INSERT INTO system_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`,
+		name, hex.EncodeToString(key)); err != nil {
+		return nil, fmt.Errorf("store %s: %w", name, err)
+	}
+	if err := db.QueryRow(`SELECT value FROM system_settings WHERE key = ?`, name).Scan(&hexVal); err != nil {
+		return nil, fmt.Errorf("read system setting %s: %w", name, err)
+	}
+	return hex.DecodeString(hexVal)
+}
 
-	secret := make([]byte, 32)
-	_, _ = rand.Read(secret)
-	hexVal = hex.EncodeToString(secret)
-	db.Exec(`INSERT INTO system_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-		secretSettingKey, hexVal)
-	return secret
+// vapidSubject is the contact push services are given (RFC 8292 section
+// 2.1): the server's URL, when it is an https one.
+func vapidSubject(baseURL string) string {
+	if strings.HasPrefix(baseURL, "https://") {
+		return baseURL
+	}
+	return ""
+}
+
+// StartPush runs push delivery until ctx ends.
+func (p *Providers) StartPush(ctx context.Context) {
+	if p.Pusher != nil {
+		go p.Pusher.Run(ctx)
+	}
 }

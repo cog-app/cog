@@ -36,7 +36,8 @@ func TestSSHInteractiveShell(t *testing.T) {
 	}
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	p := services.NewFromDB(log, cfg, sysDB, clock.System())
+	p, err := services.NewFromDB(log, cfg, sysDB, clock.System())
+	require.NoError(t, err)
 	t.Cleanup(p.Plugins.Stop)
 	require.NoError(t, p.Plugins.Start(context.Background()))
 	_, err = p.Users.Create("testuser", "testpass")

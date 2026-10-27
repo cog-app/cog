@@ -137,7 +137,10 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 		DisableProcessPlugins: true,
 	}
 
-	p := services.NewFromDB(log, cfg, sysDB, tc.Clock(), plugins...)
+	p, err := services.NewFromDB(log, cfg, sysDB, tc.Clock(), plugins...)
+	if err != nil {
+		t.Fatalf("cogtest: providers: %v", err)
+	}
 	p.LogBuffer = logBuf
 
 	// Override unixepoch() in all per-user plugin DBs too.
