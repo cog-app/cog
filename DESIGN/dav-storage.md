@@ -563,7 +563,7 @@ Each milestone is a run of commits that builds and passes tests on its own.
 - **A REPLY updates the organizer's copy only.** The other attendees are not sent the event again for it, as SabreDAV does not: it would send every attendee a message per answer. Their copies show the answers as of the last invitation they got.
 - **A cancellation marks the recipient's copy cancelled** rather than deleting it, so they see that it was cancelled, as SabreDAV does.
 - **Sharees schedule as the owner only with the Schedule permission** (section 7).
-- **Free/busy of other users** is visible only through a share (section 7); see section 13.
+- **Free/busy of other users** is visible through a share (section 7), and beyond shares by setting, not by default: an admin can let every user see every other user's busy time, and a group can let its members see each other's (so an organisation enables it for its own group, not the whole server). Busy time only, never event details; which calendars count and who may change a group's setting are decided when it is built. Not in this MR.
 - **Managed attachment files** are hashed files under the calendar plugin's data directory, as contact photos are, not files in the user's Files. An attachment lives and dies with the ATTACH that names it, its access follows the event's calendar and invitations rather than a file share, the calendar keeps working with the Files plugin disabled, and nothing a user does in Files (moving, renaming, deleting, editing) can break an event or change an attachment behind its MANAGED-ID. What Files gives for free, counting toward the quota, is kept by plugins reporting their storage (`plugin.StorageUser`). The ATTACH value is an absolute URL under the DAV root, not a plugin route, so clients fetch it with the credentials they already use for CalDAV.
 - **CalendarServer shares need no acceptance**: a share made over DAV takes effect at once, like one made in the web panel, and `CS:invite-reply` is accepted but only declining changes anything (section 7). Pending invitations would need a notification collection and a state Cog's shares do not have, for clients that mostly show them as accepted anyway.
 - **External attendees fetch attachments with a token** signed for their address (HMAC with the server secret) and checked against the event's current attendees, so removing them from the event revokes it.
@@ -588,7 +588,7 @@ Each milestone is a run of commits that builds and passes tests on its own.
 
 ## 13. Open questions
 
-- **Free/busy across the server.** A user sees someone else's busy time only for calendars that person shared with them (section 7), so a scheduling assistant shows nothing for colleagues who shared nothing. Nextcloud shows every user's free/busy to every other user by default. Should Cog do the same, perhaps as an admin setting, or keep it opt-in per calendar?
+None open.
 
 ## 14. Progress
 
@@ -733,7 +733,7 @@ Adjacent bugs fixed in milestone 6:
 
 Open after milestone 6:
 
-- Free/busy across the server (section 13).
+- Free/busy across the server: decided in milestone 11 as an admin and group setting (section 12), not built.
 - Not built, and not part of this MR: a web view of the inbox (a notification list of invitations and replies).
 
 How milestone 7 differs from the plan:
