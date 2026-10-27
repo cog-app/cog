@@ -134,23 +134,27 @@ func States(q Querier, collectionIDs []int64) (map[int64]State, error) {
 	return out, rows.Err()
 }
 
-// Deleted returns the URIs deleted from a collection after version since.
-func Deleted(q Querier, collectionID, since int64) ([]string, error) {
-	rows, err := q.Query(`SELECT uri FROM dav_tombstones WHERE collection_id = ? AND version > ? ORDER BY version`,
+// Deleted returns the URIs deleted from a collection after version since,
+// and the version each was deleted at, in version order.
+func Deleted(q Querier, collectionID, since int64) ([]string, []int64, error) {
+	rows, err := q.Query(`SELECT uri, version FROM dav_tombstones WHERE collection_id = ? AND version > ? ORDER BY version`,
 		collectionID, since)
 	if err != nil {
-		return nil, fmt.Errorf("tombstones of collection %d: %w", collectionID, err)
+		return nil, nil, fmt.Errorf("tombstones of collection %d: %w", collectionID, err)
 	}
 	defer rows.Close()
 	var uris []string
+	var versions []int64
 	for rows.Next() {
 		var uri string
-		if err := rows.Scan(&uri); err != nil {
-			return nil, fmt.Errorf("scan tombstone: %w", err)
+		var v int64
+		if err := rows.Scan(&uri, &v); err != nil {
+			return nil, nil, fmt.Errorf("scan tombstone: %w", err)
 		}
 		uris = append(uris, uri)
+		versions = append(versions, v)
 	}
-	return uris, rows.Err()
+	return uris, versions, rows.Err()
 }
 
 // Prune drops a collection's tombstones deleted before cutoff (unix seconds)

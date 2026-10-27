@@ -360,11 +360,9 @@ func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	compAt := slices.Index(ev.Object.Components, comp)
-	if compAt < 0 {
+	compAt := max(slices.Index(ev.Object.Components, comp),
 		// An occurrence without an override shows the master's attachments.
-		compAt = 0
-	}
+		0)
 	atts := h.attachmentsOf(ev, compAt, me.Username)
 	if err := calEventModal(plugin.CSRFToken(r), &view, cal, calendars, attendeesOf(comp), myStatus(comp, me), atts).Render(r.Context(), w); err != nil {
 		h.plugin.log.Error("render event", "id", ev.ID, "err", err)

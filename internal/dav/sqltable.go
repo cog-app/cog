@@ -24,6 +24,9 @@ type Table struct {
 	// reading through q. size holds the length of what it generates, so
 	// listings without data need not render.
 	Render func(q davsql.Querier, c *Collection, ids []int64) (map[int64][]byte, error)
+	// Load reads the models of the rows with these IDs (Object or Card
+	// set), for ModelReader; nil for a table without them.
+	Load func(q davsql.Querier, c *Collection, ids []int64) (map[int64]Model, error)
 }
 
 func (t *Table) columns() string {
@@ -31,7 +34,7 @@ func (t *Table) columns() string {
 	if t.Component == "" {
 		comp = "component"
 	}
-	return "id, uri, uid, version, size, " + comp
+	return "id, uri, uid, version, created_version, size, " + comp
 }
 
 func (t *Table) scan(rows *sql.Rows) ([]Resource, []int64, error) {
@@ -41,7 +44,7 @@ func (t *Table) scan(rows *sql.Rows) ([]Resource, []int64, error) {
 	for rows.Next() {
 		var r Resource
 		var id int64
-		if err := rows.Scan(&id, &r.URI, &r.UID, &r.Version, &r.Size, &r.Component); err != nil {
+		if err := rows.Scan(&id, &r.URI, &r.UID, &r.Version, &r.Created, &r.Size, &r.Component); err != nil {
 			return nil, nil, fmt.Errorf("scan %s: %w", t.Name, err)
 		}
 		out = append(out, r)
@@ -133,7 +136,7 @@ func (t *Table) Changes(owner string, c *Collection, since int64, withData bool)
 	}
 	ch := &Changes{Changed: changed, State: state}
 	if since > 0 {
-		if ch.Deleted, err = davsql.Deleted(tx, int64(c.ID), since); err != nil {
+		if ch.Deleted, ch.DeletedAt, err = davsql.Deleted(tx, int64(c.ID), since); err != nil {
 			return nil, err
 		}
 	}

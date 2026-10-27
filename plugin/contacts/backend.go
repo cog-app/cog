@@ -25,12 +25,30 @@ var (
 	_ dav.Backend     = (*backend)(nil)
 	_ dav.CardQuerier = (*backend)(nil)
 	_ dav.DateSource  = (*backend)(nil)
+	_ dav.ModelReader = (*backend)(nil)
 )
 
 func newBackend(p *Plugin) *backend {
 	b := &backend{p: p}
-	b.Table = dav.Table{Name: "cards", Component: dav.VCARD, DB: p.DB, Render: b.render}
+	b.Table = dav.Table{Name: "cards", Component: dav.VCARD, DB: p.DB, Render: b.render, Load: b.load}
 	return b
+}
+
+// load reads cards as models, photos included, for JSContact.
+func (b *backend) load(q davsql.Querier, c *dav.Collection, ids []int64) (map[int64]dav.Model, error) {
+	owner, err := b.p.username(c.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	cards, err := loadCards(q, b.p.photoStore(owner), ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]dav.Model, len(cards))
+	for id, card := range cards {
+		out[id] = dav.Model{Card: card}
+	}
+	return out, nil
 }
 
 func (b *backend) Key() string { return "c" }

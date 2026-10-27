@@ -69,6 +69,9 @@ CREATE TABLE IF NOT EXISTS events (
 	uid TEXT NOT NULL,
 	uri TEXT NOT NULL,
 	version INTEGER NOT NULL,
+	-- The version that created the row: JMAP's /changes tells resources
+	-- created since a state from those only updated.
+	created_version INTEGER NOT NULL DEFAULT 0,
 	-- Length of the text served for this version, for getcontentlength.
 	size INTEGER NOT NULL DEFAULT 0,
 	-- Cog's own colour for the event; not part of the iCalendar data.
@@ -118,6 +121,8 @@ CREATE TABLE IF NOT EXISTS schedule_inbox (
 	uid TEXT NOT NULL,
 	uri TEXT NOT NULL,
 	version INTEGER NOT NULL,
+	-- Messages are never changed: always version.
+	created_version INTEGER NOT NULL DEFAULT 0,
 	size INTEGER NOT NULL,
 	method TEXT NOT NULL,
 	data TEXT NOT NULL,

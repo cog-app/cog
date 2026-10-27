@@ -503,8 +503,7 @@ func (s *Server) fetchFeed(ctx context.Context, u *url.URL, sub *Subscription) (
 	if err != nil {
 		// The URL itself may be secret (a private Google feed): say why
 		// without it.
-		var ue *url.Error
-		if errors.As(err, &ue) {
+		if ue, ok := errors.AsType[*url.Error](err); ok {
 			err = ue.Err
 		}
 		return nil, false, validators{}, err

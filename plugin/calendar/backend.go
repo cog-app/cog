@@ -24,8 +24,21 @@ func newBackend(p *Plugin) *backend {
 	b := &backend{p: p, inbox: newInbox(p)}
 	b.Table = dav.Table{Name: "events", Component: dav.VEVENT, DB: p.DB, Render: func(q davsql.Querier, _ *dav.Collection, ids []int64) (map[int64][]byte, error) {
 		return tables.RenderIDs(q, ids)
-	}}
+	}, Load: loadModels}
 	return b
+}
+
+// loadModels reads events as models, for JSCalendar.
+func loadModels(q davsql.Querier, _ *dav.Collection, ids []int64) (map[int64]dav.Model, error) {
+	objs, err := tables.Load(q, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]dav.Model, len(objs))
+	for id, o := range objs {
+		out[id] = dav.Model{Object: o}
+	}
+	return out, nil
 }
 
 var (
@@ -37,6 +50,7 @@ var (
 	_ dav.UIDLocator       = (*backend)(nil)
 	_ dav.FreeBusyQuerier  = (*backend)(nil)
 	_ dav.BatchWriter      = (*backend)(nil)
+	_ dav.ModelReader      = (*backend)(nil)
 )
 
 // Inbox implements dav.InboxProvider: schedule inboxes live with events.

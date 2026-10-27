@@ -9,6 +9,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/compat"
 	"git.duckfam.us/jj-software/cog/internal/federation"
+	"git.duckfam.us/jj-software/cog/internal/jmap"
 	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
@@ -296,6 +297,12 @@ func New(p *services.Providers) http.Handler {
 	// CalDAV/CardDAV: the root, principals and homes, over the plugins'
 	// backends.
 	mountDAV(mux, p, davShares{&shareStoreAdapter{p.Shares}, p})
+
+	// JMAP (RFC 8620) over the same collections: contacts, and calendars
+	// when configured.
+	jmapH := p.JMAP.Handler()
+	mux.Handle("GET "+jmap.WellKnown, jmapH)
+	mux.Handle("/jmap/", jmapH)
 
 	// WebDAV stub for non-file DAV paths (presence check, HEAD/OPTIONS/GET)
 	mux.HandleFunc("/remote.php/dav", compat.HandleWebDAVStub)

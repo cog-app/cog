@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -181,8 +182,8 @@ func (r *Registry) startOne(ctx context.Context, id string) (err error) {
 
 // Stop stops all plugins in reverse registration order.
 func (r *Registry) Stop() {
-	for i := len(r.order) - 1; i >= 0; i-- {
-		id := r.order[i]
+	for _, id := range slices.Backward(r.order) {
+
 		if err := r.plugins[id].Stop(); err != nil {
 			r.log.Error("plugin stop failed", "plugin", id, "err", err)
 		}

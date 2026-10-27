@@ -25,8 +25,7 @@ func (s *Shell) execHandler(ctx context.Context, args []string) error {
 	if err != nil {
 		// The interpreter panics on non-ExitStatus errors, so we must
 		// always convert cobra errors to ExitStatus.
-		var exitStatus interp.ExitStatus
-		if errors.As(err, &exitStatus) {
+		if _, ok := errors.AsType[interp.ExitStatus](err); ok {
 			return err
 		}
 		// Cobra's "unknown command" error → exit 127.

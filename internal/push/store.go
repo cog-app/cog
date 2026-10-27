@@ -63,6 +63,29 @@ var ErrNotFound = errors.New("push: no such subscription")
 // for the same resource.
 var ErrTaken = errors.New("push: endpoint registered by another user")
 
+// ErrSkip is returned by a Messenger that owes the subscription nothing it
+// can send now (JMAP's before verification): what was owed is cleared.
+var ErrSkip = errors.New("push: nothing to send")
+
+// UserResource is what a subscription to everything a user sees watches:
+// JMAP's, which reports every account the user has.
+func UserResource(userID string) string { return "user/" + userID }
+
+// Update changes a user's subscription's options and expiry.
+func (st *Store) Update(s *Subscription) error {
+	res, err := st.db.Exec(`UPDATE push_subscriptions SET options = ?, expires_at = ?, updated_at = ? WHERE id = ? AND user_id = ?`,
+		s.Options, s.Expires.Unix(), st.clock().Unix(), s.ID, s.UserID)
+	if err != nil {
+		return fmt.Errorf("update push subscription %s: %w", s.ID, err)
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return fmt.Errorf("update push subscription %s: %w", s.ID, err)
+	} else if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // Store keeps subscriptions in the system database.
 type Store struct {
 	db    *sql.DB

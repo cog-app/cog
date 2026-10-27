@@ -462,11 +462,11 @@ func storeCard(tx *sql.Tx, ph *photoStore, collID int64, uri string, c *vcard.Ca
 		}
 	}
 	var id int64
-	err = tx.QueryRow(`INSERT INTO cards (collection_id, uid, uri, version, size, vcard_version, kind, fn,
+	err = tx.QueryRow(`INSERT INTO cards (collection_id, uid, uri, version, created_version, size, vcard_version, kind, fn,
 			n_family, n_given, n_additional, n_prefix, n_suffix, nickname, org, org_units, title, role, note,
 			bday, anniversary, gender, rev, categories, photo_hash, photo_uri, photo_type, photo_encoding, photo_params,
 			leftovers, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(collection_id, uri) DO UPDATE SET
 			uid = excluded.uid, version = excluded.version, size = excluded.size,
 			vcard_version = excluded.vcard_version, kind = excluded.kind, fn = excluded.fn,
@@ -478,7 +478,7 @@ func storeCard(tx *sql.Tx, ph *photoStore, collID int64, uri string, c *vcard.Ca
 			photo_type = excluded.photo_type, photo_encoding = excluded.photo_encoding,
 			photo_params = excluded.photo_params, leftovers = excluded.leftovers, updated_at = excluded.updated_at
 		RETURNING id`,
-		collID, c.UID, uri, version, len(data), c.Version, c.Kind, c.FN,
+		collID, c.UID, uri, version, version, len(data), c.Version, c.Kind, c.FN,
 		n[0], n[1], n[2], n[3], n[4], nickname, org, orgUnits, c.Title, c.Role, c.Note,
 		c.Birthday, c.Anniversary, c.Gender, c.Rev, categories, hash, photoURI, photoType, photoEnc, photoParams,
 		string(left), now, now).Scan(&id)

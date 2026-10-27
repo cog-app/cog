@@ -20,6 +20,16 @@ func newBackend(p *Plugin) *backend {
 	b := &backend{p: p}
 	b.Table = dav.Table{Name: "tasks", DB: p.DB, Render: func(q davsql.Querier, _ *dav.Collection, ids []int64) (map[int64][]byte, error) {
 		return tables.RenderIDs(q, ids)
+	}, Load: func(q davsql.Querier, _ *dav.Collection, ids []int64) (map[int64]dav.Model, error) {
+		objs, err := tables.Load(q, ids)
+		if err != nil {
+			return nil, err
+		}
+		out := make(map[int64]dav.Model, len(objs))
+		for id, o := range objs {
+			out[id] = dav.Model{Object: o}
+		}
+		return out, nil
 	}}
 	return b
 }
@@ -27,6 +37,7 @@ func newBackend(p *Plugin) *backend {
 var (
 	_ dav.Backend          = (*backend)(nil)
 	_ dav.TimezoneObserver = (*backend)(nil)
+	_ dav.ModelReader      = (*backend)(nil)
 )
 
 func (b *backend) Key() string { return "t" }

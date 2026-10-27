@@ -122,6 +122,9 @@ CREATE TABLE IF NOT EXISTS tasks (
 	uid TEXT NOT NULL,
 	uri TEXT NOT NULL,
 	version INTEGER NOT NULL,
+	-- The version that created the row: JMAP's /changes tells resources
+	-- created since a state from those only updated.
+	created_version INTEGER NOT NULL DEFAULT 0,
 	-- Length of the text served for this version, for getcontentlength.
 	size INTEGER NOT NULL DEFAULT 0,
 	-- When the first instance starts and the last ends; range_end_utc is NULL

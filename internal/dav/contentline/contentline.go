@@ -511,10 +511,7 @@ func appendSoftBroken(buf, prefix []byte, value string) []byte {
 	buf = append(buf, prefix...)
 	col := len(prefix)
 	for len(value) > 0 {
-		room := maxLine - col
-		if room < 4 {
-			room = 4
-		}
+		room := max(maxLine-col, 4)
 		if len(value) <= room {
 			buf = append(buf, value...)
 			break

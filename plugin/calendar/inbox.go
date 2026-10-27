@@ -131,8 +131,8 @@ func (ib *inbox) Deliver(owner, uid string, data []byte, cutoff time.Time) error
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`INSERT INTO schedule_inbox (collection_id, uid, uri, version, size, method, data, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, coll, uid, newMessageURI(), version, len(data), messageMethod(data), string(data), now); err != nil {
+	if _, err := tx.Exec(`INSERT INTO schedule_inbox (collection_id, uid, uri, version, created_version, size, method, data, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, coll, uid, newMessageURI(), version, version, len(data), messageMethod(data), string(data), now); err != nil {
 		return fmt.Errorf("deliver message: %w", err)
 	}
 	return tx.Commit()

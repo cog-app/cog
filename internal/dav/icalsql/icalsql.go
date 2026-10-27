@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -464,12 +465,8 @@ func (t *Tables) Store(tx *sql.Tx, collID int64, floating *time.Location, uri st
 	}
 	sent := o.Zones
 	o.Zones = map[string]*contentline.Component{}
-	for id, vtz := range known[collID] {
-		o.Zones[id] = vtz
-	}
-	for id, vtz := range sent {
-		o.Zones[id] = vtz
-	}
+	maps.Copy(o.Zones, known[collID])
+	maps.Copy(o.Zones, sent)
 	z := ical.ZonesFor(o, floating)
 
 	// The master first: web UIs read position 0.
@@ -493,14 +490,14 @@ func (t *Tables) Store(tx *sql.Tx, collID int64, floating *time.Location, uri st
 		return nil, err
 	}
 	var id int64
-	err = tx.QueryRow(`INSERT INTO `+t.Objects+` (collection_id, component, uid, uri, version, size, start_utc, range_end_utc, props, comps, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	err = tx.QueryRow(`INSERT INTO `+t.Objects+` (collection_id, component, uid, uri, version, created_version, size, start_utc, range_end_utc, props, comps, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(collection_id, uri) DO UPDATE SET
 			component = excluded.component, uid = excluded.uid, version = excluded.version, size = excluded.size,
 			start_utc = excluded.start_utc, range_end_utc = excluded.range_end_utc,
 			props = excluded.props, comps = excluded.comps, updated_at = excluded.updated_at
 		RETURNING id`,
-		collID, string(o.Components[0].Kind), o.UID, uri, version, len(data), startUTC, endUTC,
+		collID, string(o.Components[0].Kind), o.UID, uri, version, version, len(data), startUTC, endUTC,
 		orEmpty(props, "[]"), orEmpty(comps, "[]"), now, now).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("store %s: %w", uri, err)

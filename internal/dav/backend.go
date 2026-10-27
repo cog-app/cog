@@ -57,8 +57,10 @@ type Resource struct {
 	UID       string
 	Component Component
 	Version   int64
-	Size      int64
-	Data      []byte // only when asked for
+	// Created is the version that created the resource; 0 when unknown.
+	Created int64
+	Size    int64
+	Data    []byte // only when asked for
 }
 
 // ETag returns the resource's entity tag in a collection, quotes included.
@@ -90,7 +92,10 @@ type PutResult struct {
 type Changes struct {
 	Changed []Resource
 	Deleted []string
-	State   davsql.State
+	// DeletedAt holds the version each of Deleted was deleted at, when the
+	// backend knows it.
+	DeletedAt []int64
+	State     davsql.State
 }
 
 // UIDConflict reports that another resource in the collection holds the UID.

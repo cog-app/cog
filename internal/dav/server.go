@@ -75,6 +75,8 @@ type Server struct {
 	Push   *push.Store
 	Pusher *push.Deliverer
 	VAPID  *webpush.VAPID
+	// UserListeners hear whose collections changed, at each push round.
+	UserListeners []UserListener
 
 	pushQ     pushQueue
 	fetchOnce sync.Once

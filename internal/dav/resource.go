@@ -99,7 +99,12 @@ func (q *request) resource(home Home, owner *User, name, uri string) {
 
 // find returns the resource at uri and the backend holding it, or ErrNotFound.
 func (q *request) find(c *Collection, owner string, uri string, withData bool) (Backend, *Resource, error) {
-	for _, b := range q.backends(c) {
+	return findIn(q.backends(c), c, owner, uri, withData)
+}
+
+// findIn is find among the backends of c.
+func findIn(bes []Backend, c *Collection, owner string, uri string, withData bool) (Backend, *Resource, error) {
+	for _, b := range bes {
 		list, err := b.Get(owner, c, []string{uri}, withData)
 		if err != nil {
 			return nil, nil, err
@@ -257,7 +262,7 @@ func (q *request) put(c *Collection, owner *User, a access, uri string) {
 	var res *PutResult
 	var delivery *Delivery
 	if comp == VEVENT {
-		res, delivery, err = q.putScheduled(c, owner, a, req)
+		res, delivery, err = q.s.putScheduled(q.backends(c), c, owner, a, req, true)
 	} else {
 		res, err = q.s.put(q.backends(c), owner.Username, c, req)
 	}
@@ -304,7 +309,8 @@ func unconditional(c davsql.Conditions) bool {
 // (Server.Plan), from the stored copy it replaces. When the client named no
 // ETag, the write is made conditional on that copy, and retried if another
 // write came between, so the messages always describe the change made.
-func (q *request) putScheduled(c *Collection, owner *User, a access, req *PutRequest) (*PutResult, *Delivery, error) {
+// With send false, nothing is scheduled: the event is stored as given.
+func (s *Server) putScheduled(bes []Backend, c *Collection, owner *User, a access, req *PutRequest, send bool) (*PutResult, *Delivery, error) {
 	o, err := ical.Decode(req.Object, ical.VEVENT)
 	if err != nil {
 		return nil, nil, err
@@ -312,7 +318,7 @@ func (q *request) putScheduled(c *Collection, owner *User, a access, req *PutReq
 	for attempt := 0; ; attempt++ {
 		cond := req.Conditions
 		var old *ical.Object
-		_, r, err := q.find(c, owner.Username, req.URI, true)
+		_, r, err := findIn(bes, c, owner.Username, req.URI, true)
 		switch {
 		case errors.Is(err, ErrNotFound):
 			if unconditional(cond) {
@@ -335,12 +341,14 @@ func (q *request) putScheduled(c *Collection, owner *User, a access, req *PutReq
 			return nil, nil, err
 		}
 		cur := o.Clone()
-		if err := q.s.checkManaged(owner.Username, old, cur); err != nil {
+		if err := s.checkManaged(owner.Username, old, cur); err != nil {
 			return nil, nil, err
 		}
-		d, err := q.s.Plan(ScheduleChange{Owner: owner, Old: old, New: cur, MaySend: a.schedule()})
-		if err != nil {
-			return nil, nil, err
+		var d *Delivery
+		if send {
+			if d, err = s.Plan(ScheduleChange{Owner: owner, Old: old, New: cur, MaySend: a.schedule()}); err != nil {
+				return nil, nil, err
+			}
 		}
 		rq := *req
 		rq.Conditions = cond
@@ -351,7 +359,7 @@ func (q *request) putScheduled(c *Collection, owner *User, a access, req *PutReq
 		if !bytes.Equal(before, data) {
 			rq.Object, rq.Data = obj, data
 		}
-		res, err := q.s.put(q.backends(c), owner.Username, c, &rq)
+		res, err := s.put(bes, owner.Username, c, &rq)
 		if errors.Is(err, ErrPrecondition) && unconditional(req.Conditions) && attempt < 2 {
 			continue
 		}
@@ -456,7 +464,8 @@ func parseObject(home Home, data []byte) (*contentline.Component, Component, str
 }
 
 func (q *request) delete(c *Collection, owner *User, a access, uri string) {
-	d, err := q.deleteScheduled(c, owner, a, uri)
+	noReply := strings.EqualFold(strings.TrimSpace(q.r.Header.Get("Schedule-Reply")), "F")
+	d, err := q.s.deleteScheduled(q.backends(c), c, owner, a, uri, conditions(q.r, c.ID), noReply, true)
 	switch {
 	case errors.Is(err, ErrNotFound):
 		http.NotFound(q.w, q.r)
@@ -471,23 +480,23 @@ func (q *request) delete(c *Collection, owner *User, a access, uri string) {
 }
 
 // deleteScheduled deletes a resource; for an event, it works out what the
-// deletion sends, as putScheduled does for a write.
-func (q *request) deleteScheduled(c *Collection, owner *User, a access, uri string) (*Delivery, error) {
+// deletion sends, as putScheduled does for a write. noReply is
+// Schedule-Reply: F, an attendee deleting without declining.
+func (s *Server) deleteScheduled(bes []Backend, c *Collection, owner *User, a access, uri string, given davsql.Conditions, noReply, send bool) (*Delivery, error) {
 	cal := c.Home == HomeCalendars && c.ID != InboxID
-	noReply := strings.EqualFold(strings.TrimSpace(q.r.Header.Get("Schedule-Reply")), "F")
 	for attempt := 0; ; attempt++ {
-		b, r, err := q.find(c, owner.Username, uri, cal)
+		b, r, err := findIn(bes, c, owner.Username, uri, cal)
 		if err != nil {
 			return nil, err
 		}
-		cond := conditions(q.r, c.ID)
+		cond := given
 		var d *Delivery
-		if cal && r.Component == VEVENT {
+		if send && cal && r.Component == VEVENT {
 			old, err := decodeEvent(r.Data)
 			if err != nil {
 				return nil, fmt.Errorf("read %s: %w", r.URI, err)
 			}
-			if d, err = q.s.Plan(ScheduleChange{Owner: owner, Old: old, MaySend: a.schedule(), NoReply: noReply}); err != nil {
+			if d, err = s.Plan(ScheduleChange{Owner: owner, Old: old, MaySend: a.schedule(), NoReply: noReply}); err != nil {
 				return nil, err
 			}
 			if unconditional(cond) {
@@ -495,7 +504,7 @@ func (q *request) deleteScheduled(c *Collection, owner *User, a access, uri stri
 			}
 		}
 		err = b.Delete(owner.Username, c, uri, cond)
-		if errors.Is(err, ErrPrecondition) && d != nil && unconditional(conditions(q.r, c.ID)) && attempt < 2 {
+		if errors.Is(err, ErrPrecondition) && d != nil && unconditional(given) && attempt < 2 {
 			continue
 		}
 		return d, err

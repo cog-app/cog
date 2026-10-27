@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -348,10 +349,8 @@ func (o *syncObserver) Change(op int, _, table string, rowid int64) {
 		return
 	}
 	id := CollectionID(rowid)
-	for _, x := range o.ids {
-		if x == id {
-			return
-		}
+	if slices.Contains(o.ids, id) {
+		return
 	}
 	o.ids = append(o.ids, id)
 }
@@ -412,13 +411,24 @@ func (s *Server) sharePushChanged(subjectType, subjectID string, c *Collection) 
 // match and whose user may still read it, and marks them. A sharee's
 // subscription to a collection they can no longer read is removed. It is a
 // source of the deliverer (push.Deliverer.Sources).
-func (s *Server) MarkPush(context.Context) error {
+func (s *Server) MarkPush(ctx context.Context) error {
 	if s.Push == nil {
 		return nil
 	}
 	changes := s.pushQ.take()
 	if len(changes) == 0 {
 		return nil
+	}
+	if len(s.UserListeners) > 0 {
+		users, all, err := s.usersOf(changes)
+		if err != nil {
+			return err
+		}
+		for _, l := range s.UserListeners {
+			if err := l(ctx, users, all); err != nil {
+				return err
+			}
+		}
 	}
 	byResource := map[string]*pushChange{}
 	merge := func(res string, ch *pushChange) {
@@ -536,6 +546,71 @@ func (s *Server) MarkPush(context.Context) error {
 		}
 	}
 	return nil
+}
+
+// UserListener hears, at each push round, whose collections changed: the
+// owners of what changed and the users it is shared with, or every user
+// (all) for a change shared with a group or everyone. JMAP push listens.
+type UserListener func(ctx context.Context, users map[string]bool, all bool) error
+
+// usersOf returns the users whose view of collections the changes reach.
+func (s *Server) usersOf(changes map[pushKey]*pushChange) (map[string]bool, bool, error) {
+	users := map[string]bool{}
+	var ids []CollectionID
+	for k := range changes {
+		switch {
+		case k.collection != 0:
+			ids = append(ids, k.collection)
+		case k.homeOf != "":
+			users[k.homeOf] = true
+		case k.inboxOf != "":
+			// Inboxes are DAV's alone.
+		default:
+			return nil, true, nil
+		}
+	}
+	cols, err := s.Collections.ByIDs(ids)
+	if err != nil {
+		return nil, false, err
+	}
+	// A home that changed (a collection made or deleted) may change what
+	// the owner's sharees see: any share of theirs counts.
+	byOwner := map[string]map[string]bool{}
+	for id := range users {
+		byOwner[id] = nil
+	}
+	for _, c := range cols {
+		users[c.OwnerID] = true
+		set, seen := byOwner[c.OwnerID]
+		if !seen {
+			set = map[string]bool{}
+			byOwner[c.OwnerID] = set
+		}
+		if set != nil {
+			set[c.ID.String()] = true
+		}
+	}
+	if s.Shares == nil {
+		return users, false, nil
+	}
+	for owner, set := range byOwner {
+		for rec, err := range s.Shares.ListByOwner(owner) {
+			if err != nil {
+				return nil, false, err
+			}
+			if rec.ResourceType != ShareType || set != nil && !set[rec.ResourceID] {
+				continue
+			}
+			switch rec.SubjectType {
+			case "USER":
+				users[rec.SubjectID] = true
+			case "PUBLIC":
+			default:
+				return nil, true, nil
+			}
+		}
+	}
+	return users, false, nil
 }
 
 func subscribedCollection(resource string) (CollectionID, bool) {

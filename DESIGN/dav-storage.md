@@ -174,13 +174,13 @@ dav_subscriptions(                   -- a subscription's feed (section 9.1)
 
 dav_birthday_cursors(collection_id, book_id, version)   -- how far the birthday calendar has read each address book
 
-push_subscriptions(                  -- a client's Web Push endpoint and what it watches (section 9.2); JMAP push reuses it
+push_subscriptions(                  -- a client's Web Push endpoint and what it watches (sections 9.2, 9.3)
   id PRIMARY KEY,                    -- random; the registration URL ends with it
   user_id,                           -- who registered it; ON DELETE CASCADE
-  protocol,                          -- 'webdav' (JMAP: 'jmap')
-  resource,                          -- what it watches: 'collection/<id>', 'inbox/<user id>', 'home/<user id>/<home>'
+  protocol,                          -- 'webdav' or 'jmap'
+  resource,                          -- what it watches: 'collection/<id>', 'inbox/<user id>', 'home/<user id>/<home>'; JMAP: 'user/<user id>'
   endpoint, p256dh, auth,            -- the push resource and its RFC 8291 keys; UNIQUE(protocol, resource, endpoint)
-  options,                           -- the protocol's own, JSON: WebDAV's triggers
+  options,                           -- the protocol's own, JSON: WebDAV's triggers; JMAP's device id, types and verification
   expires_at,
   pending, seq,                      -- bits owed (content, property) and a counter of marks, so a push clears only what it carried
   next_attempt_at, failures, last_error, last_success_at)
@@ -198,6 +198,7 @@ Common to every resource table:
 - `collection_id`, the `dav_collections` ID (no foreign key; it is in another database).
 - `uid` and `uri` (resource name in the collection; usually `<uid>.ics` or `.vcf`, but clients choose it and it must be kept). Both unique per collection.
 - `version INTEGER`, set from the plugin's `dav_sync.token` for the collection on every write (section 6).
+- `created_version INTEGER`, the version of the write that created the row, which a replacing write keeps: JMAP's `/changes` tells records created since a state from those only updated (section 9.3).
 - `created_at`, `updated_at`.
 - `leftovers TEXT` (JSON).
 
@@ -346,7 +347,7 @@ The codec is `internal/dav/vcard` (`Decode`, `Card.Encode`), beside `ical` and s
 
 - Each plugin database keeps a counter per collection (`dav_sync.token`). Every write to a resource sets `version = ++token` in the same transaction, so a change and its version can never be seen apart.
 - Deletions insert into `dav_tombstones(collection_id, uri, version, deleted_at)` in the same transaction; a later PUT to the same URI removes the tombstone. Deleting a task deletes its subtasks, and each gets a tombstone; moving a resource to another collection is a delete in one and a create in the other.
-- **Composite tokens.** A collection's resources may live in several plugin databases, and no transaction spans them, so the collection's sync token is the list of its backends' counters: `http://cog/ns/sync/v2-e42-t17` (backend keys: `e` events, `t` tasks and journals, `c` contacts). RFC 6578 tokens are opaque, so this is legal. `sync-collection` hands each backend its part (absent means 0, a full sync of that backend) and merges the results. `getctag` is the same string plus `props_version`, so CalendarServer clients also notice PROPPATCH changes. JMAP state strings use the same form.
+- **Composite tokens.** A collection's resources may live in several plugin databases, and no transaction spans them, so the collection's sync token is the list of its backends' counters: `http://cog/ns/sync/v2-e42-t17` (backend keys: `e` events, `t` tasks and journals, `c` contacts). RFC 6578 tokens are opaque, so this is legal. `sync-collection` hands each backend its part (absent means 0, a full sync of that backend) and merges the results. `getctag` is the same string plus `props_version`, so CalendarServer clients also notice PROPPATCH changes. JMAP state strings use the same form, per collection of an account and for one backend: `v1:12-c42,15-c3` (section 9.3).
 - A token below a backend's `floor`, above its counter, or not in this format gets a `valid-sync-token` error, which makes clients do a full resync. Old single-number tokens fall in that case.
 - **Retention**: tombstones older than the admin setting (default 90 days) are pruned for a collection when a client next syncs it (a read first; a write only if something has expired), raising `floor` to the highest pruned version.
 - ETags are per resource, `"<collection_id>-<version>"`. Versions from different backends can coincide, which is harmless: an ETag only has to change when its own resource changes.
@@ -452,9 +453,36 @@ Everything below is in scope for the MR.
 
 | Spec | Notes |
 |---|---|
-| JSCalendar RFC 8984 | JSON form of events and tasks, generated from the same rows; used by the web UI and the agent API (task #32) |
-| JSContact RFC 9553 | JSON form of contacts, same rules |
-| JMAP for Calendars and Contacts (RFC 9610 contacts; calendars draft) | `/jmap` session endpoint, `Calendar/get|set|changes`, `CalendarEvent/*`, `AddressBook/*`, `ContactCard/*`; `changes` uses the same version/tombstone tracking as section 6; push via the same subscription store as WebDAV-Push |
+| JSCalendar RFC 8984 | JSON form of events, tasks and journals, from the same models as iCalendar (`internal/dav/jscal`, section 9.3); the agent API (task #32) uses it |
+| JSContact RFC 9553 | JSON form of contacts, same rules (`internal/dav/jscontact`) |
+| JMAP core RFC 8620 | `/.well-known/jmap`, the session resource, the API with batching and back-references, `Core/echo`, PushSubscription and EventSource (`internal/jmap`) |
+| JMAP for Contacts RFC 9610 | `AddressBook/get|changes|set`, `ContactCard/get|changes|query|set` |
+| JMAP for Calendars (draft-ietf-jmap-calendars) | behind `COG_JMAP_CALENDARS`: `Calendar/get|changes|set`, `CalendarEvent/get|changes|query|set`; tasks are not offered (JMAP for Tasks is another draft) |
+
+### 9.3 JSCalendar, JSContact and JMAP
+
+**Codecs** (`internal/dav/jscal`, `internal/dav/jscontact`, sharing `internal/dav/jsobj`) map the models (`ical.Object`, `vcard.Card`) to JSON and back, never the text. Decode(Encode(x)) equals x for every resource in the corpus (`TestFixturesRoundTrip` in each), and the RFCs' examples read and write back as sent (`TestRFCExamples`). Nothing is lost either way:
+
+- **Model to JSON.** Modelled fields map to standard properties, grouped (an event's start, end, due and duration are one group; its organizer and attendees another). What JSCalendar or JSContact has no property for travels in vendor properties prefixed `cog:`: a component's or card's leftovers (`cog:leftovers`, the same JSON as the leftovers column), a participant's or email's unmodelled parameters (`cog:params`), Apple's property group (`cog:group`), types that are not contexts or features (`cog:types`), the vCard version, a VALARM's description and repeat, a value outside an enumeration (`cog:partstat` for `IN-PROCESS`), a journal entry (`cog:component: VJOURNAL` on an Event). Where the standard form says what a value means but not how it was written (a TZID's spelling, DTEND against DURATION, a date's syntax, the order of attendees), the group's exact fields are kept in `cog:exact`, and used on the way back only while the group's properties are still what they encode to: a client that changes the group is read for what it sent, with the vendor data beside it kept.
+- **JSON to model.** A property a client sends that the model has no field for, at any depth Cog reads (a location's coordinates, a note's author, `localizations`), becomes a `JSPROP` leftover whose `JSPTR` parameter is its JSON pointer (draft-ietf-calext-jscalendar-icalendar; RFC 9555 for vCard), written back at that pointer. Ids a client chose are kept in a `JSID` parameter on the property they became. A name's or address's components in an order (or with kinds) N or ADR cannot say are kept on it in `X-COG-JSCOMPS` while they still say the same. So a JSON client's data survives a DAV client's edit of something else, and the reverse.
+- **Overrides** are `recurrenceOverrides` patches against the master (whole properties); RDATEs empty patches; EXDATEs excluded ones; what a patch may not set (RFC 8984 section 4.3.5: `privacy`, `relatedTo`, `replyTo`) differs in `cog:override`; a second override of one occurrence or a second master is kept whole in `cog:more`.
+
+**JMAP** (`internal/jmap`) answers `/jmap/api` through the auth chain (Basic, app passwords, sessions; requests must be `application/json`, which a page on another site cannot send). Every user is an **account**; a user who shares collections with another is an account of theirs too (`isPersonal: false`, read-only unless something in it is writable), holding just those collections, with each collection's `myRights` from the share (section 7).
+
+- **Ids**: collections `c<id>`; records `r<collection>-<base64url(URI)>` (a URI too long for an id is named by its hash), so a DAV tombstone names the record it deleted.
+- **State**: a type's state in an account is its collections' counters of the one backend that stores it (`v1:12-c42,15-c3`); collections' own state their IDs, properties versions and the user's rights. `/changes` reads `Backend.Changes` per collection; records created since the state are told apart by `created_version`; `maxChanges` stops at a version, never inside one; a collection gone or a counter below its floor is `cannotCalculateChanges`. `/queryChanges` always is.
+- **Writes** go through `dav.Session` (`internal/dav/api.go`), the same `Backend.Put` and `Delete`, access checks, UID checks, managed-attachment checks and counters as a DAV request, so a JMAP change is a DAV change and the reverse (`TestCrossProtocol`, `TestCalendarEvents`). An update is a JMAP PatchObject applied to the record's JSON, read back, and stored on condition of the version it was read at. Cog's edit bookkeeping applies (section 3.2): REV moves on a card, DTSTAMP and LAST-MODIFIED on an event, SEQUENCE when times, location or attendees changed and the client did not set it, and changed fields drop their dependent leftovers.
+- **Scheduling** happens only when `CalendarEvent/set` has `sendSchedulingMessages: true`, as the draft asks; otherwise the event is stored as sent.
+- **Push**: `PushSubscription` keeps a JMAP subscription in the WebDAV-Push store (section 9.2), resource `user/<id>`: a `PushVerification` is pushed first, and `StateChange` only once the client has set the code it carried. At each push round the DAV core tells JMAP whose collections changed (`dav.UserListener`: the owners and the users they are shared with), which marks those users' subscriptions and wakes their EventSource connections (`/jmap/eventsource`). A StateChange carries the current states of every account the user has, for the types asked for.
+
+**Agent API** (task #32, not built): agents use these shapes through the same `dav.Session`, as a REST facade a token can be scoped to, and with tasks, which JMAP does not have:
+
+| Route | |
+|---|---|
+| `GET /api/v1/collections?component=VEVENT\|VTODO\|VJOURNAL\|VCARD` | collections the token's user sees, with rights (the JMAP collection objects) |
+| `GET /api/v1/collections/{c<id>}/items?since=<state>` | JSCalendar or JSContact records, or what changed since a state (JMAP's ids and states) |
+| `POST /api/v1/collections/{c<id>}/items` | create a record |
+| `GET`, `PATCH` (a PatchObject), `DELETE /api/v1/items/{id}` | one record; `?send=1` schedules |
 
 ### Journals (VJOURNAL)
 
@@ -529,9 +557,16 @@ Each milestone is a run of commits that builds and passes tests on its own.
 - **Push subscriptions live in the system database**, generic over protocols (`internal/push`), not per user beside the resources: any replica can find and deliver them, sharees subscribe to the owner's collection, and JMAP push reuses the store (section 9.2).
 - **Changes are noticed by a connection observer on `dav_sync`**, not by calls at each write path: every write already bumps that row in its transaction, so watching it covers every path, present and future, and reports only committed changes. It is SQLite-specific, like the search drainer's update hooks, and like them only a hint: a lost push costs a client a poll, never data. A backend without connection hooks would report from `davsql.Bump`'s callers instead.
 - **Pushes are content-free** (topic and kind of update, no sync token) and **owed, not queued**: a bit per subscription, so a burst of writes is one push and a failing endpoint holds one owed push, not a backlog.
+- **JSON representations come from the models**, with nothing lost either way: vendor `cog:` properties for what the model holds and JSON cannot say, `JSPROP`/`JSID` leftovers for what JSON holds and the model cannot, and exact forms used only while unchanged (section 9.3). Converting through iCalendar or vCard text would lose leftovers' bytes and re-parse on every read.
+- **A shared collection is in its owner's JMAP account**, which the sharee sees as a second account, as JMAP's sharing model has it, rather than mixed into the sharee's own.
+- **JMAP record ids name the resource** (collection and URI), so a tombstone names the record it deleted and no id table is needed; the price is that a record cannot move between collections in place (section 13).
+- **JMAP push needs encryption keys**: every push is RFC 8291-encrypted, as WebDAV-Push's are; a subscription without keys is refused rather than pushed in the clear.
 
 ## 13. Open questions
 
+- **Write transactions that read first.** A deferred SQLite transaction that reads and then writes fails at once with `database is locked` when another connection commits in between, whatever `_busy_timeout` says (WAL cannot upgrade a stale snapshot). `icalsql.Store` and `Delete` and the contacts store do that; it showed once under the full test suite (`TestWebScheduling`). Begin write transactions with `BEGIN IMMEDIATE` (a DSN `_txlock=immediate` for plugin databases, or a helper for writers only)? It changes how every plugin's transactions wait, so it is not done in milestone 10.
+- **Moving a JMAP record to another collection** is refused (`invalidProperties` on `addressBookIds`/`calendarIds`): ids name the collection. Supporting it needs ids that outlive a move (a table mapping them), or accepting a new id as a destroy and create.
+- **Agent API routes** (section 9.3): agree them before task #32 builds them.
 - **Free/busy across the server.** A user sees someone else's busy time only for calendars that person shared with them (section 7), so a scheduling assistant shows nothing for colleagues who shared nothing. Nextcloud shows every user's free/busy to every other user by default. Should Cog do the same, perhaps as an admin setting, or keep it opt-in per calendar?
 
 ## 14. Progress
@@ -549,6 +584,7 @@ Branch `design-dav-storage`, one draft MR to master. Update this section at the 
 | 7. Sharing extensions, managed attachments | Done. `internal/dav/sharing.go` serves CalendarServer sharing (`CS:invite`, `CS:shared-url`, `CS:share`, `CS:invite-reply`) on the `dav:collection` shares (section 7); `internal/dav/attach.go` serves RFC 8607 managed attachments, with ATTACH modelled in `event_attachments` and the files kept by the calendar plugin (section 4.2); the event modal lists, downloads, uploads and removes attachments. Fixtures: RFC 8607's examples in `testdata/dav/ics/rfc8607/`, CalendarServer's managed and dropbox forms in `calendarserver/`. |
 | 8. Feeds | Done. `internal/dav/feed.go` serves ICS feeds from public link shares, with a free/busy-only variant, conditional GETs and feed-bound attachment tokens; `internal/dav/subscribe.go` keeps subscription calendars filled from remote feeds through `internal/safehttp`, polled by the calendar plugin; `internal/dav/birthday.go` derives the birthday calendar from the contacts' dates (`vcard.ParseDate`); collections have a kind, and those Cog fills are read-only (sections 3.0, 7, 9.1). The calendar settings page manages all three. |
 | 9. WebDAV-Push | Done. `internal/webpush` encrypts (RFC 8291) and signs (VAPID, RFC 8292) Web Push messages with the standard library only; `internal/push` keeps subscriptions in the system database and delivers them; `internal/dav/push.go` serves discovery, registration and unregistration on collections, inboxes and homes, notices changes through a connection observer on `dav_sync`, and honours Push-Dont-Notify (section 9.2). |
+| 10. JSCalendar, JSContact and JMAP | Done. `internal/dav/jscal` and `internal/dav/jscontact` (with `internal/dav/jsobj`) map the models to RFC 8984 and RFC 9553 and back, losslessly both ways (section 9.3); `internal/dav/api.go` is the DAV core outside DAV requests (`dav.Session`: collections with rights, models, changes, scheduled writes); `internal/jmap` serves JMAP core, JMAP for Contacts, JMAP for Calendars behind `COG_JMAP_CALENDARS`, PushSubscription over the push store and EventSource. |
 
 How milestone 2 differs from the plan it started with:
 
@@ -729,6 +765,22 @@ Accepted in milestone 9:
 - Pruning tombstones raises a collection's `floor` in `dav_sync`, which the observer cannot tell from a write, so it sends one push. It happens once per expired batch (default 90 days), after a client's sync.
 - Push-Dont-Notify is matched to a request's change after the request ends; a delivery round that starts between the commit and the end of the request (a second after the change at the earliest) sends the push anyway.
 - External (gRPC) plugins open their databases in their own process, outside the observer; none holds DAV resources.
+
+How milestone 10 differs from the plan:
+
+- Leftovers travel as `cog:leftovers` (Cog's own JSON of them), not RFC 9555's `vCardProps` or jCal arrays, which decode values and could not give back the bytes a client sent. JSON a client sends that Cog does not model is kept the standard way, as `JSPROP` (and ids as `JSID`).
+- `cog:exact` was not planned: without it, a value JSON can only normalise (DTEND written against DURATION, a TZID's spelling, ROLE left out) would change on every JSON round trip.
+- Backends hand out models (`dav.ModelReader`, through `dav.Table.Load`); every resource table has `created_version`, and `Backend.Changes` the version each tombstone was made at (`Changes.DeletedAt`), for JMAP's `/changes` and its `maxChanges`.
+- `putScheduled` and `deleteScheduled` moved from the DAV request to the server, with a switch to store without scheduling, so `dav.Session` writes as a PUT does.
+- The DAV core reports whose collections changed at each push round (`dav.UserListener`); JMAP marks its subscriptions from that rather than having resources of its own in the push store.
+- Not offered: blobs (photos are `data:` URIs, so no method needs upload or download; the URLs answer 404), `expandRecurrences` and `utcStart`/`utcEnd` in CalendarEvent queries, moving a record between collections (section 13), `shareWith` (no Principals capability), keyless push subscriptions, JMAP for Tasks. `isSubscribed` and the calendars' display preferences are accepted and not kept.
+- The agent API's routes are proposed (section 9.3), not built.
+
+Adjacent bugs fixed in milestone 10:
+
+- `assert.Nil`/`NotNil` (and `require`'s) panicked on a value that cannot be nil (a string, a number) instead of reporting it.
+
+Found in milestone 10, not fixed (section 13): deferred write transactions that read first fail with `database is locked` when another connection commits in between.
 
 Fixed after milestone 2 (pre-existing, found through the `webtest` fix):
 

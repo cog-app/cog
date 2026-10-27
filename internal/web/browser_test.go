@@ -563,7 +563,7 @@ func TestBrowserAdminLogsCopy(t *testing.T) {
 		"copied text has the entries newest first:\n%s", copied)
 
 	// Each line carries the time and level beside the message, tab separated.
-	for _, line := range strings.Split(copied, "\n") {
+	for line := range strings.SplitSeq(copied, "\n") {
 		if strings.Contains(line, "copytest first entry") {
 			require.Equal(t, 3, len(strings.Split(line, "\t")),
 				"line is not time/level/message: %q", line)

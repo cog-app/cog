@@ -86,6 +86,9 @@ func (d *Deliverer) deliver(ctx context.Context, s *Subscription) error {
 		return d.Store.failed(s, "no messages for protocol "+string(s.Protocol), d.Store.clock().Add(maxRetry))
 	}
 	msg, err := write(s)
+	if errors.Is(err, ErrSkip) {
+		return d.Store.delivered(s)
+	}
 	if err == nil {
 		err = d.Sender.Send(ctx, s.Endpoint, s.Keys, msg)
 	}
@@ -103,8 +106,7 @@ func (d *Deliverer) deliver(ctx context.Context, s *Subscription) error {
 		return d.Store.failed(s, fmt.Sprintf("push service answered %d", se.Code), d.Store.clock().Add(wait))
 	default:
 		// The endpoint is the client's secret, so it is left out.
-		var ue *url.Error
-		if errors.As(err, &ue) {
+		if ue, ok := errors.AsType[*url.Error](err); ok {
 			err = fmt.Errorf("post to push service: %w", ue.Err)
 		}
 		wait := Backoff(s.Failures + 1)

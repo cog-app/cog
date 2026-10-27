@@ -71,6 +71,8 @@ func configFromEnv() config.Config {
 		SSHAddr:        envOr("COG_SSH_ADDR", ":8522"),
 		SSHEnabled:     envBoolDefault("COG_SSH_ENABLED", true),
 		SSHHostKeyPath: os.Getenv("COG_SSH_HOST_KEY"),
+
+		JMAPCalendars: envBoolDefault("COG_JMAP_CALENDARS", false),
 	}
 }
 

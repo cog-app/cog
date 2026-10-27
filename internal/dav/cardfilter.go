@@ -2,6 +2,7 @@ package dav
 
 import (
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -256,12 +257,7 @@ func (pa *ParamFilter) match(p *contentline.Property) bool {
 	if pa.TextMatch == nil {
 		return true
 	}
-	for _, v := range vals {
-		if pa.TextMatch.match(v) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(vals, pa.TextMatch.match)
 }
 
 // propertyText is the text a text-match compares with: the value with its

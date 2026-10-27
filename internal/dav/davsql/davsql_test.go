@@ -60,16 +60,16 @@ func TestVersionsAndTombstones(t *testing.T) {
 	})
 	assert.Equal(t, int64(3), v3)
 
-	deleted, err := davsql.Deleted(db, 7, 2)
+	deleted, _, err := davsql.Deleted(db, 7, 2)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"a.ics"}, deleted)
-	deleted, err = davsql.Deleted(db, 7, 3)
+	deleted, _, err = davsql.Deleted(db, 7, 3)
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(deleted))
 
 	// A PUT that recreates the URI forgets the tombstone.
 	tx(t, db, func(tx *sql.Tx) { require.NoError(t, davsql.Revive(tx, 7, "a.ics")) })
-	deleted, err = davsql.Deleted(db, 7, 0)
+	deleted, _, err = davsql.Deleted(db, 7, 0)
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(deleted))
 
@@ -93,7 +93,7 @@ func TestPruneRaisesFloor(t *testing.T) {
 	st, err := davsql.GetState(db, 1)
 	require.NoError(t, err)
 	assert.Equal(t, davsql.State{Token: 2, Floor: 1, Modified: 500}, st)
-	deleted, err := davsql.Deleted(db, 1, 0)
+	deleted, _, err := davsql.Deleted(db, 1, 0)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"new.ics"}, deleted)
 

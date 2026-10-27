@@ -251,8 +251,7 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 			return nil
 		}
 		if runErr != nil {
-			var exit interp.ExitStatus
-			if !errors.As(runErr, &exit) {
+			if _, ok := errors.AsType[interp.ExitStatus](runErr); !ok {
 				s.errorf(shellStderr, "error: %v\n", runErr)
 			}
 		}

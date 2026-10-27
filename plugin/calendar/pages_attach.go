@@ -107,8 +107,7 @@ func eventPage(ev *Event) string { return fmt.Sprintf("/apps/calendar/?event=%d"
 
 // attachmentError says what a failed attachment change means to the user.
 func attachmentError(err error) string {
-	var pe *dav.PreconditionError
-	if errors.As(err, &pe) {
+	if pe, ok := errors.AsType[*dav.PreconditionError](err); ok {
 		switch pe.Name.Local {
 		case "max-attachment-size":
 			return fmt.Sprintf("The file is larger than %s.", formatSize(dav.MaxAttachmentSize))
@@ -153,8 +152,7 @@ func (h *Pages) changeAttachment(w http.ResponseWriter, r *http.Request, ev *Eve
 			fail("The event changed meanwhile; try again.")
 			return
 		}
-		var pe *dav.PreconditionError
-		if !errors.As(err, &pe) {
+		if _, ok := errors.AsType[*dav.PreconditionError](err); !ok {
 			h.plugin.log.Error("change attachment", "event", ev.ID, "err", err)
 		}
 		fail(attachmentError(err))

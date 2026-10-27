@@ -99,6 +99,9 @@ CREATE TABLE IF NOT EXISTS cards (
 	uid TEXT NOT NULL,
 	uri TEXT NOT NULL,
 	version INTEGER NOT NULL,
+	-- The version that created the row: JMAP's /changes tells resources
+	-- created since a state from those only updated.
+	created_version INTEGER NOT NULL DEFAULT 0,
 	-- Length of the text served for this version, for getcontentlength.
 	size INTEGER NOT NULL DEFAULT 0,
 	-- VERSION as received ('2.1', '3.0', '4.0'), written back unchanged.

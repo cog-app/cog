@@ -22,7 +22,8 @@ func fixture(t *testing.T, name string) *Object {
 	return o
 }
 
-func size(n int64) *int64 { return &n }
+//go:fix inline
+func size(n int64) *int64 { return new(n) }
 
 // TestAttachVariants decodes ATTACH in each form the corpus has.
 func TestAttachVariants(t *testing.T) {

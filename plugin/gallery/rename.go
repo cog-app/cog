@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/template"
 	"time"
@@ -160,8 +161,8 @@ func (p *Plugin) UndoLastRename(username string) error {
 	}
 
 	// Reverse in reverse order.
-	for i := len(entries) - 1; i >= 0; i-- {
-		e := entries[i]
+	for _, e := range slices.Backward(entries) {
+
 		if _, err := fp.Rename(username, e.NewPath, e.OldPath); err != nil {
 			p.log.Error("undo rename", "from", e.NewPath, "to", e.OldPath, "err", err)
 			continue

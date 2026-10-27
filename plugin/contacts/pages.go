@@ -468,8 +468,7 @@ func (h *Pages) ServePhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, ct, err := s.Photo(r.Context(), c)
-	var remote *remoteError
-	if errors.As(err, &remote) {
+	if _, ok := errors.AsType[*remoteError](err); ok {
 		h.plugin.log.Warn("contact photo unavailable", "card", c.ID, "err", err)
 		http.NotFound(w, r)
 		return

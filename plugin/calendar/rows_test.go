@@ -3,6 +3,7 @@ package calendar_test
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/url"
 	"strings"
 	"testing"
@@ -139,9 +140,7 @@ func seriesEnv(t *testing.T) (*cogtest.Env, *cogtest.User, *calendar.Event, func
 			"tz": {"America/Denver"}, "rrule_freq": {"CUSTOM"}, "rrule": {"FREQ=WEEKLY;COUNT=6"},
 			"attendee_email": {"bob@example.com"}, "attendee_name": {"Bob"}, "attendee_role": {"REQ-PARTICIPANT"},
 		}
-		for k, v := range form {
-			base[k] = v
-		}
+		maps.Copy(base, form)
 		return env.PostForm(t, fmt.Sprintf("/apps/calendar/events/%d", ev.ID), base, cookie, csrf, cogtest.StopRedirect)
 	}
 	return env, alice, ev, get, post

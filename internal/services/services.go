@@ -24,6 +24,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/email"
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/group"
+	"git.duckfam.us/jj-software/cog/internal/jmap"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -68,6 +69,7 @@ type Providers struct {
 	PasswordResets *auth.PasswordResetStore
 	Activities     *activity.Store
 	DAV            *dav.Server
+	JMAP           *jmap.Server    // JMAP over the DAV core's collections
 	Push           *push.Store     // push subscriptions (WebDAV-Push; JMAP push)
 	Pusher         *push.Deliverer // delivers to them; StartPush runs it
 	Federation     *federation.Store
@@ -249,6 +251,10 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		Log:      log.With("component", "push"),
 	}
 	davServer.EnablePush(pushStore, pusher, vapid)
+	jmapServer := &jmap.Server{DAV: davServer, Push: pushStore, Pusher: pusher, BaseURL: cfg.BaseURL,
+		Calendars: cfg.JMAPCalendars, Clock: c, Log: log.With("component", "jmap")}
+	pusher.Messages[push.JMAP] = jmapServer.PushMessage
+	davServer.UserListeners = append(davServer.UserListeners, jmapServer.UsersChanged)
 	registry.SetTxObserverFactory(davServer.SyncObserver)
 	for _, p := range plugins {
 		if dp, ok := p.(dav.Provider); ok {
@@ -311,6 +317,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		RateLimiter:    ratelimit.New(10, 15*time.Minute, c),
 		Activities:     activities,
 		DAV:            davServer,
+		JMAP:           jmapServer,
 		Push:           pushStore,
 		Pusher:         pusher,
 		Federation:     fedStore,

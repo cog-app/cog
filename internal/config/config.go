@@ -31,6 +31,11 @@ type Config struct {
 	SSHEnabled     bool   `json:"ssh_enabled"`       // env COG_SSH_ENABLED, default true
 	SSHHostKeyPath string `json:"ssh_host_key_path"` // env COG_SSH_HOST_KEY, default ""
 
+	// JMAPCalendars offers JMAP for Calendars, which follows an Internet
+	// draft (env COG_JMAP_CALENDARS, default false). JMAP for Contacts is
+	// always offered.
+	JMAPCalendars bool `json:"jmap_calendars"`
+
 	// DisableProcessPlugins skips loading cog-plugin-* binaries from PATH.
 	// Tests set this so they don't depend on what's installed on the machine.
 	DisableProcessPlugins bool `json:"disable_process_plugins"`
