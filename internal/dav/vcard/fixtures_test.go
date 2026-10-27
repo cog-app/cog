@@ -107,10 +107,15 @@ func TestFixturesRoundTrip(t *testing.T) {
 
 // TestFixturesModelled checks that the corpus exercises what the codec
 // models, so a change that quietly stops claiming a property shows up as a
-// count dropping rather than as leftovers that still round-trip.
+// count dropping rather than as leftovers that still round-trip. It counts
+// the committed corpus only, so the result is the same with or without the
+// local-only directories (CI has none of them).
 func TestFixturesModelled(t *testing.T) {
 	n := map[string]int{}
-	for _, in := range fixtures(t) {
+	for key, in := range fixtures(t) {
+		if !strings.HasPrefix(key, fixtureRoots[0]+"/") {
+			continue
+		}
 		c := Decode(in)
 		count := func(key string, ok bool) {
 			if ok {
@@ -130,8 +135,8 @@ func TestFixturesModelled(t *testing.T) {
 		count("v40", c.Version == V40)
 	}
 	for key, min := range map[string]int{
-		"fn": 90, "n": 90, "org": 40, "email": 60, "tel": 60, "adr": 40,
-		"photo": 15, "member": 3, "label": 10, "v21": 20, "v40": 5,
+		"fn": 75, "n": 70, "org": 40, "email": 50, "tel": 60, "adr": 40,
+		"photo": 20, "member": 3, "label": 10, "v21": 35, "v40": 8,
 	} {
 		if n[key] < min {
 			t.Errorf("%s: %d cards, want at least %d", key, n[key], min)

@@ -13,7 +13,12 @@ import (
 // lastScanYear bounds the transitions VTimezone reads from Go's zone data.
 // The final regular rule is written without an end, so it covers later years;
 // a fixed bound keeps the output independent of the date it is generated on.
-const lastScanYear = 2037
+// It is past the last irregular change the tz database predicts (Morocco's
+// Ramadan changes, listed to 2087), so a zone's output does not depend on
+// whether the zone data in use lists them or stops at 2037: Go's own
+// zoneinfo.zip lists them, some systems' data does not. Regular zones cost
+// nothing extra, their later years being one open-ended RRULE.
+const lastScanYear = 2087
 
 // transition is one change of a zone's offset.
 type transition struct {

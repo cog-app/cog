@@ -3,6 +3,7 @@ package jscontact
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -98,7 +99,10 @@ func TestFixturesRoundTrip(t *testing.T) {
 }
 
 func pretty(v any) string {
-	b, _ := json.MarshalIndent(v, "", "  ")
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("(cannot show: %v)", err)
+	}
 	return string(b)
 }
 

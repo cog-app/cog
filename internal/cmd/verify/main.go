@@ -78,6 +78,7 @@ func main() {
 		"-coverpkg=./...",
 		"-coverprofile="+coverProfile,
 		"-count=1",
+		"-timeout=30m", // browser tests queue for Chrome slots (webtest)
 		"./...",
 	); !ok && !*cont {
 		os.Exit(1)

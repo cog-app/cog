@@ -31,7 +31,7 @@ func TestVTimezoneRoundTrip(t *testing.T) {
 				vtz := VTimezone(loc, from)
 				got, err := FromRules(vtz)
 				require.NoError(t, err)
-				end := time.Date(2045, 1, 1, 0, 0, 0, 0, time.UTC)
+				end := time.Date(lastScanYear+8, 1, 1, 0, 0, 0, 0, time.UTC)
 				var bad int
 				for at := time.Date(from, 1, 1, 12, 0, 0, 0, time.UTC); at.Before(end); at = at.Add(time.Hour) {
 					_, want := at.In(loc).Zone()

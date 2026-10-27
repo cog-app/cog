@@ -3,6 +3,7 @@ package jscal
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -145,11 +146,18 @@ func modelJSON(t *testing.T, o *ical.Object) string {
 	// Only the zones the components use are written.
 	b, err := json.MarshalIndent(o, "", " ")
 	require.NoError(t, err)
-	return string(b)
+	// JSON cannot carry text that is not UTF-8 (a Latin-1 file read as
+	// is): its bytes become U+FFFD, as they do on the way to JSON. Go 1.26
+	// writes them as \ufffd and a real U+FFFD as itself, Go 1.27 both as
+	// itself; make them one so the comparison does not depend on Go.
+	return strings.ReplaceAll(string(b), `\ufffd`, "\ufffd")
 }
 
 func indent(v any) string {
-	b, _ := json.MarshalIndent(v, "", "  ")
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("(cannot show: %v)", err)
+	}
 	return string(b)
 }
 
