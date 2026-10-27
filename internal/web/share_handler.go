@@ -84,6 +84,12 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 			sd.SubjectName = "Public link"
 			if rec.Token != nil {
 				sd.Token = *rec.Token
+				sd.LinkPath = "/s/" + sd.Token
+				if resType == dav.ShareType {
+					// A calendar's public link is its ICS feed.
+					sd.SubjectName = "Feed"
+					sd.LinkPath = strings.TrimPrefix(h.p.DAV.FeedURL(sd.Token), strings.TrimSuffix(h.p.Config.BaseURL, "/"))
+				}
 			}
 		case "INSTANCE":
 			sd.SubjectName = "Everyone"

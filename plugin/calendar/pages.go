@@ -55,16 +55,26 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	calIndexPage(calendars, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
-// Settings shows calendar management.
+// Settings shows calendar management: calendars, their feeds, the
+// subscriptions and the birthday calendar.
 func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 	u := plugin.UserFromContext(r.Context())
 	calendars, err := h.plugin.Calendars(u.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.plugin.log.Error("calendar settings", "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	v, err := h.plugin.settingsView(u.ID, calendars)
+	if err != nil {
+		h.plugin.log.Error("calendar settings", "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 	plugin.SetTitle(w, "Calendar Settings")
-	calSettingsPage(calendars, plugin.CSRFToken(r)).Render(r.Context(), w)
+	if err := calSettingsPage(v, plugin.CSRFToken(r)).Render(r.Context(), w); err != nil {
+		h.plugin.log.Error("render calendar settings", "err", err)
+	}
 }
 
 // EventsJSON returns events as JSON for FullCalendar.
@@ -228,6 +238,19 @@ func (h *Pages) ownEvent(r *http.Request) (*sql.DB, string, *Event, *Calendar, i
 		return nil, "", nil, nil, http.StatusInternalServerError, err
 	}
 	return db, userID, ev, cal, 0, nil
+}
+
+// errReadOnly is an edit of an event in a calendar Cog fills.
+var errReadOnly = errors.New("this calendar is read-only")
+
+// ownWritable is ownEvent for a change: an event of a read-only calendar
+// is refused.
+func (h *Pages) ownWritable(r *http.Request) (*sql.DB, string, *Event, *Calendar, int, error) {
+	db, userID, ev, cal, status, err := h.ownEvent(r)
+	if err == nil && cal.ReadOnly {
+		return nil, "", nil, nil, http.StatusForbidden, errReadOnly
+	}
+	return db, userID, ev, cal, status, err
 }
 
 // Attendee is an attendee as the event modal shows one.
@@ -401,7 +424,7 @@ func (f *eventForm) movedTo(start time.Time) *eventForm {
 // is split in two at it), or "all" (the master, moved by as much as the
 // instance was).
 func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
-	db, userID, ev, oldCal, status, err := h.ownEvent(r)
+	db, userID, ev, oldCal, status, err := h.ownWritable(r)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
@@ -413,6 +436,10 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	cal, err := h.plugin.Calendar(userID, calID)
 	if err != nil {
 		http.Error(w, "invalid calendar", http.StatusBadRequest)
+		return
+	}
+	if cal.ReadOnly {
+		http.Error(w, errReadOnly.Error(), http.StatusForbidden)
 		return
 	}
 	f, err := parseEventForm(cal, r)
@@ -658,6 +685,10 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid calendar", http.StatusBadRequest)
 		return
 	}
+	if cal.ReadOnly {
+		http.Error(w, errReadOnly.Error(), http.StatusForbidden)
+		return
+	}
 	f, err := parseEventForm(cal, r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -710,7 +741,7 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 // of a series, scope says what goes: "this" occurrence (an EXDATE), the
 // "following" ones (the series ends before it), or "all" of it.
 func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
-	db, userID, ev, cal, status, err := h.ownEvent(r)
+	db, userID, ev, cal, status, err := h.ownWritable(r)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
@@ -1028,7 +1059,7 @@ func parseAttendeeForm(r *http.Request) []ical.Attendee {
 // invitation in the user's calendar: their PARTSTAT changes on every
 // occurrence, and the organizer gets the REPLY.
 func (h *Pages) RespondToInvite(w http.ResponseWriter, r *http.Request) {
-	db, userID, ev, cal, status, err := h.ownEvent(r)
+	db, userID, ev, cal, status, err := h.ownWritable(r)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return

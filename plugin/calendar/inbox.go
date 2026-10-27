@@ -127,7 +127,7 @@ func (ib *inbox) Deliver(owner, uid string, data []byte, cutoff time.Time) error
 			return err
 		}
 	}
-	version, err := davsql.Bump(tx, coll)
+	version, err := davsql.Bump(tx, coll, now)
 	if err != nil {
 		return err
 	}

@@ -488,7 +488,7 @@ func (t *Tables) Store(tx *sql.Tx, collID int64, floating *time.Location, uri st
 		return nil, err
 	}
 
-	version, err := davsql.Bump(tx, collID)
+	version, err := davsql.Bump(tx, collID, now)
 	if err != nil {
 		return nil, err
 	}

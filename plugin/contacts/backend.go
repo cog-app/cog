@@ -1,9 +1,14 @@
 package contacts
 
 import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
 	"slices"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
+	"git.duckfam.us/jj-software/cog/internal/dav/codec"
 	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
 	"git.duckfam.us/jj-software/cog/internal/dav/vcard"
 )
@@ -18,6 +23,7 @@ type backend struct {
 var (
 	_ dav.Backend     = (*backend)(nil)
 	_ dav.CardQuerier = (*backend)(nil)
+	_ dav.DateSource  = (*backend)(nil)
 )
 
 func newBackend(p *Plugin) *backend {
@@ -104,4 +110,69 @@ func (b *backend) QueryCards(owner string, c *dav.Collection, f *dav.CardFilter,
 		out = append(out, list...)
 	}
 	return out, truncated, nil
+}
+
+// vendorAnniversaries are the properties 3.0 clients write an anniversary
+// in, which has no property of its own before 4.0.
+var vendorAnniversaries = []string{"X-ANNIVERSARY", "X-EVOLUTION-ANNIVERSARY", "X-MS-ANNIVERSARY", "X-WAB-WEDDING_ANNIVERSARY"}
+
+// CardDates implements dav.DateSource for the birthday calendar: the dates
+// of the cards among uris (all when nil), read from their columns and
+// leftovers in one query per chunk, without rendering a card.
+func (b *backend) CardDates(owner string, c *dav.Collection, uris []string) ([]dav.CardDates, error) {
+	db, err := b.p.DB(owner)
+	if err != nil {
+		return nil, err
+	}
+	const q = `SELECT uri, fn, n_given, n_family, org, bday, anniversary, leftovers FROM cards WHERE collection_id = ?`
+	if uris == nil {
+		return cardDates(db, q, c.ID)
+	}
+	var out []dav.CardDates
+	for chunk := range slices.Chunk(uris, loadChunk) {
+		list, err := cardDates(db, q+" AND uri IN ("+placeholders(len(chunk))+")", append([]any{c.ID}, anys(chunk)...)...)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, list...)
+	}
+	return out, nil
+}
+
+func cardDates(q davsql.Querier, query string, args ...any) ([]dav.CardDates, error) {
+	rows, err := q.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("card dates: %w", err)
+	}
+	defer rows.Close()
+	var out []dav.CardDates
+	for rows.Next() {
+		var d dav.CardDates
+		var given, family sql.NullString
+		var org, left string
+		if err := rows.Scan(&d.URI, &d.Name, &given, &family, &org, &d.Birthday, &d.Anniversary, &left); err != nil {
+			return nil, fmt.Errorf("card dates: %w", err)
+		}
+		var l codec.Leftovers
+		if err := json.Unmarshal([]byte(left), &l); err != nil {
+			return nil, fmt.Errorf("card %s leftovers: %w", d.URI, err)
+		}
+		d.BirthdayParams, d.AnniversaryParams = l.Params["BDAY"], l.Params["ANNIVERSARY"]
+		if d.Anniversary == "" {
+			for _, p := range l.Props {
+				if p.Group == "" && slices.ContainsFunc(vendorAnniversaries, func(n string) bool { return strings.EqualFold(n, p.Name) }) {
+					d.Anniversary, d.AnniversaryParams = p.Value, p.Params
+					break
+				}
+			}
+		}
+		if d.Name == "" {
+			d.Name = strings.TrimSpace(strings.ReplaceAll(given.String, ",", " ") + " " + strings.ReplaceAll(family.String, ",", " "))
+		}
+		if d.Name == "" {
+			d.Name = org
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }

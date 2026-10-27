@@ -167,7 +167,7 @@ func (h *Pages) changeAttachment(w http.ResponseWriter, r *http.Request, ev *Eve
 // UploadAttachment handles POST of a file to attach to an event, as a
 // managed attachment, so DAV clients see it too.
 func (h *Pages) UploadAttachment(w http.ResponseWriter, r *http.Request) {
-	_, userID, ev, cal, status, err := h.ownEvent(r)
+	_, userID, ev, cal, status, err := h.ownWritable(r)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
@@ -196,7 +196,7 @@ func (h *Pages) UploadAttachment(w http.ResponseWriter, r *http.Request) {
 // RemoveAttachment handles POST to remove one of the user's managed
 // attachments from every component of an event.
 func (h *Pages) RemoveAttachment(w http.ResponseWriter, r *http.Request) {
-	_, userID, ev, cal, status, err := h.ownEvent(r)
+	_, userID, ev, cal, status, err := h.ownWritable(r)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return

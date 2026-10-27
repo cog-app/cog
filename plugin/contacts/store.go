@@ -74,6 +74,9 @@ type Store struct {
 	photos *photoStore
 	fetch  *http.Client // for photos given by URL
 	log    *slog.Logger
+	// changed runs after every committed write: the birthday calendar
+	// follows the cards.
+	changed func() error
 }
 
 // Store returns a user's contacts.
@@ -82,7 +85,13 @@ func (p *Plugin) Store(username string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{DB: db, photos: p.photoStore(username), fetch: p.fetch, log: p.log}, nil
+	changed := func() error {
+		if p.dav == nil {
+			return nil
+		}
+		return p.dav.CardsChanged(username)
+	}
+	return &Store{DB: db, photos: p.photoStore(username), fetch: p.fetch, log: p.log, changed: changed}, nil
 }
 
 // preferred orders a card's values: by PREF, then TYPE=pref, then as
@@ -266,6 +275,11 @@ func (s *Store) write(fn func(tx *sql.Tx) (garbage []string, err error)) error {
 	}
 	if err := s.collect(garbage); err != nil {
 		s.log.Error("remove unused contact photos", "err", err)
+	}
+	// The cards are stored whatever happens to the birthday calendar,
+	// which catches up on its next sync.
+	if err := s.changed(); err != nil {
+		s.log.Error("update the birthday calendar", "err", err)
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"time"
 
@@ -35,6 +36,7 @@ var (
 	_ dav.InboxProvider    = (*backend)(nil)
 	_ dav.UIDLocator       = (*backend)(nil)
 	_ dav.FreeBusyQuerier  = (*backend)(nil)
+	_ dav.BatchWriter      = (*backend)(nil)
 )
 
 // Inbox implements dav.InboxProvider: schedule inboxes live with events.
@@ -88,6 +90,44 @@ func (b *backend) Put(owner string, c *dav.Collection, req *dav.PutRequest) (*da
 	}
 	b.p.collected(owner)
 	return &dav.PutResult{Version: st.Version, Created: st.Created, Data: st.Data}, nil
+}
+
+// WriteBatch stores the events of a calendar Cog fills (a subscription, the
+// birthdays) in one transaction.
+func (b *backend) WriteBatch(owner string, c *dav.Collection, puts []*dav.PutRequest, deletes []string) error {
+	db, err := b.p.DB(owner)
+	if err != nil {
+		return err
+	}
+	objs := make([]*ical.Object, len(puts))
+	for i, req := range puts {
+		if objs[i], err = ical.Decode(req.Object, ical.VEVENT); err != nil {
+			return fmt.Errorf("decode event %s: %w", req.URI, err)
+		}
+	}
+	now := b.p.ctx.Now().Unix()
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("write events: %w", err)
+	}
+	defer tx.Rollback()
+	zone := zoneOf(c)
+	for i, req := range puts {
+		if _, err := tables.Store(tx, int64(c.ID), zone, req.URI, objs[i], davsql.Conditions{}, now); err != nil {
+			return fmt.Errorf("store %s: %w", req.URI, err)
+		}
+	}
+	for _, uri := range deletes {
+		if err := tables.Delete(tx, int64(c.ID), uri, davsql.Conditions{}, now); err != nil && !errors.Is(err, dav.ErrNotFound) {
+			return fmt.Errorf("delete %s: %w", uri, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("write events: %w", err)
+	}
+	// A replaced event may have named attachments nothing names now.
+	b.p.collected(owner)
+	return nil
 }
 
 func (b *backend) Delete(owner string, c *dav.Collection, uri string, cond davsql.Conditions) error {

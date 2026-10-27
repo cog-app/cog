@@ -152,8 +152,8 @@ func (s *Server) serveAttachment(w http.ResponseWriter, r *http.Request, user *U
 		s.Log.Error("dav: attachment", "owner", ownerName, "id", id, "err", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
-	token := r.URL.Query().Get("token")
-	if user == nil && token == "" {
+	token, feed := r.URL.Query().Get("token"), r.URL.Query().Get("feed")
+	if user == nil && token == "" && feed == "" {
 		w.Header().Set("WWW-Authenticate", `Basic realm="Cog"`)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -186,6 +186,12 @@ func (s *Server) serveAttachment(w http.ResponseWriter, r *http.Request, user *U
 		if allowed, err = s.mayFetch(owner, id, user, token, uses); err != nil {
 			fail(err)
 			return
+		}
+		if !allowed {
+			if allowed, err = s.feedMayFetch(owner, id, feed, uses); err != nil {
+				fail(err)
+				return
+			}
 		}
 	}
 	if !allowed {
@@ -319,6 +325,9 @@ func precondition(status int, name xml.Name) error { return &PreconditionError{s
 // its attendees. Only the event's organizer may (RFC 8607 section 3.12.2);
 // an event without one is the owner's own.
 func (s *Server) ChangeAttachment(owner *User, c *Collection, uri string, ch AttachmentChange) (*AttachmentResult, error) {
+	if c.ReadOnly() {
+		return nil, ErrReadOnly
+	}
 	bes := s.backendsOf(c)
 	store := s.attachments(bes)
 	var events Backend
@@ -611,6 +620,24 @@ func (s *Server) checkManaged(owner string, old, cur *ical.Object) error {
 		}
 	}
 	return nil
+}
+
+// relinkManaged gives each ATTACH naming one of the owner's managed
+// attachments (its URL starts with prefix) the URL link returns for its
+// MANAGED-ID.
+func relinkManaged(c *contentline.Component, prefix string, link func(id string) string) {
+	for i := range c.Props {
+		p := &c.Props[i]
+		if !p.Is("ATTACH") || !strings.HasPrefix(p.Value, prefix) {
+			continue
+		}
+		if id := p.Param("MANAGED-ID"); id != "" {
+			p.Value = link(id)
+		}
+	}
+	for _, sub := range c.Components {
+		relinkManaged(sub, prefix, link)
+	}
 }
 
 // stripManaged removes MANAGED-ID from ATTACH properties: on export and

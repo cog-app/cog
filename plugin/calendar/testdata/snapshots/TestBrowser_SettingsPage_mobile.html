@@ -259,6 +259,103 @@
               </tbody>
             </table>
           </div>
+          <div class="card">
+            <div class="card-title">
+              Feeds
+            </div>
+            <p class="text-muted">
+              A feed is a secret address any calendar app can subscribe to (webcal), without an account. Anyone with the address sees the calendar, or only when you are busy; a new address or revoking it stops the old one at once.
+            </p>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>
+                    Calendar
+                  </th>
+                  <th>
+                    Whole calendar
+                  </th>
+                  <th>
+                    Busy times only
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr id="cal-feed-1">
+                  <td>
+                    Personal
+                  </td>
+                  <td>
+                    <form action="/apps/calendar/calendars/1/feed" method="post" style="display:inline">
+                      <input name="csrf_token" type="hidden" value="«hex»" />
+                      <input name="kind" type="hidden" value="full" />
+                      <input name="action" type="hidden" value="renew" />
+                      <button class="btn btn-sm" type="submit">
+                        Create feed
+                      </button>
+                    </form>
+                  </td>
+                  <td>
+                    <form action="/apps/calendar/calendars/1/feed" method="post" style="display:inline">
+                      <input name="csrf_token" type="hidden" value="«hex»" />
+                      <input name="kind" type="hidden" value="busy" />
+                      <input name="action" type="hidden" value="renew" />
+                      <button class="btn btn-sm" type="submit">
+                        Create feed
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <div class="card-title">
+              Subscriptions
+            </div>
+            <p class="text-muted">
+              A subscription is a read-only calendar filled from a feed elsewhere (a school's holidays, a team's fixtures), fetched again every hour or as often as the feed asks.
+            </p>
+            <form action="/apps/calendar/subscriptions" class="flex gap-1 items-end" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div class="form-group" style="margin-bottom:0;flex:1">
+                <label for="sub-url">
+                  Feed address
+                </label>
+                <input class="form-control" id="sub-url" name="url" placeholder="webcal://example.com/calendar.ics" required="" type="url" />
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label for="sub-name">
+                  Name
+                </label>
+                <input class="form-control" id="sub-name" name="name" placeholder="School holidays" type="text" />
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label for="sub-color">
+                  Color
+                </label>
+                <input class="form-control" id="sub-color" name="color" type="color" value="#7a7a7a" />
+              </div>
+              <button class="btn btn-primary" type="submit">
+                Subscribe
+              </button>
+            </form>
+          </div>
+          <div class="card">
+            <div class="card-title">
+              Birthdays
+            </div>
+            <form action="/apps/calendar/birthdays" class="flex gap-1 items-center" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <p class="text-muted" style="margin:0;flex:1">
+                Show your contacts' birthdays and anniversaries in a read-only calendar.
+              </p>
+              <input name="enable" type="hidden" value="1" />
+              <button class="btn btn-sm btn-primary" type="submit">
+                Turn on
+              </button>
+            </form>
+          </div>
           <datalist id="cal-timezones">
             <option value="UTC" />
             <option value="Pacific/Honolulu" />

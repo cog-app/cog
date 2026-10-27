@@ -2,6 +2,7 @@ package dav
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
@@ -102,6 +103,36 @@ func IsUIDConflict(err error) (*UIDConflict, bool) {
 	var c *UIDConflict
 	ok := errors.As(err, &c)
 	return c, ok
+}
+
+// BatchWriter is implemented by backends that store many resources of one
+// collection in one transaction, for collections Cog fills itself: a
+// subscription's feed, the birthday calendar. Puts are unconditional and
+// replace what is at their URI; deleting a URI that holds nothing is not an
+// error. Without it the core writes them one at a time.
+type BatchWriter interface {
+	WriteBatch(owner string, c *Collection, puts []*PutRequest, deletes []string) error
+}
+
+// writeBatch stores puts and removes deletes in c through b.
+func writeBatch(b Backend, owner string, c *Collection, puts []*PutRequest, deletes []string) error {
+	if len(puts) == 0 && len(deletes) == 0 {
+		return nil
+	}
+	if bw, ok := b.(BatchWriter); ok {
+		return bw.WriteBatch(owner, c, puts, deletes)
+	}
+	for _, p := range puts {
+		if _, err := b.Put(owner, c, p); err != nil {
+			return fmt.Errorf("store %s: %w", p.URI, err)
+		}
+	}
+	for _, uri := range deletes {
+		if err := b.Delete(owner, c, uri, davsql.Conditions{}); err != nil && !errors.Is(err, ErrNotFound) {
+			return fmt.Errorf("delete %s: %w", uri, err)
+		}
+	}
+	return nil
 }
 
 // TimeRangeQuerier is implemented by backends that can narrow a

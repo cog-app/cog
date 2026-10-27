@@ -94,14 +94,16 @@ func (c *Collection) zone() *time.Location {
 }
 
 // transparent reports whether the owner marked the calendar as not making
-// them busy (RFC 6638 §9.1, kept as a dead property).
+// them busy (RFC 6638 §9.1, kept as a dead property). A calendar Cog fills
+// (a subscription's school holidays, the birthdays) is transparent unless
+// marked opaque.
 func (c *Collection) transparent() bool {
 	for _, d := range c.DeadProps {
 		if d.Space == nsCalDAV && d.Local == "schedule-calendar-transp" {
 			return strings.Contains(d.Inner, "transparent")
 		}
 	}
-	return false
+	return c.ReadOnly()
 }
 
 func (s *Server) mailer() plugin.EmailSender {
@@ -304,7 +306,8 @@ func (s *Server) deliver(u *User, m itip.Message) error {
 	if err != nil {
 		return err
 	}
-	cols = slices.DeleteFunc(cols, func(c Collection) bool { return !c.Has(VEVENT) })
+	// An invitation never lands in, or changes, a calendar Cog fills.
+	cols = slices.DeleteFunc(cols, func(c Collection) bool { return !c.Has(VEVENT) || c.ReadOnly() })
 	var applyErr error
 	if len(cols) > 0 {
 		applyErr = s.apply(bes, events, u, cols, m)
@@ -630,7 +633,7 @@ func (q *request) defaultCalendar(ownerID string) (*Collection, error) {
 		return nil, err
 	}
 	for i := range cols {
-		if cols[i].Has(VEVENT) {
+		if cols[i].Has(VEVENT) && !cols[i].ReadOnly() {
 			return &cols[i], nil
 		}
 	}

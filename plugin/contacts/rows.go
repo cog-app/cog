@@ -144,7 +144,7 @@ func loadCards(q davsql.Querier, ph *photoStore, ids []int64) (map[int64]*vcard.
 
 func placeholders(n int) string { return "?" + strings.Repeat(",?", n-1) }
 
-func anys(ids []int64) []any {
+func anys[T any](ids []T) []any {
 	out := make([]any, len(ids))
 	for i, id := range ids {
 		out[i] = id
@@ -450,7 +450,7 @@ func storeCard(tx *sql.Tx, ph *photoStore, collID int64, uri string, c *vcard.Ca
 		return nil, err
 	}
 
-	version, err := davsql.Bump(tx, collID)
+	version, err := davsql.Bump(tx, collID, now)
 	if err != nil {
 		return nil, err
 	}

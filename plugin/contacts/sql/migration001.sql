@@ -1,0 +1,2 @@
+-- IF COLUMN dav_sync.modified NOT EXIST
+ALTER TABLE dav_sync ADD COLUMN modified INTEGER NOT NULL DEFAULT 0;

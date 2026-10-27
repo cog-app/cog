@@ -30,7 +30,7 @@ templ SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []S
 									if s.Token != "" {
 										<br/>
 										<code style="font-size:0.8rem;color:var(--color-text-muted)">
-											{ fmt.Sprintf("/s/%s", s.Token) }
+											{ s.LinkPath }
 										</code>
 									}
 								} else {

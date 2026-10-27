@@ -38,9 +38,9 @@ func TestVersionsAndTombstones(t *testing.T) {
 	var v1, v2, v3 int64
 	tx(t, db, func(tx *sql.Tx) {
 		var err error
-		v1, err = davsql.Bump(tx, 7)
+		v1, err = davsql.Bump(tx, 7, 100)
 		require.NoError(t, err)
-		v2, err = davsql.Bump(tx, 7)
+		v2, err = davsql.Bump(tx, 7, 100)
 		require.NoError(t, err)
 	})
 	assert.Equal(t, int64(1), v1)
@@ -48,7 +48,7 @@ func TestVersionsAndTombstones(t *testing.T) {
 
 	// Collections count separately.
 	tx(t, db, func(tx *sql.Tx) {
-		v, err := davsql.Bump(tx, 8)
+		v, err := davsql.Bump(tx, 8, 100)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), v)
 	})
@@ -75,8 +75,8 @@ func TestVersionsAndTombstones(t *testing.T) {
 
 	states, err := davsql.States(db, []int64{7, 8, 9})
 	require.NoError(t, err)
-	assert.Equal(t, davsql.State{Token: 3}, states[7])
-	assert.Equal(t, davsql.State{Token: 1}, states[8])
+	assert.Equal(t, davsql.State{Token: 3, Modified: 100}, states[7])
+	assert.Equal(t, davsql.State{Token: 1, Modified: 100}, states[8])
 	_, ok := states[9]
 	assert.False(t, ok)
 }
@@ -92,7 +92,7 @@ func TestPruneRaisesFloor(t *testing.T) {
 	require.NoError(t, davsql.Prune(db, 1, 300))
 	st, err := davsql.GetState(db, 1)
 	require.NoError(t, err)
-	assert.Equal(t, davsql.State{Token: 2, Floor: 1}, st)
+	assert.Equal(t, davsql.State{Token: 2, Floor: 1, Modified: 500}, st)
 	deleted, err := davsql.Deleted(db, 1, 0)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"new.ics"}, deleted)

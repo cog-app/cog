@@ -27,6 +27,7 @@ type dataCollection struct {
 	Name     string
 	Kind     string // "Events, Tasks", "Contacts"
 	Filename string
+	ReadOnly bool // filled by Cog: exported, never imported into
 }
 
 var componentLabels = map[dav.Component]string{
@@ -83,7 +84,7 @@ func (h *dataHandler) ShowData(w http.ResponseWriter, r *http.Request) {
 		for _, comp := range cols[i].Components {
 			kinds = append(kinds, componentLabels[comp])
 		}
-		rows[i] = dataCollection{ID: int64(cols[i].ID), Name: cols[i].Title(), Kind: strings.Join(kinds, ", "), Filename: filename(&cols[i])}
+		rows[i] = dataCollection{ID: int64(cols[i].ID), Name: cols[i].Title(), Kind: strings.Join(kinds, ", "), Filename: filename(&cols[i]), ReadOnly: cols[i].ReadOnly()}
 	}
 	var flashMsg, flashKind string
 	if f := getFlash(w, r); f != nil {

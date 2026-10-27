@@ -67,11 +67,27 @@ func (id CollectionID) String() string { return strconv.FormatInt(int64(id), 10)
 // the CollectionID.
 const ShareType = "dav:collection"
 
+// Kind says where a collection's resources come from.
+type Kind string
+
+const (
+	// KindOwn collections hold what their owner and sharees write.
+	KindOwn Kind = ""
+	// KindSubscription calendars are filled from a remote iCalendar feed
+	// (Source) and are read-only to every client.
+	KindSubscription Kind = "subscription"
+	// KindBirthdays is a user's birthday calendar, derived from the
+	// birthdays and anniversaries of the contacts in their address books.
+	KindBirthdays Kind = "birthdays"
+)
+
 // Collection is a calendar or address book.
 type Collection struct {
 	ID           CollectionID
 	OwnerID      string // user ID
 	Home         Home
+	Kind         Kind
+	Source       string // a subscription's feed URL, as the user gave it
 	Name         string // path segment, unique per owner and home
 	Components   []Component
 	DisplayName  string
@@ -84,6 +100,10 @@ type Collection struct {
 	CreatedAt    int64
 	UpdatedAt    int64
 }
+
+// ReadOnly reports whether Cog fills the collection itself, so no client
+// may write to it, its owner included.
+func (c *Collection) ReadOnly() bool { return c.Kind != KindOwn }
 
 // Has reports whether the collection holds resources of type c.
 func (c *Collection) Has(comp Component) bool { return slices.Contains(c.Components, comp) }
@@ -122,13 +142,17 @@ func NewStore(db *sql.DB, c clock.Clock) *Store {
 	return &Store{db: db, clock: c}
 }
 
-const collectionColumns = `id, owner_user_id, home, name, components, display_name, description,
-	color, sort_order, timezone, dead_props, props_version, created_at, updated_at`
+// selectCollections reads collections with their subscription's URL; the
+// queries add their conditions on c.
+const selectCollections = `SELECT c.id, c.owner_user_id, c.home, c.kind, COALESCE(s.url, ''), c.name, c.components,
+	c.display_name, c.description, c.color, c.sort_order, c.timezone, c.dead_props, c.props_version,
+	c.created_at, c.updated_at
+	FROM dav_collections c LEFT JOIN dav_subscriptions s ON s.collection_id = c.id`
 
 func scanCollection(row interface{ Scan(...any) error }) (*Collection, error) {
 	var c Collection
 	var comps, dead string
-	if err := row.Scan(&c.ID, &c.OwnerID, &c.Home, &c.Name, &comps, &c.DisplayName, &c.Description,
+	if err := row.Scan(&c.ID, &c.OwnerID, &c.Home, &c.Kind, &c.Source, &c.Name, &comps, &c.DisplayName, &c.Description,
 		&c.Color, &c.SortOrder, &c.Timezone, &dead, &c.PropsVersion, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -162,8 +186,8 @@ func (s *Store) query(q string, args ...any) ([]Collection, error) {
 
 // List returns a user's collections in a home, in display order.
 func (s *Store) List(ownerID string, home Home) ([]Collection, error) {
-	return s.query(`SELECT `+collectionColumns+` FROM dav_collections
-		WHERE owner_user_id = ? AND home = ? ORDER BY sort_order, display_name, name`, ownerID, home)
+	return s.query(selectCollections+` WHERE c.owner_user_id = ? AND c.home = ?
+		ORDER BY c.sort_order, c.display_name, c.name`, ownerID, home)
 }
 
 // ListWith returns a user's collections that hold any of comps.
@@ -182,8 +206,8 @@ func (s *Store) ListWith(ownerID string, comps ...Component) ([]Collection, erro
 
 // Get returns a user's collection by home and name.
 func (s *Store) Get(ownerID string, home Home, name string) (*Collection, error) {
-	c, err := scanCollection(s.db.QueryRow(`SELECT `+collectionColumns+` FROM dav_collections
-		WHERE owner_user_id = ? AND home = ? AND name = ?`, ownerID, home, name))
+	c, err := scanCollection(s.db.QueryRow(selectCollections+`
+		WHERE c.owner_user_id = ? AND c.home = ? AND c.name = ?`, ownerID, home, name))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -195,7 +219,7 @@ func (s *Store) Get(ownerID string, home Home, name string) (*Collection, error)
 
 // ByID returns a collection by ID.
 func (s *Store) ByID(id CollectionID) (*Collection, error) {
-	c, err := scanCollection(s.db.QueryRow(`SELECT `+collectionColumns+` FROM dav_collections WHERE id = ?`, id))
+	c, err := scanCollection(s.db.QueryRow(selectCollections+` WHERE c.id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -214,8 +238,12 @@ func (s *Store) ByIDs(ids []CollectionID) ([]Collection, error) {
 	for i, id := range ids {
 		args[i] = id
 	}
-	return s.query(`SELECT `+collectionColumns+` FROM dav_collections
-		WHERE id IN (?`+strings.Repeat(",?", len(ids)-1)+`)`, args...)
+	return s.query(selectCollections+` WHERE c.id IN (?`+strings.Repeat(",?", len(ids)-1)+`)`, args...)
+}
+
+// OfKind returns a user's collections of a kind.
+func (s *Store) OfKind(ownerID string, kind Kind) ([]Collection, error) {
+	return s.query(selectCollections+` WHERE c.owner_user_id = ? AND c.kind = ? ORDER BY c.id`, ownerID, kind)
 }
 
 func encodeComponents(comps []Component) string {
@@ -256,10 +284,10 @@ func (s *Store) Create(c *Collection) error {
 		return fmt.Errorf("encode dead properties: %w", err)
 	}
 	now := s.clock().Unix()
-	res, err := s.db.Exec(`INSERT INTO dav_collections (owner_user_id, home, name, components, display_name,
+	res, err := s.db.Exec(`INSERT INTO dav_collections (owner_user_id, home, kind, name, components, display_name,
 		description, color, sort_order, timezone, dead_props, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.OwnerID, c.Home, c.Name, encodeComponents(c.Components), c.DisplayName,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.OwnerID, c.Home, c.Kind, c.Name, encodeComponents(c.Components), c.DisplayName,
 		c.Description, c.Color, c.SortOrder, c.Timezone, dead, now, now)
 	if err != nil {
 		var se sqlite3.Error
@@ -277,7 +305,7 @@ func (s *Store) Create(c *Collection) error {
 }
 
 // Update saves c's properties and bumps its props version. Name, owner,
-// home and components cannot change.
+// home, kind and components cannot change.
 func (s *Store) Update(c *Collection) error {
 	dead, err := encodeDead(c.DeadProps)
 	if err != nil {

@@ -545,7 +545,9 @@ templ settingsDataPage(pd ui.PageData, flash string, flashKind string, collectio
 					<label for="import-target">Into</label>
 					<select class="form-control" id="import-target" name="target">
 						for _, c := range collections {
-							<option value={ strconv.FormatInt(c.ID, 10) }>{ c.Name } ({ c.Kind })</option>
+							if !c.ReadOnly {
+								<option value={ strconv.FormatInt(c.ID, 10) }>{ c.Name } ({ c.Kind })</option>
+							}
 						}
 						for _, h := range homes {
 							if h == dav.HomeCalendars {

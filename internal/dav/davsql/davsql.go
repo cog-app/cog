@@ -18,7 +18,8 @@ import (
 const Schema = `CREATE TABLE IF NOT EXISTS dav_sync (
 	collection_id INTEGER PRIMARY KEY,
 	token INTEGER NOT NULL DEFAULT 0,
-	floor INTEGER NOT NULL DEFAULT 0
+	floor INTEGER NOT NULL DEFAULT 0,
+	modified INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS dav_tombstones (
@@ -40,12 +41,13 @@ type Querier interface {
 }
 
 // Bump increments a collection's counter and returns the new value, the
-// version for the resource being written.
-func Bump(tx Querier, collectionID int64) (int64, error) {
+// version for the resource being written. now (unix seconds) becomes the
+// collection's modification time, which feeds send as Last-Modified.
+func Bump(tx Querier, collectionID, now int64) (int64, error) {
 	var v int64
-	err := tx.QueryRow(`INSERT INTO dav_sync (collection_id, token) VALUES (?, 1)
-		ON CONFLICT(collection_id) DO UPDATE SET token = token + 1
-		RETURNING token`, collectionID).Scan(&v)
+	err := tx.QueryRow(`INSERT INTO dav_sync (collection_id, token, modified) VALUES (?, 1, ?)
+		ON CONFLICT(collection_id) DO UPDATE SET token = token + 1, modified = MAX(modified, excluded.modified)
+		RETURNING token`, collectionID, now).Scan(&v)
 	if err != nil {
 		return 0, fmt.Errorf("bump sync token of collection %d: %w", collectionID, err)
 	}
@@ -55,7 +57,7 @@ func Bump(tx Querier, collectionID int64) (int64, error) {
 // Delete records that uri was removed from a collection at a new version and
 // returns that version. Call it in the transaction that deletes the row.
 func Delete(tx Querier, collectionID int64, uri string, now int64) (int64, error) {
-	v, err := Bump(tx, collectionID)
+	v, err := Bump(tx, collectionID, now)
 	if err != nil {
 		return 0, err
 	}
@@ -86,15 +88,16 @@ func Revive(tx Querier, collectionID int64, uri string) error {
 
 // State is a collection's sync state in one database.
 type State struct {
-	Token int64 // highest version written
-	Floor int64 // highest version whose tombstones were pruned
+	Token    int64 // highest version written
+	Floor    int64 // highest version whose tombstones were pruned
+	Modified int64 // unix seconds of the last write or deletion
 }
 
 // GetState returns one collection's state; a collection never written to has
 // the zero state.
 func GetState(q Querier, collectionID int64) (State, error) {
 	var s State
-	err := q.QueryRow(`SELECT token, floor FROM dav_sync WHERE collection_id = ?`, collectionID).Scan(&s.Token, &s.Floor)
+	err := q.QueryRow(`SELECT token, floor, modified FROM dav_sync WHERE collection_id = ?`, collectionID).Scan(&s.Token, &s.Floor, &s.Modified)
 	if errors.Is(err, sql.ErrNoRows) {
 		return State{}, nil
 	}
@@ -114,7 +117,7 @@ func States(q Querier, collectionIDs []int64) (map[int64]State, error) {
 	for i, id := range collectionIDs {
 		args[i] = id
 	}
-	rows, err := q.Query(`SELECT collection_id, token, floor FROM dav_sync
+	rows, err := q.Query(`SELECT collection_id, token, floor, modified FROM dav_sync
 		WHERE collection_id IN (?`+strings.Repeat(",?", len(args)-1)+`)`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("sync states: %w", err)
@@ -123,7 +126,7 @@ func States(q Querier, collectionIDs []int64) (map[int64]State, error) {
 	for rows.Next() {
 		var id int64
 		var s State
-		if err := rows.Scan(&id, &s.Token, &s.Floor); err != nil {
+		if err := rows.Scan(&id, &s.Token, &s.Floor, &s.Modified); err != nil {
 			return nil, fmt.Errorf("scan sync state: %w", err)
 		}
 		out[id] = s

@@ -43,10 +43,25 @@ func (r *ImportResult) fail(format string, args ...any) {
 	}
 }
 
+// ErrReadOnly is a write to a collection Cog fills itself.
+var ErrReadOnly = errors.New("dav: the collection is read-only")
+
 // Import splits an iCalendar or vCard file into resources the way a client
 // would PUT them and stores each in c. A resource whose UID is already in
 // the collection replaces it, so importing the same file twice is a no-op.
 func (s *Server) Import(ownerUsername string, c *Collection, r io.Reader) (*ImportResult, error) {
+	if c.ReadOnly() {
+		return nil, ErrReadOnly
+	}
+	if c.Home == HomeAddressBooks {
+		// The birthday calendar reads the imported cards in one pass.
+		release := s.holdBirthdays(ownerUsername)
+		defer func() {
+			if err := release(); err != nil {
+				s.Log.Error("dav: birthday calendar after import", "owner", ownerUsername, "err", err)
+			}
+		}()
+	}
 	comps, err := contentline.Parse(r)
 	if err != nil {
 		return nil, fmt.Errorf("not a valid file: %w", err)
@@ -232,11 +247,37 @@ func collectTZIDs(c *contentline.Component, ids map[string]bool) {
 // each VTIMEZONE once, or the vCards one after another. It reads the stored
 // resources through the same path as GET, so export and DAV agree.
 func (s *Server) Export(w io.Writer, ownerUsername string, c *Collection) error {
+	return s.export(w, ownerUsername, c, s.backendsOf(c), exportOptions{})
+}
+
+// exportOptions change what an export shows, for feeds.
+type exportOptions struct {
+	// busyOnly shows only when the owner is busy, as a free/busy-only
+	// share does: resources are redacted (BusyRedactor), and those of a
+	// backend that cannot redact them are left out.
+	busyOnly bool
+	// attachment, when set, gives the URL a managed attachment of the
+	// owner's is written with; otherwise it keeps the URL Cog serves it at.
+	attachment func(id string) string
+}
+
+func (s *Server) export(w io.Writer, ownerUsername string, c *Collection, bes []Backend, opt exportOptions) error {
 	var all []Resource
-	for _, b := range s.backendsOf(c) {
+	for _, b := range bes {
 		list, err := b.List(ownerUsername, c, true)
 		if err != nil {
 			return err
+		}
+		if opt.busyOnly {
+			red, ok := b.(BusyRedactor)
+			if !ok {
+				continue
+			}
+			for i := range list {
+				if err := red.Redact(c, &list[i]); err != nil {
+					return err
+				}
+			}
 		}
 		all = append(all, list...)
 	}
@@ -296,6 +337,9 @@ func (s *Server) Export(w io.Writer, ownerUsername string, c *Collection) error 
 				seenZone[id] = true
 				out.Components = append(out.Components, sub)
 				continue
+			}
+			if opt.attachment != nil {
+				relinkManaged(sub, s.AttachmentURL(ownerUsername, ""), opt.attachment)
 			}
 			stripManaged(sub)
 			objects = append(objects, sub)

@@ -168,3 +168,27 @@ func (p *Plugin) SharedCalendars(userID string) ([]SharedCalendar, error) {
 	}
 	return out, nil
 }
+
+// writable returns the calendars events may be created in or moved to.
+func writable(cals []Calendar) []Calendar {
+	var out []Calendar
+	for _, c := range cals {
+		if !c.ReadOnly {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func readOnly(cal *Calendar) bool { return cal != nil && cal.ReadOnly }
+
+// readOnlyReason says why an event cannot be edited.
+func readOnlyReason(cal *Calendar) string {
+	switch cal.Kind {
+	case dav.KindSubscription:
+		return "This event comes from a subscribed calendar and cannot be edited here."
+	case dav.KindBirthdays:
+		return "This event comes from a contact's birthday or anniversary: edit the contact to change it."
+	}
+	return "This calendar is read-only."
+}

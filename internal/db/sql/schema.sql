@@ -190,5 +190,28 @@ CREATE TABLE IF NOT EXISTS dav_collections (
 	props_version INTEGER NOT NULL DEFAULT 0,
 	created_at INTEGER NOT NULL,
 	updated_at INTEGER NOT NULL,
+	kind TEXT NOT NULL DEFAULT '',
 	UNIQUE(owner_user_id, home, name)
+);
+/* a remote feed a subscription collection is filled from */
+CREATE TABLE IF NOT EXISTS dav_subscriptions (
+	collection_id INTEGER PRIMARY KEY REFERENCES dav_collections(id) ON DELETE CASCADE,
+	url TEXT NOT NULL,
+	etag TEXT NOT NULL DEFAULT '',
+	last_modified TEXT NOT NULL DEFAULT '',
+	refresh INTEGER NOT NULL DEFAULT 0,
+	next_poll_at INTEGER NOT NULL DEFAULT 0,
+	last_poll_at INTEGER NOT NULL DEFAULT 0,
+	last_success_at INTEGER NOT NULL DEFAULT 0,
+	failures INTEGER NOT NULL DEFAULT 0,
+	last_error TEXT NOT NULL DEFAULT '',
+	skipped INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_dav_subscriptions_next ON dav_subscriptions(next_poll_at);
+/* how far the birthday calendar has read each address book */
+CREATE TABLE IF NOT EXISTS dav_birthday_cursors (
+	collection_id INTEGER NOT NULL REFERENCES dav_collections(id) ON DELETE CASCADE,
+	book_id INTEGER NOT NULL,
+	version INTEGER NOT NULL,
+	PRIMARY KEY (collection_id, book_id)
 );

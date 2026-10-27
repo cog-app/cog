@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -57,8 +58,19 @@ type Server struct {
 	// BaseURL is the server's external URL, for the absolute URLs of
 	// managed attachments.
 	BaseURL string
-	// Secret signs the attachment URLs sent to external attendees.
+	// Secret signs the attachment URLs sent to external attendees and
+	// feed subscribers.
 	Secret []byte
+	// Links keeps the secret links of ICS feeds; nil serves none.
+	Links Links
+	// Fetch is the client subscriptions are fetched with; nil means
+	// safehttp's, which reaches only public addresses.
+	Fetch *http.Client
+
+	fetchOnce sync.Once
+	fetch     *http.Client
+	// birthdayStates holds a *birthdayState per owner's username.
+	birthdayStates sync.Map
 }
 
 func (s *Server) retention() time.Duration {
@@ -110,10 +122,20 @@ func resourceHref(c *Collection, ownerUsername, uri string) string {
 type access struct {
 	owner bool
 	perms uint32 // share bitmask; ignored for the owner
+	// readOnly is a collection Cog fills itself (Collection.ReadOnly):
+	// nobody writes its resources, whatever their share says.
+	readOnly bool
 }
 
-func (a access) read() bool     { return a.owner || a.perms&plugin.PermRead != 0 }
-func (a access) write() bool    { return a.owner || a.perms&plugin.PermWrite != 0 }
+// accessTo is the access of the owner (or of a sharee with perms) to c.
+func accessTo(c *Collection, owner bool, perms uint32) access {
+	return access{owner: owner, perms: perms, readOnly: c.ReadOnly()}
+}
+
+func (a access) read() bool { return a.owner || a.perms&plugin.PermRead != 0 }
+func (a access) write() bool {
+	return !a.readOnly && (a.owner || a.perms&plugin.PermWrite != 0)
+}
 func (a access) freeBusy() bool { return a.read() || a.perms&plugin.PermFreeBusy != 0 }
 func (a access) busyOnly() bool { return !a.read() && a.freeBusy() }
 
@@ -136,6 +158,11 @@ type request struct {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if rest, ok := strings.CutPrefix(r.URL.Path, Root+feedsPath+"/"); ok {
+		// A feed's secret is its credential.
+		s.serveFeed(w, r, rest)
+		return
+	}
 	au := auth.UserFromContext(r.Context())
 	if rest, ok := strings.CutPrefix(r.URL.Path, Root+attachmentsPath+"/"); ok {
 		// An external attendee fetches an attachment with a token instead
@@ -251,13 +278,13 @@ func (q *request) sharedWith() (shareMap, error) {
 // access returns the current user's access to c.
 func (q *request) access(c *Collection) (access, error) {
 	if c.OwnerID == q.user.ID {
-		return access{owner: true}, nil
+		return accessTo(c, true, 0), nil
 	}
 	shared, err := q.sharedWith()
 	if err != nil {
 		return access{}, err
 	}
-	return access{perms: shared.perms(c)}, nil
+	return accessTo(c, false, shared.perms(c)), nil
 }
 
 // depth returns the Depth header as 0 or 1; infinity is treated as 1, since
@@ -540,14 +567,14 @@ func (q *request) listHome(home Home) ([]listed, error) {
 	}
 	var out []listed
 	for _, c := range own {
-		out = append(out, listed{Collection: c, owner: q.user.Username, access: access{owner: true}})
+		out = append(out, listed{Collection: c, owner: q.user.Username, access: accessTo(&c, true, 0)})
 	}
 	shared, err := q.s.Collections.Shared(q.s.Shares, q.s.username, q.user.ID, homeComponents(home)...)
 	if err != nil {
 		return nil, err
 	}
 	for _, sc := range shared {
-		out = append(out, listed{Collection: sc.Collection, owner: sc.OwnerUsername, access: access{perms: sc.Permissions}})
+		out = append(out, listed{Collection: sc.Collection, owner: sc.OwnerUsername, access: accessTo(&sc.Collection, false, sc.Permissions)})
 	}
 	if err := q.fillTokens(out); err != nil {
 		return nil, err
@@ -615,6 +642,13 @@ func privilegeSet(names []string) string {
 func privileges(a access, home Home) string {
 	var names []string
 	switch {
+	case a.owner && a.readOnly:
+		// The owner names, colours and deletes a collection Cog fills, but
+		// writes nothing in it.
+		names = []string{"read", "write-properties", "read-acl", "read-current-user-privilege-set"}
+		if home == HomeCalendars {
+			names = append(names, "read-free-busy")
+		}
 	case a.owner:
 		names = []string{"all", "read", "write", "write-properties", "write-content", "bind", "unbind", "read-acl", "read-current-user-privilege-set"}
 		if home == HomeCalendars {
@@ -632,7 +666,7 @@ func privileges(a access, home Home) string {
 			// write-properties stays with the owner: sharees cannot PROPPATCH.
 			names = append(names, "write", "write-content", "bind", "unbind")
 		}
-		if a.perms&plugin.PermSchedule != 0 && home == HomeCalendars {
+		if a.write() && a.perms&plugin.PermSchedule != 0 && home == HomeCalendars {
 			// Writes by this sharee send invitations and replies as the owner.
 			names = append(names, "schedule-send", "schedule-send-invite", "schedule-send-reply")
 		}
@@ -707,6 +741,13 @@ func (q *request) collectionProps(c *Collection, a access, ownerName string, tok
 			prop{carddav("supported-collation-set"),
 				`<CR:supported-collation>i;unicode-casemap</CR:supported-collation><CR:supported-collation>i;ascii-casemap</CR:supported-collation><CR:supported-collation>i;octet</CR:supported-collation>`},
 		)
+	}
+	if c.Kind == KindSubscription {
+		// Apple clients show where a subscribed calendar comes from. The
+		// resource type stays calendar, not CS:subscribed: Cog holds the
+		// events, and a client that saw subscribed would fetch the feed
+		// itself instead of syncing them.
+		props = append(props, prop{cs("source"), hrefEl(c.Source)})
 	}
 	props = append(props, sharing...)
 	for _, d := range c.DeadProps {

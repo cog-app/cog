@@ -79,6 +79,8 @@ Deleting a collection removes its row first (clients discover collections throug
 
 Each calendar home also holds the user's **schedule inbox and outbox** (RFC 6638) at `inbox/` and `outbox/`; the names are reserved, so no calendar can take them. They are not rows in `dav_collections` (no UI lists them as calendars): the inbox is collection ID 0 (`dav.InboxID`, which `AUTOINCREMENT` never hands out), and its messages live in the calendar plugin's database (section 4.2). The outbox has no resources; it answers free/busy requests.
 
+Some collections are **filled by Cog** rather than written by clients (`Collection.Kind`): a subscription to a remote feed, and the user's birthday calendar (section 9.1). Their resources are rows in the backend that stores events like any calendar's, so the web UI, sync, feeds and sharing need nothing special; they are **read-only to every client, the owner included** (`Collection.ReadOnly`): the privilege set has no write, PUT, DELETE and attachment POSTs are refused, import skips them, and invitations never land in them. The owner may still rename, recolour, share and delete them.
+
 Considered and rejected: one collection table per plugin, with single-component collections. Every plugin's default `personal` collided in the shared calendar home, and Nextcloud-style mixed collections, which clients expect, were impossible.
 
 ### 3.1 `contentline` (no library)
@@ -157,14 +159,26 @@ dav_collections(
   timezone,                          -- IANA; floating times and new events
   dead_props,                        -- JSON: PROPPATCHed properties Cog doesn't model
   props_version,                     -- bumped by PROPPATCH; part of getctag
-  created_at, updated_at
+  created_at, updated_at,
+  kind                               -- '' (written by clients), 'subscription' or 'birthdays': filled by Cog, read-only
 )
+
+dav_subscriptions(                   -- a subscription's feed (section 9.1)
+  collection_id PRIMARY KEY,         -- ON DELETE CASCADE
+  url,                               -- as the user gave it, webcal:// included; served as CS:source
+  etag, last_modified,               -- validators of the last response, for conditional fetches
+  refresh,                           -- seconds the feed asks for (REFRESH-INTERVAL, X-PUBLISHED-TTL); 0 = default
+  next_poll_at, last_poll_at, last_success_at,
+  failures, last_error,              -- consecutive failures and why the last one failed, shown in the UI
+  skipped)                           -- components of the last fetch a subscription does not hold
+
+dav_birthday_cursors(collection_id, book_id, version)   -- how far the birthday calendar has read each address book
 ```
 
 Sync state, in every plugin database that holds resources (`internal/dav/davsql` runs the SQL in the caller's transaction):
 
 ```
-dav_sync(collection_id PRIMARY KEY, token, floor)   -- floor: highest pruned tombstone version
+dav_sync(collection_id PRIMARY KEY, token, floor, modified)   -- floor: highest pruned tombstone version; modified: last write, for a feed's Last-Modified
 dav_tombstones(collection_id, uri, version, deleted_at, PRIMARY KEY(collection_id, uri))
 ```
 
@@ -332,6 +346,8 @@ The codec is `internal/dav/vcard` (`Decode`, `Card.Encode`), beside `ical` and s
 - Report it to clients via `DAV:current-user-privilege-set` (a subset of RFC 3744): `read`, `write`, `write-content`, `bind`, `unbind`, `read-free-busy`, `schedule-*`. Without it clients show read-only shares as editable. The owner has `all`.
 - Only the owner may PROPPATCH or delete a collection, or create one in their home.
 - Free/busy-only shares expose only `read-free-busy` and answer `free-busy-query` REPORTs (RFC 4791 §7.10); events are not readable.
+- **Read-only collections** (a subscription, the birthday calendar; section 3.0): the owner has `read`, `write-properties`, `read-acl`, `read-current-user-privilege-set` and `read-free-busy`, not `all`; a sharee's Write grants nothing there, and Schedule nothing with it. They are transparent for free/busy unless the owner marks them opaque.
+- **Feeds** are public link shares (`PUBLIC` with a token) of a `dav:collection`, made by its owner: Read serves the calendar, FreeBusy only its busy times (section 9.1). The share panel lists them as "Feed" and revoking one there revokes the feed.
 - **Free/busy through the outbox** (RFC 6638 §5): a user may see the busy time of all their own calendars, and of someone else's calendars those that person shared with them with FreeBusy or Read; for anyone else the answer is `3.8;No authority`, and for an address that is not a Cog user `3.7`. A calendar whose owner set `schedule-calendar-transp` to transparent never makes them busy there.
 - **Schedule** (bit 16) lets a sharee act as the owner in scheduling: a write they make in the owner's calendar sends invitations and replies in the owner's name, as the owner's own write would, and the collection reports `schedule-send`, `schedule-send-invite` and `schedule-send-reply`. Without it, a sharee's write is stored but sends nothing, and the attendees (or the organizer) it would have reached get SCHEDULE-STATUS 3.8, so the client can see why. Anyone may invite any Cog user; delivery needs no share. The share panel's presets are Read-only, Read/Write, Free/Busy only and Delegate (Read, Write, FreeBusy and Schedule).
 - The owner's inbox reports `read`, `unbind` and `schedule-deliver` (with `-invite`, `-reply` and `schedule-query-freebusy`); the outbox `read` and `schedule-send` (with `-invite`, `-reply` and `-freebusy`). Nobody else may open either.
@@ -382,6 +398,30 @@ Everything below is in scope for the MR.
 | ICS feeds (export) | secret, revocable `.ics` URL per calendar for webcal subscribers; free/busy-only variant |
 | ICS subscriptions (import) | read-only calendars from remote feeds (school, sports); polled with ETag/If-Modified-Since; `CS:source`; fetched through `internal/safehttp` (block private ranges) |
 | Birthday calendar | read-only calendar derived from contacts' BDAY/ANNIVERSARY, regenerated on card changes |
+
+### 9.1 Feeds, subscriptions and birthdays
+
+**ICS feeds** (`internal/dav/feed.go`): `/remote.php/dav/feeds/<token>.ics` serves a calendar as one iCalendar file, without an account.
+
+- The secret is a **public link share** of the collection (`dav.Links`, over the share table): revocable tokens are what that table already keeps, the share panel lists and revokes them with the calendar's other shares, and the permission bits say which feed it is (Read: the calendar; FreeBusy only: busy times). Every request looks the token up, so revoking or renewing takes effect at once. A link counts only when the collection's owner made it, as for any share; one with a password is not a feed, since subscribing apps cannot give one; an expired one is gone.
+- The text is `Server.Export`'s, from rows through the same path as GET; a busy-only feed is redacted by the backend as a free/busy-only share sees it (`BusyRedactor`), and a backend that cannot redact (tasks) is left out.
+- **Polling is cheap**: the ETag is the collection's ctag (composite sync token and props version), and Last-Modified the latest of the collection's `updated_at` and its backends' `dav_sync.modified`. Both come from one query per backend, so `If-None-Match` or `If-Modified-Since` gets a 304 without anything rendered.
+- **Managed attachments in a feed** carry a token (`?feed=`), an HMAC of the owner, the attachment and the feed's secret, accepted while that feed exists and an event of its calendar carries the attachment. Subscribers have no account, so plain URLs would not open, and a token bound to the feed is revoked with it, as an external attendee's is with their invitation. MANAGED-ID is dropped, as in an export. A busy-only feed has no attachments.
+- The calendar settings page lists each calendar's two feeds, copyable and as a `webcal://` link, and makes, renews and revokes them (PRG).
+
+**ICS subscriptions** (`internal/dav/subscribe.go`): a calendar collection of kind `subscription`, made from the settings page with a `webcal://`, `webcals://` (both read as https) or `http(s)://` URL.
+
+- **Fetching**: through `internal/safehttp` (public addresses only, checked after resolution and pinned, every redirect hop checked, at most five), within 30 seconds and 10 MB, conditionally on the last response's ETag and Last-Modified, which are kept only once the events are stored. The first fetch happens on subscribing; a URL that fails is refused and nothing is kept.
+- **Storing**: the feed is split into resources as an import is (VEVENTs grouped by UID with their overrides and VTIMEZONEs, METHOD dropped, MANAGED-ID stripped), each named after its UID, or its hash when the UID is unsafe in a path, so the same event has the same name on every fetch; an event without a UID gets one from a hash of its text. They are stored as rows through the events backend in one transaction (`BatchWriter`), decoded by `internal/dav/ical` with leftovers kept. An event whose text is unchanged is not rewritten (its ETag stays); one gone from the feed is deleted with a tombstone, so DAV clients sync the feed's changes. Components other than VEVENT are skipped and counted; a feed with nothing readable is an error rather than a reason to delete every event. The feed's X-WR-TIMEZONE becomes the calendar's zone for floating times when the user has not set one.
+- **Polling**: every hour, or as often as the feed asks (REFRESH-INTERVAL, X-PUBLISHED-TTL, within 15 minutes and a week). The calendar plugin runs `Server.PollDue` every minute; each due subscription is claimed in the system database first, so replicas never fetch the same feed at once. A failure is recorded on the subscription (count and reason, shown on the settings page with the next try), logged, and retried with backoff (doubling, at most a day); the URL is left out of messages, since private feed URLs are secrets. "Refresh now" fetches at once.
+- **To clients** it is a calendar (resource type `calendar`) with `CS:source`, read-only (section 7). It is not `CS:subscribed`: a client that saw that would fetch the feed itself instead of syncing Cog's copy.
+
+**Birthday calendar** (`internal/dav/birthday.go`): one per user, of kind `birthdays`, at `contact_birthdays`, turned on and off from the settings page.
+
+- **Per user, not per address book**: one calendar to show or subscribe to, as Nextcloud and Apple do; per book would add a calendar per address book. It reads the user's own address books, not those shared with them, whose writes would have to fan out to every sharee.
+- **A real collection, not a virtual one**: its events are rows, so the web UI, sync, ETags, feeds and sharing work unchanged. A virtual collection would need its own sync tokens over several address books, its own range queries and its own path in the web UI.
+- **Events**: one yearly all-day event per BDAY and per ANNIVERSARY (or, in a 3.0 card without one, the vendor property clients use: X-ANNIVERSARY, X-EVOLUTION-ANNIVERSARY, X-MS-ANNIVERSARY, X-WAB-WEDDING_ANNIVERSARY), `🎂 Name (1990)` or `💍 Name (2010)`, transparent. Dates are read as written in every version (`vcard.ParseDate`): `19950415`, `1995-04-15`, `--0415`, `--04-15`, date-times with or without zones, and Apple's yearless `1604-04-15` with X-APPLE-OMIT-YEAR; forms without a day, free text and impossible dates make no event. A series starts in the birth year (1900 at the earliest), or 1970 without one; February 29 recurs on the last day of February. The URI and UID are the address book and a hash of the card's URI, never its content, so an edit replaces the event in place; DTSTAMP is fixed, so regenerating an unchanged card writes nothing.
+- **Following the cards**: the contacts store calls `Server.CardsChanged` after every write it commits (DAV, the web UI, an import, a deleted book). The calendar keeps, per address book, the version it has read (`dav_birthday_cursors`), and catches up from the cards changed and deleted since (`Backend.Changes`, then `DateSource.CardDates`, which reads the date columns and leftovers without rendering a card), the events those cards may have, and one batch write: a fixed number of queries however large the book. An import holds the sync until its last card. A cursor below the book's floor, a new book or a deleted one is read whole. A sync that fails (or is skipped while a plugin is disabled) is made good by the next.
 
 ### JSON representations and API
 
@@ -456,6 +496,12 @@ Each milestone is a run of commits that builds and passes tests on its own.
 - **External attendees fetch attachments with a token** signed for their address (HMAC with the server secret) and checked against the event's current attendees, so removing them from the event revokes it.
 - **Recurrence expansion**: `github.com/teambition/rrule-go`, already a dependency, behind `internal/dav/ical` and `internal/dav/tz`; only RRULE arithmetic, not iCalendar parsing. Two limits are worked around or accepted: it stops about 292 years after DTSTART (its offsets are `time.Duration`s), so `FromRules` starts a 1601-based Outlook observance at 1900 in the same phase; and an event series is not expanded beyond that span. When DTSTART does not match the rule, it is counted as an occurrence on top of COUNT rather than as one of them.
 
+- **A feed's secret is a public link share** of the collection, not a column on `dav_collections`: the share table already keeps revocable tokens with expiry, the share panel already lists and revokes links, the permission bits tell a full feed from a busy-only one, and a collection can have both (section 9.1).
+- **Feed subscribers fetch managed attachments with a token** bound to the feed's secret, not plain URLs, which would not open without an account; revoking the feed revokes them (section 9.1).
+- **Subscriptions are stored, not proxied**: the server fetches the feed and keeps its events as rows, so every client syncs them (and the web UI shows them) with Cog's own ETags and tombstones; the collection is a `calendar` with `CS:source`, not CalendarServer's `CS:subscribed`, which makes Apple clients fetch the feed themselves. They hold events only.
+- **The birthday calendar is per user and a real collection**, derived incrementally from the address books' sync state (section 9.1).
+- **Collections Cog fills are read-only to their owner too** (section 3.0): a client's edit would be overwritten by the next fetch or card change.
+
 ## 13. Open questions
 
 - **Free/busy across the server.** A user sees someone else's busy time only for calendars that person shared with them (section 7), so a scheduling assistant shows nothing for colleagues who shared nothing. Nextcloud shows every user's free/busy to every other user by default. Should Cog do the same, perhaps as an admin setting, or keep it opt-in per calendar?
@@ -473,6 +519,7 @@ Branch `design-dav-storage`, one draft MR to master. Update this section at the 
 | 5. Contacts | Done. `internal/dav/vcard` models vCard 2.1, 3.0 and 4.0 (labels by group, groups and members, inline photos) with leftovers; `internal/dav/codec` holds what it shares with `ical`; the contacts plugin stores cards as rows (section 4.4), photos as hashed files, and renders text on read; the contacts web UI edits rows. |
 | 6. Scheduling and free/busy | Done. `internal/dav/itip` works out iTIP messages (RFC 5546) from a change and applies received ones; `internal/dav/schedule.go` has the inbox and outbox, implicit scheduling on DAV PUT/DELETE and web edits, delivery between Cog users and iMIP email to others, SCHEDULE-AGENT/-STATUS/-FORCE-SEND, the free-busy-query REPORT and outbox free/busy, and the Schedule permission (sections 4.2, 5 and 7). Inboxes live in the calendar plugin's database (`schedule_inbox`). Fixtures: RFC 5546's examples in `testdata/dav/ics/rfc5546/` and its broken ones in `quirks/rfc5546/`. |
 | 7. Sharing extensions, managed attachments | Done. `internal/dav/sharing.go` serves CalendarServer sharing (`CS:invite`, `CS:shared-url`, `CS:share`, `CS:invite-reply`) on the `dav:collection` shares (section 7); `internal/dav/attach.go` serves RFC 8607 managed attachments, with ATTACH modelled in `event_attachments` and the files kept by the calendar plugin (section 4.2); the event modal lists, downloads, uploads and removes attachments. Fixtures: RFC 8607's examples in `testdata/dav/ics/rfc8607/`, CalendarServer's managed and dropbox forms in `calendarserver/`. |
+| 8. Feeds | Done. `internal/dav/feed.go` serves ICS feeds from public link shares, with a free/busy-only variant, conditional GETs and feed-bound attachment tokens; `internal/dav/subscribe.go` keeps subscription calendars filled from remote feeds through `internal/safehttp`, polled by the calendar plugin; `internal/dav/birthday.go` derives the birthday calendar from the contacts' dates (`vcard.ParseDate`); collections have a kind, and those Cog fills are read-only (sections 3.0, 7, 9.1). The calendar settings page manages all three. |
 
 How milestone 2 differs from the plan it started with:
 
@@ -561,7 +608,7 @@ How milestone 5 differs from the plan:
 - The rows live in the contacts plugin, not a sibling of `icalsql` (section 4.4).
 - `photo_file_id` became `photo_hash`: photos are files under the plugin's data directory named by their SHA-256, as `photo_path` was, not files in the user's Files. Their type, ENCODING token and other parameters are columns.
 - Child rows carry `position` and `group_name` besides the planned columns; ADR components and N are lists (comma-separated in their columns), NICKNAME, ORG's units and CATEGORIES JSON. `card_related` holds RELATED (4.0); Apple's `X-ABRELATEDNAMES` stays a leftover with its label.
-- BDAY, ANNIVERSARY and GENDER are stored as written, not parsed: their syntax differs by version (`--0203`, `2012-06-06`, `19950415`). The birthday calendar (milestone 8) will read them.
+- BDAY, ANNIVERSARY and GENDER are stored as written, not parsed: their syntax differs by version (`--0203`, `2012-06-06`, `19950415`). The birthday calendar reads them (`vcard.ParseDate`, section 9.1).
 - vCard 2.1 is modelled rather than left whole: it is stored and written back as 2.1 (section 4.4).
 - The edit form gained first and last name fields (N), so a name edited in Cog reaches clients that show N, as iOS does.
 - `dav.Table` lost its `Data` mode: no table stores resource text any more.
@@ -615,6 +662,29 @@ Adjacent bugs fixed in milestone 7:
 
 - The quota check allowed any upload when the usage could not be read; it fails with the error.
 - The share panel stopped listing shares at the first error, and showed a share with a user it could not look up without a name; user search and the picker did the same with their lists, and two renders ignored their errors. Errors are logged and answered with 500; a share with a deleted user says so.
+
+How milestone 8 differs from the plan:
+
+- The poller lives in the DAV core and runs from the calendar plugin's lifecycle, not a service of its own: with the calendar disabled there is nothing to store events in.
+- Collections gained `kind`; subscriptions their own table (`dav_subscriptions`), joined into every collection read for `Source`; `dav_sync` gained `modified`, which `davsql.Bump` sets, for Last-Modified.
+- `dav.BatchWriter` stores many events of one collection in one transaction (a feed, a birthday sync); without it the core writes one at a time.
+- `dav.DateSource` lets the birthday calendar read cards' dates from columns and leftovers, not rendered text.
+- A subscription holds VEVENT only; a feed's tasks are skipped and counted. Its alarms are kept as the feed sent them.
+
+Adjacent bugs fixed in milestone 8:
+
+- The share panel showed a calendar's public link as `/s/<token>`, a page that serves no calendar: the link did nothing. It is the calendar's feed now, and the panel shows the feed's path.
+- The calendar settings page answered errors with their text (`http.Error(w, err.Error())`) and ignored its render error; it logs them and answers 500.
+
+Found in milestone 8:
+
+- `TestBrowserVolumeBrowse` browses the data directory, so its golden shows the size of `system.db-wal`, which changes with the system schema (it did here). It is stable between runs.
+
+Open after milestone 8:
+
+- Apple's dates in groups (`item1.X-ABDATE` with an anniversary label) are not read by the birthday calendar; nor are the address books shared with the user.
+- An address book's public link is listed as a feed in the share panel but nothing serves it.
+- Subscriptions keep the feed's VALARMs; Apple offers to drop them. Reminders do not fire yet (milestone 3's `processReminders` is a stub), so this waits for them.
 
 Fixed after milestone 2 (pre-existing, found through the `webtest` fix):
 

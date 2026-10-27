@@ -4,12 +4,14 @@ import (
 	"errors"
 	"iter"
 	"net/http"
+	"strconv"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/settings"
+	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
@@ -82,6 +84,78 @@ func (a davShares) Delete(id string) error {
 	return a.s.Delete(id)
 }
 
+// davLinks adapts *share.Store to dav.Links: a feed's secret is a public
+// link share of the collection.
+type davLinks struct{ s *share.Store }
+
+func davLink(rec *share.Record) (dav.Link, bool) {
+	id, err := strconv.ParseInt(rec.ResourceID, 10, 64)
+	if err != nil || rec.ResourceType != dav.ShareType || rec.SubjectType != "PUBLIC" || rec.Token == nil {
+		return dav.Link{}, false
+	}
+	return dav.Link{ID: rec.ID, OwnerID: rec.OwnerUserID, Collection: dav.CollectionID(id), Token: *rec.Token, Permissions: rec.Permissions}, true
+}
+
+func (a davLinks) CreateLink(ownerID string, id dav.CollectionID, permissions uint32) (*dav.Link, error) {
+	rec, err := a.s.CreatePublicLink(ownerID, dav.ShareType, id.String(), permissions, nil)
+	if err != nil {
+		return nil, err
+	}
+	l, _ := davLink(rec)
+	return &l, nil
+}
+
+// LinkByToken finds a feed's link. A link with a password is not a feed:
+// calendar clients subscribing to a URL have no way to give one.
+func (a davLinks) LinkByToken(token string) (*dav.Link, error) {
+	rec, err := a.s.GetByToken(token)
+	if errors.Is(err, share.ErrNotFound) {
+		return nil, dav.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	l, ok := davLink(rec)
+	if !ok || (rec.PasswordHash != nil && *rec.PasswordHash != "") {
+		return nil, dav.ErrNotFound
+	}
+	return &l, nil
+}
+
+func (a davLinks) LinksTo(id dav.CollectionID) ([]dav.Link, error) {
+	var out []dav.Link
+	for rec, err := range a.s.ListByResource(dav.ShareType, id.String()) {
+		if err != nil {
+			return nil, err
+		}
+		if l, ok := davLink(&rec); ok && (rec.PasswordHash == nil || *rec.PasswordHash == "") {
+			out = append(out, l)
+		}
+	}
+	return out, nil
+}
+
+func (a davLinks) LinksBy(ownerID string) ([]dav.Link, error) {
+	var out []dav.Link
+	for rec, err := range a.s.ListByOwner(ownerID) {
+		if err != nil {
+			return nil, err
+		}
+		if l, ok := davLink(&rec); ok && (rec.PasswordHash == nil || *rec.PasswordHash == "") {
+			out = append(out, l)
+		}
+	}
+	return out, nil
+}
+
+func (a davLinks) DeleteLink(id string) error {
+	err := a.s.Delete(id)
+	if errors.Is(err, share.ErrNotFound) {
+		return dav.ErrNotFound
+	}
+	return err
+}
+
 // davPermissionLevels are the presets the share panel offers for collections.
 var davPermissionLevels = []plugin.PermissionLevel{
 	{Label: "Read-only", Permissions: plugin.PermRead},
@@ -110,6 +184,7 @@ func mountDAV(mux *http.ServeMux, p *services.Providers, shares dav.Shares) {
 	srv.Shares = shares
 	srv.BaseURL = p.Config.BaseURL
 	srv.Secret = p.CSRFSecret
+	srv.Links = davLinks{p.Shares}
 	srv.Backends = func() []dav.Backend {
 		var out []dav.Backend
 		for _, pr := range all {
@@ -145,4 +220,6 @@ func mountDAV(mux *http.ServeMux, p *services.Providers, shares dav.Shares) {
 	// Attachments check access themselves: an external attendee has a token
 	// rather than an account.
 	mux.Handle("/remote.php/dav/attachments/", srv)
+	// A feed's URL is its secret: subscribers have no account.
+	mux.Handle("/remote.php/dav/feeds/", srv)
 }

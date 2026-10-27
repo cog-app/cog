@@ -27,12 +27,16 @@ type Calendar struct {
 	SortOrder   int
 	Timezone    string // IANA zone for floating times and new events; "" = UTC
 	OwnerID     string
+	Kind        dav.Kind
+	// ReadOnly calendars are filled by Cog (a subscription, the
+	// birthdays): nobody edits their events.
+	ReadOnly bool
 }
 
 func calendarFrom(c *dav.Collection) Calendar {
 	return Calendar{
 		ID: int64(c.ID), UID: c.Name, Name: c.Title(), Color: c.Color, Description: c.Description,
-		SortOrder: c.SortOrder, Timezone: c.Timezone, OwnerID: c.OwnerID,
+		SortOrder: c.SortOrder, Timezone: c.Timezone, OwnerID: c.OwnerID, Kind: c.Kind, ReadOnly: c.ReadOnly(),
 	}
 }
 

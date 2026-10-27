@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
@@ -30,7 +31,7 @@ type Plugin struct {
 	ctx    plugin.PluginContext
 	log    *slog.Logger
 	cancel context.CancelFunc
-	done   chan struct{}
+	loops  sync.WaitGroup
 	dav    *dav.Server
 }
 
@@ -110,6 +111,10 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "calendars", http.HandlerFunc(pages.CreateCalendar))
 	ctx.RegisterAction("POST", "calendars/{id}", http.HandlerFunc(pages.UpdateCalendarHandler))
 	ctx.RegisterAction("DELETE", "calendars/{id}", http.HandlerFunc(pages.DeleteCalendarHandler))
+	ctx.RegisterAction("POST", "calendars/{id}/feed", http.HandlerFunc(pages.Feed))
+	ctx.RegisterAction("POST", "subscriptions", http.HandlerFunc(pages.Subscribe))
+	ctx.RegisterAction("POST", "subscriptions/{id}/refresh", http.HandlerFunc(pages.RefreshSubscription))
+	ctx.RegisterAction("POST", "birthdays", http.HandlerFunc(pages.Birthdays))
 	ctx.RegisterAPI("notifications", http.HandlerFunc(pages.Notifications))
 	ctx.RegisterAPI("rrule-preview", http.HandlerFunc(pages.RRulePreview))
 
@@ -118,15 +123,17 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 
 func (p *Plugin) Start(ctx context.Context) error {
 	ctx, p.cancel = context.WithCancel(ctx)
-	p.done = make(chan struct{})
-	go p.reminderLoop(ctx)
+	p.loops.Go(func() { p.reminderLoop(ctx) })
+	if p.dav != nil {
+		p.loops.Go(func() { p.subscriptionLoop(ctx) })
+	}
 	return nil
 }
 
 func (p *Plugin) Stop() error {
 	if p.cancel != nil {
 		p.cancel()
-		<-p.done
+		p.loops.Wait()
 	}
 	return nil
 }
@@ -161,7 +168,6 @@ type Notification struct {
 
 // reminderLoop periodically checks for due alarm notifications across all users.
 func (p *Plugin) reminderLoop(ctx context.Context) {
-	defer close(p.done)
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
