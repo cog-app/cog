@@ -122,8 +122,15 @@ func TestUpdateCalendarSettings(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, denverStart, ev.DTStart)
 
+	// An unknown zone is refused with a message after the redirect (PRG),
+	// and changes nothing.
+	form.Set("name", "Renamed")
 	form.Set("timezone", "Mars/Olympus")
-	env.PostForm(t, fmt.Sprintf("/apps/calendar/calendars/%d", calID), form, cookie, csrf, cogtest.StopRedirect).Status(400)
+	env.PostForm(t, fmt.Sprintf("/apps/calendar/calendars/%d", calID), form, cookie, csrf, cogtest.StopRedirect).Status(303)
+	cal, err = cp.Calendar(alice.ID, calID)
+	require.NoError(t, err)
+	assert.Equal(t, "Family", cal.Name)
+	assert.Equal(t, "America/Denver", cal.Timezone)
 }
 
 func TestEventsJSONFilteredByCalendar(t *testing.T) {

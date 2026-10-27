@@ -824,8 +824,12 @@ func (h *Pages) UpdateCalendarHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cal, err := h.plugin.Calendar(u.ID, id)
-	if err != nil {
+	if errors.Is(err, dav.ErrNotFound) {
 		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.failed(w, r, "update the calendar", err)
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
@@ -838,14 +842,14 @@ func (h *Pages) UpdateCalendarHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	tz := r.FormValue("timezone")
 	if tz != "" && LoadTimezone(tz) == nil {
-		http.Error(w, "unknown timezone "+tz, http.StatusBadRequest)
+		back(w, r, plugin.Flash{Kind: "error", Message: "Unknown timezone " + tz + "."})
 		return
 	}
 	if err := h.plugin.UpdateCalendar(u.Username, u.ID, id, name, color, tz); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.failed(w, r, "update the calendar", err)
 		return
 	}
-	http.Redirect(w, r, "/apps/calendar/settings", http.StatusSeeOther)
+	back(w, r, plugin.Flash{Kind: "success", Message: "Saved " + name + "."})
 }
 
 // formTimes parses an event form's start and end. Date-times are read in the
