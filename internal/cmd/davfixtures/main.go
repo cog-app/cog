@@ -4,6 +4,7 @@
 //	go tool davfixtures gpl [-out tmp/dav-fixtures-gpl]
 //	go tool davfixtures export [-base https://cog.duckfam.us] [-out tmp/dav-export] [-import tmp/dav-import]
 //	go tool davfixtures tasks -db path/to/tasks/plugin.db [-import tmp/dav-import]
+//	go tool davfixtures photos -db path/to/contacts/plugin.db -data dir -vcf tmp/dav-import/addressbooks/<user>/contacts.vcf
 //	go tool davfixtures compare [-v] -got dir want-path...
 //	go tool davfixtures anonymise -out dir -prefix name file...
 //
@@ -22,6 +23,9 @@
 // tasks reads the task lists of a server from before the DAV storage rewrite,
 // which had no CalDAV for tasks, from its tasks database and writes each list
 // as one .ics file under -import (DESIGN/dav-storage.md section 8).
+//
+// photos puts the photos the old contacts web UI kept beside each card into
+// the cards of an exported address book file, which no CardDAV export has.
 //
 // compare checks a server's export after an import against what was
 // imported: the same UIDs, components and properties.
@@ -56,7 +60,7 @@ var gplManifest string
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: davfixtures gpl|export|tasks|compare|anonymise [flags]")
+		fmt.Fprintln(os.Stderr, "usage: davfixtures gpl|export|tasks|photos|compare|anonymise [flags]")
 		os.Exit(2)
 	}
 	var err error
@@ -67,6 +71,8 @@ func main() {
 		err = runExport(os.Args[2:])
 	case "tasks":
 		err = runTasks(os.Args[2:])
+	case "photos":
+		err = runPhotos(os.Args[2:])
 	case "compare":
 		err = runCompare(os.Args[2:])
 	case "anonymise":

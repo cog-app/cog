@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"database/sql"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
@@ -128,4 +129,47 @@ func TestCompareResources(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "got/cal/b.ics")))
 	err = runCompare([]string{"-got", filepath.Join(dir, "got"), filepath.Join(dir, "want")})
 	assert.NotNil(t, err)
+}
+
+func TestPhotosFromOldDatabase(t *testing.T) {
+	dir := t.TempDir()
+	data := filepath.Join(dir, "data")
+	png := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89")
+	require.NoError(t, os.MkdirAll(filepath.Join(data, "contacts", "u", "photos"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(data, "contacts", "u", "photos", "a.png"), png, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(data, "contacts", "u", "photos", "b.png"), png, 0o600))
+
+	path := filepath.Join(dir, "plugin.db")
+	db, err := sql.Open("sqlite3", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`CREATE TABLE cards (uid TEXT NOT NULL, photo_path TEXT NOT NULL DEFAULT '');
+		INSERT INTO cards VALUES ('a', '/data/contacts/u/photos/a.png'), ('b', '/data/contacts/u/photos/b.png'),
+			('own', '/data/contacts/u/photos/a.png'), ('none', '')`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	vcf := filepath.Join(dir, "contacts.vcf")
+	require.NoError(t, os.WriteFile(vcf, []byte(
+		"BEGIN:VCARD\r\nVERSION:3.0\r\nUID:a\r\nFN:A\r\nEND:VCARD\r\n"+
+			"BEGIN:VCARD\r\nVERSION:4.0\r\nUID:b\r\nFN:B\r\nEND:VCARD\r\n"+
+			"BEGIN:VCARD\r\nVERSION:3.0\r\nUID:own\r\nFN:Own\r\nPHOTO;VALUE=uri:https://example.com/own.jpg\r\nEND:VCARD\r\n"+
+			"BEGIN:VCARD\r\nVERSION:3.0\r\nUID:none\r\nFN:None\r\nEND:VCARD\r\n"), 0o600))
+	require.NoError(t, runPhotos([]string{"-db", path, "-data", data, "-vcf", vcf}))
+
+	out, err := os.ReadFile(vcf)
+	require.NoError(t, err)
+	comps, err := contentline.Parse(bytes.NewReader(out))
+	require.NoError(t, err)
+	require.Equal(t, 4, len(comps))
+	enc := base64.StdEncoding.EncodeToString(png)
+	a := comps[0].Prop("PHOTO")
+	require.True(t, a != nil)
+	assert.Equal(t, "b", a.Param("ENCODING"))
+	assert.Equal(t, "PNG", a.Param("TYPE"))
+	assert.Equal(t, enc, a.Value)
+	b := comps[1].Prop("PHOTO")
+	require.True(t, b != nil)
+	assert.Equal(t, "data:image/png;base64,"+enc, b.Value)
+	assert.Equal(t, "https://example.com/own.jpg", comps[2].Prop("PHOTO").Value) // a client's own photo wins
+	assert.Nil(t, comps[3].Prop("PHOTO"))
 }

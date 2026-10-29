@@ -22,7 +22,7 @@ COG_USER=jonathan COG_PASS="$(pass show cog.duckfam.us/jonathan | head -n1)" go 
 go tool davfixtures anonymise -out testdata/dav/ics/cog-production -prefix event tmp/dav-export/calendars/jonathan/*/X.ics ...
 ```
 
-`export` also writes each collection as one file under `tmp/dav-import/`, ready for `/settings/data`. For the production cut-over (`DESIGN/dav-storage.md` section 8.2), `go tool davfixtures tasks -db tasks.db` writes the old server's task lists, which it had no CalDAV for, and `go tool davfixtures compare -got after/ before/` checks a server's export after an import against what was imported.
+`export` also writes each collection as one file under `tmp/dav-import/`, ready for `/settings/data`. For the production cut-over (`DESIGN/dav-storage.md` section 8.2), `go tool davfixtures tasks -db tasks.db` writes the old server's task lists, which it had no CalDAV for, `go tool davfixtures photos` puts its web-uploaded contact photos into the exported cards, and `go tool davfixtures compare -got after/ before/` checks a server's export after an import against what was imported.
 
 The round-trip tests pick up `tmp/dav-fixtures-gpl/` and `tmp/dav-export/` when present. Read anonymised output before committing it: the anonymiser only replaces the properties it knows.
 
