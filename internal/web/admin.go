@@ -474,8 +474,10 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 	pd := pageDataWithNav(r, "Settings", h.p.CSRFSecret, h.p.Plugins)
 	pubReg := h.p.Settings != nil && h.p.Settings.GetBool(settings.KeyPublicRegistration)
 	expiryHours := settings.DefaultInviteExpiryHours
+	tombstoneDays := settings.DefaultDAVTombstoneDays
 	if h.p.Settings != nil {
 		expiryHours = h.p.Settings.GetInt(settings.KeyInviteExpiryHours, settings.DefaultInviteExpiryHours)
+		tombstoneDays = h.p.Settings.GetInt(settings.KeyDAVTombstoneDays, settings.DefaultDAVTombstoneDays)
 	}
 
 	var mfaRequired string
@@ -497,7 +499,7 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), env, status, flashMsg, flashKind, mfaRequired).Render(r.Context(), w)
+	adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), strconv.Itoa(tombstoneDays), env, status, flashMsg, flashKind, mfaRequired).Render(r.Context(), w)
 }
 
 func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -513,6 +515,13 @@ func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := h.p.Settings.SetInt(settings.KeyInviteExpiryHours, expiryHours); err != nil {
 			h.p.Log.Error("save setting failed", "key", "invite_expiry_hours", "err", err)
+		}
+		days, err := strconv.Atoi(r.FormValue("dav_tombstone_days"))
+		if err != nil || days < 1 {
+			days = settings.DefaultDAVTombstoneDays
+		}
+		if err := h.p.Settings.SetInt(settings.KeyDAVTombstoneDays, days); err != nil {
+			h.p.Log.Error("save setting failed", "key", settings.KeyDAVTombstoneDays, "err", err)
 		}
 
 		// Save MFA enforcement setting.

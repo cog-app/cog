@@ -1,6 +1,7 @@
 package contacts
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"embed"
@@ -10,10 +11,15 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
+	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/dav"
+	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
+	"git.duckfam.us/jj-software/cog/internal/dav/vcard"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
+	"github.com/google/uuid"
 )
 
 //go:generate go tool migratesql .
@@ -27,76 +33,21 @@ const PluginID = "contacts"
 type Plugin struct {
 	ctx plugin.PluginContext
 	log *slog.Logger
+	dav *dav.Server
+	// fetch gets photos cards give by URL (safehttp).
+	fetch *http.Client
 }
 
 // New creates a new Contacts plugin instance.
 func New() *Plugin {
-	return &Plugin{}
+	return &Plugin{fetch: safehttp.Client(10 * time.Second)}
 }
 
-// sharedAddressBook describes an address book shared to the current user.
-type sharedAddressBook struct {
-	OwnerUsername string
-	Book          *AddressBook
-	Perms         uint32
-}
+// SetDAV implements dav.Provider.
+func (p *Plugin) SetDAV(s *dav.Server) { p.dav = s }
 
-// sharedBooks returns address books shared to the given user (by user ID).
-func (p *Plugin) sharedBooks(userID string) []sharedAddressBook {
-	shares := p.ctx.ShareStore()
-	if shares == nil {
-		return nil
-	}
-	users := p.ctx.UserLookup()
-	if users == nil {
-		return nil
-	}
-	var result []sharedAddressBook
-	for rec, err := range shares.ListBySubject(userID) {
-		if err != nil {
-			p.log.Error("list shared books", "err", err)
-			break
-		}
-		if rec.ResourceType != "contacts:address_book" {
-			continue
-		}
-		ownerUser, err := users.GetByID(rec.OwnerUserID)
-		if err != nil {
-			p.log.Error("lookup user", "user_id", rec.OwnerUserID, "err", err)
-			continue
-		}
-		ownerUsername := ownerUser.Username
-		ownerDB, err := p.DB(ownerUsername)
-		if err != nil {
-			p.log.Error("db for user", "user", ownerUsername, "err", err)
-			continue
-		}
-		book, err := GetAddressBookByUID(ownerDB, rec.ResourceID)
-		if err != nil {
-			continue
-		}
-		result = append(result, sharedAddressBook{
-			OwnerUsername: ownerUsername,
-			Book:          book,
-			Perms:         rec.Permissions,
-		})
-	}
-	return result
-}
-
-// checkBookAccess checks if userID has at least requiredPerm on an address book
-// owned by ownerUsername. Returns true if the user IS the owner, or if a share grants access.
-func (p *Plugin) checkBookAccess(userID, ownerUsername, bookUID string, requiredPerm uint32) bool {
-	shares := p.ctx.ShareStore()
-	if shares == nil {
-		return false
-	}
-	decision, err := shares.CheckAccess(userID, "contacts:address_book", bookUID)
-	if err != nil {
-		return false
-	}
-	return decision.Allowed && (decision.EffectivePerms&requiredPerm) == requiredPerm
-}
+// DAVBackends implements dav.Provider: cards in any address book.
+func (p *Plugin) DAVBackends() []dav.Backend { return []dav.Backend{newBackend(p)} }
 
 func (p *Plugin) ID() string { return PluginID }
 
@@ -122,16 +73,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	})
 	ctx.RegisterSearchSource(plugin.SearchSourceDef{
 		PrimaryTable: "cards",
-		EnrichSQL:    "SELECT rowid, fn, email, tel FROM cards WHERE rowid IN (?)",
-	})
-	ctx.RegisterResource(plugin.ResourceDef{
-		Type:     "address_book",
-		Table:    "address_books",
-		IDColumn: "uid",
-		PermissionLevels: []plugin.PermissionLevel{
-			{Label: "Read-only", Permissions: plugin.PermRead},
-			{Label: "Read/Write", Permissions: plugin.PermRead | plugin.PermWrite},
-		},
+		EnrichSQL: `SELECT rowid, fn,
+			coalesce((SELECT value FROM card_emails WHERE card_id = cards.id ORDER BY position LIMIT 1), ''),
+			coalesce((SELECT value FROM card_phones WHERE card_id = cards.id ORDER BY position LIMIT 1), ''),
+			org, note
+			FROM cards WHERE rowid IN (?)`,
 	})
 
 	// Web UI routes
@@ -150,75 +96,97 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 
 	ctx.RegisterAction("POST", "contacts/{id}/star", http.HandlerFunc(pages.ToggleStar))
 
-	// CardDAV endpoints
-	carddav := NewCardDAVHandler(p)
-	ctx.RegisterDAVHandler("addressbooks", carddav)
-
 	return nil
 }
 
-func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
-	db, err := p.DB(userID)
+func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, username string) error {
+	s, err := p.Store(username)
 	if err != nil {
-		return nil
+		return err
 	}
-	cards, _ := StarredContacts(db, 5)
+	userID, err := p.userID(username)
+	if err != nil {
+		return err
+	}
+	books, err := p.bookMap(userID)
+	if err != nil {
+		return err
+	}
+	cards, err := s.Starred(books, 5)
+	if err != nil {
+		return err
+	}
 	return starredContactsWidget(cards).Render(ctx, w)
+}
+
+// StorageUsage implements plugin.StorageUser: contact photos count toward
+// the user's quota.
+func (p *Plugin) StorageUsage(username string) (int64, error) {
+	return p.photoStore(username).usage()
+}
+
+// photoStore returns where a user's contact photos are kept.
+func (p *Plugin) photoStore(username string) *photoStore {
+	return &photoStore{dir: filepath.Join(p.ctx.DataDir(), "contacts", username, "photos"), log: p.log}
+}
+
+// NewCard returns a vCard 3.0 for a contact Cog creates: the version most
+// clients read, a new UID, and REV set to now.
+func NewCard(now time.Time) *vcard.Card {
+	c := &vcard.Card{Version: vcard.V30, UID: uuid.NewString()}
+	c.Leftovers.Props = []contentline.Property{{Name: "PRODID", Value: vcard.ProdID}}
+	c.Stamp(now)
+	return c
 }
 
 // CreateCardByName creates a minimal contact card with just a name in the user's
 // default address book. Returns the vCard UID of the created contact.
 func (p *Plugin) CreateCardByName(username, name string) (string, error) {
-	db, err := p.DB(username)
+	s, err := p.Store(username)
 	if err != nil {
 		return "", err
 	}
-	if err := EnsureDefaultAddressBook(db); err != nil {
-		return "", fmt.Errorf("ensure default address book: %w", err)
+	userID, err := p.userID(username)
+	if err != nil {
+		return "", err
 	}
-	books, err := ListAddressBooks(db)
-	if err != nil || len(books) == 0 {
+	books, err := p.Books(userID)
+	if err != nil {
+		return "", fmt.Errorf("list address books: %w", err)
+	}
+	if len(books) == 0 {
 		return "", fmt.Errorf("no address book available")
 	}
-	bookID := books[0].ID
-
-	now := p.ctx.Now()
-	uid := fmt.Sprintf("%d-%s", now.UnixNano(), name)
-	uri := uid + ".vcf"
-	fields := VCardFields{UID: uid, FN: name}
-	fields.MarshalJSONFields()
-	vcardData := GenerateVCardFull(fields, now)
-	if _, err := UpsertCard(db, bookID, uid, uri, vcardData, fields); err != nil {
+	c := NewCard(p.ctx.Now())
+	c.FN = name
+	nameFromFN(c)
+	if _, err := s.Save(books[0].ID, nil, c, p.ctx.Now()); err != nil {
 		return "", fmt.Errorf("create contact card: %w", err)
 	}
-	return uid, nil
+	return c.UID, nil
 }
 
-// SetPhoto saves an image as a contact's photo. The contact is identified by
-// vCard UID. Does nothing if the card is not found.
+// SetPhoto saves an image as a contact's photo, as a JPEG in the card, so
+// DAV clients see it too. The contact is identified by vCard UID.
 func (p *Plugin) SetPhoto(username, cardUID string, img image.Image) error {
-	db, err := p.DB(username)
+	s, err := p.Store(username)
 	if err != nil {
 		return err
 	}
-	card, err := FindCardByUID(db, cardUID)
+	card, err := s.FindByUID(cardUID)
+	if err == nil {
+		err = s.Load(card)
+	}
 	if err != nil {
 		return fmt.Errorf("find card %s: %w", cardUID, err)
 	}
-	photoDir := filepath.Join(p.ctx.DataDir(), "contacts", username, "photos")
-	if err := os.MkdirAll(photoDir, 0755); err != nil {
-		return fmt.Errorf("create photo dir: %w", err)
-	}
-	photoPath := filepath.Join(photoDir, card.UID+".jpg")
-	f, err := os.Create(photoPath)
-	if err != nil {
-		return fmt.Errorf("create photo file: %w", err)
-	}
-	defer f.Close()
-	if err := jpeg.Encode(f, img, &jpeg.Options{Quality: 85}); err != nil {
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 85}); err != nil {
 		return fmt.Errorf("encode photo: %w", err)
 	}
-	_, err = db.Exec(`UPDATE cards SET photo_path = ? WHERE id = ?`, photoPath, card.ID)
+	now := p.ctx.Now()
+	setPhoto(card.VCard, buf.Bytes(), now)
+	_, err = s.Save(card.AddressBookID, card, card.VCard, now)
 	return err
 }
 

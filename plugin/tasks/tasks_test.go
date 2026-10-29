@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/tasks"
@@ -29,37 +30,34 @@ func itoa(id int64) string { return strconv.FormatInt(id, 10) }
 
 func TestCreateListAndGet(t *testing.T) {
 	_, tp, alice := setupDB(t)
-	db, err := tp.DB(alice.Username)
-	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "test-uid", "Test List", "#ff0000")
+	list, err := tp.CreateList(alice.ID, "Test List", "#ff0000")
 	require.NoError(t, err)
 	require.Equal(t, "Test List", list.Name)
 	require.Equal(t, "#ff0000", list.Color)
+	require.Equal(t, "test-list", list.UID)
 
-	got, err := tasks.GetTaskList(db, list.ID)
+	got, err := tp.List(alice.ID, list.ID)
 	require.NoError(t, err)
 	require.Equal(t, "Test List", got.Name)
 
-	byUID, err := tasks.GetTaskListByUID(db, "test-uid")
+	// Names are unique per home.
+	again, err := tp.CreateList(alice.ID, "Test List", "")
 	require.NoError(t, err)
-	require.Equal(t, list.ID, byUID.ID)
+	require.Equal(t, "test-list-2", again.UID)
 }
 
-func TestEnsureDefaultList(t *testing.T) {
+func TestDefaultListIsSharedPersonalCalendar(t *testing.T) {
 	_, tp, alice := setupDB(t)
-	db, err := tp.DB(alice.Username)
-	require.NoError(t, err)
 
-	require.NoError(t, tasks.EnsureDefaultList(db))
-	lists, err := tasks.ListTaskLists(db)
+	lists, err := tp.Lists(alice.ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(lists))
 	require.Equal(t, "Personal", lists[0].Name)
+	require.Equal(t, "personal", lists[0].UID)
 
 	// Calling again should not create another.
-	require.NoError(t, tasks.EnsureDefaultList(db))
-	lists, err = tasks.ListTaskLists(db)
+	lists, err = tp.Lists(alice.ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(lists))
 }
@@ -69,23 +67,23 @@ func TestCreateTaskAndToggle(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "list1", "My List", "")
+	list, err := tp.CreateList(alice.ID, "My List", "")
 	require.NoError(t, err)
 
-	task, err := tasks.CreateTask(db, list.ID, "task-uid-1", nil, "Buy milk", "From store", 1, nil, nil, time.Now())
+	task, err := tasks.CreateTask(db, list, "task-uid-1", tasks.NewTask{Summary: "Buy milk", Description: "From store", Priority: 1}, time.Now())
 	require.NoError(t, err)
 	require.Equal(t, "Buy milk", task.Summary)
 	require.Equal(t, "NEEDS-ACTION", task.Status)
 	require.Equal(t, 1, task.Priority)
 
 	// Toggle to completed.
-	toggled, err := tasks.ToggleTask(db, task.ID, time.Now())
+	toggled, err := tasks.ToggleTask(db, list, task, time.Now())
 	require.NoError(t, err)
 	require.Equal(t, "COMPLETED", toggled.Status)
 	require.Equal(t, 100, toggled.PercentComplete)
 
 	// Toggle back.
-	toggled2, err := tasks.ToggleTask(db, task.ID, time.Now())
+	toggled2, err := tasks.ToggleTask(db, list, toggled, time.Now())
 	require.NoError(t, err)
 	require.Equal(t, "NEEDS-ACTION", toggled2.Status)
 	require.Equal(t, 0, toggled2.PercentComplete)
@@ -96,13 +94,13 @@ func TestDeleteTask(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "list1", "List", "")
+	list, err := tp.CreateList(alice.ID, "List", "")
 	require.NoError(t, err)
 
-	task, err := tasks.CreateTask(db, list.ID, "del-uid", nil, "Delete me", "", 0, nil, nil, time.Now())
+	task, err := tasks.CreateTask(db, list, "del-uid", tasks.NewTask{Summary: "Delete me"}, time.Now())
 	require.NoError(t, err)
 
-	require.NoError(t, tasks.DeleteTask(db, task.ID))
+	require.NoError(t, tasks.DeleteTask(db, task.ID, time.Now()))
 	_, err = tasks.GetTask(db, task.ID)
 	require.True(t, err != nil)
 }
@@ -112,22 +110,22 @@ func TestHierarchy_CreateAndCascadeDelete(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "list1", "List", "")
+	list, err := tp.CreateList(alice.ID, "List", "")
 	require.NoError(t, err)
 
-	parent, err := tasks.CreateTask(db, list.ID, "parent-uid", nil, "Parent Task", "", 0, nil, nil, time.Now())
+	parent, err := tasks.CreateTask(db, list, "parent-uid", tasks.NewTask{Summary: "Parent Task"}, time.Now())
 	require.NoError(t, err)
 
-	child1, err := tasks.CreateTask(db, list.ID, "child1-uid", &parent.ID, "Child 1", "", 0, nil, nil, time.Now())
+	child1, err := tasks.CreateTask(db, list, "child1-uid", tasks.NewTask{Summary: "Child 1", ParentUID: parent.UID}, time.Now())
 	require.NoError(t, err)
 	require.True(t, child1.ParentID != nil)
 	require.Equal(t, parent.ID, *child1.ParentID)
 
-	_, err = tasks.CreateTask(db, list.ID, "child2-uid", &parent.ID, "Child 2", "", 0, nil, nil, time.Now())
+	_, err = tasks.CreateTask(db, list, "child2-uid", tasks.NewTask{Summary: "Child 2", ParentUID: parent.UID}, time.Now())
 	require.NoError(t, err)
 
 	// Grandchild under child1.
-	_, err = tasks.CreateTask(db, list.ID, "grandchild-uid", &child1.ID, "Grandchild", "", 0, nil, nil, time.Now())
+	_, err = tasks.CreateTask(db, list, "grandchild-uid", tasks.NewTask{Summary: "Grandchild", ParentUID: child1.UID}, time.Now())
 	require.NoError(t, err)
 
 	allTasks, err := tasks.ListTasks(db, list.ID)
@@ -145,7 +143,7 @@ func TestHierarchy_CreateAndCascadeDelete(t *testing.T) {
 	require.Equal(t, 1, len(grandchildren))
 
 	// Delete parent — cascade deletes all children.
-	require.NoError(t, tasks.DeleteTask(db, parent.ID))
+	require.NoError(t, tasks.DeleteTask(db, parent.ID, time.Now()))
 	allTasks, err = tasks.ListTasks(db, list.ID)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(allTasks))
@@ -156,18 +154,18 @@ func TestReorderTasks(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "list1", "List", "")
+	list, err := tp.CreateList(alice.ID, "List", "")
 	require.NoError(t, err)
 
-	t1, err := tasks.CreateTask(db, list.ID, "t1", nil, "First", "", 0, nil, nil, time.Now())
+	t1, err := tasks.CreateTask(db, list, "t1", tasks.NewTask{Summary: "First"}, time.Now())
 	require.NoError(t, err)
-	t2, err := tasks.CreateTask(db, list.ID, "t2", nil, "Second", "", 0, nil, nil, time.Now())
+	t2, err := tasks.CreateTask(db, list, "t2", tasks.NewTask{Summary: "Second"}, time.Now())
 	require.NoError(t, err)
-	t3, err := tasks.CreateTask(db, list.ID, "t3", nil, "Third", "", 0, nil, nil, time.Now())
+	t3, err := tasks.CreateTask(db, list, "t3", tasks.NewTask{Summary: "Third"}, time.Now())
 	require.NoError(t, err)
 
 	// Reverse order.
-	require.NoError(t, tasks.ReorderTasks(db, list.ID, nil, []int64{t3.ID, t2.ID, t1.ID}))
+	require.NoError(t, tasks.ReorderTasks(db, list, nil, []int64{t3.ID, t2.ID, t1.ID}, time.Now()))
 
 	reordered, err := tasks.ListTasks(db, list.ID)
 	require.NoError(t, err)
@@ -182,60 +180,26 @@ func TestReparentTask(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "list1", "List", "")
+	list, err := tp.CreateList(alice.ID, "List", "")
 	require.NoError(t, err)
 
-	parent, err := tasks.CreateTask(db, list.ID, "p1", nil, "Parent", "", 0, nil, nil, time.Now())
+	parent, err := tasks.CreateTask(db, list, "p1", tasks.NewTask{Summary: "Parent"}, time.Now())
 	require.NoError(t, err)
-	child, err := tasks.CreateTask(db, list.ID, "c1", nil, "Child", "", 0, nil, nil, time.Now())
+	child, err := tasks.CreateTask(db, list, "c1", tasks.NewTask{Summary: "Child"}, time.Now())
 	require.NoError(t, err)
 
-	require.NoError(t, tasks.ReparentTask(db, child.ID, &parent.ID, 0))
+	// Dropping a task into another's group makes it a subtask.
+	require.NoError(t, tasks.ReorderTasks(db, list, &parent.ID, []int64{child.ID}, time.Now()))
 
 	updated, err := tasks.GetTask(db, child.ID)
 	require.NoError(t, err)
 	require.True(t, updated.ParentID != nil)
 	require.Equal(t, parent.ID, *updated.ParentID)
-}
-
-// --- ICS tests ---
-
-func TestVTodoRoundTrip(t *testing.T) {
-	fields := tasks.VTodoFields{
-		UID:             "todo-123",
-		Summary:         "Test Task",
-		Description:     "A description with, commas",
-		Priority:        5,
-		PercentComplete: 50,
-		Status:          "IN-PROCESS",
-	}
-
-	ics := tasks.GenerateVTodoICS("todo-123", fields, time.Now())
-	require.True(t, strings.Contains(ics, "UID:todo-123"))
-	require.True(t, strings.Contains(ics, "SUMMARY:Test Task"))
-	require.True(t, strings.Contains(ics, "PRIORITY:5"))
-	require.True(t, strings.Contains(ics, "STATUS:IN-PROCESS"))
-	require.True(t, strings.Contains(ics, "BEGIN:VTODO"))
-
-	parsed, err := tasks.ParseVTodo(ics)
+	ics, err := tasks.RenderTask(updated)
 	require.NoError(t, err)
-	require.Equal(t, "todo-123", parsed.UID)
-	require.Equal(t, "Test Task", parsed.Summary)
-	require.Equal(t, "A description with, commas", parsed.Description)
-	require.Equal(t, 5, parsed.Priority)
-	require.Equal(t, 50, parsed.PercentComplete)
-	require.Equal(t, "IN-PROCESS", parsed.Status)
-}
-
-func TestParseVTodoNoTodo(t *testing.T) {
-	_, err := tasks.ParseVTodo("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")
-	require.True(t, err != nil)
-}
-
-func TestParseVTodoNoUID(t *testing.T) {
-	ics := "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nSUMMARY:No UID\r\nEND:VTODO\r\nEND:VCALENDAR\r\n"
-	_, err := tasks.ParseVTodo(ics)
-	require.True(t, err != nil)
+	assert.Contains(t, ics, "RELATED-TO;RELTYPE=PARENT:p1")
+	assert.Contains(t, ics, "X-APPLE-SORT-ORDER:0")
+	require.True(t, updated.Version > child.Version, "reparenting is a change DAV clients see")
 }
 
 // --- Page tests ---
@@ -247,10 +211,8 @@ func TestTasksIndexPage(t *testing.T) {
 
 func TestTasksListPage(t *testing.T) {
 	env, tp, alice := setupDB(t)
-	db, err := tp.DB(alice.Username)
-	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "test-list", "Test", "")
+	list, err := tp.CreateList(alice.ID, "Test", "")
 	require.NoError(t, err)
 
 	env.Get(t, "/apps/tasks/list/"+itoa(list.ID), alice.Auth).
@@ -262,9 +224,9 @@ func TestTasksTaskDetailPage(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "detail-list", "Detail", "")
+	list, err := tp.CreateList(alice.ID, "Detail", "")
 	require.NoError(t, err)
-	task, err := tasks.CreateTask(db, list.ID, "detail-uid", nil, "Detail Task", "A description", 5, nil, nil, time.Now())
+	task, err := tasks.CreateTask(db, list, "detail-uid", tasks.NewTask{Summary: "Detail Task", Description: "A description", Priority: 5}, time.Now())
 	require.NoError(t, err)
 
 	env.Get(t, "/apps/tasks/task/"+itoa(task.ID), alice.Auth).
@@ -273,10 +235,8 @@ func TestTasksTaskDetailPage(t *testing.T) {
 
 func TestTasksListSettingsPage(t *testing.T) {
 	env, tp, alice := setupDB(t)
-	db, err := tp.DB(alice.Username)
-	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "settings-list", "Settings", "#ff0000")
+	list, err := tp.CreateList(alice.ID, "Settings", "#ff0000")
 	require.NoError(t, err)
 
 	env.Get(t, "/apps/tasks/list/"+itoa(list.ID)+"/settings", alice.Auth).
@@ -288,19 +248,19 @@ func TestUpcomingTasks(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "upcoming-list", "Upcoming", "")
+	list, err := tp.CreateList(alice.ID, "Upcoming", "")
 	require.NoError(t, err)
 
 	// Task with a due date.
-	due := int64(9999999999)
-	_, err = tasks.CreateTask(db, list.ID, "due-uid", nil, "Due Task", "", 0, &due, nil, time.Now())
+	due := time.Unix(9999999999, 0)
+	_, err = tasks.CreateTask(db, list, "due-uid", tasks.NewTask{Summary: "Due Task", Due: &due}, time.Now())
 	require.NoError(t, err)
 
 	// Task without a due date — should not appear.
-	_, err = tasks.CreateTask(db, list.ID, "nodue-uid", nil, "No Due", "", 0, nil, nil, time.Now())
+	_, err = tasks.CreateTask(db, list, "nodue-uid", tasks.NewTask{Summary: "No Due"}, time.Now())
 	require.NoError(t, err)
 
-	upcoming, err := tasks.UpcomingTasks(db, 10)
+	upcoming, err := tasks.UpcomingTasks(db, map[int64]tasks.TaskList{list.ID: *list}, 10)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(upcoming))
 	require.Equal(t, "Due Task", upcoming[0].Summary)
@@ -326,10 +286,10 @@ func TestTasksUpdateTask(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "update-list", "Update List", "")
+	list, err := tp.CreateList(alice.ID, "Update List", "")
 	require.NoError(t, err)
 
-	task, err := tasks.CreateTask(db, list.ID, "update-uid", nil, "Original", "old desc", 1, nil, nil, time.Now())
+	task, err := tasks.CreateTask(db, list, "update-uid", tasks.NewTask{Summary: "Original", Description: "old desc", Priority: 1}, time.Now())
 	require.NoError(t, err)
 
 	cookie, csrf := sessionAuth(t, env, alice)
@@ -357,14 +317,14 @@ func TestTasksReorder(t *testing.T) {
 	db, err := tp.DB(alice.Username)
 	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "reorder-list", "Reorder", "")
+	list, err := tp.CreateList(alice.ID, "Reorder", "")
 	require.NoError(t, err)
 
-	t1, err := tasks.CreateTask(db, list.ID, "r1", nil, "First", "", 0, nil, nil, time.Now())
+	t1, err := tasks.CreateTask(db, list, "r1", tasks.NewTask{Summary: "First"}, time.Now())
 	require.NoError(t, err)
-	t2, err := tasks.CreateTask(db, list.ID, "r2", nil, "Second", "", 0, nil, nil, time.Now())
+	t2, err := tasks.CreateTask(db, list, "r2", tasks.NewTask{Summary: "Second"}, time.Now())
 	require.NoError(t, err)
-	t3, err := tasks.CreateTask(db, list.ID, "r3", nil, "Third", "", 0, nil, nil, time.Now())
+	t3, err := tasks.CreateTask(db, list, "r3", tasks.NewTask{Summary: "Third"}, time.Now())
 	require.NoError(t, err)
 
 	cookie, csrf := sessionAuth(t, env, alice)
@@ -389,10 +349,8 @@ func TestTasksReorder(t *testing.T) {
 
 func TestTasksUpdateList(t *testing.T) {
 	env, tp, alice := setupDB(t)
-	db, err := tp.DB(alice.Username)
-	require.NoError(t, err)
 
-	list, err := tasks.CreateTaskList(db, "rename-list", "Old Name", "#000000")
+	list, err := tp.CreateList(alice.ID, "Old Name", "#000000")
 	require.NoError(t, err)
 
 	cookie, csrf := sessionAuth(t, env, alice)
@@ -403,7 +361,7 @@ func TestTasksUpdateList(t *testing.T) {
 	}, cookie, csrf, cogtest.StopRedirect).Status(303)
 
 	// Verify.
-	updated, err := tasks.GetTaskList(db, list.ID)
+	updated, err := tp.List(alice.ID, list.ID)
 	require.NoError(t, err)
 	require.Equal(t, "New Name", updated.Name)
 	require.Equal(t, "#ff0000", updated.Color)

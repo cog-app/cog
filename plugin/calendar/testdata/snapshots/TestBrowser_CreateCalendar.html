@@ -152,6 +152,11 @@
           <label class="sidebar-item" style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
             <input checked="" class="cal-toggle" data-calendar-id="1" style="accent-color:var(--cal-color);--cal-color:inherit" type="checkbox" />
             <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;flex-shrink:0;" />
+            Personal
+          </label>
+          <label class="sidebar-item" style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+            <input checked="" class="cal-toggle" data-calendar-id="2" style="accent-color:var(--cal-color);--cal-color:inherit" type="checkbox" />
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;flex-shrink:0;" />
             Work Calendar
           </label>
           <div class="sidebar-divider" />
@@ -228,13 +233,13 @@
                     <input aria-label="Color" class="form-control" form="cal-edit-1" name="color" style="width:3rem;padding:0.1rem" type="color" value="#0082c9" />
                   </td>
                   <td>
-                    <input aria-label="Name" class="form-control" form="cal-edit-1" name="name" required="" type="text" value="Work Calendar" />
+                    <input aria-label="Name" class="form-control" form="cal-edit-1" name="name" required="" type="text" value="Personal" />
                   </td>
                   <td>
-                    <input aria-label="Timezone" class="form-control" form="cal-edit-1" list="cal-timezones" name="timezone" placeholder="UTC" type="text" value="UTC" />
+                    <input aria-label="Timezone" class="form-control" form="cal-edit-1" list="cal-timezones" name="timezone" placeholder="UTC" type="text" value="" />
                   </td>
                   <td>
-                    Work Calendar
+                    personal
                   </td>
                   <td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
                     <form action="/apps/calendar/calendars/1" id="cal-edit-1" method="post">
@@ -243,12 +248,12 @@
                         Save
                       </button>
                     </form>
-                    <cog-share-button resource-id="1" resource="calendar">
+                    <cog-share-button resource-id="1" resource="dav:collection">
                       <button class="btn btn-outline btn-sm">
                         Share
                       </button>
                     </cog-share-button>
-                    <button class="btn btn-sm" hx-confirm="Delete this calendar and all its events?" hx-delete="/apps/calendar/calendars/1" hx-swap="outerHTML" hx-target="#cal-1">
+                    <button class="btn btn-sm" hx-confirm="Delete this calendar and everything in it, tasks included?" hx-delete="/apps/calendar/calendars/1" hx-swap="outerHTML" hx-target="#cal-1">
                       Delete
                     </button>
                   </td>
@@ -256,8 +261,163 @@
                 <tr>
                   <td colspan="5" id="cal-share-1" />
                 </tr>
+                <tr id="cal-2">
+                  <td>
+                    <input aria-label="Color" class="form-control" form="cal-edit-2" name="color" style="width:3rem;padding:0.1rem" type="color" value="#0082c9" />
+                  </td>
+                  <td>
+                    <input aria-label="Name" class="form-control" form="cal-edit-2" name="name" required="" type="text" value="Work Calendar" />
+                  </td>
+                  <td>
+                    <input aria-label="Timezone" class="form-control" form="cal-edit-2" list="cal-timezones" name="timezone" placeholder="UTC" type="text" value="UTC" />
+                  </td>
+                  <td>
+                    work-calendar
+                  </td>
+                  <td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
+                    <form action="/apps/calendar/calendars/2" id="cal-edit-2" method="post">
+                      <input name="csrf_token" type="hidden" value="«hex»" />
+                      <button class="btn btn-sm btn-primary" type="submit">
+                        Save
+                      </button>
+                    </form>
+                    <cog-share-button resource-id="2" resource="dav:collection">
+                      <button class="btn btn-outline btn-sm">
+                        Share
+                      </button>
+                    </cog-share-button>
+                    <button class="btn btn-sm" hx-confirm="Delete this calendar and everything in it, tasks included?" hx-delete="/apps/calendar/calendars/2" hx-swap="outerHTML" hx-target="#cal-2">
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="5" id="cal-share-2" />
+                </tr>
               </tbody>
             </table>
+          </div>
+          <div class="card">
+            <div class="card-title">
+              Feeds
+            </div>
+            <p class="text-muted">
+              A feed is a secret address any calendar app can subscribe to (webcal), without an account. Anyone with the address sees the calendar, or only when you are busy; a new address or revoking it stops the old one at once.
+            </p>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>
+                    Calendar
+                  </th>
+                  <th>
+                    Whole calendar
+                  </th>
+                  <th>
+                    Busy times only
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr id="cal-feed-1">
+                  <td>
+                    Personal
+                  </td>
+                  <td>
+                    <form action="/apps/calendar/calendars/1/feed" method="post" style="display:inline">
+                      <input name="csrf_token" type="hidden" value="«hex»" />
+                      <input name="kind" type="hidden" value="full" />
+                      <input name="action" type="hidden" value="renew" />
+                      <button class="btn btn-sm" type="submit">
+                        Create feed
+                      </button>
+                    </form>
+                  </td>
+                  <td>
+                    <form action="/apps/calendar/calendars/1/feed" method="post" style="display:inline">
+                      <input name="csrf_token" type="hidden" value="«hex»" />
+                      <input name="kind" type="hidden" value="busy" />
+                      <input name="action" type="hidden" value="renew" />
+                      <button class="btn btn-sm" type="submit">
+                        Create feed
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+                <tr id="cal-feed-2">
+                  <td>
+                    Work Calendar
+                  </td>
+                  <td>
+                    <form action="/apps/calendar/calendars/2/feed" method="post" style="display:inline">
+                      <input name="csrf_token" type="hidden" value="«hex»" />
+                      <input name="kind" type="hidden" value="full" />
+                      <input name="action" type="hidden" value="renew" />
+                      <button class="btn btn-sm" type="submit">
+                        Create feed
+                      </button>
+                    </form>
+                  </td>
+                  <td>
+                    <form action="/apps/calendar/calendars/2/feed" method="post" style="display:inline">
+                      <input name="csrf_token" type="hidden" value="«hex»" />
+                      <input name="kind" type="hidden" value="busy" />
+                      <input name="action" type="hidden" value="renew" />
+                      <button class="btn btn-sm" type="submit">
+                        Create feed
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <div class="card-title">
+              Subscriptions
+            </div>
+            <p class="text-muted">
+              A subscription is a read-only calendar filled from a feed elsewhere (a school's holidays, a team's fixtures), fetched again every hour or as often as the feed asks.
+            </p>
+            <form action="/apps/calendar/subscriptions" class="flex gap-1 items-end" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div class="form-group" style="margin-bottom:0;flex:1">
+                <label for="sub-url">
+                  Feed address
+                </label>
+                <input class="form-control" id="sub-url" name="url" placeholder="webcal://example.com/calendar.ics" required="" type="url" />
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label for="sub-name">
+                  Name
+                </label>
+                <input class="form-control" id="sub-name" name="name" placeholder="School holidays" type="text" />
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label for="sub-color">
+                  Color
+                </label>
+                <input class="form-control" id="sub-color" name="color" type="color" value="#7a7a7a" />
+              </div>
+              <button class="btn btn-primary" type="submit">
+                Subscribe
+              </button>
+            </form>
+          </div>
+          <div class="card">
+            <div class="card-title">
+              Birthdays
+            </div>
+            <form action="/apps/calendar/birthdays" class="flex gap-1 items-center" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <p class="text-muted" style="margin:0;flex:1">
+                Show your contacts' birthdays and anniversaries in a read-only calendar.
+              </p>
+              <input name="enable" type="hidden" value="1" />
+              <button class="btn btn-sm btn-primary" type="submit">
+                Turn on
+              </button>
+            </form>
           </div>
           <datalist id="cal-timezones">
             <option value="UTC" />

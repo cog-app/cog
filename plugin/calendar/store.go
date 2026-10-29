@@ -1,26 +1,43 @@
 package calendar
 
 import (
-	"crypto/md5"
+	"cmp"
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/dav"
+	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
+	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
+	"git.duckfam.us/jj-software/cog/internal/dav/ical"
+	"git.duckfam.us/jj-software/cog/internal/dav/icalsql"
 )
 
-// Calendar is a user's named calendar collection.
+// Calendar is a DAV collection that holds events, as the calendar UI shows it.
+// Collections belong to the DAV core (internal/dav); this is a view of one.
 type Calendar struct {
-	ID          int64
-	UID         string
-	Name        string
+	ID          int64  // dav.CollectionID
+	UID         string // the collection's path name
+	Name        string // display name
 	Color       string
 	Description string
 	SortOrder   int
-	CTag        int64
-	SyncToken   int64
 	Timezone    string // IANA zone for floating times and new events; "" = UTC
-	CreatedAt   int64
-	UpdatedAt   int64
+	OwnerID     string
+	Kind        dav.Kind
+	// ReadOnly calendars are filled by Cog (a subscription, the
+	// birthdays): nobody edits their events.
+	ReadOnly bool
+}
+
+func calendarFrom(c *dav.Collection) Calendar {
+	return Calendar{
+		ID: int64(c.ID), UID: c.Name, Name: c.Title(), Color: c.Color, Description: c.Description,
+		SortOrder: c.SortOrder, Timezone: c.Timezone, OwnerID: c.OwnerID, Kind: c.Kind, ReadOnly: c.ReadOnly(),
+	}
 }
 
 // Zone returns the calendar's timezone, or UTC when unset or unknown.
@@ -31,22 +48,31 @@ func (c *Calendar) Zone() *time.Location {
 	return time.UTC
 }
 
-// Event is a single calendar event with indexed fields and raw ICS blob.
+// Event is a stored event resource as the web UI shows it: the fields of its
+// first component, which is the master when there is one, and the whole
+// object when it was loaded.
 type Event struct {
-	ID          int64
-	CalendarID  int64
-	UID         string
-	ETag        string
+	ID         int64
+	CalendarID int64 // dav.CollectionID
+	UID        string
+	URI        string // resource name in the collection
+	Version    int64
+	Color      string // Cog's own colour; not part of the iCalendar data
+
 	Summary     string
 	Location    string
 	Description string
-	DTStart     int64
+	DTStart     int64 // the component's own span; all-day values at UTC midnight
 	DTEnd       int64
 	IsAllDay    bool
-	Color       string
-	ICSData     string
-	CreatedAt   int64
-	UpdatedAt   int64
+	RRule       string
+	// Occurrence is the start of the master occurrence an instance is, as
+	// Unix time; 0 for an event that does not recur.
+	Occurrence int64
+	CreatedAt  int64
+	UpdatedAt  int64
+
+	Object *ical.Object // nil unless loaded
 }
 
 // EventWithCalendar extends Event with calendar metadata for display.
@@ -65,454 +91,332 @@ func (e *EventWithCalendar) Zone() *time.Location {
 	return time.UTC
 }
 
-// --- Calendar CRUD ---
-
-func ListCalendars(db *sql.DB) ([]Calendar, error) {
-	rows, err := db.Query(`SELECT id, uid, name, color, description, sort_order, ctag, sync_token, timezone, created_at, updated_at FROM calendars ORDER BY sort_order, name`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var cals []Calendar
-	for rows.Next() {
-		var c Calendar
-		if err := rows.Scan(&c.ID, &c.UID, &c.Name, &c.Color, &c.Description, &c.SortOrder, &c.CTag, &c.SyncToken, &c.Timezone, &c.CreatedAt, &c.UpdatedAt); err != nil {
-			return nil, err
-		}
-		cals = append(cals, c)
-	}
-	return cals, rows.Err()
+// tables are where events are stored; AfterWrite keeps their reminders.
+var tables = &icalsql.Tables{
+	Objects: "events", Components: "vevents", Attendees: "event_attendees", Alarms: "event_alarms",
+	Attachments: "event_attachments",
+	AfterWrite: func(tx *sql.Tx, id int64, o *ical.Object, z ical.Zones, now int64) error {
+		return ensureNotifications(tx, id, o, z, now)
+	},
 }
 
-func GetCalendar(db *sql.DB, id int64) (*Calendar, error) {
-	var c Calendar
-	err := db.QueryRow(`SELECT id, uid, name, color, description, sort_order, ctag, sync_token, timezone, created_at, updated_at FROM calendars WHERE id = ?`, id).
-		Scan(&c.ID, &c.UID, &c.Name, &c.Color, &c.Description, &c.SortOrder, &c.CTag, &c.SyncToken, &c.Timezone, &c.CreatedAt, &c.UpdatedAt)
-	if err != nil {
-		return nil, err
-	}
-	return &c, nil
-}
+// eventColumns selects an Event: the resource row and its first component.
+const eventColumns = `e.id, e.collection_id, e.uid, e.uri, e.version, e.color, e.created_at, e.updated_at,
+	v.summary, v.location, v.description, coalesce(v.dtstart_utc, 0), coalesce(v.end_utc, 0), v.dtstart_is_date, v.rrule`
 
-func GetCalendarByUID(db *sql.DB, uid string) (*Calendar, error) {
-	var c Calendar
-	err := db.QueryRow(`SELECT id, uid, name, color, description, sort_order, ctag, sync_token, timezone, created_at, updated_at FROM calendars WHERE uid = ?`, uid).
-		Scan(&c.ID, &c.UID, &c.Name, &c.Color, &c.Description, &c.SortOrder, &c.CTag, &c.SyncToken, &c.Timezone, &c.CreatedAt, &c.UpdatedAt)
-	if err != nil {
-		return nil, err
-	}
-	return &c, nil
-}
+const eventFrom = ` FROM events e JOIN vevents v ON v.object_id = e.id AND v.position = 0`
 
-func CreateCalendar(db *sql.DB, uid, name, color, description, timezone string) (*Calendar, error) {
-	if color == "" {
-		color = "#0082c9"
-	}
-	res, err := db.Exec(`INSERT INTO calendars (uid, name, color, description, timezone) VALUES (?, ?, ?, ?, ?)`, uid, name, color, description, timezone)
-	if err != nil {
-		return nil, err
-	}
-	id, _ := res.LastInsertId()
-	return GetCalendar(db, id)
-}
-
-func UpdateCalendar(db *sql.DB, id int64, name, color, description string) error {
-	_, err := db.Exec(`UPDATE calendars SET name = ?, color = ?, description = ?, updated_at = unixepoch() WHERE id = ?`, name, color, description, id)
-	return err
-}
-
-// SetCalendarTimezone changes a calendar's zone and recomputes its events'
-// indexed times, since floating times are read in that zone.
-func SetCalendarTimezone(db *sql.DB, id int64, timezone string) error {
-	if _, err := db.Exec(`UPDATE calendars SET timezone = ?, updated_at = unixepoch() WHERE id = ? AND timezone != ?`, timezone, id, timezone); err != nil {
-		return err
-	}
-	return RecomputeEventTimes(db, id)
-}
-
-func DeleteCalendar(db *sql.DB, id int64) error {
-	_, err := db.Exec(`DELETE FROM calendars WHERE id = ?`, id)
-	return err
-}
-
-func BumpCTag(db *sql.DB, calendarID int64) error {
-	_, err := db.Exec(`UPDATE calendars SET ctag = ctag + 1, sync_token = sync_token + 1, updated_at = unixepoch() WHERE id = ?`, calendarID)
-	return err
-}
-
-// EnsureDefaultCalendar creates a "personal" calendar if none exist.
-func EnsureDefaultCalendar(db *sql.DB) error {
-	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM calendars`).Scan(&count); err != nil {
-		return err
-	}
-	if count == 0 {
-		_, err := CreateCalendar(db, "personal", "Personal", "#0082c9", "", "")
-		return err
-	}
-	return nil
-}
-
-// --- Event CRUD ---
-
-func ListEvents(db *sql.DB, calendarID int64) ([]Event, error) {
-	rows, err := db.Query(`SELECT id, calendar_id, uid, etag, summary, location, description, dtstart, dtend, is_all_day, color, ics_data, created_at, updated_at
-		FROM events WHERE calendar_id = ? ORDER BY dtstart`, calendarID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanEvents(rows)
-}
-
-func GetEventByUID(db *sql.DB, calendarID int64, uid string) (*Event, error) {
+func scanEvent(row interface{ Scan(...any) error }) (*Event, error) {
 	var e Event
-	err := db.QueryRow(`SELECT id, calendar_id, uid, etag, summary, location, description, dtstart, dtend, is_all_day, color, ics_data, created_at, updated_at
-		FROM events WHERE calendar_id = ? AND uid = ?`, calendarID, uid).
-		Scan(&e.ID, &e.CalendarID, &e.UID, &e.ETag, &e.Summary, &e.Location, &e.Description, &e.DTStart, &e.DTEnd, &e.IsAllDay, &e.Color, &e.ICSData, &e.CreatedAt, &e.UpdatedAt)
-	if err != nil {
+	if err := row.Scan(&e.ID, &e.CalendarID, &e.UID, &e.URI, &e.Version, &e.Color, &e.CreatedAt, &e.UpdatedAt,
+		&e.Summary, &e.Location, &e.Description, &e.DTStart, &e.DTEnd, &e.IsAllDay, &e.RRule); err != nil {
 		return nil, err
 	}
 	return &e, nil
 }
 
-func GetEvent(db *sql.DB, id int64) (*Event, error) {
-	var e Event
-	err := db.QueryRow(`SELECT id, calendar_id, uid, etag, summary, location, description, dtstart, dtend, is_all_day, color, ics_data, created_at, updated_at
-		FROM events WHERE id = ?`, id).
-		Scan(&e.ID, &e.CalendarID, &e.UID, &e.ETag, &e.Summary, &e.Location, &e.Description, &e.DTStart, &e.DTEnd, &e.IsAllDay, &e.Color, &e.ICSData, &e.CreatedAt, &e.UpdatedAt)
+func queryEvents(q davsql.Querier, where string, args ...any) ([]Event, error) {
+	rows, err := q.Query(`SELECT `+eventColumns+eventFrom+` WHERE `+where, args...)
 	if err != nil {
-		return nil, err
-	}
-	return &e, nil
-}
-
-// UpsertEvent inserts or updates an event, bumps the calendar's ctag.
-func UpsertEvent(db *sql.DB, calendarID int64, uid, icsData string, fields VEventFields) (*Event, error) {
-	etag := fmt.Sprintf("%x", md5.Sum([]byte(icsData)))
-	dtstart, dtend := eventUnix(fields)
-
-	_, err := db.Exec(`INSERT INTO events (calendar_id, uid, etag, summary, location, description, dtstart, dtend, is_all_day, color, ics_data)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(calendar_id, uid) DO UPDATE SET
-			etag = excluded.etag,
-			summary = excluded.summary,
-			location = excluded.location,
-			description = excluded.description,
-			dtstart = excluded.dtstart,
-			dtend = excluded.dtend,
-			is_all_day = excluded.is_all_day,
-			color = excluded.color,
-			ics_data = excluded.ics_data,
-			updated_at = unixepoch()`,
-		calendarID, uid, etag, fields.Summary, fields.Location, fields.Description,
-		dtstart, dtend, fields.IsAllDay, fields.Color, icsData)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := BumpCTag(db, calendarID); err != nil {
-		return nil, err
-	}
-
-	return GetEventByUID(db, calendarID, uid)
-}
-
-func DeleteEvent(db *sql.DB, calendarID int64, uid string) error {
-	// Record deletion for sync-token tracking before deleting.
-	var syncToken int64
-	if err := db.QueryRow(`SELECT sync_token FROM calendars WHERE id = ?`, calendarID).Scan(&syncToken); err != nil {
-		return fmt.Errorf("get sync token: %w", err)
-	}
-	if _, err := db.Exec(`INSERT INTO deleted_events (calendar_id, uid, deleted_at_token) VALUES (?, ?, ?)`,
-		calendarID, uid, syncToken+1); err != nil {
-		return fmt.Errorf("record deletion: %w", err)
-	}
-
-	_, err := db.Exec(`DELETE FROM events WHERE calendar_id = ? AND uid = ?`, calendarID, uid)
-	if err != nil {
-		return err
-	}
-	return BumpCTag(db, calendarID)
-}
-
-func DeleteEventByID(db *sql.DB, id int64) error {
-	var calID int64
-	if err := db.QueryRow(`SELECT calendar_id FROM events WHERE id = ?`, id).Scan(&calID); err != nil {
-		return err
-	}
-	if _, err := db.Exec(`DELETE FROM events WHERE id = ?`, id); err != nil {
-		return err
-	}
-	return BumpCTag(db, calID)
-}
-
-// UpcomingEvents returns events starting from now, joined with calendar info.
-func UpcomingEvents(db *sql.DB, now int64, limit int) ([]EventWithCalendar, error) {
-	rows, err := db.Query(`SELECT e.id, e.calendar_id, e.uid, e.etag, e.summary, e.location, e.description,
-		e.dtstart, e.dtend, e.is_all_day, e.color, e.ics_data, e.created_at, e.updated_at,
-		c.name, c.color, c.timezone
-		FROM events e JOIN calendars c ON e.calendar_id = c.id
-		WHERE e.dtstart >= ? OR e.dtend >= ?
-		ORDER BY e.dtstart LIMIT ?`, now, now, limit)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query events: %w", err)
 	}
 	defer rows.Close()
-	var events []EventWithCalendar
-	for rows.Next() {
-		var ev EventWithCalendar
-		if err := rows.Scan(&ev.ID, &ev.CalendarID, &ev.UID, &ev.ETag, &ev.Summary, &ev.Location, &ev.Description,
-			&ev.DTStart, &ev.DTEnd, &ev.IsAllDay, &ev.Color, &ev.ICSData, &ev.CreatedAt, &ev.UpdatedAt,
-			&ev.CalendarName, &ev.CalendarColor, &ev.CalendarTimezone); err != nil {
-			return nil, err
-		}
-		events = append(events, ev)
-	}
-	return events, rows.Err()
-}
-
-// AllEvents returns all events joined with calendar info, ordered by start time.
-func AllEvents(db *sql.DB, limit int) ([]EventWithCalendar, error) {
-	rows, err := db.Query(`SELECT e.id, e.calendar_id, e.uid, e.etag, e.summary, e.location, e.description,
-		e.dtstart, e.dtend, e.is_all_day, e.color, e.ics_data, e.created_at, e.updated_at,
-		c.name, c.color, c.timezone
-		FROM events e JOIN calendars c ON e.calendar_id = c.id
-		ORDER BY e.dtstart LIMIT ?`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var events []EventWithCalendar
-	for rows.Next() {
-		var ev EventWithCalendar
-		if err := rows.Scan(&ev.ID, &ev.CalendarID, &ev.UID, &ev.ETag, &ev.Summary, &ev.Location, &ev.Description,
-			&ev.DTStart, &ev.DTEnd, &ev.IsAllDay, &ev.Color, &ev.ICSData, &ev.CreatedAt, &ev.UpdatedAt,
-			&ev.CalendarName, &ev.CalendarColor, &ev.CalendarTimezone); err != nil {
-			return nil, err
-		}
-		events = append(events, ev)
-	}
-	return events, rows.Err()
-}
-
-// EventsInRange returns events overlapping the given time range (unix timestamps).
-func EventsInRange(db *sql.DB, start, end int64) ([]EventWithCalendar, error) {
-	rows, err := db.Query(`SELECT e.id, e.calendar_id, e.uid, e.etag, e.summary, e.location, e.description,
-		e.dtstart, e.dtend, e.is_all_day, e.color, e.ics_data, e.created_at, e.updated_at,
-		c.name, c.color, c.timezone
-		FROM events e JOIN calendars c ON e.calendar_id = c.id
-		WHERE e.dtstart < ? AND (e.dtend > ? OR e.ics_data LIKE '%RRULE:%')
-		ORDER BY e.dtstart`, end, start)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var events []EventWithCalendar
-	for rows.Next() {
-		var ev EventWithCalendar
-		if err := rows.Scan(&ev.ID, &ev.CalendarID, &ev.UID, &ev.ETag, &ev.Summary, &ev.Location, &ev.Description,
-			&ev.DTStart, &ev.DTEnd, &ev.IsAllDay, &ev.Color, &ev.ICSData, &ev.CreatedAt, &ev.UpdatedAt,
-			&ev.CalendarName, &ev.CalendarColor, &ev.CalendarTimezone); err != nil {
-			return nil, err
-		}
-		events = append(events, ev)
-	}
-	return events, rows.Err()
-}
-
-// EventsChangedSince returns all events in the calendar that were created or
-// modified after the given sync token. Since sync_token increments per mutation,
-// we return all events (clients use etags to determine actual changes).
-func EventsChangedSince(db *sql.DB, calendarID, sinceToken int64) ([]Event, error) {
-	// Simple approach: return all events in the calendar. The client compares
-	// etags to determine which actually changed. This is correct for sync-collection.
-	return ListEvents(db, calendarID)
-}
-
-// DeletedEventsSince returns UIDs of events deleted after the given sync token.
-func DeletedEventsSince(db *sql.DB, calendarID, sinceToken int64) ([]string, error) {
-	rows, err := db.Query(`SELECT uid FROM deleted_events WHERE calendar_id = ? AND deleted_at_token > ?`,
-		calendarID, sinceToken)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var uids []string
-	for rows.Next() {
-		var uid string
-		if err := rows.Scan(&uid); err != nil {
-			return nil, err
-		}
-		uids = append(uids, uid)
-	}
-	return uids, rows.Err()
-}
-
-// EventsInRangeForCalendar returns events in a calendar overlapping the given time range.
-func EventsInRangeForCalendar(db *sql.DB, calendarID, start, end int64) ([]Event, error) {
-	rows, err := db.Query(`SELECT id, calendar_id, uid, etag, summary, location, description,
-		dtstart, dtend, is_all_day, color, ics_data, created_at, updated_at
-		FROM events WHERE calendar_id = ? AND dtstart < ? AND (dtend > ? OR ics_data LIKE '%RRULE:%')
-		ORDER BY dtstart`, calendarID, end, start)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanEvents(rows)
-}
-
-// Attendee represents an event attendee.
-type Attendee struct {
-	ID          int64
-	EventID     int64
-	Email       string
-	CogUser     string
-	DisplayName string
-	Status      string // NEEDS-ACTION, ACCEPTED, DECLINED, TENTATIVE
-	Role        string // REQ-PARTICIPANT, OPT-PARTICIPANT, CHAIR
-}
-
-// AddAttendee adds an attendee to an event.
-func AddAttendee(db *sql.DB, eventID int64, email, cogUser, displayName, role string) error {
-	if role == "" {
-		role = "REQ-PARTICIPANT"
-	}
-	_, err := db.Exec(`INSERT INTO event_attendees (event_id, email, cog_user, display_name, role) VALUES (?, ?, ?, ?, ?)`,
-		eventID, email, cogUser, displayName, role)
-	return err
-}
-
-// ListAttendees returns all attendees for an event.
-func ListAttendees(db *sql.DB, eventID int64) ([]Attendee, error) {
-	rows, err := db.Query(`SELECT id, event_id, email, cog_user, display_name, status, role FROM event_attendees WHERE event_id = ? ORDER BY id`, eventID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var attendees []Attendee
-	for rows.Next() {
-		var a Attendee
-		if err := rows.Scan(&a.ID, &a.EventID, &a.Email, &a.CogUser, &a.DisplayName, &a.Status, &a.Role); err != nil {
-			return nil, err
-		}
-		attendees = append(attendees, a)
-	}
-	return attendees, rows.Err()
-}
-
-// UpdateAttendeeStatus updates the status of an attendee by event ID and email.
-func UpdateAttendeeStatus(db *sql.DB, eventID int64, email, status string) error {
-	_, err := db.Exec(`UPDATE event_attendees SET status = ? WHERE event_id = ? AND email = ?`, status, eventID, email)
-	return err
-}
-
-// DeleteAttendees removes all attendees for an event.
-func DeleteAttendees(db *sql.DB, eventID int64) error {
-	_, err := db.Exec(`DELETE FROM event_attendees WHERE event_id = ?`, eventID)
-	return err
-}
-
-func scanEvents(rows *sql.Rows) ([]Event, error) {
 	var events []Event
 	for rows.Next() {
-		var e Event
-		if err := rows.Scan(&e.ID, &e.CalendarID, &e.UID, &e.ETag, &e.Summary, &e.Location, &e.Description,
-			&e.DTStart, &e.DTEnd, &e.IsAllDay, &e.Color, &e.ICSData, &e.CreatedAt, &e.UpdatedAt); err != nil {
-			return nil, err
+		e, err := scanEvent(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan event: %w", err)
 		}
-		events = append(events, e)
+		events = append(events, *e)
 	}
 	return events, rows.Err()
 }
 
-// eventTimesVersion is bumped when the way dtstart/dtend are derived from
-// ics_data changes, so RepairEventTimes recomputes existing rows once.
-// v1: honour TZID and the calendar's zone instead of reading local times as UTC.
-const eventTimesVersion = "1"
-
-// RepairEventTimes recomputes every event's indexed times if they were derived
-// by an older parser. It is a no-op once the database is current.
-func RepairEventTimes(db *sql.DB) error {
-	var v string
-	err := db.QueryRow(`SELECT value FROM meta WHERE key = 'event_times_version'`).Scan(&v)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("read event times version: %w", err)
+// EventsByID returns the events among ids, by ID, without their objects.
+func EventsByID(db *sql.DB, ids []int64) (map[int64]*Event, error) {
+	list := slices.Compact(slices.Sorted(slices.Values(ids)))
+	out := make(map[int64]*Event, len(list))
+	for chunk := range slices.Chunk(list, 500) {
+		events, err := queryEvents(db, `e.id IN (`+icalsql.Placeholders(len(chunk))+`)`, icalsql.Anys(chunk)...)
+		if err != nil {
+			return nil, err
+		}
+		for i := range events {
+			out[events[i].ID] = &events[i]
+		}
 	}
-	if v == eventTimesVersion {
-		return nil
-	}
-	if err := RecomputeEventTimes(db, 0); err != nil {
-		return err
-	}
-	_, err = db.Exec(`INSERT INTO meta (key, value) VALUES ('event_times_version', ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, eventTimesVersion)
-	return err
+	return out, nil
 }
 
-// RecomputeEventTimes re-derives dtstart, dtend and reminder times from
-// ics_data for one calendar, or all calendars when calendarID is 0. The ICS
-// itself is untouched, so etags and DAV clients are unaffected.
-func RecomputeEventTimes(db *sql.DB, calendarID int64) error {
-	cals, err := ListCalendars(db)
-	if err != nil {
-		return fmt.Errorf("list calendars: %w", err)
-	}
-	locs := make(map[int64]*time.Location, len(cals))
-	for i := range cals {
-		locs[cals[i].ID] = cals[i].Zone()
-	}
+// ListEvents returns a calendar's events in start order.
+func ListEvents(db *sql.DB, calendarID int64) ([]Event, error) {
+	return queryEvents(db, `e.collection_id = ? ORDER BY e.start_utc, e.id`, calendarID)
+}
 
-	rows, err := db.Query(`SELECT id, calendar_id, dtstart, dtend, ics_data FROM events WHERE ? = 0 OR calendar_id = ?`, calendarID, calendarID)
-	if err != nil {
-		return fmt.Errorf("list events: %w", err)
-	}
-	type change struct {
-		id, start, end int64
-		ics            string
-	}
-	var changes []change
-	for rows.Next() {
-		var id, calID, start, end int64
-		var ics string
-		if err := rows.Scan(&id, &calID, &start, &end, &ics); err != nil {
-			rows.Close()
-			return fmt.Errorf("scan event: %w", err)
-		}
-		fields, err := ParseVEventIn(ics, locs[calID])
-		if err != nil {
-			continue // unparseable ICS was stored as-is; nothing to derive
-		}
-		newStart, newEnd := eventUnix(fields)
-		if newStart != start || newEnd != end {
-			changes = append(changes, change{id, newStart, newEnd, ics})
-		}
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return fmt.Errorf("iterate events: %w", err)
-	}
-	rows.Close()
+// GetEvent returns an event by row ID, with its object.
+func GetEvent(db *sql.DB, id int64) (*Event, error) {
+	return getEvent(db, `e.id = ?`, id)
+}
 
-	for _, c := range changes {
-		if _, err := db.Exec(`UPDATE events SET dtstart = ?, dtend = ? WHERE id = ?`, c.start, c.end, c.id); err != nil {
-			return fmt.Errorf("update event %d times: %w", c.id, err)
-		}
-		if err := EnsureNotifications(db, c.id, c.start, c.ics); err != nil {
-			return fmt.Errorf("update event %d reminders: %w", c.id, err)
-		}
+// GetEventByUID returns a calendar's event with this UID, with its object.
+func GetEventByUID(db *sql.DB, calendarID int64, uid string) (*Event, error) {
+	return getEvent(db, `e.collection_id = ? AND e.uid = ?`, calendarID, uid)
+}
+
+func getEvent(db *sql.DB, where string, args ...any) (*Event, error) {
+	ev, err := scanEvent(db.QueryRow(`SELECT `+eventColumns+eventFrom+` WHERE `+where, args...))
+	if err != nil {
+		return nil, err
+	}
+	objs, err := tables.Load(db, []int64{ev.ID})
+	if err != nil {
+		return nil, err
+	}
+	ev.Object = objs[ev.ID]
+	return ev, nil
+}
+
+// inCalendars returns " AND <col> IN (...)" and its arguments, limiting a
+// query to the given calendars. Rows of a deleted collection whose purge
+// failed are never in the map, so they stay invisible.
+func inCalendars(col string, cals map[int64]Calendar) (string, []any) {
+	if len(cals) == 0 {
+		return " AND 0", nil
+	}
+	args := make([]any, 0, len(cals))
+	for id := range cals {
+		args = append(args, id)
+	}
+	return " AND " + col + " IN (?" + strings.Repeat(",?", len(args)-1) + ")", args
+}
+
+func withCalendars(events []Event, cals map[int64]Calendar) []EventWithCalendar {
+	out := make([]EventWithCalendar, 0, len(events))
+	for _, e := range events {
+		c := cals[e.CalendarID]
+		out = append(out, EventWithCalendar{Event: e, CalendarName: c.Name, CalendarColor: c.Color, CalendarTimezone: c.Timezone})
+	}
+	return out
+}
+
+// EventsInRange returns the events in cals with an instance that may overlap
+// [start, end), with their objects loaded for expansion.
+func EventsInRange(db *sql.DB, cals map[int64]Calendar, start, end int64) ([]EventWithCalendar, error) {
+	in, args := inCalendars("e.collection_id", cals)
+	events, err := queryEvents(db, `e.start_utc < ? AND (e.range_end_utc IS NULL OR e.range_end_utc >= ?)`+in+`
+		ORDER BY e.start_utc, e.id`, append([]any{end, start}, args...)...)
+	if err != nil {
+		return nil, err
+	}
+	if err := attachObjects(db, events); err != nil {
+		return nil, err
+	}
+	return withCalendars(events, cals), nil
+}
+
+func attachObjects(db *sql.DB, events []Event) error {
+	ids := make([]int64, len(events))
+	for i := range events {
+		ids[i] = events[i].ID
+	}
+	objs, err := tables.Load(db, ids)
+	if err != nil {
+		return err
+	}
+	for i := range events {
+		events[i].Object = objs[events[i].ID]
 	}
 	return nil
 }
 
-// eventUnix returns the indexed start and end for parsed fields, using 0 for
-// missing values.
-func eventUnix(f VEventFields) (start, end int64) {
-	if !f.DTStart.IsZero() {
-		start = f.DTStart.Unix()
+// Instances returns an event's instances overlapping [start, end), each as
+// a copy of the event with that instance's fields and times.
+func Instances(ev EventWithCalendar, start, end time.Time) ([]EventWithCalendar, error) {
+	if ev.Object == nil {
+		return nil, fmt.Errorf("event %d: object not loaded", ev.ID)
 	}
-	if !f.DTEnd.IsZero() {
-		end = f.DTEnd.Unix()
+	ins, err := ev.Object.Instances(ical.ZonesFor(ev.Object, ev.Zone()), start, end)
+	if err != nil {
+		return nil, fmt.Errorf("expand event %s: %w", ev.UID, err)
 	}
-	return start, end
+	out := make([]EventWithCalendar, 0, len(ins))
+	for _, in := range ins {
+		e := ev
+		e.Summary, e.Location, e.Description = in.Event.Summary, in.Event.Location, in.Event.Description
+		e.DTStart, e.DTEnd = in.Start.Unix(), in.End.Unix()
+		e.IsAllDay = in.Event.Start.IsDate
+		if !in.RecurrenceID.IsZero() {
+			e.Occurrence = in.RecurrenceID.Unix()
+		}
+		out = append(out, e)
+	}
+	return out, nil
+}
+
+// upcomingHorizon bounds how far ahead UpcomingEvents looks.
+const upcomingHorizon = 366 * 24 * time.Hour
+
+// UpcomingEvents returns the next instances in cals that have not ended.
+func UpcomingEvents(db *sql.DB, cals map[int64]Calendar, now int64, limit int) ([]EventWithCalendar, error) {
+	from := time.Unix(now, 0)
+	to := from.Add(upcomingHorizon)
+	events, err := EventsInRange(db, cals, from.Unix(), to.Unix())
+	if err != nil {
+		return nil, err
+	}
+	var out []EventWithCalendar
+	for _, ev := range events {
+		ins, err := Instances(ev, from, to)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ins...)
+	}
+	slices.SortStableFunc(out, func(a, b EventWithCalendar) int { return cmp.Compare(a.DTStart, b.DTStart) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// --- Writes ---
+//
+// Every write bumps the collection's version in the same transaction
+// (davsql), whether it comes from DAV or the web UI, so sync tokens and ETags
+// always reflect it.
+
+// ParseObject reads one event resource from iCalendar text.
+func ParseObject(ics string) (*ical.Object, error) {
+	comps, err := contentline.Parse(strings.NewReader(ics))
+	if err != nil {
+		return nil, err
+	}
+	if len(comps) != 1 || !comps[0].Is("VCALENDAR") {
+		return nil, errors.New("not one VCALENDAR")
+	}
+	o, err := ical.Decode(comps[0], ical.VEVENT)
+	if err != nil {
+		return nil, err
+	}
+	if o.UID == "" {
+		return nil, errors.New("VEVENT missing UID")
+	}
+	return o, nil
+}
+
+// Save is one event written by Cog: an object stored in a calendar. From
+// is the event being edited, or nil for a new one; moving it to another
+// calendar deletes it from the old one. Color, when set, is the new
+// event's Cog colour; an edited event keeps its own.
+type Save struct {
+	Cal    *Calendar
+	From   *Event
+	Object *ical.Object
+	Color  string
+}
+
+// SaveEvent stores one event written by Cog (web UI, seeds, tests).
+func SaveEvent(db *sql.DB, cal *Calendar, from *Event, o *ical.Object, now time.Time) (*Event, error) {
+	evs, err := SaveEvents(db, now, Save{Cal: cal, From: from, Object: o})
+	if err != nil {
+		return nil, err
+	}
+	return evs[0], nil
+}
+
+// SaveEvents stores events written by Cog in one transaction, so a series
+// split in two is never seen half done.
+func SaveEvents(db *sql.DB, now time.Time, saves ...Save) ([]*Event, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("save event: %w", err)
+	}
+	defer tx.Rollback()
+	ids := make([]int64, len(saves))
+	for i, sv := range saves {
+		uri := sv.Object.UID + ".ics"
+		if sv.From != nil {
+			uri = sv.From.URI
+			if sv.From.CalendarID != sv.Cal.ID {
+				if err := tables.Delete(tx, sv.From.CalendarID, sv.From.URI, davsql.Conditions{}, now.Unix()); err != nil {
+					return nil, err
+				}
+			}
+		}
+		st, err := tables.Store(tx, sv.Cal.ID, sv.Cal.Zone(), uri, sv.Object, davsql.Conditions{}, now.Unix())
+		if err != nil {
+			return nil, err
+		}
+		color := sv.Color
+		if sv.From != nil {
+			color = sv.From.Color
+		}
+		if color != "" {
+			if _, err := tx.Exec(`UPDATE events SET color = ? WHERE id = ?`, color, st.ID); err != nil {
+				return nil, fmt.Errorf("set event colour: %w", err)
+			}
+		}
+		ids[i] = st.ID
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("save event: %w", err)
+	}
+	out := make([]*Event, len(ids))
+	for i, id := range ids {
+		if out[i], err = GetEvent(db, id); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// SaveICS parses ics and stores it as a new event in cal.
+func SaveICS(db *sql.DB, cal *Calendar, ics string, now time.Time) (*Event, error) {
+	o, err := ParseObject(ics)
+	if err != nil {
+		return nil, err
+	}
+	return SaveEvent(db, cal, nil, o, now)
+}
+
+// RenderEvent returns the iCalendar text Cog serves for an event.
+func RenderEvent(ev *Event) (string, error) {
+	if ev.Object == nil {
+		return "", fmt.Errorf("event %d: object not loaded", ev.ID)
+	}
+	data, err := icalsql.Render(ev.Object)
+	return string(data), err
+}
+
+// SetEventColor sets the per-event color, a Cog extension that is not part
+// of the ICS, so it does not change the event's version.
+func SetEventColor(db *sql.DB, id int64, color string) error {
+	if _, err := db.Exec(`UPDATE events SET color = ? WHERE id = ?`, color, id); err != nil {
+		return fmt.Errorf("set event color: %w", err)
+	}
+	return nil
+}
+
+// DeleteEventByID removes an event and leaves a tombstone for DAV clients.
+func DeleteEventByID(db *sql.DB, id int64, now time.Time) error {
+	ev, err := GetEvent(db, id)
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("delete event: %w", err)
+	}
+	defer tx.Rollback()
+	if err := tables.Delete(tx, ev.CalendarID, ev.URI, davsql.Conditions{}, now.Unix()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RecomputeEventTimes re-derives a calendar's indexed times and reminders
+// after its zone changes, since floating times are read in that zone. The
+// iCalendar data is unchanged, so versions and DAV clients are unaffected.
+func RecomputeEventTimes(db *sql.DB, calendarID int64, zone *time.Location, now time.Time) error {
+	return tables.RecomputeCollection(db, calendarID, zone, now)
 }

@@ -2,6 +2,8 @@ package migrate_test
 
 import (
 	"database/sql"
+	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -221,4 +223,26 @@ func parseGuardWrapper(body string) (table, column string, ok bool) {
 		}
 	}
 	return "", "", false
+}
+
+// A schema that cannot be applied to what is in the database leaves it as
+// it was and says the database is incompatible.
+func TestMigrate_IncompatibleLeavesDatabaseAlone(t *testing.T) {
+	db, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "old.db")+"?_busy_timeout=5000")
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+	_, err = db.Exec(`CREATE TABLE events (id INTEGER PRIMARY KEY, ics_data TEXT)`)
+	require.NoError(t, err)
+	fsys := fstest.MapFS{
+		"sql/schema.sql": &fstest.MapFile{Data: []byte(`
+			CREATE TABLE IF NOT EXISTS vevents (id INTEGER PRIMARY KEY);
+			CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, component TEXT);
+			CREATE INDEX IF NOT EXISTS idx_events_component ON events(component);
+		`)},
+	}
+	err = migrate.Migrate(db, fsys)
+	require.True(t, errors.Is(err, migrate.ErrIncompatible), err)
+	exists, err := migrate.ColumnExists(db, "vevents", "id")
+	require.NoError(t, err)
+	require.False(t, exists)
 }

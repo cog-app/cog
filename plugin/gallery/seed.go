@@ -54,13 +54,19 @@ var seedPhotos = []struct {
 
 // Seed creates sample gallery images for a user.
 func (p *Plugin) Seed(username string) error {
+	fp, err := p.filesPlugin()
+	if err != nil {
+		return fmt.Errorf("seed gallery: %w", err)
+	}
 	db, err := p.DB(username)
 	if err != nil {
 		return fmt.Errorf("seed gallery: %w", err)
 	}
 
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM media`).Scan(&count)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM media`).Scan(&count); err != nil {
+		return fmt.Errorf("seed gallery: %w", err)
+	}
 	if count > 0 {
 		return nil
 	}
@@ -74,7 +80,7 @@ func (p *Plugin) Seed(username string) error {
 			continue
 		}
 
-		if _, err := p.files.Upload(username, photo.path, &buf); err != nil {
+		if _, err := fp.Upload(username, photo.path, &buf); err != nil {
 			p.log.Error("seed upload", "path", photo.path, "err", err)
 			continue
 		}

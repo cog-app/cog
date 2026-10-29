@@ -152,6 +152,10 @@
           <div style="padding:0.25rem 0.75rem;font-size:0.8rem;font-weight:600;text-transform:uppercase;color:var(--color-muted, #888)">
             Address Books
           </div>
+          <a class="sidebar-item" href="/apps/contacts/?book=1" style="display:flex;align-items:center;gap:0.5rem">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;" />
+            Contacts
+          </a>
           <div class="sidebar-divider" />
           <a class="sidebar-item active" href="/apps/contacts/settings">
             Settings
@@ -194,9 +198,47 @@
             <div class="card-title">
               Address Books
             </div>
-            <p class="text-muted">
-              No address books.
-            </p>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>
+                    Color
+                  </th>
+                  <th>
+                    Name
+                  </th>
+                  <th>
+                    UID
+                  </th>
+                  <th class="text-right">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr id="book-1">
+                  <td>
+                    <span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#0082c9;" />
+                  </td>
+                  <td>
+                    Contacts
+                  </td>
+                  <td>
+                    contacts
+                  </td>
+                  <td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
+                    <cog-share-button resource-id="1" resource="dav:collection">
+                      <button class="btn btn-outline btn-sm">
+                        Share
+                      </button>
+                    </cog-share-button>
+                    <button class="btn btn-danger btn-sm" hx-confirm="Delete this address book and all its contacts?" hx-delete="/apps/contacts/books/1" hx-swap="outerHTML" hx-target="#book-1">
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           <div class="card">
             <div class="card-title">

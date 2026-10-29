@@ -1,9 +1,11 @@
 package calendar
 
 import (
-	"crypto/md5"
+	"errors"
 	"fmt"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/dav"
 )
 
 // Seed creates sample calendars and events for a user.
@@ -12,17 +14,36 @@ func (p *Plugin) Seed(username string) error {
 	if err != nil {
 		return fmt.Errorf("seed calendar: %w", err)
 	}
+	userID, err := p.userID(username)
+	if err != nil {
+		return fmt.Errorf("seed calendar: %w", err)
+	}
 
 	// Check if already seeded.
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM calendars`).Scan(&count)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&count); err != nil {
+		return fmt.Errorf("seed calendar: %w", err)
+	}
 	if count > 0 {
 		return nil
 	}
 
-	db.Exec(`INSERT INTO calendars (uid, name, color) VALUES ('personal', 'Personal', '#0082c9')`)
-	db.Exec(`INSERT INTO calendars (uid, name, color) VALUES ('work', 'Work', '#e64a19')`)
-
+	cals := map[string]*Calendar{}
+	if cals["personal"], err = p.CalendarByName(userID, "personal"); errors.Is(err, dav.ErrNotFound) {
+		if _, err := p.Calendars(userID); err != nil {
+			return fmt.Errorf("seed calendar: %w", err)
+		}
+		cals["personal"], err = p.CalendarByName(userID, "personal")
+	}
+	if err != nil {
+		return fmt.Errorf("seed calendar: %w", err)
+	}
+	if cals["work"], err = p.CalendarByName(userID, "work"); errors.Is(err, dav.ErrNotFound) {
+		cals["work"], err = p.CreateCalendar(userID, "work", "Work", "#e64a19", "", "")
+	}
+	if err != nil {
+		return fmt.Errorf("seed calendar: %w", err)
+	}
 	// Find start of current week (Monday).
 	now := p.ctx.Now().UTC()
 	weekday := now.Weekday()
@@ -80,6 +101,7 @@ func (p *Plugin) Seed(username string) error {
 			day(11), day(14), true},
 	}
 
+	now = p.ctx.Now()
 	for _, ev := range events {
 		var icsData string
 		if ev.allDay {
@@ -89,20 +111,10 @@ func (p *Plugin) Seed(username string) error {
 			icsData = ics(ev.uid, ev.summary, ev.desc, ev.loc,
 				ev.start.Format("20060102T150405Z"), ev.end.Format("20060102T150405Z"))
 		}
-		etag := fmt.Sprintf("%x", md5.Sum([]byte(icsData)))
-		var calID int64
-		db.QueryRow(`SELECT id FROM calendars WHERE uid = ?`, ev.calUID).Scan(&calID)
-		_, err := db.Exec(`INSERT INTO events (calendar_id, uid, etag, summary, location, description, dtstart, dtend, is_all_day, ics_data)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			calID, ev.uid, etag, ev.summary, ev.loc, ev.desc, ev.start.Unix(), ev.end.Unix(), ev.allDay, icsData)
-		if err != nil {
-			p.log.Error("seed event", "uid", ev.uid, "err", err)
-		} else {
-			p.log.Info("seeded event", "summary", ev.summary)
+		if _, err := SaveICS(db, cals[ev.calUID], icsData, now); err != nil {
+			return fmt.Errorf("seed event %s: %w", ev.uid, err)
 		}
 	}
-
-	db.Exec(`UPDATE calendars SET ctag = (SELECT COUNT(*) FROM events WHERE calendar_id = calendars.id)`)
 	return nil
 }
 

@@ -132,9 +132,11 @@ A screenshot is only captured when the DOM golden does not match, which keeps th
 WEBTEST_UPDATE=1 go test ./plugin/calendar/    # accept DOM changes, refresh images
 ```
 
+At most `WEBTEST_PARALLEL` test binaries (default: a quarter of the CPUs) run Chrome at once; the others wait for a slot, which is a lock file in the temp directory. Each browser action may take `WEBTEST_TIMEOUT` (default 30s). Both exist because `go test ./...` runs every package's browser tests in parallel, and on a loaded machine pages outlast short timeouts. Waiting for a slot counts against `go test`'s per-package timeout, so the whole suite runs with `-timeout 30m` (CI and `go tool verify` pass it); a plain `go test ./...` can time out `internal/web` on a slow machine.
+
 A failing snapshot writes `<TestName>.actual.html` and `.actual.png` next to the golden. Diff the HTML to see what changed; the image is there to look at.
 
-CSRF tokens and user identifiers are masked in the golden — they differ per run. Nothing else does, so a golden that changes between runs means the page is genuinely nondeterministic, which is worth fixing rather than masking.
+CSRF tokens, user identifiers and the test's temp directory (`«tmp»`) are masked in the golden — they differ per run. Nothing else does, so a golden that changes between runs means the page is genuinely nondeterministic, which is worth fixing rather than masking.
 
 `<script>` elements are dropped. The DOM is captured once the page has settled, so what a script did to the page is already in the tree; keeping the element would only churn every golden when a library's content hash changed. Stylesheets stay, because their hash is what makes a CSS edit reach the golden.
 

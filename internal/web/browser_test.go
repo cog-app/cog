@@ -429,6 +429,21 @@ func TestBrowserVolumeBrowse(t *testing.T) {
 	b := eng.Start(t)
 	b.Login(t, "admin", "pass")
 
+	// The volume is the data directory, so the listing shows the system
+	// database's write-ahead log, whose size would follow the schema and
+	// every write before now. Empty it, so the golden shows only what this
+	// page's own request writes.
+	_, err = env.Providers.DB.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+	require.NoError(t, err)
+
+	// Modification times are shown; fix them, after logging in has written
+	// whatever it writes, so the golden is stable.
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	for _, e := range entries {
+		require.NoError(t, os.Chtimes(filepath.Join(dir, e.Name()), env.Now(), env.Now()))
+	}
+
 	b.Navigate(t, "/volumes/"+vol.ID+"/browse")
 	b.WaitText(t, "docs")
 	b.WaitText(t, "hello.txt")
@@ -448,6 +463,14 @@ func TestBrowserVolumeMkdir(t *testing.T) {
 
 	b := eng.Start(t)
 	b.Login(t, "admin", "pass")
+
+	// Modification times are shown; fix them, after logging in has written
+	// whatever it writes, so the golden is stable.
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	for _, e := range entries {
+		require.NoError(t, os.Chtimes(filepath.Join(dir, e.Name()), env.Now(), env.Now()))
+	}
 
 	b.Navigate(t, "/volumes/"+vol.ID+"/browse")
 	b.WaitVisible(t, `input[name="name"]`)
@@ -540,7 +563,7 @@ func TestBrowserAdminLogsCopy(t *testing.T) {
 		"copied text has the entries newest first:\n%s", copied)
 
 	// Each line carries the time and level beside the message, tab separated.
-	for _, line := range strings.Split(copied, "\n") {
+	for line := range strings.SplitSeq(copied, "\n") {
 		if strings.Contains(line, "copytest first entry") {
 			require.Equal(t, 3, len(strings.Split(line, "\t")),
 				"line is not time/level/message: %q", line)

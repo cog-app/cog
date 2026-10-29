@@ -71,6 +71,8 @@ func configFromEnv() config.Config {
 		SSHAddr:        envOr("COG_SSH_ADDR", ":8522"),
 		SSHEnabled:     envBoolDefault("COG_SSH_ENABLED", true),
 		SSHHostKeyPath: os.Getenv("COG_SSH_HOST_KEY"),
+
+		JMAPCalendars: envBoolDefault("COG_JMAP_CALENDARS", false),
 	}
 }
 
@@ -212,6 +214,7 @@ func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 	if err := p.Plugins.Start(ctx); err != nil {
 		return fmt.Errorf("start plugins: %w", err)
 	}
+	p.StartPush(ctx)
 
 	// Start SSH server if enabled.
 	if cfg.SSHEnabled {

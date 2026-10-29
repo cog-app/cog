@@ -24,7 +24,11 @@ test:
     - apk add --no-cache gcc musl-dev chromium
   script:
     - CGO_ENABLED=1 go generate ./...
-    - CGO_ENABLED=1 go test ./...
+    # A package's browser tests wait for a Chrome slot (WEBTEST_PARALLEL,
+    # CLAUDE.md) while other packages hold them, and the wait counts against
+    # go test's per-package timeout: internal/web needs about ten minutes of
+    # wall time here, which is the default limit.
+    - CGO_ENABLED=1 go test -timeout 30m ./...
 
 build:
   stage: build

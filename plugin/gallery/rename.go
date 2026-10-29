@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/template"
 	"time"
@@ -102,6 +103,10 @@ func PreviewRename(db *sql.DB, pattern string) ([]RenamePreview, error) {
 
 // ApplyRename executes the rename operations using the files plugin.
 func (p *Plugin) ApplyRename(username string, previews []RenamePreview) error {
+	fp, err := p.filesPlugin()
+	if err != nil {
+		return err
+	}
 	if len(previews) == 0 {
 		return nil
 	}
@@ -117,7 +122,7 @@ func (p *Plugin) ApplyRename(username string, previews []RenamePreview) error {
 	}
 
 	for _, pr := range previews {
-		if _, err := p.files.Rename(username, pr.OldPath, pr.NewPath); err != nil {
+		if _, err := fp.Rename(username, pr.OldPath, pr.NewPath); err != nil {
 			p.log.Error("rename", "from", pr.OldPath, "to", pr.NewPath, "err", err)
 			continue
 		}
@@ -138,6 +143,10 @@ func (p *Plugin) ApplyRename(username string, previews []RenamePreview) error {
 
 // UndoLastRename reverses the most recent rename batch.
 func (p *Plugin) UndoLastRename(username string) error {
+	fp, err := p.filesPlugin()
+	if err != nil {
+		return err
+	}
 	db, err := p.DB(username)
 	if err != nil {
 		return err
@@ -152,9 +161,9 @@ func (p *Plugin) UndoLastRename(username string) error {
 	}
 
 	// Reverse in reverse order.
-	for i := len(entries) - 1; i >= 0; i-- {
-		e := entries[i]
-		if _, err := p.files.Rename(username, e.NewPath, e.OldPath); err != nil {
+	for _, e := range slices.Backward(entries) {
+
+		if _, err := fp.Rename(username, e.NewPath, e.OldPath); err != nil {
 			p.log.Error("undo rename", "from", e.NewPath, "to", e.OldPath, "err", err)
 			continue
 		}

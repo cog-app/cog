@@ -1,19 +1,20 @@
 package contacts
 
 import (
+	"bytes"
 	"database/sql"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
-	"io"
 	"net/http"
-	"os"
-	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
+	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -28,53 +29,164 @@ func NewPages(p *Plugin) *Pages {
 	return &Pages{plugin: p}
 }
 
-// Index shows all contacts, including contacts from shared address books.
-func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
+// access is the request user's view of their own and shared address books.
+type access struct {
+	own    map[int64]AddressBook
+	shared []sharedAddressBook
+}
+
+func (h *Pages) access(r *http.Request) (*plugin.UserInfo, *access, error) {
 	u := plugin.UserFromContext(r.Context())
-	db, err := plugin.UserDB(r)
+	own, err := h.plugin.bookMap(u.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, nil, err
 	}
-	// Without a book the create form has nothing to post to, so this failing
-	// silently turns every later create into "access denied".
-	if err := EnsureDefaultAddressBook(db); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	plugin.SetTitle(w, "Contacts")
-	books, err := ListAddressBooks(db)
+	shared, err := h.plugin.sharedBooks(u.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, nil, err
 	}
+	return u, &access{own: own, shared: shared}, nil
+}
 
-	var cards []CardWithBook
-	if bookIDStr := r.URL.Query().Get("book"); bookIDStr != "" {
-		bookID, _ := strconv.ParseInt(bookIDStr, 10, 64)
-		cards, _ = CardsByAddressBook(db, bookID, 500)
-	} else {
-		cards, _ = AllCards(db, 500)
+// books lists own books, by sort order, then shared ones.
+func (a *access) books() []AddressBook {
+	var books []AddressBook
+	for _, b := range a.own {
+		books = append(books, b)
 	}
+	slices.SortFunc(books, func(x, y AddressBook) int {
+		if x.SortOrder != y.SortOrder {
+			return x.SortOrder - y.SortOrder
+		}
+		return strings.Compare(x.Name, y.Name)
+	})
+	for _, sb := range a.shared {
+		books = append(books, sb.Book)
+	}
+	return books
+}
 
-	// Merge in shared address books and their contacts.
-	for _, sb := range h.plugin.sharedBooks(u.ID) {
-		ownerDB, err := h.plugin.DB(sb.OwnerUsername)
+// book returns the store holding a book the user may use, and whether they
+// may write to it.
+func (h *Pages) book(u *plugin.UserInfo, a *access, id int64) (*Store, *AddressBook, bool, error) {
+	if b, ok := a.own[id]; ok {
+		s, err := h.plugin.Store(u.Username)
+		return s, &b, true, err
+	}
+	for _, sb := range a.shared {
+		if sb.Book.ID == id {
+			s, err := h.plugin.Store(sb.OwnerUsername)
+			return s, &sb.Book, sb.Perms&plugin.PermWrite != 0, err
+		}
+	}
+	return nil, nil, false, dav.ErrNotFound
+}
+
+// card finds a card by row ID in the user's own books, then in shared ones,
+// with its vCard when full is set. Row IDs are per database, so the book the
+// card is in decides which.
+func (h *Pages) card(u *plugin.UserInfo, a *access, id int64, full bool) (*Store, *Card, *AddressBook, bool, error) {
+	s, c, b, w, err := h.findCard(u, a, id)
+	if err == nil && full {
+		err = s.Load(c)
+	}
+	return s, c, b, w, err
+}
+
+func (h *Pages) findCard(u *plugin.UserInfo, a *access, id int64) (*Store, *Card, *AddressBook, bool, error) {
+	s, err := h.plugin.Store(u.Username)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	if c, err := s.Row(id); err == nil {
+		if b, ok := a.own[c.AddressBookID]; ok {
+			return s, c, &b, true, nil
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return nil, nil, nil, false, err
+	}
+	for _, sb := range a.shared {
+		owner, err := h.plugin.Store(sb.OwnerUsername)
 		if err != nil {
-			h.plugin.log.Error("shared db", "user", sb.OwnerUsername, "err", err)
+			return nil, nil, nil, false, err
+		}
+		c, err := owner.Row(id)
+		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
-		books = append(books, *sb.Book)
-
-		bookIDStr := r.URL.Query().Get("book")
-		if bookIDStr != "" {
-			bookID, _ := strconv.ParseInt(bookIDStr, 10, 64)
-			if bookID != sb.Book.ID {
-				continue
-			}
+		if err != nil {
+			return nil, nil, nil, false, err
 		}
-		sharedCards, _ := CardsByAddressBook(ownerDB, sb.Book.ID, 500)
+		if c.AddressBookID == sb.Book.ID {
+			return owner, c, &sb.Book, sb.Perms&plugin.PermWrite != 0, nil
+		}
+	}
+	return nil, nil, nil, false, dav.ErrNotFound
+}
+
+// fail reports an error from a form post on the page it came from (PRG).
+func fail(w http.ResponseWriter, r *http.Request, msg string) {
+	plugin.SetFlash(w, plugin.Flash{Kind: "error", Message: msg})
+	http.Redirect(w, r, "/apps/contacts/", http.StatusSeeOther)
+}
+
+func httpError(w http.ResponseWriter, err error) {
+	if errors.Is(err, dav.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+
+// Index shows all contacts, including contacts from shared address books.
+func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
+	u, a, err := h.access(r)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	plugin.SetTitle(w, "Contacts")
+
+	var filter int64 = -1
+	if v := r.URL.Query().Get("book"); v != "" {
+		if filter, err = strconv.ParseInt(v, 10, 64); err != nil {
+			http.Error(w, "invalid book", http.StatusBadRequest)
+			return
+		}
+	}
+	own := a.own
+	if filter >= 0 {
+		own = map[int64]AddressBook{}
+		if b, ok := a.own[filter]; ok {
+			own[filter] = b
+		}
+	}
+	store, err := h.plugin.Store(u.Username)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	cards, err := store.In(own, "", 500)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+
+	// Merge in contacts from shared address books.
+	for _, sb := range a.shared {
+		if filter >= 0 && filter != sb.Book.ID {
+			continue
+		}
+		owner, err := h.plugin.Store(sb.OwnerUsername)
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		sharedCards, err := owner.In(map[int64]AddressBook{sb.Book.ID: sb.Book}, "", 500)
+		if err != nil {
+			httpError(w, err)
+			return
+		}
 		for i := range sharedCards {
 			sharedCards[i].OwnerUsername = sb.OwnerUsername
 			sharedCards[i].BookName = sb.Book.Name + " (" + sb.OwnerUsername + ")"
@@ -82,450 +194,333 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		cards = append(cards, sharedCards...)
 	}
 
-	contactsIndexPage(books, cards, plugin.CSRFToken(r)).Render(r.Context(), w)
+	contactsIndexPage(a.books(), cards, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // Starred shows starred contacts.
 func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	u, a, err := h.access(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, err)
+		return
+	}
+	store, err := h.plugin.Store(u.Username)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	cards, err := store.Starred(a.own, 500)
+	if err != nil {
+		httpError(w, err)
 		return
 	}
 	plugin.SetTitle(w, "Starred Contacts")
-	books, _ := ListAddressBooks(db)
-	cards, _ := StarredContacts(db, 500)
-	contactsStarredPage(books, cards).Render(r.Context(), w)
+	contactsStarredPage(a.books(), cards).Render(r.Context(), w)
 }
 
 // Settings shows address book management.
 func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	u := plugin.UserFromContext(r.Context())
+	books, err := h.plugin.Books(u.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, err)
 		return
 	}
 	plugin.SetTitle(w, "Contacts Settings")
-	books, _ := ListAddressBooks(db)
 	contactsSettingsPage(books, plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
 // ContactDetail returns a contact detail partial for the modal.
 func (h *Pages) ContactDetail(w http.ResponseWriter, r *http.Request) {
-	u := plugin.UserFromContext(r.Context())
+	u, a, err := h.access(r)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-
-	// Try the user's own DB first.
-	db, err := plugin.UserDB(r)
+	_, c, book, _, err := h.card(u, a, id, true)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, err)
 		return
 	}
-	c, err := GetCard(db, id)
-	if err != nil {
-		// Not in own DB — check shared address books.
-		c, db, err = h.findSharedCard(u.ID, id)
-		if err != nil {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-	}
-
-	book, _ := GetAddressBook(db, c.AddressBookID)
-	books, _ := ListAddressBooks(db)
-
-	contactDetailModal(c, book, books, plugin.CSRFToken(r)).Render(r.Context(), w)
+	contactDetailModal(c, book, a.books(), plugin.CSRFToken(r)).Render(r.Context(), w)
 }
 
-// findSharedCard searches shared address books for a card by ID.
-// Returns the card, the owner's DB, and any error.
-func (h *Pages) findSharedCard(userID string, cardID int64) (*Card, *sql.DB, error) {
-	for _, sb := range h.plugin.sharedBooks(userID) {
-		ownerDB, err := h.plugin.DB(sb.OwnerUsername)
-		if err != nil {
-			continue
-		}
-		c, err := GetCard(ownerDB, cardID)
-		if err != nil {
-			continue
-		}
-		// Verify the card belongs to the shared book.
-		if c.AddressBookID == sb.Book.ID {
-			return c, ownerDB, nil
-		}
-	}
-	return nil, nil, fmt.Errorf("not found")
-}
-
-// CreateContact handles POST to create a new contact.
+// CreateContact handles POST to create a new contact, in one of the user's
+// own books or a shared one they may write to.
 func (h *Pages) CreateContact(w http.ResponseWriter, r *http.Request) {
-	u := plugin.UserFromContext(r.Context())
-	bookID, _ := strconv.ParseInt(r.FormValue("address_book_id"), 10, 64)
-
-	// Determine which DB to write to — own or shared.
-	targetDB, err := h.resolveWritableDB(u, bookID)
+	u, a, err := h.access(r)
 	if err != nil {
+		httpError(w, err)
+		return
+	}
+	bookID, err := strconv.ParseInt(r.FormValue("address_book_id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid address book", http.StatusBadRequest)
+		return
+	}
+	s, _, writable, err := h.book(u, a, bookID)
+	if err != nil || !writable {
 		http.Error(w, "access denied", http.StatusForbidden)
 		return
 	}
-
-	fn := r.FormValue("fn")
-	org := r.FormValue("org")
-	title := r.FormValue("title")
-	note := r.FormValue("note")
-
-	emails := parseTypedValues(r, "email_type", "email_value")
-	phones := parseTypedValues(r, "phone_type", "phone_value")
-
-	uid := fmt.Sprintf("%d-%s", h.plugin.ctx.Now().UnixNano(), fn)
-	uri := uid + ".vcf"
-
-	fields := VCardFields{
-		UID:    uid,
-		FN:     fn,
-		Org:    org,
-		Title:  title,
-		Note:   note,
-		Emails: emails,
-		Phones: phones,
+	f, err := parseContactForm(r)
+	if err != nil {
+		fail(w, r, err.Error())
+		return
 	}
-	if len(emails) > 0 {
-		fields.Email = emails[0].Value
+	now := h.plugin.ctx.Now()
+	c := NewCard(now)
+	applyForm(c, f, now)
+	nameFromFN(c)
+	if _, err := s.Save(bookID, nil, c, now); err != nil {
+		httpError(w, err)
+		return
 	}
-	if len(phones) > 0 {
-		fields.Tel = phones[0].Value
-	}
-	fields.MarshalJSONFields()
-
-	vcardData := GenerateVCardFull(fields, h.plugin.ctx.Now())
-	UpsertCard(targetDB, bookID, uid, uri, vcardData, fields)
 	http.Redirect(w, r, "/apps/contacts/", http.StatusSeeOther)
 }
 
-// resolveWritableDB returns the DB that owns bookID.
-// If bookID is in the user's own DB, returns it.
-// If bookID is in a shared address book with PermWrite, returns the owner's DB.
-// Otherwise returns an error.
-func (h *Pages) resolveWritableDB(u *plugin.UserInfo, bookID int64) (*sql.DB, error) {
-	db, err := h.plugin.DB(u.Username)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := GetAddressBook(db, bookID); err == nil {
-		return db, nil // own book
-	}
-	// Check shared books.
-	for _, sb := range h.plugin.sharedBooks(u.ID) {
-		if sb.Book.ID == bookID {
-			if sb.Perms&plugin.PermWrite == 0 {
-				return nil, fmt.Errorf("read-only share")
-			}
-			ownerDB, err := h.plugin.DB(sb.OwnerUsername)
-			if err != nil {
-				return nil, err
-			}
-			return ownerDB, nil
-		}
-	}
-	return nil, fmt.Errorf("address book not found")
-}
-
-// UpdateContact handles POST to update an existing contact.
+// UpdateContact handles POST to update an existing contact. It changes only
+// what the form shows (applyForm). It can move the contact to another book
+// in the same database: the user's own, or the same owner's.
 func (h *Pages) UpdateContact(w http.ResponseWriter, r *http.Request) {
-	u := plugin.UserFromContext(r.Context())
+	u, a, err := h.access(r)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-
-	// Find the card in own DB or shared.
-	db, err := plugin.UserDB(r)
+	s, c, book, writable, err := h.card(u, a, id, true)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, err)
 		return
 	}
-	c, err := GetCard(db, id)
-	if err != nil {
-		// Try shared books.
-		c, db, err = h.findSharedCard(u.ID, id)
-		if err != nil {
-			http.Error(w, "not found", http.StatusNotFound)
+	if !writable {
+		http.Error(w, "access denied", http.StatusForbidden)
+		return
+	}
+	bookID := c.AddressBookID
+	if v := r.FormValue("address_book_id"); v != "" && v != "0" {
+		if bookID, err = strconv.ParseInt(v, 10, 64); err != nil {
+			http.Error(w, "invalid address book", http.StatusBadRequest)
 			return
 		}
-		// For shared cards, verify write permission.
-		book, _ := GetAddressBook(db, c.AddressBookID)
-		if book != nil && !h.plugin.checkBookAccess(u.ID, "", book.UID, plugin.PermWrite) {
+	}
+	if bookID != c.AddressBookID {
+		_, target, ok, err := h.book(u, a, bookID)
+		if err != nil || !ok || target.OwnerID != book.OwnerID {
 			http.Error(w, "access denied", http.StatusForbidden)
 			return
 		}
 	}
-
-	fn := r.FormValue("fn")
-	org := r.FormValue("org")
-	title := r.FormValue("title")
-	note := r.FormValue("note")
-	bookID, _ := strconv.ParseInt(r.FormValue("address_book_id"), 10, 64)
-	if bookID == 0 {
-		bookID = c.AddressBookID
+	f, err := parseContactForm(r)
+	if err != nil {
+		fail(w, r, err.Error())
+		return
 	}
-
-	emails := parseTypedValues(r, "email_type", "email_value")
-	phones := parseTypedValues(r, "phone_type", "phone_value")
-
-	fields := VCardFields{
-		UID:    c.UID,
-		FN:     fn,
-		Org:    org,
-		Title:  title,
-		Note:   note,
-		Emails: emails,
-		Phones: phones,
+	now := h.plugin.ctx.Now()
+	applyForm(c.VCard, f, now)
+	if _, err := s.Save(bookID, c, c.VCard, now); err != nil {
+		httpError(w, err)
+		return
 	}
-	if len(emails) > 0 {
-		fields.Email = emails[0].Value
-	}
-	if len(phones) > 0 {
-		fields.Tel = phones[0].Value
-	}
-	fields.MarshalJSONFields()
-
-	vcardData := GenerateVCardFull(fields, h.plugin.ctx.Now())
-	UpsertCard(db, bookID, c.UID, c.URI, vcardData, fields)
 	http.Redirect(w, r, "/apps/contacts/", http.StatusSeeOther)
 }
 
 // DeleteContact handles DELETE to remove a contact (HTMX).
 func (h *Pages) DeleteContact(w http.ResponseWriter, r *http.Request) {
-	u := plugin.UserFromContext(r.Context())
+	u, a, err := h.access(r)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-
-	db, err := plugin.UserDB(r)
+	s, c, _, writable, err := h.card(u, a, id, false)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, err)
 		return
 	}
-	c, err := GetCard(db, id)
-	if err != nil {
-		// Try shared books.
-		c, db, err = h.findSharedCard(u.ID, id)
-		if err != nil {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-		// Verify write permission on the shared book.
-		book, _ := GetAddressBook(db, c.AddressBookID)
-		if book != nil && !h.plugin.checkBookAccess(u.ID, "", book.UID, plugin.PermWrite) {
-			http.Error(w, "access denied", http.StatusForbidden)
-			return
-		}
+	if !writable {
+		http.Error(w, "access denied", http.StatusForbidden)
+		return
 	}
-	DeleteCardByID(db, id)
+	if err := s.Delete(c, h.plugin.ctx.Now()); err != nil {
+		httpError(w, err)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
 // CreateAddressBookHandler handles POST to create a new address book.
 func (h *Pages) CreateAddressBookHandler(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	uid := r.FormValue("uid")
-	name := r.FormValue("name")
-	color := r.FormValue("color")
-	if uid == "" {
-		uid = name
-	}
+	u := plugin.UserFromContext(r.Context())
+	name := strings.TrimSpace(r.FormValue("name"))
 	if name != "" {
-		CreateAddressBook(db, uid, name, "", color)
+		if _, err := h.plugin.CreateBook(u.ID, r.FormValue("uid"), name, "", r.FormValue("color")); err != nil {
+			httpError(w, err)
+			return
+		}
 	}
 	http.Redirect(w, r, "/apps/contacts/settings", http.StatusSeeOther)
 }
 
 // DeleteAddressBookHandler handles DELETE to remove an address book (HTMX).
 func (h *Pages) DeleteAddressBookHandler(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
-		return
-	}
-	DeleteAddressBook(db, id)
-	w.WriteHeader(http.StatusOK)
-}
-
-// UploadPhoto handles a contact photo upload.
-func (h *Pages) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 	u := plugin.UserFromContext(r.Context())
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-
-	db, err := plugin.UserDB(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := h.plugin.DeleteBook(u.Username, u.ID, id); err != nil {
+		httpError(w, err)
 		return
 	}
-	c, err := GetCard(db, id)
-	if err != nil {
-		c, db, err = h.findSharedCard(u.ID, id)
-		if err != nil {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-		book, _ := GetAddressBook(db, c.AddressBookID)
-		if book != nil && !h.plugin.checkBookAccess(u.ID, "", book.UID, plugin.PermWrite) {
-			http.Error(w, "access denied", http.StatusForbidden)
-			return
-		}
-	}
+	w.WriteHeader(http.StatusOK)
+}
 
-	if err := r.ParseMultipartForm(5 << 20); err != nil { // 5MB max
-		http.Error(w, "file too large", http.StatusBadRequest)
+// UploadPhoto handles a contact photo upload. The photo becomes the card's
+// PHOTO, re-encoded as a JPEG, so DAV clients get it too.
+func (h *Pages) UploadPhoto(w http.ResponseWriter, r *http.Request) {
+	u, a, err := h.access(r)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	s, c, _, writable, err := h.card(u, a, id, true)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	if !writable {
+		http.Error(w, "access denied", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseMultipartForm(5 << 20); err != nil {
+		fail(w, r, "The photo is too large (5 MB at most).")
 		return
 	}
 	file, header, err := r.FormFile("photo")
 	if err != nil {
-		http.Redirect(w, r, "/apps/contacts/", http.StatusSeeOther)
+		fail(w, r, "Choose a photo to upload.")
 		return
 	}
 	defer file.Close()
-
-	// Validate content type.
-	ct := header.Header.Get("Content-Type")
-	if ct != "" && !strings.HasPrefix(ct, "image/") {
-		http.Error(w, "only image files are accepted", http.StatusBadRequest)
+	if ct := header.Header.Get("Content-Type"); ct != "" && !strings.HasPrefix(ct, "image/") {
+		fail(w, r, "Only image files can be a contact's photo.")
 		return
 	}
-
-	// Decode to validate it is a real image.
 	img, _, err := image.Decode(file)
 	if err != nil {
-		http.Error(w, "invalid image", http.StatusBadRequest)
+		fail(w, r, "The photo could not be read as an image.")
 		return
 	}
-
-	// Save as JPEG.
-	photoDir := filepath.Join(h.plugin.ctx.DataDir(), "contacts", u.Username, "photos")
-	if err := os.MkdirAll(photoDir, 0755); err != nil {
-		http.Error(w, "server error", http.StatusInternalServerError)
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 85}); err != nil {
+		httpError(w, fmt.Errorf("encode photo: %w", err))
 		return
 	}
-	photoPath := filepath.Join(photoDir, c.UID+".jpg")
-
-	f, err := os.Create(photoPath)
-	if err != nil {
-		http.Error(w, "save error", http.StatusInternalServerError)
+	now := h.plugin.ctx.Now()
+	setPhoto(c.VCard, buf.Bytes(), now)
+	if _, err := s.Save(c.AddressBookID, c, c.VCard, now); err != nil {
+		httpError(w, err)
 		return
 	}
-	defer f.Close()
-
-	if err := jpeg.Encode(f, img, &jpeg.Options{Quality: 85}); err != nil {
-		http.Error(w, "encode error", http.StatusInternalServerError)
-		return
-	}
-
-	// Update card photo_path in database.
-	_, _ = db.Exec(`UPDATE cards SET photo_path = ? WHERE id = ?`, photoPath, id)
-
 	http.Redirect(w, r, "/apps/contacts/", http.StatusSeeOther)
 }
 
 // ServePhoto serves a contact's photo image.
 func (h *Pages) ServePhoto(w http.ResponseWriter, r *http.Request) {
-	u := plugin.UserFromContext(r.Context())
+	u, a, err := h.access(r)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-
-	db, err := plugin.UserDB(r)
+	s, c, _, _, err := h.card(u, a, id, false)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, err)
 		return
 	}
-	c, err := GetCard(db, id)
-	if err != nil {
-		c, _, err = h.findSharedCard(u.ID, id)
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-	}
-	if c.PhotoPath == "" {
+	if !c.HasPhoto() {
 		http.NotFound(w, r)
 		return
 	}
-	f, err := os.Open(c.PhotoPath)
-	if err != nil {
+	data, ct, err := s.Photo(r.Context(), c)
+	if _, ok := errors.AsType[*remoteError](err); ok {
+		h.plugin.log.Warn("contact photo unavailable", "card", c.ID, "err", err)
 		http.NotFound(w, r)
 		return
 	}
-	defer f.Close()
-	w.Header().Set("Content-Type", "image/jpeg")
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	if data == nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, max-age=3600")
-	io.Copy(w, f)
+	if c.PhotoURI == "" {
+		// A stored photo's name is its content; a cached one can change.
+		w.Header().Set("ETag", `"`+c.PhotoHash+`"`)
+	}
+	if _, err := w.Write(data); err != nil {
+		h.plugin.log.Error("serve photo", "card", c.ID, "err", err)
+	}
 }
 
 // ToggleStar toggles the starred state of a contact and returns the updated star button HTML.
 func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
+	u, a, err := h.access(r)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	db, err := plugin.UserDB(r)
+	s, c, book, _, err := h.card(u, a, id, false)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, err)
 		return
 	}
-	c, err := GetCard(db, id)
-	if err != nil {
+	if book.OwnerID != u.ID {
+		// Starring is the owner's own; a sharee's star would land on the
+		// owner's card.
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	newStarred := !c.IsStarred
-	if err := SetStarred(db, id, newStarred); err != nil {
+	if err := s.SetStarred(c.ID, newStarred); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	// Return updated star button for HTMX swap.
 	ui.Star(newStarred, fmt.Sprintf("/apps/contacts/contacts/%d/star", id)).Render(r.Context(), w)
-}
-
-// parseTypedValues extracts paired type/value form arrays into a slice of TypedValue.
-func parseTypedValues(r *http.Request, typeKey, valueKey string) []TypedValue {
-	if err := r.ParseForm(); err != nil {
-		return nil
-	}
-	types := r.Form[typeKey]
-	values := r.Form[valueKey]
-	var result []TypedValue
-	for i := range values {
-		if values[i] == "" {
-			continue
-		}
-		typ := ""
-		if i < len(types) {
-			typ = types[i]
-		}
-		result = append(result, TypedValue{Type: typ, Value: values[i]})
-	}
-	return result
 }

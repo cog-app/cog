@@ -90,9 +90,9 @@ func upcomingTasksWidget(tasks []TaskWithList) templ.Component {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var5 string
-					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(widgetDueDate(*t.DueAt))
+					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(widgetDueDate(&t.Task))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/tasks/widget.templ`, Line: 20, Col: 31}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/tasks/widget.templ`, Line: 20, Col: 30}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 					if templ_7745c5c3_Err != nil {
@@ -113,9 +113,9 @@ func upcomingTasksWidget(tasks []TaskWithList) templ.Component {
 	})
 }
 
-func widgetDueDate(unix int64) string {
-	t := time.Unix(unix, 0)
-	now := time.Now()
+func widgetDueDate(task *Task) string {
+	t := dueTime(task)
+	now := time.Now().In(t.Location())
 	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
 		return "Today"
 	}

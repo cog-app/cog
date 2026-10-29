@@ -36,9 +36,20 @@ type Browser struct {
 	timeout time.Duration
 }
 
-const defaultTimeout = 10 * time.Second
+// defaultTimeout bounds one action: a navigation, a wait, a click. It is
+// generous because a whole test suite running beside the browser makes
+// pages slow; a test that is merely slow still passes, and one waiting for
+// something that never comes still fails. WEBTEST_TIMEOUT overrides it.
+var defaultTimeout = timeoutFromEnv(30 * time.Second)
 
-// SetTimeout overrides the default action timeout (10s).
+func timeoutFromEnv(d time.Duration) time.Duration {
+	if v, err := time.ParseDuration(os.Getenv("WEBTEST_TIMEOUT")); err == nil && v > 0 {
+		return v
+	}
+	return d
+}
+
+// SetTimeout overrides the default action timeout.
 func (b *Browser) SetTimeout(d time.Duration) {
 	b.timeout = d
 }
@@ -68,7 +79,7 @@ func (b *Browser) el(sel string) (*rod.Element, error) {
 	// in parallel looks like — burns the entire deadline here, leaving the
 	// lookup below to fail immediately with a context error even though the
 	// element was there all along.
-	_ = b.page.Timeout(2 * time.Second).WaitStable(300 * time.Millisecond)
+	_ = b.page.Timeout(5 * time.Second).WaitStable(300 * time.Millisecond)
 
 	p := b.tp()
 	if len(sel) > 1 && sel[:2] == "//" {
@@ -223,7 +234,7 @@ func (b *Browser) WaitReady(t testing.TB, sel string) {
 // WaitText waits for text to appear in a visible element within <body>.
 func (b *Browser) WaitText(t testing.TB, text string) {
 	t.Helper()
-	sel := fmt.Sprintf(`//body//*[contains(text(),"%s")]`, text)
+	sel := fmt.Sprintf(`//body//*[text()[contains(.,"%s")]]`, text)
 	if _, err := b.el(sel); err != nil {
 		t.Fatalf("webtest: wait text %q: %v", text, err)
 	}
@@ -311,6 +322,10 @@ func (b *Browser) HasElement(t testing.TB, sel string) bool {
 func (b *Browser) Count(t testing.TB, sel string) int {
 	t.Helper()
 	p := b.tp()
+	// Counting a page that is still loading counts part of it.
+	if err := p.WaitLoad(); err != nil {
+		t.Fatalf("webtest: count %s: page did not load: %v", sel, err)
+	}
 	els, err := p.Elements(sel)
 	if err != nil {
 		t.Fatalf("webtest: count %s: %v", sel, err)
@@ -359,6 +374,11 @@ func (b *Browser) Login(t testing.TB, user, pass string) {
 	b.Type(t, "#password", pass)
 	b.Click(t, `button[type="submit"]`)
 	b.WaitNotVisible(t, "#password")
+	// The page logged in to may still be arriving; a test that counts or
+	// snapshots it next would see part of it.
+	if err := b.tp().WaitLoad(); err != nil {
+		t.Fatalf("webtest: login: page after login did not load: %v", err)
+	}
 }
 
 // Snapshot compares the page against a golden pair in testdata/snapshots,
@@ -391,11 +411,23 @@ func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
 		defer b.page.MustSetViewport(1280, 720, 0, false)
 		// A resize reflows without mutating the DOM, so WaitStable below has
 		// nothing to observe and can return before the new layout is painted.
-		_ = b.page.Timeout(b.actionTimeout()).WaitRepaint()
+		if err := b.page.Timeout(b.actionTimeout()).WaitRepaint(); err != nil {
+			t.Logf("webtest: snapshot: repaint after resize: %v", err)
+		}
 	}
 
-	// Wait for the page to settle before capturing.
-	_ = b.tp().WaitStable(300 * time.Millisecond)
+	// A page still loading has a truncated DOM and no scripts run yet; on a
+	// loaded machine an element the test waited for can appear well before
+	// the rest of the document. Capturing that would record a page nobody
+	// sees, so it is an error, not a golden.
+	if err := b.tp().WaitLoad(); err != nil {
+		t.Fatalf("webtest: snapshot: page did not finish loading: %v", err)
+	}
+	// Wait for the page to settle before capturing. A page that never
+	// settles is still captured, and the golden will say what moved.
+	if err := b.tp().WaitStable(300 * time.Millisecond); err != nil {
+		t.Logf("webtest: snapshot: page did not settle: %v", err)
+	}
 
 	raw, err := b.page.HTML()
 	if err != nil {

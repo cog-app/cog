@@ -44,6 +44,8 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 			if err := p.Plugins.Start(context.Background()); err != nil {
 				return err
 			}
+			// Deliver WebDAV-Push notifications.
+			p.StartPush(context.Background())
 
 			if envBool("COG_LOG_REQUESTS") {
 				handler = requestLogger(handler)

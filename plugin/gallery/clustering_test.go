@@ -2,9 +2,9 @@ package gallery
 
 import (
 	"database/sql"
-	"fmt"
 	"math"
 	"math/rand/v2"
+	"path/filepath"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -95,8 +95,7 @@ func TestFloat32Roundtrip(t *testing.T) {
 
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared&_foreign_keys=on", t.Name())
-	db, err := sql.Open("sqlite3", dsn)
+	db, err := sql.Open("sqlite3", "file:"+filepath.Join(t.TempDir(), "gallery.db")+"?_busy_timeout=5000&_foreign_keys=on")
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 	require.NoError(t, migrate.Migrate(db, sqlFS))

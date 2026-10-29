@@ -96,7 +96,7 @@ templ taskItem(task *Task, allTasks []Task, depth int, csrfToken string) {
 			<span class="drag-handle" title="Drag to reorder">&#9776;</span>
 			<input
 				type="checkbox"
-				if task.Status == "COMPLETED" {
+				if task.Done() {
 					checked
 				}
 				hx-post={ fmt.Sprintf("/apps/tasks/task/%d/toggle", task.ID) }
@@ -111,9 +111,12 @@ templ taskItem(task *Task, allTasks []Task, depth int, csrfToken string) {
 			} else if task.Priority >= 5 && task.Priority <= 6 {
 				<span class="badge" style="background:#f0ad4e;color:#fff;font-size:0.7rem" title="Medium priority">!!</span>
 			}
+			if task.RRule != "" {
+				<span class="badge" title="Repeats">&#8635;</span>
+			}
 			if task.DueAt != nil {
-				<span class={ dueBadgeClass(*task.DueAt) } title="Due date">
-					{ formatDueDate(*task.DueAt) }
+				<span class={ dueBadgeClass(task) } title="Due date">
+					{ formatDueDate(task) }
 				</span>
 			}
 			<button
@@ -143,7 +146,7 @@ templ taskItem(task *Task, allTasks []Task, depth int, csrfToken string) {
 	</div>
 }
 
-templ taskDetailPage(sb sidebarData, task *Task, lists []TaskList, allTasks []Task, csrfToken string) {
+templ taskDetailPage(sb sidebarData, task *Task, lists []TaskList, allTasks []Task, times formTimes, csrfToken string) {
 	<div class="sidebar-layout">
 		@tasksSidebar(sb, csrfToken)
 		<div class="sidebar-content">
@@ -197,7 +200,7 @@ templ taskDetailPage(sb sidebarData, task *Task, lists []TaskList, allTasks []Ta
 							<label for="status">Status</label>
 							<select class="form-control" id="status" name="status">
 								for _, s := range []string{"NEEDS-ACTION", "IN-PROCESS", "COMPLETED", "CANCELLED"} {
-									if s == task.Status {
+									if s == task.StatusOrDefault() {
 										<option value={ s } selected>{ s }</option>
 									} else {
 										<option value={ s }>{ s }</option>
@@ -212,12 +215,12 @@ templ taskDetailPage(sb sidebarData, task *Task, lists []TaskList, allTasks []Ta
 					</div>
 					<div class="flex gap-1" style="flex-wrap:wrap">
 						<div class="form-group" style="flex:1;min-width:200px">
-							<label for="due_at">Due Date</label>
-							<input class="form-control" type="datetime-local" id="due_at" name="due_at_date" value={ formatDatetimeLocal(task.DueAt) }/>
+							<label for="due_at">Due Date ({ times.Zone })</label>
+							<input class="form-control" type="datetime-local" id="due_at" name="due_at_date" value={ times.Due }/>
 						</div>
 						<div class="form-group" style="flex:1;min-width:200px">
-							<label for="start_at">Start Date</label>
-							<input class="form-control" type="datetime-local" id="start_at" name="start_at_date" value={ formatDatetimeLocal(task.StartAt) }/>
+							<label for="start_at">Start Date ({ times.Zone })</label>
+							<input class="form-control" type="datetime-local" id="start_at" name="start_at_date" value={ times.Start }/>
 						</div>
 					</div>
 					<div class="flex gap-1">
@@ -317,14 +320,14 @@ func sidebarClass(activeList, listID int64) string {
 }
 
 func taskItemClass(task *Task) string {
-	if task.Status == "COMPLETED" {
+	if task.Done() {
 		return "task-item completed"
 	}
 	return "task-item"
 }
 
 func taskSummaryClass(task *Task) string {
-	if task.Status == "COMPLETED" {
+	if task.Done() {
 		return "task-summary completed"
 	}
 	return "task-summary"
@@ -344,9 +347,19 @@ func groupIndent(depth int) string {
 	return fmt.Sprintf("margin-left:%drem", depth)
 }
 
-func formatDueDate(unix int64) string {
-	t := time.Unix(unix, 0)
-	now := time.Now()
+// dueTime returns when a task is due; a due date is shown as that date
+// wherever the server is.
+func dueTime(task *Task) time.Time {
+	t := time.Unix(*task.DueAt, 0)
+	if task.DueIsDate {
+		return t.UTC()
+	}
+	return t
+}
+
+func formatDueDate(task *Task) string {
+	t := dueTime(task)
+	now := time.Now().In(t.Location())
 	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
 		return "Today"
 	}
@@ -360,22 +373,18 @@ func formatDueDate(unix int64) string {
 	return t.Format("2006-01-02")
 }
 
-func dueBadgeClass(unix int64) string {
+func dueBadgeClass(task *Task) string {
 	now := time.Now()
-	t := time.Unix(unix, 0)
+	t := dueTime(task)
+	if task.DueIsDate {
+		// Due on a day: overdue once that day is over.
+		t = time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, time.Local)
+	}
 	if t.Before(now) {
 		return "badge badge-overdue"
 	}
-	tomorrow := now.AddDate(0, 0, 1)
-	if t.Before(tomorrow) {
+	if t.Before(now.AddDate(0, 0, 1)) {
 		return "badge badge-due-soon"
 	}
 	return "badge"
-}
-
-func formatDatetimeLocal(ts *int64) string {
-	if ts == nil {
-		return ""
-	}
-	return time.Unix(*ts, 0).Format("2006-01-02T15:04")
 }

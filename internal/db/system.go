@@ -16,7 +16,7 @@ var sqlFS embed.FS
 // It enables WAL mode and returns a single connection for the
 // single-writer pattern described in the design.
 func OpenSystem(path string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000")
+	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000&"+TxLockImmediate)
 	if err != nil {
 		return nil, fmt.Errorf("open system db: %w", err)
 	}

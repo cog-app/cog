@@ -52,7 +52,7 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 				<div class="form-group">
 					<label for="ce-calendar">Calendar</label>
 					<select class="form-control" id="ce-calendar" name="calendar_id" onchange="syncCalColor(this,'ce-color','ce-color-enable')">
-						for _, cal := range calendars {
+						for _, cal := range writable(calendars) {
 							<option value={ strconv.FormatInt(cal.ID, 10) } data-color={ cal.Color }>{ cal.Name }</option>
 						}
 					</select>
@@ -234,9 +234,35 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 				picker.value = picker.getAttribute("data-default") || "#0082c9";
 			}
 		}
+		function openEventModal(url) {
+			fetch(url, {
+				headers: {
+					"X-CSRF-Token": document.querySelector("[name=csrf_token]").value,
+				},
+			})
+				.then(function (r) {
+					if (!r.ok) throw new Error(r.status);
+					return r.text();
+				})
+				.then(function (html) {
+					var body = document.getElementById("event-modal-body");
+					body.innerHTML = html;
+					fillBrowserTimes(body);
+					htmx.process(body);
+					document.getElementById("event-modal").style.display = "flex";
+				})
+				.catch(function (err) {
+					console.error("open event", url, err);
+				});
+		}
 		(function () {
 			var calEl = document.getElementById("calendar");
 			var params = new URLSearchParams(window.location.search);
+			// A form about an event redirects back with ?event=<id>, so its
+			// modal opens again.
+			if (/^[0-9]+$/.test(params.get("event") || "")) {
+				openEventModal("/apps/calendar/events/" + params.get("event"));
+			}
 			var initDate = params.get("date");
 			var calOpts = {
 				initialView: "dayGridMonth",
@@ -254,22 +280,11 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 				},
 				eventClick: function (info) {
 					info.jsEvent.preventDefault();
-					var id = info.event.id;
-					fetch("/apps/calendar/events/" + id, {
-						headers: {
-							"X-CSRF-Token": document.querySelector("[name=csrf_token]").value,
-						},
-					})
-						.then(function (r) {
-							return r.text();
-						})
-						.then(function (html) {
-							var body = document.getElementById("event-modal-body");
-							body.innerHTML = html;
-							fillBrowserTimes(body);
-							htmx.process(body);
-							document.getElementById("event-modal").style.display = "flex";
-						});
+					var url = "/apps/calendar/events/" + info.event.id;
+					if (info.event.extendedProps.occurrence) {
+						url += "?occurrence=" + info.event.extendedProps.occurrence;
+					}
+					openEventModal(url);
 				},
 				dateClick: function (info) {
 					var modal = document.getElementById("create-modal");
@@ -332,7 +347,7 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 	</script>
 }
 
-templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee) {
+templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee, myStatus string, attachments []AttachmentView) {
 	<h2 style="margin-top:0">{ ev.Summary }</h2>
 	<div class="text-muted" style="margin-bottom:1rem">
 		{ formatEventTime(ev.DTStart, ev.DTEnd, ev.IsAllDay) }
@@ -380,14 +395,89 @@ templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Cale
 			</ul>
 		</div>
 	}
+	if myStatus != "" && !readOnly(cal) {
+		<div class="flex gap-1" style="margin-top:0.75rem;align-items:center">
+			<strong style="font-size:0.85rem">Going?</strong>
+			for _, opt := range []struct{ status, label string }{{"ACCEPTED", "Yes"}, {"TENTATIVE", "Maybe"}, {"DECLINED", "No"}} {
+				<button
+					type="button"
+					if myStatus == opt.status {
+						class="btn btn-sm btn-primary"
+					} else {
+						class="btn btn-sm"
+					}
+					hx-post={ fmt.Sprintf("/apps/calendar/events/%d/respond", ev.ID) }
+					hx-vals={ fmt.Sprintf(`{"status":%q}`, opt.status) }
+					hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":%q}`, csrfToken) }
+					hx-swap="none"
+					hx-on::after-request="document.getElementById('event-modal').style.display='none';location.reload()"
+				>{ opt.label }</button>
+			}
+		</div>
+	}
+	<div style="margin-top:0.75rem" id="em-attachments">
+		<strong style="font-size:0.85rem">Attachments</strong>
+		if len(attachments) > 0 {
+			<ul style="list-style:none;padding:0;margin:0.25rem 0">
+				for _, att := range attachments {
+					<li class="flex gap-1 items-center" style="padding:0.25rem 0;font-size:0.85rem">
+						if att.URL != "" {
+							<a href={ templ.SafeURL(att.URL) } download?={ att.Local() } target="_blank" rel="noopener noreferrer">{ att.Name }</a>
+						} else {
+							<span>{ att.Name }</span>
+						}
+						if att.Size != "" {
+							<span class="text-muted">({ att.Size })</span>
+						}
+						if att.ManagedID != "" && !readOnly(cal) {
+							<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d/attachments/remove", ev.ID)) } style="display:inline">
+								<input type="hidden" name="csrf_token" value={ csrfToken }/>
+								<input type="hidden" name="managed_id" value={ att.ManagedID }/>
+								<button type="submit" class="btn btn-sm">Remove</button>
+							</form>
+						}
+					</li>
+				}
+			</ul>
+		}
+		if !readOnly(cal) {
+			<form method="post" enctype="multipart/form-data" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d/attachments", ev.ID)) } class="flex gap-1 items-center" style="margin-top:0.25rem">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<input type="file" name="file" required/>
+				<button type="submit" class="btn btn-sm">Attach</button>
+			</form>
+		}
+	</div>
 	<div class="sidebar-divider" style="margin:1rem 0"></div>
+	if readOnly(cal) {
+		<p class="text-muted">{ readOnlyReason(cal) }</p>
+		<div class="flex gap-1" style="justify-content:flex-end">
+			<button type="button" class="btn" onclick="document.getElementById('event-modal').style.display='none'">Close</button>
+		</div>
+	} else {
+		@calEventEditForm(csrfToken, ev, cal, calendars, attendees)
+	}
+}
+
+templ calEventEditForm(csrfToken string, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee) {
 	<h3>Edit Event</h3>
 	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d", ev.ID)) } onsubmit="clearColorIfUnchecked('em-color-enable','em-color')">
 		<input type="hidden" name="csrf_token" value={ csrfToken }/>
+		if ev.Occurrence != 0 {
+			<input type="hidden" name="occurrence" value={ strconv.FormatInt(ev.Occurrence, 10) }/>
+			<div class="form-group">
+				<label for="em-scope">Apply to</label>
+				<select class="form-control" id="em-scope" name="scope">
+					<option value="this" selected>This event</option>
+					<option value="following">This and following events</option>
+					<option value="all">All events</option>
+				</select>
+			</div>
+		}
 		<div class="form-group">
 			<label for="em-calendar">Calendar</label>
 			<select class="form-control" id="em-calendar" name="calendar_id">
-				for _, c := range calendars {
+				for _, c := range writable(calendars) {
 					if c.ID == ev.CalendarID {
 						<option value={ strconv.FormatInt(c.ID, 10) } selected>{ c.Name }</option>
 					} else {
@@ -610,7 +700,10 @@ templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Cale
 			<button
 				type="button"
 				class="btn btn-danger"
-				hx-delete={ fmt.Sprintf("/apps/calendar/events/%d", ev.ID) }
+				hx-delete={ deleteURL(ev) }
+				if ev.Occurrence != 0 {
+					hx-include="#em-scope"
+				}
 				hx-confirm="Delete this event?"
 				hx-on::after-request="document.getElementById('event-modal').style.display='none';location.reload()"
 			>Delete</button>
@@ -640,6 +733,15 @@ templ emByDayCheckbox(prefix, day, label string, checked bool) {
 	</label>
 }
 
+// deleteURL deletes the event, or with the scope chosen in the form, part of
+// a series.
+func deleteURL(ev *Event) string {
+	if ev.Occurrence != 0 {
+		return fmt.Sprintf("/apps/calendar/events/%d?occurrence=%d", ev.ID, ev.Occurrence)
+	}
+	return fmt.Sprintf("/apps/calendar/events/%d", ev.ID)
+}
+
 func eventColorOrDefault(ev *Event, cal *Calendar) string {
 	if ev.Color != "" {
 		return ev.Color
@@ -653,9 +755,9 @@ func calDefaultColor(cal *Calendar) string {
 	return "#0082c9"
 }
 
-templ calSettingsPage(calendars []Calendar, csrfToken string) {
+templ calSettingsPage(v *settingsView, csrfToken string) {
 	<div class="sidebar-layout">
-		@calSidebar(calendars, "/apps/calendar/settings", csrfToken)
+		@calSidebar(v.Calendars, "/apps/calendar/settings", csrfToken)
 		<div class="sidebar-content">
 			<h1>Calendar Settings</h1>
 			@ui.Card("Create Calendar") {
@@ -681,7 +783,7 @@ templ calSettingsPage(calendars []Calendar, csrfToken string) {
 				</form>
 			}
 			@ui.Card("Calendars") {
-				if len(calendars) == 0 {
+				if len(v.Calendars) == 0 {
 					<p class="text-muted">No calendars.</p>
 				} else {
 					<table class="table">
@@ -695,7 +797,7 @@ templ calSettingsPage(calendars []Calendar, csrfToken string) {
 							</tr>
 						</thead>
 						<tbody>
-							for _, cal := range calendars {
+							for _, cal := range v.Calendars {
 								<tr id={ fmt.Sprintf("cal-%d", cal.ID) }>
 									<td>
 										<input class="form-control" type="color" name="color" value={ cal.Color } form={ fmt.Sprintf("cal-edit-%d", cal.ID) } aria-label="Color" style="width:3rem;padding:0.1rem"/>
@@ -706,19 +808,24 @@ templ calSettingsPage(calendars []Calendar, csrfToken string) {
 									<td>
 										<input class="form-control" type="text" name="timezone" value={ cal.Timezone } list="cal-timezones" placeholder="UTC" form={ fmt.Sprintf("cal-edit-%d", cal.ID) } aria-label="Timezone"/>
 									</td>
-									<td>{ cal.UID }</td>
+									<td>
+										{ cal.UID }
+										if cal.ReadOnly {
+											<span class="text-muted">(read-only)</span>
+										}
+									</td>
 									<td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
 										<form id={ fmt.Sprintf("cal-edit-%d", cal.ID) } method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID)) }>
 											<input type="hidden" name="csrf_token" value={ csrfToken }/>
 											<button class="btn btn-sm btn-primary" type="submit">Save</button>
 										</form>
-										<cog-share-button resource="calendar" resource-id={ strconv.FormatInt(cal.ID, 10) }>Share</cog-share-button>
+										<cog-share-button resource="dav:collection" resource-id={ strconv.FormatInt(cal.ID, 10) }>Share</cog-share-button>
 										<button
 											class="btn btn-sm"
 											hx-delete={ fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID) }
 											hx-target={ fmt.Sprintf("#cal-%d", cal.ID) }
 											hx-swap="outerHTML"
-											hx-confirm="Delete this calendar and all its events?"
+											hx-confirm="Delete this calendar and everything in it, tasks included?"
 										>Delete</button>
 									</td>
 								</tr>
@@ -730,6 +837,11 @@ templ calSettingsPage(calendars []Calendar, csrfToken string) {
 					</table>
 				}
 			}
+			if v.CanFeed {
+				@calFeedsCard(v, csrfToken)
+			}
+			@calSubscriptionsCard(v, csrfToken)
+			@calBirthdaysCard(v, csrfToken)
 			<datalist id="cal-timezones">
 				for _, tz := range commonTimezones {
 					<option value={ tz }></option>
@@ -755,6 +867,142 @@ templ calSettingsPage(calendars []Calendar, csrfToken string) {
 			}
 		</div>
 	</div>
+}
+
+templ calFeedsCard(v *settingsView, csrfToken string) {
+	@ui.Card("Feeds") {
+		<p class="text-muted">
+			A feed is a secret address any calendar app can subscribe to (webcal), without an account.
+			Anyone with the address sees the calendar, or only when you are busy; a new address or revoking it stops the old one at once.
+		</p>
+		<table class="table">
+			<thead>
+				<tr>
+					<th>Calendar</th>
+					<th>Whole calendar</th>
+					<th>Busy times only</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, cal := range v.Calendars {
+					<tr id={ fmt.Sprintf("cal-feed-%d", cal.ID) }>
+						<td>{ cal.Name }</td>
+						<td>
+							@calFeedCell(cal, "full", v.Feeds[cal.ID].Full, csrfToken)
+						</td>
+						<td>
+							@calFeedCell(cal, "busy", v.Feeds[cal.ID].Busy, csrfToken)
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+templ calFeedCell(cal Calendar, kind, url, csrfToken string) {
+	if url != "" {
+		@ui.ShareLink(url, "")
+		<div class="flex gap-1" style="margin-top:0.25rem">
+			<a class="btn btn-sm" href={ templ.SafeURL(webcalURL(url)) }>Open in calendar app</a>
+			@calFeedButton(cal, kind, "renew", "New address", csrfToken)
+			@calFeedButton(cal, kind, "revoke", "Revoke", csrfToken)
+		</div>
+	} else {
+		@calFeedButton(cal, kind, "renew", "Create feed", csrfToken)
+	}
+}
+
+templ calFeedButton(cal Calendar, kind, action, label, csrfToken string) {
+	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/calendars/%d/feed", cal.ID)) } style="display:inline">
+		<input type="hidden" name="csrf_token" value={ csrfToken }/>
+		<input type="hidden" name="kind" value={ kind }/>
+		<input type="hidden" name="action" value={ action }/>
+		<button class="btn btn-sm" type="submit">{ label }</button>
+	</form>
+}
+
+templ calSubscriptionsCard(v *settingsView, csrfToken string) {
+	@ui.Card("Subscriptions") {
+		<p class="text-muted">
+			A subscription is a read-only calendar filled from a feed elsewhere (a school's holidays, a team's fixtures), fetched again every hour or as often as the feed asks.
+		</p>
+		<form method="post" action="/apps/calendar/subscriptions" class="flex gap-1 items-end">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<div class="form-group" style="margin-bottom:0;flex:1">
+				<label for="sub-url">Feed address</label>
+				<input class="form-control" type="url" id="sub-url" name="url" placeholder="webcal://example.com/calendar.ics" required/>
+			</div>
+			<div class="form-group" style="margin-bottom:0">
+				<label for="sub-name">Name</label>
+				<input class="form-control" type="text" id="sub-name" name="name" placeholder="School holidays"/>
+			</div>
+			<div class="form-group" style="margin-bottom:0">
+				<label for="sub-color">Color</label>
+				<input class="form-control" type="color" id="sub-color" name="color" value="#7a7a7a"/>
+			</div>
+			<button class="btn btn-primary" type="submit">Subscribe</button>
+		</form>
+		if len(v.Subscriptions) > 0 {
+			<table class="table" style="margin-top:1rem">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Feed</th>
+						<th>Last fetched</th>
+						<th class="text-right">Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, sub := range v.Subscriptions {
+						<tr id={ fmt.Sprintf("sub-%d", sub.ID) }>
+							<td>{ sub.Name }</td>
+							<td style="word-break:break-all"><code>{ sub.Source }</code></td>
+							<td>
+								if sub.LastSuccess != "" {
+									{ sub.LastSuccess }
+								} else {
+									<span class="text-muted">never</span>
+								}
+								if sub.LastError != "" {
+									<div class="text-danger" style="font-size:0.85rem">
+										{ fmt.Sprintf("Failed %d× — %s. Next try %s.", sub.Failures, sub.LastError, sub.NextPoll) }
+									</div>
+								}
+								if sub.Skipped > 0 {
+									<div class="text-muted" style="font-size:0.85rem">{ fmt.Sprintf("%d entries skipped (not events Cog can read).", sub.Skipped) }</div>
+								}
+							</td>
+							<td class="text-right">
+								<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/subscriptions/%d/refresh", sub.ID)) } style="display:inline">
+									<input type="hidden" name="csrf_token" value={ csrfToken }/>
+									<button class="btn btn-sm" type="submit">Refresh now</button>
+								</form>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+			<p class="text-muted" style="font-size:0.85rem">Rename, recolour or delete a subscription in the calendar list above.</p>
+		}
+	}
+}
+
+templ calBirthdaysCard(v *settingsView, csrfToken string) {
+	@ui.Card("Birthdays") {
+		<form method="post" action="/apps/calendar/birthdays" class="flex gap-1 items-center">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			if v.Birthdays != nil {
+				<p style="margin:0;flex:1">The <strong>{ v.Birthdays.Name }</strong> calendar shows the birthdays and anniversaries of your contacts, and follows them as they change.</p>
+				<input type="hidden" name="enable" value="0"/>
+				<button class="btn btn-sm" type="submit">Turn off</button>
+			} else {
+				<p style="margin:0;flex:1" class="text-muted">Show your contacts' birthdays and anniversaries in a read-only calendar.</p>
+				<input type="hidden" name="enable" value="1"/>
+				<button class="btn btn-sm btn-primary" type="submit">Turn on</button>
+			}
+		</form>
+	}
 }
 
 func sidebarClass(activePath, itemPath string) string {

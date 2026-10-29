@@ -11,12 +11,8 @@ The Contacts plugin (`id: contacts`) provides address book management and full C
 
 ## 2. Data Model
 
-- **Address Books:** User-owned containers of contact cards.
-  - Properties: `id`, `name`, `description`, `color`, `order`, `sync_token`.
-  - Resource Type: `contacts:address_book`.
-- **Cards:** vCard objects within an address book.
-  - Properties: `id`, `address_book_id`, `uid`, `etag`, `uri`, `vcard_data`, `fn`, `email`, `tel`, `rev`, `created_at`, `updated_at`.
-  - Resource Type: `contacts:card`.
+- **Address Books:** DAV collections owned by the user, kept by the DAV core in the system database (`dav_collections`); shared as `dav:collection`.
+- **Cards:** rows in the plugin database (`cards` and its child tables), with the vCard text generated on read. Anything Cog does not model is kept and written back. See [dav-storage.md](../dav-storage.md) section 4.4.
 
 ## 3. CardDAV Compatibility
 
@@ -64,7 +60,7 @@ The Contacts plugin (`id: contacts`) provides address book management and full C
 - Suggested mapping:
   - `name`: `fn`
   - `subtext`: primary email or phone
-  - Full-text fields: `vcard_data`, `fn`, `email`, `tel`
+  - Full-text fields: `fn`, first email, first phone, `org`, `note`
 - Search indexing remains eventual-consistent via Collector pipeline.
 
 ## 7. Performance and Maintenance

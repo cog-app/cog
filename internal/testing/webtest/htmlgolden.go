@@ -2,6 +2,8 @@ package webtest
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -19,6 +21,10 @@ var (
 	volatileHex = regexp.MustCompile(`\b[0-9a-f]{16,}\b`)
 	// User and group identifiers.
 	volatileUUID = regexp.MustCompile(`\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
+	// The per-test directory t.TempDir creates under the system temp
+	// directory, named after the test plus a random suffix. A page that shows
+	// a path (an admin's volume list) shows the data directory cogtest made.
+	volatileTempRoot = regexp.MustCompile(regexp.QuoteMeta(filepath.Clean(os.TempDir())) + `/Test[^/\s"'<>]*`)
 )
 
 // normalizeDOM turns a serialised page into a stable, readable golden.
@@ -36,6 +42,7 @@ func normalizeDOM(raw string) (string, error) {
 	writeNode(&b, doc, 0)
 
 	out := b.String()
+	out = volatileTempRoot.ReplaceAllString(out, "«tmp»")
 	out = volatileUUID.ReplaceAllString(out, "«uuid»")
 	out = volatileHex.ReplaceAllString(out, "«hex»")
 

@@ -17,7 +17,7 @@ templ upcomingTasksWidget(tasks []TaskWithList) {
 				</a>
 				if t.DueAt != nil {
 					<span class="text-muted" style="font-size:0.85rem;white-space:nowrap">
-						{ widgetDueDate(*t.DueAt) }
+						{ widgetDueDate(&t.Task) }
 					</span>
 				}
 			</div>
@@ -25,9 +25,9 @@ templ upcomingTasksWidget(tasks []TaskWithList) {
 	}
 }
 
-func widgetDueDate(unix int64) string {
-	t := time.Unix(unix, 0)
-	now := time.Now()
+func widgetDueDate(task *Task) string {
+	t := dueTime(task)
+	now := time.Now().In(t.Location())
 	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
 		return "Today"
 	}

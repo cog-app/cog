@@ -6,7 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -22,8 +22,7 @@ import (
 )
 
 func TestSSHInteractiveShell(t *testing.T) {
-	dbName := url.PathEscape(t.Name())
-	sysDB, err := sql.Open("sqlite3", "file:"+dbName+"?mode=memory&cache=shared&_journal_mode=WAL&_foreign_keys=on")
+	sysDB, err := sql.Open("sqlite3", "file:"+filepath.Join(t.TempDir(), "system.db")+"?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=on")
 	require.NoError(t, err)
 	require.NoError(t, db.Migrate(sysDB))
 	t.Cleanup(func() { sysDB.Close() })
@@ -37,7 +36,8 @@ func TestSSHInteractiveShell(t *testing.T) {
 	}
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	p := services.NewFromDB(log, cfg, sysDB, clock.System())
+	p, err := services.NewFromDB(log, cfg, sysDB, clock.System())
+	require.NoError(t, err)
 	t.Cleanup(p.Plugins.Stop)
 	require.NoError(t, p.Plugins.Start(context.Background()))
 	_, err = p.Users.Create("testuser", "testpass")

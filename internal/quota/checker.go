@@ -57,7 +57,7 @@ func (c *Checker) QuotaCheck(username string, additionalBytes int64) error {
 	if c.Usage != nil {
 		used, err = c.Usage(username)
 		if err != nil {
-			return nil // can't determine usage, allow
+			return fmt.Errorf("quota check: %w", err)
 		}
 	}
 

@@ -1,2 +1,2 @@
--- IF COLUMN cards.photo_path NOT EXIST
-ALTER TABLE cards ADD COLUMN photo_path TEXT NOT NULL DEFAULT '';
+-- IF COLUMN cards.created_version NOT EXIST
+ALTER TABLE cards ADD COLUMN created_version INTEGER NOT NULL DEFAULT 0;

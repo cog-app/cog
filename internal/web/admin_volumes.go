@@ -405,6 +405,7 @@ func (h *shareHandler) SharePanelAdmin(w http.ResponseWriter, r *http.Request) {
 			sd.SubjectName = "Public link"
 			if rec.Token != nil {
 				sd.Token = *rec.Token
+				sd.LinkPath = "/s/" + sd.Token
 			}
 		case "INSTANCE":
 			sd.SubjectName = "Everyone"

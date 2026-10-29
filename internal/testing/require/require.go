@@ -81,7 +81,7 @@ func False(t testing.TB, value bool, msgAndArgs ...any) {
 // Nil asserts that obj is nil.
 func Nil(t testing.TB, obj any, msgAndArgs ...any) {
 	t.Helper()
-	if obj != nil && !reflect.ValueOf(obj).IsNil() {
+	if !isNil(obj) {
 		fail(t, fmt.Sprintf("expected nil, got %v", obj), msgAndArgs...)
 	}
 }
@@ -89,7 +89,7 @@ func Nil(t testing.TB, obj any, msgAndArgs ...any) {
 // NotNil asserts that obj is not nil.
 func NotNil(t testing.TB, obj any, msgAndArgs ...any) {
 	t.Helper()
-	if obj == nil || reflect.ValueOf(obj).IsNil() {
+	if isNil(obj) {
 		fail(t, "expected non-nil value", msgAndArgs...)
 	}
 }
@@ -142,4 +142,17 @@ func NotEmpty[T comparable](t testing.TB, v T, msgAndArgs ...any) {
 	if v == zero {
 		fail(t, "expected non-zero value", msgAndArgs...)
 	}
+}
+
+// isNil reports whether obj is nil or a nil pointer, map, slice, channel,
+// function or interface. A value of any other kind is not nil.
+func isNil(obj any) bool {
+	if obj == nil {
+		return true
+	}
+	switch v := reflect.ValueOf(obj); v.Kind() {
+	case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func, reflect.Interface, reflect.UnsafePointer:
+		return v.IsNil()
+	}
+	return false
 }

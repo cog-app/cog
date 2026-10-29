@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +13,9 @@ import (
 	"sync"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/dav"
+	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
+	"git.duckfam.us/jj-software/cog/internal/dav/ical"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
@@ -24,11 +28,11 @@ const PluginID = "calendar"
 
 // Plugin is the calendar plugin.
 type Plugin struct {
-	ctx      plugin.PluginContext
-	log      *slog.Logger
-	cancel   context.CancelFunc
-	done     chan struct{}
-	repaired sync.Map // username -> struct{}: RepairEventTimes ran this process
+	ctx    plugin.PluginContext
+	log    *slog.Logger
+	cancel context.CancelFunc
+	loops  sync.WaitGroup
+	dav    *dav.Server
 }
 
 // New creates a new Calendar plugin instance.
@@ -47,31 +51,33 @@ func (p *Plugin) DB(username string) (*sql.DB, error) {
 	return p.ctx.PluginDB(username)
 }
 
-// userDB is DB plus repairOnce. Use it wherever event times are read.
-func (p *Plugin) userDB(username string) (*sql.DB, error) {
-	db, err := p.DB(username)
-	if err != nil {
-		return nil, err
+// me returns the user as the DAV core knows them, with their email.
+func (p *Plugin) me(userID string) (*dav.User, error) {
+	if p.dav == nil {
+		return nil, errors.New("calendar: no DAV server")
 	}
-	if err := p.repairOnce(username, db); err != nil {
-		return nil, err
-	}
-	return db, nil
+	return p.dav.Users.ByID(userID)
 }
 
-// repairOnce brings a user's indexed event times up to date with the current
-// parser the first time their database is used in this process. Plugin
-// migrations are SQL-only, and re-deriving times needs the ICS parser.
-func (p *Plugin) repairOnce(username string, db *sql.DB) error {
-	if _, done := p.repaired.Load(username); done {
-		return nil
+// plan works out what storing new in place of old sends (old nil for a new
+// event, new nil for a deleted one); the caller sends it once stored.
+func (p *Plugin) plan(userID string, old, new *ical.Object) (*dav.Delivery, error) {
+	if p.dav == nil {
+		return nil, nil
 	}
-	if err := RepairEventTimes(db); err != nil {
-		return fmt.Errorf("repair event times for %s: %w", username, err)
-	}
-	p.repaired.Store(username, struct{}{})
-	return nil
+	return p.dav.PlanFor(userID, old, new)
 }
+
+// organizerOf is the ORGANIZER Cog writes for a user.
+func organizerOf(u *dav.User) *ical.Organizer {
+	return &ical.Organizer{Address: dav.CalendarAddress(u), CN: u.DisplayName}
+}
+
+// SetDAV implements dav.Provider.
+func (p *Plugin) SetDAV(s *dav.Server) { p.dav = s }
+
+// DAVBackends implements dav.Provider: events in any calendar collection.
+func (p *Plugin) DAVBackends() []dav.Backend { return []dav.Backend{newBackend(p)} }
 
 func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	p.ctx = ctx
@@ -85,19 +91,8 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		Render:   p.renderWidget,
 	})
 	ctx.RegisterSearchSource(plugin.SearchSourceDef{
-		PrimaryTable: "events",
-		EnrichSQL:    "SELECT rowid, summary, location, description FROM events WHERE rowid IN (?)",
-	})
-	ctx.RegisterResource(plugin.ResourceDef{
-		Type:     "calendar",
-		Table:    "calendars",
-		IDColumn: "uid",
-		PermissionLevels: []plugin.PermissionLevel{
-			{Label: "Read-only", Permissions: plugin.PermRead},
-			{Label: "Read/Write", Permissions: plugin.PermRead | plugin.PermWrite},
-			{Label: "Free/Busy only", Permissions: plugin.PermFreeBusy},
-			{Label: "Appointment Scheduling", Permissions: plugin.PermRead | plugin.PermFreeBusy | plugin.PermSchedule},
-		},
+		PrimaryTable: "vevents",
+		EnrichSQL:    "SELECT rowid, summary, location, description FROM vevents WHERE rowid IN (?)",
 	})
 
 	// Web UI routes
@@ -110,101 +105,57 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "events", http.HandlerFunc(pages.CreateEvent))
 	ctx.RegisterAction("DELETE", "events/{id}", http.HandlerFunc(pages.DeleteEvent))
 	ctx.RegisterAction("POST", "events/{id}/respond", http.HandlerFunc(pages.RespondToInvite))
+	ctx.RegisterAction("POST", "events/{id}/attachments", http.HandlerFunc(pages.UploadAttachment))
+	ctx.RegisterAction("POST", "events/{id}/attachments/remove", http.HandlerFunc(pages.RemoveAttachment))
+	ctx.RegisterAPI("events/{id}/attachments/{comp}/{n}", http.HandlerFunc(pages.InlineAttachment))
 	ctx.RegisterAction("POST", "calendars", http.HandlerFunc(pages.CreateCalendar))
 	ctx.RegisterAction("POST", "calendars/{id}", http.HandlerFunc(pages.UpdateCalendarHandler))
 	ctx.RegisterAction("DELETE", "calendars/{id}", http.HandlerFunc(pages.DeleteCalendarHandler))
+	ctx.RegisterAction("POST", "calendars/{id}/feed", http.HandlerFunc(pages.Feed))
+	ctx.RegisterAction("POST", "subscriptions", http.HandlerFunc(pages.Subscribe))
+	ctx.RegisterAction("POST", "subscriptions/{id}/refresh", http.HandlerFunc(pages.RefreshSubscription))
+	ctx.RegisterAction("POST", "birthdays", http.HandlerFunc(pages.Birthdays))
 	ctx.RegisterAPI("notifications", http.HandlerFunc(pages.Notifications))
 	ctx.RegisterAPI("rrule-preview", http.HandlerFunc(pages.RRulePreview))
-
-	// CalDAV endpoints
-	caldav := NewCalDAVHandler(p)
-	ctx.RegisterDAVHandler("calendars", caldav)
-	ctx.RegisterDAVHandler("principals", caldav)
 
 	return nil
 }
 
 func (p *Plugin) Start(ctx context.Context) error {
 	ctx, p.cancel = context.WithCancel(ctx)
-	p.done = make(chan struct{})
-	go p.reminderLoop(ctx)
+	p.loops.Go(func() { p.reminderLoop(ctx) })
+	if p.dav != nil {
+		p.loops.Go(func() { p.subscriptionLoop(ctx) })
+	}
 	return nil
 }
 
 func (p *Plugin) Stop() error {
 	if p.cancel != nil {
 		p.cancel()
-		<-p.done
+		p.loops.Wait()
 	}
 	return nil
 }
 
-func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
-	db, err := p.userDB(userID)
+func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, username string) error {
+	db, err := p.DB(username)
 	if err != nil {
-		return nil
+		return err
 	}
-	events, _ := UpcomingEvents(db, p.ctx.Now().Unix(), 5)
+	userID, err := p.userID(username)
+	if err != nil {
+		return err
+	}
+	cals, err := p.calendarMap(userID)
+	if err != nil {
+		return err
+	}
+	events, err := UpcomingEvents(db, cals, p.ctx.Now().Unix(), 5)
+	if err != nil {
+		return err
+	}
 	return eventsWidget(events).Render(ctx, w)
-}
-
-// SharedCalendar describes a calendar shared to the current user from another user.
-type SharedCalendar struct {
-	Calendar
-	OwnerUsername string
-	Permissions   uint32
-}
-
-// SharedCalendars returns calendars shared with the given user from other users.
-// It queries the share store for calendar:calendar shares targeting this user,
-// then fetches the calendar details from each owner's plugin DB.
-func (p *Plugin) SharedCalendars(username string) ([]SharedCalendar, error) {
-	shares := p.ctx.ShareStore()
-	if shares == nil {
-		return nil, nil
-	}
-	var result []SharedCalendar
-	for rec, err := range shares.ListBySubject(username) {
-		if err != nil {
-			return nil, err
-		}
-		if rec.ResourceType != "calendar:calendar" {
-			continue
-		}
-		// rec.OwnerUserID is the username of the calendar owner.
-		// rec.ResourceID is the calendar UID in the owner's DB.
-		ownerDB, err := p.userDB(rec.OwnerUserID)
-		if err != nil {
-			continue
-		}
-		cal, err := GetCalendarByUID(ownerDB, rec.ResourceID)
-		if err != nil {
-			continue
-		}
-		result = append(result, SharedCalendar{
-			Calendar:      *cal,
-			OwnerUsername: rec.OwnerUserID,
-			Permissions:   rec.Permissions,
-		})
-	}
-	return result, nil
-}
-
-// CheckCalendarAccess checks if a user has access to a specific calendar owned by another user.
-// Returns the effective permissions (0 if no access).
-func (p *Plugin) CheckCalendarAccess(userID, calendarUID string) (uint32, string, error) {
-	shares := p.ctx.ShareStore()
-	if shares == nil {
-		return 0, "", nil
-	}
-	decision, err := shares.CheckAccess(userID, "calendar:calendar", calendarUID)
-	if err != nil {
-		return 0, "", err
-	}
-	if decision.Allowed {
-		return decision.EffectivePerms, decision.OwnerUserID, nil
-	}
-	return 0, "", nil
 }
 
 // Notification represents a pending or fired reminder notification.
@@ -217,7 +168,6 @@ type Notification struct {
 
 // reminderLoop periodically checks for due alarm notifications across all users.
 func (p *Plugin) reminderLoop(ctx context.Context) {
-	defer close(p.done)
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
@@ -244,31 +194,47 @@ func (p *Plugin) processReminders() {
 	// A production system would iterate over all users with calendar DBs.
 }
 
-// EnsureNotifications creates notification records for an event's alarms.
-// Call this when creating or updating an event.
-func EnsureNotifications(db *sql.DB, eventID int64, dtstart int64, icsData string) error {
-	// Clear old notifications for this event.
-	if _, err := db.Exec(`DELETE FROM notifications WHERE event_id = ?`, eventID); err != nil {
+// ensureNotifications replaces an event's reminder records with those of
+// its first instance that has not ended, in the transaction that writes it.
+func ensureNotifications(q davsql.Querier, eventID int64, o *ical.Object, z ical.Zones, now int64) error {
+	if _, err := q.Exec(`DELETE FROM notifications WHERE event_id = ?`, eventID); err != nil {
 		return fmt.Errorf("clear notifications: %w", err)
 	}
-
-	// Only VALARM triggers are needed here; times come from dtstart.
-	fields, err := ParseVEvent(icsData)
-	if err != nil || len(fields.Alarms) == 0 {
+	from := time.Unix(now, 0)
+	ins, err := o.Instances(z, from, from.Add(upcomingHorizon))
+	if err != nil || len(ins) == 0 {
+		// Nothing ahead to remind about; a recurrence Cog cannot expand
+		// has no reminders either.
 		return nil
 	}
-
-	for _, alarm := range fields.Alarms {
-		triggerAt := parseTriggerTime(dtstart, alarm.Trigger)
-		if triggerAt <= 0 {
+	in := ins[0]
+	for _, a := range in.Event.Alarms {
+		at, ok := triggerTime(a, in)
+		if !ok {
 			continue
 		}
-		if _, err := db.Exec(`INSERT INTO notifications (event_id, trigger_at) VALUES (?, ?)`,
-			eventID, triggerAt); err != nil {
+		if _, err := q.Exec(`INSERT INTO notifications (event_id, trigger_at) VALUES (?, ?)`, eventID, at.Unix()); err != nil {
 			return fmt.Errorf("insert notification: %w", err)
 		}
 	}
 	return nil
+}
+
+// triggerTime returns when an alarm fires for an instance.
+func triggerTime(a ical.Alarm, in ical.Instance) (time.Time, bool) {
+	if a.Absolute {
+		t, err := time.Parse("20060102T150405Z", a.Trigger)
+		return t, err == nil
+	}
+	d, err := ical.ParseDuration(a.Trigger)
+	if err != nil {
+		return time.Time{}, false
+	}
+	base := in.Start
+	if strings.EqualFold(a.Related, "END") {
+		base = in.End
+	}
+	return d.Add(base), true
 }
 
 // DueNotifications returns unfired notifications that are due (trigger_at <= now).
@@ -295,77 +261,9 @@ func DueNotifications(db *sql.DB, now int64) ([]Notification, error) {
 }
 
 // MarkNotificationFired marks a notification as fired.
-func MarkNotificationFired(db *sql.DB, id int64) {
-	db.Exec(`UPDATE notifications SET fired = 1 WHERE id = ?`, id)
-}
-
-// parseTriggerTime converts a VALARM trigger (e.g. "-PT15M") to a unix timestamp
-// relative to the event start.
-func parseTriggerTime(dtstart int64, trigger string) int64 {
-	if trigger == "" {
-		return 0
+func MarkNotificationFired(db *sql.DB, id int64) error {
+	if _, err := db.Exec(`UPDATE notifications SET fired = 1 WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("mark notification %d fired: %w", id, err)
 	}
-
-	negative := false
-	s := trigger
-	if s[0] == '-' {
-		negative = true
-		s = s[1:]
-	}
-
-	// Parse ISO 8601 duration: PT15M, PT1H, P1D, PT30S, etc.
-	if len(s) < 2 {
-		return 0
-	}
-
-	var totalSeconds int64
-
-	// Skip leading P
-	if s[0] == 'P' {
-		s = s[1:]
-	}
-
-	// Check for days before T
-	if idx := strings.IndexByte(s, 'D'); idx > 0 {
-		if d, err := fmt.Sscanf(s[:idx], "%d", new(int)); d == 1 && err == nil {
-			var days int
-			fmt.Sscanf(s[:idx], "%d", &days)
-			totalSeconds += int64(days) * 86400
-		}
-		s = s[idx+1:]
-	}
-
-	// Skip T
-	if len(s) > 0 && s[0] == 'T' {
-		s = s[1:]
-	}
-
-	// Parse H, M, S
-	for len(s) > 0 {
-		var num int
-		var unit byte
-		n, err := fmt.Sscanf(s, "%d%c", &num, &unit)
-		if n < 2 || err != nil {
-			break
-		}
-		switch unit {
-		case 'H':
-			totalSeconds += int64(num) * 3600
-		case 'M':
-			totalSeconds += int64(num) * 60
-		case 'S':
-			totalSeconds += int64(num)
-		}
-		// Advance past the parsed portion.
-		idx := strings.IndexByte(s, unit)
-		if idx < 0 {
-			break
-		}
-		s = s[idx+1:]
-	}
-
-	if negative {
-		return dtstart - totalSeconds
-	}
-	return dtstart + totalSeconds
+	return nil
 }

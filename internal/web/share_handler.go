@@ -2,16 +2,20 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/search"
+	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/share"
+	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
@@ -32,6 +36,8 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 	levels := defaultPermissionLevels()
 	if def, ok := h.p.Plugins.ResourceDefByType(resType); ok && len(def.PermissionLevels) > 0 {
 		levels = def.PermissionLevels
+	} else if resType == dav.ShareType {
+		levels = davPermissionLevels
 	}
 
 	// Convert to UI types.
@@ -41,10 +47,32 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get existing shares for this resource.
+	// A collection's public link is its feed, whose name says what it holds.
+	feedHome := dav.HomeCalendars
+	if resType == dav.ShareType {
+		id, err := strconv.ParseInt(resID, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid collection", http.StatusBadRequest)
+			return
+		}
+		c, err := h.p.DAV.Collections.ByID(dav.CollectionID(id))
+		switch {
+		case errors.Is(err, dav.ErrNotFound):
+			http.NotFound(w, r)
+			return
+		case err != nil:
+			h.p.Log.Error("share panel: look up collection", "id", resID, "err", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		feedHome = c.Home
+	}
 	var shares []ui.ShareDisplayItem
 	for rec, err := range h.p.Shares.ListByResource(resType, resID) {
 		if err != nil {
-			break
+			h.p.Log.Error("share panel: list shares", "type", resType, "id", resID, "err", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
 		}
 		if rec.OwnerUserID != u.ID {
 			continue // only show shares owned by this user
@@ -56,7 +84,15 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 		}
 		switch rec.SubjectType {
 		case "USER":
-			if su, err := h.p.Users.GetByID(rec.SubjectID); err == nil {
+			su, err := h.p.Users.GetByID(rec.SubjectID)
+			switch {
+			case errors.Is(err, user.ErrNotFound):
+				sd.SubjectName = "(deleted user)"
+			case err != nil:
+				h.p.Log.Error("share panel: look up sharee", "user", rec.SubjectID, "err", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			default:
 				sd.SubjectName = su.DisplayName
 				if sd.SubjectName == "" {
 					sd.SubjectName = su.Username
@@ -68,6 +104,13 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 			sd.SubjectName = "Public link"
 			if rec.Token != nil {
 				sd.Token = *rec.Token
+				sd.LinkPath = "/s/" + sd.Token
+				if resType == dav.ShareType {
+					// A calendar's public link is its ICS feed, an
+					// address book's a vCard file of its cards.
+					sd.SubjectName = "Feed"
+					sd.LinkPath = strings.TrimPrefix(h.p.DAV.FeedURL(sd.Token, feedHome), strings.TrimSuffix(h.p.Config.BaseURL, "/"))
+				}
 			}
 		case "INSTANCE":
 			sd.SubjectName = "Everyone"
@@ -82,7 +125,9 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 	if panelID == "" {
 		panelID = "share-panel"
 	}
-	ui.SharePanel(panelID, resType, resID, csrf, shares, levelChoices).Render(r.Context(), w)
+	if err := ui.SharePanel(panelID, resType, resID, csrf, shares, levelChoices).Render(r.Context(), w); err != nil {
+		h.p.Log.Error("render share panel", "err", err)
+	}
 }
 
 // CreateShareForm handles POST from the share panel form (form-encoded, HTMX).
@@ -194,7 +239,9 @@ func (h *shareHandler) UserSearch(w http.ResponseWriter, r *http.Request) {
 	var results []map[string]string
 	for u2, err := range h.p.Users.List() {
 		if err != nil {
-			break
+			h.p.Log.Error("user search", "err", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
 		}
 		if u2.ID == u.ID {
 			continue
@@ -235,7 +282,9 @@ func (h *shareHandler) PickerSearch(w http.ResponseWriter, r *http.Request) {
 	case "group":
 		for g, err := range h.p.Groups.List() {
 			if err != nil {
-				break
+				h.p.Log.Error("user search", "err", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
 			}
 			if q != "" && !strings.Contains(strings.ToLower(g.Name), q) {
 				continue
@@ -252,7 +301,9 @@ func (h *shareHandler) PickerSearch(w http.ResponseWriter, r *http.Request) {
 	default: // "user"
 		for u2, err := range h.p.Users.List() {
 			if err != nil {
-				break
+				h.p.Log.Error("user search", "err", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
 			}
 			if u2.ID == u.ID {
 				continue
@@ -277,7 +328,9 @@ func (h *shareHandler) PickerSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ui.PickerResults(items).Render(r.Context(), w)
+	if err := ui.PickerResults(items).Render(r.Context(), w); err != nil {
+		h.p.Log.Error("render picker results", "err", err)
+	}
 }
 
 // CreateFederatedShareForm handles POST from the share panel federated share form (HTMX).
@@ -380,32 +433,36 @@ func (h *shareHandler) CreateFederatedShareForm(w http.ResponseWriter, r *http.R
 	h.SharePanel(w, r)
 }
 
-func (h *shareHandler) propagateShareCreate(rec *share.Record) {
-	if h.p.Search == nil || h.p.Search.Propagator == nil || rec == nil {
+func (h *shareHandler) propagateShareCreate(rec *share.Record) { propagateShareCreate(h.p, rec) }
+
+func (h *shareHandler) propagateShareDelete(rec *share.Record) { propagateShareDelete(h.p, rec) }
+
+// propagateShareCreate indexes a new share's resource for its recipients.
+func propagateShareCreate(p *services.Providers, rec *share.Record) {
+	if p.Search == nil || p.Search.Propagator == nil || rec == nil {
 		return
 	}
-	h.p.Search.Propagator.OnShareCreate(&search.ShareRecord{
-		ID:           rec.ID,
-		OwnerUserID:  rec.OwnerUserID,
-		ResourceType: rec.ResourceType,
-		ResourceID:   rec.ResourceID,
-		SubjectType:  rec.SubjectType,
-		SubjectID:    rec.SubjectID,
-	})
+	p.Search.Propagator.OnShareCreate(searchShare(rec))
 }
 
-func (h *shareHandler) propagateShareDelete(rec *share.Record) {
-	if h.p.Search == nil || h.p.Search.Propagator == nil || rec == nil {
+// propagateShareDelete removes a share's resource from its recipients'
+// indexes.
+func propagateShareDelete(p *services.Providers, rec *share.Record) {
+	if p.Search == nil || p.Search.Propagator == nil || rec == nil {
 		return
 	}
-	h.p.Search.Propagator.OnShareDelete(&search.ShareRecord{
+	p.Search.Propagator.OnShareDelete(searchShare(rec))
+}
+
+func searchShare(rec *share.Record) *search.ShareRecord {
+	return &search.ShareRecord{
 		ID:           rec.ID,
 		OwnerUserID:  rec.OwnerUserID,
 		ResourceType: rec.ResourceType,
 		ResourceID:   rec.ResourceID,
 		SubjectType:  rec.SubjectType,
 		SubjectID:    rec.SubjectID,
-	})
+	}
 }
 
 func defaultPermissionLevels() []plugin.PermissionLevel {

@@ -21,19 +21,23 @@ type shareStoreAdapter struct {
 func (a *shareStoreAdapter) ListBySubject(subjectID string) iter.Seq2[plugin.ShareRecord, error] {
 	return func(yield func(plugin.ShareRecord, error) bool) {
 		for rec, err := range a.s.ListBySubject(subjectID) {
-			pr := plugin.ShareRecord{
-				ID:           rec.ID,
-				OwnerUserID:  rec.OwnerUserID,
-				ResourceType: rec.ResourceType,
-				ResourceID:   rec.ResourceID,
-				SubjectType:  rec.SubjectType,
-				SubjectID:    rec.SubjectID,
-				Permissions:  rec.Permissions,
-			}
-			if !yield(pr, err) {
+			if !yield(pluginShare(&rec), err) {
 				return
 			}
 		}
+	}
+}
+
+// pluginShare is a share record as plugins see it.
+func pluginShare(rec *share.Record) plugin.ShareRecord {
+	return plugin.ShareRecord{
+		ID:           rec.ID,
+		OwnerUserID:  rec.OwnerUserID,
+		ResourceType: rec.ResourceType,
+		ResourceID:   rec.ResourceID,
+		SubjectType:  rec.SubjectType,
+		SubjectID:    rec.SubjectID,
+		Permissions:  rec.Permissions,
 	}
 }
 

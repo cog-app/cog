@@ -1,76 +1,80 @@
 package contacts
 
 import (
-	"crypto/md5"
+	"errors"
 	"fmt"
+
+	"git.duckfam.us/jj-software/cog/internal/dav"
+	"git.duckfam.us/jj-software/cog/internal/dav/vcard"
 )
 
 // Seed creates sample address books and contacts for a user.
 func (p *Plugin) Seed(username string) error {
-	db, err := p.DB(username)
+	s, err := p.Store(username)
+	if err != nil {
+		return fmt.Errorf("seed contacts: %w", err)
+	}
+	userID, err := p.userID(username)
 	if err != nil {
 		return fmt.Errorf("seed contacts: %w", err)
 	}
 
 	// Check if already seeded.
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM address_books`).Scan(&count)
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM cards`).Scan(&count); err != nil {
+		return fmt.Errorf("seed contacts: %w", err)
+	}
 	if count > 0 {
 		return nil
 	}
 
-	db.Exec(`INSERT INTO address_books (uid, name, color) VALUES ('contacts', 'Contacts', '#0082c9')`)
-	db.Exec(`INSERT INTO address_books (uid, name, color) VALUES ('work', 'Work', '#e64a19')`)
+	books, err := p.Books(userID)
+	if err != nil {
+		return fmt.Errorf("seed contacts: %w", err)
+	}
+	ids := map[string]int64{"contacts": books[0].ID}
+	work, err := p.BookByName(userID, "work")
+	if errors.Is(err, dav.ErrNotFound) {
+		work, err = p.CreateBook(userID, "work", "Work", "", "#e64a19")
+	}
+	if err != nil {
+		return fmt.Errorf("seed contacts: %w", err)
+	}
+	ids["work"] = work.ID
 
 	type seedCard struct {
-		bookUID string
-		uid     string
-		fn      string
-		email   string
-		tel     string
+		bookUID       string
+		uid           string
+		given, family string
+		email         string
+		tel           string
 	}
 
 	cards := []seedCard{
-		{"contacts", "alice-smith", "Alice Smith", "alice@example.com", "+1-555-0101"},
-		{"contacts", "bob-jones", "Bob Jones", "bob.jones@example.com", "+1-555-0102"},
-		{"contacts", "carol-white", "Carol White", "carol@example.com", ""},
-		{"contacts", "david-brown", "David Brown", "", "+1-555-0104"},
-		{"work", "emma-wilson", "Emma Wilson", "emma.wilson@company.com", "+1-555-0201"},
-		{"work", "frank-taylor", "Frank Taylor", "frank.t@company.com", "+1-555-0202"},
-		{"work", "grace-lee", "Grace Lee", "grace.lee@company.com", "+1-555-0203"},
+		{"contacts", "alice-smith", "Alice", "Smith", "alice@example.com", "+1-555-0101"},
+		{"contacts", "bob-jones", "Bob", "Jones", "bob.jones@example.com", "+1-555-0102"},
+		{"contacts", "carol-white", "Carol", "White", "carol@example.com", ""},
+		{"contacts", "david-brown", "David", "Brown", "", "+1-555-0104"},
+		{"work", "emma-wilson", "Emma", "Wilson", "emma.wilson@company.com", "+1-555-0201"},
+		{"work", "frank-taylor", "Frank", "Taylor", "frank.t@company.com", "+1-555-0202"},
+		{"work", "grace-lee", "Grace", "Lee", "grace.lee@company.com", "+1-555-0203"},
 	}
 
-	for _, c := range cards {
-		vc := vcard(c.uid, c.fn, c.email, c.tel)
-		etag := fmt.Sprintf("%x", md5.Sum([]byte(vc)))
-		uri := c.uid + ".vcf"
-		var bookID int64
-		db.QueryRow(`SELECT id FROM address_books WHERE uid = ?`, c.bookUID).Scan(&bookID)
-		_, err := db.Exec(`INSERT INTO cards (address_book_id, uid, uri, etag, fn, email, tel, vcard_data)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			bookID, c.uid, uri, etag, c.fn, c.email, c.tel, vc)
-		if err != nil {
-			p.log.Error("seed contact", "uid", c.uid, "err", err)
-		} else {
-			p.log.Info("seeded contact", "name", c.fn)
+	now := p.ctx.Now()
+	for _, sc := range cards {
+		c := NewCard(now)
+		c.UID = sc.uid
+		c.N = &vcard.Name{Given: []string{sc.given}, Family: []string{sc.family}}
+		c.FN = c.N.Formatted()
+		if sc.email != "" {
+			c.Emails = []vcard.Value{{Meta: vcard.Meta{Types: []string{"INTERNET"}}, Value: sc.email}}
+		}
+		if sc.tel != "" {
+			c.Phones = []vcard.Value{{Meta: vcard.Meta{Types: []string{"CELL"}}, Value: sc.tel}}
+		}
+		if _, err := s.Save(ids[sc.bookUID], nil, c, now); err != nil {
+			return fmt.Errorf("seed contact %s: %w", sc.uid, err)
 		}
 	}
-
-	db.Exec(`UPDATE address_books SET ctag = (SELECT COUNT(*) FROM cards WHERE address_book_id = address_books.id)`)
 	return nil
-}
-
-func vcard(uid, fn, email, tel string) string {
-	s := "BEGIN:VCARD\r\nVERSION:3.0\r\n"
-	s += "UID:" + uid + "\r\n"
-	s += "FN:" + fn + "\r\n"
-	if email != "" {
-		s += "EMAIL;TYPE=INTERNET:" + email + "\r\n"
-	}
-	if tel != "" {
-		s += "TEL;TYPE=CELL:" + tel + "\r\n"
-	}
-	s += "REV:20260305T120000Z\r\n"
-	s += "END:VCARD\r\n"
-	return s
 }

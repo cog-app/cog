@@ -2,17 +2,19 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/pprof"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/compat"
 	"git.duckfam.us/jj-software/cog/internal/federation"
+	"git.duckfam.us/jj-software/cog/internal/jmap"
 	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/share"
-	"git.duckfam.us/jj-software/cog/plugin/calendar"
+	"git.duckfam.us/jj-software/cog/plugin"
 	filesPlugin "git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -69,6 +71,7 @@ func New(p *services.Providers) http.Handler {
 	h := handler{p}
 	loginH := loginHandler{h}
 	settingsH := settingsHandler{h}
+	dataH := dataHandler{h}
 	adminH := adminHandler{h}
 	adminVolH := adminVolumeHandler{h}
 	volBrowserH := volumeBrowserHandler{h}
@@ -104,6 +107,10 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /settings/profile", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowProfile)))
 	mux.Handle("GET /settings/security", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowSecurity)))
 	mux.Handle("GET /settings/storage", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowStorage)))
+	mux.Handle("GET /settings/data", auth.RequireAuthWeb(http.HandlerFunc(dataH.ShowData)))
+	mux.Handle("GET /settings/data/export/{id}", auth.RequireAuthWeb(http.HandlerFunc(dataH.Export)))
+	mux.Handle("GET /settings/data/export.zip", auth.RequireAuthWeb(http.HandlerFunc(dataH.ExportAll)))
+	mux.Handle("POST /settings/data/import", csrfWeb(http.HandlerFunc(dataH.Import)))
 	mux.Handle("POST /settings/profile", csrfWeb(http.HandlerFunc(settingsH.UpdateProfile)))
 	mux.Handle("POST /settings/password", csrfWeb(http.HandlerFunc(settingsH.UpdatePassword)))
 	mux.Handle("POST /settings/mounts", csrfWeb(http.HandlerFunc(settingsH.CreateMount)))
@@ -287,9 +294,15 @@ func New(p *services.Providers) http.Handler {
 		}
 	}
 
-	// CalDAV/CardDAV discovery: PROPFIND on /remote.php/dav/ returns current-user-principal.
-	mux.Handle("PROPFIND /remote.php/dav/{$}", auth.RequireAuth(http.HandlerFunc(calendar.HandleDAVRoot)))
-	mux.Handle("PROPFIND /remote.php/dav", auth.RequireAuth(http.HandlerFunc(calendar.HandleDAVRoot)))
+	// CalDAV/CardDAV: the root, principals and homes, over the plugins'
+	// backends.
+	mountDAV(mux, p, davShares{&shareStoreAdapter{p.Shares}, p})
+
+	// JMAP (RFC 8620) over the same collections: contacts, and calendars
+	// when configured.
+	jmapH := p.JMAP.Handler()
+	mux.Handle("GET "+jmap.WellKnown, jmapH)
+	mux.Handle("/jmap/", jmapH)
 
 	// WebDAV stub for non-file DAV paths (presence check, HEAD/OPTIONS/GET)
 	mux.HandleFunc("/remote.php/dav", compat.HandleWebDAVStub)
@@ -381,8 +394,12 @@ func buildOCSQuotaFunc(p *services.Providers, fp *filesPlugin.Plugin) compat.Quo
 	if fp == nil || p.Quotas == nil || p.Mounts == nil {
 		return nil
 	}
+	usage := storageUsage(p, fp)
 	return func(username string) (used, total int64) {
-		used, _ = fp.Usage(username)
+		used, err := usage(username)
+		if err != nil {
+			p.Log.Error("storage usage", "user", username, "err", err)
+		}
 		u, err := p.Users.GetByUsername(username)
 		if err != nil {
 			return used, -1
@@ -403,6 +420,29 @@ func buildOCSQuotaFunc(p *services.Providers, fp *filesPlugin.Plugin) compat.Quo
 	}
 }
 
+// storageUsage is what a user stores: their files, and what enabled plugins
+// keep for them elsewhere (plugin.StorageUser).
+func storageUsage(p *services.Providers, fp *filesPlugin.Plugin) quota.UsageFunc {
+	return func(username string) (int64, error) {
+		total, err := fp.Usage(username)
+		if err != nil {
+			return 0, err
+		}
+		for plug := range p.Plugins.Plugins() {
+			su, ok := plug.(plugin.StorageUser)
+			if !ok || !p.Plugins.IsEnabled(plug.ID()) {
+				continue
+			}
+			n, err := su.StorageUsage(username)
+			if err != nil {
+				return 0, fmt.Errorf("%s storage usage: %w", plug.ID(), err)
+			}
+			total += n
+		}
+		return total, nil
+	}
+}
+
 // buildQuotaChecker creates a QuotaChecker wired to the services layer.
 func buildQuotaChecker(p *services.Providers, fp *filesPlugin.Plugin) *quota.Checker {
 	if fp == nil || p.Quotas == nil || p.Mounts == nil {
@@ -410,7 +450,7 @@ func buildQuotaChecker(p *services.Providers, fp *filesPlugin.Plugin) *quota.Che
 	}
 	return &quota.Checker{
 		Quotas: p.Quotas,
-		Usage:  fp.Usage,
+		Usage:  storageUsage(p, fp),
 		RootVolume: func(username string) (string, error) {
 			u, err := p.Users.GetByUsername(username)
 			if err != nil {

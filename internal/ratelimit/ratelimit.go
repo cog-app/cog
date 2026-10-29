@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -151,8 +152,8 @@ func ClientIP(r *http.Request) string {
 
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		hops := strings.Split(xff, ",")
-		for i := len(hops) - 1; i >= 0; i-- {
-			hop := strings.TrimSpace(hops[i])
+		for _, hop := range slices.Backward(hops) {
+			hop := strings.TrimSpace(hop)
 			if hop == "" {
 				continue
 			}

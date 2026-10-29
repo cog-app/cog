@@ -2,6 +2,7 @@ package federation_test
 
 import (
 	"encoding/json"
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
 	"net/url"
 	"strings"
 	"testing"
@@ -132,8 +133,8 @@ func TestFederationAcceptReject(t *testing.T) {
 
 func TestFederationCrossInstance(t *testing.T) {
 	// httptest servers bind to 127.0.0.1, which the SSRF guard normally blocks.
-	federation.SetAllowPrivate(true)
-	t.Cleanup(func() { federation.SetAllowPrivate(false) })
+	safehttp.SetAllowPrivate(true)
+	t.Cleanup(func() { safehttp.SetAllowPrivate(false) })
 
 	// Set up two Cog instances with real httptest.Servers that can talk to each other.
 	sender := cogtest.New(t)

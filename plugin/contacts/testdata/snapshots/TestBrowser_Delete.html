@@ -197,11 +197,25 @@
                 </option>
               </select>
             </div>
+            <div class="flex gap-1">
+              <div class="form-group" style="flex:1">
+                <label for="cc-given">
+                  First name
+                </label>
+                <input class="form-control" id="cc-given" name="given" type="text" />
+              </div>
+              <div class="form-group" style="flex:1">
+                <label for="cc-family">
+                  Last name
+                </label>
+                <input class="form-control" id="cc-family" name="family" type="text" />
+              </div>
+            </div>
             <div class="form-group">
               <label for="cc-fn">
-                Name
+                Display name
               </label>
-              <input class="form-control" id="cc-fn" name="fn" required="" type="text" />
+              <input class="form-control" id="cc-fn" name="fn" placeholder="First and last name" type="text" />
             </div>
             <fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
               <legend style="font-weight:500;font-size:0.9rem">
@@ -209,8 +223,9 @@
               </legend>
               <div id="cc-emails">
                 <div class="flex gap-1 items-end mb-1">
+                  <input name="email_index" type="hidden" value="new" />
                   <select class="form-control" name="email_type" style="width:100px">
-                    <option value="INTERNET">
+                    <option selected="" value="INTERNET">
                       Personal
                     </option>
                     <option value="WORK">
@@ -220,7 +235,7 @@
                       Home
                     </option>
                   </select>
-                  <input class="form-control" name="email_value" placeholder="email@example.com" style="flex:1" type="email" />
+                  <input class="form-control" name="email_value" placeholder="email@example.com" style="flex:1" type="email" value="" />
                 </div>
               </div>
               <button class="btn btn-outline btn-sm" onclick="addField('cc-emails','email')" type="button">
@@ -233,8 +248,9 @@
               </legend>
               <div id="cc-phones">
                 <div class="flex gap-1 items-end mb-1">
+                  <input name="phone_index" type="hidden" value="new" />
                   <select class="form-control" name="phone_type" style="width:100px">
-                    <option value="CELL">
+                    <option selected="" value="CELL">
                       Cell
                     </option>
                     <option value="WORK">
@@ -247,7 +263,7 @@
                       Fax
                     </option>
                   </select>
-                  <input class="form-control" name="phone_value" placeholder="+1 555-1234" style="flex:1" type="tel" />
+                  <input class="form-control" name="phone_value" placeholder="+1 555-1234" style="flex:1" type="tel" value="" />
                 </div>
               </div>
               <button class="btn btn-outline btn-sm" onclick="addField('cc-phones','phone')" type="button">

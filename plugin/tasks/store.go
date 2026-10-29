@@ -1,44 +1,95 @@
 package tasks
 
 import (
-	"crypto/md5"
 	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/dav"
+	"git.duckfam.us/jj-software/cog/internal/dav/contentline"
+	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
+	"git.duckfam.us/jj-software/cog/internal/dav/ical"
+	"git.duckfam.us/jj-software/cog/internal/dav/icalsql"
+	"git.duckfam.us/jj-software/cog/internal/dav/tz"
 )
 
-// TaskList is a container for tasks (shareable resource).
-type TaskList struct {
-	ID        int64
-	UID       string
-	Name      string
-	Color     string
-	SortOrder int
-	CTag      int64
-	SyncToken int64
-	CreatedAt int64
-	UpdatedAt int64
+// tables are where tasks and journal entries are stored: one resource table
+// for both kinds, with the shared component layout (internal/dav/icalsql).
+var tables = &icalsql.Tables{
+	Objects: "tasks", Components: "task_components", Attendees: "task_attendees",
+	Alarms: "task_alarms", Relations: "task_relations",
 }
 
-// Task is a single task item with hierarchy and VTODO sync support.
+// TaskList is a DAV collection that holds tasks, as the tasks UI shows it.
+// Collections belong to the DAV core (internal/dav); this is a view of one.
+type TaskList struct {
+	ID        int64  // dav.CollectionID
+	UID       string // the collection's path name
+	Name      string // display name
+	Color     string
+	SortOrder int
+	Timezone  string // IANA zone for floating times and the web UI; "" = UTC
+	OwnerID   string
+}
+
+func listFrom(c *dav.Collection) TaskList {
+	return TaskList{
+		ID: int64(c.ID), UID: c.Name, Name: c.Title(), Color: c.Color, SortOrder: c.SortOrder,
+		Timezone: c.Timezone, OwnerID: c.OwnerID,
+	}
+}
+
+// Zone returns the list's time zone, or UTC when unset or unknown.
+func (l *TaskList) Zone() *time.Location {
+	if loc := tz.Load(l.Timezone); loc != nil {
+		return loc
+	}
+	return time.UTC
+}
+
+// Task is a stored task resource as the web UI shows it: the fields of its
+// master component, and the whole object when it was loaded.
 type Task struct {
-	ID              int64
-	ListID          int64
-	UID             string
-	ETag            string
-	ParentID        *int64
+	ID      int64
+	ListID  int64 // dav.CollectionID
+	UID     string
+	URI     string
+	Version int64
+
 	Summary         string
 	Description     string
-	Priority        int
+	Location        string
+	Priority        int // 0: undefined
 	PercentComplete int
-	Status          string
-	CompletedAt     *int64
+	Status          string // as stored; "" reads as NEEDS-ACTION
 	DueAt           *int64
+	DueIsDate       bool
 	StartAt         *int64
-	SortOrder       int
-	ICSData         string
-	CreatedAt       int64
-	UpdatedAt       int64
+	StartIsDate     bool
+	CompletedAt     *int64
+	RRule           string
+	SortOrder       *int // X-APPLE-SORT-ORDER
+	// ParentUID is the UID of the parent task (RELATED-TO;RELTYPE=PARENT);
+	// ParentID is its row when it is in the same list.
+	ParentUID string
+	ParentID  *int64
+	CreatedAt int64
+	UpdatedAt int64
+
+	Object *ical.Object // nil unless loaded
+}
+
+// Done reports whether the task is completed.
+func (t *Task) Done() bool { return t.Status == "COMPLETED" }
+
+// StatusOrDefault returns the status, NEEDS-ACTION when there is none.
+func (t *Task) StatusOrDefault() string {
+	if t.Status == "" {
+		return "NEEDS-ACTION"
+	}
+	return t.Status
 }
 
 // TaskWithList extends Task with list metadata for display (e.g. widget).
@@ -48,309 +99,120 @@ type TaskWithList struct {
 	ListColor string
 }
 
-// --- List CRUD ---
+// --- Task queries ---
 
-func ListTaskLists(db *sql.DB) ([]TaskList, error) {
-	rows, err := db.Query(`SELECT id, uid, name, color, sort_order, ctag, sync_token, created_at, updated_at FROM lists ORDER BY sort_order, name`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var lists []TaskList
-	for rows.Next() {
-		var l TaskList
-		if err := rows.Scan(&l.ID, &l.UID, &l.Name, &l.Color, &l.SortOrder, &l.CTag, &l.SyncToken, &l.CreatedAt, &l.UpdatedAt); err != nil {
-			return nil, err
-		}
-		lists = append(lists, l)
-	}
-	return lists, rows.Err()
-}
+const taskColumns = `t.id, t.collection_id, t.uid, t.uri, t.version, t.created_at, t.updated_at,
+	c.summary, c.description, c.location, coalesce(c.priority, 0), coalesce(c.percent_complete, 0), c.status,
+	c.due_utc, c.due_is_date, c.dtstart_utc, c.dtstart_is_date, c.completed_utc, c.rrule, c.sort_order,
+	coalesce(r.related_uid, '')`
 
-func GetTaskList(db *sql.DB, id int64) (*TaskList, error) {
-	var l TaskList
-	err := db.QueryRow(`SELECT id, uid, name, color, sort_order, ctag, sync_token, created_at, updated_at FROM lists WHERE id = ?`, id).
-		Scan(&l.ID, &l.UID, &l.Name, &l.Color, &l.SortOrder, &l.CTag, &l.SyncToken, &l.CreatedAt, &l.UpdatedAt)
-	if err != nil {
-		return nil, err
-	}
-	return &l, nil
-}
+const taskFrom = ` FROM tasks t JOIN task_components c ON c.object_id = t.id AND c.position = 0
+	LEFT JOIN task_relations r ON r.component_id = c.id AND r.is_parent
+	WHERE t.component = 'VTODO' AND `
 
-func GetTaskListByUID(db *sql.DB, uid string) (*TaskList, error) {
-	var l TaskList
-	err := db.QueryRow(`SELECT id, uid, name, color, sort_order, ctag, sync_token, created_at, updated_at FROM lists WHERE uid = ?`, uid).
-		Scan(&l.ID, &l.UID, &l.Name, &l.Color, &l.SortOrder, &l.CTag, &l.SyncToken, &l.CreatedAt, &l.UpdatedAt)
-	if err != nil {
-		return nil, err
-	}
-	return &l, nil
-}
-
-func CreateTaskList(db *sql.DB, uid, name, color string) (*TaskList, error) {
-	if color == "" {
-		color = "#0082c9"
-	}
-	res, err := db.Exec(`INSERT INTO lists (uid, name, color) VALUES (?, ?, ?)`, uid, name, color)
-	if err != nil {
-		return nil, err
-	}
-	id, _ := res.LastInsertId()
-	return GetTaskList(db, id)
-}
-
-func UpdateTaskList(db *sql.DB, id int64, name, color string) error {
-	_, err := db.Exec(`UPDATE lists SET name = ?, color = ?, updated_at = unixepoch() WHERE id = ?`, name, color, id)
-	return err
-}
-
-func DeleteTaskList(db *sql.DB, id int64) error {
-	_, err := db.Exec(`DELETE FROM lists WHERE id = ?`, id)
-	return err
-}
-
-func EnsureDefaultList(db *sql.DB) error {
-	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM lists`).Scan(&count); err != nil {
-		return err
-	}
-	if count == 0 {
-		_, err := CreateTaskList(db, "personal", "Personal", "#0082c9")
-		return err
-	}
-	return nil
-}
-
-func BumpCTag(db *sql.DB, listID int64) error {
-	_, err := db.Exec(`UPDATE lists SET ctag = ctag + 1, sync_token = sync_token + 1, updated_at = unixepoch() WHERE id = ?`, listID)
-	return err
-}
-
-// TaskCount returns the number of incomplete tasks in a list.
-func TaskCount(db *sql.DB, listID int64) int {
-	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE list_id = ? AND status != 'COMPLETED'`, listID).Scan(&count)
-	return count
-}
-
-// --- Task CRUD ---
-
-const taskColumns = `id, list_id, uid, etag, parent_id, summary, description, priority, percent_complete, status, completed_at, due_at, start_at, sort_order, ics_data, created_at, updated_at`
+// taskOrder puts tasks with a sort order first, in that order, then the
+// rest by creation.
+const taskOrder = ` ORDER BY c.sort_order IS NULL, c.sort_order, t.created_at, t.id`
 
 func scanTask(row interface{ Scan(...any) error }) (*Task, error) {
 	var t Task
-	err := row.Scan(&t.ID, &t.ListID, &t.UID, &t.ETag, &t.ParentID, &t.Summary, &t.Description,
-		&t.Priority, &t.PercentComplete, &t.Status, &t.CompletedAt, &t.DueAt, &t.StartAt,
-		&t.SortOrder, &t.ICSData, &t.CreatedAt, &t.UpdatedAt)
-	if err != nil {
+	var sortOrder sql.NullInt64
+	if err := row.Scan(&t.ID, &t.ListID, &t.UID, &t.URI, &t.Version, &t.CreatedAt, &t.UpdatedAt,
+		&t.Summary, &t.Description, &t.Location, &t.Priority, &t.PercentComplete, &t.Status,
+		&t.DueAt, &t.DueIsDate, &t.StartAt, &t.StartIsDate, &t.CompletedAt, &t.RRule, &sortOrder, &t.ParentUID); err != nil {
 		return nil, err
+	}
+	if sortOrder.Valid {
+		n := int(sortOrder.Int64)
+		t.SortOrder = &n
 	}
 	return &t, nil
 }
 
-func scanTasks(rows *sql.Rows) ([]Task, error) {
+func queryTasks(q davsql.Querier, where string, args ...any) ([]Task, error) {
+	rows, err := q.Query(`SELECT `+taskColumns+taskFrom+where, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query tasks: %w", err)
+	}
+	defer rows.Close()
 	var tasks []Task
 	for rows.Next() {
 		t, err := scanTask(rows)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan task: %w", err)
 		}
 		tasks = append(tasks, *t)
 	}
 	return tasks, rows.Err()
 }
 
+// ListTasks returns a list's tasks in order, each with ParentID set when its
+// parent is in the list. A task whose parents lead back to it is shown as a
+// root, so a cycle sent by a client cannot hide tasks.
 func ListTasks(db *sql.DB, listID int64) ([]Task, error) {
-	rows, err := db.Query(`SELECT `+taskColumns+` FROM tasks WHERE list_id = ? ORDER BY sort_order, created_at`, listID)
+	tasks, err := queryTasks(db, `t.collection_id = ?`+taskOrder, listID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	return scanTasks(rows)
+	byUID := make(map[string]int, len(tasks))
+	for i := range tasks {
+		byUID[tasks[i].UID] = i
+	}
+	parent := make([]int, len(tasks))
+	for i := range tasks {
+		parent[i] = -1
+		if j, ok := byUID[tasks[i].ParentUID]; ok && tasks[i].ParentUID != "" && j != i {
+			parent[i] = j
+		}
+	}
+	for i := range tasks {
+		j := parent[i]
+		for steps := 0; j >= 0 && j != i && steps < len(tasks); steps++ {
+			j = parent[j]
+		}
+		if j == i {
+			parent[i] = -1
+		}
+		if parent[i] >= 0 {
+			id := tasks[parent[i]].ID
+			tasks[i].ParentID = &id
+		}
+	}
+	return tasks, nil
 }
 
+// GetTask returns a task by row ID, with its object and its parent's row
+// when the parent is in the same list.
 func GetTask(db *sql.DB, id int64) (*Task, error) {
-	return scanTask(db.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, id))
+	t, err := scanTask(db.QueryRow(`SELECT `+taskColumns+taskFrom+`t.id = ?`, id))
+	if err != nil {
+		return nil, err
+	}
+	objs, err := tables.Load(db, []int64{t.ID})
+	if err != nil {
+		return nil, err
+	}
+	t.Object = objs[t.ID]
+	if t.ParentUID != "" {
+		var pid int64
+		switch err := db.QueryRow(`SELECT id FROM tasks WHERE collection_id = ? AND uid = ? AND id != ?`, t.ListID, t.ParentUID, t.ID).Scan(&pid); {
+		case err == nil:
+			t.ParentID = &pid
+		case errors.Is(err, sql.ErrNoRows):
+		default:
+			return nil, fmt.Errorf("find parent of task %d: %w", id, err)
+		}
+	}
+	return t, nil
 }
 
+// GetTaskByUID returns a list's task with this UID, with its object.
 func GetTaskByUID(db *sql.DB, listID int64, uid string) (*Task, error) {
-	return scanTask(db.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE list_id = ? AND uid = ?`, listID, uid))
-}
-
-func CreateTask(db *sql.DB, listID int64, uid string, parentID *int64, summary, description string, priority int, dueAt, startAt *int64, now time.Time) (*Task, error) {
-	// Get next sort_order for this parent.
-	var maxSort int
-	db.QueryRow(`SELECT COALESCE(MAX(sort_order), -1) FROM tasks WHERE list_id = ? AND parent_id IS ?`, listID, parentID).Scan(&maxSort)
-
-	icsData := GenerateVTodoICS(uid, VTodoFields{
-		UID:     uid,
-		Summary: summary, Description: description,
-		Priority: priority,
-		Status:   "NEEDS-ACTION",
-	}, now)
-	etag := fmt.Sprintf("%x", md5.Sum([]byte(icsData)))
-
-	res, err := db.Exec(`INSERT INTO tasks (list_id, uid, etag, parent_id, summary, description, priority, due_at, start_at, sort_order, ics_data)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		listID, uid, etag, parentID, summary, description, priority, dueAt, startAt, maxSort+1, icsData)
-	if err != nil {
-		return nil, err
-	}
-	if err := BumpCTag(db, listID); err != nil {
-		return nil, err
-	}
-	id, _ := res.LastInsertId()
-	return GetTask(db, id)
-}
-
-func UpdateTask(db *sql.DB, id int64, summary, description string, priority int, status string, percentComplete int, dueAt, startAt, completedAt *int64, listID int64, parentID *int64, now time.Time) error {
-	icsData := GenerateVTodoICS("", VTodoFields{
-		Summary: summary, Description: description,
-		Priority: priority, Status: status, PercentComplete: percentComplete,
-	}, now)
-	etag := fmt.Sprintf("%x", md5.Sum([]byte(icsData)))
-
-	// Get the current task to find the uid for ICS regeneration and the list for ctag bump.
-	old, err := GetTask(db, id)
-	if err != nil {
-		return err
-	}
-
-	icsData = GenerateVTodoICS(old.UID, VTodoFields{
-		UID: old.UID, Summary: summary, Description: description,
-		Priority: priority, Status: status, PercentComplete: percentComplete,
-	}, now)
-	etag = fmt.Sprintf("%x", md5.Sum([]byte(icsData)))
-
-	_, err = db.Exec(`UPDATE tasks SET summary = ?, description = ?, priority = ?, status = ?,
-		percent_complete = ?, due_at = ?, start_at = ?, completed_at = ?, list_id = ?, parent_id = ?,
-		etag = ?, ics_data = ?, updated_at = unixepoch() WHERE id = ?`,
-		summary, description, priority, status, percentComplete, dueAt, startAt, completedAt,
-		listID, parentID, etag, icsData, id)
-	if err != nil {
-		return err
-	}
-	if err := BumpCTag(db, listID); err != nil {
-		return err
-	}
-	if old.ListID != listID {
-		return BumpCTag(db, old.ListID)
-	}
-	return nil
-}
-
-func DeleteTask(db *sql.DB, id int64) error {
-	task, err := GetTask(db, id)
-	if err != nil {
-		return err
-	}
-
-	// Record deletion for sync-token tracking.
-	var syncToken int64
-	if err := db.QueryRow(`SELECT sync_token FROM lists WHERE id = ?`, task.ListID).Scan(&syncToken); err != nil {
-		return fmt.Errorf("get sync token: %w", err)
-	}
-	if _, err := db.Exec(`INSERT INTO deleted_tasks (list_id, uid, deleted_at_token) VALUES (?, ?, ?)`,
-		task.ListID, task.UID, syncToken+1); err != nil {
-		return fmt.Errorf("record deletion: %w", err)
-	}
-
-	// CASCADE will delete subtasks.
-	if _, err := db.Exec(`DELETE FROM tasks WHERE id = ?`, id); err != nil {
-		return err
-	}
-	return BumpCTag(db, task.ListID)
-}
-
-// ToggleTask flips a task between COMPLETED and NEEDS-ACTION.
-func ToggleTask(db *sql.DB, id int64, now time.Time) (*Task, error) {
-	task, err := GetTask(db, id)
-	if err != nil {
-		return nil, err
-	}
-
-	var newStatus string
-	var completedAt *int64
-	var percentComplete int
-	if task.Status == "COMPLETED" {
-		newStatus = "NEEDS-ACTION"
-		percentComplete = 0
-	} else {
-		newStatus = "COMPLETED"
-		now := task.UpdatedAt // will be overwritten
-		completedAt = &now
-		percentComplete = 100
-	}
-
-	icsData := GenerateVTodoICS(task.UID, VTodoFields{
-		UID: task.UID, Summary: task.Summary, Description: task.Description,
-		Priority: task.Priority, Status: newStatus, PercentComplete: percentComplete,
-	}, now)
-	etag := fmt.Sprintf("%x", md5.Sum([]byte(icsData)))
-
-	_, err = db.Exec(`UPDATE tasks SET status = ?, completed_at = ?, percent_complete = ?,
-		etag = ?, ics_data = ?, updated_at = unixepoch() WHERE id = ?`,
-		newStatus, completedAt, percentComplete, etag, icsData, id)
-	if err != nil {
-		return nil, err
-	}
-	if err := BumpCTag(db, task.ListID); err != nil {
+	var id int64
+	if err := db.QueryRow(`SELECT id FROM tasks WHERE collection_id = ? AND uid = ?`, listID, uid).Scan(&id); err != nil {
 		return nil, err
 	}
 	return GetTask(db, id)
-}
-
-// --- Reorder ---
-
-// ReorderTasks sets sort_order for tasks with the given parent in a list.
-func ReorderTasks(db *sql.DB, listID int64, parentID *int64, orderedIDs []int64) error {
-	for i, id := range orderedIDs {
-		if _, err := db.Exec(`UPDATE tasks SET sort_order = ?, updated_at = unixepoch() WHERE id = ? AND list_id = ?`, i, id, listID); err != nil {
-			return err
-		}
-	}
-	return BumpCTag(db, listID)
-}
-
-// ReparentTask moves a task to a new parent at a given sort position.
-func ReparentTask(db *sql.DB, taskID int64, newParentID *int64, sortOrder int) error {
-	task, err := GetTask(db, taskID)
-	if err != nil {
-		return err
-	}
-	_, err = db.Exec(`UPDATE tasks SET parent_id = ?, sort_order = ?, updated_at = unixepoch() WHERE id = ?`,
-		newParentID, sortOrder, taskID)
-	if err != nil {
-		return err
-	}
-	return BumpCTag(db, task.ListID)
-}
-
-// --- Queries ---
-
-// ChildMap returns tasks grouped by parent_id for recursive rendering.
-func ChildMap(db *sql.DB, listID int64) (map[*int64][]Task, []Task, error) {
-	tasks, err := ListTasks(db, listID)
-	if err != nil {
-		return nil, nil, err
-	}
-	m := make(map[int64][]Task) // parent_id -> children; 0 means root
-	var roots []Task
-	for _, t := range tasks {
-		if t.ParentID == nil {
-			roots = append(roots, t)
-		} else {
-			m[*t.ParentID] = append(m[*t.ParentID], t)
-		}
-	}
-	// Convert to the expected format.
-	result := make(map[*int64][]Task)
-	result[nil] = roots
-	for pid, children := range m {
-		p := pid
-		result[&p] = children
-	}
-	return result, tasks, nil
 }
 
 // ChildrenOf returns children for a given parent task from the flat task list.
@@ -364,7 +226,7 @@ func ChildrenOf(tasks []Task, parentID int64) []Task {
 	return children
 }
 
-// RootTasks returns tasks with no parent from the flat task list.
+// RootTasks returns tasks with no parent in the list from the flat task list.
 func RootTasks(tasks []Task) []Task {
 	var roots []Task
 	for _, t := range tasks {
@@ -375,53 +237,293 @@ func RootTasks(tasks []Task) []Task {
 	return roots
 }
 
-// UpcomingTasks returns incomplete tasks with the soonest due dates, joined with list info.
-func UpcomingTasks(db *sql.DB, limit int) ([]TaskWithList, error) {
-	rows, err := db.Query(`SELECT t.id, t.list_id, t.uid, t.etag, t.parent_id, t.summary, t.description,
-		t.priority, t.percent_complete, t.status, t.completed_at, t.due_at, t.start_at,
-		t.sort_order, t.ics_data, t.created_at, t.updated_at,
-		l.name, l.color
-		FROM tasks t JOIN lists l ON t.list_id = l.id
-		WHERE t.status != 'COMPLETED' AND t.due_at IS NOT NULL
-		ORDER BY t.due_at LIMIT ?`, limit)
+// UpcomingTasks returns open tasks in lists with the soonest due dates.
+func UpcomingTasks(db *sql.DB, lists map[int64]TaskList, limit int) ([]TaskWithList, error) {
+	if len(lists) == 0 {
+		return nil, nil
+	}
+	args := make([]any, 0, len(lists)+1)
+	for id := range lists {
+		args = append(args, id)
+	}
+	tasks, err := queryTasks(db, `c.status NOT IN ('COMPLETED', 'CANCELLED') AND c.due_utc IS NOT NULL
+		AND t.collection_id IN (`+icalsql.Placeholders(len(lists))+`) ORDER BY c.due_utc LIMIT ?`, append(args, limit)...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var result []TaskWithList
-	for rows.Next() {
-		var tw TaskWithList
-		if err := rows.Scan(&tw.ID, &tw.ListID, &tw.UID, &tw.ETag, &tw.ParentID, &tw.Summary, &tw.Description,
-			&tw.Priority, &tw.PercentComplete, &tw.Status, &tw.CompletedAt, &tw.DueAt, &tw.StartAt,
-			&tw.SortOrder, &tw.ICSData, &tw.CreatedAt, &tw.UpdatedAt,
-			&tw.ListName, &tw.ListColor); err != nil {
-			return nil, err
-		}
-		result = append(result, tw)
+	out := make([]TaskWithList, len(tasks))
+	for i, t := range tasks {
+		l := lists[t.ListID]
+		out[i] = TaskWithList{Task: t, ListName: l.Name, ListColor: l.Color}
 	}
-	return result, rows.Err()
+	return out, nil
 }
 
-// --- Sync ---
+// --- Writes ---
+//
+// Every write goes through icalsql, which bumps the collection's version in
+// the same transaction, so DAV clients see web edits.
 
-func TasksChangedSince(db *sql.DB, listID, sinceToken int64) ([]Task, error) {
-	return ListTasks(db, listID)
-}
-
-func DeletedTasksSince(db *sql.DB, listID, sinceToken int64) ([]string, error) {
-	rows, err := db.Query(`SELECT uid FROM deleted_tasks WHERE list_id = ? AND deleted_at_token > ?`,
-		listID, sinceToken)
+// ParseObject reads one task or journal resource from iCalendar text.
+func ParseObject(ics string, kind ical.Kind) (*ical.Object, error) {
+	comps, err := contentline.Parse(strings.NewReader(ics))
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var uids []string
-	for rows.Next() {
-		var uid string
-		if err := rows.Scan(&uid); err != nil {
-			return nil, err
-		}
-		uids = append(uids, uid)
+	if len(comps) != 1 || !comps[0].Is("VCALENDAR") {
+		return nil, fmt.Errorf("not one VCALENDAR")
 	}
-	return uids, rows.Err()
+	o, err := ical.Decode(comps[0], kind)
+	if err != nil {
+		return nil, err
+	}
+	if o.UID == "" {
+		return nil, fmt.Errorf("%s missing UID", kind)
+	}
+	return o, nil
+}
+
+// RenderTask returns the iCalendar text Cog serves for a loaded task.
+func RenderTask(t *Task) (string, error) {
+	if t.Object == nil {
+		return "", fmt.Errorf("task %d: object not loaded", t.ID)
+	}
+	data, err := icalsql.Render(t.Object)
+	return string(data), err
+}
+
+// NewTask is what the web UI sets on a task it creates.
+type NewTask struct {
+	Summary     string
+	Description string
+	Priority    int
+	Due, Start  *time.Time // in the list's zone
+	ParentUID   string
+}
+
+// CreateTask stores a new task with uid in a list.
+func CreateTask(db *sql.DB, list *TaskList, uid string, nt NewTask, now time.Time) (*Task, error) {
+	stamp := ical.DateTimeOf(now.UTC(), false)
+	seq := 0
+	e := &ical.Component{
+		Kind: ical.VTODO, Summary: nt.Summary, Description: nt.Description, Status: "NEEDS-ACTION",
+		Sequence: &seq, DTStamp: stamp, Created: stamp, LastModified: stamp,
+	}
+	if nt.Priority > 0 {
+		p := nt.Priority
+		e.Priority = &p
+	}
+	if nt.Due != nil {
+		e.Due = ical.DateTimeOf(nt.Due.In(list.Zone()), false)
+	}
+	if nt.Start != nil {
+		e.Start = ical.DateTimeOf(nt.Start.In(list.Zone()), false)
+	}
+	e.SetParent(nt.ParentUID)
+	o := &ical.Object{
+		UID:        uid,
+		Props:      []contentline.Property{{Name: "PRODID", Value: ical.ProdID}},
+		Components: []*ical.Component{e},
+	}
+	return SaveTask(db, list, nil, o, now)
+}
+
+// SaveTask stores an object written by Cog in a list. from is the task
+// being edited, or nil for a new one; moving it to another list deletes it
+// from the old one, leaving a tombstone there.
+func SaveTask(db *sql.DB, list *TaskList, from *Task, o *ical.Object, now time.Time) (*Task, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("save task: %w", err)
+	}
+	defer tx.Rollback()
+	uri := o.UID + ".ics"
+	cond := davsql.Conditions{IfNoneMatchAny: true}
+	if from != nil {
+		uri, cond = from.URI, davsql.Conditions{}
+		if from.ListID != list.ID {
+			if err := tables.Delete(tx, from.ListID, from.URI, davsql.Conditions{}, now.Unix()); err != nil {
+				return nil, err
+			}
+		}
+	}
+	st, err := tables.Store(tx, list.ID, list.Zone(), uri, o, cond, now.Unix())
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("save task: %w", err)
+	}
+	return GetTask(db, st.ID)
+}
+
+// DeleteTask removes a task and its subtasks in the same list, leaving a
+// tombstone for each.
+func DeleteTask(db *sql.DB, id int64, now time.Time) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("delete task: %w", err)
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query(`WITH RECURSIVE sub(id, uid, collection_id) AS (
+			SELECT id, uid, collection_id FROM tasks WHERE id = ?
+			UNION
+			SELECT t.id, t.uid, t.collection_id FROM sub
+			JOIN task_relations r ON r.related_uid = sub.uid AND r.is_parent
+			JOIN task_components c ON c.id = r.component_id AND c.position = 0
+			JOIN tasks t ON t.id = c.object_id AND t.collection_id = sub.collection_id
+		) SELECT collection_id, uri FROM tasks WHERE id IN (SELECT id FROM sub)`, id)
+	if err != nil {
+		return fmt.Errorf("find subtasks: %w", err)
+	}
+	type res struct {
+		list int64
+		uri  string
+	}
+	var doomed []res
+	for rows.Next() {
+		var r res
+		if err := rows.Scan(&r.list, &r.uri); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan subtask: %w", err)
+		}
+		doomed = append(doomed, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("find subtasks: %w", err)
+	}
+	if len(doomed) == 0 {
+		return sql.ErrNoRows
+	}
+	for _, r := range doomed {
+		if err := tables.Delete(tx, r.list, r.uri, davsql.Conditions{}, now.Unix()); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ToggleTask completes an open task or reopens a completed one. Completing
+// one occurrence of a recurring task moves the series on to the next
+// (Complete).
+func ToggleTask(db *sql.DB, list *TaskList, t *Task, now time.Time) (*Task, error) {
+	o := t.Object
+	z := ical.ZonesFor(o, list.Zone())
+	e := o.Components[0]
+	if e.Status == "COMPLETED" {
+		setStatus(e, "NEEDS-ACTION", now)
+	} else if err := Complete(o, z, now); err != nil {
+		return nil, err
+	}
+	o.Components[0].Stamp(now, true)
+	return SaveTask(db, list, t, o, now)
+}
+
+// Complete marks an object's task done. A recurring task is moved on to its
+// next occurrence instead, as tasks.org does (ical.Object.Advance), and
+// stays open; only its last occurrence completes the task.
+func Complete(o *ical.Object, z ical.Zones, now time.Time) error {
+	m := o.Components[0]
+	if !m.IsOverride() && m.Recurs() {
+		ok, err := o.Advance(z)
+		if err != nil {
+			return fmt.Errorf("complete occurrence: %w", err)
+		}
+		if ok {
+			m = o.Components[0]
+			if m.Status != "" {
+				m.Status = "NEEDS-ACTION"
+			}
+			m.Completed = ical.DateTime{}
+			if m.PercentComplete != nil {
+				zero := 0
+				m.PercentComplete = &zero
+			}
+			m.Changed("STATUS", "TIME")
+			return nil
+		}
+	}
+	setStatus(m, "COMPLETED", now)
+	return nil
+}
+
+// setStatus sets a task's STATUS with what goes with it: COMPLETED and 100%
+// when it is done; no COMPLETED, and not 100%, when it is not.
+func setStatus(e *ical.Component, status string, now time.Time) {
+	e.Status = status
+	if status == "COMPLETED" {
+		e.Completed = ical.DateTimeOf(now.UTC(), false)
+		full := 100
+		e.PercentComplete = &full
+	} else {
+		e.Completed = ical.DateTime{}
+		if e.PercentComplete != nil && *e.PercentComplete == 100 {
+			zero := 0
+			e.PercentComplete = &zero
+		}
+	}
+	e.Changed("STATUS")
+}
+
+// ReorderTasks puts tasks in the given order under one parent (nil for the
+// top level), writing X-APPLE-SORT-ORDER and RELATED-TO so DAV clients see
+// the same order and tree. Tasks whose order and parent are unchanged are
+// not written.
+func ReorderTasks(db *sql.DB, list *TaskList, parentID *int64, orderedIDs []int64, now time.Time) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("reorder tasks: %w", err)
+	}
+	defer tx.Rollback()
+	parentUID := ""
+	if parentID != nil {
+		if err := tx.QueryRow(`SELECT uid FROM tasks WHERE id = ? AND collection_id = ?`, *parentID, list.ID).Scan(&parentUID); err != nil {
+			return fmt.Errorf("reorder tasks: parent %d: %w", *parentID, err)
+		}
+	}
+	objs, err := tables.Load(tx, orderedIDs)
+	if err != nil {
+		return err
+	}
+	uris := map[int64]string{}
+	rows, err := tx.Query(`SELECT id, uri FROM tasks WHERE collection_id = ? AND id IN (`+icalsql.Placeholders(max(len(orderedIDs), 1))+`)`,
+		append([]any{list.ID}, icalsql.Anys(orderedIDs)...)...)
+	if err != nil {
+		return fmt.Errorf("reorder tasks: %w", err)
+	}
+	for rows.Next() {
+		var id int64
+		var uri string
+		if err := rows.Scan(&id, &uri); err != nil {
+			rows.Close()
+			return fmt.Errorf("reorder tasks: %w", err)
+		}
+		uris[id] = uri
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("reorder tasks: %w", err)
+	}
+	for i, id := range orderedIDs {
+		o, uri := objs[id], uris[id]
+		if o == nil || uri == "" || o.UID == parentUID {
+			return fmt.Errorf("reorder tasks: task %d is not in list %d", id, list.ID)
+		}
+		e := o.Components[0]
+		changed := e.SetParent(parentUID)
+		if e.SortOrder == nil || *e.SortOrder != i {
+			n := i
+			e.SortOrder = &n
+			changed = true
+		}
+		if !changed {
+			continue
+		}
+		e.Stamp(now, false)
+		if _, err := tables.Store(tx, list.ID, list.Zone(), uri, o, davsql.Conditions{}, now.Unix()); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

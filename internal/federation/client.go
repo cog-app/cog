@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
 	"io"
 	"net/http"
 	"strings"
@@ -18,15 +19,15 @@ type Client struct {
 }
 
 // NewClient creates an OCM client with SSRF protections: dials are gated by
-// safeDialContext (blocks private/loopback/link-local/metadata IPs and pins to
+// safehttp.DialContext (blocks private/loopback/link-local/metadata IPs and pins to
 // the resolved address), redirects are refused, and only HTTPS is permitted
 // for remote hosts.
 func NewClient(baseURL string) *Client {
 	return &Client{
 		HTTP: &http.Client{
 			Timeout:       30 * time.Second,
-			Transport:     safeTransport(),
-			CheckRedirect: noRedirect,
+			Transport:     safehttp.Transport(),
+			CheckRedirect: safehttp.NoRedirect,
 		},
 		BaseURL: strings.TrimSuffix(baseURL, "/"),
 	}
@@ -138,7 +139,7 @@ func (c *Client) Notify(ctx context.Context, remoteHost string, notif OCMNotific
 }
 
 // normalizeHost prepends https:// when missing. An explicit http:// is honored
-// only in allowPrivate (test) mode; in production normalizeHost upgrades it to
+// only when safehttp allows private addresses (tests); in production normalizeHost upgrades it to
 // https:// to defeat downgrade attacks.
 func normalizeHost(host string) string {
 	host = strings.TrimSuffix(host, "/")
@@ -146,7 +147,7 @@ func normalizeHost(host string) string {
 		return host
 	}
 	if strings.HasPrefix(host, "http://") {
-		if allowPrivate {
+		if safehttp.AllowPrivate() {
 			return host
 		}
 		return "https://" + strings.TrimPrefix(host, "http://")

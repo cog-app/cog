@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -17,50 +18,56 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
-// sharedBrowser is a process-wide Chrome instance reused by all Engines.
-// This avoids launching dozens of Chrome processes when go test ./...
-// runs multiple packages concurrently.
+// sharedBrowser is one Chrome process for every engine in the test binary.
+// It is launched when the first engine needs it and closed when the last one
+// closes; a later engine launches it again. (It used to launch once, so every
+// engine created after the first one closed got a dead browser and its tests
+// skipped.) While it runs, the binary holds a browser slot (slot.go).
 var sharedBrowser struct {
-	once    sync.Once
-	browser *rod.Browser
-	err     error
-
 	mu       sync.Mutex
+	browser  *rod.Browser
 	refCount int
+	release  func() // frees this binary's browser slot
 }
 
 func acquireBrowser() (*rod.Browser, error) {
-	sharedBrowser.once.Do(func() {
+	sharedBrowser.mu.Lock()
+	defer sharedBrowser.mu.Unlock()
+	if sharedBrowser.browser == nil {
 		path, found := launcher.LookPath()
 		if !found {
-			sharedBrowser.err = launcher.ErrAlreadyLaunched
-			return
+			return nil, launcher.ErrAlreadyLaunched
 		}
-		u := launcher.New().Bin(path).Headless(true).NoSandbox(true).MustLaunch()
+		release, err := acquireSlot()
+		if err != nil {
+			return nil, err
+		}
+		u, err := launcher.New().Bin(path).Headless(true).NoSandbox(true).Launch()
+		if err != nil {
+			release()
+			return nil, err
+		}
 		b := rod.New().ControlURL(u)
 		if err := b.Connect(); err != nil {
-			sharedBrowser.err = err
-			return
+			release()
+			return nil, err
 		}
-		sharedBrowser.browser = b
-	})
-	if sharedBrowser.err != nil {
-		return nil, sharedBrowser.err
+		sharedBrowser.browser, sharedBrowser.release = b, release
 	}
-	sharedBrowser.mu.Lock()
 	sharedBrowser.refCount++
-	sharedBrowser.mu.Unlock()
 	return sharedBrowser.browser, nil
 }
 
 func releaseBrowser() {
 	sharedBrowser.mu.Lock()
+	defer sharedBrowser.mu.Unlock()
 	sharedBrowser.refCount--
-	last := sharedBrowser.refCount == 0
-	sharedBrowser.mu.Unlock()
-
-	if last && sharedBrowser.browser != nil {
-		sharedBrowser.browser.Close()
+	if sharedBrowser.refCount == 0 && sharedBrowser.browser != nil {
+		if err := sharedBrowser.browser.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "webtest: close browser: %v\n", err)
+		}
+		sharedBrowser.browser = nil
+		sharedBrowser.release()
 	}
 }
 

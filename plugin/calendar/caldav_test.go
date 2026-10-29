@@ -35,12 +35,6 @@ func TestCalDAV_CalendarHome(t *testing.T) {
 	env := cogtest.New(t, calendar.New())
 	alice := env.CreateUser(t, "alice", "pass")
 
-	// First ensure DB is migrated.
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	_, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-
 	body := `<?xml version="1.0" encoding="UTF-8"?>
 <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
   <D:prop>
@@ -63,16 +57,12 @@ func TestCalDAV_PutGetDeleteEvent(t *testing.T) {
 	alice := env.CreateUser(t, "alice", "pass")
 
 	// Ensure the user's calendar DB is migrated and has a default calendar.
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-	calendar.EnsureDefaultCalendar(db)
+	ensurePersonal(t, env, alice)
 
 	now := time.Now().UTC()
 	dtstart := now.Add(1 * time.Hour)
 	dtend := now.Add(2 * time.Hour)
-	ics := calendar.GenerateICS("caldav-test-uid", "CalDAV Meeting", "Room 101", "Office",
+	ics := genICS("caldav-test-uid", "CalDAV Meeting", "Room 101", "Office",
 		dtstart, dtend, false, now)
 
 	eventURL := env.Providers.Config.BaseURL + "/remote.php/dav/calendars/alice/personal/caldav-test-uid.ics"
@@ -81,15 +71,25 @@ func TestCalDAV_PutGetDeleteEvent(t *testing.T) {
 	putReq := cogtest.NewRequest(t, "PUT", eventURL, strings.NewReader(ics))
 	putReq.Header.Set("Content-Type", "text/calendar; charset=utf-8")
 	putResp := env.Do(t, putReq, alice.Auth).Status(201)
-	etag := putResp.Header.Get("ETag")
-	require.True(t, etag != "")
+	// Cog stores rows and writes its own text, which differs from the
+	// request, so the PUT has no ETag and the client fetches the event
+	// (RFC 4791 §5.3.4).
+	require.Equal(t, "", putResp.Header.Get("ETag"))
 
 	// GET the event back.
 	getReq := cogtest.NewRequest(t, "GET", eventURL, nil)
 	resp := env.Do(t, getReq, alice.Auth).Status(200)
+	etag := resp.Header.Get("ETag")
 	body := resp.ReadBody()
 	require.True(t, strings.Contains(body, "CalDAV Meeting"))
 	require.True(t, strings.Contains(body, "caldav-test-uid"))
+
+	// PUT back exactly what was served: now the stored text is the
+	// request, and the response carries the new ETag.
+	again := cogtest.NewRequest(t, "PUT", eventURL, strings.NewReader(body))
+	again.Header.Set("If-Match", etag)
+	newTag := env.Do(t, again, alice.Auth).Status(204).Header.Get("ETag")
+	require.True(t, newTag != "" && newTag != etag, "ETag %q after %q", newTag, etag)
 
 	// DELETE the event.
 	delReq := cogtest.NewRequest(t, "DELETE", eventURL, nil)
@@ -104,17 +104,13 @@ func TestCalDAV_ReportMultiget(t *testing.T) {
 	env := cogtest.New(t, calendar.New())
 	alice := env.CreateUser(t, "alice", "pass")
 
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-	calendar.EnsureDefaultCalendar(db)
+	ensurePersonal(t, env, alice)
 
 	now := time.Now().UTC()
 
 	// PUT two events via CalDAV.
 	for _, uid := range []string{"multiget-1", "multiget-2"} {
-		ics := calendar.GenerateICS(uid, "Event "+uid, "", "",
+		ics := genICS(uid, "Event "+uid, "", "",
 			now.Add(1*time.Hour), now.Add(2*time.Hour), false, now)
 		putReq := cogtest.NewRequest(t, "PUT",
 			env.Providers.Config.BaseURL+"/remote.php/dav/calendars/alice/personal/"+uid+".ics",
@@ -150,16 +146,12 @@ func TestCalDAV_SyncCollection(t *testing.T) {
 	env := cogtest.New(t, calendar.New())
 	alice := env.CreateUser(t, "alice", "pass")
 
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-	calendar.EnsureDefaultCalendar(db)
+	ensurePersonal(t, env, alice)
 
 	now := time.Now().UTC()
 
 	// PUT an event.
-	ics := calendar.GenerateICS("sync-uid-1", "Sync Event", "", "",
+	ics := genICS("sync-uid-1", "Sync Event", "", "",
 		now.Add(1*time.Hour), now.Add(2*time.Hour), false, now)
 	putReq := cogtest.NewRequest(t, "PUT",
 		env.Providers.Config.BaseURL+"/remote.php/dav/calendars/alice/personal/sync-uid-1.ics",
@@ -192,11 +184,7 @@ func TestCalDAV_CalendarHomeListing(t *testing.T) {
 	env := cogtest.New(t, calendar.New())
 	alice := env.CreateUser(t, "alice", "pass")
 
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-	calendar.EnsureDefaultCalendar(db)
+	ensurePersonal(t, env, alice)
 
 	// PROPFIND the calendar home with Depth: 1 to list calendars.
 	body := `<?xml version="1.0" encoding="UTF-8"?>
@@ -224,13 +212,10 @@ func TestCalDAV_Options(t *testing.T) {
 	env := cogtest.New(t, calendar.New())
 	alice := env.CreateUser(t, "alice", "pass")
 
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	_, err := cp.DB(alice.Username)
-	require.NoError(t, err)
+	ensurePersonal(t, env, alice)
 
 	req := cogtest.NewRequest(t, "OPTIONS",
-		env.Providers.Config.BaseURL+"/remote.php/dav/calendars/alice/",
+		env.Providers.Config.BaseURL+"/remote.php/dav/calendars/alice/personal/",
 		nil)
 	resp := env.Do(t, req, alice.Auth).Status(200)
 	allow := resp.Header.Get("Allow")
@@ -244,10 +229,7 @@ func TestCalDAV_MKCalendar(t *testing.T) {
 	env := cogtest.New(t, calendar.New())
 	alice := env.CreateUser(t, "alice", "pass")
 
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	_, err := cp.DB(alice.Username)
-	require.NoError(t, err)
+	cp := ensurePersonal(t, env, alice)
 
 	mkBody := `<?xml version="1.0" encoding="UTF-8"?>
 <C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:ICAL="http://apple.com/ns/ical/">
@@ -267,9 +249,7 @@ func TestCalDAV_MKCalendar(t *testing.T) {
 	env.Do(t, req, alice.Auth).Status(201)
 
 	// Verify calendar was created via store.
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-	cal, err := calendar.GetCalendarByUID(db, "work-cal")
+	cal, err := cp.CalendarByName(alice.ID, "work-cal")
 	require.NoError(t, err)
 	require.Equal(t, "Work", cal.Name)
 	require.Equal(t, "#ff0000", cal.Color)
@@ -279,14 +259,10 @@ func TestCalDAV_DeleteCalendar(t *testing.T) {
 	env := cogtest.New(t, calendar.New())
 	alice := env.CreateUser(t, "alice", "pass")
 
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-	calendar.EnsureDefaultCalendar(db)
+	cp := ensurePersonal(t, env, alice)
 
 	// Verify "personal" calendar exists.
-	cal, err := calendar.GetCalendarByUID(db, "personal")
+	cal, err := cp.CalendarByName(alice.ID, "personal")
 	require.NoError(t, err)
 	require.Equal(t, "Personal", cal.Name)
 
@@ -297,7 +273,7 @@ func TestCalDAV_DeleteCalendar(t *testing.T) {
 	env.Do(t, req, alice.Auth).Status(204)
 
 	// Verify it's gone.
-	_, err = calendar.GetCalendarByUID(db, "personal")
+	_, err = cp.CalendarByName(alice.ID, "personal")
 	require.True(t, err != nil)
 }
 
@@ -305,11 +281,7 @@ func TestCalDAV_Proppatch(t *testing.T) {
 	env := cogtest.New(t, calendar.New())
 	alice := env.CreateUser(t, "alice", "pass")
 
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-	calendar.EnsureDefaultCalendar(db)
+	cp := ensurePersonal(t, env, alice)
 
 	proppatchBody := `<?xml version="1.0" encoding="UTF-8"?>
 <D:propertyupdate xmlns:D="DAV:" xmlns:ICAL="http://apple.com/ns/ical/" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -328,7 +300,7 @@ func TestCalDAV_Proppatch(t *testing.T) {
 	env.Do(t, req, alice.Auth).Status(207)
 
 	// Verify changes.
-	cal, err := calendar.GetCalendarByUID(db, "personal")
+	cal, err := cp.CalendarByName(alice.ID, "personal")
 	require.NoError(t, err)
 	require.Equal(t, "Renamed", cal.Name)
 	require.Equal(t, "#00ff00", cal.Color)
@@ -338,14 +310,10 @@ func TestCalDAV_EventPropfind(t *testing.T) {
 	env := cogtest.New(t, calendar.New())
 	alice := env.CreateUser(t, "alice", "pass")
 
-	plug, _ := env.Providers.Plugins.Plugin("calendar")
-	cp := plug.(*calendar.Plugin)
-	db, err := cp.DB(alice.Username)
-	require.NoError(t, err)
-	calendar.EnsureDefaultCalendar(db)
+	ensurePersonal(t, env, alice)
 
 	now := time.Now().UTC()
-	ics := calendar.GenerateICS("propfind-uid", "Propfind Event", "", "",
+	ics := genICS("propfind-uid", "Propfind Event", "", "",
 		now.Add(1*time.Hour), now.Add(2*time.Hour), false, now)
 
 	// PUT the event first.
@@ -374,4 +342,15 @@ func TestCalDAV_EventPropfind(t *testing.T) {
 	body := resp.ReadBody()
 	require.True(t, strings.Contains(body, "propfind-uid"))
 	require.True(t, strings.Contains(body, "getetag"))
+}
+
+// ensurePersonal returns the calendar plugin after giving alice her default
+// calendar.
+func ensurePersonal(t *testing.T, env *cogtest.Env, u *cogtest.User) *calendar.Plugin {
+	t.Helper()
+	plug, _ := env.Providers.Plugins.Plugin("calendar")
+	cp := plug.(*calendar.Plugin)
+	_, err := cp.Calendars(u.ID)
+	require.NoError(t, err)
+	return cp
 }

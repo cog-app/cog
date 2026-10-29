@@ -152,6 +152,7 @@ type ShareDisplayItem struct {
 	SubjectName string
 	PermLabel   string
 	Token       string // for public links
+	LinkPath    string // where a public link is served: /s/<token>, or a calendar's feed
 }
 
 // PermissionLevelChoice is a named permission level for the share form dropdown.

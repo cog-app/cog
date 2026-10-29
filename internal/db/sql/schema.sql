@@ -175,3 +175,67 @@ CREATE TABLE IF NOT EXISTS volume_quotas (
 );
 /* email index for forgot-password lookups */
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email != '';
+CREATE TABLE IF NOT EXISTS dav_collections (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	owner_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	home TEXT NOT NULL,
+	name TEXT NOT NULL,
+	components TEXT NOT NULL,
+	display_name TEXT NOT NULL DEFAULT '',
+	description TEXT NOT NULL DEFAULT '',
+	color TEXT NOT NULL DEFAULT '',
+	sort_order INTEGER NOT NULL DEFAULT 0,
+	timezone TEXT NOT NULL DEFAULT '',
+	dead_props TEXT NOT NULL DEFAULT '[]',
+	props_version INTEGER NOT NULL DEFAULT 0,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL,
+	kind TEXT NOT NULL DEFAULT '',
+	UNIQUE(owner_user_id, home, name)
+);
+/* a remote feed a subscription collection is filled from */
+CREATE TABLE IF NOT EXISTS dav_subscriptions (
+	collection_id INTEGER PRIMARY KEY REFERENCES dav_collections(id) ON DELETE CASCADE,
+	url TEXT NOT NULL,
+	etag TEXT NOT NULL DEFAULT '',
+	last_modified TEXT NOT NULL DEFAULT '',
+	refresh INTEGER NOT NULL DEFAULT 0,
+	next_poll_at INTEGER NOT NULL DEFAULT 0,
+	last_poll_at INTEGER NOT NULL DEFAULT 0,
+	last_success_at INTEGER NOT NULL DEFAULT 0,
+	failures INTEGER NOT NULL DEFAULT 0,
+	last_error TEXT NOT NULL DEFAULT '',
+	skipped INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_dav_subscriptions_next ON dav_subscriptions(next_poll_at);
+/* how far the birthday calendar has read each address book */
+CREATE TABLE IF NOT EXISTS dav_birthday_cursors (
+	collection_id INTEGER NOT NULL REFERENCES dav_collections(id) ON DELETE CASCADE,
+	book_id INTEGER NOT NULL,
+	version INTEGER NOT NULL,
+	book_owner_id TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (collection_id, book_id)
+);
+/* push subscriptions: a client's push endpoint and what it watches (WebDAV-Push; JMAP push) */
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+	id TEXT PRIMARY KEY,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	protocol TEXT NOT NULL,
+	resource TEXT NOT NULL,
+	endpoint TEXT NOT NULL,
+	p256dh BLOB NOT NULL,
+	auth BLOB NOT NULL,
+	options TEXT NOT NULL DEFAULT '',
+	expires_at INTEGER NOT NULL,
+	pending INTEGER NOT NULL DEFAULT 0,
+	seq INTEGER NOT NULL DEFAULT 0,
+	next_attempt_at INTEGER NOT NULL DEFAULT 0,
+	failures INTEGER NOT NULL DEFAULT 0,
+	last_error TEXT NOT NULL DEFAULT '',
+	last_success_at INTEGER NOT NULL DEFAULT 0,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL,
+	UNIQUE(protocol, resource, endpoint)
+);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_due ON push_subscriptions(next_attempt_at) WHERE pending != 0;
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_expiry ON push_subscriptions(expires_at);
