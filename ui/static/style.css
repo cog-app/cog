@@ -3116,6 +3116,107 @@ a.login-title:hover {
 .files-selection-count {
   font-weight: 600;
   margin-right: auto;
+  white-space: nowrap;
+}
+.files-selection-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.files-selection > .btn-icon {
+  margin-left: calc(-1 * var(--space-2));
+}
+
+/* Move dialog: a folder browser. The head says where it is; each row opens
+   a subfolder. */
+.files-move-body {
+  min-height: 16rem;
+}
+.files-picker-loading {
+  margin: 0;
+  font-size: var(--font-sm);
+}
+.files-picker-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h);
+  margin-bottom: var(--space-3);
+}
+.files-picker-where {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.files-picker-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.files-picker-path {
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.files-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+.files-picker-list > li + li {
+  border-top: 1px solid var(--color-border);
+}
+.files-picker-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.files-picker-item:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+.files-picker-item:focus-visible {
+  outline-offset: -2px;
+}
+.files-picker-item:disabled {
+  cursor: default;
+  color: var(--color-text-muted);
+}
+.files-picker-item:disabled .files-icon-folder {
+  opacity: 0.5;
+}
+.files-picker-item-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.files-picker-item > svg {
+  flex: none;
+  color: var(--color-text-muted);
+}
+.files-picker-note {
+  flex: none;
+  font-size: var(--font-xs);
+}
+.files-picker-empty {
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius);
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+.files-picker-help {
+  margin: var(--space-3) 0 0;
 }
 
 /* Drag-and-drop: tints the page below the navbar. */
@@ -3220,6 +3321,14 @@ textarea.files-editor {
 @media (max-width: 768px) {
   .files-selection {
     padding: var(--space-2) var(--space-4);
+  }
+  /* Phones: the selection bar's actions are icons (each has a label). */
+  .files-selection-label {
+    display: none;
+  }
+  .files-selection-actions .btn {
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
   }
   .files-check-hit {
     min-width: var(--tap);

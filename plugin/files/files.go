@@ -358,26 +358,21 @@ func (p *Plugin) Download(username, filePath string) (io.ReadCloser, *FileMeta, 
 	if err != nil {
 		return nil, nil, err
 	}
-
-	if fs := p.userFS(username); fs != nil {
-		rc, err := fs.Get(filePath)
-		if err != nil {
-			return nil, nil, fmt.Errorf("open file: %w", err)
-		}
-		return rc, meta, nil
-	}
-
-	fsPath := filepath.Join(p.ctx.UserFilesDir(username), filePath)
-	f, err := os.Open(fsPath)
+	rc, err := p.open(username, filePath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open file: %w", err)
+		return nil, nil, err
 	}
-	return f, meta, nil
+	return rc, meta, nil
 }
 
 // List returns files/directories within a given directory, performing
 // lazy reconciliation between disk and metadata.
 func (p *Plugin) List(username, dirPath string) ([]FileMeta, error) {
+	return p.list(username, dirPath, false)
+}
+
+// list is List, or with dirsOnly just the folders.
+func (p *Plugin) list(username, dirPath string, dirsOnly bool) ([]FileMeta, error) {
 	dirPath = normalizePath(dirPath)
 
 	db, err := p.DB(username)
@@ -392,8 +387,8 @@ func (p *Plugin) List(username, dirPath string) ([]FileMeta, error) {
 
 	rows, err := db.Query(`
 		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
-		FROM files WHERE parent_path = ?
-		ORDER BY is_dir DESC, name COLLATE NOCASE ASC, name ASC`, dirPath)
+		FROM files WHERE parent_path = ? AND (is_dir = 1 OR NOT ?)
+		ORDER BY is_dir DESC, name COLLATE NOCASE ASC, name ASC`, dirPath, dirsOnly)
 	if err != nil {
 		return nil, fmt.Errorf("list files: %w", err)
 	}

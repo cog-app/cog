@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -137,7 +138,16 @@ func (h *Pages) ServeGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Directory → listing.
+	// Directory → the move dialog's folder picker, a zip of a selection, or
+	// the listing.
+	if meta.IsDir && r.URL.Query().Get("folders") == "1" {
+		h.serveFolderPicker(w, r, u.Username, fp)
+		return
+	}
+	if meta.IsDir && r.URL.Query().Get("zip") == "1" {
+		h.serveZip(w, r, u.Username, fp)
+		return
+	}
 	if meta.IsDir {
 		items, err := h.plugin.List(u.Username, fp)
 		if err != nil {
@@ -566,6 +576,8 @@ func archiveViewKind(mimeType string) string {
 //   - ?save=1 saves the text editor's content to the file
 //   - ?rename=1 renames the file or folder at the path to the form's name
 //   - ?delete=1 moves the form's paths to the trash; the path is the folder to return to
+//   - ?move=1 moves the form's paths into the folder named by dest; the
+//     path is the folder to return to
 //   - ?star=1 toggles the favourite and returns the new star button
 //   - a name field creates a folder in the path's folder
 //   - otherwise the files in the form are uploaded into the path's folder
@@ -583,6 +595,8 @@ func (h *Pages) ServePost(w http.ResponseWriter, r *http.Request) {
 		h.handleRename(w, r, u.Username, fp)
 	case q.Get("delete") == "1":
 		h.handleDeleteForm(w, r, u.Username, fp)
+	case q.Get("move") == "1":
+		h.handleMoveForm(w, r, u.Username, fp)
 	case q.Get("star") == "1":
 		h.handleStar(w, r, u.Username, fp)
 	case r.FormValue("name") != "":
@@ -685,6 +699,114 @@ func (h *Pages) handleDeleteForm(w http.ResponseWriter, r *http.Request, usernam
 		h.flashRedirect(w, r, "success", "Moved “"+path.Base(paths[0])+"” to the trash.", back)
 	default:
 		h.flashRedirect(w, r, "success", fmt.Sprintf("Moved %d items to the trash.", len(paths)), back)
+	}
+}
+
+// handleMoveForm moves the selected items into the folder the move dialog
+// chose and comes back to the folder they were in, saying what moved and
+// what could not.
+func (h *Pages) handleMoveForm(w http.ResponseWriter, r *http.Request, username, fp string) {
+	back := fileURL(fp)
+	if err := r.ParseForm(); err != nil {
+		h.flashRedirect(w, r, "error", "Nothing was moved: "+err.Error(), back)
+		return
+	}
+	paths := r.PostForm["path"]
+	if len(paths) == 0 {
+		h.flashRedirect(w, r, "error", "Nothing was selected to move.", back)
+		return
+	}
+	dest := path.Clean("/" + r.PostForm.Get("dest"))
+	moved, failures, err := h.plugin.Move(username, paths, dest)
+	if err != nil {
+		h.plugin.log.Error("move from file browser", "user", username, "dest", dest, "err", err)
+		h.flashRedirect(w, r, "error", "Nothing was moved to “"+dirTitle(dest)+"”: "+err.Error(), back)
+		return
+	}
+	for _, f := range failures {
+		h.plugin.log.Info("move from file browser", "user", username, "path", f.Path, "dest", dest, "err", f.Err)
+	}
+	kind, msg := moveFlash(moved, failures, dest)
+	h.flashRedirect(w, r, kind, msg, back)
+}
+
+// moveFlash says how a move went: what went where, then what stayed and why.
+func moveFlash(moved []string, failures []MoveFailure, dest string) (kind, msg string) {
+	to := "“" + dirTitle(dest) + "”"
+	switch len(moved) {
+	case 0:
+	case 1:
+		msg = "Moved “" + path.Base(moved[0]) + "” to " + to + "."
+	default:
+		msg = fmt.Sprintf("Moved %d items to %s.", len(moved), to)
+	}
+	if len(failures) == 0 {
+		return "success", msg
+	}
+	var why []string
+	for _, f := range failures {
+		why = append(why, "“"+path.Base(f.Path)+"” ("+f.Err.Error()+")")
+	}
+	if msg != "" {
+		msg += " "
+	}
+	return "error", msg + "Could not move " + strings.Join(why, ", ") + "."
+}
+
+// serveFolderPicker answers the move dialog (htmx) with the folders inside
+// fp. The request carries the selection as path parameters, so the picker
+// can refuse a folder being moved and the folder the items are already in.
+func (h *Pages) serveFolderPicker(w http.ResponseWriter, r *http.Request, username, fp string) {
+	folders, err := h.plugin.ListDirs(username, fp)
+	if err != nil {
+		h.plugin.log.Error("folder picker", "user", username, "dir", fp, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	sel := map[string]bool{}
+	for _, p := range r.URL.Query()["path"] {
+		sel[path.Clean("/"+p)] = true
+	}
+	ui.Render(w, r, folderPicker(fp, folders, sel))
+}
+
+// serveZip streams a zip of the selected files and folders in fp (path
+// parameters), as the selection bar's Download. A single file is sent as
+// itself. Problems found before the first byte go back to the folder as a
+// flash; one after it can only abort the response, which the browser shows
+// as a failed download rather than a quietly truncated archive.
+func (h *Pages) serveZip(w http.ResponseWriter, r *http.Request, username, fp string) {
+	back := fileURL(fp)
+	paths := r.URL.Query()["path"]
+	if len(paths) == 0 {
+		h.flashRedirect(w, r, "error", "Nothing was selected to download.", back)
+		return
+	}
+	if len(paths) == 1 {
+		meta, err := h.plugin.GetByPath(username, paths[0])
+		if err != nil {
+			h.flashRedirect(w, r, "error", "“"+path.Base(paths[0])+"” could not be downloaded: "+err.Error(), back)
+			return
+		}
+		if !meta.IsDir {
+			h.serveDownload(w, r, username, meta.Path, meta)
+			return
+		}
+	}
+	entries, err := h.plugin.zipEntries(username, paths)
+	if err != nil {
+		h.flashRedirect(w, r, "error", "The download could not be prepared: "+err.Error(), back)
+		return
+	}
+	name := dirTitle(fp) + ".zip"
+	if len(paths) == 1 {
+		name = path.Base(path.Clean("/"+paths[0])) + ".zip"
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+	if err := h.plugin.writeZip(username, entries, w); err != nil {
+		h.plugin.log.Error("zip download", "user", username, "dir", fp, "err", err)
+		panic(http.ErrAbortHandler)
 	}
 }
 
@@ -870,6 +992,31 @@ func fileResourceType(isDir bool) string {
 // space, "#", "?" or "%" in it still reaches the right file.
 func fileURL(p string) string {
 	return "/apps/files" + (&url.URL{Path: path.Clean("/" + p)}).EscapedPath()
+}
+
+// zipURL downloads paths, all in dir, as one zip archive.
+func zipURL(dir string, paths ...string) string {
+	q := url.Values{"zip": {"1"}, "path": paths}
+	return fileURL(dir) + "?" + q.Encode()
+}
+
+// pickerNote is why the move dialog cannot use dir, or "" if it can: the
+// selected items are already there, or dir is inside one of them.
+func pickerNote(dir string, selected map[string]bool) string {
+	for p := range selected {
+		if dir == p || strings.HasPrefix(dir, p+"/") {
+			return "A folder cannot be moved into itself."
+		}
+	}
+	for p := range selected {
+		if parentDir(p) == dir {
+			if len(selected) == 1 {
+				return "It is already in this folder. Choose another one."
+			}
+			return "The items are already in this folder. Choose another one."
+		}
+	}
+	return ""
 }
 
 // archiveEntryURL is the URL of a path inside an archive.

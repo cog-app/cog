@@ -67,13 +67,25 @@ templ filesPage(pd ui.PageData, dirPath string, items []FileMeta, folderIcons ma
 			</div>
 		} else {
 			<div class="card card-flush files-card">
-				<div class="files-selection" id="files-selection" hidden>
-					<span class="files-selection-count" data-selection-count>0 selected</span>
-					<button type="button" class="btn btn-sm btn-outline-danger" data-files-delete-selected>
-						@ui.Icon("trash")
-						Delete
+				<div class="files-selection" id="files-selection" data-folder-url={ fileURL(dirPath) } hidden>
+					<button type="button" class="btn-icon btn-icon-sm" data-files-clear-selection aria-label="Clear selection" title="Clear selection">
+						@ui.Icon("x")
 					</button>
-					<button type="button" class="btn btn-sm btn-ghost" data-files-clear-selection>Clear</button>
+					<span class="files-selection-count" data-selection-count aria-live="polite">0 selected</span>
+					<div class="files-selection-actions">
+						<button type="button" class="btn btn-sm" data-files-download-selected aria-label="Download" title="Download">
+							@ui.Icon("download")
+							<span class="files-selection-label">Download</span>
+						</button>
+						<button type="button" class="btn btn-sm" data-files-move-selected aria-label="Move" title="Move">
+							@moveIcon()
+							<span class="files-selection-label">Move…</span>
+						</button>
+						<button type="button" class="btn btn-sm btn-outline-danger" data-files-delete-selected aria-label="Delete" title="Delete">
+							@ui.Icon("trash")
+							<span class="files-selection-label">Delete</span>
+						</button>
+					</div>
 				</div>
 				<table class="table files-table" id="files-table">
 					<thead>
@@ -113,6 +125,7 @@ templ filesPage(pd ui.PageData, dirPath string, items []FileMeta, folderIcons ma
 			</form>
 		}
 		@renameModal(pd.CSRFToken)
+		@moveModal(pd.CSRFToken, dirPath)
 		@deleteModal(pd.CSRFToken, dirPath)
 		<script type="text/javascript" data-files-drop={ fileURL(dirPath) } data-csrf={ pd.CSRFToken }>
 			filesDragDrop(document.currentScript.dataset.filesDrop, document.currentScript.dataset.csrf);
@@ -192,6 +205,10 @@ templ rowMenu(f FileMeta) {
 					@ui.Icon("folder")
 					Open
 				</a>
+				<a href={ templ.SafeURL(zipURL(f.ParentPath, f.Path)) }>
+					@ui.Icon("download")
+					Download as ZIP
+				</a>
 			} else {
 				<a href={ templ.SafeURL(fileURL(f.Path) + "?dl=1") }>
 					@ui.Icon("download")
@@ -201,6 +218,10 @@ templ rowMenu(f FileMeta) {
 			<button type="button" data-files-rename={ fileURL(f.Path) + "?rename=1" } data-name={ f.Name }>
 				@ui.Icon("edit")
 				Rename
+			</button>
+			<button type="button" data-files-move={ f.Path } data-name={ f.Name }>
+				@moveIcon()
+				Move…
 			</button>
 			<cog-share-button
 				class="files-menu-share"
@@ -240,6 +261,114 @@ templ renameModal(csrfToken string) {
 			</div>
 		</form>
 	}
+}
+
+// moveModal moves the selection, or one row, into a folder chosen by
+// browsing. filesScripts fills in the paths and loads the picker, which
+// answers with the folder's subfolders and the submit button for it.
+templ moveModal(csrfToken, dirPath string) {
+	@ui.Modal("files-move", "Move") {
+		<form method="post" action={ templ.SafeURL(fileURL(dirPath) + "?move=1") } data-files-move-form>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<div data-move-paths></div>
+			<div class="modal-body files-move-body">
+				<div
+					id="files-move-picker"
+					hx-get={ fileURL(dirPath) + "?folders=1" }
+					hx-trigger="files:move-open"
+					hx-include="[data-move-paths]"
+				>
+					<p class="files-picker-loading text-muted">Loading folders…</p>
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn" data-modal-close>Cancel</button>
+				@moveSubmit(false, true)
+			</div>
+		</form>
+	}
+}
+
+// moveSubmit is the move dialog's submit button. The picker swaps it out of
+// band, disabled where the selection cannot go.
+templ moveSubmit(oob, disabled bool) {
+	<button
+		class="btn btn-primary"
+		type="submit"
+		id="files-move-submit"
+		if oob {
+			hx-swap-oob="true"
+		}
+		disabled?={ disabled }
+	>Move here</button>
+}
+
+// folderPicker is one folder of the move dialog: where it is, a way up, and
+// its subfolders. A folder being moved cannot be entered or chosen, and the
+// folder the items are already in cannot be chosen.
+templ folderPicker(dir string, folders []FileMeta, selected map[string]bool) {
+	<input type="hidden" name="dest" value={ dir }/>
+	<div class="files-picker-head">
+		if dir != "/" {
+			<button
+				type="button"
+				class="btn-icon btn-icon-sm"
+				hx-get={ fileURL(parentDir(dir)) + "?folders=1" }
+				hx-target="#files-move-picker"
+				hx-include="[data-move-paths]"
+				aria-label={ "Up to " + dirTitle(parentDir(dir)) }
+				title={ "Up to " + dirTitle(parentDir(dir)) }
+			>
+				@ui.Icon("arrow-up")
+			</button>
+		}
+		<div class="files-picker-where">
+			<span class="files-picker-name">{ dirTitle(dir) }</span>
+			if dir != "/" {
+				<span class="files-picker-path">{ dir }</span>
+			}
+		</div>
+	</div>
+	if len(folders) == 0 {
+		<p class="files-picker-empty">No folders in here.</p>
+	} else {
+		<ul class="files-picker-list">
+			for _, f := range folders {
+				<li>
+					<button
+						type="button"
+						class="files-picker-item"
+						hx-get={ fileURL(f.Path) + "?folders=1" }
+						hx-target="#files-move-picker"
+						hx-include="[data-move-paths]"
+						disabled?={ selected[f.Path] }
+					>
+						<span class="files-thumb" aria-hidden="true">
+							@fileIcon("", true, "")
+						</span>
+						<span class="files-picker-item-name">{ f.Name }</span>
+						if selected[f.Path] {
+							<span class="files-picker-note">Being moved</span>
+						} else {
+							@chevronIcon(false)
+						}
+					</button>
+				</li>
+			}
+		</ul>
+	}
+	if note := pickerNote(dir, selected); note != "" {
+		<p class="form-help files-picker-help">{ note }</p>
+	}
+	@moveSubmit(true, pickerNote(dir, selected) != "")
+}
+
+templ moveIcon() {
+	<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+		<polyline points="12 10 15 13 12 16"></polyline>
+		<line x1="8" y1="13" x2="15" y2="13"></line>
+	</svg>
 }
 
 // deleteModal confirms moving one or more items to the trash. The form posts
@@ -305,6 +434,44 @@ templ filesScripts() {
 				cogModal.open(dlg);
 			}
 
+			// askMove fills the move dialog with the items, opens it and has
+			// the picker load the folder they are in.
+			function askMove(items) {
+				var dlg = document.getElementById("files-move");
+				if (!dlg || !items.length) return;
+				var holder = dlg.querySelector("[data-move-paths]");
+				holder.innerHTML = "";
+				items.forEach(function (it) {
+					var input = document.createElement("input");
+					input.type = "hidden";
+					input.name = "path";
+					input.value = it.path;
+					holder.appendChild(input);
+				});
+				dlg.querySelector(".modal-title").textContent = items.length === 1
+					? "Move “" + items[0].name + "”"
+					: "Move " + items.length + " items";
+				var picker = document.getElementById("files-move-picker");
+				cogModal.open(dlg);
+				htmx.trigger(picker, "files:move-open");
+			}
+
+			function picked() {
+				return checks().filter(function (c) { return c.checked; }).map(function (c) {
+					return { path: c.value, name: c.getAttribute("data-name") };
+				});
+			}
+
+			// downloadSelected fetches one file as itself, anything more as a zip.
+			function downloadSelected(items) {
+				var bar = document.getElementById("files-selection");
+				if (!bar || !items.length) return;
+				var q = new URLSearchParams();
+				q.append("zip", "1");
+				items.forEach(function (it) { q.append("path", it.path); });
+				window.location.href = bar.getAttribute("data-folder-url") + "?" + q.toString();
+			}
+
 			function askRename(action, name) {
 				var dlg = document.getElementById("files-rename");
 				if (!dlg) return;
@@ -328,17 +495,21 @@ templ filesScripts() {
 			});
 
 			document.addEventListener("click", function (e) {
-				var t = e.target.closest("[data-files-rename], [data-files-delete], [data-files-delete-selected], [data-files-clear-selection]");
+				var t = e.target.closest("[data-files-rename], [data-files-delete], [data-files-move], [data-files-delete-selected], [data-files-move-selected], [data-files-download-selected], [data-files-clear-selection]");
 				if (!t) return;
 				if (window.cog && cog.closeDropdowns) cog.closeDropdowns();
 				if (t.hasAttribute("data-files-rename")) {
 					askRename(t.getAttribute("data-files-rename"), t.getAttribute("data-name"));
 				} else if (t.hasAttribute("data-files-delete")) {
 					askDelete([{ path: t.getAttribute("data-files-delete"), name: t.getAttribute("data-name") }]);
+				} else if (t.hasAttribute("data-files-move")) {
+					askMove([{ path: t.getAttribute("data-files-move"), name: t.getAttribute("data-name") }]);
 				} else if (t.hasAttribute("data-files-delete-selected")) {
-					askDelete(checks().filter(function (c) { return c.checked; }).map(function (c) {
-						return { path: c.value, name: c.getAttribute("data-name") };
-					}));
+					askDelete(picked());
+				} else if (t.hasAttribute("data-files-move-selected")) {
+					askMove(picked());
+				} else if (t.hasAttribute("data-files-download-selected")) {
+					downloadSelected(picked());
 				} else {
 					checks().forEach(function (c) { c.checked = false; });
 					updateSelection();

@@ -5,7 +5,7 @@
     <title>
       Files — Cog
     </title>
-    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
+    <link href="/static/style.css?v=1c5757ec35a1" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0yMiAxOWEyIDIgMCAwIDEtMiAySDRhMiAyIDAgMCAxLTItMlY1YTIgMiAwIDAgMSAyLTJoNWwyIDNoOWEyIDIgMCAwIDEgMiAyeiI+PC9wYXRoPjwvc3ZnPg==" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -308,6 +308,38 @@
                 </button>
                 <button class="btn btn-primary" type="submit">
                   Rename
+                </button>
+              </div>
+            </form>
+          </dialog>
+          <dialog aria-labelledby="files-move-title" class="modal" id="files-move">
+            <div class="modal-header">
+              <h2 class="modal-title" id="files-move-title">
+                Move
+              </h2>
+              <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="18" x2="6" y1="6" y2="18" />
+                  <line x1="6" x2="18" y1="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <form action="/apps/files/?move=1" data-files-move-form="" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div data-move-paths="" />
+              <div class="modal-body files-move-body">
+                <div hx-get="/apps/files/?folders=1" hx-include="[data-move-paths]" hx-trigger="files:move-open" id="files-move-picker">
+                  <p class="files-picker-loading text-muted">
+                    Loading folders…
+                  </p>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn" data-modal-close="" type="button">
+                  Cancel
+                </button>
+                <button class="btn btn-primary" disabled="" id="files-move-submit" type="submit">
+                  Move here
                 </button>
               </div>
             </form>

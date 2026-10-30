@@ -172,6 +172,74 @@ func TestBrowser(t *testing.T) {
 		b.Snapshot(t)
 	})
 
+	// Move…: the dialog opens on the folder the selection is in, where the
+	// selection cannot go, so "Move here" waits for another folder.
+	t.Run("MoveDialog", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "full", "pass")
+		b.Navigate(t, "/apps/files/")
+		b.WaitVisible(t, "#files-table")
+		b.Click(t, `[data-file-check][value="/notes.txt"]`)
+		b.Click(t, `[data-file-check][value="/Documents"]`)
+		b.Click(t, "[data-files-move-selected]")
+		b.WaitVisible(t, "#files-move .files-picker-item")
+		b.WaitText(t, "The items are already in this folder.")
+		if b.Eval(t, `() => document.getElementById("files-move-submit").disabled`) != true {
+			t.Fatal("Move here is enabled for the folder the items are already in")
+		}
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	// Inside a folder the picker offers the way up and that folder's
+	// folders, and "Move here" is enabled.
+	t.Run("MoveDialogSubfolder", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "full", "pass")
+		b.Navigate(t, "/apps/files/")
+		b.WaitVisible(t, "#files-table")
+		b.Click(t, `[aria-label="Actions for notes.txt"]`)
+		b.Click(t, `[data-files-move][data-name="notes.txt"]`)
+		b.WaitVisible(t, "#files-move .files-picker-item")
+		b.Click(t, `//button[contains(@class,"files-picker-item")][normalize-space()="Projects"]`)
+		b.WaitReady(t, `#files-move input[name="dest"][value="/Projects"]`)
+		b.WaitVisible(t, `#files-move [aria-label="Up to Files"]`)
+		if b.Eval(t, `() => document.getElementById("files-move-submit").disabled`) != false {
+			t.Fatal("Move here is disabled in another folder")
+		}
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	// Browsing into a folder and moving there: the browser comes back to the
+	// folder the items left, which says where they went.
+	env.CreateUser(t, "mover", "pass")
+	seedFiles(t, fp, "mover")
+	t.Run("MoveIntoFolder", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "mover", "pass")
+		b.Navigate(t, "/apps/files/")
+		b.WaitVisible(t, "#files-table")
+		b.Click(t, `[data-file-check][value="/notes.txt"]`)
+		b.Click(t, `[data-file-check][value="/photo.png"]`)
+		b.Click(t, "[data-files-move-selected]")
+		b.WaitVisible(t, "#files-move .files-picker-item")
+		b.Click(t, `//button[contains(@class,"files-picker-item")][normalize-space()="Projects"]`)
+		b.WaitReady(t, `#files-move input[name="dest"][value="/Projects"]`)
+		b.Click(t, `//button[contains(@class,"files-picker-item")][normalize-space()="2026"]`)
+		b.WaitReady(t, `#files-move input[name="dest"][value="/Projects/2026"]`)
+		b.Click(t, `#files-move [aria-label="Up to Projects"]`)
+		b.WaitReady(t, `#files-move input[name="dest"][value="/Projects"]`)
+		b.Click(t, "#files-move-submit")
+		b.WaitText(t, "Moved 2 items to “Projects”.")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+		for _, p := range []string{"/Projects/notes.txt", "/Projects/photo.png"} {
+			_, err := fp.GetByPath("mover", p)
+			require.NoError(t, err)
+		}
+	})
+
 	t.Run("DropOverlay", func(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "full", "pass")
