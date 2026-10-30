@@ -1,26 +1,55 @@
-<html>
+<html lang="en">
   <head>
+    <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1" name="viewport" />
     <title>
-      Cog - Login
+      Connect an app — Cog
     </title>
+    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/favicon.svg?v=f043627311df" rel="icon" type="image/svg+xml" />
   </head>
   <body>
-    <h1>
-      Grant App Access
-    </h1>
-    <p>
-      Signed in as
-      <strong>
-        alice
-      </strong>
-      . Approving will create an app password tied to your account for the requesting application.
-    </p>
-    <form action="?token=«hex»" method="POST">
-      <input name="csrf_token" type="hidden" value="«hex»" />
-      <button type="submit">
-        Grant Access
-      </button>
-    </form>
+    <main class="login-container">
+      <div class="card login-card">
+        <a class="login-title" href="/">
+          <svg aria-hidden="true" fill="none" height="28" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="28">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          <span>
+            Cog
+          </span>
+        </a>
+        <h1 class="login-heading">
+          Connect Go-http-client?
+        </h1>
+        <p class="login-lead">
+          <strong>
+            Go-http-client
+          </strong>
+          wants to access your Cog account
+          <strong>
+            alice
+          </strong>
+          : your files, calendars and contacts.
+        </p>
+        <form action="/index.php/login/v2/grant?token=«hex»" method="post">
+          <input name="csrf_token" type="hidden" value="«hex»" />
+          <button class="btn btn-primary btn-block" name="action" type="submit" value="grant">
+            Grant access
+          </button>
+          <button class="btn btn-secondary btn-block" formnovalidate="" name="action" type="submit" value="cancel">
+            Cancel
+          </button>
+        </form>
+        <p class="login-note">
+          Granting creates an app password for this app. You can revoke it at any time in
+          <a href="/settings/security">
+            Settings › Security
+          </a>
+          .
+        </p>
+      </div>
+    </main>
   </body>
 </html>

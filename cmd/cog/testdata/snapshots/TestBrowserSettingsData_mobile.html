@@ -1,20 +1,20 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
     <title>
       Import and export — Cog
     </title>
-    <link href="/static/style.css?v=896ce6a8a2ed" rel="stylesheet" />
+    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
     <link href="/static/favicon.svg" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
     </style>
   </head>
   <body hx-headers="{\"X-CSRF-Token\":\"«hex»\"}">
-    <nav class="navbar navbar--collapsed" data-nav-count="9">
-      <a class="navbar-brand" href="/">
-        <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" style="vertical-align:middle" viewBox="0 0 24 24" width="20">
+    <nav aria-label="Main" class="navbar navbar--collapsed">
+      <a aria-label="Cog home" class="navbar-brand" href="/">
+        <svg aria-hidden="true" fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
@@ -129,30 +129,30 @@
           </a>
         </li>
       </ul>
-      <div class="navbar-apps-dropdown dropdown" tabindex="0">
-        <button class="apps-toggle" type="button">
-          <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+      <div class="dropdown navbar-apps">
+        <button aria-controls="apps-menu" aria-expanded="false" aria-label="Apps" class="btn-icon" data-dropdown-toggle="" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
             <rect height="7" width="7" x="3" y="3" />
             <rect height="7" width="7" x="14" y="3" />
             <rect height="7" width="7" x="3" y="14" />
             <rect height="7" width="7" x="14" y="14" />
           </svg>
         </button>
-        <div class="dropdown-menu apps-menu">
-          <a class="" href="/">
+        <div class="dropdown-menu" id="apps-menu">
+          <a href="/">
             <svg class="nav-icon" viewBox="0 0 24 24">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
               <polyline points="9 22 9 12 15 12 15 22" />
             </svg>
             Dashboard
           </a>
-          <a class="" href="/apps/files">
+          <a href="/apps/files">
             <svg class="nav-icon" viewBox="0 0 24 24">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
             Files
           </a>
-          <a class="" href="/apps/calendar">
+          <a href="/apps/calendar">
             <svg class="nav-icon" viewBox="0 0 24 24">
               <rect height="18" rx="2" ry="2" width="18" x="3" y="4" />
               <line x1="16" x2="16" y1="2" y2="6" />
@@ -161,7 +161,7 @@
             </svg>
             Calendar
           </a>
-          <a class="" href="/apps/contacts">
+          <a href="/apps/contacts">
             <svg class="nav-icon" viewBox="0 0 24 24">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
               <circle cx="9" cy="7" r="4" />
@@ -170,7 +170,7 @@
             </svg>
             Contacts
           </a>
-          <a class="" href="/apps/notes">
+          <a href="/apps/notes">
             <svg class="nav-icon" viewBox="0 0 24 24">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
               <polyline points="14 2 14 8 20 8" />
@@ -179,7 +179,7 @@
             </svg>
             Notes
           </a>
-          <a class="" href="/apps/feed/">
+          <a href="/apps/feed/">
             <svg class="nav-icon" viewBox="0 0 24 24">
               <path d="M4 11a9 9 0 0 1 9 9" />
               <path d="M4 4a16 16 0 0 1 16 16" />
@@ -187,7 +187,7 @@
             </svg>
             Feed
           </a>
-          <a class="" href="/apps/gallery">
+          <a href="/apps/gallery">
             <svg class="nav-icon" viewBox="0 0 24 24">
               <rect height="18" rx="2" ry="2" width="18" x="3" y="3" />
               <circle cx="8.5" cy="8.5" r="1.5" />
@@ -195,45 +195,91 @@
             </svg>
             Gallery
           </a>
-          <a class="" href="/apps/bookmarks">
+          <a href="/apps/bookmarks">
             <svg class="nav-icon" viewBox="0 0 24 24">
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
             </svg>
             Bookmarks
           </a>
-          <a class="" href="/apps/tasks">
+          <a href="/apps/tasks">
             <svg class="nav-icon" viewBox="0 0 24 24">
               <path d="M9 11l3 3L22 4" />
               <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
             </svg>
             Tasks
           </a>
+          <div class="dropdown-divider" />
+          <button data-search-open="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" x2="16.65" y1="21" y2="16.65" />
+            </svg>
+            Search
+          </button>
+          <a class="active" href="/settings/profile">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="4" x2="4" y1="21" y2="14" />
+              <line x1="4" x2="4" y1="10" y2="3" />
+              <line x1="12" x2="12" y1="21" y2="12" />
+              <line x1="12" x2="12" y1="8" y2="3" />
+              <line x1="20" x2="20" y1="21" y2="16" />
+              <line x1="20" x2="20" y1="12" y2="3" />
+              <line x1="1" x2="7" y1="14" y2="14" />
+              <line x1="9" x2="15" y1="8" y2="8" />
+              <line x1="17" x2="23" y1="16" y2="16" />
+            </svg>
+            Settings
+          </a>
+          <a class="" href="/admin/">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            Admin
+          </a>
         </div>
       </div>
-      <div class="navbar-search">
-        <input autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)..." type="search" />
-        <div class="search-results" id="search-results" />
+      <div class="navbar-spacer" />
+      <div class="navbar-search" role="search">
+        <label class="sr-only" for="search-box">
+          Search
+        </label>
+        <input aria-controls="search-results" autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)…" type="search" />
+        <div aria-live="polite" class="search-results" id="search-results" />
       </div>
+      <button aria-controls="search-box" aria-expanded="false" aria-label="Search" class="btn-icon search-toggle" data-search-open="" type="button">
+        <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+          <circle cx="11" cy="11" r="7" />
+          <line x1="21" x2="16.65" y1="21" y2="16.65" />
+        </svg>
+      </button>
       <div class="navbar-end">
-        <div id="notif-bell" onclick="toggleNotifPanel()" style="position:relative;cursor:pointer;padding:0 0.5rem;display:none" title="Notifications">
-          <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-          </svg>
-          <span class="notif-badge" id="notif-badge" style="display:none" />
+        <div class="dropdown notif-dropdown" hidden="" id="notif">
+          <button aria-controls="notif-panel" aria-expanded="false" aria-label="Notifications" class="btn-icon" data-dropdown-toggle="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <span class="notif-badge" id="notif-badge" />
+          </button>
+          <div class="dropdown-menu" id="notif-panel" />
         </div>
-        <div class="dropdown-menu" id="notif-panel" style="display:none;position:absolute;right:4rem;top:3rem;min-width:280px;max-height:300px;overflow:auto;z-index:100" />
-        <div class="dropdown" tabindex="0">
-          <button class="dropdown-toggle" type="button">
-            <img class="avatar-sm" src="/avatar/«hex»" />
+        <div class="dropdown">
+          <button aria-controls="user-menu" aria-expanded="false" aria-label="Account menu for data" class="dropdown-toggle" data-dropdown-toggle="" type="button">
+            <img alt="" class="avatar-sm" src="/avatar/«hex»" />
             <span class="dropdown-username">
               data
             </span>
-            <span class="dropdown-caret">
+            <span aria-hidden="true" class="dropdown-caret">
               ▾
             </span>
           </button>
-          <div class="dropdown-menu">
+          <div class="dropdown-menu" id="user-menu">
+            <div class="dropdown-header">
+              <strong>
+                data
+              </strong>
+            </div>
+            <div class="dropdown-divider" />
             <a class="" href="/settings/profile">
               Profile
             </a>
@@ -246,6 +292,9 @@
             <a class="" href="/settings/groups">
               Groups
             </a>
+            <a class="active" href="/settings/data">
+              Import and export
+            </a>
             <div class="dropdown-divider" />
             <a class="" href="/admin/">
               Admin
@@ -253,7 +302,7 @@
             <div class="dropdown-divider" />
             <form action="/logout" method="post">
               <input name="csrf_token" type="hidden" value="«hex»" />
-              <button onmousedown="this.closest('form').submit()" type="submit">
+              <button type="submit">
                 Log out
               </button>
             </form>
@@ -262,8 +311,19 @@
       </div>
     </nav>
     <main class="content">
-      <div class="sidebar-layout">
-        <nav class="sidebar">
+      <div class="sidebar-layout has-sidebar-toggle">
+        <button aria-controls="sidebar-1" aria-expanded="false" aria-label="Menu: Import and export" class="sidebar-toggle" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <line x1="3" x2="21" y1="6" y2="6" />
+            <line x1="3" x2="21" y1="12" y2="12" />
+            <line x1="3" x2="21" y1="18" y2="18" />
+          </svg>
+          <span class="sidebar-toggle-label" data-label="Import and export" />
+          <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        <nav aria-label="Section" class="sidebar" id="sidebar-1">
           <a class="sidebar-item" href="/settings/profile">
             Profile
           </a>
@@ -276,73 +336,105 @@
           <a class="sidebar-item" href="/settings/groups">
             Groups
           </a>
-          <a class="sidebar-item active" href="/settings/data">
+          <a aria-current="page" class="sidebar-item active" href="/settings/data">
             Import and export
           </a>
         </nav>
         <div class="sidebar-content">
-          <h1 style="margin-bottom:1rem">
-            Import and export
-          </h1>
-          <div class="card">
-            <div class="card-title">
-              Export
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                Import and export
+              </h1>
             </div>
-            <p class="text-muted">
-              Download a calendar, task list or address book as one .ics or .vcf file, or everything as a zip.
+            <div class="page-actions" />
+          </header>
+          <div class="card">
+            <h2 class="card-title">
+              Export
+            </h2>
+            <p class="card-desc">
+              Download a calendar, task list or address book as an .ics or .vcf file, or everything as a zip.
             </p>
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>
-                    Name
-                  </th>
-                  <th>
-                    Holds
-                  </th>
-                  <th class="text-right">
-                    Download
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>
-                    Personal
-                  </td>
-                  <td>
-                    Events, Tasks
-                  </td>
-                  <td class="text-right">
-                    <a class="btn btn-sm" href="/settings/data/export/1">
-                      personal.ics
-                    </a>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    Contacts
-                  </td>
-                  <td>
-                    Contacts
-                  </td>
-                  <td class="text-right">
-                    <a class="btn btn-sm" href="/settings/data/export/2">
-                      contacts.vcf
-                    </a>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <a class="btn btn-primary" href="/settings/data/export.zip">
-              Export everything
-            </a>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>
+                      Name
+                    </th>
+                    <th class="hide-mobile">
+                      Holds
+                    </th>
+                    <th class="col-actions">
+                      <span class="sr-only">
+                        Download
+                      </span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="break-anywhere">
+                      Personal
+                      <div class="show-mobile text-sm text-muted">
+                        Events, Tasks
+                      </div>
+                    </td>
+                    <td class="hide-mobile">
+                      Events, Tasks
+                    </td>
+                    <td class="col-actions">
+                      <a class="btn btn-secondary btn-sm" download="" href="/settings/data/export/1">
+                        <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" />
+                          <line x1="12" x2="12" y1="15" y2="3" />
+                        </svg>
+                        personal.ics
+                      </a>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="break-anywhere">
+                      Contacts
+                      <div class="show-mobile text-sm text-muted">
+                        Contacts
+                      </div>
+                    </td>
+                    <td class="hide-mobile">
+                      Contacts
+                    </td>
+                    <td class="col-actions">
+                      <a class="btn btn-secondary btn-sm" download="" href="/settings/data/export/2">
+                        <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" />
+                          <line x1="12" x2="12" y1="15" y2="3" />
+                        </svg>
+                        contacts.vcf
+                      </a>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="form-actions">
+              <a class="btn btn-primary" download="" href="/settings/data/export.zip">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" x2="12" y1="15" y2="3" />
+                </svg>
+                Export everything
+              </a>
+            </div>
           </div>
           <div class="card">
-            <div class="card-title">
+            <h2 class="card-title">
               Import
-            </div>
-            <p class="text-muted">
+            </h2>
+            <p class="card-desc">
               Upload an .ics or .vcf file. Entries whose UID is already in the collection are replaced, so importing the same file again changes nothing.
             </p>
             <form action="/settings/data/import" enctype="multipart/form-data" method="post">
@@ -357,7 +449,7 @@
                 <label for="import-target">
                   Into
                 </label>
-                <select class="form-control" id="import-target" name="target">
+                <select class="form-control w-md" id="import-target" name="target" onchange="document.getElementById('import-name-group').hidden = !this.value.startsWith('new:')">
                   <option value="1">
                     Personal (Events, Tasks)
                   </option>
@@ -372,15 +464,17 @@
                   </option>
                 </select>
               </div>
-              <div class="form-group">
+              <div class="form-group" hidden="" id="import-name-group">
                 <label for="import-name">
-                  Name for a new one
+                  Name of the new one
                 </label>
-                <input class="form-control" id="import-name" name="name" placeholder="Imported" type="text" />
+                <input class="form-control w-md" id="import-name" name="name" placeholder="Imported" type="text" />
               </div>
-              <button class="btn btn-primary" type="submit">
-                Import
-              </button>
+              <div class="form-actions">
+                <button class="btn btn-primary" type="submit">
+                  Import
+                </button>
+              </div>
             </form>
           </div>
         </div>
