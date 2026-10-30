@@ -3,6 +3,7 @@ package gallery_test
 import (
 	"fmt"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -445,4 +446,63 @@ func TestGalleryTagMedia(t *testing.T) {
 	mediaTags, err := gallery.TagsForMedia(db, mediaID)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(mediaTags))
+}
+
+// TestGallerySetCoverAndRemove drives the album page's tile menu: "Set as
+// album cover" and "Remove from album", each a form POST that redirects back
+// to the album with a flash saying what happened.
+func TestGallerySetCoverAndRemove(t *testing.T) {
+	env := cogtest.New(t, gallery.New()).WithCookieJar(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	db, err := env.Providers.Plugins.PluginDB(alice.Username, "gallery")
+	require.NoError(t, err)
+
+	now := time.Now().Unix()
+	var ids []int64
+	for i, name := range []string{"one.jpg", "two.jpg", "elsewhere.jpg"} {
+		when := now - int64(i)*60
+		id, err := gallery.InsertMedia(db, &gallery.Media{
+			FileID: int64(100 + i), FilePath: "/Photos/" + name, FileETag: "e",
+			MimeType: "image/jpeg", Width: 800, Height: 600, DateTaken: &when, DateIndexed: now,
+		})
+		require.NoError(t, err)
+		ids = append(ids, id)
+	}
+	album, err := gallery.CreateAlbumRow(db, "Trip", "")
+	require.NoError(t, err)
+	require.NoError(t, gallery.AddMediaToAlbum(db, album, ids[0]))
+	require.NoError(t, gallery.AddMediaToAlbum(db, album, ids[1]))
+	cover := func() int64 {
+		t.Helper()
+		a, err := gallery.GetAlbum(db, album)
+		require.NoError(t, err)
+		return *a.CoverMediaID
+	}
+	require.Equal(t, ids[0], cover())
+
+	cookie, csrf := sessionAuth(t, env, alice)
+	post := func(action string, media int64) *cogtest.Response {
+		t.Helper()
+		return env.PostForm(t, fmt.Sprintf("/apps/gallery/albums/%d/%s", album, action),
+			url.Values{"media_id": {fmt.Sprint(media)}}, cookie, csrf).Status(200)
+	}
+
+	post("cover", ids[1]).Contains("“two.jpg” is now the cover of “Trip”.")
+	require.Equal(t, ids[1], cover())
+
+	// A photo that is not in the album cannot be its cover.
+	post("cover", ids[2]).Contains("“elsewhere.jpg” is not in “Trip”, so it cannot be its cover.")
+	require.Equal(t, ids[1], cover())
+
+	// The album page marks the cover and offers the others.
+	page := env.Get(t, fmt.Sprintf("/apps/gallery/album/%d", album), cookie).Status(200).ReadBody()
+	require.Equal(t, 1, strings.Count(page, `class="gallery-cover-badge"`))
+	require.Equal(t, 1, strings.Count(page, "data-set-cover"))
+
+	// Taking the cover out falls back to the first photo.
+	post("remove", ids[1]).Contains("Removed “two.jpg” from “Trip”.")
+	require.Equal(t, ids[0], cover())
+	media, err := gallery.AlbumMedia(db, album, 10, 0)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(media))
 }

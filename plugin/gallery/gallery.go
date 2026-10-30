@@ -161,6 +161,8 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "albums", http.HandlerFunc(pages.CreateAlbum))
 	ctx.RegisterAction("POST", "albums/{id}/add", http.HandlerFunc(pages.AddToAlbum))
 	ctx.RegisterAction("DELETE", "albums/{id}/media/{media_id}", http.HandlerFunc(pages.RemoveFromAlbum))
+	ctx.RegisterAction("POST", "albums/{id}/remove", http.HandlerFunc(pages.RemoveFromAlbumForm))
+	ctx.RegisterAction("POST", "albums/{id}/cover", http.HandlerFunc(pages.SetCover))
 	ctx.RegisterAction("DELETE", "albums/{id}", http.HandlerFunc(pages.DeleteAlbum))
 	ctx.RegisterAction("POST", "albums/{id}/delete", http.HandlerFunc(pages.DeleteAlbum))
 	ctx.RegisterAction("POST", "albums/{id}/rename", http.HandlerFunc(pages.RenameAlbum))

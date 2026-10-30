@@ -290,6 +290,42 @@ func TestBrowserWithPhotos(t *testing.T) {
 		b.WaitText(t, "Created “Birthdays”")
 		b.WaitText(t, "This album is empty")
 	})
+
+	// A photo's corner menu on the album page. IMG_0004 is in the first
+	// column on a phone, where the menu has to open rightwards to stay on
+	// screen.
+	t.Run("AlbumTileMenu", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "photos", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/gallery/album/%d", s.album))
+		openTileMenu(t, b, "IMG_0004.png")
+		b.WaitVisible(t, ".gallery-tile-menu.open [data-set-cover]")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	// The cover mark moves to the chosen photo, and the flash says so.
+	t.Run("SetAlbumCover", func(t *testing.T) {
+		db, err := env.Providers.Plugins.PluginDB(user.Username, "gallery")
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, gallery.SetAlbumCover(db, s.album, s.detailed))
+		})
+		b := eng.Start(t)
+		b.Login(t, "photos", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/gallery/album/%d", s.album))
+		openTileMenu(t, b, "IMG_0004.png")
+		b.Click(t, ".gallery-tile-menu.open [data-set-cover]")
+		b.WaitText(t, "“IMG_0004.png” is now the cover of “Summer 2025”.")
+		if got := b.Attribute(t, ".gallery-cover-badge", "class"); got != "gallery-cover-badge" {
+			t.Fatalf("no cover mark: %q", got)
+		}
+		if n := b.Count(t, `.gallery-tile:has([title="IMG_0004.png"]) .gallery-cover-badge`); n != 1 {
+			t.Fatalf("IMG_0004.png has %d cover marks, want 1", n)
+		}
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
 }
 
 type seededPhotos struct {
@@ -462,4 +498,13 @@ func testPNG(t *testing.T, w, h int, c color.RGBA) []byte {
 	var buf bytes.Buffer
 	require.NoError(t, png.Encode(&buf, img))
 	return buf.Bytes()
+}
+
+// openTileMenu opens a photo's corner menu on the album page. The button
+// shows on hover, and rod's click waits on it to become interactable while
+// it fades in; a script click is what a pointer's click does.
+func openTileMenu(t *testing.T, b *webtest.Browser, name string) {
+	t.Helper()
+	b.WaitReady(t, `[aria-label="Actions for `+name+`"]`)
+	b.Eval(t, `() => document.querySelector('[aria-label="Actions for `+name+`"]').click()`)
 }

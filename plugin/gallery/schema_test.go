@@ -19,6 +19,7 @@ func TestFreshSchemaHasMigrations(t *testing.T) {
 
 	addColumn := regexp.MustCompile(`(?i)ALTER TABLE (\w+) ADD COLUMN (\w+)`)
 	createIndex := regexp.MustCompile(`(?i)CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?(\w+)`)
+	createTrigger := regexp.MustCompile(`(?i)CREATE TRIGGER (?:IF NOT EXISTS )?(\w+)`)
 	files, err := fs.Glob(sqlFS, "sql/migration*.sql")
 	require.NoError(t, err)
 	for _, f := range files {
@@ -33,6 +34,11 @@ func TestFreshSchemaHasMigrations(t *testing.T) {
 			var n int
 			require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`, m[1]).Scan(&n))
 			assert.True(t, n == 1, "%s: index %s missing from a fresh database", f, m[1])
+		}
+		for _, m := range createTrigger.FindAllStringSubmatch(string(body), -1) {
+			var n int
+			require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name = ?`, m[1]).Scan(&n))
+			assert.True(t, n == 1, "%s: trigger %s missing from a fresh database", f, m[1])
 		}
 	}
 }

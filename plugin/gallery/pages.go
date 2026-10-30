@@ -567,6 +567,91 @@ func (h *Pages) RemoveFromAlbum(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// albumPhoto reads the album named by the path and the photo named by the
+// form's media_id, for the album page's tile menu. On failure it has
+// answered: 404 for an album that does not exist, a flash for a bad photo.
+func (h *Pages) albumPhoto(w http.ResponseWriter, r *http.Request, db *sql.DB) (*Album, *Media, bool) {
+	albumID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return nil, nil, false
+	}
+	album, err := GetAlbum(db, albumID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return nil, nil, false
+	}
+	if err != nil {
+		h.serverError(w, r, err)
+		return nil, nil, false
+	}
+	back := fmt.Sprintf("/apps/gallery/album/%d", albumID)
+	mediaID, err := strconv.ParseInt(r.FormValue("media_id"), 10, 64)
+	if err != nil {
+		flashRedirect(w, r, "error", "Choose a photo from the album.", back)
+		return nil, nil, false
+	}
+	m, err := GetMedia(db, mediaID)
+	if errors.Is(err, sql.ErrNoRows) {
+		flashRedirect(w, r, "error", "That photo is no longer in your gallery.", back)
+		return nil, nil, false
+	}
+	if err != nil {
+		h.serverError(w, r, err)
+		return nil, nil, false
+	}
+	return album, m, true
+}
+
+// SetCover makes a photo of the album its cover.
+func (h *Pages) SetCover(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	album, m, ok := h.albumPhoto(w, r, db)
+	if !ok {
+		return
+	}
+	back := fmt.Sprintf("/apps/gallery/album/%d", album.ID)
+	err = SetAlbumCover(db, album.ID, m.ID)
+	if errors.Is(err, ErrNotInAlbum) {
+		flashRedirect(w, r, "error", "“"+m.FileName()+"” is not in “"+album.Name+"”, so it cannot be its cover.", back)
+		return
+	}
+	if err != nil {
+		flashRedirect(w, r, "error", "The cover could not be changed: "+err.Error(), back)
+		return
+	}
+	flashRedirect(w, r, "success", "“"+m.FileName()+"” is now the cover of “"+album.Name+"”.", back)
+}
+
+// RemoveFromAlbumForm takes a photo out of a manual album from the album
+// page's tile menu (PRG). The photo stays in the gallery; if it was the
+// cover, the album goes back to its first photo.
+func (h *Pages) RemoveFromAlbumForm(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	album, m, ok := h.albumPhoto(w, r, db)
+	if !ok {
+		return
+	}
+	back := fmt.Sprintf("/apps/gallery/album/%d", album.ID)
+	if album.AlbumType != AlbumManual {
+		flashRedirect(w, r, "error", "Photos cannot be taken out of an automatic album.", back)
+		return
+	}
+	if err := RemoveMediaFromAlbum(db, album.ID, m.ID); err != nil {
+		flashRedirect(w, r, "error", "“"+m.FileName()+"” could not be removed: "+err.Error(), back)
+		return
+	}
+	flashRedirect(w, r, "success", "Removed “"+m.FileName()+"” from “"+album.Name+"”.", back)
+}
+
 // RenameAlbum changes a manual album's name and description.
 func (h *Pages) RenameAlbum(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)

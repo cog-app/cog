@@ -279,6 +279,22 @@ templ galleryScripts() {
 				}
 			});
 
+			// --- Album tile menus ----------------------------------------
+			// A menu that would run off the left edge (a phone's first
+			// column) opens rightwards instead.
+			function placeTileMenu(dd) {
+				dd.classList.remove("is-start");
+				if (dd.querySelector(".dropdown-menu").getBoundingClientRect().left < 8) {
+					dd.classList.add("is-start");
+				}
+			}
+			document.addEventListener("cog:dropdown-open", function (e) {
+				if (e.target.classList && e.target.classList.contains("gallery-tile-menu")) placeTileMenu(e.target);
+			});
+			window.addEventListener("resize", function () {
+				document.querySelectorAll(".gallery-tile-menu.open").forEach(placeTileMenu);
+			});
+
 			// --- Lightbox -------------------------------------------------
 			// The full-size image loads only when the lightbox opens. Moving
 			// to the next photo keeps the lightbox open (#view).
@@ -504,7 +520,11 @@ templ albumViewPage(activePath string, album *Album, media []Media, candidates [
 				@ui.EmptyState("This album is empty", "Add photos from your gallery to fill it.")
 			</div>
 		} else {
-			@photoGrid(media)
+			<div class="gallery-grid">
+				for _, m := range media {
+					@albumTile(album, m, csrfToken)
+				}
+			</div>
 		}
 		if album.AlbumType == AlbumManual {
 			@ui.Modal("gallery-add-photos", "Add photos to “"+album.Name+"”") {
@@ -555,6 +575,78 @@ templ albumViewPage(activePath string, album *Album, media []Media, candidates [
 			}
 		}
 	}
+}
+
+// albumTile is a photo in an album: its thumbnail, a "Cover" mark on the
+// one the album shows, and a menu in the corner to make it the cover or
+// (in a manual album) take it out.
+templ albumTile(album *Album, m Media, csrfToken string) {
+	<div class="gallery-tile">
+		@photoTile(m)
+		if isAlbumCover(album, m.ID) {
+			<span class="gallery-cover-badge">Cover</span>
+		}
+		if !isAlbumCover(album, m.ID) || album.AlbumType == AlbumManual {
+			<div class="dropdown gallery-tile-action gallery-tile-menu">
+				<button
+					type="button"
+					class="gallery-tile-button"
+					data-dropdown-toggle
+					aria-expanded="false"
+					aria-controls={ fmt.Sprintf("album-photo-%d-menu", m.ID) }
+					aria-label={ "Actions for " + m.FileName() }
+					title="Actions"
+				>
+					@ui.Icon("more")
+				</button>
+				<div class="dropdown-menu" id={ fmt.Sprintf("album-photo-%d-menu", m.ID) }>
+					if !isAlbumCover(album, m.ID) {
+						<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/cover", album.ID)) }>
+							<input type="hidden" name="csrf_token" value={ csrfToken }/>
+							<input type="hidden" name="media_id" value={ strconv.FormatInt(m.ID, 10) }/>
+							<button type="submit" data-set-cover>
+								@coverIcon()
+								Set as album cover
+							</button>
+						</form>
+					}
+					if album.AlbumType == AlbumManual {
+						if !isAlbumCover(album, m.ID) {
+							<div class="dropdown-divider"></div>
+						}
+						<form
+							method="post"
+							action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/remove", album.ID)) }
+							data-confirm={ "Remove “" + m.FileName() + "” from “" + album.Name + "”? It stays in your gallery." }
+							data-confirm-title="Remove from album"
+							data-confirm-action="Remove"
+						>
+							<input type="hidden" name="csrf_token" value={ csrfToken }/>
+							<input type="hidden" name="media_id" value={ strconv.FormatInt(m.ID, 10) }/>
+							<button type="submit" class="danger">
+								@ui.Icon("x")
+								Remove from album
+							</button>
+						</form>
+					}
+				</div>
+			</div>
+		}
+	</div>
+}
+
+// isAlbumCover reports whether the album shows this photo as its cover: the
+// one chosen, or its first photo when none is.
+func isAlbumCover(album *Album, mediaID int64) bool {
+	return album.CoverMediaID != nil && *album.CoverMediaID == mediaID
+}
+
+templ coverIcon() {
+	<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+		<circle cx="8.5" cy="8.5" r="1.5"></circle>
+		<polyline points="21 15 16 10 5 21"></polyline>
+	</svg>
 }
 
 // --- Photo ---

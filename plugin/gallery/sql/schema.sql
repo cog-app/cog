@@ -69,6 +69,14 @@ CREATE TABLE IF NOT EXISTS album_media (
 
 CREATE INDEX IF NOT EXISTS idx_album_media_media ON album_media(media_id);
 
+-- A chosen cover that leaves the album is forgotten; the album falls back to
+-- its first photo (albumCoverCol in store.go).
+CREATE TRIGGER IF NOT EXISTS album_cover_removed AFTER DELETE ON album_media
+BEGIN
+    UPDATE albums SET cover_media_id = NULL
+    WHERE id = OLD.album_id AND cover_media_id = OLD.media_id;
+END;
+
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,

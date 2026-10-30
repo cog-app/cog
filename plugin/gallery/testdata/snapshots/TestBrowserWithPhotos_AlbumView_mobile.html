@@ -5,7 +5,7 @@
     <title>
       Summer 2025 — Cog
     </title>
-    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
+    <link href="/static/style.css?v=1c5757ec35a1" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIj48L3JlY3Q+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiPjwvY2lyY2xlPjxwb2x5bGluZSBwb2ludHM9IjIxIDE1IDE2IDEwIDUgMjEiPjwvcG9seWxpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -299,24 +299,236 @@
             Road trip down the coast
           </p>
           <div class="gallery-grid">
-            <a class="gallery-thumb" href="/apps/gallery/photo/1" title="IMG_0001.png">
-              <img alt="IMG_0001.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/1/thumbnail?size=256" />
-            </a>
-            <a class="gallery-thumb" href="/apps/gallery/photo/2" title="IMG_0002.png">
-              <img alt="IMG_0002.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/2/thumbnail?size=256" />
-            </a>
-            <a class="gallery-thumb" href="/apps/gallery/photo/3" title="IMG_0003.png">
-              <img alt="IMG_0003.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/3/thumbnail?size=256" />
-            </a>
-            <a class="gallery-thumb" href="/apps/gallery/photo/4" title="IMG_0004.png">
-              <img alt="IMG_0004.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/4/thumbnail?size=256" />
-            </a>
-            <a class="gallery-thumb" href="/apps/gallery/photo/5" title="IMG_0005.png">
-              <img alt="IMG_0005.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/5/thumbnail?size=256" />
-            </a>
-            <a class="gallery-thumb" href="/apps/gallery/photo/6" title="Beach day & sunset #2 - the long panoramic one.png">
-              <img alt="Beach day & sunset #2 - the long panoramic one.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/6/thumbnail?size=256" />
-            </a>
+            <div class="gallery-tile">
+              <a class="gallery-thumb" href="/apps/gallery/photo/1" title="IMG_0001.png">
+                <img alt="IMG_0001.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/1/thumbnail?size=256" />
+              </a>
+              <span class="gallery-cover-badge">
+                Cover
+              </span>
+              <div class="dropdown gallery-tile-action gallery-tile-menu">
+                <button aria-controls="album-photo-1-menu" aria-expanded="false" aria-label="Actions for IMG_0001.png" class="gallery-tile-button" data-dropdown-toggle="" title="Actions" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <circle cx="12" cy="12" r="1" />
+                    <circle cx="19" cy="12" r="1" />
+                    <circle cx="5" cy="12" r="1" />
+                  </svg>
+                </button>
+                <div class="dropdown-menu" id="album-photo-1-menu">
+                  <form action="/apps/gallery/albums/1/remove" data-confirm-action="Remove" data-confirm-title="Remove from album" data-confirm="Remove “IMG_0001.png” from “Summer 2025”? It stays in your gallery." method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="1" />
+                    <button class="danger" type="submit">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <line x1="18" x2="6" y1="6" y2="18" />
+                        <line x1="6" x2="18" y1="6" y2="18" />
+                      </svg>
+                      Remove from album
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+            <div class="gallery-tile">
+              <a class="gallery-thumb" href="/apps/gallery/photo/2" title="IMG_0002.png">
+                <img alt="IMG_0002.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/2/thumbnail?size=256" />
+              </a>
+              <div class="dropdown gallery-tile-action gallery-tile-menu">
+                <button aria-controls="album-photo-2-menu" aria-expanded="false" aria-label="Actions for IMG_0002.png" class="gallery-tile-button" data-dropdown-toggle="" title="Actions" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <circle cx="12" cy="12" r="1" />
+                    <circle cx="19" cy="12" r="1" />
+                    <circle cx="5" cy="12" r="1" />
+                  </svg>
+                </button>
+                <div class="dropdown-menu" id="album-photo-2-menu">
+                  <form action="/apps/gallery/albums/1/cover" method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="2" />
+                    <button data-set-cover="" type="submit">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <rect height="18" rx="2" ry="2" width="18" x="3" y="3" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                      Set as album cover
+                    </button>
+                  </form>
+                  <div class="dropdown-divider" />
+                  <form action="/apps/gallery/albums/1/remove" data-confirm-action="Remove" data-confirm-title="Remove from album" data-confirm="Remove “IMG_0002.png” from “Summer 2025”? It stays in your gallery." method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="2" />
+                    <button class="danger" type="submit">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <line x1="18" x2="6" y1="6" y2="18" />
+                        <line x1="6" x2="18" y1="6" y2="18" />
+                      </svg>
+                      Remove from album
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+            <div class="gallery-tile">
+              <a class="gallery-thumb" href="/apps/gallery/photo/3" title="IMG_0003.png">
+                <img alt="IMG_0003.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/3/thumbnail?size=256" />
+              </a>
+              <div class="dropdown gallery-tile-action gallery-tile-menu">
+                <button aria-controls="album-photo-3-menu" aria-expanded="false" aria-label="Actions for IMG_0003.png" class="gallery-tile-button" data-dropdown-toggle="" title="Actions" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <circle cx="12" cy="12" r="1" />
+                    <circle cx="19" cy="12" r="1" />
+                    <circle cx="5" cy="12" r="1" />
+                  </svg>
+                </button>
+                <div class="dropdown-menu" id="album-photo-3-menu">
+                  <form action="/apps/gallery/albums/1/cover" method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="3" />
+                    <button data-set-cover="" type="submit">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <rect height="18" rx="2" ry="2" width="18" x="3" y="3" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                      Set as album cover
+                    </button>
+                  </form>
+                  <div class="dropdown-divider" />
+                  <form action="/apps/gallery/albums/1/remove" data-confirm-action="Remove" data-confirm-title="Remove from album" data-confirm="Remove “IMG_0003.png” from “Summer 2025”? It stays in your gallery." method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="3" />
+                    <button class="danger" type="submit">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <line x1="18" x2="6" y1="6" y2="18" />
+                        <line x1="6" x2="18" y1="6" y2="18" />
+                      </svg>
+                      Remove from album
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+            <div class="gallery-tile">
+              <a class="gallery-thumb" href="/apps/gallery/photo/4" title="IMG_0004.png">
+                <img alt="IMG_0004.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/4/thumbnail?size=256" />
+              </a>
+              <div class="dropdown gallery-tile-action gallery-tile-menu">
+                <button aria-controls="album-photo-4-menu" aria-expanded="false" aria-label="Actions for IMG_0004.png" class="gallery-tile-button" data-dropdown-toggle="" title="Actions" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <circle cx="12" cy="12" r="1" />
+                    <circle cx="19" cy="12" r="1" />
+                    <circle cx="5" cy="12" r="1" />
+                  </svg>
+                </button>
+                <div class="dropdown-menu" id="album-photo-4-menu">
+                  <form action="/apps/gallery/albums/1/cover" method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="4" />
+                    <button data-set-cover="" type="submit">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <rect height="18" rx="2" ry="2" width="18" x="3" y="3" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                      Set as album cover
+                    </button>
+                  </form>
+                  <div class="dropdown-divider" />
+                  <form action="/apps/gallery/albums/1/remove" data-confirm-action="Remove" data-confirm-title="Remove from album" data-confirm="Remove “IMG_0004.png” from “Summer 2025”? It stays in your gallery." method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="4" />
+                    <button class="danger" type="submit">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <line x1="18" x2="6" y1="6" y2="18" />
+                        <line x1="6" x2="18" y1="6" y2="18" />
+                      </svg>
+                      Remove from album
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+            <div class="gallery-tile">
+              <a class="gallery-thumb" href="/apps/gallery/photo/5" title="IMG_0005.png">
+                <img alt="IMG_0005.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/5/thumbnail?size=256" />
+              </a>
+              <div class="dropdown gallery-tile-action gallery-tile-menu">
+                <button aria-controls="album-photo-5-menu" aria-expanded="false" aria-label="Actions for IMG_0005.png" class="gallery-tile-button" data-dropdown-toggle="" title="Actions" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <circle cx="12" cy="12" r="1" />
+                    <circle cx="19" cy="12" r="1" />
+                    <circle cx="5" cy="12" r="1" />
+                  </svg>
+                </button>
+                <div class="dropdown-menu" id="album-photo-5-menu">
+                  <form action="/apps/gallery/albums/1/cover" method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="5" />
+                    <button data-set-cover="" type="submit">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <rect height="18" rx="2" ry="2" width="18" x="3" y="3" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                      Set as album cover
+                    </button>
+                  </form>
+                  <div class="dropdown-divider" />
+                  <form action="/apps/gallery/albums/1/remove" data-confirm-action="Remove" data-confirm-title="Remove from album" data-confirm="Remove “IMG_0005.png” from “Summer 2025”? It stays in your gallery." method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="5" />
+                    <button class="danger" type="submit">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <line x1="18" x2="6" y1="6" y2="18" />
+                        <line x1="6" x2="18" y1="6" y2="18" />
+                      </svg>
+                      Remove from album
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+            <div class="gallery-tile">
+              <a class="gallery-thumb" href="/apps/gallery/photo/6" title="Beach day & sunset #2 - the long panoramic one.png">
+                <img alt="Beach day & sunset #2 - the long panoramic one.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/6/thumbnail?size=256" />
+              </a>
+              <div class="dropdown gallery-tile-action gallery-tile-menu">
+                <button aria-controls="album-photo-6-menu" aria-expanded="false" aria-label="Actions for Beach day & sunset #2 - the long panoramic one.png" class="gallery-tile-button" data-dropdown-toggle="" title="Actions" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <circle cx="12" cy="12" r="1" />
+                    <circle cx="19" cy="12" r="1" />
+                    <circle cx="5" cy="12" r="1" />
+                  </svg>
+                </button>
+                <div class="dropdown-menu" id="album-photo-6-menu">
+                  <form action="/apps/gallery/albums/1/cover" method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="6" />
+                    <button data-set-cover="" type="submit">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <rect height="18" rx="2" ry="2" width="18" x="3" y="3" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                      Set as album cover
+                    </button>
+                  </form>
+                  <div class="dropdown-divider" />
+                  <form action="/apps/gallery/albums/1/remove" data-confirm-action="Remove" data-confirm-title="Remove from album" data-confirm="Remove “Beach day & sunset #2 - the long panoramic one.png” from “Summer 2025”? It stays in your gallery." method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="6" />
+                    <button class="danger" type="submit">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <line x1="18" x2="6" y1="6" y2="18" />
+                        <line x1="6" x2="18" y1="6" y2="18" />
+                      </svg>
+                      Remove from album
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
           </div>
           <dialog aria-labelledby="gallery-add-photos-title" class="modal" id="gallery-add-photos">
             <div class="modal-header">

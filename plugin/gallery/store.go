@@ -575,10 +575,27 @@ func NeighbourMedia(db *sql.DB, m *Media) (newer, older int64, err error) {
 	return newer, older, nil
 }
 
-// SetAlbumCover sets the cover media for an album.
+// ErrNotInAlbum is a cover chosen from outside the album.
+var ErrNotInAlbum = errors.New("the photo is not in this album")
+
+// SetAlbumCover makes one of an album's photos its cover. The choice lasts
+// until that photo leaves the album (the album_cover_removed trigger), when
+// the album goes back to showing its first photo.
 func SetAlbumCover(db *sql.DB, albumID, mediaID int64) error {
-	_, err := db.Exec(`UPDATE albums SET cover_media_id = ? WHERE id = ?`, mediaID, albumID)
-	return err
+	res, err := db.Exec(`UPDATE albums SET cover_media_id = ?
+		WHERE id = ? AND EXISTS (SELECT 1 FROM album_media WHERE album_id = ? AND media_id = ?)`,
+		mediaID, albumID, albumID, mediaID)
+	if err != nil {
+		return fmt.Errorf("set album cover: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set album cover: %w", err)
+	}
+	if n == 0 {
+		return ErrNotInAlbum
+	}
+	return nil
 }
 
 // --- Tags ---

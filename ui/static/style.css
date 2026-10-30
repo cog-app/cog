@@ -3578,6 +3578,75 @@ a.gallery-thumb:focus-visible {
   }
 }
 
+/* Album page: a "⋯" menu in a photo's corner (Set as album cover, Remove
+   from album), and a mark on the photo the album shows as its cover. */
+.gallery-tile-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.gallery-tile-button::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+.gallery-tile-button svg {
+  width: 16px;
+  height: 16px;
+}
+.gallery-tile:hover .gallery-tile-button,
+.gallery-tile-button:focus-visible,
+.gallery-tile-menu.open .gallery-tile-button {
+  opacity: 1;
+}
+.gallery-tile-button:hover,
+.gallery-tile-menu.open .gallery-tile-button {
+  background: rgba(0, 0, 0, 0.75);
+}
+@media (hover: none) {
+  .gallery-tile-button {
+    opacity: 1;
+  }
+}
+.gallery-tile-menu .dropdown-menu {
+  top: calc(100% + 4px);
+}
+/* Near the left edge the menu opens rightwards instead (galleryScripts). */
+.gallery-tile-menu.is-start .dropdown-menu {
+  left: 0;
+  right: auto;
+}
+.gallery-tile-menu .dropdown-menu svg {
+  flex: none;
+  color: var(--color-text-muted);
+}
+.gallery-tile-menu .dropdown-menu .danger svg {
+  color: currentColor;
+}
+.gallery-cover-badge {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  pointer-events: none;
+}
+
 /* --- People --- */
 .gallery-segmented {
   display: inline-flex;
