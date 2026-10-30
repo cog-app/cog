@@ -117,6 +117,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Recent Photos",
 		Priority: 25,
+		URL:      "/apps/gallery/",
 		Render:   p.renderWidget,
 	})
 	ctx.RegisterSearchSource(plugin.SearchSourceDef{
@@ -161,6 +162,9 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "albums/{id}/add", http.HandlerFunc(pages.AddToAlbum))
 	ctx.RegisterAction("DELETE", "albums/{id}/media/{media_id}", http.HandlerFunc(pages.RemoveFromAlbum))
 	ctx.RegisterAction("DELETE", "albums/{id}", http.HandlerFunc(pages.DeleteAlbum))
+	ctx.RegisterAction("POST", "albums/{id}/delete", http.HandlerFunc(pages.DeleteAlbum))
+	ctx.RegisterAction("POST", "albums/{id}/rename", http.HandlerFunc(pages.RenameAlbum))
+	ctx.RegisterAction("POST", "media/{id}/delete", http.HandlerFunc(pages.DeletePhoto))
 	ctx.RegisterAction("POST", "people/{id}/name", http.HandlerFunc(pages.NamePerson))
 	ctx.RegisterAction("POST", "people/{id}/merge", http.HandlerFunc(pages.MergePeople))
 	ctx.RegisterAction("POST", "people/{id}/hide", http.HandlerFunc(pages.HidePerson))
@@ -194,7 +198,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "duplicates/{id}/delete-member", http.HandlerFunc(pages.DeleteDuplicateMember))
 	ctx.RegisterAction("POST", "duplicates/{id}/delete-all", http.HandlerFunc(pages.DeleteAllDuplicates))
 	ctx.RegisterAction("POST", "duplicates/{id}/dismiss", http.HandlerFunc(pages.DismissDuplicateGroup))
-	ctx.RegisterAction("POST", "rename/preview", http.HandlerFunc(pages.RenamePreview))
+	ctx.RegisterPage("rename/preview", http.HandlerFunc(pages.RenamePreview))
 	ctx.RegisterAction("POST", "rename/apply", http.HandlerFunc(pages.RenameApply))
 	ctx.RegisterAction("POST", "rename/undo", http.HandlerFunc(pages.RenameUndo))
 
@@ -512,9 +516,12 @@ func formatBytes(b uint64) string {
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
 	db, err := p.DB(userID)
 	if err != nil {
-		return nil
+		return fmt.Errorf("recent photos widget: %w", err)
 	}
-	media, _ := RecentMedia(db, 8)
+	media, err := RecentMedia(db, 8)
+	if err != nil {
+		return fmt.Errorf("recent photos widget: %w", err)
+	}
 	return recentPhotosWidget(media).Render(ctx, w)
 }
 

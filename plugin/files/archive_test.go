@@ -246,7 +246,7 @@ func TestArchiveBrowseZip(t *testing.T) {
 	resp.Status(http.StatusOK)
 	resp.Contains("hello.txt")
 	resp.Contains("sub")
-	resp.Contains("Extract All")
+	resp.Contains("Extract all")
 
 	// Navigate into subdirectory.
 	resp = env.Get(t, "/apps/files/test.zip/sub", u.Auth)

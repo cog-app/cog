@@ -160,11 +160,11 @@ func TestBrowserWithPhotos(t *testing.T) {
 		{"AlbumView", fmt.Sprintf("/apps/gallery/album/%d", s.album), "Summer"},
 		{"AlbumEmpty", fmt.Sprintf("/apps/gallery/album/%d", s.emptyAlbum), "This album is empty"},
 		{"Tags", "/apps/gallery/tags", "beach"},
-		{"TagView", "/apps/gallery/tag/beach", "Tag: beach"},
+		{"TagView", "/apps/gallery/tag/beach", "beach"},
 		{"People", "/apps/gallery/people", "3 photos"},
 		{"PersonView", fmt.Sprintf("/apps/gallery/person/%d", s.person), "Hide"},
-		{"Duplicates", "/apps/gallery/duplicates", "duplicates"},
-		{"DuplicateGroup", fmt.Sprintf("/apps/gallery/duplicates/%d", s.dupGroup), "Duplicate Group"},
+		{"Duplicates", "/apps/gallery/duplicates", "similar photos"},
+		{"DuplicateGroup", fmt.Sprintf("/apps/gallery/duplicates/%d", s.dupGroup), "Duplicate group"},
 		{"PhotoView", fmt.Sprintf("/apps/gallery/photo/%d", s.detailed), "Details"},
 		{"PhotoViewMinimal", fmt.Sprintf("/apps/gallery/photo/%d", s.plain), "Details"},
 		{"VideoView", fmt.Sprintf("/apps/gallery/photo/%d", s.video), "Details"},
@@ -181,24 +181,39 @@ func TestBrowserWithPhotos(t *testing.T) {
 		})
 	}
 
+	// The photo itself opens the lightbox: the face boxes no longer cover it
+	// until "Show faces" turns them on.
 	t.Run("Lightbox", func(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "photos", "pass")
 		b.Navigate(t, fmt.Sprintf("/apps/gallery/photo/%d", s.detailed))
-		// The face boxes sit on top of the image and intercept a click on its
-		// centre, so open the lightbox the way the image's onclick does.
-		b.Eval(t, `() => openLightbox(document.querySelector(".face-container img"))`)
-		b.WaitVisible(t, ".lightbox img")
+		b.Click(t, "[data-lightbox-open]")
+		b.WaitVisible(t, ".gallery-lightbox img")
+		waitImageLoaded(t, b, ".gallery-lightbox img")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
 
+	// A name with "&" and "#" in it used to cut the download URL short, so
+	// the lightbox stayed black.
 	t.Run("LightboxSpecialChars", func(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "photos", "pass")
 		b.Navigate(t, fmt.Sprintf("/apps/gallery/photo/%d", s.special))
-		b.Eval(t, `() => openLightbox(document.querySelector(".face-container img"))`)
-		b.WaitVisible(t, ".lightbox")
+		b.Click(t, "[data-lightbox-open]")
+		b.WaitVisible(t, ".gallery-lightbox img")
+		if w := waitImageLoaded(t, b, ".gallery-lightbox img"); w != 600 {
+			t.Fatalf("full-size image is %dpx wide, want the 600px original", w)
+		}
+		b.Snapshot(t)
+	})
+
+	t.Run("ShowFaces", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "photos", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/gallery/photo/%d", s.detailed))
+		b.Click(t, "[data-toggle-faces]")
+		b.WaitVisible(t, ".show-faces")
 		b.Snapshot(t)
 	})
 
@@ -206,8 +221,8 @@ func TestBrowserWithPhotos(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "photos", "pass")
 		b.Navigate(t, "/apps/gallery/settings")
-		b.ClickText(t, "Preview Rename")
-		b.WaitText(t, "Rename Preview")
+		b.Click(t, `[data-testid="rename-preview"]`)
+		b.WaitText(t, "will be renamed")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -216,14 +231,64 @@ func TestBrowserWithPhotos(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "photos", "pass")
 		b.Navigate(t, "/apps/gallery/settings")
-		// Wait for the request to finish rather than for a result: the button
-		// posts to a GET-only route, so today nothing is swapped in.
-		b.Eval(t, `() => new Promise(resolve => {
-			document.body.addEventListener("htmx:afterRequest", () => resolve(true), { once: true });
-			document.querySelector('[hx-post$="scan-folders-preview"]').click();
-		})`)
+		b.Click(t, `[hx-get$="scan-folders-preview"]`)
+		b.WaitText(t, "matching files")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("NewAlbumDialog", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "photos", "pass")
+		b.Navigate(t, "/apps/gallery/albums")
+		b.Click(t, `[data-modal-open="gallery-new-album"]`)
+		b.WaitVisible(t, "#new-album-name")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("AddPhotosDialog", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "photos", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/gallery/album/%d", s.emptyAlbum))
+		b.Click(t, `[data-modal-open="gallery-add-photos"]`)
+		b.WaitVisible(t, "#gallery-add-photos .gallery-pick")
+		b.Eval(t, `() => document.querySelector("#gallery-add-photos .gallery-pick input").click()`)
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("NamePersonDialog", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "photos", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/gallery/person/%d", s.person))
+		b.Click(t, `[data-modal-open="gallery-name-person"]`)
+		b.WaitVisible(t, "#gallery-person-name")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("ConfirmDialog", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "photos", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/gallery/duplicates/%d", s.dupGroup))
+		b.Click(t, `form[action$="/delete"] button[type="submit"]`)
+		b.WaitVisible(t, "#gallery-confirm")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	// Creating a second manual album used to fail on a unique index that
+	// treated every manual album as the same one.
+	t.Run("CreateAlbum", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "photos", "pass")
+		b.Navigate(t, "/apps/gallery/albums")
+		b.Click(t, `[data-modal-open="gallery-new-album"]`)
+		b.Type(t, "#new-album-name", "Birthdays")
+		b.Click(t, `#gallery-new-album button[type="submit"]`)
+		b.WaitText(t, "Created “Birthdays”")
+		b.WaitText(t, "This album is empty")
 	})
 }
 
@@ -337,13 +402,7 @@ func seedPhotos(t *testing.T, env *cogtest.Env, fp *files.Plugin, username strin
 		require.NoError(t, gallery.AddMediaToAlbum(db, album, m))
 	}
 	require.NoError(t, gallery.SetAlbumCover(db, album, ids[0]))
-	// CreateAlbumRow cannot make a second manual album: the unique index on
-	// (album_type, auto_key) treats every manual album's empty key as the
-	// same. Give this one a key of its own so the page can be looked at.
-	res, err := db.Exec(`INSERT INTO albums (name, auto_key) VALUES (?, 'manual-2')`,
-		"A weekend in the mountains with the whole extended family")
-	require.NoError(t, err)
-	emptyAlbum, err := res.LastInsertId()
+	emptyAlbum, err := gallery.CreateAlbumRow(db, "A weekend in the mountains with the whole extended family", "")
 	require.NoError(t, err)
 
 	group, err := gallery.InsertDuplicateGroup(db)
@@ -357,6 +416,32 @@ func seedPhotos(t *testing.T, env *cogtest.Env, fp *files.Plugin, username strin
 	return seededPhotos{
 		album: album, emptyAlbum: emptyAlbum, person: person, dupGroup: group,
 		detailed: ids[0], plain: ids[2], video: videoID, special: ids[5],
+	}
+}
+
+// waitImageLoaded waits for the image to finish loading and returns its
+// natural width, 0 if it failed. Eval does not await a promise, so it polls.
+func waitImageLoaded(t *testing.T, b *webtest.Browser, sel string) int {
+	t.Helper()
+	js := `() => { const i = document.querySelector(` + "`" + sel + "`" + `); return i && i.complete ? i.naturalWidth : -1 }`
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		var w int
+		switch v := b.Eval(t, js).(type) {
+		case float64:
+			w = int(v)
+		case int:
+			w = v
+		default:
+			t.Fatalf("image width: got %T %v", v, v)
+		}
+		if w >= 0 {
+			return w
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s did not finish loading", sel)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 

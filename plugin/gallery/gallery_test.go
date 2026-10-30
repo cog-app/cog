@@ -161,8 +161,9 @@ func TestGalleryPeopleAndTags(t *testing.T) {
 	// Verify tag detail page shows linked media.
 	env.Get(t, "/apps/gallery/tag/groom", alice.Auth).Status(200).Contains("/apps/gallery/photo/")
 
-	// Verify person detail page shows linked media and face overlays.
-	env.Get(t, "/apps/gallery/person/1", alice.Auth).Status(200).Contains("/apps/gallery/photo/").Contains("position:absolute")
+	// Verify person detail page shows linked media, each with a way to say
+	// it is someone else.
+	env.Get(t, "/apps/gallery/person/1", alice.Auth).Status(200).Contains("/apps/gallery/photo/").Contains("/remove-face")
 
 	// Verify photo detail page shows faces sidebar.
 	env.Get(t, "/apps/gallery/photo/1", alice.Auth).Status(200).Contains("Faces")
@@ -211,13 +212,18 @@ func TestGalleryPeopleUnnamedFilter(t *testing.T) {
 		VALUES (1, 1, 0.1, 0.1, 0.2, 0.2, 5.0), (1, 2, 0.5, 0.5, 0.2, 0.2, 5.0)`)
 	require.NoError(t, err)
 
+	const (
+		allTab      = `All <span class="count">2</span>`
+		unnamedTab  = `Unnamed <span class="count">1</span>`
+		unnamedCard = `gallery-unnamed">Unnamed</span>`
+	)
 	env.Get(t, "/apps/gallery/people", alice.Auth).Status(200).
-		Contains("All (2)").Contains("Unnamed (1)").
-		Contains("Dieter").Contains("Unknown")
+		Contains(allTab).Contains(unnamedTab).
+		Contains("Dieter").Contains(unnamedCard)
 
 	env.Get(t, "/apps/gallery/people?filter=unnamed", alice.Auth).Status(200).
-		Contains("All (2)").Contains("Unnamed (1)").
-		NotContains("Dieter").Contains("Unknown")
+		Contains(allTab).Contains(unnamedTab).
+		NotContains("Dieter").Contains(unnamedCard)
 }
 
 func TestGalleryTagsPage(t *testing.T) {
@@ -350,6 +356,30 @@ func TestGalleryAlbumsCRUD(t *testing.T) {
 	albums, err = gallery.ListAlbums(db, -1)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(albums))
+}
+
+// A user can have any number of manual albums, while automatic albums stay
+// one per key.
+func TestManualAlbumsAreNotUnique(t *testing.T) {
+	env := cogtest.New(t, gallery.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	db, err := env.Providers.Plugins.PluginDB(alice.Username, "gallery")
+	require.NoError(t, err)
+
+	_, err = gallery.CreateAlbumRow(db, "First", "")
+	require.NoError(t, err)
+	_, err = gallery.CreateAlbumRow(db, "Second", "")
+	require.NoError(t, err)
+
+	a, err := gallery.UpsertAutoAlbum(db, gallery.AlbumCamera, "canon", "Canon")
+	require.NoError(t, err)
+	b, err := gallery.UpsertAutoAlbum(db, gallery.AlbumCamera, "canon", "Canon")
+	require.NoError(t, err)
+	require.Equal(t, a, b)
+
+	albums, err := gallery.ListAlbums(db, -1)
+	require.NoError(t, err)
+	require.Equal(t, 3, len(albums))
 }
 
 func TestGalleryToggleStar(t *testing.T) {

@@ -82,6 +82,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Recent Files",
 		Priority: 30,
+		URL:      "/apps/files/",
 		Render:   p.renderWidget,
 	})
 	ctx.RegisterResource(plugin.ResourceDef{
@@ -146,10 +147,13 @@ func (p *Plugin) registerRoutes(priv plugin.PrivilegedContext) {
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
 	db, err := p.DB(userID)
 	if err != nil {
-		return nil
+		return fmt.Errorf("recent files widget: %w", err)
 	}
-	files, _ := RecentFiles(db, 5)
-	return recentFilesWidget(files).Render(ctx, w)
+	files, err := RecentFiles(db, 5)
+	if err != nil {
+		return fmt.Errorf("recent files widget: %w", err)
+	}
+	return recentFilesWidget(files, p.ctx.Now()).Render(ctx, w)
 }
 
 func (p *Plugin) Start(ctx context.Context) error {
@@ -389,7 +393,7 @@ func (p *Plugin) List(username, dirPath string) ([]FileMeta, error) {
 	rows, err := db.Query(`
 		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
 		FROM files WHERE parent_path = ?
-		ORDER BY is_dir DESC, name ASC`, dirPath)
+		ORDER BY is_dir DESC, name COLLATE NOCASE ASC, name ASC`, dirPath)
 	if err != nil {
 		return nil, fmt.Errorf("list files: %w", err)
 	}
@@ -856,7 +860,7 @@ func (p *Plugin) Favorites(username string) ([]FileMeta, error) {
 	rows, err := db.Query(`
 		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
 		FROM files WHERE favorite = 1
-		ORDER BY is_dir DESC, name ASC`)
+		ORDER BY is_dir DESC, name COLLATE NOCASE ASC, name ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("favorites: %w", err)
 	}
@@ -1048,7 +1052,7 @@ func (p *Plugin) Search(username, query string) ([]FileMeta, error) {
 	rows, err := db.Query(`
 		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
 		FROM files WHERE name LIKE ? ESCAPE '\'
-		ORDER BY is_dir DESC, name ASC
+		ORDER BY is_dir DESC, name COLLATE NOCASE ASC, name ASC
 		LIMIT 50`, pattern)
 	if err != nil {
 		return nil, fmt.Errorf("search files: %w", err)

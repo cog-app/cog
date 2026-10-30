@@ -31,7 +31,17 @@ func TestBrowser(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "page", "pass")
 		b.Navigate(t, "/apps/files/")
-		b.WaitVisible(t, "#files-table")
+		b.WaitVisible(t, "#files-empty")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("NewFolderDialog", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "create", "pass")
+		b.Navigate(t, "/apps/files/")
+		b.Click(t, `[data-modal-open="files-new-folder"]`)
+		b.WaitVisible(t, `[data-testid="new-folder-name"]`)
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -40,10 +50,9 @@ func TestBrowser(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "create", "pass")
 		b.Navigate(t, "/apps/files/")
-		b.Type(t, `[data-testid="new-folder-name"]`, "Test Folder")
-		b.Click(t, `[data-testid="new-folder-submit"]`)
+		createFolder(t, b, "Test Folder")
 		b.WaitVisible(t, "#files-table")
-		b.WaitText(t, "Test Folder")
+		b.WaitText(t, "Created “Test Folder”")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -52,12 +61,14 @@ func TestBrowser(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "delete", "pass")
 		b.Navigate(t, "/apps/files/")
-		b.Type(t, `[data-testid="new-folder-name"]`, "Doomed Folder")
-		b.Click(t, `[data-testid="new-folder-submit"]`)
-		b.WaitText(t, "Doomed Folder")
-		b.AcceptConfirms(t)
-		b.Click(t, `[hx-delete]`)
-		b.WaitNotVisible(t, `[hx-delete]`)
+		createFolder(t, b, "Doomed Folder")
+		b.WaitText(t, "Created “Doomed Folder”")
+		b.Click(t, "#files-table [data-dropdown-toggle]")
+		b.Click(t, "#files-table [data-files-delete]")
+		b.WaitVisible(t, "#files-delete")
+		b.Click(t, `#files-delete button[type="submit"]`)
+		b.WaitVisible(t, "#files-empty")
+		b.WaitText(t, "Moved “Doomed Folder” to the trash.")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -66,13 +77,17 @@ func TestBrowser(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "rename", "pass")
 		b.Navigate(t, "/apps/files/")
-		b.Type(t, `[data-testid="new-folder-name"]`, "Old Name")
-		b.Click(t, `[data-testid="new-folder-submit"]`)
-		b.WaitText(t, "Old Name")
-		// Override prompt to return the new name.
-		b.Eval(t, `() => { window.prompt = () => "New Name" }`)
-		b.Click(t, `[onclick*="renameFile"]`)
-		b.WaitText(t, "New Name")
+		createFolder(t, b, "Old Name")
+		b.WaitText(t, "Created “Old Name”")
+		b.Click(t, "#files-table [data-dropdown-toggle]")
+		b.Click(t, "#files-table [data-files-rename]")
+		b.WaitVisible(t, "#files-rename-name")
+		if got := b.Value(t, "#files-rename-name"); got != "Old Name" {
+			t.Fatalf("rename dialog starts with %q, want the current name", got)
+		}
+		b.Type(t, "#files-rename-name", "New Name")
+		b.Click(t, `#files-rename button[type="submit"]`)
+		b.WaitText(t, "Renamed “Old Name” to “New Name”.")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -115,11 +130,46 @@ func TestBrowser(t *testing.T) {
 		b.Login(t, "full", "pass")
 		b.Navigate(t, "/apps/files/")
 		b.WaitVisible(t, "#files-table")
-		b.Click(t, `.file-check[value="/notes.txt"]`)
-		b.Click(t, `.file-check[value="/photo.png"]`)
-		b.WaitVisible(t, "#bulk-delete-btn")
+		b.Click(t, `[data-file-check][value="/notes.txt"]`)
+		b.Click(t, `[data-file-check][value="/photo.png"]`)
+		b.WaitVisible(t, "#files-selection")
+		b.WaitText(t, "2 selected")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("RowMenu", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "full", "pass")
+		b.Navigate(t, "/apps/files/")
+		b.WaitVisible(t, "#files-table")
+		b.Click(t, `[aria-label="Actions for notes.txt"]`)
+		b.WaitVisible(t, ".dropdown.open .dropdown-menu")
+		b.Snapshot(t)
+	})
+
+	t.Run("RenameDialog", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "full", "pass")
+		b.Navigate(t, "/apps/files/")
+		b.WaitVisible(t, "#files-table")
+		b.Click(t, `[aria-label="Actions for notes.txt"]`)
+		b.Click(t, `[data-files-rename][data-name="notes.txt"]`)
+		b.WaitVisible(t, "#files-rename-name")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("BulkDeleteDialog", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "full", "pass")
+		b.Navigate(t, "/apps/files/")
+		b.WaitVisible(t, "#files-table")
+		b.Click(t, `[data-file-check][value="/notes.txt"]`)
+		b.Click(t, `[data-file-check][value="/photo.png"]`)
+		b.Click(t, "[data-files-delete-selected]")
+		b.WaitText(t, "Delete 2 items?")
+		b.Snapshot(t)
 	})
 
 	t.Run("DropOverlay", func(t *testing.T) {
@@ -129,7 +179,7 @@ func TestBrowser(t *testing.T) {
 		b.WaitVisible(t, "#files-table")
 		// Dragging real files cannot be scripted; show the overlay the dragenter
 		// handler would.
-		b.Eval(t, `() => { document.getElementById("drop-overlay").style.display = "" }`)
+		b.Eval(t, `() => { document.getElementById("drop-overlay").hidden = false }`)
 		b.WaitVisible(t, "#drop-overlay")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
@@ -182,7 +232,7 @@ func TestBrowser(t *testing.T) {
 		b.Eval(t, `() => { Math.random = () => 0.5 }`)
 		b.Click(t, "cog-share-button button")
 		b.WaitText(t, "Not shared with anyone")
-		b.Eval(t, `() => { document.querySelectorAll(".modal-content details").forEach(d => d.open = true) }`)
+		b.Eval(t, `() => { document.querySelectorAll("dialog.modal details").forEach(d => d.open = true) }`)
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -191,7 +241,16 @@ func TestBrowser(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "full", "pass")
 		b.Navigate(t, "/apps/files/backup.zip")
-		b.WaitText(t, "Extract All")
+		b.WaitText(t, "Extract all")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("ArchiveFolder", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "full", "pass")
+		b.Navigate(t, "/apps/files/backup.zip/src")
+		b.WaitText(t, "main.go")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -213,6 +272,14 @@ func TestBrowser(t *testing.T) {
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
+}
+
+// createFolder makes a folder through the New folder dialog.
+func createFolder(t *testing.T, b *webtest.Browser, name string) {
+	t.Helper()
+	b.Click(t, `[data-modal-open="files-new-folder"]`)
+	b.Type(t, `[data-testid="new-folder-name"]`, name)
+	b.Click(t, `[data-testid="new-folder-submit"]`)
 }
 
 const (
@@ -248,6 +315,7 @@ func seedFiles(t *testing.T, fp *files.Plugin, username string) {
 	}{
 		{"/notes.txt", []byte("Meeting notes\n\n- Ship the gallery\n- Review the file browser on mobile\n\tIndented with a tab\n")},
 		{"/photo.png", testPNG(t, 320, 200, color.RGBA{R: 40, G: 120, B: 200, A: 255})},
+		{"/sunset.png", testPNG(t, 200, 300, color.RGBA{R: 230, G: 120, B: 40, A: 255})},
 		{"/song.mp3", bytes.Repeat([]byte{0xff}, 3*1024*1024)},
 		{"/clip.mp4", bytes.Repeat([]byte{0x00}, 12*1024*1024)},
 		{"/backup.zip", zipBuf.Bytes()},

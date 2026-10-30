@@ -54,7 +54,9 @@ CREATE TABLE IF NOT EXISTS albums (
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_albums_type_key ON albums(album_type, auto_key);
+-- Only automatic albums are keyed: every manual album (album_type 0) has an
+-- empty auto_key, so a full unique index would allow just one of them.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_albums_auto_key ON albums(album_type, auto_key) WHERE album_type != 0;
 CREATE INDEX IF NOT EXISTS idx_albums_type ON albums(album_type);
 
 CREATE TABLE IF NOT EXISTS album_media (

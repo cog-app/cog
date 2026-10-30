@@ -552,3 +552,27 @@ func TestAPI_ShareCreate_ResponseShape(t *testing.T) {
 	owner, _ := raw["OwnerUserID"].(string)
 	assert.Equal(t, alice.ID, owner)
 }
+
+// A listing sorts names the way people read them: "backup.zip" before
+// "Quarterly report", whatever the case of the first letter.
+func TestList_SortsCaseInsensitively(t *testing.T) {
+	fp := files.New()
+	env := cogtest.New(t, fp)
+	alice := env.CreateUser(t, "alice", "pass")
+
+	for _, p := range []string{"/Quarterly.txt", "/backup.zip", "/alpha.txt", "/Beta.txt"} {
+		uploadFile(t, env, alice, p, "x")
+	}
+	_, err := fp.CreateDir(alice.Username, "/zeta")
+	require.NoError(t, err)
+	_, err = fp.CreateDir(alice.Username, "/Archive")
+	require.NoError(t, err)
+
+	items, err := fp.List(alice.Username, "/")
+	require.NoError(t, err)
+	var names []string
+	for _, f := range items {
+		names = append(names, f.Name)
+	}
+	assert.Equal(t, "Archive,zeta,alpha.txt,backup.zip,Beta.txt,Quarterly.txt", strings.Join(names, ","))
+}

@@ -2,7 +2,6 @@ package files
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,7 +36,9 @@ func filePath(r *http.Request) string {
 	return path.Clean("/" + p)
 }
 
-func (h *Pages) pageData(r *http.Request, title string) ui.PageData {
+// pageData builds the shell's data for a page. It takes the flash a redirect
+// left behind, so the layout renders it above the page.
+func (h *Pages) pageData(w http.ResponseWriter, r *http.Request, title string) ui.PageData {
 	u := auth.UserFromContext(r.Context())
 	sessID := auth.SessionIDFromContext(r.Context())
 	var csrf string
@@ -65,6 +66,7 @@ func (h *Pages) pageData(r *http.Request, title string) ui.PageData {
 		IsAdmin:     isAdmin,
 		PluginID:    "files",
 		Favicon:     favicon,
+		Flash:       h.plugin.ctx.Cookies().TakeFlash(w, r),
 	}
 }
 
@@ -84,8 +86,8 @@ func (h *Pages) ServeVolumes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pd := h.pageData(r, "Volumes")
-	volumesPage(pd, volumes).Render(r.Context(), w)
+	pd := h.pageData(w, r, "Volumes")
+	ui.Render(w, r, volumesPage(pd, volumes))
 }
 
 // ServeFavorites shows all favorited files.
@@ -104,8 +106,8 @@ func (h *Pages) ServeFavorites(w http.ResponseWriter, r *http.Request) {
 	}
 
 	iconMap := h.buildIconMap(u.Username, files)
-	pd := h.pageData(r, "Favorites")
-	favoritesPage(pd, files, iconMap).Render(r.Context(), w)
+	pd := h.pageData(w, r, "Favorites")
+	ui.Render(w, r, favoritesPage(pd, files, iconMap, h.plugin.ctx.Now()))
 }
 
 // ServeGet handles GET requests:
@@ -143,8 +145,8 @@ func (h *Pages) ServeGet(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		iconMap := h.buildIconMap(u.Username, items)
-		pd := h.pageData(r, "Files")
-		filesPage(pd, fp, items, iconMap).Render(r.Context(), w)
+		pd := h.pageData(w, r, dirTitle(fp))
+		ui.Render(w, r, filesPage(pd, fp, items, iconMap, h.plugin.ctx.Now()))
 		return
 	}
 
@@ -179,22 +181,63 @@ func (h *Pages) ServeGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// File → view page.
-	pd := h.pageData(r, meta.Name)
+	pd := h.pageData(w, r, meta.Name)
 	kind := fileViewKind(meta.MimeType)
 
 	var textContent string
 	if kind == "text" {
-		if content, err := h.readText(u.Username, fp); err == nil {
-			textContent = content
+		content, err := h.readText(u.Username, fp)
+		if err != nil {
+			http.Error(w, "read file: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		textContent = content
+	}
+
+	var nav imageNav
+	if kind == "image" {
+		siblings, err := h.plugin.List(u.Username, parentDir(fp))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		nav = imageNeighbours(siblings, fp)
+	}
+
+	ui.Render(w, r, fileViewPage(pd, fp, meta, kind, textContent, nav, h.plugin.ctx.Now()))
+}
+
+// imageNav places an image among the images of its folder, for the
+// previous/next links on its view page.
+type imageNav struct {
+	Prev, Next string // paths; "" at either end
+	Index      int    // 1-based position
+	Total      int
+}
+
+// imageNeighbours finds the images either side of fp in a folder listing,
+// which is already in display order.
+func imageNeighbours(items []FileMeta, fp string) imageNav {
+	var images []string
+	for _, f := range items {
+		if !f.IsDir && fileViewKind(f.MimeType) == "image" {
+			images = append(images, f.Path)
 		}
 	}
-
-	var flashMsg, flashKind string
-	if flash := h.getFlash(w, r); flash != nil {
-		flashMsg, flashKind = flash.Message, flash.Kind
+	var nav imageNav
+	for i, p := range images {
+		if p != fp {
+			continue
+		}
+		nav.Index, nav.Total = i+1, len(images)
+		if i > 0 {
+			nav.Prev = images[i-1]
+		}
+		if i < len(images)-1 {
+			nav.Next = images[i+1]
+		}
 	}
-
-	fileViewPage(pd, fp, meta, kind, textContent, flashMsg, flashKind).Render(r.Context(), w)
+	return nav
 }
 
 func (h *Pages) serveDownload(w http.ResponseWriter, r *http.Request, username, fp string, meta *FileMeta) {
@@ -362,13 +405,8 @@ func (h *Pages) serveArchiveListing(w http.ResponseWriter, r *http.Request, user
 		return
 	}
 
-	var flashMsg, flashKind string
-	if flash := h.getFlash(w, r); flash != nil {
-		flashMsg, flashKind = flash.Message, flash.Kind
-	}
-
-	pd := h.pageData(r, meta.Name)
-	archivePage(pd, archivePath, innerPath, meta, entries, flashMsg, flashKind).Render(r.Context(), w)
+	pd := h.pageData(w, r, meta.Name)
+	ui.Render(w, r, archivePage(pd, archivePath, innerPath, entries, h.plugin.ctx.Now()))
 }
 
 // serveArchiveContent handles requests for paths inside an archive.
@@ -403,8 +441,8 @@ func (h *Pages) serveArchiveContent(w http.ResponseWriter, r *http.Request, user
 			http.Error(w, "list archive: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		pd := h.pageData(r, meta.Name)
-		archivePage(pd, archivePath, innerPath, meta, entries, "", "").Render(r.Context(), w)
+		pd := h.pageData(w, r, path.Base(innerPath))
+		ui.Render(w, r, archivePage(pd, archivePath, innerPath, entries, h.plugin.ctx.Now()))
 		return
 	}
 
@@ -422,18 +460,19 @@ func (h *Pages) serveArchiveContent(w http.ResponseWriter, r *http.Request, user
 	kind := archiveViewKind(entry.MimeType)
 	var textContent string
 	if kind == "text" {
-		limited := io.LimitReader(rc, 1<<20)
-		b, err := io.ReadAll(limited)
+		b, err := io.ReadAll(io.LimitReader(rc, 1<<20))
 		rc.Close()
-		if err == nil {
-			textContent = string(b)
+		if err != nil {
+			http.Error(w, "read archive entry: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
+		textContent = string(b)
 	} else {
 		rc.Close()
 	}
 
-	pd := h.pageData(r, entry.Name)
-	archiveEntryViewPage(pd, archivePath, entry, kind, textContent).Render(r.Context(), w)
+	pd := h.pageData(w, r, entry.Name)
+	ui.Render(w, r, archiveEntryViewPage(pd, archivePath, entry, kind, textContent))
 }
 
 // serveArchiveFileStream extracts and streams a single file from an archive.
@@ -474,26 +513,22 @@ func (h *Pages) serveArchiveFileStream(w http.ResponseWriter, r *http.Request, u
 func (h *Pages) handleExtract(w http.ResponseWriter, r *http.Request, username, fp string) {
 	meta, err := h.plugin.GetByPath(username, fp)
 	if err != nil {
-		h.setFlash(w, "error", "File not found.")
-		http.Redirect(w, r, "/apps/files"+parentDir(fp), http.StatusSeeOther)
+		h.flashRedirect(w, r, "error", "File not found.", fileURL(parentDir(fp)))
 		return
 	}
 	if !isArchiveFile(meta) {
-		h.setFlash(w, "error", "Not an archive file.")
-		http.Redirect(w, r, "/apps/files"+fp, http.StatusSeeOther)
+		h.flashRedirect(w, r, "error", "Not an archive file.", fileURL(fp))
 		return
 	}
 
 	destDir := ExtractDestination(fp)
 	count, err := h.plugin.ExtractArchive(username, fp, destDir)
 	if err != nil {
-		h.setFlash(w, "error", "Extract failed: "+err.Error())
-		http.Redirect(w, r, "/apps/files"+fp, http.StatusSeeOther)
+		h.flashRedirect(w, r, "error", "Extract failed: "+err.Error(), fileURL(fp))
 		return
 	}
 
-	h.setFlash(w, "success", fmt.Sprintf("Extracted %d items to %s", count, path.Base(destDir)))
-	http.Redirect(w, r, "/apps/files"+destDir, http.StatusSeeOther)
+	h.flashRedirect(w, r, "success", fmt.Sprintf("Extracted %d items to “%s”.", count, path.Base(destDir)), fileURL(destDir))
 }
 
 // archiveViewKind categorizes a MIME type for the archive entry view page.
@@ -523,69 +558,183 @@ func archiveViewKind(mimeType string) string {
 	return "binary"
 }
 
-// ServePost handles POST — upload file, create directory, save text content, or extract archive.
+// ServePost handles the forms the file browser posts. Each one redirects
+// back with a flash message (Post-Redirect-Get), except ?star=1, which an
+// htmx button calls for its own replacement.
+//
+//   - ?extract=1 extracts the archive at the path
+//   - ?save=1 saves the text editor's content to the file
+//   - ?rename=1 renames the file or folder at the path to the form's name
+//   - ?delete=1 moves the form's paths to the trash; the path is the folder to return to
+//   - ?star=1 toggles the favourite and returns the new star button
+//   - a name field creates a folder in the path's folder
+//   - otherwise the files in the form are uploaded into the path's folder
 func (h *Pages) ServePost(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	fp := filePath(r)
+	q := r.URL.Query()
 
-	// ?extract=1 → extract archive.
-	if r.URL.Query().Get("extract") == "1" {
+	switch {
+	case q.Get("extract") == "1":
 		h.handleExtract(w, r, u.Username, fp)
+	case q.Get("save") == "1":
+		h.handleSave(w, r, u.Username, fp)
+	case q.Get("rename") == "1":
+		h.handleRename(w, r, u.Username, fp)
+	case q.Get("delete") == "1":
+		h.handleDeleteForm(w, r, u.Username, fp)
+	case q.Get("star") == "1":
+		h.handleStar(w, r, u.Username, fp)
+	case r.FormValue("name") != "":
+		h.handleMkdir(w, r, u.Username, fp)
+	default:
+		h.handleUpload(w, r, u.Username, fp)
+	}
+}
+
+// flashRedirect leaves a message for the page at target and sends the
+// browser there.
+func (h *Pages) flashRedirect(w http.ResponseWriter, r *http.Request, kind, msg, target string) {
+	h.plugin.ctx.Cookies().SetFlash(w, plugin.Flash{Kind: kind, Message: msg})
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+func (h *Pages) handleSave(w http.ResponseWriter, r *http.Request, username, fp string) {
+	if _, err := h.plugin.Upload(username, fp, strings.NewReader(r.FormValue("content"))); err != nil {
+		h.flashRedirect(w, r, "error", "The file could not be saved: "+err.Error(), fileURL(fp))
 		return
 	}
+	h.flashRedirect(w, r, "success", "Saved "+path.Base(fp)+".", fileURL(fp))
+}
 
-	// ?save=1 → save text content.
-	if r.URL.Query().Get("save") == "1" {
-		content := r.FormValue("content")
-		if _, err := h.plugin.Upload(u.Username, fp, strings.NewReader(content)); err != nil {
-			http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
-			return
+// validName rejects a name that would not stay inside its folder.
+func validName(name string) error {
+	switch {
+	case name == "":
+		return fmt.Errorf("a name is required")
+	case name == "." || name == "..":
+		return fmt.Errorf("%q is not a valid name", name)
+	case strings.ContainsAny(name, "/\\"):
+		return fmt.Errorf("a name cannot contain a slash")
+	}
+	return nil
+}
+
+func (h *Pages) handleMkdir(w http.ResponseWriter, r *http.Request, username, fp string) {
+	name := strings.TrimSpace(r.FormValue("name"))
+	if err := validName(name); err != nil {
+		h.flashRedirect(w, r, "error", "The folder could not be created: "+err.Error()+".", fileURL(fp))
+		return
+	}
+	if _, err := h.plugin.CreateDir(username, path.Join(fp, name)); err != nil {
+		h.flashRedirect(w, r, "error", "The folder could not be created: "+err.Error(), fileURL(fp))
+		return
+	}
+	h.flashRedirect(w, r, "success", "Created “"+name+"”.", fileURL(fp))
+}
+
+func (h *Pages) handleRename(w http.ResponseWriter, r *http.Request, username, fp string) {
+	back := fileURL(parentDir(fp))
+	name := strings.TrimSpace(r.FormValue("name"))
+	if err := validName(name); err != nil {
+		h.flashRedirect(w, r, "error", "“"+path.Base(fp)+"” could not be renamed: "+err.Error()+".", back)
+		return
+	}
+	if fp == "/" {
+		h.flashRedirect(w, r, "error", "The root folder cannot be renamed.", back)
+		return
+	}
+	if name == path.Base(fp) {
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+	if _, err := h.plugin.Rename(username, fp, path.Join(parentDir(fp), name)); err != nil {
+		h.flashRedirect(w, r, "error", "“"+path.Base(fp)+"” could not be renamed: "+err.Error(), back)
+		return
+	}
+	h.flashRedirect(w, r, "success", "Renamed “"+path.Base(fp)+"” to “"+name+"”.", back)
+}
+
+func (h *Pages) handleDeleteForm(w http.ResponseWriter, r *http.Request, username, fp string) {
+	back := fileURL(fp)
+	if err := r.ParseForm(); err != nil {
+		h.flashRedirect(w, r, "error", "Nothing was deleted: "+err.Error(), back)
+		return
+	}
+	paths := r.PostForm["path"]
+	if len(paths) == 0 {
+		h.flashRedirect(w, r, "error", "Nothing was selected to delete.", back)
+		return
+	}
+	var failed []string
+	for _, p := range paths {
+		p = path.Clean("/" + p)
+		if p == "/" {
+			failed = append(failed, "the root folder")
+			continue
 		}
-		h.setFlash(w, "success", "File saved.")
-		http.Redirect(w, r, "/apps/files"+fp, http.StatusSeeOther)
-		return
-	}
-
-	// Try mkdir (simple form field).
-	name := r.FormValue("name")
-	if name != "" {
-		dest := path.Join(fp, name)
-		if _, err := h.plugin.CreateDir(u.Username, dest); err != nil {
-			http.Error(w, "mkdir failed: "+err.Error(), http.StatusInternalServerError)
-			return
+		if err := h.plugin.Delete(username, p); err != nil {
+			h.plugin.log.Error("delete from file browser", "user", username, "path", p, "err", err)
+			failed = append(failed, "“"+path.Base(p)+"” ("+err.Error()+")")
 		}
-		http.Redirect(w, r, "/apps/files"+fp, http.StatusSeeOther)
+	}
+	switch {
+	case len(failed) > 0:
+		h.flashRedirect(w, r, "error", "Could not delete "+strings.Join(failed, ", ")+".", back)
+	case len(paths) == 1:
+		h.flashRedirect(w, r, "success", "Moved “"+path.Base(paths[0])+"” to the trash.", back)
+	default:
+		h.flashRedirect(w, r, "success", fmt.Sprintf("Moved %d items to the trash.", len(paths)), back)
+	}
+}
+
+// handleStar toggles a favourite for an htmx star button and returns the
+// button in its new state.
+func (h *Pages) handleStar(w http.ResponseWriter, r *http.Request, username, fp string) {
+	meta, err := h.plugin.GetByPath(username, fp)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	if err := h.plugin.SetFavorite(username, fp, !meta.Favorite); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := favoriteButton(fp, !meta.Favorite).Render(r.Context(), w); err != nil {
+		h.plugin.log.Error("render star", "err", err)
+	}
+}
 
-	// Otherwise, file upload.
+func (h *Pages) handleUpload(w http.ResponseWriter, r *http.Request, username, fp string) {
+	back := fileURL(fp)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		http.Error(w, "parse form: "+err.Error(), http.StatusBadRequest)
+		h.flashRedirect(w, r, "error", "The upload could not be read: "+err.Error(), back)
 		return
 	}
-
 	files := r.MultipartForm.File["file"]
 	if len(files) == 0 {
-		http.Error(w, "file required", http.StatusBadRequest)
+		h.flashRedirect(w, r, "error", "Choose a file to upload.", back)
 		return
 	}
-
 	for _, header := range files {
+		name := path.Base(header.Filename)
 		file, err := header.Open()
 		if err != nil {
-			http.Error(w, "open failed: "+err.Error(), http.StatusInternalServerError)
+			h.flashRedirect(w, r, "error", "“"+name+"” could not be uploaded: "+err.Error(), back)
 			return
 		}
-		dest := path.Join(fp, header.Filename)
-		_, uploadErr := h.plugin.Upload(u.Username, dest, file)
+		_, uploadErr := h.plugin.Upload(username, path.Join(fp, name), file)
 		file.Close()
 		if uploadErr != nil {
-			http.Error(w, "upload failed: "+uploadErr.Error(), http.StatusInternalServerError)
+			h.flashRedirect(w, r, "error", "“"+name+"” could not be uploaded: "+uploadErr.Error(), back)
 			return
 		}
 	}
-
-	http.Redirect(w, r, "/apps/files"+fp, http.StatusSeeOther)
+	if len(files) == 1 {
+		h.flashRedirect(w, r, "success", "Uploaded “"+path.Base(files[0].Filename)+"”.", back)
+		return
+	}
+	h.flashRedirect(w, r, "success", fmt.Sprintf("Uploaded %d files.", len(files)), back)
 }
 
 // ServeDelete handles DELETE.
@@ -715,39 +864,191 @@ func fileResourceType(isDir bool) string {
 	return "file"
 }
 
-// --- Flash helpers (cookie-based one-time messages) ---
+// --- Display helpers ---
 
-const flashCookieName = "cog_flash"
-
-type flash struct {
-	Kind    string `json:"k"`
-	Message string `json:"m"`
+// fileURL is the file browser's URL for a path, escaped so a name with a
+// space, "#", "?" or "%" in it still reaches the right file.
+func fileURL(p string) string {
+	return "/apps/files" + (&url.URL{Path: path.Clean("/" + p)}).EscapedPath()
 }
 
-func (h *Pages) setFlash(w http.ResponseWriter, kind, message string) {
-	data, _ := json.Marshal(flash{Kind: kind, Message: message})
-	h.plugin.ctx.Cookies().Set(w, &http.Cookie{
-		Name:   flashCookieName,
-		Value:  url.QueryEscape(string(data)),
-		MaxAge: 60,
-	})
+// archiveEntryURL is the URL of a path inside an archive.
+func archiveEntryURL(archivePath, inner string) string {
+	if inner == "" {
+		return fileURL(archivePath)
+	}
+	return fileURL(archivePath + "/" + inner)
 }
 
-func (h *Pages) getFlash(w http.ResponseWriter, r *http.Request) *flash {
-	cookie, err := r.Cookie(flashCookieName)
-	if err != nil {
+// dirTitle names a folder for its page heading.
+func dirTitle(dirPath string) string {
+	if path.Clean("/"+dirPath) == "/" {
+		return "Files"
+	}
+	return path.Base(dirPath)
+}
+
+// dirCrumbs leads from the root to the folder that holds dirPath. A page
+// header appends dirPath itself as the current page.
+func dirCrumbs(dirPath string) []ui.Crumb {
+	if path.Clean("/"+dirPath) == "/" {
 		return nil
 	}
-	h.plugin.ctx.Cookies().Clear(w, flashCookieName)
-	val, err := url.QueryUnescape(cookie.Value)
-	if err != nil {
-		return nil
+	return pathCrumbs(parentDir(dirPath))
+}
+
+// pathCrumbs leads from the root through every folder of dirPath, dirPath
+// included.
+func pathCrumbs(dirPath string) []ui.Crumb {
+	crumbs := []ui.Crumb{{Label: "Files", URL: fileURL("/")}}
+	for _, seg := range breadcrumbSegments(dirPath) {
+		crumbs = append(crumbs, ui.Crumb{Label: seg.Name, URL: fileURL(seg.Path)})
 	}
-	var f flash
-	if err := json.Unmarshal([]byte(val), &f); err != nil {
-		return nil
+	return crumbs
+}
+
+// archiveCrumbs leads from the root through the archive's folder, the
+// archive, and the folders inside it above innerPath.
+func archiveCrumbs(archivePath, innerPath string) []ui.Crumb {
+	crumbs := pathCrumbs(parentDir(archivePath))
+	if innerPath == "" {
+		return crumbs
 	}
-	return &f
+	crumbs = append(crumbs, ui.Crumb{Label: path.Base(archivePath), URL: fileURL(archivePath)})
+	segs := archiveInnerSegments(archivePath, innerPath)
+	for _, seg := range segs[:len(segs)-1] {
+		crumbs = append(crumbs, ui.Crumb{Label: seg.Name, URL: archiveEntryURL(archivePath, seg.Path)})
+	}
+	return crumbs
+}
+
+// archiveTitle is the heading of an archive listing: the archive, or the
+// folder inside it.
+func archiveTitle(archivePath, innerPath string) string {
+	if innerPath == "" {
+		return path.Base(archivePath)
+	}
+	return path.Base(innerPath)
+}
+
+// shortTime is a modification time as a listing shows it: the time for
+// today, the day for this year, the date for anything older.
+func shortTime(unix int64, now time.Time) string {
+	if unix <= 0 {
+		return ""
+	}
+	t := time.Unix(unix, 0).In(now.Location())
+	switch {
+	case t.Year() == now.Year() && t.YearDay() == now.YearDay():
+		return t.Format("15:04")
+	case t.Year() == now.Year():
+		return t.Format("Jan 2")
+	}
+	return t.Format("Jan 2, 2006")
+}
+
+// modifiedLabel says when a file changed, as a sentence fragment:
+// "Modified today at 06:00", "Modified Mar 14".
+func modifiedLabel(unix int64, now time.Time) string {
+	t := shortTime(unix, now)
+	if strings.Contains(t, ":") {
+		return "Modified today at " + t
+	}
+	return "Modified " + t
+}
+
+// fullTime is the exact time, for a title attribute.
+func fullTime(unix int64) string {
+	if unix <= 0 {
+		return ""
+	}
+	return time.Unix(unix, 0).Format("Mon, Jan 2, 2006 15:04")
+}
+
+// metaLine is the size and date shown under a name on a phone, where the
+// columns that hold them are hidden.
+func metaLine(f FileMeta, now time.Time) string {
+	var parts []string
+	if !f.IsDir {
+		parts = append(parts, formatSize(f.Size))
+	}
+	if t := shortTime(f.MTime, now); t != "" {
+		parts = append(parts, t)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// friendlyKind names a file's type for people: "PNG image", "Text",
+// "PDF document". It never shows a MIME parameter such as "; charset=utf-8".
+func friendlyKind(mimeType, name string) string {
+	mt := mimeType
+	if i := strings.IndexByte(mt, ';'); i >= 0 {
+		mt = mt[:i]
+	}
+	mt = strings.TrimSpace(strings.ToLower(mt))
+	switch mt {
+	case "text/plain":
+		return "Text"
+	case "text/markdown", "text/x-markdown":
+		return "Markdown"
+	case "text/html":
+		return "HTML document"
+	case "text/csv":
+		return "CSV spreadsheet"
+	case "application/json":
+		return "JSON"
+	case "application/pdf":
+		return "PDF document"
+	case "application/zip":
+		return "ZIP archive"
+	case "application/x-tar":
+		return "TAR archive"
+	case "application/gzip", "application/x-gzip":
+		return "GZIP archive"
+	case "audio/mpeg":
+		return "MP3 audio"
+	case "image/svg+xml":
+		return "SVG image"
+	}
+	major, sub, _ := strings.Cut(mt, "/")
+	sub = strings.TrimPrefix(sub, "x-")
+	switch major {
+	case "image":
+		return strings.ToUpper(sub) + " image"
+	case "video":
+		return strings.ToUpper(sub) + " video"
+	case "audio":
+		return strings.ToUpper(sub) + " audio"
+	case "text":
+		return "Text"
+	}
+	if ext := strings.TrimPrefix(path.Ext(name), "."); ext != "" {
+		return strings.ToUpper(ext) + " file"
+	}
+	return "File"
+}
+
+// archiveMetaLine is metaLine for an entry inside an archive.
+func archiveMetaLine(e ArchiveEntry, now time.Time) string {
+	var parts []string
+	if !e.IsDir {
+		parts = append(parts, formatSize(e.Size))
+	}
+	if t := formatArchiveTime(e.MTime, now); t != "" {
+		parts = append(parts, t)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// extractFolderName is the folder "Extract all" creates for an archive.
+func extractFolderName(archivePath string) string {
+	return path.Base(ExtractDestination(archivePath))
+}
+
+// menuID is the DOM id of a row's action menu. It uses the file's ID, which
+// unlike its path cannot collide once reduced to DOM-safe characters.
+func menuID(id int64) string {
+	return "file-menu-" + strconv.FormatInt(id, 10)
 }
 
 // --- Path helpers ---
@@ -809,23 +1110,6 @@ func archiveInnerSegments(archivePath, innerPath string) []breadcrumbSeg {
 		})
 	}
 	return segs
-}
-
-// archiveParentURL returns the URL for navigating up one level inside an archive.
-func archiveParentURL(archivePath, innerPath string) string {
-	if innerPath == "" {
-		return "/apps/files" + parentDir(archivePath)
-	}
-	parent := path.Dir(innerPath)
-	if parent == "." || parent == "/" {
-		return "/apps/files" + archivePath
-	}
-	return "/apps/files" + archivePath + "/" + parent
-}
-
-// archiveBaseName returns the filename of the archive for breadcrumbs.
-func archiveBaseName(archivePath string) string {
-	return path.Base(archivePath)
 }
 
 func safeDomID(p string) string {
