@@ -369,7 +369,9 @@ func seedFiles(t *testing.T, fp *files.Plugin, username string) {
 	var zipBuf bytes.Buffer
 	zw := zip.NewWriter(&zipBuf)
 	for _, name := range []string{"readme.txt", "src/main.go", "src/util.go", "assets/logo.png"} {
-		w, err := zw.Create(name)
+		// Stored, not deflated: the compressor's output, and so the size the
+		// listing shows, changes between Go releases.
+		w, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Store})
 		require.NoError(t, err)
 		_, err = w.Write([]byte(strings.Repeat("x", 100+len(name)*10)))
 		require.NoError(t, err)
@@ -413,6 +415,9 @@ func testPNG(t *testing.T, w, h int, c color.RGBA) []byte {
 		}
 	}
 	var buf bytes.Buffer
-	require.NoError(t, png.Encode(&buf, img))
+	// Uncompressed for the same reason as the zip in seedFiles: the size is
+	// on the page, and zlib's output is not stable across Go releases.
+	enc := png.Encoder{CompressionLevel: png.NoCompression}
+	require.NoError(t, enc.Encode(&buf, img))
 	return buf.Bytes()
 }

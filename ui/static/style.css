@@ -4256,6 +4256,15 @@ html:has(dialog.gallery-lightbox[open]) {
 .cal-card .fc-timegrid-axis-cushion {
   font-size: var(--font-xs);
   color: var(--color-text-muted);
+  /* FullCalendar sizes the time axis to its widest label. A fixed width
+     makes that the same whatever font draws "10 AM", so the column
+     widths it writes into the page don't vary from machine to machine. */
+  display: inline-block;
+  box-sizing: border-box;
+  width: 3.5rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-align: right;
 }
 .cal-card .fc-timegrid-event .fc-event-main {
   padding: 2px 4px;
