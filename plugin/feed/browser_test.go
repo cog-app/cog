@@ -172,7 +172,8 @@ func TestBrowser(t *testing.T) {
 		b.Login(t, "expand", "pass")
 		b.Navigate(t, "/apps/feed/")
 		b.WaitText(t, "Designing a storage layer")
-		b.Click(t, ".feed-item-head")
+		// Click the summary line: the middle of the row is the title, a link to the reader.
+		b.Click(t, ".feed-item-head .feed-item-summary-line")
 		b.WaitVisible(t, ".feed-item-detail .feed-item-content")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)

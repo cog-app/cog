@@ -4,15 +4,12 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"image/png"
 	"io"
-	"iter"
 	"net/http"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
-	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -35,7 +32,9 @@ func (h *settingsHandler) ShowProfile(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	settingsProfilePage(pd, flashMsg, flashKind).Render(r.Context(), w)
+	if err := settingsProfilePage(pd, flashMsg, flashKind).Render(r.Context(), w); err != nil {
+		h.p.Log.Error("render profile page", "err", err)
+	}
 }
 
 func (h *settingsHandler) ShowSecurity(w http.ResponseWriter, r *http.Request) {
@@ -49,21 +48,28 @@ func (h *settingsHandler) ShowSecurity(w http.ResponseWriter, r *http.Request) {
 
 	var backupCodeCount int
 	if u.MFAMethod == "totp" {
-		backupCodeCount, _ = h.p.TOTP.BackupCodeCount(u.ID)
+		backupCodeCount, err = h.p.TOTP.BackupCodeCount(u.ID)
+		if err != nil {
+			h.p.Log.Error("count backup codes", "user", u.Username, "err", err)
+		}
 	}
 
-	flash := getFlash(w, r)
-	var flashMsg, flashKind string
-	if flash != nil {
-		flashMsg, flashKind = flash.Message, flash.Kind
+	var flash securityFlash
+	if f := getFlash(w, r); f != nil {
+		flash = securityFlash{Message: f.Message, Kind: f.Kind, For: f.Value("form"), Invalid: f.Value("invalid")}
 	}
 	smtpConfigured := h.p.EmailSender() != nil
 	var webauthnCreds []auth.WebAuthnCredential
 	webauthnAvailable := h.p.WebAuthn != nil
 	if webauthnAvailable {
-		webauthnCreds, _ = h.p.WebAuthn.ListCredentials(u.ID)
+		webauthnCreds, err = h.p.WebAuthn.ListCredentials(u.ID)
+		if err != nil {
+			h.p.Log.Error("list passkeys", "user", u.Username, "err", err)
+		}
 	}
-	settingsSecurityPage(pd, flashMsg, flashKind, appPasswords, u.MFAMethod, backupCodeCount, smtpConfigured, webauthnAvailable, webauthnCreds).Render(r.Context(), w)
+	if err := settingsSecurityPage(pd, flash, appPasswords, u.MFAMethod, backupCodeCount, smtpConfigured, webauthnAvailable, webauthnCreds).Render(r.Context(), w); err != nil {
+		h.p.Log.Error("render security page", "err", err)
+	}
 }
 
 // CreateAppPassword mints a new app password.
@@ -103,8 +109,15 @@ func (h *settingsHandler) CreateAppPassword(w http.ResponseWriter, r *http.Reque
 	}
 
 	if htmx {
+		all, err := h.p.AppPasswords.ListByUser(u.ID)
+		if err != nil {
+			h.p.Log.Error("list app passwords", "err", err)
+			all = []auth.AppPassword{*ap}
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		appPasswordCreatedFragment(plaintext, *ap).Render(r.Context(), w)
+		if err := appPasswordCreatedFragment(plaintext, all).Render(r.Context(), w); err != nil {
+			h.p.Log.Error("render app password", "err", err)
+		}
 		return
 	}
 	// Non-HTMX fallback: token created but not exposed to avoid cookie leak.
@@ -127,54 +140,66 @@ func (h *settingsHandler) ShowStorage(w http.ResponseWriter, r *http.Request) {
 	pd := pageDataWithNav(r, "Storage", h.p.CSRFSecret, h.p.Plugins)
 	u := auth.UserFromContext(r.Context())
 
-	// Mounts as iterator.
-	var mounts iter.Seq2[mount.Mount, error]
+	var mounts []storageMount
 	if h.p.Mounts != nil {
-		mounts = h.p.Mounts.ListByUser(u.ID)
+		for m, err := range h.p.Mounts.ListByUser(u.ID) {
+			if err != nil {
+				h.p.Log.Error("list mounts", "user", u.Username, "err", err)
+				break
+			}
+			mounts = append(mounts, storageMount{Mount: m})
+		}
 	}
 
-	// Volumes: collect for <select> dropdown + volumeNames map.
+	// Volumes the user can mount, for the select and the mount names.
 	var volumes []volume.Volume
+	var err error
 	if h.p.Access != nil {
-		volumes, _ = seq.Collect(h.p.Access.ListAccessible(u.ID))
+		volumes, err = seq.Collect(h.p.Access.ListAccessible(u.ID))
 	} else if h.p.Volumes != nil {
-		volumes, _ = seq.Collect(h.p.Volumes.List())
+		volumes, err = seq.Collect(h.p.Volumes.List())
 	}
-
+	if err != nil {
+		h.p.Log.Error("list volumes", "user", u.Username, "err", err)
+	}
 	volumeNames := make(map[string]string, len(volumes))
 	for _, v := range volumes {
 		volumeNames[v.ID] = v.Name
 	}
+	for i := range mounts {
+		mounts[i].VolumeName = volumeNames[mounts[i].VolumeID]
+	}
 
-	// Owned volumes as iterator + has-bool.
-	ownedFilter := seq.Filter(h.p.Volumes.List(), func(v volume.Volume) bool {
-		return v.OwnerUserID != nil && *v.OwnerUserID == u.ID
-	})
-	var ownedVolumes iter.Seq2[volume.Volume, error]
-	var hasOwnedVolumes bool
-	var ownedErr error
-	_, ownedVolumes, ownedErr = seq.Peek(ownedFilter)
-	hasOwnedVolumes = !errors.Is(ownedErr, seq.ErrEmpty)
-	if !hasOwnedVolumes {
-		ownedVolumes = seq.Filter(h.p.Volumes.List(), func(v volume.Volume) bool {
-			return v.OwnerUserID != nil && *v.OwnerUserID == u.ID
-		})
+	var ownedVolumes []volume.Volume
+	for v, err := range h.p.Volumes.List() {
+		if err != nil {
+			h.p.Log.Error("list owned volumes", "user", u.Username, "err", err)
+			break
+		}
+		if v.OwnerUserID != nil && *v.OwnerUserID == u.ID {
+			ownedVolumes = append(ownedVolumes, v)
+		}
 	}
 
 	// Compute usage and quota for the user's root volume.
 	var usageInfo storageUsageInfo
 	if fp := h.filesPlugin(); fp != nil {
 		used, err := fp.Usage(u.Username)
-		if err == nil {
-			usageInfo.Used = used
-			usageInfo.UsedLabel = quota.FormatBytes(used)
+		if err != nil {
+			h.p.Log.Error("storage usage", "user", u.Username, "err", err)
 		}
+		usageInfo.Used = used
+		usageInfo.UsedLabel = quota.FormatBytes(used)
 	}
 	if h.p.Mounts != nil {
-		if rootMount, err := h.p.Mounts.GetUserRoot(u.ID); err == nil {
+		rootMount, err := h.p.Mounts.GetUserRoot(u.ID)
+		if err != nil {
+			h.p.Log.Error("root mount", "user", u.Username, "err", err)
+		} else {
 			var groupIDs []string
 			for g, err := range h.p.Groups.ListGroupsForUser(u.ID) {
 				if err != nil {
+					h.p.Log.Error("list groups for quota", "user", u.Username, "err", err)
 					break
 				}
 				groupIDs = append(groupIDs, g.ID)
@@ -192,7 +217,9 @@ func (h *settingsHandler) ShowStorage(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	settingsStoragePage(pd, flashMsg, flashKind, mounts, volumes, volumeNames, ownedVolumes, hasOwnedVolumes, usageInfo).Render(r.Context(), w)
+	if err := settingsStoragePage(pd, flashMsg, flashKind, mounts, volumes, ownedVolumes, usageInfo).Render(r.Context(), w); err != nil {
+		h.p.Log.Error("render storage page", "err", err)
+	}
 }
 
 // storageUsageInfo holds storage usage and quota for display.
@@ -232,27 +259,29 @@ func (h *settingsHandler) UpdatePassword(w http.ResponseWriter, r *http.Request)
 	newPass := r.FormValue("new_password")
 	confirm := r.FormValue("confirm_password")
 
+	// Errors show beside the password form, not at the top of the page.
+	fail := func(msg, field string) {
+		setFlashForm(w, "error", msg, map[string]string{"form": "password", "invalid": field})
+		http.Redirect(w, r, "/settings/security#password", http.StatusSeeOther)
+	}
 	if newPass != confirm {
-		setFlash(w, "error", "New passwords do not match.")
-		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		fail("The new passwords don't match.", "confirm_password")
 		return
 	}
 	if newPass == "" {
-		setFlash(w, "error", "New password cannot be empty.")
-		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		fail("Enter a new password.", "new_password")
 		return
 	}
 
 	// Verify current password.
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(current)); err != nil {
-		setFlash(w, "error", "Current password is incorrect.")
-		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		fail("Your current password is incorrect.", "current_password")
 		return
 	}
 
 	if err := h.p.Users.UpdatePassword(u.ID, newPass); err != nil {
-		setFlash(w, "error", "Failed to update password.")
-		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
+		h.p.Log.Error("update password", "user", u.Username, "err", err)
+		fail("The password could not be changed. Try again.", "")
 		return
 	}
 
@@ -603,7 +632,9 @@ func (h *settingsHandler) FinishWebAuthnRegistration(w http.ResponseWriter, r *h
 	}
 
 	if u.MFAMethod == "" {
-		h.p.Users.SetMFAMethod(u.ID, "webauthn")
+		if _, err := h.p.Users.SetMFAMethod(u.ID, "webauthn"); err != nil {
+			h.p.Log.Error("set mfa method after passkey registration", "user", u.Username, "err", err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -625,9 +656,13 @@ func (h *settingsHandler) DeleteWebAuthnCredential(w http.ResponseWriter, r *htt
 		return
 	}
 
-	count, _ := h.p.WebAuthn.CredentialCount(u.ID)
-	if count == 0 && u.MFAMethod == "webauthn" {
-		h.p.Users.SetMFAMethod(u.ID, "")
+	count, err := h.p.WebAuthn.CredentialCount(u.ID)
+	if err != nil {
+		h.p.Log.Error("count passkeys", "user", u.Username, "err", err)
+	} else if count == 0 && u.MFAMethod == "webauthn" {
+		if _, err := h.p.Users.SetMFAMethod(u.ID, ""); err != nil {
+			h.p.Log.Error("clear mfa method after last passkey", "user", u.Username, "err", err)
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)

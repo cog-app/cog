@@ -141,23 +141,33 @@ func TestBrowserCore(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "menu-open", "pass")
 		b.Click(t, ".navbar-end .dropdown-toggle")
-		b.WaitVisible(t, ".navbar-end .dropdown > .dropdown-menu")
+		b.WaitVisible(t, "#user-menu")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
 
 	// At phone width with every plugin the nav collapses to the apps menu.
 	// The menu is hidden at desktop width, so put the navbar into its
-	// collapsed stage first and focus the menu; the mobile resize then keeps
+	// collapsed stage first and open the menu; the mobile resize then keeps
 	// the stage the navbar script would have chosen anyway.
 	t.Run("AppsMenu/Open", func(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "apps-menu", "pass")
-		b.Eval(t, `() => {
-			document.querySelector(".navbar").classList.add("navbar--collapsed");
-			document.querySelector(".navbar-apps-dropdown").focus();
-		}`)
-		b.WaitVisible(t, ".apps-menu")
+		b.Eval(t, `() => document.querySelector(".navbar").classList.add("navbar--collapsed")`)
+		b.Click(t, `[aria-controls="apps-menu"]`)
+		b.WaitVisible(t, "#apps-menu")
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	// On a phone the search box is behind a button and opens as a panel
+	// under the navbar.
+	t.Run("Search/Mobile", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "searcher", "pass")
+		b.Eval(t, `() => document.querySelector(".navbar").classList.add("navbar--collapsed")`)
+		b.Click(t, ".search-toggle")
+		b.Type(t, "#search-box", "sec")
+		b.WaitVisible(t, "#search-results .search-hit")
 		b.Snapshot(t, webtest.Mobile)
 	})
 

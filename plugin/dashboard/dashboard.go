@@ -2,12 +2,15 @@
 package dashboard
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"embed"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -49,6 +52,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Your Groups",
 		Priority: 50,
+		URL:      "/settings/groups",
 		Render:   p.renderWidget,
 	})
 
@@ -75,12 +79,12 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, username string)
 	}
 	u, err := userLookup.GetByUsername(username)
 	if err != nil {
-		return nil
+		return fmt.Errorf("groups widget: look up %s: %w", username, err)
 	}
 	var groups []plugin.GroupInfo
 	for g, err := range groupStore.ListGroupsForUser(u.ID) {
 		if err != nil {
-			break
+			return fmt.Errorf("groups widget: list groups: %w", err)
 		}
 		groups = append(groups, g)
 		if len(groups) >= 5 {
@@ -133,6 +137,26 @@ func (p *Plugin) pageData(r *http.Request, title string) ui.PageData {
 	}
 }
 
+// layout returns the user's saved layout, or the default when there is none
+// or it cannot be read.
+func (p *Plugin) layout(username string) *Layout {
+	def := &Layout{Columns: 2}
+	db, err := p.DB(username)
+	if err != nil {
+		p.ctx.Logger().Error("dashboard: open database", "user", username, "err", err)
+		return def
+	}
+	layout, err := GetLayout(db)
+	if err != nil {
+		p.ctx.Logger().Error("dashboard: read layout", "user", username, "err", err)
+		return def
+	}
+	if layout == nil {
+		return def
+	}
+	return layout
+}
+
 // Handler returns an http.Handler for the dashboard page.
 func (p *Plugin) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -156,15 +180,7 @@ func (p *Plugin) Handler() http.Handler {
 			widgets = p.ctx.Widgets()
 		}
 
-		// Apply user layout preferences.
-		var layout *Layout
-		db, err := p.DB(u.Username)
-		if err == nil {
-			layout, _ = GetLayout(db)
-		}
-		if layout == nil {
-			layout = &Layout{Columns: 2}
-		}
+		layout := p.layout(u.Username)
 
 		if len(layout.WidgetOrder) > 0 {
 			widgetMap := make(map[string]plugin.Widget, len(widgets))
@@ -182,7 +198,26 @@ func (p *Plugin) Handler() http.Handler {
 			widgets = ordered
 		}
 
-		dashboardPage(pd, apps, widgets, u.Username, layout.Columns).Render(r.Context(), w)
+		shown := make([]shownWidget, 0, len(widgets))
+		var buf bytes.Buffer
+		for _, wd := range widgets {
+			buf.Reset()
+			if err := wd.Render(r.Context(), &buf, u.Username); err != nil {
+				p.ctx.Logger().Error("render dashboard widget", "widget", wd.Title, "user", u.Username, "err", err)
+				continue
+			}
+			html := buf.String()
+			shown = append(shown, shownWidget{
+				Title: wd.Title,
+				URL:   wd.URL,
+				HTML:  html,
+				Empty: strings.Contains(html, ui.WidgetEmptyMarker),
+			})
+		}
+
+		if err := dashboardPage(pd, apps, shown, layout.Columns).Render(r.Context(), w); err != nil {
+			p.ctx.Logger().Error("render dashboard", "err", err)
+		}
 	})
 }
 
@@ -197,14 +232,7 @@ func (p *Plugin) EditHandler() http.Handler {
 			allWidgets = p.ctx.Widgets()
 		}
 
-		var layout *Layout
-		db, err := p.DB(u.Username)
-		if err == nil {
-			layout, _ = GetLayout(db)
-		}
-		if layout == nil {
-			layout = &Layout{Columns: 2}
-		}
+		layout := p.layout(u.Username)
 
 		// Build enabled set from saved order (if any).
 		enabledSet := make(map[string]bool)
@@ -241,7 +269,9 @@ func (p *Plugin) EditHandler() http.Handler {
 			}
 		}
 
-		dashboardEditPage(pd, orderedWidgets, layout, enabledSet).Render(r.Context(), w)
+		if err := dashboardEditPage(pd, orderedWidgets, layout, enabledSet).Render(r.Context(), w); err != nil {
+			p.ctx.Logger().Error("render dashboard editor", "err", err)
+		}
 	})
 }
 

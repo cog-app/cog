@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -47,22 +48,32 @@ func (h *adminHandler) NewUserForm(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		errMsg = flash.Message
 	}
-	adminUserNewPage(pd, errMsg).Render(r.Context(), w)
+	form := newUserForm{Username: flash.Value("username"), IsAdmin: flash.Value("is_admin") == "1"}
+	if err := adminUserNewPage(pd, errMsg, form).Render(r.Context(), w); err != nil {
+		h.p.Log.Error("render new user page", "err", err)
+	}
 }
 
 func (h *adminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
-	username := r.FormValue("username")
+	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
+	keep := map[string]string{"username": username, "is_admin": r.FormValue("is_admin")}
 
 	if username == "" || password == "" {
-		setFlash(w, "error", "Username and password are required.")
+		setFlashForm(w, "error", "Username and password are required.", keep)
 		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
 		return
 	}
 
 	u, err := h.p.Users.Create(username, password)
+	if errors.Is(err, user.ErrUsernameTaken) {
+		setFlashForm(w, "error", fmt.Sprintf("A user named “%s” already exists.", username), keep)
+		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
+		return
+	}
 	if err != nil {
-		setFlash(w, "error", "Failed to create user: "+err.Error())
+		h.p.Log.Error("create user", "username", username, "err", err)
+		setFlashForm(w, "error", "The user could not be created. The server log has the details.", keep)
 		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
 		return
 	}
@@ -85,7 +96,15 @@ func (h *adminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	setFlash(w, "success", fmt.Sprintf("User “%s” created.", u.Username))
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+}
+
+// newUserForm is what the new-user form shows: empty, or what was typed
+// before an error sent the admin back to it.
+type newUserForm struct {
+	Username string
+	IsAdmin  bool
 }
 
 func (h *adminHandler) EditUserForm(w http.ResponseWriter, r *http.Request) {
@@ -324,7 +343,12 @@ func filterLogEntries(entries []logbuf.Entry, r *http.Request) []logbuf.Entry {
 	regexStr := r.URL.Query().Get("regex")
 	var re *regexp.Regexp
 	if regexStr != "" {
-		re, _ = regexp.Compile(regexStr)
+		var err error
+		if re, err = regexp.Compile(regexStr); err != nil {
+			// Half-typed patterns arrive with every keystroke; until the
+			// pattern is valid, match it as plain text.
+			re = regexp.MustCompile(regexp.QuoteMeta(regexStr))
+		}
 	}
 
 	if len(levelSet) == 0 && len(sourceSet) == 0 && re == nil {

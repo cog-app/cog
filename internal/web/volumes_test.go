@@ -117,3 +117,29 @@ func TestVolumeDeleteFile(t *testing.T) {
 	_, err := os.Stat(fpath)
 	require.True(t, os.IsNotExist(err))
 }
+
+// The default volume is the data directory, which holds the server's own
+// files. The browser must not list them, serve them, or delete them.
+func TestVolumeBrowseProtectsServerFiles(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	cookie, token := sessionAndCSRF(t, env, alice.ID)
+
+	volID, dir := defaultVolumeDir(t, env)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hi"), 0o644))
+	_, err := os.Stat(filepath.Join(dir, "system.db"))
+	require.NoError(t, err)
+
+	page := env.Get(t, "/volumes/"+volID+"/browse", cookie).Status(200).ReadBody()
+	require.True(t, strings.Contains(page, "hello.txt"), "ordinary file not listed")
+	require.True(t, !strings.Contains(page, "system.db"), "system database listed")
+	require.True(t, !strings.Contains(page, ".search"), "search index listed")
+
+	for _, p := range []string{"system.db", "system.db-wal", ".search", "alice/app_data"} {
+		env.Get(t, "/volumes/"+volID+"/download?path="+url.QueryEscape(p), cookie).Status(http.StatusForbidden)
+		env.Delete(t, "/volumes/"+volID+"/file?path="+url.QueryEscape(p),
+			cookie, cogtest.Header("X-CSRF-Token", token)).Status(http.StatusForbidden)
+	}
+	_, err = os.Stat(filepath.Join(dir, "system.db"))
+	require.NoError(t, err)
+}

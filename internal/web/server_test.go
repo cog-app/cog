@@ -64,7 +64,7 @@ func TestNCLoginFlow(t *testing.T) {
 	// Step 6b: GET /grant authenticated — render confirm form, extract CSRF.
 	grantPage := env.Get(t, "/index.php/login/v2/grant?token="+grantToken).
 		Status(200).
-		Contains("Grant Access")
+		Contains("Grant access")
 	m := grantCSRFRe.FindStringSubmatch(grantPage.ReadBody())
 	require.True(t, len(m) == 2)
 	csrf := m[1]
@@ -72,7 +72,7 @@ func TestNCLoginFlow(t *testing.T) {
 	// Step 6c: POST /grant with CSRF — authoritative grant.
 	env.PostForm(t, "/index.php/login/v2/grant?token="+grantToken, url.Values{
 		"csrf_token": {csrf},
-	}).Status(200).Contains("Login Granted")
+	}).Status(200).Contains("Access granted")
 
 	// Step 7: POST /index.php/login/v2/poll — poll after grant
 	var pollResp struct {

@@ -257,7 +257,7 @@ func TestBrowserAdminLogs(t *testing.T) {
 	b.Login(t, "admin", "pass")
 
 	b.Navigate(t, "/admin/logs")
-	b.WaitText(t, "Server Logs")
+	b.WaitText(t, "Server logs")
 	b.Snapshot(t)
 	b.Snapshot(t, webtest.Mobile)
 }
@@ -442,12 +442,8 @@ func TestBrowserVolumeBrowse(t *testing.T) {
 	b := eng.Start(t)
 	b.Login(t, "admin", "pass")
 
-	// The volume is the data directory, so the listing shows the system
-	// database's write-ahead log, whose size would follow the schema and
-	// every write before now. Empty it, so the golden shows only what this
-	// page's own request writes.
-	_, err = env.Providers.DB.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
-	require.NoError(t, err)
+	// The volume is the data directory. The server's own files in it (the
+	// system database, its journal, the search index) are not listed.
 
 	// Modification times are shown; fix them, after logging in has written
 	// whatever it writes, so the golden is stable.
@@ -601,10 +597,7 @@ func TestBrowserAdminGeneralSettings(t *testing.T) {
 	b.Navigate(t, "/admin/settings")
 	b.WaitVisible(t, `input[name="invite_expiry_hours"]`)
 	// Uptimes follow the wall clock.
-	b.Eval(t, `() => document.querySelectorAll("table tr").forEach(r => {
-		if (r.cells.length === 2 && r.cells[0].textContent.includes("Uptime")) r.cells[1].textContent = "«uptime»";
-	})`)
-	maskServerPort(t, b)
+	b.Eval(t, `() => document.querySelectorAll("[data-uptime]").forEach(d => { d.textContent = "«uptime»" })`)
 	b.Snapshot(t)
 	b.Snapshot(t, webtest.Mobile)
 }
@@ -718,7 +711,6 @@ func TestBrowserGroupDetailWithInvites(t *testing.T) {
 	b.Login(t, "alice", "pass")
 	b.Navigate(t, "/settings/groups/"+grp.ID)
 	b.WaitText(t, "carol.with.a.long.address@example.com")
-	maskServerPort(t, b)
 	b.Snapshot(t)
 	b.Snapshot(t, webtest.Mobile)
 }
@@ -807,14 +799,14 @@ func TestBrowserNCLoginFlowGrant(t *testing.T) {
 	b.Type(t, "#username", "alice")
 	b.Type(t, "#password", "secret")
 	b.Click(t, `button[type="submit"]`)
-	b.WaitText(t, "Grant App Access")
+	b.WaitText(t, "Grant access")
 	t.Run("Grant", func(t *testing.T) {
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
 
 	b.Click(t, `button[type="submit"]`)
-	b.WaitText(t, "Login Granted")
+	b.WaitText(t, "Access granted")
 	t.Run("Granted", func(t *testing.T) {
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
@@ -834,19 +826,4 @@ func TestBrowserNotFound(t *testing.T) {
 	b.WaitReady(t, "body")
 	b.Snapshot(t)
 	b.Snapshot(t, webtest.Mobile)
-}
-
-// maskServerPort replaces the test server's random port wherever the page
-// shows an absolute URL (the Base URL row, invite links), which the golden
-// masking does not cover.
-func maskServerPort(t *testing.T, b *webtest.Browser) {
-	t.Helper()
-	b.Eval(t, `() => {
-		const re = /127\.0\.0\.1:\d+/g;
-		const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-		while (walker.nextNode()) walker.currentNode.nodeValue = walker.currentNode.nodeValue.replace(re, "127.0.0.1:«port»");
-		document.querySelectorAll("*").forEach(el => {
-			for (const a of el.attributes) if (re.test(a.value)) el.setAttribute(a.name, a.value.replace(re, "127.0.0.1:«port»"));
-		});
-	}`)
 }

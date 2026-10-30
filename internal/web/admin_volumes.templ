@@ -10,55 +10,57 @@ import (
 
 templ adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, "volumes") {
-		<div class="flex justify-between items-center" style="margin-bottom:1rem">
-			<h1>Volumes</h1>
-			<a class="btn btn-primary" href="/admin/volumes/new">New Volume</a>
-		</div>
-		if flash != "" {
-			@ui.Alert(flashKind, flash)
+		@ui.PageHeader("Volumes", nil) {
+			<a class="btn btn-primary" href="/admin/volumes/new">
+				@ui.Icon("plus")
+				New volume
+			</a>
 		}
-		@ui.Card("") {
-			<table class="table">
-				<thead>
-					<tr>
-						<th>Name</th>
-						<th>URI</th>
-						<th>Description</th>
-					</tr>
-				</thead>
-				<tbody>
-					for v, err := range volumes {
-						if err == nil {
-							<tr style="cursor:pointer" onclick={ goTo("/admin/volumes/" + v.ID) }>
-								<td>
-									{ v.Name }
+		@ui.Alert(flashKind, flash)
+		<div class="card card-flush">
+			<div class="table-wrap">
+				<table class="table">
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>URI</th>
+							<th class="hide-mobile">Description</th>
+						</tr>
+					</thead>
+					<tbody>
+						for v, err := range volumes {
+							if err != nil {
+								<tr><td colspan="3" class="text-danger">Some volumes could not be loaded.</td></tr>
+								break
+							}
+							<tr>
+								<td class="nowrap">
+									<a class="row-link" href={ templ.SafeURL("/admin/volumes/" + v.ID) }>{ v.Name }</a>
 									if v.IsDefault() {
-										<span title="Default system volume">&#9733;</span>
+										<span class="badge badge-neutral" title="The volume user files are created on">Default</span>
 									}
 								</td>
-								<td><code>{ v.URI }</code></td>
-								<td>{ v.Description }</td>
+								<td><code class="truncate uri-cell" title={ v.URI }>{ v.URI }</code></td>
+								<td class="hide-mobile text-muted">{ v.Description }</td>
 							</tr>
 						}
-					}
-				</tbody>
-			</table>
-		}
+					</tbody>
+				</table>
+			</div>
+		</div>
 	}
 }
 
 templ adminVolumeNewPage(pd ui.PageData, errMsg string) {
 	@ui.AdminSidebarPage(pd, "volumes") {
-		<h1 style="margin-bottom:1rem">New Volume</h1>
-		if errMsg != "" {
-			@ui.Alert("error", errMsg)
-		}
+		@ui.PageHeader("New volume", []ui.Crumb{{Label: "Volumes", URL: "/admin/volumes"}})
+		@ui.Alert("error", errMsg)
 		@ui.Card("") {
 			@volumeForm(volumeFormData{
 				Action:           "/admin/volumes",
 				CSRFToken:        pd.CSRFToken,
 				ConnType:         "file",
-				SubmitLabel:      "Create Volume",
+				SubmitLabel:      "Create volume",
 				ShowTypeSelector: true,
 				CancelURL:        "/admin/volumes",
 			})
@@ -68,16 +70,14 @@ templ adminVolumeNewPage(pd ui.PageData, errMsg string) {
 
 templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, fd volumeFormData, isDefault bool, shares []ui.ShareDisplayItem, levels []plugin.PermissionLevel, quotas []quotaDisplayItem, flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, "volumes") {
-		<h1 style="margin-bottom:1rem">
-			Edit Volume: { v.Name }
+		@ui.PageHeader(v.Name, []ui.Crumb{{Label: "Volumes", URL: "/admin/volumes"}}) {
 			if isDefault {
-				<span title="Default system volume">&#9733;</span>
+				<span class="badge badge-neutral" title="The volume user files are created on">Default</span>
 			}
-		</h1>
-		if flash != "" {
-			@ui.Alert(flashKind, flash)
+			<a class="btn btn-secondary" href={ templ.SafeURL("/volumes/" + v.ID + "/browse") }>Browse files</a>
 		}
-		@ui.Card("") {
+		@ui.Alert(flashKind, flash)
+		@ui.Card("Settings") {
 			@volumeForm(fd)
 		}
 		@ui.Card("Sharing") {
@@ -87,15 +87,17 @@ templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, fd volumeFormData, i
 			@adminQuotaPanel(v.ID, pd.CSRFToken, quotas)
 		}
 		if !isDefault {
-			@ui.Card("Danger Zone") {
-				<p class="text-muted" style="margin-bottom:0.5rem">Deleting a volume cannot be undone.</p>
+			<div class="card card-danger">
+				<h2 class="card-title">Danger zone</h2>
+				<p class="text-muted">Deleting a volume cannot be undone.</p>
 				<button
+					type="button"
 					class="btn btn-danger"
 					hx-delete={ "/admin/volumes/" + v.ID }
-					hx-confirm="Delete this volume? This cannot be undone."
+					hx-confirm={ "Delete the volume " + v.Name + "? This cannot be undone." }
 					hx-on::after-request="window.location='/admin/volumes'"
-				>Delete Volume</button>
-			}
+				>Delete volume</button>
+			</div>
 		}
 	}
 }
@@ -103,36 +105,39 @@ templ adminVolumeEditPage(pd ui.PageData, v *volume.Volume, fd volumeFormData, i
 templ adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, levels []plugin.PermissionLevel) {
 	<div id="vol-share-panel">
 		if len(shares) > 0 {
-			<table class="table" style="margin-bottom:1rem">
-				<thead>
-					<tr>
-						<th>Shared with</th>
-						<th>Permissions</th>
-						<th class="text-right"></th>
-					</tr>
-				</thead>
-				<tbody>
-					for _, s := range shares {
-						<tr id={ "share-" + s.ID }>
-							<td>{ s.SubjectName } <span class="text-muted">({ s.SubjectType })</span></td>
-							<td>{ s.PermLabel }</td>
-							<td class="text-right">
-								<button
-									class="btn btn-danger btn-sm"
-									hx-delete={ "/admin/shares/" + s.ID }
-									hx-target={ "#share-" + s.ID }
-									hx-swap="outerHTML"
-									hx-confirm="Remove this share?"
-								>Remove</button>
-							</td>
+			<div class="table-wrap">
+				<table class="table">
+					<thead>
+						<tr>
+							<th>Shared with</th>
+							<th class="col-shrink">Permissions</th>
+							<th class="col-actions"><span class="sr-only">Actions</span></th>
 						</tr>
-					}
-				</tbody>
-			</table>
+					</thead>
+					<tbody>
+						for _, s := range shares {
+							<tr id={ "share-" + s.ID }>
+								<td class="break-anywhere">{ s.SubjectName } <span class="text-sm text-muted">({ s.SubjectType })</span></td>
+								<td class="nowrap">{ s.PermLabel }</td>
+								<td class="col-actions">
+									<button
+										type="button"
+										class="btn btn-outline-danger btn-sm"
+										hx-delete={ "/admin/shares/" + s.ID }
+										hx-target={ "#share-" + s.ID }
+										hx-swap="outerHTML"
+										hx-confirm={ "Stop sharing with " + s.SubjectName + "?" }
+									>Remove</button>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
 		} else {
-			<p class="text-muted" style="margin-bottom:1rem">No shares yet.</p>
+			<p class="empty-state empty-state-sm">Not shared with anyone yet.</p>
 		}
-		<h4>Share with User</h4>
+		<h3 class="card-subtitle">Share with a user</h3>
 		<form
 			method="post"
 			action="/admin/shares/create"
@@ -144,14 +149,14 @@ templ adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, 
 			<input type="hidden" name="resource_type" value="files:volume"/>
 			<input type="hidden" name="resource_id" value={ volumeID }/>
 			<input type="hidden" name="panel_id" value="vol-share-panel"/>
-			<div class="flex gap-1 items-end" style="flex-wrap:wrap">
-				<div>
+			<div class="form-row mb-0">
+				<div class="form-group">
 					<label class="form-label">User</label>
-					<input class="form-control" type="text" name="subject_id" placeholder="User ID" required style="max-width:200px"/>
+					@ui.Picker("/api/picker/search?type=user", "subject_id", "Search users…", false)
 				</div>
-				<div>
-					<label class="form-label">Permissions</label>
-					<select class="form-control" name="permissions" style="max-width:200px">
+				<div class="form-group form-group-auto">
+					<label class="form-label" for="share-permissions">Permissions</label>
+					<select class="form-control" id="share-permissions" name="permissions">
 						for _, l := range levels {
 							<option value={ permStr(l.Permissions) }>{ l.Label }</option>
 						}
@@ -166,68 +171,88 @@ templ adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, 
 templ adminQuotaPanel(volumeID, csrfToken string, quotas []quotaDisplayItem) {
 	<div id="vol-quota-panel">
 		if len(quotas) > 0 {
-			<table class="table" style="margin-bottom:1rem">
-				<thead>
-					<tr>
-						<th>Subject</th>
-						<th>Type</th>
-						<th>Limit</th>
-						<th class="text-right"></th>
-					</tr>
-				</thead>
-				<tbody>
-					for _, q := range quotas {
-						<tr id={ "quota-" + q.ID }>
-							<td>{ q.SubjectName }</td>
-							<td>{ q.SubjectType }</td>
-							<td>{ q.QuotaLabel }</td>
-							<td class="text-right">
-								<button
-									class="btn btn-danger btn-sm"
-									hx-delete={ "/admin/volumes/" + volumeID + "/quotas/" + q.ID }
-									hx-target={ "#quota-" + q.ID }
-									hx-swap="outerHTML"
-									hx-confirm="Remove this quota?"
-								>Remove</button>
-							</td>
+			<div class="table-wrap">
+				<table class="table">
+					<thead>
+						<tr>
+							<th>Applies to</th>
+							<th class="col-shrink">Type</th>
+							<th class="col-shrink text-right">Limit</th>
+							<th class="col-actions"><span class="sr-only">Actions</span></th>
 						</tr>
-					}
-				</tbody>
-			</table>
+					</thead>
+					<tbody>
+						for _, q := range quotas {
+							<tr id={ "quota-" + q.ID }>
+								<td class="break-anywhere">{ q.SubjectName }</td>
+								<td class="nowrap">{ q.SubjectType }</td>
+								<td class="nowrap text-right">{ q.QuotaLabel }</td>
+								<td class="col-actions">
+									<button
+										type="button"
+										class="btn btn-outline-danger btn-sm"
+										hx-delete={ "/admin/volumes/" + volumeID + "/quotas/" + q.ID }
+										hx-target={ "#quota-" + q.ID }
+										hx-swap="outerHTML"
+										hx-confirm="Remove this quota?"
+									>Remove</button>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
 		} else {
-			<p class="text-muted" style="margin-bottom:1rem">No quotas set (unlimited).</p>
+			<p class="empty-state empty-state-sm">No quotas set: storage on this volume is unlimited.</p>
 		}
-		<h4>Set Quota</h4>
-		<form method="post" action={ templ.SafeURL("/admin/volumes/" + volumeID + "/quotas") }>
+		<h3 class="card-subtitle">Set a quota</h3>
+		<form method="post" action={ templ.SafeURL("/admin/volumes/" + volumeID + "/quotas") } data-quota-form>
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
-			<div class="flex gap-1 items-end" style="flex-wrap:wrap">
-				<div>
-					<label class="form-label">Type</label>
-					<select class="form-control" name="subject_type" style="max-width:150px">
-						<option value="DEFAULT">Default</option>
-						<option value="USER">User</option>
-						<option value="GROUP">Group</option>
+			<div class="form-row mb-0">
+				<div class="form-group form-group-auto">
+					<label class="form-label" for="quota-type">Applies to</label>
+					<select class="form-control" id="quota-type" name="subject_type" onchange={ quotaSubjectToggle() }>
+						<option value="DEFAULT">Everyone (default)</option>
+						<option value="USER">A user</option>
+						<option value="GROUP">A group</option>
 					</select>
 				</div>
-				<div>
-					<label class="form-label">Subject ID</label>
-					<input class="form-control" type="text" name="subject_id" placeholder="User/Group ID (blank for default)" style="max-width:200px"/>
+				<div class="form-group" data-subject="USER" hidden>
+					<label class="form-label">User</label>
+					@ui.Picker("/api/picker/search?type=user", "subject_id", "Search users…", false)
 				</div>
-				<div>
-					<label class="form-label">Amount</label>
-					<input class="form-control" type="number" name="amount" min="1" required style="max-width:100px"/>
+				<div class="form-group" data-subject="GROUP" hidden>
+					<label class="form-label">Group</label>
+					@ui.Picker("/api/picker/search?type=group", "subject_id", "Search groups…", false)
 				</div>
-				<div>
-					<label class="form-label">Unit</label>
-					<select class="form-control" name="unit" style="max-width:100px">
-						<option value="GB">GB</option>
-						<option value="MB">MB</option>
-					</select>
+				<div class="form-group form-group-auto">
+					<label class="form-label" for="quota-amount">Limit</label>
+					<div class="flex gap-1">
+						<input class="form-control w-xs" type="number" id="quota-amount" name="amount" min="1" required/>
+						<label class="sr-only" for="quota-unit">Unit</label>
+						<select class="form-control form-control-auto" id="quota-unit" name="unit">
+							<option value="GB">GB</option>
+							<option value="MB">MB</option>
+						</select>
+					</div>
 				</div>
-				<button class="btn btn-primary" type="submit">Set Quota</button>
+				<button class="btn btn-primary" type="submit">Set quota</button>
 			</div>
 		</form>
 	</div>
+}
+
+// quotaSubjectToggle shows the picker for the chosen subject type and
+// disables the other, so only one subject_id is submitted.
+
+script quotaSubjectToggle() {
+	var form = event.currentTarget.closest("form");
+	var type = event.currentTarget.value;
+	form.querySelectorAll("[data-subject]").forEach(function(el) {
+		var on = el.getAttribute("data-subject") === type;
+		el.hidden = !on;
+		el.querySelectorAll("input").forEach(function(i) { i.disabled = !on; });
+	});
 }
 
 func permStr(p uint32) string {

@@ -3,6 +3,7 @@ package dashboard
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 )
 
 // Layout stores per-user dashboard customization preferences.
@@ -23,7 +24,7 @@ func GetLayout(db *sql.DB) (*Layout, error) {
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(orderJSON), &l.WidgetOrder); err != nil {
-		l.WidgetOrder = nil
+		return nil, fmt.Errorf("decode widget order: %w", err)
 	}
 	return &l, nil
 }

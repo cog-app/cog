@@ -108,7 +108,7 @@ templ volumeForm(fd volumeFormData) {
 		if fd.ShowTypeSelector {
 			<div class="form-group">
 				<label for="conn_type">Connection Type</label>
-				<select class="form-control" id="conn_type" name="conn_type" style="max-width:200px">
+				<select class="form-control w-sm" id="conn_type" name="conn_type">
 					<option value="file" selected?={ fd.ConnType == "" || fd.ConnType == "file" }>Local Filesystem</option>
 					<option value="webdav" selected?={ fd.ConnType == "webdav" }>WebDAV</option>
 					<option value="mem" selected?={ fd.ConnType == "mem" }>In-Memory</option>
@@ -143,7 +143,7 @@ templ volumeForm(fd volumeFormData) {
 			@ui.FormField("Remote URL", "remote_url", "text", fd.WebDAV.URL, "https://nc.example.com/remote.php/dav/files/user")
 			<div class="form-group">
 				<label for="auth_type">Auth Type</label>
-				<select class="form-control" id="auth_type" name="auth_type" style="max-width:200px">
+				<select class="form-control w-sm" id="auth_type" name="auth_type">
 					<option value="basic" selected?={ fd.WebDAV.AuthType == "" || fd.WebDAV.AuthType == "basic" }>Basic</option>
 					<option value="bearer" selected?={ fd.WebDAV.AuthType == "bearer" }>Bearer Token</option>
 				</select>
@@ -157,18 +157,14 @@ templ volumeForm(fd volumeFormData) {
 			</div>
 		</div>
 		<div data-conn-type="mem" style={ connTypeDisplay(fd.ShowTypeSelector, fd.ConnType, "mem") }>
-			<p class="text-muted" style="margin-bottom:1rem">In-memory volumes have no configuration. Data is not persisted.</p>
+			<p class="form-help mb-2">In-memory volumes have no settings. Their data is lost when the server stops.</p>
 		</div>
-		<button class="btn btn-primary" type="submit">{ fd.SubmitLabel }</button>
-		if fd.CancelURL != "" {
-			<a class="btn btn-outline" href={ templ.SafeURL(fd.CancelURL) } style="margin-left:0.5rem">
-				if fd.SubmitLabel == "Save" {
-					Back
-				} else {
-					Cancel
-				}
-			</a>
-		}
+		<div class="form-actions">
+			<button class="btn btn-primary" type="submit">{ fd.SubmitLabel }</button>
+			if fd.CancelURL != "" && fd.SubmitLabel != "Save" {
+				<a class="btn btn-secondary" href={ templ.SafeURL(fd.CancelURL) }>Cancel</a>
+			}
+		</div>
 	</form>
 	@volumeFormToggle()
 }

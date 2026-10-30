@@ -3,37 +3,96 @@ package web
 import (
 	"fmt"
 	"git.duckfam.us/jj-software/cog/internal/group"
+	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
 templ settingsGroupsPage(pd ui.PageData, ownedGroups []group.Group, memberGroups []group.Group, flash string, flashKind string) {
 	@ui.SidebarPage(pd, settingsSidebar("groups")) {
-		<h1 style="margin-bottom:1rem">Groups</h1>
-		if flash != "" {
-			@ui.Alert(flashKind, flash)
-		}
-		@ui.Card("Create Group") {
-			<form method="post" action="/settings/groups" class="flex gap-1 items-center">
+		@ui.PageHeader("Groups", nil)
+		@ui.Alert(flashKind, flash)
+		@ui.Card("Create group") {
+			<form method="post" action="/settings/groups" class="form-inline">
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				<input class="form-control" type="text" name="name" placeholder="Group name" required style="max-width:300px"/>
+				<label class="sr-only" for="new-group-name">Group name</label>
+				<input class="form-control" type="text" id="new-group-name" name="name" placeholder="Group name" required/>
 				<button class="btn btn-primary" type="submit">Create</button>
 			</form>
 		}
-		@ui.Card("My Groups") {
-			if len(ownedGroups) > 0 {
-				@groupTable(ownedGroups, "/settings/groups/")
+		<div class="card card-flush">
+			<h2 class="card-title">Your groups</h2>
+			if len(ownedGroups) == 0 && len(memberGroups) == 0 {
+				@ui.EmptyState("", "You're not in any groups yet. Create one above, or ask someone to invite you.")
 			} else {
-				<p class="text-muted">You don't own any groups yet.</p>
+				<div class="table-wrap">
+					<table class="table">
+						<thead>
+							<tr>
+								<th>Name</th>
+								<th class="col-shrink">Role</th>
+								<th class="col-shrink text-right">Members</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, g := range ownedGroups {
+								@groupRow(g, "/settings/groups/", "Owner")
+							}
+							for _, g := range memberGroups {
+								@groupRow(g, "/settings/groups/", "Member")
+							}
+						</tbody>
+					</table>
+				</div>
 			}
-		}
-		@ui.Card("Member Of") {
-			if len(memberGroups) > 0 {
-				@groupTable(memberGroups, "/settings/groups/")
-			} else {
-				<p class="text-muted">You're not a member of any other groups.</p>
-			}
-		}
+		</div>
 	}
+}
+
+templ groupRow(g group.Group, urlPrefix, role string) {
+	<tr>
+		<td><a class="row-link break-anywhere" href={ templ.SafeURL(urlPrefix + g.ID) }>{ g.Name }</a></td>
+		if role != "" {
+			<td>
+				if role == "Owner" {
+					<span class="badge badge-admin">Owner</span>
+				} else {
+					<span class="badge badge-neutral">Member</span>
+				}
+			</td>
+		}
+		<td class="text-right">
+			if g.MemberCount == 0 {
+				<span class="text-sm text-muted">None yet</span>
+			} else {
+				{ fmt.Sprint(g.MemberCount) }
+			}
+		</td>
+	</tr>
+}
+
+// groupList is the admin's table of every group.
+templ groupList(groups []group.Group, urlPrefix, empty string) {
+	<div class="card card-flush">
+		if len(groups) == 0 {
+			@ui.EmptyState("", empty)
+		} else {
+			<div class="table-wrap">
+				<table class="table">
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th class="col-shrink text-right">Members</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, g := range groups {
+							@groupRow(g, urlPrefix, "")
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+	</div>
 }
 
 templ settingsGroupDetailPage(pd ui.PageData, gdd groupDetailData) {
@@ -48,263 +107,277 @@ templ adminGroupDetailPage(pd ui.PageData, gdd groupDetailData) {
 	}
 }
 
+func memberRowID(d groupDetailData, m group.Member) string {
+	return fmt.Sprintf("member-%s-%s", d.Group.ID, m.MemberID)
+}
+
 templ groupDetailContent(pd ui.PageData, d groupDetailData) {
-	<h1 style="margin-bottom:1rem">Group: { d.Group.Name }</h1>
-	if d.Flash != "" {
-		if d.LastInviteURL != "" {
-			@ui.AlertWithCopy(d.FlashKind, d.Flash, d.LastInviteURL)
-		} else {
-			@ui.Alert(d.FlashKind, d.Flash)
-		}
+	@ui.PageHeader(d.Group.Name, []ui.Crumb{{Label: "Groups", URL: d.BasePath}})
+	if d.LastInviteURL != "" {
+		@ui.AlertWithCopy(d.FlashKind, d.Flash, d.LastInviteURL)
+	} else {
+		@ui.Alert(d.FlashKind, d.Flash)
 	}
 	if d.IsOwner {
-		@ui.Card("Group Name") {
-			<form method="post" action={ templ.SafeURL(d.BasePath + "/" + d.Group.ID) }>
+		@ui.Card("Group name") {
+			<form method="post" action={ templ.SafeURL(d.BasePath + "/" + d.Group.ID) } class="form-inline">
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				@ui.FormField("Name", "name", "text", d.Group.Name, "")
+				<label class="sr-only" for="name">Name</label>
+				<input class="form-control" type="text" id="name" name="name" value={ d.Group.Name } required/>
 				<button class="btn btn-primary" type="submit">Save</button>
-				<a class="btn btn-outline" href={ templ.SafeURL(d.BasePath) } style="margin-left:0.5rem">Back</a>
 			</form>
 		}
-	} else {
-		<p><a href={ templ.SafeURL(d.BasePath) }>&larr; Back to Groups</a></p>
 	}
 	@ui.Card("Members") {
 		if d.IsOwner {
-			<form method="post" action={ templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/members") } class="flex gap-1 items-center mb-2">
+			<form method="post" action={ templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/members") } class="form-inline mb-1">
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				<div style="min-width:250px">
-					@ui.Picker("/api/picker/search?type=user", "member_id", "Search users...", false)
-				</div>
-				<button class="btn btn-primary" type="submit">Add Member</button>
+				@ui.Picker("/api/picker/search?type=user", "member_id", "Search users to add…", false)
+				<button class="btn btn-primary" type="submit">Add member</button>
 			</form>
-			<details style="margin-bottom:0.75rem">
-				<summary style="cursor:pointer;font-weight:500">Add group member</summary>
-				<form method="post" action={ templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/members") } class="flex gap-1 items-center" style="margin-top:0.5rem">
+			<details class="mb-2">
+				<summary class="text-sm">Add another group as a member</summary>
+				<form method="post" action={ templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/members") } class="form-inline mt-1">
 					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 					<input type="hidden" name="member_type" value="GROUP"/>
-					<div style="min-width:250px">
-						@ui.Picker("/api/picker/search?type=group", "member_id", "Search groups...", false)
-					</div>
-					<button class="btn btn-primary" type="submit">Add Group</button>
+					@ui.Picker("/api/picker/search?type=group", "member_id", "Search groups…", false)
+					<button class="btn btn-secondary" type="submit">Add group</button>
 				</form>
 			</details>
 		}
-		<table class="table mb-0">
-			<thead>
-				<tr>
-					<th>Member</th>
-					<th>Type</th>
-					<th class="text-right">Actions</th>
-				</tr>
-			</thead>
-			<tbody>
-				for m, err := range d.Members {
-					if err != nil {
-						<tr><td colspan="3" class="text-danger">Error loading members.</td></tr>
-						break
-					}
-					<tr id={ fmt.Sprintf("member-%s-%s", d.Group.ID, m.MemberID) }>
-						<td>{ m.Username }</td>
-						<td>
-							if m.MemberType == group.GroupMember {
-								<span style="font-size:0.85rem;color:var(--color-text-muted)">Group</span>
-							} else if d.IsOwner {
-								<form method="post" action={ templ.SafeURL(fmt.Sprintf("%s/%s/members/%s/type", d.BasePath, d.Group.ID, m.MemberID)) } style="display:inline">
-									<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-									<select class="form-control" name="member_type" style="display:inline-block;width:auto;padding:0.2rem 0.4rem;font-size:0.85rem" onchange="this.form.submit()">
-										if m.MemberType == "OWNER" {
-											<option value={ group.Owner } selected>Owner</option>
-											<option value={ group.User }>User</option>
-										} else {
-											<option value={ group.Owner }>Owner</option>
-											<option value={ group.User } selected>User</option>
-										}
-									</select>
-								</form>
-							} else {
-								{ m.MemberType }
-							}
-						</td>
-						<td class="text-right">
-							if d.IsOwner && m.MemberID != pd.User.ID {
-								<button
-									class="btn btn-danger btn-sm"
-									hx-delete={ fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID) }
-									hx-target={ fmt.Sprintf("#member-%s-%s", d.Group.ID, m.MemberID) }
-									hx-swap="outerHTML"
-								>Remove</button>
-							}
-							if !d.IsOwner && m.MemberType == group.User && m.MemberID == pd.User.ID {
-								<button
-									class="btn btn-danger btn-sm"
-									hx-delete={ fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID) }
-									hx-confirm="Leave this group?"
-									hx-target={ fmt.Sprintf("#member-%s-%s", d.Group.ID, m.MemberID) }
-									hx-swap="outerHTML"
-								>Leave</button>
-							}
-						</td>
+		if d.MembersErr != nil {
+			<div class="alert alert-error">Some members could not be loaded.</div>
+		}
+		<div class="table-wrap">
+			<table class="table">
+				<thead>
+					<tr>
+						<th>Member</th>
+						<th class="col-shrink">Role</th>
+						<th class="col-actions"><span class="sr-only">Actions</span></th>
 					</tr>
-				}
-			</tbody>
-		</table>
+				</thead>
+				<tbody>
+					for _, m := range d.Members {
+						<tr id={ memberRowID(d, m) }>
+							<td class="break-anywhere">
+								{ m.Username }
+								if m.MemberID == pd.User.ID {
+									<span class="text-sm text-muted">(you)</span>
+								}
+							</td>
+							<td>
+								if m.MemberType == group.GroupMember {
+									<span class="badge badge-neutral">Group</span>
+								} else if d.IsOwner {
+									<form method="post" action={ templ.SafeURL(fmt.Sprintf("%s/%s/members/%s/type", d.BasePath, d.Group.ID, m.MemberID)) }>
+										<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+										<label class="sr-only" for={ memberRowID(d, m) + "-role" }>Role of { m.Username }</label>
+										<select class="form-control form-control-sm form-control-auto" id={ memberRowID(d, m) + "-role" } name="member_type" onchange="this.form.submit()">
+											<option value={ group.Owner } selected?={ m.MemberType == group.Owner }>Owner</option>
+											<option value={ group.User } selected?={ m.MemberType != group.Owner }>Member</option>
+										</select>
+									</form>
+								} else if m.MemberType == group.Owner {
+									<span class="badge badge-admin">Owner</span>
+								} else {
+									<span class="badge badge-neutral">Member</span>
+								}
+							</td>
+							<td class="col-actions">
+								if m.MemberID == pd.User.ID && (!d.IsOwner || d.OwnerCount > 1) {
+									<button
+										type="button"
+										class="btn btn-outline-danger btn-sm"
+										hx-delete={ fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID) }
+										hx-confirm={ "Leave " + d.Group.Name + "?" }
+										hx-target={ "#" + memberRowID(d, m) }
+										hx-swap="outerHTML"
+									>Leave</button>
+								} else if d.IsOwner && m.MemberID != pd.User.ID {
+									<button
+										type="button"
+										class="btn btn-outline-danger btn-sm"
+										hx-delete={ fmt.Sprintf("%s/%s/members/%s", d.BasePath, d.Group.ID, m.MemberID) }
+										hx-confirm={ "Remove " + m.Username + " from " + d.Group.Name + "?" }
+										hx-target={ "#" + memberRowID(d, m) }
+										hx-swap="outerHTML"
+									>Remove</button>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
 	}
 	if d.IsOwner {
 		@ui.Card("Invitations") {
-			<form method="post" action={ templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/invites") } class="flex gap-1 items-center mb-2">
+			<form method="post" action={ templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/invites") }>
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				<input class="form-control" type="email" name="email" placeholder={ emailPlaceholder(d.SMTPAvailable) } style="max-width:300px"/>
-				<select class="form-control" name="member_type" style="max-width:120px">
-					<option value={ group.User } selected>User</option>
-					<option value={ group.Owner }>Owner</option>
-				</select>
-				<button class="btn btn-primary" type="submit">Create Invite</button>
+				<div class="form-row">
+					<div class="form-group">
+						<label for="invite-email">Email (optional)</label>
+						<input class="form-control" type="email" id="invite-email" name="email" placeholder="name@example.com"/>
+					</div>
+					<div class="form-group form-group-auto">
+						<label for="invite-role">Role</label>
+						<select class="form-control" id="invite-role" name="member_type">
+							<option value={ group.User } selected>Member</option>
+							<option value={ group.Owner }>Owner</option>
+						</select>
+					</div>
+					<button class="btn btn-primary" type="submit">Create invite</button>
+				</div>
+				<p class="form-help">
+					if d.SMTPAvailable {
+						With an address, the invitation is emailed. Without one, you get a link to send yourself.
+					} else {
+						Email is not set up on this server, so you get a link to send yourself.
+					}
+				</p>
 			</form>
-			if d.SMTPAvailable {
-				<p class="text-muted" style="font-size:0.85rem">An email will be sent if an address is provided.</p>
-			}
 			if len(d.Invitations) > 0 {
-				<table class="table mb-0">
-					<thead>
-						<tr>
-							<th>Email</th>
-							<th>Role</th>
-							<th>Link</th>
-							<th class="text-right">Actions</th>
-						</tr>
-					</thead>
-					<tbody>
-						for _, inv := range d.Invitations {
-							<tr id={ "invite-" + inv.ID }>
-								<td>
-									if inv.Email != "" {
-										{ inv.Email }
-									} else {
-										<span class="text-muted">(link only)</span>
-									}
-								</td>
-								<td>{ inv.MemberType }</td>
-								<td>
-									@ui.ShareLink(d.SiteBaseURL+"/invite/"+inv.Token, inv.Token[:16]+"...")
-								</td>
-								<td class="text-right">
-									<button
-										class="btn btn-danger btn-sm"
-										hx-delete={ fmt.Sprintf("%s/%s/invites/%s", d.BasePath, d.Group.ID, inv.ID) }
-										hx-target={ "#invite-" + inv.ID }
-										hx-swap="outerHTML"
-									>Revoke</button>
-								</td>
+				<h3 class="card-subtitle">Pending</h3>
+				<div class="table-wrap">
+					<table class="table table-stack">
+						<thead>
+							<tr>
+								<th>Invited</th>
+								<th class="col-shrink">Role</th>
+								<th>Link</th>
+								<th class="col-actions"><span class="sr-only">Actions</span></th>
 							</tr>
-						}
-					</tbody>
-				</table>
+						</thead>
+						<tbody>
+							for _, inv := range d.Invitations {
+								<tr id={ "invite-" + inv.ID }>
+									<td class="break-anywhere" data-label="Invited">
+										if inv.Email != "" {
+											{ inv.Email }
+										} else {
+											<span class="text-muted">Anyone with the link</span>
+										}
+									</td>
+									<td data-label="Role">
+										if inv.MemberType == group.Owner {
+											<span class="badge badge-admin">Owner</span>
+										} else {
+											<span class="badge badge-neutral">Member</span>
+										}
+									</td>
+									<td data-label="Link">
+										@ui.ShareLink(d.SiteBaseURL+"/invite/"+inv.Token, inv.Token[:16]+"…")
+									</td>
+									<td class="col-actions">
+										<button
+											type="button"
+											class="btn btn-outline-danger btn-sm"
+											hx-delete={ fmt.Sprintf("%s/%s/invites/%s", d.BasePath, d.Group.ID, inv.ID) }
+											hx-confirm="Revoke this invitation? Its link stops working."
+											hx-target={ "#invite-" + inv.ID }
+											hx-swap="outerHTML"
+										>Revoke</button>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
 			}
 		}
 	}
 	if d.IsAdmin {
-		@ui.Card("Danger Zone") {
-			<p class="text-muted" style="margin-bottom:0.5rem">Deleting a group removes all members and cannot be undone.</p>
-			<form method="post" action={ templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/delete") } onsubmit="return confirm('Are you sure you want to delete this group?')">
+		<div class="card card-danger">
+			<h2 class="card-title">Danger zone</h2>
+			<p class="text-muted">Deleting a group removes all its members and cannot be undone.</p>
+			<form method="post" action={ templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/delete") } onsubmit={ confirmSubmit("Delete " + d.Group.Name + "? This cannot be undone.") }>
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				<button class="btn btn-danger" type="submit">Delete Group</button>
+				<button class="btn btn-danger" type="submit">Delete group</button>
 			</form>
-		}
+		</div>
 	}
 }
 
-templ inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, isLoggedIn bool, errMsg string) {
+script confirmSubmit(msg string) {
+	if (!confirm(msg)) event.preventDefault();
+}
+
+func roleLabel(t group.MemberType) string {
+	if t == group.Owner {
+		return "an owner"
+	}
+	return "a member"
+}
+
+func inviterName(u *user.User) string {
+	if u == nil {
+		return "Someone"
+	}
+	if u.DisplayName != "" {
+		return u.DisplayName
+	}
+	return u.Username
+}
+
+templ inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, inviter *user.User, isLoggedIn bool, errMsg string) {
 	if isLoggedIn {
 		@ui.Base(pd) {
-			<div style="max-width:500px;margin:2rem auto;text-align:center">
-				@ui.Card("Group Invitation") {
-					<p style="margin-bottom:1rem">You've been invited to join the group <strong>{ g.Name }</strong>.</p>
-					<form method="post" action={ templ.SafeURL("/invite/" + inv.Token) } style="display:inline">
+			<div class="card content--narrow invite-card">
+				<h1 class="card-title">Group invitation</h1>
+				<div class="flex items-center gap-2 mb-2">
+					if inviter != nil {
+						<img class="avatar-lg" src={ inviter.AvatarURL() } alt=""/>
+					}
+					<p>
+						<strong>{ inviterName(inviter) }</strong> invited you to join <strong>{ g.Name }</strong> as { roleLabel(inv.MemberType) }.
+						<span class="text-muted">{ fmt.Sprintf("%d %s", g.MemberCount, plural(g.MemberCount, "member", "members")) }.</span>
+					</p>
+				</div>
+				@ui.Alert("error", errMsg)
+				<div class="form-actions form-actions-end">
+					<a class="btn btn-secondary" href="/">Decline</a>
+					<form method="post" action={ templ.SafeURL("/invite/" + inv.Token) }>
 						<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-						<button class="btn btn-primary" type="submit">Accept</button>
+						<button class="btn btn-primary" type="submit">Join { g.Name }</button>
 					</form>
-					<a class="btn btn-outline" href="/" style="margin-left:0.5rem">Decline</a>
-				}
+				</div>
 			</div>
 		}
 	} else {
-		<!DOCTYPE html>
-		<html lang="en">
-			<head>
-				<meta charset="utf-8"/>
-				<meta name="viewport" content="width=device-width, initial-scale=1"/>
-				<title>Group Invitation — Cog</title>
-				<link rel="stylesheet" href={ ui.Static.URL("style.css") }/>
-				<link rel="icon" href={ ui.Static.URL("favicon.svg") } type="image/svg+xml"/>
-			</head>
-			<body>
-				<div class="login-container">
-					<div class="card login-card">
-						<div class="login-title">
-							@ui.CogIcon(28)
-							Cog
-						</div>
-						<p style="text-align:center;margin-bottom:1rem">You've been invited to join the group <strong>{ g.Name }</strong>.</p>
-						if errMsg != "" {
-							<div class="alert alert-error">{ errMsg }</div>
-						}
-						<form method="post" action={ templ.SafeURL("/invite/" + inv.Token) }>
-							<input type="hidden" name="action" value="register"/>
-							<input type="hidden" name="invite_token" value={ inv.Token }/>
-							<div class="form-group">
-								<label for="username">Username</label>
-								<input class="form-control" type="text" id="username" name="username" required autofocus/>
-							</div>
-							<div class="form-group">
-								<label for="password">Password</label>
-								<input class="form-control" type="password" id="password" name="password" required/>
-							</div>
-							<div class="form-group">
-								<label for="confirm">Confirm Password</label>
-								<input class="form-control" type="password" id="confirm" name="confirm" required/>
-							</div>
-							<button class="btn btn-primary" type="submit" style="width:100%;margin-top:0.5rem">Register &amp; Join Group</button>
-						</form>
-						<p style="text-align:center;margin-top:1rem">
-							Already have an account?
-							<a href={ templ.SafeURL("/login?next=/invite/" + inv.Token) }>Log in</a>
-						</p>
-					</div>
+		@ui.AuthPage("Group invitation") {
+			<p class="login-lead">
+				<strong>{ inviterName(inviter) }</strong> invited you to join <strong>{ g.Name }</strong> on Cog. Create an account to accept.
+			</p>
+			@ui.Alert("error", errMsg)
+			<form method="post" action={ templ.SafeURL("/invite/" + inv.Token) }>
+				<input type="hidden" name="action" value="register"/>
+				<input type="hidden" name="invite_token" value={ inv.Token }/>
+				<div class="form-group">
+					<label for="username">Username</label>
+					<input class="form-control" type="text" id="username" name="username" required autofocus autocomplete="username" autocapitalize="none"/>
 				</div>
-			</body>
-		</html>
+				<div class="form-group">
+					<label for="password">Password</label>
+					<input class="form-control" type="password" id="password" name="password" required autocomplete="new-password"/>
+				</div>
+				<div class="form-group">
+					<label for="confirm">Confirm password</label>
+					<input class="form-control" type="password" id="confirm" name="confirm" required autocomplete="new-password"/>
+				</div>
+				<button class="btn btn-primary btn-block" type="submit">Create account and join</button>
+			</form>
+			<p class="login-footer">
+				Already have an account?
+				<a href={ templ.SafeURL("/login?next=/invite/" + inv.Token) }>Log in</a>
+			</p>
+		}
 	}
 }
 
-// groupTable renders a clickable table of groups with member counts.
-// urlPrefix is prepended to the group ID for the row link (e.g. "/settings/groups/" or "/admin/groups/").
-templ groupTable(groups []group.Group, urlPrefix string) {
-	<table class="table">
-		<thead>
-			<tr>
-				<th>Name</th>
-				<th>Members</th>
-			</tr>
-		</thead>
-		<tbody>
-			for _, g := range groups {
-				<tr style="cursor:pointer" onclick={ goTo(urlPrefix + g.ID) }>
-					<td>{ g.Name }</td>
-					<td>{ fmt.Sprint(g.MemberCount) }</td>
-				</tr>
-			}
-		</tbody>
-	</table>
-}
-
-script goTo(url string) {
-	window.location = url;
-}
-
-func emailPlaceholder(smtpAvailable bool) string {
-	if smtpAvailable {
-		return "Email (optional, will send invite)"
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
 	}
-	return "Email (optional, SMTP not configured)"
+	return many
 }

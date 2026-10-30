@@ -90,7 +90,9 @@ func (h *dataHandler) ShowData(w http.ResponseWriter, r *http.Request) {
 	if f := getFlash(w, r); f != nil {
 		flashMsg, flashKind = f.Message, f.Kind
 	}
-	settingsDataPage(pd, flashMsg, flashKind, rows, h.homes()).Render(r.Context(), w)
+	if err := settingsDataPage(pd, flashMsg, flashKind, rows, h.homes()).Render(r.Context(), w); err != nil {
+		h.p.Log.Error("render import and export page", "err", err)
+	}
 }
 
 // ownCollection returns the request user's collection named by the id value.

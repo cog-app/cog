@@ -90,22 +90,30 @@ func (h searchHandler) SearchPartial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pages := ui.MatchPages(q, u.IsAdmin)
+	pages := ui.MatchPages(q, u.IsAdmin, buildNav(r.URL.Path, h.p.Plugins))
 
 	var userHits []search.Hit
 	var systemHits []search.Hit
 
 	if h.p.Search != nil {
-		if result, err := h.p.Search.SearchUser(u.Username, q, 10, 0); err == nil && result != nil {
+		result, err := h.p.Search.SearchUser(u.Username, q, 10, 0)
+		if err != nil {
+			h.p.Log.Error("search partial: user search", "user", u.Username, "err", err)
+		} else if result != nil {
 			userHits = result.Hits
 		}
 		if u.IsAdmin {
-			if result, err := h.p.Search.SearchSystem(q, 10, 0); err == nil && result != nil {
+			result, err := h.p.Search.SearchSystem(q, 10, 0)
+			if err != nil {
+				h.p.Log.Error("search partial: system search", "err", err)
+			} else if result != nil {
 				systemHits = result.Hits
 			}
 		}
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	ui.SearchResults(pages, userHits, systemHits, u.IsAdmin).Render(r.Context(), w)
+	if err := ui.SearchResults(q, pages, userHits, systemHits, u.IsAdmin).Render(r.Context(), w); err != nil {
+		h.p.Log.Error("search partial: render", "err", err)
+	}
 }

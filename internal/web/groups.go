@@ -2,7 +2,6 @@ package web
 
 import (
 	"fmt"
-	"iter"
 	"net/http"
 	"strings"
 
@@ -18,7 +17,9 @@ import (
 // groupDetailData holds all data needed by the shared group detail template.
 type groupDetailData struct {
 	Group         *group.Group
-	Members       iter.Seq2[group.Member, error]
+	Members       []group.Member
+	MembersErr    error // listing stopped early; Members holds what came before
+	OwnerCount    int   // how many members are owners: an owner may leave only if another remains
 	Invitations   []group.Invitation
 	IsOwner       bool
 	IsAdmin       bool
@@ -125,12 +126,23 @@ func (h *groupHandler) buildGroupDetailData(w http.ResponseWriter, r *http.Reque
 
 	d := groupDetailData{
 		Group:         g,
-		Members:       h.p.Groups.ListMembers(g.ID),
 		IsOwner:       isOwner,
 		IsAdmin:       u.IsAdmin,
 		SMTPAvailable: h.p.EmailSender() != nil,
 		SiteBaseURL:   h.p.Config.BaseURL,
 		BasePath:      basePath,
+	}
+
+	for m, err := range h.p.Groups.ListMembers(g.ID) {
+		if err != nil {
+			h.p.Log.Error("list group members", "group", g.ID, "err", err)
+			d.MembersErr = err
+			break
+		}
+		d.Members = append(d.Members, m)
+		if m.MemberType == group.Owner {
+			d.OwnerCount++
+		}
 	}
 
 	if isOwner {
@@ -183,6 +195,7 @@ func (h *groupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setFlash(w, "success", fmt.Sprintf("Group “%s” created. Invite people below.", g.Name))
 	http.Redirect(w, r, "/settings/groups/"+g.ID, http.StatusSeeOther)
 }
 
@@ -389,12 +402,21 @@ func (h *groupHandler) AcceptInviteForm(w http.ResponseWriter, r *http.Request) 
 		errMsg = flash.Message
 	}
 
+	var inviter *user.User
+	if inv.InvitedBy != "" {
+		inviter, err = h.p.Users.GetByID(inv.InvitedBy)
+		if err != nil {
+			h.p.Log.Warn("invitation: look up inviter", "user", inv.InvitedBy, "err", err)
+			inviter = nil
+		}
+	}
+
+	pd := ui.PageData{Title: "Group Invitation"}
 	if isLoggedIn {
-		pd := pageDataWithNav(r, "Group Invitation", h.p.CSRFSecret, h.p.Plugins)
-		inviteAcceptPage(pd, g, inv, true, errMsg).Render(r.Context(), w)
-	} else {
-		pd := ui.PageData{Title: "Group Invitation"}
-		inviteAcceptPage(pd, g, inv, false, errMsg).Render(r.Context(), w)
+		pd = pageDataWithNav(r, "Group Invitation", h.p.CSRFSecret, h.p.Plugins)
+	}
+	if err := inviteAcceptPage(pd, g, inv, inviter, isLoggedIn, errMsg).Render(r.Context(), w); err != nil {
+		h.p.Log.Error("render invitation page", "err", err)
 	}
 }
 
