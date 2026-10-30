@@ -1,6 +1,7 @@
 package webtest
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,13 +21,20 @@ type snapshotConfig struct {
 	suffix string
 	width  int
 	height int
+	// noOverflow fails the snapshot when the page is wider than the
+	// viewport, which on a phone means the whole page scrolls sideways.
+	noOverflow bool
 }
 
 // Mobile captures at 375×812 (iPhone) and appends "_mobile" to the filename.
+// It also fails the test when the document is wider than the viewport: a
+// full-page screenshot of such a page silently comes out wider than a phone
+// and is laid out at that width, which hides exactly the problem it shows.
 func Mobile(cfg *snapshotConfig) {
 	cfg.suffix = "mobile"
 	cfg.width = 375
 	cfg.height = 812
+	cfg.noOverflow = true
 }
 
 // Browser controls a single browser tab.
@@ -81,19 +89,49 @@ func (b *Browser) el(sel string) (*rod.Element, error) {
 	// element was there all along.
 	_ = b.page.Timeout(5 * time.Second).WaitStable(300 * time.Millisecond)
 
-	p := b.tp()
-	if len(sel) > 1 && sel[:2] == "//" {
-		el, err := p.ElementX(sel)
-		if err != nil {
-			return nil, err
+	return b.firstVisible(sel)
+}
+
+// firstVisible waits for an element matching sel (CSS, or XPath when it
+// starts with //) that is visible, and returns the first such one. Matching
+// only the first element in the document would wait forever on a hidden
+// copy of the same text earlier in the page, such as a navbar menu that is
+// collapsed at this width.
+func (b *Browser) firstVisible(sel string) (*rod.Element, error) {
+	deadline := time.Now().Add(b.actionTimeout())
+	xpath := len(sel) > 1 && sel[:2] == "//"
+	for {
+		var (
+			els rod.Elements
+			err error
+		)
+		if xpath {
+			els, err = b.page.ElementsX(sel)
+		} else {
+			els, err = b.page.Elements(sel)
 		}
-		return el, el.WaitVisible()
+		if err != nil {
+			// A page mid-navigation has no document to search; try again.
+			if time.Now().After(deadline) {
+				return nil, fmt.Errorf("find %s: %w", sel, err)
+			}
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		for _, el := range els {
+			visible, err := el.Visible()
+			if err == nil && visible {
+				return el, nil
+			}
+		}
+		if time.Now().After(deadline) {
+			if len(els) == 0 {
+				return nil, fmt.Errorf("no element matches %s: %w", sel, context.DeadlineExceeded)
+			}
+			return nil, fmt.Errorf("%d elements match %s, none visible: %w", len(els), sel, context.DeadlineExceeded)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	el, err := p.Element(sel)
-	if err != nil {
-		return nil, err
-	}
-	return el, el.WaitVisible()
 }
 
 // --- Navigation ---
@@ -429,6 +467,12 @@ func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
 		t.Logf("webtest: snapshot: page did not settle: %v", err)
 	}
 
+	if cfg.noOverflow {
+		if msg := b.horizontalOverflow(t); msg != "" {
+			t.Errorf("webtest: page is wider than the %dpx viewport, so it scrolls sideways: %s", cfg.width, msg)
+		}
+	}
+
 	raw, err := b.page.HTML()
 	if err != nil {
 		t.Fatalf("webtest: snapshot html: %v", err)
@@ -484,6 +528,51 @@ func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
 		t.Errorf("webtest: page changed for %s\n  golden: %s\n  actual: %s\n  image:  %s\nRe-run with WEBTEST_UPDATE=1 to accept.",
 			name, domPath, domOut, imageOut)
 	}
+}
+
+// overflowJS reports what makes the document wider than the viewport, or ""
+// when nothing does. It names the outermost offending elements, skipping any
+// inside a box that clips or scrolls horizontally: a wide table inside a
+// .table-wrap scrolls on its own and is not a page overflow.
+const overflowJS = `() => {
+	const doc = document.documentElement;
+	const vw = doc.clientWidth;
+	if (doc.scrollWidth <= vw) return "";
+	const clipped = (el) => {
+		for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+			const ox = getComputedStyle(p).overflowX;
+			if (ox !== "visible") return true;
+		}
+		return false;
+	};
+	const describe = (el) => {
+		let d = el.tagName.toLowerCase();
+		if (el.id) d += "#" + el.id;
+		if (typeof el.className === "string" && el.className.trim()) d += "." + el.className.trim().split(/\s+/).join(".");
+		return d;
+	};
+	const out = [];
+	for (const el of document.body.querySelectorAll("*")) {
+		const r = el.getBoundingClientRect();
+		if (r.width === 0 || r.right <= vw + 0.5) continue;
+		const p = el.parentElement;
+		if (p && p !== document.body && p.getBoundingClientRect().right > vw + 0.5) continue;
+		if (getComputedStyle(el).position === "fixed" || clipped(el)) continue;
+		out.push(describe(el) + " (right edge " + Math.round(r.right) + "px)");
+		if (out.length >= 5) break;
+	}
+	return "document is " + doc.scrollWidth + "px wide; " + (out.join(", ") || "no single element found");
+}`
+
+// horizontalOverflow returns a description of what makes the page wider than
+// the viewport, or "" when it fits.
+func (b *Browser) horizontalOverflow(t testing.TB) string {
+	t.Helper()
+	res, err := b.tp().Evaluate(rod.Eval(overflowJS))
+	if err != nil {
+		t.Fatalf("webtest: measure overflow: %v", err)
+	}
+	return res.Value.Str()
 }
 
 // captureImage writes a full-page screenshot. It exists so the DOM comparison

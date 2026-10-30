@@ -170,3 +170,16 @@ func TestChildlessAndVoidElementsSelfClose(t *testing.T) {
 		t.Errorf("void element was given a closing tag:\n%s", out)
 	}
 }
+
+// TestServerPortIsMasked keeps the test server's random port out of pages
+// that print an absolute URL.
+func TestServerPortIsMasked(t *testing.T) {
+	first := normalize(t, `<html><body><a href="http://127.0.0.1:40211/invite/x">http://127.0.0.1:40211/invite/x</a></body></html>`)
+	second := normalize(t, `<html><body><a href="http://127.0.0.1:3311/invite/x">http://127.0.0.1:3311/invite/x</a></body></html>`)
+	if first != second {
+		t.Fatalf("server port reached the golden:\n%s\n---\n%s", first, second)
+	}
+	if !strings.Contains(first, "http://127.0.0.1:«port»/invite/x") {
+		t.Fatalf("the URL around the port was not kept:\n%s", first)
+	}
+}

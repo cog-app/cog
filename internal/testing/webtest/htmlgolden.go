@@ -25,6 +25,10 @@ var (
 	// directory, named after the test plus a random suffix. A page that shows
 	// a path (an admin's volume list) shows the data directory cogtest made.
 	volatileTempRoot = regexp.MustCompile(regexp.QuoteMeta(filepath.Clean(os.TempDir())) + `/Test[^/\s"'<>]*`)
+	// The test server listens on a random loopback port, and any page that
+	// prints an absolute URL (the admin's base URL, an invite link, a feed
+	// address) carries it.
+	volatileLoopback = regexp.MustCompile(`\b127\.0\.0\.1:\d+\b`)
 )
 
 // normalizeDOM turns a serialised page into a stable, readable golden.
@@ -43,6 +47,7 @@ func normalizeDOM(raw string) (string, error) {
 
 	out := b.String()
 	out = volatileTempRoot.ReplaceAllString(out, "«tmp»")
+	out = volatileLoopback.ReplaceAllString(out, "127.0.0.1:«port»")
 	out = volatileUUID.ReplaceAllString(out, "«uuid»")
 	out = volatileHex.ReplaceAllString(out, "«hex»")
 
