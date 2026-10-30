@@ -20,7 +20,7 @@ var md = goldmark.New(
 	goldmark.WithExtensions(
 		extension.GFM, // strikethrough, tables, autolinks, task lists
 		highlighting.NewHighlighting(
-			highlighting.WithStyle("monokai"),
+			highlighting.WithStyle("github"),
 			highlighting.WithFormatOptions(),
 		),
 	),

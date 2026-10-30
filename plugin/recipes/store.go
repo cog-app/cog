@@ -88,12 +88,12 @@ func queryRecipes(db *sql.DB, query string, args ...any) ([]Recipe, error) {
 
 func ListRecipes(db *sql.DB, limit int) ([]Recipe, error) {
 	return queryRecipes(db, `SELECT `+recipeCols+`
-		FROM recipes ORDER BY updated_at DESC LIMIT ?`, limit)
+		FROM recipes ORDER BY updated_at DESC, id DESC LIMIT ?`, limit)
 }
 
 func RecipesByCategory(db *sql.DB, category string, limit int) ([]Recipe, error) {
 	return queryRecipes(db, `SELECT `+recipeCols+`
-		FROM recipes WHERE category = ? ORDER BY updated_at DESC LIMIT ?`, category, limit)
+		FROM recipes WHERE category = ? ORDER BY updated_at DESC, id DESC LIMIT ?`, category, limit)
 }
 
 func RecipesByKeyword(db *sql.DB, keyword string, limit int) ([]Recipe, error) {
@@ -101,12 +101,12 @@ func RecipesByKeyword(db *sql.DB, keyword string, limit int) ([]Recipe, error) {
 		FROM recipes r
 		JOIN keywords k ON k.recipe_id = r.id
 		WHERE k.keyword = ?
-		ORDER BY r.updated_at DESC LIMIT ?`, keyword, limit)
+		ORDER BY r.updated_at DESC, r.id DESC LIMIT ?`, keyword, limit)
 }
 
 func RecentRecipes(db *sql.DB, limit int) ([]Recipe, error) {
 	return queryRecipes(db, `SELECT `+recipeCols+`
-		FROM recipes ORDER BY updated_at DESC LIMIT ?`, limit)
+		FROM recipes ORDER BY updated_at DESC, id DESC LIMIT ?`, limit)
 }
 
 func GetRecipe(db *sql.DB, id int64) (*Recipe, error) {

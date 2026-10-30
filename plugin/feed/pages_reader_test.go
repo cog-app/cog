@@ -116,8 +116,8 @@ func TestFeedReaderHTTP(t *testing.T) {
 		resp := env.Get(t, "/apps/feed/", u.Auth)
 		resp.Status(http.StatusOK)
 		body := resp.ReadBody()
-		if !strings.Contains(body, "All Articles") {
-			t.Errorf("index page missing 'All Articles' header; body len=%d", len(body))
+		if !strings.Contains(body, "All articles") {
+			t.Errorf("index page missing 'All articles' header; body len=%d", len(body))
 		}
 	})
 
@@ -212,7 +212,7 @@ func TestFeedReaderBrowser(t *testing.T) {
 
 	t.Run("SidebarShowsAllAndStarred", func(t *testing.T) {
 		b.Navigate(t, "/apps/feed/")
-		b.WaitText(t, "All Articles")
+		b.WaitText(t, "All articles")
 		b.WaitText(t, "Starred")
 	})
 

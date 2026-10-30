@@ -143,6 +143,8 @@ func TestBrowser(t *testing.T) {
 	env.CreateUser(t, "reader", "pass")
 	env.CreateUser(t, "subs", "pass")
 	env.CreateUser(t, "sub", "pass")
+	env.CreateUser(t, "star", "pass")
+	seedBrowserFeed(t, env, "star")
 	seedBrowserFeed(t, env, "index")
 	seedBrowserFeed(t, env, "expand")
 	articleID := seedBrowserFeed(t, env, "reader")
@@ -179,6 +181,24 @@ func TestBrowser(t *testing.T) {
 		b.Snapshot(t, webtest.Mobile)
 	})
 
+	t.Run("StarUpdatesSidebar", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "star", "pass")
+		b.Navigate(t, "/apps/feed/")
+		b.WaitText(t, "Designing a storage layer")
+		require.Equal(t, "1", b.Text(t, `#feed-sidebar a[href="/apps/feed/starred"] .count`))
+		b.Click(t, `#item-list .btn-star:not(.active)`)
+		b.WaitVisible(t, `#item-list .btn-star.active ~ *`)
+		// The sidebar comes back with the star, out of band; its count follows.
+		deadline := time.Now().Add(10 * time.Second)
+		for b.Text(t, `#feed-sidebar a[href="/apps/feed/starred"] .count`) != "2" {
+			if time.Now().After(deadline) {
+				t.Fatal("sidebar starred count did not update")
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	})
+
 	t.Run("Reader", func(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "reader", "pass")
@@ -204,7 +224,7 @@ func TestBrowser(t *testing.T) {
 		b.Login(t, "subs", "pass")
 		b.Navigate(t, "/apps/feed/settings/subscriptions")
 		b.WaitVisible(t, "#add-subscription")
-		b.Eval(t, `() => { document.querySelector(".subscription-list-collapse").open = true }`)
+		b.Eval(t, `() => { document.querySelector("#subscription-details").open = true }`)
 		b.WaitVisible(t, "#subscription-list")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)

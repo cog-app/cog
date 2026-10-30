@@ -2,6 +2,7 @@ package bookmarks_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +24,8 @@ func TestBrowser(t *testing.T) {
 	env.CreateUser(t, "folder", "pass")
 	env.CreateUser(t, "tags", "pass")
 	env.CreateUser(t, "many", "pass")
+	env.CreateUser(t, "rowdelete", "pass")
+	seedBookmark(t, env, "rowdelete", "https://example.com/only", "Only Bookmark")
 	longID := seedManyBookmarks(t, env, "many")
 
 	t.Run("EmptyState", func(t *testing.T) {
@@ -75,9 +78,24 @@ func TestBrowser(t *testing.T) {
 		b.Type(t, "#title", "Delete Me")
 		b.Click(t, `main button[type="submit"]`)
 		b.WaitText(t, "Delete Me")
+		// The bookmark's own page: deleting it goes back to the list.
 		b.AcceptConfirms(t)
-		b.Click(t, `[hx-delete]`)
-		b.WaitNotVisible(t, `[hx-delete]`)
+		b.Click(t, `.page-actions [hx-delete]`)
+		b.WaitText(t, "Deleted “Delete Me”.")
+		b.WaitText(t, "No bookmarks yet")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("DeleteFromList", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "rowdelete", "pass")
+		b.Navigate(t, "/apps/bookmarks/")
+		b.WaitText(t, "Only Bookmark")
+		b.AcceptConfirms(t)
+		b.Click(t, `.list-row [hx-delete]`)
+		b.WaitText(t, "No bookmarks yet")
+		require.False(t, b.HasElement(t, ".sidebar .count"), "sidebar still counts the deleted bookmark")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -85,17 +103,12 @@ func TestBrowser(t *testing.T) {
 	t.Run("CreateFolder", func(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "folder", "pass")
-		b.Navigate(t, "/apps/bookmarks/new")
-		b.WaitVisible(t, `input[name="title"]`)
-		// The folder form is the second form on the page (after the bookmark form).
-		b.Eval(t, `() => {
-			const forms = document.querySelectorAll('form[action="/apps/bookmarks/folders"]');
-			if (forms.length > 0) {
-				forms[0].querySelector('input[name="title"]').value = "My Folder";
-				forms[0].submit();
-			}
-		}`)
-		b.WaitText(t, "My Folder")
+		b.Navigate(t, "/apps/bookmarks/")
+		b.ClickText(t, "New folder")
+		b.WaitVisible(t, "#new-folder-title")
+		b.Type(t, "#new-folder-title", "My Folder")
+		b.Click(t, `#new-folder-modal button[type="submit"]`)
+		b.WaitText(t, "Created folder “My Folder”.")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -142,9 +155,16 @@ func TestBrowser(t *testing.T) {
 	t.Run("ExportPage", func(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "tags", "pass")
-		// The export is a direct download — just verify the bookmarks index has content.
 		b.Navigate(t, "/apps/bookmarks/")
-		b.WaitText(t, "Tagged BM")
+		b.ClickText(t, "Import and export")
+		b.WaitText(t, "Download bookmarks.html")
+		// The download link serves the export the page promises.
+		href := b.Attribute(t, `a[download]`, "href")
+		body, ok := b.Eval(t, fmt.Sprintf(`() => { const x = new XMLHttpRequest(); x.open("GET", %q, false); x.send(); return x.responseText }`, href)).(string)
+		require.True(t, ok, "export did not return text")
+		require.True(t, strings.Contains(body, "<!DOCTYPE NETSCAPE-Bookmark-file-1>"), "export is not a bookmarks file")
+		require.True(t, strings.Contains(body, `HREF="https://example.com"`), "export lacks the bookmark")
+		require.True(t, strings.Contains(body, `TAGS="testtag"`), "export lacks the bookmark's tags")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -161,7 +181,7 @@ func TestBrowser(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "many", "pass")
 		b.Navigate(t, fmt.Sprintf("/apps/bookmarks/bookmark/%d", longID))
-		b.WaitText(t, "Description:")
+		b.WaitText(t, "Visits")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -224,4 +244,15 @@ func seedManyBookmarks(t *testing.T, env *cogtest.Env, username string) int64 {
 		}
 	}
 	return longID
+}
+
+// seedBookmark gives a user one bookmark, through the store.
+func seedBookmark(t *testing.T, env *cogtest.Env, username, url, title string) {
+	t.Helper()
+	raw, ok := env.Providers.Plugins.Plugin(bookmarks.PluginID)
+	require.True(t, ok, "bookmarks plugin not registered")
+	db, err := raw.(*bookmarks.Plugin).DB(username)
+	require.NoError(t, err)
+	_, err = bookmarks.CreateBookmark(db, url, title, "", nil, nil)
+	require.NoError(t, err)
 }

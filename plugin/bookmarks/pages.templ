@@ -7,350 +7,510 @@ import (
 	"strings"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
 templ bookmarksSidebar(sb sidebarData) {
-	<nav class="sidebar" id="bookmarks-sidebar">
-		<a href="/apps/bookmarks/" class={ sidebarClass(sb.ActivePath, "/apps/bookmarks/") }>
-			All Bookmarks
-			if sb.TotalCount > 0 {
-				<span class="badge">{ strconv.Itoa(sb.TotalCount) }</span>
-			}
-		</a>
-		<a href="/apps/bookmarks/tags" class={ sidebarClass(sb.ActivePath, "/apps/bookmarks/tags") }>
-			Tags
-		</a>
-		if len(sb.Folders) > 0 {
-			<div class="sidebar-divider"></div>
-			for _, f := range sb.Folders {
-				if f.ParentID == nil {
-					@folderSidebarItem(f, sb)
-				}
+	<nav
+		class="sidebar"
+		id="bookmarks-sidebar"
+		aria-label="Bookmarks"
+		if sb.OOB {
+			hx-swap-oob="true"
+		}
+	>
+		@sidebarLink(sb.ActivePath == "/apps/bookmarks/", "/apps/bookmarks/", "All bookmarks", sb.TotalCount)
+		@sidebarLink(sb.ActivePath == "/apps/bookmarks/tags", "/apps/bookmarks/tags", "Tags", sb.TagCount)
+		<div class="sidebar-heading">Folders</div>
+		for _, f := range sb.Folders {
+			if f.ParentID == nil {
+				@sidebarLink(sb.ActiveFolder == f.ID, fmt.Sprintf("/apps/bookmarks/folder/%d", f.ID), f.Title, sb.FolderCounts[f.ID])
 			}
 		}
+		<button type="button" class="sidebar-item bm-sidebar-button" data-modal-open="new-folder-modal">
+			@ui.Icon("plus")
+			New folder
+		</button>
 		<div class="sidebar-divider"></div>
-		<a href="/apps/bookmarks/new" class={ sidebarClass(sb.ActivePath, "/apps/bookmarks/new") }>
-			+ New Bookmark
-		</a>
+		@sidebarLink(sb.ActivePath == "/apps/bookmarks/import-export", "/apps/bookmarks/import-export", "Import and export", 0)
 	</nav>
 }
 
-templ folderSidebarItem(f Folder, sb sidebarData) {
+templ sidebarLink(active bool, href, label string, count int) {
 	<a
-		href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/folder/%d", f.ID)) }
-		class={ folderSidebarClass(sb.ActiveFolder, f.ID) }
-		style="padding-left:1.5rem;font-size:0.9rem"
+		href={ templ.SafeURL(href) }
+		if active {
+			class="sidebar-item active"
+			aria-current="page"
+		} else {
+			class="sidebar-item"
+		}
 	>
-		{ f.Title }
+		<span class="break-anywhere">{ label }</span>
+		if count > 0 {
+			<span class="count">{ strconv.Itoa(count) }</span>
+		}
 	</a>
 }
 
-templ bookmarksIndexPage(sb sidebarData, bms []Bookmark, search string, csrfToken string) {
+// bookmarksLayout is the sidebar, the page, and the dialogs the sidebar opens.
+templ bookmarksLayout(sb sidebarData) {
 	<div class="sidebar-layout">
 		@bookmarksSidebar(sb)
 		<div class="sidebar-content">
-			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-				<h1 style="margin:0">All Bookmarks</h1>
-				<a href="/apps/bookmarks/new" class="btn btn-primary btn-sm">Add Bookmark</a>
+			{ children... }
+		</div>
+	</div>
+	@ui.Modal("new-folder-modal", "New folder") {
+		<form method="post" action="/apps/bookmarks/folders">
+			<input type="hidden" name="csrf_token" value={ plugin.CSRFTokenFromContext(ctx) }/>
+			<div class="modal-body">
+				<div class="form-group mb-0">
+					<label for="new-folder-title">Name</label>
+					<input class="form-control" type="text" id="new-folder-title" name="title" required/>
+				</div>
 			</div>
-			<form method="get" action="/apps/bookmarks/" class="mb-2">
-				<div class="flex gap-1">
-					<input class="form-control" type="text" name="q" value={ search } placeholder="Search bookmarks..." style="max-width:400px"/>
-					<button class="btn btn-outline btn-sm" type="submit">Search</button>
+			<div class="modal-footer">
+				<button type="button" class="btn" data-modal-close>Cancel</button>
+				<button class="btn btn-primary" type="submit">Create folder</button>
+			</div>
+		</form>
+	}
+}
+
+templ addBookmarkButton(href string) {
+	<a href={ templ.SafeURL(href) } class="btn btn-primary">
+		@ui.Icon("plus")
+		Add bookmark
+	</a>
+}
+
+templ bookmarksIndexPage(sb sidebarData, v listView) {
+	@bookmarksLayout(sb) {
+		@ui.PageHeader("All bookmarks", nil) {
+			@addBookmarkButton("/apps/bookmarks/new")
+		}
+		<form method="get" action="/apps/bookmarks/" class="form-inline bm-search" role="search">
+			<label class="sr-only" for="bm-q">Search bookmarks</label>
+			<input class="form-control" type="search" id="bm-q" name="q" value={ v.Search } placeholder="Search titles, URLs and descriptions"/>
+			<button class="btn" type="submit" aria-label="Search">
+				@ui.Icon("search")
+				<span class="hide-mobile">Search</span>
+			</button>
+		</form>
+		@bookmarkList(v)
+	}
+}
+
+templ bookmarksFolderPage(sb sidebarData, folder *Folder, v listView) {
+	@bookmarksLayout(sb) {
+		@ui.PageHeader(folder.Title, []ui.Crumb{{Label: "Bookmarks", URL: "/apps/bookmarks/"}}) {
+			@addBookmarkButton(fmt.Sprintf("/apps/bookmarks/new?folder=%d", folder.ID))
+			<div class="dropdown">
+				<button type="button" class="btn btn-square" data-dropdown-toggle aria-expanded="false" aria-controls="folder-menu" aria-label="Folder actions">
+					@ui.Icon("more")
+				</button>
+				<div class="dropdown-menu" id="folder-menu">
+					<button type="button" data-modal-open="rename-folder-modal">
+						@ui.Icon("edit")
+						Rename folder
+					</button>
+					<button
+						type="button"
+						class="danger"
+						hx-delete={ fmt.Sprintf("/apps/bookmarks/folders/%d", folder.ID) }
+						hx-confirm={ fmt.Sprintf("Delete the folder “%s”? Its bookmarks are kept.", folder.Title) }
+					>
+						@ui.Icon("trash")
+						Delete folder
+					</button>
+				</div>
+			</div>
+		}
+		@bookmarkList(v)
+		@ui.Modal("rename-folder-modal", "Rename folder") {
+			<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/folders/%d", folder.ID)) }>
+				<input type="hidden" name="csrf_token" value={ plugin.CSRFTokenFromContext(ctx) }/>
+				<div class="modal-body">
+					<div class="form-group mb-0">
+						<label for="rename-folder-title">Name</label>
+						<input class="form-control" type="text" id="rename-folder-title" name="title" value={ folder.Title } required/>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn" data-modal-close>Cancel</button>
+					<button class="btn btn-primary" type="submit">Rename</button>
 				</div>
 			</form>
-			if len(bms) == 0 {
-				@ui.Card("") {
-					if search != "" {
-						<p class="text-muted">No bookmarks match your search.</p>
-					} else {
-						<p class="text-muted">No bookmarks yet. Add your first bookmark!</p>
-					}
-				}
-			} else {
-				@bookmarkList(bms, csrfToken)
-			}
-		</div>
-	</div>
+		}
+	}
 }
 
-templ bookmarksFolderPage(sb sidebarData, folder *Folder, bms []Bookmark, csrfToken string) {
-	<div class="sidebar-layout">
-		@bookmarksSidebar(sb)
-		<div class="sidebar-content">
-			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-				<h1 style="margin:0">{ folder.Title }</h1>
-				<div class="flex gap-1">
-					<a href="/apps/bookmarks/new" class="btn btn-primary btn-sm">Add Bookmark</a>
-					<button
-						class="btn btn-danger btn-sm"
-						hx-delete={ fmt.Sprintf("/apps/bookmarks/folders/%d", folder.ID) }
-						hx-confirm="Delete this folder and unlink its bookmarks?"
-						hx-target="body"
-					>Delete Folder</button>
-				</div>
+templ bookmarksTagsPage(sb sidebarData, tags []TagCount) {
+	@bookmarksLayout(sb) {
+		@ui.PageHeader("Tags", []ui.Crumb{{Label: "Bookmarks", URL: "/apps/bookmarks/"}})
+		if len(tags) == 0 {
+			<div class="list">
+				@ui.EmptyState("No tags yet", "Tags you give bookmarks are collected here.")
 			</div>
-			if len(bms) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No bookmarks in this folder.</p>
-				}
-			} else {
-				@bookmarkList(bms, csrfToken)
-			}
-		</div>
-	</div>
-}
-
-templ bookmarksTagsPage(sb sidebarData, tags []string, csrfToken string) {
-	<div class="sidebar-layout">
-		@bookmarksSidebar(sb)
-		<div class="sidebar-content">
-			<h1>Tags</h1>
-			if len(tags) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No tags yet.</p>
-				}
-			} else {
-				<div class="flex gap-1" style="flex-wrap:wrap">
-					for _, tag := range tags {
-						<a
-							href={ templ.SafeURL("/apps/bookmarks/tag/" + url.PathEscape(tag)) }
-							class="badge"
-							style="font-size:0.9rem;padding:0.4rem 0.8rem;cursor:pointer"
-						>{ tag }</a>
+		} else {
+			<div class="card">
+				<div class="chip-group">
+					for _, t := range tags {
+						<a href={ templ.SafeURL("/apps/bookmarks/tag/" + url.PathEscape(t.Tag)) } class="chip">
+							{ t.Tag }
+							<span class="count">{ strconv.Itoa(t.Count) }</span>
+						</a>
 					}
 				</div>
-			}
-		</div>
-	</div>
-}
-
-templ bookmarksTagPage(sb sidebarData, tag string, bms []Bookmark, csrfToken string) {
-	<div class="sidebar-layout">
-		@bookmarksSidebar(sb)
-		<div class="sidebar-content">
-			<h1>Tag: { tag }</h1>
-			if len(bms) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No bookmarks with this tag.</p>
-				}
-			} else {
-				@bookmarkList(bms, csrfToken)
-			}
-		</div>
-	</div>
-}
-
-templ bookmarkDetailPage(sb sidebarData, bm *Bookmark, folders []Folder, csrfToken string) {
-	<div class="sidebar-layout">
-		@bookmarksSidebar(sb)
-		<div class="sidebar-content">
-			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-				<h1 style="margin:0">{ bm.Title }</h1>
-				<div class="flex gap-1">
-					<a href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmark/%d/edit", bm.ID)) } class="btn btn-outline btn-sm">Edit</a>
-					<button
-						class="btn btn-danger btn-sm"
-						hx-delete={ fmt.Sprintf("/apps/bookmarks/bookmarks/%d", bm.ID) }
-						hx-confirm="Delete this bookmark?"
-						hx-target="body"
-					>Delete</button>
-				</div>
 			</div>
-			@ui.Card("") {
-				<div class="mb-2">
-					<strong>URL:</strong>
-					<a href={ templ.SafeURL(bm.URL) } target="_blank" rel="noopener">{ bm.URL }</a>
-				</div>
-				if bm.Description != "" {
-					<div class="mb-2">
-						<strong>Description:</strong>
-						<p>{ bm.Description }</p>
-					</div>
-				}
-				if len(bm.Tags) > 0 {
-					<div class="mb-2">
-						<strong>Tags:</strong>
-						<span class="flex gap-1" style="display:inline-flex;flex-wrap:wrap">
-							for _, tag := range bm.Tags {
-								<a href={ templ.SafeURL("/apps/bookmarks/tag/" + url.PathEscape(tag)) } class="badge">{ tag }</a>
-							}
-						</span>
-					</div>
-				}
-				if len(bm.Folders) > 0 {
-					<div class="mb-2">
-						<strong>Folders:</strong>
-						<span>
-							for i, fid := range bm.Folders {
-								if i > 0 {
-									{ ", " }
-								}
-								{ folderName(folders, fid) }
-							}
-						</span>
-					</div>
-				}
-				<div class="text-muted" style="font-size:0.85rem">
-					Clicks: { strconv.Itoa(bm.ClickCount) } &middot; Added: { formatTime(bm.CreatedAt) }
-				</div>
-			}
-		</div>
-	</div>
+		}
+	}
 }
 
-templ bookmarkEditPage(sb sidebarData, bm *Bookmark, folders []Folder, csrfToken string) {
-	<div class="sidebar-layout">
-		@bookmarksSidebar(sb)
-		<div class="sidebar-content">
-			<h1>Edit: { bm.Title }</h1>
-			@ui.Card("") {
-				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmarks/%d", bm.ID)) }>
+templ bookmarksTagPage(sb sidebarData, tag string, v listView) {
+	@bookmarksLayout(sb) {
+		@ui.PageHeader(tag, []ui.Crumb{{Label: "Bookmarks", URL: "/apps/bookmarks/"}, {Label: "Tags", URL: "/apps/bookmarks/tags"}}) {
+			<button type="button" class="btn" data-modal-open="rename-tag-modal">
+				@ui.Icon("edit")
+				Rename
+			</button>
+			<form method="post" action="/apps/bookmarks/tags/delete" onsubmit={ confirmSubmit(fmt.Sprintf("Remove the tag “%s” from every bookmark?", tag)) }>
+				<input type="hidden" name="csrf_token" value={ plugin.CSRFTokenFromContext(ctx) }/>
+				<input type="hidden" name="tag" value={ tag }/>
+				<button class="btn btn-outline-danger" type="submit">
+					@ui.Icon("trash")
+					Delete tag
+				</button>
+			</form>
+		}
+		@bookmarkList(v)
+		@ui.Modal("rename-tag-modal", "Rename tag") {
+			<form method="post" action="/apps/bookmarks/tags/rename">
+				<input type="hidden" name="csrf_token" value={ plugin.CSRFTokenFromContext(ctx) }/>
+				<input type="hidden" name="tag" value={ tag }/>
+				<div class="modal-body">
+					<div class="form-group mb-0">
+						<label for="rename-tag-name">Name</label>
+						<input class="form-control" type="text" id="rename-tag-name" name="name" value={ tag } required/>
+						<p class="form-help">Renaming to a tag that already exists merges the two.</p>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn" data-modal-close>Cancel</button>
+					<button class="btn btn-primary" type="submit">Rename</button>
+				</div>
+			</form>
+		}
+	}
+}
+
+script confirmSubmit(msg string) {
+	if (!confirm(msg)) { event.preventDefault(); }
+}
+
+templ bookmarksImportExportPage(sb sidebarData, csrfToken string) {
+	@bookmarksLayout(sb) {
+		@ui.PageHeader("Import and export", []ui.Crumb{{Label: "Bookmarks", URL: "/apps/bookmarks/"}})
+		<div class="grid grid-2">
+			<section class="card">
+				<h2 class="card-title">Import</h2>
+				<p class="card-desc">Add bookmarks from an HTML file exported by a browser or another bookmark manager. Bookmarks you already have are updated, not duplicated.</p>
+				<form method="post" action="/apps/bookmarks/import" enctype="multipart/form-data">
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					@bookmarkForm(bm.URL, bm.Title, bm.Description, strings.Join(bm.Tags, ", "), bm.Folders, folders)
-					<div class="flex gap-1">
-						<button class="btn btn-primary" type="submit">Save</button>
-						<a href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmark/%d", bm.ID)) } class="btn btn-outline">Cancel</a>
+					<div class="form-group">
+						<label for="import-file">Bookmarks file</label>
+						<input class="form-control" type="file" id="import-file" name="file" accept=".html,.htm" required/>
 					</div>
+					<button class="btn btn-primary" type="submit">
+						@ui.Icon("upload")
+						Import
+					</button>
 				</form>
-			}
-		</div>
-	</div>
-}
-
-templ bookmarkNewPage(sb sidebarData, folders []Folder, csrfToken string) {
-	<div class="sidebar-layout">
-		@bookmarksSidebar(sb)
-		<div class="sidebar-content">
-			<h1>New Bookmark</h1>
-			@ui.Card("") {
-				<form method="post" action="/apps/bookmarks/bookmarks">
-					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					@bookmarkForm("", "", "", "", nil, folders)
-					<div class="flex gap-1">
-						<button class="btn btn-primary" type="submit">Add</button>
-						<a href="/apps/bookmarks/" class="btn btn-outline">Cancel</a>
-					</div>
-				</form>
-			}
-			<div style="margin-top:1.5rem">
-				@ui.Card("Create Folder") {
-					<form method="post" action="/apps/bookmarks/folders" class="flex gap-1 items-center">
-						<input type="hidden" name="csrf_token" value={ csrfToken }/>
-						<input class="form-control" type="text" name="title" placeholder="Folder name" required style="max-width:300px"/>
-						<button class="btn btn-outline" type="submit">Create</button>
-					</form>
-				}
-			</div>
-			<div style="margin-top:1.5rem">
-				@ui.Card("Import Bookmarks") {
-					<form method="post" action="/apps/bookmarks/import" enctype="multipart/form-data" class="flex gap-1 items-center">
-						<input type="hidden" name="csrf_token" value={ csrfToken }/>
-						<input class="form-control" type="file" name="file" accept=".html,.htm" required style="max-width:400px"/>
-						<button class="btn btn-outline" type="submit">Import</button>
-					</form>
-					<p class="text-muted" style="font-size:0.85rem;margin-top:0.5rem">Accepts Netscape Bookmark HTML format (exported from browsers).</p>
-				}
-			</div>
-		</div>
-	</div>
-}
-
-templ bookmarkForm(bmURL, title, description, tags string, selectedFolders []int64, allFolders []Folder) {
-	<div class="form-group">
-		<label for="url">URL</label>
-		<input class="form-control" type="url" id="url" name="url" value={ bmURL } placeholder="https://example.com" required/>
-	</div>
-	<div class="form-group">
-		<label for="title">Title</label>
-		<input class="form-control" type="text" id="title" name="title" value={ title } placeholder="Page title"/>
-	</div>
-	<div class="form-group">
-		<label for="description">Description</label>
-		<textarea class="form-control" id="description" name="description" rows="3" placeholder="Optional description">{ description }</textarea>
-	</div>
-	<div class="form-group">
-		<label for="tags">Tags (comma-separated)</label>
-		<input class="form-control" type="text" id="tags" name="tags" value={ tags } placeholder="dev, reference, tools"/>
-	</div>
-	if len(allFolders) > 0 {
-		<div class="form-group">
-			<label for="folder_id">Folder</label>
-			<select class="form-control" id="folder_id" name="folder_id">
-				<option value="-1">(root)</option>
-				for _, f := range allFolders {
-					if isFolderSelected(f.ID, selectedFolders) {
-						<option value={ strconv.FormatInt(f.ID, 10) } selected>{ f.Title }</option>
-					} else {
-						<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Title }</option>
-					}
-				}
-			</select>
+			</section>
+			<section class="card">
+				<h2 class="card-title">Export</h2>
+				<p class="card-desc">Download every bookmark, with its tags, as an HTML file that browsers and other bookmark managers can import.</p>
+				<a class="btn" href="/apps/bookmarks/export" download="bookmarks.html">
+					@ui.Icon("download")
+					Download bookmarks.html
+				</a>
+			</section>
 		</div>
 	}
 }
 
-templ bookmarkList(bms []Bookmark, csrfToken string) {
+templ bookmarkDetailPage(sb sidebarData, bm *Bookmark, now time.Time) {
+	@bookmarksLayout(sb) {
+		<header class="page-header">
+			<div class="page-heading">
+				@ancestors([]ui.Crumb{{Label: "Bookmarks", URL: "/apps/bookmarks/"}})
+				<h1>{ bm.Title }</h1>
+				<p class="page-subtitle">{ displayDomain(bm.URL) }</p>
+			</div>
+			<div class="page-actions">
+				<a class="btn btn-primary" href={ templ.SafeURL(openURL(bm.ID)) } target="_blank" rel="noopener">
+					@ui.Icon("external")
+					Open
+				</a>
+				<a href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmark/%d/edit", bm.ID)) } class="btn" aria-label={ "Edit " + bm.Title }>
+					@ui.Icon("edit")
+					Edit
+				</a>
+				<button
+					type="button"
+					class="btn btn-outline-danger"
+					aria-label={ "Delete " + bm.Title }
+					hx-delete={ fmt.Sprintf("/apps/bookmarks/bookmarks/%d", bm.ID) }
+					hx-confirm={ fmt.Sprintf("Delete “%s”?", bm.Title) }
+				>
+					@ui.Icon("trash")
+					Delete
+				</button>
+			</div>
+		</header>
+		<div class="card">
+			if !bm.Available {
+				<div class="alert alert-warning">This link looked broken the last time it was checked.</div>
+			}
+			@ui.ShareLink(bm.URL, "")
+			if bm.Description != "" {
+				<p class="bm-description">{ bm.Description }</p>
+			}
+			<dl class="kv bm-meta">
+				if len(bm.Tags) > 0 {
+					<dt>Tags</dt>
+					<dd>
+						<div class="chip-group">
+							for _, tag := range bm.Tags {
+								<a href={ templ.SafeURL("/apps/bookmarks/tag/" + url.PathEscape(tag)) } class="chip">{ tag }</a>
+							}
+						</div>
+					</dd>
+				}
+				if folders := realFolders(bm.Folders, sb.Folders); len(folders) > 0 {
+					<dt>Folders</dt>
+					<dd>
+						<div class="chip-group">
+							for _, f := range folders {
+								<a href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/folder/%d", f.ID)) } class="chip">
+									@ui.Icon("folder")
+									{ f.Title }
+								</a>
+							}
+						</div>
+					</dd>
+				}
+				<dt>Visits</dt>
+				<dd>{ strconv.Itoa(bm.ClickCount) }</dd>
+				<dt>Added</dt>
+				<dd>
+					@timeTag(bm.CreatedAt, now)
+				</dd>
+			</dl>
+		</div>
+	}
+}
+
+templ bookmarkEditPage(sb sidebarData, bm *Bookmark, csrfToken string) {
+	@bookmarksLayout(sb) {
+		@ui.PageHeader("Edit bookmark", []ui.Crumb{{Label: "Bookmarks", URL: "/apps/bookmarks/"}, {Label: shorten(bm.Title, 40), URL: fmt.Sprintf("/apps/bookmarks/bookmark/%d", bm.ID)}})
+		<form class="card" method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmarks/%d", bm.ID)) }>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			@bookmarkForm(bm.URL, bm.Title, bm.Description, strings.Join(bm.Tags, ", "), bm.Folders, sb.Folders, true)
+			<div class="form-actions">
+				<button class="btn btn-primary" type="submit">Save</button>
+				<a href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmark/%d", bm.ID)) } class="btn">Cancel</a>
+			</div>
+		</form>
+	}
+}
+
+templ bookmarkNewPage(sb sidebarData, selectedFolders []int64, csrfToken string) {
+	@bookmarksLayout(sb) {
+		@ui.PageHeader("New bookmark", []ui.Crumb{{Label: "Bookmarks", URL: "/apps/bookmarks/"}})
+		<form class="card" method="post" action="/apps/bookmarks/bookmarks">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			@bookmarkForm("", "", "", "", selectedFolders, sb.Folders, false)
+			<div class="form-actions">
+				<button class="btn btn-primary" type="submit">Add bookmark</button>
+				<a href="/apps/bookmarks/" class="btn">Cancel</a>
+			</div>
+		</form>
+	}
+}
+
+// bookmarkForm is the fields shared by the new and edit forms. The URL of an
+// existing bookmark is fixed (it is the bookmark's identity), so the edit
+// form shows it read-only.
+templ bookmarkForm(bmURL, title, description, tags string, selectedFolders []int64, allFolders []Folder, editing bool) {
+	<div class="form-group">
+		<label for="url">URL</label>
+		if editing {
+			<input class="form-control" type="url" id="url" name="url" value={ bmURL } readonly/>
+		} else {
+			<input class="form-control" type="url" id="url" name="url" value={ bmURL } placeholder="https://example.com" required/>
+		}
+	</div>
+	<div class="form-group">
+		<label for="title">Title</label>
+		<input class="form-control" type="text" id="title" name="title" value={ title } placeholder="Defaults to the URL"/>
+	</div>
+	<div class="form-group">
+		<label for="description">Description</label>
+		<textarea class="form-control" id="description" name="description" rows="3" placeholder="Optional">{ description }</textarea>
+	</div>
+	<div class="form-group">
+		<label for="tags">Tags</label>
+		<input class="form-control" type="text" id="tags" name="tags" value={ tags } placeholder="dev, reference, tools"/>
+		<p class="form-help">Separate tags with commas.</p>
+	</div>
+	if len(allFolders) > 0 {
+		<fieldset class="form-group" id="folder_id">
+			<legend>Folders</legend>
+			<div class="chip-group bm-folder-picker">
+				for _, f := range allFolders {
+					<label class="chip">
+						<input
+							type="checkbox"
+							name="folder_id"
+							value={ strconv.FormatInt(f.ID, 10) }
+							if isFolderSelected(f.ID, selectedFolders) {
+								checked
+							}
+						/>
+						{ f.Title }
+					</label>
+				}
+			</div>
+		</fieldset>
+	}
+}
+
+// bookmarkList is the list, or its empty state. Its id is what a row
+// delete's out-of-band empty state replaces.
+templ bookmarkList(v listView) {
 	<div id="bookmark-list">
-		for _, bm := range bms {
-			@bookmarkRow(&bm, csrfToken)
+		if len(v.Bookmarks) == 0 {
+			@bookmarkListEmpty(v)
+		} else {
+			<ul class="list">
+				for i := range v.Bookmarks {
+					@bookmarkRow(&v.Bookmarks[i])
+				}
+			</ul>
 		}
 	</div>
 }
 
-templ bookmarkRow(bm *Bookmark, csrfToken string) {
-	<div id={ fmt.Sprintf("bm-%d", bm.ID) } style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0);display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
-		<div style="min-width:0;flex:1">
-			<div class="flex items-center gap-1" style="flex-wrap:wrap">
-				<a href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmark/%d", bm.ID)) } style="font-weight:500">
-					{ bm.Title }
-				</a>
-				if !bm.Available {
-					<span class="badge" style="background:var(--color-danger, #d9534f);color:#fff;font-size:0.7rem">broken</span>
+templ bookmarkListEmpty(v listView) {
+	<div class="list">
+		switch {
+			case v.Search != "":
+				@ui.EmptyState("No matches", fmt.Sprintf("No bookmark’s title, URL or description contains “%s”.", v.Search))
+			case v.Kind == viewFolder:
+				@ui.EmptyState("This folder is empty", "Tick the folder when you add or edit a bookmark to put it here.")
+			case v.Kind == viewTag:
+				@ui.EmptyState("No bookmarks with this tag", "")
+			default:
+				@ui.EmptyState("No bookmarks yet", "Add a link, or import the bookmarks from your browser.") {
+					<a class="btn" href="/apps/bookmarks/import-export">
+						@ui.Icon("upload")
+						Import bookmarks
+					</a>
 				}
-			</div>
-			<div class="text-muted" style="font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-				{ displayDomain(bm.URL) }
-				if len(bm.Tags) > 0 {
-					{ " · " }
-					for i, tag := range bm.Tags {
-						if i > 0 {
-							{ ", " }
-						}
-						{ tag }
-					}
-				}
-			</div>
-		</div>
-		<div class="flex gap-1" style="flex-shrink:0">
-			<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmarks/%d/click", bm.ID)) } target="_blank" style="display:inline">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<button class="btn btn-outline btn-sm" type="submit" title="Open & track click">&#8599;</button>
-			</form>
-			<button
-				class="btn btn-danger btn-sm"
-				hx-delete={ fmt.Sprintf("/apps/bookmarks/bookmarks/%d", bm.ID) }
-				hx-target={ fmt.Sprintf("#bm-%d", bm.ID) }
-				hx-swap="outerHTML"
-				hx-confirm="Delete this bookmark?"
-			>&#10005;</button>
-		</div>
+		}
 	</div>
 }
 
-func sidebarClass(activePath, itemPath string) string {
-	if activePath == itemPath {
-		return "sidebar-item active"
-	}
-	return "sidebar-item"
+templ bookmarkRow(bm *Bookmark) {
+	<li class="list-row bm-row" id={ bookmarkRowID(bm.ID) }>
+		<div class="list-row-main">
+			<a class="list-row-title" href={ templ.SafeURL(openURL(bm.ID)) } target="_blank" rel="noopener" title={ bm.URL }>{ bm.Title }</a>
+			<div class="list-row-meta">
+				if !bm.Available {
+					<span class="badge badge-danger">Broken</span>
+				}
+				{ displayDomain(bm.URL) }
+			</div>
+			if len(bm.Tags) > 0 {
+				<div class="bm-tags">
+					for _, tag := range bm.Tags {
+						<a href={ templ.SafeURL("/apps/bookmarks/tag/" + url.PathEscape(tag)) } class="badge">{ tag }</a>
+					}
+				</div>
+			}
+		</div>
+		<div class="list-row-actions">
+			<a class="btn-icon btn-icon-sm" href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmark/%d", bm.ID)) } aria-label={ "Details of " + bm.Title } title="Details">
+				@infoIcon()
+			</a>
+			<button
+				type="button"
+				class="btn-icon btn-icon-sm btn-icon-danger"
+				aria-label={ "Delete " + bm.Title }
+				title="Delete"
+				hx-delete={ fmt.Sprintf("/apps/bookmarks/bookmarks/%d", bm.ID) }
+				hx-target="closest li"
+				hx-swap="outerHTML"
+				hx-confirm={ fmt.Sprintf("Delete “%s”?", bm.Title) }
+			>
+				@ui.Icon("trash")
+			</button>
+		</div>
+	</li>
 }
 
-func folderSidebarClass(activeFolder, folderID int64) string {
-	if activeFolder == folderID {
-		return "sidebar-item active"
+// rowDeleted answers a row delete: the row is swapped for nothing, the
+// sidebar's counts are refreshed, and an emptied list gets its empty state.
+templ rowDeleted(sb sidebarData, empty *listView) {
+	@bookmarksSidebar(sb)
+	if empty != nil {
+		<div id="bookmark-list" hx-swap-oob="true">
+			@bookmarkListEmpty(*empty)
+		</div>
 	}
-	return "sidebar-item"
+}
+
+// ancestors is a breadcrumb trail of the pages above this one, for a page
+// whose own (long) title is the heading right below it.
+templ ancestors(crumbs []ui.Crumb) {
+	<nav class="breadcrumbs" aria-label="Breadcrumb">
+		<ol>
+			for _, c := range crumbs {
+				<li><a href={ templ.SafeURL(c.URL) }>{ c.Label }</a></li>
+			}
+		</ol>
+	</nav>
+}
+
+templ infoIcon() {
+	<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<circle cx="12" cy="12" r="10"></circle>
+		<line x1="12" y1="16" x2="12" y2="12"></line>
+		<line x1="12" y1="8" x2="12.01" y2="8"></line>
+	</svg>
+}
+
+templ timeTag(unix int64, now time.Time) {
+	if unix != 0 {
+		<time datetime={ time.Unix(unix, 0).UTC().Format(time.RFC3339) }>{ formatTime(unix, now) }</time>
+	}
+}
+
+// shorten cuts s to at most n characters, for a breadcrumb.
+func shorten(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimSpace(string(r[:n-1])) + "…"
+}
+
+// openURL counts a visit, then redirects to the bookmark.
+func openURL(id int64) string {
+	return fmt.Sprintf("/apps/bookmarks/bookmarks/%d/open", id)
 }
 
 func displayDomain(rawURL string) string {
@@ -361,16 +521,18 @@ func displayDomain(rawURL string) string {
 	return u.Host
 }
 
-func folderName(folders []Folder, id int64) string {
-	if id == -1 {
-		return "(root)"
-	}
-	for _, f := range folders {
-		if f.ID == id {
-			return f.Title
+// realFolders returns the folders a bookmark is in, leaving out the root
+// sentinel (-1) every unfiled bookmark carries.
+func realFolders(ids []int64, folders []Folder) []Folder {
+	var out []Folder
+	for _, id := range ids {
+		for _, f := range folders {
+			if f.ID == id {
+				out = append(out, f)
+			}
 		}
 	}
-	return strconv.FormatInt(id, 10)
+	return out
 }
 
 func isFolderSelected(id int64, selected []int64) bool {
@@ -382,17 +544,19 @@ func isFolderSelected(id int64, selected []int64) bool {
 	return false
 }
 
-func formatTime(unix int64) string {
+// formatTime shows a time relative to now: the time of day for today, the
+// date without a year for this year, the full date otherwise. now comes from
+// the plugin's clock, so the output does not depend on the wall clock.
+func formatTime(unix int64, now time.Time) string {
 	if unix == 0 {
 		return ""
 	}
-	t := time.Unix(unix, 0)
-	now := time.Now()
+	t := time.Unix(unix, 0).In(now.Location())
 	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
-		return t.Format("15:04")
+		return "today at " + t.Format("15:04")
 	}
 	if t.Year() == now.Year() {
 		return t.Format("Jan 2")
 	}
-	return t.Format("2006-01-02")
+	return t.Format("Jan 2, 2006")
 }

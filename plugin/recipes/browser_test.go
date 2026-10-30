@@ -1,7 +1,13 @@
 package recipes_test
 
 import (
+	"database/sql"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -24,6 +30,8 @@ func TestBrowser(t *testing.T) {
 	env.CreateUser(t, "import", "pass")
 	env.CreateUser(t, "full", "pass")
 	fullID := seedRecipes(t, env, "full")
+	env.CreateUser(t, "rowdelete", "pass")
+	seedOne(t, env, "rowdelete", recipes.Recipe{Name: "Only soup", Category: "Soups"})
 
 	t.Run("EmptyState", func(t *testing.T) {
 		b := eng.Start(t)
@@ -76,9 +84,24 @@ func TestBrowser(t *testing.T) {
 		b.Type(t, "#name", "Delete Me")
 		b.Click(t, `main button[type="submit"]`)
 		b.WaitText(t, "Delete Me")
+		// The recipe's own page: deleting it goes back to the list.
 		b.AcceptConfirms(t)
-		b.Click(t, `[hx-delete]`)
-		b.WaitNotVisible(t, `[hx-delete]`)
+		b.Click(t, `.page-actions [hx-delete]`)
+		b.WaitText(t, "Deleted “Delete Me”.")
+		b.WaitText(t, "No recipes yet")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("DeleteFromList", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "rowdelete", "pass")
+		b.Navigate(t, "/apps/recipes/category/Soups")
+		b.WaitText(t, "Only soup")
+		b.AcceptConfirms(t)
+		b.Click(t, `.list-row [hx-delete]`)
+		b.WaitText(t, "No recipes in this category")
+		require.False(t, b.HasElement(t, ".sidebar .count"), "sidebar still counts the deleted recipe")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -102,7 +125,7 @@ func TestBrowser(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "import", "pass")
 		b.Navigate(t, "/apps/recipes/import")
-		b.WaitText(t, "Import Recipe")
+		b.WaitText(t, "Import recipe")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -194,9 +217,42 @@ func seedRecipes(t *testing.T, env *cogtest.Env, username string) int64 {
 		"Blend half the soup until smooth, stir it back in, and adjust the seasoning.",
 		"Serve topped with croutons, basil and a final drizzle of oil.",
 	}, []string{"soup", "vegetarian", "make-ahead", "freezer-friendly", "winter"})
+	giveImage(t, raw.(*recipes.Plugin), db, username, full)
 
 	add(recipes.Recipe{Name: "Overnight oats", Category: "Breakfast", TotalTime: "PT5M", RecipeYield: "1 serving"},
 		[]string{"50 g oats", "150 ml milk"}, []string{"Mix and refrigerate overnight."}, []string{"vegetarian", "quick"})
 	add(recipes.Recipe{Name: "Untitled experiment"}, nil, nil, nil)
 	return full
+}
+
+// seedOne gives a user a single recipe.
+func seedOne(t *testing.T, env *cogtest.Env, username string, r recipes.Recipe) {
+	t.Helper()
+	raw, ok := env.Providers.Plugins.Plugin(recipes.PluginID)
+	require.True(t, ok, "recipes plugin not registered")
+	db, err := raw.(*recipes.Plugin).DB(username)
+	require.NoError(t, err)
+	_, err = recipes.CreateRecipe(db, &r)
+	require.NoError(t, err)
+}
+
+// giveImage stores a generated photo for a recipe, as an import would. It is
+// a fixed gradient, so the snapshot does not depend on a download.
+func giveImage(t *testing.T, p *recipes.Plugin, db *sql.DB, username string, id int64) {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 320, 180))
+	for y := range 180 {
+		for x := range 320 {
+			img.Set(x, y, color.RGBA{R: uint8(200 + x/8), G: uint8(90 + y/3), B: 60, A: 255})
+		}
+	}
+	dir := p.ImagesDir(username)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	name := fmt.Sprintf("%d.png", id)
+	f, err := os.Create(filepath.Join(dir, name))
+	require.NoError(t, err)
+	require.NoError(t, png.Encode(f, img))
+	require.NoError(t, f.Close())
+	_, err = db.Exec(`UPDATE recipes SET image_path = ? WHERE id = ?`, name, id)
+	require.NoError(t, err)
 }

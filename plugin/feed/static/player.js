@@ -373,26 +373,29 @@
 		// updateContextBar rewrites the page's context bar prev/next links from
 		// the freshly-swapped player fragment's data attributes.
 		function updateContextBar(playerEl) {
-			var bar = document.querySelector(".feed-context-bar");
-			if (!bar) return;
 			var ctx = playerEl.dataset.ctx || "ctx=all";
-			var links = bar.querySelectorAll(".btn");
-			// bar markup order: [0] = prev, [1] = next
-			rewireNavBtn(links[0], playerEl.dataset.barPrevId, playerEl.dataset.barPrevTitle, ctx, "← Prev");
-			rewireNavBtn(links[1], playerEl.dataset.barNextId, playerEl.dataset.barNextTitle, ctx, "Next →");
+			// The reader has a bar above and below the article; each holds
+			// [0] = prev, [1] = next.
+			document.querySelectorAll(".feed-context-bar").forEach(function (bar) {
+				var links = bar.querySelectorAll(".btn");
+				rewireNavBtn(links[0], playerEl.dataset.barPrevId, playerEl.dataset.barPrevTitle, ctx, "← Prev");
+				rewireNavBtn(links[1], playerEl.dataset.barNextId, playerEl.dataset.barNextTitle, ctx, "Next →");
+			});
+			var heading = document.querySelector("[data-feed-item-title]");
+			if (heading && playerEl.dataset.title) heading.textContent = playerEl.dataset.title;
 		}
 
 		function rewireNavBtn(el, id, title, ctx, text) {
 			if (!el) return;
 			var tag = (id && id !== "0") ? "a" : "span";
 			var repl = document.createElement(tag);
-			repl.className = "btn btn-outline btn-sm";
+			repl.className = "btn btn-sm";
 			repl.textContent = text;
 			if (id && id !== "0") {
 				repl.setAttribute("href", "/apps/feed/items/" + id + "?" + ctx);
 				if (title) repl.setAttribute("title", title);
 			} else {
-				repl.style.opacity = "0.5";
+				repl.setAttribute("aria-disabled", "true");
 			}
 			el.parentNode.replaceChild(repl, el);
 		}

@@ -1,18 +1,18 @@
 package bookmarks
 
-import "fmt"
+import "git.duckfam.us/jj-software/cog/ui"
 
 templ recentBookmarksWidget(bms []Bookmark) {
 	if len(bms) == 0 {
-		<p class="text-muted">No bookmarks yet.</p>
+		@ui.WidgetEmpty("No bookmarks yet.", "Add bookmark", "/apps/bookmarks/new")
 	} else {
-		for _, bm := range bms {
-			<div style="padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
-				<a href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmark/%d", bm.ID)) } style="font-weight:500">
-					{ bm.Title }
-				</a>
-				<div class="text-muted" style="font-size:0.85rem">{ displayDomain(bm.URL) }</div>
-			</div>
-		}
+		<ul class="widget-list">
+			for _, bm := range bms {
+				<li>
+					<a href={ templ.SafeURL(openURL(bm.ID)) } target="_blank" rel="noopener" class="font-medium">{ bm.Title }</a>
+					<div class="text-muted text-sm">{ displayDomain(bm.URL) }</div>
+				</li>
+			}
+		</ul>
 	}
 }

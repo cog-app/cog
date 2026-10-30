@@ -5,10 +5,16 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,10 +72,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterNavItem(plugin.NavItem{
 		Label: "Recipes",
 		URL:   "/apps/recipes",
-		Icon:  `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"></path></svg>`,
+		Icon:  `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"></path><path d="M7 2v20"></path><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"></path></svg>`,
 	})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Recent Recipes",
+		URL:      "/apps/recipes/",
 		Priority: 35,
 		Render:   p.renderWidget,
 	})
@@ -131,39 +138,139 @@ func (p *Plugin) Start(ctx context.Context) error { return nil }
 func (p *Plugin) Stop() error                     { return nil }
 
 // imagesDir returns the path to the recipe images directory for a user.
+//
+// TODO(host): this is the one place the plugin knows a storage layout. The
+// host has no per-plugin file store to hand out yet; when it does, images
+// belong there.
 func (p *Plugin) imagesDir(username string) string {
-	return p.ctx.DataDir() + "/" + username + "/app_data/recipes/images"
+	return filepath.Join(p.ctx.DataDir(), username, "app_data", "recipes", "images")
+}
+
+// imagePath is where a recipe's stored image file lives. The name comes from
+// the database, so only its base is used: it cannot point outside the
+// directory.
+func (p *Plugin) imagePath(username, name string) string {
+	return filepath.Join(p.imagesDir(username), filepath.Base(name))
+}
+
+// removeImage deletes a recipe's image file. One that is already gone is not
+// an error.
+func (p *Plugin) removeImage(username, name string) error {
+	if err := os.Remove(p.imagePath(username, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
 	db, err := p.DB(userID)
 	if err != nil {
-		return nil
+		return fmt.Errorf("open recipes database: %w", err)
 	}
-	recipes, _ := RecentRecipes(db, 5)
+	recipes, err := RecentRecipes(db, 5)
+	if err != nil {
+		return fmt.Errorf("recent recipes: %w", err)
+	}
 	return recentRecipesWidget(recipes).Render(ctx, w)
 }
 
-// formatDuration converts an ISO 8601 duration like "PT1H30M" to a human-readable string.
-func formatDuration(iso string) string {
-	iso = strings.TrimPrefix(iso, "PT")
-	iso = strings.TrimPrefix(iso, "P")
-	if iso == "" {
+// isoDurationRe matches the ISO 8601 durations schema.org recipes use:
+// PT1H30M, PT90M, P0DT1H, PT1H30M0S.
+var isoDurationRe = regexp.MustCompile(`^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:\d+(?:\.\d+)?S)?)?$`)
+
+// parseDuration returns an ISO 8601 duration in minutes. ok is false for
+// anything else (an imported "about an hour").
+func parseDuration(iso string) (minutes int, ok bool) {
+	m := isoDurationRe.FindStringSubmatch(strings.ToUpper(strings.TrimSpace(iso)))
+	if m == nil || iso == "" {
+		return 0, false
+	}
+	for i, mult := range []int{24 * 60, 60, 1} {
+		if m[i+1] == "" {
+			continue
+		}
+		n, err := strconv.Atoi(m[i+1])
+		if err != nil {
+			return 0, false
+		}
+		minutes += n * mult
+	}
+	return minutes, true
+}
+
+// isoDuration is the ISO 8601 form of a number of minutes, "" for none.
+func isoDuration(minutes int) string {
+	if minutes <= 0 {
 		return ""
 	}
-	var parts []string
-	// Parse hours
-	if i := strings.Index(iso, "H"); i >= 0 {
-		parts = append(parts, iso[:i]+"h")
-		iso = iso[i+1:]
+	h, m := minutes/60, minutes%60
+	switch {
+	case h == 0:
+		return fmt.Sprintf("PT%dM", m)
+	case m == 0:
+		return fmt.Sprintf("PT%dH", h)
 	}
-	// Parse minutes
-	if i := strings.Index(iso, "M"); i >= 0 {
-		parts = append(parts, iso[:i]+"m")
-		iso = iso[i+1:]
-	}
-	if len(parts) == 0 {
+	return fmt.Sprintf("PT%dH%dM", h, m)
+}
+
+// formatDuration shows an ISO 8601 duration the way a cook reads it:
+// "1 hr 30 min". A value that is not ISO 8601 is shown as it is.
+func formatDuration(iso string) string {
+	minutes, ok := parseDuration(iso)
+	if !ok {
 		return iso
 	}
-	return strings.Join(parts, " ")
+	h, m := minutes/60, minutes%60
+	switch {
+	case h == 0:
+		return fmt.Sprintf("%d min", m)
+	case m == 0:
+		return fmt.Sprintf("%d hr", h)
+	}
+	return fmt.Sprintf("%d hr %d min", h, m)
+}
+
+// durationParts splits a stored duration into the hours and minutes the form
+// shows. A value that is not ISO 8601 comes back as raw, so the form can keep
+// it rather than drop it.
+func durationParts(iso string) (hours, minutes, raw string) {
+	total, ok := parseDuration(iso)
+	if !ok {
+		return "", "", iso
+	}
+	if total == 0 {
+		return "", "", ""
+	}
+	if total >= 60 {
+		hours = strconv.Itoa(total / 60)
+	}
+	if total%60 != 0 || total < 60 {
+		minutes = strconv.Itoa(total % 60)
+	}
+	return hours, minutes, ""
+}
+
+// formDuration reads a duration from the form's <name>_h and <name>_m fields
+// as ISO 8601. With both empty it keeps <name>_raw, a value the form could
+// not show as numbers.
+func formDuration(r *http.Request, name string) (string, error) {
+	h, m := strings.TrimSpace(r.FormValue(name+"_h")), strings.TrimSpace(r.FormValue(name+"_m"))
+	if h == "" && m == "" {
+		return r.FormValue(name + "_raw"), nil
+	}
+	total := 0
+	for _, part := range []struct {
+		value string
+		mult  int
+	}{{h, 60}, {m, 1}} {
+		if part.value == "" {
+			continue
+		}
+		n, err := strconv.Atoi(part.value)
+		if err != nil || n < 0 {
+			return "", fmt.Errorf("%s time: %q is not a whole number", name, part.value)
+		}
+		total += n * part.mult
+	}
+	return isoDuration(total), nil
 }

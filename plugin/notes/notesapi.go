@@ -233,8 +233,10 @@ func (a *NotesAPI) deleteNote(w http.ResponseWriter, db *sql.DB, username string
 		plugin.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
-	a.plugin.deleteNoteFile(username, note.Filename)
-	DeleteNoteMeta(db, id)
+	if err := a.plugin.deleteNote(db, username, note); err != nil {
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 

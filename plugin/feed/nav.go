@@ -80,7 +80,7 @@ func (c viewCtx) label(store *Store) string {
 		}
 		return "Playlist"
 	default:
-		return "All"
+		return "All articles"
 	}
 }
 
@@ -110,6 +110,9 @@ func (c viewCtx) path() string {
 type itemNav struct {
 	Ctx       string // encoded ctx (no leading "?")
 	Label     string
+	Path      string // the list's own page
+	Pos       int    // 1-based place of the item in the list; 0 when not in it
+	Total     int    // the list's length, 0 when the item is not in it
 	PrevID    int64
 	PrevTitle string
 	NextID    int64

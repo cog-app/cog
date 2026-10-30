@@ -3,6 +3,7 @@ package recipes
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -121,12 +122,15 @@ func (a *CookbookAPI) GetRecipeImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	recipe, err := GetRecipe(db, id)
-	if err != nil || recipe.ImagePath == "" {
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && recipe.ImagePath == "") {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	imgDir := a.plugin.imagesDir(a.username(r))
-	http.ServeFile(w, r, imgDir+"/"+recipe.ImagePath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.ServeFile(w, r, a.plugin.imagePath(a.username(r), recipe.ImagePath))
 }
 
 // ListCategories returns all categories with counts.

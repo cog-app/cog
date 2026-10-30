@@ -114,6 +114,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Feed",
+		URL:      "/apps/feed/",
 		Priority: 25,
 		Render:   p.renderWidget,
 	})

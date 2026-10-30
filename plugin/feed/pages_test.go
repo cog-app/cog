@@ -25,7 +25,7 @@ func TestFeedSettings(t *testing.T) {
 		b.Submit(t, "#sub-url")
 		b.WaitVisible(t, "#add-subscription")
 		// Subscription URL appears in the (collapsed) list.
-		b.Eval(t, `() => { document.querySelector(".subscription-list-collapse").open = true }`)
+		b.Eval(t, `() => { document.querySelector("#subscription-details").open = true }`)
 		b.WaitVisible(t, `//code[contains(text(),"https://example.com/feed.xml")]`)
 	})
 

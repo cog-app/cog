@@ -131,17 +131,23 @@ func (s *Store) ImportOPML(data []byte) (int, error) {
 		// Folder with child feeds.
 		var folderID sql.NullInt64
 		if outline.Text != "" {
-			id, err := s.CreateFolder(outline.Text)
-			if err == nil {
+			id, createErr := s.CreateFolder(outline.Text)
+			if createErr == nil {
 				folderID = sql.NullInt64{Int64: id, Valid: true}
 			} else {
 				// Folder might already exist — look it up.
-				folders, _ := s.ListFolders()
+				folders, err := s.ListFolders()
+				if err != nil {
+					return count, fmt.Errorf("import opml: %w", err)
+				}
 				for _, f := range folders {
 					if f.Name == outline.Text {
 						folderID = sql.NullInt64{Int64: f.ID, Valid: true}
 						break
 					}
+				}
+				if !folderID.Valid {
+					return count, fmt.Errorf("import opml: folder %q: %w", outline.Text, createErr)
 				}
 			}
 		}
