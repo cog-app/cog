@@ -5,7 +5,7 @@
     <title>
       Bookmarks — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xOSAyMWwtNy01LTcgNVY1YTIgMiAwIDAgMSAyLTJoMTBhMiAyIDAgMCAxIDIgMnoiPjwvcGF0aD48L3N2Zz4=" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -178,152 +178,279 @@
     </nav>
     <main class="content" data-plugin="bookmarks">
       <div class="sidebar-layout has-sidebar-toggle">
-        <button aria-controls="bookmarks-sidebar" aria-expanded="false" aria-label="Menu: All Bookmarks 4" class="sidebar-toggle" type="button">
+        <button aria-controls="bookmarks-sidebar" aria-expanded="false" aria-label="Menu: All bookmarks" class="sidebar-toggle" type="button">
           <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
             <line x1="3" x2="21" y1="6" y2="6" />
             <line x1="3" x2="21" y1="12" y2="12" />
             <line x1="3" x2="21" y1="18" y2="18" />
           </svg>
-          <span class="sidebar-toggle-label" data-label="All Bookmarks 4" />
+          <span class="sidebar-toggle-label" data-label="All bookmarks" />
           <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="bookmarks-sidebar">
-          <a class="sidebar-item active" href="/apps/bookmarks/">
-            All Bookmarks
-            <span class="badge">
+        <nav aria-label="Bookmarks" class="sidebar" id="bookmarks-sidebar">
+          <a aria-current="page" class="sidebar-item active" href="/apps/bookmarks/">
+            <span class="break-anywhere">
+              All bookmarks
+            </span>
+            <span class="count">
               4
             </span>
           </a>
           <a class="sidebar-item" href="/apps/bookmarks/tags">
-            Tags
+            <span class="break-anywhere">
+              Tags
+            </span>
+            <span class="count">
+              9
+            </span>
           </a>
+          <div class="sidebar-heading">
+            Folders
+          </div>
+          <a class="sidebar-item" href="/apps/bookmarks/folder/1">
+            <span class="break-anywhere">
+              Reading List
+            </span>
+            <span class="count">
+              2
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/bookmarks/folder/2">
+            <span class="break-anywhere">
+              Work Reference Material For The Platform Team
+            </span>
+          </a>
+          <button class="sidebar-item bm-sidebar-button" data-modal-open="new-folder-modal" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="12" x2="12" y1="5" y2="19" />
+              <line x1="5" x2="19" y1="12" y2="12" />
+            </svg>
+            New folder
+          </button>
           <div class="sidebar-divider" />
-          <a class="sidebar-item" href="/apps/bookmarks/folder/1" style="padding-left:1.5rem;font-size:0.9rem">
-            Reading List
-          </a>
-          <a class="sidebar-item" href="/apps/bookmarks/folder/2" style="padding-left:1.5rem;font-size:0.9rem">
-            Work Reference Material For The Platform Team
-          </a>
-          <div class="sidebar-divider" />
-          <a class="sidebar-item" href="/apps/bookmarks/new">
-            + New Bookmark
+          <a class="sidebar-item" href="/apps/bookmarks/import-export">
+            <span class="break-anywhere">
+              Import and export
+            </span>
           </a>
         </nav>
         <div class="sidebar-content">
-          <div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-            <h1 style="margin:0">
-              All Bookmarks
-            </h1>
-            <a class="btn btn-primary btn-sm" href="/apps/bookmarks/new">
-              Add Bookmark
-            </a>
-          </div>
-          <form action="/apps/bookmarks/" class="mb-2" method="get">
-            <div class="flex gap-1">
-              <input class="form-control" name="q" placeholder="Search bookmarks..." style="max-width:400px" type="text" value="" />
-              <button class="btn btn-outline btn-sm" type="submit">
-                Search
-              </button>
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                All bookmarks
+              </h1>
             </div>
+            <div class="page-actions">
+              <a class="btn btn-primary" href="/apps/bookmarks/new">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="12" x2="12" y1="5" y2="19" />
+                  <line x1="5" x2="19" y1="12" y2="12" />
+                </svg>
+                Add bookmark
+              </a>
+            </div>
+          </header>
+          <form action="/apps/bookmarks/" class="form-inline bm-search" method="get" role="search">
+            <label class="sr-only" for="bm-q">
+              Search bookmarks
+            </label>
+            <input class="form-control" id="bm-q" name="q" placeholder="Search titles, URLs and descriptions" type="search" value="" />
+            <button aria-label="Search" class="btn" type="submit">
+              <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" x2="16.65" y1="21" y2="16.65" />
+              </svg>
+              <span class="hide-mobile">
+                Search
+              </span>
+            </button>
           </form>
           <div id="bookmark-list">
-            <div id="bm-4" style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0);display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
-              <div style="min-width:0;flex:1">
-                <div class="flex items-center gap-1" style="flex-wrap:wrap">
-                  <a href="/apps/bookmarks/bookmark/4" style="font-weight:500">
+            <ul class="list">
+              <li class="list-row bm-row" id="bm-4">
+                <div class="list-row-main">
+                  <a class="list-row-title" href="/apps/bookmarks/bookmarks/4/open" rel="noopener" target="_blank" title="http://localhost:8080/dashboard">
                     Local dev dashboard
                   </a>
+                  <div class="list-row-meta">
+                    localhost:8080
+                  </div>
+                  <div class="bm-tags">
+                    <a class="badge" href="/apps/bookmarks/tag/dev">
+                      dev
+                    </a>
+                  </div>
                 </div>
-                <div class="text-muted" style="font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                  localhost:8080 · dev
-                </div>
-              </div>
-              <div class="flex gap-1" style="flex-shrink:0">
-                <form action="/apps/bookmarks/bookmarks/4/click" method="post" style="display:inline" target="_blank">
-                  <input name="csrf_token" type="hidden" value="«hex»" />
-                  <button class="btn btn-outline btn-sm" title="Open & track click" type="submit">
-                    ↗
+                <div class="list-row-actions">
+                  <a aria-label="Details of Local dev dashboard" class="btn-icon btn-icon-sm" href="/apps/bookmarks/bookmark/4" title="Details">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" x2="12" y1="16" y2="12" />
+                      <line x1="12" x2="12.01" y1="8" y2="8" />
+                    </svg>
+                  </a>
+                  <button aria-label="Delete Local dev dashboard" class="btn-icon btn-icon-sm btn-icon-danger" hx-confirm="Delete “Local dev dashboard”?" hx-delete="/apps/bookmarks/bookmarks/4" hx-swap="outerHTML" hx-target="closest li" title="Delete" type="button">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
                   </button>
-                </form>
-                <button class="btn btn-danger btn-sm" hx-confirm="Delete this bookmark?" hx-delete="/apps/bookmarks/bookmarks/4" hx-swap="outerHTML" hx-target="#bm-4">
-                  ✕
-                </button>
-              </div>
-            </div>
-            <div id="bm-3" style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0);display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
-              <div style="min-width:0;flex:1">
-                <div class="flex items-center gap-1" style="flex-wrap:wrap">
-                  <a href="/apps/bookmarks/bookmark/3" style="font-weight:500">
+                </div>
+              </li>
+              <li class="list-row bm-row" id="bm-3">
+                <div class="list-row-main">
+                  <a class="list-row-title" href="/apps/bookmarks/bookmarks/3/open" rel="noopener" target="_blank" title="https://news.example.net/2026/03/14/story">
                     News story
                   </a>
+                  <div class="list-row-meta">
+                    news.example.net
+                  </div>
+                  <div class="bm-tags">
+                    <a class="badge" href="/apps/bookmarks/tag/news">
+                      news
+                    </a>
+                  </div>
                 </div>
-                <div class="text-muted" style="font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                  news.example.net · news
-                </div>
-              </div>
-              <div class="flex gap-1" style="flex-shrink:0">
-                <form action="/apps/bookmarks/bookmarks/3/click" method="post" style="display:inline" target="_blank">
-                  <input name="csrf_token" type="hidden" value="«hex»" />
-                  <button class="btn btn-outline btn-sm" title="Open & track click" type="submit">
-                    ↗
+                <div class="list-row-actions">
+                  <a aria-label="Details of News story" class="btn-icon btn-icon-sm" href="/apps/bookmarks/bookmark/3" title="Details">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" x2="12" y1="16" y2="12" />
+                      <line x1="12" x2="12.01" y1="8" y2="8" />
+                    </svg>
+                  </a>
+                  <button aria-label="Delete News story" class="btn-icon btn-icon-sm btn-icon-danger" hx-confirm="Delete “News story”?" hx-delete="/apps/bookmarks/bookmarks/3" hx-swap="outerHTML" hx-target="closest li" title="Delete" type="button">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
                   </button>
-                </form>
-                <button class="btn btn-danger btn-sm" hx-confirm="Delete this bookmark?" hx-delete="/apps/bookmarks/bookmarks/3" hx-swap="outerHTML" hx-target="#bm-3">
-                  ✕
-                </button>
-              </div>
-            </div>
-            <div id="bm-2" style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0);display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
-              <div style="min-width:0;flex:1">
-                <div class="flex items-center gap-1" style="flex-wrap:wrap">
-                  <a href="/apps/bookmarks/bookmark/2" style="font-weight:500">
+                </div>
+              </li>
+              <li class="list-row bm-row" id="bm-2">
+                <div class="list-row-main">
+                  <a class="list-row-title" href="/apps/bookmarks/bookmarks/2/open" rel="noopener" target="_blank" title="https://docs.example.org/reference/api/v2/endpoints/authentication/oauth2/device-authorization-grant?lang=en&version=latest">
                     An extremely long bookmark title that describes the page in far more words than any reasonable title ever should
                   </a>
+                  <div class="list-row-meta">
+                    docs.example.org
+                  </div>
+                  <div class="bm-tags">
+                    <a class="badge" href="/apps/bookmarks/tag/api">
+                      api
+                    </a>
+                    <a class="badge" href="/apps/bookmarks/tag/authentication">
+                      authentication
+                    </a>
+                    <a class="badge" href="/apps/bookmarks/tag/documentation">
+                      documentation
+                    </a>
+                    <a class="badge" href="/apps/bookmarks/tag/oauth">
+                      oauth
+                    </a>
+                    <a class="badge" href="/apps/bookmarks/tag/reference">
+                      reference
+                    </a>
+                    <a class="badge" href="/apps/bookmarks/tag/to-read">
+                      to-read
+                    </a>
+                    <a class="badge" href="/apps/bookmarks/tag/work">
+                      work
+                    </a>
+                  </div>
                 </div>
-                <div class="text-muted" style="font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                  docs.example.org · api, authentication, documentation, oauth, reference, to-read, work
-                </div>
-              </div>
-              <div class="flex gap-1" style="flex-shrink:0">
-                <form action="/apps/bookmarks/bookmarks/2/click" method="post" style="display:inline" target="_blank">
-                  <input name="csrf_token" type="hidden" value="«hex»" />
-                  <button class="btn btn-outline btn-sm" title="Open & track click" type="submit">
-                    ↗
+                <div class="list-row-actions">
+                  <a aria-label="Details of An extremely long bookmark title that describes the page in far more words than any reasonable title ever should" class="btn-icon btn-icon-sm" href="/apps/bookmarks/bookmark/2" title="Details">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" x2="12" y1="16" y2="12" />
+                      <line x1="12" x2="12.01" y1="8" y2="8" />
+                    </svg>
+                  </a>
+                  <button aria-label="Delete An extremely long bookmark title that describes the page in far more words than any reasonable title ever should" class="btn-icon btn-icon-sm btn-icon-danger" hx-confirm="Delete “An extremely long bookmark title that describes the page in far more words than any reasonable title ever should”?" hx-delete="/apps/bookmarks/bookmarks/2" hx-swap="outerHTML" hx-target="closest li" title="Delete" type="button">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
                   </button>
-                </form>
-                <button class="btn btn-danger btn-sm" hx-confirm="Delete this bookmark?" hx-delete="/apps/bookmarks/bookmarks/2" hx-swap="outerHTML" hx-target="#bm-2">
-                  ✕
-                </button>
-              </div>
-            </div>
-            <div id="bm-1" style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0);display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
-              <div style="min-width:0;flex:1">
-                <div class="flex items-center gap-1" style="flex-wrap:wrap">
-                  <a href="/apps/bookmarks/bookmark/1" style="font-weight:500">
+                </div>
+              </li>
+              <li class="list-row bm-row" id="bm-1">
+                <div class="list-row-main">
+                  <a class="list-row-title" href="/apps/bookmarks/bookmarks/1/open" rel="noopener" target="_blank" title="https://example.com/">
                     Short
                   </a>
+                  <div class="list-row-meta">
+                    example.com
+                  </div>
                 </div>
-                <div class="text-muted" style="font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                  example.com
-                </div>
-              </div>
-              <div class="flex gap-1" style="flex-shrink:0">
-                <form action="/apps/bookmarks/bookmarks/1/click" method="post" style="display:inline" target="_blank">
-                  <input name="csrf_token" type="hidden" value="«hex»" />
-                  <button class="btn btn-outline btn-sm" title="Open & track click" type="submit">
-                    ↗
+                <div class="list-row-actions">
+                  <a aria-label="Details of Short" class="btn-icon btn-icon-sm" href="/apps/bookmarks/bookmark/1" title="Details">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" x2="12" y1="16" y2="12" />
+                      <line x1="12" x2="12.01" y1="8" y2="8" />
+                    </svg>
+                  </a>
+                  <button aria-label="Delete Short" class="btn-icon btn-icon-sm btn-icon-danger" hx-confirm="Delete “Short”?" hx-delete="/apps/bookmarks/bookmarks/1" hx-swap="outerHTML" hx-target="closest li" title="Delete" type="button">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
                   </button>
-                </form>
-                <button class="btn btn-danger btn-sm" hx-confirm="Delete this bookmark?" hx-delete="/apps/bookmarks/bookmarks/1" hx-swap="outerHTML" hx-target="#bm-1">
-                  ✕
-                </button>
-              </div>
-            </div>
+                </div>
+              </li>
+            </ul>
           </div>
         </div>
       </div>
+      <dialog aria-labelledby="new-folder-modal-title" class="modal" id="new-folder-modal">
+        <div class="modal-header">
+          <h2 class="modal-title" id="new-folder-modal-title">
+            New folder
+          </h2>
+          <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <form action="/apps/bookmarks/folders" method="post">
+          <input name="csrf_token" type="hidden" value="«hex»" />
+          <div class="modal-body">
+            <div class="form-group mb-0">
+              <label for="new-folder-title">
+                Name
+              </label>
+              <input class="form-control" id="new-folder-title" name="title" required="" type="text" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn" data-modal-close="" type="button">
+              Cancel
+            </button>
+            <button class="btn btn-primary" type="submit">
+              Create folder
+            </button>
+          </div>
+        </form>
+      </dialog>
     </main>
   </body>
 </html>

@@ -5,7 +5,7 @@
     <title>
       Calendar Settings — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxyZWN0IHg9IjMiIHk9IjQiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIj48L3JlY3Q+PGxpbmUgeDE9IjE2IiB5MT0iMiIgeDI9IjE2IiB5Mj0iNiI+PC9saW5lPjxsaW5lIHgxPSI4IiB5MT0iMiIgeDI9IjgiIHkyPSI2Ij48L2xpbmU+PGxpbmUgeDE9IjMiIHkxPSIxMCIgeDI9IjIxIiB5Mj0iMTAiPjwvbGluZT48L3N2Zz4=" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -195,190 +195,282 @@
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="sidebar-1">
+        <nav aria-label="Calendar" class="sidebar" id="sidebar-1">
           <a class="sidebar-item" href="/apps/calendar/">
-            All Events
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <rect height="18" rx="2" width="18" x="3" y="4" />
+              <line x1="16" x2="16" y1="2" y2="6" />
+              <line x1="8" x2="8" y1="2" y2="6" />
+              <line x1="3" x2="21" y1="10" y2="10" />
+            </svg>
+            Calendar
           </a>
           <div class="sidebar-divider" />
-          <div style="padding:0.25rem 0.75rem;font-size:0.8rem;font-weight:600;text-transform:uppercase;color:var(--color-text-muted, #888)">
-            Calendars
-          </div>
-          <label class="sidebar-item" style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
-            <input checked="" class="cal-toggle" data-calendar-id="1" style="accent-color:var(--cal-color);--cal-color:inherit" type="checkbox" />
-            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;flex-shrink:0;" />
-            Personal
-          </label>
-          <label class="sidebar-item" style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
-            <input checked="" class="cal-toggle" data-calendar-id="2" style="accent-color:var(--cal-color);--cal-color:inherit" type="checkbox" />
-            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;flex-shrink:0;" />
-            Work Calendar
-          </label>
-          <div class="sidebar-divider" />
-          <a class="sidebar-item active" href="/apps/calendar/settings">
+          <a aria-current="page" class="sidebar-item active" href="/apps/calendar/settings">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="4" x2="4" y1="21" y2="14" />
+              <line x1="4" x2="4" y1="10" y2="3" />
+              <line x1="12" x2="12" y1="21" y2="12" />
+              <line x1="12" x2="12" y1="8" y2="3" />
+              <line x1="20" x2="20" y1="21" y2="16" />
+              <line x1="20" x2="20" y1="12" y2="3" />
+              <line x1="1" x2="7" y1="14" y2="14" />
+              <line x1="9" x2="15" y1="8" y2="8" />
+              <line x1="17" x2="23" y1="16" y2="16" />
+            </svg>
             Settings
           </a>
         </nav>
         <div class="sidebar-content">
-          <h1>
-            Calendar Settings
-          </h1>
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                Calendar settings
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
           <div class="card">
             <h2 class="card-title">
-              Create Calendar
+              New calendar
             </h2>
-            <form action="/apps/calendar/calendars" class="flex gap-1 items-end" method="post">
+            <form action="/apps/calendar/calendars" method="post">
               <input name="csrf_token" type="hidden" value="«hex»" />
-              <div class="form-group" style="margin-bottom:0">
-                <label for="name">
-                  Name
-                </label>
-                <input class="form-control" id="name" name="name" placeholder="Work" required="" type="text" />
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="name">
+                    Name
+                  </label>
+                  <input class="form-control" id="name" name="name" placeholder="Work" required="" type="text" />
+                </div>
+                <div class="form-group">
+                  <label for="timezone">
+                    Time zone
+                  </label>
+                  <input class="form-control" data-browser-tz="" id="timezone" list="cal-timezones" name="timezone" placeholder="America/Denver" type="text" />
+                </div>
+                <div class="form-group form-group-auto">
+                  <label for="color">
+                    Colour
+                  </label>
+                  <input class="form-control" id="color" name="color" type="color" value="#0082c9" />
+                </div>
+                <button class="btn btn-primary" type="submit">
+                  Create
+                </button>
               </div>
-              <div class="form-group" style="margin-bottom:0">
-                <label for="uid">
-                  URL slug
-                </label>
-                <input class="form-control" id="uid" name="uid" placeholder="work" type="text" />
-              </div>
-              <div class="form-group" style="margin-bottom:0">
-                <label for="color">
-                  Color
-                </label>
-                <input class="form-control" id="color" name="color" type="color" value="#0082c9" />
-              </div>
-              <div class="form-group" style="margin-bottom:0">
-                <label for="timezone">
-                  Timezone
-                </label>
-                <input class="form-control" data-browser-tz="" id="timezone" list="cal-timezones" name="timezone" placeholder="America/Denver" type="text" />
-              </div>
-              <button class="btn btn-primary" type="submit">
-                Create
-              </button>
+              <details class="cal-more">
+                <summary>
+                  More options
+                </summary>
+                <div class="form-group mt-1">
+                  <label for="uid">
+                    Address
+                  </label>
+                  <input aria-describedby="uid-help" class="form-control w-md" id="uid" name="uid" placeholder="work" type="text" />
+                  <p class="form-help" id="uid-help">
+                    The calendar's name in CalDAV URLs. Made from the name when left empty.
+                  </p>
+                </div>
+              </details>
             </form>
           </div>
-          <div class="card">
+          <div class="card card-flush">
             <h2 class="card-title">
               Calendars
             </h2>
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>
-                    Color
-                  </th>
-                  <th>
-                    Name
-                  </th>
-                  <th>
-                    Timezone
-                  </th>
-                  <th>
-                    UID
-                  </th>
-                  <th class="text-right">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr id="cal-1">
-                  <td>
-                    <input aria-label="Color" class="form-control" form="cal-edit-1" name="color" style="width:3rem;padding:0.1rem" type="color" value="#0082c9" />
-                  </td>
-                  <td>
-                    <input aria-label="Name" class="form-control" form="cal-edit-1" name="name" required="" type="text" value="Personal" />
-                  </td>
-                  <td>
-                    <input aria-label="Timezone" class="form-control" form="cal-edit-1" list="cal-timezones" name="timezone" placeholder="UTC" type="text" value="" />
-                  </td>
-                  <td>
-                    personal
-                  </td>
-                  <td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
-                    <form action="/apps/calendar/calendars/1" id="cal-edit-1" method="post">
-                      <input name="csrf_token" type="hidden" value="«hex»" />
-                      <button class="btn btn-sm btn-primary" type="submit">
-                        Save
-                      </button>
-                    </form>
-                    <cog-share-button resource-id="1" resource="dav:collection">
-                      <button class="btn btn-secondary btn-sm" type="button">
-                        Share
-                      </button>
-                    </cog-share-button>
-                    <button class="btn btn-sm" hx-confirm="Delete this calendar and everything in it, tasks included?" hx-delete="/apps/calendar/calendars/1" hx-swap="outerHTML" hx-target="#cal-1">
-                      Delete
+            <ul class="list cal-list">
+              <li class="list-row" id="cal-1">
+                <span class="color-dot" style="background:#0082c9;" />
+                <div class="list-row-main">
+                  <div class="list-row-title">
+                    Personal
+                  </div>
+                  <div class="list-row-meta">
+                    personal · UTC
+                  </div>
+                </div>
+                <div class="list-row-actions">
+                  <button class="btn btn-sm" data-modal-open="cal-edit-1" type="button">
+                    Edit
+                  </button>
+                  <cog-share-button btn-class="btn btn-sm" resource-id="1" resource="dav:collection" share-title="Personal">
+                    <button class="btn btn-sm" type="button">
+                      Share
                     </button>
-                  </td>
-                </tr>
-                <tr>
-                  <td colspan="5" id="cal-share-1" />
-                </tr>
-                <tr id="cal-2">
-                  <td>
-                    <input aria-label="Color" class="form-control" form="cal-edit-2" name="color" style="width:3rem;padding:0.1rem" type="color" value="#0082c9" />
-                  </td>
-                  <td>
-                    <input aria-label="Name" class="form-control" form="cal-edit-2" name="name" required="" type="text" value="Work Calendar" />
-                  </td>
-                  <td>
-                    <input aria-label="Timezone" class="form-control" form="cal-edit-2" list="cal-timezones" name="timezone" placeholder="UTC" type="text" value="UTC" />
-                  </td>
-                  <td>
-                    work-calendar
-                  </td>
-                  <td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
-                    <form action="/apps/calendar/calendars/2" id="cal-edit-2" method="post">
-                      <input name="csrf_token" type="hidden" value="«hex»" />
-                      <button class="btn btn-sm btn-primary" type="submit">
-                        Save
-                      </button>
-                    </form>
-                    <cog-share-button resource-id="2" resource="dav:collection">
-                      <button class="btn btn-secondary btn-sm" type="button">
-                        Share
-                      </button>
-                    </cog-share-button>
-                    <button class="btn btn-sm" hx-confirm="Delete this calendar and everything in it, tasks included?" hx-delete="/apps/calendar/calendars/2" hx-swap="outerHTML" hx-target="#cal-2">
-                      Delete
+                  </cog-share-button>
+                  <button aria-label="Delete Personal" class="btn-icon btn-icon-danger" hx-confirm="Delete “Personal” and everything in it, tasks included?" hx-delete="/apps/calendar/calendars/1" hx-swap="outerHTML" hx-target="#cal-1" title="Delete" type="button">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
+                  </button>
+                </div>
+              </li>
+              <li class="list-row" id="cal-2">
+                <span class="color-dot" style="background:#0082c9;" />
+                <div class="list-row-main">
+                  <div class="list-row-title">
+                    Work Calendar
+                  </div>
+                  <div class="list-row-meta">
+                    work-calendar · UTC
+                  </div>
+                </div>
+                <div class="list-row-actions">
+                  <button class="btn btn-sm" data-modal-open="cal-edit-2" type="button">
+                    Edit
+                  </button>
+                  <cog-share-button btn-class="btn btn-sm" resource-id="2" resource="dav:collection" share-title="Work Calendar">
+                    <button class="btn btn-sm" type="button">
+                      Share
                     </button>
-                  </td>
-                </tr>
-                <tr>
-                  <td colspan="5" id="cal-share-2" />
-                </tr>
-              </tbody>
-            </table>
+                  </cog-share-button>
+                  <button aria-label="Delete Work Calendar" class="btn-icon btn-icon-danger" hx-confirm="Delete “Work Calendar” and everything in it, tasks included?" hx-delete="/apps/calendar/calendars/2" hx-swap="outerHTML" hx-target="#cal-2" title="Delete" type="button">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
+                  </button>
+                </div>
+              </li>
+            </ul>
+            <dialog aria-labelledby="cal-edit-1-title" class="modal" id="cal-edit-1">
+              <div class="modal-header">
+                <h2 class="modal-title" id="cal-edit-1-title">
+                  Edit calendar
+                </h2>
+                <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <line x1="18" x2="6" y1="6" y2="18" />
+                    <line x1="6" x2="18" y1="6" y2="18" />
+                  </svg>
+                </button>
+              </div>
+              <form action="/apps/calendar/calendars/1" method="post">
+                <div class="modal-body">
+                  <input name="csrf_token" type="hidden" value="«hex»" />
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="cal-1-name">
+                        Name
+                      </label>
+                      <input class="form-control" id="cal-1-name" name="name" required="" type="text" value="Personal" />
+                    </div>
+                    <div class="form-group form-group-auto">
+                      <label for="cal-1-color">
+                        Colour
+                      </label>
+                      <input class="form-control" id="cal-1-color" name="color" type="color" value="#0082c9" />
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label for="cal-1-tz">
+                      Time zone
+                    </label>
+                    <input aria-describedby="cal-1-tz-help" class="form-control" id="cal-1-tz" list="cal-timezones" name="timezone" placeholder="UTC" type="text" value="" />
+                    <p class="form-help" id="cal-1-tz-help">
+                      For events without a zone of their own. Empty means UTC.
+                    </p>
+                  </div>
+                  <p class="form-help">
+                    Address:
+                    <code>
+                      personal
+                    </code>
+                  </p>
+                </div>
+                <div class="modal-footer">
+                  <button class="btn" data-modal-close="" type="button">
+                    Cancel
+                  </button>
+                  <button class="btn btn-primary" type="submit">
+                    Save
+                  </button>
+                </div>
+              </form>
+            </dialog>
+            <dialog aria-labelledby="cal-edit-2-title" class="modal" id="cal-edit-2">
+              <div class="modal-header">
+                <h2 class="modal-title" id="cal-edit-2-title">
+                  Edit calendar
+                </h2>
+                <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <line x1="18" x2="6" y1="6" y2="18" />
+                    <line x1="6" x2="18" y1="6" y2="18" />
+                  </svg>
+                </button>
+              </div>
+              <form action="/apps/calendar/calendars/2" method="post">
+                <div class="modal-body">
+                  <input name="csrf_token" type="hidden" value="«hex»" />
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="cal-2-name">
+                        Name
+                      </label>
+                      <input class="form-control" id="cal-2-name" name="name" required="" type="text" value="Work Calendar" />
+                    </div>
+                    <div class="form-group form-group-auto">
+                      <label for="cal-2-color">
+                        Colour
+                      </label>
+                      <input class="form-control" id="cal-2-color" name="color" type="color" value="#0082c9" />
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label for="cal-2-tz">
+                      Time zone
+                    </label>
+                    <input aria-describedby="cal-2-tz-help" class="form-control" id="cal-2-tz" list="cal-timezones" name="timezone" placeholder="UTC" type="text" value="UTC" />
+                    <p class="form-help" id="cal-2-tz-help">
+                      For events without a zone of their own. Empty means UTC.
+                    </p>
+                  </div>
+                  <p class="form-help">
+                    Address:
+                    <code>
+                      work-calendar
+                    </code>
+                  </p>
+                </div>
+                <div class="modal-footer">
+                  <button class="btn" data-modal-close="" type="button">
+                    Cancel
+                  </button>
+                  <button class="btn btn-primary" type="submit">
+                    Save
+                  </button>
+                </div>
+              </form>
+            </dialog>
           </div>
           <div class="card">
             <h2 class="card-title">
               Feeds
             </h2>
-            <p class="text-muted">
+            <p class="card-desc">
               A feed is a secret address any calendar app can subscribe to (webcal), without an account. Anyone with the address sees the calendar, or only when you are busy; a new address or revoking it stops the old one at once.
             </p>
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>
-                    Calendar
-                  </th>
-                  <th>
-                    Whole calendar
-                  </th>
-                  <th>
-                    Busy times only
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr id="cal-feed-1">
-                  <td>
-                    Personal
-                  </td>
-                  <td>
-                    <form action="/apps/calendar/calendars/1/feed" method="post" style="display:inline">
+            <ul class="divided-list cal-feeds">
+              <li id="cal-feed-1">
+                <div class="cal-feed-name">
+                  <span class="color-dot" style="background:#0082c9;" />
+                  Personal
+                </div>
+                <div class="cal-feed-kinds">
+                  <div class="cal-feed-kind">
+                    <div class="cal-feed-label">
+                      Whole calendar
+                    </div>
+                    <form action="/apps/calendar/calendars/1/feed" class="inline-flex" method="post">
                       <input name="csrf_token" type="hidden" value="«hex»" />
                       <input name="kind" type="hidden" value="full" />
                       <input name="action" type="hidden" value="renew" />
@@ -386,9 +478,12 @@
                         Create feed
                       </button>
                     </form>
-                  </td>
-                  <td>
-                    <form action="/apps/calendar/calendars/1/feed" method="post" style="display:inline">
+                  </div>
+                  <div class="cal-feed-kind">
+                    <div class="cal-feed-label">
+                      Busy times only
+                    </div>
+                    <form action="/apps/calendar/calendars/1/feed" class="inline-flex" method="post">
                       <input name="csrf_token" type="hidden" value="«hex»" />
                       <input name="kind" type="hidden" value="busy" />
                       <input name="action" type="hidden" value="renew" />
@@ -396,14 +491,20 @@
                         Create feed
                       </button>
                     </form>
-                  </td>
-                </tr>
-                <tr id="cal-feed-2">
-                  <td>
-                    Work Calendar
-                  </td>
-                  <td>
-                    <form action="/apps/calendar/calendars/2/feed" method="post" style="display:inline">
+                  </div>
+                </div>
+              </li>
+              <li id="cal-feed-2">
+                <div class="cal-feed-name">
+                  <span class="color-dot" style="background:#0082c9;" />
+                  Work Calendar
+                </div>
+                <div class="cal-feed-kinds">
+                  <div class="cal-feed-kind">
+                    <div class="cal-feed-label">
+                      Whole calendar
+                    </div>
+                    <form action="/apps/calendar/calendars/2/feed" class="inline-flex" method="post">
                       <input name="csrf_token" type="hidden" value="«hex»" />
                       <input name="kind" type="hidden" value="full" />
                       <input name="action" type="hidden" value="renew" />
@@ -411,9 +512,12 @@
                         Create feed
                       </button>
                     </form>
-                  </td>
-                  <td>
-                    <form action="/apps/calendar/calendars/2/feed" method="post" style="display:inline">
+                  </div>
+                  <div class="cal-feed-kind">
+                    <div class="cal-feed-label">
+                      Busy times only
+                    </div>
+                    <form action="/apps/calendar/calendars/2/feed" class="inline-flex" method="post">
                       <input name="csrf_token" type="hidden" value="«hex»" />
                       <input name="kind" type="hidden" value="busy" />
                       <input name="action" type="hidden" value="renew" />
@@ -421,35 +525,35 @@
                         Create feed
                       </button>
                     </form>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                  </div>
+                </div>
+              </li>
+            </ul>
           </div>
           <div class="card">
             <h2 class="card-title">
               Subscriptions
             </h2>
-            <p class="text-muted">
+            <p class="card-desc">
               A subscription is a read-only calendar filled from a feed elsewhere (a school's holidays, a team's fixtures), fetched again every hour or as often as the feed asks.
             </p>
-            <form action="/apps/calendar/subscriptions" class="flex gap-1 items-end" method="post">
+            <form action="/apps/calendar/subscriptions" class="form-row" method="post">
               <input name="csrf_token" type="hidden" value="«hex»" />
-              <div class="form-group" style="margin-bottom:0;flex:1">
+              <div class="form-group cal-sub-url">
                 <label for="sub-url">
                   Feed address
                 </label>
                 <input class="form-control" id="sub-url" name="url" placeholder="webcal://example.com/calendar.ics" required="" type="url" />
               </div>
-              <div class="form-group" style="margin-bottom:0">
+              <div class="form-group">
                 <label for="sub-name">
                   Name
                 </label>
                 <input class="form-control" id="sub-name" name="name" placeholder="School holidays" type="text" />
               </div>
-              <div class="form-group" style="margin-bottom:0">
+              <div class="form-group form-group-auto">
                 <label for="sub-color">
-                  Color
+                  Colour
                 </label>
                 <input class="form-control" id="sub-color" name="color" type="color" value="#7a7a7a" />
               </div>
@@ -462,16 +566,57 @@
             <h2 class="card-title">
               Birthdays
             </h2>
-            <form action="/apps/calendar/birthdays" class="flex gap-1 items-center" method="post">
+            <form action="/apps/calendar/birthdays" class="cal-birthdays" method="post">
               <input name="csrf_token" type="hidden" value="«hex»" />
-              <p class="text-muted" style="margin:0;flex:1">
+              <p class="text-muted">
                 Show your contacts' birthdays and anniversaries in a read-only calendar.
               </p>
               <input name="enable" type="hidden" value="1" />
-              <button class="btn btn-sm btn-primary" type="submit">
+              <button class="btn btn-primary" type="submit">
                 Turn on
               </button>
             </form>
+          </div>
+          <div class="card" id="caldav">
+            <h2 class="card-title">
+              CalDAV sync
+            </h2>
+            <p class="card-desc">
+              Calendar apps on your phone or computer (and task apps) stay in step with these calendars through CalDAV.
+            </p>
+            <dl class="kv">
+              <dt>
+                Server
+              </dt>
+              <dd>
+                <div class="share-link">
+                  <code>
+                    http://127.0.0.1:«port»/remote.php/dav/
+                  </code>
+                  <button class="btn btn-secondary btn-sm" onclick="__templ_copyShareLink_12a2(\"http://127.0.0.1:«port»/remote.php/dav/\")" type="button">
+                    Copy
+                  </button>
+                </div>
+              </dd>
+              <dt>
+                Username
+              </dt>
+              <dd>
+                <code>
+                  newcal
+                </code>
+              </dd>
+              <dt>
+                Password
+              </dt>
+              <dd>
+                Your Cog password, or better, an
+                <a href="/settings/security">
+                  app password
+                </a>
+                per device.
+              </dd>
+            </dl>
           </div>
           <datalist id="cal-timezones">
             <option value="UTC" />
@@ -494,38 +639,6 @@
             <option value="Australia/Sydney" />
             <option value="Pacific/Auckland" />
           </datalist>
-          <div class="card">
-            <h2 class="card-title">
-              CalDAV Access
-            </h2>
-            <p class="text-muted">
-              Configure your CalDAV client with:
-            </p>
-            <ul>
-              <li>
-                <strong>
-                  Server:
-                </strong>
-                <code>
-                  your-server-url
-                </code>
-              </li>
-              <li>
-                <strong>
-                  Path:
-                </strong>
-                <code>
-                  /remote.php/dav
-                </code>
-              </li>
-              <li>
-                <strong>
-                  Username/Password:
-                </strong>
-                your Cog credentials or an app password
-              </li>
-            </ul>
-          </div>
         </div>
       </div>
     </main>

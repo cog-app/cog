@@ -5,7 +5,7 @@
     <title>
       VID_0001.mp4 — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIj48L3JlY3Q+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiPjwvY2lyY2xlPjxwb2x5bGluZSBwb2ludHM9IjIxIDE1IDE2IDEwIDUgMjEiPjwvcG9seWxpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -191,138 +191,197 @@
       </div>
     </nav>
     <main class="content" data-plugin="gallery">
-      <div class="sidebar-layout has-sidebar-toggle">
-        <button aria-controls="gallery-sidebar" aria-expanded="false" aria-label="Menu: Menu" class="sidebar-toggle" type="button">
-          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
-            <line x1="3" x2="21" y1="6" y2="6" />
-            <line x1="3" x2="21" y1="12" y2="12" />
-            <line x1="3" x2="21" y1="18" y2="18" />
-          </svg>
-          <span class="sidebar-toggle-label" data-label="Menu" />
-          <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
-        <nav class="sidebar" id="gallery-sidebar">
-          <a class="sidebar-item" href="/apps/gallery/">
-            Timeline
+      <header class="page-header">
+        <div class="page-heading">
+          <nav aria-label="Breadcrumb" class="breadcrumbs">
+            <ol>
+              <li>
+                <a href="/apps/gallery/">
+                  Gallery
+                </a>
+              </li>
+              <li>
+                <span aria-current="page">
+                  VID_0001.mp4
+                </span>
+              </li>
+            </ol>
+          </nav>
+          <h1>
+            VID_0001.mp4
+          </h1>
+        </div>
+        <div class="page-actions">
+          <button aria-label="Star" aria-pressed="false" class="btn-star" hx-post="/apps/gallery/media/9/star" hx-swap="outerHTML" title="Toggle star" type="button">
+            <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+          </button>
+          <a class="btn" download="VID_0001.mp4" href="/api/files/download?path=%2FPhotos%2FVID_0001.mp4">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" x2="12" y1="15" y2="3" />
+            </svg>
+            Download
           </a>
-          <a class="sidebar-item" href="/apps/gallery/starred">
-            Starred
-          </a>
-          <a class="sidebar-item" href="/apps/gallery/albums">
-            Albums
-          </a>
-          <a class="sidebar-item" href="/apps/gallery/people">
-            People
-          </a>
-          <a class="sidebar-item" href="/apps/gallery/tags">
-            Tags
-          </a>
-          <a class="sidebar-item" href="/apps/gallery/videos">
-            Videos
-          </a>
-          <a class="sidebar-item" href="/apps/gallery/duplicates">
-            Duplicates
-          </a>
-          <div class="sidebar-divider" />
-          <a class="sidebar-item" href="/apps/gallery/settings">
-            Settings
-          </a>
-          <div class="" hx-get="/apps/gallery/api/user-scan-status" hx-swap="innerHTML" hx-trigger="load, every 5s" />
-        </nav>
-        <div class="sidebar-content">
-          <div class="flex items-center gap-1 mb-2">
-            <h1 style="margin:0">
-              VID_0001.mp4
-            </h1>
-            <button aria-label="Star" aria-pressed="false" class="btn-star" hx-post="/apps/gallery/media/9/star" hx-swap="outerHTML" title="Toggle star" type="button">
-              <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          <div class="dropdown">
+            <button aria-controls="add-to-album-menu" aria-expanded="false" class="btn" data-dropdown-toggle="" type="button">
+              <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                <line x1="12" x2="12" y1="5" y2="19" />
+                <line x1="5" x2="19" y1="12" y2="12" />
               </svg>
+              Add to album
             </button>
+            <div class="dropdown-menu" id="add-to-album-menu">
+              <form action="/apps/gallery/albums/1/add" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <input name="media_id" type="hidden" value="9" />
+                <input name="return" type="hidden" value="/apps/gallery/photo/9" />
+                <button type="submit">
+                  Summer 2025
+                </button>
+              </form>
+              <form action="/apps/gallery/albums/2/add" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <input name="media_id" type="hidden" value="9" />
+                <input name="return" type="hidden" value="/apps/gallery/photo/9" />
+                <button type="submit">
+                  A weekend in the mountains with the whole extended family
+                </button>
+              </form>
+              <div class="dropdown-divider" />
+              <a href="/apps/gallery/albums">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="12" x2="12" y1="5" y2="19" />
+                  <line x1="5" x2="19" y1="12" y2="12" />
+                </svg>
+                New album…
+              </a>
+            </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 300px;gap:1rem">
-            <div>
-              <video controls="" style="max-width:100%;border-radius:4px">
-                <source src="/api/files/download?path=/Photos/VID_0001.mp4" type="video/mp4" />
-              </video>
-            </div>
-            <div>
-              <div class="card">
-                <h2 class="card-title">
-                  Details
-                </h2>
-                <table style="width:100%;font-size:0.85rem">
-                  <tbody>
-                    <tr>
-                      <td class="text-muted">
-                        Filename
-                      </td>
-                      <td>
-                        VID_0001.mp4
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="text-muted">
-                        Size
-                      </td>
-                      <td>
-                        1920×1080
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="text-muted">
-                        Date
-                      </td>
-                      <td>
-                        Jul 4, 2025 3:30 PM
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="text-muted">
-                        Duration
-                      </td>
-                      <td>
-                        1:23
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="text-muted">
-                        Codec
-                      </td>
-                      <td>
-                        h264
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div class="card">
-                <h2 class="card-title">
-                  Tags
-                </h2>
-                <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:0.5rem" />
-                <form action="/apps/gallery/media/9/tags" method="post" style="display:flex;gap:4px">
-                  <input name="csrf_token" type="hidden" value="«hex»" />
-                  <input class="form-control form-control-sm" name="tag_name" placeholder="Add tag..." style="flex:1" type="text" />
-                  <button class="btn btn-sm" type="submit">
-                    Add
-                  </button>
-                </form>
-              </div>
-              <div class="card">
-                <h2 class="card-title">
-                  Faces
-                </h2>
-                <p class="text-muted" style="margin:0;font-size:0.85rem">
-                  No faces detected.
-                </p>
-              </div>
-            </div>
+          <form action="/apps/gallery/media/9/delete" data-confirm-title="Delete photo" data-confirm="Move “VID_0001.mp4” to the trash? It leaves the gallery and every album." method="post">
+            <input name="csrf_token" type="hidden" value="«hex»" />
+            <button class="btn btn-outline-danger" type="submit">
+              <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                <path d="M10 11v6" />
+                <path d="M14 11v6" />
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+              </svg>
+              Delete
+            </button>
+          </form>
+        </div>
+      </header>
+      <div class="gallery-photo-layout">
+        <div class="gallery-photo-main">
+          <video class="gallery-video" controls="" preload="metadata">
+            <source src="/api/files/download?path=%2FPhotos%2FVID_0001.mp4" type="video/mp4" />
+          </video>
+          <div class="gallery-photo-toolbar">
+            <span aria-disabled="true" class="btn btn-sm">
+              <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              Newer
+            </span>
+            <a class="btn btn-sm" data-photo-nav="older" href="/apps/gallery/photo/1" title="Older photo (→)">
+              Older
+              <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </a>
+          </div>
+        </div>
+        <div class="gallery-photo-side">
+          <div class="card">
+            <h2 class="card-title">
+              Details
+            </h2>
+            <dl class="gallery-meta">
+              <dt>
+                File
+              </dt>
+              <dd>
+                VID_0001.mp4
+              </dd>
+              <dt>
+                Size
+              </dt>
+              <dd>
+                1920 × 1080
+              </dd>
+              <dt>
+                Taken
+              </dt>
+              <dd>
+                Jul 4, 2025 3:30 PM
+              </dd>
+              <dt>
+                Duration
+              </dt>
+              <dd>
+                1:23
+              </dd>
+              <dt>
+                Codec
+              </dt>
+              <dd>
+                h264
+              </dd>
+            </dl>
+          </div>
+          <div class="card">
+            <h2 class="card-title">
+              Tags
+            </h2>
+            <form action="/apps/gallery/media/9/tags" class="gallery-tag-form" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <label class="sr-only" for="gallery-add-tag">
+                Add a tag
+              </label>
+              <input autocomplete="off" class="form-control form-control-sm" id="gallery-add-tag" name="tag_name" placeholder="Add a tag…" required="" type="text" />
+              <button class="btn btn-sm" type="submit">
+                Add
+              </button>
+            </form>
+          </div>
+          <div class="card">
+            <h2 class="card-title">
+              Faces
+            </h2>
+            <p class="empty-state empty-state-sm">
+              No faces found in this photo.
+            </p>
           </div>
         </div>
       </div>
+      <dialog aria-labelledby="gallery-confirm-title" class="modal" id="gallery-confirm">
+        <div class="modal-header">
+          <h2 class="modal-title" id="gallery-confirm-title">
+            Are you sure?
+          </h2>
+          <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p data-confirm-message="" />
+        </div>
+        <div class="modal-footer">
+          <button class="btn" data-modal-close="" type="button">
+            Cancel
+          </button>
+          <button class="btn btn-danger" data-confirm-ok="" type="button">
+            Delete
+          </button>
+        </div>
+      </dialog>
     </main>
   </body>
 </html>

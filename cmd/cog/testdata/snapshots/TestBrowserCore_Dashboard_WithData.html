@@ -5,7 +5,7 @@
     <title>
       Dashboard — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0zIDlsOS03IDkgN3YxMWEyIDIgMCAwIDEtMiAySDVhMiAyIDAgMCAxLTItMnoiPjwvcGF0aD48cG9seWxpbmUgcG9pbnRzPSI5IDIyIDkgMTIgMTUgMTIgMTUgMjIiPjwvcG9seWxpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -440,99 +440,75 @@
         <section class="card widget">
           <div class="card-header">
             <h2 class="card-title">
-              Upcoming Events
-            </h2>
-          </div>
-          <p class="text-muted">
-            No upcoming events.
-          </p>
-        </section>
-        <section class="card widget">
-          <div class="card-header">
-            <h2 class="card-title">
-              Upcoming Tasks
-            </h2>
-          </div>
-          <p class="text-muted">
-            No upcoming tasks.
-          </p>
-        </section>
-        <section class="card widget">
-          <div class="card-header">
-            <h2 class="card-title">
-              Feed
-            </h2>
-          </div>
-          <p class="text-muted">
-            No recent items.
-          </p>
-        </section>
-        <section class="card widget">
-          <div class="card-header">
-            <h2 class="card-title">
-              Recent Photos
-            </h2>
-          </div>
-          <p class="text-muted">
-            No photos yet.
-          </p>
-        </section>
-        <section class="card widget">
-          <div class="card-header">
-            <h2 class="card-title">
               Recent Files
             </h2>
-          </div>
-          <div style="padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
-            <a href="/apps/files/" style="font-weight:500">
-              report-2026-with-a-rather-long-file-name.txt
+            <a class="text-sm" href="/apps/files/">
+              View all
             </a>
-            <div class="text-muted" style="font-size:0.85rem">
-              5 B — Mar 14, 06:00
-            </div>
           </div>
+          <ul class="widget-list">
+            <li>
+              <a class="file-name font-medium" href="/apps/files/report-2026-with-a-rather-long-file-name.txt">
+                <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" x2="8" y1="13" y2="13" />
+                  <line x1="16" x2="8" y1="17" y2="17" />
+                </svg>
+                <span>
+                  report-2026-with-a-rather-long-file-name.txt
+                </span>
+              </a>
+              <div class="text-muted text-sm">
+                5 B · Files ·
+                <span title="Sat, Mar 14, 2026 06:00">
+                  06:00
+                </span>
+              </div>
+            </li>
+          </ul>
         </section>
         <section class="card widget">
           <div class="card-header">
             <h2 class="card-title">
               Recent Notes
             </h2>
-          </div>
-          <div style="padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
-            <a href="/apps/notes/note/1" style="font-weight:500">
-              Groceries
+            <a class="text-sm" href="/apps/notes/">
+              View all
             </a>
           </div>
-          <div style="padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
-            <a href="/apps/notes/note/2" style="font-weight:500">
-              Meeting notes for the quarterly planning session with a long title
-            </a>
-          </div>
+          <ul class="widget-list">
+            <li>
+              <a class="font-medium" href="/apps/notes/note/2">
+                Meeting notes for the quarterly planning session with a long title
+              </a>
+            </li>
+            <li>
+              <a class="font-medium" href="/apps/notes/note/1">
+                Groceries
+              </a>
+            </li>
+          </ul>
         </section>
         <section class="card widget">
           <div class="card-header">
             <h2 class="card-title">
               Recent Bookmarks
             </h2>
-          </div>
-          <div style="padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
-            <a href="/apps/bookmarks/bookmark/1" style="font-weight:500">
-              Example bookmark
+            <a class="text-sm" href="/apps/bookmarks/">
+              View all
             </a>
-            <div class="text-muted" style="font-size:0.85rem">
-              example.com
-            </div>
           </div>
-        </section>
-        <section class="card widget">
-          <div class="card-header">
-            <h2 class="card-title">
-              Starred Contacts
-            </h2>
-          </div>
-          <p class="text-muted">
-            No starred contacts.
-          </p>
+          <ul class="widget-list">
+            <li>
+              <a class="font-medium" href="/apps/bookmarks/bookmarks/1/open" rel="noopener" target="_blank">
+                Example bookmark
+              </a>
+              <div class="text-muted text-sm">
+                example.com
+              </div>
+            </li>
+          </ul>
         </section>
         <section class="card widget">
           <div class="card-header">
@@ -551,6 +527,26 @@
             </li>
           </ul>
         </section>
+      </div>
+      <div class="card widget-empties mt-2">
+        <span class="text-sm text-muted">
+          Nothing here yet:
+        </span>
+        <a class="chip" href="/apps/calendar/">
+          Upcoming Events
+        </a>
+        <a class="chip" href="/apps/tasks/">
+          Upcoming Tasks
+        </a>
+        <a class="chip" href="/apps/feed/">
+          Feed
+        </a>
+        <a class="chip" href="/apps/gallery/">
+          Recent Photos
+        </a>
+        <a class="chip" href="/apps/contacts/starred">
+          Starred Contacts
+        </a>
       </div>
     </main>
   </body>

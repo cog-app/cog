@@ -5,8 +5,8 @@
     <title>
       Recipes — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
-    <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyem0tMSAxNy45M2MtMy45NS0uNDktNy0zLjg1LTctNy45MyAwLS42Mi4wOC0xLjIxLjIxLTEuNzlMOSAxNXYxYzAgMS4xLjkgMiAyIDJ2MS45M3ptNi45LTIuNTRjLS4yNi0uODEtMS0xLjM5LTEuOS0xLjM5aC0xdi0zYzAtLjU1LS40NS0xLTEtMUg4di0yaDJjLjU1IDAgMS0uNDUgMS0xVjdoMmMxLjEgMCAyLS45IDItMnYtLjQxYzIuOTMgMS4xOSA1IDQuMDYgNSA3LjQxIDAgMi4wOC0uOCAzLjk3LTIuMSA1LjM5eiI+PC9wYXRoPjwvc3ZnPg==" rel="icon" type="image/svg+xml" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
+    <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0zIDJ2N2MwIDEuMS45IDIgMiAyaDRhMiAyIDAgMCAwIDItMlYyIj48L3BhdGg+PHBhdGggZD0iTTcgMnYyMCI+PC9wYXRoPjxwYXRoIGQ9Ik0yMSAxNVYyYTUgNSAwIDAgMC01IDV2NmMwIDEuMS45IDIgMiAyaDNabTAgMHY3Ij48L3BhdGg+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
     </style>
@@ -26,7 +26,9 @@
         <li>
           <a aria-current="page" class="active" href="/apps/recipes" title="Recipes">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+              <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
+              <path d="M7 2v20" />
+              <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
             </svg>
             <span class="nav-label">
               Recipes
@@ -67,7 +69,9 @@
         <div class="dropdown-menu" id="apps-menu">
           <a aria-current="page" class="active" href="/apps/recipes">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+              <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
+              <path d="M7 2v20" />
+              <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
             </svg>
             Recipes
           </a>
@@ -188,47 +192,61 @@
     </nav>
     <main class="content" data-plugin="recipes">
       <div class="sidebar-layout has-sidebar-toggle">
-        <button aria-controls="recipes-sidebar" aria-expanded="false" aria-label="Menu: All Recipes" class="sidebar-toggle" type="button">
+        <button aria-controls="recipes-sidebar" aria-expanded="false" aria-label="Menu: All recipes" class="sidebar-toggle" type="button">
           <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
             <line x1="3" x2="21" y1="6" y2="6" />
             <line x1="3" x2="21" y1="12" y2="12" />
             <line x1="3" x2="21" y1="18" y2="18" />
           </svg>
-          <span class="sidebar-toggle-label" data-label="All Recipes" />
+          <span class="sidebar-toggle-label" data-label="All recipes" />
           <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="recipes-sidebar">
-          <a class="sidebar-item active" href="/apps/recipes/">
-            All Recipes
-          </a>
-          <div class="sidebar-divider" />
-          <a class="sidebar-item" href="/apps/recipes/new">
-            + New Recipe
-          </a>
-          <a class="sidebar-item" href="/apps/recipes/import">
-            + Import from URL
+        <nav aria-label="Recipes" class="sidebar" id="recipes-sidebar">
+          <a aria-current="page" class="sidebar-item active" href="/apps/recipes/">
+            <span class="break-anywhere">
+              All recipes
+            </span>
           </a>
         </nav>
         <div class="sidebar-content">
-          <div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-            <h1 style="margin:0">
-              All Recipes
-            </h1>
-            <div class="flex gap-1">
-              <a class="btn btn-outline btn-sm" href="/apps/recipes/import">
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                All recipes
+              </h1>
+            </div>
+            <div class="page-actions">
+              <a class="btn" href="/apps/recipes/import">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" x2="12" y1="15" y2="3" />
+                </svg>
                 Import
               </a>
-              <a class="btn btn-primary btn-sm" href="/apps/recipes/new">
-                New Recipe
+              <a class="btn btn-primary" href="/apps/recipes/new">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="12" x2="12" y1="5" y2="19" />
+                  <line x1="5" x2="19" y1="12" y2="12" />
+                </svg>
+                New recipe
               </a>
             </div>
-          </div>
-          <div class="card">
-            <p class="text-muted">
-              No recipes yet. Create one or import from a URL!
-            </p>
+          </header>
+          <div id="recipe-list">
+            <div class="list">
+              <div class="empty-state">
+                <div class="empty-state-title">
+                  No recipes yet
+                </div>
+                <p>
+                  Write one down, or import it from a recipe site.
+                </p>
+                <div class="empty-state-actions" />
+              </div>
+            </div>
           </div>
         </div>
       </div>

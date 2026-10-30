@@ -3,9 +3,9 @@
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1" name="viewport" />
     <title>
-      New Note — Cog
+      New note — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xNCAySDZhMiAyIDAgMCAwLTIgMnYxNmEyIDIgMCAwIDAgMiAyaDEyYTIgMiAwIDAgMCAyLTJWOHoiPjwvcGF0aD48cG9seWxpbmUgcG9pbnRzPSIxNCAyIDE0IDggMjAgOCI+PC9wb2x5bGluZT48bGluZSB4MT0iMTYiIHkxPSIxMyIgeDI9IjgiIHkyPSIxMyI+PC9saW5lPjxsaW5lIHgxPSIxNiIgeTE9IjE3IiB4Mj0iOCIgeTI9IjE3Ij48L2xpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -184,74 +184,113 @@
     </nav>
     <main class="content" data-plugin="notes">
       <div class="sidebar-layout has-sidebar-toggle">
-        <button aria-controls="notes-sidebar" aria-expanded="false" aria-label="Menu: + New Note" class="sidebar-toggle" type="button">
+        <button aria-controls="notes-sidebar" aria-expanded="false" aria-label="Menu: Menu" class="sidebar-toggle" type="button">
           <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
             <line x1="3" x2="21" y1="6" y2="6" />
             <line x1="3" x2="21" y1="12" y2="12" />
             <line x1="3" x2="21" y1="18" y2="18" />
           </svg>
-          <span class="sidebar-toggle-label" data-label="+ New Note" />
+          <span class="sidebar-toggle-label" data-label="Menu" />
           <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="notes-sidebar">
+        <nav aria-label="Notes" class="sidebar" id="notes-sidebar">
           <a class="sidebar-item" href="/apps/notes/">
-            All Notes
-            <span class="badge">
+            <span class="break-anywhere">
+              All notes
+            </span>
+            <span class="count">
               1
             </span>
           </a>
           <a class="sidebar-item" href="/apps/notes/starred">
-            Starred
+            <span class="break-anywhere">
+              Starred
+            </span>
           </a>
-          <div class="sidebar-divider" />
-          <a class="sidebar-item" href="/apps/notes/category/Work" style="padding-left:1.5rem;font-size:0.9rem">
-            Work
-          </a>
-          <div class="sidebar-divider" />
-          <a class="sidebar-item active" href="/apps/notes/new">
-            + New Note
+          <div class="sidebar-heading">
+            Categories
+          </div>
+          <a class="sidebar-item" href="/apps/notes/category/Work">
+            <span class="break-anywhere">
+              Work
+            </span>
           </a>
         </nav>
         <div class="sidebar-content">
-          <h1>
-            New Note
-          </h1>
-          <div class="card">
-            <form action="/apps/notes/notes" method="post">
-              <input name="csrf_token" type="hidden" value="«hex»" />
+          <header class="page-header">
+            <div class="page-heading">
+              <nav aria-label="Breadcrumb" class="breadcrumbs">
+                <ol>
+                  <li>
+                    <a href="/apps/notes/">
+                      Notes
+                    </a>
+                  </li>
+                  <li>
+                    <span aria-current="page">
+                      New note
+                    </span>
+                  </li>
+                </ol>
+              </nav>
+              <h1>
+                New note
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
+          <form action="/apps/notes/notes" class="card" method="post">
+            <input name="csrf_token" type="hidden" value="«hex»" />
+            <div class="form-row">
               <div class="form-group">
                 <label for="title">
                   Title
                 </label>
-                <input class="form-control" id="title" name="title" placeholder="My Note" required="" type="text" />
+                <input class="form-control" id="title" name="title" placeholder="My note" required="" type="text" value="" />
               </div>
               <div class="form-group">
                 <label for="category">
                   Category
                 </label>
-                <input class="form-control" id="category" list="categories" name="category" placeholder="e.g. recipes" type="text" />
+                <input class="form-control" id="category" list="categories" name="category" placeholder="None" type="text" value="" />
                 <datalist id="categories">
                   <option value="Work" />
                 </datalist>
               </div>
-              <div class="form-group">
+            </div>
+            <div class="form-group note-editor">
+              <div class="note-editor-bar">
                 <label for="content">
-                  Content (Markdown)
+                  Content
                 </label>
-                <textarea class="form-control" id="content" name="content" placeholder="# Hello World" rows="20" style="font-family:monospace;white-space:pre-wrap" />
+                <div aria-label="Editor mode" class="chip-group" role="group">
+                  <label class="chip">
+                    <input checked="" name="editor_mode" type="radio" value="write" />
+                    Write
+                  </label>
+                  <label class="chip">
+                    <input hx-include="#content" hx-post="/apps/notes/preview" hx-swap="innerHTML" hx-target="#note-preview" hx-trigger="change" name="editor_mode" type="radio" value="preview" />
+                    Preview
+                  </label>
+                </div>
               </div>
-              <div class="flex gap-1">
-                <button class="btn btn-primary" type="submit">
-                  Create
-                </button>
-                <a class="btn btn-outline" href="/apps/notes/">
-                  Cancel
-                </a>
-              </div>
-            </form>
-          </div>
+              <textarea class="form-control mono note-editor-input" id="content" name="content" placeholder="# Hello world" rows="16" />
+              <div aria-live="polite" class="note-preview" id="note-preview" />
+              <p class="form-help">
+                Markdown, with tables, task lists, highlighted code, LaTeX math and Mermaid diagrams.
+              </p>
+            </div>
+            <div class="form-actions form-actions-sticky">
+              <button class="btn btn-primary" type="submit">
+                Create
+              </button>
+              <a class="btn" href="/apps/notes/">
+                Cancel
+              </a>
+            </div>
+          </form>
         </div>
       </div>
     </main>

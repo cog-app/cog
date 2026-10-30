@@ -3,9 +3,9 @@
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1" name="viewport" />
     <title>
-      New Bookmark — Cog
+      New bookmark — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xOSAyMWwtNy01LTcgNVY1YTIgMiAwIDAgMSAyLTJoMTBhMiAyIDAgMCAxIDIgMnoiPjwvcGF0aD48L3N2Zz4=" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -178,129 +178,174 @@
     </nav>
     <main class="content" data-plugin="bookmarks">
       <div class="sidebar-layout has-sidebar-toggle">
-        <button aria-controls="bookmarks-sidebar" aria-expanded="false" aria-label="Menu: + New Bookmark" class="sidebar-toggle" type="button">
+        <button aria-controls="bookmarks-sidebar" aria-expanded="false" aria-label="Menu: Menu" class="sidebar-toggle" type="button">
           <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
             <line x1="3" x2="21" y1="6" y2="6" />
             <line x1="3" x2="21" y1="12" y2="12" />
             <line x1="3" x2="21" y1="18" y2="18" />
           </svg>
-          <span class="sidebar-toggle-label" data-label="+ New Bookmark" />
+          <span class="sidebar-toggle-label" data-label="Menu" />
           <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="bookmarks-sidebar">
+        <nav aria-label="Bookmarks" class="sidebar" id="bookmarks-sidebar">
           <a class="sidebar-item" href="/apps/bookmarks/">
-            All Bookmarks
-            <span class="badge">
+            <span class="break-anywhere">
+              All bookmarks
+            </span>
+            <span class="count">
               4
             </span>
           </a>
           <a class="sidebar-item" href="/apps/bookmarks/tags">
-            Tags
+            <span class="break-anywhere">
+              Tags
+            </span>
+            <span class="count">
+              9
+            </span>
           </a>
+          <div class="sidebar-heading">
+            Folders
+          </div>
+          <a class="sidebar-item" href="/apps/bookmarks/folder/1">
+            <span class="break-anywhere">
+              Reading List
+            </span>
+            <span class="count">
+              2
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/bookmarks/folder/2">
+            <span class="break-anywhere">
+              Work Reference Material For The Platform Team
+            </span>
+          </a>
+          <button class="sidebar-item bm-sidebar-button" data-modal-open="new-folder-modal" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="12" x2="12" y1="5" y2="19" />
+              <line x1="5" x2="19" y1="12" y2="12" />
+            </svg>
+            New folder
+          </button>
           <div class="sidebar-divider" />
-          <a class="sidebar-item" href="/apps/bookmarks/folder/1" style="padding-left:1.5rem;font-size:0.9rem">
-            Reading List
-          </a>
-          <a class="sidebar-item" href="/apps/bookmarks/folder/2" style="padding-left:1.5rem;font-size:0.9rem">
-            Work Reference Material For The Platform Team
-          </a>
-          <div class="sidebar-divider" />
-          <a class="sidebar-item active" href="/apps/bookmarks/new">
-            + New Bookmark
+          <a class="sidebar-item" href="/apps/bookmarks/import-export">
+            <span class="break-anywhere">
+              Import and export
+            </span>
           </a>
         </nav>
         <div class="sidebar-content">
-          <h1>
-            New Bookmark
-          </h1>
-          <div class="card">
-            <form action="/apps/bookmarks/bookmarks" method="post">
-              <input name="csrf_token" type="hidden" value="«hex»" />
-              <div class="form-group">
-                <label for="url">
-                  URL
-                </label>
-                <input class="form-control" id="url" name="url" placeholder="https://example.com" required="" type="url" value="" />
-              </div>
-              <div class="form-group">
-                <label for="title">
-                  Title
-                </label>
-                <input class="form-control" id="title" name="title" placeholder="Page title" type="text" value="" />
-              </div>
-              <div class="form-group">
-                <label for="description">
-                  Description
-                </label>
-                <textarea class="form-control" id="description" name="description" placeholder="Optional description" rows="3" />
-              </div>
-              <div class="form-group">
-                <label for="tags">
-                  Tags (comma-separated)
-                </label>
-                <input class="form-control" id="tags" name="tags" placeholder="dev, reference, tools" type="text" value="" />
-              </div>
-              <div class="form-group">
-                <label for="folder_id">
-                  Folder
-                </label>
-                <select class="form-control" id="folder_id" name="folder_id">
-                  <option value="-1">
-                    (root)
-                  </option>
-                  <option value="1">
-                    Reading List
-                  </option>
-                  <option value="2">
-                    Work Reference Material For The Platform Team
-                  </option>
-                </select>
-              </div>
-              <div class="flex gap-1">
-                <button class="btn btn-primary" type="submit">
-                  Add
-                </button>
-                <a class="btn btn-outline" href="/apps/bookmarks/">
-                  Cancel
-                </a>
-              </div>
-            </form>
-          </div>
-          <div style="margin-top:1.5rem">
-            <div class="card">
-              <h2 class="card-title">
-                Create Folder
-              </h2>
-              <form action="/apps/bookmarks/folders" class="flex gap-1 items-center" method="post">
-                <input name="csrf_token" type="hidden" value="«hex»" />
-                <input class="form-control" name="title" placeholder="Folder name" required="" style="max-width:300px" type="text" />
-                <button class="btn btn-outline" type="submit">
-                  Create
-                </button>
-              </form>
+          <header class="page-header">
+            <div class="page-heading">
+              <nav aria-label="Breadcrumb" class="breadcrumbs">
+                <ol>
+                  <li>
+                    <a href="/apps/bookmarks/">
+                      Bookmarks
+                    </a>
+                  </li>
+                  <li>
+                    <span aria-current="page">
+                      New bookmark
+                    </span>
+                  </li>
+                </ol>
+              </nav>
+              <h1>
+                New bookmark
+              </h1>
             </div>
-          </div>
-          <div style="margin-top:1.5rem">
-            <div class="card">
-              <h2 class="card-title">
-                Import Bookmarks
-              </h2>
-              <form action="/apps/bookmarks/import" class="flex gap-1 items-center" enctype="multipart/form-data" method="post">
-                <input name="csrf_token" type="hidden" value="«hex»" />
-                <input accept=".html,.htm" class="form-control" name="file" required="" style="max-width:400px" type="file" />
-                <button class="btn btn-outline" type="submit">
-                  Import
-                </button>
-              </form>
-              <p class="text-muted" style="font-size:0.85rem;margin-top:0.5rem">
-                Accepts Netscape Bookmark HTML format (exported from browsers).
+            <div class="page-actions" />
+          </header>
+          <form action="/apps/bookmarks/bookmarks" class="card" method="post">
+            <input name="csrf_token" type="hidden" value="«hex»" />
+            <div class="form-group">
+              <label for="url">
+                URL
+              </label>
+              <input class="form-control" id="url" name="url" placeholder="https://example.com" required="" type="url" value="" />
+            </div>
+            <div class="form-group">
+              <label for="title">
+                Title
+              </label>
+              <input class="form-control" id="title" name="title" placeholder="Defaults to the URL" type="text" value="" />
+            </div>
+            <div class="form-group">
+              <label for="description">
+                Description
+              </label>
+              <textarea class="form-control" id="description" name="description" placeholder="Optional" rows="3" />
+            </div>
+            <div class="form-group">
+              <label for="tags">
+                Tags
+              </label>
+              <input class="form-control" id="tags" name="tags" placeholder="dev, reference, tools" type="text" value="" />
+              <p class="form-help">
+                Separate tags with commas.
               </p>
             </div>
-          </div>
+            <fieldset class="form-group" id="folder_id">
+              <legend>
+                Folders
+              </legend>
+              <div class="chip-group bm-folder-picker">
+                <label class="chip">
+                  <input name="folder_id" type="checkbox" value="1" />
+                  Reading List
+                </label>
+                <label class="chip">
+                  <input name="folder_id" type="checkbox" value="2" />
+                  Work Reference Material For The Platform Team
+                </label>
+              </div>
+            </fieldset>
+            <div class="form-actions">
+              <button class="btn btn-primary" type="submit">
+                Add bookmark
+              </button>
+              <a class="btn" href="/apps/bookmarks/">
+                Cancel
+              </a>
+            </div>
+          </form>
         </div>
       </div>
+      <dialog aria-labelledby="new-folder-modal-title" class="modal" id="new-folder-modal">
+        <div class="modal-header">
+          <h2 class="modal-title" id="new-folder-modal-title">
+            New folder
+          </h2>
+          <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <form action="/apps/bookmarks/folders" method="post">
+          <input name="csrf_token" type="hidden" value="«hex»" />
+          <div class="modal-body">
+            <div class="form-group mb-0">
+              <label for="new-folder-title">
+                Name
+              </label>
+              <input class="form-control" id="new-folder-title" name="title" required="" type="text" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn" data-modal-close="" type="button">
+              Cancel
+            </button>
+            <button class="btn btn-primary" type="submit">
+              Create folder
+            </button>
+          </div>
+        </form>
+      </dialog>
     </main>
   </body>
 </html>

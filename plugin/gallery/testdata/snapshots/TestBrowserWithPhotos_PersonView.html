@@ -5,7 +5,7 @@
     <title>
       Ada — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIj48L3JlY3Q+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiPjwvY2lyY2xlPjxwb2x5bGluZSBwb2ludHM9IjIxIDE1IDE2IDEwIDUgMjEiPjwvcG9seWxpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -192,18 +192,18 @@
     </nav>
     <main class="content" data-plugin="gallery">
       <div class="sidebar-layout has-sidebar-toggle">
-        <button aria-controls="gallery-sidebar" aria-expanded="false" aria-label="Menu: Menu" class="sidebar-toggle" type="button">
+        <button aria-controls="gallery-sidebar" aria-expanded="false" aria-label="Menu: People" class="sidebar-toggle" type="button">
           <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
             <line x1="3" x2="21" y1="6" y2="6" />
             <line x1="3" x2="21" y1="12" y2="12" />
             <line x1="3" x2="21" y1="18" y2="18" />
           </svg>
-          <span class="sidebar-toggle-label" data-label="Menu" />
+          <span class="sidebar-toggle-label" data-label="People" />
           <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="gallery-sidebar">
+        <nav aria-label="Gallery" class="sidebar" id="gallery-sidebar">
           <a class="sidebar-item" href="/apps/gallery/">
             Timeline
           </a>
@@ -213,7 +213,7 @@
           <a class="sidebar-item" href="/apps/gallery/albums">
             Albums
           </a>
-          <a class="sidebar-item" href="/apps/gallery/people">
+          <a aria-current="page" class="sidebar-item active" href="/apps/gallery/people">
             People
           </a>
           <a class="sidebar-item" href="/apps/gallery/tags">
@@ -232,71 +232,155 @@
           <div class="" hx-get="/apps/gallery/api/user-scan-status" hx-swap="innerHTML" hx-trigger="load, every 5s" />
         </nav>
         <div class="sidebar-content">
-          <div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-            <h1 style="margin:0">
-              Ada
-            </h1>
-            <div class="flex gap-1">
-              <form action="/apps/gallery/people/1/name" method="post" style="display:flex;gap:4px">
+          <header class="page-header">
+            <div class="page-heading">
+              <nav aria-label="Breadcrumb" class="breadcrumbs">
+                <ol>
+                  <li>
+                    <a href="/apps/gallery/people">
+                      People
+                    </a>
+                  </li>
+                  <li>
+                    <span aria-current="page">
+                      Ada
+                    </span>
+                  </li>
+                </ol>
+              </nav>
+              <h1>
+                Ada
+              </h1>
+            </div>
+            <div class="page-actions">
+              <button class="btn btn-primary" data-modal-open="gallery-name-person" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+                </svg>
+                Rename
+              </button>
+              <form action="/apps/gallery/people/1/hide" data-confirm-action="Hide" data-confirm-title="Hide person" data-confirm="Hide Ada? They no longer appear in People; their photos stay in the gallery." method="post">
                 <input name="csrf_token" type="hidden" value="«hex»" />
-                <input class="merge-target" name="merge_into" type="hidden" value="" />
-                <input class="contact-target" name="contact_uid" type="hidden" value="" />
-                <div class="picker" style="flex:1">
-                  <input autocomplete="off" class="form-control search-input person-name-input" hx-get="/apps/gallery/api/people/search?exclude=1" hx-include="this" hx-params="name" hx-target="next .picker-results" hx-trigger="input changed delay:200ms" name="name" placeholder="Name this person" type="text" value="Ada" />
-                  <div class="picker-results" />
-                </div>
-                <button class="btn btn-primary btn-sm" type="submit">
-                  Save
-                </button>
-              </form>
-              <form action="/apps/gallery/people/1/hide" method="post" style="display:inline">
-                <input name="csrf_token" type="hidden" value="«hex»" />
-                <button class="btn btn-sm" title="Hide this person" type="submit">
+                <button class="btn" type="submit">
                   Hide
                 </button>
               </form>
             </div>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px">
-            <div style="position:relative">
-              <a class="thumb-loading" href="/apps/gallery/photo/3" style="display:block;aspect-ratio:1;overflow:hidden;border-radius:4px">
-                <img alt="" loading="lazy" src="/apps/gallery/api/face/3/thumbnail" style="width:100%;height:100%;object-fit:cover;position:relative" />
+          </header>
+          <div class="gallery-grid">
+            <div class="gallery-tile">
+              <a class="gallery-thumb" href="/apps/gallery/photo/3">
+                <img alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/face/3/thumbnail" />
               </a>
-              <form action="/apps/gallery/people/1/remove-face" method="post" style="position:absolute;top:4px;right:4px">
+              <form action="/apps/gallery/people/1/remove-face" class="gallery-tile-action" data-confirm-action="Remove" data-confirm-title="Not this person" data-confirm="This photo is not of Ada? It moves to a new, unnamed person." method="post">
                 <input name="csrf_token" type="hidden" value="«hex»" />
                 <input name="face_id" type="hidden" value="3" />
-                <button class="btn btn-sm" style="min-width:44px;min-height:44px;padding:0;font-size:1.25rem;line-height:1;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:6px;cursor:pointer" title="Remove from this person" type="submit">
-                  ×
+                <button aria-label="Not Ada" class="gallery-tile-remove" title="Not Ada" type="submit">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <line x1="18" x2="6" y1="6" y2="18" />
+                    <line x1="6" x2="18" y1="6" y2="18" />
+                  </svg>
                 </button>
               </form>
             </div>
-            <div style="position:relative">
-              <a class="thumb-loading" href="/apps/gallery/photo/1" style="display:block;aspect-ratio:1;overflow:hidden;border-radius:4px">
-                <img alt="" loading="lazy" src="/apps/gallery/api/face/1/thumbnail" style="width:100%;height:100%;object-fit:cover;position:relative" />
+            <div class="gallery-tile">
+              <a class="gallery-thumb" href="/apps/gallery/photo/1">
+                <img alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/face/1/thumbnail" />
               </a>
-              <form action="/apps/gallery/people/1/remove-face" method="post" style="position:absolute;top:4px;right:4px">
+              <form action="/apps/gallery/people/1/remove-face" class="gallery-tile-action" data-confirm-action="Remove" data-confirm-title="Not this person" data-confirm="This photo is not of Ada? It moves to a new, unnamed person." method="post">
                 <input name="csrf_token" type="hidden" value="«hex»" />
                 <input name="face_id" type="hidden" value="1" />
-                <button class="btn btn-sm" style="min-width:44px;min-height:44px;padding:0;font-size:1.25rem;line-height:1;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:6px;cursor:pointer" title="Remove from this person" type="submit">
-                  ×
+                <button aria-label="Not Ada" class="gallery-tile-remove" title="Not Ada" type="submit">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <line x1="18" x2="6" y1="6" y2="18" />
+                    <line x1="6" x2="18" y1="6" y2="18" />
+                  </svg>
                 </button>
               </form>
             </div>
-            <div style="position:relative">
-              <a class="thumb-loading" href="/apps/gallery/photo/2" style="display:block;aspect-ratio:1;overflow:hidden;border-radius:4px">
-                <img alt="" loading="lazy" src="/apps/gallery/api/face/2/thumbnail" style="width:100%;height:100%;object-fit:cover;position:relative" />
+            <div class="gallery-tile">
+              <a class="gallery-thumb" href="/apps/gallery/photo/2">
+                <img alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/face/2/thumbnail" />
               </a>
-              <form action="/apps/gallery/people/1/remove-face" method="post" style="position:absolute;top:4px;right:4px">
+              <form action="/apps/gallery/people/1/remove-face" class="gallery-tile-action" data-confirm-action="Remove" data-confirm-title="Not this person" data-confirm="This photo is not of Ada? It moves to a new, unnamed person." method="post">
                 <input name="csrf_token" type="hidden" value="«hex»" />
                 <input name="face_id" type="hidden" value="2" />
-                <button class="btn btn-sm" style="min-width:44px;min-height:44px;padding:0;font-size:1.25rem;line-height:1;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:6px;cursor:pointer" title="Remove from this person" type="submit">
-                  ×
+                <button aria-label="Not Ada" class="gallery-tile-remove" title="Not Ada" type="submit">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <line x1="18" x2="6" y1="6" y2="18" />
+                    <line x1="6" x2="18" y1="6" y2="18" />
+                  </svg>
                 </button>
               </form>
             </div>
           </div>
+          <dialog aria-labelledby="gallery-name-person-title" class="modal" id="gallery-name-person">
+            <div class="modal-header">
+              <h2 class="modal-title" id="gallery-name-person-title">
+                Name this person
+              </h2>
+              <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="18" x2="6" y1="6" y2="18" />
+                  <line x1="6" x2="18" y1="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <form action="/apps/gallery/people/1/name" data-person-form="" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <input data-merge-target="" name="merge_into" type="hidden" value="" />
+              <input data-contact-target="" name="contact_uid" type="hidden" value="" />
+              <div class="modal-body gallery-name-body">
+                <div class="form-group mb-0">
+                  <label for="gallery-person-name">
+                    Name
+                  </label>
+                  <div class="picker">
+                    <input autocomplete="off" class="form-control" data-person-name="" hx-get="/apps/gallery/api/people/search?exclude=1" hx-include="this" hx-params="name" hx-target="next .picker-results" hx-trigger="input changed delay:200ms" id="gallery-person-name" name="name" placeholder="Type a name" type="text" value="Ada" />
+                    <div class="picker-results" />
+                  </div>
+                  <p class="form-help">
+                    Pick someone from the list to merge their photos with this person's, or a contact to link them.
+                  </p>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn" data-modal-close="" type="button">
+                  Cancel
+                </button>
+                <button class="btn btn-primary" type="submit">
+                  Save
+                </button>
+              </div>
+            </form>
+          </dialog>
         </div>
       </div>
+      <dialog aria-labelledby="gallery-confirm-title" class="modal" id="gallery-confirm">
+        <div class="modal-header">
+          <h2 class="modal-title" id="gallery-confirm-title">
+            Are you sure?
+          </h2>
+          <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p data-confirm-message="" />
+        </div>
+        <div class="modal-footer">
+          <button class="btn" data-modal-close="" type="button">
+            Cancel
+          </button>
+          <button class="btn btn-danger" data-confirm-ok="" type="button">
+            Delete
+          </button>
+        </div>
+      </dialog>
     </main>
   </body>
 </html>

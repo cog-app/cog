@@ -5,7 +5,7 @@
     <title>
       Duplicate Group — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIj48L3JlY3Q+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiPjwvY2lyY2xlPjxwb2x5bGluZSBwb2ludHM9IjIxIDE1IDE2IDEwIDUgMjEiPjwvcG9seWxpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -203,7 +203,7 @@
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="gallery-sidebar">
+        <nav aria-label="Gallery" class="sidebar" id="gallery-sidebar">
           <a class="sidebar-item" href="/apps/gallery/">
             Timeline
           </a>
@@ -222,7 +222,7 @@
           <a class="sidebar-item" href="/apps/gallery/videos">
             Videos
           </a>
-          <a class="sidebar-item active" href="/apps/gallery/duplicates">
+          <a aria-current="page" class="sidebar-item active" href="/apps/gallery/duplicates">
             Duplicates
           </a>
           <div class="sidebar-divider" />
@@ -232,144 +232,242 @@
           <div class="" hx-get="/apps/gallery/api/user-scan-status" hx-swap="innerHTML" hx-trigger="load, every 5s" />
         </nav>
         <div class="sidebar-content">
-          <div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-            <h1 style="margin:0">
-              <a href="/apps/gallery/duplicates" style="text-decoration:none">
-                ←
-              </a>
-              Duplicate Group
-            </h1>
-            <div style="display:flex;gap:4px">
-              <form action="/apps/gallery/duplicates/1/dismiss" method="post" style="display:inline">
-                <input name="csrf_token" type="hidden" value="«hex»" />
-                <button class="btn btn-sm" type="submit">
-                  Not Duplicates
-                </button>
-              </form>
-              <form action="/apps/gallery/duplicates/1/delete" method="post" onsubmit="return confirm('Delete non-keep files? They will be moved to trash.')" style="display:inline">
-                <input name="csrf_token" type="hidden" value="«hex»" />
-                <button class="btn btn-danger btn-sm" type="submit">
-                  Delete Non-Keep
-                </button>
-              </form>
-              <form action="/apps/gallery/duplicates/1/delete-all" method="post" onsubmit="return confirm('Delete ALL files in this group including the kept one? They will be moved to trash.')" style="display:inline">
-                <input name="csrf_token" type="hidden" value="«hex»" />
-                <button class="btn btn-danger btn-sm" type="submit">
-                  Delete All
-                </button>
-              </form>
+          <header class="page-header">
+            <div class="page-heading">
+              <nav aria-label="Breadcrumb" class="breadcrumbs">
+                <ol>
+                  <li>
+                    <a href="/apps/gallery/duplicates">
+                      Duplicates
+                    </a>
+                  </li>
+                  <li>
+                    <span aria-current="page">
+                      Duplicate group
+                    </span>
+                  </li>
+                </ol>
+              </nav>
+              <h1>
+                Duplicate group
+              </h1>
             </div>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
-            <div class="card" style="border:2px solid var(--color-success);">
-              <a href="/apps/gallery/photo/7" style="display:block;margin:-1.5rem -1.5rem 0.75rem;overflow:hidden;border-radius:6px 6px 0 0">
-                <div class="thumb-loading" style="aspect-ratio:1">
-                  <img alt="IMG_0007.png" loading="lazy" src="/apps/gallery/api/media/7/thumbnail?size=256" style="width:100%;height:100%;object-fit:cover;position:relative" />
+            <div class="page-actions">
+              <form action="/apps/gallery/duplicates/1/dismiss" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <button class="btn" type="submit">
+                  Not duplicates
+                </button>
+              </form>
+              <form action="/apps/gallery/duplicates/1/delete" data-confirm-title="Delete the others" data-confirm="Move 1 photo to the trash and keep the one marked Keep?" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <button class="btn btn-danger" type="submit">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                    <path d="M10 11v6" />
+                    <path d="M14 11v6" />
+                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                  </svg>
+                  Delete 1 other
+                </button>
+              </form>
+              <div class="dropdown">
+                <button aria-controls="dupe-menu" aria-expanded="false" aria-label="More actions" class="btn btn-square" data-dropdown-toggle="" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <circle cx="12" cy="12" r="1" />
+                    <circle cx="19" cy="12" r="1" />
+                    <circle cx="5" cy="12" r="1" />
+                  </svg>
+                </button>
+                <div class="dropdown-menu" id="dupe-menu">
+                  <button class="danger" data-modal-open="gallery-delete-all" type="button">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
+                    Delete all, including the kept one…
+                  </button>
                 </div>
+              </div>
+            </div>
+          </header>
+          <div class="gallery-dupes">
+            <div class="card gallery-dupe is-keep">
+              <a class="gallery-thumb" href="/apps/gallery/photo/7">
+                <img alt="IMG_0007.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/7/thumbnail?size=256" />
               </a>
-              <div style="margin-bottom:0.5rem">
-                <span class="badge" style="background:var(--color-success);color:#fff">
+              <div class="gallery-dupe-body">
+                <span class="badge badge-success">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                    <polyline points="22 4 12 14.01 9 11.01" />
+                  </svg>
                   Keep
                 </span>
-              </div>
-              <table style="font-size:0.8rem;width:100%;margin-bottom:0.5rem">
-                <tbody>
-                  <tr>
-                    <td class="text-muted">
-                      Size
-                    </td>
-                    <td>
-                      400×300
-                    </td>
-                  </tr>
-                  <tr>
-                    <td class="text-muted">
-                      Path
-                    </td>
-                    <td style="word-break:break-all">
-                      IMG_0007.png
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <div style="display:flex;gap:4px;flex-wrap:wrap">
-                <form action="/apps/gallery/duplicates/1/unmark" method="post" style="display:inline">
-                  <input name="csrf_token" type="hidden" value="«hex»" />
-                  <input name="media_id" type="hidden" value="7" />
-                  <button class="btn btn-sm" type="submit">
-                    Not a Duplicate
-                  </button>
-                </form>
-                <form action="/apps/gallery/duplicates/1/delete-member" method="post" onsubmit="return confirm('Delete this file? It will be moved to trash.')" style="display:inline">
-                  <input name="csrf_token" type="hidden" value="«hex»" />
-                  <input name="media_id" type="hidden" value="7" />
-                  <button class="btn btn-danger btn-sm" type="submit">
-                    Delete
-                  </button>
-                </form>
+                <dl class="gallery-meta">
+                  <dt>
+                    File
+                  </dt>
+                  <dd>
+                    IMG_0007.png
+                  </dd>
+                  <dt>
+                    Size
+                  </dt>
+                  <dd>
+                    400 × 300
+                  </dd>
+                </dl>
+                <div class="gallery-dupe-actions">
+                  <form action="/apps/gallery/duplicates/1/unmark" method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="7" />
+                    <button class="btn btn-sm" type="submit">
+                      Not a duplicate
+                    </button>
+                  </form>
+                  <form action="/apps/gallery/duplicates/1/delete-member" class="ml-auto" data-confirm-title="Delete photo" data-confirm="Move “IMG_0007.png” to the trash?" method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="7" />
+                    <button aria-label="Delete IMG_0007.png" class="btn-icon btn-icon-sm btn-icon-danger" title="Delete" type="submit">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                        <path d="M10 11v6" />
+                        <path d="M14 11v6" />
+                        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                      </svg>
+                    </button>
+                  </form>
+                </div>
               </div>
             </div>
-            <div class="card" style="">
-              <a href="/apps/gallery/photo/8" style="display:block;margin:-1.5rem -1.5rem 0.75rem;overflow:hidden;border-radius:6px 6px 0 0">
-                <div class="thumb-loading" style="aspect-ratio:1">
-                  <img alt="IMG_0007 (copy).png" loading="lazy" src="/apps/gallery/api/media/8/thumbnail?size=256" style="width:100%;height:100%;object-fit:cover;position:relative" />
-                </div>
+            <div class="card gallery-dupe">
+              <a class="gallery-thumb" href="/apps/gallery/photo/8">
+                <img alt="IMG_0007 (copy).png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/8/thumbnail?size=256" />
               </a>
-              <table style="font-size:0.8rem;width:100%;margin-bottom:0.5rem">
-                <tbody>
-                  <tr>
-                    <td class="text-muted">
-                      Size
-                    </td>
-                    <td>
-                      400×300
-                    </td>
-                  </tr>
-                  <tr>
-                    <td class="text-muted">
-                      Path
-                    </td>
-                    <td style="word-break:break-all">
-                      IMG_0007 (copy).png
-                    </td>
-                  </tr>
-                  <tr>
-                    <td class="text-muted">
-                      Distance
-                    </td>
-                    <td>
-                      2
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <div style="display:flex;gap:4px;flex-wrap:wrap">
-                <form action="/apps/gallery/duplicates/1/keep" method="post" style="display:inline">
-                  <input name="csrf_token" type="hidden" value="«hex»" />
-                  <input name="media_id" type="hidden" value="8" />
-                  <button class="btn btn-sm" type="submit">
-                    Set as Keep
-                  </button>
-                </form>
-                <form action="/apps/gallery/duplicates/1/unmark" method="post" style="display:inline">
-                  <input name="csrf_token" type="hidden" value="«hex»" />
-                  <input name="media_id" type="hidden" value="8" />
-                  <button class="btn btn-sm" type="submit">
-                    Not a Duplicate
-                  </button>
-                </form>
-                <form action="/apps/gallery/duplicates/1/delete-member" method="post" onsubmit="return confirm('Delete this file? It will be moved to trash.')" style="display:inline">
-                  <input name="csrf_token" type="hidden" value="«hex»" />
-                  <input name="media_id" type="hidden" value="8" />
-                  <button class="btn btn-danger btn-sm" type="submit">
-                    Delete
-                  </button>
-                </form>
+              <div class="gallery-dupe-body">
+                <dl class="gallery-meta">
+                  <dt>
+                    File
+                  </dt>
+                  <dd>
+                    IMG_0007 (copy).png
+                  </dd>
+                  <dt>
+                    Size
+                  </dt>
+                  <dd>
+                    400 × 300
+                  </dd>
+                  <dt>
+                    Difference
+                  </dt>
+                  <dd>
+                    2
+                  </dd>
+                </dl>
+                <div class="gallery-dupe-actions">
+                  <form action="/apps/gallery/duplicates/1/keep" method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="8" />
+                    <button class="btn btn-sm" type="submit">
+                      Keep this one
+                    </button>
+                  </form>
+                  <form action="/apps/gallery/duplicates/1/unmark" method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="8" />
+                    <button class="btn btn-sm" type="submit">
+                      Not a duplicate
+                    </button>
+                  </form>
+                  <form action="/apps/gallery/duplicates/1/delete-member" class="ml-auto" data-confirm-title="Delete photo" data-confirm="Move “IMG_0007 (copy).png” to the trash?" method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <input name="media_id" type="hidden" value="8" />
+                    <button aria-label="Delete IMG_0007 (copy).png" class="btn-icon btn-icon-sm btn-icon-danger" title="Delete" type="submit">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                        <path d="M10 11v6" />
+                        <path d="M14 11v6" />
+                        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                      </svg>
+                    </button>
+                  </form>
+                </div>
               </div>
             </div>
           </div>
+          <dialog aria-labelledby="gallery-delete-all-title" class="modal" id="gallery-delete-all">
+            <div class="modal-header">
+              <h2 class="modal-title" id="gallery-delete-all-title">
+                Delete every photo in this group
+              </h2>
+              <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="18" x2="6" y1="6" y2="18" />
+                  <line x1="6" x2="18" y1="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <form action="/apps/gallery/duplicates/1/delete-all" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div class="modal-body">
+                <p>
+                  This moves all 2 photos to the trash, including the one marked Keep. None of them stays in the gallery.
+                </p>
+                <div class="form-group mb-0 mt-2">
+                  <label for="gallery-delete-all-confirm">
+                    Type
+                    <strong>
+                      delete
+                    </strong>
+                    to confirm
+                  </label>
+                  <input autocomplete="off" class="form-control" id="gallery-delete-all-confirm" pattern="[Dd][Ee][Ll][Ee][Tt][Ee]" required="" type="text" />
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn" data-modal-close="" type="button">
+                  Cancel
+                </button>
+                <button class="btn btn-danger" type="submit">
+                  Delete all
+                </button>
+              </div>
+            </form>
+          </dialog>
         </div>
       </div>
+      <dialog aria-labelledby="gallery-confirm-title" class="modal" id="gallery-confirm">
+        <div class="modal-header">
+          <h2 class="modal-title" id="gallery-confirm-title">
+            Are you sure?
+          </h2>
+          <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p data-confirm-message="" />
+        </div>
+        <div class="modal-footer">
+          <button class="btn" data-modal-close="" type="button">
+            Cancel
+          </button>
+          <button class="btn btn-danger" data-confirm-ok="" type="button">
+            Delete
+          </button>
+        </div>
+      </dialog>
     </main>
   </body>
 </html>

@@ -5,7 +5,7 @@
     <title>
       Designing a storage layer that survives a crash halfway through a write — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik00IDExYTkgOSAwIDAgMSA5IDkiPjwvcGF0aD48cGF0aCBkPSJNNCA0YTE2IDE2IDAgMCAxIDE2IDE2Ij48L3BhdGg+PGNpcmNsZSBjeD0iNSIgY3k9IjE5IiByPSIxIj48L2NpcmNsZT48L3N2Zz4=" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -182,189 +182,233 @@
     </nav>
     <main class="content" data-plugin="feed">
       <div class="sidebar-layout has-sidebar-toggle">
-        <button aria-controls="feed-sidebar" aria-expanded="false" aria-label="Menu: All 6" class="sidebar-toggle" type="button">
+        <button aria-controls="feed-sidebar" aria-expanded="false" aria-label="Menu: All articles" class="sidebar-toggle" type="button">
           <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
             <line x1="3" x2="21" y1="6" y2="6" />
             <line x1="3" x2="21" y1="12" y2="12" />
             <line x1="3" x2="21" y1="18" y2="18" />
           </svg>
-          <span class="sidebar-toggle-label" data-label="All 6" />
+          <span class="sidebar-toggle-label" data-label="All articles" />
           <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="feed-sidebar">
-          <label class="sidebar-hide-empty" style="display:flex;align-items:center;gap:0.4rem;padding:0.25rem 0.5rem;font-size:0.8rem;color:var(--color-text-muted)">
-            <input hx-post="/apps/feed/player/prefs" hx-swap="outerHTML" hx-target="#feed-sidebar" hx-vals="js:{hide_empty: event.target.checked ? \"1\" : \"0\"}" name="hide_empty" type="checkbox" />
-            Hide read
-          </label>
-          <a class="sidebar-item active" href="/apps/feed/">
-            All
-            <span class="badge">
+        <nav aria-label="Feed" class="sidebar" id="feed-sidebar">
+          <a aria-current="page" class="sidebar-item active" href="/apps/feed/">
+            <span class="break-anywhere">
+              All articles
+            </span>
+            <span class="count">
               6
             </span>
           </a>
           <a class="sidebar-item" href="/apps/feed/starred">
-            Starred
-            <span class="badge">
+            <span class="break-anywhere">
+              Starred
+            </span>
+            <span class="count">
               1
             </span>
           </a>
           <a class="sidebar-item" href="/apps/feed/history">
-            History
+            <span class="break-anywhere">
+              History
+            </span>
           </a>
-          <div class="sidebar-divider" />
+          <div class="sidebar-heading feed-sidebar-heading">
+            <span>
+              Feeds
+            </span>
+            <label class="feed-hide-read">
+              <input hx-post="/apps/feed/player/prefs" hx-swap="outerHTML" hx-target="#feed-sidebar" hx-vals="js:{hide_empty: event.target.checked ? \"1\" : \"0\"}" name="hide_empty" type="checkbox" />
+              Unread only
+            </label>
+          </div>
           <details class="sidebar-folder" data-folder-id="2">
-            <summary class="sidebar-group-label">
-              <a href="/apps/feed/folder/2" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none">
+            <summary class="sidebar-item">
+              <a class="feed-folder-link" href="/apps/feed/folder/2" onclick="event.stopPropagation()">
                 Podcasts
               </a>
-              <span class="badge">
+              <span class="count">
                 1
               </span>
             </summary>
-            <a class="sidebar-item" href="/apps/feed/subscription/3" style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem">
-              <span class="feed-sub-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;align-items:center;justify-content:center">
+            <a class="sidebar-item feed-sub sidebar-child" href="/apps/feed/subscription/3" title="Weekly Audio Show">
+              <span class="feed-sub-icon">
                 <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
                   <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
                   <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
                   <circle cx="5.5" cy="18.5" r="2.5" />
                 </svg>
               </span>
-              <span class="sidebar-item-text">
+              <span class="feed-sub-name">
                 Weekly Audio Show
               </span>
-              <span class="badge">
+              <span class="count">
                 1
               </span>
             </a>
           </details>
           <details class="sidebar-folder" data-folder-id="1">
-            <summary class="sidebar-group-label">
-              <a href="/apps/feed/folder/1" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none">
+            <summary class="sidebar-item">
+              <a class="feed-folder-link" href="/apps/feed/folder/1" onclick="event.stopPropagation()">
                 Tech News
               </a>
-              <span class="badge">
+              <span class="count">
                 4
               </span>
             </summary>
-            <a class="sidebar-item" href="/apps/feed/subscription/1" style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem">
-              <span class="feed-sub-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;align-items:center;justify-content:center">
+            <a class="sidebar-item feed-sub sidebar-child" href="/apps/feed/subscription/1" title="Example Engineering Blog">
+              <span class="feed-sub-icon">
                 <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
                   <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
                   <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
                   <circle cx="5.5" cy="18.5" r="2.5" />
                 </svg>
               </span>
-              <span class="sidebar-item-text">
+              <span class="feed-sub-name">
                 Example Engineering Blog
               </span>
-              <span class="badge">
+              <span class="count">
                 4
               </span>
             </a>
           </details>
-          <a class="sidebar-item text-danger" href="/apps/feed/subscription/2" style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem">
-            <span class="feed-sub-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;align-items:center;justify-content:center">
-              <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
-                <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
-                <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
-                <circle cx="5.5" cy="18.5" r="2.5" />
+          <a class="sidebar-item feed-sub" href="/apps/feed/subscription/2" title="A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar — fetch failing: GET https://long.example.org/rss: 503 Service Unavailable">
+            <span aria-label="Fetch failing" class="feed-sub-icon feed-sub-failing" role="img">
+              <svg aria-hidden="true" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" x2="12" y1="9" y2="13" />
+                <line x1="12" x2="12.01" y1="17" y2="17" />
               </svg>
             </span>
-            <span class="sidebar-item-text">
+            <span class="feed-sub-name">
               A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar
             </span>
-            <span class="text-danger" title="GET https://long.example.org/rss: 503 Service Unavailable">
-              !
-            </span>
           </a>
-          <a class="sidebar-item" href="/apps/feed/subscription/4" style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem">
-            <span class="feed-sub-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;align-items:center;justify-content:center">
+          <a class="sidebar-item feed-sub" href="/apps/feed/subscription/4" title="Video Channel">
+            <span class="feed-sub-icon">
               <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
                 <path d="M23 7a3 3 0 0 0-2.1-2.1C19 4.4 12 4.4 12 4.4s-7 0-8.9.5A3 3 0 0 0 1 7a31 31 0 0 0 0 10 3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5A3 3 0 0 0 23 17a31 31 0 0 0 0-10zM10 15.5v-7l6 3.5z" />
               </svg>
             </span>
-            <span class="sidebar-item-text">
+            <span class="feed-sub-name">
               Video Channel
             </span>
-            <span class="badge">
+            <span class="count">
               1
             </span>
           </a>
-          <div class="sidebar-divider" />
-          <span class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-text-muted)">
+          <div class="sidebar-heading">
             Tags
-          </span>
-          <a class="sidebar-item" href="/apps/feed/tag/read-later" style="padding-left:1.5rem;font-size:0.9rem">
-            read-later
+          </div>
+          <a class="sidebar-item" href="/apps/feed/tag/read-later">
+            <span class="break-anywhere">
+              read-later
+            </span>
           </a>
-          <a class="sidebar-item" href="/apps/feed/tag/storage" style="padding-left:1.5rem;font-size:0.9rem">
-            storage
+          <a class="sidebar-item" href="/apps/feed/tag/storage">
+            <span class="break-anywhere">
+              storage
+            </span>
           </a>
-          <hr class="sidebar-divider" />
-          <div class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-text-muted);padding:0.25rem 0.5rem">
+          <div class="sidebar-heading">
             Settings
           </div>
-          <a class="sidebar-item" href="/apps/feed/settings/subscriptions" style="padding-left:1.5rem;font-size:0.9rem">
-            Subscriptions
+          <a class="sidebar-item" href="/apps/feed/settings/subscriptions">
+            <span class="break-anywhere">
+              Subscriptions
+            </span>
           </a>
-          <a class="sidebar-item" href="/apps/feed/settings/filters" style="padding-left:1.5rem;font-size:0.9rem">
-            Filters
+          <a class="sidebar-item" href="/apps/feed/settings/filters">
+            <span class="break-anywhere">
+              Filters
+            </span>
           </a>
-          <a class="sidebar-item" href="/apps/feed/settings/playlists" style="padding-left:1.5rem;font-size:0.9rem">
-            Playlists
+          <a class="sidebar-item" href="/apps/feed/settings/playlists">
+            <span class="break-anywhere">
+              Playlists
+            </span>
           </a>
         </nav>
         <div class="sidebar-content">
-          <div class="feed-context-bar" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem">
-            <span class="text-muted">
-              All
-            </span>
-            <div class="flex gap-1">
-              <span class="btn btn-outline btn-sm" style="opacity:0.5">
+          <nav aria-label="Article navigation" class="feed-context-bar">
+            <a class="feed-context-label" href="/apps/feed/">
+              All articles
+              <span class="text-muted">
+                · 1 of 8
+              </span>
+            </a>
+            <div class="btn-group">
+              <span aria-disabled="true" class="btn btn-sm">
                 ← Prev
               </span>
-              <a class="btn btn-outline btn-sm" href="/apps/feed/items/4?ctx=all" title="Episode 112: Interviews, follow-ups and a surprisingly long episode title">
+              <a class="btn btn-sm" href="/apps/feed/items/4?ctx=all" title="Episode 112: Interviews, follow-ups and a surprisingly long episode title">
                 Next →
               </a>
             </div>
-          </div>
-          <div class="card">
-            <h2 class="card-title">
-              Designing a storage layer that survives a crash halfway through a write
-            </h2>
-            <div class="text-muted" style="font-size:0.85rem;margin-bottom:0.5rem">
-              Example Engineering Blog · Jane Doe
+          </nav>
+          <header class="page-header feed-reader-header">
+            <div class="page-heading">
+              <h1 data-feed-item-title="">
+                Designing a storage layer that survives a crash halfway through a write
+              </h1>
+              <p class="page-subtitle">
+                Example Engineering Blog · Jane Doe · Jun 20, 2025
+              </p>
             </div>
-            <div class="mb-2" id="item-tags-1">
-              <span class="badge" style="margin-right:0.25rem;display:inline-flex;align-items:center;gap:0.25rem">
+            <div class="page-actions">
+              <button aria-label="Star" aria-pressed="false" class="btn-star" hx-post="/apps/feed/items/1/star" hx-swap="outerHTML" title="Toggle star" type="button">
+                <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+              </button>
+              <a class="btn" href="https://blog.example.com/posts/storage-layer" rel="noopener" target="_blank">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" x2="21" y1="14" y2="3" />
+                </svg>
+                Open original
+              </a>
+            </div>
+          </header>
+          <div class="feed-item-tags" id="item-tags-1">
+            <span class="chip">
+              <a href="/apps/feed/tag/read-later">
                 read-later
-                <form action="/apps/feed/items/1/tag/read-later/delete" hx-post="/apps/feed/items/1/tag/read-later/delete" hx-swap="outerHTML" hx-target="#item-tags-1" method="post" style="margin:0;display:inline">
-                  <input name="csrf_token" type="hidden" value="«hex»" />
-                  <button style="background:none;border:none;cursor:pointer;padding:0;line-height:1;font-size:0.75rem;color:inherit;opacity:0.7" title="Remove tag" type="submit">
-                    ×
-                  </button>
-                </form>
-              </span>
-              <span class="badge" style="margin-right:0.25rem;display:inline-flex;align-items:center;gap:0.25rem">
-                storage
-                <form action="/apps/feed/items/1/tag/storage/delete" hx-post="/apps/feed/items/1/tag/storage/delete" hx-swap="outerHTML" hx-target="#item-tags-1" method="post" style="margin:0;display:inline">
-                  <input name="csrf_token" type="hidden" value="«hex»" />
-                  <button style="background:none;border:none;cursor:pointer;padding:0;line-height:1;font-size:0.75rem;color:inherit;opacity:0.7" title="Remove tag" type="submit">
-                    ×
-                  </button>
-                </form>
-              </span>
-              <form action="/apps/feed/items/1/tag" hx-post="/apps/feed/items/1/tag" hx-swap="outerHTML" hx-target="#item-tags-1" method="post" style="display:inline-flex;align-items:center;gap:0.25rem;margin-left:0.25rem">
+              </a>
+              <form action="/apps/feed/items/1/tag/read-later/delete" hx-post="/apps/feed/items/1/tag/read-later/delete" hx-swap="outerHTML" hx-target="#item-tags-1" method="post">
                 <input name="csrf_token" type="hidden" value="«hex»" />
-                <input name="tag" placeholder="add tag" style="width:7rem;font-size:0.8rem;padding:0.1rem 0.3rem;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg)" type="text" />
-                <button class="btn btn-outline btn-sm" style="padding:0.1rem 0.4rem;font-size:0.8rem" type="submit">
-                  +
+                <button aria-label="Remove tag read-later" class="chip-remove" type="submit">
+                  ×
                 </button>
               </form>
-            </div>
-            <div class="note-content prose">
+            </span>
+            <span class="chip">
+              <a href="/apps/feed/tag/storage">
+                storage
+              </a>
+              <form action="/apps/feed/items/1/tag/storage/delete" hx-post="/apps/feed/items/1/tag/storage/delete" hx-swap="outerHTML" hx-target="#item-tags-1" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <button aria-label="Remove tag storage" class="chip-remove" type="submit">
+                  ×
+                </button>
+              </form>
+            </span>
+            <form action="/apps/feed/items/1/tag" class="feed-tag-add" hx-post="/apps/feed/items/1/tag" hx-swap="outerHTML" hx-target="#item-tags-1" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <label class="sr-only" for="tag-1">
+                Add a tag
+              </label>
+              <input class="form-control form-control-sm" id="tag-1" name="tag" placeholder="Add a tag" required="" type="text" />
+              <button class="btn btn-sm" type="submit">
+                Add
+              </button>
+            </form>
+          </div>
+          <article class="card">
+            <div class="prose feed-article">
               <p>
                 Most storage bugs are not in the happy path. They live in the half-second between the write and the fsync, and they only show up when the power goes out.
               </p>
@@ -399,12 +443,17 @@
                 Further reading: https://blog.example.com/posts/a-very-long-url-that-has-no-natural-break-points-and-should-wrap-instead-of-overflowing-the-card
               </p>
             </div>
-            <p style="margin-top:1rem">
-              <a href="https://blog.example.com/posts/storage-layer" rel="noopener" target="_blank">
-                Original
+          </article>
+          <nav aria-label="Article navigation" class="feed-context-bar feed-context-bar-bottom">
+            <div class="btn-group">
+              <span aria-disabled="true" class="btn btn-sm">
+                ← Prev
+              </span>
+              <a class="btn btn-sm" href="/apps/feed/items/4?ctx=all" title="Episode 112: Interviews, follow-ups and a surprisingly long episode title">
+                Next →
               </a>
-            </p>
-          </div>
+            </div>
+          </nav>
         </div>
       </div>
     </main>

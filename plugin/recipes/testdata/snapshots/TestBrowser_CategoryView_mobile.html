@@ -5,8 +5,8 @@
     <title>
       Soups — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
-    <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyem0tMSAxNy45M2MtMy45NS0uNDktNy0zLjg1LTctNy45MyAwLS42Mi4wOC0xLjIxLjIxLTEuNzlMOSAxNXYxYzAgMS4xLjkgMiAyIDJ2MS45M3ptNi45LTIuNTRjLS4yNi0uODEtMS0xLjM5LTEuOS0xLjM5aC0xdi0zYzAtLjU1LS40NS0xLTEtMUg4di0yaDJjLjU1IDAgMS0uNDUgMS0xVjdoMmMxLjEgMCAyLS45IDItMnYtLjQxYzIuOTMgMS4xOSA1IDQuMDYgNSA3LjQxIDAgMi4wOC0uOCAzLjk3LTIuMSA1LjM5eiI+PC9wYXRoPjwvc3ZnPg==" rel="icon" type="image/svg+xml" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
+    <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0zIDJ2N2MwIDEuMS45IDIgMiAyaDRhMiAyIDAgMCAwIDItMlYyIj48L3BhdGg+PHBhdGggZD0iTTcgMnYyMCI+PC9wYXRoPjxwYXRoIGQ9Ik0yMSAxNVYyYTUgNSAwIDAgMC01IDV2NmMwIDEuMS45IDIgMiAyaDNabTAgMHY3Ij48L3BhdGg+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
     </style>
@@ -26,7 +26,9 @@
         <li>
           <a aria-current="page" class="active" href="/apps/recipes" title="Recipes">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+              <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
+              <path d="M7 2v20" />
+              <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
             </svg>
             <span class="nav-label">
               Recipes
@@ -67,7 +69,9 @@
         <div class="dropdown-menu" id="apps-menu">
           <a aria-current="page" class="active" href="/apps/recipes">
             <svg class="nav-icon" viewBox="0 0 24 24">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+              <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
+              <path d="M7 2v20" />
+              <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
             </svg>
             Recipes
           </a>
@@ -178,67 +182,105 @@
     </nav>
     <main class="content" data-plugin="recipes">
       <div class="sidebar-layout has-sidebar-toggle">
-        <button aria-controls="recipes-sidebar" aria-expanded="false" aria-label="Menu: Soups 1" class="sidebar-toggle" type="button">
+        <button aria-controls="recipes-sidebar" aria-expanded="false" aria-label="Menu: Soups" class="sidebar-toggle" type="button">
           <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
             <line x1="3" x2="21" y1="6" y2="6" />
             <line x1="3" x2="21" y1="12" y2="12" />
             <line x1="3" x2="21" y1="18" y2="18" />
           </svg>
-          <span class="sidebar-toggle-label" data-label="Soups 1" />
+          <span class="sidebar-toggle-label" data-label="Soups" />
           <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="recipes-sidebar">
+        <nav aria-label="Recipes" class="sidebar" id="recipes-sidebar">
           <a class="sidebar-item" href="/apps/recipes/">
-            All Recipes
-            <span class="badge">
+            <span class="break-anywhere">
+              All recipes
+            </span>
+            <span class="count">
               1
             </span>
           </a>
-          <div class="sidebar-divider" />
-          <div style="padding:0.25rem 1rem;font-size:0.75rem;text-transform:uppercase;color:var(--color-text-muted);font-weight:600">
+          <div class="sidebar-heading">
             Categories
           </div>
-          <a class="sidebar-item active" href="/apps/recipes/category/Soups" style="padding-left:1.5rem;font-size:0.9rem">
-            Soups
-            <span class="badge">
+          <a aria-current="page" class="sidebar-item active" href="/apps/recipes/category/Soups">
+            <span class="break-anywhere">
+              Soups
+            </span>
+            <span class="count">
               1
             </span>
-          </a>
-          <div class="sidebar-divider" />
-          <a class="sidebar-item" href="/apps/recipes/new">
-            + New Recipe
-          </a>
-          <a class="sidebar-item" href="/apps/recipes/import">
-            + Import from URL
           </a>
         </nav>
         <div class="sidebar-content">
-          <h1>
-            Soups
-          </h1>
+          <header class="page-header">
+            <div class="page-heading">
+              <nav aria-label="Breadcrumb" class="breadcrumbs">
+                <ol>
+                  <li>
+                    <a href="/apps/recipes/">
+                      Recipes
+                    </a>
+                  </li>
+                  <li>
+                    <span aria-current="page">
+                      Soups
+                    </span>
+                  </li>
+                </ol>
+              </nav>
+              <h1>
+                Soups
+              </h1>
+            </div>
+            <div class="page-actions">
+              <a class="btn" href="/apps/recipes/import">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" x2="12" y1="15" y2="3" />
+                </svg>
+                Import
+              </a>
+              <a class="btn btn-primary" href="/apps/recipes/new">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="12" x2="12" y1="5" y2="19" />
+                  <line x1="5" x2="19" y1="12" y2="12" />
+                </svg>
+                New recipe
+              </a>
+            </div>
+          </header>
           <div id="recipe-list">
-            <div id="recipe-1" style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0);display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
-              <div style="min-width:0;flex:1">
-                <div class="flex items-center gap-1" style="flex-wrap:wrap">
-                  <a href="/apps/recipes/recipe/1" style="font-weight:500">
+            <ul class="list">
+              <li class="list-row" id="recipe-1">
+                <span aria-hidden="true" class="recipe-thumb recipe-thumb-empty">
+                  <svg aria-hidden="true" fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+                    <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
+                    <path d="M7 2v20" />
+                    <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
+                  </svg>
+                </span>
+                <div class="list-row-main">
+                  <a class="list-row-title" href="/apps/recipes/recipe/1">
                     Category Soup
                   </a>
-                  <span class="badge" style="font-size:0.75rem">
-                    Soups
-                  </span>
                 </div>
-                <div class="text-muted" style="font-size:0.85rem">
-                  Mar 14
+                <div class="list-row-actions">
+                  <button aria-label="Delete Category Soup" class="btn-icon btn-icon-sm btn-icon-danger" hx-confirm="Delete “Category Soup”?" hx-delete="/apps/recipes/recipes/1" hx-swap="outerHTML" hx-target="closest li" title="Delete" type="button">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
+                  </button>
                 </div>
-              </div>
-              <div class="flex gap-1" style="flex-shrink:0">
-                <button class="btn btn-danger btn-sm" hx-confirm="Delete this recipe?" hx-delete="/apps/recipes/recipes/1" hx-swap="outerHTML" hx-target="#recipe-1">
-                  ✕
-                </button>
-              </div>
-            </div>
+              </li>
+            </ul>
           </div>
         </div>
       </div>

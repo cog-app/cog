@@ -5,7 +5,7 @@
     <title>
       Albums — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIj48L3JlY3Q+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiPjwvY2lyY2xlPjxwb2x5bGluZSBwb2ludHM9IjIxIDE1IDE2IDEwIDUgMjEiPjwvcG9seWxpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -203,14 +203,14 @@
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="gallery-sidebar">
+        <nav aria-label="Gallery" class="sidebar" id="gallery-sidebar">
           <a class="sidebar-item" href="/apps/gallery/">
             Timeline
           </a>
           <a class="sidebar-item" href="/apps/gallery/starred">
             Starred
           </a>
-          <a class="sidebar-item active" href="/apps/gallery/albums">
+          <a aria-current="page" class="sidebar-item active" href="/apps/gallery/albums">
             Albums
           </a>
           <a class="sidebar-item" href="/apps/gallery/people">
@@ -232,35 +232,111 @@
           <div class="" hx-get="/apps/gallery/api/user-scan-status" hx-swap="innerHTML" hx-trigger="load, every 5s" />
         </nav>
         <div class="sidebar-content">
-          <div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-            <h1 style="margin:0">
-              Albums
-            </h1>
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                Albums
+              </h1>
+            </div>
+            <div class="page-actions">
+              <button class="btn btn-primary" data-modal-open="gallery-new-album" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="12" x2="12" y1="5" y2="19" />
+                  <line x1="5" x2="19" y1="12" y2="12" />
+                </svg>
+                New album
+              </button>
+            </div>
+          </header>
+          <div class="gallery-albums">
+            <a class="gallery-album" href="/apps/gallery/album/1">
+              <span class="gallery-thumb">
+                <img alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/1/thumbnail?size=256" />
+              </span>
+              <span class="gallery-album-name">
+                Summer 2025
+              </span>
+              <span class="gallery-album-meta">
+                6 items
+              </span>
+            </a>
+            <a class="gallery-album" href="/apps/gallery/album/2">
+              <span class="gallery-thumb is-empty" />
+              <span class="gallery-album-name">
+                A weekend in the mountains with the whole extended family
+              </span>
+              <span class="gallery-album-meta">
+                0 items
+              </span>
+            </a>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
-            <a class="card" href="/apps/gallery/album/1" style="text-decoration:none">
-              <div style="padding:1rem">
-                <div style="font-weight:600">
-                  Summer 2025
+          <dialog aria-labelledby="gallery-new-album-title" class="modal" id="gallery-new-album">
+            <div class="modal-header">
+              <h2 class="modal-title" id="gallery-new-album-title">
+                New album
+              </h2>
+              <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="18" x2="6" y1="6" y2="18" />
+                  <line x1="6" x2="18" y1="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <form action="/apps/gallery/albums" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div class="modal-body">
+                <div class="form-group">
+                  <label for="new-album-name">
+                    Name
+                  </label>
+                  <input autocomplete="off" class="form-control" id="new-album-name" name="name" required="" type="text" value="" />
                 </div>
-                <div class="text-muted" style="font-size:0.85rem">
-                  6 items
+                <div class="form-group mb-0">
+                  <label for="new-album-description">
+                    Description
+                    <span class="text-muted">
+                      (optional)
+                    </span>
+                  </label>
+                  <textarea class="form-control" id="new-album-description" name="description" rows="3" />
                 </div>
               </div>
-            </a>
-            <a class="card" href="/apps/gallery/album/2" style="text-decoration:none">
-              <div style="padding:1rem">
-                <div style="font-weight:600">
-                  A weekend in the mountains with the whole extended family
-                </div>
-                <div class="text-muted" style="font-size:0.85rem">
-                  0 items
-                </div>
+              <div class="modal-footer">
+                <button class="btn" data-modal-close="" type="button">
+                  Cancel
+                </button>
+                <button class="btn btn-primary" type="submit">
+                  Create album
+                </button>
               </div>
-            </a>
-          </div>
+            </form>
+          </dialog>
         </div>
       </div>
+      <dialog aria-labelledby="gallery-confirm-title" class="modal" id="gallery-confirm">
+        <div class="modal-header">
+          <h2 class="modal-title" id="gallery-confirm-title">
+            Are you sure?
+          </h2>
+          <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p data-confirm-message="" />
+        </div>
+        <div class="modal-footer">
+          <button class="btn" data-modal-close="" type="button">
+            Cancel
+          </button>
+          <button class="btn btn-danger" data-confirm-ok="" type="button">
+            Delete
+          </button>
+        </div>
+      </dialog>
     </main>
   </body>
 </html>

@@ -3,9 +3,9 @@
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1" name="viewport" />
     <title>
-      Edit: Note Being Edited — Cog
+      Edit Note Being Edited — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xNCAySDZhMiAyIDAgMCAwLTIgMnYxNmEyIDIgMCAwIDAgMiAyaDEyYTIgMiAwIDAgMCAyLTJWOHoiPjwvcGF0aD48cG9seWxpbmUgcG9pbnRzPSIxNCAyIDE0IDggMjAgOCI+PC9wb2x5bGluZT48bGluZSB4MT0iMTYiIHkxPSIxMyIgeDI9IjgiIHkyPSIxMyI+PC9saW5lPjxsaW5lIHgxPSIxNiIgeTE9IjE3IiB4Mj0iOCIgeTI9IjE3Ij48L2xpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -195,66 +195,115 @@
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="notes-sidebar">
+        <nav aria-label="Notes" class="sidebar" id="notes-sidebar">
           <a class="sidebar-item" href="/apps/notes/">
-            All Notes
-            <span class="badge">
+            <span class="break-anywhere">
+              All notes
+            </span>
+            <span class="count">
               1
             </span>
           </a>
           <a class="sidebar-item" href="/apps/notes/starred">
-            Starred
+            <span class="break-anywhere">
+              Starred
+            </span>
           </a>
-          <div class="sidebar-divider" />
-          <a class="sidebar-item" href="/apps/notes/category/Work" style="padding-left:1.5rem;font-size:0.9rem">
-            Work
-          </a>
-          <div class="sidebar-divider" />
-          <a class="sidebar-item" href="/apps/notes/new">
-            + New Note
+          <div class="sidebar-heading">
+            Categories
+          </div>
+          <a class="sidebar-item" href="/apps/notes/category/Work">
+            <span class="break-anywhere">
+              Work
+            </span>
           </a>
         </nav>
         <div class="sidebar-content">
-          <h1>
-            Edit: Note Being Edited
-          </h1>
-          <div class="card">
-            <form action="/apps/notes/notes/1" method="post">
-              <input name="csrf_token" type="hidden" value="«hex»" />
-              <input name="etag" type="hidden" value="«hex»" />
+          <header class="page-header">
+            <div class="page-heading">
+              <nav aria-label="Breadcrumb" class="breadcrumbs">
+                <ol>
+                  <li>
+                    <a href="/apps/notes/">
+                      Notes
+                    </a>
+                  </li>
+                  <li>
+                    <a href="/apps/notes/category/Work">
+                      Work
+                    </a>
+                  </li>
+                  <li>
+                    <a href="/apps/notes/note/1">
+                      Note Being Edited
+                    </a>
+                  </li>
+                  <li>
+                    <span aria-current="page">
+                      Edit note
+                    </span>
+                  </li>
+                </ol>
+              </nav>
+              <h1>
+                Edit note
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
+          <form action="/apps/notes/notes/1" class="card" method="post">
+            <input name="csrf_token" type="hidden" value="«hex»" />
+            <input name="etag" type="hidden" value="«hex»" />
+            <div class="form-row">
               <div class="form-group">
                 <label for="title">
                   Title
                 </label>
-                <input class="form-control" id="title" name="title" required="" type="text" value="Note Being Edited" />
+                <input class="form-control" id="title" name="title" placeholder="My note" required="" type="text" value="Note Being Edited" />
               </div>
               <div class="form-group">
                 <label for="category">
                   Category
                 </label>
-                <input class="form-control" id="category" list="categories" name="category" placeholder="e.g. recipes" type="text" value="Work" />
+                <input class="form-control" id="category" list="categories" name="category" placeholder="None" type="text" value="Work" />
                 <datalist id="categories">
                   <option value="Work" />
                 </datalist>
               </div>
-              <div class="form-group">
+            </div>
+            <div class="form-group note-editor">
+              <div class="note-editor-bar">
                 <label for="content">
-                  Content (Markdown)
+                  Content
                 </label>
-                <textarea class="form-control" id="content" name="content" rows="20" style="font-family:monospace;white-space:pre-wrap">
-                  Intro paragraph with **bold**, *italic*, `inline code` and a [link](https://example.com). ## Section heading A paragraph under the section heading that runs long enough to wrap across more than one line at desktop width, so line-height and measure are visible. ### Checklist - first item - second item with a much longer description that wraps onto another line - nested item - third item 1. step one 2. step two > A block quote that should look different from body text. ```go func main() { fmt.Println("a fairly long line of code that will not fit on a phone screen without scrolling") } ``` | Column A | Column B | Column C | |---|---|---| | one | two | three | | four | five | six | --- https://example.com/a/very/long/url/without/any/natural/break/points/that/should/wrap/rather/than/overflow
-                </textarea>
+                <div aria-label="Editor mode" class="chip-group" role="group">
+                  <label class="chip">
+                    <input checked="" name="editor_mode" type="radio" value="write" />
+                    Write
+                  </label>
+                  <label class="chip">
+                    <input hx-include="#content" hx-post="/apps/notes/preview" hx-swap="innerHTML" hx-target="#note-preview" hx-trigger="change" name="editor_mode" type="radio" value="preview" />
+                    Preview
+                  </label>
+                </div>
               </div>
-              <div class="flex gap-1">
-                <button class="btn btn-primary" type="submit">
-                  Save
-                </button>
-                <a class="btn btn-outline" href="/apps/notes/note/1">
-                  Cancel
-                </a>
-              </div>
-            </form>
-          </div>
+              <textarea class="form-control mono note-editor-input" id="content" name="content" placeholder="# Hello world" rows="16">
+                Intro paragraph with **bold**, *italic*, `inline code` and a [link](https://example.com). ## Section heading A paragraph under the section heading that runs long enough to wrap across more than one line at desktop width, so line-height and measure are visible. ### Checklist - first item - second item with a much longer description that wraps onto another line - nested item - third item 1. step one 2. step two > A block quote that should look different from body text. ```go func main() { fmt.Println("a fairly long line of code that will not fit on a phone screen without scrolling") } ``` | Column A | Column B | Column C | |---|---|---| | one | two | three | | four | five | six | --- https://example.com/a/very/long/url/without/any/natural/break/points/that/should/wrap/rather/than/overflow
+              </textarea>
+              <div aria-live="polite" class="note-preview" id="note-preview" />
+              <p class="form-help">
+                Markdown, with tables, task lists, highlighted code, LaTeX math and Mermaid diagrams.
+              </p>
+            </div>
+            <div class="form-actions form-actions-sticky">
+              <button class="btn btn-primary" type="submit">
+                Save
+              </button>
+              <a class="btn" href="/apps/notes/note/1">
+                Cancel
+              </a>
+            </div>
+          </form>
         </div>
       </div>
     </main>

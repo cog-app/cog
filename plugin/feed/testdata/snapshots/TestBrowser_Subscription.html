@@ -5,7 +5,7 @@
     <title>
       A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik00IDExYTkgOSAwIDAgMSA5IDkiPjwvcGF0aD48cGF0aCBkPSJNNCA0YTE2IDE2IDAgMCAxIDE2IDE2Ij48L3BhdGg+PGNpcmNsZSBjeD0iNSIgY3k9IjE5IiByPSIxIj48L2NpcmNsZT48L3N2Zz4=" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -182,226 +182,290 @@
     </nav>
     <main class="content" data-plugin="feed">
       <div class="sidebar-layout has-sidebar-toggle">
-        <button aria-controls="feed-sidebar" aria-expanded="false" aria-label="Menu: A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar !" class="sidebar-toggle" type="button">
+        <button aria-controls="feed-sidebar" aria-expanded="false" aria-label="Menu: A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar" class="sidebar-toggle" type="button">
           <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
             <line x1="3" x2="21" y1="6" y2="6" />
             <line x1="3" x2="21" y1="12" y2="12" />
             <line x1="3" x2="21" y1="18" y2="18" />
           </svg>
-          <span class="sidebar-toggle-label" data-label="A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar !" />
+          <span class="sidebar-toggle-label" data-label="A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar" />
           <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="feed-sidebar">
-          <label class="sidebar-hide-empty" style="display:flex;align-items:center;gap:0.4rem;padding:0.25rem 0.5rem;font-size:0.8rem;color:var(--color-text-muted)">
-            <input hx-post="/apps/feed/player/prefs" hx-swap="outerHTML" hx-target="#feed-sidebar" hx-vals="js:{hide_empty: event.target.checked ? \"1\" : \"0\"}" name="hide_empty" type="checkbox" />
-            Hide read
-          </label>
+        <nav aria-label="Feed" class="sidebar" id="feed-sidebar">
           <a class="sidebar-item" href="/apps/feed/">
-            All
-            <span class="badge">
+            <span class="break-anywhere">
+              All articles
+            </span>
+            <span class="count">
               7
             </span>
           </a>
           <a class="sidebar-item" href="/apps/feed/starred">
-            Starred
-            <span class="badge">
+            <span class="break-anywhere">
+              Starred
+            </span>
+            <span class="count">
               1
             </span>
           </a>
           <a class="sidebar-item" href="/apps/feed/history">
-            History
+            <span class="break-anywhere">
+              History
+            </span>
           </a>
-          <div class="sidebar-divider" />
+          <div class="sidebar-heading feed-sidebar-heading">
+            <span>
+              Feeds
+            </span>
+            <label class="feed-hide-read">
+              <input hx-post="/apps/feed/player/prefs" hx-swap="outerHTML" hx-target="#feed-sidebar" hx-vals="js:{hide_empty: event.target.checked ? \"1\" : \"0\"}" name="hide_empty" type="checkbox" />
+              Unread only
+            </label>
+          </div>
           <details class="sidebar-folder" data-folder-id="2">
-            <summary class="sidebar-group-label">
-              <a href="/apps/feed/folder/2" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none">
+            <summary class="sidebar-item">
+              <a class="feed-folder-link" href="/apps/feed/folder/2" onclick="event.stopPropagation()">
                 Podcasts
               </a>
-              <span class="badge">
+              <span class="count">
                 1
               </span>
             </summary>
-            <a class="sidebar-item" href="/apps/feed/subscription/3" style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem">
-              <span class="feed-sub-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;align-items:center;justify-content:center">
+            <a class="sidebar-item feed-sub sidebar-child" href="/apps/feed/subscription/3" title="Weekly Audio Show">
+              <span class="feed-sub-icon">
                 <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
                   <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
                   <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
                   <circle cx="5.5" cy="18.5" r="2.5" />
                 </svg>
               </span>
-              <span class="sidebar-item-text">
+              <span class="feed-sub-name">
                 Weekly Audio Show
               </span>
-              <span class="badge">
+              <span class="count">
                 1
               </span>
             </a>
           </details>
           <details class="sidebar-folder" data-folder-id="1">
-            <summary class="sidebar-group-label">
-              <a href="/apps/feed/folder/1" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none">
+            <summary class="sidebar-item">
+              <a class="feed-folder-link" href="/apps/feed/folder/1" onclick="event.stopPropagation()">
                 Tech News
               </a>
-              <span class="badge">
+              <span class="count">
                 5
               </span>
             </summary>
-            <a class="sidebar-item" href="/apps/feed/subscription/1" style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem">
-              <span class="feed-sub-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;align-items:center;justify-content:center">
+            <a class="sidebar-item feed-sub sidebar-child" href="/apps/feed/subscription/1" title="Example Engineering Blog">
+              <span class="feed-sub-icon">
                 <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
                   <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
                   <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
                   <circle cx="5.5" cy="18.5" r="2.5" />
                 </svg>
               </span>
-              <span class="sidebar-item-text">
+              <span class="feed-sub-name">
                 Example Engineering Blog
               </span>
-              <span class="badge">
+              <span class="count">
                 5
               </span>
             </a>
           </details>
-          <a class="sidebar-item active text-danger" href="/apps/feed/subscription/2" style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem">
-            <span class="feed-sub-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;align-items:center;justify-content:center">
-              <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
-                <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
-                <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
-                <circle cx="5.5" cy="18.5" r="2.5" />
+          <a aria-current="page" class="sidebar-item feed-sub active" href="/apps/feed/subscription/2" title="A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar — fetch failing: GET https://long.example.org/rss: 503 Service Unavailable">
+            <span aria-label="Fetch failing" class="feed-sub-icon feed-sub-failing" role="img">
+              <svg aria-hidden="true" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" x2="12" y1="9" y2="13" />
+                <line x1="12" x2="12.01" y1="17" y2="17" />
               </svg>
             </span>
-            <span class="sidebar-item-text">
+            <span class="feed-sub-name">
               A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar
             </span>
-            <span class="text-danger" title="GET https://long.example.org/rss: 503 Service Unavailable">
-              !
-            </span>
           </a>
-          <a class="sidebar-item" href="/apps/feed/subscription/4" style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem">
-            <span class="feed-sub-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;align-items:center;justify-content:center">
+          <a class="sidebar-item feed-sub" href="/apps/feed/subscription/4" title="Video Channel">
+            <span class="feed-sub-icon">
               <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
                 <path d="M23 7a3 3 0 0 0-2.1-2.1C19 4.4 12 4.4 12 4.4s-7 0-8.9.5A3 3 0 0 0 1 7a31 31 0 0 0 0 10 3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5A3 3 0 0 0 23 17a31 31 0 0 0 0-10zM10 15.5v-7l6 3.5z" />
               </svg>
             </span>
-            <span class="sidebar-item-text">
+            <span class="feed-sub-name">
               Video Channel
             </span>
-            <span class="badge">
+            <span class="count">
               1
             </span>
           </a>
-          <div class="sidebar-divider" />
-          <span class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-text-muted)">
+          <div class="sidebar-heading">
             Tags
-          </span>
-          <a class="sidebar-item" href="/apps/feed/tag/read-later" style="padding-left:1.5rem;font-size:0.9rem">
-            read-later
+          </div>
+          <a class="sidebar-item" href="/apps/feed/tag/read-later">
+            <span class="break-anywhere">
+              read-later
+            </span>
           </a>
-          <a class="sidebar-item" href="/apps/feed/tag/storage" style="padding-left:1.5rem;font-size:0.9rem">
-            storage
+          <a class="sidebar-item" href="/apps/feed/tag/storage">
+            <span class="break-anywhere">
+              storage
+            </span>
           </a>
-          <hr class="sidebar-divider" />
-          <div class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-text-muted);padding:0.25rem 0.5rem">
+          <div class="sidebar-heading">
             Settings
           </div>
-          <a class="sidebar-item" href="/apps/feed/settings/subscriptions" style="padding-left:1.5rem;font-size:0.9rem">
-            Subscriptions
+          <a class="sidebar-item" href="/apps/feed/settings/subscriptions">
+            <span class="break-anywhere">
+              Subscriptions
+            </span>
           </a>
-          <a class="sidebar-item" href="/apps/feed/settings/filters" style="padding-left:1.5rem;font-size:0.9rem">
-            Filters
+          <a class="sidebar-item" href="/apps/feed/settings/filters">
+            <span class="break-anywhere">
+              Filters
+            </span>
           </a>
-          <a class="sidebar-item" href="/apps/feed/settings/playlists" style="padding-left:1.5rem;font-size:0.9rem">
-            Playlists
+          <a class="sidebar-item" href="/apps/feed/settings/playlists">
+            <span class="break-anywhere">
+              Playlists
+            </span>
           </a>
         </nav>
         <div class="sidebar-content">
-          <div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-            <h1 style="margin:0;display:flex;align-items:center;gap:0.5rem">
-              <span class="feed-sub-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;align-items:center;justify-content:center">
-                <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
-                  <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
-                  <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
-                  <circle cx="5.5" cy="18.5" r="2.5" />
-                </svg>
-              </span>
-              A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar
-            </h1>
-            <div class="flex gap-1">
-              <form action="/apps/feed/subscriptions/2/refresh" method="post">
-                <input name="csrf_token" type="hidden" value="«hex»" />
-                <button class="btn btn-outline btn-sm" type="submit">
-                  Refresh
+          <header class="page-header">
+            <div class="page-heading">
+              <nav aria-label="Breadcrumb" class="breadcrumbs">
+                <ol>
+                  <li>
+                    <a href="/apps/feed/">
+                      Feed
+                    </a>
+                  </li>
+                </ol>
+              </nav>
+              <h1 class="feed-sub-title">
+                <span class="feed-sub-icon">
+                  <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
+                    <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
+                    <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
+                    <circle cx="5.5" cy="18.5" r="2.5" />
+                  </svg>
+                </span>
+                <span>
+                  A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar
+                </span>
+              </h1>
+              <p class="page-subtitle break-anywhere">
+                https://long.example.org/rss
+              </p>
+            </div>
+            <div class="page-actions">
+              <div class="dropdown">
+                <button aria-controls="sub-menu" aria-expanded="false" aria-label="Subscription actions" class="btn btn-square" data-dropdown-toggle="" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <circle cx="12" cy="12" r="1" />
+                    <circle cx="19" cy="12" r="1" />
+                    <circle cx="5" cy="12" r="1" />
+                  </svg>
                 </button>
-              </form>
-              <form action="/apps/feed/subscriptions/2/read-all" method="post">
-                <input name="csrf_token" type="hidden" value="«hex»" />
-                <button class="btn btn-outline btn-sm" type="submit">
-                  Mark all read
-                </button>
-              </form>
-              <a class="btn btn-outline btn-sm" href="/apps/feed/subscription/2/settings">
-                Settings
-              </a>
+                <div class="dropdown-menu" id="sub-menu">
+                  <form action="/apps/feed/subscriptions/2/refresh" method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <button type="submit">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" x2="12" y1="15" y2="3" />
+                      </svg>
+                      Check for new posts
+                    </button>
+                  </form>
+                  <a href="/apps/feed/subscription/2/settings">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <line x1="4" x2="4" y1="21" y2="14" />
+                      <line x1="4" x2="4" y1="10" y2="3" />
+                      <line x1="12" x2="12" y1="21" y2="12" />
+                      <line x1="12" x2="12" y1="8" y2="3" />
+                      <line x1="20" x2="20" y1="21" y2="16" />
+                      <line x1="20" x2="20" y1="12" y2="3" />
+                      <line x1="1" x2="7" y1="14" y2="14" />
+                      <line x1="9" x2="15" y1="8" y2="8" />
+                      <line x1="17" x2="23" y1="16" y2="16" />
+                    </svg>
+                    Settings
+                  </a>
+                </div>
+              </div>
+            </div>
+          </header>
+          <div class="alert alert-warning" role="status">
+            <div class="alert-title">
+              Last fetch failed
+            </div>
+            <div class="break-anywhere">
+              GET https://long.example.org/rss: 503 Service Unavailable
+            </div>
+            <div class="text-sm">
+              Failed 3 times in a row. It will be tried again on its schedule.
             </div>
           </div>
-          <div class="alert alert-error" role="alert">
-            <button aria-label="Dismiss" class="alert-dismiss" onclick="this.parentElement.remove()" type="button">
-              ×
-            </button>
-            Last fetch failed: GET https://long.example.org/rss: 503 Service Unavailable (errors in a row: 3)
-          </div>
-          <style>
-            /* The head bleeds out to the row edges so a read item's tint spans the full width, while the expanded body keeps the surface background. */ .feed-item-head { margin: -0.75rem -1rem; padding: 0.75rem 1rem; } .feed-item-detail { margin-top: 0.75rem; } .feed-item-read .feed-item-head { background: rgba(0, 0, 0, 0.07); } .feed-item-read .feed-item-head a:not(.btn), .feed-item-read .feed-item-head .feed-item-summary-line { opacity: 0.75; }
-          </style>
-          <div id="item-list">
-            <div class="feed-item feed-item-read" id="item-3" style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0)">
-              <div class="feed-item-head flex items-center gap-1" onclick="toggleArticle(3)" style="justify-content:space-between;cursor:pointer">
-                <div style="min-width:0;flex:1">
-                  <div class="flex items-center gap-1" style="flex-wrap:wrap">
-                    <a class="text-muted" href="/apps/feed/subscription/2" onclick="event.stopPropagation()" style="font-size:0.8rem">
-                      A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar
-                    </a>
-                    <span class="text-muted" style="font-size:0.8rem">
-                      · 2025-06-15
-                    </span>
-                  </div>
-                  <a href="/apps/feed/items/3?ctx=sub&cid=2" onclick="event.stopPropagation()" style="font-weight:500;color:inherit;text-decoration:none">
+          <ul class="list" id="item-list">
+            <li class="list-row feed-item feed-item-read" id="item-3">
+              <div aria-controls="detail-3" aria-expanded="false" class="feed-item-head" data-feed-toggle="3" role="button" tabindex="0">
+                <span class="feed-unread-dot" title="Unread" />
+                <div class="list-row-main">
+                  <a class="feed-item-title" href="/apps/feed/items/3?ctx=sub&cid=2">
                     An already-read article from the subscription with the very long name
                   </a>
-                  <div class="feed-item-summary-line" id="summary-3">
+                  <div class="list-row-meta">
+                    Jun 15, 2025
+                  </div>
+                  <div class="feed-item-summary-line">
                     This one has been read, so it should look visibly quieter than the unread rows above it.
                   </div>
                 </div>
-                <div class="flex gap-1" onclick="event.stopPropagation()" style="flex-shrink:0">
-                  <a class="btn btn-outline btn-sm" href="https://long.example.org/read" rel="noopener" target="_blank" title="Open article">
-                    ↗
+                <div class="list-row-actions">
+                  <a aria-label="Open original of An already-read article from the subscription with the very long name" class="btn-icon btn-icon-sm hide-mobile" href="https://long.example.org/read" rel="noopener" target="_blank" title="Open original">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" x2="21" y1="14" y2="3" />
+                    </svg>
                   </a>
                   <button aria-label="Star" aria-pressed="false" class="btn-star" hx-post="/apps/feed/items/3/star" hx-swap="outerHTML" title="Toggle star" type="button">
                     <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
                       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                     </svg>
                   </button>
-                  <button class="btn btn-outline btn-sm" hx-post="/apps/feed/items/3/read" hx-swap="outerHTML" hx-target="#item-3" title="Toggle read">
-                    ○
+                  <button aria-label="Mark An already-read article from the subscription with the very long name as unread" class="btn-icon btn-icon-sm hide-mobile" hx-post="/apps/feed/items/3/read" hx-swap="outerHTML" hx-target="#item-3" title="Mark as unread" type="button">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <circle cx="12" cy="12" r="9" />
+                    </svg>
                   </button>
                 </div>
               </div>
-              <div class="feed-item-detail" id="detail-3" style="display:none">
-                <div class="feed-item-content">
+              <div class="feed-item-detail" hidden="" id="detail-3">
+                <div class="feed-item-content prose">
                   <p>
                     This one has been read, so it should look visibly quieter than the unread rows above it.
                   </p>
                 </div>
-                <div style="margin-top:0.75rem;clear:both">
-                  <a class="btn btn-outline btn-sm" href="https://long.example.org/read" rel="noopener" target="_blank">
-                    Open article
+                <div class="feed-item-detail-actions">
+                  <a class="btn btn-sm" href="/apps/feed/items/3?ctx=sub&cid=2">
+                    Open in reader
+                  </a>
+                  <a class="btn btn-sm" data-feed-original="" href="https://long.example.org/read" rel="noopener" target="_blank">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" x2="21" y1="14" y2="3" />
+                    </svg>
+                    Original
                   </a>
                 </div>
               </div>
-            </div>
-          </div>
+            </li>
+          </ul>
         </div>
       </div>
     </main>

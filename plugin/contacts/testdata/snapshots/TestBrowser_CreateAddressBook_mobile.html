@@ -5,7 +5,7 @@
     <title>
       Contacts Settings — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xNyAyMXYtMmE0IDQgMCAwIDAtNC00SDVhNCA0IDAgMCAwLTQgNHYyIj48L3BhdGg+PGNpcmNsZSBjeD0iOSIgY3k9IjciIHI9IjQiPjwvY2lyY2xlPjxwYXRoIGQ9Ik0yMyAyMXYtMmE0IDQgMCAwIDAtMy0zLjg3Ij48L3BhdGg+PHBhdGggZD0iTTE2IDMuMTNhNCA0IDAgMCAxIDAgNy43NSI+PC9wYXRoPjwvc3ZnPg==" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -195,161 +195,293 @@
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="sidebar-1">
+        <nav aria-label="Contacts" class="sidebar" id="sidebar-1">
           <a class="sidebar-item" href="/apps/contacts/">
-            All Contacts
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            All contacts
           </a>
           <a class="sidebar-item" href="/apps/contacts/starred">
-            ★ Starred
+            <span class="contact-star-icon">
+              <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+            </span>
+            Starred
           </a>
-          <div class="sidebar-divider" />
-          <div style="padding:0.25rem 0.75rem;font-size:0.8rem;font-weight:600;text-transform:uppercase;color:var(--color-text-muted, #888)">
-            Address Books
+          <div class="sidebar-heading">
+            Address books
           </div>
-          <a class="sidebar-item" href="/apps/contacts/?book=1" style="display:flex;align-items:center;gap:0.5rem">
-            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;" />
+          <a class="sidebar-item" href="/apps/contacts/?book=1">
+            <span class="color-dot" style="background:#0082c9;" />
             Contacts
           </a>
-          <a class="sidebar-item" href="/apps/contacts/?book=2" style="display:flex;align-items:center;gap:0.5rem">
-            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;" />
+          <a class="sidebar-item" href="/apps/contacts/?book=2">
+            <span class="color-dot" style="background:#0082c9;" />
             Work Contacts
           </a>
           <div class="sidebar-divider" />
-          <a class="sidebar-item active" href="/apps/contacts/settings">
+          <a aria-current="page" class="sidebar-item active" href="/apps/contacts/settings">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="4" x2="4" y1="21" y2="14" />
+              <line x1="4" x2="4" y1="10" y2="3" />
+              <line x1="12" x2="12" y1="21" y2="12" />
+              <line x1="12" x2="12" y1="8" y2="3" />
+              <line x1="20" x2="20" y1="21" y2="16" />
+              <line x1="20" x2="20" y1="12" y2="3" />
+              <line x1="1" x2="7" y1="14" y2="14" />
+              <line x1="9" x2="15" y1="8" y2="8" />
+              <line x1="17" x2="23" y1="16" y2="16" />
+            </svg>
             Settings
           </a>
         </nav>
         <div class="sidebar-content">
-          <h1>
-            Contacts Settings
-          </h1>
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                Contacts settings
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
           <div class="card">
             <h2 class="card-title">
-              Create Address Book
+              New address book
             </h2>
-            <form action="/apps/contacts/books" class="flex gap-1 items-end" method="post">
+            <form action="/apps/contacts/books" method="post">
               <input name="csrf_token" type="hidden" value="«hex»" />
-              <div class="form-group" style="margin-bottom:0">
-                <label for="name">
-                  Name
-                </label>
-                <input class="form-control" id="name" name="name" placeholder="Work" required="" type="text" />
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="name">
+                    Name
+                  </label>
+                  <input class="form-control" id="name" name="name" placeholder="Work" required="" type="text" />
+                </div>
+                <div class="form-group">
+                  <label for="uid">
+                    Address (optional)
+                  </label>
+                  <input aria-describedby="uid-help" class="form-control" id="uid" name="uid" placeholder="work" type="text" />
+                </div>
+                <div class="form-group form-group-auto">
+                  <label for="color">
+                    Colour
+                  </label>
+                  <input class="form-control" id="color" name="color" type="color" value="#0082c9" />
+                </div>
+                <button class="btn btn-primary" type="submit">
+                  Create
+                </button>
               </div>
-              <div class="form-group" style="margin-bottom:0">
-                <label for="uid">
-                  URL slug
-                </label>
-                <input class="form-control" id="uid" name="uid" placeholder="work" type="text" />
-              </div>
-              <div class="form-group" style="margin-bottom:0">
-                <label for="color">
-                  Color
-                </label>
-                <input class="form-control" id="color" name="color" type="color" value="#0082c9" />
-              </div>
-              <button class="btn btn-primary" type="submit">
-                Create
-              </button>
+              <p class="form-help" id="uid-help">
+                The address is the book's name in CardDAV URLs; it is made from the name when left empty.
+              </p>
             </form>
           </div>
-          <div class="card">
+          <div class="card card-flush">
             <h2 class="card-title">
-              Address Books
+              Address books
             </h2>
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>
-                    Color
-                  </th>
-                  <th>
-                    Name
-                  </th>
-                  <th>
-                    UID
-                  </th>
-                  <th class="text-right">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr id="book-1">
-                  <td>
-                    <span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#0082c9;" />
-                  </td>
-                  <td>
+            <ul class="list contact-books">
+              <li class="list-row" id="book-1">
+                <span class="color-dot" style="background:#0082c9;" />
+                <div class="list-row-main">
+                  <a class="list-row-title" href="/apps/contacts/?book=1">
                     Contacts
-                  </td>
-                  <td>
+                  </a>
+                  <div class="list-row-meta">
                     contacts
-                  </td>
-                  <td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
-                    <cog-share-button resource-id="1" resource="dav:collection">
-                      <button class="btn btn-secondary btn-sm" type="button">
-                        Share
-                      </button>
-                    </cog-share-button>
-                    <button class="btn btn-danger btn-sm" hx-confirm="Delete this address book and all its contacts?" hx-delete="/apps/contacts/books/1" hx-swap="outerHTML" hx-target="#book-1">
-                      Delete
+                  </div>
+                </div>
+                <div class="list-row-actions">
+                  <button class="btn btn-sm" data-modal-open="book-edit-1" type="button">
+                    Edit
+                  </button>
+                  <cog-share-button btn-class="btn btn-sm" resource-id="1" resource="dav:collection" share-title="Contacts">
+                    <button class="btn btn-sm" type="button">
+                      Share
                     </button>
-                  </td>
-                </tr>
-                <tr id="book-2">
-                  <td>
-                    <span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#0082c9;" />
-                  </td>
-                  <td>
+                  </cog-share-button>
+                  <button aria-label="Delete Contacts" class="btn-icon btn-icon-danger" hx-confirm="Delete “Contacts” and all its contacts?" hx-delete="/apps/contacts/books/1" hx-swap="outerHTML" hx-target="#book-1" title="Delete" type="button">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
+                  </button>
+                </div>
+              </li>
+              <li class="list-row" id="book-2">
+                <span class="color-dot" style="background:#0082c9;" />
+                <div class="list-row-main">
+                  <a class="list-row-title" href="/apps/contacts/?book=2">
                     Work Contacts
-                  </td>
-                  <td>
+                  </a>
+                  <div class="list-row-meta">
                     work-contacts
-                  </td>
-                  <td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
-                    <cog-share-button resource-id="2" resource="dav:collection">
-                      <button class="btn btn-secondary btn-sm" type="button">
-                        Share
-                      </button>
-                    </cog-share-button>
-                    <button class="btn btn-danger btn-sm" hx-confirm="Delete this address book and all its contacts?" hx-delete="/apps/contacts/books/2" hx-swap="outerHTML" hx-target="#book-2">
-                      Delete
+                  </div>
+                </div>
+                <div class="list-row-actions">
+                  <button class="btn btn-sm" data-modal-open="book-edit-2" type="button">
+                    Edit
+                  </button>
+                  <cog-share-button btn-class="btn btn-sm" resource-id="2" resource="dav:collection" share-title="Work Contacts">
+                    <button class="btn btn-sm" type="button">
+                      Share
                     </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="card">
-            <h2 class="card-title">
-              CardDAV Access
-            </h2>
-            <p class="text-muted">
-              Configure your CardDAV client with:
-            </p>
-            <ul>
-              <li>
-                <strong>
-                  Server:
-                </strong>
-                <code>
-                  your-server-url
-                </code>
-              </li>
-              <li>
-                <strong>
-                  Path:
-                </strong>
-                <code>
-                  /remote.php/dav
-                </code>
-              </li>
-              <li>
-                <strong>
-                  Username/Password:
-                </strong>
-                your Cog credentials or an app password
+                  </cog-share-button>
+                  <button aria-label="Delete Work Contacts" class="btn-icon btn-icon-danger" hx-confirm="Delete “Work Contacts” and all its contacts?" hx-delete="/apps/contacts/books/2" hx-swap="outerHTML" hx-target="#book-2" title="Delete" type="button">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
+                  </button>
+                </div>
               </li>
             </ul>
+            <dialog aria-labelledby="book-edit-1-title" class="modal" id="book-edit-1">
+              <div class="modal-header">
+                <h2 class="modal-title" id="book-edit-1-title">
+                  Edit address book
+                </h2>
+                <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <line x1="18" x2="6" y1="6" y2="18" />
+                    <line x1="6" x2="18" y1="6" y2="18" />
+                  </svg>
+                </button>
+              </div>
+              <form action="/apps/contacts/books/1" method="post">
+                <div class="modal-body">
+                  <input name="csrf_token" type="hidden" value="«hex»" />
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="book-1-name">
+                        Name
+                      </label>
+                      <input class="form-control" id="book-1-name" name="name" required="" type="text" value="Contacts" />
+                    </div>
+                    <div class="form-group form-group-auto">
+                      <label for="book-1-color">
+                        Colour
+                      </label>
+                      <input class="form-control" id="book-1-color" name="color" type="color" value="#0082c9" />
+                    </div>
+                  </div>
+                  <p class="form-help">
+                    Address:
+                    <code>
+                      contacts
+                    </code>
+                  </p>
+                </div>
+                <div class="modal-footer">
+                  <button class="btn" data-modal-close="" type="button">
+                    Cancel
+                  </button>
+                  <button class="btn btn-primary" type="submit">
+                    Save
+                  </button>
+                </div>
+              </form>
+            </dialog>
+            <dialog aria-labelledby="book-edit-2-title" class="modal" id="book-edit-2">
+              <div class="modal-header">
+                <h2 class="modal-title" id="book-edit-2-title">
+                  Edit address book
+                </h2>
+                <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <line x1="18" x2="6" y1="6" y2="18" />
+                    <line x1="6" x2="18" y1="6" y2="18" />
+                  </svg>
+                </button>
+              </div>
+              <form action="/apps/contacts/books/2" method="post">
+                <div class="modal-body">
+                  <input name="csrf_token" type="hidden" value="«hex»" />
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="book-2-name">
+                        Name
+                      </label>
+                      <input class="form-control" id="book-2-name" name="name" required="" type="text" value="Work Contacts" />
+                    </div>
+                    <div class="form-group form-group-auto">
+                      <label for="book-2-color">
+                        Colour
+                      </label>
+                      <input class="form-control" id="book-2-color" name="color" type="color" value="#0082c9" />
+                    </div>
+                  </div>
+                  <p class="form-help">
+                    Address:
+                    <code>
+                      work-contacts
+                    </code>
+                  </p>
+                </div>
+                <div class="modal-footer">
+                  <button class="btn" data-modal-close="" type="button">
+                    Cancel
+                  </button>
+                  <button class="btn btn-primary" type="submit">
+                    Save
+                  </button>
+                </div>
+              </form>
+            </dialog>
+          </div>
+          <div class="card" id="carddav">
+            <h2 class="card-title">
+              CardDAV sync
+            </h2>
+            <p class="card-desc">
+              Contacts on your phone or computer stay in step with these address books through CardDAV.
+            </p>
+            <dl class="kv">
+              <dt>
+                Server
+              </dt>
+              <dd>
+                <div class="share-link">
+                  <code>
+                    http://127.0.0.1:«port»/remote.php/dav/
+                  </code>
+                  <button class="btn btn-secondary btn-sm" onclick="__templ_copyShareLink_12a2(\"http://127.0.0.1:«port»/remote.php/dav/\")" type="button">
+                    Copy
+                  </button>
+                </div>
+              </dd>
+              <dt>
+                Username
+              </dt>
+              <dd>
+                <code>
+                  newbook
+                </code>
+              </dd>
+              <dt>
+                Password
+              </dt>
+              <dd>
+                Your Cog password, or better, an
+                <a href="/settings/security">
+                  app password
+                </a>
+                per device.
+              </dd>
+            </dl>
           </div>
         </div>
       </div>

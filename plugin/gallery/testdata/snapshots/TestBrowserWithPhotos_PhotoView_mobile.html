@@ -5,7 +5,7 @@
     <title>
       IMG_0001.png — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIj48L3JlY3Q+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiPjwvY2lyY2xlPjxwb2x5bGluZSBwb2ludHM9IjIxIDE1IDE2IDEwIDUgMjEiPjwvcG9seWxpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -191,259 +191,400 @@
       </div>
     </nav>
     <main class="content" data-plugin="gallery">
-      <div class="sidebar-layout has-sidebar-toggle">
-        <button aria-controls="gallery-sidebar" aria-expanded="false" aria-label="Menu: Menu" class="sidebar-toggle" type="button">
-          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
-            <line x1="3" x2="21" y1="6" y2="6" />
-            <line x1="3" x2="21" y1="12" y2="12" />
-            <line x1="3" x2="21" y1="18" y2="18" />
-          </svg>
-          <span class="sidebar-toggle-label" data-label="Menu" />
-          <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
-        <nav class="sidebar" id="gallery-sidebar">
-          <a class="sidebar-item" href="/apps/gallery/">
-            Timeline
+      <header class="page-header">
+        <div class="page-heading">
+          <nav aria-label="Breadcrumb" class="breadcrumbs">
+            <ol>
+              <li>
+                <a href="/apps/gallery/">
+                  Gallery
+                </a>
+              </li>
+              <li>
+                <span aria-current="page">
+                  IMG_0001.png
+                </span>
+              </li>
+            </ol>
+          </nav>
+          <h1>
+            IMG_0001.png
+          </h1>
+        </div>
+        <div class="page-actions">
+          <button aria-label="Star" aria-pressed="true" class="btn-star active" hx-post="/apps/gallery/media/1/star" hx-swap="outerHTML" title="Toggle star" type="button">
+            <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+          </button>
+          <a class="btn" download="IMG_0001.png" href="/api/files/download?path=%2FPhotos%2FIMG_0001.png">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" x2="12" y1="15" y2="3" />
+            </svg>
+            Download
           </a>
-          <a class="sidebar-item" href="/apps/gallery/starred">
-            Starred
-          </a>
-          <a class="sidebar-item" href="/apps/gallery/albums">
-            Albums
-          </a>
-          <a class="sidebar-item" href="/apps/gallery/people">
-            People
-          </a>
-          <a class="sidebar-item" href="/apps/gallery/tags">
-            Tags
-          </a>
-          <a class="sidebar-item" href="/apps/gallery/videos">
-            Videos
-          </a>
-          <a class="sidebar-item" href="/apps/gallery/duplicates">
-            Duplicates
-          </a>
-          <div class="sidebar-divider" />
-          <a class="sidebar-item" href="/apps/gallery/settings">
-            Settings
-          </a>
-          <div class="" hx-get="/apps/gallery/api/user-scan-status" hx-swap="innerHTML" hx-trigger="load, every 5s" />
-        </nav>
-        <div class="sidebar-content">
-          <div class="flex items-center gap-1 mb-2">
-            <h1 style="margin:0">
-              IMG_0001.png
-            </h1>
-            <button aria-label="Star" aria-pressed="true" class="btn-star active" hx-post="/apps/gallery/media/1/star" hx-swap="outerHTML" title="Toggle star" type="button">
-              <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          <div class="dropdown">
+            <button aria-controls="add-to-album-menu" aria-expanded="false" class="btn" data-dropdown-toggle="" type="button">
+              <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                <line x1="12" x2="12" y1="5" y2="19" />
+                <line x1="5" x2="19" y1="12" y2="12" />
               </svg>
+              Add to album
             </button>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 300px;gap:1rem">
-            <div>
-              <div class="face-container" style="position:relative;max-width:100%;aspect-ratio:400/300;">
-                <img alt="IMG_0001.png" data-full-src="/api/files/download?path=/Photos/IMG_0001.png" onclick="openLightbox(this)" src="/apps/gallery/api/media/1/thumbnail?size=1024" style="width:100%;height:100%;border-radius:4px;display:block;cursor:zoom-in" />
-                <a class="face-box" href="/apps/gallery/person/1" style="position:absolute;left:10.00%;top:20.00%;width:20.00%;height:30.00%;" title="Ada, age ~34, 93%" />
-                <a class="face-box" href="/apps/gallery/person/2" style="position:absolute;left:40.00%;top:20.00%;width:20.00%;height:30.00%;" title="Grace Hopper-Lovelace, age ~34, 93%" />
-                <a class="face-box" href="/apps/gallery/person/3" style="position:absolute;left:70.00%;top:20.00%;width:20.00%;height:30.00%;" title="Unknown, age ~34, 93%" />
-                <div class="face-box" style="position:absolute;left:70.00%;top:50.00%;width:15.00%;height:20.00%;" title="Unknown, 71%" />
-              </div>
+            <div class="dropdown-menu" id="add-to-album-menu">
+              <form action="/apps/gallery/albums/1/add" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <input name="media_id" type="hidden" value="1" />
+                <input name="return" type="hidden" value="/apps/gallery/photo/1" />
+                <button type="submit">
+                  Summer 2025
+                </button>
+              </form>
+              <form action="/apps/gallery/albums/2/add" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <input name="media_id" type="hidden" value="1" />
+                <input name="return" type="hidden" value="/apps/gallery/photo/1" />
+                <button type="submit">
+                  A weekend in the mountains with the whole extended family
+                </button>
+              </form>
+              <div class="dropdown-divider" />
+              <a href="/apps/gallery/albums">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="12" x2="12" y1="5" y2="19" />
+                  <line x1="5" x2="19" y1="12" y2="12" />
+                </svg>
+                New album…
+              </a>
             </div>
-            <div>
-              <div class="card">
-                <h2 class="card-title">
-                  Details
-                </h2>
-                <table style="width:100%;font-size:0.85rem">
-                  <tbody>
-                    <tr>
-                      <td class="text-muted">
-                        Filename
-                      </td>
-                      <td>
-                        IMG_0001.png
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="text-muted">
-                        Size
-                      </td>
-                      <td>
-                        400×300
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="text-muted">
-                        Date
-                      </td>
-                      <td>
-                        Jul 4, 2025 3:30 PM
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="text-muted">
-                        Camera
-                      </td>
-                      <td>
-                        Apple iPhone 15 Pro
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="text-muted">
-                        Lens
-                      </td>
-                      <td>
-                        iPhone 15 Pro back triple camera 6.765mm f/1.78
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="text-muted">
-                        Aperture
-                      </td>
-                      <td>
-                        f/1.8
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="text-muted">
-                        Shutter
-                      </td>
-                      <td>
-                        1/120
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="text-muted">
-                        ISO
-                      </td>
-                      <td>
-                        100
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="text-muted">
-                        Focal Length
-                      </td>
-                      <td>
-                        26mm
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="text-muted">
-                        Location
-                      </td>
-                      <td>
-                        Santa Cruz, California, United States
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div class="card">
-                <h2 class="card-title">
-                  Tags
-                </h2>
-                <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:0.5rem">
-                  <form action="/apps/gallery/media/1/remove-tag" method="post" style="display:inline">
-                    <input name="csrf_token" type="hidden" value="«hex»" />
-                    <input name="tag_id" type="hidden" value="1" />
-                    <button class="badge" style="cursor:pointer;border:none;background:var(--color-bg-secondary)" title="87% confidence" type="submit">
-                      beach ×
-                    </button>
-                  </form>
-                  <form action="/apps/gallery/media/1/remove-tag" method="post" style="display:inline">
-                    <input name="csrf_token" type="hidden" value="«hex»" />
-                    <input name="tag_id" type="hidden" value="3" />
-                    <button class="badge" style="cursor:pointer;border:none;background:var(--color-bg-secondary)" title="87% confidence" type="submit">
-                      family ×
-                    </button>
-                  </form>
-                </div>
-                <form action="/apps/gallery/media/1/tags" method="post" style="display:flex;gap:4px">
+          </div>
+          <form action="/apps/gallery/media/1/delete" data-confirm-title="Delete photo" data-confirm="Move “IMG_0001.png” to the trash? It leaves the gallery and every album." method="post">
+            <input name="csrf_token" type="hidden" value="«hex»" />
+            <button class="btn btn-outline-danger" type="submit">
+              <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                <path d="M10 11v6" />
+                <path d="M14 11v6" />
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+              </svg>
+              Delete
+            </button>
+          </form>
+        </div>
+      </header>
+      <div class="gallery-photo-layout">
+        <div class="gallery-photo-main">
+          <div class="gallery-photo-frame" style="--ar:400/300;">
+            <button aria-label="View full size" class="gallery-photo-open" data-lightbox-open="" type="button">
+              <img alt="IMG_0001.png" src="/apps/gallery/api/media/1/thumbnail?size=1024" />
+            </button>
+            <a class="face-box" href="/apps/gallery/person/1" style="left:10.00%;top:20.00%;width:20.00%;height:30.00%;" tabindex="-1" title="Ada, about 34 (93% sure)" />
+            <a class="face-box" href="/apps/gallery/person/2" style="left:40.00%;top:20.00%;width:20.00%;height:30.00%;" tabindex="-1" title="Grace Hopper-Lovelace, about 34 (93% sure)" />
+            <a class="face-box" href="/apps/gallery/person/3" style="left:70.00%;top:20.00%;width:20.00%;height:30.00%;" tabindex="-1" title="Unnamed person, about 34 (93% sure)" />
+            <span class="face-box" style="left:70.00%;top:50.00%;width:15.00%;height:20.00%;" title="Not assigned to anyone (71% sure)" />
+          </div>
+          <div class="gallery-photo-toolbar">
+            <a class="btn btn-sm" data-photo-nav="newer" href="/apps/gallery/photo/9" title="Newer photo (←)">
+              <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              Newer
+            </a>
+            <button aria-pressed="false" class="btn btn-sm btn-ghost" data-toggle-faces="" type="button">
+              Show faces
+            </button>
+            <a class="btn btn-sm" data-photo-nav="older" href="/apps/gallery/photo/2" title="Older photo (→)">
+              Older
+              <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </a>
+          </div>
+        </div>
+        <div class="gallery-photo-side">
+          <div class="card">
+            <h2 class="card-title">
+              Details
+            </h2>
+            <dl class="gallery-meta">
+              <dt>
+                File
+              </dt>
+              <dd>
+                IMG_0001.png
+              </dd>
+              <dt>
+                Size
+              </dt>
+              <dd>
+                400 × 300
+              </dd>
+              <dt>
+                Taken
+              </dt>
+              <dd>
+                Jul 4, 2025 3:30 PM
+              </dd>
+              <dt>
+                Camera
+              </dt>
+              <dd>
+                Apple iPhone 15 Pro
+              </dd>
+              <dt>
+                Lens
+              </dt>
+              <dd>
+                iPhone 15 Pro back triple camera 6.765mm f/1.78
+              </dd>
+              <dt>
+                Aperture
+              </dt>
+              <dd>
+                f/1.8
+              </dd>
+              <dt>
+                Shutter
+              </dt>
+              <dd>
+                1/120
+              </dd>
+              <dt>
+                ISO
+              </dt>
+              <dd>
+                100
+              </dd>
+              <dt>
+                Focal length
+              </dt>
+              <dd>
+                26 mm
+              </dd>
+              <dt>
+                Location
+              </dt>
+              <dd>
+                Santa Cruz, California, United States
+              </dd>
+            </dl>
+          </div>
+          <div class="card">
+            <h2 class="card-title">
+              Tags
+            </h2>
+            <ul class="chip-group gallery-tag-list">
+              <li class="chip">
+                <a href="/apps/gallery/tag/beach">
+                  beach
+                </a>
+                <form action="/apps/gallery/media/1/remove-tag" method="post">
                   <input name="csrf_token" type="hidden" value="«hex»" />
-                  <input class="form-control form-control-sm" name="tag_name" placeholder="Add tag..." style="flex:1" type="text" />
-                  <button class="btn btn-sm" type="submit">
-                    Add
+                  <input name="tag_id" type="hidden" value="1" />
+                  <button aria-label="Remove tag beach" class="chip-remove" title="Remove tag" type="submit">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <line x1="18" x2="6" y1="6" y2="18" />
+                      <line x1="6" x2="18" y1="6" y2="18" />
+                    </svg>
                   </button>
                 </form>
-              </div>
-              <div class="card">
-                <h2 class="card-title">
-                  Faces
-                </h2>
-                <div style="display:flex;flex-direction:column;gap:6px">
-                  <div style="display:flex;align-items:center;gap:8px">
-                    <img alt="Ada, age ~34, 93%" src="/apps/gallery/api/face/1/thumbnail" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0" />
-                    <a href="/apps/gallery/person/1" style="text-decoration:none;font-size:0.85rem;flex:1;min-width:0">
-                      Ada, age ~34, 93%
-                    </a>
-                    <form action="/apps/gallery/media/1/delete-face" method="post" style="display:inline;flex-shrink:0">
-                      <input name="csrf_token" type="hidden" value="«hex»" />
-                      <input name="face_id" type="hidden" value="1" />
-                      <button class="btn btn-sm" style="padding:0 4px;font-size:0.7rem;line-height:1" title="Delete face" type="submit">
-                        ×
-                      </button>
-                    </form>
-                  </div>
-                  <div style="display:flex;align-items:center;gap:8px">
-                    <img alt="Grace Hopper-Lovelace, age ~34, 93%" src="/apps/gallery/api/face/4/thumbnail" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0" />
-                    <a href="/apps/gallery/person/2" style="text-decoration:none;font-size:0.85rem;flex:1;min-width:0">
-                      Grace Hopper-Lovelace, age ~34, 93%
-                    </a>
-                    <form action="/apps/gallery/media/1/delete-face" method="post" style="display:inline;flex-shrink:0">
-                      <input name="csrf_token" type="hidden" value="«hex»" />
-                      <input name="face_id" type="hidden" value="4" />
-                      <button class="btn btn-sm" style="padding:0 4px;font-size:0.7rem;line-height:1" title="Delete face" type="submit">
-                        ×
-                      </button>
-                    </form>
-                  </div>
-                  <div style="display:flex;align-items:center;gap:8px">
-                    <img alt="Unknown, age ~34, 93%" src="/apps/gallery/api/face/6/thumbnail" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0" />
-                    <a href="/apps/gallery/person/3" style="text-decoration:none;font-size:0.85rem;flex:1;min-width:0">
-                      Unknown, age ~34, 93%
-                    </a>
-                    <form action="/apps/gallery/media/1/delete-face" method="post" style="display:inline;flex-shrink:0">
-                      <input name="csrf_token" type="hidden" value="«hex»" />
-                      <input name="face_id" type="hidden" value="6" />
-                      <button class="btn btn-sm" style="padding:0 4px;font-size:0.7rem;line-height:1" title="Delete face" type="submit">
-                        ×
-                      </button>
-                    </form>
-                  </div>
-                  <div style="display:flex;align-items:center;gap:8px">
-                    <img alt="Unknown, 71%" src="/apps/gallery/api/face/7/thumbnail" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0" />
-                    <form action="/apps/gallery/faces/7/new-person" method="post" style="display:inline;flex:1;min-width:0">
-                      <input name="csrf_token" type="hidden" value="«hex»" />
-                      <button class="badge" style="cursor:pointer;border:none;background:var(--color-bg);font-size:0.85rem" title="Create person from this face" type="submit">
-                        Unknown +
-                      </button>
-                    </form>
-                    <form action="/apps/gallery/media/1/delete-face" method="post" style="display:inline;flex-shrink:0">
-                      <input name="csrf_token" type="hidden" value="«hex»" />
-                      <input name="face_id" type="hidden" value="7" />
-                      <button class="btn btn-sm" style="padding:0 4px;font-size:0.7rem;line-height:1" title="Delete face" type="submit">
-                        ×
-                      </button>
-                    </form>
+              </li>
+              <li class="chip">
+                <a href="/apps/gallery/tag/family">
+                  family
+                </a>
+                <form action="/apps/gallery/media/1/remove-tag" method="post">
+                  <input name="csrf_token" type="hidden" value="«hex»" />
+                  <input name="tag_id" type="hidden" value="3" />
+                  <button aria-label="Remove tag family" class="chip-remove" title="Remove tag" type="submit">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <line x1="18" x2="6" y1="6" y2="18" />
+                      <line x1="6" x2="18" y1="6" y2="18" />
+                    </svg>
+                  </button>
+                </form>
+              </li>
+            </ul>
+            <form action="/apps/gallery/media/1/tags" class="gallery-tag-form" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <label class="sr-only" for="gallery-add-tag">
+                Add a tag
+              </label>
+              <input autocomplete="off" class="form-control form-control-sm" id="gallery-add-tag" name="tag_name" placeholder="Add a tag…" required="" type="text" />
+              <button class="btn btn-sm" type="submit">
+                Add
+              </button>
+            </form>
+          </div>
+          <div class="card">
+            <h2 class="card-title">
+              Faces
+            </h2>
+            <ul class="gallery-face-list">
+              <li>
+                <img alt="" class="avatar-md" loading="lazy" src="/apps/gallery/api/face/1/thumbnail" />
+                <div class="gallery-face-label" title="Ada, about 34 (93% sure)">
+                  <a href="/apps/gallery/person/1">
+                    Ada
+                  </a>
+                  <div class="text-xs text-muted">
+                    About 34 years old
                   </div>
                 </div>
-              </div>
-              <div class="card">
-                <h2 class="card-title">
-                  Text (OCR)
-                </h2>
-                <pre style="white-space:pre-wrap;font-size:0.85rem;margin:0">
-                  SANTA CRUZ BEACH BOARDWALK
-                </pre>
-              </div>
-            </div>
+                <form action="/apps/gallery/media/1/delete-face" data-confirm-action="Remove" data-confirm-title="Remove face" data-confirm="Remove this face from the photo? The photo itself is kept." method="post">
+                  <input name="csrf_token" type="hidden" value="«hex»" />
+                  <input name="face_id" type="hidden" value="1" />
+                  <button aria-label="Remove face" class="btn-icon btn-icon-sm btn-icon-danger" title="Remove face" type="submit">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <line x1="18" x2="6" y1="6" y2="18" />
+                      <line x1="6" x2="18" y1="6" y2="18" />
+                    </svg>
+                  </button>
+                </form>
+              </li>
+              <li>
+                <img alt="" class="avatar-md" loading="lazy" src="/apps/gallery/api/face/4/thumbnail" />
+                <div class="gallery-face-label" title="Grace Hopper-Lovelace, about 34 (93% sure)">
+                  <a href="/apps/gallery/person/2">
+                    Grace Hopper-Lovelace
+                  </a>
+                  <div class="text-xs text-muted">
+                    About 34 years old
+                  </div>
+                </div>
+                <form action="/apps/gallery/media/1/delete-face" data-confirm-action="Remove" data-confirm-title="Remove face" data-confirm="Remove this face from the photo? The photo itself is kept." method="post">
+                  <input name="csrf_token" type="hidden" value="«hex»" />
+                  <input name="face_id" type="hidden" value="4" />
+                  <button aria-label="Remove face" class="btn-icon btn-icon-sm btn-icon-danger" title="Remove face" type="submit">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <line x1="18" x2="6" y1="6" y2="18" />
+                      <line x1="6" x2="18" y1="6" y2="18" />
+                    </svg>
+                  </button>
+                </form>
+              </li>
+              <li>
+                <img alt="" class="avatar-md" loading="lazy" src="/apps/gallery/api/face/6/thumbnail" />
+                <div class="gallery-face-label" title="Unnamed person, about 34 (93% sure)">
+                  <a class="gallery-unnamed" href="/apps/gallery/person/3">
+                    Unnamed person
+                  </a>
+                  <div class="text-xs text-muted">
+                    About 34 years old
+                  </div>
+                </div>
+                <form action="/apps/gallery/media/1/delete-face" data-confirm-action="Remove" data-confirm-title="Remove face" data-confirm="Remove this face from the photo? The photo itself is kept." method="post">
+                  <input name="csrf_token" type="hidden" value="«hex»" />
+                  <input name="face_id" type="hidden" value="6" />
+                  <button aria-label="Remove face" class="btn-icon btn-icon-sm btn-icon-danger" title="Remove face" type="submit">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <line x1="18" x2="6" y1="6" y2="18" />
+                      <line x1="6" x2="18" y1="6" y2="18" />
+                    </svg>
+                  </button>
+                </form>
+              </li>
+              <li>
+                <img alt="" class="avatar-md" loading="lazy" src="/apps/gallery/api/face/7/thumbnail" />
+                <div class="gallery-face-label" title="Not assigned to anyone (71% sure)">
+                  <span class="gallery-unnamed">
+                    Not assigned
+                  </span>
+                  <form action="/apps/gallery/faces/7/new-person" method="post">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <button class="btn-link gallery-inline-action" type="submit">
+                      Create person
+                    </button>
+                  </form>
+                </div>
+                <form action="/apps/gallery/media/1/delete-face" data-confirm-action="Remove" data-confirm-title="Remove face" data-confirm="Remove this face from the photo? The photo itself is kept." method="post">
+                  <input name="csrf_token" type="hidden" value="«hex»" />
+                  <input name="face_id" type="hidden" value="7" />
+                  <button aria-label="Remove face" class="btn-icon btn-icon-sm btn-icon-danger" title="Remove face" type="submit">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <line x1="18" x2="6" y1="6" y2="18" />
+                      <line x1="6" x2="18" y1="6" y2="18" />
+                    </svg>
+                  </button>
+                </form>
+              </li>
+            </ul>
+          </div>
+          <div class="card">
+            <h2 class="card-title">
+              Text in the photo
+            </h2>
+            <pre class="gallery-ocr">
+              SANTA CRUZ BEACH BOARDWALK
+            </pre>
           </div>
         </div>
       </div>
+      <dialog aria-label="IMG_0001.png" class="gallery-lightbox" id="gallery-lightbox">
+        <div class="gallery-lightbox-stage">
+          <img alt="IMG_0001.png" data-lightbox-img="" data-src="/api/files/download?path=%2FPhotos%2FIMG_0001.png" />
+        </div>
+        <a aria-label="Newer photo" class="gallery-lightbox-nav gallery-lightbox-prev" href="/apps/gallery/photo/9#view">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </a>
+        <a aria-label="Older photo" class="gallery-lightbox-nav gallery-lightbox-next" href="/apps/gallery/photo/2#view">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </a>
+        <div class="gallery-lightbox-bar">
+          <div class="gallery-lightbox-caption">
+            <span class="gallery-lightbox-name">
+              IMG_0001.png
+            </span>
+            <span>
+              Jul 4, 2025
+            </span>
+          </div>
+          <a aria-label="Download" class="gallery-lightbox-button" download="IMG_0001.png" href="/api/files/download?path=%2FPhotos%2FIMG_0001.png" title="Download">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" x2="12" y1="15" y2="3" />
+            </svg>
+          </a>
+          <button aria-label="Close" autofocus="" class="gallery-lightbox-button" data-lightbox-close="" title="Close (Esc)" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </dialog>
+      <dialog aria-labelledby="gallery-confirm-title" class="modal" id="gallery-confirm">
+        <div class="modal-header">
+          <h2 class="modal-title" id="gallery-confirm-title">
+            Are you sure?
+          </h2>
+          <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p data-confirm-message="" />
+        </div>
+        <div class="modal-footer">
+          <button class="btn" data-modal-close="" type="button">
+            Cancel
+          </button>
+          <button class="btn btn-danger" data-confirm-ok="" type="button">
+            Delete
+          </button>
+        </div>
+      </dialog>
     </main>
   </body>
 </html>

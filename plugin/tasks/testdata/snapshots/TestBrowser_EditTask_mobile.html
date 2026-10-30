@@ -5,7 +5,7 @@
     <title>
       Choose paint colours — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik05IDExbDMgM0wyMiA0Ij48L3BhdGg+PHBhdGggZD0iTTIxIDEydjdhMiAyIDAgMCAxLTIgMkg1YTIgMiAwIDAgMS0yLTJWNWEyIDIgMCAwIDEgMi0yaDExIj48L3BhdGg+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -191,47 +191,156 @@
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="tasks-sidebar">
-          <a class="sidebar-item active" href="/apps/tasks/list/2">
-            <span class="sidebar-color-dot" style="background:#43a047;" />
+        <nav aria-label="Task lists" class="sidebar" id="tasks-sidebar">
+          <div class="sidebar-heading">
+            Lists
+          </div>
+          <a aria-current="page" class="sidebar-item active" href="/apps/tasks/list/2">
+            <span class="color-dot" style="background:#43a047;" />
             Home Renovation
           </a>
           <a class="sidebar-item" href="/apps/tasks/list/1">
-            <span class="sidebar-color-dot" style="background:#0082c9;" />
+            <span class="color-dot" style="background:#0082c9;" />
             Personal
           </a>
           <div class="sidebar-divider" />
-          <form action="/apps/tasks/list" class="flex gap-1 items-center" method="post" style="padding:0.5rem 1rem">
+          <form action="/apps/tasks/list" class="task-new-list" method="post">
             <input name="csrf_token" type="hidden" value="«hex»" />
-            <input class="form-control" data-testid="new-list-name" name="name" placeholder="New list..." required="" style="flex:1;min-width:0" type="text" />
-            <button class="btn btn-outline btn-sm" data-testid="new-list-submit" type="submit">
-              +
+            <label class="sr-only" for="new-list-name">
+              New list
+            </label>
+            <input class="form-control form-control-sm" data-testid="new-list-name" id="new-list-name" name="name" placeholder="New list…" required="" type="text" />
+            <button aria-label="Create list" class="btn btn-sm btn-square" data-testid="new-list-submit" title="Create list" type="submit">
+              <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                <line x1="12" x2="12" y1="5" y2="19" />
+                <line x1="5" x2="19" y1="12" y2="12" />
+              </svg>
             </button>
           </form>
         </nav>
         <div class="sidebar-content">
-          <h1>
-            Edit Task
-          </h1>
+          <header class="page-header">
+            <div class="page-heading">
+              <nav aria-label="Breadcrumb" class="breadcrumbs">
+                <ol>
+                  <li>
+                    <a href="/apps/tasks/list/2">
+                      Home Renovation
+                    </a>
+                  </li>
+                  <li>
+                    <span aria-current="page">
+                      Edit task
+                    </span>
+                  </li>
+                </ol>
+              </nav>
+              <h1>
+                Edit task
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
           <div class="card">
-            <form action="/apps/tasks/task/2" method="post">
+            <form action="/apps/tasks/task/2" id="task-form" method="post">
               <input name="csrf_token" type="hidden" value="«hex»" />
               <div class="form-group">
                 <label for="summary">
-                  Summary
+                  Title
                 </label>
                 <input class="form-control" id="summary" name="summary" required="" type="text" value="Choose paint colours" />
               </div>
               <div class="form-group">
                 <label for="description">
-                  Description
+                  Notes
                 </label>
                 <textarea class="form-control" id="description" name="description" rows="4">
                   Sample pots from the shop on Elm Street; compare in daylight.
                 </textarea>
               </div>
-              <div class="flex gap-1" style="flex-wrap:wrap">
-                <div class="form-group" style="flex:1;min-width:200px">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="status">
+                    Status
+                  </label>
+                  <select class="form-control" data-task-status="" id="status" name="status">
+                    <option selected="" value="NEEDS-ACTION">
+                      To do
+                    </option>
+                    <option value="IN-PROCESS">
+                      In progress
+                    </option>
+                    <option value="COMPLETED">
+                      Done
+                    </option>
+                    <option value="CANCELLED">
+                      Cancelled
+                    </option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="priority">
+                    Priority
+                  </label>
+                  <select class="form-control" id="priority" name="priority">
+                    <option value="0">
+                      None
+                    </option>
+                    <option value="1">
+                      High
+                    </option>
+                    <option selected="" value="5">
+                      Medium
+                    </option>
+                    <option value="9">
+                      Low
+                    </option>
+                  </select>
+                </div>
+                <div class="form-group" data-task-percent="" hidden="">
+                  <label for="percent_complete">
+                    Progress (%)
+                  </label>
+                  <input class="form-control" id="percent_complete" max="100" min="0" name="percent_complete" type="number" value="0" />
+                </div>
+              </div>
+              <div class="form-row">
+                <fieldset class="form-group">
+                  <legend>
+                    Due
+                  </legend>
+                  <div class="task-when">
+                    <label class="sr-only" for="due_date">
+                      Due date
+                    </label>
+                    <input class="form-control" id="due_date" name="due_date" type="date" value="2026-03-15" />
+                    <label class="sr-only" for="due_time">
+                      Due time
+                    </label>
+                    <input class="form-control" id="due_time" name="due_time" type="time" value="14:00" />
+                  </div>
+                </fieldset>
+                <fieldset class="form-group">
+                  <legend>
+                    Starts
+                  </legend>
+                  <div class="task-when">
+                    <label class="sr-only" for="start_date">
+                      Start date
+                    </label>
+                    <input class="form-control" id="start_date" name="start_date" type="date" value="" />
+                    <label class="sr-only" for="start_time">
+                      Start time
+                    </label>
+                    <input class="form-control" id="start_time" name="start_time" type="time" value="" />
+                  </div>
+                </fieldset>
+              </div>
+              <p class="form-help task-when-help">
+                Leave the time empty for something due on a day.
+              </p>
+              <div class="form-row">
+                <div class="form-group">
                   <label for="list_id">
                     List
                   </label>
@@ -244,13 +353,13 @@
                     </option>
                   </select>
                 </div>
-                <div class="form-group" style="flex:1;min-width:200px">
+                <div class="form-group">
                   <label for="parent_id">
-                    Parent Task
+                    Subtask of
                   </label>
                   <select class="form-control" id="parent_id" name="parent_id">
                     <option value="">
-                      (none)
+                      Nothing (top level)
                     </option>
                     <option selected="" value="1">
                       Kitchen
@@ -270,65 +379,34 @@
                     <option value="8">
                       Pick up tiles
                     </option>
-                  </select>
-                </div>
-              </div>
-              <div class="flex gap-1" style="flex-wrap:wrap">
-                <div class="form-group" style="flex:1;min-width:150px">
-                  <label for="priority">
-                    Priority (0-9)
-                  </label>
-                  <input class="form-control" id="priority" max="9" min="0" name="priority" type="number" value="5" />
-                </div>
-                <div class="form-group" style="flex:1;min-width:150px">
-                  <label for="status">
-                    Status
-                  </label>
-                  <select class="form-control" id="status" name="status">
-                    <option selected="" value="NEEDS-ACTION">
-                      NEEDS-ACTION
-                    </option>
-                    <option value="IN-PROCESS">
-                      IN-PROCESS
-                    </option>
-                    <option value="COMPLETED">
-                      COMPLETED
-                    </option>
-                    <option value="CANCELLED">
-                      CANCELLED
+                    <option value="9">
+                      Repaint the fence
                     </option>
                   </select>
                 </div>
-                <div class="form-group" style="flex:1;min-width:150px">
-                  <label for="percent_complete">
-                    % Complete
-                  </label>
-                  <input class="form-control" id="percent_complete" max="100" min="0" name="percent_complete" type="number" value="0" />
-                </div>
-              </div>
-              <div class="flex gap-1" style="flex-wrap:wrap">
-                <div class="form-group" style="flex:1;min-width:200px">
-                  <label for="due_at">
-                    Due Date (UTC)
-                  </label>
-                  <input class="form-control" id="due_at" name="due_at_date" type="datetime-local" value="2025-03-10T00:00" />
-                </div>
-                <div class="form-group" style="flex:1;min-width:200px">
-                  <label for="start_at">
-                    Start Date (UTC)
-                  </label>
-                  <input class="form-control" id="start_at" name="start_at_date" type="datetime-local" value="" />
-                </div>
-              </div>
-              <div class="flex gap-1">
-                <button class="btn btn-primary" type="submit">
-                  Save
-                </button>
-                <a class="btn btn-outline" href="/apps/tasks/list/2">
-                  Cancel
-                </a>
               </div>
             </form>
+            <div class="form-actions">
+              <button class="btn btn-primary" form="task-form" type="submit">
+                Save
+              </button>
+              <a class="btn" href="/apps/tasks/list/2">
+                Cancel
+              </a>
+              <form action="/apps/tasks/task/2/delete" class="spacer" method="post" onsubmit="return confirm('Delete this task and its subtasks?')">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <button class="btn btn-outline-danger" type="submit">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                    <path d="M10 11v6" />
+                    <path d="M14 11v6" />
+                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                  </svg>
+                  Delete
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </div>

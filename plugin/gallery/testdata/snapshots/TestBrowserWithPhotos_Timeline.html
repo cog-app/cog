@@ -5,7 +5,7 @@
     <title>
       Gallery — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIj48L3JlY3Q+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiPjwvY2lyY2xlPjxwb2x5bGluZSBwb2ludHM9IjIxIDE1IDE2IDEwIDUgMjEiPjwvcG9seWxpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -192,23 +192,20 @@
     </nav>
     <main class="content" data-plugin="gallery">
       <div class="sidebar-layout has-sidebar-toggle">
-        <button aria-controls="gallery-sidebar" aria-expanded="false" aria-label="Menu: Timeline 9" class="sidebar-toggle" type="button">
+        <button aria-controls="gallery-sidebar" aria-expanded="false" aria-label="Menu: Timeline" class="sidebar-toggle" type="button">
           <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
             <line x1="3" x2="21" y1="6" y2="6" />
             <line x1="3" x2="21" y1="12" y2="12" />
             <line x1="3" x2="21" y1="18" y2="18" />
           </svg>
-          <span class="sidebar-toggle-label" data-label="Timeline 9" />
+          <span class="sidebar-toggle-label" data-label="Timeline" />
           <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="gallery-sidebar">
-          <a class="sidebar-item active" href="/apps/gallery/">
+        <nav aria-label="Gallery" class="sidebar" id="gallery-sidebar">
+          <a aria-current="page" class="sidebar-item active" href="/apps/gallery/">
             Timeline
-            <span class="badge">
-              9
-            </span>
           </a>
           <a class="sidebar-item" href="/apps/gallery/starred">
             Starred
@@ -235,43 +232,131 @@
           <div class="" hx-get="/apps/gallery/api/user-scan-status" hx-swap="innerHTML" hx-trigger="load, every 5s" />
         </nav>
         <div class="sidebar-content">
-          <h1>
-            Timeline
-          </h1>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px">
-            <a class="thumb-loading" href="/apps/gallery/photo/1" style="aspect-ratio:1;overflow:hidden;border-radius:4px;position:relative;display:block">
-              <img alt="IMG_0001.png" loading="lazy" src="/apps/gallery/api/media/1/thumbnail?size=256" style="width:100%;height:100%;object-fit:cover;position:relative" />
-            </a>
-            <a class="thumb-loading" href="/apps/gallery/photo/9" style="aspect-ratio:1;overflow:hidden;border-radius:4px;position:relative;display:block">
-              <img alt="VID_0001.mp4" loading="lazy" src="/apps/gallery/api/media/9/thumbnail?size=256" style="width:100%;height:100%;object-fit:cover;position:relative" />
-              <span style="position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,0.6);color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75rem">
-                1:23
-              </span>
-            </a>
-            <a class="thumb-loading" href="/apps/gallery/photo/2" style="aspect-ratio:1;overflow:hidden;border-radius:4px;position:relative;display:block">
-              <img alt="IMG_0002.png" loading="lazy" src="/apps/gallery/api/media/2/thumbnail?size=256" style="width:100%;height:100%;object-fit:cover;position:relative" />
-            </a>
-            <a class="thumb-loading" href="/apps/gallery/photo/3" style="aspect-ratio:1;overflow:hidden;border-radius:4px;position:relative;display:block">
-              <img alt="IMG_0003.png" loading="lazy" src="/apps/gallery/api/media/3/thumbnail?size=256" style="width:100%;height:100%;object-fit:cover;position:relative" />
-            </a>
-            <a class="thumb-loading" href="/apps/gallery/photo/4" style="aspect-ratio:1;overflow:hidden;border-radius:4px;position:relative;display:block">
-              <img alt="IMG_0004.png" loading="lazy" src="/apps/gallery/api/media/4/thumbnail?size=256" style="width:100%;height:100%;object-fit:cover;position:relative" />
-            </a>
-            <a class="thumb-loading" href="/apps/gallery/photo/5" style="aspect-ratio:1;overflow:hidden;border-radius:4px;position:relative;display:block">
-              <img alt="IMG_0005.png" loading="lazy" src="/apps/gallery/api/media/5/thumbnail?size=256" style="width:100%;height:100%;object-fit:cover;position:relative" />
-            </a>
-            <a class="thumb-loading" href="/apps/gallery/photo/6" style="aspect-ratio:1;overflow:hidden;border-radius:4px;position:relative;display:block">
-              <img alt="Beach day & sunset #2 - the long panoramic one.png" loading="lazy" src="/apps/gallery/api/media/6/thumbnail?size=256" style="width:100%;height:100%;object-fit:cover;position:relative" />
-            </a>
-            <a class="thumb-loading" href="/apps/gallery/photo/7" style="aspect-ratio:1;overflow:hidden;border-radius:4px;position:relative;display:block">
-              <img alt="IMG_0007.png" loading="lazy" src="/apps/gallery/api/media/7/thumbnail?size=256" style="width:100%;height:100%;object-fit:cover;position:relative" />
-            </a>
-            <a class="thumb-loading" href="/apps/gallery/photo/8" style="aspect-ratio:1;overflow:hidden;border-radius:4px;position:relative;display:block">
-              <img alt="IMG_0007 (copy).png" loading="lazy" src="/apps/gallery/api/media/8/thumbnail?size=256" style="width:100%;height:100%;object-fit:cover;position:relative" />
-            </a>
-          </div>
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                Timeline
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
+          <section class="gallery-day">
+            <h2 class="gallery-day-title">
+              Friday, July 4, 2025
+            </h2>
+            <div class="gallery-grid">
+              <a class="gallery-thumb is-missing" href="/apps/gallery/photo/9" title="VID_0001.mp4">
+                <img alt="VID_0001.mp4" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/9/thumbnail?size=256" />
+                <span aria-hidden="true" class="gallery-play">
+                  <svg aria-hidden="true" fill="currentColor" height="20" viewBox="0 0 24 24" width="20">
+                    <polygon points="7 4 20 12 7 20 7 4" />
+                  </svg>
+                </span>
+                <span class="gallery-duration">
+                  1:23
+                </span>
+              </a>
+              <a class="gallery-thumb" href="/apps/gallery/photo/1" title="IMG_0001.png">
+                <img alt="IMG_0001.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/1/thumbnail?size=256" />
+              </a>
+            </div>
+          </section>
+          <section class="gallery-day">
+            <h2 class="gallery-day-title">
+              Thursday, July 3, 2025
+            </h2>
+            <div class="gallery-grid">
+              <a class="gallery-thumb" href="/apps/gallery/photo/2" title="IMG_0002.png">
+                <img alt="IMG_0002.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/2/thumbnail?size=256" />
+              </a>
+            </div>
+          </section>
+          <section class="gallery-day">
+            <h2 class="gallery-day-title">
+              Wednesday, July 2, 2025
+            </h2>
+            <div class="gallery-grid">
+              <a class="gallery-thumb" href="/apps/gallery/photo/3" title="IMG_0003.png">
+                <img alt="IMG_0003.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/3/thumbnail?size=256" />
+              </a>
+            </div>
+          </section>
+          <section class="gallery-day">
+            <h2 class="gallery-day-title">
+              Tuesday, July 1, 2025
+            </h2>
+            <div class="gallery-grid">
+              <a class="gallery-thumb" href="/apps/gallery/photo/4" title="IMG_0004.png">
+                <img alt="IMG_0004.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/4/thumbnail?size=256" />
+              </a>
+            </div>
+          </section>
+          <section class="gallery-day">
+            <h2 class="gallery-day-title">
+              Monday, June 30, 2025
+            </h2>
+            <div class="gallery-grid">
+              <a class="gallery-thumb" href="/apps/gallery/photo/5" title="IMG_0005.png">
+                <img alt="IMG_0005.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/5/thumbnail?size=256" />
+              </a>
+            </div>
+          </section>
+          <section class="gallery-day">
+            <h2 class="gallery-day-title">
+              Sunday, June 29, 2025
+            </h2>
+            <div class="gallery-grid">
+              <a class="gallery-thumb" href="/apps/gallery/photo/6" title="Beach day & sunset #2 - the long panoramic one.png">
+                <img alt="Beach day & sunset #2 - the long panoramic one.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/6/thumbnail?size=256" />
+              </a>
+            </div>
+          </section>
+          <section class="gallery-day">
+            <h2 class="gallery-day-title">
+              Saturday, June 28, 2025
+            </h2>
+            <div class="gallery-grid">
+              <a class="gallery-thumb" href="/apps/gallery/photo/7" title="IMG_0007.png">
+                <img alt="IMG_0007.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/7/thumbnail?size=256" />
+              </a>
+            </div>
+          </section>
+          <section class="gallery-day">
+            <h2 class="gallery-day-title">
+              Friday, June 27, 2025
+            </h2>
+            <div class="gallery-grid">
+              <a class="gallery-thumb" href="/apps/gallery/photo/8" title="IMG_0007 (copy).png">
+                <img alt="IMG_0007 (copy).png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/8/thumbnail?size=256" />
+              </a>
+            </div>
+          </section>
         </div>
       </div>
+      <dialog aria-labelledby="gallery-confirm-title" class="modal" id="gallery-confirm">
+        <div class="modal-header">
+          <h2 class="modal-title" id="gallery-confirm-title">
+            Are you sure?
+          </h2>
+          <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p data-confirm-message="" />
+        </div>
+        <div class="modal-footer">
+          <button class="btn" data-modal-close="" type="button">
+            Cancel
+          </button>
+          <button class="btn btn-danger" data-confirm-ok="" type="button">
+            Delete
+          </button>
+        </div>
+      </dialog>
     </main>
   </body>
 </html>

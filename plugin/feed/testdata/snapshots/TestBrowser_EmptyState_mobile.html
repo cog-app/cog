@@ -5,7 +5,7 @@
     <title>
       Feed — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik00IDExYTkgOSAwIDAgMSA5IDkiPjwvcGF0aD48cGF0aCBkPSJNNCA0YTE2IDE2IDAgMCAxIDE2IDE2Ij48L3BhdGg+PGNpcmNsZSBjeD0iNSIgY3k9IjE5IiByPSIxIj48L2NpcmNsZT48L3N2Zz4=" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -192,144 +192,206 @@
     </nav>
     <main class="content" data-plugin="feed">
       <div class="sidebar-layout has-sidebar-toggle">
-        <button aria-controls="feed-sidebar" aria-expanded="false" aria-label="Menu: All" class="sidebar-toggle" type="button">
+        <button aria-controls="feed-sidebar" aria-expanded="false" aria-label="Menu: All articles" class="sidebar-toggle" type="button">
           <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
             <line x1="3" x2="21" y1="6" y2="6" />
             <line x1="3" x2="21" y1="12" y2="12" />
             <line x1="3" x2="21" y1="18" y2="18" />
           </svg>
-          <span class="sidebar-toggle-label" data-label="All" />
+          <span class="sidebar-toggle-label" data-label="All articles" />
           <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="feed-sidebar">
-          <label class="sidebar-hide-empty" style="display:flex;align-items:center;gap:0.4rem;padding:0.25rem 0.5rem;font-size:0.8rem;color:var(--color-text-muted)">
-            <input hx-post="/apps/feed/player/prefs" hx-swap="outerHTML" hx-target="#feed-sidebar" hx-vals="js:{hide_empty: event.target.checked ? \"1\" : \"0\"}" name="hide_empty" type="checkbox" />
-            Hide read
-          </label>
-          <a class="sidebar-item active" href="/apps/feed/">
-            All
+        <nav aria-label="Feed" class="sidebar" id="feed-sidebar">
+          <a aria-current="page" class="sidebar-item active" href="/apps/feed/">
+            <span class="break-anywhere">
+              All articles
+            </span>
           </a>
           <a class="sidebar-item" href="/apps/feed/starred">
-            Starred
+            <span class="break-anywhere">
+              Starred
+            </span>
           </a>
           <a class="sidebar-item" href="/apps/feed/history">
-            History
+            <span class="break-anywhere">
+              History
+            </span>
           </a>
-          <div class="sidebar-divider" />
-          <hr class="sidebar-divider" />
-          <div class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-text-muted);padding:0.25rem 0.5rem">
+          <div class="sidebar-heading feed-sidebar-heading">
+            <span>
+              Feeds
+            </span>
+            <label class="feed-hide-read">
+              <input hx-post="/apps/feed/player/prefs" hx-swap="outerHTML" hx-target="#feed-sidebar" hx-vals="js:{hide_empty: event.target.checked ? \"1\" : \"0\"}" name="hide_empty" type="checkbox" />
+              Unread only
+            </label>
+          </div>
+          <div class="sidebar-heading">
             Settings
           </div>
-          <a class="sidebar-item" href="/apps/feed/settings/subscriptions" style="padding-left:1.5rem;font-size:0.9rem">
-            Subscriptions
+          <a class="sidebar-item" href="/apps/feed/settings/subscriptions">
+            <span class="break-anywhere">
+              Subscriptions
+            </span>
           </a>
-          <a class="sidebar-item" href="/apps/feed/settings/filters" style="padding-left:1.5rem;font-size:0.9rem">
-            Filters
+          <a class="sidebar-item" href="/apps/feed/settings/filters">
+            <span class="break-anywhere">
+              Filters
+            </span>
           </a>
-          <a class="sidebar-item" href="/apps/feed/settings/playlists" style="padding-left:1.5rem;font-size:0.9rem">
-            Playlists
+          <a class="sidebar-item" href="/apps/feed/settings/playlists">
+            <span class="break-anywhere">
+              Playlists
+            </span>
           </a>
         </nav>
         <div class="sidebar-content">
-          <div class="flex items-center gap-1 mb-2" style="justify-content:space-between;flex-wrap:wrap">
-            <h1 style="margin:0">
-              All Articles
-            </h1>
-            <div class="flex gap-1 items-center">
-              <form action="/apps/feed/" method="get">
-                <div class="flex gap-1">
-                  <input class="form-control" name="q" placeholder="Search feeds…" style="max-width:280px" title="Search — see ▾ for syntax" type="search" value="" />
-                  <button class="btn btn-outline btn-sm" type="submit">
-                    Go
-                  </button>
-                </div>
-                <details class="feed-search-help" style="margin-top:0.25rem;font-size:0.8rem;color:var(--color-text-muted)">
-                  <summary style="cursor:pointer;user-select:none">
-                    Search help
-                  </summary>
-                  <div style="margin-top:0.4rem;line-height:1.6;background:var(--color-bg);border:1px solid var(--color-border);border-radius:4px;padding:0.5rem 0.75rem">
-                    <code>
-                      term
-                    </code>
-                    — title / author / content
-                    <br />
-                    <code>
-                      “exact phrase”
-                    </code>
-                    — phrase match
-                    <br />
-                    <code>
-                      :type=audio
-                    </code>
-                    /
-                    <code>
-                      :type=video
-                    </code>
-                    /
-                    <code>
-                      :type=text
-                    </code>
-                    <br />
-                    <code>
-                      is:unread
-                    </code>
-                    <code>
-                      is:starred
-                    </code>
-                    <code>
-                      is:downloaded
-                    </code>
-                    <br />
-                    <code>
-                      :tag=name
-                    </code>
-                    <code>
-                      :folder=name
-                    </code>
-                    <code>
-                      :subscription=name
-                    </code>
-                    <br />
-                    <code>
-                      :published>2026-01-01
-                    </code>
-                    <code>
-                      :published>-7d
-                    </code>
-                    <code>
-                      :published<2026-06-01
-                    </code>
-                    <br />
-                    <code>
-                      :duration>600
-                    </code>
-                    — duration in seconds
-                    <br />
-                    combine:
-                    <code>
-                      is:unread :type=audio “deep dive”
-                    </code>
-                    •
-                    <code>
-                      OR
-                    </code>
-                    <code>
-                      NOT
-                    </code>
-                    <code>
-                      ( )
-                    </code>
-                  </div>
-                </details>
-              </form>
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                All articles
+              </h1>
             </div>
-          </div>
-          <div class="card">
-            <p class="text-muted">
-              No articles yet. Subscribe to feeds in Settings.
-            </p>
+            <div class="page-actions" />
+          </header>
+          <form action="/apps/feed/" class="feed-search" method="get" role="search">
+            <div class="form-inline">
+              <label class="sr-only" for="feed-q">
+                Search articles
+              </label>
+              <input aria-describedby="feed-search-help" class="form-control" id="feed-q" name="q" placeholder="Search articles" type="search" value="" />
+              <button aria-label="Search" class="btn" type="submit">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="21" x2="16.65" y1="21" y2="16.65" />
+                </svg>
+                <span class="hide-mobile">
+                  Search
+                </span>
+              </button>
+            </div>
+            <details class="feed-search-help" id="feed-search-help">
+              <summary>
+                Search syntax
+              </summary>
+              <dl class="feed-search-help-body">
+                <dt>
+                  <code>
+                    term
+                  </code>
+                </dt>
+                <dd>
+                  title, author or content
+                </dd>
+                <dt>
+                  <code>
+                    "exact phrase"
+                  </code>
+                </dt>
+                <dd>
+                  phrase match
+                </dd>
+                <dt>
+                  <code>
+                    :type=audio
+                  </code>
+                </dt>
+                <dd>
+                  also
+                  <code>
+                    video
+                  </code>
+                  ,
+                  <code>
+                    text
+                  </code>
+                </dd>
+                <dt>
+                  <code>
+                    is:unread
+                  </code>
+                </dt>
+                <dd>
+                  also
+                  <code>
+                    is:starred
+                  </code>
+                  ,
+                  <code>
+                    is:downloaded
+                  </code>
+                </dd>
+                <dt>
+                  <code>
+                    :tag=name
+                  </code>
+                </dt>
+                <dd>
+                  also
+                  <code>
+                    :folder=
+                  </code>
+                  ,
+                  <code>
+                    :subscription=
+                  </code>
+                </dd>
+                <dt>
+                  <code>
+                    :published>-7d
+                  </code>
+                </dt>
+                <dd>
+                  or a date:
+                  <code>
+                    :published<2026-06-01
+                  </code>
+                </dd>
+                <dt>
+                  <code>
+                    :duration>600
+                  </code>
+                </dt>
+                <dd>
+                  length in seconds
+                </dd>
+                <dt>
+                  <code>
+                    OR
+                  </code>
+                  <code>
+                    NOT
+                  </code>
+                  <code>
+                    ( )
+                  </code>
+                </dt>
+                <dd>
+                  combine terms
+                </dd>
+              </dl>
+            </details>
+          </form>
+          <div class="list">
+            <div class="empty-state">
+              <div class="empty-state-title">
+                No articles yet
+              </div>
+              <p>
+                Subscribe to a feed, a podcast or a YouTube channel and its new posts appear here.
+              </p>
+              <div class="empty-state-actions">
+                <a class="btn btn-primary" href="/apps/feed/settings/subscriptions">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <line x1="12" x2="12" y1="5" y2="19" />
+                    <line x1="5" x2="19" y1="12" y2="12" />
+                  </svg>
+                  Add a subscription
+                </a>
+              </div>
+            </div>
           </div>
         </div>
       </div>

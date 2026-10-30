@@ -5,7 +5,7 @@
     <title>
       Files — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0yMiAxOWEyIDIgMCAwIDEtMiAySDRhMiAyIDAgMCAxLTItMlY1YTIgMiAwIDAgMSAyLTJoNWwyIDNoOWEyIDIgMCAwIDEgMiAyeiI+PC9wYXRoPjwvc3ZnPg==" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -161,69 +161,191 @@
       </div>
     </nav>
     <main class="content" data-plugin="files">
-      <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem">
-        <h1 style="margin:0">
-          Files
-        </h1>
-        <a class="btn btn-outline btn-sm" href="/apps/files/favorites">
-          Favorites
-        </a>
-        <a class="btn btn-outline btn-sm" href="/apps/files/volumes">
-          Volumes
-        </a>
-      </div>
-      <nav style="margin-bottom:1rem">
-        <a href="/apps/files/">
-          root
-        </a>
-      </nav>
-      <div class="card">
-        <div class="flex gap-1 items-end mb-2" style="flex-wrap:wrap">
-          <form action="/apps/files/" class="flex gap-1 items-end" method="post">
-            <input name="csrf_token" type="hidden" value="«hex»" />
-            <input class="form-control" data-testid="new-folder-name" name="name" placeholder="New folder" required="" style="max-width:200px" type="text" />
-            <button class="btn btn-outline btn-sm" data-testid="new-folder-submit" type="submit">
-              Create Folder
-            </button>
-          </form>
-          <form action="/apps/files/" class="upload-form" enctype="multipart/form-data" method="post">
-            <input name="csrf_token" type="hidden" value="«hex»" />
-            <label class="btn btn-primary btn-sm">
-              Upload
-              <input accept="" class="sr-only" multiple="" name="file" onchange="this.form.submit()" type="file" />
-            </label>
-          </form>
-          <button class="btn btn-danger btn-sm" id="bulk-delete-btn" onclick="bulkDelete()" style="display:none">
-            Delete Selected
-          </button>
-        </div>
-        <div id="drop-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,100,200,0.15);z-index:1000;pointer-events:none;border:3px dashed var(--color-primary,#0082c9);margin:8px">
-          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.5rem;font-weight:600;color:var(--color-primary,#0082c9);background:var(--color-bg,#fff);padding:1rem 2rem;border-radius:8px">
-            Drop files to upload
+      <div class="sidebar-layout has-sidebar-toggle">
+        <button aria-controls="sidebar-1" aria-expanded="false" aria-label="Menu: All files" class="sidebar-toggle" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <line x1="3" x2="21" y1="6" y2="6" />
+            <line x1="3" x2="21" y1="12" y2="12" />
+            <line x1="3" x2="21" y1="18" y2="18" />
+          </svg>
+          <span class="sidebar-toggle-label" data-label="All files" />
+          <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        <nav aria-label="Files" class="sidebar" id="sidebar-1">
+          <a aria-current="page" class="sidebar-item active" href="/apps/files/">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            All files
+          </a>
+          <a class="sidebar-item" href="/apps/files/favorites">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+            Favorites
+          </a>
+          <a class="sidebar-item" href="/apps/files/volumes">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <ellipse cx="12" cy="5" rx="9" ry="3" />
+              <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+            </svg>
+            Volumes
+          </a>
+        </nav>
+        <div class="sidebar-content">
+          <div data-page-flash="">
+            <div class="alert alert-success" role="status">
+              <button aria-label="Dismiss" class="alert-dismiss" onclick="this.parentElement.remove()" type="button">
+                ×
+              </button>
+              Moved “Doomed Folder” to the trash.
+            </div>
           </div>
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                Files
+              </h1>
+            </div>
+            <div class="page-actions">
+              <button class="btn" data-modal-open="files-new-folder" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="12" x2="12" y1="5" y2="19" />
+                  <line x1="5" x2="19" y1="12" y2="12" />
+                </svg>
+                New folder
+              </button>
+              <form action="/apps/files/" class="upload-form" enctype="multipart/form-data" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <label class="btn btn-primary">
+                  Upload
+                  <input accept="" class="sr-only" multiple="" name="file" onchange="this.form.submit()" type="file" />
+                </label>
+              </form>
+            </div>
+          </header>
+          <div class="files-drop-overlay" hidden="" id="drop-overlay">
+            <div class="files-drop-message">
+              <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" x2="12" y1="3" y2="15" />
+              </svg>
+              Drop files to upload to “Files”
+            </div>
+          </div>
+          <div class="card" id="files-empty">
+            <div class="empty-state">
+              <div class="empty-state-title">
+                This folder is empty
+              </div>
+              <p>
+                Upload files with the button above, or drag them onto this page.
+              </p>
+              <div class="empty-state-actions" />
+            </div>
+          </div>
+          <dialog aria-labelledby="files-new-folder-title" class="modal" id="files-new-folder">
+            <div class="modal-header">
+              <h2 class="modal-title" id="files-new-folder-title">
+                New folder
+              </h2>
+              <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="18" x2="6" y1="6" y2="18" />
+                  <line x1="6" x2="18" y1="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <form action="/apps/files/" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div class="modal-body">
+                <div class="form-group mb-0">
+                  <label for="files-new-folder-name">
+                    Folder name
+                  </label>
+                  <input autocomplete="off" class="form-control" data-testid="new-folder-name" id="files-new-folder-name" name="name" required="" type="text" />
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn" data-modal-close="" type="button">
+                  Cancel
+                </button>
+                <button class="btn btn-primary" data-testid="new-folder-submit" type="submit">
+                  Create folder
+                </button>
+              </div>
+            </form>
+          </dialog>
+          <dialog aria-labelledby="files-rename-title" class="modal" id="files-rename">
+            <div class="modal-header">
+              <h2 class="modal-title" id="files-rename-title">
+                Rename
+              </h2>
+              <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="18" x2="6" y1="6" y2="18" />
+                  <line x1="6" x2="18" y1="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <form action="" data-files-rename-form="" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div class="modal-body">
+                <div class="form-group mb-0">
+                  <label for="files-rename-name">
+                    New name
+                  </label>
+                  <input autocomplete="off" class="form-control" id="files-rename-name" name="name" required="" type="text" />
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn" data-modal-close="" type="button">
+                  Cancel
+                </button>
+                <button class="btn btn-primary" type="submit">
+                  Rename
+                </button>
+              </div>
+            </form>
+          </dialog>
+          <dialog aria-labelledby="files-delete-title" class="modal" id="files-delete">
+            <div class="modal-header">
+              <h2 class="modal-title" id="files-delete-title">
+                Move to trash
+              </h2>
+              <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="18" x2="6" y1="6" y2="18" />
+                  <line x1="6" x2="18" y1="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <form action="/apps/files/?delete=1" data-files-delete-form="" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div data-delete-paths="" />
+              <div class="modal-body">
+                <p data-delete-message="">
+                  Delete this item?
+                </p>
+                <p class="form-help">
+                  Deleted items are moved to the trash.
+                </p>
+              </div>
+              <div class="modal-footer">
+                <button class="btn" data-modal-close="" type="button">
+                  Cancel
+                </button>
+                <button class="btn btn-danger" type="submit">
+                  Delete
+                </button>
+              </div>
+            </form>
+          </dialog>
         </div>
-        <table class="table" id="files-table">
-          <thead>
-            <tr>
-              <th style="width:2rem">
-                <input id="select-all" onchange="toggleSelectAll(this)" type="checkbox" />
-              </th>
-              <th>
-                Name
-              </th>
-              <th>
-                Size
-              </th>
-              <th>
-                Modified
-              </th>
-              <th class="text-right">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody />
-        </table>
       </div>
     </main>
   </body>

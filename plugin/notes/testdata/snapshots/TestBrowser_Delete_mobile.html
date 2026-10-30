@@ -5,7 +5,7 @@
     <title>
       Notes — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xNCAySDZhMiAyIDAgMCAwLTIgMnYxNmEyIDIgMCAwIDAgMiAyaDEyYTIgMiAwIDAgMCAyLTJWOHoiPjwvcGF0aD48cG9seWxpbmUgcG9pbnRzPSIxNCAyIDE0IDggMjAgOCI+PC9wb2x5bGluZT48bGluZSB4MT0iMTYiIHkxPSIxMyIgeDI9IjgiIHkyPSIxMyI+PC9saW5lPjxsaW5lIHgxPSIxNiIgeTE9IjE3IiB4Mj0iOCIgeTI9IjE3Ij48L2xpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -184,42 +184,59 @@
     </nav>
     <main class="content" data-plugin="notes">
       <div class="sidebar-layout has-sidebar-toggle">
-        <button aria-controls="notes-sidebar" aria-expanded="false" aria-label="Menu: All Notes 1" class="sidebar-toggle" type="button">
+        <button aria-controls="notes-sidebar" aria-expanded="false" aria-label="Menu: All notes" class="sidebar-toggle" type="button">
           <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
             <line x1="3" x2="21" y1="6" y2="6" />
             <line x1="3" x2="21" y1="12" y2="12" />
             <line x1="3" x2="21" y1="18" y2="18" />
           </svg>
-          <span class="sidebar-toggle-label" data-label="All Notes 1" />
+          <span class="sidebar-toggle-label" data-label="All notes" />
           <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="notes-sidebar">
-          <a class="sidebar-item active" href="/apps/notes/">
-            All Notes
-            <span class="badge">
-              1
+        <nav aria-label="Notes" class="sidebar" id="notes-sidebar">
+          <a aria-current="page" class="sidebar-item active" href="/apps/notes/">
+            <span class="break-anywhere">
+              All notes
             </span>
           </a>
           <a class="sidebar-item" href="/apps/notes/starred">
-            Starred
-          </a>
-          <div class="sidebar-divider" />
-          <a class="sidebar-item" href="/apps/notes/new">
-            + New Note
+            <span class="break-anywhere">
+              Starred
+            </span>
           </a>
         </nav>
         <div class="sidebar-content">
-          <div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-            <h1 style="margin:0">
-              All Notes
-            </h1>
-            <a class="btn btn-primary btn-sm" href="/apps/notes/new">
-              New Note
-            </a>
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                All notes
+              </h1>
+            </div>
+            <div class="page-actions">
+              <a class="btn btn-primary" href="/apps/notes/new">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="12" x2="12" y1="5" y2="19" />
+                  <line x1="5" x2="19" y1="12" y2="12" />
+                </svg>
+                New note
+              </a>
+            </div>
+          </header>
+          <div id="note-list">
+            <div class="list">
+              <div class="empty-state">
+                <div class="empty-state-title">
+                  No notes yet
+                </div>
+                <p>
+                  Notes are Markdown files, kept in the Notes folder of your files.
+                </p>
+                <div class="empty-state-actions" />
+              </div>
+            </div>
           </div>
-          <div id="note-list" />
         </div>
       </div>
     </main>

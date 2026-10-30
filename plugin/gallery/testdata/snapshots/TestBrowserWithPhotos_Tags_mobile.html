@@ -5,7 +5,7 @@
     <title>
       Tags — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIj48L3JlY3Q+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiPjwvY2lyY2xlPjxwb2x5bGluZSBwb2ludHM9IjIxIDE1IDE2IDEwIDUgMjEiPjwvcG9seWxpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -203,7 +203,7 @@
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="gallery-sidebar">
+        <nav aria-label="Gallery" class="sidebar" id="gallery-sidebar">
           <a class="sidebar-item" href="/apps/gallery/">
             Timeline
           </a>
@@ -216,7 +216,7 @@
           <a class="sidebar-item" href="/apps/gallery/people">
             People
           </a>
-          <a class="sidebar-item active" href="/apps/gallery/tags">
+          <a aria-current="page" class="sidebar-item active" href="/apps/gallery/tags">
             Tags
           </a>
           <a class="sidebar-item" href="/apps/gallery/videos">
@@ -232,43 +232,82 @@
           <div class="" hx-get="/apps/gallery/api/user-scan-status" hx-swap="innerHTML" hx-trigger="load, every 5s" />
         </nav>
         <div class="sidebar-content">
-          <h1>
-            Tags
-          </h1>
-          <div style="display:flex;flex-wrap:wrap;gap:8px">
-            <a class="badge" href="/apps/gallery/tag/beach" style="font-size:0.9rem;padding:6px 12px;text-decoration:none">
-              beach
-              <span class="text-muted" style="margin-left:4px">
-                3
-              </span>
-            </a>
-            <a class="badge" href="/apps/gallery/tag/family" style="font-size:0.9rem;padding:6px 12px;text-decoration:none">
-              family
-              <span class="text-muted" style="margin-left:4px">
-                2
-              </span>
-            </a>
-            <a class="badge" href="/apps/gallery/tag/sunset" style="font-size:0.9rem;padding:6px 12px;text-decoration:none">
-              sunset
-              <span class="text-muted" style="margin-left:4px">
-                1
-              </span>
-            </a>
-            <a class="badge" href="/apps/gallery/tag/golden retriever" style="font-size:0.9rem;padding:6px 12px;text-decoration:none">
-              golden retriever
-              <span class="text-muted" style="margin-left:4px">
-                1
-              </span>
-            </a>
-            <a class="badge" href="/apps/gallery/tag/architecture-and-buildings" style="font-size:0.9rem;padding:6px 12px;text-decoration:none">
-              architecture-and-buildings
-              <span class="text-muted" style="margin-left:4px">
-                1
-              </span>
-            </a>
-          </div>
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                Tags
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
+          <ul class="chip-group gallery-tags">
+            <li>
+              <a class="chip" href="/apps/gallery/tag/beach">
+                beach
+                <span class="count">
+                  3
+                </span>
+              </a>
+            </li>
+            <li>
+              <a class="chip" href="/apps/gallery/tag/family">
+                family
+                <span class="count">
+                  2
+                </span>
+              </a>
+            </li>
+            <li>
+              <a class="chip" href="/apps/gallery/tag/sunset">
+                sunset
+                <span class="count">
+                  1
+                </span>
+              </a>
+            </li>
+            <li>
+              <a class="chip" href="/apps/gallery/tag/golden%20retriever">
+                golden retriever
+                <span class="count">
+                  1
+                </span>
+              </a>
+            </li>
+            <li>
+              <a class="chip" href="/apps/gallery/tag/architecture-and-buildings">
+                architecture-and-buildings
+                <span class="count">
+                  1
+                </span>
+              </a>
+            </li>
+          </ul>
         </div>
       </div>
+      <dialog aria-labelledby="gallery-confirm-title" class="modal" id="gallery-confirm">
+        <div class="modal-header">
+          <h2 class="modal-title" id="gallery-confirm-title">
+            Are you sure?
+          </h2>
+          <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p data-confirm-message="" />
+        </div>
+        <div class="modal-footer">
+          <button class="btn" data-modal-close="" type="button">
+            Cancel
+          </button>
+          <button class="btn btn-danger" data-confirm-ok="" type="button">
+            Delete
+          </button>
+        </div>
+      </dialog>
     </main>
   </body>
 </html>

@@ -5,7 +5,7 @@
     <title>
       People — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIj48L3JlY3Q+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiPjwvY2lyY2xlPjxwb2x5bGluZSBwb2ludHM9IjIxIDE1IDE2IDEwIDUgMjEiPjwvcG9seWxpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -203,7 +203,7 @@
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="gallery-sidebar">
+        <nav aria-label="Gallery" class="sidebar" id="gallery-sidebar">
           <a class="sidebar-item" href="/apps/gallery/">
             Timeline
           </a>
@@ -213,7 +213,7 @@
           <a class="sidebar-item" href="/apps/gallery/albums">
             Albums
           </a>
-          <a class="sidebar-item active" href="/apps/gallery/people">
+          <a aria-current="page" class="sidebar-item active" href="/apps/gallery/people">
             People
           </a>
           <a class="sidebar-item" href="/apps/gallery/tags">
@@ -232,54 +232,89 @@
           <div class="" hx-get="/apps/gallery/api/user-scan-status" hx-swap="innerHTML" hx-trigger="load, every 5s" />
         </nav>
         <div class="sidebar-content">
-          <h1>
-            People
-          </h1>
-          <div class="flex gap-1 mb-2">
-            <a class="btn btn-sm btn-primary" href="/apps/gallery/people">
-              All (3)
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                People
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
+          <nav aria-label="Filter people" class="gallery-segmented">
+            <a aria-current="page" href="/apps/gallery/people">
+              All
+              <span class="count">
+                3
+              </span>
             </a>
-            <a class="btn btn-sm btn-outline" href="/apps/gallery/people?filter=unnamed">
-              Unnamed (1)
+            <a href="/apps/gallery/people?filter=unnamed">
+              Unnamed
+              <span class="count">
+                1
+              </span>
             </a>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">
-            <a class="card" href="/apps/gallery/person/1" style="text-decoration:none;text-align:center;padding:0.5rem">
-              <div class="thumb-loading" style="width:100%;aspect-ratio:1;border-radius:50%;overflow:hidden;margin-bottom:0.5rem">
-                <img alt="Ada" loading="lazy" src="/apps/gallery/api/face/3/thumbnail" style="width:100%;height:100%;object-fit:cover;position:relative" />
-              </div>
-              <div style="font-weight:600">
+          </nav>
+          <div class="gallery-people">
+            <a class="gallery-person" href="/apps/gallery/person/1">
+              <span class="gallery-thumb gallery-thumb-round">
+                <img alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/face/3/thumbnail" />
+              </span>
+              <span class="gallery-person-name">
                 Ada
-              </div>
-              <div class="text-muted" style="font-size:0.85rem">
+              </span>
+              <span class="gallery-album-meta">
                 3 photos
-              </div>
+              </span>
             </a>
-            <a class="card" href="/apps/gallery/person/2" style="text-decoration:none;text-align:center;padding:0.5rem">
-              <div class="thumb-loading" style="width:100%;aspect-ratio:1;border-radius:50%;overflow:hidden;margin-bottom:0.5rem">
-                <img alt="Grace Hopper-Lovelace" loading="lazy" src="/apps/gallery/api/face/4/thumbnail" style="width:100%;height:100%;object-fit:cover;position:relative" />
-              </div>
-              <div style="font-weight:600">
+            <a class="gallery-person" href="/apps/gallery/person/2">
+              <span class="gallery-thumb gallery-thumb-round">
+                <img alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/face/4/thumbnail" />
+              </span>
+              <span class="gallery-person-name">
                 Grace Hopper-Lovelace
-              </div>
-              <div class="text-muted" style="font-size:0.85rem">
+              </span>
+              <span class="gallery-album-meta">
                 2 photos
-              </div>
+              </span>
             </a>
-            <a class="card" href="/apps/gallery/person/3" style="text-decoration:none;text-align:center;padding:0.5rem">
-              <div class="thumb-loading" style="width:100%;aspect-ratio:1;border-radius:50%;overflow:hidden;margin-bottom:0.5rem">
-                <img alt="Unknown" loading="lazy" src="/apps/gallery/api/face/6/thumbnail" style="width:100%;height:100%;object-fit:cover;position:relative" />
-              </div>
-              <div style="font-weight:600">
-                Unknown
-              </div>
-              <div class="text-muted" style="font-size:0.85rem">
-                1 photos
-              </div>
+            <a class="gallery-person" href="/apps/gallery/person/3">
+              <span class="gallery-thumb gallery-thumb-round">
+                <img alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/face/6/thumbnail" />
+              </span>
+              <span class="gallery-person-name gallery-unnamed">
+                Unnamed
+              </span>
+              <span class="gallery-album-meta">
+                1 photo
+              </span>
             </a>
           </div>
         </div>
       </div>
+      <dialog aria-labelledby="gallery-confirm-title" class="modal" id="gallery-confirm">
+        <div class="modal-header">
+          <h2 class="modal-title" id="gallery-confirm-title">
+            Are you sure?
+          </h2>
+          <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p data-confirm-message="" />
+        </div>
+        <div class="modal-footer">
+          <button class="btn" data-modal-close="" type="button">
+            Cancel
+          </button>
+          <button class="btn btn-danger" data-confirm-ok="" type="button">
+            Delete
+          </button>
+        </div>
+      </dialog>
     </main>
   </body>
 </html>

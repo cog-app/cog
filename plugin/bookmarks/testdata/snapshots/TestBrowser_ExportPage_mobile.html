@@ -3,9 +3,9 @@
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1" name="viewport" />
     <title>
-      Bookmarks — Cog
+      Import and export — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xOSAyMWwtNy01LTcgNVY1YTIgMiAwIDAgMSAyLTJoMTBhMiAyIDAgMCAxIDIgMnoiPjwvcGF0aD48L3N2Zz4=" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -178,76 +178,151 @@
     </nav>
     <main class="content" data-plugin="bookmarks">
       <div class="sidebar-layout has-sidebar-toggle">
-        <button aria-controls="bookmarks-sidebar" aria-expanded="false" aria-label="Menu: All Bookmarks 1" class="sidebar-toggle" type="button">
+        <button aria-controls="bookmarks-sidebar" aria-expanded="false" aria-label="Menu: Import and export" class="sidebar-toggle" type="button">
           <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
             <line x1="3" x2="21" y1="6" y2="6" />
             <line x1="3" x2="21" y1="12" y2="12" />
             <line x1="3" x2="21" y1="18" y2="18" />
           </svg>
-          <span class="sidebar-toggle-label" data-label="All Bookmarks 1" />
+          <span class="sidebar-toggle-label" data-label="Import and export" />
           <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="bookmarks-sidebar">
-          <a class="sidebar-item active" href="/apps/bookmarks/">
-            All Bookmarks
-            <span class="badge">
+        <nav aria-label="Bookmarks" class="sidebar" id="bookmarks-sidebar">
+          <a class="sidebar-item" href="/apps/bookmarks/">
+            <span class="break-anywhere">
+              All bookmarks
+            </span>
+            <span class="count">
               1
             </span>
           </a>
           <a class="sidebar-item" href="/apps/bookmarks/tags">
-            Tags
+            <span class="break-anywhere">
+              Tags
+            </span>
+            <span class="count">
+              1
+            </span>
           </a>
+          <div class="sidebar-heading">
+            Folders
+          </div>
+          <button class="sidebar-item bm-sidebar-button" data-modal-open="new-folder-modal" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="12" x2="12" y1="5" y2="19" />
+              <line x1="5" x2="19" y1="12" y2="12" />
+            </svg>
+            New folder
+          </button>
           <div class="sidebar-divider" />
-          <a class="sidebar-item" href="/apps/bookmarks/new">
-            + New Bookmark
+          <a aria-current="page" class="sidebar-item active" href="/apps/bookmarks/import-export">
+            <span class="break-anywhere">
+              Import and export
+            </span>
           </a>
         </nav>
         <div class="sidebar-content">
-          <div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-            <h1 style="margin:0">
-              All Bookmarks
-            </h1>
-            <a class="btn btn-primary btn-sm" href="/apps/bookmarks/new">
-              Add Bookmark
-            </a>
-          </div>
-          <form action="/apps/bookmarks/" class="mb-2" method="get">
-            <div class="flex gap-1">
-              <input class="form-control" name="q" placeholder="Search bookmarks..." style="max-width:400px" type="text" value="" />
-              <button class="btn btn-outline btn-sm" type="submit">
-                Search
-              </button>
+          <header class="page-header">
+            <div class="page-heading">
+              <nav aria-label="Breadcrumb" class="breadcrumbs">
+                <ol>
+                  <li>
+                    <a href="/apps/bookmarks/">
+                      Bookmarks
+                    </a>
+                  </li>
+                  <li>
+                    <span aria-current="page">
+                      Import and export
+                    </span>
+                  </li>
+                </ol>
+              </nav>
+              <h1>
+                Import and export
+              </h1>
             </div>
-          </form>
-          <div id="bookmark-list">
-            <div id="bm-1" style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0);display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
-              <div style="min-width:0;flex:1">
-                <div class="flex items-center gap-1" style="flex-wrap:wrap">
-                  <a href="/apps/bookmarks/bookmark/1" style="font-weight:500">
-                    Tagged BM
-                  </a>
+            <div class="page-actions" />
+          </header>
+          <div class="grid grid-2">
+            <section class="card">
+              <h2 class="card-title">
+                Import
+              </h2>
+              <p class="card-desc">
+                Add bookmarks from an HTML file exported by a browser or another bookmark manager. Bookmarks you already have are updated, not duplicated.
+              </p>
+              <form action="/apps/bookmarks/import" enctype="multipart/form-data" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <div class="form-group">
+                  <label for="import-file">
+                    Bookmarks file
+                  </label>
+                  <input accept=".html,.htm" class="form-control" id="import-file" name="file" required="" type="file" />
                 </div>
-                <div class="text-muted" style="font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                  example.com · testtag
-                </div>
-              </div>
-              <div class="flex gap-1" style="flex-shrink:0">
-                <form action="/apps/bookmarks/bookmarks/1/click" method="post" style="display:inline" target="_blank">
-                  <input name="csrf_token" type="hidden" value="«hex»" />
-                  <button class="btn btn-outline btn-sm" title="Open & track click" type="submit">
-                    ↗
-                  </button>
-                </form>
-                <button class="btn btn-danger btn-sm" hx-confirm="Delete this bookmark?" hx-delete="/apps/bookmarks/bookmarks/1" hx-swap="outerHTML" hx-target="#bm-1">
-                  ✕
+                <button class="btn btn-primary" type="submit">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" x2="12" y1="3" y2="15" />
+                  </svg>
+                  Import
                 </button>
-              </div>
-            </div>
+              </form>
+            </section>
+            <section class="card">
+              <h2 class="card-title">
+                Export
+              </h2>
+              <p class="card-desc">
+                Download every bookmark, with its tags, as an HTML file that browsers and other bookmark managers can import.
+              </p>
+              <a class="btn" download="bookmarks.html" href="/apps/bookmarks/export">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" x2="12" y1="15" y2="3" />
+                </svg>
+                Download bookmarks.html
+              </a>
+            </section>
           </div>
         </div>
       </div>
+      <dialog aria-labelledby="new-folder-modal-title" class="modal" id="new-folder-modal">
+        <div class="modal-header">
+          <h2 class="modal-title" id="new-folder-modal-title">
+            New folder
+          </h2>
+          <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <form action="/apps/bookmarks/folders" method="post">
+          <input name="csrf_token" type="hidden" value="«hex»" />
+          <div class="modal-body">
+            <div class="form-group mb-0">
+              <label for="new-folder-title">
+                Name
+              </label>
+              <input class="form-control" id="new-folder-title" name="title" required="" type="text" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn" data-modal-close="" type="button">
+              Cancel
+            </button>
+            <button class="btn btn-primary" type="submit">
+              Create folder
+            </button>
+          </div>
+        </form>
+      </dialog>
     </main>
   </body>
 </html>

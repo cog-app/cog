@@ -5,7 +5,7 @@
     <title>
       Home Renovation Settings — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik05IDExbDMgM0wyMiA0Ij48L3BhdGg+PHBhdGggZD0iTTIxIDEydjdhMiAyIDAgMCAxLTIgMkg1YTIgMiAwIDAgMS0yLTJWNWEyIDIgMCAwIDEgMi0yaDExIj48L3BhdGg+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -191,62 +191,96 @@
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="tasks-sidebar">
-          <a class="sidebar-item active" href="/apps/tasks/list/2">
-            <span class="sidebar-color-dot" style="background:#43a047;" />
+        <nav aria-label="Task lists" class="sidebar" id="tasks-sidebar">
+          <div class="sidebar-heading">
+            Lists
+          </div>
+          <a aria-current="page" class="sidebar-item active" href="/apps/tasks/list/2">
+            <span class="color-dot" style="background:#43a047;" />
             Home Renovation
           </a>
           <a class="sidebar-item" href="/apps/tasks/list/1">
-            <span class="sidebar-color-dot" style="background:#0082c9;" />
+            <span class="color-dot" style="background:#0082c9;" />
             Personal
           </a>
           <div class="sidebar-divider" />
-          <form action="/apps/tasks/list" class="flex gap-1 items-center" method="post" style="padding:0.5rem 1rem">
+          <form action="/apps/tasks/list" class="task-new-list" method="post">
             <input name="csrf_token" type="hidden" value="«hex»" />
-            <input class="form-control" data-testid="new-list-name" name="name" placeholder="New list..." required="" style="flex:1;min-width:0" type="text" />
-            <button class="btn btn-outline btn-sm" data-testid="new-list-submit" type="submit">
-              +
+            <label class="sr-only" for="new-list-name">
+              New list
+            </label>
+            <input class="form-control form-control-sm" data-testid="new-list-name" id="new-list-name" name="name" placeholder="New list…" required="" type="text" />
+            <button aria-label="Create list" class="btn btn-sm btn-square" data-testid="new-list-submit" title="Create list" type="submit">
+              <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                <line x1="12" x2="12" y1="5" y2="19" />
+                <line x1="5" x2="19" y1="12" y2="12" />
+              </svg>
             </button>
           </form>
         </nav>
         <div class="sidebar-content">
-          <h1>
-            Home Renovation — Settings
-          </h1>
+          <header class="page-header">
+            <div class="page-heading">
+              <nav aria-label="Breadcrumb" class="breadcrumbs">
+                <ol>
+                  <li>
+                    <a href="/apps/tasks/list/2">
+                      Home Renovation
+                    </a>
+                  </li>
+                  <li>
+                    <span aria-current="page">
+                      List settings
+                    </span>
+                  </li>
+                </ol>
+              </nav>
+              <h1>
+                List settings
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
           <div class="card">
+            <h2 class="card-title">
+              List
+            </h2>
             <form action="/apps/tasks/list/2" method="post">
               <input name="csrf_token" type="hidden" value="«hex»" />
-              <div class="form-group">
-                <label for="name">
-                  Name
-                </label>
-                <input class="form-control" id="name" name="name" required="" type="text" value="Home Renovation" />
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="name">
+                    Name
+                  </label>
+                  <input class="form-control" id="name" name="name" required="" type="text" value="Home Renovation" />
+                </div>
+                <div class="form-group form-group-auto">
+                  <label for="color">
+                    Colour
+                  </label>
+                  <input class="form-control" id="color" name="color" type="color" value="#43a047" />
+                </div>
               </div>
-              <div class="form-group">
-                <label for="color">
-                  Color
-                </label>
-                <input class="form-control" id="color" name="color" type="color" value="#43a047" />
-              </div>
-              <div class="flex gap-1">
+              <div class="form-actions">
                 <button class="btn btn-primary" type="submit">
                   Save
                 </button>
-                <a class="btn btn-outline" href="/apps/tasks/list/2">
+                <a class="btn" href="/apps/tasks/list/2">
                   Cancel
                 </a>
               </div>
             </form>
           </div>
-          <div style="margin-top:2rem">
-            <div class="card">
-              <h2 class="card-title">
-                Danger Zone
-              </h2>
-              <button class="btn btn-danger" hx-confirm="Delete 'Home Renovation' and all its tasks?" hx-delete="/apps/tasks/list/2">
-                Delete List
-              </button>
-            </div>
+          <div class="card card-danger">
+            <h2 class="card-title">
+              Danger zone
+            </h2>
+            <p class="card-desc">
+              Deleting “Home Renovation” deletes every task in it, on this server and in every app that syncs it.
+            </p>
+            <button class="btn btn-danger" hx-confirm="Delete “Home Renovation” and all its tasks?" hx-delete="/apps/tasks/list/2" type="button">
+              Delete list
+            </button>
           </div>
         </div>
       </div>

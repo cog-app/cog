@@ -5,7 +5,7 @@
     <title>
       Dashboard — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0zIDlsOS03IDkgN3YxMWEyIDIgMCAwIDEtMiAySDVhMiAyIDAgMCAxLTItMnoiPjwvcGF0aD48cG9seWxpbmUgcG9pbnRzPSI5IDIyIDkgMTIgMTUgMTIgMTUgMjIiPjwvcG9seWxpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -448,92 +448,34 @@
           </span>
         </a>
       </nav>
-      <div class="widget-grid widget-grid-2">
-        <section class="card widget">
-          <div class="card-header">
-            <h2 class="card-title">
-              Upcoming Events
-            </h2>
-          </div>
-          <p class="text-muted">
-            No upcoming events.
-          </p>
-        </section>
-        <section class="card widget">
-          <div class="card-header">
-            <h2 class="card-title">
-              Upcoming Tasks
-            </h2>
-          </div>
-          <p class="text-muted">
-            No upcoming tasks.
-          </p>
-        </section>
-        <section class="card widget">
-          <div class="card-header">
-            <h2 class="card-title">
-              Feed
-            </h2>
-          </div>
-          <p class="text-muted">
-            No recent items.
-          </p>
-        </section>
-        <section class="card widget">
-          <div class="card-header">
-            <h2 class="card-title">
-              Recent Photos
-            </h2>
-          </div>
-          <p class="text-muted">
-            No photos yet.
-          </p>
-        </section>
-        <section class="card widget">
-          <div class="card-header">
-            <h2 class="card-title">
-              Recent Files
-            </h2>
-          </div>
-          <p class="text-muted">
-            No files yet.
-          </p>
-        </section>
-        <section class="card widget">
-          <div class="card-header">
-            <h2 class="card-title">
-              Recent Notes
-            </h2>
-          </div>
-          <p class="text-muted">
-            No notes yet.
-          </p>
-        </section>
-        <section class="card widget">
-          <div class="card-header">
-            <h2 class="card-title">
-              Recent Bookmarks
-            </h2>
-          </div>
-          <p class="text-muted">
-            No bookmarks yet.
-          </p>
-        </section>
-        <section class="card widget">
-          <div class="card-header">
-            <h2 class="card-title">
-              Starred Contacts
-            </h2>
-          </div>
-          <p class="text-muted">
-            No starred contacts.
-          </p>
-        </section>
-      </div>
       <div class="card widget-empties mt-2">
         <span class="text-sm text-muted">
           Nothing here yet:
         </span>
+        <a class="chip" href="/apps/calendar/">
+          Upcoming Events
+        </a>
+        <a class="chip" href="/apps/tasks/">
+          Upcoming Tasks
+        </a>
+        <a class="chip" href="/apps/feed/">
+          Feed
+        </a>
+        <a class="chip" href="/apps/gallery/">
+          Recent Photos
+        </a>
+        <a class="chip" href="/apps/files/">
+          Recent Files
+        </a>
+        <a class="chip" href="/apps/notes/">
+          Recent Notes
+        </a>
+        <a class="chip" href="/apps/bookmarks/">
+          Recent Bookmarks
+        </a>
+        <a class="chip" href="/apps/contacts/starred">
+          Starred Contacts
+        </a>
         <a class="chip" href="/settings/groups">
           Your Groups
         </a>

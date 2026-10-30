@@ -5,7 +5,7 @@
     <title>
       Gallery Settings — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIj48L3JlY3Q+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiPjwvY2lyY2xlPjxwb2x5bGluZSBwb2ludHM9IjIxIDE1IDE2IDEwIDUgMjEiPjwvcG9seWxpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -203,7 +203,7 @@
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="gallery-sidebar">
+        <nav aria-label="Gallery" class="sidebar" id="gallery-sidebar">
           <a class="sidebar-item" href="/apps/gallery/">
             Timeline
           </a>
@@ -226,99 +226,196 @@
             Duplicates
           </a>
           <div class="sidebar-divider" />
-          <a class="sidebar-item active" href="/apps/gallery/settings">
+          <a aria-current="page" class="sidebar-item active" href="/apps/gallery/settings">
             Settings
           </a>
           <div class="" hx-get="/apps/gallery/api/user-scan-status" hx-swap="innerHTML" hx-trigger="load, every 5s" />
         </nav>
         <div class="sidebar-content">
-          <h1>
-            Gallery Settings
-          </h1>
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                Gallery Settings
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
           <div class="card">
-            <h2 class="card-title">
-              Status
-            </h2>
+            <div class="card-header">
+              <h2 class="card-title">
+                Library
+              </h2>
+              <form action="/apps/gallery/settings/scan" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <button class="btn" type="submit">
+                  Scan now
+                </button>
+              </form>
+            </div>
             <p>
-              Indexed photos:
-              <strong>
-                9
-              </strong>
+              9 photos and videos indexed.
             </p>
-            <form action="/apps/gallery/settings/scan" method="post">
-              <input name="csrf_token" type="hidden" value="«hex»" />
-              <button class="btn btn-primary btn-sm" type="submit">
-                Scan Now
-              </button>
-            </form>
           </div>
           <div class="card">
             <h2 class="card-title">
-              Scan Folders
+              Folders to scan
             </h2>
-            <p class="text-muted" style="margin-bottom:0.75rem">
-              One folder pattern per line. A trailing
-              <code>
-                /
-              </code>
-              matches everything in that folder. Glob patterns like
-              <code>
-                Camera/*.jpg
-              </code>
-              are also supported.
-            </p>
             <form action="/apps/gallery/settings/folders" method="post">
               <input name="csrf_token" type="hidden" value="«hex»" />
-              <div class="form-group" style="margin-bottom:0.75rem">
-                <label>
-                  Folder Patterns
+              <div class="form-group">
+                <label for="gallery-folders">
+                  Folder patterns
                 </label>
-                <textarea class="form-control" name="folders" placeholder="Photos/" required="" rows="4">
+                <textarea aria-describedby="gallery-folders-help" class="form-control mono" id="gallery-folders" name="folders" placeholder="Photos/" required="" rows="4">
                   Photos/
                 </textarea>
+                <p class="form-help" id="gallery-folders-help">
+                  One pattern per line. A trailing
+                  <code>
+                    /
+                  </code>
+                  takes everything in that folder; globs such as
+                  <code>
+                    Camera/*.jpg
+                  </code>
+                  work too.
+                </p>
               </div>
-              <div style="display:flex;gap:8px;align-items:center">
-                <button class="btn btn-primary btn-sm" type="submit">
+              <div class="form-actions mt-0">
+                <button class="btn btn-primary" type="submit">
                   Save
                 </button>
-                <button class="btn btn-sm" hx-include="closest form" hx-post="/apps/gallery/api/scan-folders-preview" hx-target="#folder-preview" type="button">
-                  Preview
+                <button class="btn" hx-get="/apps/gallery/api/scan-folders-preview" hx-include="closest form" hx-params="folders" hx-target="#folder-preview" type="button">
+                  Preview matches
                 </button>
               </div>
+              <p class="form-error" data-preview-error="" hidden="" role="alert">
+                The preview could not be loaded. Try again.
+              </p>
+              <div aria-live="polite" class="gallery-folder-preview" id="folder-preview" />
             </form>
-            <div id="folder-preview" style="margin-top:0.75rem" />
           </div>
           <div class="card">
             <h2 class="card-title">
-              File Rename
+              Rename files
             </h2>
-            <p class="text-muted" style="margin-bottom:0.75rem">
-              Rename files using a Go template pattern. Available variables:
-              <code>
-                Year, Month, Day, Hour, Minute, Second, Camera, Lens, Original, Ext, Place, Country
-              </code>
-            </p>
-            <form action="/apps/gallery/rename/preview" method="post">
-              <input name="csrf_token" type="hidden" value="«hex»" />
-              <div class="form-group" style="margin-bottom:0.75rem">
-                <label>
+            <form action="/apps/gallery/rename/preview" method="get">
+              <div class="form-group">
+                <label for="gallery-rename-pattern">
                   Pattern
                 </label>
-                <input class="form-control" name="pattern" placeholder="{{.Year}}/{{.Month}}-{{.Day}}/{{.Original}}{{.Ext}}" type="text" value="{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}" />
+                <input aria-describedby="gallery-rename-help" class="form-control mono" id="gallery-rename-pattern" name="pattern" placeholder="{{.Year}}/{{.Month}}-{{.Day}}/{{.Original}}{{.Ext}}" required="" type="text" value="{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}" />
+                <p class="form-help" id="gallery-rename-help">
+                  A Go template. Available fields:
+                </p>
+                <ul class="chip-group gallery-fields">
+                  <li>
+                    <code>
+                      {{.Year}}
+                    </code>
+                  </li>
+                  <li>
+                    <code>
+                      {{.Month}}
+                    </code>
+                  </li>
+                  <li>
+                    <code>
+                      {{.Day}}
+                    </code>
+                  </li>
+                  <li>
+                    <code>
+                      {{.Hour}}
+                    </code>
+                  </li>
+                  <li>
+                    <code>
+                      {{.Minute}}
+                    </code>
+                  </li>
+                  <li>
+                    <code>
+                      {{.Second}}
+                    </code>
+                  </li>
+                  <li>
+                    <code>
+                      {{.Camera}}
+                    </code>
+                  </li>
+                  <li>
+                    <code>
+                      {{.Lens}}
+                    </code>
+                  </li>
+                  <li>
+                    <code>
+                      {{.Original}}
+                    </code>
+                  </li>
+                  <li>
+                    <code>
+                      {{.Ext}}
+                    </code>
+                  </li>
+                  <li>
+                    <code>
+                      {{.Place}}
+                    </code>
+                  </li>
+                  <li>
+                    <code>
+                      {{.Country}}
+                    </code>
+                  </li>
+                </ul>
               </div>
-              <button class="btn btn-primary btn-sm" type="submit">
-                Preview Rename
-              </button>
+              <div class="form-actions mt-0">
+                <button class="btn btn-primary" data-testid="rename-preview" type="submit">
+                  Preview rename
+                </button>
+              </div>
             </form>
-            <form action="/apps/gallery/rename/undo" method="post" style="margin-top:0.5rem">
+            <div class="card-subtitle">
+              Undo
+            </div>
+            <form action="/apps/gallery/rename/undo" class="gallery-undo" data-confirm-action="Undo" data-confirm-title="Undo last rename" data-confirm="Put every file the last rename moved back where it was?" method="post">
               <input name="csrf_token" type="hidden" value="«hex»" />
-              <button class="btn btn-sm" type="submit">
-                Undo Last Rename
+              <p class="text-sm text-muted">
+                Puts back the files the last rename moved.
+              </p>
+              <button class="btn" type="submit">
+                Undo last rename
               </button>
             </form>
           </div>
         </div>
       </div>
+      <dialog aria-labelledby="gallery-confirm-title" class="modal" id="gallery-confirm">
+        <div class="modal-header">
+          <h2 class="modal-title" id="gallery-confirm-title">
+            Are you sure?
+          </h2>
+          <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p data-confirm-message="" />
+        </div>
+        <div class="modal-footer">
+          <button class="btn" data-modal-close="" type="button">
+            Cancel
+          </button>
+          <button class="btn btn-danger" data-confirm-ok="" type="button">
+            Delete
+          </button>
+        </div>
+      </dialog>
     </main>
   </body>
 </html>

@@ -5,7 +5,7 @@
     <title>
       Tags — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xOSAyMWwtNy01LTcgNVY1YTIgMiAwIDAgMSAyLTJoMTBhMiAyIDAgMCAxIDIgMnoiPjwvcGF0aD48L3N2Zz4=" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -189,32 +189,107 @@
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <nav class="sidebar" id="bookmarks-sidebar">
+        <nav aria-label="Bookmarks" class="sidebar" id="bookmarks-sidebar">
           <a class="sidebar-item" href="/apps/bookmarks/">
-            All Bookmarks
-            <span class="badge">
+            <span class="break-anywhere">
+              All bookmarks
+            </span>
+            <span class="count">
               1
             </span>
           </a>
-          <a class="sidebar-item active" href="/apps/bookmarks/tags">
-            Tags
+          <a aria-current="page" class="sidebar-item active" href="/apps/bookmarks/tags">
+            <span class="break-anywhere">
+              Tags
+            </span>
+            <span class="count">
+              1
+            </span>
           </a>
+          <div class="sidebar-heading">
+            Folders
+          </div>
+          <button class="sidebar-item bm-sidebar-button" data-modal-open="new-folder-modal" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="12" x2="12" y1="5" y2="19" />
+              <line x1="5" x2="19" y1="12" y2="12" />
+            </svg>
+            New folder
+          </button>
           <div class="sidebar-divider" />
-          <a class="sidebar-item" href="/apps/bookmarks/new">
-            + New Bookmark
+          <a class="sidebar-item" href="/apps/bookmarks/import-export">
+            <span class="break-anywhere">
+              Import and export
+            </span>
           </a>
         </nav>
         <div class="sidebar-content">
-          <h1>
-            Tags
-          </h1>
-          <div class="flex gap-1" style="flex-wrap:wrap">
-            <a class="badge" href="/apps/bookmarks/tag/testtag" style="font-size:0.9rem;padding:0.4rem 0.8rem;cursor:pointer">
-              testtag
-            </a>
+          <header class="page-header">
+            <div class="page-heading">
+              <nav aria-label="Breadcrumb" class="breadcrumbs">
+                <ol>
+                  <li>
+                    <a href="/apps/bookmarks/">
+                      Bookmarks
+                    </a>
+                  </li>
+                  <li>
+                    <span aria-current="page">
+                      Tags
+                    </span>
+                  </li>
+                </ol>
+              </nav>
+              <h1>
+                Tags
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
+          <div class="card">
+            <div class="chip-group">
+              <a class="chip" href="/apps/bookmarks/tag/testtag">
+                testtag
+                <span class="count">
+                  1
+                </span>
+              </a>
+            </div>
           </div>
         </div>
       </div>
+      <dialog aria-labelledby="new-folder-modal-title" class="modal" id="new-folder-modal">
+        <div class="modal-header">
+          <h2 class="modal-title" id="new-folder-modal-title">
+            New folder
+          </h2>
+          <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <form action="/apps/bookmarks/folders" method="post">
+          <input name="csrf_token" type="hidden" value="«hex»" />
+          <div class="modal-body">
+            <div class="form-group mb-0">
+              <label for="new-folder-title">
+                Name
+              </label>
+              <input class="form-control" id="new-folder-title" name="title" required="" type="text" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn" data-modal-close="" type="button">
+              Cancel
+            </button>
+            <button class="btn btn-primary" type="submit">
+              Create folder
+            </button>
+          </div>
+        </form>
+      </dialog>
     </main>
   </body>
 </html>

@@ -5,7 +5,7 @@
     <title>
       Volumes — Cog
     </title>
-    <link href="/static/style.css?v=7d69d7d9e500" rel="stylesheet" />
+    <link href="/static/style.css?v=719f3831c37e" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0yMiAxOWEyIDIgMCAwIDEtMiAySDRhMiAyIDAgMCAxLTItMlY1YTIgMiAwIDAgMSAyLTJoNWwyIDNoOWEyIDIgMCAwIDEgMiAyeiI+PC9wYXRoPjwvc3ZnPg==" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -161,58 +161,102 @@
       </div>
     </nav>
     <main class="content" data-plugin="files">
-      <h1 style="margin-bottom:0.5rem">
-        Volumes
-      </h1>
-      <p style="margin-bottom:1rem">
-        <a href="/apps/files/">
-          Back to Files
-        </a>
-      </p>
-      <div class="card">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>
-                Name
-              </th>
-              <th>
-                Description
-              </th>
-              <th>
-                Type
-              </th>
-              <th>
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>
-                <div style="display:flex;align-items:center;gap:0.5rem">
-                  <svg fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
-                    <ellipse cx="12" cy="5" rx="9" ry="3" />
-                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                  </svg>
-                  default
-                </div>
-              </td>
-              <td class="text-muted">
-                Default local storage
-              </td>
-              <td class="text-muted">
-                file
-              </td>
-              <td>
-                <a class="btn btn-outline btn-sm" href="/volumes/«hex»/browse">
-                  Browse
-                </a>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div class="sidebar-layout has-sidebar-toggle">
+        <button aria-controls="sidebar-1" aria-expanded="false" aria-label="Menu: Volumes" class="sidebar-toggle" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <line x1="3" x2="21" y1="6" y2="6" />
+            <line x1="3" x2="21" y1="12" y2="12" />
+            <line x1="3" x2="21" y1="18" y2="18" />
+          </svg>
+          <span class="sidebar-toggle-label" data-label="Volumes" />
+          <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        <nav aria-label="Files" class="sidebar" id="sidebar-1">
+          <a class="sidebar-item" href="/apps/files/">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            All files
+          </a>
+          <a class="sidebar-item" href="/apps/files/favorites">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+            Favorites
+          </a>
+          <a aria-current="page" class="sidebar-item active" href="/apps/files/volumes">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <ellipse cx="12" cy="5" rx="9" ry="3" />
+              <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+            </svg>
+            Volumes
+          </a>
+        </nav>
+        <div class="sidebar-content">
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                Volumes
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
+          <div class="card card-flush">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>
+                    Name
+                  </th>
+                  <th class="hide-mobile">
+                    Description
+                  </th>
+                  <th class="col-shrink hide-mobile">
+                    Type
+                  </th>
+                  <th class="col-actions">
+                    <span class="sr-only">
+                      Actions
+                    </span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <span class="file-name">
+                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <ellipse cx="12" cy="5" rx="9" ry="3" />
+                        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                      </svg>
+                      <span>
+                        default
+                      </span>
+                    </span>
+                    <div class="files-meta show-mobile">
+                      Default local storage
+                    </div>
+                  </td>
+                  <td class="text-muted hide-mobile">
+                    Default local storage
+                  </td>
+                  <td class="text-muted nowrap hide-mobile">
+                    file
+                  </td>
+                  <td class="col-actions">
+                    <a class="btn btn-sm" href="/volumes/«hex»/browse">
+                      Browse
+                    </a>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </main>
   </body>
