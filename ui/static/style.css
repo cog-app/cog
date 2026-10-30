@@ -1,6 +1,94 @@
-/* Cog UI — vanilla CSS */
+/* Cog UI — vanilla CSS
+ *
+ * Layout of this file:
+ *   1. Tokens            — every colour, size and space the UI uses
+ *   2. Base              — reset, typography, native form controls
+ *   3. Shell             — navbar, search, dropdowns, page container
+ *   4. Page structure    — page header, breadcrumbs, sidebar layout
+ *   5. Components        — cards, forms, buttons, tables, alerts, badges,
+ *                          chips, lists, modal, empty state, prose, misc
+ *   6. Utilities
+ *   7. Auth pages        — login, MFA, register, consent screens
+ *   8. Plugin sections   — one delimited region per plugin, so a change to
+ *                          one app's styles never conflicts with another's:
+ *                            / * ==== plugin: NAME ==== * / … / * ==== end plugin: NAME ==== * /
+ *
+ * Every class a template uses must be defined here; ui/classes_test.go fails
+ * the build otherwise. Prefer an existing component over a new class, and a
+ * class over an inline style: inline styles cannot respond to a media query.
+ */
 
-/* Reset */
+/* ========================================================================
+   1. Tokens
+   ======================================================================== */
+
+:root {
+  /* Surfaces */
+  --color-bg: #f5f5f5; /* page background */
+  --color-bg-muted: #ebedf0; /* neutral fills: badges, read rows, wells */
+  --color-bg-alt: #eef0f3; /* code blocks, tokens, inset panels */
+  --color-bg-secondary: var(--color-bg-alt);
+  --color-surface: #ffffff; /* cards, menus, dialogs, inputs */
+  --color-surface-hover: #f6f8fa; /* row and menu-item hover on a surface */
+  --color-hover: rgba(0, 0, 0, 0.045); /* hover on the page background */
+
+  /* Brand and state */
+  --color-primary: #0070f3;
+  --color-primary-hover: #005cc5;
+  --color-primary-bg: #e8f1fe; /* subtle primary fill: active items, links as chips */
+  --color-primary-subtle: var(--color-primary-bg);
+  --color-danger: #dc3545;
+  --color-danger-hover: #c82333;
+  --color-danger-bg: #fdecee;
+  --color-danger-border: #f1b0b7;
+  --color-success: #1e7e34;
+  --color-success-bg: #e3f4e8;
+  --color-warning: #8a5a00; /* readable on white and on --color-warning-bg */
+  --color-warning-bg: #fff4d6;
+
+  /* Text and lines */
+  --color-text: #1a1a1a;
+  --color-text-muted: #616161;
+  --color-border: #e0e0e0; /* dividers, card edges */
+  --color-border-strong: #c8cdd3; /* control edges: inputs, buttons */
+
+  /* Shape */
+  --radius: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.16);
+  --focus-ring: 0 0 0 3px rgba(0, 112, 243, 0.25);
+
+  /* Spacing scale (also the step of .mt-N / .mb-N / .gap-N: N × 0.5rem) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  /* Controls: inputs and buttons in one row share a height */
+  --control-h: 2.5rem;
+  --control-h-sm: 2rem;
+  --tap: 44px; /* minimum touch target */
+
+  /* Type */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sm: 0.875rem;
+  --font-xs: 0.75rem;
+
+  /* Shell */
+  --navbar-h: 56px;
+  --content-max: 1080px;
+}
+
+/* ========================================================================
+   2. Base
+   ======================================================================== */
+
 *,
 *::before,
 *::after {
@@ -9,25 +97,14 @@
   padding: 0;
 }
 
-:root {
-  --color-bg: #f5f5f5;
-  --color-bg-muted: #dddddd;
-  --color-surface: #ffffff;
-  --color-primary: #0070f3;
-  --color-primary-hover: #005cc5;
-  --color-danger: #dc3545;
-  --color-danger-hover: #c82333;
-  --color-text: #1a1a1a;
-  --color-text-muted: #666666;
-  --color-border: #e0e0e0;
-  --color-success: #28a745;
-  --radius: 6px;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+html {
+  /* Keep the layout from jumping sideways between short and long pages. */
+  scrollbar-gutter: stable;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
   background: var(--color-bg);
   color: var(--color-text);
   line-height: 1.5;
@@ -41,29 +118,130 @@ a:hover {
   text-decoration: underline;
 }
 
-/* Navbar */
+h1,
+h2,
+h3,
+h4 {
+  line-height: 1.25;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+h1 {
+  font-size: 1.6rem;
+  margin-bottom: var(--space-4);
+}
+h2 {
+  font-size: 1.25rem;
+  margin-bottom: var(--space-3);
+}
+h3 {
+  font-size: 1.1rem;
+  margin-bottom: var(--space-2);
+}
+h4 {
+  font-size: 1rem;
+  margin-bottom: var(--space-2);
+}
+
+img,
+video {
+  max-width: 100%;
+  height: auto;
+}
+/* In an auto-sized table cell a percentage max-width collapses the image to
+   nothing (the cell sizes to the image, the image to the cell). */
+:is(td, th) > img {
+  max-width: none;
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: var(--space-4) 0;
+}
+
+/* The reset strips list indentation; give it back to plain lists in content. */
+:where(.card, .modal-body, .alert) :is(ul, ol):not([class]) {
+  padding-left: 1.25rem;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+
+summary {
+  cursor: pointer;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+  accent-color: var(--color-primary);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  h1 {
+    font-size: 1.35rem;
+  }
+  h2 {
+    font-size: 1.15rem;
+  }
+}
+
+/* ========================================================================
+   3. Shell
+   ======================================================================== */
+
+/* --- Navbar --- */
 .navbar {
   display: flex;
   align-items: center;
+  gap: var(--space-1);
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
-  padding: 0 1rem;
-  height: 56px;
+  padding: 0 var(--space-4);
+  height: var(--navbar-h);
   box-shadow: var(--shadow);
   position: relative;
-  z-index: 10;
+  z-index: 50;
 }
 
 .navbar-brand {
   font-weight: 700;
   font-size: 1.25rem;
   color: var(--color-text);
-  margin-right: 1rem;
+  margin-right: var(--space-3);
   white-space: nowrap;
-  flex-shrink: 0;
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.35rem;
 }
 .navbar-brand:hover {
   text-decoration: none;
@@ -74,7 +252,7 @@ a:hover {
   list-style: none;
   gap: 0.125rem;
   overflow: hidden;
-  flex-shrink: 1;
+  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -82,11 +260,21 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.5rem 0.5rem;
+  padding: var(--space-2);
   border-radius: var(--radius);
   color: var(--color-text-muted);
   font-size: 0.85rem;
   white-space: nowrap;
+}
+.navbar-nav a:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+  text-decoration: none;
+}
+.navbar-nav a.active {
+  color: var(--color-primary);
+  background: var(--color-primary-bg);
+  font-weight: 500;
 }
 
 .nav-icon {
@@ -97,56 +285,102 @@ a:hover {
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
-  flex-shrink: 0;
+  flex: none;
 }
 
-.navbar-nav a:hover {
-  background: var(--color-bg);
-  color: var(--color-text);
-  text-decoration: none;
+/* Pushes the search and the account menu to the right edge; it gives up its
+   width first when space runs short. */
+.navbar-spacer {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
-.navbar-nav a.active {
-  color: var(--color-primary);
-  font-weight: 500;
+.navbar-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
 }
 
+/* Stage 1: labels below icons */
+.navbar--compact .navbar-nav a {
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.3rem 0.4rem;
+}
+.navbar--compact .nav-label {
+  font-size: 0.65rem;
+}
+
+/* Stage 2: icons only */
+.navbar--icon-only .nav-label,
+.navbar--collapsed .nav-label {
+  display: none;
+}
+.navbar--icon-only .navbar-nav {
+  gap: 0;
+}
+.navbar--icon-only .navbar-search {
+  width: 180px;
+}
+
+/* Stage 3: the nav no longer fits; the apps menu replaces it */
+.navbar--collapsed .navbar-nav {
+  display: none;
+}
+.navbar--collapsed .navbar-apps {
+  display: block;
+}
+
+.navbar--icon-only .dropdown-username,
+.navbar--icon-only .dropdown-caret,
+.navbar--collapsed .dropdown-username,
+.navbar--collapsed .dropdown-caret {
+  display: none;
+}
+
+/* --- Navbar search --- */
 .navbar-search {
   position: relative;
-  flex: 1;
-  max-width: 280px;
-  min-width: 0;
-  margin: 0 0.5rem;
+  width: 260px;
+  flex: none;
+  margin-right: var(--space-2);
 }
 
 .search-input {
+  min-height: 36px;
   height: 36px;
   padding: 0.25rem 0.75rem;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
+}
+
+/* The search icon button shown instead of the box where the box won't fit. */
+.navbar .search-toggle {
+  display: none;
 }
 
 .search-results {
   display: none;
   position: absolute;
   top: 100%;
-  left: 0;
   right: 0;
+  width: max(100%, 380px);
+  max-width: calc(100vw - 1.5rem);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  max-height: 400px;
+  box-shadow: var(--shadow-lg);
+  max-height: 420px;
   overflow-y: auto;
   z-index: 200;
   margin-top: 4px;
 }
-
 .navbar-search:focus-within .search-results:not(:empty) {
   display: block;
 }
 
 .search-section {
-  padding: 0.4rem 0.75rem;
+  padding: 0.45rem 0.75rem 0.3rem;
   font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -158,43 +392,91 @@ a:hover {
 .search-hit {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  gap: var(--space-2);
+  padding: 0.55rem 0.75rem;
   color: var(--color-text);
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   cursor: pointer;
+  min-height: 40px;
 }
-
 .search-hit:hover,
 .search-hit-active {
-  background: var(--color-bg);
+  background: var(--color-surface-hover);
   text-decoration: none;
 }
-
+.search-hit-active {
+  box-shadow: inset 3px 0 0 var(--color-primary);
+}
 .search-hit-name {
   font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
-
 .search-hit-sub {
   color: var(--color-text-muted);
   font-size: 0.8rem;
   margin-left: auto;
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .search-empty {
-  padding: 0.75rem;
+  padding: var(--space-4) var(--space-3);
   text-align: center;
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.875rem;
+}
+.search-empty strong {
+  color: var(--color-text);
+  font-weight: 500;
 }
 
-.navbar-end {
-  margin-left: auto;
-  position: relative;
-  flex-shrink: 0;
+/* Phones, and any width where the nav had to collapse: the box becomes a
+   full-width panel under the navbar, opened by the search button. */
+@media (max-width: 640px) {
+  .navbar .navbar-search {
+    display: none;
+  }
+  .navbar .search-toggle {
+    display: inline-flex;
+  }
+}
+.navbar--collapsed .navbar-search {
+  display: none;
+}
+.navbar.navbar--collapsed .search-toggle {
+  display: inline-flex;
+}
+.navbar.search-open .navbar-search {
+  display: block;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  width: auto;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: var(--shadow-lg);
+}
+.navbar.search-open .search-input {
+  height: var(--control-h);
+  font-size: 16px; /* below 16px iOS zooms the page on focus */
+}
+.navbar.search-open .search-results {
+  position: static;
+  width: auto;
+  max-width: none;
+  max-height: 70vh;
+  box-shadow: none;
+  margin-top: var(--space-2);
 }
 
-/* User dropdown */
+/* --- Dropdowns (user menu, apps menu, notifications) ---
+   Markup: .dropdown > button.dropdown-toggle[data-dropdown-toggle][aria-expanded]
+           + .dropdown-menu. cog.js toggles .open on the .dropdown. */
 .dropdown {
   position: relative;
   display: inline-block;
@@ -203,44 +485,63 @@ a:hover {
 .dropdown-toggle {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.75rem;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: 0.3rem 0.65rem 0.3rem 0.35rem;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-pill);
   background: var(--color-surface);
   cursor: pointer;
   font-size: 0.9rem;
   color: var(--color-text);
 }
-
 .dropdown-toggle:hover {
-  background: var(--color-bg);
+  background: var(--color-surface-hover);
+}
+.dropdown-caret {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
 }
 
 .dropdown-menu {
   display: none;
   position: absolute;
   right: 0;
-  top: calc(100% + 4px);
+  top: calc(100% + 6px);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  min-width: 160px;
+  box-shadow: var(--shadow-lg);
+  min-width: 200px;
+  max-width: calc(100vw - 1rem);
   z-index: 100;
-  overflow: hidden;
+  padding: var(--space-1) 0;
+}
+.dropdown.open > .dropdown-menu {
+  display: block;
 }
 
-.dropdown:focus-within .dropdown-menu,
-.dropdown-menu:hover {
+.dropdown-header {
+  padding: var(--space-2) var(--space-4) var(--space-1);
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.dropdown-header strong {
   display: block;
+  color: var(--color-text);
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .dropdown-menu a,
 .dropdown-menu button {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   width: 100%;
-  padding: 0.5rem 1rem;
+  min-height: 38px;
+  padding: var(--space-2) var(--space-4);
   text-align: left;
   border: none;
   background: none;
@@ -248,772 +549,1843 @@ a:hover {
   color: var(--color-text);
   cursor: pointer;
 }
-
 .dropdown-menu a:hover,
-.dropdown-menu button:hover {
-  background: var(--color-bg);
+.dropdown-menu button:hover,
+.dropdown-menu a:focus-visible,
+.dropdown-menu button:focus-visible {
+  background: var(--color-surface-hover);
   text-decoration: none;
+  outline-offset: -2px;
+}
+.dropdown-menu a.active {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+.dropdown-menu .danger {
+  color: var(--color-danger);
+}
+.dropdown-menu .nav-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .dropdown-divider {
   border-top: 1px solid var(--color-border);
-  margin: 0.25rem 0;
+  margin: var(--space-1) 0;
 }
 
-/* Content area */
-.content {
-  max-width: 960px;
-  margin: 2rem auto;
-  padding: 0 1.5rem;
+/* Apps menu (#apps-menu): only shown once the nav has collapsed into it. */
+.navbar-apps {
+  display: none;
+  flex: none;
+}
+.navbar-apps .dropdown-menu {
+  left: 0;
+  right: auto;
+  min-width: 220px;
+  max-height: calc(100vh - var(--navbar-h) - 1rem);
+  overflow-y: auto;
 }
 
-/* Cards */
-.card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
+/* Notification bell */
+.notif-dropdown .dropdown-menu {
+  min-width: 280px;
+  max-height: 320px;
+  overflow-y: auto;
 }
-
-/* A card laid out by a grid takes its spacing from the gap, not its own margin. */
-[style*="display:grid"] > .card {
-  margin-bottom: 0;
-}
-
-.card-title {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin-bottom: 1rem;
-}
-
-/* Forms */
-.form-group {
-  margin-bottom: 1rem;
-}
-
-.form-group label {
-  display: block;
-  font-weight: 500;
-  font-size: 0.9rem;
-  margin-bottom: 0.3rem;
-}
-
-.form-control {
-  display: block;
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  font-size: 0.9rem;
-  line-height: 1.5;
-  background: var(--color-surface);
-  color: var(--color-text);
-}
-
-.form-control:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(0, 112, 243, 0.15);
-}
-
-/* Buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.5rem 1rem;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  text-decoration: none;
-  line-height: 1.5;
-  gap: 0.5rem;
-}
-
-.btn:hover {
-  text-decoration: none;
-}
-
-.btn-primary {
-  background: var(--color-primary);
-  color: white;
-}
-.btn-primary:hover {
-  background: var(--color-primary-hover);
-}
-
-.btn-danger {
-  background: var(--color-danger);
-  color: white;
-}
-.btn-danger:hover {
-  background: var(--color-danger-hover);
-}
-
-.btn-outline {
-  background: transparent;
-  border-color: var(--color-border);
-  color: var(--color-text);
-}
-.btn-outline:hover {
-  background: var(--color-bg);
-}
-
-.btn-secondary {
-  background: var(--color-surface);
-  border-color: var(--color-border);
-  color: var(--color-text);
-}
-.btn-secondary:hover {
-  background: var(--color-bg);
-}
-
-.btn-sm {
-  padding: 0.3rem 0.6rem;
-  font-size: 0.8rem;
-}
-
-.btn-star {
-  border: none;
-  background: none;
-  cursor: pointer;
-  padding: 0 0.15rem;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-}
-.btn-star svg {
-  fill: none;
-  stroke: var(--color-text-muted);
-}
-.btn-star.active svg {
-  fill: gold;
-  stroke: gold;
-}
-.btn-star.active:hover svg {
-  opacity: 0.8;
-}
-
-/* Tables */
-.table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.table th,
-.table td {
-  padding: 0.75rem;
-  text-align: left;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.table th {
-  font-weight: 600;
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.table tr:hover td {
-  background: var(--color-bg);
-}
-
-/* Alerts */
-.alert {
-  padding: 0.75rem 2rem 0.75rem 1rem;
-  border-radius: var(--radius);
-  margin-bottom: 1rem;
-  font-size: 0.9rem;
-  position: relative;
-}
-
-.alert-success {
-  background: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
-}
-
-.alert-error {
-  background: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
-}
-
-.alert-dismiss {
+.notif-badge {
   position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  background: none;
-  border: none;
-  font-size: 1.2rem;
-  line-height: 1;
-  cursor: pointer;
-  color: inherit;
-  opacity: 0.6;
-  padding: 0 0.25rem;
-}
-
-.alert-dismiss:hover {
-  opacity: 1;
-}
-
-/* Utilities */
-.text-muted {
-  color: var(--color-text-muted);
-}
-.text-right {
-  text-align: right;
-}
-.mb-0 {
-  margin-bottom: 0;
-}
-.mb-1 {
-  margin-bottom: 0.5rem;
-}
-.mb-2 {
-  margin-bottom: 1rem;
-}
-.mt-1 {
-  margin-top: 0.5rem;
-}
-.mt-2 {
-  margin-top: 1rem;
-}
-.flex {
-  display: flex;
-}
-.items-center {
-  align-items: center;
-}
-.justify-between {
-  justify-content: space-between;
-}
-.gap-1 {
-  gap: 0.5rem;
-}
-
-/* Login page */
-.login-container {
+  top: 2px;
+  right: 2px;
+  background: var(--color-danger);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
-}
-
-.login-card {
-  width: 100%;
-  max-width: 380px;
-  padding: 2rem;
-}
-
-.login-title {
-  text-align: center;
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-bottom: 1.5rem;
-}
-
-/* Checkbox */
-.form-check {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.form-check input[type="checkbox"] {
-  width: 1rem;
-  height: 1rem;
-}
-
-/* Badge */
-.badge {
-  display: inline-block;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.badge-admin {
-  background: #e3f2fd;
-  color: #1565c0;
-}
-
-.badge-danger {
-  background: #f8d7da;
-  color: #721c24;
-}
-
-.badge-warn {
-  background: #fff3cd;
-  color: #856404;
-}
-
-.badge-overdue {
-  background: #f8d7da;
-  color: #721c24;
-}
-
-.badge-due-soon {
-  background: #fff3cd;
-  color: #856404;
+  padding: 0 4px;
+  pointer-events: none;
 }
 
 /* Avatars */
 .avatar-sm {
+  max-width: none;
   width: 28px;
   height: 28px;
   border-radius: 50%;
   object-fit: cover;
   vertical-align: middle;
+  flex: none;
+}
+.avatar-md {
+  max-width: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  object-fit: cover;
+  vertical-align: middle;
+  flex: none;
 }
 .avatar-lg {
+  max-width: none;
   width: 64px;
   height: 64px;
   border-radius: 50%;
   object-fit: cover;
+  flex: none;
 }
 
-/* App grid (dashboard) */
-.app-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
+@media (max-width: 768px) {
+  .navbar {
+    padding: 0 var(--space-2);
+  }
+  .navbar-brand {
+    margin-right: var(--space-1);
+    font-size: 1.05rem;
+  }
+  .navbar-nav {
+    gap: 0;
+  }
+  .navbar-nav a {
+    flex-direction: row;
+    padding: var(--space-2);
+  }
+  .nav-label,
+  .dropdown-username,
+  .dropdown-caret {
+    display: none;
+  }
+  .navbar-search {
+    width: 180px;
+  }
+  /* Avatar alone: a round button, not an empty-looking box. */
+  .dropdown-toggle {
+    border-color: transparent;
+    padding: 0;
+    min-width: var(--tap);
+    min-height: var(--tap);
+    justify-content: center;
+  }
+  .dropdown-menu a,
+  .dropdown-menu button {
+    min-height: var(--tap);
+  }
+  .navbar .btn-icon {
+    width: var(--tap);
+    height: var(--tap);
+  }
+  .navbar-nav a {
+    min-width: 40px;
+    min-height: var(--tap);
+    justify-content: center;
+  }
 }
 
-.app-card {
-  text-align: center;
-  padding: 1.5rem;
+@media (max-width: 480px) {
+  .brand-text {
+    display: none;
+  }
+}
+
+/* --- Page container --- */
+.content {
+  max-width: var(--content-max);
+  margin: var(--space-8) auto;
+  padding: 0 var(--space-6);
+}
+.content--narrow {
+  max-width: 640px;
+}
+
+@media (max-width: 768px) {
+  .content {
+    padding: 0 var(--space-3);
+    margin: var(--space-4) auto;
+  }
+}
+
+/* ========================================================================
+   4. Page structure
+   ======================================================================== */
+
+/* Page header: title, optional breadcrumb above it, actions to the right that
+   wrap below the title on a narrow screen.
+   <header class="page-header">
+     <div class="page-heading"><nav class="breadcrumbs">…</nav><h1>…</h1></div>
+     <div class="page-actions">…buttons…</div>
+   </header>                                 (ui.PageHeader renders this) */
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-5);
+}
+.page-heading {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+.page-header h1,
+.page-heading h1 {
+  margin: 0;
+}
+.page-header > h1 {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+.page-subtitle {
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  margin-top: var(--space-1);
+}
+.page-actions:empty {
+  display: none;
+}
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Breadcrumbs: <nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li>…</li></ol></nav>
+   The last item is <span aria-current="page">. */
+.breadcrumbs {
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-1);
+}
+.breadcrumbs ol {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.breadcrumbs li {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.breadcrumbs li + li::before {
+  content: "›";
+  margin: 0 0.4rem;
+  color: var(--color-text-muted);
+}
+.breadcrumbs a {
+  color: var(--color-text-muted);
+}
+.breadcrumbs a:hover {
+  color: var(--color-primary);
+}
+.breadcrumbs [aria-current] {
   color: var(--color-text);
-  transition: border-color 0.15s;
 }
 
-.app-card:hover {
-  border-color: var(--color-primary);
-  text-decoration: none;
+/* Vertical rhythm for a column of blocks: children are spaced by the gap,
+   not by their own margins. */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+.stack-sm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+:is(.stack, .stack-sm) > * {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
-.app-icon svg {
-  width: 36px;
-  height: 36px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.app-card-label {
-  font-weight: 600;
-  font-size: 1.1rem;
-}
-
-/* Sidebar layout */
+/* --- Sidebar layout ---
+   <div class="sidebar-layout">
+     <nav class="sidebar">  .sidebar-item[.active] | .sidebar-heading | .sidebar-divider </nav>
+     <div class="sidebar-content">…</div>
+   </div>
+   On phones cog.js inserts a .sidebar-toggle button above the sidebar that
+   names the current item and opens the full sidebar as a panel. Plugins need
+   no markup of their own for it. */
 .sidebar-layout {
   display: flex;
-  gap: 2rem;
+  align-items: flex-start;
+  gap: var(--space-8);
 }
 
 .sidebar {
-  flex-shrink: 0;
-  width: 200px;
+  flex: none;
+  width: 210px;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
 .sidebar-item {
-  display: block;
-  padding: 0.5rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.25rem;
+  padding: 0.4rem var(--space-3);
   border-radius: var(--radius);
   color: var(--color-text-muted);
   font-size: 0.9rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
-
 .sidebar-item:hover {
-  background: var(--color-bg);
+  background: var(--color-hover);
   color: var(--color-text);
   text-decoration: none;
 }
-
 .sidebar-item.active {
-  background: var(--color-bg);
+  background: var(--color-surface);
   color: var(--color-primary);
   font-weight: 500;
+  box-shadow:
+    inset 3px 0 0 var(--color-primary),
+    var(--shadow);
+}
+.sidebar-item > svg {
+  flex: none;
+}
+/* A count or badge sits at the right edge of its item. */
+.sidebar-item > .badge,
+.sidebar-item > .count {
+  margin-left: auto;
+}
+.sidebar-item > .badge {
+  background: transparent;
+  color: var(--color-text-muted);
+  padding-right: 0;
+}
+
+.sidebar-child {
+  padding-left: var(--space-6);
+}
+
+.sidebar-heading,
+.sidebar-group,
+.sidebar-group-label {
+  display: block;
+  padding: var(--space-4) var(--space-3) var(--space-1);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.sidebar > .sidebar-heading:first-child,
+.sidebar > .sidebar-group:first-child {
+  padding-top: var(--space-1);
+}
+
+.sidebar-divider {
+  height: 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: var(--space-2) var(--space-3);
+}
+
+/* Small coloured dot for a collection (calendar, list, book). Set the colour
+   with style="background:…". */
+.color-dot,
+.sidebar-color-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  vertical-align: middle;
+  background: var(--color-text-muted);
 }
 
 .sidebar-content {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
-/* Dropdown active */
-.dropdown-menu a.active {
-  color: var(--color-primary);
-  font-weight: 500;
+.sidebar-toggle {
+  display: none;
 }
 
-/* Text color utilities */
-.text-danger {
-  color: var(--color-danger);
-}
-.text-success {
-  color: var(--color-success);
-}
-
-/* Sidebar text overflow gradient */
-.sidebar-item-text {
-  overflow: hidden;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-  mask-image: linear-gradient(to right, black calc(100% - 16px), transparent);
-  -webkit-mask-image: linear-gradient(
-    to right,
-    black calc(100% - 16px),
-    transparent
-  );
-}
-
-/* Spinner for pending feeds */
-.spinner-sm {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--color-border);
-  border-top-color: var(--color-primary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  flex-shrink: 0;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
+@media (max-width: 768px) {
+  .sidebar-layout {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-4);
+  }
+  .sidebar {
+    width: 100%;
+  }
+  .sidebar-item {
+    min-height: var(--tap);
+  }
+  .sidebar-layout.has-sidebar-toggle > .sidebar {
+    display: none;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    padding: var(--space-2);
+    margin-top: calc(-1 * var(--space-2));
+  }
+  .sidebar-layout.has-sidebar-toggle.sidebar-open > .sidebar {
+    display: flex;
+  }
+  .sidebar-layout.has-sidebar-toggle .sidebar-item.active {
+    box-shadow: inset 3px 0 0 var(--color-primary);
+    background: var(--color-primary-bg);
+  }
+  .sidebar-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    min-height: var(--tap);
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    color: var(--color-text);
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+  }
+  .sidebar-toggle svg {
+    flex: none;
+    color: var(--color-text-muted);
+  }
+  .sidebar-toggle-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sidebar-toggle-label::before {
+    content: attr(data-label);
+  }
+  .sidebar-toggle-chevron {
+    transition: transform 0.15s;
+  }
+  .sidebar-open > .sidebar-toggle .sidebar-toggle-chevron {
+    transform: rotate(180deg);
   }
 }
 
-/* RSS item styles */
-.rss-item {
-  transition: background 0.1s;
-}
-.rss-item-read {
-  background-color: var(--color-bg-muted);
-}
+/* ========================================================================
+   5. Components
+   ======================================================================== */
 
-.rss-item-detail {
-  padding: 1rem;
-  border-top: 1px solid var(--color-border);
+/* --- Cards --- */
+.card {
   background: var(--color-surface);
-}
-
-.rss-item-preview-img {
-  max-width: 200px;
-  max-height: 150px;
-  object-fit: cover;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  float: right;
-  margin: 0 0 0.5rem 1rem;
+  box-shadow: var(--shadow);
+  padding: var(--space-6);
+  margin-bottom: var(--space-6);
+  min-width: 0;
 }
 
-.rss-item-summary {
+/* A card laid out by a grid takes its spacing from the gap, not its margin. */
+:where(.grid, .stack, .stack-sm, [style*="display:grid"], [style*="display: grid"]) > .card {
+  margin-bottom: 0;
+}
+
+.card-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: var(--space-4);
+  overflow-wrap: anywhere;
+}
+/* Title with an action at the right: <div class="card-header"><h2 class="card-title">…</h2>…</div> */
+.card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.card-header > .card-title {
+  margin: 0;
+}
+/* A section inside a card, below a rule. */
+.card-subtitle {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: var(--space-5) 0 var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+.card-desc,
+.card > p:not(:last-child):not([class*="mb-"]) {
+  margin-bottom: var(--space-3);
+}
+.card-desc {
   color: var(--color-text-muted);
-  font-size: 0.9rem;
+  font-size: var(--font-sm);
+}
+/* Content runs to the card edge (a table): <div class="card card-flush"> */
+.card-flush {
+  padding: 0;
+  overflow: hidden;
+}
+.card-flush > .card-title,
+.card-flush > .card-header {
+  padding: var(--space-5) var(--space-6) 0;
+}
+.card-flush .table :is(th, td):first-child {
+  padding-left: var(--space-6);
+}
+.card-flush .table :is(th, td):last-child {
+  padding-right: var(--space-6);
+}
+.card-footer {
+  margin: var(--space-5) calc(-1 * var(--space-6)) calc(-1 * var(--space-6));
+  padding: var(--space-3) var(--space-6);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.card-danger {
+  border-color: var(--color-danger-border);
+}
+.card-danger > .card-title {
+  color: var(--color-danger);
+}
+
+@media (max-width: 768px) {
+  .card {
+    padding: var(--space-4);
+    margin-bottom: var(--space-4);
+  }
+  .card-flush {
+    padding: 0;
+  }
+  .card-flush > .card-title,
+  .card-flush > .card-header {
+    padding: var(--space-4) var(--space-4) 0;
+  }
+  .card-flush .table :is(th, td):first-child {
+    padding-left: var(--space-4);
+  }
+  .card-flush .table :is(th, td):last-child {
+    padding-right: var(--space-4);
+  }
+  .card-footer {
+    margin: var(--space-4) calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
+    padding: var(--space-3) var(--space-4);
+  }
+}
+
+/* Responsive grid of cards: <div class="grid grid-2"> (columns collapse on phones) */
+.grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+}
+.grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 768px) {
+  .grid-2,
+  .grid-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* --- Forms ---
+   <div class="form-group">
+     <label class="form-label" for="x">Label</label>
+     <input class="form-control" id="x">
+     <p class="form-help">Hint</p>
+   </div>
+   Fields side by side: <div class="form-row"> .form-group … .btn </div>
+   Input + button in one line: <form class="form-inline"> */
+.form-group {
+  margin-bottom: var(--space-4);
+  min-width: 0;
+}
+
+.form-label,
+.form-group label:not(.btn, .form-check, .chip) {
+  display: block;
+  font-weight: 500;
+  font-size: var(--font-sm);
+  margin-bottom: 0.3rem;
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: var(--control-h);
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  background: var(--color-surface);
+  color: var(--color-text);
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
+}
+.form-control::placeholder {
+  color: #8a8f95;
+}
+.form-control:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
+}
+.form-control:disabled,
+.form-control[readonly] {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+}
+.form-control[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
+textarea.form-control {
+  min-height: 5.5rem;
+  resize: vertical;
   line-height: 1.5;
 }
 
-.rss-item-summary-line {
-  color: var(--color-text-muted);
+select.form-control {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23616161' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  cursor: pointer;
+}
+select.form-control[multiple],
+select.form-control[size]:not([size="1"]) {
+  background-image: none;
+  padding-right: 0.75rem;
+}
+
+/* A colour input is a swatch, not a text box. */
+.form-control[type="color"] {
+  width: 3.25rem;
+  height: var(--control-h);
+  padding: 0.25rem;
+  flex: none;
+  cursor: pointer;
+}
+
+.form-control[type="file"] {
+  padding: 0.3rem 0.4rem;
+  font-size: var(--font-sm);
+}
+.form-control[type="file"]::file-selector-button {
+  margin-right: var(--space-3);
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.form-control-sm {
+  min-height: var(--control-h-sm);
+  padding: 0.25rem 0.6rem;
+  font-size: var(--font-sm);
+}
+.form-control-sm[type="color"] {
+  height: var(--control-h-sm);
+}
+select.form-control-sm {
+  padding-right: 1.75rem;
+  background-position: right 0.5rem center;
+}
+
+.form-control.mono,
+textarea.mono {
+  font-family: var(--font-mono);
   font-size: 0.85rem;
+}
+
+/* Fields that only need to be as wide as their content. */
+.form-control-auto {
+  width: auto;
+  display: inline-block;
+}
+.form-control.w-xs {
+  max-width: 7rem;
+}
+.form-control.w-sm {
+  max-width: 12rem;
+}
+.form-control.w-md {
+  max-width: 20rem;
+}
+
+.form-help {
+  font-size: 0.825rem;
+  color: var(--color-text-muted);
+  margin-top: 0.3rem;
+}
+.form-error {
+  font-size: 0.825rem;
+  color: var(--color-danger);
+  margin-top: 0.3rem;
+}
+
+.form-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 400;
+  font-size: 0.9375rem;
+  min-height: 1.75rem;
+  cursor: pointer;
+}
+.form-group .form-check + .form-help {
+  margin-left: 1.6rem;
+}
+.form-check-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+}
+
+fieldset {
+  border: 0;
+  min-width: 0;
+}
+legend {
+  font-weight: 500;
+  font-size: var(--font-sm);
+  margin-bottom: 0.3rem;
+}
+
+/* Labelled fields side by side, buttons aligned with the inputs. */
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.form-row > .form-group {
+  flex: 1 1 12rem;
+  margin-bottom: 0;
+}
+.form-row > .form-group-auto {
+  flex: 0 0 auto;
+}
+.form-row > .btn {
+  flex: none;
+}
+
+/* One input and its button(s) on a line; the input takes the room. */
+.form-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.form-inline > .form-control,
+.form-inline > .picker {
+  flex: 1 1 10rem;
+  width: auto;
+  max-width: 26rem;
+}
+.form-inline > .btn,
+.form-inline > select.form-control {
+  flex: none;
+}
+.form-inline > select.form-control {
+  width: auto;
+}
+
+/* Buttons that end a form. Add .form-actions-sticky to keep them in view at
+   the bottom of a long card. */
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+.form-actions-end {
+  justify-content: flex-end;
+}
+.form-actions > .spacer {
+  margin-left: auto;
+}
+.form-actions-sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-3) var(--space-6);
+  margin: var(--space-5) calc(-1 * var(--space-6)) calc(-1 * var(--space-6));
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+@media (max-width: 768px) {
+  .form-actions-sticky {
+    padding: var(--space-3) var(--space-4);
+    margin: var(--space-4) calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
+  }
+}
+/* A sticky bar of actions after a column of cards (outside any card). */
+.page-actions-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  padding: var(--space-3) 0;
+  background: linear-gradient(to bottom, transparent, var(--color-bg) 30%);
+}
+
+@media (max-width: 480px) {
+  /* Below 16px iOS zooms the page when a field takes focus. */
+  .form-control {
+    font-size: 16px;
+  }
+}
+
+/* --- Buttons ---
+   .btn alone is the neutral (secondary) button. Variants: .btn-primary,
+   .btn-secondary, .btn-danger (final destructive action only),
+   .btn-outline-danger (row deletes), .btn-ghost, .btn-link.
+   Sizes: default shares --control-h with .form-control; .btn-sm with
+   .form-control-sm. Icon-only: .btn-icon (needs aria-label). */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: var(--control-h);
+  padding: 0.4rem 1rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.25;
   white-space: nowrap;
+  text-decoration: none;
+  vertical-align: middle;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.btn:hover {
+  background: var(--color-surface-hover);
+  border-color: #b4bac1;
+  text-decoration: none;
+}
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.btn svg {
+  flex: none;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.btn-secondary,
+.btn-outline {
+  background: var(--color-surface);
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.btn-danger {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: #fff;
+}
+.btn-danger:hover {
+  background: var(--color-danger-hover);
+  border-color: var(--color-danger-hover);
+}
+
+.btn-outline-danger,
+.btn-danger-outline {
+  background: var(--color-surface);
+  border-color: var(--color-danger-border);
+  color: var(--color-danger);
+}
+.btn-outline-danger:hover,
+.btn-danger-outline:hover {
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger);
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text);
+}
+.btn-ghost:hover {
+  background: var(--color-hover);
+  border-color: transparent;
+}
+
+.btn-link {
+  background: none;
+  border-color: transparent;
+  color: var(--color-primary);
+  padding-left: var(--space-1);
+  padding-right: var(--space-1);
+}
+.btn-link:hover {
+  background: none;
+  border-color: transparent;
+  text-decoration: underline;
+}
+
+.btn-sm {
+  min-height: var(--control-h-sm);
+  padding: 0.2rem 0.65rem;
+  font-size: 0.8125rem;
+  gap: 0.3rem;
+}
+.btn-block {
+  display: flex;
+  width: 100%;
+}
+
+/* Square icon-only button: <button class="btn-icon" aria-label="Delete note">svg</button>.
+   Transparent until hovered; .btn-icon-danger turns red on hover. */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--control-h);
+  height: var(--control-h);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  position: relative;
+  line-height: 1;
+}
+.btn-icon:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+  text-decoration: none;
+}
+.btn-icon-sm {
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+}
+.btn-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.btn-icon-danger:hover,
+.btn-icon.danger:hover {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+/* An icon-only .btn with a border: <button class="btn btn-square"> */
+.btn.btn-square {
+  padding: 0;
+  width: var(--control-h);
+}
+.btn.btn-sm.btn-square {
+  width: var(--control-h-sm);
+}
+
+.btn-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  min-height: 2rem;
+  border: none;
+  background: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  flex: none;
+}
+.btn-star:hover {
+  background: var(--color-hover);
+}
+.btn-star svg {
+  fill: none;
+  stroke: var(--color-text-muted);
+}
+.btn-star.active svg {
+  fill: #f5b301;
+  stroke: #e0a100;
+}
+
+/* Fingers need bigger targets than pointers. */
+@media (pointer: coarse) {
+  .btn-sm,
+  .btn-icon,
+  .btn-icon-sm,
+  .btn-star {
+    min-width: var(--tap);
+    min-height: var(--tap);
+  }
+}
+
+/* ui.Upload: a button-styled label around a visually hidden file input. */
+.upload-form {
+  display: inline-flex;
+}
+label.btn:focus-within {
+  box-shadow: var(--focus-ring);
+}
+
+/* A row of buttons that wraps: <div class="btn-group"> */
+.btn-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* --- Tables ---
+   Always wrap: <div class="table-wrap"><table class="table">…</table></div>
+   so a wide table scrolls inside its card instead of widening the page.
+   Right-align the actions column with <th class="col-actions"> / <td class="col-actions">
+   and put several buttons in <div class="row-actions">. */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+.table-wrap + * {
+  margin-top: var(--space-4);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+.table th,
+.table td {
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--color-border);
+  overflow-wrap: break-word;
+}
+.table th {
+  font-weight: 600;
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.table tbody tr:last-child > td {
+  border-bottom: 0;
+}
+.table tbody tr:hover > td {
+  background: var(--color-surface-hover);
+}
+.table code {
+  overflow-wrap: anywhere;
+}
+/* In a padded card the table lines up with the card's text. */
+.card:not(.card-flush) .table :is(th, td):first-child {
+  padding-left: 0;
+}
+.card:not(.card-flush) .table :is(th, td):last-child {
+  padding-right: 0;
+}
+.card:not(.card-flush) .table tbody tr:hover > td {
+  background: none;
+}
+@media (max-width: 640px) {
+  .table th,
+  .table td {
+    padding: 0.55rem 0.5rem;
+  }
+}
+.table-sm th,
+.table-sm td {
+  padding: 0.4rem 0.6rem;
+}
+.table-fixed {
+  table-layout: fixed;
+}
+
+.table .text-right,
+.table .col-actions {
+  text-align: right;
+}
+.table .text-center {
+  text-align: center;
+}
+.table .col-actions {
+  white-space: nowrap;
+  width: 1%;
+}
+.table .col-shrink {
+  width: 1%;
+  white-space: nowrap;
+}
+.table td.empty-state {
+  padding: var(--space-6) var(--space-4);
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+/* A whole row that opens something: put class="row-link" on the main link in
+   the row; its ::after stretches over the row. */
+.table tr:has(.row-link) {
+  position: relative;
+}
+.row-link {
+  color: var(--color-text);
+  font-weight: 500;
+}
+.row-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.table tr:has(.row-link) :is(button, select, input, a:not(.row-link)) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Below 640px a .table-stack shows each row as a block of label: value
+   lines. Give each cell data-label="Column". */
+@media (max-width: 640px) {
+  .table-stack thead {
+    display: none;
+  }
+  .table-stack,
+  .table-stack tbody,
+  .table-stack tr,
+  .table-stack td {
+    display: block;
+    width: 100%;
+  }
+  .table-stack tr {
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .table-stack tr:last-child {
+    border-bottom: 0;
+  }
+  .table-stack td {
+    border: 0;
+    padding: 0.2rem 0;
+    text-align: left;
+  }
+  .table-stack td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: var(--font-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+  }
+  .table-stack .col-actions {
+    width: auto;
+    text-align: left;
+  }
+  .table-stack .row-actions {
+    justify-content: flex-start;
+    padding-top: var(--space-1);
+  }
+  .table-stack tbody tr:hover > td {
+    background: none;
+  }
+}
+
+/* Key/value pairs: <dl class="kv"><dt>…</dt><dd>…</dd></dl> */
+.kv {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) 1fr;
+  gap: var(--space-2) var(--space-6);
+}
+.kv dt {
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+.kv dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .kv {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .kv dt {
+    font-size: var(--font-sm);
+  }
+  .kv dd {
+    margin-bottom: var(--space-3);
+  }
+}
+
+/* --- Alerts --- */
+.alert {
+  position: relative;
+  padding: 0.75rem 2.5rem 0.75rem 1rem;
+  border-radius: var(--radius);
+  margin-bottom: var(--space-4);
+  font-size: 0.9375rem;
+  border: 1px solid transparent;
+  overflow-wrap: anywhere;
+}
+.alert:not(:has(.alert-dismiss)) {
+  padding-right: 1rem;
+}
+.alert a {
+  color: inherit;
+  text-decoration: underline;
+}
+.alert-title {
+  font-weight: 600;
+}
+.alert-success {
+  background: #d4edda;
+  color: #155724;
+  border-color: #c3e6cb;
+}
+.alert-error,
+.alert-danger {
+  background: #f8d7da;
+  color: #721c24;
+  border-color: #f5c6cb;
+}
+.alert-info {
+  background: var(--color-primary-bg);
+  color: #0b4a8f;
+  border-color: #c4dcfb;
+}
+.alert-warning,
+.alert-warn {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  border-color: #f3dc9b;
+}
+.alert-dismiss {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.6;
+}
+.alert-dismiss:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+.alert-body {
+  margin-top: var(--space-2);
+}
+/* A one-time secret in an alert: a code block with a copy button. */
+.secret-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.secret-box code {
+  flex: 1 1 16rem;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+  font-size: 0.875rem;
+}
+
+/* --- Badges and chips ---
+   .badge: small status label (neutral by default).
+   .chip: a tag; a link, a removable item, or a toggle (label.chip > input). */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  background: var(--color-bg-muted);
+  color: var(--color-text);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.badge svg,
+.chip svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.badge-neutral {
+  background: var(--color-bg-muted);
+  color: var(--color-text);
+}
+.badge-outline {
+  background: transparent;
+  border-color: var(--color-border-strong);
+  color: var(--color-text-muted);
+}
+.badge-primary,
+.badge-info,
+.badge-admin {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+.badge-success {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+.badge-danger {
+  background: #f8d7da;
+  color: #721c24;
+}
+.badge-warn,
+.badge-warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+a.badge {
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+}
+a.badge:hover {
+  text-decoration: none;
+  filter: brightness(0.96);
+}
+
+.count {
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.9rem;
+  padding: 0.2rem 0.7rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-sm);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+a.chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  text-decoration: none;
+}
+.chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-right: -0.35rem;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+.chip-remove:hover {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+/* Toggle chips: <label class="chip"><input type="checkbox"> Label</label> */
+.chip > input[type="checkbox"],
+.chip > input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+label.chip {
+  cursor: pointer;
+  user-select: none;
+}
+.chip:has(> input:checked) {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+.chip:has(> input:focus-visible) {
+  box-shadow: var(--focus-ring);
+}
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* --- Lists ---
+   A container of rows on one surface, for item lists that aren't tables:
+   <ul class="list"><li class="list-row">
+     <div class="list-row-main"><a class="list-row-title">…</a><div class="list-row-meta">…</div></div>
+     <div class="list-row-actions">…</div>
+   </li></ul> */
+.list {
+  list-style: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-bottom: var(--space-6);
+  overflow: hidden;
+}
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 3.25rem;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+.list-row:last-child {
+  border-bottom: 0;
+}
+.list-row:hover {
+  background: var(--color-surface-hover);
+}
+.list-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.list-row-title {
+  display: block;
+  color: var(--color-text);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+a.list-row-title:hover {
+  color: var(--color-primary);
+}
+.list-row-meta {
+  margin-top: 0.1rem;
+  font-size: 0.825rem;
+  color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-top: 2px;
+  white-space: nowrap;
+}
+.list-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+.list > .empty-state {
+  border: 0;
 }
 
-.rss-item-content {
-  font-size: 0.9rem;
-  line-height: 1.6;
+/* Short list inside a card or widget: rows separated by rules. */
+.widget-list,
+.divided-list {
+  list-style: none;
+}
+.widget-list > li,
+.divided-list > li {
+  padding: 0.45rem 0;
+  overflow-wrap: anywhere;
+}
+.widget-list > li + li,
+.divided-list > li + li {
+  border-top: 1px solid var(--color-border);
+}
+.widget-list > li:first-child {
+  padding-top: 0;
+}
+.widget-list > li:last-child {
+  padding-bottom: 0;
+}
+
+/* --- Modal dialog ---
+   <dialog class="modal" id="x" aria-labelledby="x-title">
+     <div class="modal-header">
+       <h2 class="modal-title" id="x-title">Title</h2>
+       <button type="button" class="btn-icon modal-close" data-modal-close aria-label="Close">✕</button>
+     </div>
+     <div class="modal-body">…scrolls…</div>
+     <div class="modal-footer">…buttons stay in view…</div>
+   </dialog>
+   (ui.Modal renders the header.) A <form> may wrap body and footer.
+   Open with <button data-modal-open="x"> or cogModal.open("x"); Esc, the ✕,
+   [data-modal-close] and a click on the backdrop close it. Full screen on
+   phones. */
+dialog.modal {
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text);
+  width: min(560px, calc(100% - 2rem));
+  max-width: none;
+  max-height: min(88vh, 960px);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
-  word-break: break-word;
+  margin: auto;
+}
+dialog.modal[open] {
+  display: flex;
+  flex-direction: column;
+}
+dialog.modal.modal-lg {
+  width: min(820px, calc(100% - 2rem));
+}
+dialog.modal::backdrop {
+  background: rgba(15, 20, 30, 0.5);
+}
+.modal > form {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+html:has(dialog.modal[open]) {
+  overflow: hidden;
 }
 
-.rss-item-content img {
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  flex: none;
+}
+.modal-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.modal-close {
+  font-size: 1.1rem;
+}
+.modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-5);
+  overflow-wrap: anywhere;
+}
+.modal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+  flex: none;
+}
+/* Something to keep apart from Save/Cancel (a Delete): put it first with this class. */
+.modal-footer > .modal-footer-start {
+  margin-right: auto;
+}
+
+@media (max-width: 640px) {
+  dialog.modal,
+  dialog.modal.modal-lg {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    margin: 0;
+  }
+  .modal-body {
+    padding: var(--space-4);
+  }
+  .modal-footer {
+    padding: var(--space-3) var(--space-4);
+  }
+}
+
+/* Older overlay markup (.modal-overlay > .modal-content), toggled by inline
+   style. New code should use dialog.modal. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 30, 0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-content {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  max-width: 560px;
+  width: calc(100% - 2rem);
+  max-height: 88vh;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  box-shadow: var(--shadow-lg);
+}
+@media (max-width: 640px) {
+  .modal-overlay {
+    align-items: stretch;
+  }
+  .modal-content {
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    border-radius: 0;
+    padding: var(--space-4);
+  }
+}
+
+/* --- Empty state ---
+   <div class="empty-state"><div class="empty-state-title">No notes yet</div>
+     <p>…</p><a class="btn btn-primary">New note</a></div>     (ui.EmptyState) */
+.empty-state {
+  text-align: center;
+  padding: var(--space-8) var(--space-4);
+  color: var(--color-text-muted);
+}
+.empty-state > svg,
+.empty-state-icon svg {
+  display: block;
+  width: 40px;
+  height: 40px;
+  margin: 0 auto var(--space-3);
+  color: #9aa0a6;
+}
+.empty-state-title {
+  color: var(--color-text);
+  font-weight: 600;
+  font-size: 1.05rem;
+  margin-bottom: var(--space-1);
+}
+.empty-state p {
+  max-width: 32rem;
+  margin: 0 auto;
+}
+.empty-state-actions:empty {
+  display: none;
+}
+.empty-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+/* Inline variant for an empty table or card section. */
+.empty-state-sm {
+  padding: var(--space-2) 0;
+  text-align: left;
+  font-size: var(--font-sm);
+}
+
+/* --- Prose: rendered Markdown, feed articles, any user HTML --- */
+.prose {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.prose > * + * {
+  margin-top: 0.85em;
+}
+.prose > :first-child {
+  margin-top: 0;
+}
+.prose :is(h1, h2, h3, h4, h5, h6) {
+  line-height: 1.3;
+  margin-top: 1.5em;
+  margin-bottom: 0;
+}
+.prose :is(h1, h2, h3, h4) + * {
+  margin-top: 0.5em;
+}
+.prose h1 {
+  font-size: 1.4rem;
+}
+.prose h2 {
+  font-size: 1.2rem;
+}
+.prose h3 {
+  font-size: 1.05rem;
+}
+.prose :is(h4, h5, h6) {
+  font-size: 1rem;
+}
+.prose :is(ul, ol) {
+  padding-left: 1.5em;
+}
+.prose li + li,
+.prose li > :is(ul, ol) {
+  margin-top: 0.3em;
+}
+.prose li > p + p {
+  margin-top: 0.5em;
+}
+.prose a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose blockquote {
+  border-left: 3px solid var(--color-border-strong);
+  padding-left: 1em;
+  color: var(--color-text-muted);
+}
+.prose pre {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  background: var(--color-bg-alt);
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.prose :not(pre) > code {
+  background: var(--color-bg-alt);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.875em;
+}
+.prose table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+.prose th,
+.prose td {
+  border: 1px solid var(--color-border);
+  padding: 0.4rem 0.65rem;
+  text-align: left;
+}
+.prose th {
+  background: var(--color-surface-hover);
+  font-weight: 600;
+}
+.prose img,
+.prose video,
+.prose iframe {
   max-width: 100%;
   height: auto;
   border-radius: var(--radius);
 }
-
-/* Sidebar folders (collapsible) */
-.sidebar-folder {
-  margin: 0;
+.prose hr {
+  margin: 1.5em 0;
 }
 
-.sidebar-folder > summary {
-  list-style: none;
-  cursor: pointer;
-  padding: 0.25rem 0.75rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-  user-select: none;
-}
-
-.sidebar-folder > summary::-webkit-details-marker {
-  display: none;
-}
-
-.sidebar-folder > summary::before {
-  content: "\25B6";
-  display: inline-block;
-  font-size: 0.6rem;
-  margin-right: 0.4rem;
-  transition: transform 0.15s;
-}
-
-.sidebar-folder[open] > summary::before {
-  transform: rotate(90deg);
-}
-
-.rss-item-active {
-  border-left: 3px solid var(--color-primary);
-}
-
-/* Apps dropdown — hidden by default, shown at smallest breakpoint */
-.navbar-apps-dropdown {
-  display: none;
-}
-
-.apps-toggle {
-  padding: 0.4rem;
-  border: none;
-  background: none;
-}
-
-.apps-toggle:hover {
-  background: var(--color-bg);
-  border-radius: var(--radius);
-}
-
-.apps-menu {
-  min-width: 180px;
-  left: 0;
-  right: auto;
-}
-
-.apps-menu a {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.apps-menu .nav-icon {
-  width: 16px;
-  height: 16px;
-}
-
-/* Navbar collapse stages — driven by JS based on item count + available width */
-
-/* Stage 1: Labels below icons (compact) */
-.navbar--compact .navbar-nav a {
-  flex-direction: column;
-  gap: 0.15rem;
-  font-size: 0.7rem;
-  padding: 0.35rem 0.4rem;
-}
-.navbar--compact .nav-label {
-  font-size: 0.65rem;
-}
-
-/* Stage 2: Icons only */
-.navbar.navbar--icon-only {
-  padding: 0 0.5rem;
-}
-.navbar--icon-only .navbar-brand {
-  margin-right: 0.5rem;
-  font-size: 1rem;
-}
-.navbar--icon-only .navbar-nav {
-  gap: 0;
-}
-.navbar--icon-only .navbar-nav a {
-  flex-direction: row;
-  padding: 0.5rem;
-}
-.navbar--icon-only .nav-label {
-  display: none;
-}
-.navbar--icon-only .navbar-search {
-  max-width: 140px;
-  margin: 0 0.25rem;
-}
-.navbar--icon-only .dropdown-username {
-  display: none;
-}
-.navbar--icon-only .dropdown-caret {
-  display: none;
-}
-
-/* Stage 3: Apps dropdown replaces nav */
-.navbar--collapsed .navbar-nav {
-  display: none;
-}
-.navbar--collapsed .navbar-apps-dropdown {
-  display: inline-block;
-}
-.navbar--collapsed .navbar-search {
-  display: none;
-}
-.navbar--collapsed .brand-text {
-  display: none;
-}
-.navbar--collapsed .dropdown-username {
-  display: none;
-}
-.navbar--collapsed .dropdown-caret {
-  display: none;
-}
-
-/* Guarantee icon-only at tablet sizes regardless of JS timing */
-@media (max-width: 768px) {
-  .navbar {
-    padding: 0 0.5rem;
-  }
-  .navbar-brand {
-    margin-right: 0.5rem;
-    font-size: 1rem;
-  }
-  .navbar-nav {
-    gap: 0;
-  }
-  .navbar-nav a {
-    flex-direction: row;
-    padding: 0.5rem;
-  }
-  .nav-label {
-    display: none;
-  }
-  .navbar-search {
-    max-width: 140px;
-    margin: 0 0.25rem;
-  }
-  .dropdown-username {
-    display: none;
-  }
-  .dropdown-caret {
-    display: none;
-  }
-}
-
-/* Guarantee at least icon-only at phone sizes regardless of JS timing.
-   JS upgrades to collapsed when there are too many items to fit as icons. */
-@media (max-width: 480px) {
-  .navbar {
-    padding: 0 0.5rem;
-  }
-  .navbar-nav {
-    gap: 0;
-  }
-  .navbar-nav a {
-    flex-direction: row;
-    padding: 0.5rem;
-  }
-  .nav-label {
-    display: none;
-  }
-  .navbar-search {
-    display: none;
-  }
-  .brand-text {
-    display: none;
-  }
-  .dropdown-username {
-    display: none;
-  }
-  .dropdown-caret {
-    display: none;
-  }
-}
-
-/* Non-navbar mobile layout — still viewport-based */
-@media (max-width: 768px) {
-  .sidebar-layout {
-    flex-direction: column;
-    gap: 1rem;
-  }
-  .sidebar {
-    width: 100%;
-    flex-direction: row;
-    overflow-x: auto;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-  .sidebar::-webkit-scrollbar {
-    display: none;
-  }
-  .sidebar-content {
-    overflow-x: auto;
-  }
-
-  .content {
-    padding: 0 0.75rem;
-    margin: 1rem auto;
-  }
-
-  /* Compact dashboard app grid */
-  .app-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    padding-bottom: 0.25rem;
-  }
-  .app-grid .app-card {
-    flex-shrink: 0;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--color-border);
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.85rem;
-  }
-  .app-grid .app-card > div:first-child {
-    margin-bottom: 0;
-  }
-  .app-icon svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  /* Force fixed-column grids (dashboard widgets, recipe form rows) to one
-     column. auto-fill grids are exempt: they already fit themselves to the
-     viewport, and collapsing them gave the gallery one photo per row. */
-  [style*="grid-template-columns"]:not([style*="auto-fill"]) {
-    grid-template-columns: 1fr !important;
-  }
-
-  /* Hide less-important columns */
-  .hide-mobile {
-    display: none;
-  }
-}
-
-/* Share link */
+/* --- Share link and copy --- */
 .share-link {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.share-link code {
+  min-width: 0;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
 }
 
-/* Picker (user/group search) */
+/* --- Share panel (ui.SharePanel) --- */
+.share-panel > h3 {
+  margin-bottom: var(--space-3);
+}
+.share-option {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-3) 0;
+}
+.share-option > summary {
+  font-weight: 500;
+}
+.share-option > form {
+  margin: var(--space-3) 0 0;
+}
+
+/* Inside a dialog the dialog's title already says "Sharing". */
+.modal-body .share-panel > h3 {
+  display: none;
+}
+
+/* --- Picker (user/group search) --- */
 .picker {
   position: relative;
+  min-width: 0;
 }
 .picker-input {
   width: 100%;
@@ -1024,13 +2396,14 @@ a:hover {
   top: 100%;
   left: 0;
   right: 0;
-  max-height: 200px;
+  max-height: 220px;
   overflow-y: auto;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-lg);
   display: none;
+  margin-top: 2px;
 }
 .picker-results:not(:empty) {
   display: block;
@@ -1038,13 +2411,14 @@ a:hover {
 .picker-option {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
+  min-height: 2.5rem;
   padding: 0.4rem 0.75rem;
   cursor: pointer;
 }
 .picker-option:hover,
 .picker-option.active {
-  background: var(--color-bg);
+  background: var(--color-surface-hover);
 }
 .picker-option-name {
   font-weight: 500;
@@ -1053,20 +2427,24 @@ a:hover {
   font-size: 0.85rem;
   color: var(--color-text-muted);
 }
+.picker-empty {
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
 .picker-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
-  margin-top: 0.25rem;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
 }
 .picker-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: 0.15rem 0.5rem;
+  gap: var(--space-1);
+  background: var(--color-bg-muted);
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.6rem;
   font-size: 0.85rem;
 }
 .picker-chip button {
@@ -1079,49 +2457,36 @@ a:hover {
   padding: 0;
 }
 
-/* Notification badge */
-.notif-badge {
-  position: absolute;
-  top: -4px;
-  right: 0;
-  background: var(--color-danger, #e53935);
-  color: #fff;
-  font-size: 0.65rem;
-  font-weight: 700;
-  min-width: 16px;
-  height: 16px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 4px;
+/* --- Progress bar: <div class="progress"><div class="progress-bar" style="width:40%"></div></div> --- */
+.progress {
+  height: 0.6rem;
+  background: var(--color-bg-muted);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: inherit;
 }
 
-/* Modal overlay + content */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* --- Loading --- */
+.spinner-sm {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex: none;
 }
-.modal-content {
-  background: var(--color-bg, #fff);
-  border-radius: 8px;
-  padding: 1.5rem;
-  max-width: 500px;
-  width: 90%;
-  max-height: 80vh;
-  overflow-y: auto;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-/* Thumbnail loading placeholder */
 .thumb-loading {
   background: linear-gradient(
     110deg,
@@ -1132,7 +2497,6 @@ a:hover {
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
 }
-
 @keyframes shimmer {
   0% {
     background-position: 200% 0;
@@ -1142,7 +2506,481 @@ a:hover {
   }
 }
 
-/* Lightbox */
+/* --- Code block for a value the user copies or reads (tokens, templates) --- */
+.code-block {
+  display: block;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg-alt);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+pre.code-block {
+  max-height: 300px;
+  overflow: auto;
+}
+
+/* --- A file or folder name with its icon --- */
+.file-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.file-name > svg {
+  flex: none;
+  color: var(--color-text-muted);
+}
+
+/* ========================================================================
+   6. Utilities — spacing steps are N × 0.5rem
+   ======================================================================== */
+
+.text-muted {
+  color: var(--color-text-muted);
+}
+.text-danger {
+  color: var(--color-danger);
+}
+.text-success {
+  color: var(--color-success);
+}
+.text-warning {
+  color: var(--color-warning);
+}
+.text-right {
+  text-align: right;
+}
+.text-center {
+  text-align: center;
+}
+.text-left {
+  text-align: left;
+}
+.text-sm {
+  font-size: var(--font-sm);
+}
+.text-xs {
+  font-size: var(--font-xs);
+}
+.font-medium {
+  font-weight: 500;
+}
+.font-semibold {
+  font-weight: 600;
+}
+.mono {
+  font-family: var(--font-mono);
+}
+.nowrap {
+  white-space: nowrap;
+}
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.break-anywhere {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.m-0 {
+  margin: 0;
+}
+.mb-0 {
+  margin-bottom: 0;
+}
+.mb-1 {
+  margin-bottom: 0.5rem;
+}
+.mb-2 {
+  margin-bottom: 1rem;
+}
+.mb-3 {
+  margin-bottom: 1.5rem;
+}
+.mt-0 {
+  margin-top: 0;
+}
+.mt-1 {
+  margin-top: 0.5rem;
+}
+.mt-2 {
+  margin-top: 1rem;
+}
+.mt-3 {
+  margin-top: 1.5rem;
+}
+.ml-auto {
+  margin-left: auto;
+}
+
+.flex {
+  display: flex;
+}
+.inline-flex {
+  display: inline-flex;
+}
+.flex-col {
+  flex-direction: column;
+}
+.flex-wrap {
+  flex-wrap: wrap;
+}
+.flex-1 {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+.flex-none {
+  flex: none;
+}
+.items-center {
+  align-items: center;
+}
+.items-start {
+  align-items: flex-start;
+}
+.items-end {
+  align-items: flex-end;
+}
+.items-baseline {
+  align-items: baseline;
+}
+.justify-between {
+  justify-content: space-between;
+}
+.justify-end {
+  justify-content: flex-end;
+}
+.justify-center {
+  justify-content: center;
+}
+.gap-0 {
+  gap: 0.25rem;
+}
+.gap-1 {
+  gap: 0.5rem;
+}
+.gap-2 {
+  gap: 1rem;
+}
+.gap-3 {
+  gap: 1.5rem;
+}
+.w-full {
+  width: 100%;
+}
+
+/* Visually hidden, still read by screen readers. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Responsive visibility. */
+.show-mobile {
+  display: none !important;
+}
+@media (max-width: 768px) {
+  .hide-mobile {
+    display: none !important;
+  }
+  .show-mobile {
+    display: revert !important;
+  }
+}
+
+/* ========================================================================
+   Core pages: settings, admin, error pages
+   ======================================================================== */
+
+.error-card,
+.invite-card {
+  margin: var(--space-8) auto;
+}
+
+/* Admin › Volumes: a long URI is cut short; the full value is its title. */
+.uri-cell {
+  display: block;
+  max-width: 22rem;
+}
+
+/* Admin › Email: rendered template previews. */
+.email-preview {
+  display: block;
+  width: 100%;
+  height: 360px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+/* Admin › Logs */
+.log-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-3);
+}
+.log-filters > .form-control {
+  flex: 1 1 16rem;
+  width: auto;
+}
+.log-scroll {
+  max-height: 600px;
+  overflow-y: auto;
+}
+.log-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.8125rem;
+}
+
+/* ========================================================================
+   7. Auth pages (login, MFA, register, reset, invitations, consent)
+   ======================================================================== */
+
+.login-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--space-4);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  padding: var(--space-8);
+  margin-bottom: 0;
+}
+
+.login-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: var(--space-6);
+  color: var(--color-text);
+}
+a.login-title:hover {
+  text-decoration: none;
+}
+.login-heading {
+  font-size: 1.15rem;
+  text-align: center;
+  margin-bottom: var(--space-2);
+}
+.login-lead {
+  text-align: center;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-5);
+}
+.login-links {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+  font-size: var(--font-sm);
+}
+.login-footer {
+  text-align: center;
+  margin-top: var(--space-5);
+  font-size: 0.9375rem;
+}
+.login-card .btn-block + .btn-block {
+  margin-top: var(--space-2);
+}
+.login-card form > .btn-block {
+  margin-top: var(--space-2);
+}
+.login-icon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--space-3);
+}
+.login-icon svg {
+  width: 48px;
+  height: 48px;
+}
+.login-icon-success {
+  color: var(--color-success);
+}
+.login-icon-muted {
+  color: var(--color-text-muted);
+}
+.login-note {
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+  margin-top: var(--space-4);
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .login-container {
+    align-items: flex-start;
+    padding-top: 8vh;
+  }
+  .login-card {
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    padding: var(--space-6) var(--space-2);
+  }
+}
+
+/* ========================================================================
+   8. Plugin sections
+   Each region belongs to one plugin. Keep a plugin's own classes inside its
+   region and prefix them with something plugin-specific.
+   ======================================================================== */
+
+/* ==== plugin: dashboard ==== */
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.app-grid > .app-card {
+  margin-bottom: 0;
+}
+.app-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  text-align: center;
+  padding: var(--space-5) var(--space-4);
+  color: var(--color-text);
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.app-card:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(0, 112, 243, 0.12);
+  text-decoration: none;
+}
+.app-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+}
+.app-icon {
+  display: flex;
+}
+.app-card-icon svg {
+  width: 36px;
+  height: 36px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.app-card-label {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.widget-grid {
+  display: grid;
+  gap: var(--space-4);
+  align-items: start;
+}
+.widget-grid > .card {
+  margin-bottom: 0;
+}
+.widget > .card-header {
+  margin-bottom: var(--space-3);
+}
+.widget-grid-1 {
+  grid-template-columns: minmax(0, 1fr);
+}
+.widget-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.widget-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+/* ui.WidgetEmpty, and the line the dashboard folds empty widgets into. */
+.widget-empty {
+  font-size: var(--font-sm);
+}
+.widget-empties {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+.widget-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  margin-bottom: var(--space-2);
+  background: var(--color-surface);
+}
+.widget-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 768px) {
+  /* Phone home screen: icon over label, four to a row. */
+  .app-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+  .app-card {
+    padding: var(--space-3) var(--space-1);
+    gap: var(--space-1);
+  }
+  .app-card-icon svg {
+    width: 26px;
+    height: 26px;
+  }
+  .app-card-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+  .widget-grid-2,
+  .widget-grid-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* ==== end plugin: dashboard ==== */
+
+/* ==== plugin: files ==== */
+/* ==== end plugin: files ==== */
+
+/* ==== plugin: gallery ==== */
 .lightbox {
   position: fixed;
   inset: 0;
@@ -1184,7 +3022,6 @@ a:hover {
   z-index: 1001;
 }
 
-/* Face box hover */
 .face-box {
   border: 2px solid rgba(255, 255, 255, 0.5);
   border-radius: 2px;
@@ -1196,7 +3033,6 @@ a:hover {
   opacity: 1;
 }
 
-/* User scan banner */
 .scan-banner {
   display: flex;
   align-items: center;
@@ -1209,3 +3045,121 @@ a:hover {
   color: var(--color-text-muted);
   margin-bottom: 1rem;
 }
+/* ==== end plugin: gallery ==== */
+
+/* ==== plugin: calendar ==== */
+/* ==== end plugin: calendar ==== */
+
+/* ==== plugin: contacts ==== */
+/* ==== end plugin: contacts ==== */
+
+/* ==== plugin: tasks ==== */
+.badge-overdue {
+  background: #f8d7da;
+  color: #721c24;
+}
+.badge-due-soon {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+/* ==== end plugin: tasks ==== */
+
+/* ==== plugin: notes ==== */
+/* ==== end plugin: notes ==== */
+
+/* ==== plugin: bookmarks ==== */
+/* ==== end plugin: bookmarks ==== */
+
+/* ==== plugin: recipes ==== */
+/* ==== end plugin: recipes ==== */
+
+/* ==== plugin: feed ==== */
+.feed-item {
+  transition: background 0.1s;
+}
+.feed-item-read {
+  background-color: var(--color-bg-muted);
+}
+.feed-item-detail {
+  padding: 1rem;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.feed-item-preview-img {
+  max-width: 200px;
+  max-height: 150px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  float: right;
+  margin: 0 0 0.5rem 1rem;
+}
+.feed-item-summary {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.feed-item-summary-line {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.feed-item-content {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.feed-item-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+.feed-item-active {
+  box-shadow: inset 3px 0 0 var(--color-primary);
+}
+
+/* Sidebar folders (collapsible) */
+.sidebar-folder {
+  margin: 0;
+}
+.sidebar-folder > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  user-select: none;
+}
+.sidebar-folder > summary::-webkit-details-marker {
+  display: none;
+}
+.sidebar-folder > summary::before {
+  content: "\25B6";
+  display: inline-block;
+  font-size: 0.6rem;
+  margin-right: 0.4rem;
+  transition: transform 0.15s;
+}
+.sidebar-folder[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+/* Sidebar text overflow gradient */
+.sidebar-item-text {
+  overflow: hidden;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  mask-image: linear-gradient(to right, black calc(100% - 16px), transparent);
+  -webkit-mask-image: linear-gradient(
+    to right,
+    black calc(100% - 16px),
+    transparent
+  );
+}
+/* ==== end plugin: feed ==== */

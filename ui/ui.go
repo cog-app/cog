@@ -99,42 +99,63 @@ func IconToFavicon(icon string) string {
 type PageLink struct {
 	Label    string
 	URL      string
+	Section  string // where the page lives, shown beside it: "Settings", "Admin", "App"
 	Keywords string // extra search terms (space-separated)
 	Admin    bool   // only shown to admins
 }
 
-// AllPages is the static list of navigable pages.
+// AllPages is the static list of navigable core pages. Apps are added from
+// the navbar at search time, so only installed and enabled apps are found.
 var AllPages = []PageLink{
-	{Label: "Files", URL: "/apps/files/", Keywords: "documents uploads"},
-	{Label: "Calendar", URL: "/apps/calendar/", Keywords: "events schedule caldav"},
-	{Label: "Contacts", URL: "/apps/contacts/", Keywords: "address book carddav vcard people"},
-	{Label: "News", URL: "/apps/rss/", Keywords: "rss atom feed reader articles"},
-	{Label: "Profile", URL: "/settings/profile", Keywords: "account name email avatar"},
-	{Label: "Security", URL: "/settings/security", Keywords: "password app passwords"},
-	{Label: "Storage", URL: "/settings/storage", Keywords: "mounts volumes disk"},
-	{Label: "Groups", URL: "/settings/groups", Keywords: "teams members"},
-	{Label: "Admin", URL: "/admin/", Keywords: "administration dashboard", Admin: true},
-	{Label: "Admin Users", URL: "/admin/users", Keywords: "accounts manage", Admin: true},
-	{Label: "Admin Groups", URL: "/admin/groups", Keywords: "teams manage", Admin: true},
-	{Label: "Admin Volumes", URL: "/admin/volumes", Keywords: "storage disks", Admin: true},
-	{Label: "Admin Settings", URL: "/admin/settings", Keywords: "configuration", Admin: true},
-	{Label: "Admin Plugins", URL: "/admin/plugins", Keywords: "extensions", Admin: true},
+	{Label: "Dashboard", URL: "/", Section: "Home", Keywords: "home start widgets"},
+	{Label: "Profile", URL: "/settings/profile", Section: "Settings", Keywords: "account name email avatar"},
+	{Label: "Security", URL: "/settings/security", Section: "Settings", Keywords: "password app passwords two-factor mfa totp passkeys"},
+	{Label: "Storage", URL: "/settings/storage", Section: "Settings", Keywords: "mounts volumes disk quota"},
+	{Label: "Groups", URL: "/settings/groups", Section: "Settings", Keywords: "teams members invitations"},
+	{Label: "Import and export", URL: "/settings/data", Section: "Settings", Keywords: "backup download upload ics vcf"},
+	{Label: "General", URL: "/admin/settings", Section: "Admin", Keywords: "administration configuration registration", Admin: true},
+	{Label: "Email", URL: "/admin/email", Section: "Admin", Keywords: "smtp templates mail", Admin: true},
+	{Label: "Users", URL: "/admin/users", Section: "Admin", Keywords: "accounts manage", Admin: true},
+	{Label: "Groups", URL: "/admin/groups", Section: "Admin", Keywords: "teams manage", Admin: true},
+	{Label: "Volumes", URL: "/admin/volumes", Section: "Admin", Keywords: "storage disks", Admin: true},
+	{Label: "Plugins", URL: "/admin/plugins", Section: "Admin", Keywords: "apps extensions", Admin: true},
+	{Label: "Logs", URL: "/admin/logs", Section: "Admin", Keywords: "server log errors", Admin: true},
 }
 
-// MatchPages returns pages whose label or keywords match the query (case-insensitive).
-func MatchPages(query string, isAdmin bool) []PageLink {
-	q := strings.ToLower(query)
+// MatchPages returns the pages whose label, section or keywords contain a
+// word starting with the query (case-insensitive): "se" finds every Settings
+// page and Security, "adm" every Admin page. apps are the navbar's app links.
+func MatchPages(query string, isAdmin bool, apps []NavItem) []PageLink {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return nil
+	}
+	pages := make([]PageLink, 0, len(apps)+len(AllPages))
+	for _, a := range apps {
+		pages = append(pages, PageLink{Label: a.Label, URL: a.URL, Section: "App"})
+	}
+	pages = append(pages, AllPages...)
+
 	var matches []PageLink
-	for _, p := range AllPages {
+	for _, p := range pages {
 		if p.Admin && !isAdmin {
 			continue
 		}
-		if strings.Contains(strings.ToLower(p.Label), q) ||
-			strings.Contains(p.Keywords, q) {
+		if wordPrefix(p.Label+" "+p.Section+" "+p.Keywords, q) {
 			matches = append(matches, p)
 		}
 	}
 	return matches
+}
+
+// wordPrefix reports whether some word of text starts with q, or q spans
+// words ("app pass").
+func wordPrefix(text, q string) bool {
+	t := strings.ToLower(text)
+	if strings.HasPrefix(t, q) || strings.Contains(t, " "+q) {
+		return true
+	}
+	return false
 }
 
 // SidebarItem is a navigation link in a page sidebar.

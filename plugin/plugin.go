@@ -104,9 +104,14 @@ type NavItem struct {
 }
 
 // Widget is a dashboard widget registered by a plugin.
+//
+// A widget with nothing to show should render ui.WidgetEmpty: the dashboard
+// recognises it and folds every empty widget into one line, so a new user's
+// dashboard is not a column of empty cards.
 type Widget struct {
 	Title    string
-	Priority int // lower = rendered first
+	Priority int    // lower = rendered first
+	URL      string // the app page the widget summarises; linked as "View all"
 	Render   func(ctx context.Context, w io.Writer, userID string) error
 }
 

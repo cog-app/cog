@@ -113,7 +113,7 @@ templ PickerResults(items []PickerItem) {
 	for _, item := range items {
 		<div class="picker-option" data-id={ item.ID } data-name={ item.Name }>
 			if item.AvatarURL != "" {
-				<img class="avatar-sm" src={ item.AvatarURL } style="width:24px;height:24px"/>
+				<img class="avatar-sm" src={ item.AvatarURL } alt=""/>
 			}
 			<div>
 				<span class="picker-option-name">{ item.Name }</span>
@@ -124,6 +124,6 @@ templ PickerResults(items []PickerItem) {
 		</div>
 	}
 	if len(items) == 0 {
-		<div style="padding:0.5rem 0.75rem;color:var(--color-text-muted)">No results</div>
+		<div class="picker-empty">No matches</div>
 	}
 }

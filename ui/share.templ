@@ -10,157 +10,115 @@ import (
 // Use <cog-share resource="type" resource-id="id"> or <cog-share-button> web components
 // instead of calling this template directly.
 templ SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []ShareDisplayItem, levels []PermissionLevelChoice) {
-	<div id={ panelID }>
-		<h3 style="margin-bottom:0.75rem">Sharing</h3>
+	<div id={ panelID } class="share-panel">
+		<h3>Sharing</h3>
 		if len(shares) > 0 {
-			<table style="width:100%;border-collapse:collapse;margin-bottom:1rem">
-				<thead>
-					<tr style="text-align:left;border-bottom:1px solid var(--color-border)">
-						<th style="padding:0.5rem">Shared with</th>
-						<th style="padding:0.5rem">Permissions</th>
-						<th style="padding:0.5rem;width:3rem"></th>
-					</tr>
-				</thead>
-				<tbody>
-					for _, s := range shares {
-						<tr style="border-bottom:1px solid var(--color-border)">
-							<td style="padding:0.5rem">
-								if s.SubjectType == "PUBLIC" {
-									<span title="Public link">{ s.SubjectName }</span>
-									if s.Token != "" {
-										<br/>
-										<code style="font-size:0.8rem;color:var(--color-text-muted)">
-											{ s.LinkPath }
-										</code>
-									}
-								} else {
-									{ s.SubjectName }
-								}
-							</td>
-							<td style="padding:0.5rem">{ s.PermLabel }</td>
-							<td style="padding:0.5rem">
-								<button
-									class="btn btn-outline btn-sm"
-									style="color:var(--color-danger)"
-									hx-delete={ fmt.Sprintf("/api/shares/%s/delete", s.ID) }
-									hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, csrfToken) }
-									hx-target={ "#" + panelID }
-									hx-get={ fmt.Sprintf("/api/shares/panel?type=%s&id=%s&scope=%s", resourceType, resourceID, panelID) }
-									hx-swap="outerHTML"
-									hx-trigger="click"
-									title="Remove share"
-								>
-									&times;
-								</button>
-							</td>
+			<div class="table-wrap mb-2">
+				<table class="table table-sm">
+					<thead>
+						<tr>
+							<th>Shared with</th>
+							<th class="col-shrink">Permissions</th>
+							<th class="col-actions"><span class="sr-only">Actions</span></th>
 						</tr>
-					}
-				</tbody>
-			</table>
-		} else {
-			<p style="color:var(--color-text-muted);margin-bottom:1rem">Not shared with anyone.</p>
-		}
-		<details style="margin-bottom:0.75rem">
-			<summary style="cursor:pointer;font-weight:500">Share with a user</summary>
-			<form
-				hx-post="/api/shares/create"
-				hx-target={ "#" + panelID }
-				hx-swap="outerHTML"
-				style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:end;margin-top:0.5rem;padding:0.75rem;border:1px solid var(--color-border);border-radius:var(--radius)"
-			>
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<input type="hidden" name="resource_type" value={ resourceType }/>
-				<input type="hidden" name="resource_id" value={ resourceID }/>
-				<input type="hidden" name="panel_id" value={ panelID }/>
-				<div style="flex:1;min-width:150px">
-					<label style="font-size:0.85rem;font-weight:500">User</label>
-					@Picker("/api/picker/search?type=user", "subject_id", "Search users...", false)
-				</div>
-				<div style="min-width:120px">
-					<label style="font-size:0.85rem;font-weight:500">Permission</label>
-					<select name="permissions" class="form-control">
-						for _, l := range levels {
-							<option value={ strconv.FormatUint(uint64(l.Permissions), 10) }>{ l.Label }</option>
+					</thead>
+					<tbody>
+						for _, s := range shares {
+							<tr>
+								<td class="break-anywhere">
+									if s.SubjectType == "PUBLIC" {
+										<span title="Public link">{ s.SubjectName }</span>
+										if s.Token != "" {
+											<div><code class="text-xs text-muted">{ s.LinkPath }</code></div>
+										}
+									} else {
+										{ s.SubjectName }
+									}
+								</td>
+								<td class="nowrap">{ s.PermLabel }</td>
+								<td class="col-actions">
+									<button
+										type="button"
+										class="btn-icon btn-icon-sm btn-icon-danger"
+										aria-label={ "Stop sharing with " + s.SubjectName }
+										title="Remove share"
+										hx-delete={ fmt.Sprintf("/api/shares/%s/delete", s.ID) }
+										hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, csrfToken) }
+										hx-target={ "#" + panelID }
+										hx-get={ fmt.Sprintf("/api/shares/panel?type=%s&id=%s&scope=%s", resourceType, resourceID, panelID) }
+										hx-swap="outerHTML"
+										hx-trigger="click"
+									>
+										@Icon("x")
+									</button>
+								</td>
+							</tr>
 						}
-					</select>
+					</tbody>
+				</table>
+			</div>
+		} else {
+			<p class="empty-state empty-state-sm">Not shared with anyone yet.</p>
+		}
+		<details class="share-option">
+			<summary>Share with a user</summary>
+			<form hx-post="/api/shares/create" hx-target={ "#" + panelID } hx-swap="outerHTML" class="form-row mb-0">
+				@shareHidden(csrfToken, resourceType, resourceID, panelID)
+				<div class="form-group">
+					<label class="form-label">User</label>
+					@Picker("/api/picker/search?type=user", "subject_id", "Search users…", false)
 				</div>
-				<button type="submit" class="btn btn-primary btn-sm">Share</button>
+				@sharePermission(panelID+"-user-perm", levels)
+				<button type="submit" class="btn btn-primary">Share</button>
 			</form>
 		</details>
-		<details style="margin-bottom:0.75rem">
-			<summary style="cursor:pointer;font-weight:500">Share with everyone</summary>
-			<form
-				hx-post="/api/shares/create"
-				hx-target={ "#" + panelID }
-				hx-swap="outerHTML"
-				style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:end;margin-top:0.5rem;padding:0.75rem;border:1px solid var(--color-border);border-radius:var(--radius)"
-			>
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<input type="hidden" name="resource_type" value={ resourceType }/>
-				<input type="hidden" name="resource_id" value={ resourceID }/>
-				<input type="hidden" name="panel_id" value={ panelID }/>
+		<details class="share-option">
+			<summary>Share with everyone on this server</summary>
+			<form hx-post="/api/shares/create" hx-target={ "#" + panelID } hx-swap="outerHTML" class="form-row mb-0">
+				@shareHidden(csrfToken, resourceType, resourceID, panelID)
 				<input type="hidden" name="subject_type" value="INSTANCE"/>
 				<input type="hidden" name="subject_id" value=""/>
-				<div style="min-width:120px">
-					<label style="font-size:0.85rem;font-weight:500">Permission</label>
-					<select name="permissions" class="form-control">
-						for _, l := range levels {
-							<option value={ strconv.FormatUint(uint64(l.Permissions), 10) }>{ l.Label }</option>
-						}
-					</select>
-				</div>
-				<button type="submit" class="btn btn-primary btn-sm">Share with Everyone</button>
+				@sharePermission(panelID+"-all-perm", levels)
+				<button type="submit" class="btn btn-primary">Share with everyone</button>
 			</form>
 		</details>
-		<details style="margin-bottom:0.75rem">
-			<summary style="cursor:pointer;font-weight:500">Share with remote user</summary>
-			<form
-				hx-post="/api/shares/federated"
-				hx-target={ "#" + panelID }
-				hx-swap="outerHTML"
-				style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:end;margin-top:0.5rem;padding:0.75rem;border:1px solid var(--color-border);border-radius:var(--radius)"
-			>
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<input type="hidden" name="resource_type" value={ resourceType }/>
-				<input type="hidden" name="resource_id" value={ resourceID }/>
-				<input type="hidden" name="panel_id" value={ panelID }/>
-				<div style="flex:1;min-width:200px">
-					<label style="font-size:0.85rem;font-weight:500">Remote user</label>
-					<input type="text" name="share_with" class="form-control" placeholder="user@cloud.example.com" required/>
+		<details class="share-option">
+			<summary>Share with someone on another server</summary>
+			<form hx-post="/api/shares/federated" hx-target={ "#" + panelID } hx-swap="outerHTML" class="form-row mb-0">
+				@shareHidden(csrfToken, resourceType, resourceID, panelID)
+				<div class="form-group">
+					<label class="form-label" for={ panelID + "-remote" }>Their address</label>
+					<input type="text" id={ panelID + "-remote" } name="share_with" class="form-control" placeholder="user@cloud.example.com" required/>
 				</div>
-				<div style="min-width:120px">
-					<label style="font-size:0.85rem;font-weight:500">Permission</label>
-					<select name="permissions" class="form-control">
-						for _, l := range levels {
-							<option value={ strconv.FormatUint(uint64(l.Permissions), 10) }>{ l.Label }</option>
-						}
-					</select>
-				</div>
-				<button type="submit" class="btn btn-primary btn-sm">Share</button>
+				@sharePermission(panelID+"-remote-perm", levels)
+				<button type="submit" class="btn btn-primary">Share</button>
 			</form>
 		</details>
-		<details>
-			<summary style="cursor:pointer;font-weight:500">Create public link</summary>
-			<form
-				hx-post="/api/shares/public-link-form"
-				hx-target={ "#" + panelID }
-				hx-swap="outerHTML"
-				style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:end;margin-top:0.5rem;padding:0.75rem;border:1px solid var(--color-border);border-radius:var(--radius)"
-			>
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<input type="hidden" name="resource_type" value={ resourceType }/>
-				<input type="hidden" name="resource_id" value={ resourceID }/>
-				<input type="hidden" name="panel_id" value={ panelID }/>
-				<div style="min-width:120px">
-					<label style="font-size:0.85rem;font-weight:500">Permission</label>
-					<select name="permissions" class="form-control">
-						for _, l := range levels {
-							<option value={ strconv.FormatUint(uint64(l.Permissions), 10) }>{ l.Label }</option>
-						}
-					</select>
-				</div>
-				<button type="submit" class="btn btn-primary btn-sm">Create Link</button>
+		<details class="share-option">
+			<summary>Create a link anyone can open</summary>
+			<form hx-post="/api/shares/public-link-form" hx-target={ "#" + panelID } hx-swap="outerHTML" class="form-row mb-0">
+				@shareHidden(csrfToken, resourceType, resourceID, panelID)
+				@sharePermission(panelID+"-link-perm", levels)
+				<button type="submit" class="btn btn-primary">Create link</button>
 			</form>
 		</details>
+	</div>
+}
+
+templ shareHidden(csrfToken, resourceType, resourceID, panelID string) {
+	<input type="hidden" name="csrf_token" value={ csrfToken }/>
+	<input type="hidden" name="resource_type" value={ resourceType }/>
+	<input type="hidden" name="resource_id" value={ resourceID }/>
+	<input type="hidden" name="panel_id" value={ panelID }/>
+}
+
+templ sharePermission(id string, levels []PermissionLevelChoice) {
+	<div class="form-group form-group-auto">
+		<label class="form-label" for={ id }>Permission</label>
+		<select id={ id } name="permissions" class="form-control">
+			for _, l := range levels {
+				<option value={ strconv.FormatUint(uint64(l.Permissions), 10) }>{ l.Label }</option>
+			}
+		</select>
 	</div>
 }

@@ -21,6 +21,19 @@ type Flash struct {
 	Kind    string `json:"k"` // "success" or "error"; the alert's CSS variant
 	Message string `json:"m"`
 	URL     string `json:"u,omitempty"` // rendered as a copyable link
+	// Form carries what the user typed back to the form a failed POST came
+	// from, so an error does not also cost them their input. Never put a
+	// password or other secret here: the cookie is readable by the browser.
+	Form map[string]string `json:"f,omitempty"`
+}
+
+// Value returns the form value the flash carried for name, or "". It is safe
+// to call on a nil flash.
+func (f *Flash) Value(name string) string {
+	if f == nil {
+		return ""
+	}
+	return f.Form[name]
 }
 
 // FlashHeader is how a plugin hands a message to the host. A plugin does not
