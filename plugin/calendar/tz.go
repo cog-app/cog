@@ -25,7 +25,7 @@ var commonTimezones = []string{
 // DTSTART names, the calendar's for a floating time, or nil for UTC times,
 // which the form shows in the browser's zone instead.
 func eventEditZone(ev *Event, cal *Calendar) *time.Location {
-	if ev.Object == nil || len(ev.Object.Components) == 0 {
+	if ev == nil || ev.Object == nil || len(ev.Object.Components) == 0 {
 		return nil
 	}
 	start := ev.Object.Components[0].Start

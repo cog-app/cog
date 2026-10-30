@@ -65,7 +65,7 @@ func TestCreateEventUsesBrowserZone(t *testing.T) {
 
 	// The edit modal shows the event in its own zone.
 	env.Get(t, fmt.Sprintf("/apps/calendar/events/%d", events[0].ID), alice.Auth).Status(200).
-		Contains(`value="2026-10-25T09:00"`).Contains("Times in America/Denver")
+		Contains(`value="2026-10-25T09:00"`).Contains(`name="tz" list="cal-timezones" value="America/Denver"`)
 
 	form.Set("tz", "Mars/Olympus")
 	env.PostForm(t, "/apps/calendar/events", form, cookie, csrf, cogtest.StopRedirect).Status(400)

@@ -97,6 +97,7 @@ type TaskWithList struct {
 	Task
 	ListName  string
 	ListColor string
+	ListZone  *time.Location
 }
 
 // --- Task queries ---
@@ -254,7 +255,7 @@ func UpcomingTasks(db *sql.DB, lists map[int64]TaskList, limit int) ([]TaskWithL
 	out := make([]TaskWithList, len(tasks))
 	for i, t := range tasks {
 		l := lists[t.ListID]
-		out[i] = TaskWithList{Task: t, ListName: l.Name, ListColor: l.Color}
+		out[i] = TaskWithList{Task: t, ListName: l.Name, ListColor: l.Color, ListZone: l.Zone()}
 	}
 	return out, nil
 }
@@ -298,6 +299,7 @@ type NewTask struct {
 	Description string
 	Priority    int
 	Due, Start  *time.Time // in the list's zone
+	DueDate     bool       // Due is a whole day: its date, at midnight UTC
 	ParentUID   string
 }
 
@@ -313,7 +315,9 @@ func CreateTask(db *sql.DB, list *TaskList, uid string, nt NewTask, now time.Tim
 		p := nt.Priority
 		e.Priority = &p
 	}
-	if nt.Due != nil {
+	if nt.Due != nil && nt.DueDate {
+		e.Due = ical.DateTimeOf(nt.Due.UTC(), true)
+	} else if nt.Due != nil {
 		e.Due = ical.DateTimeOf(nt.Due.In(list.Zone()), false)
 	}
 	if nt.Start != nil {

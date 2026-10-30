@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
-	"git.duckfam.us/jj-software/cog/internal/dav/ical"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"github.com/google/uuid"
 )
@@ -63,7 +62,9 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	plugin.SetTitle(w, "Tasks")
-	tasksIndexPage(sb, plugin.CSRFToken(r)).Render(r.Context(), w)
+	if err := tasksIndexPage(sb, plugin.CSRFToken(r)).Render(r.Context(), w); err != nil {
+		h.plugin.log.Error("render tasks", "error", err)
+	}
 }
 
 // ListView shows tasks for a specific list.
@@ -91,7 +92,9 @@ func (h *Pages) ListView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	plugin.SetTitle(w, list.Name)
-	tasksListPage(sb, list, allTasks, plugin.CSRFToken(r)).Render(r.Context(), w)
+	if err := tasksListPage(sb, list, allTasks, h.plugin.ctx.Now(), plugin.CSRFToken(r)).Render(r.Context(), w); err != nil {
+		h.plugin.log.Error("render task list", "error", err)
+	}
 }
 
 // TaskDetail shows a single task edit form.
@@ -126,11 +129,9 @@ func (h *Pages) TaskDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	z := ical.ZonesFor(task.Object, list.Zone())
-	m := task.Object.Components[0]
-	times := formTimes{Due: inputValue(m.Due, z, list.Zone()), Start: inputValue(m.Start, z, list.Zone()), Zone: list.Zone().String()}
+	times := formTimesOf(task.Object, list)
 	plugin.SetTitle(w, task.Summary)
-	if err := taskDetailPage(sb, task, sb.Lists, allTasks, times, plugin.CSRFToken(r)).Render(r.Context(), w); err != nil {
+	if err := taskDetailPage(sb, task, list, sb.Lists, allTasks, times, plugin.CSRFToken(r)).Render(r.Context(), w); err != nil {
 		h.plugin.log.Error("render task", "error", err)
 	}
 }
@@ -297,28 +298,53 @@ func (h *Pages) ToggleTask(w http.ResponseWriter, r *http.Request) {
 			task = &allTasks[i]
 		}
 	}
-	if err := taskItem(task, allTasks, 0, plugin.CSRFToken(r)).Render(r.Context(), w); err != nil {
+	if err := taskItem(task, allTasks, 0, list, h.plugin.ctx.Now(), plugin.CSRFToken(r)).Render(r.Context(), w); err != nil {
 		h.plugin.log.Error("render task", "error", err)
 	}
 }
 
-// DeleteTask handles DELETE (HTMX).
+// DeleteTask handles DELETE (HTMX): the list swaps the task's row out.
 func (h *Pages) DeleteTask(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.deleteTask(w, r); ok {
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
+// DeleteTaskForm handles the edit page's Delete, a form POST, and goes back
+// to the task's list (PRG).
+func (h *Pages) DeleteTaskForm(w http.ResponseWriter, r *http.Request) {
+	if listID, ok := h.deleteTask(w, r); ok {
+		http.Redirect(w, r, listURL(listID), http.StatusSeeOther)
+	}
+}
+
+// deleteTask deletes the request user's task named by the path and returns
+// the list it was in; on failure it has written the error.
+func (h *Pages) deleteTask(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return 0, false
 	}
 	taskID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid task id", http.StatusBadRequest)
-		return
+		return 0, false
+	}
+	task, err := GetTask(db, taskID)
+	if err != nil {
+		http.Error(w, "task not found", http.StatusNotFound)
+		return 0, false
+	}
+	if _, err := h.list(r, strconv.FormatInt(task.ListID, 10)); err != nil {
+		http.Error(w, "task not found", http.StatusNotFound)
+		return 0, false
 	}
 	if err := DeleteTask(db, taskID, h.plugin.ctx.Now()); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return 0, false
 	}
-	w.WriteHeader(http.StatusOK)
+	return task.ListID, true
 }
 
 // Reorder handles POST JSON for drag-and-drop reordering.
@@ -413,5 +439,7 @@ func (h *Pages) ListSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	plugin.SetTitle(w, list.Name+" Settings")
-	taskListSettingsPage(sb, list, plugin.CSRFToken(r)).Render(r.Context(), w)
+	if err := taskListSettingsPage(sb, list, plugin.CSRFToken(r)).Render(r.Context(), w); err != nil {
+		h.plugin.log.Error("render list settings", "error", err)
+	}
 }

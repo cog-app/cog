@@ -57,6 +57,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Upcoming Tasks",
 		Priority: 20,
+		URL:      "/apps/tasks/",
 		Render:   p.renderWidget,
 	})
 	ctx.RegisterSearchSource(plugin.SearchSourceDef{
@@ -74,6 +75,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "task/{id}", pages.wrap(pages.UpdateTask))
 	ctx.RegisterAction("POST", "task/{id}/toggle", pages.wrap(pages.ToggleTask))
 	ctx.RegisterAction("DELETE", "task/{id}", pages.wrap(pages.DeleteTask))
+	ctx.RegisterAction("POST", "task/{id}/delete", pages.wrap(pages.DeleteTaskForm))
 	ctx.RegisterAction("POST", "list", pages.wrap(pages.CreateList))
 	ctx.RegisterAction("POST", "list/{id}", pages.wrap(pages.UpdateList))
 	ctx.RegisterAction("DELETE", "list/{id}", pages.wrap(pages.DeleteList))
@@ -105,5 +107,5 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, username string)
 	if err != nil {
 		return err
 	}
-	return upcomingTasksWidget(tasks).Render(ctx, w)
+	return upcomingTasksWidget(tasks, p.ctx.Now()).Render(ctx, w)
 }

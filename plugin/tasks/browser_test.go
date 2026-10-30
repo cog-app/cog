@@ -53,8 +53,11 @@ func TestBrowser(t *testing.T) {
 		b.Click(t, `[data-testid="new-task-submit"]`)
 		b.WaitVisible(t, `#task-tree .task-item`)
 		b.AcceptConfirms(t)
-		b.Click(t, `[hx-delete]`)
+		b.Click(t, `#task-tree [data-dropdown-toggle]`)
+		b.Click(t, `#task-tree [hx-delete]`)
 		b.WaitNotVisible(t, `#task-tree .task-item`)
+		// The list is empty again, and says so.
+		b.WaitText(t, "No tasks yet")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -94,8 +97,9 @@ func TestBrowser(t *testing.T) {
 		b.Navigate(t, "/apps/tasks/")
 		b.ClickText(t, "Home Renovation")
 		b.WaitText(t, "Choose paint colours")
-		b.Click(t, "#task-tree .subtask-add summary")
-		b.WaitVisible(t, `#task-tree .subtask-add input[name="summary"]`)
+		b.Click(t, "#task-tree [data-dropdown-toggle]")
+		b.Click(t, "#task-tree [data-subtask-open]")
+		b.WaitVisible(t, `#task-tree [data-subtask-form] input[name="summary"]`)
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -107,8 +111,9 @@ func TestBrowser(t *testing.T) {
 		b.Navigate(t, "/apps/tasks/")
 		b.ClickText(t, "Home Renovation")
 		b.WaitText(t, "Choose paint colours")
-		b.ClickText(t, "Choose paint colours")
-		b.WaitText(t, "Edit Task")
+		// The summary link, not the checkbox's label, which names it too.
+		b.Click(t, `//a[contains(@class,"task-summary")][normalize-space()="Choose paint colours"]`)
+		b.WaitText(t, "Edit task")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -121,17 +126,16 @@ func TestBrowser(t *testing.T) {
 		b.ClickText(t, "Home Renovation")
 		b.WaitText(t, "Choose paint colours")
 		b.Click(t, `a[href$="/settings"]`)
-		b.WaitText(t, "Danger Zone")
+		b.WaitText(t, "Danger zone")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
 }
 
 // populatedEnv is browserEnv with a second list holding a tree of tasks:
-// every priority, due dates, a completed task, three levels of subtasks and a
-// summary long enough to wrap. Due dates are in 2025 — the page formats them
-// against the wall clock, and a year that is never the current one keeps the
-// golden stable.
+// every priority, due dates around the test clock's 2026-03-14 (overdue,
+// tomorrow, later, next year), a completed task, three levels of subtasks and
+// a summary long enough to wrap.
 func populatedEnv(t *testing.T, username string) *webtest.Engine {
 	t.Helper()
 	env := cogtest.New(t, tasks.New())
@@ -146,8 +150,12 @@ func populatedEnv(t *testing.T, username string) *webtest.Engine {
 	list, err := tp.CreateList(u.ID, "Home Renovation", "#43a047")
 	require.NoError(t, err)
 
-	day := func(d int) *time.Time {
-		t := time.Date(2025, time.March, d, 0, 0, 0, 0, time.UTC)
+	day := func(y, d int) *time.Time {
+		t := time.Date(y, time.March, d, 0, 0, 0, 0, time.UTC)
+		return &t
+	}
+	at := func(d, h int) *time.Time {
+		t := time.Date(2026, time.March, d, h, 0, 0, 0, time.UTC)
 		return &t
 	}
 	n := 0
@@ -157,15 +165,16 @@ func populatedEnv(t *testing.T, username string) *webtest.Engine {
 		require.NoError(t, err)
 		return task
 	}
-	kitchen := add(tasks.NewTask{Summary: "Kitchen", Priority: 1, Due: day(28)})
-	paint := add(tasks.NewTask{Summary: "Choose paint colours", Description: "Sample pots from the shop on Elm Street; compare in daylight.", Priority: 5, Due: day(10), ParentUID: kitchen.UID})
+	kitchen := add(tasks.NewTask{Summary: "Kitchen", Priority: 1, Due: day(2026, 28), DueDate: true})
+	paint := add(tasks.NewTask{Summary: "Choose paint colours", Description: "Sample pots from the shop on Elm Street; compare in daylight.", Priority: 5, Due: at(15, 14), ParentUID: kitchen.UID})
 	add(tasks.NewTask{Summary: "Order sample pots", ParentUID: paint.UID})
 	add(tasks.NewTask{Summary: "Get three quotes for new cabinets", Priority: 9, ParentUID: kitchen.UID})
-	done := add(tasks.NewTask{Summary: "Measure the windows", Due: day(3)})
+	done := add(tasks.NewTask{Summary: "Measure the windows", Due: day(2026, 3), DueDate: true})
 	_, err = tasks.ToggleTask(db, list, done, env.Now())
 	require.NoError(t, err)
-	add(tasks.NewTask{Summary: "Call the electrician about rewiring the upstairs bedrooms before the plasterer arrives, and ask whether the old fuse box needs replacing too", Priority: 1, Due: day(5)})
+	add(tasks.NewTask{Summary: "Call the electrician about rewiring the upstairs bedrooms before the plasterer arrives, and ask whether the old fuse box needs replacing too", Priority: 1, Due: day(2026, 12), DueDate: true})
 	add(tasks.NewTask{Summary: "Pick up tiles"})
+	add(tasks.NewTask{Summary: "Repaint the fence", Priority: 7, Due: day(2027, 1), DueDate: true})
 
 	eng := webtest.New(env)
 	t.Cleanup(eng.Close)

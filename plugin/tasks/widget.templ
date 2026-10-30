@@ -1,38 +1,25 @@
 package tasks
 
 import (
-	"fmt"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/ui"
 )
 
-templ upcomingTasksWidget(tasks []TaskWithList) {
+templ upcomingTasksWidget(tasks []TaskWithList, now time.Time) {
 	if len(tasks) == 0 {
-		<p class="text-muted">No upcoming tasks.</p>
+		@ui.WidgetEmpty("Nothing due.", "Open tasks", "/apps/tasks/")
 	} else {
-		for _, t := range tasks {
-			<div style="padding:0.4rem 0;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:0.5rem">
-				<span class="sidebar-color-dot" style={ fmt.Sprintf("background:%s", t.ListColor) }></span>
-				<a href={ templ.SafeURL(fmt.Sprintf("/apps/tasks/task/%d", t.ID)) } style="font-weight:500;flex:1">
-					{ t.Summary }
-				</a>
-				if t.DueAt != nil {
-					<span class="text-muted" style="font-size:0.85rem;white-space:nowrap">
-						{ widgetDueDate(&t.Task) }
-					</span>
-				}
-			</div>
-		}
+		<ul class="widget-list">
+			for _, t := range tasks {
+				<li class="task-widget-row">
+					<span class="color-dot" style={ "background:" + t.ListColor } title={ t.ListName }></span>
+					<a class="task-widget-title" href={ templ.SafeURL(taskURL(t.ID)) }>{ t.Summary }</a>
+					if t.DueAt != nil {
+						<span class={ dueBadgeClass(&t.Task, now, t.ListZone) }>{ formatDueDate(&t.Task, now, t.ListZone) }</span>
+					}
+				</li>
+			}
+		</ul>
 	}
-}
-
-func widgetDueDate(task *Task) string {
-	t := dueTime(task)
-	now := time.Now().In(t.Location())
-	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
-		return "Today"
-	}
-	if t.Year() == now.Year() {
-		return t.Format("Jan 2")
-	}
-	return t.Format("2006-01-02")
 }

@@ -1,6 +1,7 @@
 package contacts_test
 
 import (
+	"strconv"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/dav/vcard"
@@ -28,7 +29,7 @@ func TestBrowser(t *testing.T) {
 		b.Login(t, "create", "pass")
 		b.Navigate(t, "/apps/contacts/")
 		b.WaitText(t, "No contacts yet")
-		b.Eval(t, `document.getElementById('create-contact-modal').style.display='flex'`)
+		b.Click(t, `[data-modal-open="create-contact-modal"]`)
 		b.Type(t, "#cc-given", "Alice")
 		b.Type(t, "#cc-family", "Smith")
 		b.Click(t, `#create-contact-modal button[type="submit"]`)
@@ -43,12 +44,12 @@ func TestBrowser(t *testing.T) {
 		b.Login(t, "delete", "pass")
 		b.Navigate(t, "/apps/contacts/")
 		b.WaitText(t, "No contacts yet")
-		b.Eval(t, `document.getElementById('create-contact-modal').style.display='flex'`)
+		b.Click(t, `[data-modal-open="create-contact-modal"]`)
 		b.Type(t, "#cc-fn", "Bob Jones")
 		b.Click(t, `#create-contact-modal button[type="submit"]`)
 		b.WaitText(t, "Bob Jones")
-		// Click the contact row to open detail modal via showContactDetail().
-		b.ClickText(t, "Bob Jones")
+		// The name opens the contact's dialog.
+		openContact(t, b, "Bob Jones")
 		b.WaitVisible(t, `#contact-modal [hx-delete]`)
 		b.AcceptConfirms(t)
 		b.Click(t, `#contact-modal [hx-delete]`)
@@ -74,13 +75,15 @@ func TestBrowser(t *testing.T) {
 		b.Navigate(t, "/apps/contacts/")
 		b.WaitText(t, "No contacts yet")
 		// Create a contact first.
-		b.Eval(t, `document.getElementById('create-contact-modal').style.display='flex'`)
+		b.Click(t, `[data-modal-open="create-contact-modal"]`)
 		b.Type(t, "#cc-fn", "Edit Target")
 		b.Click(t, `#create-contact-modal button[type="submit"]`)
 		b.WaitText(t, "Edit Target")
 		// Open detail modal.
-		b.ClickText(t, "Edit Target")
-		b.WaitVisible(t, `#contact-modal`)
+		openContact(t, b, "Edit Target")
+		b.WaitVisible(t, `#contact-modal [data-show-edit]`)
+		b.Click(t, `#contact-modal [data-show-edit]`)
+		b.WaitVisible(t, `#contact-modal #em-fn`)
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -137,7 +140,7 @@ func TestBrowser(t *testing.T) {
 		b.Login(t, "detail", "pass")
 		b.Navigate(t, "/apps/contacts/")
 		b.WaitText(t, "Maximilian")
-		b.ClickText(t, "Maximilian")
+		openContact(t, b, "Maximilian")
 		b.WaitVisible(t, `#contact-modal [hx-delete]`)
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
@@ -149,9 +152,10 @@ func TestBrowser(t *testing.T) {
 		b.Login(t, "editmulti", "pass")
 		b.Navigate(t, "/apps/contacts/")
 		b.WaitText(t, "Maximilian")
-		b.ClickText(t, "Maximilian")
+		openContact(t, b, "Maximilian")
 		b.WaitVisible(t, `#contact-modal [hx-delete]`)
-		b.Click(t, `#contact-modal button[onclick*="em-phones"]`)
+		b.Click(t, `#contact-modal [data-show-edit]`)
+		b.Click(t, `#contact-modal [data-add-row="em-phones"]`)
 		// The image shows the email and phone rows rather than the header.
 		b.Eval(t, `() => document.getElementById('em-emails').scrollIntoView()`)
 		b.Snapshot(t)
@@ -164,10 +168,11 @@ func TestBrowser(t *testing.T) {
 		b.Login(t, "newform", "pass")
 		b.Navigate(t, "/apps/contacts/")
 		b.WaitText(t, "Maximilian")
-		b.Click(t, `button[onclick*="create-contact-modal"]`)
+		b.Click(t, `[data-modal-open="create-contact-modal"]`)
 		b.WaitVisible(t, "#cc-given")
-		b.Click(t, `#create-contact-modal button[onclick*="cc-emails"]`)
-		b.Click(t, `#create-contact-modal button[onclick*="cc-phones"]`)
+		b.Click(t, `#create-contact-modal [data-add-row="cc-emails"]`)
+		b.Click(t, `#create-contact-modal [data-add-row="cc-phones"]`)
+		b.Click(t, `#create-contact-modal [data-add-row="cc-addresses"]`)
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -179,7 +184,7 @@ func TestBrowser(t *testing.T) {
 		b.Navigate(t, "/apps/contacts/starred")
 		b.WaitText(t, "Maximilian")
 		// The detail modal opened from the starred page, not the index.
-		b.ClickText(t, "Maximilian")
+		openContact(t, b, "Maximilian")
 		b.WaitVisible(t, `#contact-modal [hx-delete]`)
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
@@ -245,4 +250,13 @@ func browserEnv(t *testing.T, username string) *webtest.Engine {
 	eng := webtest.New(env)
 	t.Cleanup(eng.Close)
 	return eng
+}
+
+// openContact clicks a contact's name in the list. The name's link stretches
+// over its row (.row-link), which rod's actionability check takes for
+// something covering the link, so the click is the DOM's own.
+func openContact(t *testing.T, b *webtest.Browser, name string) {
+	t.Helper()
+	b.WaitVisible(t, `//a[@data-contact-id][contains(., "`+name+`")]`)
+	b.Eval(t, `() => Array.from(document.querySelectorAll("a[data-contact-id]")).find(a => a.textContent.includes(`+strconv.Quote(name)+`)).click()`)
 }

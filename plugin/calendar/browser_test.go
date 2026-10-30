@@ -38,7 +38,7 @@ func TestBrowser(t *testing.T) {
 		b.Login(t, "create", "pass")
 		b.Navigate(t, "/apps/calendar/")
 		b.WaitVisible(t, "#calendar")
-		b.Eval(t, `document.getElementById('create-modal').style.display='flex'`)
+		b.Click(t, ".fc-newEvent-button")
 		b.WaitVisible(t, "#ce-summary")
 		b.Type(t, "#ce-summary", "Test Event")
 		b.Eval(t, `document.getElementById('ce-start').value = '2026-03-14T10:00'`)
@@ -56,7 +56,7 @@ func TestBrowser(t *testing.T) {
 		b.Navigate(t, "/apps/calendar/")
 		b.WaitVisible(t, "#calendar")
 		// Create an event first.
-		b.Eval(t, `document.getElementById('create-modal').style.display='flex'`)
+		b.Click(t, ".fc-newEvent-button")
 		b.WaitVisible(t, "#ce-summary")
 		b.Type(t, "#ce-summary", "Delete Me")
 		b.Eval(t, `document.getElementById('ce-start').value = '2026-03-14T14:00'`)
@@ -86,9 +86,8 @@ func TestBrowser(t *testing.T) {
 		b.Snapshot(t, webtest.Mobile)
 	})
 
-	// The populated subtests look at March 2025 rather than the test clock's
-	// March 2026: the event modal formats its times against the wall clock,
-	// and a year that is never the current one keeps the golden stable.
+	// The populated subtests look at March 2025, a year before the test
+	// clock's March 2026, so the event dialog shows dates with their year.
 
 	t.Run("PopulatedMonth", func(t *testing.T) {
 		eng := populatedEnv(t, "month")
@@ -154,13 +153,14 @@ func TestBrowser(t *testing.T) {
 		b.Login(t, "newform", "pass")
 		b.Navigate(t, "/apps/calendar/?date=2025-03-01")
 		b.WaitText(t, "Deploy Freeze")
-		// A click on a day is the only way the page offers to start an event.
+		// A click on a day starts an event at 9:00 that day.
 		b.Click(t, `.fc-daygrid-day[data-date="2025-03-20"] .fc-daygrid-day-frame`)
 		b.WaitVisible(t, "#ce-summary")
+		b.Click(t, "#ce-allday")
 		b.Select(t, "#ce-freq", `[value="WEEKLY"]`)
-		b.WaitVisible(t, "#ce-byday")
-		b.Click(t, `#create-modal button[onclick*="addAttendeeRow"]`)
-		b.WaitVisible(t, `#ce-attendees input[name="attendee_email"]`)
+		b.WaitVisible(t, "#create-modal [data-byday]")
+		b.Click(t, `#create-modal [data-add-attendee]`)
+		b.WaitVisible(t, `#create-modal input[name="attendee_email"]`)
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
