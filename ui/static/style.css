@@ -4984,6 +4984,29 @@ html:has(dialog.gallery-lightbox[open]) {
   border-top: 1px solid var(--color-border);
   margin-top: var(--space-1);
 }
+/* Rendered even when empty, so a ticked task can move into it in place. */
+.task-completed:not(:has(.task-item)) {
+  display: none;
+}
+/* Every task is ticked: say so above "Completed" instead of an empty band. */
+.task-all-done {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+.task-all-done svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--color-success);
+}
+.task-tree:has(#task-done .task-item):not(:has(#task-open .task-item)) > .task-all-done {
+  display: flex;
+}
 .task-completed > summary {
   list-style: none;
   display: flex;

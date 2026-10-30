@@ -298,7 +298,18 @@ func (h *Pages) ToggleTask(w http.ResponseWriter, r *http.Request) {
 			task = &allTasks[i]
 		}
 	}
-	if err := taskItem(task, allTasks, 0, list, h.plugin.ctx.Now(), plugin.CSRFToken(r)).Render(r.Context(), w); err != nil {
+	now, csrf := h.plugin.ctx.Now(), plugin.CSRFToken(r)
+
+	// A top-level task changes sections: its row is not swapped in place,
+	// both root groups and the count are swapped out of band instead.
+	if task.ParentID == nil {
+		w.Header().Set("HX-Reswap", "none")
+		if err := rootGroupsSwap(allTasks, list, now, csrf).Render(r.Context(), w); err != nil {
+			h.plugin.log.Error("render task groups", "error", err)
+		}
+		return
+	}
+	if err := taskItem(task, allTasks, 1, list, now, csrf).Render(r.Context(), w); err != nil {
 		h.plugin.log.Error("render task", "error", err)
 	}
 }

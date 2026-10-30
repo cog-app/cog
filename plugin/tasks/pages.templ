@@ -81,27 +81,61 @@ templ tasksListPage(sb sidebarData, list *TaskList, allTasks []Task, now time.Ti
 				</button>
 			</form>
 			<div id="task-tree" class="task-tree">
-				@taskGroup(openRoots(allTasks), allTasks, 0, list, now, csrfToken)
+				@taskGroup("task-open", false, openRoots(allTasks), allTasks, 0, list, now, csrfToken)
 				<div class="task-empty">
 					@ui.EmptyState("No tasks yet", "Add your first task above.")
 				</div>
-				if done := doneRoots(allTasks); len(done) > 0 {
-					<details class="task-completed">
-						<summary>Completed <span class="count">{ strconv.Itoa(len(done)) }</span></summary>
-						@taskGroup(done, allTasks, 0, list, now, csrfToken)
-					</details>
-				}
+				<p class="task-all-done">
+					@ui.Icon("check-circle")
+					All done. Nothing left on this list.
+				</p>
+				// Always present, so a task ticked in the list has somewhere to
+				// go; the stylesheet hides it while it holds nothing.
+				<details class="task-completed" id="task-completed">
+					<summary>
+						Completed
+						@completedCount(len(doneRoots(allTasks)), false)
+					</summary>
+					@taskGroup("task-done", false, doneRoots(allTasks), allTasks, 0, list, now, csrfToken)
+				</details>
 			</div>
 		</div>
 	</div>
 	@sortableScript()
 }
 
+templ completedCount(n int, oob bool) {
+	<span
+		class="count"
+		id="task-completed-count"
+		if oob {
+			hx-swap-oob="true"
+		}
+	>{ strconv.Itoa(n) }</span>
+}
+
+// rootGroupsSwap is the answer to ticking a top-level task: both root groups
+// and the completed count, swapped in out of band, which moves the task
+// between the open list and "Completed" without touching whether that
+// section is expanded.
+templ rootGroupsSwap(allTasks []Task, list *TaskList, now time.Time, csrfToken string) {
+	@taskGroup("task-open", true, openRoots(allTasks), allTasks, 0, list, now, csrfToken)
+	@completedCount(len(doneRoots(allTasks)), true)
+	@taskGroup("task-done", true, doneRoots(allTasks), allTasks, 0, list, now, csrfToken)
+}
+
 // taskGroup is one level of the tree: a list's top-level tasks, or one
 // task's subtasks. Groups are what drag and drop reorders within and moves
-// between.
-templ taskGroup(tasks []Task, allTasks []Task, depth int, list *TaskList, now time.Time, csrfToken string) {
+// between. The two root groups have an id, which an out-of-band swap
+// replaces them by.
+templ taskGroup(id string, oob bool, tasks []Task, allTasks []Task, depth int, list *TaskList, now time.Time, csrfToken string) {
 	<div
+		if id != "" {
+			id={ id }
+		}
+		if oob {
+			hx-swap-oob="true"
+		}
 		class={ "task-group", templ.KV("task-subgroup", depth > 0) }
 		data-task-group
 		data-parent-id={ parentIDAttr(tasks) }
@@ -189,7 +223,7 @@ templ taskItem(task *Task, allTasks []Task, depth int, list *TaskList, now time.
 			<button class="btn btn-ghost btn-sm" type="button" data-subtask-cancel>Cancel</button>
 		</form>
 		if children := ChildrenOf(allTasks, task.ID); len(children) > 0 {
-			@taskGroup(children, allTasks, depth+1, list, now, csrfToken)
+			@taskGroup("", false, children, allTasks, depth+1, list, now, csrfToken)
 		}
 	</div>
 }
@@ -397,6 +431,18 @@ templ sortableScript() {
 			init(document);
 			document.body.addEventListener("htmx:afterSwap", function (e) {
 				init(e.target.parentElement || document);
+			});
+			// Ticking a top-level task replaces the root groups out of band.
+			// The ticked box keeps focus if its row is still on screen.
+			var toggled = "";
+			document.body.addEventListener("htmx:beforeRequest", function (e) {
+				var box = e.target.closest && e.target.closest(".task-check input");
+				if (box) toggled = box.closest("[data-task-id]").id;
+			});
+			document.body.addEventListener("htmx:oobAfterSwap", function () {
+				init(document);
+				var box = toggled && document.querySelector("#" + toggled + " > .task-row .task-check input");
+				if (box && box.offsetParent) box.focus();
 			});
 			document.addEventListener("click", function (e) {
 				var open = e.target.closest("[data-subtask-open]");

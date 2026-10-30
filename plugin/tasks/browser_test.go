@@ -37,7 +37,8 @@ func TestBrowser(t *testing.T) {
 		b.Type(t, `[data-testid="new-task-summary"]`, "Toggle me")
 		b.Click(t, `[data-testid="new-task-submit"]`)
 		b.Click(t, `#task-tree .task-item input[type="checkbox"]`)
-		b.WaitVisible(t, ".task-item.completed")
+		// The ticked task moves into the collapsed "Completed" section.
+		b.WaitReady(t, "#task-done .task-item.completed")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -90,6 +91,49 @@ func TestBrowser(t *testing.T) {
 		b.Snapshot(t, webtest.Mobile)
 	})
 
+	// Ticking a top-level task moves it into "Completed" in place, and the
+	// count follows, without a reload.
+	t.Run("TickMovesToCompleted", func(t *testing.T) {
+		eng := populatedEnv(t, "tick")
+		b := eng.Start(t)
+		b.Login(t, "tick", "pass")
+		b.Navigate(t, "/apps/tasks/")
+		b.ClickText(t, "Home Renovation")
+		b.WaitText(t, "Choose paint colours")
+		require.Equal(t, "1", b.Text(t, "#task-completed-count"))
+		markReload(t, b)
+		id := taskItemID(t, b, "Pick up tiles")
+		b.Click(t, "#"+id+" > .task-row .task-check input")
+		b.WaitReady(t, "#task-done > #"+id+".completed")
+		require.Equal(t, "2", b.Text(t, "#task-completed-count"))
+		b.Click(t, "#task-completed > summary")
+		b.WaitVisible(t, "#task-done > #"+id)
+		requireNoReload(t, b)
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	// Unticking a completed task moves it back to the open list; with none
+	// left, the "Completed" section goes away.
+	t.Run("UntickMovesBack", func(t *testing.T) {
+		eng := populatedEnv(t, "untick")
+		b := eng.Start(t)
+		b.Login(t, "untick", "pass")
+		b.Navigate(t, "/apps/tasks/")
+		b.ClickText(t, "Home Renovation")
+		b.WaitText(t, "Choose paint colours")
+		markReload(t, b)
+		b.Click(t, "#task-completed > summary")
+		id := taskItemID(t, b, "Measure the windows")
+		b.Click(t, "#"+id+" > .task-row .task-check input")
+		b.WaitReady(t, "#task-open > #"+id+":not(.completed)")
+		require.Equal(t, "0", b.Eval(t, `document.getElementById("task-completed-count").textContent`))
+		b.WaitNotVisible(t, "#task-completed")
+		requireNoReload(t, b)
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
 	t.Run("SubtaskForm", func(t *testing.T) {
 		eng := populatedEnv(t, "subform")
 		b := eng.Start(t)
@@ -130,6 +174,26 @@ func TestBrowser(t *testing.T) {
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
+}
+
+// taskItemID is the DOM id of the row of the task with this summary.
+func taskItemID(t *testing.T, b *webtest.Browser, summary string) string {
+	t.Helper()
+	return b.Attribute(t, `//a[contains(@class,"task-summary")][normalize-space()="`+summary+`"]/ancestor::div[contains(@class,"task-item")][1]`, "id")
+}
+
+// markReload tags the window so requireNoReload can tell whether the page
+// was loaded again since.
+func markReload(t *testing.T, b *webtest.Browser) {
+	t.Helper()
+	b.Eval(t, `() => { window.__noReload = true }`)
+}
+
+func requireNoReload(t *testing.T, b *webtest.Browser) {
+	t.Helper()
+	if b.Eval(t, `() => window.__noReload === true`) != true {
+		t.Fatal("the page reloaded; the task should have moved in place")
+	}
 }
 
 // populatedEnv is browserEnv with a second list holding a tree of tasks:
