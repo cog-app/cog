@@ -406,7 +406,7 @@ templ bookmarkList(v listView) {
 
 templ bookmarkListEmpty(v listView) {
 	<div class="list">
-		switch {
+		switch  {
 			case v.Search != "":
 				@ui.EmptyState("No matches", fmt.Sprintf("No bookmark’s title, URL or description contains “%s”.", v.Search))
 			case v.Kind == viewFolder:

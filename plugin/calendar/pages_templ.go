@@ -2324,7 +2324,7 @@ func calScript() templ.Component {
 			templ_7745c5c3_Var115 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 231, "<script>\n\t\t(function () {\n\t\t\tvar calEl = document.getElementById(\"calendar\");\n\t\t\tvar NARROW = window.matchMedia(\"(max-width: 640px)\");\n\t\t\tvar HIDDEN_KEY = \"cog.calendar.hidden\";\n\t\t\tvar browserTZ = Intl.DateTimeFormat().resolvedOptions().timeZone || \"UTC\";\n\t\t\tvar pad = function (n) {\n\t\t\t\treturn String(n).padStart(2, \"0\");\n\t\t\t};\n\t\t\tfunction localDate(d) {\n\t\t\t\treturn d.getFullYear() + \"-\" + pad(d.getMonth() + 1) + \"-\" + pad(d.getDate());\n\t\t\t}\n\t\t\tfunction localDateTime(d) {\n\t\t\t\treturn localDate(d) + \"T\" + pad(d.getHours()) + \":\" + pad(d.getMinutes());\n\t\t\t}\n\n\t\t\t// --- Forms -------------------------------------------------------\n\t\t\t// [data-browser-tz] fields get the browser's zone and\n\t\t\t// [data-unix] datetime inputs its wall time.\n\t\t\tfunction fillBrowserTimes(root) {\n\t\t\t\troot.querySelectorAll(\"[data-browser-tz]\").forEach(function (el) {\n\t\t\t\t\tif (!el.value) el.value = browserTZ;\n\t\t\t\t});\n\t\t\t\troot.querySelectorAll(\"input[data-unix]\").forEach(function (el) {\n\t\t\t\t\tel.value = localDateTime(new Date(Number(el.dataset.unix) * 1000));\n\t\t\t\t});\n\t\t\t\troot.querySelectorAll(\"[data-tz-label]\").forEach(function (el) {\n\t\t\t\t\tvar input = el.closest(\"details\").querySelector(\"[data-tz-input]\");\n\t\t\t\t\tel.textContent = input.value || browserTZ;\n\t\t\t\t});\n\t\t\t}\n\t\t\t// [data-when]: the event's time in the browser's locale, in its own\n\t\t\t// zone when it has one, relative to today.\n\t\t\tfunction formatWhen(root) {\n\t\t\t\troot.querySelectorAll(\"[data-when]\").forEach(function (el) {\n\t\t\t\t\tvar tz = el.dataset.tz || undefined;\n\t\t\t\t\tvar allDay = el.hasAttribute(\"data-all-day\");\n\t\t\t\t\tvar start = new Date(Number(el.dataset.start) * 1000);\n\t\t\t\t\tvar end = new Date(Number(el.dataset.end) * 1000);\n\t\t\t\t\tif (allDay) {\n\t\t\t\t\t\ttz = \"UTC\";\n\t\t\t\t\t\tend = new Date(end.getTime() - 86400000);\n\t\t\t\t\t}\n\t\t\t\t\tvar dayKey = function (d) {\n\t\t\t\t\t\treturn new Intl.DateTimeFormat(\"en-CA\", { timeZone: tz, year: \"numeric\", month: \"2-digit\", day: \"2-digit\" }).format(d);\n\t\t\t\t\t};\n\t\t\t\t\tvar now = new Date();\n\t\t\t\t\tvar today = dayKey(now);\n\t\t\t\t\tvar tomorrow = dayKey(new Date(now.getTime() + 86400000));\n\t\t\t\t\tvar sameYear = new Intl.DateTimeFormat(\"en\", { timeZone: tz, year: \"numeric\" }).format(start) ===\n\t\t\t\t\t\tnew Intl.DateTimeFormat(\"en\", { timeZone: tz, year: \"numeric\" }).format(now);\n\t\t\t\t\tvar dayFmt = new Intl.DateTimeFormat(undefined, {\n\t\t\t\t\t\ttimeZone: tz, weekday: \"short\", month: \"short\", day: \"numeric\",\n\t\t\t\t\t\tyear: sameYear ? undefined : \"numeric\",\n\t\t\t\t\t});\n\t\t\t\t\tvar day = function (d) {\n\t\t\t\t\t\tvar k = dayKey(d);\n\t\t\t\t\t\tif (k === today) return \"Today\";\n\t\t\t\t\t\tif (k === tomorrow) return \"Tomorrow\";\n\t\t\t\t\t\treturn dayFmt.format(d);\n\t\t\t\t\t};\n\t\t\t\t\tvar time = new Intl.DateTimeFormat(undefined, { timeZone: tz, hour: \"numeric\", minute: \"2-digit\" });\n\t\t\t\t\tvar text;\n\t\t\t\t\tif (allDay) {\n\t\t\t\t\t\ttext = dayKey(start) === dayKey(end) ? day(start) : day(start) + \" – \" + day(end);\n\t\t\t\t\t} else if (dayKey(start) === dayKey(end)) {\n\t\t\t\t\t\ttext = day(start) + \" · \" + time.formatRange(start, end);\n\t\t\t\t\t} else {\n\t\t\t\t\t\ttext = day(start) + \", \" + time.format(start) + \" – \" + day(end) + \", \" + time.format(end);\n\t\t\t\t\t}\n\t\t\t\t\tif (!allDay && tz && tz !== browserTZ) {\n\t\t\t\t\t\tvar zone = new Intl.DateTimeFormat(undefined, { timeZone: tz, timeZoneName: \"short\" })\n\t\t\t\t\t\t\t.formatToParts(start)\n\t\t\t\t\t\t\t.find(function (p) {\n\t\t\t\t\t\t\t\treturn p.type === \"timeZoneName\";\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\tif (zone) text += \" \" + zone.value;\n\t\t\t\t\t}\n\t\t\t\t\tel.textContent = text;\n\t\t\t\t});\n\t\t\t}\n\t\t\tfunction setTimed(form, allDay) {\n\t\t\t\tform.querySelectorAll(\"[data-timed]\").forEach(function (el) {\n\t\t\t\t\tel.hidden = allDay;\n\t\t\t\t});\n\t\t\t\tform.querySelectorAll(\"[data-dated]\").forEach(function (el) {\n\t\t\t\t\tel.hidden = !allDay;\n\t\t\t\t});\n\t\t\t\tform.querySelector('[name=\"datetime_start\"]').required = !allDay;\n\t\t\t\tform.querySelector('[name=\"date_start\"]').required = allDay;\n\t\t\t}\n\t\t\tfunction setFreq(form, freq) {\n\t\t\t\tform.querySelector(\"[data-rrule-opts]\").hidden = freq === \"NONE\" || freq === \"CUSTOM\";\n\t\t\t\tform.querySelector(\"[data-rrule-custom]\").hidden = freq !== \"CUSTOM\";\n\t\t\t\tform.querySelector(\"[data-byday]\").hidden = freq !== \"WEEKLY\";\n\t\t\t\tvar units = { DAILY: \"days\", WEEKLY: \"weeks\", MONTHLY: \"months\", YEARLY: \"years\" };\n\t\t\t\tform.querySelector(\"[data-freq-unit]\").textContent = units[freq] || \"\";\n\t\t\t}\n\t\t\tfunction syncCalColor(form) {\n\t\t\t\tvar sel = form.querySelector(\"[data-cal-select]\");\n\t\t\t\tvar dot = form.querySelector(\"[data-cal-swatch]\");\n\t\t\t\tif (!sel || !dot || sel.selectedIndex < 0) return;\n\t\t\t\tdot.style.background = sel.options[sel.selectedIndex].dataset.color || \"\";\n\t\t\t}\n\t\t\tdocument.addEventListener(\"change\", function (e) {\n\t\t\t\tvar form = e.target.closest(\"form\");\n\t\t\t\tif (!form) return;\n\t\t\t\tif (e.target.matches(\"[data-all-day]\")) setTimed(form, e.target.checked);\n\t\t\t\tif (e.target.matches(\"[data-freq]\")) setFreq(form, e.target.value);\n\t\t\t\tif (e.target.matches(\"[data-cal-select]\")) syncCalColor(form);\n\t\t\t\tif (e.target.matches(\"[data-tz-input]\")) {\n\t\t\t\t\te.target.closest(\"details\").querySelector(\"[data-tz-label]\").textContent =\n\t\t\t\t\t\te.target.value || browserTZ;\n\t\t\t\t}\n\t\t\t});\n\t\t\tdocument.addEventListener(\"input\", function (e) {\n\t\t\t\tif (!e.target.matches(\"[data-swatch-picker]\")) return;\n\t\t\t\tvar radio = e.target.parentElement.querySelector(\"[data-swatch-custom]\");\n\t\t\t\tradio.value = e.target.value;\n\t\t\t\tradio.checked = true;\n\t\t\t});\n\t\t\tdocument.addEventListener(\"click\", function (e) {\n\t\t\t\tvar add = e.target.closest(\"[data-add-attendee]\");\n\t\t\t\tif (add) {\n\t\t\t\t\tvar row = document.getElementById(\"tpl-attendee-row\").content.firstElementChild.cloneNode(true);\n\t\t\t\t\tadd.parentElement.querySelector(\"[data-attendees]\").appendChild(row);\n\t\t\t\t\trow.querySelector(\"input\").focus();\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar remove = e.target.closest(\"[data-remove-attendee]\");\n\t\t\t\tif (remove) {\n\t\t\t\t\tremove.closest(\".cal-attendee-row\").remove();\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar edit = e.target.closest(\"[data-show-edit], [data-show-view]\");\n\t\t\t\tif (edit) {\n\t\t\t\t\tvar dialog = edit.closest(\"dialog\");\n\t\t\t\t\tvar editing = edit.hasAttribute(\"data-show-edit\");\n\t\t\t\t\tdialog.querySelectorAll(\"[data-view]\").forEach(function (el) {\n\t\t\t\t\t\tel.hidden = editing;\n\t\t\t\t\t});\n\t\t\t\t\tdialog.querySelectorAll(\"[data-edit]\").forEach(function (el) {\n\t\t\t\t\t\tel.hidden = !editing;\n\t\t\t\t\t});\n\t\t\t\t\tif (editing) dialog.querySelector(\"[data-edit] input:not([type=hidden])\").focus();\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// --- New event ---------------------------------------------------\n\t\t\t// openCreate opens the new-event dialog, emptied, for a time\n\t\t\t// (start, end) or a range of days (allDay, end exclusive).\n\t\t\tfunction openCreate(start, end, allDay) {\n\t\t\t\tvar form = document.getElementById(\"create-event-form\");\n\t\t\t\tif (!form) return;\n\t\t\t\tform.reset();\n\t\t\t\tform.querySelectorAll(\".cal-attendee-row\").forEach(function (r) {\n\t\t\t\t\tr.remove();\n\t\t\t\t});\n\t\t\t\tfillBrowserTimes(form);\n\t\t\t\tform.querySelector(\"[data-all-day]\").checked = allDay;\n\t\t\t\tsetTimed(form, allDay);\n\t\t\t\tsetFreq(form, \"NONE\");\n\t\t\t\tsyncCalColor(form);\n\t\t\t\tif (allDay) {\n\t\t\t\t\tform.querySelector('[name=\"date_start\"]').value = localDate(start);\n\t\t\t\t\tform.querySelector('[name=\"date_end\"]').value = localDate(end);\n\t\t\t\t} else {\n\t\t\t\t\tform.querySelector('[name=\"datetime_start\"]').value = localDateTime(start);\n\t\t\t\t\tform.querySelector('[name=\"datetime_end\"]').value = localDateTime(end);\n\t\t\t\t}\n\t\t\t\tcogModal.open(\"create-modal\");\n\t\t\t\tform.querySelector('[name=\"summary\"]').focus();\n\t\t\t}\n\t\t\tfunction newEventNow() {\n\t\t\t\tvar start = new Date();\n\t\t\t\tstart.setMinutes(0, 0, 0);\n\t\t\t\tstart = new Date(start.getTime() + 3600000);\n\t\t\t\topenCreate(start, new Date(start.getTime() + 3600000), false);\n\t\t\t}\n\n\t\t\t// --- Event dialog ------------------------------------------------\n\t\t\tfunction openEvent(url) {\n\t\t\t\tfetch(url)\n\t\t\t\t\t.then(function (r) {\n\t\t\t\t\t\tif (!r.ok) throw new Error(\"HTTP \" + r.status);\n\t\t\t\t\t\treturn r.text();\n\t\t\t\t\t})\n\t\t\t\t\t.then(function (html) {\n\t\t\t\t\t\tvar slot = document.getElementById(\"event-modal-slot\");\n\t\t\t\t\t\tslot.innerHTML = html;\n\t\t\t\t\t\tfillBrowserTimes(slot);\n\t\t\t\t\t\tformatWhen(slot);\n\t\t\t\t\t\thtmx.process(slot);\n\t\t\t\t\t\tcogModal.open(\"event-modal\");\n\t\t\t\t\t})\n\t\t\t\t\t.catch(function (err) {\n\t\t\t\t\t\tconsole.error(\"open event\", url, err);\n\t\t\t\t\t});\n\t\t\t}\n\n\t\t\t// --- Calendar ----------------------------------------------------\n\t\t\tvar hidden = {};\n\t\t\ttry {\n\t\t\t\thidden = JSON.parse(localStorage.getItem(HIDDEN_KEY) || \"{}\") || {};\n\t\t\t} catch (err) {\n\t\t\t\tconsole.warn(\"calendar: read hidden calendars\", err);\n\t\t\t}\n\t\t\tfunction toolbars(narrow) {\n\t\t\t\tvar views = narrow ? \"dayGridMonth,timeGridThreeDay,listWeek\" : \"dayGridMonth,timeGridWeek,timeGridDay,listWeek\";\n\t\t\t\tvar create = calEl.hasAttribute(\"data-can-create\") ? \"newEvent\" : \"\";\n\t\t\t\tif (narrow) {\n\t\t\t\t\treturn {\n\t\t\t\t\t\theaderToolbar: { left: \"prev,next\", center: \"title\", right: create },\n\t\t\t\t\t\tfooterToolbar: { left: \"today\", center: \"\", right: views },\n\t\t\t\t\t};\n\t\t\t\t}\n\t\t\t\treturn {\n\t\t\t\t\theaderToolbar: { left: \"prev,next today\", center: \"title\", right: views + (create ? \" \" + create : \"\") },\n\t\t\t\t\tfooterToolbar: false,\n\t\t\t\t};\n\t\t\t}\n\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\tvar narrow = NARROW.matches;\n\t\t\tvar opts = Object.assign(toolbars(narrow), {\n\t\t\t\tinitialView: \"dayGridMonth\",\n\t\t\t\tcustomButtons: { newEvent: { text: \"New event\", hint: \"New event\", click: newEventNow } },\n\t\t\t\tbuttonText: { today: \"Today\" },\n\t\t\t\tviews: {\n\t\t\t\t\tdayGridMonth: { buttonText: \"Month\" },\n\t\t\t\t\ttimeGridWeek: { buttonText: \"Week\" },\n\t\t\t\t\ttimeGridDay: { buttonText: \"Day\" },\n\t\t\t\t\ttimeGridThreeDay: {\n\t\t\t\t\t\ttype: \"timeGrid\",\n\t\t\t\t\t\tduration: { days: 3 },\n\t\t\t\t\t\tbuttonText: \"3 days\",\n\t\t\t\t\t\ttitleFormat: { month: \"short\", day: \"numeric\" },\n\t\t\t\t\t},\n\t\t\t\t\tlistWeek: { buttonText: \"Agenda\" },\n\t\t\t\t},\n\t\t\t\tevents: \"/apps/calendar/events.json\",\n\t\t\t\teventDataTransform: function (ev) {\n\t\t\t\t\tif (hidden[ev.extendedProps.calendarId]) ev.display = \"none\";\n\t\t\t\t\treturn ev;\n\t\t\t\t},\n\t\t\t\teditable: false,\n\t\t\t\tselectable: calEl.hasAttribute(\"data-can-create\"),\n\t\t\t\theight: \"auto\",\n\t\t\t\tdayMaxEvents: narrow ? 3 : 4,\n\t\t\t\tnowIndicator: true,\n\t\t\t\tscrollTime: \"08:00:00\",\n\t\t\t\tslotEventOverlap: false,\n\t\t\t\teventMinHeight: 24,\n\t\t\t\tdisplayEventTime: !narrow,\n\t\t\t\teventTimeFormat: { hour: \"numeric\", minute: \"2-digit\", meridiem: \"short\" },\n\t\t\t\tdatesSet: function (info) {\n\t\t\t\t\tvar d = localDate(info.view.currentStart);\n\t\t\t\t\thistory.replaceState(null, \"\", \"/apps/calendar/?date=\" + d);\n\t\t\t\t},\n\t\t\t\tviewDidMount: function (info) {\n\t\t\t\t\t// The time grids get a fixed height so they open scrolled to\n\t\t\t\t\t// the working day instead of showing midnight to midnight.\n\t\t\t\t\tvar timeGrid = info.view.type.indexOf(\"timeGrid\") === 0;\n\t\t\t\t\tsetTimeout(function () {\n\t\t\t\t\t\tcalendar.setOption(\"height\", timeGrid ? Math.max(480, window.innerHeight - 180) : \"auto\");\n\t\t\t\t\t\tif (timeGrid) calendar.scrollToTime(\"08:00:00\");\n\t\t\t\t\t});\n\t\t\t\t},\n\t\t\t\teventClick: function (info) {\n\t\t\t\t\tinfo.jsEvent.preventDefault();\n\t\t\t\t\tvar url = \"/apps/calendar/events/\" + info.event.id;\n\t\t\t\t\tif (info.event.extendedProps.occurrence) {\n\t\t\t\t\t\turl += \"?occurrence=\" + info.event.extendedProps.occurrence;\n\t\t\t\t\t}\n\t\t\t\t\topenEvent(url);\n\t\t\t\t},\n\t\t\t\t// A click on a day starts a 9:00 event that day, a drag over days\n\t\t\t\t// an all-day one; in the time grids a click starts an hour at\n\t\t\t\t// that time.\n\t\t\t\tselect: function (info) {\n\t\t\t\t\tcalendar.unselect();\n\t\t\t\t\tvar days = Math.round((info.end - info.start) / 86400000);\n\t\t\t\t\tif (info.view.type.indexOf(\"dayGrid\") === 0 && days === 1) {\n\t\t\t\t\t\tvar s = new Date(info.start);\n\t\t\t\t\t\ts.setHours(9, 0, 0, 0);\n\t\t\t\t\t\topenCreate(s, new Date(s.getTime() + 3600000), false);\n\t\t\t\t\t} else if (info.allDay) {\n\t\t\t\t\t\topenCreate(info.start, info.end, true);\n\t\t\t\t\t} else {\n\t\t\t\t\t\tvar end = info.end - info.start < 3600000 ? new Date(info.start.getTime() + 3600000) : info.end;\n\t\t\t\t\t\topenCreate(info.start, end, false);\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\twindowResize: function () {\n\t\t\t\t\tif (NARROW.matches === narrow) return;\n\t\t\t\t\tnarrow = NARROW.matches;\n\t\t\t\t\tvar t = toolbars(narrow);\n\t\t\t\t\tcalendar.setOption(\"headerToolbar\", t.headerToolbar);\n\t\t\t\t\tcalendar.setOption(\"footerToolbar\", t.footerToolbar);\n\t\t\t\t\tcalendar.setOption(\"displayEventTime\", !narrow);\n\t\t\t\t\tcalendar.setOption(\"dayMaxEvents\", narrow ? 3 : 4);\n\t\t\t\t\tvar type = calendar.view.type;\n\t\t\t\t\tif (narrow && type === \"timeGridWeek\") calendar.changeView(\"timeGridThreeDay\");\n\t\t\t\t\tif (!narrow && type === \"timeGridThreeDay\") calendar.changeView(\"timeGridWeek\");\n\t\t\t\t},\n\t\t\t});\n\t\t\tif (params.get(\"date\")) opts.initialDate = params.get(\"date\");\n\t\t\tvar calendar = new FullCalendar.Calendar(calEl, opts);\n\t\t\tcalendar.render();\n\t\t\t// FullCalendar measures itself when it renders and when the window\n\t\t\t// resizes; the page around it can settle later than either.\n\t\t\tif (window.ResizeObserver) {\n\t\t\t\tnew ResizeObserver(function () {\n\t\t\t\t\tcalendar.updateSize();\n\t\t\t\t}).observe(calEl.parentElement);\n\t\t\t}\n\n\t\t\tdocument.querySelectorAll(\"[data-cal-toggle]\").forEach(function (cb) {\n\t\t\t\tvar id = Number(cb.dataset.calToggle);\n\t\t\t\tcb.checked = !hidden[id];\n\t\t\t\tcb.addEventListener(\"change\", function () {\n\t\t\t\t\tif (cb.checked) delete hidden[id];\n\t\t\t\t\telse hidden[id] = true;\n\t\t\t\t\ttry {\n\t\t\t\t\t\tlocalStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden));\n\t\t\t\t\t} catch (err) {\n\t\t\t\t\t\tconsole.warn(\"calendar: save hidden calendars\", err);\n\t\t\t\t\t}\n\t\t\t\t\tcalendar.getEvents().forEach(function (ev) {\n\t\t\t\t\t\tif (ev.extendedProps.calendarId === id) ev.setProp(\"display\", cb.checked ? \"auto\" : \"none\");\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t});\n\n\t\t\t// A form about an event redirects back with ?event=<id>, so its\n\t\t\t// dialog opens again.\n\t\t\tif (/^[0-9]+$/.test(params.get(\"event\") || \"\")) {\n\t\t\t\topenEvent(\"/apps/calendar/events/\" + params.get(\"event\"));\n\t\t\t}\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 231, "<script>\n\t\t(function () {\n\t\t\tvar calEl = document.getElementById(\"calendar\");\n\t\t\tvar NARROW = window.matchMedia(\"(max-width: 640px)\");\n\t\t\tvar HIDDEN_KEY = \"cog.calendar.hidden\";\n\t\t\tvar browserTZ = Intl.DateTimeFormat().resolvedOptions().timeZone || \"UTC\";\n\t\t\tvar pad = function (n) {\n\t\t\t\treturn String(n).padStart(2, \"0\");\n\t\t\t};\n\t\t\tfunction localDate(d) {\n\t\t\t\treturn d.getFullYear() + \"-\" + pad(d.getMonth() + 1) + \"-\" + pad(d.getDate());\n\t\t\t}\n\t\t\tfunction localDateTime(d) {\n\t\t\t\treturn localDate(d) + \"T\" + pad(d.getHours()) + \":\" + pad(d.getMinutes());\n\t\t\t}\n\n\t\t\t// --- Forms -------------------------------------------------------\n\t\t\t// [data-browser-tz] fields get the browser's zone and\n\t\t\t// [data-unix] datetime inputs its wall time.\n\t\t\tfunction fillBrowserTimes(root) {\n\t\t\t\troot.querySelectorAll(\"[data-browser-tz]\").forEach(function (el) {\n\t\t\t\t\tif (!el.value) el.value = browserTZ;\n\t\t\t\t});\n\t\t\t\troot.querySelectorAll(\"input[data-unix]\").forEach(function (el) {\n\t\t\t\t\tel.value = localDateTime(new Date(Number(el.dataset.unix) * 1000));\n\t\t\t\t});\n\t\t\t\troot.querySelectorAll(\"[data-tz-label]\").forEach(function (el) {\n\t\t\t\t\tvar input = el.closest(\"details\").querySelector(\"[data-tz-input]\");\n\t\t\t\t\tel.textContent = input.value || browserTZ;\n\t\t\t\t});\n\t\t\t}\n\t\t\t// [data-when]: the event's time in the browser's locale, in its own\n\t\t\t// zone when it has one, relative to today.\n\t\t\tfunction formatWhen(root) {\n\t\t\t\troot.querySelectorAll(\"[data-when]\").forEach(function (el) {\n\t\t\t\t\tvar tz = el.dataset.tz || undefined;\n\t\t\t\t\tvar allDay = el.hasAttribute(\"data-all-day\");\n\t\t\t\t\tvar start = new Date(Number(el.dataset.start) * 1000);\n\t\t\t\t\tvar end = new Date(Number(el.dataset.end) * 1000);\n\t\t\t\t\tif (allDay) {\n\t\t\t\t\t\ttz = \"UTC\";\n\t\t\t\t\t\tend = new Date(end.getTime() - 86400000);\n\t\t\t\t\t}\n\t\t\t\t\tvar dayKey = function (d) {\n\t\t\t\t\t\treturn new Intl.DateTimeFormat(\"en-CA\", { timeZone: tz, year: \"numeric\", month: \"2-digit\", day: \"2-digit\" }).format(d);\n\t\t\t\t\t};\n\t\t\t\t\tvar now = new Date();\n\t\t\t\t\tvar today = dayKey(now);\n\t\t\t\t\tvar tomorrow = dayKey(new Date(now.getTime() + 86400000));\n\t\t\t\t\tvar sameYear = new Intl.DateTimeFormat(\"en\", { timeZone: tz, year: \"numeric\" }).format(start) ===\n\t\t\t\t\t\tnew Intl.DateTimeFormat(\"en\", { timeZone: tz, year: \"numeric\" }).format(now);\n\t\t\t\t\tvar dayFmt = new Intl.DateTimeFormat(undefined, {\n\t\t\t\t\t\ttimeZone: tz, weekday: \"short\", month: \"short\", day: \"numeric\",\n\t\t\t\t\t\tyear: sameYear ? undefined : \"numeric\",\n\t\t\t\t\t});\n\t\t\t\t\tvar day = function (d) {\n\t\t\t\t\t\tvar k = dayKey(d);\n\t\t\t\t\t\tif (k === today) return \"Today\";\n\t\t\t\t\t\tif (k === tomorrow) return \"Tomorrow\";\n\t\t\t\t\t\treturn dayFmt.format(d);\n\t\t\t\t\t};\n\t\t\t\t\tvar time = new Intl.DateTimeFormat(undefined, { timeZone: tz, hour: \"numeric\", minute: \"2-digit\" });\n\t\t\t\t\tvar text;\n\t\t\t\t\tif (allDay) {\n\t\t\t\t\t\ttext = dayKey(start) === dayKey(end) ? day(start) : day(start) + \" – \" + day(end);\n\t\t\t\t\t} else if (dayKey(start) === dayKey(end)) {\n\t\t\t\t\t\ttext = day(start) + \" · \" + time.formatRange(start, end);\n\t\t\t\t\t} else {\n\t\t\t\t\t\ttext = day(start) + \", \" + time.format(start) + \" – \" + day(end) + \", \" + time.format(end);\n\t\t\t\t\t}\n\t\t\t\t\tif (!allDay && tz && tz !== browserTZ) {\n\t\t\t\t\t\tvar zone = new Intl.DateTimeFormat(undefined, { timeZone: tz, timeZoneName: \"short\" })\n\t\t\t\t\t\t\t.formatToParts(start)\n\t\t\t\t\t\t\t.find(function (p) {\n\t\t\t\t\t\t\t\treturn p.type === \"timeZoneName\";\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\tif (zone) text += \" \" + zone.value;\n\t\t\t\t\t}\n\t\t\t\t\tel.textContent = text;\n\t\t\t\t});\n\t\t\t}\n\t\t\tfunction setTimed(form, allDay) {\n\t\t\t\tform.querySelectorAll(\"[data-timed]\").forEach(function (el) {\n\t\t\t\t\tel.hidden = allDay;\n\t\t\t\t});\n\t\t\t\tform.querySelectorAll(\"[data-dated]\").forEach(function (el) {\n\t\t\t\t\tel.hidden = !allDay;\n\t\t\t\t});\n\t\t\t\tform.querySelector('[name=\"datetime_start\"]').required = !allDay;\n\t\t\t\tform.querySelector('[name=\"date_start\"]').required = allDay;\n\t\t\t}\n\t\t\tfunction setFreq(form, freq) {\n\t\t\t\tform.querySelector(\"[data-rrule-opts]\").hidden = freq === \"NONE\" || freq === \"CUSTOM\";\n\t\t\t\tform.querySelector(\"[data-rrule-custom]\").hidden = freq !== \"CUSTOM\";\n\t\t\t\tform.querySelector(\"[data-byday]\").hidden = freq !== \"WEEKLY\";\n\t\t\t\tvar units = { DAILY: \"days\", WEEKLY: \"weeks\", MONTHLY: \"months\", YEARLY: \"years\" };\n\t\t\t\tform.querySelector(\"[data-freq-unit]\").textContent = units[freq] || \"\";\n\t\t\t}\n\t\t\tfunction syncCalColor(form) {\n\t\t\t\tvar sel = form.querySelector(\"[data-cal-select]\");\n\t\t\t\tvar dot = form.querySelector(\"[data-cal-swatch]\");\n\t\t\t\tif (!sel || !dot || sel.selectedIndex < 0) return;\n\t\t\t\tdot.style.background = sel.options[sel.selectedIndex].dataset.color || \"\";\n\t\t\t}\n\t\t\tdocument.addEventListener(\"change\", function (e) {\n\t\t\t\tvar form = e.target.closest(\"form\");\n\t\t\t\tif (!form) return;\n\t\t\t\tif (e.target.matches(\"[data-all-day]\")) setTimed(form, e.target.checked);\n\t\t\t\tif (e.target.matches(\"[data-freq]\")) setFreq(form, e.target.value);\n\t\t\t\tif (e.target.matches(\"[data-cal-select]\")) syncCalColor(form);\n\t\t\t\tif (e.target.matches(\"[data-tz-input]\")) {\n\t\t\t\t\te.target.closest(\"details\").querySelector(\"[data-tz-label]\").textContent =\n\t\t\t\t\t\te.target.value || browserTZ;\n\t\t\t\t}\n\t\t\t});\n\t\t\tdocument.addEventListener(\"input\", function (e) {\n\t\t\t\tif (!e.target.matches(\"[data-swatch-picker]\")) return;\n\t\t\t\tvar radio = e.target.parentElement.querySelector(\"[data-swatch-custom]\");\n\t\t\t\tradio.value = e.target.value;\n\t\t\t\tradio.checked = true;\n\t\t\t});\n\t\t\tdocument.addEventListener(\"click\", function (e) {\n\t\t\t\tvar add = e.target.closest(\"[data-add-attendee]\");\n\t\t\t\tif (add) {\n\t\t\t\t\tvar row = document.getElementById(\"tpl-attendee-row\").content.firstElementChild.cloneNode(true);\n\t\t\t\t\tadd.parentElement.querySelector(\"[data-attendees]\").appendChild(row);\n\t\t\t\t\trow.querySelector(\"input\").focus();\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar remove = e.target.closest(\"[data-remove-attendee]\");\n\t\t\t\tif (remove) {\n\t\t\t\t\tremove.closest(\".cal-attendee-row\").remove();\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar edit = e.target.closest(\"[data-show-edit], [data-show-view]\");\n\t\t\t\tif (edit) {\n\t\t\t\t\tvar dialog = edit.closest(\"dialog\");\n\t\t\t\t\tvar editing = edit.hasAttribute(\"data-show-edit\");\n\t\t\t\t\tdialog.querySelectorAll(\"[data-view]\").forEach(function (el) {\n\t\t\t\t\t\tel.hidden = editing;\n\t\t\t\t\t});\n\t\t\t\t\tdialog.querySelectorAll(\"[data-edit]\").forEach(function (el) {\n\t\t\t\t\t\tel.hidden = !editing;\n\t\t\t\t\t});\n\t\t\t\t\tif (editing) dialog.querySelector(\"[data-edit] input:not([type=hidden])\").focus();\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// --- New event ---------------------------------------------------\n\t\t\t// openCreate opens the new-event dialog, emptied, for a time\n\t\t\t// (start, end) or a range of days (allDay, end exclusive).\n\t\t\tfunction openCreate(start, end, allDay) {\n\t\t\t\tvar form = document.getElementById(\"create-event-form\");\n\t\t\t\tif (!form) return;\n\t\t\t\tform.reset();\n\t\t\t\tform.querySelectorAll(\".cal-attendee-row\").forEach(function (r) {\n\t\t\t\t\tr.remove();\n\t\t\t\t});\n\t\t\t\tfillBrowserTimes(form);\n\t\t\t\tform.querySelector(\"[data-all-day]\").checked = allDay;\n\t\t\t\tsetTimed(form, allDay);\n\t\t\t\tsetFreq(form, \"NONE\");\n\t\t\t\tsyncCalColor(form);\n\t\t\t\tif (allDay) {\n\t\t\t\t\tform.querySelector('[name=\"date_start\"]').value = localDate(start);\n\t\t\t\t\tform.querySelector('[name=\"date_end\"]').value = localDate(end);\n\t\t\t\t} else {\n\t\t\t\t\tform.querySelector('[name=\"datetime_start\"]').value = localDateTime(start);\n\t\t\t\t\tform.querySelector('[name=\"datetime_end\"]').value = localDateTime(end);\n\t\t\t\t}\n\t\t\t\tcogModal.open(\"create-modal\");\n\t\t\t\tform.querySelector('[name=\"summary\"]').focus();\n\t\t\t}\n\t\t\tfunction newEventNow() {\n\t\t\t\tvar start = new Date();\n\t\t\t\tstart.setMinutes(0, 0, 0);\n\t\t\t\tstart = new Date(start.getTime() + 3600000);\n\t\t\t\topenCreate(start, new Date(start.getTime() + 3600000), false);\n\t\t\t}\n\n\t\t\t// --- Event dialog ------------------------------------------------\n\t\t\tfunction openEvent(url) {\n\t\t\t\tfetch(url)\n\t\t\t\t\t.then(function (r) {\n\t\t\t\t\t\tif (!r.ok) throw new Error(\"HTTP \" + r.status);\n\t\t\t\t\t\treturn r.text();\n\t\t\t\t\t})\n\t\t\t\t\t.then(function (html) {\n\t\t\t\t\t\tvar slot = document.getElementById(\"event-modal-slot\");\n\t\t\t\t\t\tslot.innerHTML = html;\n\t\t\t\t\t\tfillBrowserTimes(slot);\n\t\t\t\t\t\tformatWhen(slot);\n\t\t\t\t\t\thtmx.process(slot);\n\t\t\t\t\t\tcogModal.open(\"event-modal\");\n\t\t\t\t\t})\n\t\t\t\t\t.catch(function (err) {\n\t\t\t\t\t\tconsole.error(\"open event\", url, err);\n\t\t\t\t\t});\n\t\t\t}\n\n\t\t\t// --- Calendar ----------------------------------------------------\n\t\t\tvar hidden = {};\n\t\t\ttry {\n\t\t\t\thidden = JSON.parse(localStorage.getItem(HIDDEN_KEY) || \"{}\") || {};\n\t\t\t} catch (err) {\n\t\t\t\tconsole.warn(\"calendar: read hidden calendars\", err);\n\t\t\t}\n\t\t\tfunction toolbars(narrow) {\n\t\t\t\tvar views = narrow ? \"dayGridMonth,timeGridThreeDay,listWeek\" : \"dayGridMonth,timeGridWeek,timeGridDay,listWeek\";\n\t\t\t\tvar create = calEl.hasAttribute(\"data-can-create\") ? \"newEvent\" : \"\";\n\t\t\t\tif (narrow) {\n\t\t\t\t\treturn {\n\t\t\t\t\t\theaderToolbar: { left: \"prev,next\", center: \"title\", right: create },\n\t\t\t\t\t\tfooterToolbar: { left: \"today\", center: \"\", right: views },\n\t\t\t\t\t};\n\t\t\t\t}\n\t\t\t\treturn {\n\t\t\t\t\theaderToolbar: { left: \"prev,next today\", center: \"title\", right: views + (create ? \" \" + create : \"\") },\n\t\t\t\t\tfooterToolbar: false,\n\t\t\t\t};\n\t\t\t}\n\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\tvar narrow = NARROW.matches;\n\t\t\tvar opts = Object.assign(toolbars(narrow), {\n\t\t\t\tinitialView: \"dayGridMonth\",\n\t\t\t\tcustomButtons: { newEvent: { text: \"New event\", hint: \"New event\", click: newEventNow } },\n\t\t\t\tbuttonText: { today: \"Today\" },\n\t\t\t\tviews: {\n\t\t\t\t\tdayGridMonth: { buttonText: \"Month\" },\n\t\t\t\t\ttimeGridWeek: { buttonText: \"Week\" },\n\t\t\t\t\ttimeGridDay: { buttonText: \"Day\" },\n\t\t\t\t\ttimeGridThreeDay: {\n\t\t\t\t\t\ttype: \"timeGrid\",\n\t\t\t\t\t\tduration: { days: 3 },\n\t\t\t\t\t\tbuttonText: \"3 days\",\n\t\t\t\t\t\ttitleFormat: { month: \"short\", day: \"numeric\" },\n\t\t\t\t\t},\n\t\t\t\t\tlistWeek: { buttonText: \"Agenda\" },\n\t\t\t\t},\n\t\t\t\tevents: \"/apps/calendar/events.json\",\n\t\t\t\teventDataTransform: function (ev) {\n\t\t\t\t\tif (hidden[ev.extendedProps.calendarId]) ev.display = \"none\";\n\t\t\t\t\treturn ev;\n\t\t\t\t},\n\t\t\t\teditable: false,\n\t\t\t\tselectable: calEl.hasAttribute(\"data-can-create\"),\n\t\t\t\theight: \"auto\",\n\t\t\t\tdayMaxEvents: narrow ? 3 : 4,\n\t\t\t\t// A phone's day cell is too narrow for \"+2 more\".\n\t\t\t\tmoreLinkContent: function (arg) {\n\t\t\t\t\treturn narrow ? \"+\" + arg.num : arg.text;\n\t\t\t\t},\n\t\t\t\tnowIndicator: true,\n\t\t\t\tscrollTime: \"08:00:00\",\n\t\t\t\tslotEventOverlap: false,\n\t\t\t\teventMinHeight: 24,\n\t\t\t\tdisplayEventTime: !narrow,\n\t\t\t\teventTimeFormat: { hour: \"numeric\", minute: \"2-digit\", meridiem: \"short\" },\n\t\t\t\tdatesSet: function (info) {\n\t\t\t\t\tvar d = localDate(info.view.currentStart);\n\t\t\t\t\thistory.replaceState(null, \"\", \"/apps/calendar/?date=\" + d);\n\t\t\t\t},\n\t\t\t\tviewDidMount: function (info) {\n\t\t\t\t\t// The time grids get a fixed height so they open scrolled to\n\t\t\t\t\t// the working day instead of showing midnight to midnight.\n\t\t\t\t\tvar timeGrid = info.view.type.indexOf(\"timeGrid\") === 0;\n\t\t\t\t\tsetTimeout(function () {\n\t\t\t\t\t\tcalendar.setOption(\"height\", timeGrid ? Math.max(480, window.innerHeight - 180) : \"auto\");\n\t\t\t\t\t\tif (timeGrid) calendar.scrollToTime(\"08:00:00\");\n\t\t\t\t\t});\n\t\t\t\t},\n\t\t\t\teventClick: function (info) {\n\t\t\t\t\tinfo.jsEvent.preventDefault();\n\t\t\t\t\tvar url = \"/apps/calendar/events/\" + info.event.id;\n\t\t\t\t\tif (info.event.extendedProps.occurrence) {\n\t\t\t\t\t\turl += \"?occurrence=\" + info.event.extendedProps.occurrence;\n\t\t\t\t\t}\n\t\t\t\t\topenEvent(url);\n\t\t\t\t},\n\t\t\t\t// A click on a day starts a 9:00 event that day, a drag over days\n\t\t\t\t// an all-day one; in the time grids a click starts an hour at\n\t\t\t\t// that time.\n\t\t\t\tselect: function (info) {\n\t\t\t\t\tcalendar.unselect();\n\t\t\t\t\tvar days = Math.round((info.end - info.start) / 86400000);\n\t\t\t\t\tif (info.view.type.indexOf(\"dayGrid\") === 0 && days === 1) {\n\t\t\t\t\t\tvar s = new Date(info.start);\n\t\t\t\t\t\ts.setHours(9, 0, 0, 0);\n\t\t\t\t\t\topenCreate(s, new Date(s.getTime() + 3600000), false);\n\t\t\t\t\t} else if (info.allDay) {\n\t\t\t\t\t\topenCreate(info.start, info.end, true);\n\t\t\t\t\t} else {\n\t\t\t\t\t\tvar end = info.end - info.start < 3600000 ? new Date(info.start.getTime() + 3600000) : info.end;\n\t\t\t\t\t\topenCreate(info.start, end, false);\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\twindowResize: function () {\n\t\t\t\t\tif (NARROW.matches === narrow) return;\n\t\t\t\t\tnarrow = NARROW.matches;\n\t\t\t\t\tvar t = toolbars(narrow);\n\t\t\t\t\tcalendar.setOption(\"headerToolbar\", t.headerToolbar);\n\t\t\t\t\tcalendar.setOption(\"footerToolbar\", t.footerToolbar);\n\t\t\t\t\tcalendar.setOption(\"displayEventTime\", !narrow);\n\t\t\t\t\tcalendar.setOption(\"dayMaxEvents\", narrow ? 3 : 4);\n\t\t\t\t\tvar type = calendar.view.type;\n\t\t\t\t\tif (narrow && type === \"timeGridWeek\") calendar.changeView(\"timeGridThreeDay\");\n\t\t\t\t\tif (!narrow && type === \"timeGridThreeDay\") calendar.changeView(\"timeGridWeek\");\n\t\t\t\t},\n\t\t\t});\n\t\t\tif (params.get(\"date\")) opts.initialDate = params.get(\"date\");\n\t\t\tvar calendar = new FullCalendar.Calendar(calEl, opts);\n\t\t\tcalendar.render();\n\t\t\t// FullCalendar measures itself when it renders and when the window\n\t\t\t// resizes; the page around it can settle later than either.\n\t\t\tif (window.ResizeObserver) {\n\t\t\t\tnew ResizeObserver(function () {\n\t\t\t\t\tcalendar.updateSize();\n\t\t\t\t}).observe(calEl.parentElement);\n\t\t\t}\n\n\t\t\tdocument.querySelectorAll(\"[data-cal-toggle]\").forEach(function (cb) {\n\t\t\t\tvar id = Number(cb.dataset.calToggle);\n\t\t\t\tcb.checked = !hidden[id];\n\t\t\t\tcb.addEventListener(\"change\", function () {\n\t\t\t\t\tif (cb.checked) delete hidden[id];\n\t\t\t\t\telse hidden[id] = true;\n\t\t\t\t\ttry {\n\t\t\t\t\t\tlocalStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden));\n\t\t\t\t\t} catch (err) {\n\t\t\t\t\t\tconsole.warn(\"calendar: save hidden calendars\", err);\n\t\t\t\t\t}\n\t\t\t\t\tcalendar.getEvents().forEach(function (ev) {\n\t\t\t\t\t\tif (ev.extendedProps.calendarId === id) ev.setProp(\"display\", cb.checked ? \"auto\" : \"none\");\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t});\n\n\t\t\t// A form about an event redirects back with ?event=<id>, so its\n\t\t\t// dialog opens again.\n\t\t\tif (/^[0-9]+$/.test(params.get(\"event\") || \"\")) {\n\t\t\t\topenEvent(\"/apps/calendar/events/\" + params.get(\"event\"));\n\t\t\t}\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2388,7 +2388,7 @@ func calSettingsPage(v *settingsView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var118 string
 			templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 795, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 799, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var118))
 			if templ_7745c5c3_Err != nil {
@@ -2426,7 +2426,7 @@ func calSettingsPage(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var119 string
 				templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-%d", cal.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 828, Col: 62}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 832, Col: 62}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var119))
 				if templ_7745c5c3_Err != nil {
@@ -2439,7 +2439,7 @@ func calSettingsPage(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var120 string
 				templ_7745c5c3_Var120, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues("background:" + cal.Color)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 829, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 833, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var120))
 				if templ_7745c5c3_Err != nil {
@@ -2452,7 +2452,7 @@ func calSettingsPage(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var121 string
 				templ_7745c5c3_Var121, templ_7745c5c3_Err = templ.JoinStringErrs(cal.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 832, Col: 20}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 836, Col: 20}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var121))
 				if templ_7745c5c3_Err != nil {
@@ -2475,7 +2475,7 @@ func calSettingsPage(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var122 string
 				templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.JoinStringErrs(calendarMeta(cal))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 837, Col: 55}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 841, Col: 55}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var122))
 				if templ_7745c5c3_Err != nil {
@@ -2488,7 +2488,7 @@ func calSettingsPage(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var123 string
 				templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-edit-%d", cal.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 840, Col: 102}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 844, Col: 102}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var123))
 				if templ_7745c5c3_Err != nil {
@@ -2501,7 +2501,7 @@ func calSettingsPage(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var124 string
 				templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(cal.ID, 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 841, Col: 96}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 845, Col: 96}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var124))
 				if templ_7745c5c3_Err != nil {
@@ -2514,7 +2514,7 @@ func calSettingsPage(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var125 string
 				templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.JoinStringErrs(cal.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 841, Col: 121}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 845, Col: 121}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var125))
 				if templ_7745c5c3_Err != nil {
@@ -2527,7 +2527,7 @@ func calSettingsPage(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var126 string
 				templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.JoinStringErrs("Delete " + cal.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 845, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 849, Col: 43}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var126))
 				if templ_7745c5c3_Err != nil {
@@ -2540,7 +2540,7 @@ func calSettingsPage(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var127 string
 				templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 847, Col: 72}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 851, Col: 72}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var127))
 				if templ_7745c5c3_Err != nil {
@@ -2553,7 +2553,7 @@ func calSettingsPage(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var128 string
 				templ_7745c5c3_Var128, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#cal-%d", cal.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 848, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 852, Col: 52}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var128))
 				if templ_7745c5c3_Err != nil {
@@ -2566,7 +2566,7 @@ func calSettingsPage(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var129 string
 				templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Delete “%s” and everything in it, tasks included?", cal.Name))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 850, Col: 101}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 854, Col: 101}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var129))
 				if templ_7745c5c3_Err != nil {
@@ -2670,7 +2670,7 @@ func calEditDialog(cal Calendar, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var132 templ.SafeURL
 			templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 884, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 888, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var132))
 			if templ_7745c5c3_Err != nil {
@@ -2683,7 +2683,7 @@ func calEditDialog(cal Calendar, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var133 string
 			templ_7745c5c3_Var133, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 886, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 890, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var133))
 			if templ_7745c5c3_Err != nil {
@@ -2696,7 +2696,7 @@ func calEditDialog(cal Calendar, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var134 string
 			templ_7745c5c3_Var134, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-%d-name", cal.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 889, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 893, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var134))
 			if templ_7745c5c3_Err != nil {
@@ -2709,7 +2709,7 @@ func calEditDialog(cal Calendar, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var135 string
 			templ_7745c5c3_Var135, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-%d-name", cal.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 890, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 894, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var135))
 			if templ_7745c5c3_Err != nil {
@@ -2722,7 +2722,7 @@ func calEditDialog(cal Calendar, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var136 string
 			templ_7745c5c3_Var136, templ_7745c5c3_Err = templ.JoinStringErrs(cal.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 890, Col: 116}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 894, Col: 116}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var136))
 			if templ_7745c5c3_Err != nil {
@@ -2735,7 +2735,7 @@ func calEditDialog(cal Calendar, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var137 string
 			templ_7745c5c3_Var137, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-%d-color", cal.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 893, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 897, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var137))
 			if templ_7745c5c3_Err != nil {
@@ -2748,7 +2748,7 @@ func calEditDialog(cal Calendar, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var138 string
 			templ_7745c5c3_Var138, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-%d-color", cal.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 894, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 898, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var138))
 			if templ_7745c5c3_Err != nil {
@@ -2761,7 +2761,7 @@ func calEditDialog(cal Calendar, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var139 string
 			templ_7745c5c3_Var139, templ_7745c5c3_Err = templ.JoinStringErrs(cal.Color)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 894, Col: 120}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 898, Col: 120}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var139))
 			if templ_7745c5c3_Err != nil {
@@ -2774,7 +2774,7 @@ func calEditDialog(cal Calendar, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var140 string
 			templ_7745c5c3_Var140, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-%d-tz", cal.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 898, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 902, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var140))
 			if templ_7745c5c3_Err != nil {
@@ -2787,7 +2787,7 @@ func calEditDialog(cal Calendar, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var141 string
 			templ_7745c5c3_Var141, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-%d-tz", cal.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 899, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 903, Col: 82}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var141))
 			if templ_7745c5c3_Err != nil {
@@ -2800,7 +2800,7 @@ func calEditDialog(cal Calendar, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var142 string
 			templ_7745c5c3_Var142, templ_7745c5c3_Err = templ.JoinStringErrs(cal.Timezone)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 899, Col: 121}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 903, Col: 121}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var142))
 			if templ_7745c5c3_Err != nil {
@@ -2813,7 +2813,7 @@ func calEditDialog(cal Calendar, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var143 string
 			templ_7745c5c3_Var143, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-%d-tz-help", cal.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 899, Col: 219}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 903, Col: 219}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var143))
 			if templ_7745c5c3_Err != nil {
@@ -2826,7 +2826,7 @@ func calEditDialog(cal Calendar, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var144 string
 			templ_7745c5c3_Var144, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-%d-tz-help", cal.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 900, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 904, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var144))
 			if templ_7745c5c3_Err != nil {
@@ -2839,7 +2839,7 @@ func calEditDialog(cal Calendar, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var145 string
 			templ_7745c5c3_Var145, templ_7745c5c3_Err = templ.JoinStringErrs(cal.UID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 902, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 906, Col: 49}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var145))
 			if templ_7745c5c3_Err != nil {
@@ -2892,7 +2892,7 @@ func calFeedsCard(v *settingsView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var147 string
 			templ_7745c5c3_Var147, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("cal-feed-%d", cal.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 921, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 925, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var147))
 			if templ_7745c5c3_Err != nil {
@@ -2905,7 +2905,7 @@ func calFeedsCard(v *settingsView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var148 string
 			templ_7745c5c3_Var148, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues("background:" + cal.Color)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 923, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 927, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var148))
 			if templ_7745c5c3_Err != nil {
@@ -2918,7 +2918,7 @@ func calFeedsCard(v *settingsView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var149 string
 			templ_7745c5c3_Var149, templ_7745c5c3_Err = templ.JoinStringErrs(cal.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 924, Col: 16}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 928, Col: 16}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var149))
 			if templ_7745c5c3_Err != nil {
@@ -2986,7 +2986,7 @@ func calFeedCell(cal Calendar, kind, url, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var151 templ.SafeURL
 			templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(webcalURL(url)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 946, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 950, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var151))
 			if templ_7745c5c3_Err != nil {
@@ -3054,7 +3054,7 @@ func calFeedButton(cal Calendar, kind, action, label, class, csrfToken string) t
 		var templ_7745c5c3_Var153 templ.SafeURL
 		templ_7745c5c3_Var153, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/calendar/calendars/%d/feed", cal.ID)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 959, Col: 100}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 963, Col: 100}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var153))
 		if templ_7745c5c3_Err != nil {
@@ -3067,7 +3067,7 @@ func calFeedButton(cal Calendar, kind, action, label, class, csrfToken string) t
 		var templ_7745c5c3_Var154 string
 		templ_7745c5c3_Var154, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 960, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 964, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var154))
 		if templ_7745c5c3_Err != nil {
@@ -3080,7 +3080,7 @@ func calFeedButton(cal Calendar, kind, action, label, class, csrfToken string) t
 		var templ_7745c5c3_Var155 string
 		templ_7745c5c3_Var155, templ_7745c5c3_Err = templ.JoinStringErrs(kind)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 961, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 965, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var155))
 		if templ_7745c5c3_Err != nil {
@@ -3093,7 +3093,7 @@ func calFeedButton(cal Calendar, kind, action, label, class, csrfToken string) t
 		var templ_7745c5c3_Var156 string
 		templ_7745c5c3_Var156, templ_7745c5c3_Err = templ.JoinStringErrs(action)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 962, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 966, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var156))
 		if templ_7745c5c3_Err != nil {
@@ -3128,7 +3128,7 @@ func calFeedButton(cal Calendar, kind, action, label, class, csrfToken string) t
 		var templ_7745c5c3_Var159 string
 		templ_7745c5c3_Var159, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 963, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 967, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var159))
 		if templ_7745c5c3_Err != nil {
@@ -3170,7 +3170,7 @@ func calSubscriptionsCard(v *settingsView, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var161 string
 		templ_7745c5c3_Var161, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 974, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 978, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var161))
 		if templ_7745c5c3_Err != nil {
@@ -3193,7 +3193,7 @@ func calSubscriptionsCard(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var162 string
 				templ_7745c5c3_Var162, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("sub-%d", sub.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 992, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 996, Col: 43}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var162))
 				if templ_7745c5c3_Err != nil {
@@ -3206,7 +3206,7 @@ func calSubscriptionsCard(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var163 string
 				templ_7745c5c3_Var163, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues("background:" + sub.Color)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 995, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 999, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var163))
 				if templ_7745c5c3_Err != nil {
@@ -3219,7 +3219,7 @@ func calSubscriptionsCard(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var164 string
 				templ_7745c5c3_Var164, templ_7745c5c3_Err = templ.JoinStringErrs(sub.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 996, Col: 18}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1000, Col: 18}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var164))
 				if templ_7745c5c3_Err != nil {
@@ -3232,7 +3232,7 @@ func calSubscriptionsCard(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var165 string
 				templ_7745c5c3_Var165, templ_7745c5c3_Err = templ.JoinStringErrs(sub.Source)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 998, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1002, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var165))
 				if templ_7745c5c3_Err != nil {
@@ -3250,7 +3250,7 @@ func calSubscriptionsCard(v *settingsView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var166 string
 					templ_7745c5c3_Var166, templ_7745c5c3_Err = templ.JoinStringErrs(sub.LastSuccess)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1001, Col: 39}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1005, Col: 39}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var166))
 					if templ_7745c5c3_Err != nil {
@@ -3274,7 +3274,7 @@ func calSubscriptionsCard(v *settingsView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var167 string
 					templ_7745c5c3_Var167, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Failed %d× — %s. Next try %s.", sub.Failures, sub.LastError, sub.NextPoll))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1008, Col: 101}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1012, Col: 101}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var167))
 					if templ_7745c5c3_Err != nil {
@@ -3293,7 +3293,7 @@ func calSubscriptionsCard(v *settingsView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var168 string
 					templ_7745c5c3_Var168, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d entries skipped (not events Cog can read).", sub.Skipped))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1012, Col: 115}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1016, Col: 115}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var168))
 					if templ_7745c5c3_Err != nil {
@@ -3311,7 +3311,7 @@ func calSubscriptionsCard(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var169 templ.SafeURL
 				templ_7745c5c3_Var169, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/calendar/subscriptions/%d/refresh", sub.ID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1015, Col: 112}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1019, Col: 112}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var169))
 				if templ_7745c5c3_Err != nil {
@@ -3324,7 +3324,7 @@ func calSubscriptionsCard(v *settingsView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var170 string
 				templ_7745c5c3_Var170, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1016, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1020, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var170))
 				if templ_7745c5c3_Err != nil {
@@ -3376,7 +3376,7 @@ func calBirthdaysCard(v *settingsView, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var172 string
 		templ_7745c5c3_Var172, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1031, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1035, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var172))
 		if templ_7745c5c3_Err != nil {
@@ -3394,7 +3394,7 @@ func calBirthdaysCard(v *settingsView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var173 string
 			templ_7745c5c3_Var173, templ_7745c5c3_Err = templ.JoinStringErrs(v.Birthdays.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1033, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1037, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var173))
 			if templ_7745c5c3_Err != nil {
@@ -3447,7 +3447,7 @@ func davAccessCard(id, title, intro, davURL, username string) templ.Component {
 		var templ_7745c5c3_Var175 string
 		templ_7745c5c3_Var175, templ_7745c5c3_Err = templ.JoinStringErrs(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1047, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1051, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var175))
 		if templ_7745c5c3_Err != nil {
@@ -3460,7 +3460,7 @@ func davAccessCard(id, title, intro, davURL, username string) templ.Component {
 		var templ_7745c5c3_Var176 string
 		templ_7745c5c3_Var176, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1048, Col: 32}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1052, Col: 32}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var176))
 		if templ_7745c5c3_Err != nil {
@@ -3473,7 +3473,7 @@ func davAccessCard(id, title, intro, davURL, username string) templ.Component {
 		var templ_7745c5c3_Var177 string
 		templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.JoinStringErrs(intro)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1049, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1053, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var177))
 		if templ_7745c5c3_Err != nil {
@@ -3504,7 +3504,7 @@ func davAccessCard(id, title, intro, davURL, username string) templ.Component {
 		var templ_7745c5c3_Var178 string
 		templ_7745c5c3_Var178, templ_7745c5c3_Err = templ.JoinStringErrs(username)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1058, Col: 23}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/pages.templ`, Line: 1062, Col: 23}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var178))
 		if templ_7745c5c3_Err != nil {

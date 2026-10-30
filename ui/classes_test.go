@@ -121,7 +121,7 @@ func TestTemplateClassesAreDefined(t *testing.T) {
 func templateClasses(src string) []string {
 	var out []string
 	add := func(s string) {
-		for _, c := range strings.Fields(s) {
+		for c := range strings.FieldsSeq(s) {
 			// Not a class: a name finished at run time, a URL or a format
 			// string passed to a helper inside the expression.
 			if strings.HasSuffix(c, "-") || strings.ContainsAny(c, "{}()+$'/%") {

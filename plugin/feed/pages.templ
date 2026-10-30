@@ -947,6 +947,7 @@ templ feedItemDetail(sb sidebarData, nav itemNav, ip ItemPlayback, tags []string
 		@feedItemContextBar(nav, true)
 	}
 }
+
 templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken string, nav itemNav) {
 	<div
 		id="feed-player"
@@ -1357,7 +1358,6 @@ templ feedSubscriptionSettingsPage(sb sidebarData, sub Subscription, folders []F
 }
 
 // --- Template helpers ---
-
 
 // itemHref builds an item-detail URL carrying the view context.
 func itemHref(id int64, ctx string) string {
