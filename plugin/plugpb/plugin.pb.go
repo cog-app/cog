@@ -615,7 +615,9 @@ type RegisterWidgetEvent struct {
 	Title    string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
 	Priority int32                  `protobuf:"varint,2,opt,name=priority,proto3" json:"priority,omitempty"`
 	// widget_key used to dispatch RenderWidget calls.
-	WidgetKey     string `protobuf:"bytes,3,opt,name=widget_key,json=widgetKey,proto3" json:"widget_key,omitempty"`
+	WidgetKey string `protobuf:"bytes,3,opt,name=widget_key,json=widgetKey,proto3" json:"widget_key,omitempty"`
+	// url is the app page the widget summarises, linked as "View all".
+	Url           string `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -667,6 +669,13 @@ func (x *RegisterWidgetEvent) GetPriority() int32 {
 func (x *RegisterWidgetEvent) GetWidgetKey() string {
 	if x != nil {
 		return x.WidgetKey
+	}
+	return ""
+}
+
+func (x *RegisterWidgetEvent) GetUrl() string {
+	if x != nil {
+		return x.Url
 	}
 	return ""
 }
@@ -1049,12 +1058,13 @@ const file_plugin_proto_rawDesc = "" +
 	"\x14RegisterNavItemEvent\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12\x12\n" +
-	"\x04icon\x18\x03 \x01(\tR\x04icon\"f\n" +
+	"\x04icon\x18\x03 \x01(\tR\x04icon\"x\n" +
 	"\x13RegisterWidgetEvent\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12\x1a\n" +
 	"\bpriority\x18\x02 \x01(\x05R\bpriority\x12\x1d\n" +
 	"\n" +
-	"widget_key\x18\x03 \x01(\tR\twidgetKey\"\xc1\x03\n" +
+	"widget_key\x18\x03 \x01(\tR\twidgetKey\x12\x10\n" +
+	"\x03url\x18\x04 \x01(\tR\x03url\"\xc1\x03\n" +
 	"\vHTTPRequest\x12\x1b\n" +
 	"\troute_key\x18\x01 \x01(\tR\brouteKey\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x12\n" +

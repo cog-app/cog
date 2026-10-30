@@ -288,7 +288,15 @@
 
   function sidebarLabel(sb) {
     var active = sb.querySelector(".sidebar-item.active");
-    var text = active ? active.textContent.replace(/\s+/g, " ").trim() : "";
+    var text = "";
+    if (active) {
+      // The item's name only: a count or badge beside it is not part of it.
+      var name = active.cloneNode(true);
+      name.querySelectorAll(".count, .badge").forEach(function (el) {
+        el.remove();
+      });
+      text = name.textContent.replace(/\s+/g, " ").trim();
+    }
     return text || "Menu";
   }
 

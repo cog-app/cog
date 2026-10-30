@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/ui"
 	"log/slog"
 	"net/http"
 	"net/smtp"
@@ -38,7 +39,7 @@ func (h *adminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminUsersPage(pd, h.p.Users.List(), flashMsg, flashKind).Render(r.Context(), w)
+	ui.Render(w, r, adminUsersPage(pd, h.p.Users.List(), flashMsg, flashKind))
 }
 
 func (h *adminHandler) NewUserForm(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +121,7 @@ func (h *adminHandler) EditUserForm(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminUserEditPage(pd, u, flashMsg, flashKind).Render(r.Context(), w)
+	ui.Render(w, r, adminUserEditPage(pd, u, flashMsg, flashKind))
 }
 
 func (h *adminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -215,7 +216,7 @@ func (h *adminHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
-	adminGroupsPage(pd, groups, flashMsg, flashKind).Render(r.Context(), w)
+	ui.Render(w, r, adminGroupsPage(pd, groups, flashMsg, flashKind))
 }
 
 func (h *adminHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
@@ -258,7 +259,7 @@ func (h *adminHandler) EditGroupForm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
-	adminGroupDetailPage(pd, d).Render(r.Context(), w)
+	ui.Render(w, r, adminGroupDetailPage(pd, d))
 }
 
 func (h *adminHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
@@ -302,7 +303,7 @@ func (h *adminHandler) ShowLogs(w http.ResponseWriter, r *http.Request) {
 		entries = h.p.LogBuffer.Entries()
 		sources = h.p.LogBuffer.Sources()
 	}
-	adminLogsPage(pd, entries, sources).Render(r.Context(), w)
+	ui.Render(w, r, adminLogsPage(pd, entries, sources))
 }
 
 func (h *adminHandler) LogEntries(w http.ResponseWriter, r *http.Request) {
@@ -311,7 +312,7 @@ func (h *adminHandler) LogEntries(w http.ResponseWriter, r *http.Request) {
 		entries = h.p.LogBuffer.Entries()
 	}
 	entries = filterLogEntries(entries, r)
-	logEntriesPartial(entries).Render(r.Context(), w)
+	ui.Render(w, r, logEntriesPartial(entries))
 }
 
 func filterLogEntries(entries []logbuf.Entry, r *http.Request) []logbuf.Entry {
@@ -392,7 +393,7 @@ func (h *adminHandler) ListPlugins(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-	adminPluginsPage(pd, plugins).Render(r.Context(), w)
+	ui.Render(w, r, adminPluginsPage(pd, plugins))
 }
 
 func (h *adminHandler) TogglePlugin(w http.ResponseWriter, r *http.Request) {
@@ -523,7 +524,7 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), strconv.Itoa(tombstoneDays), env, status, flashMsg, flashKind, mfaRequired).Render(r.Context(), w)
+	ui.Render(w, r, adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), strconv.Itoa(tombstoneDays), env, status, flashMsg, flashKind, mfaRequired))
 }
 
 func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -583,7 +584,7 @@ func (h *adminHandler) ShowEmail(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminEmailPage(pd, smtpData, overrideHTML, overrideText, email.DefaultHTML(), email.DefaultText(), flashMsg, flashKind).Render(r.Context(), w)
+	ui.Render(w, r, adminEmailPage(pd, smtpData, overrideHTML, overrideText, email.DefaultHTML(), email.DefaultText(), flashMsg, flashKind))
 }
 
 func (h *adminHandler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
@@ -667,27 +668,27 @@ func (h *adminHandler) PreviewEmail(w http.ResponseWriter, r *http.Request) {
 func (h *adminHandler) TestSMTP(w http.ResponseWriter, r *http.Request) {
 	sender := h.p.EmailSender()
 	if sender == nil {
-		smtpTestAlert("error", "SMTP not configured", "Save the SMTP host and from address first.").Render(r.Context(), w)
+		ui.Render(w, r, smtpTestAlert("error", "SMTP not configured", "Save the SMTP host and from address first."))
 		return
 	}
 	addr := fmt.Sprintf("%s:%d", sender.Host, sender.Port)
 	c, err := smtp.Dial(addr)
 	if err != nil {
-		smtpTestAlert("error", "Connection failed", err.Error()).Render(r.Context(), w)
+		ui.Render(w, r, smtpTestAlert("error", "Connection failed", err.Error()))
 		return
 	}
 	defer c.Close()
 	if err := c.Hello("localhost"); err != nil {
-		smtpTestAlert("error", "EHLO failed", err.Error()).Render(r.Context(), w)
+		ui.Render(w, r, smtpTestAlert("error", "EHLO failed", err.Error()))
 		return
 	}
 	if sender.User != "" {
 		auth := smtp.PlainAuth("", sender.User, sender.Pass, sender.Host)
 		if err := c.Auth(auth); err != nil {
-			smtpTestAlert("error", "Authentication failed", err.Error()).Render(r.Context(), w)
+			ui.Render(w, r, smtpTestAlert("error", "Authentication failed", err.Error()))
 			return
 		}
 	}
 	c.Quit()
-	smtpTestAlert("success", "Connection successful", fmt.Sprintf("Connected to %s and authenticated.", addr)).Render(r.Context(), w)
+	ui.Render(w, r, smtpTestAlert("success", "Connection successful", fmt.Sprintf("Connected to %s and authenticated.", addr)))
 }

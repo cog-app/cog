@@ -25,7 +25,7 @@ func (h *adminVolumeHandler) ListVolumes(w http.ResponseWriter, r *http.Request)
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminVolumesPage(pd, h.p.Volumes.List(), flashMsg, flashKind).Render(r.Context(), w)
+	ui.Render(w, r, adminVolumesPage(pd, h.p.Volumes.List(), flashMsg, flashKind))
 }
 
 func (h *adminVolumeHandler) NewVolumeForm(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +35,7 @@ func (h *adminVolumeHandler) NewVolumeForm(w http.ResponseWriter, r *http.Reques
 	if flash != nil {
 		errMsg = flash.Message
 	}
-	adminVolumeNewPage(pd, errMsg).Render(r.Context(), w)
+	ui.Render(w, r, adminVolumeNewPage(pd, errMsg))
 }
 
 func (h *adminVolumeHandler) CreateVolume(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +114,7 @@ func (h *adminVolumeHandler) EditVolumeForm(w http.ResponseWriter, r *http.Reque
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminVolumeEditPage(pd, v, fd, v.IsDefault(), shares, defaultPermissionLevels(), quotas, flashMsg, flashKind).Render(r.Context(), w)
+	ui.Render(w, r, adminVolumeEditPage(pd, v, fd, v.IsDefault(), shares, defaultPermissionLevels(), quotas, flashMsg, flashKind))
 }
 
 func (h *adminVolumeHandler) UpdateVolume(w http.ResponseWriter, r *http.Request) {
@@ -234,7 +234,7 @@ func (h *adminVolumeHandler) DirSuggest(w http.ResponseWriter, r *http.Request) 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		w.WriteHeader(200)
-		ui.PickerResults(nil).Render(r.Context(), w)
+		ui.Render(w, r, ui.PickerResults(nil))
 		return
 	}
 
@@ -260,7 +260,7 @@ func (h *adminVolumeHandler) DirSuggest(w http.ResponseWriter, r *http.Request) 
 			break
 		}
 	}
-	ui.PickerResults(items).Render(r.Context(), w)
+	ui.Render(w, r, ui.PickerResults(items))
 }
 
 // buildVolumeURIAndConfig parses form fields for connection type and returns the URI and config JSON.
@@ -420,7 +420,7 @@ func (h *shareHandler) SharePanelAdmin(w http.ResponseWriter, r *http.Request) {
 	if panelID == "" {
 		panelID = "share-panel"
 	}
-	ui.SharePanel(panelID, resType, resID, csrf, shares, levelChoices).Render(r.Context(), w)
+	ui.Render(w, r, ui.SharePanel(panelID, resType, resID, csrf, shares, levelChoices))
 }
 
 // CreateShareAdmin handles POST from admin share panel. Uses a system admin as owner.

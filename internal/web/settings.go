@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"git.duckfam.us/jj-software/cog/ui"
 	"image/png"
 	"io"
 	"net/http"
@@ -88,7 +89,7 @@ func (h *settingsHandler) CreateAppPassword(w http.ResponseWriter, r *http.Reque
 	if name == "" {
 		if htmx {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			appPasswordErrorFragment("App password name is required.").Render(r.Context(), w)
+			ui.Render(w, r, appPasswordErrorFragment("App password name is required."))
 			return
 		}
 		setFlash(w, "error", "App password name is required.")
@@ -100,7 +101,7 @@ func (h *settingsHandler) CreateAppPassword(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		if htmx {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			appPasswordErrorFragment("Failed to create app password: "+err.Error()).Render(r.Context(), w)
+			ui.Render(w, r, appPasswordErrorFragment("Failed to create app password: "+err.Error()))
 			return
 		}
 		setFlash(w, "error", "Failed to create app password: "+err.Error())

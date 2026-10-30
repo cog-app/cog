@@ -185,7 +185,7 @@ func (h *loginHandler) ShowMFA(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		errMsg = flash.Message
 	}
-	ui.MFAPage(errMsg, next, u.MFAMethod).Render(r.Context(), w)
+	ui.Render(w, r, ui.MFAPage(errMsg, next, u.MFAMethod))
 }
 
 func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
@@ -367,7 +367,7 @@ func (h *loginHandler) ShowForgotPassword(w http.ResponseWriter, r *http.Request
 			errMsg = flash.Message
 		}
 	}
-	ui.ForgotPasswordPage(errMsg, successMsg).Render(r.Context(), w)
+	ui.Render(w, r, ui.ForgotPasswordPage(errMsg, successMsg))
 }
 
 func (h *loginHandler) HandleForgotPassword(w http.ResponseWriter, r *http.Request) {
@@ -445,7 +445,7 @@ func (h *loginHandler) ShowResetPassword(w http.ResponseWriter, r *http.Request)
 	if flash != nil {
 		errMsg = flash.Message
 	}
-	ui.ResetPasswordPage(errMsg, token).Render(r.Context(), w)
+	ui.Render(w, r, ui.ResetPasswordPage(errMsg, token))
 }
 
 func (h *loginHandler) HandleResetPassword(w http.ResponseWriter, r *http.Request) {

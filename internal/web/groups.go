@@ -84,7 +84,7 @@ func (h *groupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	settingsGroupsPage(pd, ownedGroups, memberGroups, flashMsg, flashKind).Render(r.Context(), w)
+	ui.Render(w, r, settingsGroupsPage(pd, ownedGroups, memberGroups, flashMsg, flashKind))
 }
 
 // ShowGroup shows group detail at GET /settings/groups/{id}.
@@ -168,7 +168,7 @@ func (h *groupHandler) renderGroupDetail(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
-	settingsGroupDetailPage(pd, d).Render(r.Context(), w)
+	ui.Render(w, r, settingsGroupDetailPage(pd, d))
 }
 
 // CreateGroup handles POST /settings/groups.

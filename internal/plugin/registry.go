@@ -823,7 +823,7 @@ func (pr *pluginRegistrar) shellMiddleware(handler http.Handler) http.Handler {
 			w.Header()[k] = v
 		}
 
-		ui.Shell(pd, templ.Raw(rec.Body.String())).Render(r.Context(), w)
+		ui.Render(w, r, ui.Shell(pd, templ.Raw(rec.Body.String())))
 	})
 }
 
