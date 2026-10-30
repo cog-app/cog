@@ -242,21 +242,50 @@ func (b *Browser) WaitVisible(t testing.TB, sel string) {
 	}
 }
 
-// WaitNotVisible waits for the element to disappear.
+// WaitNotVisible waits until no element matching sel (CSS, or XPath when it
+// starts with //) is visible: every match is hidden, or none is left.
 func (b *Browser) WaitNotVisible(t testing.TB, sel string) {
 	t.Helper()
-	p := b.tp()
-	if len(sel) > 1 && sel[:2] == "//" {
-		err := p.WaitElementsMoreThan(sel, -1) // no direct "wait not present" for xpath
-		_ = err
-		return
+	if err := b.noneVisible(sel); err != nil {
+		t.Fatalf("webtest: wait not visible %s: %v", sel, err)
 	}
-	// Poll until element is gone or invisible.
-	if err := rod.Try(func() {
-		p.MustElement(sel).MustWaitInvisible()
-	}); err != nil {
-		// Element not found = already gone, that's fine.
-		return
+}
+
+// noneVisible polls until nothing matching sel is visible. It used to wait
+// for a match to exist and then for it to hide, so an element that was
+// already removed held the test for the whole action timeout.
+func (b *Browser) noneVisible(sel string) error {
+	deadline := time.Now().Add(b.actionTimeout())
+	xpath := len(sel) > 1 && sel[:2] == "//"
+	for {
+		var (
+			els rod.Elements
+			err error
+		)
+		if xpath {
+			els, err = b.page.ElementsX(sel)
+		} else {
+			els, err = b.page.Elements(sel)
+		}
+		visible := 0
+		if err == nil {
+			for _, el := range els {
+				// An element detached since the query is no longer visible.
+				if v, verr := el.Visible(); verr == nil && v {
+					visible++
+				}
+			}
+		}
+		if err == nil && visible == 0 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			if err != nil {
+				return fmt.Errorf("find %s: %w", sel, err)
+			}
+			return fmt.Errorf("%d elements matching %s still visible: %w", visible, sel, context.DeadlineExceeded)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 

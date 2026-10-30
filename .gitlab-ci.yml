@@ -28,7 +28,15 @@ test:
     # CLAUDE.md) while other packages hold them, and the wait counts against
     # go test's per-package timeout: internal/web needs about ten minutes of
     # wall time here, which is the default limit.
+    - nproc
     - CGO_ENABLED=1 go test -timeout 30m ./...
+  artifacts:
+    # A failing snapshot writes <TestName>.actual.html and .png beside its
+    # golden; without them a CI-only difference can't be read.
+    when: on_failure
+    expire_in: 1 week
+    paths:
+      - "**/testdata/snapshots/*.actual.*"
 
 build:
   stage: build
