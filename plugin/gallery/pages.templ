@@ -419,7 +419,7 @@ templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face, csrfT
 							style="display:flex;gap:4px"
 						>
 							<input type="hidden" name="csrf_token" value={ csrfToken }/>
-							<input type="text" name="tag_name" placeholder="Add tag..." class="input input-sm" style="flex:1"/>
+							<input type="text" name="tag_name" placeholder="Add tag..." class="form-control form-control-sm" style="flex:1"/>
 							<button type="submit" class="btn btn-sm">Add</button>
 						</form>
 					}
@@ -926,7 +926,7 @@ templ settingsPage(db *sql.DB, total int, csrfToken string) {
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
 					<div class="form-group" style="margin-bottom:0.75rem">
 						<label>Folder Patterns</label>
-						<textarea name="folders" class="input" rows="4" required placeholder="Photos/">{ SettingScanFolders.MustGet(db) }</textarea>
+						<textarea name="folders" class="form-control" rows="4" required placeholder="Photos/">{ SettingScanFolders.MustGet(db) }</textarea>
 					</div>
 					<div style="display:flex;gap:8px;align-items:center">
 						<button type="submit" class="btn btn-primary btn-sm">Save</button>
@@ -947,7 +947,7 @@ templ settingsPage(db *sql.DB, total int, csrfToken string) {
 						<input
 							type="text"
 							name="pattern"
-							class="input"
+							class="form-control"
 							value={ GetSetting(db, "rename_pattern", "{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}") }
 							placeholder="{{.Year}}/{{.Month}}-{{.Day}}/{{.Original}}{{.Ext}}"
 						/>
@@ -992,7 +992,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			<input type="hidden" name="_section" value="tags"/>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Backend</label>
-				<select name="tag_backend" class="input">
+				<select name="tag_backend" class="form-control">
 					<option value="none" selected?={ GetSetting(db, "tag_backend", "none") == "none" }>None (disabled)</option>
 					<option value="onnx" selected?={ GetSetting(db, "tag_backend", "none") == "onnx" }>ONNX (local)</option>
 					<option value="ollama" selected?={ GetSetting(db, "tag_backend", "none") == "ollama" }>Ollama</option>
@@ -1001,7 +1001,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem" id="tag-model-group">
 				<label>ONNX Tag Model</label>
-				<select name="tag_model" class="input">
+				<select name="tag_model" class="form-control">
 					<option value="joytag" selected?={ GetSetting(db, "tag_model", "joytag") == "joytag" }>JoyTag (multi-label, photos)</option>
 					<option value="wd14" selected?={ GetSetting(db, "tag_model", "joytag") == "wd14" }>WD14 (multi-label, general)</option>
 					<option value="mobilenet" selected?={ GetSetting(db, "tag_model", "joytag") == "mobilenet" }>MobileNet (ImageNet, legacy)</option>
@@ -1010,7 +1010,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Minimum Confidence</label>
-				<input type="number" name="tag_min_confidence" class="input" value={ GetSetting(db, "tag_min_confidence", "0.5") } step="0.05" min="0" max="1"/>
+				<input type="number" name="tag_min_confidence" class="form-control" value={ GetSetting(db, "tag_min_confidence", "0.5") } step="0.05" min="0" max="1"/>
 				<small class="text-muted">Tags below this confidence are discarded. Default: 0.5</small>
 			</div>
 			<button type="submit" class="btn btn-primary btn-sm">Save</button>
@@ -1033,7 +1033,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			<input type="hidden" name="_section" value="faces"/>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Backend</label>
-				<select name="face_backend" class="input">
+				<select name="face_backend" class="form-control">
 					<option value="none" selected?={ GetSetting(db, "face_backend", "none") == "none" }>None (disabled)</option>
 					<option value="onnx" selected?={ GetSetting(db, "face_backend", "none") == "onnx" }>ONNX (SCRFD + ArcFace)</option>
 					<option value="pigo" selected?={ GetSetting(db, "face_backend", "none") == "pigo" }>Pigo (detection only, no embeddings)</option>
@@ -1041,12 +1041,12 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Minimum Confidence</label>
-				<input type="number" name="face_min_confidence" class="input" value={ GetSetting(db, "face_min_confidence", "0.7") } step="0.05" min="0" max="1"/>
+				<input type="number" name="face_min_confidence" class="form-control" value={ GetSetting(db, "face_min_confidence", "0.7") } step="0.05" min="0" max="1"/>
 				<small class="text-muted">Faces below this confidence are discarded. Default: 0.7</small>
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Cluster Threshold</label>
-				<input type="number" name="cluster_threshold" class="input" value={ GetSetting(db, "cluster_threshold", "0.35") } step="0.01" min="0.01" max="1.0"/>
+				<input type="number" name="cluster_threshold" class="form-control" value={ GetSetting(db, "cluster_threshold", "0.35") } step="0.01" min="0.01" max="1.0"/>
 				<small class="text-muted">Cosine distance threshold for grouping faces into people (lower = stricter). Default: 0.35</small>
 			</div>
 			<button type="submit" class="btn btn-primary btn-sm">Save</button>
@@ -1064,7 +1064,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Algorithm</label>
-				<select name="duplicate_algorithm" class="input">
+				<select name="duplicate_algorithm" class="form-control">
 					<option value="difference" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "difference" }>Difference Hash</option>
 					<option value="average" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "average" }>Average Hash</option>
 					<option value="phash" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "phash" }>Perceptual Hash (pHash)</option>
@@ -1074,7 +1074,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Distance Threshold</label>
-				<input type="number" name="duplicate_distance" class="input" value={ GetSetting(db, "duplicate_distance", "5") } min="0" max="64"/>
+				<input type="number" name="duplicate_distance" class="form-control" value={ GetSetting(db, "duplicate_distance", "5") } min="0" max="64"/>
 				<small class="text-muted">Maximum Hamming distance to consider images duplicates (lower = stricter). Default: 5</small>
 			</div>
 			<button type="submit" class="btn btn-primary btn-sm">Save</button>
@@ -1120,24 +1120,24 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			<p class="text-muted" style="margin-bottom:0.75rem;font-size:0.85rem">Shared connection settings for tag classification and face detection backends.</p>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>ONNX Runtime Library Path</label>
-				<input type="text" name="onnx_library_path" class="input" value={ GetSetting(db, "onnx_library_path", "") } placeholder="/usr/lib/libonnxruntime.so"/>
+				<input type="text" name="onnx_library_path" class="form-control" value={ GetSetting(db, "onnx_library_path", "") } placeholder="/usr/lib/libonnxruntime.so"/>
 				<small class="text-muted">Leave blank to auto-detect.</small>
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>ONNX Models Directory</label>
-				<input type="text" name="onnx_models_dir" class="input" value={ GetSetting(db, "onnx_models_dir", "") } placeholder="(auto: data dir)"/>
+				<input type="text" name="onnx_models_dir" class="form-control" value={ GetSetting(db, "onnx_models_dir", "") } placeholder="(auto: data dir)"/>
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Ollama / OpenAI URL</label>
-				<input type="text" name="recognition_url" class="input" value={ GetSetting(db, "recognition_url", "") } placeholder="http://localhost:11434"/>
+				<input type="text" name="recognition_url" class="form-control" value={ GetSetting(db, "recognition_url", "") } placeholder="http://localhost:11434"/>
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>API Key</label>
-				<input type="password" name="recognition_api_key" class="input" value={ GetSetting(db, "recognition_api_key", "") } placeholder="sk-..."/>
+				<input type="password" name="recognition_api_key" class="form-control" value={ GetSetting(db, "recognition_api_key", "") } placeholder="sk-..."/>
 			</div>
 			<div class="form-group" style="margin-bottom:0.75rem">
 				<label>Model</label>
-				<input type="text" name="recognition_model" class="input" value={ GetSetting(db, "recognition_model", "") } placeholder="llava:13b"/>
+				<input type="text" name="recognition_model" class="form-control" value={ GetSetting(db, "recognition_model", "") } placeholder="llava:13b"/>
 			</div>
 			<button type="submit" class="btn btn-primary btn-sm">Save</button>
 		</form>

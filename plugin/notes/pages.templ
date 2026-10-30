@@ -129,7 +129,7 @@ templ noteViewPage(sb sidebarData, note *Note, renderedHTML string, csrfToken st
 				Last modified: { formatTime(note.Modified) }
 			</div>
 			@ui.Card("") {
-				<div class="note-content">
+				<div class="note-content prose">
 					@templ.Raw(renderedHTML)
 				</div>
 			}

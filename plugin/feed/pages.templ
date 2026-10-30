@@ -26,7 +26,7 @@ type sidebarData struct {
 
 templ feedSidebar(sb sidebarData) {
 	<nav class="sidebar" id="feed-sidebar">
-		<label class="sidebar-hide-empty" style="display:flex;align-items:center;gap:0.4rem;padding:0.25rem 0.5rem;font-size:0.8rem;color:var(--color-muted)">
+		<label class="sidebar-hide-empty" style="display:flex;align-items:center;gap:0.4rem;padding:0.25rem 0.5rem;font-size:0.8rem;color:var(--color-text-muted)">
 			<input
 				type="checkbox"
 				name="hide_empty"
@@ -84,7 +84,7 @@ templ feedSidebar(sb sidebarData) {
 		}
 		if len(sb.Tags) > 0 {
 			<div class="sidebar-divider"></div>
-			<span class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-muted)">Tags</span>
+			<span class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-text-muted)">Tags</span>
 			for _, tag := range sb.Tags {
 				<a
 					href={ templ.SafeURL("/apps/feed/tag/" + url.PathEscape(tag)) }
@@ -95,7 +95,7 @@ templ feedSidebar(sb sidebarData) {
 		}
 		if len(sb.Playlists) > 0 {
 			<div class="sidebar-divider"></div>
-			<span class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-muted)">Playlists</span>
+			<span class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-text-muted)">Playlists</span>
 			for _, pl := range sb.Playlists {
 				<a
 					href={ templ.SafeURL(fmt.Sprintf("/apps/feed/playlists/%d", pl.ID)) }
@@ -105,7 +105,7 @@ templ feedSidebar(sb sidebarData) {
 			}
 		}
 		<hr class="sidebar-divider"/>
-		<div class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-muted);padding:0.25rem 0.5rem">Settings</div>
+		<div class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-text-muted);padding:0.25rem 0.5rem">Settings</div>
 		<a href="/apps/feed/settings/subscriptions" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/settings/subscriptions") } style="padding-left:1.5rem;font-size:0.9rem">Subscriptions</a>
 		<a href="/apps/feed/settings/filters" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/settings/filters") } style="padding-left:1.5rem;font-size:0.9rem">Filters</a>
 		<a href="/apps/feed/settings/playlists" class={ feedSidebarClass(sb.ActivePath, "/apps/feed/settings/playlists") } style="padding-left:1.5rem;font-size:0.9rem">Playlists</a>
@@ -167,7 +167,7 @@ templ feedIndexPage(sb sidebarData, items []ItemWithSubscription, q string, csrf
 							<input class="form-control" type="search" name="q" value={ q } placeholder="Search feeds…" style="max-width:280px" title="Search — see ▾ for syntax"/>
 							<button class="btn btn-outline btn-sm" type="submit">Go</button>
 						</div>
-						<details class="feed-search-help" style="margin-top:0.25rem;font-size:0.8rem;color:var(--color-muted)">
+						<details class="feed-search-help" style="margin-top:0.25rem;font-size:0.8rem;color:var(--color-text-muted)">
 							<summary style="cursor:pointer;user-select:none">Search help</summary>
 							<div style="margin-top:0.4rem;line-height:1.6;background:var(--color-bg);border:1px solid var(--color-border);border-radius:4px;padding:0.5rem 0.75rem">
 								<code>term</code> — title / author / content
@@ -827,7 +827,7 @@ templ feedItemDetail(sb sidebarData, nav itemNav, ip ItemPlayback, tags []string
 				</div>
 				@feedItemTagRow(ip.ID, tags, csrfToken)
 				if ip.Type == "text" {
-					<div class="note-content">
+					<div class="note-content prose">
 						@templ.Raw(ip.ContentHTML)
 					</div>
 				} else {
@@ -963,7 +963,7 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 			}
 			.feed-player .player-played {
 				width: 0;
-				background: var(--accent, #4a9eff);
+				background: var(--color-primary);
 			}
 			.feed-player .player-handle {
 				position: absolute;
@@ -1011,8 +1011,8 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 				right: 0;
 				bottom: calc(100% + 4px);
 				z-index: 10;
-				background: var(--card-bg, #fff);
-				border: 1px solid var(--border, #ddd);
+				background: var(--color-surface);
+				border: 1px solid var(--color-border);
 				border-radius: 8px;
 				padding: 0.5rem;
 				min-width: 180px;
@@ -1041,7 +1041,7 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 				border-radius: 4px;
 			}
 			.feed-player .player-gear-toggle[aria-pressed="true"] {
-				background: var(--accent, #4a9eff);
+				background: var(--color-primary);
 				color: #fff;
 			}
 			.feed-player.controls-hidden .player-bar,
@@ -1174,7 +1174,7 @@ templ feedHistoryPage(sb sidebarData, items []PlayedItem, csrfToken string) {
 				@ui.Card("") {
 					<table style="width:100%;border-collapse:collapse">
 						<thead>
-							<tr style="font-size:0.85rem;color:var(--color-muted);text-align:left">
+							<tr style="font-size:0.85rem;color:var(--color-text-muted);text-align:left">
 								<th style="padding:0.4rem 0.5rem">Title</th>
 								<th style="padding:0.4rem 0.5rem">Feed</th>
 								<th style="padding:0.4rem 0.5rem">Progress</th>
@@ -1187,7 +1187,7 @@ templ feedHistoryPage(sb sidebarData, items []PlayedItem, csrfToken string) {
 									<td style="padding:0.5rem">
 										<a href={ templ.SafeURL(fmt.Sprintf("/apps/feed/items/%d", pi.ID)) }>{ pi.Title }</a>
 									</td>
-									<td style="padding:0.5rem;font-size:0.85rem;color:var(--color-muted)">{ pi.SubscriptionTitle }</td>
+									<td style="padding:0.5rem;font-size:0.85rem;color:var(--color-text-muted)">{ pi.SubscriptionTitle }</td>
 									<td style="padding:0.5rem;font-size:0.85rem">
 										if pi.Completed {
 											<span class="badge" style="background:var(--color-success,#22c55e)">Done</span>
@@ -1197,7 +1197,7 @@ templ feedHistoryPage(sb sidebarData, items []PlayedItem, csrfToken string) {
 											<span class="text-muted">—</span>
 										}
 									</td>
-									<td style="padding:0.5rem;font-size:0.85rem;color:var(--color-muted)">{ feedFormatTime(pi.LastPlayedAt) }</td>
+									<td style="padding:0.5rem;font-size:0.85rem;color:var(--color-text-muted)">{ feedFormatTime(pi.LastPlayedAt) }</td>
 								</tr>
 							}
 						</tbody>

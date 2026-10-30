@@ -14,7 +14,7 @@ templ contactsSidebar(books []AddressBook, activePath string) {
 		<a href="/apps/contacts/" class={ sidebarClass(activePath, "/apps/contacts/") }>All Contacts</a>
 		<a href="/apps/contacts/starred" class={ sidebarClass(activePath, "/apps/contacts/starred") }>★ Starred</a>
 		<div class="sidebar-divider"></div>
-		<div style="padding:0.25rem 0.75rem;font-size:0.8rem;font-weight:600;text-transform:uppercase;color:var(--color-muted, #888)">Address Books</div>
+		<div style="padding:0.25rem 0.75rem;font-size:0.8rem;font-weight:600;text-transform:uppercase;color:var(--color-text-muted, #888)">Address Books</div>
 		for _, book := range books {
 			<a
 				href={ templ.SafeURL(fmt.Sprintf("/apps/contacts/?book=%d", book.ID)) }
@@ -177,7 +177,7 @@ templ contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken str
 		}
 		.typed-label {
 			font-size: 0.75rem;
-			color: var(--color-muted, #888);
+			color: var(--color-text-muted, #888);
 			text-transform: uppercase;
 		}
 	</style>
