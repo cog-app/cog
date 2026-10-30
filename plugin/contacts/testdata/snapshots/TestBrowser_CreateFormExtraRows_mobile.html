@@ -1,0 +1,550 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport" />
+    <title>
+      Contacts — Cog
+    </title>
+    <link href="/static/style.css?v=896ce6a8a2ed" rel="stylesheet" />
+    <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xNyAyMXYtMmE0IDQgMCAwIDAtNC00SDVhNCA0IDAgMCAwLTQgNHYyIj48L3BhdGg+PGNpcmNsZSBjeD0iOSIgY3k9IjciIHI9IjQiPjwvY2lyY2xlPjxwYXRoIGQ9Ik0yMyAyMXYtMmE0IDQgMCAwIDAtMy0zLjg3Ij48L3BhdGg+PHBhdGggZD0iTTE2IDMuMTNhNCA0IDAgMCAxIDAgNy43NSI+PC9wYXRoPjwvc3ZnPg==" rel="icon" type="image/svg+xml" />
+    <style>
+      .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
+  <body hx-headers="{\"X-CSRF-Token\":\"«hex»\"}">
+    <nav class="navbar navbar--icon-only" data-nav-count="3">
+      <a class="navbar-brand" href="/">
+        <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" style="vertical-align:middle" viewBox="0 0 24 24" width="20">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        <span class="brand-text">
+          Cog
+        </span>
+      </a>
+      <ul class="navbar-nav">
+        <li>
+          <a class="active" href="/apps/contacts" title="Contacts">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span class="nav-label">
+              Contacts
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="/" title="Dashboard">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            <span class="nav-label">
+              Dashboard
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="/apps/files" title="Files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <span class="nav-label">
+              Files
+            </span>
+          </a>
+        </li>
+      </ul>
+      <div class="navbar-apps-dropdown dropdown" tabindex="0">
+        <button class="apps-toggle" type="button">
+          <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+            <rect height="7" width="7" x="3" y="3" />
+            <rect height="7" width="7" x="14" y="3" />
+            <rect height="7" width="7" x="3" y="14" />
+            <rect height="7" width="7" x="14" y="14" />
+          </svg>
+        </button>
+        <div class="dropdown-menu apps-menu">
+          <a class="active" href="/apps/contacts">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            Contacts
+          </a>
+          <a class="" href="/">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            Dashboard
+          </a>
+          <a class="" href="/apps/files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            Files
+          </a>
+        </div>
+      </div>
+      <div class="navbar-search">
+        <input autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)..." type="search" />
+        <div class="search-results" id="search-results" />
+      </div>
+      <div class="navbar-end">
+        <div id="notif-bell" onclick="toggleNotifPanel()" style="position:relative;cursor:pointer;padding:0 0.5rem;display:none" title="Notifications">
+          <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          <span class="notif-badge" id="notif-badge" style="display:none" />
+        </div>
+        <div class="dropdown-menu" id="notif-panel" style="display:none;position:absolute;right:4rem;top:3rem;min-width:280px;max-height:300px;overflow:auto;z-index:100" />
+        <div class="dropdown" tabindex="0">
+          <button class="dropdown-toggle" type="button">
+            <img class="avatar-sm" src="/avatar/«hex»" />
+            <span class="dropdown-username">
+              newform
+            </span>
+            <span class="dropdown-caret">
+              ▾
+            </span>
+          </button>
+          <div class="dropdown-menu">
+            <a class="" href="/settings/profile">
+              Profile
+            </a>
+            <a class="" href="/settings/security">
+              Security
+            </a>
+            <a class="" href="/settings/storage">
+              Storage
+            </a>
+            <a class="" href="/settings/groups">
+              Groups
+            </a>
+            <div class="dropdown-divider" />
+            <form action="/logout" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <button onmousedown="this.closest('form').submit()" type="submit">
+                Log out
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <main class="content" data-plugin="contacts">
+      <div class="sidebar-layout">
+        <nav class="sidebar">
+          <a class="sidebar-item active" href="/apps/contacts/">
+            All Contacts
+          </a>
+          <a class="sidebar-item" href="/apps/contacts/starred">
+            ★ Starred
+          </a>
+          <div class="sidebar-divider" />
+          <div style="padding:0.25rem 0.75rem;font-size:0.8rem;font-weight:600;text-transform:uppercase;color:var(--color-muted, #888)">
+            Address Books
+          </div>
+          <a class="sidebar-item" href="/apps/contacts/?book=1" style="display:flex;align-items:center;gap:0.5rem">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0082c9;" />
+            Contacts
+          </a>
+          <a class="sidebar-item" href="/apps/contacts/?book=2" style="display:flex;align-items:center;gap:0.5rem">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e64a19;" />
+            Work
+          </a>
+          <div class="sidebar-divider" />
+          <a class="sidebar-item" href="/apps/contacts/settings">
+            Settings
+          </a>
+        </nav>
+        <div class="sidebar-content">
+          <div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
+            <h1 style="margin:0">
+              Contacts
+            </h1>
+            <button class="btn btn-primary" onclick="document.getElementById('create-contact-modal').style.display='flex'">
+              New Contact
+            </button>
+          </div>
+          <div id="contacts-list">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th />
+                  <th>
+                    Name
+                  </th>
+                  <th class="hide-mobile">
+                    Email
+                  </th>
+                  <th class="hide-mobile">
+                    Phone
+                  </th>
+                  <th class="hide-mobile">
+                    Org
+                  </th>
+                  <th>
+                    Book
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr id="contact-1" onclick="showContactDetail(1)" style="cursor:pointer">
+                  <td>
+                    <span class="avatar-initials" style="background:#0082c9;">
+                      AS
+                    </span>
+                  </td>
+                  <td style="font-weight:500">
+                    Alice Smith
+                  </td>
+                  <td class="hide-mobile">
+                    alice@example.com
+                  </td>
+                  <td class="hide-mobile">
+                    +1-555-0101
+                  </td>
+                  <td class="hide-mobile" />
+                  <td>
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#0082c9;vertical-align:middle;margin-right:4px;" />
+                    Contacts
+                  </td>
+                </tr>
+                <tr id="contact-2" onclick="showContactDetail(2)" style="cursor:pointer">
+                  <td>
+                    <span class="avatar-initials" style="background:#0082c9;">
+                      BJ
+                    </span>
+                  </td>
+                  <td style="font-weight:500">
+                    Bob Jones
+                  </td>
+                  <td class="hide-mobile">
+                    bob.jones@example.com
+                  </td>
+                  <td class="hide-mobile">
+                    +1-555-0102
+                  </td>
+                  <td class="hide-mobile" />
+                  <td>
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#0082c9;vertical-align:middle;margin-right:4px;" />
+                    Contacts
+                  </td>
+                </tr>
+                <tr id="contact-3" onclick="showContactDetail(3)" style="cursor:pointer">
+                  <td>
+                    <span class="avatar-initials" style="background:#0082c9;">
+                      CW
+                    </span>
+                  </td>
+                  <td style="font-weight:500">
+                    Carol White
+                  </td>
+                  <td class="hide-mobile">
+                    carol@example.com
+                  </td>
+                  <td class="hide-mobile" />
+                  <td class="hide-mobile" />
+                  <td>
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#0082c9;vertical-align:middle;margin-right:4px;" />
+                    Contacts
+                  </td>
+                </tr>
+                <tr id="contact-4" onclick="showContactDetail(4)" style="cursor:pointer">
+                  <td>
+                    <span class="avatar-initials" style="background:#0082c9;">
+                      DB
+                    </span>
+                  </td>
+                  <td style="font-weight:500">
+                    David Brown
+                  </td>
+                  <td class="hide-mobile" />
+                  <td class="hide-mobile">
+                    +1-555-0104
+                  </td>
+                  <td class="hide-mobile" />
+                  <td>
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#0082c9;vertical-align:middle;margin-right:4px;" />
+                    Contacts
+                  </td>
+                </tr>
+                <tr id="contact-5" onclick="showContactDetail(5)" style="cursor:pointer">
+                  <td>
+                    <span class="avatar-initials" style="background:#e64a19;">
+                      EW
+                    </span>
+                  </td>
+                  <td style="font-weight:500">
+                    Emma Wilson
+                  </td>
+                  <td class="hide-mobile">
+                    emma.wilson@company.com
+                  </td>
+                  <td class="hide-mobile">
+                    +1-555-0201
+                  </td>
+                  <td class="hide-mobile" />
+                  <td>
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e64a19;vertical-align:middle;margin-right:4px;" />
+                    Work
+                  </td>
+                </tr>
+                <tr id="contact-6" onclick="showContactDetail(6)" style="cursor:pointer">
+                  <td>
+                    <span class="avatar-initials" style="background:#e64a19;">
+                      FT
+                    </span>
+                  </td>
+                  <td style="font-weight:500">
+                    Frank Taylor
+                  </td>
+                  <td class="hide-mobile">
+                    frank.t@company.com
+                  </td>
+                  <td class="hide-mobile">
+                    +1-555-0202
+                  </td>
+                  <td class="hide-mobile" />
+                  <td>
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e64a19;vertical-align:middle;margin-right:4px;" />
+                    Work
+                  </td>
+                </tr>
+                <tr id="contact-7" onclick="showContactDetail(7)" style="cursor:pointer">
+                  <td>
+                    <span class="avatar-initials" style="background:#e64a19;">
+                      GL
+                    </span>
+                  </td>
+                  <td style="font-weight:500">
+                    Grace Lee
+                  </td>
+                  <td class="hide-mobile">
+                    grace.lee@company.com
+                  </td>
+                  <td class="hide-mobile">
+                    +1-555-0203
+                  </td>
+                  <td class="hide-mobile" />
+                  <td>
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e64a19;vertical-align:middle;margin-right:4px;" />
+                    Work
+                  </td>
+                </tr>
+                <tr id="contact-8" onclick="showContactDetail(8)" style="cursor:pointer">
+                  <td>
+                    <span class="avatar-initials" style="background:#0082c9;">
+                      MF
+                    </span>
+                  </td>
+                  <td style="font-weight:500">
+                    Maximilian Alexander Featherstonehaugh-Wolfeschlegelsteinhausen
+                    <span class="btn-star active" style="cursor:default">
+                      <svg fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                      </svg>
+                    </span>
+                  </td>
+                  <td class="hide-mobile">
+                    maximilian.featherstonehaugh-wolfeschlegelsteinhausen@international-widgets.example.com
+                  </td>
+                  <td class="hide-mobile">
+                    +44 20 7946 0958
+                  </td>
+                  <td class="hide-mobile">
+                    International Consolidated Widgets and Sprockets Corporation
+                  </td>
+                  <td>
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#0082c9;vertical-align:middle;margin-right:4px;" />
+                    Contacts
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-overlay" id="contact-modal" onclick="if(event.target===this)this.style.display='none'" style="display:none">
+        <div class="modal-content" id="contact-modal-body" />
+      </div>
+      <div class="modal-overlay" id="create-contact-modal" onclick="if(event.target===this)this.style.display='none'" style="display: flex;">
+        <div class="modal-content">
+          <h2 style="margin-top:0">
+            New Contact
+          </h2>
+          <form action="/apps/contacts/contacts" method="post">
+            <input name="csrf_token" type="hidden" value="«hex»" />
+            <div class="form-group">
+              <label for="cc-book">
+                Address Book
+              </label>
+              <select class="form-control" id="cc-book" name="address_book_id">
+                <option value="1">
+                  Contacts
+                </option>
+                <option value="2">
+                  Work
+                </option>
+              </select>
+            </div>
+            <div class="flex gap-1">
+              <div class="form-group" style="flex:1">
+                <label for="cc-given">
+                  First name
+                </label>
+                <input class="form-control" id="cc-given" name="given" type="text" />
+              </div>
+              <div class="form-group" style="flex:1">
+                <label for="cc-family">
+                  Last name
+                </label>
+                <input class="form-control" id="cc-family" name="family" type="text" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="cc-fn">
+                Display name
+              </label>
+              <input class="form-control" id="cc-fn" name="fn" placeholder="First and last name" type="text" />
+            </div>
+            <fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
+              <legend style="font-weight:500;font-size:0.9rem">
+                Emails
+              </legend>
+              <div id="cc-emails">
+                <div class="flex gap-1 items-end mb-1">
+                  <input name="email_index" type="hidden" value="new" />
+                  <select class="form-control" name="email_type" style="width:100px">
+                    <option selected="" value="INTERNET">
+                      Personal
+                    </option>
+                    <option value="WORK">
+                      Work
+                    </option>
+                    <option value="HOME">
+                      Home
+                    </option>
+                  </select>
+                  <input class="form-control" name="email_value" placeholder="email@example.com" style="flex:1" type="email" value="" />
+                </div>
+                <div class="flex gap-1 items-end mb-1">
+                  <input name="email_index" type="hidden" value="new" />
+                  <select class="form-control" name="email_type" style="width:100px">
+                    <option value="INTERNET">
+                      Personal
+                    </option>
+                    <option value="WORK">
+                      Work
+                    </option>
+                    <option value="HOME">
+                      Home
+                    </option>
+                  </select>
+                  <input class="form-control" name="email_value" placeholder="email@example.com" style="flex:1" type="email" />
+                  <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()" type="button">
+                    X
+                  </button>
+                </div>
+              </div>
+              <button class="btn btn-outline btn-sm" onclick="addField('cc-emails','email')" type="button">
+                + Add email
+              </button>
+            </fieldset>
+            <fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
+              <legend style="font-weight:500;font-size:0.9rem">
+                Phones
+              </legend>
+              <div id="cc-phones">
+                <div class="flex gap-1 items-end mb-1">
+                  <input name="phone_index" type="hidden" value="new" />
+                  <select class="form-control" name="phone_type" style="width:100px">
+                    <option selected="" value="CELL">
+                      Cell
+                    </option>
+                    <option value="WORK">
+                      Work
+                    </option>
+                    <option value="HOME">
+                      Home
+                    </option>
+                    <option value="FAX">
+                      Fax
+                    </option>
+                  </select>
+                  <input class="form-control" name="phone_value" placeholder="+1 555-1234" style="flex:1" type="tel" value="" />
+                </div>
+                <div class="flex gap-1 items-end mb-1">
+                  <input name="phone_index" type="hidden" value="new" />
+                  <select class="form-control" name="phone_type" style="width:100px">
+                    <option value="CELL">
+                      Cell
+                    </option>
+                    <option value="WORK">
+                      Work
+                    </option>
+                    <option value="HOME">
+                      Home
+                    </option>
+                    <option value="FAX">
+                      Fax
+                    </option>
+                  </select>
+                  <input class="form-control" name="phone_value" placeholder="+1 555-1234" style="flex:1" type="tel" />
+                  <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()" type="button">
+                    X
+                  </button>
+                </div>
+              </div>
+              <button class="btn btn-outline btn-sm" onclick="addField('cc-phones','phone')" type="button">
+                + Add phone
+              </button>
+            </fieldset>
+            <fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
+              <legend style="font-weight:500;font-size:0.9rem">
+                Work
+              </legend>
+              <div class="form-group">
+                <label for="cc-org">
+                  Organization
+                </label>
+                <input class="form-control" id="cc-org" name="org" type="text" />
+              </div>
+              <div class="form-group">
+                <label for="cc-title">
+                  Title
+                </label>
+                <input class="form-control" id="cc-title" name="title" type="text" />
+              </div>
+            </fieldset>
+            <div class="form-group">
+              <label for="cc-note">
+                Note
+              </label>
+              <textarea class="form-control" id="cc-note" name="note" rows="3" />
+            </div>
+            <div class="flex gap-1" style="justify-content:flex-end">
+              <button class="btn" onclick="document.getElementById('create-contact-modal').style.display='none'" type="button">
+                Cancel
+              </button>
+              <button class="btn btn-primary" type="submit">
+                Create
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <style>
+        .avatar-initials { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; font-weight: 600; font-size: 0.8rem; } .typed-label { font-size: 0.75rem; color: var(--color-muted, #888); text-transform: uppercase; }
+      </style>
+    </main>
+  </body>
+</html>

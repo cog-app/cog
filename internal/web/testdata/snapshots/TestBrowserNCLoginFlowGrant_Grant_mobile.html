@@ -1,0 +1,26 @@
+<html>
+  <head>
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      Cog - Login
+    </title>
+  </head>
+  <body>
+    <h1>
+      Grant App Access
+    </h1>
+    <p>
+      Signed in as
+      <strong>
+        alice
+      </strong>
+      . Approving will create an app password tied to your account for the requesting application.
+    </p>
+    <form action="?token=«hex»" method="POST">
+      <input name="csrf_token" type="hidden" value="«hex»" />
+      <button type="submit">
+        Grant Access
+      </button>
+    </form>
+  </body>
+</html>

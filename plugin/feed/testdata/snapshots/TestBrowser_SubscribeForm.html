@@ -1,0 +1,453 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport" />
+    <title>
+      Feed Settings — Cog
+    </title>
+    <link href="/static/style.css?v=896ce6a8a2ed" rel="stylesheet" />
+    <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik00IDExYTkgOSAwIDAgMSA5IDkiPjwvcGF0aD48cGF0aCBkPSJNNCA0YTE2IDE2IDAgMCAxIDE2IDE2Ij48L3BhdGg+PGNpcmNsZSBjeD0iNSIgY3k9IjE5IiByPSIxIj48L2NpcmNsZT48L3N2Zz4=" rel="icon" type="image/svg+xml" />
+    <style>
+      .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
+  <body hx-headers="{\"X-CSRF-Token\":\"«hex»\"}">
+    <nav class="navbar" data-nav-count="3">
+      <a class="navbar-brand" href="/">
+        <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" style="vertical-align:middle" viewBox="0 0 24 24" width="20">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        <span class="brand-text">
+          Cog
+        </span>
+      </a>
+      <ul class="navbar-nav">
+        <li>
+          <a class="active" href="/apps/feed/" title="Feed">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M4 11a9 9 0 0 1 9 9" />
+              <path d="M4 4a16 16 0 0 1 16 16" />
+              <circle cx="5" cy="19" r="1" />
+            </svg>
+            <span class="nav-label">
+              Feed
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="/" title="Dashboard">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            <span class="nav-label">
+              Dashboard
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="/apps/files" title="Files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <span class="nav-label">
+              Files
+            </span>
+          </a>
+        </li>
+      </ul>
+      <div class="navbar-apps-dropdown dropdown" tabindex="0">
+        <button class="apps-toggle" type="button">
+          <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+            <rect height="7" width="7" x="3" y="3" />
+            <rect height="7" width="7" x="14" y="3" />
+            <rect height="7" width="7" x="3" y="14" />
+            <rect height="7" width="7" x="14" y="14" />
+          </svg>
+        </button>
+        <div class="dropdown-menu apps-menu">
+          <a class="active" href="/apps/feed/">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M4 11a9 9 0 0 1 9 9" />
+              <path d="M4 4a16 16 0 0 1 16 16" />
+              <circle cx="5" cy="19" r="1" />
+            </svg>
+            Feed
+          </a>
+          <a class="" href="/">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            Dashboard
+          </a>
+          <a class="" href="/apps/files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            Files
+          </a>
+        </div>
+      </div>
+      <div class="navbar-search">
+        <input autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)..." type="search" />
+        <div class="search-results" id="search-results" />
+      </div>
+      <div class="navbar-end">
+        <div id="notif-bell" onclick="toggleNotifPanel()" style="position:relative;cursor:pointer;padding:0 0.5rem;display:none" title="Notifications">
+          <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          <span class="notif-badge" id="notif-badge" style="display:none" />
+        </div>
+        <div class="dropdown-menu" id="notif-panel" style="display:none;position:absolute;right:4rem;top:3rem;min-width:280px;max-height:300px;overflow:auto;z-index:100" />
+        <div class="dropdown" tabindex="0">
+          <button class="dropdown-toggle" type="button">
+            <img class="avatar-sm" src="/avatar/«hex»" />
+            <span class="dropdown-username">
+              subs
+            </span>
+            <span class="dropdown-caret">
+              ▾
+            </span>
+          </button>
+          <div class="dropdown-menu">
+            <a class="" href="/settings/profile">
+              Profile
+            </a>
+            <a class="" href="/settings/security">
+              Security
+            </a>
+            <a class="" href="/settings/storage">
+              Storage
+            </a>
+            <a class="" href="/settings/groups">
+              Groups
+            </a>
+            <div class="dropdown-divider" />
+            <form action="/logout" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <button onmousedown="this.closest('form').submit()" type="submit">
+                Log out
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <main class="content" data-plugin="feed">
+      <div class="sidebar-layout">
+        <nav class="sidebar" id="feed-sidebar">
+          <label class="sidebar-hide-empty" style="display:flex;align-items:center;gap:0.4rem;padding:0.25rem 0.5rem;font-size:0.8rem;color:var(--color-muted)">
+            <input hx-post="/apps/feed/player/prefs" hx-swap="outerHTML" hx-target="#feed-sidebar" hx-vals="js:{hide_empty: event.target.checked ? \"1\" : \"0\"}" name="hide_empty" type="checkbox" />
+            Hide read
+          </label>
+          <a class="sidebar-item" href="/apps/feed/">
+            All
+            <span class="badge">
+              7
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/feed/starred">
+            Starred
+            <span class="badge">
+              1
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/feed/history">
+            History
+          </a>
+          <div class="sidebar-divider" />
+          <details class="sidebar-folder" data-folder-id="2">
+            <summary class="sidebar-group-label">
+              <a href="/apps/feed/folder/2" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none">
+                Podcasts
+              </a>
+              <span class="badge">
+                1
+              </span>
+            </summary>
+            <a class="sidebar-item" href="/apps/feed/subscription/3" style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem">
+              <span class="feed-sub-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;align-items:center;justify-content:center">
+                <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
+                  <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
+                  <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
+                  <circle cx="5.5" cy="18.5" r="2.5" />
+                </svg>
+              </span>
+              <span class="sidebar-item-text">
+                Weekly Audio Show
+              </span>
+              <span class="badge">
+                1
+              </span>
+            </a>
+          </details>
+          <details class="sidebar-folder" data-folder-id="1">
+            <summary class="sidebar-group-label">
+              <a href="/apps/feed/folder/1" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none">
+                Tech News
+              </a>
+              <span class="badge">
+                5
+              </span>
+            </summary>
+            <a class="sidebar-item" href="/apps/feed/subscription/1" style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem">
+              <span class="feed-sub-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;align-items:center;justify-content:center">
+                <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
+                  <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
+                  <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
+                  <circle cx="5.5" cy="18.5" r="2.5" />
+                </svg>
+              </span>
+              <span class="sidebar-item-text">
+                Example Engineering Blog
+              </span>
+              <span class="badge">
+                5
+              </span>
+            </a>
+          </details>
+          <a class="sidebar-item text-danger" href="/apps/feed/subscription/2" style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem">
+            <span class="feed-sub-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;align-items:center;justify-content:center">
+              <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
+                <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
+                <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
+                <circle cx="5.5" cy="18.5" r="2.5" />
+              </svg>
+            </span>
+            <span class="sidebar-item-text">
+              A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar
+            </span>
+            <span class="text-danger" title="GET https://long.example.org/rss: 503 Service Unavailable">
+              !
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/feed/subscription/4" style="padding-left:1.5rem;font-size:0.9rem;display:flex;align-items:center;gap:0.25rem">
+            <span class="feed-sub-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;align-items:center;justify-content:center">
+              <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
+                <path d="M23 7a3 3 0 0 0-2.1-2.1C19 4.4 12 4.4 12 4.4s-7 0-8.9.5A3 3 0 0 0 1 7a31 31 0 0 0 0 10 3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5A3 3 0 0 0 23 17a31 31 0 0 0 0-10zM10 15.5v-7l6 3.5z" />
+              </svg>
+            </span>
+            <span class="sidebar-item-text">
+              Video Channel
+            </span>
+            <span class="badge">
+              1
+            </span>
+          </a>
+          <div class="sidebar-divider" />
+          <span class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-muted)">
+            Tags
+          </span>
+          <a class="sidebar-item" href="/apps/feed/tag/read-later" style="padding-left:1.5rem;font-size:0.9rem">
+            read-later
+          </a>
+          <a class="sidebar-item" href="/apps/feed/tag/storage" style="padding-left:1.5rem;font-size:0.9rem">
+            storage
+          </a>
+          <hr class="sidebar-divider" />
+          <div class="sidebar-group-label" style="font-size:0.8rem;color:var(--color-muted);padding:0.25rem 0.5rem">
+            Settings
+          </div>
+          <a class="sidebar-item active" href="/apps/feed/settings/subscriptions" style="padding-left:1.5rem;font-size:0.9rem">
+            Subscriptions
+          </a>
+          <a class="sidebar-item" href="/apps/feed/settings/filters" style="padding-left:1.5rem;font-size:0.9rem">
+            Filters
+          </a>
+          <a class="sidebar-item" href="/apps/feed/settings/playlists" style="padding-left:1.5rem;font-size:0.9rem">
+            Playlists
+          </a>
+        </nav>
+        <div class="sidebar-content">
+          <div class="card">
+            <div class="card-title">
+              Subscriptions
+            </div>
+            <form action="/apps/feed/subscriptions" id="add-subscription" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div class="form-group">
+                <label for="sub-url">
+                  URL
+                </label>
+                <input class="form-control" id="sub-url" name="url" placeholder="https://example.com/feed.xml" required="" type="url" />
+                <small class="text-muted">
+                  Type auto-detected from the URL (RSS / YouTube / generic page).
+                </small>
+              </div>
+              <div class="form-group">
+                <label for="sub-folder">
+                  Folder
+                </label>
+                <select class="form-control" id="sub-folder" name="folder_id">
+                  <option value="">
+                    (none)
+                  </option>
+                  <option value="2">
+                    Podcasts
+                  </option>
+                  <option value="1">
+                    Tech News
+                  </option>
+                </select>
+              </div>
+              <button class="btn btn-primary">
+                Add subscription
+              </button>
+            </form>
+            <details class="subscription-list-collapse" open="" style="margin-top:1rem">
+              <summary style="cursor:pointer;font-weight:500">
+                Subscriptions (4)
+              </summary>
+              <ul id="subscription-list" style="margin-top:0.5rem;padding-left:0;list-style:none">
+                <li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+                  <span style="flex:1">
+                    A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar
+                  </span>
+                  <code>
+                    https://long.example.org/rss
+                  </code>
+                  <span class="badge">
+                    rss
+                  </span>
+                  <form action="/apps/feed/subscriptions/2/delete" method="post" style="margin:0">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <button class="btn btn-danger">
+                      Delete
+                    </button>
+                  </form>
+                </li>
+                <li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+                  <span style="flex:1">
+                    Example Engineering Blog
+                  </span>
+                  <code>
+                    https://blog.example.com/feed.xml
+                  </code>
+                  <span class="badge">
+                    rss
+                  </span>
+                  <form action="/apps/feed/subscriptions/1/delete" method="post" style="margin:0">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <button class="btn btn-danger">
+                      Delete
+                    </button>
+                  </form>
+                </li>
+                <li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+                  <span style="flex:1">
+                    Video Channel
+                  </span>
+                  <code>
+                    https://www.youtube.com/channel/UCexample
+                  </code>
+                  <span class="badge">
+                    youtube
+                  </span>
+                  <form action="/apps/feed/subscriptions/4/delete" method="post" style="margin:0">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <button class="btn btn-danger">
+                      Delete
+                    </button>
+                  </form>
+                </li>
+                <li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+                  <span style="flex:1">
+                    Weekly Audio Show
+                  </span>
+                  <code>
+                    https://audio.example.net/podcast.xml
+                  </code>
+                  <span class="badge">
+                    rss
+                  </span>
+                  <form action="/apps/feed/subscriptions/3/delete" method="post" style="margin:0">
+                    <input name="csrf_token" type="hidden" value="«hex»" />
+                    <button class="btn btn-danger">
+                      Delete
+                    </button>
+                  </form>
+                </li>
+              </ul>
+            </details>
+            <div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+              <form action="/apps/feed/opml/import" enctype="multipart/form-data" method="post" style="display:inline">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <label class="btn-secondary btn-sm" style="cursor:pointer">
+                  Import OPML
+                  <input accept=".opml,.xml,application/xml" multiple="" name="opml" onchange="this.form.submit()" style="display:none" type="file" />
+                </label>
+              </form>
+              <a class="btn btn-secondary btn-sm" href="/apps/feed/opml/export">
+                Export OPML
+              </a>
+            </div>
+            <form action="/apps/feed/import" enctype="multipart/form-data" method="post" style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <label class="btn btn-secondary btn-sm" style="cursor:pointer">
+                Import AntennaPod
+                <input name="format" type="hidden" value="antennapod" />
+                <input accept=".db,.sqlite" name="file" onchange="this.form.submit()" style="display:none" type="file" />
+              </label>
+            </form>
+            <form action="/apps/feed/import" enctype="multipart/form-data" method="post" style="margin-top:0.5rem">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <label class="btn btn-secondary btn-sm" style="cursor:pointer">
+                Import NewPipe
+                <input name="format" type="hidden" value="newpipe" />
+                <input accept=".zip" name="file" onchange="this.form.submit()" style="display:none" type="file" />
+              </label>
+            </form>
+            <form action="/apps/feed/import" enctype="multipart/form-data" method="post" style="margin-top:0.5rem">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <label class="btn btn-secondary btn-sm" style="cursor:pointer">
+                Import YouTube Takeout
+                <input name="format" type="hidden" value="youtube-csv" />
+                <input accept=".csv" name="file" onchange="this.form.submit()" style="display:none" type="file" />
+              </label>
+            </form>
+          </div>
+          <div class="card">
+            <div class="card-title">
+              Folders
+            </div>
+            <form action="/apps/feed/folders" class="flex gap-1 items-center" id="add-folder" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <input class="form-control" id="folder-name" name="name" placeholder="Folder name" required="" style="max-width:300px" type="text" />
+              <button class="btn btn-primary">
+                Add folder
+              </button>
+            </form>
+            <ul style="margin-top:1rem;padding-left:0;list-style:none">
+              <li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+                <span style="flex:1">
+                  Podcasts
+                </span>
+                <form action="/apps/feed/folders/2/delete" method="post" style="margin:0">
+                  <input name="csrf_token" type="hidden" value="«hex»" />
+                  <button class="btn btn-danger">
+                    Delete
+                  </button>
+                </form>
+              </li>
+              <li style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
+                <span style="flex:1">
+                  Tech News
+                </span>
+                <form action="/apps/feed/folders/1/delete" method="post" style="margin:0">
+                  <input name="csrf_token" type="hidden" value="«hex»" />
+                  <button class="btn btn-danger">
+                    Delete
+                  </button>
+                </form>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

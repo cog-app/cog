@@ -1,0 +1,147 @@
+<html>
+  <head />
+  <body>
+    <div class="sidebar-layout">
+      <nav class="sidebar" id="gallery-sidebar">
+        <a class="sidebar-item" href="/apps/gallery/">
+          Timeline
+        </a>
+        <a class="sidebar-item" href="/apps/gallery/starred">
+          Starred
+        </a>
+        <a class="sidebar-item" href="/apps/gallery/albums">
+          Albums
+        </a>
+        <a class="sidebar-item" href="/apps/gallery/people">
+          People
+        </a>
+        <a class="sidebar-item" href="/apps/gallery/tags">
+          Tags
+        </a>
+        <a class="sidebar-item" href="/apps/gallery/videos">
+          Videos
+        </a>
+        <a class="sidebar-item" href="/apps/gallery/duplicates">
+          Duplicates
+        </a>
+        <div class="sidebar-divider" />
+        <a class="sidebar-item active" href="/apps/gallery/settings">
+          Settings
+        </a>
+        <div hx-get="/apps/gallery/api/user-scan-status" hx-swap="innerHTML" hx-trigger="load, every 5s" />
+      </nav>
+      <div class="sidebar-content">
+        <h1>
+          Rename Preview
+        </h1>
+        <p>
+          Pattern:
+          <code>
+            {{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}
+          </code>
+        </p>
+        <p>
+          9 files will be renamed:
+        </p>
+        <div class="card">
+          <table style="width:100%;font-size:0.85rem">
+            <thead>
+              <tr>
+                <th>
+                  Current Path
+                </th>
+                <th>
+                  New Path
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  /Photos/IMG_0007 (copy).png
+                </td>
+                <td>
+                  2025/06/2025-06-27_153000.png
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  /Photos/IMG_0007.png
+                </td>
+                <td>
+                  2025/06/2025-06-28_153000.png
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  /Photos/Beach day & sunset #2 - the long panoramic one.png
+                </td>
+                <td>
+                  2025/06/2025-06-29_153000.png
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  /Photos/IMG_0005.png
+                </td>
+                <td>
+                  2025/06/2025-06-30_153000.png
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  /Photos/IMG_0004.png
+                </td>
+                <td>
+                  2025/07/2025-07-01_153000.png
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  /Photos/IMG_0003.png
+                </td>
+                <td>
+                  2025/07/2025-07-02_153000.png
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  /Photos/IMG_0002.png
+                </td>
+                <td>
+                  2025/07/2025-07-03_153000.png
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  /Photos/IMG_0001.png
+                </td>
+                <td>
+                  2025/07/2025-07-04_153000.png
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  /Photos/VID_0001.mp4
+                </td>
+                <td>
+                  2025/07/2025-07-04_153000.mp4
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <form action="/apps/gallery/rename/apply" method="post" style="margin-top:1rem">
+          <input name="csrf_token" type="hidden" value="«hex»" />
+          <input name="pattern" type="hidden" value="{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}" />
+          <button class="btn btn-primary" type="submit">
+            Apply Rename
+          </button>
+          <a class="btn" href="/apps/gallery/settings" style="margin-left:0.5rem">
+            Cancel
+          </a>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>

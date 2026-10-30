@@ -1,9 +1,12 @@
 package bookmarks_test
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
+	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/internal/testing/webtest"
 	"git.duckfam.us/jj-software/cog/plugin/bookmarks"
 )
@@ -19,6 +22,8 @@ func TestBrowser(t *testing.T) {
 	env.CreateUser(t, "delete", "pass")
 	env.CreateUser(t, "folder", "pass")
 	env.CreateUser(t, "tags", "pass")
+	env.CreateUser(t, "many", "pass")
+	longID := seedManyBookmarks(t, env, "many")
 
 	t.Run("EmptyState", func(t *testing.T) {
 		b := eng.Start(t)
@@ -143,4 +148,80 @@ func TestBrowser(t *testing.T) {
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
+	t.Run("ManyBookmarks", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "many", "pass")
+		b.Navigate(t, "/apps/bookmarks/")
+		b.WaitText(t, "Short")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("LongDetail", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "many", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/bookmarks/bookmark/%d", longID))
+		b.WaitText(t, "Description:")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("EditForm", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "many", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/bookmarks/bookmark/%d/edit", longID))
+		b.WaitVisible(t, "#folder_id")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("NewForm", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "many", "pass")
+		b.Navigate(t, "/apps/bookmarks/new")
+		b.WaitVisible(t, "#url")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+}
+
+// seedManyBookmarks gives a user folders, tags and bookmarks with titles,
+// URLs and tag lists long enough to stress the list and detail layouts. The
+// clock advances between inserts so the list order is fixed. It returns the
+// bookmark with the longest fields.
+func seedManyBookmarks(t *testing.T, env *cogtest.Env, username string) int64 {
+	t.Helper()
+	raw, ok := env.Providers.Plugins.Plugin(bookmarks.PluginID)
+	require.True(t, ok, "bookmarks plugin not registered")
+	db, err := raw.(*bookmarks.Plugin).DB(username)
+	require.NoError(t, err)
+
+	reading, err := bookmarks.CreateFolder(db, "Reading List", nil)
+	require.NoError(t, err)
+	_, err = bookmarks.CreateFolder(db, "Work Reference Material For The Platform Team", nil)
+	require.NoError(t, err)
+
+	type bm struct {
+		url, title, desc string
+		tags             []string
+		folders          []int64
+	}
+	var longID int64
+	for i, c := range []bm{
+		{"https://example.com/", "Short", "", nil, nil},
+		{"https://docs.example.org/reference/api/v2/endpoints/authentication/oauth2/device-authorization-grant?lang=en&version=latest",
+			"An extremely long bookmark title that describes the page in far more words than any reasonable title ever should",
+			"A description long enough to wrap across several lines in the detail view, so that the spacing between the label and the paragraph, and between this block and the next, is visible in the snapshot.",
+			[]string{"reference", "api", "authentication", "oauth", "documentation", "to-read", "work"}, []int64{reading.ID}},
+		{"https://news.example.net/2026/03/14/story", "News story", "", []string{"news"}, []int64{reading.ID}},
+		{"http://localhost:8080/dashboard", "Local dev dashboard", "", []string{"dev"}, nil},
+	} {
+		env.Clock.Advance(time.Minute)
+		created, err := bookmarks.CreateBookmark(db, c.url, c.title, c.desc, c.tags, c.folders)
+		require.NoError(t, err, "bookmark %d", i)
+		if len(c.tags) > 5 {
+			longID = created.ID
+		}
+	}
+	return longID
 }
