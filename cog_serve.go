@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
 	cogssh "git.duckfam.us/jj-software/cog/internal/ssh"
 	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/web"
@@ -24,6 +25,13 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "Start the Cog server",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := configFromEnv()
+
+			// Lets a development server subscribe to feeds on the local
+			// network. Never set it in production: it disables the guard
+			// that keeps user-supplied URLs off the host's own network.
+			if envBool("COG_PRIVATE_IPS") {
+				safehttp.SetAllowPrivate(true)
+			}
 
 			p, err := openProviders(plugins...)
 			if err != nil {

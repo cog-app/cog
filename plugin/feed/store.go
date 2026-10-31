@@ -433,7 +433,7 @@ func (s *Store) DeleteItem(id int64) error {
 
 // MarkRead sets or clears the is_read flag on an item.
 func (s *Store) MarkRead(id int64, read bool) error {
-	_, err := s.db.Exec(`UPDATE items SET is_read = ? WHERE id = ?`, boolToInt(read), id)
+	_, err := s.db.Exec(`UPDATE items SET is_read = ?, fetched_at = unixepoch() WHERE id = ?`, boolToInt(read), id)
 	if err != nil {
 		return fmt.Errorf("mark read: %w", err)
 	}
@@ -442,7 +442,7 @@ func (s *Store) MarkRead(id int64, read bool) error {
 
 // MarkStarred sets or clears the is_starred flag on an item.
 func (s *Store) MarkStarred(id int64, starred bool) error {
-	_, err := s.db.Exec(`UPDATE items SET is_starred = ? WHERE id = ?`, boolToInt(starred), id)
+	_, err := s.db.Exec(`UPDATE items SET is_starred = ?, fetched_at = unixepoch() WHERE id = ?`, boolToInt(starred), id)
 	if err != nil {
 		return fmt.Errorf("mark starred: %w", err)
 	}
@@ -1237,7 +1237,7 @@ func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscripti
 
 // MarkAllRead marks all items as read.
 func (s *Store) MarkAllRead() error {
-	_, err := s.db.Exec(`UPDATE items SET is_read = 1`)
+	_, err := s.db.Exec(`UPDATE items SET is_read = 1, fetched_at = unixepoch() WHERE is_read = 0`)
 	if err != nil {
 		return fmt.Errorf("mark all read: %w", err)
 	}
@@ -1246,7 +1246,7 @@ func (s *Store) MarkAllRead() error {
 
 // MarkAllReadBySubscription marks all items in a subscription as read.
 func (s *Store) MarkAllReadBySubscription(subID int64) error {
-	_, err := s.db.Exec(`UPDATE items SET is_read = 1 WHERE subscription_id = ?`, subID)
+	_, err := s.db.Exec(`UPDATE items SET is_read = 1, fetched_at = unixepoch() WHERE subscription_id = ? AND is_read = 0`, subID)
 	if err != nil {
 		return fmt.Errorf("mark all read by subscription: %w", err)
 	}
@@ -1256,8 +1256,8 @@ func (s *Store) MarkAllReadBySubscription(subID int64) error {
 // MarkAllReadByFolder marks all items in subscriptions belonging to a folder as read.
 func (s *Store) MarkAllReadByFolder(folderID int64) error {
 	_, err := s.db.Exec(`
-		UPDATE items SET is_read = 1
-		WHERE subscription_id IN (SELECT id FROM subscriptions WHERE folder_id = ?)`, folderID)
+		UPDATE items SET is_read = 1, fetched_at = unixepoch()
+		WHERE is_read = 0 AND subscription_id IN (SELECT id FROM subscriptions WHERE folder_id = ?)`, folderID)
 	if err != nil {
 		return fmt.Errorf("mark all read by folder: %w", err)
 	}
@@ -1266,7 +1266,7 @@ func (s *Store) MarkAllReadByFolder(folderID int64) error {
 
 // MarkItemRead force-sets a single item as read (non-toggle).
 func (s *Store) MarkItemRead(id int64) error {
-	_, err := s.db.Exec(`UPDATE items SET is_read = 1 WHERE id = ?`, id)
+	_, err := s.db.Exec(`UPDATE items SET is_read = 1, fetched_at = unixepoch() WHERE id = ? AND is_read = 0`, id)
 	if err != nil {
 		return fmt.Errorf("mark item read: %w", err)
 	}

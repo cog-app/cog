@@ -9,7 +9,14 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
 )
+
+// client fetches the URLs users subscribe to. It dials only public
+// addresses, checked after resolution, so a redirect or a rebinding DNS
+// name cannot point discovery at the host's own network.
+var client = safehttp.Client(10 * time.Second)
 
 // DiscoverFeedURL attempts to find a feed URL on an HTML page by scanning
 // <link rel="alternate" type="application/rss+xml|atom+xml"> elements.
@@ -23,7 +30,7 @@ func DiscoverFeedURL(ctx context.Context, pageURL string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("User-Agent", "cog-feed/1.0")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -83,7 +90,7 @@ func sniffContentType(ctx context.Context, rawURL string) string {
 			continue
 		}
 		req.Header.Set("User-Agent", "cog-feed/1.0")
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := client.Do(req)
 		cancel()
 		if err != nil {
 			continue

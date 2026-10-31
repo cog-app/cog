@@ -5,9 +5,34 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
 )
 
+// allowLoopback lets discovery reach an httptest server for one test.
+func allowLoopback(t *testing.T) {
+	safehttp.SetAllowPrivate(true)
+	t.Cleanup(func() { safehttp.SetAllowPrivate(false) })
+}
+
+// Discovery must not reach the host's own network, however the URL got past
+// validation.
+func TestDiscoverFeedURL_blocksLoopback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("discovery reached a loopback server")
+	}))
+	defer srv.Close()
+
+	if _, err := DiscoverFeedURL(context.Background(), srv.URL+"/"); err == nil {
+		t.Fatal("DiscoverFeedURL succeeded against loopback")
+	}
+	if got := sniffContentType(context.Background(), srv.URL+"/"); got != "" {
+		t.Fatalf("sniffContentType = %q against loopback, want \"\"", got)
+	}
+}
+
 func TestDiscoverFeedURL(t *testing.T) {
+	allowLoopback(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/feed.xml":
@@ -34,6 +59,7 @@ func TestDiscoverFeedURL(t *testing.T) {
 }
 
 func TestDiscoverFeedURL_atom_preferred(t *testing.T) {
+	allowLoopback(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
@@ -55,6 +81,7 @@ func TestDiscoverFeedURL_atom_preferred(t *testing.T) {
 }
 
 func TestDiscoverFeedURL_none(t *testing.T) {
+	allowLoopback(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)

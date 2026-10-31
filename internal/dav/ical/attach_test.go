@@ -22,15 +22,12 @@ func fixture(t *testing.T, name string) *Object {
 	return o
 }
 
-//go:fix inline
-func size(n int64) *int64 { return new(n) }
-
 // TestAttachVariants decodes ATTACH in each form the corpus has.
 func TestAttachVariants(t *testing.T) {
 	// RFC 8607: a managed attachment, and an override's own.
 	o := fixture(t, "rfc8607/A-add-instance.ics")
 	require.Equal(t, 2, len(o.Components))
-	assert.Equal(t, []Attachment{{Value: "https://cal.example.com/attach/65/34X22R", ManagedID: "97S", FmtType: "text/html", Size: size(80), Filename: "agenda.html"}}, o.Components[0].Attachments)
+	assert.Equal(t, []Attachment{{Value: "https://cal.example.com/attach/65/34X22R", ManagedID: "97S", FmtType: "text/html", Size: new(int64(80)), Filename: "agenda.html"}}, o.Components[0].Attachments)
 	assert.Equal(t, "33225", o.Components[1].Attachments[0].ManagedID)
 	assert.Equal(t, []string{"97S", "33225"}, o.ManagedIDs())
 	assert.Equal(t, 0, len(o.Components[0].Leftovers.Props))

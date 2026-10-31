@@ -27,8 +27,7 @@ func Migrate(db *sql.DB, fsys fs.FS) error {
 		return fmt.Errorf("read schema.sql: %w", err)
 	}
 	if err := execTx(db, string(schema)); err != nil {
-		var se scriptError
-		if errors.As(err, &se) {
+		if _, ok := errors.AsType[scriptError](err); ok {
 			return fmt.Errorf("%w: schema.sql: %w", ErrIncompatible, err)
 		}
 		return fmt.Errorf("schema.sql: %w", err)
