@@ -11,19 +11,23 @@
 package ncapi
 
 import (
+	"crypto/md5"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
+	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
 // Backend is the minimal interface that the feed plugin must satisfy.
@@ -71,71 +75,124 @@ func (a *NewsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		path = "/"
 	}
 
-	switch {
-	case r.Method == "GET" && (path == "/" || path == "/version"):
-		a.version(w)
+	segs := strings.Split(strings.Trim(path, "/"), "/")
+	// route is the method and path with the second segment generalised, e.g.
+	// "PUT feeds/:id/move".
+	route := r.Method + " " + segs[0]
+	if len(segs) > 1 {
+		route += "/:id"
+	}
+	if len(segs) > 2 {
+		route += "/" + strings.Join(segs[2:], "/")
+	}
+
+	// Item updates name items in three different shapes; updateItems parses them.
+	if r.Method == "PUT" && segs[0] == "items" && len(segs) > 2 {
+		a.updateItems(w, r, db, segs[1:])
+		return
+	}
+
+	// pathID parses the numeric ID in segs[1]. A malformed ID is a client
+	// error, not ID 0: treating it as 0 used to turn bad requests into
+	// silent no-ops that still answered 200.
+	pathID := func() (int64, bool) {
+		id, err := strconv.ParseInt(segs[1], 10, 64)
+		if err != nil || id <= 0 {
+			plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id " + strconv.Quote(segs[1])})
+			return 0, false
+		}
+		return id, true
+	}
+
+	switch route {
+	case "GET ":
+		plugin.WriteJSON(w, http.StatusOK, map[string]any{"apiLevels": []string{"v1-2"}})
+	case "GET version":
+		plugin.WriteJSON(w, http.StatusOK, map[string]any{"version": serverVersion})
+	case "GET status":
+		plugin.WriteJSON(w, http.StatusOK, map[string]any{
+			"version": serverVersion,
+			"warnings": map[string]bool{
+				"improperlyConfiguredCron": false,
+				"incorrectDbCharset":       false,
+			},
+		})
+	case "GET user":
+		a.user(w, u)
 	// Folders
-	case r.Method == "GET" && path == "/folders":
+	case "GET folders":
 		a.listFolders(w, db)
-	case r.Method == "POST" && path == "/folders":
+	case "POST folders":
 		a.createFolder(w, r, db)
-	case r.Method == "PUT" && strings.HasPrefix(path, "/folders/"):
-		id := plugin.PathID(path, "/folders/")
-		a.renameFolder(w, r, db, id)
-	case r.Method == "DELETE" && strings.HasPrefix(path, "/folders/"):
-		id := plugin.PathID(path, "/folders/")
-		a.deleteFolder(w, db, id)
+	case "PUT folders/:id":
+		if id, ok := pathID(); ok {
+			a.renameFolder(w, r, db, id)
+		}
+	case "PUT folders/:id/read":
+		if id, ok := pathID(); ok {
+			a.markFolderRead(w, r, db, id)
+		}
+	case "DELETE folders/:id":
+		if id, ok := pathID(); ok {
+			a.deleteFolder(w, db, id)
+		}
 	// Feeds (subscriptions WHERE kind='rss')
-	case r.Method == "GET" && path == "/feeds":
+	case "GET feeds":
 		a.listFeeds(w, db)
-	case r.Method == "POST" && path == "/feeds":
+	case "POST feeds":
 		a.createFeed(w, r, db, u.Username)
-	case r.Method == "DELETE" && strings.HasPrefix(path, "/feeds/"):
-		id := plugin.PathID(path, "/feeds/")
-		a.deleteFeed(w, db, id)
-	case r.Method == "PUT" && strings.HasSuffix(path, "/move") && strings.HasPrefix(path, "/feeds/"):
-		id := plugin.PathIDSuffix(path, "/feeds/", "/move")
-		a.moveFeed(w, r, db, id)
-	case r.Method == "PUT" && strings.HasSuffix(path, "/rename") && strings.HasPrefix(path, "/feeds/"):
-		id := plugin.PathIDSuffix(path, "/feeds/", "/rename")
-		a.renameFeed(w, r, db, id)
-	case r.Method == "PUT" && strings.HasSuffix(path, "/read") && strings.HasPrefix(path, "/feeds/"):
-		id := plugin.PathIDSuffix(path, "/feeds/", "/read")
-		a.markFeedRead(w, r, db, id)
+	case "DELETE feeds/:id":
+		if id, ok := pathID(); ok {
+			a.deleteFeed(w, db, id)
+		}
+	case "PUT feeds/:id/move":
+		if id, ok := pathID(); ok {
+			a.moveFeed(w, r, db, id)
+		}
+	case "PUT feeds/:id/rename":
+		if id, ok := pathID(); ok {
+			a.renameFeed(w, r, db, id)
+		}
+	case "PUT feeds/:id/read":
+		if id, ok := pathID(); ok {
+			a.markFeedRead(w, r, db, id)
+		}
 	// Items (WHERE type='text')
-	case r.Method == "GET" && path == "/items":
+	case "GET items":
 		a.getItems(w, r, db)
-	case r.Method == "GET" && path == "/items/updated":
+	case "GET items/:id":
+		if segs[1] != "updated" {
+			plugin.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
 		a.getUpdatedItems(w, r, db)
-	case r.Method == "PUT" && strings.HasSuffix(path, "/read") && strings.HasPrefix(path, "/items/"):
-		id := plugin.PathIDSuffix(path, "/items/", "/read")
-		a.setItemRead(w, db, id, true)
-	case r.Method == "PUT" && strings.HasSuffix(path, "/unread") && strings.HasPrefix(path, "/items/"):
-		id := plugin.PathIDSuffix(path, "/items/", "/unread")
-		a.setItemRead(w, db, id, false)
-	case r.Method == "PUT" && strings.HasSuffix(path, "/star") && strings.HasPrefix(path, "/items/"):
-		id := plugin.PathIDSuffix(path, "/items/", "/star")
-		a.setItemStarred(w, db, id, true)
-	case r.Method == "PUT" && strings.HasSuffix(path, "/unstar") && strings.HasPrefix(path, "/items/"):
-		id := plugin.PathIDSuffix(path, "/items/", "/unstar")
-		a.setItemStarred(w, db, id, false)
-	// Bulk operations
-	case r.Method == "PUT" && path == "/items/read/multiple":
-		a.bulkRead(w, r, db, true)
-	case r.Method == "PUT" && path == "/items/unread/multiple":
-		a.bulkRead(w, r, db, false)
-	case r.Method == "PUT" && path == "/items/star/multiple":
-		a.bulkStar(w, r, db, true)
-	case r.Method == "PUT" && path == "/items/unstar/multiple":
-		a.bulkStar(w, r, db, false)
+	case "PUT items/:id":
+		if segs[1] != "read" {
+			plugin.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		a.markAllRead(w, r, db)
 	default:
 		plugin.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 	}
 }
 
-func (a *NewsAPI) version(w http.ResponseWriter) {
+// serverVersion is the NextCloud News version reported by /version and
+// /status. Clients may gate features on it; apiLevels, not this, says which
+// API is implemented.
+const serverVersion = "18.0.0"
+
+// user answers GET /user, which clients use to label the account.
+func (a *NewsAPI) user(w http.ResponseWriter, u *user.User) {
+	name := u.DisplayName
+	if name == "" {
+		name = u.Username
+	}
 	plugin.WriteJSON(w, http.StatusOK, map[string]any{
-		"apiLevels": []string{"v1-2"},
+		"userId":             u.Username,
+		"displayName":        name,
+		"lastLoginTimestamp": 0,
+		"avatar":             nil,
 	})
 }
 
@@ -175,7 +232,7 @@ func (a *NewsAPI) renameFolder(w http.ResponseWriter, r *http.Request, db *sql.D
 		return
 	}
 	if err := renameFolder(db, id, body.Name); err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -183,7 +240,7 @@ func (a *NewsAPI) renameFolder(w http.ResponseWriter, r *http.Request, db *sql.D
 
 func (a *NewsAPI) deleteFolder(w http.ResponseWriter, db *sql.DB, id int64) {
 	if err := deleteFolder(db, id); err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -197,11 +254,19 @@ func (a *NewsAPI) listFeeds(w http.ResponseWriter, db *sql.DB) {
 		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	starredCount, _ := starredCount(db)
-	plugin.WriteJSON(w, http.StatusOK, map[string]any{
+	starred, newest, err := feedTotals(db)
+	if err != nil {
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	resp := map[string]any{
 		"feeds":        subsToAPI(subs),
-		"starredCount": starredCount,
-	})
+		"starredCount": starred,
+	}
+	if newest > 0 {
+		resp["newestItemId"] = newest
+	}
+	plugin.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (a *NewsAPI) createFeed(w http.ResponseWriter, r *http.Request, db *sql.DB, username string) {
@@ -230,7 +295,7 @@ func (a *NewsAPI) createFeed(w http.ResponseWriter, r *http.Request, db *sql.DB,
 	}
 
 	var folderID sql.NullInt64
-	if body.FolderID != nil {
+	if body.FolderID != nil && *body.FolderID > 0 {
 		folderID = sql.NullInt64{Int64: *body.FolderID, Valid: true}
 	}
 	sub, err := createRSSSubscription(db, feedURL, folderID)
@@ -244,7 +309,7 @@ func (a *NewsAPI) createFeed(w http.ResponseWriter, r *http.Request, db *sql.DB,
 
 func (a *NewsAPI) deleteFeed(w http.ResponseWriter, db *sql.DB, id int64) {
 	if err := deleteSubscription(db, id); err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -263,7 +328,7 @@ func (a *NewsAPI) moveFeed(w http.ResponseWriter, r *http.Request, db *sql.DB, i
 		folderID = sql.NullInt64{Int64: *body.FolderID, Valid: true}
 	}
 	if err := moveSubscription(db, id, folderID); err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -278,44 +343,27 @@ func (a *NewsAPI) renameFeed(w http.ResponseWriter, r *http.Request, db *sql.DB,
 		return
 	}
 	if err := renameSubscription(db, id, body.Title); err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
 }
 
 func (a *NewsAPI) markFeedRead(w http.ResponseWriter, r *http.Request, db *sql.DB, id int64) {
-	var body struct {
-		NewestItemID int64 `json:"newestItemId"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
-		return
-	}
-	if body.NewestItemID > 0 {
-		if err := markSubReadBefore(db, id, body.NewestItemID); err != nil {
-			plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-	} else {
-		if err := markSubRead(db, id); err != nil {
-			plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-	}
-	w.WriteHeader(http.StatusOK)
+	a.markReadWhere(w, r, db, "subscription_id = ?", id)
 }
 
 // --- Items (WHERE type='text') ---
 
 func (a *NewsAPI) getItems(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	batchSize := queryInt(r, "batchSize", 50)
-	offset := queryInt(r, "offset", 0)
+	offset := int64(queryInt(r, "offset", 0))
 	typ := queryInt(r, "type", 3)
 	id := int64(queryInt(r, "id", 0))
-	getRead := r.URL.Query().Get("getRead") == "true"
+	getRead := r.URL.Query().Get("getRead") != "false"
+	oldestFirst := r.URL.Query().Get("oldestFirst") == "true"
 
-	items, err := allTextItems(db, batchSize, offset, typ, id, getRead)
+	items, err := allTextItems(db, batchSize, offset, typ, id, getRead, oldestFirst)
 	if err != nil {
 		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -336,62 +384,208 @@ func (a *NewsAPI) getUpdatedItems(w http.ResponseWriter, r *http.Request, db *sq
 	plugin.WriteJSON(w, http.StatusOK, map[string]any{"items": itemsToAPI(items)})
 }
 
-func (a *NewsAPI) setItemRead(w http.ResponseWriter, db *sql.DB, id int64, read bool) {
-	if err := setItemRead(db, id, read); err != nil {
+// itemActions maps the verb at the end of an item path to the column it sets.
+var itemActions = map[string]struct {
+	column string
+	value  int
+}{
+	"read":   {"is_read", 1},
+	"unread": {"is_read", 0},
+	"star":   {"is_starred", 1},
+	"unstar": {"is_starred", 0},
+}
+
+// updateItems handles every PUT under /items/ that changes read or starred
+// state. segs is the path after "/items/", in one of three shapes:
+//
+//	{itemId}/{action}            v1-2 read/unread, v1-3 everything
+//	{feedId}/{guidHash}/{action} v1-2 star/unstar
+//	{action}/multiple            bulk; the body names the items
+func (a *NewsAPI) updateItems(w http.ResponseWriter, r *http.Request, db *sql.DB, segs []string) {
+	act, ok := itemActions[segs[len(segs)-1]]
+	if len(segs) == 2 && segs[1] == "multiple" {
+		act, ok = itemActions[segs[0]]
+	}
+	if !ok || len(segs) < 2 || len(segs) > 3 {
+		plugin.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+
+	var ids []int64
+	switch {
+	case segs[1] == "multiple":
+		var body struct {
+			Items   json.RawMessage `json:"items"`
+			ItemIDs []int64         `json:"itemIds"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+			return
+		}
+		refs, err := decodeItemRefs(body.Items)
+		if err != nil {
+			plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		ids = append(body.ItemIDs, refs.ids...)
+		byHash, err := itemIDsByGUIDHash(db, refs.hashes)
+		if err != nil {
+			plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		ids = append(ids, byHash...)
+	case len(segs) == 3:
+		feedID, err := strconv.ParseInt(segs[0], 10, 64)
+		if err != nil {
+			plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid feed id"})
+			return
+		}
+		ids, err = itemIDsByGUIDHash(db, []guidRef{{FeedID: feedID, GUIDHash: segs[1]}})
+		if err != nil {
+			plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if len(ids) == 0 {
+			plugin.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "item not found"})
+			return
+		}
+	default:
+		id, err := strconv.ParseInt(segs[0], 10, 64)
+		if err != nil {
+			plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid item id"})
+			return
+		}
+		ids = []int64{id}
+	}
+
+	if err := setItemsBool(db, act.column, act.value, ids); err != nil {
 		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
 }
 
-func (a *NewsAPI) setItemStarred(w http.ResponseWriter, db *sql.DB, id int64, starred bool) {
-	if err := setItemStarred(db, id, starred); err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	w.WriteHeader(http.StatusOK)
+// markAllRead handles PUT /items/read.
+func (a *NewsAPI) markAllRead(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	a.markReadWhere(w, r, db, "1 = 1")
 }
 
-func (a *NewsAPI) bulkRead(w http.ResponseWriter, r *http.Request, db *sql.DB, read bool) {
+// markFolderRead handles PUT /folders/{id}/read.
+func (a *NewsAPI) markFolderRead(w http.ResponseWriter, r *http.Request, db *sql.DB, id int64) {
+	a.markReadWhere(w, r, db, "subscription_id IN (SELECT id FROM subscriptions WHERE folder_id = ?)", id)
+}
+
+// markReadWhere marks the text items matching cond read, up to the body's
+// newestItemId so that items the client has not seen yet stay unread.
+func (a *NewsAPI) markReadWhere(w http.ResponseWriter, r *http.Request, db *sql.DB, cond string, args ...any) {
 	var body struct {
-		Items []int64 `json:"items"`
+		NewestItemID int64 `json:"newestItemId"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
 		plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
-	var err error
-	if read {
-		err = markItemsRead(db, body.Items)
-	} else {
-		err = markItemsUnread(db, body.Items)
+	if body.NewestItemID > 0 {
+		cond += " AND id <= ?"
+		args = append(args, body.NewestItemID)
 	}
-	if err != nil {
+	if err := markItemsReadWhere(db, cond, args...); err != nil {
 		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
 }
 
-func (a *NewsAPI) bulkStar(w http.ResponseWriter, r *http.Request, db *sql.DB, star bool) {
-	var body struct {
-		Items []int64 `json:"items"`
+// guidRef is how API v1-2 names an item for starring.
+type guidRef struct {
+	FeedID   int64  `json:"feedId"`
+	GUIDHash string `json:"guidHash"`
+}
+
+type itemRefs struct {
+	ids    []int64
+	hashes []guidRef
+}
+
+// decodeItemRefs reads a bulk "items" array, which v1-2 sends as item IDs for
+// read/unread and as {feedId, guidHash} objects for star/unstar.
+func decodeItemRefs(raw json.RawMessage) (itemRefs, error) {
+	var refs itemRefs
+	if len(raw) == 0 || string(raw) == "null" {
+		return refs, nil
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
-		return
+	if err := json.Unmarshal(raw, &refs.ids); err == nil {
+		return refs, nil
 	}
-	var err error
-	if star {
-		err = starItems(db, body.Items)
-	} else {
-		err = unstarItems(db, body.Items)
+	if err := json.Unmarshal(raw, &refs.hashes); err != nil {
+		return refs, fmt.Errorf("items must be item ids or {feedId, guidHash} objects: %w", err)
 	}
+	return refs, nil
+}
+
+// itemIDsByGUIDHash resolves v1-2 {feedId, guidHash} references. The hash is
+// derived rather than stored, so each feed's GUIDs are hashed once per call.
+func itemIDsByGUIDHash(db *sql.DB, refs []guidRef) ([]int64, error) {
+	want := make(map[int64]map[string]bool)
+	for _, ref := range refs {
+		if want[ref.FeedID] == nil {
+			want[ref.FeedID] = make(map[string]bool)
+		}
+		want[ref.FeedID][ref.GUIDHash] = true
+	}
+	var ids []int64
+	for feedID, hashes := range want {
+		rows, err := db.Query(`SELECT id, guid FROM items WHERE subscription_id = ? AND type = 'text'`, feedID)
+		if err != nil {
+			return nil, fmt.Errorf("items by guid hash: %w", err)
+		}
+		for rows.Next() {
+			var id int64
+			var guid string
+			if err := rows.Scan(&id, &guid); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("items by guid hash scan: %w", err)
+			}
+			if hashes[md5Hex(guid)] {
+				ids = append(ids, id)
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, fmt.Errorf("items by guid hash rows: %w", err)
+		}
+	}
+	return ids, nil
+}
+
+// errNotFound is returned by the DB helpers when no row matched the ID.
+var errNotFound = errors.New("not found")
+
+// writeErr answers with 404 for errNotFound and 500 for anything else.
+func writeErr(w http.ResponseWriter, err error) {
+	status := http.StatusInternalServerError
+	if errors.Is(err, errNotFound) {
+		status = http.StatusNotFound
+	}
+	plugin.WriteJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+// execOne runs a statement that targets one row and reports errNotFound
+// when it matched none.
+func execOne(db *sql.DB, what, q string, args ...any) error {
+	res, err := db.Exec(q, args...)
 	if err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
+		return fmt.Errorf("%s: %w", what, err)
 	}
-	w.WriteHeader(http.StatusOK)
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s rows affected: %w", what, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%s: %w", what, errNotFound)
+	}
+	return nil
 }
 
 // --- DB helpers: folders ---
@@ -434,17 +628,34 @@ func createFolder(db *sql.DB, name string) (folder, error) {
 }
 
 func renameFolder(db *sql.DB, id int64, name string) error {
-	_, err := db.Exec(`UPDATE folders SET name = ? WHERE id = ?`, name, id)
-	if err != nil {
-		return fmt.Errorf("rename folder: %w", err)
-	}
-	return nil
+	return execOne(db, "rename folder", `UPDATE folders SET name = ? WHERE id = ?`, name, id)
 }
 
+// deleteFolder deletes a folder and, as NextCloud News does, the RSS feeds in
+// it. Podcast and video subscriptions are not the news API's to delete, so
+// they fall back to the root.
 func deleteFolder(db *sql.DB, id int64) error {
-	_, err := db.Exec(`DELETE FROM folders WHERE id = ?`, id)
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("delete folder begin: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM subscriptions WHERE folder_id = ? AND kind = 'rss'`, id); err != nil {
+		return fmt.Errorf("delete folder feeds: %w", err)
+	}
+	res, err := tx.Exec(`DELETE FROM folders WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete folder: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete folder rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("delete folder: %w", errNotFound)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("delete folder commit: %w", err)
 	}
 	return nil
 }
@@ -452,21 +663,23 @@ func deleteFolder(db *sql.DB, id int64) error {
 // --- DB helpers: subscriptions (kind='rss') ---
 
 type subscription struct {
-	ID         int64
-	FolderID   sql.NullInt64
-	URL        string
-	Title      string
-	FaviconURL string
-	SiteURL    string
-	ErrorCount int64
-	LastError  string
-	CreatedAt  int64
+	ID          int64
+	FolderID    sql.NullInt64
+	URL         string
+	Title       string
+	FaviconURL  string
+	SiteURL     string
+	ErrorCount  int64
+	LastError   string
+	CreatedAt   int64
+	UnreadCount int64
 }
 
 func listRSSSubscriptions(db *sql.DB) ([]subscription, error) {
 	rows, err := db.Query(`
-		SELECT id, folder_id, url, title, favicon_url, site_url, error_count, last_error, created_at
-		FROM subscriptions
+		SELECT id, folder_id, url, title, favicon_url, site_url, error_count, last_error, created_at,
+			(SELECT COUNT(*) FROM items i WHERE i.subscription_id = s.id AND i.type = 'text' AND i.is_read = 0)
+		FROM subscriptions s
 		WHERE kind = 'rss'
 		ORDER BY title`)
 	if err != nil {
@@ -500,47 +713,17 @@ func createRSSSubscription(db *sql.DB, rawURL string, folderID sql.NullInt64) (s
 }
 
 func deleteSubscription(db *sql.DB, id int64) error {
-	_, err := db.Exec(`DELETE FROM subscriptions WHERE id = ?`, id)
-	if err != nil {
-		return fmt.Errorf("delete subscription: %w", err)
-	}
-	return nil
+	return execOne(db, "delete subscription", `DELETE FROM subscriptions WHERE id = ? AND kind = 'rss'`, id)
 }
 
 func moveSubscription(db *sql.DB, id int64, folderID sql.NullInt64) error {
-	_, err := db.Exec(`UPDATE subscriptions SET folder_id = ? WHERE id = ?`, folderID, id)
-	if err != nil {
-		return fmt.Errorf("move subscription: %w", err)
-	}
-	return nil
+	return execOne(db, "move subscription", `
+		UPDATE subscriptions SET folder_id = ?1
+		WHERE id = ?2 AND kind = 'rss' AND (?1 IS NULL OR ?1 IN (SELECT id FROM folders))`, folderID, id)
 }
 
 func renameSubscription(db *sql.DB, id int64, title string) error {
-	_, err := db.Exec(`UPDATE subscriptions SET title = ? WHERE id = ?`, title, id)
-	if err != nil {
-		return fmt.Errorf("rename subscription: %w", err)
-	}
-	return nil
-}
-
-func markSubRead(db *sql.DB, subID int64) error {
-	_, err := db.Exec(`
-		UPDATE items SET is_read = 1, fetched_at = unixepoch()
-		WHERE subscription_id = ? AND is_read = 0`, subID)
-	if err != nil {
-		return fmt.Errorf("mark sub read: %w", err)
-	}
-	return nil
-}
-
-func markSubReadBefore(db *sql.DB, subID, newestItemID int64) error {
-	_, err := db.Exec(`
-		UPDATE items SET is_read = 1, fetched_at = unixepoch()
-		WHERE subscription_id = ? AND id <= ? AND is_read = 0`, subID, newestItemID)
-	if err != nil {
-		return fmt.Errorf("mark sub read before: %w", err)
-	}
-	return nil
+	return execOne(db, "rename subscription", `UPDATE subscriptions SET title = ? WHERE id = ? AND kind = 'rss'`, title, id)
 }
 
 func scanSubscriptions(rows *sql.Rows) ([]subscription, error) {
@@ -548,7 +731,7 @@ func scanSubscriptions(rows *sql.Rows) ([]subscription, error) {
 	for rows.Next() {
 		var s subscription
 		if err := rows.Scan(&s.ID, &s.FolderID, &s.URL, &s.Title, &s.FaviconURL,
-			&s.SiteURL, &s.ErrorCount, &s.LastError, &s.CreatedAt); err != nil {
+			&s.SiteURL, &s.ErrorCount, &s.LastError, &s.CreatedAt, &s.UnreadCount); err != nil {
 			return nil, fmt.Errorf("scan subscription: %w", err)
 		}
 		subs = append(subs, s)
@@ -573,13 +756,15 @@ type itemWithSub struct {
 	FetchedAt   int64
 	IsRead      bool
 	IsStarred   bool
-	ContentHash string
 	SubTitle    string
 }
 
-func allTextItems(db *sql.DB, limit, offset int, typ int, id int64, getRead bool) ([]itemWithSub, error) {
+// allTextItems pages through text items the way NextCloud News does: offset
+// is an item ID, not a row count, and each page continues past the last ID
+// the client received.
+func allTextItems(db *sql.DB, limit int, offset int64, typ int, id int64, getRead, oldestFirst bool) ([]itemWithSub, error) {
 	q := `SELECT i.id, i.subscription_id, i.guid, i.title, i.author, i.url,
-		i.content_html, i.published_at, i.fetched_at, i.is_read, i.is_starred, i.content_hash,
+		i.content_html, i.published_at, i.fetched_at, i.is_read, i.is_starred,
 		s.title
 		FROM items i JOIN subscriptions s ON i.subscription_id = s.id
 		WHERE i.type = 'text'`
@@ -606,19 +791,32 @@ func allTextItems(db *sql.DB, limit, offset int, typ int, id int64, getRead bool
 		conditions = append(conditions, "i.is_starred = 1")
 	}
 
+	order := "DESC"
+	if oldestFirst {
+		order = "ASC"
+	}
+	if offset > 0 {
+		if oldestFirst {
+			conditions = append(conditions, "i.id > ?")
+		} else {
+			conditions = append(conditions, "i.id < ?")
+		}
+		args = append(args, offset)
+	}
+
 	if len(conditions) > 0 {
 		q += " AND " + strings.Join(conditions, " AND ")
 	}
 
-	q += " ORDER BY i.id DESC LIMIT ? OFFSET ?"
-	args = append(args, limit, offset)
+	q += " ORDER BY i.id " + order + " LIMIT ?"
+	args = append(args, limit)
 
 	return queryItems(db, q, args...)
 }
 
 func updatedTextItems(db *sql.DB, lastModified int64, typ int, id int64) ([]itemWithSub, error) {
 	q := `SELECT i.id, i.subscription_id, i.guid, i.title, i.author, i.url,
-		i.content_html, i.published_at, i.fetched_at, i.is_read, i.is_starred, i.content_hash,
+		i.content_html, i.published_at, i.fetched_at, i.is_read, i.is_starred,
 		s.title
 		FROM items i JOIN subscriptions s ON i.subscription_id = s.id
 		WHERE i.type = 'text' AND i.fetched_at >= ?`
@@ -635,6 +833,8 @@ func updatedTextItems(db *sql.DB, lastModified int64, typ int, id int64) ([]item
 			q += " AND s.folder_id = ?"
 			args = append(args, id)
 		}
+	case 2: // starred
+		q += " AND i.is_starred = 1"
 	}
 
 	q += " ORDER BY i.id DESC"
@@ -654,7 +854,7 @@ func queryItems(db *sql.DB, q string, args ...any) ([]itemWithSub, error) {
 		if err := rows.Scan(
 			&it.ID, &it.SubID, &it.GUID, &it.Title, &it.Author, &it.URL,
 			&it.ContentHTML, &it.PublishedAt, &it.FetchedAt, &isRead,
-			&isStarred, &it.ContentHash, &it.SubTitle); err != nil {
+			&isStarred, &it.SubTitle); err != nil {
 			return nil, fmt.Errorf("scan item: %w", err)
 		}
 		it.IsRead = isRead != 0
@@ -667,36 +867,14 @@ func queryItems(db *sql.DB, q string, args ...any) ([]itemWithSub, error) {
 	return items, nil
 }
 
-func setItemRead(db *sql.DB, id int64, read bool) error {
-	_, err := db.Exec(`UPDATE items SET is_read = ?, fetched_at = unixepoch() WHERE id = ?`, boolInt(read), id)
+// markItemsReadWhere marks unread text items matching cond read.
+func markItemsReadWhere(db *sql.DB, cond string, args ...any) error {
+	_, err := db.Exec(`UPDATE items SET is_read = 1, fetched_at = unixepoch()
+		WHERE type = 'text' AND is_read = 0 AND `+cond, args...)
 	if err != nil {
-		return fmt.Errorf("set item read: %w", err)
+		return fmt.Errorf("mark items read: %w", err)
 	}
 	return nil
-}
-
-func setItemStarred(db *sql.DB, id int64, starred bool) error {
-	_, err := db.Exec(`UPDATE items SET is_starred = ?, fetched_at = unixepoch() WHERE id = ?`, boolInt(starred), id)
-	if err != nil {
-		return fmt.Errorf("set item starred: %w", err)
-	}
-	return nil
-}
-
-func markItemsRead(db *sql.DB, ids []int64) error {
-	return setItemsBool(db, "is_read", 1, ids)
-}
-
-func markItemsUnread(db *sql.DB, ids []int64) error {
-	return setItemsBool(db, "is_read", 0, ids)
-}
-
-func starItems(db *sql.DB, ids []int64) error {
-	return setItemsBool(db, "is_starred", 1, ids)
-}
-
-func unstarItems(db *sql.DB, ids []int64) error {
-	return setItemsBool(db, "is_starred", 0, ids)
 }
 
 func setItemsBool(db *sql.DB, column string, val int, ids []int64) error {
@@ -718,13 +896,16 @@ func setItemsBool(db *sql.DB, column string, val int, ids []int64) error {
 	return nil
 }
 
-func starredCount(db *sql.DB) (int, error) {
-	var n int
-	err := db.QueryRow(`SELECT COUNT(*) FROM items WHERE is_starred = 1`).Scan(&n)
+// feedTotals returns the starred count and newest item ID that accompany the
+// feed list.
+func feedTotals(db *sql.DB) (starred, newest int64, err error) {
+	err = db.QueryRow(`
+		SELECT COALESCE(SUM(is_starred), 0), COALESCE(MAX(id), 0)
+		FROM items WHERE type = 'text'`).Scan(&starred, &newest)
 	if err != nil {
-		return 0, fmt.Errorf("starred count: %w", err)
+		return 0, 0, fmt.Errorf("feed totals: %w", err)
 	}
-	return n, nil
+	return starred, newest, nil
 }
 
 // --- API serialization ---
@@ -756,7 +937,7 @@ func subToAPI(s subscription) map[string]any {
 		"faviconLink":      s.FaviconURL,
 		"added":            s.CreatedAt,
 		"folderId":         fid,
-		"unreadCount":      0,
+		"unreadCount":      s.UnreadCount,
 		"ordering":         0,
 		"link":             s.SiteURL,
 		"pinned":           false,
@@ -773,11 +954,15 @@ func subsToAPI(subs []subscription) []map[string]any {
 	return out
 }
 
+// itemToAPI serialises an item. NextCloud News derives guidHash from the GUID
+// and fingerprint from the content; clients key and deduplicate on both, so
+// each must differ between items exactly when NextCloud's would.
 func itemToAPI(it itemWithSub) map[string]any {
+	fingerprint := md5Hex(it.Title + it.URL + it.ContentHTML)
 	return map[string]any{
 		"id":               it.ID,
 		"guid":             it.GUID,
-		"guidHash":         it.ContentHash,
+		"guidHash":         md5Hex(it.GUID),
 		"url":              it.URL,
 		"title":            it.Title,
 		"author":           it.Author,
@@ -787,8 +972,8 @@ func itemToAPI(it itemWithSub) map[string]any {
 		"unread":           !it.IsRead,
 		"starred":          it.IsStarred,
 		"lastModified":     it.FetchedAt,
-		"fingerprint":      it.ContentHash,
-		"contentHash":      it.ContentHash,
+		"fingerprint":      fingerprint,
+		"contentHash":      fingerprint,
 		"enclosureMime":    nil,
 		"enclosureLink":    nil,
 		"mediaThumbnail":   nil,
@@ -818,17 +1003,10 @@ func queryInt(r *http.Request, key string, def int) int {
 	return v
 }
 
-func boolInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
+func md5Hex(s string) string {
+	sum := md5.Sum([]byte(s))
+	return hex.EncodeToString(sum[:])
 }
-
-var allowPrivateIPs = func() bool {
-	v := os.Getenv("COG_PRIvaTE_IPS")
-	return v == "true" || v == "1" || v == "yes"
-}()
 
 // validateURL checks that a URL is safe to fetch (SSRF protection).
 func validateURL(rawURL string) error {
@@ -852,7 +1030,7 @@ func validateURL(rawURL string) error {
 		if ip == nil {
 			continue
 		}
-		if allowPrivateIPs {
+		if safehttp.AllowPrivate() {
 			continue
 		}
 		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
