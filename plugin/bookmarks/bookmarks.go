@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -49,6 +50,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterNavItem(plugin.NavItem{Label: "Bookmarks", URL: "/apps/bookmarks", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Recent Bookmarks",
+		URL:      "/apps/bookmarks/",
 		Priority: 35,
 		Render:   p.renderWidget,
 	})
@@ -75,6 +77,10 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterPage("bookmark/{id}", http.HandlerFunc(pages.BookmarkView))
 	ctx.RegisterPage("bookmark/{id}/edit", http.HandlerFunc(pages.BookmarkEdit))
 	ctx.RegisterPage("new", http.HandlerFunc(pages.NewBookmark))
+	ctx.RegisterPage("import-export", http.HandlerFunc(pages.ImportExport))
+	ctx.RegisterAPI("bookmarks/{id}/open", http.HandlerFunc(pages.OpenBookmark))
+	ctx.RegisterAction("POST", "tags/rename", http.HandlerFunc(pages.RenameTag))
+	ctx.RegisterAction("POST", "tags/delete", http.HandlerFunc(pages.DeleteTag))
 	ctx.RegisterAction("POST", "bookmarks", http.HandlerFunc(pages.CreateBookmark))
 	ctx.RegisterAction("POST", "bookmarks/{id}", http.HandlerFunc(pages.UpdateBookmark))
 	ctx.RegisterAction("DELETE", "bookmarks/{id}", http.HandlerFunc(pages.DeleteBookmark))
@@ -100,8 +106,11 @@ func (p *Plugin) Stop() error                     { return nil }
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
 	db, err := p.DB(userID)
 	if err != nil {
-		return nil
+		return fmt.Errorf("open bookmarks database: %w", err)
 	}
-	bms, _ := RecentBookmarks(db, 5)
+	bms, err := RecentBookmarks(db, 5)
+	if err != nil {
+		return fmt.Errorf("recent bookmarks: %w", err)
+	}
 	return recentBookmarksWidget(bms).Render(ctx, w)
 }

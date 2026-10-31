@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/internal/testing/webtest"
@@ -50,6 +51,11 @@ func TestBrowserCore(t *testing.T) {
 	env.CreateUser(t, "dropdown", "pass")
 	env.CreateUser(t, "profile", "pass")
 	env.CreateUser(t, "security", "pass")
+	env.CreateUser(t, "menu-open", "pass")
+	env.CreateUser(t, "apps-menu", "pass")
+	env.CreateUser(t, "searcher", "pass")
+	filled := env.CreateUser(t, "filled", "pass")
+	env.CreateUser(t, "storage", "pass")
 
 	t.Run("Login/Success", func(t *testing.T) {
 		b := eng.Start(t)
@@ -129,4 +135,104 @@ func TestBrowserCore(t *testing.T) {
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
+
+	// The dropdown opens on focus; the subtest above only saw it closed.
+	t.Run("UserDropdown/Open", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "menu-open", "pass")
+		b.Click(t, ".navbar-end .dropdown-toggle")
+		b.WaitVisible(t, "#user-menu")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	// At phone width with every plugin the nav collapses to the apps menu.
+	// The menu is hidden at desktop width, so put the navbar into its
+	// collapsed stage first and open the menu; the mobile resize then keeps
+	// the stage the navbar script would have chosen anyway.
+	t.Run("AppsMenu/Open", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "apps-menu", "pass")
+		b.Eval(t, `() => document.querySelector(".navbar").classList.add("navbar--collapsed")`)
+		b.Click(t, `[aria-controls="apps-menu"]`)
+		b.WaitVisible(t, "#apps-menu")
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	// On a phone the search box is behind a button and opens as a panel
+	// under the navbar.
+	t.Run("Search/Mobile", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "searcher", "pass")
+		b.Eval(t, `() => document.querySelector(".navbar").classList.add("navbar--collapsed")`)
+		b.Click(t, ".search-toggle")
+		b.Type(t, "#search-box", "sec")
+		b.WaitVisible(t, "#search-results .search-hit")
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("Search/Pages", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "searcher", "pass")
+		b.Type(t, "#search-box", "se")
+		b.WaitVisible(t, "#search-results .search-hit")
+		b.Snapshot(t)
+	})
+
+	t.Run("Search/NoResults", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "searcher", "pass")
+		b.Type(t, "#search-box", "zzqqxx")
+		b.WaitVisible(t, "#search-results .search-empty")
+		b.Snapshot(t)
+	})
+
+	// The dashboard with something in it: every widget above is empty.
+	t.Run("Dashboard/WithData", func(t *testing.T) {
+		u := filled
+		for _, title := range []string{"Groceries", "Meeting notes for the quarterly planning session with a long title"} {
+			env.PostJSON(t, "/index.php/apps/notes/api/v1/notes",
+				map[string]any{"title": title, "content": "body"}, u.Auth).Status(200)
+		}
+		env.PostJSON(t, "/index.php/apps/bookmarks/public/rest/v2/bookmark",
+			map[string]any{"url": "https://example.com/a/very/long/path/that/keeps/going", "title": "Example bookmark"}, u.Auth).Status(200)
+		env.Put(t, "/remote.php/dav/files/"+u.ID+"/report-2026-with-a-rather-long-file-name.txt",
+			strings.NewReader("hello"), u.Auth).Status(201)
+		grp, err := env.Providers.Groups.Create("family", nil, nil)
+		require.NoError(t, err)
+		require.NoError(t, env.Providers.Groups.AddMember(grp.ID, u.ID, group.Owner))
+
+		b := eng.Start(t)
+		b.Login(t, "filled", "pass")
+		b.WaitVisible(t, ".app-grid")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("Settings/Storage", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "storage", "pass")
+		b.Navigate(t, "/settings/storage")
+		b.WaitVisible(t, `input[name="user_path"]`)
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+}
+
+// The import page lists collections by database ID, so it gets an
+// environment of its own: in the shared one the IDs depend on which other
+// subtests ran first.
+func TestBrowserSettingsData(t *testing.T) {
+	env := cogtest.New(t, allPlugins...)
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	env.CreateUser(t, "data", "pass")
+	b := eng.Start(t)
+	b.Login(t, "data", "pass")
+	b.Navigate(t, "/settings/data")
+	b.WaitVisible(t, "#import-file")
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 }

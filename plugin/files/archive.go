@@ -416,6 +416,10 @@ func sortArchiveEntries(entries []ArchiveEntry) {
 		if entries[i].IsDir != entries[j].IsDir {
 			return entries[i].IsDir
 		}
+		a, b := strings.ToLower(entries[i].Name), strings.ToLower(entries[j].Name)
+		if a != b {
+			return a < b
+		}
 		return entries[i].Name < entries[j].Name
 	})
 }
@@ -436,10 +440,16 @@ func isArchiveEntryDir(f archiveReader, size int64, format, entryPath string) bo
 	return len(entries) > 0
 }
 
-// formatArchiveTime formats a Unix timestamp for display.
-func formatArchiveTime(unix int64) string {
-	if unix <= 0 {
+// dosEpoch is 1980-01-01, the earliest time a zip entry can record. An
+// archive written without timestamps stores zero, which decodes to just
+// before it (1979-11-30); such a time means "unknown", not a date.
+const dosEpoch = 315532800
+
+// formatArchiveTime formats an entry's time for display, or "" when the
+// archive did not record one.
+func formatArchiveTime(unix int64, now time.Time) string {
+	if unix < dosEpoch {
 		return ""
 	}
-	return time.Unix(unix, 0).Format("2006-01-02 15:04")
+	return shortTime(unix, now)
 }

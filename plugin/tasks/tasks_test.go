@@ -366,3 +366,51 @@ func TestTasksUpdateList(t *testing.T) {
 	require.Equal(t, "New Name", updated.Name)
 	require.Equal(t, "#ff0000", updated.Color)
 }
+
+// TestTasksToggleMovesTopLevelTask checks that ticking a top-level task
+// answers with both root groups and the completed count out of band, so the
+// row moves between the open list and "Completed" without a reload, while a
+// subtask is still swapped in place.
+func TestTasksToggleMovesTopLevelTask(t *testing.T) {
+	env, tp, alice := setupDB(t)
+	db, err := tp.DB(alice.Username)
+	require.NoError(t, err)
+	list, err := tp.CreateList(alice.ID, "Toggle", "")
+	require.NoError(t, err)
+
+	parent, err := tasks.CreateTask(db, list, "p", tasks.NewTask{Summary: "Parent"}, time.Now())
+	require.NoError(t, err)
+	child, err := tasks.CreateTask(db, list, "c", tasks.NewTask{Summary: "Child", ParentUID: parent.UID}, time.Now())
+	require.NoError(t, err)
+	other, err := tasks.CreateTask(db, list, "o", tasks.NewTask{Summary: "Other"}, time.Now())
+	require.NoError(t, err)
+
+	cookie, csrf := sessionAuth(t, env, alice)
+	toggle := func(id int64) *cogtest.Response {
+		return env.Post(t, "/apps/tasks/task/"+itoa(id)+"/toggle", cookie, csrf, cogtest.Header("HX-Request", "true")).Status(200)
+	}
+
+	// Ticking: the task leaves #task-open for #task-done, the count says 1.
+	resp := toggle(other.ID)
+	require.Equal(t, "none", resp.Header.Get("HX-Reswap"))
+	body := resp.ReadBody()
+	open, done, ok := strings.Cut(body, `id="task-completed-count"`)
+	require.True(t, ok, "no completed count in %s", body)
+	assert.True(t, strings.Contains(open, `id="task-open" hx-swap-oob="true"`), "open group not swapped out of band: %s", open)
+	assert.True(t, strings.Contains(open, "Parent") && !strings.Contains(open, "Other"), "open group: %s", open)
+	assert.True(t, strings.HasPrefix(done, ` hx-swap-oob="true">1</span>`), "count: %s", done)
+	assert.True(t, strings.Contains(done, `id="task-done" hx-swap-oob="true"`) && strings.Contains(done, "Other"), "done group: %s", done)
+
+	// Unticking moves it back and the count drops to 0.
+	body = toggle(other.ID).ReadBody()
+	open, done, _ = strings.Cut(body, `id="task-completed-count"`)
+	assert.True(t, strings.Contains(open, "Other"), "open group after untick: %s", open)
+	assert.True(t, strings.HasPrefix(done, ` hx-swap-oob="true">0</span>`), "count after untick: %s", done)
+
+	// A subtask stays where it is: its own row comes back, swapped in place.
+	resp = toggle(child.ID)
+	require.Equal(t, "", resp.Header.Get("HX-Reswap"))
+	body = resp.ReadBody()
+	assert.True(t, strings.HasPrefix(body, `<div id="task-`+itoa(child.ID)+`" class="task-item completed"`), "subtask row: %s", body)
+	assert.False(t, strings.Contains(body, "hx-swap-oob"), "subtask toggle swapped out of band: %s", body)
+}

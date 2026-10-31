@@ -11,9 +11,11 @@ import templruntime "github.com/a-h/templ/runtime"
 import (
 	"fmt"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/ui"
 )
 
-func eventsWidget(events []EventWithCalendar) templ.Component {
+func eventsWidget(events []EventWithCalendar, now time.Time) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -35,69 +37,96 @@ func eventsWidget(events []EventWithCalendar) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		if len(events) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<p class=\"text-muted\">No upcoming events.</p>")
+			templ_7745c5c3_Err = ui.WidgetEmpty("Nothing coming up.", "Open calendar", "/apps/calendar/").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<ul class=\"widget-list\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 			for _, ev := range events {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div style=\"padding:0.4rem 0;border-bottom:1px solid var(--color-border)\"><a href=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<li class=\"cal-widget-row\"><span class=\"color-dot\" style=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var2 templ.SafeURL
-				templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/calendar/?date=%s", time.Unix(ev.DTStart, 0).UTC().Format("2006-01-02"))))
+				var templ_7745c5c3_Var2 string
+				templ_7745c5c3_Var2, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues("background:" + widgetColor(ev))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/widget.templ`, Line: 14, Col: 120}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/widget.templ`, Line: 17, Col: 68}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" style=\"font-weight:500\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"></span><div class=\"cal-widget-text\"><a class=\"cal-widget-title\" href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var3 string
-				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Summary)
+				var templ_7745c5c3_Var3 templ.SafeURL
+				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/calendar/?date=%s&event=%d", widgetDate(ev), ev.ID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/widget.templ`, Line: 15, Col: 17}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/widget.templ`, Line: 19, Col: 126}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</a><div class=\"text-muted\" style=\"font-size:0.85rem\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var4 string
-				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(widgetEventTime(ev))
+				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(ev.Summary)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/widget.templ`, Line: 18, Col: 26}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/widget.templ`, Line: 19, Col: 141}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</a><div class=\"text-sm text-muted\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
+				var templ_7745c5c3_Var5 string
+				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(formatEventTime(ev.DTStart, ev.DTEnd, ev.IsAllDay, ev.Zone(), now))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/calendar/widget.templ`, Line: 20, Col: 106}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div></div></li>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</ul>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
 			}
 		}
 		return nil
 	})
 }
 
-// widgetEventTime formats an event's start in its calendar's zone. All-day
-// dates are stored at UTC midnight, so they're formatted in UTC.
-func widgetEventTime(ev EventWithCalendar) string {
-	start := time.Unix(ev.DTStart, 0)
+// widgetDate is the day an event starts, which the calendar opens on.
+func widgetDate(ev EventWithCalendar) string {
+	t := time.Unix(ev.DTStart, 0)
 	if ev.IsAllDay {
-		return start.UTC().Format("Mon, Jan 2")
+		return t.UTC().Format("2006-01-02")
 	}
-	return start.In(ev.Zone()).Format("Mon, Jan 2 15:04")
+	return t.In(ev.Zone()).Format("2006-01-02")
+}
+
+func widgetColor(ev EventWithCalendar) string {
+	if ev.Color != "" {
+		return ev.Color
+	}
+	return ev.CalendarColor
 }
 
 var _ = templruntime.GeneratedTemplate

@@ -4,90 +4,129 @@ import (
 	"fmt"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/ui"
+	"net/url"
 	"path"
 )
 
-templ volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items []volume.FileInfo) {
+func browseURL(volID, p string) string {
+	return fmt.Sprintf("/volumes/%s/browse?path=%s", volID, url.QueryEscape(p))
+}
+
+// volumeCrumbs leads from the page the volume was opened from, through the
+// volume's root, to the folder above the current one.
+func volumeCrumbs(vol *volume.Volume, dirPath string, back ui.Crumb) []ui.Crumb {
+	crumbs := []ui.Crumb{back}
+	segs := breadcrumbSegments(dirPath)
+	if len(segs) == 0 {
+		return crumbs
+	}
+	crumbs = append(crumbs, ui.Crumb{Label: vol.Name, URL: "/volumes/" + vol.ID + "/browse"})
+	for _, seg := range segs[:len(segs)-1] {
+		crumbs = append(crumbs, ui.Crumb{Label: seg.Name, URL: browseURL(vol.ID, seg.Path)})
+	}
+	return crumbs
+}
+
+func volumeTitle(vol *volume.Volume, dirPath string) string {
+	segs := breadcrumbSegments(dirPath)
+	if len(segs) == 0 {
+		return vol.Name
+	}
+	return segs[len(segs)-1].Name
+}
+
+templ volumeBrowsePage(pd ui.PageData, vol *volume.Volume, dirPath string, items []volume.FileInfo, hidden int, back ui.Crumb) {
 	@ui.Base(pd) {
-		<h1 style="margin-bottom:0.5rem">{ vol.Name }</h1>
-		@volumeBreadcrumbs(vol.ID, dirPath)
-		@ui.Card("") {
-			<div class="flex gap-1 items-end mb-2" style="flex-wrap:wrap">
-				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/volumes/%s/mkdir?path=%s", vol.ID, dirPath)) } class="flex gap-1 items-end">
-					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-					<input class="form-control" type="text" name="name" placeholder="New folder" required style="max-width:200px"/>
-					<button class="btn btn-outline btn-sm" type="submit">Create Folder</button>
-				</form>
-				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/volumes/%s/upload?path=%s", vol.ID, dirPath)) } enctype="multipart/form-data" class="flex gap-1 items-end">
-					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-					<input class="form-control" type="file" name="file" required style="max-width:300px"/>
-					<button class="btn btn-primary btn-sm" type="submit">Upload</button>
-				</form>
-			</div>
-			<table class="table">
-				<thead>
-					<tr>
-						<th>Name</th>
-						<th>Size</th>
-						<th>Modified</th>
-						<th class="text-right">Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					if dirPath != "/" && dirPath != "" {
-						<tr>
-							<td>
-								<a href={ templ.SafeURL(fmt.Sprintf("/volumes/%s/browse?path=%s", vol.ID, parentDir(dirPath))) }>../</a>
-							</td>
-							<td></td>
-							<td></td>
-							<td></td>
-						</tr>
-					}
-					for _, f := range items {
-						<tr id={ "file-" + safeDomID(f.Path) }>
-							<td>
-								if f.IsDir {
-									<a href={ templ.SafeURL(fmt.Sprintf("/volumes/%s/browse?path=%s", vol.ID, f.Path)) }>{ f.Name }/</a>
-								} else {
-									<a href={ templ.SafeURL(fmt.Sprintf("/volumes/%s/download?path=%s", vol.ID, f.Path)) }>{ f.Name }</a>
-								}
-							</td>
-							<td>
-								if !f.IsDir {
-									{ formatSize(f.Size) }
-								}
-							</td>
-							<td>
-								if !f.ModTime.IsZero() {
-									{ f.ModTime.Format("2006-01-02 15:04") }
-								}
-							</td>
-							<td class="text-right">
-								<button
-									class="btn btn-danger btn-sm"
-									hx-delete={ fmt.Sprintf("/volumes/%s/file?path=%s", vol.ID, f.Path) }
-									hx-target={ "#file-" + safeDomID(f.Path) }
-									hx-swap="outerHTML"
-									hx-confirm={ "Delete " + f.Name + "?" }
-								>Delete</button>
-							</td>
-						</tr>
-					}
-				</tbody>
-			</table>
+		@ui.PageHeader(volumeTitle(vol, dirPath), volumeCrumbs(vol, dirPath, back)) {
+			@ui.Upload(fmt.Sprintf("/volumes/%s/upload?path=%s", vol.ID, url.QueryEscape(dirPath)), "file", "", pd.CSRFToken, "Upload file", "btn btn-primary")
 		}
+		<div class="card">
+			<form method="post" action={ templ.SafeURL(fmt.Sprintf("/volumes/%s/mkdir?path=%s", vol.ID, url.QueryEscape(dirPath))) } class="form-inline mb-2">
+				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+				<label class="sr-only" for="new-folder">New folder name</label>
+				<input class="form-control" type="text" id="new-folder" name="name" placeholder="New folder name" required/>
+				<button class="btn btn-secondary" type="submit">Create folder</button>
+			</form>
+			<div class="table-wrap">
+				<table class="table">
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th class="col-shrink text-right hide-mobile">Size</th>
+							<th class="col-shrink hide-mobile">Modified</th>
+							<th class="col-actions"><span class="sr-only">Actions</span></th>
+						</tr>
+					</thead>
+					<tbody>
+						if len(items) == 0 {
+							<tr><td colspan="4" class="empty-state">This folder is empty.</td></tr>
+						}
+						for _, f := range items {
+							<tr id={ "file-" + safeDomID(f.Path) }>
+								<td>
+									<span class="file-name">
+										if f.IsDir {
+											@ui.Icon("folder")
+											<a href={ templ.SafeURL(browseURL(vol.ID, f.Path)) }>{ f.Name }</a>
+										} else {
+											@ui.Icon("file")
+											<a href={ templ.SafeURL(fmt.Sprintf("/volumes/%s/download?path=%s", vol.ID, url.QueryEscape(f.Path))) }>{ f.Name }</a>
+										}
+									</span>
+									<div class="show-mobile text-xs text-muted">
+										@fileMeta(f)
+									</div>
+								</td>
+								<td class="text-right nowrap hide-mobile">
+									if !f.IsDir {
+										{ formatSize(f.Size) }
+									}
+								</td>
+								<td class="nowrap hide-mobile">
+									if !f.ModTime.IsZero() {
+										{ f.ModTime.Format("2006-01-02 15:04") }
+									}
+								</td>
+								<td class="col-actions">
+									<button
+										type="button"
+										class="btn-icon btn-icon-sm btn-icon-danger"
+										aria-label={ "Delete " + f.Name }
+										title="Delete"
+										hx-delete={ fmt.Sprintf("/volumes/%s/file?path=%s", vol.ID, url.QueryEscape(f.Path)) }
+										hx-target={ "#file-" + safeDomID(f.Path) }
+										hx-swap="outerHTML"
+										hx-confirm={ "Delete " + f.Name + "?" }
+									>
+										@ui.Icon("trash")
+									</button>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+			if hidden > 0 {
+				<p class="form-help">
+					{ fmt.Sprintf("%d of the server's own %s hidden here: deleting %s would break the running server.", hidden, plural(hidden, "files is", "files are"), plural(hidden, "it", "them")) }
+				</p>
+			}
+		</div>
 	}
 }
 
-templ volumeBreadcrumbs(volID string, dirPath string) {
-	<nav style="margin-bottom:1rem">
-		<a href={ templ.SafeURL("/volumes/" + volID + "/browse") }>root</a>
-		for _, seg := range breadcrumbSegments(dirPath) {
-			<span>/ </span>
-			<a href={ templ.SafeURL(fmt.Sprintf("/volumes/%s/browse?path=%s", volID, seg.Path)) }>{ seg.Name }</a>
-		}
-	</nav>
+// fileMeta is the size and date line shown under a name on phones, where
+// those columns are hidden.
+templ fileMeta(f volume.FileInfo) {
+	if !f.IsDir {
+		{ formatSize(f.Size) }
+	}
+	if !f.IsDir && !f.ModTime.IsZero() {
+		{ " · " }
+	}
+	if !f.ModTime.IsZero() {
+		{ f.ModTime.Format("2006-01-02 15:04") }
+	}
 }
 
 type breadcrumbSeg struct {

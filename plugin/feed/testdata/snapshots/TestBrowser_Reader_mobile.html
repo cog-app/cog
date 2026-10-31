@@ -1,0 +1,461 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      Designing a storage layer that survives a crash halfway through a write — Cog
+    </title>
+    <link href="/static/style.css?v=22be9710446b" rel="stylesheet" />
+    <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik00IDExYTkgOSAwIDAgMSA5IDkiPjwvcGF0aD48cGF0aCBkPSJNNCA0YTE2IDE2IDAgMCAxIDE2IDE2Ij48L3BhdGg+PGNpcmNsZSBjeD0iNSIgY3k9IjE5IiByPSIxIj48L2NpcmNsZT48L3N2Zz4=" rel="icon" type="image/svg+xml" />
+    <style>
+      .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
+  <body hx-headers="{\"X-CSRF-Token\":\"«hex»\"}">
+    <nav aria-label="Main" class="navbar">
+      <a aria-label="Cog home" class="navbar-brand" href="/">
+        <svg aria-hidden="true" fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        <span class="brand-text">
+          Cog
+        </span>
+      </a>
+      <ul class="navbar-nav">
+        <li>
+          <a aria-current="page" class="active" href="/apps/feed/" title="Feed">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M4 11a9 9 0 0 1 9 9" />
+              <path d="M4 4a16 16 0 0 1 16 16" />
+              <circle cx="5" cy="19" r="1" />
+            </svg>
+            <span class="nav-label">
+              Feed
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="/" title="Dashboard">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            <span class="nav-label">
+              Dashboard
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="/apps/files" title="Files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <span class="nav-label">
+              Files
+            </span>
+          </a>
+        </li>
+      </ul>
+      <div class="dropdown navbar-apps">
+        <button aria-controls="apps-menu" aria-expanded="false" aria-label="Apps" class="btn-icon" data-dropdown-toggle="" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <rect height="7" width="7" x="3" y="3" />
+            <rect height="7" width="7" x="14" y="3" />
+            <rect height="7" width="7" x="3" y="14" />
+            <rect height="7" width="7" x="14" y="14" />
+          </svg>
+        </button>
+        <div class="dropdown-menu" id="apps-menu">
+          <a aria-current="page" class="active" href="/apps/feed/">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M4 11a9 9 0 0 1 9 9" />
+              <path d="M4 4a16 16 0 0 1 16 16" />
+              <circle cx="5" cy="19" r="1" />
+            </svg>
+            Feed
+          </a>
+          <a href="/">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            Dashboard
+          </a>
+          <a href="/apps/files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            Files
+          </a>
+          <div class="dropdown-divider" />
+          <button data-search-open="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" x2="16.65" y1="21" y2="16.65" />
+            </svg>
+            Search
+          </button>
+          <a class="" href="/settings/profile">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="4" x2="4" y1="21" y2="14" />
+              <line x1="4" x2="4" y1="10" y2="3" />
+              <line x1="12" x2="12" y1="21" y2="12" />
+              <line x1="12" x2="12" y1="8" y2="3" />
+              <line x1="20" x2="20" y1="21" y2="16" />
+              <line x1="20" x2="20" y1="12" y2="3" />
+              <line x1="1" x2="7" y1="14" y2="14" />
+              <line x1="9" x2="15" y1="8" y2="8" />
+              <line x1="17" x2="23" y1="16" y2="16" />
+            </svg>
+            Settings
+          </a>
+        </div>
+      </div>
+      <div class="navbar-spacer" />
+      <div class="navbar-search" role="search">
+        <label class="sr-only" for="search-box">
+          Search
+        </label>
+        <input aria-controls="search-results" autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)…" type="search" />
+        <div aria-live="polite" class="search-results" id="search-results" />
+      </div>
+      <button aria-controls="search-box" aria-expanded="false" aria-label="Search" class="btn-icon search-toggle" data-search-open="" type="button">
+        <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+          <circle cx="11" cy="11" r="7" />
+          <line x1="21" x2="16.65" y1="21" y2="16.65" />
+        </svg>
+      </button>
+      <div class="navbar-end">
+        <div class="dropdown notif-dropdown" hidden="" id="notif">
+          <button aria-controls="notif-panel" aria-expanded="false" aria-label="Notifications" class="btn-icon" data-dropdown-toggle="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <span class="notif-badge" id="notif-badge" />
+          </button>
+          <div class="dropdown-menu" id="notif-panel" />
+        </div>
+        <div class="dropdown">
+          <button aria-controls="user-menu" aria-expanded="false" aria-label="Account menu for reader" class="dropdown-toggle" data-dropdown-toggle="" type="button">
+            <img alt="" class="avatar-sm" src="/avatar/«hex»" />
+            <span class="dropdown-username">
+              reader
+            </span>
+            <span aria-hidden="true" class="dropdown-caret">
+              ▾
+            </span>
+          </button>
+          <div class="dropdown-menu" id="user-menu">
+            <div class="dropdown-header">
+              <strong>
+                reader
+              </strong>
+            </div>
+            <div class="dropdown-divider" />
+            <a class="" href="/settings/profile">
+              Profile
+            </a>
+            <a class="" href="/settings/security">
+              Security
+            </a>
+            <a class="" href="/settings/storage">
+              Storage
+            </a>
+            <a class="" href="/settings/groups">
+              Groups
+            </a>
+            <a class="" href="/settings/data">
+              Import and export
+            </a>
+            <div class="dropdown-divider" />
+            <form action="/logout" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <button type="submit">
+                Log out
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <main class="content" data-plugin="feed">
+      <div class="sidebar-layout has-sidebar-toggle">
+        <button aria-controls="feed-sidebar" aria-expanded="false" aria-label="Menu: All articles" class="sidebar-toggle" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <line x1="3" x2="21" y1="6" y2="6" />
+            <line x1="3" x2="21" y1="12" y2="12" />
+            <line x1="3" x2="21" y1="18" y2="18" />
+          </svg>
+          <span class="sidebar-toggle-label" data-label="All articles" />
+          <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        <nav aria-label="Feed" class="sidebar" id="feed-sidebar">
+          <a aria-current="page" class="sidebar-item active" href="/apps/feed/">
+            <span class="break-anywhere">
+              All articles
+            </span>
+            <span class="count">
+              6
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/feed/starred">
+            <span class="break-anywhere">
+              Starred
+            </span>
+            <span class="count">
+              1
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/feed/history">
+            <span class="break-anywhere">
+              History
+            </span>
+          </a>
+          <div class="sidebar-heading feed-sidebar-heading">
+            <span>
+              Feeds
+            </span>
+            <label class="feed-hide-read">
+              <input hx-post="/apps/feed/player/prefs" hx-swap="outerHTML" hx-target="#feed-sidebar" hx-vals="js:{hide_empty: event.target.checked ? \"1\" : \"0\"}" name="hide_empty" type="checkbox" />
+              Unread only
+            </label>
+          </div>
+          <details class="sidebar-folder" data-folder-id="2">
+            <summary class="sidebar-item">
+              <a class="feed-folder-link" href="/apps/feed/folder/2" onclick="event.stopPropagation()">
+                Podcasts
+              </a>
+              <span class="count">
+                1
+              </span>
+            </summary>
+            <a class="sidebar-item feed-sub sidebar-child" href="/apps/feed/subscription/3" title="Weekly Audio Show">
+              <span class="feed-sub-icon">
+                <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
+                  <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
+                  <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
+                  <circle cx="5.5" cy="18.5" r="2.5" />
+                </svg>
+              </span>
+              <span class="feed-sub-name">
+                Weekly Audio Show
+              </span>
+              <span class="count">
+                1
+              </span>
+            </a>
+          </details>
+          <details class="sidebar-folder" data-folder-id="1">
+            <summary class="sidebar-item">
+              <a class="feed-folder-link" href="/apps/feed/folder/1" onclick="event.stopPropagation()">
+                Tech News
+              </a>
+              <span class="count">
+                4
+              </span>
+            </summary>
+            <a class="sidebar-item feed-sub sidebar-child" href="/apps/feed/subscription/1" title="Example Engineering Blog">
+              <span class="feed-sub-icon">
+                <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
+                  <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
+                  <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
+                  <circle cx="5.5" cy="18.5" r="2.5" />
+                </svg>
+              </span>
+              <span class="feed-sub-name">
+                Example Engineering Blog
+              </span>
+              <span class="count">
+                4
+              </span>
+            </a>
+          </details>
+          <a class="sidebar-item feed-sub" href="/apps/feed/subscription/2" title="A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar — fetch failing: GET https://long.example.org/rss: 503 Service Unavailable">
+            <span aria-label="Fetch failing" class="feed-sub-icon feed-sub-failing" role="img">
+              <svg aria-hidden="true" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" x2="12" y1="9" y2="13" />
+                <line x1="12" x2="12.01" y1="17" y2="17" />
+              </svg>
+            </span>
+            <span class="feed-sub-name">
+              A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar
+            </span>
+          </a>
+          <a class="sidebar-item feed-sub" href="/apps/feed/subscription/4" title="Video Channel">
+            <span class="feed-sub-icon">
+              <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
+                <path d="M23 7a3 3 0 0 0-2.1-2.1C19 4.4 12 4.4 12 4.4s-7 0-8.9.5A3 3 0 0 0 1 7a31 31 0 0 0 0 10 3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5A3 3 0 0 0 23 17a31 31 0 0 0 0-10zM10 15.5v-7l6 3.5z" />
+              </svg>
+            </span>
+            <span class="feed-sub-name">
+              Video Channel
+            </span>
+            <span class="count">
+              1
+            </span>
+          </a>
+          <div class="sidebar-heading">
+            Tags
+          </div>
+          <a class="sidebar-item" href="/apps/feed/tag/read-later">
+            <span class="break-anywhere">
+              read-later
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/feed/tag/storage">
+            <span class="break-anywhere">
+              storage
+            </span>
+          </a>
+          <div class="sidebar-heading">
+            Settings
+          </div>
+          <a class="sidebar-item" href="/apps/feed/settings/subscriptions">
+            <span class="break-anywhere">
+              Subscriptions
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/feed/settings/filters">
+            <span class="break-anywhere">
+              Filters
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/feed/settings/playlists">
+            <span class="break-anywhere">
+              Playlists
+            </span>
+          </a>
+        </nav>
+        <div class="sidebar-content">
+          <nav aria-label="Article navigation" class="feed-context-bar">
+            <a class="feed-context-label" href="/apps/feed/">
+              All articles
+              <span class="text-muted">
+                · 1 of 8
+              </span>
+            </a>
+            <div class="btn-group">
+              <span aria-disabled="true" class="btn btn-sm">
+                ← Prev
+              </span>
+              <a class="btn btn-sm" href="/apps/feed/items/4?ctx=all" title="Episode 112: Interviews, follow-ups and a surprisingly long episode title">
+                Next →
+              </a>
+            </div>
+          </nav>
+          <header class="page-header feed-reader-header">
+            <div class="page-heading">
+              <h1 data-feed-item-title="">
+                Designing a storage layer that survives a crash halfway through a write
+              </h1>
+              <p class="page-subtitle">
+                Example Engineering Blog · Jane Doe · Jun 20, 2025
+              </p>
+            </div>
+            <div class="page-actions">
+              <button aria-label="Star" aria-pressed="false" class="btn-star" hx-post="/apps/feed/items/1/star" hx-swap="outerHTML" title="Toggle star" type="button">
+                <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+              </button>
+              <a class="btn" href="https://blog.example.com/posts/storage-layer" rel="noopener" target="_blank">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" x2="21" y1="14" y2="3" />
+                </svg>
+                Open original
+              </a>
+            </div>
+          </header>
+          <div class="feed-item-tags" id="item-tags-1">
+            <span class="chip">
+              <a href="/apps/feed/tag/read-later">
+                read-later
+              </a>
+              <form action="/apps/feed/items/1/tag/read-later/delete" hx-post="/apps/feed/items/1/tag/read-later/delete" hx-swap="outerHTML" hx-target="#item-tags-1" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <button aria-label="Remove tag read-later" class="chip-remove" type="submit">
+                  ×
+                </button>
+              </form>
+            </span>
+            <span class="chip">
+              <a href="/apps/feed/tag/storage">
+                storage
+              </a>
+              <form action="/apps/feed/items/1/tag/storage/delete" hx-post="/apps/feed/items/1/tag/storage/delete" hx-swap="outerHTML" hx-target="#item-tags-1" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <button aria-label="Remove tag storage" class="chip-remove" type="submit">
+                  ×
+                </button>
+              </form>
+            </span>
+            <form action="/apps/feed/items/1/tag" class="feed-tag-add" hx-post="/apps/feed/items/1/tag" hx-swap="outerHTML" hx-target="#item-tags-1" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <label class="sr-only" for="tag-1">
+                Add a tag
+              </label>
+              <input class="form-control form-control-sm" id="tag-1" name="tag" placeholder="Add a tag" required="" type="text" />
+              <button class="btn btn-sm" type="submit">
+                Add
+              </button>
+            </form>
+          </div>
+          <article class="card">
+            <div class="prose feed-article">
+              <p>
+                Most storage bugs are not in the happy path. They live in the half-second between the write and the fsync, and they only show up when the power goes out.
+              </p>
+              <h2>
+                The write-ahead log
+              </h2>
+              <p>
+                Every change is appended to a log before it touches the main file. A recovery pass replays the log on start-up:
+              </p>
+              <ul>
+                <li>
+                  append the record
+                </li>
+                <li>
+                  fsync the log
+                </li>
+                <li>
+                  apply to the table
+                </li>
+              </ul>
+              <blockquote>
+                <p>
+                  If it is not in the log, it did not happen.
+                </p>
+              </blockquote>
+              <pre>
+                <code>
+                  func (w *WAL) Append(rec Record) error { if _, err := w.f.Write(rec.Bytes()); err != nil { return fmt.Errorf("append: %w", err) } return w.f.Sync() }
+                </code>
+              </pre>
+              <p>
+                Further reading: https://blog.example.com/posts/a-very-long-url-that-has-no-natural-break-points-and-should-wrap-instead-of-overflowing-the-card
+              </p>
+            </div>
+          </article>
+          <nav aria-label="Article navigation" class="feed-context-bar feed-context-bar-bottom">
+            <div class="btn-group">
+              <span aria-disabled="true" class="btn btn-sm">
+                ← Prev
+              </span>
+              <a class="btn btn-sm" href="/apps/feed/items/4?ctx=all" title="Episode 112: Interviews, follow-ups and a surprisingly long episode title">
+                Next →
+              </a>
+            </div>
+          </nav>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

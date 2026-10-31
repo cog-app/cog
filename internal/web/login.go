@@ -54,7 +54,9 @@ func (h *loginHandler) ShowLogin(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	ui.LoginPage(flashMsg, flashKind, next, regEnabled).Render(r.Context(), w)
+	if err := ui.LoginPage(flashMsg, flashKind, next, flash.Value("username"), regEnabled).Render(r.Context(), w); err != nil {
+		h.p.Log.Error("render login page", "err", err)
+	}
 }
 
 func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +85,7 @@ func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 				h.p.RateLimiter.RecordFailure(userKey)
 			}
 		}
-		setFlash(w, "error", "Invalid username or password.")
+		setFlashForm(w, "error", "Invalid username or password.", map[string]string{"username": username})
 		http.Redirect(w, r, loginRedirect("/login", next), http.StatusSeeOther)
 		return
 	}
@@ -183,7 +185,7 @@ func (h *loginHandler) ShowMFA(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		errMsg = flash.Message
 	}
-	ui.MFAPage(errMsg, next, u.MFAMethod).Render(r.Context(), w)
+	ui.Render(w, r, ui.MFAPage(errMsg, next, u.MFAMethod))
 }
 
 func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
@@ -293,7 +295,9 @@ func (h *loginHandler) ShowRegister(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		errMsg = flash.Message
 	}
-	ui.RegisterPage(errMsg, next).Render(r.Context(), w)
+	if err := ui.RegisterPage(errMsg, next, flash.Value("username")).Render(r.Context(), w); err != nil {
+		h.p.Log.Error("render register page", "err", err)
+	}
 }
 
 func (h *loginHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
@@ -317,13 +321,14 @@ func (h *loginHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	confirm := r.FormValue("confirm")
 	next := r.FormValue("next")
 
+	keep := map[string]string{"username": username}
 	if username == "" || password == "" {
-		setFlash(w, "error", "Username and password are required.")
+		setFlashForm(w, "error", "Username and password are required.", keep)
 		http.Redirect(w, r, loginRedirect("/register", next), http.StatusSeeOther)
 		return
 	}
 	if password != confirm {
-		setFlash(w, "error", "Passwords do not match.")
+		setFlashForm(w, "error", "Passwords do not match.", keep)
 		http.Redirect(w, r, loginRedirect("/register", next), http.StatusSeeOther)
 		return
 	}
@@ -334,7 +339,7 @@ func (h *loginHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		// "username already exists" doesn't leak account existence
 		// (audit security.md #24).
 		h.p.Log.Info("register failed", "username", username, "err", err)
-		setFlash(w, "error", "Registration failed. Please try a different username.")
+		setFlashForm(w, "error", "Registration failed. Please try a different username.", keep)
 		http.Redirect(w, r, loginRedirect("/register", next), http.StatusSeeOther)
 		return
 	}
@@ -343,7 +348,9 @@ func (h *loginHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	if h.p.Volumes != nil && h.p.Mounts != nil {
 		if defVol, err := h.p.Volumes.GetByName("default"); err == nil {
 			subpath := u.Username + "/files"
-			h.p.Mounts.Create(u.ID, "/", defVol.ID, subpath, false)
+			if _, err := h.p.Mounts.Create(u.ID, "/", defVol.ID, subpath, false); err != nil {
+				h.p.Log.Error("create root mount on register", "user", u.Username, "err", err)
+			}
 		}
 	}
 
@@ -360,7 +367,7 @@ func (h *loginHandler) ShowForgotPassword(w http.ResponseWriter, r *http.Request
 			errMsg = flash.Message
 		}
 	}
-	ui.ForgotPasswordPage(errMsg, successMsg).Render(r.Context(), w)
+	ui.Render(w, r, ui.ForgotPasswordPage(errMsg, successMsg))
 }
 
 func (h *loginHandler) HandleForgotPassword(w http.ResponseWriter, r *http.Request) {
@@ -438,7 +445,7 @@ func (h *loginHandler) ShowResetPassword(w http.ResponseWriter, r *http.Request)
 	if flash != nil {
 		errMsg = flash.Message
 	}
-	ui.ResetPasswordPage(errMsg, token).Render(r.Context(), w)
+	ui.Render(w, r, ui.ResetPasswordPage(errMsg, token))
 }
 
 func (h *loginHandler) HandleResetPassword(w http.ResponseWriter, r *http.Request) {

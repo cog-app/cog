@@ -44,10 +44,13 @@ type settingsView struct {
 	Subscriptions []subscriptionView
 	Birthdays     *Calendar // nil when off
 	CanFeed       bool
+	DAVURL        string // where CalDAV clients connect
+	Username      string // whom they connect as
 }
 
 func (p *Plugin) settingsView(userID string, cals []Calendar) (*settingsView, error) {
-	v := &settingsView{Calendars: cals, Feeds: map[int64]feedView{}, CanFeed: p.dav.Links != nil}
+	v := &settingsView{Calendars: cals, Feeds: map[int64]feedView{}, CanFeed: p.dav.Links != nil,
+		DAVURL: strings.TrimSuffix(p.dav.BaseURL, "/") + "/remote.php/dav/"}
 	feeds, err := p.dav.FeedsOf(userID)
 	if err != nil {
 		return nil, err

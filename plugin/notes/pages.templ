@@ -3,96 +3,158 @@ package notes
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
 templ notesSidebar(sb sidebarData) {
-	<nav class="sidebar" id="notes-sidebar">
-		<a href="/apps/notes/" class={ sidebarClass(sb.ActivePath, "/apps/notes/") }>
-			All Notes
-			if sb.NoteCount > 0 {
-				<span class="badge">{ strconv.Itoa(sb.NoteCount) }</span>
-			}
-		</a>
-		<a href="/apps/notes/starred" class={ sidebarClass(sb.ActivePath, "/apps/notes/starred") }>
-			Starred
-			if sb.StarredCount > 0 {
-				<span class="badge">{ strconv.Itoa(sb.StarredCount) }</span>
-			}
-		</a>
+	<nav
+		class="sidebar"
+		id="notes-sidebar"
+		aria-label="Notes"
+		if sb.OOB {
+			hx-swap-oob="true"
+		}
+	>
+		@sidebarLink(sb.ActivePath, "/apps/notes/", "All notes", sb.NoteCount)
+		@sidebarLink(sb.ActivePath, "/apps/notes/starred", "Starred", sb.StarredCount)
 		if len(sb.Categories) > 0 {
-			<div class="sidebar-divider"></div>
+			<div class="sidebar-heading">Categories</div>
 			for _, cat := range sb.Categories {
-				<a
-					href={ templ.SafeURL("/apps/notes/category/" + cat) }
-					class={ sidebarClass(sb.ActivePath, "/apps/notes/category/"+cat) }
-					style="padding-left:1.5rem;font-size:0.9rem"
-				>
-					{ cat }
-				</a>
+				@sidebarLink(sb.ActivePath, "/apps/notes/category/"+cat, cat, 0)
 			}
 		}
-		<div class="sidebar-divider"></div>
-		<a href="/apps/notes/new" class={ sidebarClass(sb.ActivePath, "/apps/notes/new") }>
-			+ New Note
-		</a>
 	</nav>
 }
 
-templ notesIndexPage(sb sidebarData, notes []Note, csrfToken string) {
+templ sidebarLink(activePath, href, label string, count int) {
+	<a
+		href={ templ.SafeURL(href) }
+		class={ sidebarClass(activePath, href) }
+		if activePath == href {
+			aria-current="page"
+		}
+	>
+		<span class="break-anywhere">{ label }</span>
+		if count > 0 {
+			<span class="count">{ strconv.Itoa(count) }</span>
+		}
+	</a>
+}
+
+templ notesLayout(sb sidebarData) {
 	<div class="sidebar-layout">
 		@notesSidebar(sb)
 		<div class="sidebar-content">
-			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-				<h1 style="margin:0">All Notes</h1>
-				<a href="/apps/notes/new" class="btn btn-primary btn-sm">New Note</a>
+			{ children... }
+		</div>
+	</div>
+}
+
+// notesListPage is every list of notes: all, starred, one category.
+templ notesListPage(sb sidebarData, title string, v listView) {
+	@notesLayout(sb) {
+		if v.Kind == viewCategory {
+			@ui.PageHeader(title, []ui.Crumb{{Label: "Notes", URL: "/apps/notes/"}}) {
+				@newNoteButton()
+			}
+		} else {
+			@ui.PageHeader(title, nil) {
+				@newNoteButton()
+			}
+		}
+		@noteList(v)
+	}
+}
+
+templ newNoteButton() {
+	<a href="/apps/notes/new" class="btn btn-primary">
+		@ui.Icon("plus")
+		New note
+	</a>
+}
+
+// noteList is the list, or its empty state. Its id is what a row action's
+// out-of-band empty state replaces.
+templ noteList(v listView) {
+	<div id="note-list">
+		if len(v.Notes) == 0 {
+			@noteListEmpty(v)
+		} else {
+			<ul class="list">
+				for i := range v.Notes {
+					@noteRow(&v.Notes[i], v)
+				}
+			</ul>
+		}
+	</div>
+}
+
+templ noteListEmpty(v listView) {
+	<div class="list">
+		switch v.Kind {
+			case viewStarred:
+				@ui.EmptyState("No starred notes", "Star a note to keep it here.")
+			case viewCategory:
+				@ui.EmptyState("No notes in this category", "")
+			default:
+				@ui.EmptyState("No notes yet", "Notes are Markdown files, kept in the Notes folder of your files.")
+		}
+	</div>
+}
+
+templ noteRow(note *Note, v listView) {
+	<li class="list-row" id={ noteRowID(note.ID) }>
+		<div class="list-row-main">
+			<a class="list-row-title" href={ templ.SafeURL(fmt.Sprintf("/apps/notes/note/%d", note.ID)) }>{ note.Title() }</a>
+			<div class="list-row-meta">
+				@timeTag(note.Modified, v.Now)
+				if note.Category != "" && v.Kind != viewCategory {
+					{ " · " + note.Category }
+				}
 			</div>
-			if len(notes) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No notes yet. Create your first note!</p>
-				}
-			} else {
-				@noteList(notes, csrfToken)
-			}
 		</div>
-	</div>
+		<div class="list-row-actions">
+			@ui.Star(note.Favorite, fmt.Sprintf("/apps/notes/notes/%d/star", note.ID))
+			<button
+				type="button"
+				class="btn-icon btn-icon-sm btn-icon-danger"
+				aria-label={ "Delete " + note.Title() }
+				title="Delete"
+				hx-delete={ fmt.Sprintf("/apps/notes/notes/%d", note.ID) }
+				hx-target="closest li"
+				hx-swap="outerHTML"
+				hx-confirm={ fmt.Sprintf("Delete “%s”?", note.Title()) }
+			>
+				@ui.Icon("trash")
+			</button>
+		</div>
+	</li>
 }
 
-templ notesCategoryPage(sb sidebarData, category string, notes []Note, csrfToken string) {
-	<div class="sidebar-layout">
-		@notesSidebar(sb)
-		<div class="sidebar-content">
-			<h1>{ category }</h1>
-			if len(notes) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No notes in this category.</p>
-				}
-			} else {
-				@noteList(notes, csrfToken)
-			}
+// rowUpdate answers a row action: the swapped element, then the sidebar and
+// (when the list is now empty) its empty state, both out of band.
+templ rowUpdate(swapped templ.Component, sb sidebarData, empty *listView) {
+	if swapped != nil {
+		@swapped
+	}
+	@notesSidebar(sb)
+	if empty != nil {
+		<div id="note-list" hx-swap-oob="true">
+			@noteListEmpty(*empty)
 		</div>
-	</div>
+	}
 }
 
-templ notesStarredPage(sb sidebarData, notes []Note, csrfToken string) {
-	<div class="sidebar-layout">
-		@notesSidebar(sb)
-		<div class="sidebar-content">
-			<h1>Starred Notes</h1>
-			if len(notes) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No starred notes.</p>
-				}
-			} else {
-				@noteList(notes, csrfToken)
-			}
-		</div>
-	</div>
+templ timeTag(unix int64, now time.Time) {
+	if unix != 0 {
+		<time datetime={ time.Unix(unix, 0).UTC().Format(time.RFC3339) }>{ formatTime(unix, now) }</time>
+	}
 }
 
-templ noteViewPage(sb sidebarData, note *Note, renderedHTML string, csrfToken string, extras viewExtras) {
+templ noteViewPage(sb sidebarData, note *Note, renderedHTML string, now time.Time, extras viewExtras) {
 	if extras.NeedsKaTeX {
 		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"/>
 		<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -101,43 +163,44 @@ templ noteViewPage(sb sidebarData, note *Note, renderedHTML string, csrfToken st
 	if extras.NeedsMermaid {
 		<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 	}
-	<div class="sidebar-layout">
-		@notesSidebar(sb)
-		<div class="sidebar-content">
-			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-				<div class="flex items-center gap-1">
-					<h1 style="margin:0">{ note.Title() }</h1>
-					@ui.Star(note.Favorite, fmt.Sprintf("/apps/notes/notes/%d/star", note.ID))
-				</div>
-				<div class="flex gap-1">
-					<a href={ templ.SafeURL(fmt.Sprintf("/apps/notes/note/%d/edit", note.ID)) } class="btn btn-outline btn-sm">Edit</a>
-					<button
-						class="btn btn-danger btn-sm"
-						hx-delete={ fmt.Sprintf("/apps/notes/notes/%d", note.ID) }
-						hx-confirm="Delete this note?"
-						hx-target="closest .sidebar-layout"
-						hx-swap="innerHTML"
-					>Delete</button>
-				</div>
+	@notesLayout(sb) {
+		<header class="page-header">
+			<div class="page-heading">
+				@ancestors(noteCrumbs(note, false))
+				<h1>{ note.Title() }</h1>
+				if note.Modified != 0 {
+					<p class="page-subtitle">
+						<time datetime={ time.Unix(note.Modified, 0).UTC().Format(time.RFC3339) }>{ modifiedLabel(note.Modified, now) }</time>
+					</p>
+				}
 			</div>
-			if note.Category != "" {
-				<div class="mb-2">
-					<a href={ templ.SafeURL("/apps/notes/category/" + note.Category) } class="badge">{ note.Category }</a>
-				</div>
-			}
-			<div class="text-muted mb-2" style="font-size:0.85rem">
-				Last modified: { formatTime(note.Modified) }
+			<div class="page-actions">
+				@ui.Star(note.Favorite, fmt.Sprintf("/apps/notes/notes/%d/star", note.ID))
+				<a href={ templ.SafeURL(fmt.Sprintf("/apps/notes/note/%d/edit", note.ID)) } class="btn" aria-label={ "Edit " + note.Title() }>
+					@ui.Icon("edit")
+					Edit
+				</a>
+				<button
+					type="button"
+					class="btn btn-outline-danger"
+					aria-label={ "Delete " + note.Title() }
+					hx-delete={ fmt.Sprintf("/apps/notes/notes/%d", note.ID) }
+					hx-confirm={ fmt.Sprintf("Delete “%s”?", note.Title()) }
+				>
+					@ui.Icon("trash")
+					Delete
+				</button>
 			</div>
-			@ui.Card("") {
-				<div class="note-content">
-					@templ.Raw(renderedHTML)
-				</div>
-			}
-		</div>
-	</div>
+		</header>
+		<article class="card">
+			<div class="prose note-body" data-note-body>
+				@templ.Raw(renderedHTML)
+			</div>
+		</article>
+	}
 	if extras.NeedsKaTeX {
 		<script>
-			renderMathInElement(document.querySelector(".note-content"), {
+			renderMathInElement(document.querySelector("[data-note-body]"), {
 				delimiters: [
 					{ left: "$$", right: "$$", display: true },
 					{ left: "$", right: "$", display: false },
@@ -153,139 +216,129 @@ templ noteViewPage(sb sidebarData, note *Note, renderedHTML string, csrfToken st
 	}
 }
 
-templ noteEditPage(sb sidebarData, note *Note, content string, categories []string, csrfToken string) {
-	<div class="sidebar-layout">
-		@notesSidebar(sb)
-		<div class="sidebar-content">
-			<h1>Edit: { note.Title() }</h1>
-			@ui.Card("") {
-				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/notes/notes/%d", note.ID)) }>
-					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					<input type="hidden" name="etag" value={ note.ETag }/>
-					<div class="form-group">
-						<label for="title">Title</label>
-						<input class="form-control" type="text" id="title" name="title" value={ note.Title() } required/>
-					</div>
-					<div class="form-group">
-						<label for="category">Category</label>
-						<input
-							class="form-control"
-							type="text"
-							id="category"
-							name="category"
-							value={ note.Category }
-							list="categories"
-							placeholder="e.g. recipes"
-						/>
-						<datalist id="categories">
-							for _, cat := range categories {
-								<option value={ cat }></option>
-							}
-						</datalist>
-					</div>
-					<div class="form-group">
-						<label for="content">Content (Markdown)</label>
-						<textarea
-							class="form-control"
-							id="content"
-							name="content"
-							rows="20"
-							style="font-family:monospace;white-space:pre-wrap"
-						>{ content }</textarea>
-					</div>
-					<div class="flex gap-1">
-						<button class="btn btn-primary" type="submit">Save</button>
-						<a href={ templ.SafeURL(fmt.Sprintf("/apps/notes/note/%d", note.ID)) } class="btn btn-outline">Cancel</a>
-					</div>
-				</form>
+// ancestors is a breadcrumb trail of the pages above this one, for a page
+// whose own title is the heading right below it.
+templ ancestors(crumbs []ui.Crumb) {
+	<nav class="breadcrumbs" aria-label="Breadcrumb">
+		<ol>
+			for _, c := range crumbs {
+				<li><a href={ templ.SafeURL(c.URL) }>{ c.Label }</a></li>
 			}
-		</div>
-	</div>
+		</ol>
+	</nav>
+}
+
+// noteCrumbs leads to a note: the notes list, then its category. With self,
+// the note itself is a link too (for its edit page).
+func noteCrumbs(note *Note, self bool) []ui.Crumb {
+	crumbs := []ui.Crumb{{Label: "Notes", URL: "/apps/notes/"}}
+	if note.Category != "" {
+		crumbs = append(crumbs, ui.Crumb{Label: note.Category, URL: "/apps/notes/category/" + note.Category})
+	}
+	if self {
+		crumbs = append(crumbs, ui.Crumb{Label: shorten(note.Title(), 40), URL: fmt.Sprintf("/apps/notes/note/%d", note.ID)})
+	}
+	return crumbs
+}
+
+templ noteEditPage(sb sidebarData, note *Note, content string, categories []string, csrfToken string) {
+	@notesLayout(sb) {
+		@ui.PageHeader("Edit note", noteCrumbs(note, true))
+		<form class="card" method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/notes/notes/%d", note.ID)) }>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="etag" value={ note.ETag }/>
+			@noteFields(note.Title(), note.Category, content, categories)
+			<div class="form-actions form-actions-sticky">
+				<button class="btn btn-primary" type="submit">Save</button>
+				<a href={ templ.SafeURL(fmt.Sprintf("/apps/notes/note/%d", note.ID)) } class="btn">Cancel</a>
+			</div>
+		</form>
+	}
 }
 
 templ noteNewPage(sb sidebarData, categories []string, csrfToken string) {
-	<div class="sidebar-layout">
-		@notesSidebar(sb)
-		<div class="sidebar-content">
-			<h1>New Note</h1>
-			@ui.Card("") {
-				<form method="post" action="/apps/notes/notes">
-					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					<div class="form-group">
-						<label for="title">Title</label>
-						<input class="form-control" type="text" id="title" name="title" placeholder="My Note" required/>
-					</div>
-					<div class="form-group">
-						<label for="category">Category</label>
-						<input
-							class="form-control"
-							type="text"
-							id="category"
-							name="category"
-							list="categories"
-							placeholder="e.g. recipes"
-						/>
-						<datalist id="categories">
-							for _, cat := range categories {
-								<option value={ cat }></option>
-							}
-						</datalist>
-					</div>
-					<div class="form-group">
-						<label for="content">Content (Markdown)</label>
-						<textarea
-							class="form-control"
-							id="content"
-							name="content"
-							rows="20"
-							style="font-family:monospace;white-space:pre-wrap"
-							placeholder="# Hello World"
-						></textarea>
-					</div>
-					<div class="flex gap-1">
-						<button class="btn btn-primary" type="submit">Create</button>
-						<a href="/apps/notes/" class="btn btn-outline">Cancel</a>
-					</div>
-				</form>
-			}
+	@notesLayout(sb) {
+		@ui.PageHeader("New note", []ui.Crumb{{Label: "Notes", URL: "/apps/notes/"}})
+		<form class="card" method="post" action="/apps/notes/notes">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			@noteFields("", "", "", categories)
+			<div class="form-actions form-actions-sticky">
+				<button class="btn btn-primary" type="submit">Create</button>
+				<a href="/apps/notes/" class="btn">Cancel</a>
+			</div>
+		</form>
+	}
+}
+
+// noteFields is the editor shared by the new and edit forms. Write and
+// Preview are radio chips: CSS shows the textarea or the preview for the
+// checked one, and choosing Preview asks the server to render the Markdown.
+templ noteFields(title, category, content string, categories []string) {
+	<div class="form-row">
+		<div class="form-group">
+			<label for="title">Title</label>
+			<input class="form-control" type="text" id="title" name="title" value={ title } placeholder="My note" required/>
 		</div>
+		<div class="form-group">
+			<label for="category">Category</label>
+			<input
+				class="form-control"
+				type="text"
+				id="category"
+				name="category"
+				value={ category }
+				list="categories"
+				placeholder="None"
+			/>
+			<datalist id="categories">
+				for _, cat := range categories {
+					<option value={ cat }></option>
+				}
+			</datalist>
+		</div>
+	</div>
+	<div class="form-group note-editor">
+		<div class="note-editor-bar">
+			<label for="content">Content</label>
+			<div class="chip-group" role="group" aria-label="Editor mode">
+				<label class="chip"><input type="radio" name="editor_mode" value="write" checked/> Write</label>
+				<label class="chip">
+					<input
+						type="radio"
+						name="editor_mode"
+						value="preview"
+						hx-post="/apps/notes/preview"
+						hx-trigger="change"
+						hx-include="#content"
+						hx-target="#note-preview"
+						hx-swap="innerHTML"
+					/> Preview
+				</label>
+			</div>
+		</div>
+		<textarea class="form-control mono note-editor-input" id="content" name="content" rows="16" placeholder="# Hello world">{ content }</textarea>
+		<div class="note-preview" id="note-preview" aria-live="polite"></div>
+		<p class="form-help">Markdown, with tables, task lists, highlighted code, LaTeX math and Mermaid diagrams.</p>
 	</div>
 }
 
-templ noteList(notes []Note, csrfToken string) {
-	<div id="note-list">
-		for _, note := range notes {
-			@noteRow(&note, csrfToken)
+templ notePreview(renderedHTML string) {
+	<div class="prose note-body">
+		if renderedHTML == "" {
+			<p class="text-muted">Nothing to preview.</p>
+		} else {
+			@templ.Raw(renderedHTML)
 		}
 	</div>
 }
 
-templ noteRow(note *Note, csrfToken string) {
-	<div id={ fmt.Sprintf("note-%d", note.ID) } style="padding:0.75rem 1rem;border-bottom:1px solid var(--color-border, #e0e0e0);display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
-		<div style="min-width:0;flex:1">
-			<div class="flex items-center gap-1" style="flex-wrap:wrap">
-				<a href={ templ.SafeURL(fmt.Sprintf("/apps/notes/note/%d", note.ID)) } style="font-weight:500">
-					{ note.Title() }
-				</a>
-				if note.Category != "" {
-					<span class="badge" style="font-size:0.75rem">{ note.Category }</span>
-				}
-			</div>
-			<div class="text-muted" style="font-size:0.85rem">
-				{ formatTime(note.Modified) }
-			</div>
-		</div>
-		<div class="flex gap-1" style="flex-shrink:0">
-			@ui.Star(note.Favorite, fmt.Sprintf("/apps/notes/notes/%d/star", note.ID))
-			<button
-				class="btn btn-danger btn-sm"
-				hx-delete={ fmt.Sprintf("/apps/notes/notes/%d", note.ID) }
-				hx-target={ fmt.Sprintf("#note-%d", note.ID) }
-				hx-swap="outerHTML"
-				hx-confirm="Delete this note?"
-			>&#10005;</button>
-		</div>
-	</div>
+// shorten cuts s to at most n characters, for a breadcrumb.
+func shorten(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimSpace(string(r[:n-1])) + "…"
 }
 
 func sidebarClass(activePath, itemPath string) string {
@@ -295,17 +348,28 @@ func sidebarClass(activePath, itemPath string) string {
 	return "sidebar-item"
 }
 
-func formatTime(unix int64) string {
+// modifiedLabel is formatTime as a sentence, for a note's page.
+func modifiedLabel(unix int64, now time.Time) string {
+	t := time.Unix(unix, 0).In(now.Location())
+	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
+		return "Modified today at " + t.Format("15:04")
+	}
+	return "Modified " + formatTime(unix, now)
+}
+
+// formatTime shows a time relative to now: the time of day for today, the
+// date without a year for this year, the full date otherwise. now comes from
+// the plugin's clock, so the output does not depend on the wall clock.
+func formatTime(unix int64, now time.Time) string {
 	if unix == 0 {
 		return ""
 	}
-	t := time.Unix(unix, 0)
-	now := time.Now()
+	t := time.Unix(unix, 0).In(now.Location())
 	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
 		return t.Format("15:04")
 	}
 	if t.Year() == now.Year() {
 		return t.Format("Jan 2")
 	}
-	return t.Format("2006-01-02")
+	return t.Format("Jan 2, 2006")
 }

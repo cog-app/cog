@@ -104,6 +104,19 @@ func (p *Plugin) CreateBook(userID, name, displayName, description, color string
 	return &b, nil
 }
 
+// UpdateBook renames or recolors one of a user's address books.
+func (p *Plugin) UpdateBook(userID string, id int64, displayName, color string) error {
+	c, err := p.dav.Collections.ByID(dav.CollectionID(id))
+	if err != nil {
+		return err
+	}
+	if c.OwnerID != userID || c.Home != dav.HomeAddressBooks {
+		return dav.ErrNotFound
+	}
+	c.DisplayName, c.Color = displayName, color
+	return p.dav.Collections.Update(c)
+}
+
 // DeleteBook deletes one of a user's address books with its cards.
 func (p *Plugin) DeleteBook(username, userID string, id int64) error {
 	c, err := p.dav.Collections.ByID(dav.CollectionID(id))

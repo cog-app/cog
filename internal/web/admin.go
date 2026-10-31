@@ -1,7 +1,9 @@
 package web
 
 import (
+	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/ui"
 	"log/slog"
 	"net/http"
 	"net/smtp"
@@ -37,7 +39,7 @@ func (h *adminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminUsersPage(pd, h.p.Users.List(), flashMsg, flashKind).Render(r.Context(), w)
+	ui.Render(w, r, adminUsersPage(pd, h.p.Users.List(), flashMsg, flashKind))
 }
 
 func (h *adminHandler) NewUserForm(w http.ResponseWriter, r *http.Request) {
@@ -47,22 +49,32 @@ func (h *adminHandler) NewUserForm(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		errMsg = flash.Message
 	}
-	adminUserNewPage(pd, errMsg).Render(r.Context(), w)
+	form := newUserForm{Username: flash.Value("username"), IsAdmin: flash.Value("is_admin") == "1"}
+	if err := adminUserNewPage(pd, errMsg, form).Render(r.Context(), w); err != nil {
+		h.p.Log.Error("render new user page", "err", err)
+	}
 }
 
 func (h *adminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
-	username := r.FormValue("username")
+	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
+	keep := map[string]string{"username": username, "is_admin": r.FormValue("is_admin")}
 
 	if username == "" || password == "" {
-		setFlash(w, "error", "Username and password are required.")
+		setFlashForm(w, "error", "Username and password are required.", keep)
 		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
 		return
 	}
 
 	u, err := h.p.Users.Create(username, password)
+	if errors.Is(err, user.ErrUsernameTaken) {
+		setFlashForm(w, "error", fmt.Sprintf("A user named “%s” already exists.", username), keep)
+		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
+		return
+	}
 	if err != nil {
-		setFlash(w, "error", "Failed to create user: "+err.Error())
+		h.p.Log.Error("create user", "username", username, "err", err)
+		setFlashForm(w, "error", "The user could not be created. The server log has the details.", keep)
 		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
 		return
 	}
@@ -85,7 +97,15 @@ func (h *adminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	setFlash(w, "success", fmt.Sprintf("User “%s” created.", u.Username))
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+}
+
+// newUserForm is what the new-user form shows: empty, or what was typed
+// before an error sent the admin back to it.
+type newUserForm struct {
+	Username string
+	IsAdmin  bool
 }
 
 func (h *adminHandler) EditUserForm(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +121,7 @@ func (h *adminHandler) EditUserForm(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminUserEditPage(pd, u, flashMsg, flashKind).Render(r.Context(), w)
+	ui.Render(w, r, adminUserEditPage(pd, u, flashMsg, flashKind))
 }
 
 func (h *adminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -196,7 +216,7 @@ func (h *adminHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
-	adminGroupsPage(pd, groups, flashMsg, flashKind).Render(r.Context(), w)
+	ui.Render(w, r, adminGroupsPage(pd, groups, flashMsg, flashKind))
 }
 
 func (h *adminHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
@@ -239,7 +259,7 @@ func (h *adminHandler) EditGroupForm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
-	adminGroupDetailPage(pd, d).Render(r.Context(), w)
+	ui.Render(w, r, adminGroupDetailPage(pd, d))
 }
 
 func (h *adminHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
@@ -283,7 +303,7 @@ func (h *adminHandler) ShowLogs(w http.ResponseWriter, r *http.Request) {
 		entries = h.p.LogBuffer.Entries()
 		sources = h.p.LogBuffer.Sources()
 	}
-	adminLogsPage(pd, entries, sources).Render(r.Context(), w)
+	ui.Render(w, r, adminLogsPage(pd, entries, sources))
 }
 
 func (h *adminHandler) LogEntries(w http.ResponseWriter, r *http.Request) {
@@ -292,7 +312,7 @@ func (h *adminHandler) LogEntries(w http.ResponseWriter, r *http.Request) {
 		entries = h.p.LogBuffer.Entries()
 	}
 	entries = filterLogEntries(entries, r)
-	logEntriesPartial(entries).Render(r.Context(), w)
+	ui.Render(w, r, logEntriesPartial(entries))
 }
 
 func filterLogEntries(entries []logbuf.Entry, r *http.Request) []logbuf.Entry {
@@ -324,7 +344,12 @@ func filterLogEntries(entries []logbuf.Entry, r *http.Request) []logbuf.Entry {
 	regexStr := r.URL.Query().Get("regex")
 	var re *regexp.Regexp
 	if regexStr != "" {
-		re, _ = regexp.Compile(regexStr)
+		var err error
+		if re, err = regexp.Compile(regexStr); err != nil {
+			// Half-typed patterns arrive with every keystroke; until the
+			// pattern is valid, match it as plain text.
+			re = regexp.MustCompile(regexp.QuoteMeta(regexStr))
+		}
 	}
 
 	if len(levelSet) == 0 && len(sourceSet) == 0 && re == nil {
@@ -368,7 +393,7 @@ func (h *adminHandler) ListPlugins(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-	adminPluginsPage(pd, plugins).Render(r.Context(), w)
+	ui.Render(w, r, adminPluginsPage(pd, plugins))
 }
 
 func (h *adminHandler) TogglePlugin(w http.ResponseWriter, r *http.Request) {
@@ -499,7 +524,7 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), strconv.Itoa(tombstoneDays), env, status, flashMsg, flashKind, mfaRequired).Render(r.Context(), w)
+	ui.Render(w, r, adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), strconv.Itoa(tombstoneDays), env, status, flashMsg, flashKind, mfaRequired))
 }
 
 func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -559,7 +584,7 @@ func (h *adminHandler) ShowEmail(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	adminEmailPage(pd, smtpData, overrideHTML, overrideText, email.DefaultHTML(), email.DefaultText(), flashMsg, flashKind).Render(r.Context(), w)
+	ui.Render(w, r, adminEmailPage(pd, smtpData, overrideHTML, overrideText, email.DefaultHTML(), email.DefaultText(), flashMsg, flashKind))
 }
 
 func (h *adminHandler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
@@ -643,27 +668,27 @@ func (h *adminHandler) PreviewEmail(w http.ResponseWriter, r *http.Request) {
 func (h *adminHandler) TestSMTP(w http.ResponseWriter, r *http.Request) {
 	sender := h.p.EmailSender()
 	if sender == nil {
-		smtpTestAlert("error", "SMTP not configured", "Save the SMTP host and from address first.").Render(r.Context(), w)
+		ui.Render(w, r, smtpTestAlert("error", "SMTP not configured", "Save the SMTP host and from address first."))
 		return
 	}
 	addr := fmt.Sprintf("%s:%d", sender.Host, sender.Port)
 	c, err := smtp.Dial(addr)
 	if err != nil {
-		smtpTestAlert("error", "Connection failed", err.Error()).Render(r.Context(), w)
+		ui.Render(w, r, smtpTestAlert("error", "Connection failed", err.Error()))
 		return
 	}
 	defer c.Close()
 	if err := c.Hello("localhost"); err != nil {
-		smtpTestAlert("error", "EHLO failed", err.Error()).Render(r.Context(), w)
+		ui.Render(w, r, smtpTestAlert("error", "EHLO failed", err.Error()))
 		return
 	}
 	if sender.User != "" {
 		auth := smtp.PlainAuth("", sender.User, sender.Pass, sender.Host)
 		if err := c.Auth(auth); err != nil {
-			smtpTestAlert("error", "Authentication failed", err.Error()).Render(r.Context(), w)
+			ui.Render(w, r, smtpTestAlert("error", "Authentication failed", err.Error()))
 			return
 		}
 	}
 	c.Quit()
-	smtpTestAlert("success", "Connection successful", fmt.Sprintf("Connected to %s and authenticated.", addr)).Render(r.Context(), w)
+	ui.Render(w, r, smtpTestAlert("success", "Connection successful", fmt.Sprintf("Connected to %s and authenticated.", addr)))
 }

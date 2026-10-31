@@ -1,21 +1,22 @@
 package feed
 
-import "strconv"
+import (
+	"strconv"
+
+	"git.duckfam.us/jj-software/cog/ui"
+)
 
 templ feedWidget(unread int64, recent []Item) {
 	if len(recent) == 0 {
-		<p class="text-muted">No recent items.</p>
+		@ui.WidgetEmpty("No unread articles.", "Add a subscription", "/apps/feed/settings/subscriptions")
 	} else {
-		<div style="padding:0.2rem 0;margin-bottom:0.4rem">
-			<span class="badge">{ strconv.FormatInt(unread, 10) } unread</span>
-		</div>
-		for _, it := range recent {
-			<div style="padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
-				<a href={ templ.SafeURL("/apps/feed/items/" + strconv.FormatInt(it.ID, 10)) } style="font-weight:500">
-					{ it.Title }
-				</a>
-				<div class="text-muted" style="font-size:0.85rem">{ it.Type }</div>
-			</div>
-		}
+		<p class="text-muted text-sm mb-1">{ strconv.FormatInt(unread, 10) } unread</p>
+		<ul class="widget-list">
+			for _, it := range recent {
+				<li>
+					<a href={ templ.SafeURL("/apps/feed/items/" + strconv.FormatInt(it.ID, 10)) } class="font-medium">{ it.Title }</a>
+				</li>
+			}
+		</ul>
 	}
 }

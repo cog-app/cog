@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/jpeg"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,37 +29,84 @@ func NewPages(p *Plugin) *Pages {
 	return &Pages{plugin: p}
 }
 
-// Timeline renders the main photo timeline view.
+// isAdmin reports whether the request comes from an administrator, who can
+// reach the gallery's system settings.
+func isAdmin(r *http.Request) bool {
+	u := plugin.UserFromContext(r.Context())
+	return u != nil && u.IsAdmin
+}
+
+// serverError reports a failure the user cannot fix and logs it.
+func (h *Pages) serverError(w http.ResponseWriter, r *http.Request, err error) {
+	h.plugin.log.Error("gallery page", "path", r.URL.Path, "err", err)
+	http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+
+// flashRedirect leaves a message for the page at target and sends the
+// browser there.
+func flashRedirect(w http.ResponseWriter, r *http.Request, kind, msg, target string) {
+	plugin.SetFlash(w, plugin.Flash{Kind: kind, Message: msg})
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// photoDay is one day of the timeline: its heading and its photos.
+type photoDay struct {
+	Label string
+	Media []Media
+}
+
+// groupByDay splits media, newest first, into days. Days are in UTC, the
+// same as the timeline API's day IDs.
+func groupByDay(media []Media) []photoDay {
+	var days []photoDay
+	for _, m := range media {
+		label := takenAt(&m).Format("Monday, January 2, 2006")
+		if n := len(days); n > 0 && days[n-1].Label == label {
+			days[n-1].Media = append(days[n-1].Media, m)
+			continue
+		}
+		days = append(days, photoDay{Label: label, Media: []Media{m}})
+	}
+	return days
+}
+
+// Timeline renders the main photo timeline view, grouped by day.
 func (h *Pages) Timeline(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
-	days, _ := TimelineDays(db)
-	media, _ := RecentMedia(db, 100)
-	total, _ := MediaCount(db)
+	media, err := RecentMedia(db, 100)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	plugin.SetTitle(w, "Gallery")
-	timelinePage(r.URL.Path, days, media, total).Render(r.Context(), w)
+	ui.Render(w, r, timelinePage(r.URL.Path, groupByDay(media)))
 }
 
 // Albums renders the album list view.
 func (h *Pages) Albums(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
-	albums, _ := ListAlbums(db, -1)
+	albums, err := ListAlbums(db, -1)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	plugin.SetTitle(w, "Albums")
-	albumsPage(r.URL.Path, albums).Render(r.Context(), w)
+	ui.Render(w, r, albumsPage(r.URL.Path, albums, plugin.CSRFToken(r)))
 }
 
 // AlbumView renders a single album.
 func (h *Pages) AlbumView(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -67,20 +115,46 @@ func (h *Pages) AlbumView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	album, err := GetAlbum(db, id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
 		return
 	}
-	media, _ := AlbumMedia(db, id, 200, 0)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	media, err := AlbumMedia(db, id, 200, 0)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	// A manual album offers the recent photos it does not have yet to add.
+	var candidates []Media
+	if album.AlbumType == AlbumManual {
+		recent, err := RecentMedia(db, 200)
+		if err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		in := make(map[int64]bool, len(media))
+		for _, m := range media {
+			in[m.ID] = true
+		}
+		for _, m := range recent {
+			if !in[m.ID] {
+				candidates = append(candidates, m)
+			}
+		}
+	}
 	plugin.SetTitle(w, album.Name)
-	albumViewPage(r.URL.Path, album, media, plugin.CSRFToken(r)).Render(r.Context(), w)
+	ui.Render(w, r, albumViewPage(r.URL.Path, album, media, candidates, plugin.CSRFToken(r)))
 }
 
 // PhotoView renders the detail view for a single photo.
 func (h *Pages) PhotoView(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -89,33 +163,73 @@ func (h *Pages) PhotoView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m, err := GetMedia(db, id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
 		return
 	}
-	tags, _ := TagsForMedia(db, id)
-	faces, _ := FacesForMedia(db, id)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	tags, err := TagsForMedia(db, id)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	faces, err := FacesForMedia(db, id)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	albums, err := ListAlbums(db, AlbumManual)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	newer, older, err := NeighbourMedia(db, m)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	isFavorite := false
 	if h.plugin.files != nil {
-		username := plugin.Username(r)
-		if filesDB, err := h.plugin.ctx.PluginDB(username, plugin.OfPlugin("files")); err == nil {
-			var fav int
-			filesDB.QueryRow(`SELECT favorite FROM files WHERE id = ?`, m.FileID).Scan(&fav)
-			isFavorite = fav == 1
+		filesDB, err := h.plugin.ctx.PluginDB(plugin.Username(r), plugin.OfPlugin("files"))
+		if err != nil {
+			h.serverError(w, r, err)
+			return
 		}
+		var fav int
+		err = filesDB.QueryRow(`SELECT favorite FROM files WHERE id = ?`, m.FileID).Scan(&fav)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			h.serverError(w, r, err)
+			return
+		}
+		isFavorite = fav == 1
 	}
 	plugin.SetTitle(w, m.FileName())
-	photoViewPage(r.URL.Path, m, tags, faces, plugin.CSRFToken(r), isFavorite).Render(r.Context(), w)
+	ui.Render(w, r, photoViewPage(photoView{
+		Media:    m,
+		Tags:     tags,
+		Faces:    faces,
+		Albums:   albums,
+		Newer:    newer,
+		Older:    older,
+		Favorite: isFavorite,
+	}, plugin.CSRFToken(r)))
 }
 
 // People renders the people/faces view.
 func (h *Pages) People(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
-	people, _ := ListPeople(db)
+	people, err := ListPeople(db)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	unnamed := make([]Person, 0, len(people))
 	for _, p := range people {
 		if p.Name == "" {
@@ -128,14 +242,14 @@ func (h *Pages) People(w http.ResponseWriter, r *http.Request) {
 		shown = unnamed
 	}
 	plugin.SetTitle(w, "People")
-	peoplePage(r.URL.Path, shown, len(people), len(unnamed), unnamedOnly).Render(r.Context(), w)
+	ui.Render(w, r, peoplePage(r.URL.Path, shown, len(people), len(unnamed), unnamedOnly, isAdmin(r)))
 }
 
 // PersonView renders faces for a specific person.
 func (h *Pages) PersonView(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -144,62 +258,86 @@ func (h *Pages) PersonView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	person, err := GetPerson(db, id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
 		return
 	}
-	faces, _ := FacesByPerson(db, id, 200, 0)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	faces, err := FacesByPerson(db, id, 200, 0)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	plugin.SetTitle(w, person.DisplayName())
-	personViewPage(r.URL.Path, person, faces, plugin.CSRFToken(r)).Render(r.Context(), w)
+	ui.Render(w, r, personViewPage(r.URL.Path, person, faces, plugin.CSRFToken(r)))
 }
 
 // Tags renders the tag browser.
 func (h *Pages) Tags(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
-	tags, _ := ListTags(db)
+	tags, err := ListTags(db)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	plugin.SetTitle(w, "Tags")
-	tagsPage(r.URL.Path, tags).Render(r.Context(), w)
+	ui.Render(w, r, tagsPage(r.URL.Path, tags, isAdmin(r)))
 }
 
 // TagView renders media for a specific tag.
 func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 	name := r.PathValue("name")
-	media, _ := MediaByTag(db, name, 200, 0)
+	media, err := MediaByTag(db, name, 200, 0)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	plugin.SetTitle(w, "Tag: "+name)
-	tagViewPage(r.URL.Path, name, media).Render(r.Context(), w)
+	ui.Render(w, r, tagViewPage(r.URL.Path, name, media))
 }
 
 // Videos renders the video-only timeline.
 func (h *Pages) Videos(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
-	media, _ := VideoMedia(db, 100, 0)
+	media, err := VideoMedia(db, 100, 0)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	plugin.SetTitle(w, "Videos")
-	videosPage(media).Render(r.Context(), w)
+	ui.Render(w, r, videosPage(media))
 }
 
 // Settings renders the gallery settings page.
 func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
-	total, _ := MediaCount(db)
+	total, err := MediaCount(db)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	plugin.SetTitle(w, "Gallery Settings")
-	settingsPage(db, total, plugin.CSRFToken(r)).Render(r.Context(), w)
+	ui.Render(w, r, settingsPage(db, total, plugin.CSRFToken(r)))
 }
 
 // --- API handlers ---
@@ -333,27 +471,38 @@ func (h *Pages) FaceThumbnail(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) CreateAlbum(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
-	name := r.FormValue("name")
+	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" {
-		http.Error(w, "name required", http.StatusBadRequest)
+		flashRedirect(w, r, "error", "An album needs a name.", "/apps/gallery/albums")
 		return
 	}
-	id, err := CreateAlbumRow(db, name, r.FormValue("description"))
+	id, err := CreateAlbumRow(db, name, strings.TrimSpace(r.FormValue("description")))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		flashRedirect(w, r, "error", "The album could not be created: "+err.Error(), "/apps/gallery/albums")
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/album/%d", id), http.StatusSeeOther)
+	flashRedirect(w, r, "success", "Created “"+name+"”.", fmt.Sprintf("/apps/gallery/album/%d", id))
 }
 
-// AddToAlbum adds a media item to an album.
+// galleryReturn is where a form asked to go back to, if it is a gallery
+// page; otherwise fallback. It keeps a posted "return" from sending the
+// browser off-site.
+func galleryReturn(r *http.Request, fallback string) string {
+	ret := r.FormValue("return")
+	if strings.HasPrefix(ret, "/apps/gallery/") && !strings.HasPrefix(ret, "//") {
+		return ret
+	}
+	return fallback
+}
+
+// AddToAlbum adds one or more media items (media_id, repeated) to an album.
 func (h *Pages) AddToAlbum(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 	albumID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -361,23 +510,44 @@ func (h *Pages) AddToAlbum(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	mediaID, err := strconv.ParseInt(r.FormValue("media_id"), 10, 64)
+	album, err := GetAlbum(db, albumID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
 	if err != nil {
-		http.Error(w, "media_id required", http.StatusBadRequest)
+		h.serverError(w, r, err)
 		return
 	}
-	if err := AddMediaToAlbum(db, albumID, mediaID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	back := galleryReturn(r, fmt.Sprintf("/apps/gallery/album/%d", albumID))
+	if err := r.ParseForm(); err != nil {
+		flashRedirect(w, r, "error", "Nothing was added: "+err.Error(), back)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	ids := r.PostForm["media_id"]
+	if len(ids) == 0 {
+		flashRedirect(w, r, "error", "Choose at least one photo to add.", back)
+		return
+	}
+	for _, v := range ids {
+		mediaID, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			flashRedirect(w, r, "error", "Nothing was added: invalid photo.", back)
+			return
+		}
+		if err := AddMediaToAlbum(db, albumID, mediaID); err != nil {
+			flashRedirect(w, r, "error", "The photos could not be added: "+err.Error(), back)
+			return
+		}
+	}
+	flashRedirect(w, r, "success", fmt.Sprintf("Added %s to “%s”.", plural(len(ids), "photo", "photos"), album.Name), back)
 }
 
 // RemoveFromAlbum removes a media item from an album.
 func (h *Pages) RemoveFromAlbum(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 	albumID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -391,17 +561,102 @@ func (h *Pages) RemoveFromAlbum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := RemoveMediaFromAlbum(db, albumID, mediaID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// DeleteAlbum deletes an album.
-func (h *Pages) DeleteAlbum(w http.ResponseWriter, r *http.Request) {
+// albumPhoto reads the album named by the path and the photo named by the
+// form's media_id, for the album page's tile menu. On failure it has
+// answered: 404 for an album that does not exist, a flash for a bad photo.
+func (h *Pages) albumPhoto(w http.ResponseWriter, r *http.Request, db *sql.DB) (*Album, *Media, bool) {
+	albumID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return nil, nil, false
+	}
+	album, err := GetAlbum(db, albumID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return nil, nil, false
+	}
+	if err != nil {
+		h.serverError(w, r, err)
+		return nil, nil, false
+	}
+	back := fmt.Sprintf("/apps/gallery/album/%d", albumID)
+	mediaID, err := strconv.ParseInt(r.FormValue("media_id"), 10, 64)
+	if err != nil {
+		flashRedirect(w, r, "error", "Choose a photo from the album.", back)
+		return nil, nil, false
+	}
+	m, err := GetMedia(db, mediaID)
+	if errors.Is(err, sql.ErrNoRows) {
+		flashRedirect(w, r, "error", "That photo is no longer in your gallery.", back)
+		return nil, nil, false
+	}
+	if err != nil {
+		h.serverError(w, r, err)
+		return nil, nil, false
+	}
+	return album, m, true
+}
+
+// SetCover makes a photo of the album its cover.
+func (h *Pages) SetCover(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
+		return
+	}
+	album, m, ok := h.albumPhoto(w, r, db)
+	if !ok {
+		return
+	}
+	back := fmt.Sprintf("/apps/gallery/album/%d", album.ID)
+	err = SetAlbumCover(db, album.ID, m.ID)
+	if errors.Is(err, ErrNotInAlbum) {
+		flashRedirect(w, r, "error", "“"+m.FileName()+"” is not in “"+album.Name+"”, so it cannot be its cover.", back)
+		return
+	}
+	if err != nil {
+		flashRedirect(w, r, "error", "The cover could not be changed: "+err.Error(), back)
+		return
+	}
+	flashRedirect(w, r, "success", "“"+m.FileName()+"” is now the cover of “"+album.Name+"”.", back)
+}
+
+// RemoveFromAlbumForm takes a photo out of a manual album from the album
+// page's tile menu (PRG). The photo stays in the gallery; if it was the
+// cover, the album goes back to its first photo.
+func (h *Pages) RemoveFromAlbumForm(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	album, m, ok := h.albumPhoto(w, r, db)
+	if !ok {
+		return
+	}
+	back := fmt.Sprintf("/apps/gallery/album/%d", album.ID)
+	if album.AlbumType != AlbumManual {
+		flashRedirect(w, r, "error", "Photos cannot be taken out of an automatic album.", back)
+		return
+	}
+	if err := RemoveMediaFromAlbum(db, album.ID, m.ID); err != nil {
+		flashRedirect(w, r, "error", "“"+m.FileName()+"” could not be removed: "+err.Error(), back)
+		return
+	}
+	flashRedirect(w, r, "success", "Removed “"+m.FileName()+"” from “"+album.Name+"”.", back)
+}
+
+// RenameAlbum changes a manual album's name and description.
+func (h *Pages) RenameAlbum(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		h.serverError(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -409,11 +664,84 @@ func (h *Pages) DeleteAlbum(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := DeleteAlbumRow(db, id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	back := fmt.Sprintf("/apps/gallery/album/%d", id)
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		flashRedirect(w, r, "error", "An album needs a name.", back)
 		return
 	}
-	http.Redirect(w, r, "/apps/gallery/albums", http.StatusSeeOther)
+	if err := RenameAlbumRow(db, id, name, strings.TrimSpace(r.FormValue("description"))); err != nil {
+		flashRedirect(w, r, "error", "The album could not be renamed: "+err.Error(), back)
+		return
+	}
+	flashRedirect(w, r, "success", "Saved “"+name+"”.", back)
+}
+
+// DeleteAlbum deletes an album (DELETE, or POST from the album page's
+// confirmation dialog). Its photos stay in the gallery.
+func (h *Pages) DeleteAlbum(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	album, err := GetAlbum(db, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	if err := DeleteAlbumRow(db, id); err != nil {
+		flashRedirect(w, r, "error", "The album could not be deleted: "+err.Error(), fmt.Sprintf("/apps/gallery/album/%d", id))
+		return
+	}
+	flashRedirect(w, r, "success", "Deleted the album “"+album.Name+"”. Its photos are still in your gallery.", "/apps/gallery/albums")
+}
+
+// DeletePhoto moves a photo's file to the trash and drops it from the
+// gallery.
+func (h *Pages) DeletePhoto(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	m, err := GetMedia(db, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	back := fmt.Sprintf("/apps/gallery/photo/%d", id)
+	if h.plugin.files == nil {
+		flashRedirect(w, r, "error", "The photo could not be deleted: the files app is not available.", back)
+		return
+	}
+	if err := h.plugin.files.Delete(plugin.Username(r), m.FilePath); err != nil {
+		flashRedirect(w, r, "error", "The photo could not be deleted: "+err.Error(), back)
+		return
+	}
+	if err := DeleteMediaByFileID(db, m.FileID); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	flashRedirect(w, r, "success", "Moved “"+m.FileName()+"” to the trash.", "/apps/gallery/")
 }
 
 // NamePerson names a recognized person.
@@ -757,7 +1085,7 @@ func (h *Pages) SearchTagsAPI(w http.ResponseWriter, r *http.Request) {
 	for i, t := range tags {
 		items[i] = ui.PickerItem{ID: t.Name, Name: t.Name}
 	}
-	ui.PickerResults(items).Render(r.Context(), w)
+	ui.Render(w, r, ui.PickerResults(items))
 }
 
 // SearchPeopleAPI returns people search results as picker options.
@@ -814,21 +1142,21 @@ func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ui.PickerResults(items).Render(r.Context(), w)
+	ui.Render(w, r, ui.PickerResults(items))
 }
 
 // TriggerScan manually triggers a media scan via the scan worker subprocess.
 func (h *Pages) TriggerScan(w http.ResponseWriter, r *http.Request) {
 	username := plugin.Username(r)
 	go h.plugin.requestScan(username)
-	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
+	flashRedirect(w, r, "success", "Scanning for new photos. They appear in the timeline as they are found.", "/apps/gallery/settings")
 }
 
 // SaveScanFolders saves the per-user scan folders setting.
 func (h *Pages) SaveScanFolders(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 	folders := r.FormValue("folders")
@@ -841,14 +1169,14 @@ func (h *Pages) SaveScanFolders(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !hasLine {
-		http.Error(w, "At least one folder pattern is required", http.StatusBadRequest)
+		flashRedirect(w, r, "error", "Enter at least one folder pattern.", "/apps/gallery/settings")
 		return
 	}
 	if err := SettingScanFolders.Set(db, folders); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		flashRedirect(w, r, "error", "The folders could not be saved: "+err.Error(), "/apps/gallery/settings")
 		return
 	}
-	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
+	flashRedirect(w, r, "success", "Saved the folders to scan.", "/apps/gallery/settings")
 }
 
 // ScanFoldersPreview returns an HTMX partial showing which folders match the given patterns.
@@ -860,7 +1188,7 @@ func (h *Pages) ScanFoldersPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse patterns from the posted textarea.
+	// Parse patterns from the textarea (sent as a query parameter).
 	raw := r.FormValue("folders")
 	var patterns []string
 	for line := range strings.SplitSeq(raw, "\n") {
@@ -887,7 +1215,8 @@ func (h *Pages) ScanFoldersPreview(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var p string
 		if err := rows.Scan(&p); err != nil {
-			continue
+			h.serverError(w, r, err)
+			return
 		}
 		if matchScanFolders(p, patterns) {
 			total++
@@ -899,14 +1228,18 @@ func (h *Pages) ScanFoldersPreview(w http.ResponseWriter, r *http.Request) {
 			folderSet[dir]++
 		}
 	}
+	if err := rows.Err(); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 
 	var folders []string
 	for f, count := range folderSet {
-		folders = append(folders, fmt.Sprintf("%s (%d files)", f, count))
+		folders = append(folders, fmt.Sprintf("%s (%s)", f, plural(count, "file", "files")))
 	}
 	sort.Strings(folders)
 
-	scanFoldersPreview(folders, total).Render(r.Context(), w)
+	ui.Render(w, r, scanFoldersPreview(folders, total))
 }
 
 // SaveRecognitionSettings saves recognition backend settings (legacy per-user, redirects to system settings).
@@ -924,20 +1257,20 @@ func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
 	stats := h.plugin.AggregateRecognitionStats()
 	scanStatus := h.plugin.GetScanStatus()
 	plugin.SetTitle(w, "Gallery Settings")
-	systemSettingsPage(sysDB, stats, scanStatus, plugin.CSRFToken(r)).Render(r.Context(), w)
+	ui.Render(w, r, systemSettingsPage(sysDB, stats, scanStatus, plugin.CSRFToken(r)))
 }
 
 // ScanStatusPartial returns the scan status card as an HTMX partial.
 func (h *Pages) ScanStatusPartial(w http.ResponseWriter, r *http.Request) {
 	stats := h.plugin.AggregateRecognitionStats()
 	scan := h.plugin.GetScanStatus()
-	scanStatusCard(stats, scan, plugin.CSRFToken(r)).Render(r.Context(), w)
+	ui.Render(w, r, scanStatusCard(stats, scan, plugin.CSRFToken(r)))
 }
 
 // UserScanStatusPartial returns a small scan-running banner for the gallery sidebar.
 func (h *Pages) UserScanStatusPartial(w http.ResponseWriter, r *http.Request) {
 	scan := h.plugin.GetScanStatus()
-	userScanBanner(scan).Render(r.Context(), w)
+	ui.Render(w, r, userScanBanner(scan))
 }
 
 // TriggerSystemScan triggers a full scan of all users from the admin page.
@@ -1018,16 +1351,24 @@ func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
 	}
 	username := plugin.Username(r)
 	var media []Media
-	starredCount := 0
 	if h.plugin.files != nil {
-		if filesDB, err := h.plugin.ctx.PluginDB(username, plugin.OfPlugin("files")); err == nil {
-			fileIDs, _ := StarredFileIDs(filesDB)
-			media, _ = StarredMedia(db, fileIDs)
-			starredCount = len(media)
+		filesDB, err := h.plugin.ctx.PluginDB(username, plugin.OfPlugin("files"))
+		if err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		fileIDs, err := StarredFileIDs(filesDB)
+		if err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		if media, err = StarredMedia(db, fileIDs); err != nil {
+			h.serverError(w, r, err)
+			return
 		}
 	}
 	plugin.SetTitle(w, "Starred")
-	starredPage(media, starredCount).Render(r.Context(), w)
+	ui.Render(w, r, starredPage(media))
 }
 
 // TogglePhotoStar toggles the favorite state of a photo in the files plugin.
@@ -1064,7 +1405,7 @@ func (h *Pages) TogglePhotoStar(w http.ResponseWriter, r *http.Request) {
 	h.plugin.files.SetFavorite(username, m.FilePath, newFav)
 
 	// Return updated star button.
-	ui.Star(newFav, fmt.Sprintf("/apps/gallery/media/%d/star", id)).Render(r.Context(), w)
+	ui.Render(w, r, ui.Star(newFav, fmt.Sprintf("/apps/gallery/media/%d/star", id)))
 }
 
 // Duplicates renders the duplicate groups list.
@@ -1074,9 +1415,13 @@ func (h *Pages) Duplicates(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	groups, _ := ListDuplicateGroups(db)
+	groups, err := ListDuplicateGroups(db)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	plugin.SetTitle(w, "Duplicates")
-	duplicatesPage(r.URL.Path, groups).Render(r.Context(), w)
+	ui.Render(w, r, duplicatesPage(r.URL.Path, groups))
 }
 
 // DuplicateGroupView renders a single duplicate group.
@@ -1097,7 +1442,7 @@ func (h *Pages) DuplicateGroupView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	plugin.SetTitle(w, "Duplicate Group")
-	duplicateGroupViewPage(r.URL.Path, id, members, plugin.CSRFToken(r)).Render(r.Context(), w)
+	ui.Render(w, r, duplicateGroupViewPage(r.URL.Path, id, members, plugin.CSRFToken(r)))
 }
 
 // SetDuplicateKeep sets the keep item in a duplicate group.
@@ -1302,54 +1647,64 @@ func (h *Pages) DismissDuplicateGroup(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
 }
 
-// RenamePreview shows a preview of the rename operation.
+// RenamePreview shows what renaming every photo with ?pattern= would do. It
+// is a GET page, so a refresh does not resubmit anything and the pattern
+// can be edited and previewed again in place.
 func (h *Pages) RenamePreview(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
-	pattern := r.FormValue("pattern")
+	pattern := r.URL.Query().Get("pattern")
 	if pattern == "" {
 		http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
 		return
 	}
 	previews, err := PreviewRename(db, pattern)
+	var patternErr string
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		patternErr = err.Error()
 	}
 	plugin.SetTitle(w, "Rename Preview")
-	renamePreviewPage(pattern, previews, plugin.CSRFToken(r)).Render(r.Context(), w)
+	ui.Render(w, r, renamePreviewPage(pattern, previews, patternErr, plugin.CSRFToken(r)))
 }
 
 // RenameApply executes the rename operation.
 func (h *Pages) RenameApply(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 	pattern := r.FormValue("pattern")
 	previews, err := PreviewRename(db, pattern)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		flashRedirect(w, r, "error", "Nothing was renamed: "+err.Error(), "/apps/gallery/rename/preview?pattern="+url.QueryEscape(pattern))
 		return
 	}
 	username := plugin.Username(r)
 	if err := h.plugin.ApplyRename(username, previews); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		flashRedirect(w, r, "error", "The rename stopped part way: "+err.Error()+". Undo Last Rename puts back what was renamed.", "/apps/gallery/settings")
 		return
 	}
-	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
+	flashRedirect(w, r, "success", "Renamed "+plural(len(previews), "file", "files")+".", "/apps/gallery/settings")
 }
 
 // RenameUndo reverses the most recent rename batch.
 func (h *Pages) RenameUndo(w http.ResponseWriter, r *http.Request) {
 	username := plugin.Username(r)
 	if err := h.plugin.UndoLastRename(username); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		flashRedirect(w, r, "error", "The last rename could not be undone: "+err.Error(), "/apps/gallery/settings")
 		return
 	}
-	http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
+	flashRedirect(w, r, "success", "Undid the last rename.", "/apps/gallery/settings")
+}
+
+// plural is "1 photo" or "3 photos".
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return strconv.Itoa(n) + " " + many
 }

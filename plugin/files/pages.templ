@@ -8,302 +8,615 @@ import (
 	"time"
 )
 
-templ filesPage(pd ui.PageData, dirPath string, items []FileMeta, folderIcons map[string]string) {
+// filesLayout is the frame every file browser page shares: the sidebar of
+// places (all files, favourites, volumes) and the page beside it.
+templ filesLayout(pd ui.PageData, active string) {
 	@ui.Base(pd) {
-		<div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem">
-			<h1 style="margin:0">Files</h1>
-			<a href="/apps/files/favorites" class="btn btn-outline btn-sm">Favorites</a>
-			<a href="/apps/files/volumes" class="btn btn-outline btn-sm">Volumes</a>
+		@filesScripts()
+		<div class="sidebar-layout">
+			<nav class="sidebar" aria-label="Files">
+				@filesSidebarItem("/apps/files/", "All files", active == "files") {
+					@ui.Icon("folder")
+				}
+				@filesSidebarItem("/apps/files/favorites", "Favorites", active == "favorites") {
+					@starOutlineIcon()
+				}
+				@filesSidebarItem("/apps/files/volumes", "Volumes", active == "volumes") {
+					@volumeIcon()
+				}
+			</nav>
+			<div class="sidebar-content">
+				{ children... }
+			</div>
 		</div>
-		@filesBreadcrumbs(dirPath)
-		@ui.Card("") {
-			<div class="flex gap-1 items-end mb-2" style="flex-wrap:wrap">
-				<form method="post" action={ templ.SafeURL("/apps/files" + dirPath) } class="flex gap-1 items-end">
-					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-					<input class="form-control" type="text" name="name" placeholder="New folder" required style="max-width:200px" data-testid="new-folder-name"/>
-					<button class="btn btn-outline btn-sm" type="submit" data-testid="new-folder-submit">Create Folder</button>
-				</form>
-				@ui.Upload("/apps/files"+dirPath, "file", "", pd.CSRFToken, "Upload", "btn btn-primary btn-sm")
-				<button id="bulk-delete-btn" class="btn btn-danger btn-sm" style="display:none" onclick="bulkDelete()">Delete Selected</button>
-			</div>
-			<div id="drop-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,100,200,0.15);z-index:1000;pointer-events:none;border:3px dashed var(--color-primary,#0082c9);margin:8px">
-				<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.5rem;font-weight:600;color:var(--color-primary,#0082c9);background:var(--color-bg,#fff);padding:1rem 2rem;border-radius:8px">
-					Drop files to upload
-				</div>
-			</div>
-			<table class="table" id="files-table">
-				<thead>
-					<tr>
-						<th style="width:2rem"><input type="checkbox" id="select-all" onchange="toggleSelectAll(this)"/></th>
-						<th>Name</th>
-						<th>Size</th>
-						<th>Modified</th>
-						<th class="text-right">Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					if dirPath != "/" {
-						<tr>
-							<td></td>
-							<td>
-								<a href={ templ.SafeURL("/apps/files" + parentDir(dirPath)) }>../</a>
-							</td>
-							<td></td>
-							<td></td>
-							<td></td>
-						</tr>
-					}
-					for _, f := range items {
-						<tr
-							id={ "file-" + safeDomID(f.Path) }
-							if f.IsDir {
-								data-dir={ f.Path }
-							}
-						>
-							<td><input type="checkbox" class="file-check" value={ f.Path } onchange="updateBulkBtn()"/></td>
-							<td>
-								<div style="display:flex;align-items:center;gap:0.5rem">
-									if isImageFile(f.MimeType) {
-										<img
-											src={ "/apps/files" + f.Path + "?preview=1&size=36" }
-											alt=""
-											width="18"
-											height="18"
-											style="object-fit:cover;border-radius:2px"
-											loading="lazy"
-										/>
-									} else {
-										@fileIcon(f.MimeType, f.IsDir, folderIcons[f.Path])
-									}
-									if f.IsDir {
-										<a href={ templ.SafeURL("/apps/files" + f.Path) }>{ f.Name }/</a>
-									} else {
-										<a href={ templ.SafeURL("/apps/files" + f.Path) }>{ f.Name }</a>
-									}
-								</div>
-							</td>
-							<td>
-								if !f.IsDir {
-									{ formatSize(f.Size) }
-								}
-							</td>
-							<td>
-								if f.MTime > 0 {
-									{ time.Unix(f.MTime, 0).Format("2006-01-02 15:04") }
-								}
-							</td>
-							<td class="text-right" style="white-space:nowrap">
-								@favoriteButton(f.Path, f.Favorite)
-								<button
-									class="btn btn-outline btn-sm"
-									onclick={ renameFile(f.Path, f.Name) }
-								>Rename</button>
-								<button
-									class="btn btn-danger btn-sm"
-									hx-delete={ "/apps/files" + f.Path }
-									hx-target={ "#file-" + safeDomID(f.Path) }
-									hx-swap="outerHTML"
-									hx-confirm={ "Delete " + f.Name + "?" }
-								>Delete</button>
-							</td>
-						</tr>
-					}
-				</tbody>
-			</table>
-		}
-		@filesDragDrop(dirPath, pd.CSRFToken)
-		@filesActions(pd.CSRFToken)
 	}
 }
 
-script renameFile(filePath string, currentName string) {
-	var newName = prompt('Rename to:', currentName);
-	if (!newName || newName === currentName) return;
-	var parentPath = filePath.substring(0, filePath.length - currentName.length);
-	var newPath = parentPath + newName;
-	var csrf = document.querySelector('meta[name="csrf-token"]');
-	var token = csrf ? csrf.content : document.querySelector('input[name="csrf_token"]').value;
-	fetch('/api/files/rename', {
-		method: 'POST',
-		headers: {'Content-Type': 'application/json', 'X-CSRF-Token': token},
-		body: JSON.stringify({old_path: filePath, new_path: newPath})
-	}).then(function(resp) {
-		if (resp.ok) window.location.reload();
-		else resp.text().then(function(t) { alert('Rename failed: ' + t); });
-	});
+templ filesSidebarItem(href, label string, active bool) {
+	if active {
+		<a class="sidebar-item active" aria-current="page" href={ templ.SafeURL(href) }>
+			{ children... }
+			{ label }
+		</a>
+	} else {
+		<a class="sidebar-item" href={ templ.SafeURL(href) }>
+			{ children... }
+			{ label }
+		</a>
+	}
+}
+
+templ filesPage(pd ui.PageData, dirPath string, items []FileMeta, folderIcons map[string]string, now time.Time) {
+	@filesLayout(pd, "files") {
+		@ui.PageHeader(dirTitle(dirPath), dirCrumbs(dirPath)) {
+			<button type="button" class="btn" data-modal-open="files-new-folder">
+				@ui.Icon("plus")
+				New folder
+			</button>
+			@ui.Upload(fileURL(dirPath), "file", "", pd.CSRFToken, "Upload", "btn btn-primary")
+		}
+		<div class="files-drop-overlay" id="drop-overlay" hidden>
+			<div class="files-drop-message">
+				@ui.Icon("upload")
+				{ "Drop files to upload to “" + dirTitle(dirPath) + "”" }
+			</div>
+		</div>
+		if len(items) == 0 {
+			<div class="card" id="files-empty">
+				@ui.EmptyState("This folder is empty", "Upload files with the button above, or drag them onto this page.")
+			</div>
+		} else {
+			<div class="card card-flush files-card">
+				<div class="files-selection" id="files-selection" data-folder-url={ fileURL(dirPath) } hidden>
+					<button type="button" class="btn-icon btn-icon-sm" data-files-clear-selection aria-label="Clear selection" title="Clear selection">
+						@ui.Icon("x")
+					</button>
+					<span class="files-selection-count" data-selection-count aria-live="polite">0 selected</span>
+					<div class="files-selection-actions">
+						<button type="button" class="btn btn-sm" data-files-download-selected aria-label="Download" title="Download">
+							@ui.Icon("download")
+							<span class="files-selection-label">Download</span>
+						</button>
+						<button type="button" class="btn btn-sm" data-files-move-selected aria-label="Move" title="Move">
+							@moveIcon()
+							<span class="files-selection-label">Move…</span>
+						</button>
+						<button type="button" class="btn btn-sm btn-outline-danger" data-files-delete-selected aria-label="Delete" title="Delete">
+							@ui.Icon("trash")
+							<span class="files-selection-label">Delete</span>
+						</button>
+					</div>
+				</div>
+				<table class="table files-table" id="files-table">
+					<thead>
+						<tr>
+							<th class="files-check-col">
+								<label class="files-check-hit">
+									<input type="checkbox" data-select-all aria-label="Select all"/>
+								</label>
+							</th>
+							<th>Name</th>
+							<th class="col-shrink text-right hide-mobile">Size</th>
+							<th class="col-shrink hide-mobile">Modified</th>
+							<th class="col-actions"><span class="sr-only">Actions</span></th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, f := range items {
+							@fileRow(f, folderIcons[f.Path], now)
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+		@ui.Modal("files-new-folder", "New folder") {
+			<form method="post" action={ templ.SafeURL(fileURL(dirPath)) }>
+				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+				<div class="modal-body">
+					<div class="form-group mb-0">
+						<label for="files-new-folder-name">Folder name</label>
+						<input class="form-control" type="text" id="files-new-folder-name" name="name" required autocomplete="off" data-testid="new-folder-name"/>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn" data-modal-close>Cancel</button>
+					<button class="btn btn-primary" type="submit" data-testid="new-folder-submit">Create folder</button>
+				</div>
+			</form>
+		}
+		@renameModal(pd.CSRFToken)
+		@moveModal(pd.CSRFToken, dirPath)
+		@deleteModal(pd.CSRFToken, dirPath)
+		<script type="text/javascript" data-files-drop={ fileURL(dirPath) } data-csrf={ pd.CSRFToken }>
+			filesDragDrop(document.currentScript.dataset.filesDrop, document.currentScript.dataset.csrf);
+		</script>
+	}
+}
+
+// fileRow is one entry of a folder listing. On a phone the size and date
+// columns are hidden and shown as a line under the name instead, which
+// keeps the row to checkbox, name and actions.
+templ fileRow(f FileMeta, customIcon string, now time.Time) {
+	<tr
+		id={ "file-" + safeDomID(f.Path) }
+		if f.IsDir {
+			data-dir={ f.Path }
+		}
+	>
+		<td class="files-check-col">
+			<label class="files-check-hit">
+				<input type="checkbox" data-file-check value={ f.Path } data-name={ f.Name } aria-label={ "Select " + f.Name }/>
+			</label>
+		</td>
+		<td>
+			<a class="row-link files-name" href={ templ.SafeURL(fileURL(f.Path)) } title={ f.Name }>
+				@fileThumb(f, customIcon)
+				<span class="files-name-text">
+					<span class="files-name-label">{ f.Name }</span>
+					<span class="files-meta show-mobile">{ metaLine(f, now) }</span>
+				</span>
+			</a>
+		</td>
+		<td class="text-right nowrap text-muted hide-mobile">
+			if !f.IsDir {
+				{ formatSize(f.Size) }
+			}
+		</td>
+		<td class="nowrap text-muted hide-mobile" title={ fullTime(f.MTime) }>{ shortTime(f.MTime, now) }</td>
+		<td class="col-actions">
+			<div class="row-actions">
+				@favoriteButton(f.Path, f.Favorite)
+				@rowMenu(f)
+			</div>
+		</td>
+	</tr>
+}
+
+// fileThumb is the square in front of a name: a preview for an image, the
+// type's icon for anything else.
+templ fileThumb(f FileMeta, customIcon string) {
+	<span class="files-thumb" aria-hidden="true">
+		if !f.IsDir && isImageFile(f.MimeType) {
+			<img src={ fileURL(f.Path) + "?preview=1&size=64" } alt="" width="32" height="32" loading="lazy"/>
+		} else {
+			@fileIcon(f.MimeType, f.IsDir, customIcon)
+		}
+	</span>
+}
+
+// rowMenu holds a row's actions so the list shows names, not a column of
+// buttons. Delete is last and red.
+templ rowMenu(f FileMeta) {
+	<div class="dropdown files-row-menu">
+		<button
+			type="button"
+			class="btn-icon btn-icon-sm"
+			data-dropdown-toggle
+			aria-expanded="false"
+			aria-controls={ menuID(f.ID) }
+			aria-label={ "Actions for " + f.Name }
+			title="Actions"
+		>
+			@ui.Icon("more")
+		</button>
+		<div class="dropdown-menu" id={ menuID(f.ID) }>
+			if f.IsDir {
+				<a href={ templ.SafeURL(fileURL(f.Path)) }>
+					@ui.Icon("folder")
+					Open
+				</a>
+				<a href={ templ.SafeURL(zipURL(f.ParentPath, f.Path)) }>
+					@ui.Icon("download")
+					Download as ZIP
+				</a>
+			} else {
+				<a href={ templ.SafeURL(fileURL(f.Path) + "?dl=1") }>
+					@ui.Icon("download")
+					Download
+				</a>
+			}
+			<button type="button" data-files-rename={ fileURL(f.Path) + "?rename=1" } data-name={ f.Name }>
+				@ui.Icon("edit")
+				Rename
+			</button>
+			<button type="button" data-files-move={ f.Path } data-name={ f.Name }>
+				@moveIcon()
+				Move…
+			</button>
+			<cog-share-button
+				class="files-menu-share"
+				resource={ fileResourceType(f.IsDir) }
+				resource-id={ strconv.FormatInt(f.ID, 10) }
+				share-title={ f.Name }
+				btn-class="files-share-item"
+			>Share</cog-share-button>
+			<div class="dropdown-divider"></div>
+			<button type="button" class="danger" data-files-delete={ f.Path } data-name={ f.Name }>
+				@ui.Icon("trash")
+				Delete
+			</button>
+		</div>
+	</div>
 }
 
 templ favoriteButton(filePath string, isFavorite bool) {
+	@ui.Star(isFavorite, fileURL(filePath)+"?star=1")
+}
+
+// renameModal asks for a new name. filesScripts points its form at the row
+// being renamed and selects the name up to its extension.
+templ renameModal(csrfToken string) {
+	@ui.Modal("files-rename", "Rename") {
+		<form method="post" action="" data-files-rename-form>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<div class="modal-body">
+				<div class="form-group mb-0">
+					<label for="files-rename-name">New name</label>
+					<input class="form-control" type="text" id="files-rename-name" name="name" required autocomplete="off"/>
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn" data-modal-close>Cancel</button>
+				<button class="btn btn-primary" type="submit">Rename</button>
+			</div>
+		</form>
+	}
+}
+
+// moveModal moves the selection, or one row, into a folder chosen by
+// browsing. filesScripts fills in the paths and loads the picker, which
+// answers with the folder's subfolders and the submit button for it.
+templ moveModal(csrfToken, dirPath string) {
+	@ui.Modal("files-move", "Move") {
+		<form method="post" action={ templ.SafeURL(fileURL(dirPath) + "?move=1") } data-files-move-form>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<div data-move-paths></div>
+			<div class="modal-body files-move-body">
+				<div
+					id="files-move-picker"
+					hx-get={ fileURL(dirPath) + "?folders=1" }
+					hx-trigger="files:move-open"
+					hx-include="[data-move-paths]"
+				>
+					<p class="files-picker-loading text-muted">Loading folders…</p>
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn" data-modal-close>Cancel</button>
+				@moveSubmit(false, true)
+			</div>
+		</form>
+	}
+}
+
+// moveSubmit is the move dialog's submit button. The picker swaps it out of
+// band, disabled where the selection cannot go.
+templ moveSubmit(oob, disabled bool) {
 	<button
-		class={ starClass(isFavorite) }
-		onclick={ toggleFavorite(filePath, !isFavorite) }
-		title="Toggle favorite"
-	>
-		@ui.StarIcon()
-	</button>
+		class="btn btn-primary"
+		type="submit"
+		id="files-move-submit"
+		if oob {
+			hx-swap-oob="true"
+		}
+		disabled?={ disabled }
+	>Move here</button>
 }
 
-script toggleFavorite(filePath string, setFav bool) {
-	fetch('/api/files/favorite', {
-		method: 'POST',
-		headers: {'Content-Type': 'application/json'},
-		body: JSON.stringify({path: filePath, favorite: setFav})
-	}).then(function(resp) {
-		if (resp.ok) window.location.reload();
-		else resp.text().then(function(t) { alert('Failed: ' + t); });
-	});
-}
-
-templ filesActions(csrfToken string) {
-	<script type="text/javascript">
-		function toggleSelectAll(el) {
-			document.querySelectorAll(".file-check").forEach(function (cb) {
-				cb.checked = el.checked;
-			});
-			updateBulkBtn();
+// folderPicker is one folder of the move dialog: where it is, a way up, and
+// its subfolders. A folder being moved cannot be entered or chosen, and the
+// folder the items are already in cannot be chosen.
+templ folderPicker(dir string, folders []FileMeta, selected map[string]bool) {
+	<input type="hidden" name="dest" value={ dir }/>
+	<div class="files-picker-head">
+		if dir != "/" {
+			<button
+				type="button"
+				class="btn-icon btn-icon-sm"
+				hx-get={ fileURL(parentDir(dir)) + "?folders=1" }
+				hx-target="#files-move-picker"
+				hx-include="[data-move-paths]"
+				aria-label={ "Up to " + dirTitle(parentDir(dir)) }
+				title={ "Up to " + dirTitle(parentDir(dir)) }
+			>
+				@ui.Icon("arrow-up")
+			</button>
 		}
-		function updateBulkBtn() {
-			var checked = document.querySelectorAll(".file-check:checked");
-			document.getElementById("bulk-delete-btn").style.display =
-				checked.length > 0 ? "" : "none";
-		}
-		function bulkDelete() {
-			var checked = document.querySelectorAll(".file-check:checked");
-			if (!checked.length) return;
-			if (!confirm("Delete " + checked.length + " item(s)?")) return;
-			var csrf = {{ csrfToken }};
-			var pending = checked.length;
-			var errors = [];
-			checked.forEach(function (cb) {
-				fetch("/apps/files" + cb.value, {
-					method: "DELETE",
-					headers: { "X-CSRF-Token": csrf },
-				})
-					.then(function (resp) {
-						if (resp.ok) {
-							var row = cb.closest("tr");
-							if (row) row.remove();
+		<div class="files-picker-where">
+			<span class="files-picker-name">{ dirTitle(dir) }</span>
+			if dir != "/" {
+				<span class="files-picker-path">{ dir }</span>
+			}
+		</div>
+	</div>
+	if len(folders) == 0 {
+		<p class="files-picker-empty">No folders in here.</p>
+	} else {
+		<ul class="files-picker-list">
+			for _, f := range folders {
+				<li>
+					<button
+						type="button"
+						class="files-picker-item"
+						hx-get={ fileURL(f.Path) + "?folders=1" }
+						hx-target="#files-move-picker"
+						hx-include="[data-move-paths]"
+						disabled?={ selected[f.Path] }
+					>
+						<span class="files-thumb" aria-hidden="true">
+							@fileIcon("", true, "")
+						</span>
+						<span class="files-picker-item-name">{ f.Name }</span>
+						if selected[f.Path] {
+							<span class="files-picker-note">Being moved</span>
 						} else {
-							errors.push(cb.value);
+							@chevronIcon(false)
 						}
-						pending--;
-						if (pending === 0) {
-							if (errors.length > 0)
-								alert("Failed to delete: " + errors.join(", "));
-							updateBulkBtn();
-							document.getElementById("select-all").checked = false;
-						}
-					})
-					.catch(function () {
-						errors.push(cb.value);
-						pending--;
-						if (pending === 0) {
-							if (errors.length > 0)
-								alert("Failed to delete: " + errors.join(", "));
-							updateBulkBtn();
-						}
-					});
-			});
-		}
-	</script>
+					</button>
+				</li>
+			}
+		</ul>
+	}
+	if note := pickerNote(dir, selected); note != "" {
+		<p class="form-help files-picker-help">{ note }</p>
+	}
+	@moveSubmit(true, pickerNote(dir, selected) != "")
 }
 
-templ filesDragDrop(dirPath string, csrfToken string) {
+templ moveIcon() {
+	<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+		<polyline points="12 10 15 13 12 16"></polyline>
+		<line x1="8" y1="13" x2="15" y2="13"></line>
+	</svg>
+}
+
+// deleteModal confirms moving one or more items to the trash. The form posts
+// the chosen paths to back, the folder the browser returns to.
+templ deleteModal(csrfToken, back string) {
+	@ui.Modal("files-delete", "Move to trash") {
+		<form method="post" action={ templ.SafeURL(fileURL(back) + "?delete=1") } data-files-delete-form>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<div data-delete-paths></div>
+			<div class="modal-body">
+				<p data-delete-message>Delete this item?</p>
+				<p class="form-help">Deleted items are moved to the trash.</p>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn" data-modal-close>Cancel</button>
+				<button class="btn btn-danger" type="submit">Delete</button>
+			</div>
+		</form>
+	}
+}
+
+// filesScripts wires the browser's dialogs, selection and drag-and-drop.
+// It works by delegation, so rows added later need nothing of their own.
+templ filesScripts() {
 	<script type="text/javascript">
 		(function () {
-			var basePath = {{ dirPath }};
-			var csrf = {{ csrfToken }};
-			var overlay = document.getElementById("drop-overlay");
-			var dragCount = 0;
+			if (window.filesDragDrop) return;
 
-			document.addEventListener("dragenter", function (e) {
-				if (!e.dataTransfer.types.includes("Files")) return;
-				e.preventDefault();
-				dragCount++;
-				overlay.style.display = "";
+			function checks() {
+				return Array.prototype.slice.call(document.querySelectorAll("[data-file-check]"));
+			}
+
+			function updateSelection() {
+				var bar = document.getElementById("files-selection");
+				if (!bar) return;
+				var all = checks();
+				var picked = all.filter(function (c) { return c.checked; });
+				bar.hidden = picked.length === 0;
+				bar.querySelector("[data-selection-count]").textContent = picked.length + " selected";
+				var head = document.querySelector("[data-select-all]");
+				if (head) {
+					head.checked = picked.length > 0 && picked.length === all.length;
+					head.indeterminate = picked.length > 0 && picked.length < all.length;
+				}
+			}
+
+			// askDelete fills the delete dialog with the items and opens it.
+			function askDelete(items) {
+				var dlg = document.getElementById("files-delete");
+				if (!dlg || !items.length) return;
+				var holder = dlg.querySelector("[data-delete-paths]");
+				holder.innerHTML = "";
+				items.forEach(function (it) {
+					var input = document.createElement("input");
+					input.type = "hidden";
+					input.name = "path";
+					input.value = it.path;
+					holder.appendChild(input);
+				});
+				dlg.querySelector("[data-delete-message]").textContent = items.length === 1
+					? "Delete “" + items[0].name + "”?"
+					: "Delete " + items.length + " items?";
+				cogModal.open(dlg);
+			}
+
+			// askMove fills the move dialog with the items, opens it and has
+			// the picker load the folder they are in.
+			function askMove(items) {
+				var dlg = document.getElementById("files-move");
+				if (!dlg || !items.length) return;
+				var holder = dlg.querySelector("[data-move-paths]");
+				holder.innerHTML = "";
+				items.forEach(function (it) {
+					var input = document.createElement("input");
+					input.type = "hidden";
+					input.name = "path";
+					input.value = it.path;
+					holder.appendChild(input);
+				});
+				dlg.querySelector(".modal-title").textContent = items.length === 1
+					? "Move “" + items[0].name + "”"
+					: "Move " + items.length + " items";
+				var picker = document.getElementById("files-move-picker");
+				cogModal.open(dlg);
+				htmx.trigger(picker, "files:move-open");
+			}
+
+			function picked() {
+				return checks().filter(function (c) { return c.checked; }).map(function (c) {
+					return { path: c.value, name: c.getAttribute("data-name") };
+				});
+			}
+
+			// downloadSelected fetches one file as itself, anything more as a zip.
+			function downloadSelected(items) {
+				var bar = document.getElementById("files-selection");
+				if (!bar || !items.length) return;
+				var q = new URLSearchParams();
+				q.append("zip", "1");
+				items.forEach(function (it) { q.append("path", it.path); });
+				window.location.href = bar.getAttribute("data-folder-url") + "?" + q.toString();
+			}
+
+			function askRename(action, name) {
+				var dlg = document.getElementById("files-rename");
+				if (!dlg) return;
+				dlg.querySelector("[data-files-rename-form]").setAttribute("action", action);
+				var input = dlg.querySelector("input[name=name]");
+				input.value = name;
+				cogModal.open(dlg);
+				// Select the name without its extension, the part usually renamed.
+				var dot = name.lastIndexOf(".");
+				input.focus();
+				input.setSelectionRange(0, dot > 0 ? dot : name.length);
+			}
+
+			document.addEventListener("change", function (e) {
+				if (e.target.matches("[data-select-all]")) {
+					checks().forEach(function (c) { c.checked = e.target.checked; });
+					updateSelection();
+				} else if (e.target.matches("[data-file-check]")) {
+					updateSelection();
+				}
 			});
 
-			document.addEventListener("dragleave", function (e) {
-				dragCount--;
-				if (dragCount <= 0) {
+			document.addEventListener("click", function (e) {
+				var t = e.target.closest("[data-files-rename], [data-files-delete], [data-files-move], [data-files-delete-selected], [data-files-move-selected], [data-files-download-selected], [data-files-clear-selection]");
+				if (!t) return;
+				if (window.cog && cog.closeDropdowns) cog.closeDropdowns();
+				if (t.hasAttribute("data-files-rename")) {
+					askRename(t.getAttribute("data-files-rename"), t.getAttribute("data-name"));
+				} else if (t.hasAttribute("data-files-delete")) {
+					askDelete([{ path: t.getAttribute("data-files-delete"), name: t.getAttribute("data-name") }]);
+				} else if (t.hasAttribute("data-files-move")) {
+					askMove([{ path: t.getAttribute("data-files-move"), name: t.getAttribute("data-name") }]);
+				} else if (t.hasAttribute("data-files-delete-selected")) {
+					askDelete(picked());
+				} else if (t.hasAttribute("data-files-move-selected")) {
+					askMove(picked());
+				} else if (t.hasAttribute("data-files-download-selected")) {
+					downloadSelected(picked());
+				} else {
+					checks().forEach(function (c) { c.checked = false; });
+					updateSelection();
+				}
+			});
+
+			// Left and right arrows step through a folder's images.
+			document.addEventListener("keydown", function (e) {
+				if (e.altKey || e.ctrlKey || e.metaKey || document.querySelector("dialog[open]")) return;
+				if (e.target.closest("input, textarea, select, [contenteditable]")) return;
+				var rel = e.key === "ArrowLeft" ? "prev" : e.key === "ArrowRight" ? "next" : "";
+				var link = rel && document.querySelector("a[data-image-nav=" + rel + "]");
+				if (link) {
+					e.preventDefault();
+					link.click();
+				}
+			});
+
+			// filesDragDrop uploads files dropped on the page into the folder
+			// (or onto a folder row, into that folder). The server's redirect
+			// carries the outcome as a flash message, which the reload shows.
+			window.filesDragDrop = function (basePath, csrf) {
+				var overlay = document.getElementById("drop-overlay");
+				var dragCount = 0;
+
+				function clearTargets() {
+					document.querySelectorAll("tr.is-drop-target").forEach(function (r) {
+						r.classList.remove("is-drop-target");
+					});
+				}
+
+				function hasFiles(e) {
+					return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types, "Files") >= 0;
+				}
+
+				document.addEventListener("dragenter", function (e) {
+					if (!hasFiles(e)) return;
+					e.preventDefault();
+					dragCount++;
+					overlay.hidden = false;
+				});
+
+				document.addEventListener("dragleave", function () {
+					dragCount--;
+					if (dragCount <= 0) {
+						dragCount = 0;
+						overlay.hidden = true;
+						clearTargets();
+					}
+				});
+
+				document.addEventListener("dragover", function (e) {
+					if (!hasFiles(e)) return;
+					e.preventDefault();
+					clearTargets();
+					var row = e.target.closest("tr[data-dir]");
+					if (row) row.classList.add("is-drop-target");
+				});
+
+				document.addEventListener("drop", function (e) {
+					if (!hasFiles(e)) return;
+					e.preventDefault();
 					dragCount = 0;
-					overlay.style.display = "none";
-				}
-			});
+					overlay.hidden = true;
+					var row = e.target.closest("tr[data-dir]");
+					clearTargets();
 
-			document.addEventListener("dragover", function (e) {
-				if (!e.dataTransfer.types.includes("Files")) return;
-				e.preventDefault();
-				// Highlight folder row if hovering over one.
-				var row = e.target.closest("tr[data-dir]");
-				document.querySelectorAll("tr[data-dir]").forEach(function (r) {
-					r.style.background = "";
-				});
-				if (row) {
-					row.style.background =
-						"var(--color-primary-light, rgba(0,130,201,0.1))";
-				}
-			});
-
-			document.addEventListener("drop", function (e) {
-				e.preventDefault();
-				dragCount = 0;
-				overlay.style.display = "none";
-				document.querySelectorAll("tr[data-dir]").forEach(function (r) {
-					r.style.background = "";
-				});
-
-				var files = e.dataTransfer.files;
-				if (!files.length) return;
-
-				// Determine upload target: folder row or current directory.
-				var row = e.target.closest("tr[data-dir]");
-				var uploadPath = row ? row.getAttribute("data-dir") : basePath;
-
-				var pending = files.length;
-				var errors = [];
-
-				for (var i = 0; i < files.length; i++) {
+					var files = e.dataTransfer.files;
+					if (!files.length) return;
+					var target = row ? row.querySelector("a.row-link").getAttribute("href") : basePath;
 					var fd = new FormData();
 					fd.append("csrf_token", csrf);
-					fd.append("file", files[i]);
-					fetch("/apps/files" + uploadPath, {
-						method: "POST",
-						body: fd,
-						redirect: "manual",
-					})
-						.then(function (resp) {
-							if (resp.status >= 400) {
-								errors.push("Upload failed: " + resp.statusText);
-							}
-							pending--;
-							if (pending === 0) {
-								if (errors.length > 0) alert(errors.join("\n"));
-								window.location.reload();
-							}
-						})
+					for (var i = 0; i < files.length; i++) fd.append("file", files[i]);
+					overlay.hidden = false;
+					overlay.classList.add("is-uploading");
+					fetch(target, { method: "POST", body: fd, redirect: "manual" })
+						.then(function () { window.location.reload(); })
 						.catch(function (err) {
-							errors.push(err.message);
-							pending--;
-							if (pending === 0) {
-								if (errors.length > 0) alert(errors.join("\n"));
-								window.location.reload();
-							}
+							overlay.hidden = true;
+							overlay.classList.remove("is-uploading");
+							var note = document.createElement("div");
+							note.className = "alert alert-error";
+							note.setAttribute("role", "alert");
+							note.textContent = "The upload failed: " + err.message;
+							var col = document.querySelector(".sidebar-content");
+							col.insertBefore(note, col.firstChild);
 						});
-				}
-			});
+				});
+			};
 		})();
 	</script>
 }
 
-templ filesBreadcrumbs(dirPath string) {
-	<nav style="margin-bottom:1rem">
-		<a href="/apps/files/">root</a>
-		for _, seg := range breadcrumbSegments(dirPath) {
-			<span>/ </span>
-			<a href={ templ.SafeURL("/apps/files" + seg.Path) }>{ seg.Name }</a>
+templ starOutlineIcon() {
+	<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+	</svg>
+}
+
+templ chevronIcon(left bool) {
+	<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		if left {
+			<polyline points="15 18 9 12 15 6"></polyline>
+		} else {
+			<polyline points="9 18 15 12 9 6"></polyline>
 		}
-	</nav>
+	</svg>
 }
 
 templ fileIcon(mimeType string, isDir bool, customIcon string) {
@@ -312,42 +625,42 @@ templ fileIcon(mimeType string, isDir bool, customIcon string) {
 	} else {
 		switch fileIconName(mimeType, isDir) {
 			case "folder":
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<svg class="files-icon-folder" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
 				</svg>
 			case "image":
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
 					<circle cx="8.5" cy="8.5" r="1.5"></circle>
 					<polyline points="21 15 16 10 5 21"></polyline>
 				</svg>
 			case "text":
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
 					<polyline points="14 2 14 8 20 8"></polyline>
 					<line x1="16" y1="13" x2="8" y2="13"></line>
 					<line x1="16" y1="17" x2="8" y2="17"></line>
 				</svg>
 			case "audio":
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M9 18V5l12-2v13"></path>
 					<circle cx="6" cy="18" r="3"></circle>
 					<circle cx="18" cy="16" r="3"></circle>
 				</svg>
 			case "video":
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<polygon points="23 7 16 12 23 17 23 7"></polygon>
 					<rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
 				</svg>
 			case "archive":
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
 					<polyline points="14 2 14 8 20 8"></polyline>
 					<rect x="9" y="12" width="6" height="4" rx="0.5"></rect>
 					<line x1="12" y1="10" x2="12" y2="12"></line>
 				</svg>
 			default:
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
 					<polyline points="14 2 14 8 20 8"></polyline>
 				</svg>
@@ -355,316 +668,311 @@ templ fileIcon(mimeType string, isDir bool, customIcon string) {
 	}
 }
 
-templ fileViewPage(pd ui.PageData, fp string, meta *FileMeta, kind string, textContent string, flashMsg string, flashKind string) {
-	@ui.Base(pd) {
-		@filesBreadcrumbs(parentDir(fp))
-		if flashMsg != "" {
-			@ui.Alert(flashKind, flashMsg)
+templ fileViewPage(pd ui.PageData, fp string, meta *FileMeta, kind string, textContent string, nav imageNav, now time.Time) {
+	@filesLayout(pd, "files") {
+		@ui.PageHeader(meta.Name, pathCrumbs(parentDir(fp))) {
+			<a href={ templ.SafeURL(fileURL(fp) + "?dl=1") } class="btn btn-primary">
+				@ui.Icon("download")
+				Download
+			</a>
+			<cog-share-button
+				resource={ fileResourceType(meta.IsDir) }
+				resource-id={ strconv.FormatInt(meta.ID, 10) }
+				share-title={ meta.Name }
+				btn-class="btn"
+			>Share</cog-share-button>
+			<button type="button" class="btn btn-outline-danger" data-files-delete={ fp } data-name={ meta.Name }>
+				@ui.Icon("trash")
+				Delete
+			</button>
 		}
-		@ui.Card(meta.Name) {
-			<div class="flex gap-1 items-center mb-2">
-				<span class="text-muted">{ meta.MimeType }</span>
-				<span class="text-muted">{ formatSize(meta.Size) }</span>
-				<a href={ templ.SafeURL("/apps/files" + fp + "?dl=1") } class="btn btn-primary btn-sm">Download</a>
-				<cog-share-button resource={ fileResourceType(meta.IsDir) } resource-id={ strconv.FormatInt(meta.ID, 10) }>Share</cog-share-button>
-				<button
-					class="btn btn-danger btn-sm"
-					hx-delete={ "/apps/files" + fp }
-					hx-confirm={ "Delete " + meta.Name + "?" }
-					hx-on::after-request="if(event.detail.successful) window.location=this.getAttribute('data-back')"
-					data-back={ "/apps/files" + parentDir(fp) }
-				>Delete</button>
-			</div>
+		<div class="card">
+			<p class="files-view-meta">
+				<span>{ friendlyKind(meta.MimeType, meta.Name) }</span>
+				<span>{ formatSize(meta.Size) }</span>
+				if meta.MTime > 0 {
+					<span title={ fullTime(meta.MTime) }>{ modifiedLabel(meta.MTime, now) }</span>
+				}
+			</p>
 			if kind == "image" {
-				<div style="text-align:center">
-					<img
-						src={ imageViewURL(fp, meta.MimeType) }
-						alt={ meta.Name }
-						style="max-width:100%;max-height:80vh"
-					/>
-				</div>
+				if nav.Total > 1 {
+					<div class="files-image-nav">
+						if nav.Prev != "" {
+							<a class="btn btn-sm btn-square" href={ templ.SafeURL(fileURL(nav.Prev)) } data-image-nav="prev" aria-label="Previous image" title="Previous image (←)">
+								@chevronIcon(true)
+							</a>
+						} else {
+							<span class="btn btn-sm btn-square" aria-disabled="true">
+								@chevronIcon(true)
+							</span>
+						}
+						<span class="text-sm text-muted">{ fmt.Sprintf("%d of %d", nav.Index, nav.Total) }</span>
+						if nav.Next != "" {
+							<a class="btn btn-sm btn-square" href={ templ.SafeURL(fileURL(nav.Next)) } data-image-nav="next" aria-label="Next image" title="Next image (→)">
+								@chevronIcon(false)
+							</a>
+						} else {
+							<span class="btn btn-sm btn-square" aria-disabled="true">
+								@chevronIcon(false)
+							</span>
+						}
+					</div>
+				}
+				<a class="files-image" href={ templ.SafeURL(fileURL(fp) + "?raw=1") } title="Open full size">
+					<img src={ imageViewURL(fp, meta.MimeType) } alt={ meta.Name }/>
+				</a>
 			}
 			if kind == "text" {
-				<form method="post" action={ templ.SafeURL("/apps/files" + fp + "?save=1") }>
+				<form method="post" action={ templ.SafeURL(fileURL(fp) + "?save=1") }>
 					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-					<textarea
-						name="content"
-						class="form-control"
-						style="width:100%;min-height:400px;font-family:monospace;font-size:0.85rem;white-space:pre;tab-size:4"
-					>{ textContent }</textarea>
-					<div style="margin-top:0.5rem">
-						<button class="btn btn-primary btn-sm" type="submit">Save</button>
+					<label class="sr-only" for="files-editor">{ "Contents of " + meta.Name }</label>
+					<textarea id="files-editor" name="content" class="form-control mono files-editor" spellcheck="false">{ textContent }</textarea>
+					<div class="form-actions">
+						<button class="btn btn-primary" type="submit">Save</button>
 					</div>
 				</form>
 			}
 			if kind == "video" {
-				<video controls style="max-width:100%;max-height:80vh">
-					<source src={ "/apps/files" + fp + "?raw=1" } type={ meta.MimeType }/>
+				<video class="files-media" controls>
+					<source src={ fileURL(fp) + "?raw=1" } type={ meta.MimeType }/>
 				</video>
 			}
 			if kind == "audio" {
-				<audio controls style="width:100%">
-					<source src={ "/apps/files" + fp + "?raw=1" } type={ meta.MimeType }/>
+				<audio class="files-audio" controls>
+					<source src={ fileURL(fp) + "?raw=1" } type={ meta.MimeType }/>
 				</audio>
 			}
 			if kind == "pdf" {
-				<iframe
-					src={ "/apps/files" + fp + "?raw=1" }
-					style="width:100%;height:80vh;border:1px solid var(--color-border)"
-				></iframe>
+				<iframe class="files-frame" title={ meta.Name } src={ fileURL(fp) + "?raw=1" }></iframe>
 			}
 			if kind == "office" {
-				<iframe
-					src={ "/apps/files" + fp + "?pdfpreview=1" }
-					style="width:100%;height:80vh;border:1px solid var(--color-border)"
-				></iframe>
+				<iframe class="files-frame" title={ meta.Name } src={ fileURL(fp) + "?pdfpreview=1" }></iframe>
 			}
 			if kind == "binary" {
-				<p class="text-muted">
-					{ fmt.Sprintf("No preview available for %s.", meta.MimeType) }
-				</p>
+				@ui.EmptyState("No preview available", "This file can't be shown here. Download it to open it on your device.")
 			}
-		}
+		</div>
+		@deleteModal(pd.CSRFToken, parentDir(fp))
 	}
 }
 
 templ volumesPage(pd ui.PageData, volumes []plugin.VolumeInfo) {
-	@ui.Base(pd) {
-		<h1 style="margin-bottom:0.5rem">Volumes</h1>
-		<p style="margin-bottom:1rem"><a href="/apps/files/">Back to Files</a></p>
-		@ui.Card("") {
-			if len(volumes) == 0 {
-				<p class="text-muted">No volumes available.</p>
-			} else {
+	@filesLayout(pd, "volumes") {
+		@ui.PageHeader("Volumes", nil)
+		if len(volumes) == 0 {
+			<div class="card">
+				@ui.EmptyState("No volumes available", "An administrator can add storage volumes and give you access to them.")
+			</div>
+		} else {
+			<div class="card card-flush">
 				<table class="table">
 					<thead>
 						<tr>
 							<th>Name</th>
-							<th>Description</th>
-							<th>Type</th>
-							<th>Actions</th>
+							<th class="hide-mobile">Description</th>
+							<th class="col-shrink hide-mobile">Type</th>
+							<th class="col-actions"><span class="sr-only">Actions</span></th>
 						</tr>
 					</thead>
 					<tbody>
 						for _, v := range volumes {
 							<tr>
 								<td>
-									<div style="display:flex;align-items:center;gap:0.5rem">
+									<span class="file-name">
 										@volumeIcon()
-										{ v.Name }
-									</div>
+										<span>{ v.Name }</span>
+									</span>
+									if v.Description != "" {
+										<div class="files-meta show-mobile">{ v.Description }</div>
+									}
 								</td>
-								<td class="text-muted">{ v.Description }</td>
-								<td class="text-muted">{ v.Scheme }</td>
-								<td>
+								<td class="text-muted hide-mobile">{ v.Description }</td>
+								<td class="text-muted nowrap hide-mobile">{ v.Scheme }</td>
+								<td class="col-actions">
 									if v.Scheme != "mem" {
-										<a href={ templ.SafeURL("/volumes/" + v.ID + "/browse") } class="btn btn-outline btn-sm">Browse</a>
+										<a href={ templ.SafeURL("/volumes/" + v.ID + "/browse") } class="btn btn-sm">Browse</a>
 									}
 								</td>
 							</tr>
 						}
 					</tbody>
 				</table>
-			}
+			</div>
 		}
 	}
 }
 
 templ volumeIcon() {
-	<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+	<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 		<ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
 		<path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
 		<path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
 	</svg>
 }
 
-templ archivePage(pd ui.PageData, archivePath string, innerPath string, meta *FileMeta, entries []ArchiveEntry, flashMsg string, flashKind string) {
-	@ui.Base(pd) {
-		@archiveBreadcrumbs(archivePath, innerPath)
-		if flashMsg != "" {
-			@ui.Alert(flashKind, flashMsg)
+templ archivePage(pd ui.PageData, archivePath string, innerPath string, entries []ArchiveEntry, now time.Time) {
+	@filesLayout(pd, "files") {
+		@ui.PageHeader(archiveTitle(archivePath, innerPath), archiveCrumbs(archivePath, innerPath)) {
+			<a href={ templ.SafeURL(fileURL(archivePath) + "?dl=1") } class="btn">
+				@ui.Icon("download")
+				Download archive
+			</a>
+			<button type="button" class="btn btn-primary" data-modal-open="files-extract">Extract all</button>
 		}
-		@ui.Card("") {
-			<div class="flex gap-1 items-end mb-2" style="flex-wrap:wrap">
-				<a href={ templ.SafeURL("/apps/files" + archivePath + "?dl=1") } class="btn btn-outline btn-sm">Download Archive</a>
-				<form method="post" action={ templ.SafeURL("/apps/files" + archivePath + "?extract=1") } style="display:inline">
-					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-					<button
-						class="btn btn-primary btn-sm"
-						type="submit"
-						onclick="return confirm('Extract all files from this archive?')"
-					>Extract All</button>
-				</form>
+		if len(entries) == 0 {
+			<div class="card">
+				@ui.EmptyState("This archive is empty", "")
 			</div>
-			if len(entries) == 0 {
-				<p class="text-muted">This archive is empty.</p>
-			} else {
+		} else {
+			<div class="card card-flush">
 				<table class="table">
 					<thead>
 						<tr>
 							<th>Name</th>
-							<th>Size</th>
-							<th>Modified</th>
-							<th class="text-right">Actions</th>
+							<th class="col-shrink text-right hide-mobile">Size</th>
+							<th class="col-shrink hide-mobile">Modified</th>
+							<th class="col-actions"><span class="sr-only">Actions</span></th>
 						</tr>
 					</thead>
 					<tbody>
-						if innerPath != "" {
-							<tr>
-								<td colspan="4">
-									<a href={ templ.SafeURL(archiveParentURL(archivePath, innerPath)) }>../</a>
-								</td>
-							</tr>
-						}
 						for _, e := range entries {
 							<tr>
 								<td>
-									<div style="display:flex;align-items:center;gap:0.5rem">
-										@archiveEntryIcon(e.MimeType, e.IsDir)
-										if e.IsDir {
-											<a href={ templ.SafeURL("/apps/files" + archivePath + "/" + e.Path) }>{ e.Name }/</a>
-										} else {
-											<a href={ templ.SafeURL("/apps/files" + archivePath + "/" + e.Path) }>{ e.Name }</a>
-										}
-									</div>
+									<a class="row-link files-name" href={ templ.SafeURL(archiveEntryURL(archivePath, e.Path)) }>
+										<span class="files-thumb" aria-hidden="true">
+											@fileIcon(e.MimeType, e.IsDir, "")
+										</span>
+										<span class="files-name-text">
+											<span class="files-name-label">{ e.Name }</span>
+											<span class="files-meta show-mobile">{ archiveMetaLine(e, now) }</span>
+										</span>
+									</a>
 								</td>
-								<td>
+								<td class="text-right nowrap text-muted hide-mobile">
 									if !e.IsDir {
 										{ formatSize(e.Size) }
 									}
 								</td>
-								<td>{ formatArchiveTime(e.MTime) }</td>
-								<td class="text-right">
+								<td class="nowrap text-muted hide-mobile">{ formatArchiveTime(e.MTime, now) }</td>
+								<td class="col-actions">
 									if !e.IsDir {
-										<a href={ templ.SafeURL("/apps/files" + archivePath + "/" + e.Path + "?dl=1") } class="btn btn-outline btn-sm">Download</a>
+										<a
+											href={ templ.SafeURL(archiveEntryURL(archivePath, e.Path) + "?dl=1") }
+											class="btn-icon btn-icon-sm"
+											aria-label={ "Download " + e.Name }
+											title="Download"
+										>
+											@ui.Icon("download")
+										</a>
 									}
 								</td>
 							</tr>
 						}
 					</tbody>
 				</table>
-			}
+			</div>
+		}
+		@ui.Modal("files-extract", "Extract archive") {
+			<form method="post" action={ templ.SafeURL(fileURL(archivePath) + "?extract=1") }>
+				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+				<div class="modal-body">
+					<p>{ "Extract every file in “" + archiveTitle(archivePath, "") + "” into a new folder named “" + extractFolderName(archivePath) + "”?" }</p>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn" data-modal-close>Cancel</button>
+					<button class="btn btn-primary" type="submit">Extract</button>
+				</div>
+			</form>
 		}
 	}
 }
 
 templ archiveEntryViewPage(pd ui.PageData, archivePath string, entry *ArchiveEntry, kind string, textContent string) {
-	@ui.Base(pd) {
-		@archiveBreadcrumbs(archivePath, entry.Path)
-		@ui.Card(entry.Name) {
-			<div class="flex gap-1 items-center mb-2">
-				<span class="text-muted">{ entry.MimeType }</span>
-				<span class="text-muted">{ formatSize(entry.Size) }</span>
-				<a href={ templ.SafeURL("/apps/files" + archivePath + "/" + entry.Path + "?dl=1") } class="btn btn-primary btn-sm">Download</a>
-			</div>
+	@filesLayout(pd, "files") {
+		@ui.PageHeader(entry.Name, archiveCrumbs(archivePath, entry.Path)) {
+			<a href={ templ.SafeURL(archiveEntryURL(archivePath, entry.Path) + "?dl=1") } class="btn btn-primary">
+				@ui.Icon("download")
+				Download
+			</a>
+		}
+		<div class="card">
+			<p class="files-view-meta">
+				<span>{ friendlyKind(entry.MimeType, entry.Name) }</span>
+				<span>{ formatSize(entry.Size) }</span>
+			</p>
 			if kind == "image" {
-				<div style="text-align:center">
-					<img
-						src={ "/apps/files" + archivePath + "/" + entry.Path + "?raw=1" }
-						alt={ entry.Name }
-						style="max-width:100%;max-height:80vh"
-					/>
-				</div>
+				<a class="files-image" href={ templ.SafeURL(archiveEntryURL(archivePath, entry.Path) + "?raw=1") } title="Open full size">
+					<img src={ archiveEntryURL(archivePath, entry.Path) + "?raw=1" } alt={ entry.Name }/>
+				</a>
 			}
 			if kind == "text" {
-				<textarea
-					class="form-control"
-					style="width:100%;min-height:400px;font-family:monospace;font-size:0.85rem;white-space:pre;tab-size:4"
-					readonly
-				>{ textContent }</textarea>
+				<label class="sr-only" for="files-editor">{ "Contents of " + entry.Name }</label>
+				<textarea id="files-editor" class="form-control mono files-editor" readonly spellcheck="false">{ textContent }</textarea>
 			}
 			if kind == "video" {
-				<video controls style="max-width:100%;max-height:80vh">
-					<source src={ "/apps/files" + archivePath + "/" + entry.Path + "?raw=1" } type={ entry.MimeType }/>
+				<video class="files-media" controls>
+					<source src={ archiveEntryURL(archivePath, entry.Path) + "?raw=1" } type={ entry.MimeType }/>
 				</video>
 			}
 			if kind == "audio" {
-				<audio controls style="width:100%">
-					<source src={ "/apps/files" + archivePath + "/" + entry.Path + "?raw=1" } type={ entry.MimeType }/>
+				<audio class="files-audio" controls>
+					<source src={ archiveEntryURL(archivePath, entry.Path) + "?raw=1" } type={ entry.MimeType }/>
 				</audio>
 			}
 			if kind == "pdf" {
-				<iframe
-					src={ "/apps/files" + archivePath + "/" + entry.Path + "?raw=1" }
-					style="width:100%;height:80vh;border:1px solid var(--color-border)"
-				></iframe>
+				<iframe class="files-frame" title={ entry.Name } src={ archiveEntryURL(archivePath, entry.Path) + "?raw=1" }></iframe>
 			}
 			if kind == "binary" {
-				<p class="text-muted">
-					{ fmt.Sprintf("No preview available for %s.", entry.MimeType) }
-				</p>
+				@ui.EmptyState("No preview available", "This file can't be shown here. Download it to open it on your device.")
 			}
-		}
+		</div>
 	}
 }
 
-templ archiveBreadcrumbs(archivePath string, innerPath string) {
-	<nav style="margin-bottom:1rem">
-		<a href="/apps/files/">root</a>
-		for _, seg := range breadcrumbSegments(parentDir(archivePath)) {
-			<span>/ </span>
-			<a href={ templ.SafeURL("/apps/files" + seg.Path) }>{ seg.Name }</a>
-		}
-		<span>/ </span>
-		<a href={ templ.SafeURL("/apps/files" + archivePath) }>{ archiveBaseName(archivePath) }</a>
-		for _, seg := range archiveInnerSegments(archivePath, innerPath) {
-			<span>/ </span>
-			<a href={ templ.SafeURL("/apps/files" + archivePath + "/" + seg.Path) }>{ seg.Name }</a>
-		}
-	</nav>
-}
-
-templ archiveEntryIcon(mimeType string, isDir bool) {
-	if isDir {
-		<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-			<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-		</svg>
-	} else {
-		@fileIcon(mimeType, false, "")
-	}
-}
-
-templ favoritesPage(pd ui.PageData, items []FileMeta, folderIcons map[string]string) {
-	@ui.Base(pd) {
-		<h1 style="margin-bottom:0.5rem">Favorites</h1>
-		@ui.Card("") {
-			if len(items) == 0 {
-				<p class="text-muted">No favorites yet. Star files to see them here.</p>
-			} else {
-				<table class="table">
+templ favoritesPage(pd ui.PageData, items []FileMeta, folderIcons map[string]string, now time.Time) {
+	@filesLayout(pd, "favorites") {
+		@ui.PageHeader("Favorites", nil)
+		if len(items) == 0 {
+			<div class="card">
+				@ui.EmptyState("No favorites yet", "Star a file or folder to keep it here.") {
+					<a class="btn btn-primary" href="/apps/files/">Browse files</a>
+				}
+			</div>
+		} else {
+			<div class="card card-flush files-card">
+				<table class="table files-table">
 					<thead>
 						<tr>
 							<th>Name</th>
-							<th>Path</th>
-							<th>Size</th>
-							<th>Modified</th>
+							<th class="hide-mobile">Location</th>
+							<th class="col-shrink hide-mobile">Modified</th>
+							<th class="col-actions"><span class="sr-only">Actions</span></th>
 						</tr>
 					</thead>
 					<tbody>
 						for _, f := range items {
 							<tr>
 								<td>
-									<div style="display:flex;align-items:center;gap:0.5rem">
-										@fileIcon(f.MimeType, f.IsDir, folderIcons[f.Path])
-										<a href={ templ.SafeURL("/apps/files" + f.Path) }>{ f.Name }</a>
-									</div>
+									<a class="row-link files-name" href={ templ.SafeURL(fileURL(f.Path)) } title={ f.Name }>
+										@fileThumb(f, folderIcons[f.Path])
+										<span class="files-name-text">
+											<span class="files-name-label">{ f.Name }</span>
+											<span class="files-meta show-mobile">{ dirTitle(f.ParentPath) }</span>
+										</span>
+									</a>
 								</td>
-								<td class="text-muted">{ f.ParentPath }</td>
-								<td>
-									if !f.IsDir {
-										{ formatSize(f.Size) }
-									}
+								<td class="text-muted hide-mobile">
+									<a class="files-location" href={ templ.SafeURL(fileURL(f.ParentPath)) }>{ dirTitle(f.ParentPath) }</a>
 								</td>
-								<td>
-									if f.MTime > 0 {
-										{ time.Unix(f.MTime, 0).Format("2006-01-02 15:04") }
-									}
+								<td class="nowrap text-muted hide-mobile" title={ fullTime(f.MTime) }>{ shortTime(f.MTime, now) }</td>
+								<td class="col-actions">
+									@favoriteButton(f.Path, f.Favorite)
 								</td>
 							</tr>
 						}
 					</tbody>
 				</table>
-			}
+			</div>
 		}
 	}
 }

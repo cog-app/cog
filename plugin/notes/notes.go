@@ -5,7 +5,10 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -58,6 +61,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterNavItem(plugin.NavItem{Label: "Notes", URL: "/apps/notes", Icon: `<svg class="nav-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>`})
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Recent Notes",
+		URL:      "/apps/notes/",
 		Priority: 30,
 		Render:   p.renderWidget,
 	})
@@ -90,6 +94,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "notes/{id}", http.HandlerFunc(pages.UpdateNote))
 	ctx.RegisterAction("DELETE", "notes/{id}", http.HandlerFunc(pages.DeleteNote))
 	ctx.RegisterAction("POST", "notes/{id}/star", http.HandlerFunc(pages.ToggleStar))
+	ctx.RegisterAction("POST", "preview", http.HandlerFunc(pages.Preview))
 
 	// NextCloud Notes API compatibility + cross-plugin access
 	notesAPI := NewNotesAPI(p)
@@ -157,6 +162,19 @@ func (p *Plugin) deleteNoteFile(username, filename string) error {
 	return DeleteFile(p.NotesDir(username), filename)
 }
 
+// deleteNote removes a note's file and its metadata. A file that is already
+// gone (deleted through the files app) is not an error: the metadata is what
+// still needs removing.
+func (p *Plugin) deleteNote(db *sql.DB, username string, note *Note) error {
+	if err := p.deleteNoteFile(username, note.Filename); err != nil && !errors.Is(err, vfs.ErrNotFound) && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("delete %s: %w", note.Filename, err)
+	}
+	if err := DeleteNoteMeta(db, note.ID); err != nil {
+		return fmt.Errorf("delete note %d: %w", note.ID, err)
+	}
+	return nil
+}
+
 // renameNoteFile renames a note file for a user.
 func (p *Plugin) renameNoteFile(username, oldName, newName string) error {
 	if fs := p.userFS(username); fs != nil {
@@ -168,9 +186,12 @@ func (p *Plugin) renameNoteFile(username, oldName, newName string) error {
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
 	db, err := p.DB(userID)
 	if err != nil {
-		return nil
+		return fmt.Errorf("open notes database: %w", err)
 	}
-	notes, _ := RecentNotes(db, 5)
+	notes, err := RecentNotes(db, 5)
+	if err != nil {
+		return fmt.Errorf("recent notes: %w", err)
+	}
 	return recentNotesWidget(notes).Render(ctx, w)
 }
 

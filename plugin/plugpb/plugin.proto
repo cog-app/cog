@@ -81,6 +81,8 @@ message RegisterWidgetEvent {
   int32 priority = 2;
   // widget_key used to dispatch RenderWidget calls.
   string widget_key = 3;
+  // url is the app page the widget summarises, linked as "View all".
+  string url = 4;
 }
 
 // HTTPRequest is a proxied HTTP request sent from host to plugin.

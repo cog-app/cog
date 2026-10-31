@@ -88,6 +88,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Upcoming Events",
 		Priority: 10,
+		URL:      "/apps/calendar/",
 		Render:   p.renderWidget,
 	})
 	ctx.RegisterSearchSource(plugin.SearchSourceDef{
@@ -155,7 +156,7 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, username string)
 	if err != nil {
 		return err
 	}
-	return eventsWidget(events).Render(ctx, w)
+	return eventsWidget(events, p.ctx.Now()).Render(ctx, w)
 }
 
 // Notification represents a pending or fired reminder notification.

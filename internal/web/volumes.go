@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/ui"
 )
 
 // volumeBrowserHandler serves the volume browser UI.
@@ -41,21 +43,91 @@ func (h *volumeBrowserHandler) Browse(w http.ResponseWriter, r *http.Request) {
 		dirPath = "/"
 	}
 
-	items, err := backend.List(dirPath)
+	if h.serverInternal(vol, dirPath) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	all, err := backend.List(dirPath)
 	if err != nil {
 		http.Error(w, "Failed to list: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	items := make([]volume.FileInfo, 0, len(all))
+	hidden := 0
+	for _, f := range all {
+		if h.serverInternal(vol, f.Path) {
+			hidden++
+			continue
+		}
+		items = append(items, f)
+	}
 
 	pd := pageDataWithNav(r, "Browse: "+vol.Name, h.p.CSRFSecret, h.p.Plugins)
-	volumeBrowsePage(pd, vol, dirPath, items).Render(r.Context(), w)
+	back := ui.Crumb{Label: "Storage", URL: "/settings/storage"}
+	if u.IsAdmin {
+		back = ui.Crumb{Label: "Volumes", URL: "/admin/volumes/" + vol.ID}
+	}
+	if err := volumeBrowsePage(pd, vol, dirPath, items, hidden, back).Render(r.Context(), w); err != nil {
+		h.p.Log.Error("render volume browser", "volume", vol.ID, "err", err)
+	}
+}
+
+// serverInternal reports whether p, on vol, is one of the server's own files:
+// the system database and its journal files, a search index, or a plugin's
+// database. They live in the data directory, which the default volume is,
+// and deleting one under a running server destroys data. The browser neither
+// lists them nor lets them be read, replaced or deleted.
+func (h *volumeBrowserHandler) serverInternal(vol *volume.Volume, p string) bool {
+	if vol.Scheme() != "file" || h.p.Config.DataDir == "" {
+		return false
+	}
+	root, err := filepath.Abs(vol.URIPath())
+	if err != nil {
+		return false
+	}
+	dataDir, err := filepath.Abs(h.p.Config.DataDir)
+	if err != nil || root != dataDir {
+		return false
+	}
+
+	clean := strings.TrimPrefix(path.Clean("/"+p), "/")
+	if clean == "" {
+		return false
+	}
+	segs := strings.Split(clean, "/")
+	for _, s := range segs {
+		if s == ".search" || s == "app_data" {
+			return true
+		}
+	}
+	if len(segs) == 1 {
+		// The system database, when it lives in the data directory: where
+		// COG_DB puts it, or system.db when nothing says otherwise.
+		db := "system.db"
+		if h.p.Config.DBPath != "" {
+			dbPath, err := filepath.Abs(h.p.Config.DBPath)
+			if err != nil || filepath.Dir(dbPath) != dataDir {
+				return false
+			}
+			db = filepath.Base(dbPath)
+		}
+		// system.db, system.db-wal, system.db-shm, system.db-journal
+		if segs[0] == db || strings.HasPrefix(segs[0], db+"-") {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *volumeBrowserHandler) Download(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	ok, _ := h.p.Access.CanAccess(u.ID, volID)
+	ok, err := h.p.Access.CanAccess(u.ID, volID)
+	if err != nil {
+		h.p.Log.Error("volume access check", "volume", volID, "err", err)
+	}
 	if !ok {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -74,6 +146,10 @@ func (h *volumeBrowserHandler) Download(w http.ResponseWriter, r *http.Request) 
 	}
 
 	filePath := r.URL.Query().Get("path")
+	if h.serverInternal(vol, filePath) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	rc, err := backend.Get(filePath)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -88,14 +164,19 @@ func (h *volumeBrowserHandler) Download(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+name+"\"")
-	io.Copy(w, rc)
+	if _, err := io.Copy(w, rc); err != nil {
+		h.p.Log.Warn("volume download", "volume", volID, "path", filePath, "err", err)
+	}
 }
 
 func (h *volumeBrowserHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	ok, _ := h.p.Access.CanAccess(u.ID, volID)
+	ok, err := h.p.Access.CanAccess(u.ID, volID)
+	if err != nil {
+		h.p.Log.Error("volume access check", "volume", volID, "err", err)
+	}
 	if !ok {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -132,6 +213,10 @@ func (h *volumeBrowserHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	dest := path.Join(dirPath, header.Filename)
+	if h.serverInternal(vol, dest) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	if err := backend.Put(dest, file); err != nil {
 		http.Error(w, "upload failed: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -144,7 +229,10 @@ func (h *volumeBrowserHandler) MkDir(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	ok, _ := h.p.Access.CanAccess(u.ID, volID)
+	ok, err := h.p.Access.CanAccess(u.ID, volID)
+	if err != nil {
+		h.p.Log.Error("volume access check", "volume", volID, "err", err)
+	}
 	if !ok {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -170,6 +258,10 @@ func (h *volumeBrowserHandler) MkDir(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dest := path.Join(dirPath, name)
+	if h.serverInternal(vol, dest) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	if err := backend.Mkdir(dest); err != nil {
 		http.Error(w, "mkdir failed: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -182,7 +274,10 @@ func (h *volumeBrowserHandler) DeleteFile(w http.ResponseWriter, r *http.Request
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	ok, _ := h.p.Access.CanAccess(u.ID, volID)
+	ok, err := h.p.Access.CanAccess(u.ID, volID)
+	if err != nil {
+		h.p.Log.Error("volume access check", "volume", volID, "err", err)
+	}
 	if !ok {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -201,6 +296,10 @@ func (h *volumeBrowserHandler) DeleteFile(w http.ResponseWriter, r *http.Request
 	}
 
 	filePath := r.URL.Query().Get("path")
+	if h.serverInternal(vol, filePath) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	if err := backend.Delete(filePath); err != nil {
 		http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
 		return

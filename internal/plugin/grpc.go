@@ -152,6 +152,7 @@ func (g *grpcPlugin) Register(ctx cogplugin.PluginContext) error {
 			registrar.RegisterWidget(cogplugin.Widget{
 				Title:    e.Widget.Title,
 				Priority: int(e.Widget.Priority),
+				URL:      e.Widget.Url,
 				Render:   g.widgetRenderer(e.Widget.WidgetKey),
 			})
 		}

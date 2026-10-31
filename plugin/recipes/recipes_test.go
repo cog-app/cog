@@ -79,7 +79,7 @@ func TestRecipesIndexPage(t *testing.T) {
 
 	env.Get(t, "/apps/recipes/", alice.Auth).
 		Status(200).
-		Contains("All Recipes").
+		Contains("All recipes").
 		Contains("No recipes yet")
 }
 
@@ -237,6 +237,10 @@ func TestRecipesWebCRUD(t *testing.T) {
 		"ingredients":  {"1 cup flour\n2 eggs"},
 		"instructions": {"Mix ingredients\nBake at 350"},
 		"keywords":     {"baking, easy"},
+		"prep_h":       {"1"},
+		"prep_m":       {"30"},
+		"cook_m":       {"45"},
+		"calories":     {"410 kcal"},
 	}, cookie, csrf).Status(303)
 
 	// Verify recipe appears in list
@@ -255,12 +259,17 @@ func TestRecipesWebCRUD(t *testing.T) {
 	env.Get(t, "/apps/recipes/recipe/"+id, alice.Auth).
 		Status(200).
 		Contains("My Recipe").
-		Contains("Mix ingredients")
+		Contains("Mix ingredients").
+		Contains("1 hr 30 min").
+		Contains("45 min").
+		Contains("410 kcal")
 
 	// Edit page
 	env.Get(t, "/apps/recipes/recipe/"+id+"/edit", alice.Auth).
 		Status(200).
-		Contains("Edit: My Recipe")
+		Contains("Edit recipe").
+		Contains(`name="prep_h" value="1"`).
+		Contains(`name="prep_m" value="30"`)
 
 	// Update via form
 	postFormAction(t, env, "/apps/recipes/recipes/"+id, url.Values{
@@ -292,7 +301,7 @@ func TestRecipesNewPage(t *testing.T) {
 
 	env.Get(t, "/apps/recipes/new", alice.Auth).
 		Status(200).
-		Contains("New Recipe")
+		Contains("New recipe")
 }
 
 func TestRecipesImportPage(t *testing.T) {
@@ -302,7 +311,7 @@ func TestRecipesImportPage(t *testing.T) {
 
 	env.Get(t, "/apps/recipes/import", alice.Auth).
 		Status(200).
-		Contains("Import Recipe")
+		Contains("Import recipe")
 }
 
 func TestRecipesCategoryPage(t *testing.T) {

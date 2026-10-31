@@ -28,22 +28,22 @@ func (n *Note) Title() string {
 
 func ListNotes(db *sql.DB, limit int) ([]Note, error) {
 	return queryNotes(db, `SELECT id, filename, category, favorite, etag, modified, created_at
-		FROM notes ORDER BY modified DESC LIMIT ?`, limit)
+		FROM notes ORDER BY modified DESC, id DESC LIMIT ?`, limit)
 }
 
 func NotesByCategory(db *sql.DB, category string, limit int) ([]Note, error) {
 	return queryNotes(db, `SELECT id, filename, category, favorite, etag, modified, created_at
-		FROM notes WHERE category = ? ORDER BY modified DESC LIMIT ?`, category, limit)
+		FROM notes WHERE category = ? ORDER BY modified DESC, id DESC LIMIT ?`, category, limit)
 }
 
 func StarredNotes(db *sql.DB, limit int) ([]Note, error) {
 	return queryNotes(db, `SELECT id, filename, category, favorite, etag, modified, created_at
-		FROM notes WHERE favorite = 1 ORDER BY modified DESC LIMIT ?`, limit)
+		FROM notes WHERE favorite = 1 ORDER BY modified DESC, id DESC LIMIT ?`, limit)
 }
 
 func RecentNotes(db *sql.DB, limit int) ([]Note, error) {
 	return queryNotes(db, `SELECT id, filename, category, favorite, etag, modified, created_at
-		FROM notes ORDER BY modified DESC LIMIT ?`, limit)
+		FROM notes ORDER BY modified DESC, id DESC LIMIT ?`, limit)
 }
 
 func GetNote(db *sql.DB, id int64) (*Note, error) {
@@ -190,6 +190,6 @@ func CategoryCount(db *sql.DB, category string) (int, error) {
 // SearchNotes returns notes matching a query string in filename.
 func SearchNotes(db *sql.DB, query string, limit int) ([]Note, error) {
 	return queryNotes(db, `SELECT id, filename, category, favorite, etag, modified, created_at
-		FROM notes WHERE filename LIKE ? ORDER BY modified DESC LIMIT ?`,
+		FROM notes WHERE filename LIKE ? ORDER BY modified DESC, id DESC LIMIT ?`,
 		fmt.Sprintf("%%%s%%", query), limit)
 }

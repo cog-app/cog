@@ -20,10 +20,16 @@ type Flash = cogplugin.Flash
 
 // setFlash stores a flash message in a cookie for the next GET request.
 func setFlash(w http.ResponseWriter, kind, message string, errs ...error) {
-	for err := range errs {
+	for _, err := range errs {
 		slog.Error(message, "kind", kind, "err", err)
 	}
 	cookieCfg.SetFlash(w, Flash{Kind: kind, Message: message})
+}
+
+// setFlashForm stores an error message together with the form values to put
+// back into the form, so the user does not retype them. Leave secrets out.
+func setFlashForm(w http.ResponseWriter, kind, message string, form map[string]string) {
+	cookieCfg.SetFlash(w, Flash{Kind: kind, Message: message, Form: form})
 }
 
 // setFlashURL stores a flash message with a copyable URL.

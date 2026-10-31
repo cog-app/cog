@@ -6,9 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/ui"
 )
 
 const loginFlowExpiry = 10 * time.Minute
@@ -23,6 +25,7 @@ const loginFlowExpiry = 10 * time.Minute
 type loginFlowEntry struct {
 	Token     string
 	CreatedAt time.Time
+	Client    string // who started the flow, named from its User-Agent
 	// Filled when user grants access
 	LoginName   string
 	AppPassword string
@@ -84,6 +87,7 @@ func (h *LoginFlowHandler) HandleInit(w http.ResponseWriter, r *http.Request) {
 	h.pending[pollToken] = &loginFlowEntry{
 		Token:     loginToken,
 		CreatedAt: h.Clock(),
+		Client:    clientName(r.UserAgent()),
 	}
 	h.mu.Unlock()
 
@@ -175,18 +179,68 @@ func (h *LoginFlowHandler) HandleGrant(w http.ResponseWriter, r *http.Request) {
 	sessID := auth.SessionIDFromContext(r.Context())
 	csrf := auth.CSRFToken(sessID, h.CSRFSecret)
 
+	client, ok := h.pendingClient(loginToken)
+	if !ok {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		if err := ui.LoginFlowExpiredPage().Render(r.Context(), w); err != nil {
+			slog.Error("login flow: render expired page", "err", err)
+		}
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
-		h.renderGrantPage(w, loginToken, csrf, u.Username, "")
+		var errMsg string
+		if r.URL.Query().Get("error") == "csrf" {
+			errMsg = "Your session changed while this page was open. Try again."
+		}
+		h.renderGrantPage(w, r, ui.LoginFlowGrant{
+			Token:     loginToken,
+			CSRFToken: csrf,
+			Username:  u.Username,
+			Client:    client,
+			Error:     errMsg,
+		})
 	case http.MethodPost:
 		// Validate CSRF token bound to the current session.
 		if r.FormValue("csrf_token") != csrf {
-			h.renderGrantPage(w, loginToken, csrf, u.Username, "Invalid CSRF token")
+			http.Redirect(w, r, "/index.php/login/v2/grant?token="+url.QueryEscape(loginToken)+"&error=csrf", http.StatusSeeOther)
+			return
+		}
+		if r.FormValue("action") == "cancel" {
+			h.cancel(loginToken)
+			http.Redirect(w, r, "/index.php/login/v2/done?result=cancelled", http.StatusSeeOther)
 			return
 		}
 		h.processGrant(w, r, loginToken, u)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// pendingClient returns the name of the app waiting on loginToken, and
+// whether the flow is still pending.
+func (h *LoginFlowHandler) pendingClient(loginToken string) (string, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, e := range h.pending {
+		if e.Token == loginToken && !e.Granted && h.Clock().Sub(e.CreatedAt) <= loginFlowExpiry {
+			return e.Client, true
+		}
+	}
+	return "", false
+}
+
+// cancel drops a pending flow, so the app's polling ends without credentials.
+func (h *LoginFlowHandler) cancel(loginToken string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for poll, e := range h.pending {
+		if e.Token == loginToken && !e.Granted {
+			delete(h.pending, poll)
+			return
+		}
 	}
 }
 
@@ -207,9 +261,10 @@ func (h *LoginFlowHandler) processGrant(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// Create an app password tied to the authenticated browser session's user.
-	appPW, _, err := h.AppPWs.Create(u.ID, fmt.Sprintf("Login Flow (%s)", h.Clock().Format("2006-01-02 15:04")))
+	appPW, _, err := h.AppPWs.Create(u.ID, fmt.Sprintf("%s (%s)", entry.Client, h.Clock().Format("2006-01-02 15:04")))
 	if err != nil {
 		h.mu.Unlock()
+		slog.Error("login flow: create app password", "user", u.Username, "err", err)
 		http.Error(w, "Failed to create app password", http.StatusInternalServerError)
 		return
 	}
@@ -219,32 +274,52 @@ func (h *LoginFlowHandler) processGrant(w http.ResponseWriter, r *http.Request, 
 	entry.Granted = true
 	h.mu.Unlock()
 
-	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprint(w, `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h1>Login Granted</h1><p>You can close this window and return to your app.</p></body></html>`)
+	http.Redirect(w, r, "/index.php/login/v2/done?result=granted", http.StatusSeeOther)
 }
 
-var grantTmpl = template.Must(template.New("grant").Parse(`<!DOCTYPE html>
-<html>
-<head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Cog - Login</title></head>
-<body>
-<h1>Grant App Access</h1>
-{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
-<p>Signed in as <strong>{{.Username}}</strong>. Approving will create an app password tied to your account for the requesting application.</p>
-<form method="POST" action="?token={{.Token}}">
-  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-  <button type="submit">Grant Access</button>
-</form>
-</body>
-</html>`))
+// HandleDone handles GET /index.php/login/v2/done: the page the browser lands
+// on once the user has granted or cancelled, telling them to go back to the app.
+func (h *LoginFlowHandler) HandleDone(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	granted := r.URL.Query().Get("result") == "granted"
+	if err := ui.LoginFlowDonePage(granted).Render(r.Context(), w); err != nil {
+		slog.Error("login flow: render done page", "err", err)
+	}
+}
 
-func (h *LoginFlowHandler) renderGrantPage(w http.ResponseWriter, token, csrf, username, errMsg string) {
-	w.Header().Set("Content-Type", "text/html")
-	grantTmpl.Execute(w, map[string]string{
-		"Token":     token,
-		"CSRFToken": csrf,
-		"Username":  username,
-		"Error":     errMsg,
-	})
+func (h *LoginFlowHandler) renderGrantPage(w http.ResponseWriter, r *http.Request, g ui.LoginFlowGrant) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := ui.LoginFlowGrantPage(g).Render(r.Context(), w); err != nil {
+		slog.Error("login flow: render grant page", "err", err)
+	}
+}
+
+// clientName turns a login-flow client's User-Agent into a name to show the
+// user. Nextcloud's clients identify themselves; anything else is shown as
+// its product token, which is what a person would recognise if anything.
+func clientName(ua string) string {
+	l := strings.ToLower(ua)
+	switch {
+	case ua == "":
+		return "An app"
+	case strings.Contains(l, "nextcloud-android"):
+		return "Nextcloud for Android"
+	case strings.Contains(l, "nextcloud-ios"):
+		return "Nextcloud for iOS"
+	case strings.Contains(l, "mirall") || strings.Contains(l, "nextcloud"):
+		return "Nextcloud desktop client"
+	}
+	name := ua
+	if i := strings.IndexAny(name, " ("); i > 0 {
+		name = name[:i]
+	}
+	if i := strings.IndexByte(name, '/'); i > 0 {
+		name = name[:i]
+	}
+	if len(name) > 40 {
+		name = name[:40]
+	}
+	return name
 }
 
 // Cleanup removes expired login flows. Call periodically.

@@ -23,19 +23,27 @@ class CogShare extends HTMLElement {
 
         var scope = 'sp-' + Math.random().toString(36).slice(2, 8);
         var el = this;
-        el.innerHTML = '<div id="' + scope + '"><p style="color:var(--color-text-muted)">Loading\u2026</p></div>';
+        el.innerHTML = '<div id="' + scope + '"><p class="text-muted">Loading\u2026</p></div>';
 
         fetch('/api/shares/panel?type=' + encodeURIComponent(resource) + '&id=' + encodeURIComponent(resourceId) + '&scope=' + encodeURIComponent(scope))
-            .then(function(r) { return r.text(); })
+            .then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.text();
+            })
             .then(function(html) {
                 el.innerHTML = html;
                 htmx.process(el);
+            })
+            .catch(function(err) {
+                el.innerHTML = '<div class="alert alert-error">The sharing settings could not be loaded.</div>';
+                console.warn('cog-share:', err);
             });
     }
 }
 
-// <cog-share-button resource="calendar" resource-id="5">Share</cog-share-button>
-// Renders a button that opens a modal with the sharing panel.
+// <cog-share-button resource="calendar" resource-id="5" share-title="Work">Share</cog-share-button>
+// Renders a button that opens the sharing panel in a dialog.modal (see
+// style.css): Esc, the close button and a click outside it close it.
 class CogShareButton extends HTMLElement {
     connectedCallback() {
         var resource = resolveResource(this);
@@ -43,34 +51,47 @@ class CogShareButton extends HTMLElement {
         if (!resource || !resourceId) return;
 
         var label = this.textContent.trim() || 'Share';
+        var subject = this.getAttribute('share-title');
         this.innerHTML = '';
 
         var btn = document.createElement('button');
-        btn.className = this.getAttribute('btn-class') || 'btn btn-outline btn-sm';
+        btn.type = 'button';
+        btn.className = this.getAttribute('btn-class') || 'btn btn-secondary btn-sm';
         btn.textContent = label;
         this.appendChild(btn);
 
         btn.addEventListener('click', function() {
             var scope = 'sp-' + Math.random().toString(36).slice(2, 8);
 
-            var overlay = document.createElement('div');
-            overlay.className = 'modal-overlay';
-            overlay.style.display = 'flex';
-            overlay.addEventListener('click', function(e) {
-                if (e.target === overlay) overlay.remove();
-            });
+            var dialog = document.createElement('dialog');
+            dialog.className = 'modal';
+            dialog.setAttribute('aria-labelledby', scope + '-title');
+            dialog.innerHTML =
+                '<div class="modal-header">' +
+                '<h2 class="modal-title" id="' + scope + '-title"></h2>' +
+                '<button type="button" class="btn-icon modal-close" data-modal-close aria-label="Close">' +
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+                '</button></div>' +
+                '<div class="modal-body"><p class="text-muted">Loading\u2026</p></div>';
+            dialog.querySelector('.modal-title').textContent =
+                subject ? 'Share \u201c' + subject + '\u201d' : 'Sharing';
+            dialog.addEventListener('close', function() { dialog.remove(); btn.focus(); });
+            document.body.appendChild(dialog);
+            dialog.showModal();
 
-            var content = document.createElement('div');
-            content.className = 'modal-content';
-            content.innerHTML = '<p style="color:var(--color-text-muted)">Loading\u2026</p>';
-            overlay.appendChild(content);
-            document.body.appendChild(overlay);
-
+            var body = dialog.querySelector('.modal-body');
             fetch('/api/shares/panel?type=' + encodeURIComponent(resource) + '&id=' + encodeURIComponent(resourceId) + '&scope=' + encodeURIComponent(scope))
-                .then(function(r) { return r.text(); })
+                .then(function(r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.text();
+                })
                 .then(function(html) {
-                    content.innerHTML = html;
-                    htmx.process(content);
+                    body.innerHTML = html;
+                    htmx.process(body);
+                })
+                .catch(function(err) {
+                    body.innerHTML = '<div class="alert alert-error">The sharing settings could not be loaded.</div>';
+                    console.warn('cog-share-button:', err);
                 });
         });
     }

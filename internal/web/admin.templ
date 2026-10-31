@@ -8,7 +8,6 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 	"iter"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -16,63 +15,85 @@ import (
 // --- Users ---
 templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, "users") {
-		<div class="flex justify-between items-center" style="margin-bottom:1rem">
-			<h1>Users</h1>
-			<a class="btn btn-primary" href="/admin/users/new">New User</a>
-		</div>
-		if flash != "" {
-			@ui.Alert(flashKind, flash)
+		@ui.PageHeader("Users", nil) {
+			<a class="btn btn-primary" href="/admin/users/new">
+				@ui.Icon("plus")
+				New user
+			</a>
 		}
-		@ui.Card("") {
-			<table class="table">
-				<thead>
-					<tr>
-						<th style="width:2.5rem"></th>
-						<th>Username</th>
-						<th>Display Name</th>
-						<th>Role</th>
-					</tr>
-				</thead>
-				<tbody>
-					for u, err := range users {
-						if err == nil {
-							<tr style="cursor:pointer" onclick={ goTo("/admin/users/" + u.ID) }>
-								<td><img src={ u.AvatarURL() } alt="" style="width:2rem;height:2rem;border-radius:50%;vertical-align:middle"/></td>
-								<td>{ u.Username }</td>
-								<td>{ u.DisplayName }</td>
+		@ui.Alert(flashKind, flash)
+		<div class="card card-flush">
+			<div class="table-wrap">
+				<table class="table">
+					<thead>
+						<tr>
+							<th class="col-shrink"><span class="sr-only">Avatar</span></th>
+							<th>User</th>
+							<th class="col-shrink">Role</th>
+						</tr>
+					</thead>
+					<tbody>
+						for u, err := range users {
+							if err != nil {
+								<tr><td colspan="3" class="text-danger">Some users could not be loaded.</td></tr>
+								break
+							}
+							<tr>
+								<td><img class="avatar-md" src={ u.AvatarURL() } alt=""/></td>
+								<td>
+									<a class="row-link break-anywhere" href={ templ.SafeURL("/admin/users/" + u.ID) }>
+										if u.DisplayName != "" {
+											{ u.DisplayName }
+										} else {
+											{ u.Username }
+										}
+									</a>
+									if u.DisplayName != "" {
+										<div class="text-sm text-muted break-anywhere">{ u.Username }</div>
+									}
+								</td>
 								<td>
 									if u.IsAdmin {
 										<span class="badge badge-admin">Admin</span>
+									} else {
+										<span class="text-sm text-muted">User</span>
 									}
 								</td>
 							</tr>
 						}
-					}
-				</tbody>
-			</table>
-		}
+					</tbody>
+				</table>
+			</div>
+		</div>
 	}
 }
 
-templ adminUserNewPage(pd ui.PageData, errMsg string) {
+templ adminUserNewPage(pd ui.PageData, errMsg string, form newUserForm) {
 	@ui.AdminSidebarPage(pd, "users") {
-		<h1 style="margin-bottom:1rem">New User</h1>
-		if errMsg != "" {
-			@ui.Alert("error", errMsg)
-		}
+		@ui.PageHeader("New user", []ui.Crumb{{Label: "Users", URL: "/admin/users"}})
+		@ui.Alert("error", errMsg)
 		@ui.Card("") {
 			<form method="post" action="/admin/users">
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				@ui.FormField("Username", "username", "text", "", "")
-				@ui.FormField("Password", "password", "password", "", "")
+				<div class="form-group">
+					<label for="username">Username</label>
+					<input class="form-control w-md" type="text" id="username" name="username" value={ form.Username } required autocomplete="off" autocapitalize="none" autofocus?={ form.Username == "" } aria-invalid={ ariaInvalid(errMsg != "") }/>
+				</div>
+				<div class="form-group">
+					<label for="password">Password</label>
+					<input class="form-control w-md" type="password" id="password" name="password" required autocomplete="new-password" autofocus?={ form.Username != "" }/>
+				</div>
 				<div class="form-group">
 					<label class="form-check">
-						<input type="checkbox" name="is_admin" value="1"/>
-						Admin
+						<input type="checkbox" name="is_admin" value="1" checked?={ form.IsAdmin }/>
+						Administrator
 					</label>
+					<p class="form-help">Administrators can manage users, groups, volumes and server settings.</p>
 				</div>
-				<button class="btn btn-primary" type="submit">Create User</button>
-				<a class="btn btn-outline" href="/admin/users" style="margin-left:0.5rem">Cancel</a>
+				<div class="form-actions">
+					<button class="btn btn-primary" type="submit">Create user</button>
+					<a class="btn btn-secondary" href="/admin/users">Cancel</a>
+				</div>
 			</form>
 		}
 	}
@@ -80,227 +101,247 @@ templ adminUserNewPage(pd ui.PageData, errMsg string) {
 
 templ adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, "users") {
-		<h1 style="margin-bottom:1rem">Edit User: { u.Username }</h1>
-		if flash != "" {
-			@ui.Alert(flashKind, flash)
-		}
+		@ui.PageHeader(u.Username, []ui.Crumb{{Label: "Users", URL: "/admin/users"}})
+		@ui.Alert(flashKind, flash)
 		@ui.Card("Profile") {
-			<div style="margin-bottom:1rem">
-				<img src={ u.AvatarURL() } alt="" style="width:4rem;height:4rem;border-radius:50%"/>
-			</div>
 			<form method="post" action={ templ.SafeURL("/admin/users/" + u.ID) }>
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				@ui.FormField("Display Name", "display_name", "text", u.DisplayName, "")
+				<div class="flex items-center gap-2 mb-2">
+					<img class="avatar-lg" src={ u.AvatarURL() } alt=""/>
+					<div class="flex-1">
+						@ui.FormField("Display name", "display_name", "text", u.DisplayName, "")
+					</div>
+				</div>
 				<div class="form-group">
 					<label class="form-check">
-						if u.IsAdmin {
-							<input type="checkbox" name="is_admin" value="1" checked/>
-						} else {
-							<input type="checkbox" name="is_admin" value="1"/>
-						}
-						Admin
+						<input type="checkbox" name="is_admin" value="1" checked?={ u.IsAdmin }/>
+						Administrator
 					</label>
 				</div>
-				<button class="btn btn-primary" type="submit">Save</button>
-				<a class="btn btn-outline" href="/admin/users" style="margin-left:0.5rem">Back</a>
+				<div class="form-actions">
+					<button class="btn btn-primary" type="submit">Save</button>
+				</div>
 			</form>
 		}
-		@ui.Card("Reset Password") {
+		@ui.Card("Reset password") {
 			<form method="post" action={ templ.SafeURL("/admin/users/" + u.ID + "/password") }>
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				@ui.FormField("New Password", "new_password", "password", "", "")
-				<button class="btn btn-primary" type="submit">Reset Password</button>
+				<div class="form-row">
+					<div class="form-group">
+						<label for="new_password">New password</label>
+						<input class="form-control" type="password" id="new_password" name="new_password" autocomplete="new-password"/>
+					</div>
+					<button class="btn btn-secondary" type="submit">Reset password</button>
+				</div>
 			</form>
 		}
-		@ui.Card("Danger Zone") {
-			<p class="text-muted" style="margin-bottom:0.5rem">Deleting a user removes all their data and cannot be undone.</p>
+		<div class="card card-danger">
+			<h2 class="card-title">Danger zone</h2>
+			<p class="text-muted">Deleting a user removes all their data and cannot be undone.</p>
 			<button
+				type="button"
 				class="btn btn-danger"
 				hx-delete={ "/admin/users/" + u.ID }
-				hx-confirm="Delete this user? This cannot be undone."
+				hx-confirm={ "Delete " + u.Username + " and all their data? This cannot be undone." }
 				hx-on::after-request="window.location='/admin/users'"
-			>Delete User</button>
-		}
+			>Delete user</button>
+		</div>
 	}
 }
 
 // --- Groups ---
 templ adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, "groups") {
-		<div class="flex justify-between items-center" style="margin-bottom:1rem">
-			<h1>Groups</h1>
-		</div>
-		if flash != "" {
-			@ui.Alert(flashKind, flash)
-		}
-		@ui.Card("Create Group") {
-			<form method="post" action="/admin/groups" class="flex gap-1 items-center">
+		@ui.PageHeader("Groups", nil)
+		@ui.Alert(flashKind, flash)
+		@ui.Card("Create group") {
+			<form method="post" action="/admin/groups" class="form-inline">
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				<input class="form-control" type="text" name="name" placeholder="Group name" required style="max-width:200px"/>
+				<label class="sr-only" for="new-group-name">Group name</label>
+				<input class="form-control" type="text" id="new-group-name" name="name" placeholder="Group name" required/>
 				<button class="btn btn-primary" type="submit">Create</button>
 			</form>
 		}
-		@ui.Card("") {
-			@groupTable(groups, "/admin/groups/")
-		}
+		@groupList(groups, "/admin/groups/", "No groups yet.")
 	}
 }
 
 // --- Settings ---
 templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, davTombstoneDays string, env envConfigData, status statusData, flash string, flashKind string, mfaRequired string) {
 	@ui.AdminSidebarPage(pd, "settings") {
-		<h1 style="margin-bottom:1rem">System Settings</h1>
-		if flash != "" {
-			@ui.Alert(flashKind, flash)
-		}
+		@ui.PageHeader("General", nil)
+		@ui.Alert(flashKind, flash)
 		@ui.Card("Status") {
-			<table class="table">
-				<tbody>
-					<tr><td style="font-weight:600;width:10rem">Instance Uptime</td><td>{ FormatDuration(status.InstanceUptime) }</td></tr>
-					<tr><td style="font-weight:600">Server Uptime</td><td>{ FormatDuration(status.ServerUptime) }</td></tr>
-					if status.CommitHash != "" {
-						<tr><td style="font-weight:600">Build</td><td><code>{ status.CommitHash }</code> ({ status.CommitDate.Format(time.RFC3339) })</td></tr>
-					}
-				</tbody>
-			</table>
+			<dl class="kv">
+				<dt>Instance uptime</dt>
+				<dd data-uptime>{ FormatDuration(status.InstanceUptime) }</dd>
+				<dt>Server uptime</dt>
+				<dd data-uptime>{ FormatDuration(status.ServerUptime) }</dd>
+				if status.CommitHash != "" {
+					<dt>Build</dt>
+					<dd><code>{ status.CommitHash }</code> <span class="text-muted">({ status.CommitDate.Format(time.RFC3339) })</span></dd>
+				}
+			</dl>
 		}
 		@ui.Card("Environment") {
-			<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">Server configuration from environment variables (read-only).</p>
-			<table class="table">
-				<tbody>
-					<tr><td style="font-weight:600;width:10rem">Listen Address</td><td><code>{ env.Addr }</code></td></tr>
-					<tr><td style="font-weight:600">Database Path</td><td><code>{ env.DBPath }</code></td></tr>
-					<tr><td style="font-weight:600">Base URL</td><td><code>{ env.BaseURL }</code></td></tr>
-					<tr><td style="font-weight:600">Data Directory</td><td><code>{ env.DataDir }</code></td></tr>
-				</tbody>
-			</table>
+			<p class="card-desc">Set by environment variables when the server starts. Read-only here.</p>
+			<dl class="kv">
+				<dt>Listen address</dt>
+				<dd>
+					@envValue(env.Addr, "default (:8580)")
+				</dd>
+				<dt>Database path</dt>
+				<dd>
+					@envValue(env.DBPath, "default")
+				</dd>
+				<dt>Base URL</dt>
+				<dd>
+					@envValue(env.BaseURL, "not set")
+				</dd>
+				<dt>Data directory</dt>
+				<dd>
+					@envValue(env.DataDir, "not set")
+				</dd>
+			</dl>
 		}
 		<form method="post" action="/admin/settings">
 			<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 			@ui.Card("Registration") {
 				<div class="form-group">
 					<label class="form-check">
-						if publicRegistration {
-							<input type="checkbox" name="public_registration" value="1" checked/>
-						} else {
-							<input type="checkbox" name="public_registration" value="1"/>
-						}
+						<input type="checkbox" name="public_registration" value="1" checked?={ publicRegistration }/>
 						Allow public registration
 					</label>
-					<p class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">When enabled, anyone can create an account from the login page.</p>
+					<p class="form-help">When enabled, anyone can create an account from the login page.</p>
 				</div>
 				<div class="form-group">
 					<label class="form-label" for="invite_expiry_hours">Invite link expiry (hours)</label>
-					<input class="form-control" type="number" id="invite_expiry_hours" name="invite_expiry_hours" value={ inviteExpiryHours } min="1" style="max-width:200px"/>
-					<p class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">How long group invitation links remain valid. Default: 72 hours.</p>
+					<input class="form-control w-sm" type="number" id="invite_expiry_hours" name="invite_expiry_hours" value={ inviteExpiryHours } min="1"/>
+					<p class="form-help">How long group invitation links remain valid. Default: 72 hours.</p>
 				</div>
-				<div class="form-group">
+				<div class="form-group mb-0">
 					<label class="form-label" for="dav_tombstone_days">Calendar and contact sync history (days)</label>
-					<input class="form-control" type="number" id="dav_tombstone_days" name="dav_tombstone_days" value={ davTombstoneDays } min="1" style="max-width:200px"/>
-					<p class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">How long deletions are remembered for CalDAV and CardDAV clients. A client that has not synced for longer downloads everything again. Default: 90 days.</p>
+					<input class="form-control w-sm" type="number" id="dav_tombstone_days" name="dav_tombstone_days" value={ davTombstoneDays } min="1"/>
+					<p class="form-help">How long deletions are remembered for CalDAV and CardDAV clients. A client that has not synced for longer downloads everything again. Default: 90 days.</p>
 				</div>
 			}
 			@ui.Card("Security") {
-				<div class="form-group">
-					<label class="form-label" for="mfa_required">Require Multi-Factor Authentication</label>
-					<select class="form-control" id="mfa_required" name="mfa_required" style="max-width:250px">
-						if mfaRequired == "" {
-							<option value="" selected>Disabled</option>
-						} else {
-							<option value="">Disabled</option>
-						}
-						if mfaRequired == "admins" {
-							<option value="admins" selected>Admin users only</option>
-						} else {
-							<option value="admins">Admin users only</option>
-						}
-						if mfaRequired == "all" {
-							<option value="all" selected>All users</option>
-						} else {
-							<option value="all">All users</option>
-						}
+				<div class="form-group mb-0">
+					<label class="form-label" for="mfa_required">Require multi-factor authentication</label>
+					<select class="form-control w-md" id="mfa_required" name="mfa_required">
+						<option value="" selected?={ mfaRequired == "" }>Disabled</option>
+						<option value="admins" selected?={ mfaRequired == "admins" }>Admin users only</option>
+						<option value="all" selected?={ mfaRequired == "all" }>All users</option>
 					</select>
-					<p class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">When enabled, users without MFA will be redirected to set it up on login.</p>
+					<p class="form-help">When enabled, users without MFA are sent to set it up when they log in.</p>
 				</div>
 			}
-			<button class="btn btn-primary" type="submit">Save Settings</button>
+			<div class="page-actions-bar">
+				<button class="btn btn-primary" type="submit">Save settings</button>
+			</div>
 		</form>
+	}
+}
+
+// envValue shows a configuration value, or what applies when it is unset.
+templ envValue(v, unset string) {
+	if v != "" {
+		<code>{ v }</code>
+	} else {
+		<span class="text-muted">{ unset }</span>
 	}
 }
 
 // --- Email ---
 templ adminEmailPage(pd ui.PageData, smtp smtpSettingsData, overrideHTML string, overrideText string, defaultHTML string, defaultText string, flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, "email") {
-		<h1 style="margin-bottom:1rem">Email Settings</h1>
-		if flash != "" {
-			@ui.Alert(flashKind, flash)
-		}
+		@ui.PageHeader("Email", nil)
+		@ui.Alert(flashKind, flash)
 		<form method="post" action="/admin/email">
 			<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-			@ui.Card("SMTP Configuration") {
-				<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">Configure SMTP for sending invitation and notification emails.</p>
-				@ui.FormField("SMTP Host", "smtp_host", "text", smtp.Host, "smtp.example.com")
-				<div class="form-group">
-					<label for="smtp_port">SMTP Port</label>
-					<input class="form-control" type="number" id="smtp_port" name="smtp_port" value={ smtp.Port } min="1" max="65535" style="max-width:200px"/>
+			@ui.Card("SMTP") {
+				<p class="card-desc">The mail server used for invitations, password resets and sign-in codes.</p>
+				<div class="form-row">
+					<div class="form-group">
+						<label for="smtp_host">Host</label>
+						<input class="form-control" type="text" id="smtp_host" name="smtp_host" value={ smtp.Host } placeholder="smtp.example.com"/>
+					</div>
+					<div class="form-group form-group-auto">
+						<label for="smtp_port">Port</label>
+						<input class="form-control w-xs" type="number" id="smtp_port" name="smtp_port" value={ smtp.Port } min="1" max="65535"/>
+					</div>
 				</div>
-				@ui.FormField("SMTP Username", "smtp_user", "text", smtp.User, "")
-				@ui.FormField("SMTP Password", "smtp_pass", "password", smtp.Pass, "")
-				@ui.FormField("From Address", "smtp_from", "email", smtp.From, "noreply@example.com")
-				<button
-					class="btn btn-outline btn-sm"
-					type="button"
-					hx-post="/admin/email/test-smtp"
-					hx-target="#smtp-test-result"
-					hx-swap="innerHTML"
-					hx-headers={ "{\"X-CSRF-Token\":\"" + pd.CSRFToken + "\"}" }
-					style="margin-top:0.75rem"
-				>Test Connection</button>
-				<div id="smtp-test-result"></div>
+				<div class="form-row">
+					<div class="form-group">
+						<label for="smtp_user">Username</label>
+						<input class="form-control" type="text" id="smtp_user" name="smtp_user" value={ smtp.User } autocomplete="off"/>
+					</div>
+					<div class="form-group">
+						<label for="smtp_pass">Password</label>
+						<input class="form-control" type="password" id="smtp_pass" name="smtp_pass" value={ smtp.Pass } autocomplete="new-password"/>
+					</div>
+				</div>
+				@ui.FormField("From address", "smtp_from", "email", smtp.From, "noreply@example.com")
+				<div class="btn-group">
+					<button
+						class="btn btn-secondary"
+						type="button"
+						hx-post="/admin/email/test-smtp"
+						hx-target="#smtp-test-result"
+						hx-swap="innerHTML"
+						hx-headers={ "{\"X-CSRF-Token\":\"" + pd.CSRFToken + "\"}" }
+					>Test connection</button>
+					<span class="text-sm text-muted">Tests the values above, saved or not.</span>
+				</div>
+				<div id="smtp-test-result" class="mt-1"></div>
 			}
-			@ui.Card("HTML Template Override") {
-				<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">
+			@ui.Card("HTML template override") {
+				<p class="card-desc">
 					Override the default HTML email templates using Go <code>html/template</code> syntax. Define blocks to replace: <code>layout</code>, <code>group_invite</code>, <code>password_reset</code>, <code>otp</code>. The layout uses <code>{ "{{content}}" }</code> to render the email body.
 				</p>
-				<details style="margin-bottom:0.75rem">
-					<summary class="text-muted" style="cursor:pointer;font-size:0.85rem">View default HTML template</summary>
-					<pre style="background:var(--color-bg-alt);padding:0.75rem;border-radius:4px;font-size:0.8rem;margin-top:0.5rem;max-height:300px;overflow:auto">{ defaultHTML }</pre>
+				<details class="mb-1">
+					<summary class="text-sm text-muted">View default HTML template</summary>
+					<pre class="code-block mt-1">{ defaultHTML }</pre>
 				</details>
-				<textarea class="form-control" id="override-html" name="override_html" rows="10" placeholder="Leave empty to use defaults" style="font-family:monospace;font-size:0.85rem" oninput="schedulePreview()">{ overrideHTML }</textarea>
-				<details style="margin-top:0.75rem">
-					<summary style="cursor:pointer;font-size:0.85rem;font-weight:600">Preview</summary>
-					<div style="margin-top:0.5rem">
-						<div class="flex gap-1" style="margin-bottom:0.5rem">
-							<button class="btn btn-outline btn-sm" type="button" onclick="showHTMLPreview('group_invite')">Group Invite</button>
-							<button class="btn btn-outline btn-sm" type="button" onclick="showHTMLPreview('password_reset')">Password Reset</button>
-							<button class="btn btn-outline btn-sm" type="button" onclick="showHTMLPreview('otp')">OTP Code</button>
+				<label class="sr-only" for="override-html">HTML template override</label>
+				<textarea class="form-control mono" id="override-html" name="override_html" rows="10" placeholder="Leave empty to use defaults" oninput="schedulePreview()">{ overrideHTML }</textarea>
+				<details class="mt-1">
+					<summary class="text-sm font-semibold">Preview</summary>
+					<div class="mt-1">
+						<div class="btn-group mb-1">
+							<button class="btn btn-secondary btn-sm" type="button" onclick="showHTMLPreview('group_invite')">Group invite</button>
+							<button class="btn btn-secondary btn-sm" type="button" onclick="showHTMLPreview('password_reset')">Password reset</button>
+							<button class="btn btn-secondary btn-sm" type="button" onclick="showHTMLPreview('otp')">Sign-in code</button>
 						</div>
-						<iframe id="preview-html" style="width:100%;height:400px;border:1px solid var(--color-border);border-radius:4px;background:#fff"></iframe>
+						<iframe id="preview-html" class="email-preview" title="HTML email preview"></iframe>
 					</div>
 				</details>
 			}
-			@ui.Card("Text Template Override") {
-				<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">
+			@ui.Card("Text template override") {
+				<p class="card-desc">
 					Override the default plain-text email templates using Go <code>text/template</code> syntax. Same block names as HTML.
 				</p>
-				<details style="margin-bottom:0.75rem">
-					<summary class="text-muted" style="cursor:pointer;font-size:0.85rem">View default text template</summary>
-					<pre style="background:var(--color-bg-alt);padding:0.75rem;border-radius:4px;font-size:0.8rem;margin-top:0.5rem;max-height:300px;overflow:auto">{ defaultText }</pre>
+				<details class="mb-1">
+					<summary class="text-sm text-muted">View default text template</summary>
+					<pre class="code-block mt-1">{ defaultText }</pre>
 				</details>
-				<textarea class="form-control" id="override-text" name="override_text" rows="8" placeholder="Leave empty to use defaults" style="font-family:monospace;font-size:0.85rem" oninput="schedulePreview()">{ overrideText }</textarea>
-				<details style="margin-top:0.75rem">
-					<summary style="cursor:pointer;font-size:0.85rem;font-weight:600">Preview</summary>
-					<div style="margin-top:0.5rem">
-						<div class="flex gap-1" style="margin-bottom:0.5rem">
-							<button class="btn btn-outline btn-sm" type="button" onclick="showTextPreview('group_invite')">Group Invite</button>
-							<button class="btn btn-outline btn-sm" type="button" onclick="showTextPreview('password_reset')">Password Reset</button>
-							<button class="btn btn-outline btn-sm" type="button" onclick="showTextPreview('otp')">OTP Code</button>
+				<label class="sr-only" for="override-text">Text template override</label>
+				<textarea class="form-control mono" id="override-text" name="override_text" rows="8" placeholder="Leave empty to use defaults" oninput="schedulePreview()">{ overrideText }</textarea>
+				<details class="mt-1">
+					<summary class="text-sm font-semibold">Preview</summary>
+					<div class="mt-1">
+						<div class="btn-group mb-1">
+							<button class="btn btn-secondary btn-sm" type="button" onclick="showTextPreview('group_invite')">Group invite</button>
+							<button class="btn btn-secondary btn-sm" type="button" onclick="showTextPreview('password_reset')">Password reset</button>
+							<button class="btn btn-secondary btn-sm" type="button" onclick="showTextPreview('otp')">Sign-in code</button>
 						</div>
-						<iframe id="preview-text" style="width:100%;height:300px;border:1px solid var(--color-border);border-radius:4px;background:#fff"></iframe>
+						<iframe id="preview-text" class="email-preview" title="Text email preview"></iframe>
 					</div>
 				</details>
 			}
-			<button class="btn btn-primary" type="submit">Save Email Settings</button>
+			<div class="page-actions-bar">
+				<button class="btn btn-primary" type="submit">Save email settings</button>
+			</div>
 		</form>
 		<script>
 			var htmlPreviewName = "password_reset";
@@ -375,10 +416,10 @@ templ adminEmailPage(pd ui.PageData, smtp smtpSettingsData, overrideHTML string,
 }
 
 templ smtpTestAlert(kind, title, detail string) {
-	<div class={ "alert alert-" + kind } style="position:relative">
-		<button type="button" class="alert-dismiss" onclick="this.parentElement.remove()" aria-label="Close">&times;</button>
-		<strong>{ title }</strong>
-		<p style="margin:0.25rem 0 0;font-size:0.85rem">{ detail }</p>
+	<div class={ "alert alert-" + kind } role="status">
+		<button type="button" class="alert-dismiss" onclick="this.parentElement.remove()" aria-label="Dismiss">&times;</button>
+		<div class="alert-title">{ title }</div>
+		<p class="text-sm">{ detail }</p>
 	</div>
 }
 
@@ -401,44 +442,57 @@ func logLevelLabel(level slog.Level) string {
 	return strings.ToUpper(level.String())
 }
 
-func sourceSelectSize(sources []string) string {
-	n := len(sources) + 1 // +1 for "server"
-	if n > 6 {
-		n = 6
-	}
-	return strconv.Itoa(n)
-}
-
 templ adminLogsPage(pd ui.PageData, entries []logbuf.Entry, sources []string) {
 	@ui.AdminSidebarPage(pd, "logs") {
-		<div class="flex justify-between items-center" style="margin-bottom:1rem">
-			<h1>Server Logs</h1>
-			<span class="text-muted" style="font-size:0.85rem">{ fmt.Sprintf("%d entries", len(entries)) }</span>
-		</div>
-		<div id="log-filters" class="flex items-center gap-1" style="margin-bottom:0.75rem;flex-wrap:wrap">
-			<select name="level" multiple class="form-control" size="4" style="font-size:0.85rem;width:auto">
-				<option value="DEBUG" selected>DEBUG</option>
-				<option value="INFO" selected>INFO</option>
-				<option value="WARN" selected>WARN</option>
-				<option value="ERROR" selected>ERROR</option>
-			</select>
-			<select name="source" multiple class="form-control" style="font-size:0.85rem;width:auto" size={ sourceSelectSize(sources) }>
-				<option value="server" selected>server</option>
-				for _, s := range sources {
-					<option value={ s } selected>{ s }</option>
-				}
-			</select>
-			<input type="text" name="regex" class="form-control" placeholder="Filter (regex)..." style="max-width:16rem;font-size:0.85rem"/>
-			<button type="button" class="btn btn-outline btn-sm" hx-get="/admin/logs/entries" hx-include="#log-filters" hx-target="#log-tbody" hx-swap="innerHTML">Refresh</button>
-			<button type="button" id="log-copy" class="btn btn-outline btn-sm" onclick="cogCopy(this, logEntriesText)" title="Copy the entries shown, oldest first">Copy</button>
-		</div>
-		@ui.Card("") {
-			<div style="max-height:600px;overflow-y:auto">
-				<table class="table" style="font-size:0.85rem">
+		@ui.PageHeader("Server logs", nil) {
+			<button type="button" id="log-copy" class="btn btn-secondary" onclick="cogCopy(this, logEntriesText)" title="Copy the entries shown, oldest first">Copy</button>
+		}
+		<form
+			id="log-filters"
+			class="log-filters"
+			hx-get="/admin/logs/entries"
+			hx-target="#log-tbody"
+			hx-swap="innerHTML"
+			hx-trigger="input delay:300ms, submit"
+			onsubmit="return false"
+		>
+			<fieldset>
+				<legend class="sr-only">Levels</legend>
+				<div class="chip-group">
+					for _, l := range []string{"DEBUG", "INFO", "WARN", "ERROR"} {
+						<label class="chip">
+							<input type="checkbox" name="level" value={ l } checked/>
+							{ l }
+						</label>
+					}
+				</div>
+			</fieldset>
+			<fieldset>
+				<legend class="sr-only">Sources</legend>
+				<div class="chip-group">
+					<label class="chip">
+						<input type="checkbox" name="source" value="server" checked/>
+						server
+					</label>
+					for _, src := range sources {
+						<label class="chip">
+							<input type="checkbox" name="source" value={ src } checked/>
+							{ src }
+						</label>
+					}
+				</div>
+			</fieldset>
+			<label class="sr-only" for="log-regex">Filter messages</label>
+			<input type="search" id="log-regex" name="regex" class="form-control" placeholder="Filter messages (regular expression)…"/>
+		</form>
+		<p class="text-sm text-muted mb-1">{ fmt.Sprintf("%d entries, newest first", len(entries)) }</p>
+		<div class="card card-flush">
+			<div class="table-wrap log-scroll">
+				<table class="table table-sm">
 					<thead>
 						<tr>
-							<th style="width:8rem">Time</th>
-							<th style="width:5rem">Level</th>
+							<th class="col-shrink">Time</th>
+							<th class="col-shrink">Level</th>
 							<th>Message</th>
 						</tr>
 					</thead>
@@ -447,7 +501,7 @@ templ adminLogsPage(pd ui.PageData, entries []logbuf.Entry, sources []string) {
 					</tbody>
 				</table>
 			</div>
-		}
+		</div>
 		@logEntriesScript()
 	}
 }
@@ -478,11 +532,14 @@ templ logEntriesScript() {
 }
 
 templ logEntriesPartial(entries []logbuf.Entry) {
+	if len(entries) == 0 {
+		<tr><td colspan="3" class="empty-state">No entries match these filters.</td></tr>
+	}
 	for i := len(entries) - 1; i >= 0; i-- {
 		<tr>
-			<td><code>{ entries[i].Time.Format("15:04:05.000") }</code></td>
+			<td class="nowrap"><code>{ entries[i].Time.Format("15:04:05.000") }</code></td>
 			<td><span class={ logLevelBadgeClass(entries[i].Level) }>{ logLevelLabel(entries[i].Level) }</span></td>
-			<td><code style="white-space:pre-wrap">{ entries[i].Message }</code></td>
+			<td><code class="log-message">{ entries[i].Message }</code></td>
 		</tr>
 	}
 }
@@ -490,48 +547,50 @@ templ logEntriesPartial(entries []logbuf.Entry) {
 // --- Plugins ---
 templ adminPluginsPage(pd ui.PageData, plugins []PluginInfo) {
 	@ui.AdminSidebarPage(pd, "plugins") {
-		<div class="flex justify-between items-center" style="margin-bottom:1rem">
-			<h1>Plugins</h1>
-		</div>
-		@ui.Card("") {
-			<table class="table">
-				<thead>
-					<tr>
-						<th>Plugin</th>
-						<th>Status</th>
-						<th class="text-right">Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					for _, p := range plugins {
+		@ui.PageHeader("Plugins", nil)
+		<div class="card card-flush">
+			<div class="table-wrap">
+				<table class="table">
+					<thead>
 						<tr>
-							<td>{ p.ID }</td>
-							<td>
-								if p.Enabled {
-									<span class="badge badge-admin">Enabled</span>
-								} else {
-									<span class="badge">Disabled</span>
-								}
-								if p.Protected {
-									<span class="badge" style="margin-left:0.25rem">Protected</span>
-								}
-							</td>
-							<td class="text-right">
-								if !p.Protected {
-									<form method="post" action={ templ.SafeURL("/admin/plugins/" + p.ID + "/toggle") } style="display:inline">
-										<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-										if p.Enabled {
-											<button class="btn btn-outline btn-sm" type="submit">Disable</button>
-										} else {
-											<button class="btn btn-primary btn-sm" type="submit">Enable</button>
-										}
-									</form>
-								}
-							</td>
+							<th>Plugin</th>
+							<th>Status</th>
+							<th class="col-actions"><span class="sr-only">Actions</span></th>
 						</tr>
-					}
-				</tbody>
-			</table>
-		}
+					</thead>
+					<tbody>
+						for _, p := range plugins {
+							<tr>
+								<td class="font-medium">{ p.ID }</td>
+								<td>
+									if p.Enabled {
+										<span class="badge badge-success">Enabled</span>
+									} else {
+										<span class="badge badge-neutral">Disabled</span>
+									}
+								</td>
+								<td class="col-actions">
+									if p.Protected {
+										<span class="badge badge-outline" title="Built in; cannot be disabled">
+											@ui.Icon("lock")
+											Built in
+										</span>
+									} else {
+										<form method="post" action={ templ.SafeURL("/admin/plugins/" + p.ID + "/toggle") }>
+											<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+											if p.Enabled {
+												<button class="btn btn-secondary btn-sm" type="submit">Disable</button>
+											} else {
+												<button class="btn btn-primary btn-sm" type="submit">Enable</button>
+											}
+										</form>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
 	}
 }

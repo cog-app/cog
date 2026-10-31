@@ -1,0 +1,351 @@
+package ui
+
+import "strings"
+
+// AuthPage is the frame of every page a visitor sees before or outside the
+// app: sign-in, registration, password reset, invitations and consent
+// screens. It is a card centred on the page with the Cog mark above it.
+templ AuthPage(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			@docHead(title, Static.URL("favicon.svg"))
+		</head>
+		<body>
+			<main class="login-container">
+				<div class="card login-card">
+					<a class="login-title" href="/">
+						@CogIcon(28)
+						<span>Cog</span>
+					</a>
+					{ children... }
+				</div>
+			</main>
+		</body>
+	</html>
+}
+
+// authAlert renders a flash or error message on an auth page.
+templ authAlert(kind, msg string) {
+	if msg != "" {
+		if kind == "" {
+			@Alert("error", msg)
+		} else {
+			@Alert(kind, msg)
+		}
+	}
+}
+
+var defaultUsername, defaultPassword string
+
+// isClientLogin reports whether a sign-in continues into the NextCloud login
+// flow, so the page can say why the user is signing in.
+func isClientLogin(next string) bool {
+	return strings.HasPrefix(next, "/index.php/login/v2/")
+}
+
+func loginUsername(username string) string {
+	if username != "" {
+		return username
+	}
+	return defaultUsername
+}
+
+// LoginPage renders the standalone login page (no navbar). username refills
+// the field after a failed attempt.
+templ LoginPage(flashMsg string, flashKind string, next string, username string, registrationEnabled bool) {
+	@AuthPage("Log in") {
+		if isClientLogin(next) {
+			<div class="alert alert-info">Sign in to connect an app to your Cog account.</div>
+		}
+		@authAlert(flashKind, flashMsg)
+		<form method="post" action="/login">
+			if next != "" {
+				<input type="hidden" name="next" value={ next }/>
+			}
+			<div class="form-group">
+				<label for="username">Username</label>
+				<input class="form-control" type="text" id="username" name="username" value={ loginUsername(username) } required autocomplete="username" autocapitalize="none" autofocus?={ username == "" }/>
+			</div>
+			<div class="form-group">
+				<label for="password">Password</label>
+				<input class="form-control" type="password" id="password" name="password" value={ defaultPassword } required autocomplete="current-password" autofocus?={ username != "" }/>
+			</div>
+			<button class="btn btn-primary btn-block" type="submit">Log in</button>
+			<div class="login-links">
+				<a href="/forgot-password">Forgot password?</a>
+			</div>
+		</form>
+		if registrationEnabled {
+			<p class="login-footer">
+				Don't have an account?
+				if next != "" {
+					<a href={ templ.SafeURL("/register?next=" + next) }>Register</a>
+				} else {
+					<a href="/register">Register</a>
+				}
+			</p>
+		}
+	}
+}
+
+// MFAPage renders the standalone MFA verification page.
+// mfaMethod is "totp", "email", or "webauthn".
+templ MFAPage(errMsg string, next string, mfaMethod string) {
+	@AuthPage("Verify identity") {
+		if mfaMethod == "webauthn" {
+			<p class="login-lead">Use your passkey to verify your identity.</p>
+			@authAlert("error", errMsg)
+			<div id="webauthn-status">
+				<button id="webauthn-btn" class="btn btn-primary btn-block" type="button" onclick="startWebAuthnLogin()">Verify with passkey</button>
+			</div>
+			@webAuthnLoginScript()
+		} else {
+			if mfaMethod == "email" {
+				<p class="login-lead">A verification code has been sent to your email.</p>
+			} else {
+				<p class="login-lead">Enter your authentication code to continue.</p>
+			}
+			@authAlert("error", errMsg)
+			<form method="post" action="/login/mfa">
+				if next != "" {
+					<input type="hidden" name="next" value={ next }/>
+				}
+				<div class="form-group">
+					<label for="code">Authentication code</label>
+					<input class="form-control" type="text" id="code" name="code" placeholder="6-digit code or backup code" required autofocus autocomplete="one-time-code" inputmode="numeric" pattern="[a-zA-Z0-9]{6,8}"/>
+				</div>
+				<button class="btn btn-primary btn-block" type="submit">Verify</button>
+			</form>
+			if mfaMethod == "totp" {
+				<p class="login-note">Lost your authenticator? Enter one of your backup codes instead.</p>
+			}
+		}
+	}
+}
+
+templ webAuthnLoginScript() {
+	<script>
+		async function startWebAuthnLogin() {
+			var btn = document.getElementById("webauthn-btn");
+			var status = document.getElementById("webauthn-status");
+			btn.disabled = true;
+			btn.textContent = "Waiting for passkey...";
+			try {
+				var beginResp = await fetch("/login/mfa/webauthn/begin", {
+					method: "POST",
+				});
+				if (!beginResp.ok) throw new Error("Failed to start");
+				var options = await beginResp.json();
+				options.publicKey.challenge = base64urlToBuffer(
+					options.publicKey.challenge,
+				);
+				if (options.publicKey.allowCredentials) {
+					options.publicKey.allowCredentials =
+						options.publicKey.allowCredentials.map(function (c) {
+							c.id = base64urlToBuffer(c.id);
+							return c;
+						});
+				}
+				var assertion = await navigator.credentials.get(options);
+				var body = JSON.stringify({
+					id: assertion.id,
+					rawId: bufferToBase64url(assertion.rawId),
+					type: assertion.type,
+					response: {
+						authenticatorData: bufferToBase64url(
+							assertion.response.authenticatorData,
+						),
+						clientDataJSON: bufferToBase64url(
+							assertion.response.clientDataJSON,
+						),
+						signature: bufferToBase64url(
+							assertion.response.signature,
+						),
+						userHandle: assertion.response.userHandle
+							? bufferToBase64url(assertion.response.userHandle)
+							: "",
+					},
+				});
+				var finishResp = await fetch("/login/mfa/webauthn/finish", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: body,
+				});
+				if (!finishResp.ok) throw new Error("Verification failed");
+				var result = await finishResp.json();
+				window.location.href = result.redirect || "/";
+			} catch (e) {
+				status.innerHTML =
+					'<div class="alert alert-error">' +
+					(e.message || "Passkey verification failed") +
+					"</div>";
+				status.innerHTML +=
+					'<button class="btn btn-primary btn-block" type="button" onclick="startWebAuthnLogin()">Try again</button>';
+			}
+		}
+		function base64urlToBuffer(b) {
+			var s = b.replace(/-/g, "+").replace(/_/g, "/");
+			while (s.length % 4) s += "=";
+			var raw = atob(s);
+			var arr = new Uint8Array(raw.length);
+			for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+			return arr.buffer;
+		}
+		function bufferToBase64url(buf) {
+			var arr = new Uint8Array(buf);
+			var s = "";
+			for (var i = 0; i < arr.length; i++)
+				s += String.fromCharCode(arr[i]);
+			return btoa(s)
+				.replace(/\+/g, "-")
+				.replace(/\//g, "_")
+				.replace(/=/g, "");
+		}
+		startWebAuthnLogin();
+	</script>
+}
+
+// ForgotPasswordPage renders the forgot password form.
+templ ForgotPasswordPage(errMsg string, successMsg string) {
+	@AuthPage("Forgot password") {
+		<h1 class="login-heading">Reset your password</h1>
+		@authAlert("success", successMsg)
+		@authAlert("error", errMsg)
+		if successMsg == "" {
+			<p class="login-lead">Enter your username or email and we'll send you a link to choose a new password.</p>
+			<form method="post" action="/forgot-password">
+				<div class="form-group">
+					<label for="identifier">Username or email</label>
+					<input class="form-control" type="text" id="identifier" name="identifier" required autofocus autocomplete="username" autocapitalize="none"/>
+				</div>
+				<button class="btn btn-primary btn-block" type="submit">Send reset link</button>
+			</form>
+		}
+		<p class="login-footer">
+			<a href="/login">Back to login</a>
+		</p>
+	}
+}
+
+// ResetPasswordPage renders the password reset form.
+templ ResetPasswordPage(errMsg string, token string) {
+	@AuthPage("Reset password") {
+		<h1 class="login-heading">Choose a new password</h1>
+		@authAlert("error", errMsg)
+		<form method="post" action="/reset-password">
+			<input type="hidden" name="token" value={ token }/>
+			<div class="form-group">
+				<label for="password">New password</label>
+				<input class="form-control" type="password" id="password" name="password" required autofocus autocomplete="new-password"/>
+			</div>
+			<div class="form-group">
+				<label for="confirm">Confirm password</label>
+				<input class="form-control" type="password" id="confirm" name="confirm" required autocomplete="new-password"/>
+			</div>
+			<button class="btn btn-primary btn-block" type="submit">Reset password</button>
+		</form>
+		<p class="login-footer">
+			<a href="/login">Back to login</a>
+		</p>
+	}
+}
+
+// RegisterPage renders the standalone registration page.
+templ RegisterPage(errMsg string, next string, username string) {
+	@AuthPage("Register") {
+		<h1 class="login-heading">Create your account</h1>
+		@authAlert("error", errMsg)
+		<form method="post" action="/register">
+			if next != "" {
+				<input type="hidden" name="next" value={ next }/>
+			}
+			<div class="form-group">
+				<label for="username">Username</label>
+				<input class="form-control" type="text" id="username" name="username" value={ username } required autofocus?={ username == "" } autocomplete="username" autocapitalize="none"/>
+			</div>
+			<div class="form-group">
+				<label for="password">Password</label>
+				<input class="form-control" type="password" id="password" name="password" required autofocus?={ username != "" } autocomplete="new-password"/>
+			</div>
+			<div class="form-group">
+				<label for="confirm">Confirm password</label>
+				<input class="form-control" type="password" id="confirm" name="confirm" required autocomplete="new-password"/>
+			</div>
+			<button class="btn btn-primary btn-block" type="submit">Register</button>
+		</form>
+		<p class="login-footer">
+			Already have an account?
+			if next != "" {
+				<a href={ templ.SafeURL("/login?next=" + next) }>Log in</a>
+			} else {
+				<a href="/login">Log in</a>
+			}
+		</p>
+	}
+}
+
+// LoginFlowGrant is what the NextCloud login-flow consent screen shows.
+type LoginFlowGrant struct {
+	Token     string // the login token from the client's grant URL
+	CSRFToken string
+	Username  string
+	Client    string // who is asking, from the client's User-Agent
+	Error     string
+}
+
+// LoginFlowGrantPage asks a signed-in user whether an app may have an app
+// password for their account. It names the app and the account, and says what
+// granting does, because a consent screen that looks like an error page trains
+// people to click through it.
+templ LoginFlowGrantPage(g LoginFlowGrant) {
+	@AuthPage("Connect an app") {
+		<h1 class="login-heading">Connect { g.Client }?</h1>
+		<p class="login-lead">
+			<strong>{ g.Client }</strong> wants to access your Cog account <strong>{ g.Username }</strong>: your files, calendars and contacts.
+		</p>
+		@authAlert("error", g.Error)
+		<form method="post" action={ templ.SafeURL("/index.php/login/v2/grant?token=" + g.Token) }>
+			<input type="hidden" name="csrf_token" value={ g.CSRFToken }/>
+			<button class="btn btn-primary btn-block" type="submit" name="action" value="grant">Grant access</button>
+			<button class="btn btn-secondary btn-block" type="submit" name="action" value="cancel" formnovalidate>Cancel</button>
+		</form>
+		<p class="login-note">
+			Granting creates an app password for this app. You can revoke it at any time in
+			<a href="/settings/security">Settings › Security</a>.
+		</p>
+	}
+}
+
+// LoginFlowDonePage tells the user the login flow is finished and they can go
+// back to the app.
+templ LoginFlowDonePage(granted bool) {
+	if granted {
+		@AuthPage("Access granted") {
+			<div class="login-icon login-icon-success">
+				@Icon("check-circle")
+			</div>
+			<h1 class="login-heading">Access granted</h1>
+			<p class="login-lead">You can close this window and return to your app.</p>
+		}
+	} else {
+		@AuthPage("Request cancelled") {
+			<div class="login-icon login-icon-muted">
+				@Icon("x-circle")
+			</div>
+			<h1 class="login-heading">Request cancelled</h1>
+			<p class="login-lead">No access was granted. You can close this window.</p>
+		}
+	}
+}
+
+// LoginFlowExpiredPage is shown for a login-flow link that no longer works.
+templ LoginFlowExpiredPage() {
+	@AuthPage("Link expired") {
+		<div class="login-icon login-icon-muted">
+			@Icon("x-circle")
+		</div>
+		<h1 class="login-heading">This sign-in link has expired</h1>
+		<p class="login-lead">Start the sign-in again from your app.</p>
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/internal/testing/webtest"
+	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
 func TestBrowserLoginFlow(t *testing.T) {
@@ -81,6 +82,7 @@ func TestBrowserAdminCreateUser(t *testing.T) {
 	// Should redirect to users list showing the new user.
 	b.WaitText(t, "newuser")
 	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 
 	// Verify user was created.
 	_, err := env.Providers.Users.GetByUsername("newuser")
@@ -109,6 +111,7 @@ func TestBrowserAdminEditUser(t *testing.T) {
 	// Should see success flash.
 	b.WaitText(t, "User updated")
 	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 
 	u, err := env.Providers.Users.GetByID(target.ID)
 	require.NoError(t, err)
@@ -158,6 +161,7 @@ func TestBrowserAdminCreateGroup(t *testing.T) {
 
 	b.WaitText(t, "browser-group")
 	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 }
 
 // --- Admin Volumes ---
@@ -183,6 +187,7 @@ func TestBrowserAdminCreateVolume(t *testing.T) {
 	// Should redirect to volumes list.
 	b.WaitText(t, "testvol")
 	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 
 	_, err := env.Providers.Volumes.GetByName("testvol")
 	require.NoError(t, err)
@@ -238,6 +243,7 @@ func TestBrowserAdminSettings(t *testing.T) {
 
 	b.WaitText(t, "Email settings saved")
 	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 }
 
 func TestBrowserAdminLogs(t *testing.T) {
@@ -251,8 +257,9 @@ func TestBrowserAdminLogs(t *testing.T) {
 	b.Login(t, "admin", "pass")
 
 	b.Navigate(t, "/admin/logs")
-	b.WaitText(t, "Server Logs")
+	b.WaitText(t, "Server logs")
 	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 }
 
 func TestBrowserAdminPlugins(t *testing.T) {
@@ -268,6 +275,7 @@ func TestBrowserAdminPlugins(t *testing.T) {
 	b.Navigate(t, "/admin/plugins")
 	b.WaitText(t, "files")
 	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 }
 
 // --- Settings Profile ---
@@ -291,6 +299,7 @@ func TestBrowserSettingsProfile(t *testing.T) {
 
 	b.WaitText(t, "Profile updated")
 	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 
 	u, err := env.Providers.Users.GetByUsername("alice")
 	require.NoError(t, err)
@@ -342,6 +351,7 @@ func TestBrowserSettingsCreateAppPassword(t *testing.T) {
 	// Should show the created token.
 	b.WaitVisible(t, ".alert-success")
 	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 
 	passwords, err := env.Providers.AppPasswords.ListByUser(alice.ID)
 	require.NoError(t, err)
@@ -364,6 +374,7 @@ func TestBrowserSettingsStorage(t *testing.T) {
 	b.Navigate(t, "/settings/storage")
 	b.WaitVisible(t, `input[name="user_path"]`)
 	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 }
 
 // --- Groups ---
@@ -386,6 +397,7 @@ func TestBrowserCreateGroup(t *testing.T) {
 
 	b.WaitText(t, "my-team")
 	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 }
 
 func TestBrowserGroupDetail(t *testing.T) {
@@ -407,6 +419,7 @@ func TestBrowserGroupDetail(t *testing.T) {
 	b.WaitText(t, "team")
 	b.WaitText(t, "alice")
 	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 }
 
 // --- Volume Browser ---
@@ -429,12 +442,8 @@ func TestBrowserVolumeBrowse(t *testing.T) {
 	b := eng.Start(t)
 	b.Login(t, "admin", "pass")
 
-	// The volume is the data directory, so the listing shows the system
-	// database's write-ahead log, whose size would follow the schema and
-	// every write before now. Empty it, so the golden shows only what this
-	// page's own request writes.
-	_, err = env.Providers.DB.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
-	require.NoError(t, err)
+	// The volume is the data directory. The server's own files in it (the
+	// system database, its journal, the search index) are not listed.
 
 	// Modification times are shown; fix them, after logging in has written
 	// whatever it writes, so the golden is stable.
@@ -448,6 +457,7 @@ func TestBrowserVolumeBrowse(t *testing.T) {
 	b.WaitText(t, "docs")
 	b.WaitText(t, "hello.txt")
 	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 }
 
 func TestBrowserVolumeMkdir(t *testing.T) {
@@ -514,6 +524,7 @@ func TestBrowserAcceptInvite(t *testing.T) {
 	// Should end up on group page as new member.
 	b.WaitText(t, "cool-team")
 	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 
 	_, err = env.Providers.Users.GetByUsername("bob")
 	require.NoError(t, err)
@@ -569,4 +580,250 @@ func TestBrowserAdminLogsCopy(t *testing.T) {
 				"line is not time/level/message: %q", line)
 		}
 	}
+}
+
+// --- UX review coverage: states no other browser test reaches ---
+
+// The General admin page is the admin landing page and had no snapshot.
+func TestBrowserAdminGeneralSettings(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+	b.Navigate(t, "/admin/settings")
+	b.WaitVisible(t, `input[name="invite_expiry_hours"]`)
+	// Uptimes follow the wall clock.
+	b.Eval(t, `() => document.querySelectorAll("[data-uptime]").forEach(d => { d.textContent = "«uptime»" })`)
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
+}
+
+// A user list with long names and empty display names, the way a real
+// instance looks, on both widths.
+func TestBrowserAdminUsersLongNames(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+	long := env.CreateUser(t, "a.very.long.username.from.ldap@example-corporation.com", "pass")
+	name := "Maximiliana Alexandrina Featherstonehaugh-Cholmondeley"
+	require.NoError(t, env.Providers.Users.Update(long.ID, user.UpdateOpts{DisplayName: &name}))
+	env.CreateUser(t, "bob", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+	b.Navigate(t, "/admin/users")
+	b.WaitText(t, "Featherstonehaugh")
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
+}
+
+// Creating a user whose name is taken: the error path of the new-user form.
+func TestBrowserAdminNewUserDuplicate(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+	env.CreateUser(t, "taken", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+	b.Navigate(t, "/admin/users/new")
+	b.Type(t, "#username", "taken")
+	b.Type(t, "#password", "x")
+	b.Click(t, `form[action="/admin/users"] button[type="submit"]`)
+	b.WaitVisible(t, ".alert")
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
+}
+
+func TestBrowserAdminVolumeEditPage(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	dir := t.TempDir()
+	v, err := env.Providers.Volumes.Create("archive", "Cold storage for old projects", "file://"+dir, nil, "{}")
+	require.NoError(t, err)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+	b.Navigate(t, "/admin/volumes/"+v.ID)
+	b.WaitVisible(t, `input[name="name"]`)
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
+}
+
+// The groups list itself: creating a group redirects to the group, so no
+// other test sees this page with groups in it.
+func TestBrowserSettingsGroupsList(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	bob := env.CreateUser(t, "bob", "pass")
+
+	own, err := env.Providers.Groups.Create("book-club-with-a-surprisingly-long-name", nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(own.ID, alice.ID, group.Owner))
+	other, err := env.Providers.Groups.Create("family", nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(other.ID, bob.ID, group.Owner))
+	require.NoError(t, env.Providers.Groups.AddMember(other.ID, alice.ID, group.User))
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "pass")
+	b.Navigate(t, "/settings/groups")
+	b.WaitText(t, "family")
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
+}
+
+// An owner's group page with members and an open invitation, which is where
+// the copyable invite link and the per-row actions show.
+func TestBrowserGroupDetailWithInvites(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	bob := env.CreateUser(t, "bob", "pass")
+
+	grp, err := env.Providers.Groups.Create("team", nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, alice.ID, group.Owner))
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, bob.ID, group.User))
+	_, err = env.Providers.Invitations.Create(grp.ID, "carol.with.a.long.address@example.com", alice.ID, 24, group.User)
+	require.NoError(t, err)
+	_, err = env.Providers.Invitations.Create(grp.ID, "", alice.ID, 24, group.Owner)
+	require.NoError(t, err)
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "pass")
+	b.Navigate(t, "/settings/groups/"+grp.ID)
+	b.WaitText(t, "carol.with.a.long.address@example.com")
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
+}
+
+// A mismatched confirmation on the change-password form.
+func TestBrowserSettingsChangePasswordMismatch(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "alice", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "pass")
+	b.Navigate(t, "/settings/security")
+	b.Type(t, "#current_password", "pass")
+	b.Type(t, "#new_password", "one")
+	b.Type(t, "#confirm_password", "two")
+	b.Click(t, `form[action="/settings/password"] button[type="submit"]`)
+	b.WaitVisible(t, ".alert-error")
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
+}
+
+func TestBrowserForgotPassword(t *testing.T) {
+	env := cogtest.New(t)
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Navigate(t, "/forgot-password")
+	b.WaitVisible(t, "#identifier")
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
+}
+
+// A signed-in user following an invite link.
+func TestBrowserInviteLoggedIn(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	env.CreateUser(t, "bob", "pass")
+
+	grp, err := env.Providers.Groups.Create("cool-team", nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, alice.ID, group.Owner))
+	inv, err := env.Providers.Invitations.Create(grp.ID, "", alice.ID, 24, group.User)
+	require.NoError(t, err)
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "bob", "pass")
+	b.Navigate(t, "/invite/"+inv.Token)
+	b.WaitText(t, "cool-team")
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
+}
+
+// The NextCloud Login Flow v2 as a desktop or mobile client drives it: the
+// client opens the grant URL in a browser, the user signs in and approves.
+func TestBrowserNCLoginFlowGrant(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "alice", "secret")
+
+	var init struct {
+		Login string `json:"login"`
+	}
+	env.Post(t, "/index.php/login/v2").Status(200).JSON(&init)
+	i := strings.Index(init.Login, "/index.php/login/v2/grant")
+	require.True(t, i >= 0, "unexpected login URL %q", init.Login)
+	grantPath := init.Login[i:]
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Navigate(t, grantPath)
+	b.WaitVisible(t, "#username")
+	t.Run("Login", func(t *testing.T) {
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	b.Type(t, "#username", "alice")
+	b.Type(t, "#password", "secret")
+	b.Click(t, `button[type="submit"]`)
+	b.WaitText(t, "Grant access")
+	t.Run("Grant", func(t *testing.T) {
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	b.Click(t, `button[type="submit"]`)
+	b.WaitText(t, "Access granted")
+	t.Run("Granted", func(t *testing.T) {
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+}
+
+func TestBrowserNotFound(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "alice", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "pass")
+	b.Navigate(t, "/no/such/page")
+	b.WaitReady(t, "body")
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
 }

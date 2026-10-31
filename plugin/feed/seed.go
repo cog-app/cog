@@ -62,7 +62,9 @@ func (p *Plugin) Seed(username string) error {
 			return fmt.Errorf("seed feed: item %s: %w", ti.guid, err)
 		}
 		if ti.guid == "news-2" {
-			_ = store.MarkRead(id, true) // one already-read item
+			if err := store.MarkRead(id, true); err != nil { // one already-read item
+				return fmt.Errorf("seed feed: mark %s read: %w", ti.guid, err)
+			}
 		}
 	}
 

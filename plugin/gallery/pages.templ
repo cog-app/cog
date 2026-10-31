@@ -3,6 +3,7 @@ package gallery
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -10,40 +11,32 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
-// --- Gallery Sidebar ---
-templ gallerySidebar(activePath string, total int, starredCount int) {
-	<nav class="sidebar" id="gallery-sidebar">
-		<a href="/apps/gallery/" class={ sidebarClass(activePath, "/apps/gallery/") }>
-			Timeline
-			if total > 0 {
-				<span class="badge">{ strconv.Itoa(total) }</span>
-			}
-		</a>
-		<a href="/apps/gallery/starred" class={ sidebarClass(activePath, "/apps/gallery/starred") }>
-			Starred
-			if starredCount > 0 {
-				<span class="badge">{ strconv.Itoa(starredCount) }</span>
-			}
-		</a>
-		<a href="/apps/gallery/albums" class={ sidebarClass(activePath, "/apps/gallery/albums") }>
-			Albums
-		</a>
-		<a href="/apps/gallery/people" class={ sidebarClass(activePath, "/apps/gallery/people") }>
-			People
-		</a>
-		<a href="/apps/gallery/tags" class={ sidebarClass(activePath, "/apps/gallery/tags") }>
-			Tags
-		</a>
-		<a href="/apps/gallery/videos" class={ sidebarClass(activePath, "/apps/gallery/videos") }>
-			Videos
-		</a>
-		<a href="/apps/gallery/duplicates" class={ sidebarClass(activePath, "/apps/gallery/duplicates") }>
-			Duplicates
-		</a>
+// --- Layout ---
+
+// galleryLayout is the frame of every gallery page: the sidebar of views
+// and the page beside it.
+templ galleryLayout(activePath string) {
+	<div class="sidebar-layout">
+		@gallerySidebar(activePath)
+		<div class="sidebar-content">
+			{ children... }
+		</div>
+	</div>
+	@confirmDialog()
+	@galleryScripts()
+}
+
+templ gallerySidebar(activePath string) {
+	<nav class="sidebar" id="gallery-sidebar" aria-label="Gallery">
+		@sidebarLink(activePath, "/apps/gallery/", "Timeline")
+		@sidebarLink(activePath, "/apps/gallery/starred", "Starred")
+		@sidebarLink(activePath, "/apps/gallery/albums", "Albums")
+		@sidebarLink(activePath, "/apps/gallery/people", "People")
+		@sidebarLink(activePath, "/apps/gallery/tags", "Tags")
+		@sidebarLink(activePath, "/apps/gallery/videos", "Videos")
+		@sidebarLink(activePath, "/apps/gallery/duplicates", "Duplicates")
 		<div class="sidebar-divider"></div>
-		<a href="/apps/gallery/settings" class={ sidebarClass(activePath, "/apps/gallery/settings") }>
-			Settings
-		</a>
+		@sidebarLink(activePath, "/apps/gallery/settings", "Settings")
 		<div
 			hx-get="/apps/gallery/api/user-scan-status"
 			hx-trigger="load, every 5s"
@@ -52,74 +45,91 @@ templ gallerySidebar(activePath string, total int, starredCount int) {
 	</nav>
 }
 
+templ sidebarLink(activePath, href, label string) {
+	if sidebarActive(activePath, href) {
+		<a href={ templ.SafeURL(href) } class="sidebar-item active" aria-current="page">{ label }</a>
+	} else {
+		<a href={ templ.SafeURL(href) } class="sidebar-item">{ label }</a>
+	}
+}
+
 templ userScanBanner(scan ScanStatus) {
 	if scan.Running {
-		<div class="scan-banner">
+		<div class="gallery-scan-banner" role="status">
 			<span class="spinner-sm"></span>
-			Scanning...
+			Scanning…
 		</div>
 	}
 }
 
-func duplicateCardStyle(isKeep bool) string {
-	if isKeep {
-		return "border:2px solid var(--color-success)"
-	}
-	return ""
+// sidebarSections maps a detail page to the list it belongs to, so the
+// sidebar (and its phone toggle) names the section a person or album is in.
+var sidebarSections = map[string]string{
+	"/apps/gallery/album/":  "/apps/gallery/albums",
+	"/apps/gallery/person/": "/apps/gallery/people",
+	"/apps/gallery/tag/":    "/apps/gallery/tags",
+	"/apps/gallery/rename/": "/apps/gallery/settings",
 }
 
-func sidebarClass(activePath, itemPath string) string {
-	if activePath == itemPath || (itemPath != "/apps/gallery/" && strings.HasPrefix(activePath, itemPath)) {
-		return "sidebar-item active"
-	}
-	return "sidebar-item"
-}
-
-// --- Photo Grid ---
-templ photoGrid(media []Media) {
-	<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px">
-		for _, m := range media {
-			<a
-				href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/photo/%d", m.ID)) }
-				class="thumb-loading"
-				style="aspect-ratio:1;overflow:hidden;border-radius:4px;position:relative;display:block"
-			>
-				<img
-					src={ fmt.Sprintf("/apps/gallery/api/media/%d/thumbnail?size=256", m.ID) }
-					alt={ m.FileName() }
-					style="width:100%;height:100%;object-fit:cover;position:relative"
-					loading="lazy"
-				/>
-				if m.IsVideo() {
-					<span style="position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,0.6);color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75rem">
-						{ formatDuration(m.DurationMs) }
-					</span>
-				}
-			</a>
+func sidebarActive(activePath, itemPath string) bool {
+	for prefix, section := range sidebarSections {
+		if strings.HasPrefix(activePath, prefix) {
+			return section == itemPath
 		}
-	</div>
+	}
+	return activePath == itemPath || (itemPath != "/apps/gallery/" && strings.HasPrefix(activePath, itemPath))
 }
 
+// --- URLs and labels ---
+
+func photoURL(id int64) string {
+	return fmt.Sprintf("/apps/gallery/photo/%d", id)
+}
+
+func thumbURL(id int64, size int) string {
+	return fmt.Sprintf("/apps/gallery/api/media/%d/thumbnail?size=%d", id, size)
+}
+
+func faceThumbURL(id int64) string {
+	return fmt.Sprintf("/apps/gallery/api/face/%d/thumbnail", id)
+}
+
+// downloadURL is the full-size file behind a media item. The path is query
+// escaped: a name with "&", "#", "+" or "%" in it would otherwise cut the
+// path short and load nothing.
+func downloadURL(m *Media) string {
+	return "/api/files/download?path=" + url.QueryEscape(m.FilePath)
+}
+
+// takenAt is when a photo was taken, or failing that when it was indexed.
+func takenAt(m *Media) time.Time {
+	if m.DateTaken != nil {
+		return time.Unix(*m.DateTaken, 0).UTC()
+	}
+	return time.Unix(m.DateIndexed, 0).UTC()
+}
+
+// faceTitle is a face's tooltip: who it is, their estimated age, and how sure
+// the detector was. The confidence lives here rather than in the text.
 func faceTitle(f Face) string {
-	name := "Unknown"
+	name := "Not assigned to anyone"
+	if f.PersonID != nil {
+		name = "Unnamed person"
+	}
 	if f.Name != "" {
 		name = f.Name
 	}
-	parts := name
 	if f.EstimatedAge >= 0 {
-		parts += fmt.Sprintf(", age ~%d", int(f.EstimatedAge+0.5))
+		name += fmt.Sprintf(", about %d", int(f.EstimatedAge+0.5))
 	}
-	if f.Confidence > 0 {
-		parts += fmt.Sprintf(", %.0f%%", f.Confidence*100)
+	if f.Confidence > 0 && f.Confidence <= 1 {
+		name += fmt.Sprintf(" (%.0f%% sure)", f.Confidence*100)
 	}
-	return parts
+	return name
 }
 
 func faceBoxStyle(f Face) string {
-	return fmt.Sprintf(
-		"position:absolute;left:%.2f%%;top:%.2f%%;width:%.2f%%;height:%.2f%%",
-		f.X*100, f.Y*100, f.W*100, f.H*100,
-	)
+	return fmt.Sprintf("left:%.2f%%;top:%.2f%%;width:%.2f%%;height:%.2f%%", f.X*100, f.Y*100, f.W*100, f.H*100)
 }
 
 func overlayBoxStyle(o FaceOverlay) string {
@@ -133,6 +143,16 @@ func overlayBoxStyle(o FaceOverlay) string {
 	)
 }
 
+// photoFrameStyle sizes a photo's frame to the photo's shape, so face boxes
+// placed in percentages land on the faces, and caps its height.
+func photoFrameStyle(m *Media) string {
+	w, h := m.Width, m.Height
+	if w <= 0 || h <= 0 {
+		w, h = 4, 3
+	}
+	return fmt.Sprintf("--ar:%d/%d", w, h)
+}
+
 func formatDuration(ms *int64) string {
 	if ms == nil {
 		return ""
@@ -144,882 +164,1244 @@ func formatDuration(ms *int64) string {
 	return fmt.Sprintf("%d:%02d", secs/60, secs%60)
 }
 
-// --- Timeline Page ---
-templ timelinePage(activePath string, days []TimelineDay, media []Media, total int) {
-	<div class="sidebar-layout">
-		@gallerySidebar(activePath, total, 0)
-		<div class="sidebar-content">
-			<h1>Timeline</h1>
-			if len(media) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No photos yet. Upload some images to your file storage to get started.</p>
-				}
-			} else {
-				@photoGrid(media)
-			}
-		</div>
+// --- Thumbnails ---
+
+// photoGrid is the shared grid of square thumbnails.
+templ photoGrid(media []Media) {
+	<div class="gallery-grid">
+		for _, m := range media {
+			@photoTile(m)
+		}
 	</div>
 }
 
-// --- Albums Page ---
-templ albumsPage(activePath string, albums []Album) {
-	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0, 0)
-		<div class="sidebar-content">
-			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-				<h1 style="margin:0">Albums</h1>
-			</div>
-			if len(albums) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No albums yet.</p>
+// photoTile is one square thumbnail. A thumbnail that fails to load (a
+// video without a preview, a deleted file) turns into a neutral tile
+// instead of a broken image over a shimmer that never stops.
+templ photoTile(m Media) {
+	<a href={ templ.SafeURL(photoURL(m.ID)) } class="gallery-thumb" title={ m.FileName() }>
+		<img src={ thumbURL(m.ID, 256) } alt={ m.FileName() } loading="lazy" onerror="this.parentElement.classList.add('is-missing')"/>
+		if m.IsVideo() {
+			<span class="gallery-play" aria-hidden="true">
+				@playIcon()
+			</span>
+			if m.DurationMs != nil {
+				<span class="gallery-duration">{ formatDuration(m.DurationMs) }</span>
+			}
+		}
+	</a>
+}
+
+templ playIcon() {
+	<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+		<polygon points="7 4 20 12 7 20 7 4"></polygon>
+	</svg>
+}
+
+templ chevron(left bool) {
+	<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		if left {
+			<polyline points="15 18 9 12 15 6"></polyline>
+		} else {
+			<polyline points="9 18 15 12 9 6"></polyline>
+		}
+	</svg>
+}
+
+// --- Confirmation ---
+
+// confirmDialog replaces window.confirm for any gallery form marked
+// data-confirm="Question?" (and optionally data-confirm-action="Delete").
+templ confirmDialog() {
+	@ui.Modal("gallery-confirm", "Are you sure?") {
+		<div class="modal-body">
+			<p data-confirm-message></p>
+		</div>
+		<div class="modal-footer">
+			<button type="button" class="btn" data-modal-close>Cancel</button>
+			<button type="button" class="btn btn-danger" data-confirm-ok>Delete</button>
+		</div>
+	}
+}
+
+// galleryScripts holds the gallery's behaviour, all by delegation: the
+// confirmation dialog, the lightbox, face boxes, keyboard navigation, the
+// person name picker and the folder preview's error message.
+templ galleryScripts() {
+	<script type="text/javascript">
+		(function () {
+			if (window.galleryReady) return;
+			window.galleryReady = true;
+
+			// --- Confirmation dialog -------------------------------------
+			var pending = null;
+			document.addEventListener("submit", function (e) {
+				var form = e.target;
+				if (!form.hasAttribute("data-confirm") || form.dataset.confirmed === "1") return;
+				var dlg = document.getElementById("gallery-confirm");
+				if (!dlg) return;
+				e.preventDefault();
+				pending = form;
+				dlg.querySelector("[data-confirm-message]").textContent = form.getAttribute("data-confirm");
+				dlg.querySelector(".modal-title").textContent = form.getAttribute("data-confirm-title") || "Are you sure?";
+				dlg.querySelector("[data-confirm-ok]").textContent = form.getAttribute("data-confirm-action") || "Delete";
+				cogModal.open(dlg);
+			});
+			document.addEventListener("click", function (e) {
+				if (e.target.closest("[data-confirm-ok]") && pending) {
+					var form = pending;
+					pending = null;
+					form.dataset.confirmed = "1";
+					cogModal.close("gallery-confirm");
+					if (form.requestSubmit) form.requestSubmit();
+					else form.submit();
+					return;
 				}
-			} else {
-				<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
-					for _, a := range albums {
-						<a
-							href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/album/%d", a.ID)) }
-							class="card"
-							style="text-decoration:none"
-						>
-							<div style="padding:1rem">
-								<div style="font-weight:600">{ a.Name }</div>
-								<div class="text-muted" style="font-size:0.85rem">
-									{ strconv.Itoa(a.MediaCount) } items
-									if a.AlbumType > 0 {
-										<span>· { a.AlbumTypeName() }</span>
-									}
-								</div>
-							</div>
-						</a>
+				// A menu item that opens a dialog closes its menu.
+				if (e.target.closest(".dropdown [data-modal-open]") && window.cog && cog.closeDropdowns) {
+					cog.closeDropdowns();
+				}
+				var faces = e.target.closest("[data-toggle-faces]");
+				if (faces) {
+					var frame = document.querySelector(".gallery-photo-frame");
+					var on = frame.classList.toggle("show-faces");
+					faces.setAttribute("aria-pressed", on ? "true" : "false");
+					faces.textContent = on ? "Hide faces" : "Show faces";
+				}
+				if (e.target.closest("[data-lightbox-open]")) openLightbox();
+				var lb = e.target.closest(".gallery-lightbox");
+				if (lb) {
+					if (e.target.closest("[data-lightbox-close]") || e.target === lb || e.target.classList.contains("gallery-lightbox-stage")) {
+						lb.close();
+					} else if (e.target.matches("[data-lightbox-img]")) {
+						lb.classList.toggle("is-zoomed");
 					}
-				</div>
+				}
+			});
+
+			// --- Album tile menus ----------------------------------------
+			// A menu that would run off the left edge (a phone's first
+			// column) opens rightwards instead.
+			function placeTileMenu(dd) {
+				dd.classList.remove("is-start");
+				if (dd.querySelector(".dropdown-menu").getBoundingClientRect().left < 8) {
+					dd.classList.add("is-start");
+				}
 			}
+			document.addEventListener("cog:dropdown-open", function (e) {
+				if (e.target.classList && e.target.classList.contains("gallery-tile-menu")) placeTileMenu(e.target);
+			});
+			window.addEventListener("resize", function () {
+				document.querySelectorAll(".gallery-tile-menu.open").forEach(placeTileMenu);
+			});
+
+			// --- Lightbox -------------------------------------------------
+			// The full-size image loads only when the lightbox opens. Moving
+			// to the next photo keeps the lightbox open (#view).
+			function openLightbox() {
+				var lb = document.getElementById("gallery-lightbox");
+				if (!lb) return;
+				var img = lb.querySelector("[data-lightbox-img]");
+				if (!img.getAttribute("src")) img.setAttribute("src", img.getAttribute("data-src"));
+				lb.showModal();
+			}
+			function stepPhoto(dir) {
+				var link = document.querySelector("a[data-photo-nav=" + dir + "]");
+				if (!link) return false;
+				var lb = document.getElementById("gallery-lightbox");
+				window.location.href = link.getAttribute("href") + (lb && lb.open ? "#view" : "");
+				return true;
+			}
+			document.addEventListener("keydown", function (e) {
+				if (e.altKey || e.ctrlKey || e.metaKey) return;
+				if (e.target.closest && e.target.closest("input, textarea, select, [contenteditable]")) return;
+				var open = document.querySelector("dialog[open]");
+				if (open && !open.classList.contains("gallery-lightbox")) return;
+				if (e.key === "ArrowLeft" && stepPhoto("newer")) e.preventDefault();
+				if (e.key === "ArrowRight" && stepPhoto("older")) e.preventDefault();
+			});
+			var touchX = null;
+			document.addEventListener("touchstart", function (e) {
+				touchX = e.target.closest(".gallery-lightbox") ? e.touches[0].clientX : null;
+			}, { passive: true });
+			document.addEventListener("touchend", function (e) {
+				if (touchX === null) return;
+				var dx = e.changedTouches[0].clientX - touchX;
+				touchX = null;
+				if (Math.abs(dx) > 60) stepPhoto(dx > 0 ? "newer" : "older");
+			}, { passive: true });
+			document.addEventListener("DOMContentLoaded", function () {
+				if (window.location.hash === "#view") openLightbox();
+			});
+
+			// --- Folder preview -------------------------------------------
+			document.addEventListener("htmx:beforeRequest", function (e) {
+				var err = e.target.closest("form") && e.target.closest("form").querySelector("[data-preview-error]");
+				if (err) err.hidden = true;
+			});
+			document.addEventListener("htmx:responseError", function (e) {
+				var err = e.target.closest("form") && e.target.closest("form").querySelector("[data-preview-error]");
+				if (err) err.hidden = false;
+			});
+			document.addEventListener("htmx:sendError", function (e) {
+				var err = e.target.closest("form") && e.target.closest("form").querySelector("[data-preview-error]");
+				if (err) err.hidden = false;
+			});
+
+			// --- Person name picker ---------------------------------------
+			// Choosing a suggestion merges into that person or links that
+			// contact; typing a name by hand clears the choice.
+			document.addEventListener("click", function (e) {
+				var form = e.target.closest("[data-person-form]");
+				document.querySelectorAll("[data-person-form] .picker-results").forEach(function (res) {
+					if (!form || !form.contains(res)) res.innerHTML = "";
+				});
+				var opt = e.target.closest("[data-person-form] .picker-option");
+				if (!opt) return;
+				var id = opt.dataset.id;
+				var merge = form.querySelector("[data-merge-target]");
+				var contact = form.querySelector("[data-contact-target]");
+				if (id.indexOf("contact:") === 0) {
+					contact.value = id.substring(8);
+					merge.value = "";
+				} else {
+					merge.value = id;
+					contact.value = "";
+				}
+				form.querySelector("[data-person-name]").value = opt.dataset.name;
+				form.querySelector(".picker-results").innerHTML = "";
+			});
+			document.addEventListener("input", function (e) {
+				if (!e.target.matches("[data-person-name]")) return;
+				var form = e.target.closest("[data-person-form]");
+				form.querySelector("[data-merge-target]").value = "";
+				form.querySelector("[data-contact-target]").value = "";
+			});
+			document.addEventListener("keydown", function (e) {
+				if (!e.target.matches || !e.target.matches("[data-person-name]")) return;
+				var results = e.target.closest("[data-person-form]").querySelector(".picker-results");
+				var opts = results.querySelectorAll(".picker-option");
+				if (!opts.length) return;
+				var cur = results.querySelector(".picker-option.active");
+				var idx = cur ? Array.prototype.indexOf.call(opts, cur) : -1;
+				if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+					e.preventDefault();
+					if (cur) cur.classList.remove("active");
+					idx = e.key === "ArrowDown" ? (idx + 1) % opts.length : idx <= 0 ? opts.length - 1 : idx - 1;
+					opts[idx].classList.add("active");
+				} else if (e.key === "Enter" && cur) {
+					e.preventDefault();
+					cur.click();
+				} else if (e.key === "Escape") {
+					e.stopPropagation();
+					results.innerHTML = "";
+				}
+			});
+		})();
+	</script>
+}
+
+// --- Timeline ---
+templ timelinePage(activePath string, days []photoDay) {
+	@galleryLayout(activePath) {
+		@ui.PageHeader("Timeline", nil)
+		if len(days) == 0 {
+			<div class="card">
+				@ui.EmptyState("No photos yet", "Photos and videos you upload to Files show up here once the gallery has scanned them.") {
+					<a class="btn btn-primary" href="/apps/files/">Upload photos</a>
+					<a class="btn" href="/apps/gallery/settings">Choose folders</a>
+				}
+			</div>
+		} else {
+			for _, d := range days {
+				<section class="gallery-day">
+					<h2 class="gallery-day-title">{ d.Label }</h2>
+					@photoGrid(d.Media)
+				</section>
+			}
+		}
+	}
+}
+
+// --- Albums ---
+templ albumsPage(activePath string, albums []Album, csrfToken string) {
+	@galleryLayout(activePath) {
+		@ui.PageHeader("Albums", nil) {
+			<button type="button" class="btn btn-primary" data-modal-open="gallery-new-album">
+				@ui.Icon("plus")
+				New album
+			</button>
+		}
+		if len(albums) == 0 {
+			<div class="card">
+				@ui.EmptyState("No albums yet", "Collect photos into an album to keep a trip or an event together.")
+			</div>
+		} else {
+			<div class="gallery-albums">
+				for _, a := range albums {
+					<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/album/%d", a.ID)) } class="gallery-album">
+						if a.CoverMediaID != nil {
+							<span class="gallery-thumb">
+								<img src={ thumbURL(*a.CoverMediaID, 256) } alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')"/>
+							</span>
+						} else {
+							<span class="gallery-thumb is-empty"></span>
+						}
+						<span class="gallery-album-name">{ a.Name }</span>
+						<span class="gallery-album-meta">
+							{ plural(a.MediaCount, "item", "items") }
+							if a.AlbumType > 0 {
+								{ " · " + a.AlbumTypeName() }
+							}
+						</span>
+					</a>
+				}
+			</div>
+		}
+		@ui.Modal("gallery-new-album", "New album") {
+			<form method="post" action="/apps/gallery/albums">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				@albumFields("new-album", "", "")
+				<div class="modal-footer">
+					<button type="button" class="btn" data-modal-close>Cancel</button>
+					<button type="submit" class="btn btn-primary">Create album</button>
+				</div>
+			</form>
+		}
+	}
+}
+
+templ albumFields(idPrefix, name, description string) {
+	<div class="modal-body">
+		<div class="form-group">
+			<label for={ idPrefix + "-name" }>Name</label>
+			<input class="form-control" type="text" id={ idPrefix + "-name" } name="name" value={ name } required autocomplete="off"/>
+		</div>
+		<div class="form-group mb-0">
+			<label for={ idPrefix + "-description" }>Description <span class="text-muted">(optional)</span></label>
+			<textarea class="form-control" id={ idPrefix + "-description" } name="description" rows="3">{ description }</textarea>
 		</div>
 	</div>
 }
 
-// --- Album View Page ---
-templ albumViewPage(activePath string, album *Album, media []Media, csrfToken string) {
-	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0, 0)
-		<div class="sidebar-content">
-			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-				<h1 style="margin:0">{ album.Name }</h1>
-				if album.AlbumType == AlbumManual {
-					<form
-						method="post"
-						action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d", album.ID)) }
-						style="display:inline"
-					>
-						<input type="hidden" name="csrf_token" value={ csrfToken }/>
-						<button
-							type="submit"
-							class="btn btn-danger btn-sm"
-							hx-delete={ fmt.Sprintf("/apps/gallery/albums/%d", album.ID) }
-							hx-confirm="Delete this album?"
-						>
-							Delete
+templ albumViewPage(activePath string, album *Album, media []Media, candidates []Media, csrfToken string) {
+	@galleryLayout(activePath) {
+		@ui.PageHeader(album.Name, []ui.Crumb{{Label: "Albums", URL: "/apps/gallery/albums"}}) {
+			if album.AlbumType == AlbumManual {
+				<button type="button" class="btn btn-primary" data-modal-open="gallery-add-photos">
+					@ui.Icon("plus")
+					Add photos
+				</button>
+				<cog-share-button resource="album" resource-id={ strconv.FormatInt(album.ID, 10) } share-title={ album.Name } btn-class="btn">Share</cog-share-button>
+				<div class="dropdown">
+					<button type="button" class="btn btn-square" data-dropdown-toggle aria-expanded="false" aria-controls="album-menu" aria-label="More album actions">
+						@ui.Icon("more")
+					</button>
+					<div class="dropdown-menu" id="album-menu">
+						<button type="button" data-modal-open="gallery-rename-album">
+							@ui.Icon("edit")
+							Rename
 						</button>
-					</form>
+						<button type="button" class="danger" data-modal-open="gallery-delete-album">
+							@ui.Icon("trash")
+							Delete album
+						</button>
+					</div>
+				</div>
+			} else {
+				<span class="badge badge-outline">{ album.AlbumTypeName() + " album" }</span>
+			}
+		}
+		if album.Description != "" {
+			<p class="gallery-description">{ album.Description }</p>
+		}
+		if len(media) == 0 {
+			<div class="card">
+				@ui.EmptyState("This album is empty", "Add photos from your gallery to fill it.")
+			</div>
+		} else {
+			<div class="gallery-grid">
+				for _, m := range media {
+					@albumTile(album, m, csrfToken)
 				}
 			</div>
-			if album.Description != "" {
-				<p class="text-muted">{ album.Description }</p>
+		}
+		if album.AlbumType == AlbumManual {
+			@ui.Modal("gallery-add-photos", "Add photos to “"+album.Name+"”") {
+				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/add", album.ID)) }>
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<div class="modal-body">
+						if len(candidates) == 0 {
+							<p class="empty-state empty-state-sm">Every recent photo is already in this album.</p>
+						} else {
+							<div class="gallery-grid gallery-pick-grid">
+								for _, m := range candidates {
+									<label class="gallery-thumb gallery-pick" title={ m.FileName() }>
+										<input type="checkbox" name="media_id" value={ strconv.FormatInt(m.ID, 10) } aria-label={ m.FileName() }/>
+										<img src={ thumbURL(m.ID, 256) } alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')"/>
+									</label>
+								}
+							</div>
+						}
+					</div>
+					<div class="modal-footer">
+						<button type="button" class="btn" data-modal-close>Cancel</button>
+						<button type="submit" class="btn btn-primary" disabled?={ len(candidates) == 0 }>Add selected</button>
+					</div>
+				</form>
 			}
-			if len(media) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">This album is empty.</p>
-				}
-			} else {
-				@photoGrid(media)
+			@ui.Modal("gallery-rename-album", "Rename album") {
+				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/rename", album.ID)) }>
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					@albumFields("rename-album", album.Name, album.Description)
+					<div class="modal-footer">
+						<button type="button" class="btn" data-modal-close>Cancel</button>
+						<button type="submit" class="btn btn-primary">Save</button>
+					</div>
+				</form>
 			}
-		</div>
-	</div>
+			@ui.Modal("gallery-delete-album", "Delete album") {
+				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/delete", album.ID)) }>
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<div class="modal-body">
+						<p>{ "Delete the album “" + album.Name + "”?" }</p>
+						<p class="form-help">Its photos stay in your gallery and in Files.</p>
+					</div>
+					<div class="modal-footer">
+						<button type="button" class="btn" data-modal-close>Cancel</button>
+						<button type="submit" class="btn btn-danger">Delete album</button>
+					</div>
+				</form>
+			}
+		}
+	}
 }
 
-// --- Photo View Page ---
-templ photoViewPage(activePath string, m *Media, tags []Tag, faces []Face, csrfToken string, isFavorite bool) {
-	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0, 0)
-		<div class="sidebar-content">
-			<div class="flex items-center gap-1 mb-2">
-				<h1 style="margin:0">{ m.FileName() }</h1>
-				@ui.Star(isFavorite, fmt.Sprintf("/apps/gallery/media/%d/star", m.ID))
-			</div>
-			<div style="display:grid;grid-template-columns:1fr 300px;gap:1rem">
-				<div>
-					if m.IsVideo() {
-						<video controls style="max-width:100%;border-radius:4px">
-							<source src={ fmt.Sprintf("/api/files/download?path=%s", m.FilePath) } type={ m.MimeType }/>
-						</video>
-					} else {
-						<div class="face-container" style={ fmt.Sprintf("position:relative;max-width:100%%;aspect-ratio:%d/%d", m.Width, m.Height) }>
-							<img
-								src={ fmt.Sprintf("/apps/gallery/api/media/%d/thumbnail?size=1024", m.ID) }
-								alt={ m.FileName() }
-								style="width:100%;height:100%;border-radius:4px;display:block;cursor:zoom-in"
-								data-full-src={ fmt.Sprintf("/api/files/download?path=%s", m.FilePath) }
-								onclick="openLightbox(this)"
-							/>
-							for _, f := range faces {
-								if f.PersonID != nil {
-									<a
-										href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)) }
-										class="face-box"
-										title={ faceTitle(f) }
-										style={ faceBoxStyle(f) }
-									></a>
-								} else {
-									<div
-										class="face-box"
-										title={ faceTitle(f) }
-										style={ faceBoxStyle(f) }
-									></div>
-								}
-							}
-						</div>
-						<script>
-							function openLightbox(img) {
-								var src = img.getAttribute("data-full-src");
-								var overlay = document.createElement("div");
-								overlay.className = "lightbox";
-								var lbImg = document.createElement("img");
-								lbImg.src = src;
-								lbImg.alt = "";
-								var closeBtn = document.createElement("button");
-								closeBtn.className = "lightbox-close";
-								closeBtn.setAttribute("aria-label", "Close");
-								closeBtn.innerHTML = "&times;";
-								overlay.appendChild(closeBtn);
-								overlay.appendChild(lbImg);
-
-								function closeLightbox() {
-									overlay.remove();
-									document.removeEventListener("keydown", keyHandler);
-								}
-
-								lbImg.addEventListener("click", function (e) {
-									e.stopPropagation();
-									overlay.classList.toggle("lightbox-full");
-								});
-
-								overlay.addEventListener("click", function (e) {
-									if (e.target === overlay || e.target === closeBtn) {
-										closeLightbox();
-									}
-								});
-
-								function keyHandler(e) {
-									if (e.key === "Escape") closeLightbox();
-								}
-								document.addEventListener("keydown", keyHandler);
-								document.body.appendChild(overlay);
-							}
-						</script>
-					}
-				</div>
-				<div>
-					@ui.Card("Details") {
-						<table style="width:100%;font-size:0.85rem">
-							<tr>
-								<td class="text-muted">Filename</td>
-								<td>{ m.FileName() }</td>
-							</tr>
-							<tr>
-								<td class="text-muted">Size</td>
-								<td>{ strconv.Itoa(m.Width) }×{ strconv.Itoa(m.Height) }</td>
-							</tr>
-							if m.DateTaken != nil {
-								<tr>
-									<td class="text-muted">Date</td>
-									<td>{ time.Unix(*m.DateTaken, 0).Format("Jan 2, 2006 3:04 PM") }</td>
-								</tr>
-							}
-							if m.CameraModel != "" {
-								<tr>
-									<td class="text-muted">Camera</td>
-									<td>{ strings.TrimSpace(m.CameraMake + " " + m.CameraModel) }</td>
-								</tr>
-							}
-							if m.LensModel != "" {
-								<tr>
-									<td class="text-muted">Lens</td>
-									<td>{ m.LensModel }</td>
-								</tr>
-							}
-							if m.FNumber != nil {
-								<tr>
-									<td class="text-muted">Aperture</td>
-									<td>f/{ fmt.Sprintf("%.1f", *m.FNumber) }</td>
-								</tr>
-							}
-							if m.ExposureTime != "" {
-								<tr>
-									<td class="text-muted">Shutter</td>
-									<td>{ m.ExposureTime }</td>
-								</tr>
-							}
-							if m.ISO != nil {
-								<tr>
-									<td class="text-muted">ISO</td>
-									<td>{ strconv.Itoa(*m.ISO) }</td>
-								</tr>
-							}
-							if m.FocalLength != nil {
-								<tr>
-									<td class="text-muted">Focal Length</td>
-									<td>{ fmt.Sprintf("%.0fmm", *m.FocalLength) }</td>
-								</tr>
-							}
-							if m.PlaceName != "" {
-								<tr>
-									<td class="text-muted">Location</td>
-									<td>{ m.PlaceName }</td>
-								</tr>
-							}
-							if m.IsVideo() && m.DurationMs != nil {
-								<tr>
-									<td class="text-muted">Duration</td>
-									<td>{ formatDuration(m.DurationMs) }</td>
-								</tr>
-								if m.VideoCodec != "" {
-									<tr>
-										<td class="text-muted">Codec</td>
-										<td>{ m.VideoCodec }</td>
-									</tr>
-								}
-							}
-							if m.Fingerprint != "" && m.Fingerprint != "-" {
-								<tr>
-									<td class="text-muted">Fingerprint</td>
-									<td><code style="font-size:0.75rem">{ m.Fingerprint }</code></td>
-								</tr>
-							}
-						</table>
-					}
-					@ui.Card("Tags") {
-						<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:0.5rem">
-							for _, t := range tags {
-								<form
-									method="post"
-									action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/remove-tag", m.ID)) }
-									style="display:inline"
-								>
-									<input type="hidden" name="csrf_token" value={ csrfToken }/>
-									<input type="hidden" name="tag_id" value={ strconv.FormatInt(t.ID, 10) }/>
-									<button type="submit" class="badge" style="cursor:pointer;border:none;background:var(--color-bg-secondary)" title={ fmt.Sprintf("%.0f%% confidence", t.Confidence*100) }>
-										{ t.Name } ×
-									</button>
-								</form>
-							}
-						</div>
-						<form
-							method="post"
-							action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/tags", m.ID)) }
-							style="display:flex;gap:4px"
-						>
+// albumTile is a photo in an album: its thumbnail, a "Cover" mark on the
+// one the album shows, and a menu in the corner to make it the cover or
+// (in a manual album) take it out.
+templ albumTile(album *Album, m Media, csrfToken string) {
+	<div class="gallery-tile">
+		@photoTile(m)
+		if isAlbumCover(album, m.ID) {
+			<span class="gallery-cover-badge">Cover</span>
+		}
+		if !isAlbumCover(album, m.ID) || album.AlbumType == AlbumManual {
+			<div class="dropdown gallery-tile-action gallery-tile-menu">
+				<button
+					type="button"
+					class="gallery-tile-button"
+					data-dropdown-toggle
+					aria-expanded="false"
+					aria-controls={ fmt.Sprintf("album-photo-%d-menu", m.ID) }
+					aria-label={ "Actions for " + m.FileName() }
+					title="Actions"
+				>
+					@ui.Icon("more")
+				</button>
+				<div class="dropdown-menu" id={ fmt.Sprintf("album-photo-%d-menu", m.ID) }>
+					if !isAlbumCover(album, m.ID) {
+						<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/cover", album.ID)) }>
 							<input type="hidden" name="csrf_token" value={ csrfToken }/>
-							<input type="text" name="tag_name" placeholder="Add tag..." class="input input-sm" style="flex:1"/>
-							<button type="submit" class="btn btn-sm">Add</button>
+							<input type="hidden" name="media_id" value={ strconv.FormatInt(m.ID, 10) }/>
+							<button type="submit" data-set-cover>
+								@coverIcon()
+								Set as album cover
+							</button>
 						</form>
 					}
-					@ui.Card("Faces") {
-						if len(faces) > 0 {
-							<div style="display:flex;flex-direction:column;gap:6px">
-								for _, f := range faces {
-									<div style="display:flex;align-items:center;gap:8px">
-										<img
-											src={ fmt.Sprintf("/apps/gallery/api/face/%d/thumbnail", f.ID) }
-											alt={ faceTitle(f) }
-											style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0"
-										/>
-										if f.PersonID != nil {
-											<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)) } style="text-decoration:none;font-size:0.85rem;flex:1;min-width:0">
-												{ faceTitle(f) }
-											</a>
-										} else {
-											<form
-												method="post"
-												action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/faces/%d/new-person", f.ID)) }
-												style="display:inline;flex:1;min-width:0"
-											>
-												<input type="hidden" name="csrf_token" value={ csrfToken }/>
-												<button type="submit" class="badge" style="cursor:pointer;border:none;background:var(--color-bg);font-size:0.85rem" title="Create person from this face">
-													Unknown +
-												</button>
-											</form>
-										}
-										<form
-											method="post"
-											action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/delete-face", m.ID)) }
-											style="display:inline;flex-shrink:0"
-										>
-											<input type="hidden" name="csrf_token" value={ csrfToken }/>
-											<input type="hidden" name="face_id" value={ strconv.FormatInt(f.ID, 10) }/>
-											<button type="submit" class="btn btn-sm" style="padding:0 4px;font-size:0.7rem;line-height:1" title="Delete face">×</button>
-										</form>
-									</div>
-								}
-							</div>
-						} else {
-							<p class="text-muted" style="margin:0;font-size:0.85rem">No faces detected.</p>
+					if album.AlbumType == AlbumManual {
+						if !isAlbumCover(album, m.ID) {
+							<div class="dropdown-divider"></div>
 						}
-					}
-					if strings.TrimSpace(m.OCRText) != "" {
-						@ui.Card("Text (OCR)") {
-							<pre style="white-space:pre-wrap;font-size:0.85rem;margin:0">{ strings.TrimSpace(m.OCRText) }</pre>
-						}
-					}
-				</div>
-			</div>
-		</div>
-	</div>
-}
-
-// --- People Page ---
-templ peoplePage(activePath string, people []Person, allCount, unnamedCount int, unnamedOnly bool) {
-	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0, 0)
-		<div class="sidebar-content">
-			<h1>People</h1>
-			if allCount > 0 {
-				<div class="flex gap-1 mb-2">
-					<a
-						href="/apps/gallery/people"
-						class={ "btn btn-sm", templ.KV("btn-primary", !unnamedOnly), templ.KV("btn-outline", unnamedOnly) }
-					>
-						All ({ strconv.Itoa(allCount) })
-					</a>
-					<a
-						href="/apps/gallery/people?filter=unnamed"
-						class={ "btn btn-sm", templ.KV("btn-primary", unnamedOnly), templ.KV("btn-outline", !unnamedOnly) }
-					>
-						Unnamed ({ strconv.Itoa(unnamedCount) })
-					</a>
-				</div>
-			}
-			if len(people) == 0 {
-				@ui.Card("") {
-					if unnamedOnly {
-						<p class="text-muted">Everyone has a name. Nothing left to categorize.</p>
-					} else {
-						<p class="text-muted">No people recognized yet. Enable image recognition in settings.</p>
-					}
-				}
-			} else {
-				<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">
-					for _, p := range people {
-						<a
-							href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", p.ID)) }
-							class="card"
-							style="text-decoration:none;text-align:center;padding:0.5rem"
+						<form
+							method="post"
+							action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/remove", album.ID)) }
+							data-confirm={ "Remove “" + m.FileName() + "” from “" + album.Name + "”? It stays in your gallery." }
+							data-confirm-title="Remove from album"
+							data-confirm-action="Remove"
 						>
-							if p.BestFaceID != nil {
-								<div class="thumb-loading" style="width:100%;aspect-ratio:1;border-radius:50%;overflow:hidden;margin-bottom:0.5rem">
-									<img
-										src={ fmt.Sprintf("/apps/gallery/api/face/%d/thumbnail", *p.BestFaceID) }
-										alt={ p.DisplayName() }
-										style="width:100%;height:100%;object-fit:cover;position:relative"
-										loading="lazy"
-									/>
-								</div>
-							}
-							<div style="font-weight:600">{ p.DisplayName() }</div>
-							<div class="text-muted" style="font-size:0.85rem">
-								{ strconv.Itoa(p.FaceCount) } photos
-							</div>
-						</a>
+							<input type="hidden" name="csrf_token" value={ csrfToken }/>
+							<input type="hidden" name="media_id" value={ strconv.FormatInt(m.ID, 10) }/>
+							<button type="submit" class="danger">
+								@ui.Icon("x")
+								Remove from album
+							</button>
+						</form>
 					}
 				</div>
-			}
-		</div>
+			</div>
+		}
 	</div>
 }
 
-// --- Person View Page ---
-templ personViewPage(activePath string, person *Person, faces []FaceWithMedia, csrfToken string) {
-	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0, 0)
-		<div class="sidebar-content">
-			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-				<h1 style="margin:0">{ person.DisplayName() }</h1>
-				<div class="flex gap-1">
-					@personNameForm(person, csrfToken)
-					<form
-						method="post"
-						action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/hide", person.ID)) }
-						style="display:inline"
-					>
+// isAlbumCover reports whether the album shows this photo as its cover: the
+// one chosen, or its first photo when none is.
+func isAlbumCover(album *Album, mediaID int64) bool {
+	return album.CoverMediaID != nil && *album.CoverMediaID == mediaID
+}
+
+templ coverIcon() {
+	<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+		<circle cx="8.5" cy="8.5" r="1.5"></circle>
+		<polyline points="21 15 16 10 5 21"></polyline>
+	</svg>
+}
+
+// --- Photo ---
+
+// photoView is everything the photo page shows.
+type photoView struct {
+	Media    *Media
+	Tags     []Tag
+	Faces    []Face
+	Albums   []Album // manual albums, for "Add to album"
+	Newer    int64   // the photo before this one in the timeline, or 0
+	Older    int64   // the photo after it, or 0
+	Favorite bool
+}
+
+// photoViewPage leaves out the gallery sidebar so the photo gets the width;
+// the breadcrumb leads back.
+templ photoViewPage(v photoView, csrfToken string) {
+	@ui.PageHeader(v.Media.FileName(), []ui.Crumb{{Label: "Gallery", URL: "/apps/gallery/"}}) {
+		@ui.Star(v.Favorite, fmt.Sprintf("/apps/gallery/media/%d/star", v.Media.ID))
+		<a class="btn" href={ templ.SafeURL(downloadURL(v.Media)) } download={ v.Media.FileName() }>
+			@ui.Icon("download")
+			Download
+		</a>
+		<div class="dropdown">
+			<button type="button" class="btn" data-dropdown-toggle aria-expanded="false" aria-controls="add-to-album-menu">
+				@ui.Icon("plus")
+				Add to album
+			</button>
+			<div class="dropdown-menu" id="add-to-album-menu">
+				for _, a := range v.Albums {
+					<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/add", a.ID)) }>
 						<input type="hidden" name="csrf_token" value={ csrfToken }/>
-						<button type="submit" class="btn btn-sm" title="Hide this person">Hide</button>
+						<input type="hidden" name="media_id" value={ strconv.FormatInt(v.Media.ID, 10) }/>
+						<input type="hidden" name="return" value={ photoURL(v.Media.ID) }/>
+						<button type="submit">{ a.Name }</button>
 					</form>
-				</div>
-			</div>
-			if len(faces) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No photos of this person.</p>
 				}
+				if len(v.Albums) > 0 {
+					<div class="dropdown-divider"></div>
+				}
+				<a href="/apps/gallery/albums">
+					@ui.Icon("plus")
+					New album…
+				</a>
+			</div>
+		</div>
+		<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/delete", v.Media.ID)) } data-confirm={ "Move “" + v.Media.FileName() + "” to the trash? It leaves the gallery and every album." } data-confirm-title="Delete photo">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<button type="submit" class="btn btn-outline-danger">
+				@ui.Icon("trash")
+				Delete
+			</button>
+		</form>
+	}
+	<div class="gallery-photo-layout">
+		<div class="gallery-photo-main">
+			if v.Media.IsVideo() {
+				<video class="gallery-video" controls preload="metadata">
+					<source src={ downloadURL(v.Media) } type={ v.Media.MimeType }/>
+				</video>
 			} else {
-				@personFaceGrid(person.ID, faces, csrfToken)
+				<div class="gallery-photo-frame" style={ photoFrameStyle(v.Media) }>
+					<button type="button" class="gallery-photo-open" data-lightbox-open aria-label="View full size">
+						<img src={ thumbURL(v.Media.ID, 1024) } alt={ v.Media.FileName() }/>
+					</button>
+					for _, f := range v.Faces {
+						if f.PersonID != nil {
+							<a
+								href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)) }
+								class="face-box"
+								title={ faceTitle(f) }
+								style={ faceBoxStyle(f) }
+								tabindex="-1"
+							></a>
+						} else {
+							<span class="face-box" title={ faceTitle(f) } style={ faceBoxStyle(f) }></span>
+						}
+					}
+				</div>
+			}
+			<div class="gallery-photo-toolbar">
+				if v.Newer != 0 {
+					<a class="btn btn-sm" href={ templ.SafeURL(photoURL(v.Newer)) } data-photo-nav="newer" title="Newer photo (←)">
+						@chevron(true)
+						Newer
+					</a>
+				} else {
+					<span class="btn btn-sm" aria-disabled="true">
+						@chevron(true)
+						Newer
+					</span>
+				}
+				if len(v.Faces) > 0 && !v.Media.IsVideo() {
+					<button type="button" class="btn btn-sm btn-ghost" data-toggle-faces aria-pressed="false">Show faces</button>
+				}
+				if v.Older != 0 {
+					<a class="btn btn-sm" href={ templ.SafeURL(photoURL(v.Older)) } data-photo-nav="older" title="Older photo (→)">
+						Older
+						@chevron(false)
+					</a>
+				} else {
+					<span class="btn btn-sm" aria-disabled="true">
+						Older
+						@chevron(false)
+					</span>
+				}
+			</div>
+		</div>
+		<div class="gallery-photo-side">
+			@ui.Card("Details") {
+				<dl class="gallery-meta">
+					<dt>File</dt>
+					<dd>{ v.Media.FileName() }</dd>
+					<dt>Size</dt>
+					<dd>{ strconv.Itoa(v.Media.Width) } × { strconv.Itoa(v.Media.Height) }</dd>
+					if v.Media.DateTaken != nil {
+						<dt>Taken</dt>
+						<dd>{ time.Unix(*v.Media.DateTaken, 0).UTC().Format("Jan 2, 2006 3:04 PM") }</dd>
+					}
+					if v.Media.CameraModel != "" {
+						<dt>Camera</dt>
+						<dd>{ strings.TrimSpace(v.Media.CameraMake + " " + v.Media.CameraModel) }</dd>
+					}
+					if v.Media.LensModel != "" {
+						<dt>Lens</dt>
+						<dd>{ v.Media.LensModel }</dd>
+					}
+					if v.Media.FNumber != nil {
+						<dt>Aperture</dt>
+						<dd>f/{ fmt.Sprintf("%.1f", *v.Media.FNumber) }</dd>
+					}
+					if v.Media.ExposureTime != "" {
+						<dt>Shutter</dt>
+						<dd>{ v.Media.ExposureTime }</dd>
+					}
+					if v.Media.ISO != nil {
+						<dt>ISO</dt>
+						<dd>{ strconv.Itoa(*v.Media.ISO) }</dd>
+					}
+					if v.Media.FocalLength != nil {
+						<dt>Focal length</dt>
+						<dd>{ fmt.Sprintf("%.0f mm", *v.Media.FocalLength) }</dd>
+					}
+					if v.Media.PlaceName != "" {
+						<dt>Location</dt>
+						<dd>{ v.Media.PlaceName }</dd>
+					}
+					if v.Media.IsVideo() && v.Media.DurationMs != nil {
+						<dt>Duration</dt>
+						<dd>{ formatDuration(v.Media.DurationMs) }</dd>
+						if v.Media.VideoCodec != "" {
+							<dt>Codec</dt>
+							<dd>{ v.Media.VideoCodec }</dd>
+						}
+					}
+					if v.Media.Fingerprint != "" && v.Media.Fingerprint != "-" {
+						<dt>Fingerprint</dt>
+						<dd><code>{ v.Media.Fingerprint }</code></dd>
+					}
+				</dl>
+			}
+			@ui.Card("Tags") {
+				if len(v.Tags) > 0 {
+					<ul class="chip-group gallery-tag-list">
+						for _, t := range v.Tags {
+							<li class="chip">
+								<a href={ templ.SafeURL("/apps/gallery/tag/" + url.PathEscape(t.Name)) }>{ t.Name }</a>
+								<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/remove-tag", v.Media.ID)) }>
+									<input type="hidden" name="csrf_token" value={ csrfToken }/>
+									<input type="hidden" name="tag_id" value={ strconv.FormatInt(t.ID, 10) }/>
+									<button type="submit" class="chip-remove" aria-label={ "Remove tag " + t.Name } title="Remove tag">
+										@ui.Icon("x")
+									</button>
+								</form>
+							</li>
+						}
+					</ul>
+				}
+				<form class="gallery-tag-form" method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/tags", v.Media.ID)) }>
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<label class="sr-only" for="gallery-add-tag">Add a tag</label>
+					<input type="text" id="gallery-add-tag" name="tag_name" placeholder="Add a tag…" class="form-control form-control-sm" required autocomplete="off"/>
+					<button type="submit" class="btn btn-sm">Add</button>
+				</form>
+			}
+			@ui.Card("Faces") {
+				if len(v.Faces) > 0 {
+					<ul class="gallery-face-list">
+						for _, f := range v.Faces {
+							<li>
+								<img class="avatar-md" src={ faceThumbURL(f.ID) } alt="" loading="lazy"/>
+								<div class="gallery-face-label" title={ faceTitle(f) }>
+									if f.PersonID != nil && f.Name != "" {
+										<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)) }>{ f.Name }</a>
+									} else if f.PersonID != nil {
+										<a class="gallery-unnamed" href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)) }>Unnamed person</a>
+									} else {
+										<span class="gallery-unnamed">Not assigned</span>
+										<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/faces/%d/new-person", f.ID)) }>
+											<input type="hidden" name="csrf_token" value={ csrfToken }/>
+											<button type="submit" class="btn-link gallery-inline-action">Create person</button>
+										</form>
+									}
+									if f.EstimatedAge >= 0 {
+										<div class="text-xs text-muted">{ fmt.Sprintf("About %d years old", int(f.EstimatedAge+0.5)) }</div>
+									}
+								</div>
+								<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/delete-face", v.Media.ID)) } data-confirm="Remove this face from the photo? The photo itself is kept." data-confirm-title="Remove face" data-confirm-action="Remove">
+									<input type="hidden" name="csrf_token" value={ csrfToken }/>
+									<input type="hidden" name="face_id" value={ strconv.FormatInt(f.ID, 10) }/>
+									<button type="submit" class="btn-icon btn-icon-sm btn-icon-danger" aria-label="Remove face" title="Remove face">
+										@ui.Icon("x")
+									</button>
+								</form>
+							</li>
+						}
+					</ul>
+				} else {
+					<p class="empty-state empty-state-sm">No faces found in this photo.</p>
+				}
+			}
+			if strings.TrimSpace(v.Media.OCRText) != "" {
+				@ui.Card("Text in the photo") {
+					<pre class="gallery-ocr">{ strings.TrimSpace(v.Media.OCRText) }</pre>
+				}
 			}
 		</div>
 	</div>
+	if !v.Media.IsVideo() {
+		<dialog class="gallery-lightbox" id="gallery-lightbox" aria-label={ v.Media.FileName() }>
+			<div class="gallery-lightbox-stage">
+				<img data-lightbox-img data-src={ downloadURL(v.Media) } alt={ v.Media.FileName() }/>
+			</div>
+			if v.Newer != 0 {
+				<a class="gallery-lightbox-nav gallery-lightbox-prev" href={ templ.SafeURL(photoURL(v.Newer) + "#view") } aria-label="Newer photo">
+					@chevron(true)
+				</a>
+			}
+			if v.Older != 0 {
+				<a class="gallery-lightbox-nav gallery-lightbox-next" href={ templ.SafeURL(photoURL(v.Older) + "#view") } aria-label="Older photo">
+					@chevron(false)
+				</a>
+			}
+			<div class="gallery-lightbox-bar">
+				<div class="gallery-lightbox-caption">
+					<span class="gallery-lightbox-name">{ v.Media.FileName() }</span>
+					<span>{ takenAt(v.Media).Format("Jan 2, 2006") }</span>
+				</div>
+				<a class="gallery-lightbox-button" href={ templ.SafeURL(downloadURL(v.Media)) } download={ v.Media.FileName() } aria-label="Download" title="Download">
+					@ui.Icon("download")
+				</a>
+				<button type="button" class="gallery-lightbox-button" data-lightbox-close aria-label="Close" title="Close (Esc)" autofocus>
+					@ui.Icon("x")
+				</button>
+			</div>
+		</dialog>
+	}
+	@confirmDialog()
+	@galleryScripts()
+}
+
+// --- People ---
+templ peoplePage(activePath string, people []Person, allCount, unnamedCount int, unnamedOnly bool, admin bool) {
+	@galleryLayout(activePath) {
+		@ui.PageHeader("People", nil)
+		if allCount > 0 {
+			<nav class="gallery-segmented" aria-label="Filter people">
+				@segmentLink("/apps/gallery/people", "All", allCount, !unnamedOnly)
+				@segmentLink("/apps/gallery/people?filter=unnamed", "Unnamed", unnamedCount, unnamedOnly)
+			</nav>
+		}
+		if len(people) == 0 {
+			<div class="card">
+				if unnamedOnly {
+					@ui.EmptyState("Everyone has a name", "There is nobody left to name.")
+				} else {
+					@recognitionEmpty("No people yet", "face detection", admin)
+				}
+			</div>
+		} else {
+			<div class="gallery-people">
+				for _, p := range people {
+					<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", p.ID)) } class="gallery-person">
+						if p.BestFaceID != nil {
+							<span class="gallery-thumb gallery-thumb-round">
+								<img src={ faceThumbURL(*p.BestFaceID) } alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')"/>
+							</span>
+						} else {
+							<span class="gallery-thumb gallery-thumb-round is-missing"></span>
+						}
+						if p.Name == "" {
+							<span class="gallery-person-name gallery-unnamed">Unnamed</span>
+						} else {
+							<span class="gallery-person-name">{ p.Name }</span>
+						}
+						<span class="gallery-album-meta">{ plural(p.FaceCount, "photo", "photos") }</span>
+					</a>
+				}
+			</div>
+		}
+	}
+}
+
+templ segmentLink(href, label string, count int, active bool) {
+	if active {
+		<a href={ templ.SafeURL(href) } aria-current="page">{ label } <span class="count">{ strconv.Itoa(count) }</span></a>
+	} else {
+		<a href={ templ.SafeURL(href) }>{ label } <span class="count">{ strconv.Itoa(count) }</span></a>
+	}
+}
+
+// recognitionEmpty explains an empty page that recognition fills: an
+// administrator gets a link to turn it on, anyone else who to ask.
+templ recognitionEmpty(title, feature string, admin bool) {
+	if admin {
+		@ui.EmptyState(title, "They appear here once "+feature+" is turned on and the gallery has scanned your photos.") {
+			<a class="btn btn-primary" href="/admin/plugins/gallery">Open gallery settings</a>
+		}
+	} else {
+		@ui.EmptyState(title, "They appear here once your administrator turns on "+feature+" and the gallery has scanned your photos.")
+	}
+}
+
+templ personViewPage(activePath string, person *Person, faces []FaceWithMedia, csrfToken string) {
+	@galleryLayout(activePath) {
+		@ui.PageHeader(person.DisplayName(), []ui.Crumb{{Label: "People", URL: "/apps/gallery/people"}}) {
+			<button type="button" class="btn btn-primary" data-modal-open="gallery-name-person">
+				@ui.Icon("edit")
+				if person.Name == "" {
+					Name
+				} else {
+					Rename
+				}
+			</button>
+			<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/hide", person.ID)) } data-confirm={ "Hide " + person.DisplayName() + "? They no longer appear in People; their photos stay in the gallery." } data-confirm-title="Hide person" data-confirm-action="Hide">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<button type="submit" class="btn">Hide</button>
+			</form>
+		}
+		if len(faces) == 0 {
+			<div class="card">
+				@ui.EmptyState("No photos of this person", "")
+			</div>
+		} else {
+			@personFaceGrid(person, faces, csrfToken)
+		}
+		@ui.Modal("gallery-name-person", "Name this person") {
+			@personNameForm(person, csrfToken)
+		}
+	}
 }
 
 templ personNameForm(person *Person, csrfToken string) {
-	<form
-		method="post"
-		action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/name", person.ID)) }
-		style="display:flex;gap:4px"
-	>
+	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/name", person.ID)) } data-person-form>
 		<input type="hidden" name="csrf_token" value={ csrfToken }/>
-		<input type="hidden" name="merge_into" value="" class="merge-target"/>
-		<input type="hidden" name="contact_uid" value="" class="contact-target"/>
-		<div class="picker" style="flex:1">
-			<input
-				type="text"
-				name="name"
-				value={ person.Name }
-				placeholder="Name this person"
-				class="form-control search-input person-name-input"
-				autocomplete="off"
-				hx-get={ fmt.Sprintf("/apps/gallery/api/people/search?exclude=%d", person.ID) }
-				hx-trigger="input changed delay:200ms"
-				hx-target="next .picker-results"
-				hx-include="this"
-				hx-params="name"
-			/>
-			<div class="picker-results"></div>
+		<input type="hidden" name="merge_into" value="" data-merge-target/>
+		<input type="hidden" name="contact_uid" value="" data-contact-target/>
+		<div class="modal-body gallery-name-body">
+			<div class="form-group mb-0">
+				<label for="gallery-person-name">Name</label>
+				<div class="picker">
+					<input
+						type="text"
+						id="gallery-person-name"
+						name="name"
+						value={ person.Name }
+						placeholder="Type a name"
+						class="form-control"
+						autocomplete="off"
+						data-person-name
+						hx-get={ fmt.Sprintf("/apps/gallery/api/people/search?exclude=%d", person.ID) }
+						hx-trigger="input changed delay:200ms"
+						hx-target="next .picker-results"
+						hx-include="this"
+						hx-params="name"
+					/>
+					<div class="picker-results"></div>
+				</div>
+				<p class="form-help">Pick someone from the list to merge their photos with this person's, or a contact to link them.</p>
+			</div>
 		</div>
-		<button type="submit" class="btn btn-primary btn-sm">Save</button>
-		<script>
-			(function () {
-				var form = document.currentScript.parentElement;
-				var input = form.querySelector(".person-name-input");
-				var results = form.querySelector(".picker-results");
-				var mergeField = form.querySelector(".merge-target");
-				var contactField = form.querySelector(".contact-target");
-
-				// Close when clicking outside.
-				document.addEventListener("click", function (e) {
-					if (!form.contains(e.target)) results.innerHTML = "";
-				});
-
-				// Handle result click — merge into person or link to contact.
-				results.addEventListener("click", function (e) {
-					var opt = e.target.closest(".picker-option");
-					if (!opt) return;
-					var id = opt.dataset.id;
-					if (id.indexOf("contact:") === 0) {
-						contactField.value = id.substring(8);
-						mergeField.value = "";
-					} else {
-						mergeField.value = id;
-						contactField.value = "";
-					}
-					input.value = opt.dataset.name;
-					results.innerHTML = "";
-				});
-
-				// Clear merge/contact targets when user edits name manually.
-				input.addEventListener("input", function () {
-					mergeField.value = "";
-					contactField.value = "";
-				});
-
-				// Keyboard navigation.
-				input.addEventListener("keydown", function (e) {
-					var opts = results.querySelectorAll(".picker-option");
-					if (!opts.length) return;
-					var cur = results.querySelector(".picker-option.active");
-					var idx = cur ? Array.prototype.indexOf.call(opts, cur) : -1;
-					if (e.key === "ArrowDown") {
-						e.preventDefault();
-						if (cur) cur.classList.remove("active");
-						idx = (idx + 1) % opts.length;
-						opts[idx].classList.add("active");
-					} else if (e.key === "ArrowUp") {
-						e.preventDefault();
-						if (cur) cur.classList.remove("active");
-						idx = idx <= 0 ? opts.length - 1 : idx - 1;
-						opts[idx].classList.add("active");
-					} else if (e.key === "Enter" && cur) {
-						e.preventDefault();
-						cur.click();
-					} else if (e.key === "Escape") {
-						results.innerHTML = "";
-					}
-				});
-			})();
-		</script>
+		<div class="modal-footer">
+			<button type="button" class="btn" data-modal-close>Cancel</button>
+			<button type="submit" class="btn btn-primary">Save</button>
+		</div>
 	</form>
 }
 
-templ personFaceGrid(personID int64, faces []FaceWithMedia, csrfToken string) {
-	<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px">
+templ personFaceGrid(person *Person, faces []FaceWithMedia, csrfToken string) {
+	<div class="gallery-grid">
 		for _, f := range faces {
-			<div style="position:relative">
-				<a
-					href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/photo/%d", f.MediaID)) }
-					class="thumb-loading"
-					style="display:block;aspect-ratio:1;overflow:hidden;border-radius:4px"
-				>
-					<img
-						src={ fmt.Sprintf("/apps/gallery/api/face/%d/thumbnail", f.ID) }
-						alt=""
-						style="width:100%;height:100%;object-fit:cover;position:relative"
-						loading="lazy"
-					/>
+			<div class="gallery-tile">
+				<a href={ templ.SafeURL(photoURL(f.MediaID)) } class="gallery-thumb">
+					<img src={ faceThumbURL(f.ID) } alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')"/>
 				</a>
 				<form
+					class="gallery-tile-action"
 					method="post"
-					action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/remove-face", personID)) }
-					style="position:absolute;top:4px;right:4px"
+					action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/remove-face", person.ID)) }
+					data-confirm={ "This photo is not of " + person.DisplayName() + "? It moves to a new, unnamed person." }
+					data-confirm-title="Not this person"
+					data-confirm-action="Remove"
 				>
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
 					<input type="hidden" name="face_id" value={ strconv.FormatInt(f.ID, 10) }/>
-					<button type="submit" class="btn btn-sm" style="min-width:44px;min-height:44px;padding:0;font-size:1.25rem;line-height:1;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:6px;cursor:pointer" title="Remove from this person">×</button>
+					<button type="submit" class="gallery-tile-remove" aria-label={ "Not " + person.DisplayName() } title={ "Not " + person.DisplayName() }>
+						@ui.Icon("x")
+					</button>
 				</form>
 			</div>
 		}
 	</div>
 }
 
-// --- Tags Page ---
-templ tagsPage(activePath string, tags []Tag) {
-	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0, 0)
-		<div class="sidebar-content">
-			<h1>Tags</h1>
-			if len(tags) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No tags yet. Enable image recognition in settings.</p>
-				}
-			} else {
-				<div style="display:flex;flex-wrap:wrap;gap:8px">
-					for _, t := range tags {
-						<a href={ templ.SafeURL("/apps/gallery/tag/" + t.Name) } class="badge" style="font-size:0.9rem;padding:6px 12px;text-decoration:none">
+// --- Tags ---
+templ tagsPage(activePath string, tags []Tag, admin bool) {
+	@galleryLayout(activePath) {
+		@ui.PageHeader("Tags", nil)
+		if len(tags) == 0 {
+			<div class="card">
+				@recognitionEmpty("No tags yet", "image recognition", admin)
+			</div>
+		} else {
+			<ul class="chip-group gallery-tags">
+				for _, t := range tags {
+					<li>
+						<a href={ templ.SafeURL("/apps/gallery/tag/" + url.PathEscape(t.Name)) } class="chip">
 							{ t.Name }
-							<span class="text-muted" style="margin-left:4px">{ strconv.Itoa(t.Count) }</span>
+							<span class="count">{ strconv.Itoa(t.Count) }</span>
 						</a>
-					}
-				</div>
-			}
-		</div>
-	</div>
+					</li>
+				}
+			</ul>
+		}
+	}
 }
 
-// --- Tag View Page ---
 templ tagViewPage(activePath string, name string, media []Media) {
-	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0, 0)
-		<div class="sidebar-content">
-			<h1>Tag: { name }</h1>
-			if len(media) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No photos with this tag.</p>
-				}
-			} else {
-				@photoGrid(media)
-			}
-		</div>
-	</div>
+	@galleryLayout(activePath) {
+		@ui.PageHeader(name, []ui.Crumb{{Label: "Tags", URL: "/apps/gallery/tags"}})
+		if len(media) == 0 {
+			<div class="card">
+				@ui.EmptyState("No photos with this tag", "")
+			</div>
+		} else {
+			@photoGrid(media)
+		}
+	}
 }
 
-// --- Videos Page ---
+// --- Videos and starred ---
 templ videosPage(media []Media) {
-	<div class="sidebar-layout">
-		@gallerySidebar("/apps/gallery/videos", 0, 0)
-		<div class="sidebar-content">
-			<h1>Videos</h1>
-			if len(media) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No videos found.</p>
-				}
-			} else {
-				@photoGrid(media)
-			}
-		</div>
-	</div>
+	@galleryLayout("/apps/gallery/videos") {
+		@ui.PageHeader("Videos", nil)
+		if len(media) == 0 {
+			<div class="card">
+				@ui.EmptyState("No videos yet", "Videos you upload to Files show up here once the gallery has scanned them.")
+			</div>
+		} else {
+			@photoGrid(media)
+		}
+	}
 }
 
-// --- Starred Page ---
-templ starredPage(media []Media, starredCount int) {
-	<div class="sidebar-layout">
-		@gallerySidebar("/apps/gallery/starred", 0, starredCount)
-		<div class="sidebar-content">
-			<h1>Starred</h1>
-			if len(media) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No starred photos. Star a photo to see it here.</p>
-				}
-			} else {
-				@photoGrid(media)
-			}
-		</div>
-	</div>
+templ starredPage(media []Media) {
+	@galleryLayout("/apps/gallery/starred") {
+		@ui.PageHeader("Starred", nil)
+		if len(media) == 0 {
+			<div class="card">
+				@ui.EmptyState("No starred photos", "Star a photo to keep it here.")
+			</div>
+		} else {
+			@photoGrid(media)
+		}
+	}
 }
 
-// --- Duplicates Page ---
+// --- Duplicates ---
 templ duplicatesPage(activePath string, groups []DuplicateGroup) {
-	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0, 0)
-		<div class="sidebar-content">
-			<h1>
-				Duplicates
-				if len(groups) > 0 {
-					<span class="badge">{ strconv.Itoa(len(groups)) } groups</span>
-				}
-			</h1>
-			if len(groups) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No duplicate photos detected.</p>
-				}
-			} else {
-				<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
-					for _, g := range groups {
-						<a
-							href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d", g.ID)) }
-							class="card"
-							style="text-decoration:none;padding:0;overflow:hidden"
-						>
-							<div class="thumb-loading" style="aspect-ratio:1;overflow:hidden">
-								<img
-									src={ fmt.Sprintf("/apps/gallery/api/media/%d/thumbnail?size=256", g.CoverMediaID) }
-									alt=""
-									style="width:100%;height:100%;object-fit:cover;position:relative"
-									loading="lazy"
-								/>
-							</div>
-							<div style="padding:0.5rem;text-align:center">
-								<span class="text-muted" style="font-size:0.85rem">{ strconv.Itoa(g.MemberCount) } duplicates</span>
-							</div>
-						</a>
-					}
-				</div>
+	@galleryLayout(activePath) {
+		@ui.PageHeader("Duplicates", nil) {
+			if len(groups) > 0 {
+				<span class="badge badge-neutral">{ plural(len(groups), "group", "groups") }</span>
 			}
-		</div>
-	</div>
+		}
+		if len(groups) == 0 {
+			<div class="card">
+				@ui.EmptyState("No duplicates found", "Photos that look the same show up here after a scan.")
+			</div>
+		} else {
+			<div class="gallery-albums">
+				for _, g := range groups {
+					<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d", g.ID)) } class="gallery-album">
+						<span class="gallery-thumb">
+							<img src={ thumbURL(g.CoverMediaID, 256) } alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')"/>
+						</span>
+						<span class="gallery-album-name">{ plural(g.MemberCount, "similar photo", "similar photos") }</span>
+					</a>
+				}
+			</div>
+		}
+	}
 }
 
-// --- Duplicate Group View Page ---
+func othersCount(members []DuplicateMember) int {
+	n := 0
+	for _, m := range members {
+		if !m.IsKeep {
+			n++
+		}
+	}
+	return n
+}
+
 templ duplicateGroupViewPage(activePath string, groupID int64, members []DuplicateMember, csrfToken string) {
-	<div class="sidebar-layout">
-		@gallerySidebar(activePath, 0, 0)
-		<div class="sidebar-content">
-			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-				<h1 style="margin:0">
-					<a href="/apps/gallery/duplicates" style="text-decoration:none">&larr;</a>
-					Duplicate Group
-				</h1>
-				<div style="display:flex;gap:4px">
-					<form
-						method="post"
-						action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/dismiss", groupID)) }
-						style="display:inline"
-					>
-						<input type="hidden" name="csrf_token" value={ csrfToken }/>
-						<button type="submit" class="btn btn-sm">Not Duplicates</button>
-					</form>
-					<form
-						method="post"
-						action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete", groupID)) }
-						style="display:inline"
-						onsubmit="return confirm('Delete non-keep files? They will be moved to trash.')"
-					>
-						<input type="hidden" name="csrf_token" value={ csrfToken }/>
-						<button type="submit" class="btn btn-danger btn-sm">Delete Non-Keep</button>
-					</form>
-					<form
-						method="post"
-						action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete-all", groupID)) }
-						style="display:inline"
-						onsubmit="return confirm('Delete ALL files in this group including the kept one? They will be moved to trash.')"
-					>
-						<input type="hidden" name="csrf_token" value={ csrfToken }/>
-						<button type="submit" class="btn btn-danger btn-sm">Delete All</button>
-					</form>
+	@galleryLayout(activePath) {
+		@ui.PageHeader("Duplicate group", []ui.Crumb{{Label: "Duplicates", URL: "/apps/gallery/duplicates"}}) {
+			<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/dismiss", groupID)) }>
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<button type="submit" class="btn">Not duplicates</button>
+			</form>
+			if othersCount(members) > 0 {
+				<form
+					method="post"
+					action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete", groupID)) }
+					data-confirm={ "Move " + plural(othersCount(members), "photo", "photos") + " to the trash and keep the one marked Keep?" }
+					data-confirm-title="Delete the others"
+				>
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<button type="submit" class="btn btn-danger">
+						@ui.Icon("trash")
+						{ "Delete " + plural(othersCount(members), "other", "others") }
+					</button>
+				</form>
+			}
+			<div class="dropdown">
+				<button type="button" class="btn btn-square" data-dropdown-toggle aria-expanded="false" aria-controls="dupe-menu" aria-label="More actions">
+					@ui.Icon("more")
+				</button>
+				<div class="dropdown-menu" id="dupe-menu">
+					<button type="button" class="danger" data-modal-open="gallery-delete-all">
+						@ui.Icon("trash")
+						Delete all, including the kept one…
+					</button>
 				</div>
 			</div>
-			<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
-				for _, m := range members {
-					<div class="card" style={ duplicateCardStyle(m.IsKeep) }>
-						<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/photo/%d", m.Media.ID)) } style="display:block;margin:-1.5rem -1.5rem 0.75rem;overflow:hidden;border-radius:6px 6px 0 0">
-							<div class="thumb-loading" style="aspect-ratio:1">
-								<img
-									src={ fmt.Sprintf("/apps/gallery/api/media/%d/thumbnail?size=256", m.Media.ID) }
-									alt={ m.Media.FileName() }
-									style="width:100%;height:100%;object-fit:cover;position:relative"
-									loading="lazy"
-								/>
-							</div>
-						</a>
+		}
+		<div class="gallery-dupes">
+			for _, m := range members {
+				<div class={ "card gallery-dupe", templ.KV("is-keep", m.IsKeep) }>
+					<a href={ templ.SafeURL(photoURL(m.Media.ID)) } class="gallery-thumb">
+						<img src={ thumbURL(m.Media.ID, 256) } alt={ m.Media.FileName() } loading="lazy" onerror="this.parentElement.classList.add('is-missing')"/>
+					</a>
+					<div class="gallery-dupe-body">
 						if m.IsKeep {
-							<div style="margin-bottom:0.5rem"><span class="badge" style="background:var(--color-success);color:#fff">Keep</span></div>
+							<span class="badge badge-success">
+								@ui.Icon("check-circle")
+								Keep
+							</span>
 						}
-						<table style="font-size:0.8rem;width:100%;margin-bottom:0.5rem">
-							<tr>
-								<td class="text-muted">Size</td>
-								<td>{ strconv.Itoa(m.Media.Width) }×{ strconv.Itoa(m.Media.Height) }</td>
-							</tr>
-							<tr>
-								<td class="text-muted">Path</td>
-								<td style="word-break:break-all">{ m.Media.FileName() }</td>
-							</tr>
+						<dl class="gallery-meta">
+							<dt>File</dt>
+							<dd>{ m.Media.FileName() }</dd>
+							<dt>Size</dt>
+							<dd>{ strconv.Itoa(m.Media.Width) } × { strconv.Itoa(m.Media.Height) }</dd>
 							if m.Distance > 0 {
-								<tr>
-									<td class="text-muted">Distance</td>
-									<td>{ fmt.Sprintf("%.0f", m.Distance) }</td>
-								</tr>
+								<dt>Difference</dt>
+								<dd>{ fmt.Sprintf("%.0f", m.Distance) }</dd>
 							}
-						</table>
-						<div style="display:flex;gap:4px;flex-wrap:wrap">
+						</dl>
+						<div class="gallery-dupe-actions">
 							if !m.IsKeep {
-								<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/keep", groupID)) } style="display:inline">
+								<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/keep", groupID)) }>
 									<input type="hidden" name="csrf_token" value={ csrfToken }/>
 									<input type="hidden" name="media_id" value={ strconv.FormatInt(m.Media.ID, 10) }/>
-									<button type="submit" class="btn btn-sm">Set as Keep</button>
+									<button type="submit" class="btn btn-sm">Keep this one</button>
 								</form>
 							}
-							<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/unmark", groupID)) } style="display:inline">
+							<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/unmark", groupID)) }>
 								<input type="hidden" name="csrf_token" value={ csrfToken }/>
 								<input type="hidden" name="media_id" value={ strconv.FormatInt(m.Media.ID, 10) }/>
-								<button type="submit" class="btn btn-sm">Not a Duplicate</button>
+								<button type="submit" class="btn btn-sm">Not a duplicate</button>
 							</form>
 							<form
+								class="ml-auto"
 								method="post"
 								action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete-member", groupID)) }
-								style="display:inline"
-								onsubmit="return confirm('Delete this file? It will be moved to trash.')"
+								data-confirm={ "Move “" + m.Media.FileName() + "” to the trash?" }
+								data-confirm-title="Delete photo"
 							>
 								<input type="hidden" name="csrf_token" value={ csrfToken }/>
 								<input type="hidden" name="media_id" value={ strconv.FormatInt(m.Media.ID, 10) }/>
-								<button type="submit" class="btn btn-danger btn-sm">Delete</button>
+								<button type="submit" class="btn-icon btn-icon-sm btn-icon-danger" aria-label={ "Delete " + m.Media.FileName() } title="Delete">
+									@ui.Icon("trash")
+								</button>
 							</form>
 						</div>
 					</div>
-				}
-			</div>
+				</div>
+			}
 		</div>
-	</div>
+		@ui.Modal("gallery-delete-all", "Delete every photo in this group") {
+			<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete-all", groupID)) }>
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<div class="modal-body">
+					<p>{ "This moves all " + plural(len(members), "photo", "photos") + " to the trash, including the one marked Keep. None of them stays in the gallery." }</p>
+					<div class="form-group mb-0 mt-2">
+						<label for="gallery-delete-all-confirm">Type <strong>delete</strong> to confirm</label>
+						<input class="form-control" id="gallery-delete-all-confirm" type="text" required pattern="[Dd][Ee][Ll][Ee][Tt][Ee]" autocomplete="off"/>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn" data-modal-close>Cancel</button>
+					<button type="submit" class="btn btn-danger">Delete all</button>
+				</div>
+			</form>
+		}
+	}
 }
 
-// --- Settings Page (per-user) ---
+// --- Settings (per user) ---
+
+const defaultRenamePattern = "{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}"
+
 templ settingsPage(db *sql.DB, total int, csrfToken string) {
-	<div class="sidebar-layout">
-		@gallerySidebar("/apps/gallery/settings", 0, 0)
-		<div class="sidebar-content">
-			<h1>Gallery Settings</h1>
-			@ui.Card("Status") {
-				<p>Indexed photos: <strong>{ strconv.Itoa(total) }</strong></p>
+	@galleryLayout("/apps/gallery/settings") {
+		@ui.PageHeader("Gallery Settings", nil)
+		<div class="card">
+			<div class="card-header">
+				<h2 class="card-title">Library</h2>
 				<form method="post" action="/apps/gallery/settings/scan">
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					<button type="submit" class="btn btn-primary btn-sm">Scan Now</button>
+					<button type="submit" class="btn">Scan now</button>
 				</form>
-			}
-			@ui.Card("Scan Folders") {
-				<p class="text-muted" style="margin-bottom:0.75rem">
-					One folder pattern per line. A trailing <code>/</code> matches everything in that folder.
-					Glob patterns like <code>Camera/*.jpg</code> are also supported.
-				</p>
-				<form method="post" action="/apps/gallery/settings/folders">
-					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					<div class="form-group" style="margin-bottom:0.75rem">
-						<label>Folder Patterns</label>
-						<textarea name="folders" class="input" rows="4" required placeholder="Photos/">{ SettingScanFolders.MustGet(db) }</textarea>
-					</div>
-					<div style="display:flex;gap:8px;align-items:center">
-						<button type="submit" class="btn btn-primary btn-sm">Save</button>
-						<button type="button" class="btn btn-sm" hx-post="/apps/gallery/api/scan-folders-preview" hx-include="closest form" hx-target="#folder-preview">Preview</button>
-					</div>
-				</form>
-				<div id="folder-preview" style="margin-top:0.75rem"></div>
-			}
-			@ui.Card("File Rename") {
-				<p class="text-muted" style="margin-bottom:0.75rem">
-					Rename files using a Go template pattern. Available variables:
-					<code>Year, Month, Day, Hour, Minute, Second, Camera, Lens, Original, Ext, Place, Country</code>
-				</p>
-				<form method="post" action="/apps/gallery/rename/preview">
-					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					<div class="form-group" style="margin-bottom:0.75rem">
-						<label>Pattern</label>
-						<input
-							type="text"
-							name="pattern"
-							class="input"
-							value={ GetSetting(db, "rename_pattern", "{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}") }
-							placeholder="{{.Year}}/{{.Month}}-{{.Day}}/{{.Original}}{{.Ext}}"
-						/>
-					</div>
-					<button type="submit" class="btn btn-primary btn-sm">Preview Rename</button>
-				</form>
-				<form method="post" action="/apps/gallery/rename/undo" style="margin-top:0.5rem">
-					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					<button type="submit" class="btn btn-sm">Undo Last Rename</button>
-				</form>
-			}
+			</div>
+			<p>{ plural(total, "photo or video", "photos and videos") } indexed.</p>
 		</div>
-	</div>
+		@ui.Card("Folders to scan") {
+			<form method="post" action="/apps/gallery/settings/folders">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<div class="form-group">
+					<label for="gallery-folders">Folder patterns</label>
+					<textarea id="gallery-folders" name="folders" class="form-control mono" rows="4" required placeholder="Photos/" aria-describedby="gallery-folders-help">{ SettingScanFolders.MustGet(db) }</textarea>
+					<p class="form-help" id="gallery-folders-help">
+						One pattern per line. A trailing <code>/</code> takes everything in that folder; globs such as <code>Camera/*.jpg</code> work too.
+					</p>
+				</div>
+				<div class="form-actions mt-0">
+					<button type="submit" class="btn btn-primary">Save</button>
+					<button
+						type="button"
+						class="btn"
+						hx-get="/apps/gallery/api/scan-folders-preview"
+						hx-include="closest form"
+						hx-params="folders"
+						hx-target="#folder-preview"
+					>Preview matches</button>
+				</div>
+				<p class="form-error" data-preview-error hidden role="alert">The preview could not be loaded. Try again.</p>
+				<div id="folder-preview" class="gallery-folder-preview" aria-live="polite"></div>
+			</form>
+		}
+		@ui.Card("Rename files") {
+			<form method="get" action="/apps/gallery/rename/preview">
+				<div class="form-group">
+					<label for="gallery-rename-pattern">Pattern</label>
+					<input
+						type="text"
+						id="gallery-rename-pattern"
+						name="pattern"
+						class="form-control mono"
+						value={ GetSetting(db, "rename_pattern", defaultRenamePattern) }
+						placeholder="{{.Year}}/{{.Month}}-{{.Day}}/{{.Original}}{{.Ext}}"
+						required
+						aria-describedby="gallery-rename-help"
+					/>
+					<p class="form-help" id="gallery-rename-help">A Go template. Available fields:</p>
+					<ul class="chip-group gallery-fields">
+						for _, f := range []string{"Year", "Month", "Day", "Hour", "Minute", "Second", "Camera", "Lens", "Original", "Ext", "Place", "Country"} {
+							<li><code>{ "{{." + f + "}}" }</code></li>
+						}
+					</ul>
+				</div>
+				<div class="form-actions mt-0">
+					<button type="submit" class="btn btn-primary" data-testid="rename-preview">Preview rename</button>
+				</div>
+			</form>
+			<div class="card-subtitle">Undo</div>
+			<form method="post" action="/apps/gallery/rename/undo" class="gallery-undo" data-confirm="Put every file the last rename moved back where it was?" data-confirm-title="Undo last rename" data-confirm-action="Undo">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<p class="text-sm text-muted">Puts back the files the last rename moved.</p>
+				<button type="submit" class="btn">Undo last rename</button>
+			</form>
+		}
+	}
 }
 
 // --- Scan Folders Preview Partial ---
 templ scanFoldersPreview(folders []string, total int) {
 	if total == 0 {
-		<p class="text-muted" style="font-size:0.85rem">No matching media files found.</p>
+		<p class="text-sm text-muted">No photos or videos match these patterns.</p>
 	} else {
-		<div class="text-muted" style="font-size:0.85rem">
-			<strong>{ strconv.Itoa(total) }</strong> matching files:
-			<ul style="margin:0.25rem 0 0;padding-left:1.25rem">
-				for _, f := range folders {
-					<li>{ f }</li>
-				}
-			</ul>
-		</div>
+		<p class="text-sm"><strong>{ plural(total, "matching file", "matching files") }</strong> in:</p>
+		<ul class="gallery-folder-list">
+			for _, f := range folders {
+				<li>{ f }</li>
+			}
+		</ul>
 	}
 }
 
 // --- System Settings Page (admin, rendered via RegisterSettingsPage) ---
 templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csrfToken string) {
-	<h1>Gallery Settings</h1>
-	<p class="text-muted" style="margin-bottom:1rem">
-		These settings apply to all users.
-	</p>
+	<header class="page-header">
+		<div class="page-heading">
+			<h1>Gallery Settings</h1>
+			<p class="page-subtitle">These settings apply to all users.</p>
+		</div>
+	</header>
 	@scanStatusCard(stats, scan, csrfToken)
-	@ui.Card("Tag Classification") {
+	@ui.Card("Tag classification") {
 		<form method="post" action="/admin/plugins/gallery">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			<input type="hidden" name="_section" value="tags"/>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>Backend</label>
-				<select name="tag_backend" class="input">
+			<div class="form-group">
+				<label for="tag_backend">Backend</label>
+				<select id="tag_backend" name="tag_backend" class="form-control" data-tag-backend>
 					<option value="none" selected?={ GetSetting(db, "tag_backend", "none") == "none" }>None (disabled)</option>
 					<option value="onnx" selected?={ GetSetting(db, "tag_backend", "none") == "onnx" }>ONNX (local)</option>
 					<option value="ollama" selected?={ GetSetting(db, "tag_backend", "none") == "ollama" }>Ollama</option>
 					<option value="openai" selected?={ GetSetting(db, "tag_backend", "none") == "openai" }>OpenAI-compatible</option>
 				</select>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem" id="tag-model-group">
-				<label>ONNX Tag Model</label>
-				<select name="tag_model" class="input">
+			<div class="form-group" id="tag-model-group">
+				<label for="tag_model">ONNX tag model</label>
+				<select id="tag_model" name="tag_model" class="form-control">
 					<option value="joytag" selected?={ GetSetting(db, "tag_model", "joytag") == "joytag" }>JoyTag (multi-label, photos)</option>
 					<option value="wd14" selected?={ GetSetting(db, "tag_model", "joytag") == "wd14" }>WD14 (multi-label, general)</option>
 					<option value="mobilenet" selected?={ GetSetting(db, "tag_model", "joytag") == "mobilenet" }>MobileNet (ImageNet, legacy)</option>
 				</select>
-				<small class="text-muted">Only used when backend is ONNX.</small>
+				<p class="form-help">Only used when the backend is ONNX.</p>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>Minimum Confidence</label>
-				<input type="number" name="tag_min_confidence" class="input" value={ GetSetting(db, "tag_min_confidence", "0.5") } step="0.05" min="0" max="1"/>
-				<small class="text-muted">Tags below this confidence are discarded. Default: 0.5</small>
+			<div class="form-group">
+				<label for="tag_min_confidence">Minimum confidence</label>
+				<input type="number" id="tag_min_confidence" name="tag_min_confidence" class="form-control w-xs" value={ GetSetting(db, "tag_min_confidence", "0.5") } step="0.05" min="0" max="1"/>
+				<p class="form-help">Tags below this confidence are discarded. Default: 0.5</p>
 			</div>
-			<button type="submit" class="btn btn-primary btn-sm">Save</button>
+			<button type="submit" class="btn btn-primary">Save</button>
 			<script>
 				(function () {
-					var sel = document.querySelector('select[name="tag_backend"]');
+					var sel = document.querySelector("[data-tag-backend]");
 					var group = document.getElementById("tag-model-group");
 					function update() {
-						group.style.display = sel.value === "onnx" ? "" : "none";
+						group.hidden = sel.value !== "onnx";
 					}
 					sel.addEventListener("change", update);
 					update();
@@ -1027,119 +1409,123 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			</script>
 		</form>
 	}
-	@ui.Card("Face Detection") {
+	@ui.Card("Face detection") {
 		<form method="post" action="/admin/plugins/gallery">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			<input type="hidden" name="_section" value="faces"/>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>Backend</label>
-				<select name="face_backend" class="input">
+			<div class="form-group">
+				<label for="face_backend">Backend</label>
+				<select id="face_backend" name="face_backend" class="form-control">
 					<option value="none" selected?={ GetSetting(db, "face_backend", "none") == "none" }>None (disabled)</option>
 					<option value="onnx" selected?={ GetSetting(db, "face_backend", "none") == "onnx" }>ONNX (SCRFD + ArcFace)</option>
 					<option value="pigo" selected?={ GetSetting(db, "face_backend", "none") == "pigo" }>Pigo (detection only, no embeddings)</option>
 				</select>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>Minimum Confidence</label>
-				<input type="number" name="face_min_confidence" class="input" value={ GetSetting(db, "face_min_confidence", "0.7") } step="0.05" min="0" max="1"/>
-				<small class="text-muted">Faces below this confidence are discarded. Default: 0.7</small>
+			<div class="form-row">
+				<div class="form-group">
+					<label for="face_min_confidence">Minimum confidence</label>
+					<input type="number" id="face_min_confidence" name="face_min_confidence" class="form-control" value={ GetSetting(db, "face_min_confidence", "0.7") } step="0.05" min="0" max="1"/>
+					<p class="form-help">Faces below this confidence are discarded. Default: 0.7</p>
+				</div>
+				<div class="form-group">
+					<label for="cluster_threshold">Cluster threshold</label>
+					<input type="number" id="cluster_threshold" name="cluster_threshold" class="form-control" value={ GetSetting(db, "cluster_threshold", "0.35") } step="0.01" min="0.01" max="1.0"/>
+					<p class="form-help">Cosine distance for grouping faces into people (lower is stricter). Default: 0.35</p>
+				</div>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>Cluster Threshold</label>
-				<input type="number" name="cluster_threshold" class="input" value={ GetSetting(db, "cluster_threshold", "0.35") } step="0.01" min="0.01" max="1.0"/>
-				<small class="text-muted">Cosine distance threshold for grouping faces into people (lower = stricter). Default: 0.35</small>
-			</div>
-			<button type="submit" class="btn btn-primary btn-sm">Save</button>
+			<button type="submit" class="btn btn-primary">Save</button>
 		</form>
 	}
-	@ui.Card("Duplicate Detection") {
+	@ui.Card("Duplicate detection") {
 		<form method="post" action="/admin/plugins/gallery">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			<input type="hidden" name="_section" value="duplicates"/>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>
+			<div class="form-group">
+				<label class="form-check">
 					<input type="checkbox" name="duplicate_detection_enabled" value="true" checked?={ GetSetting(db, "duplicate_detection_enabled", "true") == "true" }/>
-					Enable duplicate detection
+					Find duplicate photos
 				</label>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>Algorithm</label>
-				<select name="duplicate_algorithm" class="input">
-					<option value="difference" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "difference" }>Difference Hash</option>
-					<option value="average" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "average" }>Average Hash</option>
-					<option value="phash" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "phash" }>Perceptual Hash (pHash)</option>
-					<option value="median" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "median" }>Median Hash</option>
-					<option value="blockmean" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "blockmean" }>Block Mean Hash</option>
-				</select>
+			<div class="form-row">
+				<div class="form-group">
+					<label for="duplicate_algorithm">Algorithm</label>
+					<select id="duplicate_algorithm" name="duplicate_algorithm" class="form-control">
+						<option value="difference" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "difference" }>Difference hash</option>
+						<option value="average" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "average" }>Average hash</option>
+						<option value="phash" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "phash" }>Perceptual hash (pHash)</option>
+						<option value="median" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "median" }>Median hash</option>
+						<option value="blockmean" selected?={ GetSetting(db, "duplicate_algorithm", "difference") == "blockmean" }>Block mean hash</option>
+					</select>
+				</div>
+				<div class="form-group">
+					<label for="duplicate_distance">Distance threshold</label>
+					<input type="number" id="duplicate_distance" name="duplicate_distance" class="form-control" value={ GetSetting(db, "duplicate_distance", "5") } min="0" max="64"/>
+					<p class="form-help">Largest Hamming distance still counted as a duplicate (lower is stricter). Default: 5</p>
+				</div>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>Distance Threshold</label>
-				<input type="number" name="duplicate_distance" class="input" value={ GetSetting(db, "duplicate_distance", "5") } min="0" max="64"/>
-				<small class="text-muted">Maximum Hamming distance to consider images duplicates (lower = stricter). Default: 5</small>
-			</div>
-			<button type="submit" class="btn btn-primary btn-sm">Save</button>
+			<button type="submit" class="btn btn-primary">Save</button>
 		</form>
 	}
-	@ui.Card("OCR") {
+	@ui.Card("Text recognition (OCR)") {
 		<form method="post" action="/admin/plugins/gallery">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			<input type="hidden" name="_section" value="ocr"/>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>
+			<div class="form-group">
+				<label class="form-check">
 					<input type="checkbox" name="ocr_enabled" value="true" checked?={ GetSetting(db, "ocr_enabled", "true") == "true" }/>
-					Enable OCR text extraction
+					Extract text from photos
 				</label>
-				<small class="text-muted">Requires tesseract to be installed on the system.</small>
+				<p class="form-help">Needs tesseract installed on the server.</p>
 			</div>
-			<button type="submit" class="btn btn-primary btn-sm">Save</button>
+			<button type="submit" class="btn btn-primary">Save</button>
 		</form>
 	}
 	@ui.Card("Processing") {
 		<form method="post" action="/admin/plugins/gallery">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			<input type="hidden" name="_section" value="processing"/>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>
+			<div class="form-group">
+				<label class="form-check">
 					<input type="checkbox" name="preview_generation_enabled" value="true" checked?={ GetSetting(db, "preview_generation_enabled", "true") == "true" }/>
-					Pre-generate thumbnails during scan
+					Make thumbnails while scanning
 				</label>
-			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>
+				<label class="form-check">
 					<input type="checkbox" name="quality_scoring_enabled" value="true" checked?={ GetSetting(db, "quality_scoring_enabled", "true") == "true" }/>
-					Compute image quality scores (sharpness)
+					Score image quality (sharpness)
 				</label>
 			</div>
-			<button type="submit" class="btn btn-primary btn-sm">Save</button>
+			<button type="submit" class="btn btn-primary">Save</button>
 		</form>
 	}
-	@ui.Card("Backend Configuration") {
+	@ui.Card("Backend connection") {
 		<form method="post" action="/admin/plugins/gallery">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			<input type="hidden" name="_section" value="backend"/>
-			<p class="text-muted" style="margin-bottom:0.75rem;font-size:0.85rem">Shared connection settings for tag classification and face detection backends.</p>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>ONNX Runtime Library Path</label>
-				<input type="text" name="onnx_library_path" class="input" value={ GetSetting(db, "onnx_library_path", "") } placeholder="/usr/lib/libonnxruntime.so"/>
-				<small class="text-muted">Leave blank to auto-detect.</small>
+			<p class="card-desc">Shared by the tag classification and face detection backends.</p>
+			<div class="form-group">
+				<label for="onnx_library_path">ONNX Runtime library path</label>
+				<input type="text" id="onnx_library_path" name="onnx_library_path" class="form-control mono" value={ GetSetting(db, "onnx_library_path", "") } placeholder="/usr/lib/libonnxruntime.so"/>
+				<p class="form-help">Leave blank to detect it.</p>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>ONNX Models Directory</label>
-				<input type="text" name="onnx_models_dir" class="input" value={ GetSetting(db, "onnx_models_dir", "") } placeholder="(auto: data dir)"/>
+			<div class="form-group">
+				<label for="onnx_models_dir">ONNX models directory</label>
+				<input type="text" id="onnx_models_dir" name="onnx_models_dir" class="form-control mono" value={ GetSetting(db, "onnx_models_dir", "") } placeholder="(the data directory)"/>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>Ollama / OpenAI URL</label>
-				<input type="text" name="recognition_url" class="input" value={ GetSetting(db, "recognition_url", "") } placeholder="http://localhost:11434"/>
+			<div class="form-group">
+				<label for="recognition_url">Ollama / OpenAI URL</label>
+				<input type="url" id="recognition_url" name="recognition_url" class="form-control" value={ GetSetting(db, "recognition_url", "") } placeholder="http://localhost:11434"/>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>API Key</label>
-				<input type="password" name="recognition_api_key" class="input" value={ GetSetting(db, "recognition_api_key", "") } placeholder="sk-..."/>
+			<div class="form-row">
+				<div class="form-group">
+					<label for="recognition_api_key">API key</label>
+					<input type="password" id="recognition_api_key" name="recognition_api_key" class="form-control" value={ GetSetting(db, "recognition_api_key", "") } placeholder="sk-…" autocomplete="off"/>
+				</div>
+				<div class="form-group">
+					<label for="recognition_model">Model</label>
+					<input type="text" id="recognition_model" name="recognition_model" class="form-control" value={ GetSetting(db, "recognition_model", "") } placeholder="llava:13b"/>
+				</div>
 			</div>
-			<div class="form-group" style="margin-bottom:0.75rem">
-				<label>Model</label>
-				<input type="text" name="recognition_model" class="input" value={ GetSetting(db, "recognition_model", "") } placeholder="llava:13b"/>
-			</div>
-			<button type="submit" class="btn btn-primary btn-sm">Save</button>
+			<button type="submit" class="btn btn-primary">Save</button>
 		</form>
 	}
 }
@@ -1154,128 +1540,122 @@ templ scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) 
 			hx-swap="outerHTML"
 		}
 	>
-		@ui.Card("Background Scan") {
-			<table style="font-size:0.9rem;margin-bottom:0.75rem">
-				<tr>
-					<td class="text-muted" style="padding-right:1rem">Status</td>
-					<td>
-						if scan.Running {
-							<span class="badge" style="background:var(--color-primary);color:#fff">Running</span>
-						} else {
-							<span>Idle</span>
-						}
-					</td>
-				</tr>
+		@ui.Card("Background scan") {
+			<dl class="kv mb-2">
+				<dt>Status</dt>
+				<dd>
+					if scan.Running {
+						<span class="badge badge-primary">Running</span>
+					} else {
+						Idle
+					}
+				</dd>
 				if !scan.LastRun.IsZero() {
-					<tr>
-						<td class="text-muted" style="padding-right:1rem">Last run</td>
-						<td>{ scan.LastRun.Format("Jan 2, 2006 3:04:05 PM") }</td>
-					</tr>
+					<dt>Last run</dt>
+					<dd>{ scan.LastRun.Format("Jan 2, 2006 3:04:05 PM") }</dd>
 				}
 				if scan.LastError != nil {
-					<tr>
-						<td class="text-muted" style="padding-right:1rem">Last error</td>
-						<td style="color:var(--color-danger)">{ scan.LastError.Error() }</td>
-					</tr>
+					<dt>Last error</dt>
+					<dd class="text-danger">{ scan.LastError.Error() }</dd>
 				}
 				if len(scan.Warnings) > 0 {
-					<tr>
-						<td class="text-muted" style="padding-right:1rem;vertical-align:top">Warnings</td>
-						<td style="color:var(--color-warning)">
-							for _, w := range scan.Warnings {
-								<div>{ w }</div>
-							}
-						</td>
-					</tr>
+					<dt>Warnings</dt>
+					<dd class="text-warning">
+						for _, w := range scan.Warnings {
+							<div>{ w }</div>
+						}
+					</dd>
 				}
-				<tr>
-					<td class="text-muted" style="padding-right:1rem">Total images</td>
-					<td><strong>{ strconv.Itoa(stats.TotalImages) }</strong></td>
-				</tr>
-				<tr>
-					<td class="text-muted" style="padding-right:1rem">Recognition done</td>
-					<td>{ strconv.Itoa(stats.Done) }</td>
-				</tr>
-				<tr>
-					<td class="text-muted" style="padding-right:1rem">Pending</td>
-					<td>{ strconv.Itoa(stats.Pending) }</td>
-				</tr>
+				<dt>Total images</dt>
+				<dd><strong>{ strconv.Itoa(stats.TotalImages) }</strong></dd>
+				<dt>Recognised</dt>
+				<dd>{ strconv.Itoa(stats.Done) }</dd>
+				<dt>Waiting</dt>
+				<dd>{ strconv.Itoa(stats.Pending) }</dd>
 				if stats.Errored > 0 {
-					<tr>
-						<td class="text-muted" style="padding-right:1rem;vertical-align:top">Errored</td>
-						<td style="color:var(--color-danger)">
-							{ strconv.Itoa(stats.Errored) }
-							if len(stats.Errors) > 0 {
-								for _, e := range stats.Errors {
-									<div style="font-size:0.85rem">{ e }</div>
-								}
-							}
-						</td>
-					</tr>
+					<dt>Failed</dt>
+					<dd class="text-danger">
+						{ strconv.Itoa(stats.Errored) }
+						for _, e := range stats.Errors {
+							<div class="text-sm">{ e }</div>
+						}
+					</dd>
 				}
-			</table>
-			<div style="display:flex;gap:0.5rem">
+			</dl>
+			<div class="btn-group">
 				<form method="post" action="/admin/plugins/gallery/scan">
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					<button type="submit" class="btn btn-primary btn-sm" disabled?={ scan.Running }>
+					<button type="submit" class="btn btn-primary" disabled?={ scan.Running }>
 						if scan.Running {
-							Scanning...
+							Scanning…
 						} else {
-							Scan All Users
+							Scan all users
 						}
 					</button>
 				</form>
 				if (stats.Done > 0 || stats.Errored > 0) && !scan.Running {
-					<form method="post" action="/admin/plugins/gallery/purge-recognitions" onsubmit="return confirm('Purge all recognition data? Tags, faces, and people will be deleted and images re-queued for recognition.')">
-						<input type="hidden" name="csrf_token" value={ csrfToken }/>
-						<button type="submit" class="btn btn-danger btn-sm">
-							Purge Recognitions
-						</button>
-					</form>
+					<button type="button" class="btn btn-outline-danger" data-modal-open="gallery-purge">Purge recognitions…</button>
 				}
 			</div>
+		}
+		if (stats.Done > 0 || stats.Errored > 0) && !scan.Running {
+			@ui.Modal("gallery-purge", "Purge recognitions") {
+				<form method="post" action="/admin/plugins/gallery/purge-recognitions">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<div class="modal-body">
+						<p>Delete every user's tags, faces and people, and queue all images for recognition again?</p>
+					</div>
+					<div class="modal-footer">
+						<button type="button" class="btn" data-modal-close>Cancel</button>
+						<button type="submit" class="btn btn-danger">Purge</button>
+					</div>
+				</form>
+			}
 		}
 	</div>
 }
 
 // --- Rename Preview Page ---
-templ renamePreviewPage(pattern string, previews []RenamePreview, csrfToken string) {
-	<div class="sidebar-layout">
-		@gallerySidebar("/apps/gallery/settings", 0, 0)
-		<div class="sidebar-content">
-			<h1>Rename Preview</h1>
-			<p>Pattern: <code>{ pattern }</code></p>
-			if len(previews) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No files would be renamed with this pattern.</p>
-				}
-			} else {
-				<p>{ strconv.Itoa(len(previews)) } files will be renamed:</p>
-				@ui.Card("") {
-					<table style="width:100%;font-size:0.85rem">
-						<thead>
+templ renamePreviewPage(pattern string, previews []RenamePreview, patternErr string, csrfToken string) {
+	@galleryLayout("/apps/gallery/settings") {
+		@ui.PageHeader("Rename preview", []ui.Crumb{{Label: "Settings", URL: "/apps/gallery/settings"}})
+		<form method="get" action="/apps/gallery/rename/preview" class="form-inline mb-2">
+			<label class="sr-only" for="gallery-rename-pattern">Pattern</label>
+			<input type="text" id="gallery-rename-pattern" name="pattern" class="form-control mono" value={ pattern } required aria-invalid={ strconv.FormatBool(patternErr != "") }/>
+			<button type="submit" class="btn">Preview</button>
+		</form>
+		if patternErr != "" {
+			@ui.Alert("error", patternErr)
+		} else if len(previews) == 0 {
+			<div class="card">
+				@ui.EmptyState("Nothing to rename", "Every file already has the name this pattern gives it.")
+			</div>
+		} else {
+			<div class="card">
+				<h2 class="card-title">{ plural(len(previews), "file", "files") + " will be renamed" }</h2>
+				<table class="table table-stack gallery-rename-table">
+					<thead>
+						<tr>
+							<th>Now</th>
+							<th>After</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, p := range previews {
 							<tr>
-								<th>Current Path</th>
-								<th>New Path</th>
+								<td data-label="Now" class="mono">{ p.OldPath }</td>
+								<td data-label="After" class="mono">{ p.NewPath }</td>
 							</tr>
-						</thead>
-						<tbody>
-							for _, p := range previews {
-								<tr>
-									<td>{ p.OldPath }</td>
-									<td>{ p.NewPath }</td>
-								</tr>
-							}
-						</tbody>
-					</table>
-				}
-				<form method="post" action="/apps/gallery/rename/apply" style="margin-top:1rem">
-					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					<input type="hidden" name="pattern" value={ pattern }/>
-					<button type="submit" class="btn btn-primary">Apply Rename</button>
-					<a href="/apps/gallery/settings" class="btn" style="margin-left:0.5rem">Cancel</a>
-				</form>
-			}
-		</div>
-	</div>
+						}
+					</tbody>
+				</table>
+			</div>
+			<form method="post" action="/apps/gallery/rename/apply" class="form-actions">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<input type="hidden" name="pattern" value={ pattern }/>
+				<button type="submit" class="btn btn-primary">{ "Rename " + plural(len(previews), "file", "files") }</button>
+				<a href="/apps/gallery/settings" class="btn">Cancel</a>
+			</form>
+		}
+	}
 }

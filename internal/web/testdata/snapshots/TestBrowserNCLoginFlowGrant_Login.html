@@ -1,0 +1,52 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      Log in — Cog
+    </title>
+    <link href="/static/style.css?v=22be9710446b" rel="stylesheet" />
+    <link href="/static/favicon.svg?v=f043627311df" rel="icon" type="image/svg+xml" />
+  </head>
+  <body>
+    <main class="login-container">
+      <div class="card login-card">
+        <a class="login-title" href="/">
+          <svg aria-hidden="true" fill="none" height="28" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="28">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          <span>
+            Cog
+          </span>
+        </a>
+        <div class="alert alert-info">
+          Sign in to connect an app to your Cog account.
+        </div>
+        <form action="/login" method="post">
+          <input name="next" type="hidden" value="/index.php/login/v2/grant?token=«hex»" />
+          <div class="form-group">
+            <label for="username">
+              Username
+            </label>
+            <input autocapitalize="none" autocomplete="username" autofocus="" class="form-control" id="username" name="username" required="" type="text" value="" />
+          </div>
+          <div class="form-group">
+            <label for="password">
+              Password
+            </label>
+            <input autocomplete="current-password" class="form-control" id="password" name="password" required="" type="password" value="" />
+          </div>
+          <button class="btn btn-primary btn-block" type="submit">
+            Log in
+          </button>
+          <div class="login-links">
+            <a href="/forgot-password">
+              Forgot password?
+            </a>
+          </div>
+        </form>
+      </div>
+    </main>
+  </body>
+</html>

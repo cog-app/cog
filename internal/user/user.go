@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/mattn/go-sqlite3"
 	"iter"
 	"strings"
 	"time"
@@ -16,6 +17,10 @@ import (
 
 var ErrNotFound = errors.New("user not found")
 var ErrAuthFailed = errors.New("authentication failed")
+
+// ErrUsernameTaken is returned by Create when another account already has the
+// username.
+var ErrUsernameTaken = errors.New("username already taken")
 
 type User struct {
 	ID              string
@@ -86,6 +91,10 @@ func (s *Store) Create(username, password string) (*User, error) {
 		id, username, string(hash), homeMount, now, isAdmin, "",
 	)
 	if err != nil {
+		var se sqlite3.Error
+		if errors.As(err, &se) && se.ExtendedCode == sqlite3.ErrConstraintUnique {
+			return nil, fmt.Errorf("insert user %q: %w", username, ErrUsernameTaken)
+		}
 		return nil, fmt.Errorf("insert user: %w", err)
 	}
 

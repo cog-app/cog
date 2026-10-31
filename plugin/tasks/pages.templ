@@ -9,21 +9,28 @@ import (
 )
 
 templ tasksSidebar(sb sidebarData, csrfToken string) {
-	<nav class="sidebar" id="tasks-sidebar">
+	<nav class="sidebar" id="tasks-sidebar" aria-label="Task lists">
+		<div class="sidebar-heading">Lists</div>
 		for _, list := range sb.Lists {
 			<a
-				href={ templ.SafeURL(fmt.Sprintf("/apps/tasks/list/%d", list.ID)) }
+				href={ templ.SafeURL(listURL(list.ID)) }
 				class={ sidebarClass(sb.ActiveList, list.ID) }
+				if sb.ActiveList == list.ID {
+					aria-current="page"
+				}
 			>
-				<span class="sidebar-color-dot" style={ fmt.Sprintf("background:%s", list.Color) }></span>
+				<span class="color-dot" style={ "background:" + list.Color }></span>
 				{ list.Name }
 			</a>
 		}
 		<div class="sidebar-divider"></div>
-		<form method="post" action="/apps/tasks/list" class="flex gap-1 items-center" style="padding:0.5rem 1rem">
+		<form method="post" action="/apps/tasks/list" class="task-new-list">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
-			<input class="form-control" type="text" name="name" placeholder="New list..." required style="flex:1;min-width:0" data-testid="new-list-name"/>
-			<button class="btn btn-outline btn-sm" type="submit" data-testid="new-list-submit">+</button>
+			<label class="sr-only" for="new-list-name">New list</label>
+			<input class="form-control form-control-sm" type="text" id="new-list-name" name="name" placeholder="New list…" required data-testid="new-list-name"/>
+			<button class="btn btn-sm btn-square" type="submit" aria-label="Create list" title="Create list" data-testid="new-list-submit">
+				@ui.Icon("plus")
+			</button>
 		</form>
 	</nav>
 }
@@ -32,285 +39,436 @@ templ tasksIndexPage(sb sidebarData, csrfToken string) {
 	<div class="sidebar-layout">
 		@tasksSidebar(sb, csrfToken)
 		<div class="sidebar-content">
-			@ui.Card("") {
-				<p class="text-muted">Create your first task list using the sidebar.</p>
-			}
+			@ui.PageHeader("Tasks", nil)
+			<div class="card">
+				@ui.EmptyState("No task lists yet", "A list holds related tasks: a project, errands, a shopping list. Lists sync with any CalDAV app.") {
+					<form method="post" action="/apps/tasks/list" class="form-inline justify-center">
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<label class="sr-only" for="first-list-name">List name</label>
+						<input class="form-control" type="text" id="first-list-name" name="name" placeholder="List name" required/>
+						<button class="btn btn-primary" type="submit">Create list</button>
+					</form>
+				}
+			</div>
 		</div>
 	</div>
 }
 
-templ tasksListPage(sb sidebarData, list *TaskList, allTasks []Task, csrfToken string) {
+templ tasksListPage(sb sidebarData, list *TaskList, allTasks []Task, now time.Time, csrfToken string) {
 	<div class="sidebar-layout">
 		@tasksSidebar(sb, csrfToken)
 		<div class="sidebar-content">
-			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-				<h1 style="margin:0">
-					<span class="sidebar-color-dot" style={ fmt.Sprintf("background:%s", list.Color) }></span>
+			<header class="page-header">
+				<h1 class="task-list-title">
+					<span class="color-dot" style={ "background:" + list.Color }></span>
 					{ list.Name }
 				</h1>
-				<a href={ templ.SafeURL(fmt.Sprintf("/apps/tasks/list/%d/settings", list.ID)) } class="btn btn-outline btn-sm">Settings</a>
-			</div>
-			<!-- Quick add form -->
-			<form method="post" action="/apps/tasks/task" class="mb-2">
+				<div class="page-actions">
+					<a href={ templ.SafeURL(listURL(list.ID) + "/settings") } class="btn">
+						@ui.Icon("settings")
+						Settings
+					</a>
+				</div>
+			</header>
+			<form method="post" action="/apps/tasks/task" class="form-inline task-quick-add">
 				<input type="hidden" name="csrf_token" value={ csrfToken }/>
 				<input type="hidden" name="list_id" value={ strconv.FormatInt(list.ID, 10) }/>
-				<div class="flex gap-1">
-					<input class="form-control" type="text" name="summary" placeholder="Add a task..." required style="flex:1" data-testid="new-task-summary"/>
-					<button class="btn btn-primary btn-sm" type="submit" data-testid="new-task-submit">Add</button>
-				</div>
+				<label class="sr-only" for="new-task-summary">New task</label>
+				<input class="form-control" type="text" id="new-task-summary" name="summary" placeholder="Add a task…" required data-testid="new-task-summary"/>
+				<button class="btn btn-primary" type="submit" data-testid="new-task-submit">
+					@ui.Icon("plus")
+					Add
+				</button>
 			</form>
-			<!-- Task tree -->
-			<div id="task-tree">
-				@taskGroup(RootTasks(allTasks), allTasks, 0, list.ID, csrfToken)
+			<div id="task-tree" class="task-tree">
+				@taskGroup("task-open", false, openRoots(allTasks), allTasks, 0, list, now, csrfToken)
+				<div class="task-empty">
+					@ui.EmptyState("No tasks yet", "Add your first task above.")
+				</div>
+				<p class="task-all-done">
+					@ui.Icon("check-circle")
+					All done. Nothing left on this list.
+				</p>
+				// Always present, so a task ticked in the list has somewhere to
+				// go; the stylesheet hides it while it holds nothing.
+				<details class="task-completed" id="task-completed">
+					<summary>
+						Completed
+						@completedCount(len(doneRoots(allTasks)), false)
+					</summary>
+					@taskGroup("task-done", false, doneRoots(allTasks), allTasks, 0, list, now, csrfToken)
+				</details>
 			</div>
-			if len(allTasks) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No tasks yet. Add your first task above!</p>
-				}
-			}
 		</div>
 	</div>
-	@sortableScript(list.ID, csrfToken)
+	@sortableScript()
 }
 
-templ taskGroup(tasks []Task, allTasks []Task, depth int, listID int64, csrfToken string) {
+templ completedCount(n int, oob bool) {
+	<span
+		class="count"
+		id="task-completed-count"
+		if oob {
+			hx-swap-oob="true"
+		}
+	>{ strconv.Itoa(n) }</span>
+}
+
+// rootGroupsSwap is the answer to ticking a top-level task: both root groups
+// and the completed count, swapped in out of band, which moves the task
+// between the open list and "Completed" without touching whether that
+// section is expanded.
+templ rootGroupsSwap(allTasks []Task, list *TaskList, now time.Time, csrfToken string) {
+	@taskGroup("task-open", true, openRoots(allTasks), allTasks, 0, list, now, csrfToken)
+	@completedCount(len(doneRoots(allTasks)), true)
+	@taskGroup("task-done", true, doneRoots(allTasks), allTasks, 0, list, now, csrfToken)
+}
+
+// taskGroup is one level of the tree: a list's top-level tasks, or one
+// task's subtasks. Groups are what drag and drop reorders within and moves
+// between. The two root groups have an id, which an out-of-band swap
+// replaces them by.
+templ taskGroup(id string, oob bool, tasks []Task, allTasks []Task, depth int, list *TaskList, now time.Time, csrfToken string) {
 	<div
-		class="task-group"
+		if id != "" {
+			id={ id }
+		}
+		if oob {
+			hx-swap-oob="true"
+		}
+		class={ "task-group", templ.KV("task-subgroup", depth > 0) }
+		data-task-group
 		data-parent-id={ parentIDAttr(tasks) }
-		data-list-id={ strconv.FormatInt(listID, 10) }
-		style={ groupIndent(depth) }
+		data-list-id={ strconv.FormatInt(list.ID, 10) }
 	>
 		for i := range tasks {
-			@taskItem(&tasks[i], allTasks, depth, csrfToken)
+			@taskItem(&tasks[i], allTasks, depth, list, now, csrfToken)
 		}
 	</div>
 }
 
-templ taskItem(task *Task, allTasks []Task, depth int, csrfToken string) {
+templ taskItem(task *Task, allTasks []Task, depth int, list *TaskList, now time.Time, csrfToken string) {
 	<div
 		id={ fmt.Sprintf("task-%d", task.ID) }
-		class={ taskItemClass(task) }
+		class={ "task-item", templ.KV("completed", task.Done()) }
 		data-task-id={ strconv.FormatInt(task.ID, 10) }
 	>
 		<div class="task-row">
-			<span class="drag-handle" title="Drag to reorder">&#9776;</span>
-			<input
-				type="checkbox"
-				if task.Done() {
-					checked
+			<span class="task-handle" data-drag-handle title="Drag to reorder" aria-hidden="true">
+				<svg width="12" height="18" viewBox="0 0 12 18" fill="currentColor"><circle cx="3" cy="4" r="1.5"></circle><circle cx="9" cy="4" r="1.5"></circle><circle cx="3" cy="9" r="1.5"></circle><circle cx="9" cy="9" r="1.5"></circle><circle cx="3" cy="14" r="1.5"></circle><circle cx="9" cy="14" r="1.5"></circle></svg>
+			</span>
+			<label class="task-check">
+				<input
+					type="checkbox"
+					checked?={ task.Done() }
+					hx-post={ fmt.Sprintf("/apps/tasks/task/%d/toggle", task.ID) }
+					hx-target={ fmt.Sprintf("#task-%d", task.ID) }
+					hx-swap="outerHTML"
+				/>
+				<span class="sr-only">Done: { task.Summary }</span>
+			</label>
+			<div class="task-main">
+				<a href={ templ.SafeURL(taskURL(task.ID)) } class="task-summary">{ task.Summary }</a>
+				if p := priorityOf(task.Priority); p.Class != "" {
+					<span class={ "badge", p.Class } title={ p.Label + " priority" }>{ p.Label }</span>
 				}
-				hx-post={ fmt.Sprintf("/apps/tasks/task/%d/toggle", task.ID) }
-				hx-target={ fmt.Sprintf("#task-%d", task.ID) }
-				hx-swap="outerHTML"
-			/>
-			<a href={ templ.SafeURL(fmt.Sprintf("/apps/tasks/task/%d", task.ID)) } class={ taskSummaryClass(task) }>
-				{ task.Summary }
-			</a>
-			if task.Priority > 0 && task.Priority <= 4 {
-				<span class="badge" style="background:#d9534f;color:#fff;font-size:0.7rem" title="High priority">!!!</span>
-			} else if task.Priority >= 5 && task.Priority <= 6 {
-				<span class="badge" style="background:#f0ad4e;color:#fff;font-size:0.7rem" title="Medium priority">!!</span>
-			}
-			if task.RRule != "" {
-				<span class="badge" title="Repeats">&#8635;</span>
-			}
-			if task.DueAt != nil {
-				<span class={ dueBadgeClass(task) } title="Due date">
-					{ formatDueDate(task) }
-				</span>
-			}
-			<button
-				class="btn btn-danger btn-sm"
-				style="margin-left:auto;padding:0.1rem 0.4rem;font-size:0.75rem"
-				hx-delete={ fmt.Sprintf("/apps/tasks/task/%d", task.ID) }
-				hx-target={ fmt.Sprintf("#task-%d", task.ID) }
-				hx-swap="outerHTML"
-				hx-confirm="Delete this task?"
-			>&#10005;</button>
+				if task.RRule != "" {
+					<span class="badge badge-outline" title="Repeats">&#8635;<span class="sr-only">Repeats</span></span>
+				}
+				if task.DueAt != nil {
+					<span class={ dueBadgeClass(task, now, list.Zone()) } title="Due">{ formatDueDate(task, now, list.Zone()) }</span>
+				}
+			</div>
+			<div class="dropdown task-menu">
+				<button
+					type="button"
+					class="btn-icon btn-icon-sm"
+					data-dropdown-toggle
+					aria-expanded="false"
+					aria-controls={ fmt.Sprintf("task-%d-menu", task.ID) }
+					aria-label={ "Actions for " + task.Summary }
+				>
+					@ui.Icon("more")
+				</button>
+				<div class="dropdown-menu" id={ fmt.Sprintf("task-%d-menu", task.ID) }>
+					<a href={ templ.SafeURL(taskURL(task.ID)) }>
+						@ui.Icon("edit")
+						Edit
+					</a>
+					<button type="button" data-subtask-open={ fmt.Sprintf("task-%d-subtask", task.ID) }>
+						@ui.Icon("plus")
+						Add subtask
+					</button>
+					<button
+						type="button"
+						class="danger"
+						hx-delete={ taskURL(task.ID) }
+						hx-target={ fmt.Sprintf("#task-%d", task.ID) }
+						hx-swap="outerHTML"
+						hx-confirm={ fmt.Sprintf("Delete “%s”?", task.Summary) }
+					>
+						@ui.Icon("trash")
+						Delete
+					</button>
+				</div>
+			</div>
 		</div>
-		<!-- Subtask add form (collapsed) -->
-		<details class="subtask-add" style="margin-left:2rem;margin-bottom:0.25rem">
-			<summary style="font-size:0.85rem;cursor:pointer;color:var(--color-text-muted)">+ subtask</summary>
-			<form method="post" action="/apps/tasks/task" class="flex gap-1" style="margin-top:0.25rem">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<input type="hidden" name="list_id" value={ strconv.FormatInt(task.ListID, 10) }/>
-				<input type="hidden" name="parent_id" value={ strconv.FormatInt(task.ID, 10) }/>
-				<input class="form-control" type="text" name="summary" placeholder="Subtask..." required style="flex:1;font-size:0.9rem"/>
-				<button class="btn btn-outline btn-sm" type="submit">Add</button>
-			</form>
-		</details>
-		<!-- Children -->
+		<form method="post" action="/apps/tasks/task" class="form-inline task-subtask-form" id={ fmt.Sprintf("task-%d-subtask", task.ID) } data-subtask-form hidden>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="list_id" value={ strconv.FormatInt(task.ListID, 10) }/>
+			<input type="hidden" name="parent_id" value={ strconv.FormatInt(task.ID, 10) }/>
+			<label class="sr-only" for={ fmt.Sprintf("task-%d-subtask-summary", task.ID) }>Subtask of { task.Summary }</label>
+			<input class="form-control form-control-sm" type="text" id={ fmt.Sprintf("task-%d-subtask-summary", task.ID) } name="summary" placeholder="Subtask…" required/>
+			<button class="btn btn-primary btn-sm" type="submit">Add</button>
+			<button class="btn btn-ghost btn-sm" type="button" data-subtask-cancel>Cancel</button>
+		</form>
 		if children := ChildrenOf(allTasks, task.ID); len(children) > 0 {
-			@taskGroup(children, allTasks, depth+1, task.ListID, csrfToken)
+			@taskGroup("", false, children, allTasks, depth+1, list, now, csrfToken)
 		}
 	</div>
 }
 
-templ taskDetailPage(sb sidebarData, task *Task, lists []TaskList, allTasks []Task, times formTimes, csrfToken string) {
+templ taskDetailPage(sb sidebarData, task *Task, list *TaskList, lists []TaskList, allTasks []Task, times formTimes, csrfToken string) {
 	<div class="sidebar-layout">
 		@tasksSidebar(sb, csrfToken)
 		<div class="sidebar-content">
-			<h1>Edit Task</h1>
-			@ui.Card("") {
-				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/tasks/task/%d", task.ID)) }>
+			@ui.PageHeader("Edit task", []ui.Crumb{{Label: list.Name, URL: listURL(list.ID)}})
+			<div class="card">
+				<form method="post" action={ templ.SafeURL(taskURL(task.ID)) } id="task-form">
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
 					<div class="form-group">
-						<label for="summary">Summary</label>
+						<label for="summary">Title</label>
 						<input class="form-control" type="text" id="summary" name="summary" value={ task.Summary } required/>
 					</div>
 					<div class="form-group">
-						<label for="description">Description</label>
+						<label for="description">Notes</label>
 						<textarea class="form-control" id="description" name="description" rows="4">{ task.Description }</textarea>
 					</div>
-					<div class="flex gap-1" style="flex-wrap:wrap">
-						<div class="form-group" style="flex:1;min-width:200px">
-							<label for="list_id">List</label>
-							<select class="form-control" id="list_id" name="list_id">
-								for _, l := range lists {
-									if l.ID == task.ListID {
-										<option value={ strconv.FormatInt(l.ID, 10) } selected>{ l.Name }</option>
-									} else {
-										<option value={ strconv.FormatInt(l.ID, 10) }>{ l.Name }</option>
-									}
-								}
-							</select>
-						</div>
-						<div class="form-group" style="flex:1;min-width:200px">
-							<label for="parent_id">Parent Task</label>
-							<select class="form-control" id="parent_id" name="parent_id">
-								<option value="">(none)</option>
-								for _, t := range allTasks {
-									if t.ID != task.ID {
-										if task.ParentID != nil && *task.ParentID == t.ID {
-											<option value={ strconv.FormatInt(t.ID, 10) } selected>{ t.Summary }</option>
-										} else {
-											<option value={ strconv.FormatInt(t.ID, 10) }>{ t.Summary }</option>
-										}
-									}
-								}
-							</select>
-						</div>
-					</div>
-					<div class="flex gap-1" style="flex-wrap:wrap">
-						<div class="form-group" style="flex:1;min-width:150px">
-							<label for="priority">Priority (0-9)</label>
-							<input class="form-control" type="number" id="priority" name="priority" min="0" max="9" value={ strconv.Itoa(task.Priority) }/>
-						</div>
-						<div class="form-group" style="flex:1;min-width:150px">
+					<div class="form-row">
+						<div class="form-group">
 							<label for="status">Status</label>
-							<select class="form-control" id="status" name="status">
-								for _, s := range []string{"NEEDS-ACTION", "IN-PROCESS", "COMPLETED", "CANCELLED"} {
-									if s == task.StatusOrDefault() {
-										<option value={ s } selected>{ s }</option>
-									} else {
-										<option value={ s }>{ s }</option>
-									}
+							<select class="form-control" id="status" name="status" data-task-status>
+								for _, s := range statusOptions {
+									<option value={ s.Value } selected?={ s.Value == task.StatusOrDefault() }>{ s.Label }</option>
 								}
 							</select>
 						</div>
-						<div class="form-group" style="flex:1;min-width:150px">
-							<label for="percent_complete">% Complete</label>
+						<div class="form-group">
+							<label for="priority">Priority</label>
+							<select class="form-control" id="priority" name="priority">
+								for _, p := range priorityOptions(task.Priority) {
+									<option value={ strconv.Itoa(p.Value) } selected?={ p.Selected }>{ p.Label }</option>
+								}
+							</select>
+						</div>
+						<div class="form-group" data-task-percent hidden?={ task.StatusOrDefault() != "IN-PROCESS" }>
+							<label for="percent_complete">Progress (%)</label>
 							<input class="form-control" type="number" id="percent_complete" name="percent_complete" min="0" max="100" value={ strconv.Itoa(task.PercentComplete) }/>
 						</div>
 					</div>
-					<div class="flex gap-1" style="flex-wrap:wrap">
-						<div class="form-group" style="flex:1;min-width:200px">
-							<label for="due_at">Due Date ({ times.Zone })</label>
-							<input class="form-control" type="datetime-local" id="due_at" name="due_at_date" value={ times.Due }/>
-						</div>
-						<div class="form-group" style="flex:1;min-width:200px">
-							<label for="start_at">Start Date ({ times.Zone })</label>
-							<input class="form-control" type="datetime-local" id="start_at" name="start_at_date" value={ times.Start }/>
-						</div>
+					<div class="form-row">
+						<fieldset class="form-group">
+							<legend>Due</legend>
+							<div class="task-when">
+								<label class="sr-only" for="due_date">Due date</label>
+								<input class="form-control" type="date" id="due_date" name="due_date" value={ times.DueDate }/>
+								<label class="sr-only" for="due_time">Due time</label>
+								<input class="form-control" type="time" id="due_time" name="due_time" value={ times.DueTime }/>
+							</div>
+						</fieldset>
+						<fieldset class="form-group">
+							<legend>Starts</legend>
+							<div class="task-when">
+								<label class="sr-only" for="start_date">Start date</label>
+								<input class="form-control" type="date" id="start_date" name="start_date" value={ times.StartDate }/>
+								<label class="sr-only" for="start_time">Start time</label>
+								<input class="form-control" type="time" id="start_time" name="start_time" value={ times.StartTime }/>
+							</div>
+						</fieldset>
 					</div>
-					<div class="flex gap-1">
-						<button class="btn btn-primary" type="submit">Save</button>
-						<a href={ templ.SafeURL(fmt.Sprintf("/apps/tasks/list/%d", task.ListID)) } class="btn btn-outline">Cancel</a>
+					<p class="form-help task-when-help">
+						Leave the time empty for something due on a day.
+						if times.Zone != "" {
+							Times are in { times.Zone }.
+						}
+					</p>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="list_id">List</label>
+							<select class="form-control" id="list_id" name="list_id">
+								for _, l := range lists {
+									<option value={ strconv.FormatInt(l.ID, 10) } selected?={ l.ID == task.ListID }>{ l.Name }</option>
+								}
+							</select>
+						</div>
+						<div class="form-group">
+							<label for="parent_id">Subtask of</label>
+							<select class="form-control" id="parent_id" name="parent_id">
+								<option value="">Nothing (top level)</option>
+								for _, t := range allTasks {
+									if t.ID != task.ID {
+										<option value={ strconv.FormatInt(t.ID, 10) } selected?={ task.ParentID != nil && *task.ParentID == t.ID }>{ t.Summary }</option>
+									}
+								}
+							</select>
+						</div>
 					</div>
 				</form>
-			}
+				<div class="form-actions">
+					<button class="btn btn-primary" type="submit" form="task-form">Save</button>
+					<a href={ templ.SafeURL(listURL(task.ListID)) } class="btn">Cancel</a>
+					<form method="post" action={ templ.SafeURL(taskURL(task.ID) + "/delete") } class="spacer" onsubmit="return confirm('Delete this task and its subtasks?')">
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<button class="btn btn-outline-danger" type="submit">
+							@ui.Icon("trash")
+							Delete
+						</button>
+					</form>
+				</div>
+			</div>
 		</div>
 	</div>
+	<script>
+		(function () {
+			var status = document.querySelector("[data-task-status]");
+			var percent = document.querySelector("[data-task-percent]");
+			if (!status || !percent) return;
+			status.addEventListener("change", function () {
+				percent.hidden = status.value !== "IN-PROCESS";
+			});
+		})();
+	</script>
 }
 
 templ taskListSettingsPage(sb sidebarData, list *TaskList, csrfToken string) {
 	<div class="sidebar-layout">
 		@tasksSidebar(sb, csrfToken)
 		<div class="sidebar-content">
-			<h1>{ list.Name } — Settings</h1>
-			@ui.Card("") {
-				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/tasks/list/%d", list.ID)) }>
+			@ui.PageHeader("List settings", []ui.Crumb{{Label: list.Name, URL: listURL(list.ID)}})
+			@ui.Card("List") {
+				<form method="post" action={ templ.SafeURL(listURL(list.ID)) }>
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					<div class="form-group">
-						<label for="name">Name</label>
-						<input class="form-control" type="text" id="name" name="name" value={ list.Name } required/>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="name">Name</label>
+							<input class="form-control" type="text" id="name" name="name" value={ list.Name } required/>
+						</div>
+						<div class="form-group form-group-auto">
+							<label for="color">Colour</label>
+							<input class="form-control" type="color" id="color" name="color" value={ list.Color }/>
+						</div>
 					</div>
-					<div class="form-group">
-						<label for="color">Color</label>
-						<input class="form-control" type="color" id="color" name="color" value={ list.Color }/>
-					</div>
-					<div class="flex gap-1">
+					<div class="form-actions">
 						<button class="btn btn-primary" type="submit">Save</button>
-						<a href={ templ.SafeURL(fmt.Sprintf("/apps/tasks/list/%d", list.ID)) } class="btn btn-outline">Cancel</a>
+						<a href={ templ.SafeURL(listURL(list.ID)) } class="btn">Cancel</a>
 					</div>
 				</form>
 			}
-			<div style="margin-top:2rem">
-				@ui.Card("Danger Zone") {
-					<button
-						class="btn btn-danger"
-						hx-delete={ fmt.Sprintf("/apps/tasks/list/%d", list.ID) }
-						hx-confirm={ fmt.Sprintf("Delete '%s' and all its tasks?", list.Name) }
-					>Delete List</button>
-				}
+			<div class="card card-danger">
+				<h2 class="card-title">Danger zone</h2>
+				<p class="card-desc">Deleting “{ list.Name }” deletes every task in it, on this server and in every app that syncs it.</p>
+				<button
+					type="button"
+					class="btn btn-danger"
+					hx-delete={ listURL(list.ID) }
+					hx-confirm={ fmt.Sprintf("Delete “%s” and all its tasks?", list.Name) }
+				>Delete list</button>
 			</div>
 		</div>
 	</div>
 }
 
-templ sortableScript(listID int64, csrfToken string) {
+// sortableScript wires drag and drop (each [data-task-group] is a Sortable
+// list of tasks, moved by [data-drag-handle]) and the "Add subtask" forms.
+templ sortableScript() {
 	<script src={ ui.Static.URL("vendor/sortable.min.js") }></script>
 	<script>
 		(function () {
-			const csrfToken =
+			var csrfToken =
 				document.querySelector('input[name="csrf_token"]')?.value || "";
-			const listId = Number(
-				document.querySelector("[data-list-id]")?.dataset.listId || 0,
-			);
-			document.querySelectorAll(".task-group").forEach(function (el) {
-				new Sortable(el, {
-					group: "tasks",
-					handle: ".drag-handle",
-					animation: 150,
-					fallbackOnBody: true,
-					swapThreshold: 0.65,
-					onEnd: function (evt) {
-						const parentId = evt.to.dataset.parentId || null;
-						const ids = Array.from(evt.to.children)
-							.filter(function (c) {
-								return c.dataset && c.dataset.taskId;
-							})
-							.map(function (c) {
-								return Number(c.dataset.taskId);
-							});
-						fetch("/apps/tasks/reorder", {
-							method: "POST",
-							headers: {
-								"Content-Type": "application/json",
-								"X-CSRF-Token": csrfToken,
-							},
-							body: JSON.stringify({
-								list_id: listId,
-								parent_id: parentId ? Number(parentId) : null,
-								task_ids: ids,
-							}),
-						});
+			function save(group) {
+				var parentId = group.dataset.parentId || null;
+				var ids = Array.from(group.children)
+					.filter(function (c) {
+						return c.dataset && c.dataset.taskId;
+					})
+					.map(function (c) {
+						return Number(c.dataset.taskId);
+					});
+				fetch("/apps/tasks/reorder", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						"X-CSRF-Token": csrfToken,
 					},
+					body: JSON.stringify({
+						list_id: Number(group.dataset.listId),
+						parent_id: parentId ? Number(parentId) : null,
+						task_ids: ids,
+					}),
+				}).then(function (r) {
+					if (!r.ok) console.error("reorder tasks", r.status);
+				}, function (err) {
+					console.error("reorder tasks", err);
 				});
+			}
+			function init(root) {
+				root.querySelectorAll("[data-task-group]").forEach(function (el) {
+					if (el.closest(".task-completed") || el.dataset.sortable) return;
+					el.dataset.sortable = "1";
+					new Sortable(el, {
+						group: "tasks",
+						handle: "[data-drag-handle]",
+						animation: 150,
+						fallbackOnBody: true,
+						swapThreshold: 0.65,
+						onEnd: function (evt) {
+							save(evt.to);
+						},
+					});
+				});
+			}
+			init(document);
+			document.body.addEventListener("htmx:afterSwap", function (e) {
+				init(e.target.parentElement || document);
+			});
+			// Ticking a top-level task replaces the root groups out of band.
+			// The ticked box keeps focus if its row is still on screen.
+			var toggled = "";
+			document.body.addEventListener("htmx:beforeRequest", function (e) {
+				var box = e.target.closest && e.target.closest(".task-check input");
+				if (box) toggled = box.closest("[data-task-id]").id;
+			});
+			document.body.addEventListener("htmx:oobAfterSwap", function () {
+				init(document);
+				var box = toggled && document.querySelector("#" + toggled + " > .task-row .task-check input");
+				if (box && box.offsetParent) box.focus();
+			});
+			document.addEventListener("click", function (e) {
+				var open = e.target.closest("[data-subtask-open]");
+				if (open) {
+					var form = document.getElementById(open.dataset.subtaskOpen);
+					var dd = open.closest(".dropdown");
+					if (dd) {
+						dd.classList.remove("open");
+						var t = dd.querySelector("[data-dropdown-toggle]");
+						if (t) t.setAttribute("aria-expanded", "false");
+					}
+					if (form) {
+						form.hidden = false;
+						form.querySelector('input[name="summary"]').focus();
+					}
+					return;
+				}
+				var cancel = e.target.closest("[data-subtask-cancel]");
+				if (cancel) cancel.closest("[data-subtask-form]").hidden = true;
 			});
 		})();
 	</script>
 }
+
+func listURL(id int64) string { return "/apps/tasks/list/" + strconv.FormatInt(id, 10) }
+func taskURL(id int64) string { return "/apps/tasks/task/" + strconv.FormatInt(id, 10) }
 
 func sidebarClass(activeList, listID int64) string {
 	if activeList == listID {
@@ -319,18 +477,26 @@ func sidebarClass(activeList, listID int64) string {
 	return "sidebar-item"
 }
 
-func taskItemClass(task *Task) string {
-	if task.Done() {
-		return "task-item completed"
+// openRoots and doneRoots split a list's top-level tasks: the completed ones
+// are shown apart, below the rest.
+func openRoots(all []Task) []Task {
+	var out []Task
+	for _, t := range RootTasks(all) {
+		if !t.Done() {
+			out = append(out, t)
+		}
 	}
-	return "task-item"
+	return out
 }
 
-func taskSummaryClass(task *Task) string {
-	if task.Done() {
-		return "task-summary completed"
+func doneRoots(all []Task) []Task {
+	var out []Task
+	for _, t := range RootTasks(all) {
+		if t.Done() {
+			out = append(out, t)
+		}
 	}
-	return "task-summary"
+	return out
 }
 
 func parentIDAttr(tasks []Task) string {
@@ -340,47 +506,111 @@ func parentIDAttr(tasks []Task) string {
 	return ""
 }
 
-func groupIndent(depth int) string {
-	if depth == 0 {
-		return ""
-	}
-	return fmt.Sprintf("margin-left:%drem", depth)
+// option is one choice in a select.
+type option struct {
+	Value, Label string
 }
 
-// dueTime returns when a task is due; a due date is shown as that date
-// wherever the server is.
-func dueTime(task *Task) time.Time {
+// statusOptions are the iCalendar statuses a task can have, in words.
+var statusOptions = []option{
+	{"NEEDS-ACTION", "To do"},
+	{"IN-PROCESS", "In progress"},
+	{"COMPLETED", "Done"},
+	{"CANCELLED", "Cancelled"},
+}
+
+// priorityLevel is how a PRIORITY reads: 1–4 high, 5 medium, 6–9 low
+// (RFC 5545 §3.8.1.9), 0 none.
+type priorityLevel struct {
+	Label, Class string
+}
+
+func priorityOf(p int) priorityLevel {
+	switch {
+	case p >= 1 && p <= 4:
+		return priorityLevel{"High", "task-prio-high"}
+	case p == 5:
+		return priorityLevel{"Medium", "task-prio-medium"}
+	case p >= 6 && p <= 9:
+		return priorityLevel{"Low", "task-prio-low"}
+	}
+	return priorityLevel{}
+}
+
+// priorityChoice is one option of the priority select.
+type priorityChoice struct {
+	Value    int
+	Label    string
+	Selected bool
+}
+
+// priorityOptions are the priority select's choices. The task's own value
+// stands for its level, so saving without touching the select keeps a
+// client's 3 a 3 rather than rounding it to 1.
+func priorityOptions(current int) []priorityChoice {
+	out := []priorityChoice{{0, "None", false}, {1, "High", false}, {5, "Medium", false}, {9, "Low", false}}
+	for i := range out {
+		if priorityOf(out[i].Value) == priorityOf(current) {
+			out[i].Value, out[i].Selected = current, true
+		}
+	}
+	return out
+}
+
+// dueIn returns when a task is due, in loc. A due date (stored as midnight
+// UTC) is that day, wherever loc is.
+func dueIn(task *Task, loc *time.Location) time.Time {
+	if loc == nil {
+		loc = time.UTC
+	}
 	t := time.Unix(*task.DueAt, 0)
 	if task.DueIsDate {
-		return t.UTC()
+		u := t.UTC()
+		return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, loc)
 	}
-	return t
+	return t.In(loc)
 }
 
-func formatDueDate(task *Task) string {
-	t := dueTime(task)
-	now := time.Now().In(t.Location())
-	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
-		return "Today"
+// formatDueDate says when a task is due, relative to now, in the list's
+// zone: "Today", "Tomorrow 14:00", "Mar 28", "Mar 28, 2025".
+func formatDueDate(task *Task, now time.Time, loc *time.Location) string {
+	if loc == nil {
+		loc = time.UTC
 	}
-	tomorrow := now.AddDate(0, 0, 1)
-	if t.Year() == tomorrow.Year() && t.YearDay() == tomorrow.YearDay() {
-		return "Tomorrow"
+	d, n := dueIn(task, loc), now.In(loc)
+	today := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, loc)
+	day := time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, loc)
+	var s string
+	switch {
+	case day.Equal(today):
+		s = "Today"
+	case day.Equal(today.AddDate(0, 0, 1)):
+		s = "Tomorrow"
+	case day.Equal(today.AddDate(0, 0, -1)):
+		s = "Yesterday"
+	case d.Year() == n.Year():
+		s = d.Format("Jan 2")
+	default:
+		s = d.Format("Jan 2, 2006")
 	}
-	if t.Year() == now.Year() {
-		return t.Format("Jan 2")
+	if !task.DueIsDate {
+		s += " " + d.Format("15:04")
 	}
-	return t.Format("2006-01-02")
+	return s
 }
 
-func dueBadgeClass(task *Task) string {
-	now := time.Now()
-	t := dueTime(task)
+// dueBadgeClass colours a due date: overdue once it has passed (a due date
+// at the end of its day), due soon within a day of it. A finished task is
+// due nothing.
+func dueBadgeClass(task *Task, now time.Time, loc *time.Location) string {
+	if task.Done() || task.Status == "CANCELLED" {
+		return "badge badge-outline"
+	}
+	t := dueIn(task, loc)
 	if task.DueIsDate {
-		// Due on a day: overdue once that day is over.
-		t = time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, time.Local)
+		t = t.AddDate(0, 0, 1)
 	}
-	if t.Before(now) {
+	if !now.Before(t) {
 		return "badge badge-overdue"
 	}
 	if t.Before(now.AddDate(0, 0, 1)) {

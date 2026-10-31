@@ -59,8 +59,14 @@ func (e *FilterEngine) Apply(itemID int64) error {
 			continue
 		}
 
-		tags, _ := e.store.ItemTags(itemID)
-		dl, _ := e.store.GetDownload(itemID)
+		tags, err := e.store.ItemTags(itemID)
+		if err != nil {
+			return fmt.Errorf("filter apply: item tags: %w", err)
+		}
+		dl, err := e.store.FindDownload(itemID)
+		if err != nil {
+			return fmt.Errorf("filter apply: %w", err)
+		}
 		downloaded := dl.State == "ready"
 		rec := BuildRecord(it, sub, folder, tags, !it.IsRead, it.IsStarred, downloaded)
 

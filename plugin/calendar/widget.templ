@@ -3,31 +3,40 @@ package calendar
 import (
 	"fmt"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/ui"
 )
 
-templ eventsWidget(events []EventWithCalendar) {
+templ eventsWidget(events []EventWithCalendar, now time.Time) {
 	if len(events) == 0 {
-		<p class="text-muted">No upcoming events.</p>
+		@ui.WidgetEmpty("Nothing coming up.", "Open calendar", "/apps/calendar/")
 	} else {
-		for _, ev := range events {
-			<div style="padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
-				<a href={ templ.SafeURL(fmt.Sprintf("/apps/calendar/?date=%s", time.Unix(ev.DTStart, 0).UTC().Format("2006-01-02"))) } style="font-weight:500">
-					{ ev.Summary }
-				</a>
-				<div class="text-muted" style="font-size:0.85rem">
-					{ widgetEventTime(ev) }
-				</div>
-			</div>
-		}
+		<ul class="widget-list">
+			for _, ev := range events {
+				<li class="cal-widget-row">
+					<span class="color-dot" style={ "background:" + widgetColor(ev) }></span>
+					<div class="cal-widget-text">
+						<a class="cal-widget-title" href={ templ.SafeURL(fmt.Sprintf("/apps/calendar/?date=%s&event=%d", widgetDate(ev), ev.ID)) }>{ ev.Summary }</a>
+						<div class="text-sm text-muted">{ formatEventTime(ev.DTStart, ev.DTEnd, ev.IsAllDay, ev.Zone(), now) }</div>
+					</div>
+				</li>
+			}
+		</ul>
 	}
 }
 
-// widgetEventTime formats an event's start in its calendar's zone. All-day
-// dates are stored at UTC midnight, so they're formatted in UTC.
-func widgetEventTime(ev EventWithCalendar) string {
-	start := time.Unix(ev.DTStart, 0)
+// widgetDate is the day an event starts, which the calendar opens on.
+func widgetDate(ev EventWithCalendar) string {
+	t := time.Unix(ev.DTStart, 0)
 	if ev.IsAllDay {
-		return start.UTC().Format("Mon, Jan 2")
+		return t.UTC().Format("2006-01-02")
 	}
-	return start.In(ev.Zone()).Format("Mon, Jan 2 15:04")
+	return t.In(ev.Zone()).Format("2006-01-02")
+}
+
+func widgetColor(ev EventWithCalendar) string {
+	if ev.Color != "" {
+		return ev.Color
+	}
+	return ev.CalendarColor
 }

@@ -1,0 +1,1207 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      Calendar — Cog
+    </title>
+    <style data-fullcalendar="" />
+    <link href="/static/style.css?v=22be9710446b" rel="stylesheet" />
+    <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxyZWN0IHg9IjMiIHk9IjQiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIj48L3JlY3Q+PGxpbmUgeDE9IjE2IiB5MT0iMiIgeDI9IjE2IiB5Mj0iNiI+PC9saW5lPjxsaW5lIHgxPSI4IiB5MT0iMiIgeDI9IjgiIHkyPSI2Ij48L2xpbmU+PGxpbmUgeDE9IjMiIHkxPSIxMCIgeDI9IjIxIiB5Mj0iMTAiPjwvbGluZT48L3N2Zz4=" rel="icon" type="image/svg+xml" />
+    <style>
+      .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
+  <body hx-headers="{\"X-CSRF-Token\":\"«hex»\"}">
+    <nav aria-label="Main" class="navbar">
+      <a aria-label="Cog home" class="navbar-brand" href="/">
+        <svg aria-hidden="true" fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        <span class="brand-text">
+          Cog
+        </span>
+      </a>
+      <ul class="navbar-nav">
+        <li>
+          <a aria-current="page" class="active" href="/apps/calendar" title="Calendar">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <rect height="18" rx="2" ry="2" width="18" x="3" y="4" />
+              <line x1="16" x2="16" y1="2" y2="6" />
+              <line x1="8" x2="8" y1="2" y2="6" />
+              <line x1="3" x2="21" y1="10" y2="10" />
+            </svg>
+            <span class="nav-label">
+              Calendar
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="/" title="Dashboard">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            <span class="nav-label">
+              Dashboard
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="/apps/files" title="Files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <span class="nav-label">
+              Files
+            </span>
+          </a>
+        </li>
+      </ul>
+      <div class="dropdown navbar-apps">
+        <button aria-controls="apps-menu" aria-expanded="false" aria-label="Apps" class="btn-icon" data-dropdown-toggle="" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <rect height="7" width="7" x="3" y="3" />
+            <rect height="7" width="7" x="14" y="3" />
+            <rect height="7" width="7" x="3" y="14" />
+            <rect height="7" width="7" x="14" y="14" />
+          </svg>
+        </button>
+        <div class="dropdown-menu" id="apps-menu">
+          <a aria-current="page" class="active" href="/apps/calendar">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <rect height="18" rx="2" ry="2" width="18" x="3" y="4" />
+              <line x1="16" x2="16" y1="2" y2="6" />
+              <line x1="8" x2="8" y1="2" y2="6" />
+              <line x1="3" x2="21" y1="10" y2="10" />
+            </svg>
+            Calendar
+          </a>
+          <a href="/">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            Dashboard
+          </a>
+          <a href="/apps/files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            Files
+          </a>
+          <div class="dropdown-divider" />
+          <button data-search-open="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" x2="16.65" y1="21" y2="16.65" />
+            </svg>
+            Search
+          </button>
+          <a class="" href="/settings/profile">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="4" x2="4" y1="21" y2="14" />
+              <line x1="4" x2="4" y1="10" y2="3" />
+              <line x1="12" x2="12" y1="21" y2="12" />
+              <line x1="12" x2="12" y1="8" y2="3" />
+              <line x1="20" x2="20" y1="21" y2="16" />
+              <line x1="20" x2="20" y1="12" y2="3" />
+              <line x1="1" x2="7" y1="14" y2="14" />
+              <line x1="9" x2="15" y1="8" y2="8" />
+              <line x1="17" x2="23" y1="16" y2="16" />
+            </svg>
+            Settings
+          </a>
+        </div>
+      </div>
+      <div class="navbar-spacer" />
+      <div class="navbar-search" role="search">
+        <label class="sr-only" for="search-box">
+          Search
+        </label>
+        <input aria-controls="search-results" autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)…" type="search" />
+        <div aria-live="polite" class="search-results" id="search-results" />
+      </div>
+      <button aria-controls="search-box" aria-expanded="false" aria-label="Search" class="btn-icon search-toggle" data-search-open="" type="button">
+        <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+          <circle cx="11" cy="11" r="7" />
+          <line x1="21" x2="16.65" y1="21" y2="16.65" />
+        </svg>
+      </button>
+      <div class="navbar-end">
+        <div class="dropdown notif-dropdown" hidden="" id="notif">
+          <button aria-controls="notif-panel" aria-expanded="false" aria-label="Notifications" class="btn-icon" data-dropdown-toggle="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <span class="notif-badge" id="notif-badge" />
+          </button>
+          <div class="dropdown-menu" id="notif-panel" />
+        </div>
+        <div class="dropdown">
+          <button aria-controls="user-menu" aria-expanded="false" aria-label="Account menu for week" class="dropdown-toggle" data-dropdown-toggle="" type="button">
+            <img alt="" class="avatar-sm" src="/avatar/«hex»" />
+            <span class="dropdown-username">
+              week
+            </span>
+            <span aria-hidden="true" class="dropdown-caret">
+              ▾
+            </span>
+          </button>
+          <div class="dropdown-menu" id="user-menu">
+            <div class="dropdown-header">
+              <strong>
+                week
+              </strong>
+            </div>
+            <div class="dropdown-divider" />
+            <a class="" href="/settings/profile">
+              Profile
+            </a>
+            <a class="" href="/settings/security">
+              Security
+            </a>
+            <a class="" href="/settings/storage">
+              Storage
+            </a>
+            <a class="" href="/settings/groups">
+              Groups
+            </a>
+            <a class="" href="/settings/data">
+              Import and export
+            </a>
+            <div class="dropdown-divider" />
+            <form action="/logout" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <button type="submit">
+                Log out
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <main class="content" data-plugin="calendar">
+      <div class="sidebar-layout has-sidebar-toggle">
+        <button aria-controls="sidebar-1" aria-expanded="false" aria-label="Menu: Calendar" class="sidebar-toggle" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <line x1="3" x2="21" y1="6" y2="6" />
+            <line x1="3" x2="21" y1="12" y2="12" />
+            <line x1="3" x2="21" y1="18" y2="18" />
+          </svg>
+          <span class="sidebar-toggle-label" data-label="Calendar" />
+          <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        <nav aria-label="Calendar" class="sidebar" id="sidebar-1">
+          <a aria-current="page" class="sidebar-item active" href="/apps/calendar/">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <rect height="18" rx="2" width="18" x="3" y="4" />
+              <line x1="16" x2="16" y1="2" y2="6" />
+              <line x1="8" x2="8" y1="2" y2="6" />
+              <line x1="3" x2="21" y1="10" y2="10" />
+            </svg>
+            Calendar
+          </a>
+          <div class="sidebar-heading">
+            Calendars
+          </div>
+          <label class="sidebar-item cal-toggle">
+            <input checked="" data-cal-toggle="3" style="accent-color:#43a047;" type="checkbox" />
+            <span class="cal-toggle-name">
+              Family
+            </span>
+          </label>
+          <label class="sidebar-item cal-toggle">
+            <input checked="" data-cal-toggle="1" style="accent-color:#0082c9;" type="checkbox" />
+            <span class="cal-toggle-name">
+              Personal
+            </span>
+          </label>
+          <label class="sidebar-item cal-toggle">
+            <input checked="" data-cal-toggle="2" style="accent-color:#e64a19;" type="checkbox" />
+            <span class="cal-toggle-name">
+              Work
+            </span>
+          </label>
+          <div class="sidebar-divider" />
+          <a class="sidebar-item" href="/apps/calendar/settings">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="4" x2="4" y1="21" y2="14" />
+              <line x1="4" x2="4" y1="10" y2="3" />
+              <line x1="12" x2="12" y1="21" y2="12" />
+              <line x1="12" x2="12" y1="8" y2="3" />
+              <line x1="20" x2="20" y1="21" y2="16" />
+              <line x1="20" x2="20" y1="12" y2="3" />
+              <line x1="1" x2="7" y1="14" y2="14" />
+              <line x1="9" x2="15" y1="8" y2="8" />
+              <line x1="17" x2="23" y1="16" y2="16" />
+            </svg>
+            Settings
+          </a>
+        </nav>
+        <div class="sidebar-content">
+          <div class="cal-card">
+            <div class="fc fc-media-screen fc-direction-ltr fc-theme-standard" data-can-create="" id="calendar" style="height: 540px;">
+              <div class="fc-header-toolbar fc-toolbar fc-toolbar-ltr">
+                <div class="fc-toolbar-chunk">
+                  <div class="fc-button-group">
+                    <button aria-pressed="false" class="fc-prev-button fc-button fc-button-primary" title="Previous" type="button">
+                      <span class="fc-icon fc-icon-chevron-left" role="img" />
+                    </button>
+                    <button aria-pressed="false" class="fc-next-button fc-button fc-button-primary" title="Next" type="button">
+                      <span class="fc-icon fc-icon-chevron-right" role="img" />
+                    </button>
+                  </div>
+                </div>
+                <div class="fc-toolbar-chunk">
+                  <h2 class="fc-toolbar-title" id="fc-dom-1">
+                    Mar 10 – 12
+                  </h2>
+                </div>
+                <div class="fc-toolbar-chunk">
+                  <button aria-pressed="false" class="fc-newEvent-button fc-button fc-button-primary" title="New event" type="button">
+                    New event
+                  </button>
+                </div>
+              </div>
+              <div aria-labelledby="fc-dom-1" class="fc-view-harness fc-view-harness-active">
+                <div class="fc-timeGridThreeDay-view fc-view fc-timegrid">
+                  <table class="fc-scrollgrid fc-scrollgrid-liquid" role="grid">
+                    <thead role="rowgroup">
+                      <tr class="fc-scrollgrid-section fc-scrollgrid-section-header" role="presentation">
+                        <th role="presentation">
+                          <div class="fc-scroller-harness">
+                            <div class="fc-scroller" style="overflow: hidden scroll;">
+                              <table class="fc-col-header" role="presentation" style="width: 301px;">
+                                <colgroup>
+                                  <col style="width: 57px;" />
+                                </colgroup>
+                                <thead role="presentation">
+                                  <tr role="row">
+                                    <th aria-hidden="true" class="fc-timegrid-axis">
+                                      <div class="fc-timegrid-axis-frame" />
+                                    </th>
+                                    <th class="fc-col-header-cell fc-day fc-day-mon fc-day-past" data-date="2025-03-10" role="columnheader">
+                                      <div class="fc-scrollgrid-sync-inner">
+                                        <a aria-label="March 10, 2025" class="fc-col-header-cell-cushion">
+                                          Mon 3/10
+                                        </a>
+                                      </div>
+                                    </th>
+                                    <th class="fc-col-header-cell fc-day fc-day-tue fc-day-past" data-date="2025-03-11" role="columnheader">
+                                      <div class="fc-scrollgrid-sync-inner">
+                                        <a aria-label="March 11, 2025" class="fc-col-header-cell-cushion">
+                                          Tue 3/11
+                                        </a>
+                                      </div>
+                                    </th>
+                                    <th class="fc-col-header-cell fc-day fc-day-wed fc-day-past" data-date="2025-03-12" role="columnheader">
+                                      <div class="fc-scrollgrid-sync-inner">
+                                        <a aria-label="March 12, 2025" class="fc-col-header-cell-cushion">
+                                          Wed 3/12
+                                        </a>
+                                      </div>
+                                    </th>
+                                  </tr>
+                                </thead>
+                              </table>
+                            </div>
+                          </div>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody role="rowgroup">
+                      <tr class="fc-scrollgrid-section fc-scrollgrid-section-body" role="presentation">
+                        <td role="presentation">
+                          <div class="fc-scroller-harness">
+                            <div class="fc-scroller" style="overflow: hidden scroll;">
+                              <div class="fc-daygrid-body fc-daygrid-body-unbalanced fc-daygrid-body-natural" style="width: 301px;">
+                                <table class="fc-scrollgrid-sync-table" role="presentation" style="width: 301px;">
+                                  <colgroup>
+                                    <col style="width: 57px;" />
+                                  </colgroup>
+                                  <tbody role="presentation">
+                                    <tr role="row">
+                                      <td aria-hidden="true" class="fc-timegrid-axis fc-scrollgrid-shrink">
+                                        <div class="fc-timegrid-axis-frame fc-scrollgrid-shrink-frame fc-timegrid-axis-frame-liquid">
+                                          <span class="fc-timegrid-axis-cushion fc-scrollgrid-shrink-cushion fc-scrollgrid-sync-inner">
+                                            all-day
+                                          </span>
+                                        </div>
+                                      </td>
+                                      <td class="fc-day fc-day-mon fc-day-past fc-daygrid-day" data-date="2025-03-10" role="gridcell">
+                                        <div class="fc-daygrid-day-frame fc-scrollgrid-sync-inner">
+                                          <div class="fc-daygrid-day-events">
+                                            <div class="fc-daygrid-day-bottom" style="margin-top: 0px;" />
+                                          </div>
+                                          <div class="fc-daygrid-day-bg" />
+                                        </div>
+                                      </td>
+                                      <td class="fc-day fc-day-tue fc-day-past fc-daygrid-day" data-date="2025-03-11" role="gridcell">
+                                        <div class="fc-daygrid-day-frame fc-scrollgrid-sync-inner">
+                                          <div class="fc-daygrid-day-events">
+                                            <div class="fc-daygrid-day-bottom" style="margin-top: 0px;" />
+                                          </div>
+                                          <div class="fc-daygrid-day-bg" />
+                                        </div>
+                                      </td>
+                                      <td class="fc-day fc-day-wed fc-day-past fc-daygrid-day" data-date="2025-03-12" role="gridcell">
+                                        <div class="fc-daygrid-day-frame fc-scrollgrid-sync-inner">
+                                          <div class="fc-daygrid-day-events">
+                                            <div class="fc-daygrid-day-bottom" style="margin-top: 0px;" />
+                                          </div>
+                                          <div class="fc-daygrid-day-bg" />
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="fc-scrollgrid-section" role="presentation">
+                        <td class="fc-timegrid-divider fc-cell-shaded" />
+                      </tr>
+                      <tr class="fc-scrollgrid-section fc-scrollgrid-section-body fc-scrollgrid-section-liquid" role="presentation">
+                        <td role="presentation">
+                          <div class="fc-scroller-harness fc-scroller-harness-liquid">
+                            <div class="fc-scroller fc-scroller-liquid-absolute" style="overflow: hidden scroll;">
+                              <div class="fc-timegrid-body" style="width: 301px;">
+                                <div class="fc-timegrid-slots">
+                                  <table aria-hidden="true" class="" style="width: 301px;">
+                                    <colgroup>
+                                      <col style="width: 57px;" />
+                                    </colgroup>
+                                    <tbody>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="00:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              12am
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="00:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="00:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="00:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="01:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              1am
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="01:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="01:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="01:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="02:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              2am
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="02:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="02:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="02:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="03:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              3am
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="03:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="03:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="03:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="04:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              4am
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="04:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="04:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="04:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="05:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              5am
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="05:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="05:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="05:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="06:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              6am
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="06:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="06:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="06:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="07:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              7am
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="07:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="07:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="07:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="08:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              8am
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="08:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="08:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="08:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="09:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              9am
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="09:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="09:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="09:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="10:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              10am
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="10:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="10:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="10:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="11:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              11am
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="11:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="11:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="11:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="12:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              12pm
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="12:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="12:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="12:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="13:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              1pm
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="13:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="13:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="13:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="14:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              2pm
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="14:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="14:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="14:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="15:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              3pm
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="15:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="15:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="15:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="16:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              4pm
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="16:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="16:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="16:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="17:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              5pm
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="17:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="17:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="17:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="18:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              6pm
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="18:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="18:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="18:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="19:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              7pm
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="19:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="19:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="19:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="20:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              8pm
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="20:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="20:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="20:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="21:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              9pm
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="21:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="21:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="21:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="22:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              10pm
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="22:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="22:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="22:30:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-scrollgrid-shrink" data-time="23:00:00">
+                                          <div class="fc-timegrid-slot-label-frame fc-scrollgrid-shrink-frame">
+                                            <div class="fc-timegrid-slot-label-cushion fc-scrollgrid-shrink-cushion">
+                                              11pm
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane" data-time="23:00:00" />
+                                      </tr>
+                                      <tr>
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-label fc-timegrid-slot-minor" data-time="23:30:00" />
+                                        <td class="fc-timegrid-slot fc-timegrid-slot-lane fc-timegrid-slot-minor" data-time="23:30:00" />
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <div class="fc-timegrid-cols">
+                                  <table role="presentation" style="width: 301px;">
+                                    <colgroup>
+                                      <col style="width: 57px;" />
+                                    </colgroup>
+                                    <tbody role="presentation">
+                                      <tr role="row">
+                                        <td aria-hidden="true" class="fc-timegrid-col fc-timegrid-axis">
+                                          <div class="fc-timegrid-col-frame">
+                                            <div class="fc-timegrid-now-indicator-container" />
+                                          </div>
+                                        </td>
+                                        <td class="fc-day fc-day-mon fc-day-past fc-timegrid-col" data-date="2025-03-10" role="gridcell">
+                                          <div class="fc-timegrid-col-frame">
+                                            <div class="fc-timegrid-col-bg" />
+                                            <div class="fc-timegrid-col-events">
+                                              <div class="fc-timegrid-event-harness fc-timegrid-event-harness-inset" style="inset: 684px 0% -708px; z-index: 1;">
+                                                <a class="fc-event fc-event-start fc-event-end fc-event-past fc-timegrid-event fc-v-event fc-timegrid-event-short" style="border-color: rgb(0, 130, 201); background-color: rgb(0, 130, 201);" tabindex="0">
+                                                  <div class="fc-event-main">
+                                                    <div class="fc-event-main-frame">
+                                                      <div class="fc-event-title-container">
+                                                        <div class="fc-event-title fc-sticky">
+                                                          Team Standup
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                </a>
+                                              </div>
+                                            </div>
+                                            <div class="fc-timegrid-col-events" />
+                                            <div class="fc-timegrid-now-indicator-container" />
+                                          </div>
+                                        </td>
+                                        <td class="fc-day fc-day-tue fc-day-past fc-timegrid-col" data-date="2025-03-11" role="gridcell">
+                                          <div class="fc-timegrid-col-frame">
+                                            <div class="fc-timegrid-col-bg" />
+                                            <div class="fc-timegrid-col-events">
+                                              <div class="fc-timegrid-event-harness fc-timegrid-event-harness-inset" style="inset: 1008px 0% -1080px; z-index: 1;">
+                                                <a class="fc-event fc-event-start fc-event-end fc-event-past fc-timegrid-event fc-v-event" style="border-color: rgb(0, 130, 201); background-color: rgb(0, 130, 201);" tabindex="0">
+                                                  <div class="fc-event-main">
+                                                    <div class="fc-event-main-frame">
+                                                      <div class="fc-event-title-container">
+                                                        <div class="fc-event-title fc-sticky">
+                                                          Dentist Appointment
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                </a>
+                                              </div>
+                                            </div>
+                                            <div class="fc-timegrid-col-events" />
+                                            <div class="fc-timegrid-now-indicator-container" />
+                                          </div>
+                                        </td>
+                                        <td class="fc-day fc-day-wed fc-day-past fc-timegrid-col" data-date="2025-03-12" role="gridcell">
+                                          <div class="fc-timegrid-col-frame">
+                                            <div class="fc-timegrid-col-bg" />
+                                            <div class="fc-timegrid-col-events">
+                                              <div class="fc-timegrid-event-harness fc-timegrid-event-harness-inset" style="inset: 684px 0% -708px; z-index: 1;">
+                                                <a class="fc-event fc-event-start fc-event-end fc-event-past fc-timegrid-event fc-v-event fc-timegrid-event-short" style="border-color: rgb(0, 130, 201); background-color: rgb(0, 130, 201);" tabindex="0">
+                                                  <div class="fc-event-main">
+                                                    <div class="fc-event-main-frame">
+                                                      <div class="fc-event-title-container">
+                                                        <div class="fc-event-title fc-sticky">
+                                                          Team Standup
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                </a>
+                                              </div>
+                                              <div class="fc-timegrid-event-harness fc-timegrid-event-harness-inset" style="inset: 720px 0% -828px; z-index: 1;">
+                                                <a class="fc-event fc-event-start fc-event-end fc-event-past fc-timegrid-event fc-v-event" style="border-color: rgb(230, 74, 25); background-color: rgb(230, 74, 25);" tabindex="0">
+                                                  <div class="fc-event-main">
+                                                    <div class="fc-event-main-frame">
+                                                      <div class="fc-event-title-container">
+                                                        <div class="fc-event-title fc-sticky">
+                                                          Quarterly planning with the whole product and engineering leadership group
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                </a>
+                                              </div>
+                                            </div>
+                                            <div class="fc-timegrid-col-events" />
+                                            <div class="fc-timegrid-now-indicator-container" />
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="fc-footer-toolbar fc-toolbar fc-toolbar-ltr">
+                <div class="fc-toolbar-chunk">
+                  <button aria-pressed="false" class="fc-today-button fc-button fc-button-primary" title="This" type="button">
+                    Today
+                  </button>
+                </div>
+                <div class="fc-toolbar-chunk" />
+                <div class="fc-toolbar-chunk">
+                  <div class="fc-button-group">
+                    <button aria-pressed="false" class="fc-dayGridMonth-button fc-button fc-button-primary" title="Month view" type="button">
+                      Month
+                    </button>
+                    <button aria-pressed="true" class="fc-timeGridThreeDay-button fc-button fc-button-primary fc-button-active" title="3 days view" type="button">
+                      3 days
+                    </button>
+                    <button aria-pressed="false" class="fc-listWeek-button fc-button fc-button-primary" title="Agenda view" type="button">
+                      Agenda
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <dialog aria-labelledby="create-modal-title" class="modal" id="create-modal">
+        <div class="modal-header">
+          <h2 class="modal-title" id="create-modal-title">
+            New event
+          </h2>
+          <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <form action="/apps/calendar/events" id="create-event-form" method="post">
+          <div class="modal-body">
+            <input name="csrf_token" type="hidden" value="«hex»" />
+            <div class="form-group">
+              <label for="ce-summary">
+                Title
+              </label>
+              <input class="form-control" id="ce-summary" name="summary" required="" type="text" value="" />
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="ce-calendar">
+                  Calendar
+                </label>
+                <select class="form-control" data-cal-select="" id="ce-calendar" name="calendar_id">
+                  <option data-color="#43a047" value="3">
+                    Family
+                  </option>
+                  <option data-color="#0082c9" value="1">
+                    Personal
+                  </option>
+                  <option data-color="#e64a19" value="2">
+                    Work
+                  </option>
+                </select>
+              </div>
+              <div class="form-group form-group-auto cal-allday">
+                <label class="form-check">
+                  <input data-all-day="" id="ce-allday" name="all_day" type="checkbox" />
+                  All day
+                </label>
+              </div>
+            </div>
+            <div class="form-row" data-timed="">
+              <div class="form-group">
+                <label for="ce-start">
+                  Starts
+                </label>
+                <input class="form-control" id="ce-start" name="datetime_start" required="" type="datetime-local" />
+              </div>
+              <div class="form-group">
+                <label for="ce-end">
+                  Ends
+                </label>
+                <input class="form-control" id="ce-end" name="datetime_end" type="datetime-local" />
+              </div>
+            </div>
+            <div class="form-row" data-dated="" hidden="">
+              <div class="form-group">
+                <label for="ce-date-start">
+                  Starts
+                </label>
+                <input class="form-control" id="ce-date-start" name="date_start" type="date" value="" />
+              </div>
+              <div class="form-group">
+                <label for="ce-date-end">
+                  Ends
+                </label>
+                <input class="form-control" id="ce-date-end" name="date_end" type="date" value="" />
+              </div>
+            </div>
+            <details class="cal-tz" data-timed="">
+              <summary>
+                Time zone:
+                <span data-tz-label="" />
+              </summary>
+              <div class="form-group">
+                <label class="sr-only" for="ce-tz">
+                  Time zone
+                </label>
+                <input class="form-control w-md" data-browser-tz="" data-tz-input="" id="ce-tz" list="cal-timezones" name="tz" type="text" />
+                <p class="form-help">
+                  The start and end are times in this zone.
+                </p>
+              </div>
+            </details>
+            <div class="form-group">
+              <label for="ce-location">
+                Location
+              </label>
+              <input class="form-control" id="ce-location" name="location" type="text" value="" />
+            </div>
+            <div class="form-group">
+              <label for="ce-description">
+                Description
+              </label>
+              <textarea class="form-control" id="ce-description" name="description" rows="3" />
+            </div>
+            <div class="form-group">
+              <label for="ce-freq">
+                Repeat
+              </label>
+              <select class="form-control w-sm" data-freq="" id="ce-freq" name="rrule_freq">
+                <option selected="" value="NONE">
+                  Does not repeat
+                </option>
+                <option value="DAILY">
+                  Daily
+                </option>
+                <option value="WEEKLY">
+                  Weekly
+                </option>
+                <option value="MONTHLY">
+                  Monthly
+                </option>
+                <option value="YEARLY">
+                  Yearly
+                </option>
+                <option value="CUSTOM">
+                  Custom rule…
+                </option>
+              </select>
+            </div>
+            <div data-rrule-opts="" hidden="">
+              <div class="form-group">
+                <label for="ce-interval">
+                  Every
+                </label>
+                <div class="cal-every">
+                  <input class="form-control w-xs" id="ce-interval" min="1" name="rrule_interval" type="number" value="1" />
+                  <span data-freq-unit="">
+                    weeks
+                  </span>
+                </div>
+              </div>
+              <fieldset class="form-group" data-byday="" hidden="">
+                <legend>
+                  On
+                </legend>
+                <div class="chip-group cal-days">
+                  <label class="chip" title="Monday">
+                    <input name="rrule_byday" type="checkbox" value="MO" />
+                    M
+                    <span class="sr-only">
+                      Monday
+                    </span>
+                  </label>
+                  <label class="chip" title="Tuesday">
+                    <input name="rrule_byday" type="checkbox" value="TU" />
+                    T
+                    <span class="sr-only">
+                      Tuesday
+                    </span>
+                  </label>
+                  <label class="chip" title="Wednesday">
+                    <input name="rrule_byday" type="checkbox" value="WE" />
+                    W
+                    <span class="sr-only">
+                      Wednesday
+                    </span>
+                  </label>
+                  <label class="chip" title="Thursday">
+                    <input name="rrule_byday" type="checkbox" value="TH" />
+                    T
+                    <span class="sr-only">
+                      Thursday
+                    </span>
+                  </label>
+                  <label class="chip" title="Friday">
+                    <input name="rrule_byday" type="checkbox" value="FR" />
+                    F
+                    <span class="sr-only">
+                      Friday
+                    </span>
+                  </label>
+                  <label class="chip" title="Saturday">
+                    <input name="rrule_byday" type="checkbox" value="SA" />
+                    S
+                    <span class="sr-only">
+                      Saturday
+                    </span>
+                  </label>
+                  <label class="chip" title="Sunday">
+                    <input name="rrule_byday" type="checkbox" value="SU" />
+                    S
+                    <span class="sr-only">
+                      Sunday
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
+              <div class="form-group">
+                <label for="ce-until">
+                  Until
+                  <span class="text-muted">
+                    (optional)
+                  </span>
+                </label>
+                <input class="form-control w-sm" id="ce-until" name="rrule_until" type="date" value="" />
+              </div>
+            </div>
+            <div class="form-group" data-rrule-custom="" hidden="">
+              <label for="ce-rrule">
+                Recurrence rule
+              </label>
+              <input class="form-control mono" hx-get="/apps/calendar/rrule-preview" hx-target="#ce-rrule-desc" hx-trigger="input changed delay:300ms" id="ce-rrule" name="rrule" placeholder="FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10" type="text" value="" />
+              <p class="form-help" id="ce-rrule-desc">
+                An iCalendar RRULE, for repeats the choices above cannot describe.
+              </p>
+            </div>
+            <fieldset class="form-group">
+              <legend>
+                Attendees
+              </legend>
+              <div class="cal-attendee-rows" data-attendees="" />
+              <button class="btn btn-ghost btn-sm" data-add-attendee="" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="12" x2="12" y1="5" y2="19" />
+                  <line x1="5" x2="19" y1="12" y2="12" />
+                </svg>
+                Add attendee
+              </button>
+            </fieldset>
+            <fieldset class="form-group">
+              <legend>
+                Colour
+              </legend>
+              <div aria-label="Event colour" class="cal-swatches" role="radiogroup">
+                <label class="cal-swatch cal-swatch-default">
+                  <input checked="" name="color" type="radio" value="" />
+                  <span class="cal-swatch-dot" data-cal-swatch="" style="background:#43a047;" />
+                  <span>
+                    Calendar’s
+                  </span>
+                </label>
+                <label class="cal-swatch" title="Tomato">
+                  <input name="color" type="radio" value="#d50000" />
+                  <span class="cal-swatch-dot" style="background:#d50000;" />
+                  <span class="sr-only">
+                    Tomato
+                  </span>
+                </label>
+                <label class="cal-swatch" title="Tangerine">
+                  <input name="color" type="radio" value="#f4511e" />
+                  <span class="cal-swatch-dot" style="background:#f4511e;" />
+                  <span class="sr-only">
+                    Tangerine
+                  </span>
+                </label>
+                <label class="cal-swatch" title="Banana">
+                  <input name="color" type="radio" value="#f6bf26" />
+                  <span class="cal-swatch-dot" style="background:#f6bf26;" />
+                  <span class="sr-only">
+                    Banana
+                  </span>
+                </label>
+                <label class="cal-swatch" title="Sage">
+                  <input name="color" type="radio" value="#33b679" />
+                  <span class="cal-swatch-dot" style="background:#33b679;" />
+                  <span class="sr-only">
+                    Sage
+                  </span>
+                </label>
+                <label class="cal-swatch" title="Peacock">
+                  <input name="color" type="radio" value="#039be5" />
+                  <span class="cal-swatch-dot" style="background:#039be5;" />
+                  <span class="sr-only">
+                    Peacock
+                  </span>
+                </label>
+                <label class="cal-swatch" title="Blueberry">
+                  <input name="color" type="radio" value="#3f51b5" />
+                  <span class="cal-swatch-dot" style="background:#3f51b5;" />
+                  <span class="sr-only">
+                    Blueberry
+                  </span>
+                </label>
+                <label class="cal-swatch" title="Grape">
+                  <input name="color" type="radio" value="#8e24aa" />
+                  <span class="cal-swatch-dot" style="background:#8e24aa;" />
+                  <span class="sr-only">
+                    Grape
+                  </span>
+                </label>
+                <label class="cal-swatch" title="Graphite">
+                  <input name="color" type="radio" value="#616161" />
+                  <span class="cal-swatch-dot" style="background:#616161;" />
+                  <span class="sr-only">
+                    Graphite
+                  </span>
+                </label>
+                <label class="cal-swatch" title="Another colour">
+                  <input data-swatch-custom="" name="color" type="radio" value="#0082c9" />
+                  <input aria-label="Another colour" class="cal-swatch-picker" data-swatch-picker="" type="color" value="#0082c9" />
+                </label>
+              </div>
+            </fieldset>
+          </div>
+          <div class="modal-footer">
+            <button class="btn" data-modal-close="" type="button">
+              Cancel
+            </button>
+            <button class="btn btn-primary" type="submit">
+              Create
+            </button>
+          </div>
+        </form>
+      </dialog>
+      <div id="event-modal-slot" />
+      <datalist id="cal-timezones">
+        <option value="UTC" />
+        <option value="Pacific/Honolulu" />
+        <option value="America/Anchorage" />
+        <option value="America/Los_Angeles" />
+        <option value="America/Phoenix" />
+        <option value="America/Denver" />
+        <option value="America/Chicago" />
+        <option value="America/New_York" />
+        <option value="America/Halifax" />
+        <option value="America/Sao_Paulo" />
+        <option value="Europe/London" />
+        <option value="Europe/Berlin" />
+        <option value="Europe/Paris" />
+        <option value="Europe/Helsinki" />
+        <option value="Asia/Kolkata" />
+        <option value="Asia/Shanghai" />
+        <option value="Asia/Tokyo" />
+        <option value="Australia/Sydney" />
+        <option value="Pacific/Auckland" />
+      </datalist>
+      <template id="tpl-attendee-row">
+        <div class="cal-attendee-row">
+          <input aria-label="Attendee email" class="form-control" name="attendee_email" placeholder="name@example.com" type="email" value="" />
+          <input aria-label="Attendee name" class="form-control" name="attendee_name" placeholder="Name (optional)" type="text" value="" />
+          <select aria-label="Attendee role" class="form-control form-control-auto" name="attendee_role">
+            <option selected="" value="REQ-PARTICIPANT">
+              Required
+            </option>
+            <option value="OPT-PARTICIPANT">
+              Optional
+            </option>
+            <option value="CHAIR">
+              Chair
+            </option>
+          </select>
+          <button aria-label="Remove attendee" class="btn-icon btn-icon-danger" data-remove-attendee="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="18" x2="6" y1="6" y2="18" />
+              <line x1="6" x2="18" y1="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </template>
+    </main>
+  </body>
+</html>

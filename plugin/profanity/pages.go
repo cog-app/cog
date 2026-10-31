@@ -1,6 +1,7 @@
 package profanity
 
 import (
+	"git.duckfam.us/jj-software/cog/ui"
 	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -17,7 +18,7 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 	content := h.plugin.readWordListText(username)
 	flash := r.URL.Query().Get("flash")
 	plugin.SetTitle(w, "Profanity Filter")
-	profanitySettingsPage(content, flash, plugin.CSRFToken(r)).Render(r.Context(), w)
+	ui.Render(w, r, profanitySettingsPage(content, flash, plugin.CSRFToken(r)))
 }
 
 // SaveSettings handles POST to save the word list.
@@ -44,7 +45,7 @@ func (h *Pages) AdminSettings(w http.ResponseWriter, r *http.Request) {
 		TTSCommand: h.plugin.getSetting(db, "tts_command", ""),
 	}
 	flash := r.URL.Query().Get("flash")
-	profanityAdminPage(cfg, flash, plugin.CSRFToken(r)).Render(r.Context(), w)
+	ui.Render(w, r, profanityAdminPage(cfg, flash, plugin.CSRFToken(r)))
 }
 
 // SaveAdminSettings handles POST to save admin TTS configuration.

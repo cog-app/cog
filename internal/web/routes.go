@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/pprof"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/compat"
@@ -358,6 +359,7 @@ func New(p *services.Providers) http.Handler {
 	mux.HandleFunc("POST /index.php/login/v2/poll", loginFlow.HandlePoll)
 	mux.HandleFunc("GET /index.php/login/v2/grant", loginFlow.HandleGrant)
 	mux.HandleFunc("POST /index.php/login/v2/grant", loginFlow.HandleGrant)
+	mux.HandleFunc("GET /index.php/login/v2/done", loginFlow.HandleDone)
 
 	// --- Admin share management (for system volumes) ---
 	shareH := shareHandler{h}
@@ -386,7 +388,28 @@ func New(p *services.Providers) http.Handler {
 		filesAPI.RegisterRoutes(mux)
 	}
 
-	return authMW.Wrap(mfaEnforcement(p)(mux))
+	return authMW.Wrap(mfaEnforcement(p)(htmlNotFound(p, mux)))
+}
+
+// htmlNotFound answers a browser asking for a page no route serves with the
+// styled "page not found" page inside the normal shell, so the user can
+// navigate on. API, DAV and other clients, which do not ask for HTML, keep the
+// mux's plain answer.
+func htmlNotFound(p *services.Providers, mux *http.ServeMux) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/html") {
+			if _, pattern := mux.Handler(r); pattern == "" {
+				pd := pageDataWithNav(r, "Page not found", p.CSRFSecret, p.Plugins)
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.WriteHeader(http.StatusNotFound)
+				if err := ui.NotFoundPage(pd).Render(r.Context(), w); err != nil {
+					p.Log.Error("render not found page", "path", r.URL.Path, "err", err)
+				}
+				return
+			}
+		}
+		mux.ServeHTTP(w, r)
+	})
 }
 
 // buildOCSQuotaFunc creates a QuotaFunc for the OCS API.

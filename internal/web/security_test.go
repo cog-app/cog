@@ -128,9 +128,9 @@ func TestCreateAppPasswordHTTP(t *testing.T) {
 
 	// The fragment must contain the plaintext token. We can't recover the
 	// plaintext from storage (it's bcrypt-hashed), so just confirm the body
-	// has a <pre> block (where the token is rendered) and the success alert.
+	// has the secret box (where the token is rendered) and the success alert.
 	body := resp.ReadBody()
-	require.Contains(t, body, "<pre")
+	require.Contains(t, body, `class="secret-box"`)
 	require.Contains(t, body, "App password created")
 }
 

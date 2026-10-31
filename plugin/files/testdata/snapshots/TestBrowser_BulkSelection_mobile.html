@@ -1,0 +1,1347 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      Files — Cog
+    </title>
+    <link href="/static/style.css?v=22be9710446b" rel="stylesheet" />
+    <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0yMiAxOWEyIDIgMCAwIDEtMiAySDRhMiAyIDAgMCAxLTItMlY1YTIgMiAwIDAgMSAyLTJoNWwyIDNoOWEyIDIgMCAwIDEgMiAyeiI+PC9wYXRoPjwvc3ZnPg==" rel="icon" type="image/svg+xml" />
+    <style>
+      .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
+  <body hx-headers="{\"X-CSRF-Token\":\"«hex»\"}">
+    <nav aria-label="Main" class="navbar">
+      <a aria-label="Cog home" class="navbar-brand" href="/">
+        <svg aria-hidden="true" fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        <span class="brand-text">
+          Cog
+        </span>
+      </a>
+      <ul class="navbar-nav">
+        <li>
+          <a aria-current="page" class="active" href="/apps/files" title="Files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <span class="nav-label">
+              Files
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="/" title="Dashboard">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            <span class="nav-label">
+              Dashboard
+            </span>
+          </a>
+        </li>
+      </ul>
+      <div class="dropdown navbar-apps">
+        <button aria-controls="apps-menu" aria-expanded="false" aria-label="Apps" class="btn-icon" data-dropdown-toggle="" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <rect height="7" width="7" x="3" y="3" />
+            <rect height="7" width="7" x="14" y="3" />
+            <rect height="7" width="7" x="3" y="14" />
+            <rect height="7" width="7" x="14" y="14" />
+          </svg>
+        </button>
+        <div class="dropdown-menu" id="apps-menu">
+          <a aria-current="page" class="active" href="/apps/files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            Files
+          </a>
+          <a href="/">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            Dashboard
+          </a>
+          <div class="dropdown-divider" />
+          <button data-search-open="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" x2="16.65" y1="21" y2="16.65" />
+            </svg>
+            Search
+          </button>
+          <a class="" href="/settings/profile">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="4" x2="4" y1="21" y2="14" />
+              <line x1="4" x2="4" y1="10" y2="3" />
+              <line x1="12" x2="12" y1="21" y2="12" />
+              <line x1="12" x2="12" y1="8" y2="3" />
+              <line x1="20" x2="20" y1="21" y2="16" />
+              <line x1="20" x2="20" y1="12" y2="3" />
+              <line x1="1" x2="7" y1="14" y2="14" />
+              <line x1="9" x2="15" y1="8" y2="8" />
+              <line x1="17" x2="23" y1="16" y2="16" />
+            </svg>
+            Settings
+          </a>
+        </div>
+      </div>
+      <div class="navbar-spacer" />
+      <div class="navbar-search" role="search">
+        <label class="sr-only" for="search-box">
+          Search
+        </label>
+        <input aria-controls="search-results" autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)…" type="search" />
+        <div aria-live="polite" class="search-results" id="search-results" />
+      </div>
+      <button aria-controls="search-box" aria-expanded="false" aria-label="Search" class="btn-icon search-toggle" data-search-open="" type="button">
+        <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+          <circle cx="11" cy="11" r="7" />
+          <line x1="21" x2="16.65" y1="21" y2="16.65" />
+        </svg>
+      </button>
+      <div class="navbar-end">
+        <div class="dropdown notif-dropdown" hidden="" id="notif">
+          <button aria-controls="notif-panel" aria-expanded="false" aria-label="Notifications" class="btn-icon" data-dropdown-toggle="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <span class="notif-badge" id="notif-badge" />
+          </button>
+          <div class="dropdown-menu" id="notif-panel" />
+        </div>
+        <div class="dropdown">
+          <button aria-controls="user-menu" aria-expanded="false" aria-label="Account menu for full" class="dropdown-toggle" data-dropdown-toggle="" type="button">
+            <img alt="" class="avatar-sm" src="/avatar/«hex»" />
+            <span class="dropdown-username">
+              full
+            </span>
+            <span aria-hidden="true" class="dropdown-caret">
+              ▾
+            </span>
+          </button>
+          <div class="dropdown-menu" id="user-menu">
+            <div class="dropdown-header">
+              <strong>
+                full
+              </strong>
+            </div>
+            <div class="dropdown-divider" />
+            <a class="" href="/settings/profile">
+              Profile
+            </a>
+            <a class="" href="/settings/security">
+              Security
+            </a>
+            <a class="" href="/settings/storage">
+              Storage
+            </a>
+            <a class="" href="/settings/groups">
+              Groups
+            </a>
+            <a class="" href="/settings/data">
+              Import and export
+            </a>
+            <div class="dropdown-divider" />
+            <form action="/logout" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <button type="submit">
+                Log out
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <main class="content" data-plugin="files">
+      <div class="sidebar-layout has-sidebar-toggle">
+        <button aria-controls="sidebar-1" aria-expanded="false" aria-label="Menu: All files" class="sidebar-toggle" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <line x1="3" x2="21" y1="6" y2="6" />
+            <line x1="3" x2="21" y1="12" y2="12" />
+            <line x1="3" x2="21" y1="18" y2="18" />
+          </svg>
+          <span class="sidebar-toggle-label" data-label="All files" />
+          <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        <nav aria-label="Files" class="sidebar" id="sidebar-1">
+          <a aria-current="page" class="sidebar-item active" href="/apps/files/">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            All files
+          </a>
+          <a class="sidebar-item" href="/apps/files/favorites">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+            Favorites
+          </a>
+          <a class="sidebar-item" href="/apps/files/volumes">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <ellipse cx="12" cy="5" rx="9" ry="3" />
+              <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+            </svg>
+            Volumes
+          </a>
+        </nav>
+        <div class="sidebar-content">
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                Files
+              </h1>
+            </div>
+            <div class="page-actions">
+              <button class="btn" data-modal-open="files-new-folder" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="12" x2="12" y1="5" y2="19" />
+                  <line x1="5" x2="19" y1="12" y2="12" />
+                </svg>
+                New folder
+              </button>
+              <form action="/apps/files/" class="upload-form" enctype="multipart/form-data" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <label class="btn btn-primary">
+                  Upload
+                  <input accept="" class="sr-only" multiple="" name="file" onchange="this.form.submit()" type="file" />
+                </label>
+              </form>
+            </div>
+          </header>
+          <div class="files-drop-overlay" hidden="" id="drop-overlay">
+            <div class="files-drop-message">
+              <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" x2="12" y1="3" y2="15" />
+              </svg>
+              Drop files to upload to “Files”
+            </div>
+          </div>
+          <div class="card card-flush files-card">
+            <div class="files-selection" data-folder-url="/apps/files/" id="files-selection">
+              <button aria-label="Clear selection" class="btn-icon btn-icon-sm" data-files-clear-selection="" title="Clear selection" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="18" x2="6" y1="6" y2="18" />
+                  <line x1="6" x2="18" y1="6" y2="18" />
+                </svg>
+              </button>
+              <span aria-live="polite" class="files-selection-count" data-selection-count="">
+                2 selected
+              </span>
+              <div class="files-selection-actions">
+                <button aria-label="Download" class="btn btn-sm" data-files-download-selected="" title="Download" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" x2="12" y1="15" y2="3" />
+                  </svg>
+                  <span class="files-selection-label">
+                    Download
+                  </span>
+                </button>
+                <button aria-label="Move" class="btn btn-sm" data-files-move-selected="" title="Move" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    <polyline points="12 10 15 13 12 16" />
+                    <line x1="8" x2="15" y1="13" y2="13" />
+                  </svg>
+                  <span class="files-selection-label">
+                    Move…
+                  </span>
+                </button>
+                <button aria-label="Delete" class="btn btn-sm btn-outline-danger" data-files-delete-selected="" title="Delete" type="button">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                    <path d="M10 11v6" />
+                    <path d="M14 11v6" />
+                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                  </svg>
+                  <span class="files-selection-label">
+                    Delete
+                  </span>
+                </button>
+              </div>
+            </div>
+            <table class="table files-table" id="files-table">
+              <thead>
+                <tr>
+                  <th class="files-check-col">
+                    <label class="files-check-hit">
+                      <input aria-label="Select all" data-select-all="" type="checkbox" />
+                    </label>
+                  </th>
+                  <th>
+                    Name
+                  </th>
+                  <th class="col-shrink text-right hide-mobile">
+                    Size
+                  </th>
+                  <th class="col-shrink hide-mobile">
+                    Modified
+                  </th>
+                  <th class="col-actions">
+                    <span class="sr-only">
+                      Actions
+                    </span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr data-dir="/Documents" id="file-_Documents">
+                  <td class="files-check-col">
+                    <label class="files-check-hit">
+                      <input aria-label="Select Documents" data-file-check="" data-name="Documents" type="checkbox" value="/Documents" />
+                    </label>
+                  </td>
+                  <td>
+                    <a class="row-link files-name" href="/apps/files/Documents" title="Documents">
+                      <span aria-hidden="true" class="files-thumb">
+                        <svg class="files-icon-folder" fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                        </svg>
+                      </span>
+                      <span class="files-name-text">
+                        <span class="files-name-label">
+                          Documents
+                        </span>
+                        <span class="files-meta show-mobile">
+                          06:00
+                        </span>
+                      </span>
+                    </a>
+                  </td>
+                  <td class="text-right nowrap text-muted hide-mobile" />
+                  <td class="nowrap text-muted hide-mobile" title="Sat, Mar 14, 2026 06:00">
+                    06:00
+                  </td>
+                  <td class="col-actions">
+                    <div class="row-actions">
+                      <button aria-label="Star" aria-pressed="true" class="btn-star active" hx-post="/apps/files/Documents?star=1" hx-swap="outerHTML" title="Toggle star" type="button">
+                        <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      </button>
+                      <div class="dropdown files-row-menu">
+                        <button aria-controls="file-menu-1" aria-expanded="false" aria-label="Actions for Documents" class="btn-icon btn-icon-sm" data-dropdown-toggle="" title="Actions" type="button">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <circle cx="12" cy="12" r="1" />
+                            <circle cx="19" cy="12" r="1" />
+                            <circle cx="5" cy="12" r="1" />
+                          </svg>
+                        </button>
+                        <div class="dropdown-menu" id="file-menu-1">
+                          <a href="/apps/files/Documents">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
+                            Open
+                          </a>
+                          <a href="/apps/files/?path=%2FDocuments&zip=1">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" x2="12" y1="15" y2="3" />
+                            </svg>
+                            Download as ZIP
+                          </a>
+                          <button data-files-rename="/apps/files/Documents?rename=1" data-name="Documents" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+                            </svg>
+                            Rename
+                          </button>
+                          <button data-files-move="/Documents" data-name="Documents" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                              <polyline points="12 10 15 13 12 16" />
+                              <line x1="8" x2="15" y1="13" y2="13" />
+                            </svg>
+                            Move…
+                          </button>
+                          <cog-share-button btn-class="files-share-item" class="files-menu-share" resource-id="1" resource="directory" share-title="Documents">
+                            <button class="files-share-item" type="button">
+                              Share
+                            </button>
+                          </cog-share-button>
+                          <div class="dropdown-divider" />
+                          <button class="danger" data-files-delete="/Documents" data-name="Documents" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <tr data-dir="/Photos" id="file-_Photos">
+                  <td class="files-check-col">
+                    <label class="files-check-hit">
+                      <input aria-label="Select Photos" data-file-check="" data-name="Photos" type="checkbox" value="/Photos" />
+                    </label>
+                  </td>
+                  <td>
+                    <a class="row-link files-name" href="/apps/files/Photos" title="Photos">
+                      <span aria-hidden="true" class="files-thumb">
+                        <svg class="files-icon-folder" fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                        </svg>
+                      </span>
+                      <span class="files-name-text">
+                        <span class="files-name-label">
+                          Photos
+                        </span>
+                        <span class="files-meta show-mobile">
+                          06:00
+                        </span>
+                      </span>
+                    </a>
+                  </td>
+                  <td class="text-right nowrap text-muted hide-mobile" />
+                  <td class="nowrap text-muted hide-mobile" title="Sat, Mar 14, 2026 06:00">
+                    06:00
+                  </td>
+                  <td class="col-actions">
+                    <div class="row-actions">
+                      <button aria-label="Star" aria-pressed="false" class="btn-star" hx-post="/apps/files/Photos?star=1" hx-swap="outerHTML" title="Toggle star" type="button">
+                        <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      </button>
+                      <div class="dropdown files-row-menu">
+                        <button aria-controls="file-menu-2" aria-expanded="false" aria-label="Actions for Photos" class="btn-icon btn-icon-sm" data-dropdown-toggle="" title="Actions" type="button">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <circle cx="12" cy="12" r="1" />
+                            <circle cx="19" cy="12" r="1" />
+                            <circle cx="5" cy="12" r="1" />
+                          </svg>
+                        </button>
+                        <div class="dropdown-menu" id="file-menu-2">
+                          <a href="/apps/files/Photos">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
+                            Open
+                          </a>
+                          <a href="/apps/files/?path=%2FPhotos&zip=1">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" x2="12" y1="15" y2="3" />
+                            </svg>
+                            Download as ZIP
+                          </a>
+                          <button data-files-rename="/apps/files/Photos?rename=1" data-name="Photos" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+                            </svg>
+                            Rename
+                          </button>
+                          <button data-files-move="/Photos" data-name="Photos" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                              <polyline points="12 10 15 13 12 16" />
+                              <line x1="8" x2="15" y1="13" y2="13" />
+                            </svg>
+                            Move…
+                          </button>
+                          <cog-share-button btn-class="files-share-item" class="files-menu-share" resource-id="2" resource="directory" share-title="Photos">
+                            <button class="files-share-item" type="button">
+                              Share
+                            </button>
+                          </cog-share-button>
+                          <div class="dropdown-divider" />
+                          <button class="danger" data-files-delete="/Photos" data-name="Photos" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <tr data-dir="/Projects" id="file-_Projects">
+                  <td class="files-check-col">
+                    <label class="files-check-hit">
+                      <input aria-label="Select Projects" data-file-check="" data-name="Projects" type="checkbox" value="/Projects" />
+                    </label>
+                  </td>
+                  <td>
+                    <a class="row-link files-name" href="/apps/files/Projects" title="Projects">
+                      <span aria-hidden="true" class="files-thumb">
+                        <svg class="files-icon-folder" fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                        </svg>
+                      </span>
+                      <span class="files-name-text">
+                        <span class="files-name-label">
+                          Projects
+                        </span>
+                        <span class="files-meta show-mobile">
+                          06:00
+                        </span>
+                      </span>
+                    </a>
+                  </td>
+                  <td class="text-right nowrap text-muted hide-mobile" />
+                  <td class="nowrap text-muted hide-mobile" title="Sat, Mar 14, 2026 06:00">
+                    06:00
+                  </td>
+                  <td class="col-actions">
+                    <div class="row-actions">
+                      <button aria-label="Star" aria-pressed="false" class="btn-star" hx-post="/apps/files/Projects?star=1" hx-swap="outerHTML" title="Toggle star" type="button">
+                        <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      </button>
+                      <div class="dropdown files-row-menu">
+                        <button aria-controls="file-menu-3" aria-expanded="false" aria-label="Actions for Projects" class="btn-icon btn-icon-sm" data-dropdown-toggle="" title="Actions" type="button">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <circle cx="12" cy="12" r="1" />
+                            <circle cx="19" cy="12" r="1" />
+                            <circle cx="5" cy="12" r="1" />
+                          </svg>
+                        </button>
+                        <div class="dropdown-menu" id="file-menu-3">
+                          <a href="/apps/files/Projects">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
+                            Open
+                          </a>
+                          <a href="/apps/files/?path=%2FProjects&zip=1">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" x2="12" y1="15" y2="3" />
+                            </svg>
+                            Download as ZIP
+                          </a>
+                          <button data-files-rename="/apps/files/Projects?rename=1" data-name="Projects" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+                            </svg>
+                            Rename
+                          </button>
+                          <button data-files-move="/Projects" data-name="Projects" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                              <polyline points="12 10 15 13 12 16" />
+                              <line x1="8" x2="15" y1="13" y2="13" />
+                            </svg>
+                            Move…
+                          </button>
+                          <cog-share-button btn-class="files-share-item" class="files-menu-share" resource-id="3" resource="directory" share-title="Projects">
+                            <button class="files-share-item" type="button">
+                              Share
+                            </button>
+                          </cog-share-button>
+                          <div class="dropdown-divider" />
+                          <button class="danger" data-files-delete="/Projects" data-name="Projects" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <tr id="file-_backup_zip">
+                  <td class="files-check-col">
+                    <label class="files-check-hit">
+                      <input aria-label="Select backup.zip" data-file-check="" data-name="backup.zip" type="checkbox" value="/backup.zip" />
+                    </label>
+                  </td>
+                  <td>
+                    <a class="row-link files-name" href="/apps/files/backup.zip" title="backup.zip">
+                      <span aria-hidden="true" class="files-thumb">
+                        <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                          <rect height="4" rx="0.5" width="6" x="9" y="12" />
+                          <line x1="12" x2="12" y1="10" y2="12" />
+                        </svg>
+                      </span>
+                      <span class="files-name-text">
+                        <span class="files-name-label">
+                          backup.zip
+                        </span>
+                        <span class="files-meta show-mobile">
+                          1.3 KB · 06:00
+                        </span>
+                      </span>
+                    </a>
+                  </td>
+                  <td class="text-right nowrap text-muted hide-mobile">
+                    1.3 KB
+                  </td>
+                  <td class="nowrap text-muted hide-mobile" title="Sat, Mar 14, 2026 06:00">
+                    06:00
+                  </td>
+                  <td class="col-actions">
+                    <div class="row-actions">
+                      <button aria-label="Star" aria-pressed="false" class="btn-star" hx-post="/apps/files/backup.zip?star=1" hx-swap="outerHTML" title="Toggle star" type="button">
+                        <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      </button>
+                      <div class="dropdown files-row-menu">
+                        <button aria-controls="file-menu-12" aria-expanded="false" aria-label="Actions for backup.zip" class="btn-icon btn-icon-sm" data-dropdown-toggle="" title="Actions" type="button">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <circle cx="12" cy="12" r="1" />
+                            <circle cx="19" cy="12" r="1" />
+                            <circle cx="5" cy="12" r="1" />
+                          </svg>
+                        </button>
+                        <div class="dropdown-menu" id="file-menu-12">
+                          <a href="/apps/files/backup.zip?dl=1">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" x2="12" y1="15" y2="3" />
+                            </svg>
+                            Download
+                          </a>
+                          <button data-files-rename="/apps/files/backup.zip?rename=1" data-name="backup.zip" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+                            </svg>
+                            Rename
+                          </button>
+                          <button data-files-move="/backup.zip" data-name="backup.zip" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                              <polyline points="12 10 15 13 12 16" />
+                              <line x1="8" x2="15" y1="13" y2="13" />
+                            </svg>
+                            Move…
+                          </button>
+                          <cog-share-button btn-class="files-share-item" class="files-menu-share" resource-id="12" resource="file" share-title="backup.zip">
+                            <button class="files-share-item" type="button">
+                              Share
+                            </button>
+                          </cog-share-button>
+                          <div class="dropdown-divider" />
+                          <button class="danger" data-files-delete="/backup.zip" data-name="backup.zip" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <tr id="file-_clip_mp4">
+                  <td class="files-check-col">
+                    <label class="files-check-hit">
+                      <input aria-label="Select clip.mp4" data-file-check="" data-name="clip.mp4" type="checkbox" value="/clip.mp4" />
+                    </label>
+                  </td>
+                  <td>
+                    <a class="row-link files-name" href="/apps/files/clip.mp4" title="clip.mp4">
+                      <span aria-hidden="true" class="files-thumb">
+                        <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+                          <polygon points="23 7 16 12 23 17 23 7" />
+                          <rect height="14" rx="2" ry="2" width="15" x="1" y="5" />
+                        </svg>
+                      </span>
+                      <span class="files-name-text">
+                        <span class="files-name-label">
+                          clip.mp4
+                        </span>
+                        <span class="files-meta show-mobile">
+                          12.0 MB · 06:00
+                        </span>
+                      </span>
+                    </a>
+                  </td>
+                  <td class="text-right nowrap text-muted hide-mobile">
+                    12.0 MB
+                  </td>
+                  <td class="nowrap text-muted hide-mobile" title="Sat, Mar 14, 2026 06:00">
+                    06:00
+                  </td>
+                  <td class="col-actions">
+                    <div class="row-actions">
+                      <button aria-label="Star" aria-pressed="false" class="btn-star" hx-post="/apps/files/clip.mp4?star=1" hx-swap="outerHTML" title="Toggle star" type="button">
+                        <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      </button>
+                      <div class="dropdown files-row-menu">
+                        <button aria-controls="file-menu-11" aria-expanded="false" aria-label="Actions for clip.mp4" class="btn-icon btn-icon-sm" data-dropdown-toggle="" title="Actions" type="button">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <circle cx="12" cy="12" r="1" />
+                            <circle cx="19" cy="12" r="1" />
+                            <circle cx="5" cy="12" r="1" />
+                          </svg>
+                        </button>
+                        <div class="dropdown-menu" id="file-menu-11">
+                          <a href="/apps/files/clip.mp4?dl=1">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" x2="12" y1="15" y2="3" />
+                            </svg>
+                            Download
+                          </a>
+                          <button data-files-rename="/apps/files/clip.mp4?rename=1" data-name="clip.mp4" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+                            </svg>
+                            Rename
+                          </button>
+                          <button data-files-move="/clip.mp4" data-name="clip.mp4" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                              <polyline points="12 10 15 13 12 16" />
+                              <line x1="8" x2="15" y1="13" y2="13" />
+                            </svg>
+                            Move…
+                          </button>
+                          <cog-share-button btn-class="files-share-item" class="files-menu-share" resource-id="11" resource="file" share-title="clip.mp4">
+                            <button class="files-share-item" type="button">
+                              Share
+                            </button>
+                          </cog-share-button>
+                          <div class="dropdown-divider" />
+                          <button class="danger" data-files-delete="/clip.mp4" data-name="clip.mp4" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <tr id="file-_notes_txt">
+                  <td class="files-check-col">
+                    <label class="files-check-hit">
+                      <input aria-label="Select notes.txt" data-file-check="" data-name="notes.txt" type="checkbox" value="/notes.txt" />
+                    </label>
+                  </td>
+                  <td>
+                    <a class="row-link files-name" href="/apps/files/notes.txt" title="notes.txt">
+                      <span aria-hidden="true" class="files-thumb">
+                        <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                          <line x1="16" x2="8" y1="13" y2="13" />
+                          <line x1="16" x2="8" y1="17" y2="17" />
+                        </svg>
+                      </span>
+                      <span class="files-name-text">
+                        <span class="files-name-label">
+                          notes.txt
+                        </span>
+                        <span class="files-meta show-mobile">
+                          91 B · 06:00
+                        </span>
+                      </span>
+                    </a>
+                  </td>
+                  <td class="text-right nowrap text-muted hide-mobile">
+                    91 B
+                  </td>
+                  <td class="nowrap text-muted hide-mobile" title="Sat, Mar 14, 2026 06:00">
+                    06:00
+                  </td>
+                  <td class="col-actions">
+                    <div class="row-actions">
+                      <button aria-label="Star" aria-pressed="true" class="btn-star active" hx-post="/apps/files/notes.txt?star=1" hx-swap="outerHTML" title="Toggle star" type="button">
+                        <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      </button>
+                      <div class="dropdown files-row-menu">
+                        <button aria-controls="file-menu-7" aria-expanded="false" aria-label="Actions for notes.txt" class="btn-icon btn-icon-sm" data-dropdown-toggle="" title="Actions" type="button">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <circle cx="12" cy="12" r="1" />
+                            <circle cx="19" cy="12" r="1" />
+                            <circle cx="5" cy="12" r="1" />
+                          </svg>
+                        </button>
+                        <div class="dropdown-menu" id="file-menu-7">
+                          <a href="/apps/files/notes.txt?dl=1">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" x2="12" y1="15" y2="3" />
+                            </svg>
+                            Download
+                          </a>
+                          <button data-files-rename="/apps/files/notes.txt?rename=1" data-name="notes.txt" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+                            </svg>
+                            Rename
+                          </button>
+                          <button data-files-move="/notes.txt" data-name="notes.txt" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                              <polyline points="12 10 15 13 12 16" />
+                              <line x1="8" x2="15" y1="13" y2="13" />
+                            </svg>
+                            Move…
+                          </button>
+                          <cog-share-button btn-class="files-share-item" class="files-menu-share" resource-id="7" resource="file" share-title="notes.txt">
+                            <button class="files-share-item" type="button">
+                              Share
+                            </button>
+                          </cog-share-button>
+                          <div class="dropdown-divider" />
+                          <button class="danger" data-files-delete="/notes.txt" data-name="notes.txt" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <tr id="file-_photo_png">
+                  <td class="files-check-col">
+                    <label class="files-check-hit">
+                      <input aria-label="Select photo.png" data-file-check="" data-name="photo.png" type="checkbox" value="/photo.png" />
+                    </label>
+                  </td>
+                  <td>
+                    <a class="row-link files-name" href="/apps/files/photo.png" title="photo.png">
+                      <span aria-hidden="true" class="files-thumb">
+                        <img alt="" height="32" loading="lazy" src="/apps/files/photo.png?preview=1&size=64" width="32" />
+                      </span>
+                      <span class="files-name-text">
+                        <span class="files-name-label">
+                          photo.png
+                        </span>
+                        <span class="files-meta show-mobile">
+                          187.8 KB · 06:00
+                        </span>
+                      </span>
+                    </a>
+                  </td>
+                  <td class="text-right nowrap text-muted hide-mobile">
+                    187.8 KB
+                  </td>
+                  <td class="nowrap text-muted hide-mobile" title="Sat, Mar 14, 2026 06:00">
+                    06:00
+                  </td>
+                  <td class="col-actions">
+                    <div class="row-actions">
+                      <button aria-label="Star" aria-pressed="false" class="btn-star" hx-post="/apps/files/photo.png?star=1" hx-swap="outerHTML" title="Toggle star" type="button">
+                        <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      </button>
+                      <div class="dropdown files-row-menu">
+                        <button aria-controls="file-menu-8" aria-expanded="false" aria-label="Actions for photo.png" class="btn-icon btn-icon-sm" data-dropdown-toggle="" title="Actions" type="button">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <circle cx="12" cy="12" r="1" />
+                            <circle cx="19" cy="12" r="1" />
+                            <circle cx="5" cy="12" r="1" />
+                          </svg>
+                        </button>
+                        <div class="dropdown-menu" id="file-menu-8">
+                          <a href="/apps/files/photo.png?dl=1">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" x2="12" y1="15" y2="3" />
+                            </svg>
+                            Download
+                          </a>
+                          <button data-files-rename="/apps/files/photo.png?rename=1" data-name="photo.png" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+                            </svg>
+                            Rename
+                          </button>
+                          <button data-files-move="/photo.png" data-name="photo.png" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                              <polyline points="12 10 15 13 12 16" />
+                              <line x1="8" x2="15" y1="13" y2="13" />
+                            </svg>
+                            Move…
+                          </button>
+                          <cog-share-button btn-class="files-share-item" class="files-menu-share" resource-id="8" resource="file" share-title="photo.png">
+                            <button class="files-share-item" type="button">
+                              Share
+                            </button>
+                          </cog-share-button>
+                          <div class="dropdown-divider" />
+                          <button class="danger" data-files-delete="/photo.png" data-name="photo.png" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <tr id="file-_Quarterly_financial_report_for_the_board_-_final_version__copy_2__-_DO_NOT_EDIT_bin">
+                  <td class="files-check-col">
+                    <label class="files-check-hit">
+                      <input aria-label="Select Quarterly financial report for the board - final version (copy 2) - DO NOT EDIT.bin" data-file-check="" data-name="Quarterly financial report for the board - final version (copy 2) - DO NOT EDIT.bin" type="checkbox" value="/Quarterly financial report for the board - final version (copy 2) - DO NOT EDIT.bin" />
+                    </label>
+                  </td>
+                  <td>
+                    <a class="row-link files-name" href="/apps/files/Quarterly%20financial%20report%20for%20the%20board%20-%20final%20version%20%28copy%202%29%20-%20DO%20NOT%20EDIT.bin" title="Quarterly financial report for the board - final version (copy 2) - DO NOT EDIT.bin">
+                      <span aria-hidden="true" class="files-thumb">
+                        <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                      </span>
+                      <span class="files-name-text">
+                        <span class="files-name-label">
+                          Quarterly financial report for the board - final version (copy 2) - DO NOT EDIT.bin
+                        </span>
+                        <span class="files-meta show-mobile">
+                          2.0 KB · 06:00
+                        </span>
+                      </span>
+                    </a>
+                  </td>
+                  <td class="text-right nowrap text-muted hide-mobile">
+                    2.0 KB
+                  </td>
+                  <td class="nowrap text-muted hide-mobile" title="Sat, Mar 14, 2026 06:00">
+                    06:00
+                  </td>
+                  <td class="col-actions">
+                    <div class="row-actions">
+                      <button aria-label="Star" aria-pressed="false" class="btn-star" hx-post="/apps/files/Quarterly%20financial%20report%20for%20the%20board%20-%20final%20version%20%28copy%202%29%20-%20DO%20NOT%20EDIT.bin?star=1" hx-swap="outerHTML" title="Toggle star" type="button">
+                        <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      </button>
+                      <div class="dropdown files-row-menu">
+                        <button aria-controls="file-menu-13" aria-expanded="false" aria-label="Actions for Quarterly financial report for the board - final version (copy 2) - DO NOT EDIT.bin" class="btn-icon btn-icon-sm" data-dropdown-toggle="" title="Actions" type="button">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <circle cx="12" cy="12" r="1" />
+                            <circle cx="19" cy="12" r="1" />
+                            <circle cx="5" cy="12" r="1" />
+                          </svg>
+                        </button>
+                        <div class="dropdown-menu" id="file-menu-13">
+                          <a href="/apps/files/Quarterly%20financial%20report%20for%20the%20board%20-%20final%20version%20%28copy%202%29%20-%20DO%20NOT%20EDIT.bin?dl=1">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" x2="12" y1="15" y2="3" />
+                            </svg>
+                            Download
+                          </a>
+                          <button data-files-rename="/apps/files/Quarterly%20financial%20report%20for%20the%20board%20-%20final%20version%20%28copy%202%29%20-%20DO%20NOT%20EDIT.bin?rename=1" data-name="Quarterly financial report for the board - final version (copy 2) - DO NOT EDIT.bin" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+                            </svg>
+                            Rename
+                          </button>
+                          <button data-files-move="/Quarterly financial report for the board - final version (copy 2) - DO NOT EDIT.bin" data-name="Quarterly financial report for the board - final version (copy 2) - DO NOT EDIT.bin" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                              <polyline points="12 10 15 13 12 16" />
+                              <line x1="8" x2="15" y1="13" y2="13" />
+                            </svg>
+                            Move…
+                          </button>
+                          <cog-share-button btn-class="files-share-item" class="files-menu-share" resource-id="13" resource="file" share-title="Quarterly financial report for the board - final version (copy 2) - DO NOT EDIT.bin">
+                            <button class="files-share-item" type="button">
+                              Share
+                            </button>
+                          </cog-share-button>
+                          <div class="dropdown-divider" />
+                          <button class="danger" data-files-delete="/Quarterly financial report for the board - final version (copy 2) - DO NOT EDIT.bin" data-name="Quarterly financial report for the board - final version (copy 2) - DO NOT EDIT.bin" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <tr id="file-_song_mp3">
+                  <td class="files-check-col">
+                    <label class="files-check-hit">
+                      <input aria-label="Select song.mp3" data-file-check="" data-name="song.mp3" type="checkbox" value="/song.mp3" />
+                    </label>
+                  </td>
+                  <td>
+                    <a class="row-link files-name" href="/apps/files/song.mp3" title="song.mp3">
+                      <span aria-hidden="true" class="files-thumb">
+                        <svg fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+                          <path d="M9 18V5l12-2v13" />
+                          <circle cx="6" cy="18" r="3" />
+                          <circle cx="18" cy="16" r="3" />
+                        </svg>
+                      </span>
+                      <span class="files-name-text">
+                        <span class="files-name-label">
+                          song.mp3
+                        </span>
+                        <span class="files-meta show-mobile">
+                          3.0 MB · 06:00
+                        </span>
+                      </span>
+                    </a>
+                  </td>
+                  <td class="text-right nowrap text-muted hide-mobile">
+                    3.0 MB
+                  </td>
+                  <td class="nowrap text-muted hide-mobile" title="Sat, Mar 14, 2026 06:00">
+                    06:00
+                  </td>
+                  <td class="col-actions">
+                    <div class="row-actions">
+                      <button aria-label="Star" aria-pressed="false" class="btn-star" hx-post="/apps/files/song.mp3?star=1" hx-swap="outerHTML" title="Toggle star" type="button">
+                        <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      </button>
+                      <div class="dropdown files-row-menu">
+                        <button aria-controls="file-menu-10" aria-expanded="false" aria-label="Actions for song.mp3" class="btn-icon btn-icon-sm" data-dropdown-toggle="" title="Actions" type="button">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <circle cx="12" cy="12" r="1" />
+                            <circle cx="19" cy="12" r="1" />
+                            <circle cx="5" cy="12" r="1" />
+                          </svg>
+                        </button>
+                        <div class="dropdown-menu" id="file-menu-10">
+                          <a href="/apps/files/song.mp3?dl=1">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" x2="12" y1="15" y2="3" />
+                            </svg>
+                            Download
+                          </a>
+                          <button data-files-rename="/apps/files/song.mp3?rename=1" data-name="song.mp3" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+                            </svg>
+                            Rename
+                          </button>
+                          <button data-files-move="/song.mp3" data-name="song.mp3" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                              <polyline points="12 10 15 13 12 16" />
+                              <line x1="8" x2="15" y1="13" y2="13" />
+                            </svg>
+                            Move…
+                          </button>
+                          <cog-share-button btn-class="files-share-item" class="files-menu-share" resource-id="10" resource="file" share-title="song.mp3">
+                            <button class="files-share-item" type="button">
+                              Share
+                            </button>
+                          </cog-share-button>
+                          <div class="dropdown-divider" />
+                          <button class="danger" data-files-delete="/song.mp3" data-name="song.mp3" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <tr id="file-_sunset_png">
+                  <td class="files-check-col">
+                    <label class="files-check-hit">
+                      <input aria-label="Select sunset.png" data-file-check="" data-name="sunset.png" type="checkbox" value="/sunset.png" />
+                    </label>
+                  </td>
+                  <td>
+                    <a class="row-link files-name" href="/apps/files/sunset.png" title="sunset.png">
+                      <span aria-hidden="true" class="files-thumb">
+                        <img alt="" height="32" loading="lazy" src="/apps/files/sunset.png?preview=1&size=64" width="32" />
+                      </span>
+                      <span class="files-name-text">
+                        <span class="files-name-label">
+                          sunset.png
+                        </span>
+                        <span class="files-meta show-mobile">
+                          176.2 KB · 06:00
+                        </span>
+                      </span>
+                    </a>
+                  </td>
+                  <td class="text-right nowrap text-muted hide-mobile">
+                    176.2 KB
+                  </td>
+                  <td class="nowrap text-muted hide-mobile" title="Sat, Mar 14, 2026 06:00">
+                    06:00
+                  </td>
+                  <td class="col-actions">
+                    <div class="row-actions">
+                      <button aria-label="Star" aria-pressed="false" class="btn-star" hx-post="/apps/files/sunset.png?star=1" hx-swap="outerHTML" title="Toggle star" type="button">
+                        <svg aria-hidden="true" fill="currentColor" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      </button>
+                      <div class="dropdown files-row-menu">
+                        <button aria-controls="file-menu-9" aria-expanded="false" aria-label="Actions for sunset.png" class="btn-icon btn-icon-sm" data-dropdown-toggle="" title="Actions" type="button">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <circle cx="12" cy="12" r="1" />
+                            <circle cx="19" cy="12" r="1" />
+                            <circle cx="5" cy="12" r="1" />
+                          </svg>
+                        </button>
+                        <div class="dropdown-menu" id="file-menu-9">
+                          <a href="/apps/files/sunset.png?dl=1">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" x2="12" y1="15" y2="3" />
+                            </svg>
+                            Download
+                          </a>
+                          <button data-files-rename="/apps/files/sunset.png?rename=1" data-name="sunset.png" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+                            </svg>
+                            Rename
+                          </button>
+                          <button data-files-move="/sunset.png" data-name="sunset.png" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                              <polyline points="12 10 15 13 12 16" />
+                              <line x1="8" x2="15" y1="13" y2="13" />
+                            </svg>
+                            Move…
+                          </button>
+                          <cog-share-button btn-class="files-share-item" class="files-menu-share" resource-id="9" resource="file" share-title="sunset.png">
+                            <button class="files-share-item" type="button">
+                              Share
+                            </button>
+                          </cog-share-button>
+                          <div class="dropdown-divider" />
+                          <button class="danger" data-files-delete="/sunset.png" data-name="sunset.png" type="button">
+                            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <dialog aria-labelledby="files-new-folder-title" class="modal" id="files-new-folder">
+            <div class="modal-header">
+              <h2 class="modal-title" id="files-new-folder-title">
+                New folder
+              </h2>
+              <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="18" x2="6" y1="6" y2="18" />
+                  <line x1="6" x2="18" y1="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <form action="/apps/files/" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div class="modal-body">
+                <div class="form-group mb-0">
+                  <label for="files-new-folder-name">
+                    Folder name
+                  </label>
+                  <input autocomplete="off" class="form-control" data-testid="new-folder-name" id="files-new-folder-name" name="name" required="" type="text" />
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn" data-modal-close="" type="button">
+                  Cancel
+                </button>
+                <button class="btn btn-primary" data-testid="new-folder-submit" type="submit">
+                  Create folder
+                </button>
+              </div>
+            </form>
+          </dialog>
+          <dialog aria-labelledby="files-rename-title" class="modal" id="files-rename">
+            <div class="modal-header">
+              <h2 class="modal-title" id="files-rename-title">
+                Rename
+              </h2>
+              <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="18" x2="6" y1="6" y2="18" />
+                  <line x1="6" x2="18" y1="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <form action="" data-files-rename-form="" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div class="modal-body">
+                <div class="form-group mb-0">
+                  <label for="files-rename-name">
+                    New name
+                  </label>
+                  <input autocomplete="off" class="form-control" id="files-rename-name" name="name" required="" type="text" />
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn" data-modal-close="" type="button">
+                  Cancel
+                </button>
+                <button class="btn btn-primary" type="submit">
+                  Rename
+                </button>
+              </div>
+            </form>
+          </dialog>
+          <dialog aria-labelledby="files-move-title" class="modal" id="files-move">
+            <div class="modal-header">
+              <h2 class="modal-title" id="files-move-title">
+                Move
+              </h2>
+              <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="18" x2="6" y1="6" y2="18" />
+                  <line x1="6" x2="18" y1="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <form action="/apps/files/?move=1" data-files-move-form="" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div data-move-paths="" />
+              <div class="modal-body files-move-body">
+                <div hx-get="/apps/files/?folders=1" hx-include="[data-move-paths]" hx-trigger="files:move-open" id="files-move-picker">
+                  <p class="files-picker-loading text-muted">
+                    Loading folders…
+                  </p>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn" data-modal-close="" type="button">
+                  Cancel
+                </button>
+                <button class="btn btn-primary" disabled="" id="files-move-submit" type="submit">
+                  Move here
+                </button>
+              </div>
+            </form>
+          </dialog>
+          <dialog aria-labelledby="files-delete-title" class="modal" id="files-delete">
+            <div class="modal-header">
+              <h2 class="modal-title" id="files-delete-title">
+                Move to trash
+              </h2>
+              <button aria-label="Close" class="btn-icon modal-close" data-modal-close="" type="button">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <line x1="18" x2="6" y1="6" y2="18" />
+                  <line x1="6" x2="18" y1="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <form action="/apps/files/?delete=1" data-files-delete-form="" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div data-delete-paths="" />
+              <div class="modal-body">
+                <p data-delete-message="">
+                  Delete this item?
+                </p>
+                <p class="form-help">
+                  Deleted items are moved to the trash.
+                </p>
+              </div>
+              <div class="modal-footer">
+                <button class="btn" data-modal-close="" type="button">
+                  Cancel
+                </button>
+                <button class="btn btn-danger" type="submit">
+                  Delete
+                </button>
+              </div>
+            </form>
+          </dialog>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

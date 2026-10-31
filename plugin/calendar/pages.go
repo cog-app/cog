@@ -52,7 +52,9 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	plugin.SetTitle(w, "Calendar")
-	calIndexPage(calendars, plugin.CSRFToken(r)).Render(r.Context(), w)
+	if err := calIndexPage(calendars, plugin.CSRFToken(r)).Render(r.Context(), w); err != nil {
+		h.plugin.log.Error("render calendar", "err", err)
+	}
 }
 
 // Settings shows calendar management: calendars, their feeds, the
@@ -71,6 +73,7 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	v.Username = u.Username
 	plugin.SetTitle(w, "Calendar Settings")
 	if err := calSettingsPage(v, plugin.CSRFToken(r)).Render(r.Context(), w); err != nil {
 		h.plugin.log.Error("render calendar settings", "err", err)
@@ -364,7 +367,7 @@ func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
 		// An occurrence without an override shows the master's attachments.
 		0)
 	atts := h.attachmentsOf(ev, compAt, me.Username)
-	if err := calEventModal(plugin.CSRFToken(r), &view, cal, calendars, attendeesOf(comp), myStatus(comp, me), atts).Render(r.Context(), w); err != nil {
+	if err := calEventModal(plugin.CSRFToken(r), &view, cal, calendars, attendeesOf(comp), myStatus(comp, me), atts, h.plugin.ctx.Now()).Render(r.Context(), w); err != nil {
 		h.plugin.log.Error("render event", "id", ev.ID, "err", err)
 	}
 }
@@ -936,9 +939,14 @@ func (h *Pages) RRulePreview(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func eventRRule(ev *Event) string { return FormatRRule(ev.RRule) }
+func eventRRule(ev *Event) string { return FormatRRule(eventRRuleRaw(ev)) }
 
-func eventRRuleRaw(ev *Event) string { return ev.RRule }
+func eventRRuleRaw(ev *Event) string {
+	if ev == nil {
+		return ""
+	}
+	return ev.RRule
+}
 
 // rruleParams parses an RRULE string into key=value pairs.
 func rruleParams(rrule string) map[string]string {

@@ -66,7 +66,7 @@ func (s *Store) CreateFolder(name string) (int64, error) {
 
 // ListFolders returns all folders ordered by name.
 func (s *Store) ListFolders() ([]Folder, error) {
-	rows, err := s.db.Query(`SELECT id, name, created_at FROM folders ORDER BY name`)
+	rows, err := s.db.Query(`SELECT id, name, created_at FROM folders ORDER BY name, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list folders: %w", err)
 	}
@@ -167,7 +167,7 @@ func (s *Store) ListSubscriptions() ([]Subscription, error) {
 		SELECT id, folder_id, kind, url, title, description, site_url, image_url,
 		       favicon_url, etag, last_modified, poll_interval_sec, next_check_at,
 		       last_checked_at, last_success_at, error_count, last_error, paused, created_at
-		FROM subscriptions ORDER BY (CASE WHEN error_count > 0 THEN 0 ELSE 1 END) ASC, LOWER(COALESCE(NULLIF(title, ''), url)) ASC`)
+		FROM subscriptions ORDER BY (CASE WHEN error_count > 0 THEN 0 ELSE 1 END) ASC, LOWER(COALESCE(NULLIF(title, ''), url)) ASC, id ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list subscriptions: %w", err)
 	}
@@ -183,13 +183,13 @@ func (s *Store) ListSubscriptionsByFolder(folderID sql.NullInt64) ([]Subscriptio
 			SELECT id, folder_id, kind, url, title, description, site_url, image_url,
 			       favicon_url, etag, last_modified, poll_interval_sec, next_check_at,
 			       last_checked_at, last_success_at, error_count, last_error, paused, created_at
-			FROM subscriptions WHERE folder_id = ? ORDER BY title`, folderID.Int64)
+			FROM subscriptions WHERE folder_id = ? ORDER BY title, id`, folderID.Int64)
 	} else {
 		rows, err = s.db.Query(`
 			SELECT id, folder_id, kind, url, title, description, site_url, image_url,
 			       favicon_url, etag, last_modified, poll_interval_sec, next_check_at,
 			       last_checked_at, last_success_at, error_count, last_error, paused, created_at
-			FROM subscriptions WHERE folder_id IS NULL ORDER BY title`)
+			FROM subscriptions WHERE folder_id IS NULL ORDER BY title, id`)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("list subscriptions by folder: %w", err)
@@ -456,7 +456,7 @@ func (s *Store) ListItemsBySubscription(subID int64, limit int) ([]Item, error) 
 		       media_url, media_mime, duration_sec, thumbnail_url, published_at,
 		       fetched_at, is_read, is_starred, content_hash
 		FROM items WHERE subscription_id = ?
-		ORDER BY published_at DESC
+		ORDER BY published_at DESC, id DESC
 		LIMIT ?`, subID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list items by subscription: %w", err)
@@ -593,7 +593,7 @@ func (s *Store) CreateFilter(f Filter) (int64, error) {
 func (s *Store) ListFilters() ([]Filter, error) {
 	rows, err := s.db.Query(`
 		SELECT id, sort_order, query, action, action_value, created_at
-		FROM filters ORDER BY sort_order ASC`)
+		FROM filters ORDER BY sort_order ASC, id ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list filters: %w", err)
 	}
@@ -715,6 +715,16 @@ func (s *Store) SetCaptionsPath(itemID int64, path string) error {
 		return fmt.Errorf("set captions path: %w", err)
 	}
 	return nil
+}
+
+// FindDownload is GetDownload for callers to whom an item that was never
+// downloaded is not an error: it returns the zero Download instead.
+func (s *Store) FindDownload(itemID int64) (Download, error) {
+	d, err := s.GetDownload(itemID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Download{}, nil
+	}
+	return d, err
 }
 
 // GetDownload returns the download record for an item.
@@ -1025,7 +1035,7 @@ func (s *Store) CreatePlaylist(name, query string) (int64, error) {
 func (s *Store) ListPlaylists() ([]Playlist, error) {
 	rows, err := s.db.Query(`
 		SELECT id, name, query, sort_order, created_at
-		FROM playlists ORDER BY sort_order, name`)
+		FROM playlists ORDER BY sort_order, name, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list playlists: %w", err)
 	}
@@ -1204,7 +1214,7 @@ func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscripti
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
-	q += " ORDER BY i.published_at DESC LIMIT ?"
+	q += " ORDER BY i.published_at DESC, i.id DESC LIMIT ?"
 	args = append(args, limit)
 
 	rows, err := s.db.Query(q, args...)
@@ -1279,7 +1289,7 @@ func (s *Store) RecentUnread(limit int) ([]Item, error) {
 		`SELECT id, subscription_id, guid, type, title, author, url, content_html,
 		        media_url, media_mime, duration_sec, thumbnail_url, published_at,
 		        fetched_at, is_read, is_starred, content_hash
-		 FROM items WHERE is_read = 0 ORDER BY published_at DESC LIMIT ?`, limit)
+		 FROM items WHERE is_read = 0 ORDER BY published_at DESC, id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("recent unread: %w", err)
 	}
@@ -1312,7 +1322,7 @@ func (s *Store) ListItems(limit int) ([]Item, error) {
 		`SELECT id, subscription_id, guid, type, title, author, url, content_html,
 		        media_url, media_mime, duration_sec, thumbnail_url, published_at,
 		        fetched_at, is_read, is_starred, content_hash
-		 FROM items ORDER BY published_at DESC LIMIT ?`, limit)
+		 FROM items ORDER BY published_at DESC, id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list items: %w", err)
 	}
@@ -1699,7 +1709,7 @@ func (s *Store) ListPlaybackHistory(limit int) ([]PlayedItem, error) {
 		 JOIN items i ON i.id = pb.item_id
 		 JOIN subscriptions sub ON sub.id = i.subscription_id
 		 WHERE pb.last_played_at > 0
-		 ORDER BY pb.last_played_at DESC
+		 ORDER BY pb.last_played_at DESC, i.id DESC
 		 LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list playback history: %w", err)
@@ -1740,7 +1750,7 @@ func (s *Store) PlaybackHistoryItems(limit int) ([]ItemWithSubscription, error) 
 		FROM playback p
 		JOIN items i ON i.id = p.item_id
 		JOIN subscriptions s ON s.id = i.subscription_id
-		ORDER BY p.last_played_at DESC
+		ORDER BY p.last_played_at DESC, i.id DESC
 		LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("playback history items: %w", err)

@@ -69,6 +69,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Starred Contacts",
 		Priority: 40,
+		URL:      "/apps/contacts/starred",
 		Render:   p.renderWidget,
 	})
 	ctx.RegisterSearchSource(plugin.SearchSourceDef{
@@ -92,6 +93,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAPI("photos/{id}", http.HandlerFunc(pages.ServePhoto))
 	ctx.RegisterAction("POST", "contacts/{id}/photo", http.HandlerFunc(pages.UploadPhoto))
 	ctx.RegisterAction("POST", "books", http.HandlerFunc(pages.CreateAddressBookHandler))
+	ctx.RegisterAction("POST", "books/{id}", http.HandlerFunc(pages.UpdateAddressBookHandler))
 	ctx.RegisterAction("DELETE", "books/{id}", http.HandlerFunc(pages.DeleteAddressBookHandler))
 
 	ctx.RegisterAction("POST", "contacts/{id}/star", http.HandlerFunc(pages.ToggleStar))

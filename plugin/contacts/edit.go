@@ -69,6 +69,24 @@ type contactForm struct {
 	fn, given, family string
 	org, title, note  string
 	emails, phones    []formValue
+	// The fields below are applied only when the form has them (a form
+	// without them leaves the card's as they are).
+	birthday     *string
+	urls         []formValue
+	hasURLs      bool
+	addresses    []formAddress
+	hasAddresses bool
+}
+
+// formAddress is one address row as submitted.
+type formAddress struct {
+	index                                   int // into the card's list, or -1 for a new row
+	typ                                     string
+	street, locality, region, code, country string
+}
+
+func (a formAddress) empty() bool {
+	return a.street == "" && a.locality == "" && a.region == "" && a.code == "" && a.country == ""
 }
 
 func oneLine(s string) string {
@@ -94,8 +112,57 @@ func parseContactForm(r *http.Request) (*contactForm, error) {
 	if f.emails, err = formValues(r, "email"); err != nil {
 		return nil, err
 	}
-	f.phones, err = formValues(r, "phone")
-	return f, err
+	if f.phones, err = formValues(r, "phone"); err != nil {
+		return nil, err
+	}
+	if _, ok := r.Form["birthday"]; ok {
+		b := strings.TrimSpace(r.FormValue("birthday"))
+		f.birthday = &b
+	}
+	if _, f.hasURLs = r.Form["urls_shown"]; f.hasURLs {
+		if f.urls, err = formValues(r, "url"); err != nil {
+			return nil, err
+		}
+	}
+	if _, f.hasAddresses = r.Form["addresses_shown"]; f.hasAddresses {
+		if f.addresses, err = formAddresses(r); err != nil {
+			return nil, err
+		}
+	}
+	return f, nil
+}
+
+// formAddresses reads the address rows: adr_index, adr_type and one of each
+// address field per row.
+func formAddresses(r *http.Request) ([]formAddress, error) {
+	idx, types := r.Form["adr_index"], r.Form["adr_type"]
+	fields := [][]string{r.Form["adr_street"], r.Form["adr_locality"], r.Form["adr_region"], r.Form["adr_code"], r.Form["adr_country"]}
+	if len(idx) != len(types) {
+		return nil, errors.New("malformed address rows")
+	}
+	for _, f := range fields {
+		if len(f) != len(idx) {
+			return nil, errors.New("malformed address rows")
+		}
+	}
+	var out []formAddress
+	for i := range idx {
+		a := formAddress{index: -1, typ: types[i],
+			street:   strings.TrimSpace(strings.ReplaceAll(fields[0][i], "\r\n", "\n")),
+			locality: oneLine(fields[1][i]), region: oneLine(fields[2][i]), code: oneLine(fields[3][i]), country: oneLine(fields[4][i]),
+		}
+		if idx[i] != "" && idx[i] != "new" {
+			n, err := strconv.Atoi(idx[i])
+			if err != nil || n < 0 {
+				return nil, errors.New("malformed address row")
+			}
+			a.index = n
+		}
+		if !a.empty() {
+			out = append(out, a)
+		}
+	}
+	return out, nil
 }
 
 // formValues reads the rows of one list: kind_index, kind_type and
@@ -199,7 +266,114 @@ func applyForm(c *vcard.Card, f *contactForm, now time.Time) {
 	}
 	c.Emails = applyValues(c.Emails, f.emails, emailTypes)
 	c.Phones = applyValues(c.Phones, f.phones, phoneTypes)
+	if f.birthday != nil && *f.birthday != shownBirthday(c.Birthday) {
+		c.Birthday = *f.birthday
+	}
+	if f.hasURLs {
+		c.URLs = applyValues(c.URLs, f.urls, nil)
+	}
+	if f.hasAddresses {
+		c.Addresses = applyAddresses(c.Addresses, f.addresses)
+	}
 	c.Stamp(now)
+}
+
+// addressTypes are the address form's type menu.
+var addressTypes = []typeOption{{"HOME", "Home"}, {"WORK", "Work"}}
+
+// Street is how the form shows an address's street lines: one per line.
+func streetOf(a *vcard.Address) string { return strings.Join(a.Street, "\n") }
+
+// applyAddresses is applyValues for addresses: a row the form shows
+// unchanged keeps everything it had, a changed field replaces only itself,
+// and fields the form does not show (PO box, extended address) stay.
+func applyAddresses(cur []vcard.Address, rows []formAddress) []vcard.Address {
+	out := make([]vcard.Address, 0, len(rows))
+	used := map[int]bool{}
+	set := func(field *[]string, shown, v string) {
+		if shown == v {
+			return
+		}
+		*field = nil
+		if v != "" {
+			*field = []string{v}
+		}
+	}
+	for _, r := range rows {
+		a := vcard.Address{}
+		if r.index >= 0 && r.index < len(cur) && !used[r.index] {
+			used[r.index] = true
+			a = cur[r.index]
+			if shown := shownType(&a.Meta, addressTypes); shown != r.typ {
+				a.Types = slices.DeleteFunc(slices.Clone(a.Types), func(t string) bool { return strings.EqualFold(t, shown) })
+				if r.typ != "" {
+					a.Types = append([]string{r.typ}, a.Types...)
+				}
+				if len(a.Types) == 0 {
+					a.Types = nil
+				}
+				a.Label = ""
+			}
+		} else if r.typ != "" {
+			a.Types = []string{r.typ}
+		}
+		if streetOf(&a) != r.street {
+			a.Street = nil
+			if r.street != "" {
+				a.Street = strings.Split(r.street, "\n")
+			}
+		}
+		set(&a.Locality, joined(a.Locality), r.locality)
+		set(&a.Region, joined(a.Region), r.region)
+		set(&a.Code, joined(a.Code), r.code)
+		set(&a.Country, joined(a.Country), r.country)
+		out = append(out, a)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// shownBirthday is how the form shows a BDAY: as a date input's value when
+// it is a full date, otherwise as written.
+func shownBirthday(v string) string {
+	if t, ok := birthdayDate(v); ok {
+		return t.Format("2006-01-02")
+	}
+	return v
+}
+
+// birthdayDate parses a BDAY that is a full date (2006-01-02 or 20060102).
+func birthdayDate(v string) (time.Time, bool) {
+	for _, layout := range []string{"2006-01-02", "20060102"} {
+		if t, err := time.Parse(layout, v); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// formatBirthday is how a BDAY reads: "29 Feb 1984 · 42 years" for a full
+// date (the age as of now), "29 Feb" for one without a year, otherwise as
+// written.
+func formatBirthday(v string, now time.Time) string {
+	if t, ok := birthdayDate(v); ok {
+		age := now.Year() - t.Year()
+		if now.Month() < t.Month() || (now.Month() == t.Month() && now.Day() < t.Day()) {
+			age--
+		}
+		if age < 0 {
+			return t.Format("2 Jan 2006")
+		}
+		return fmt.Sprintf("%s · %d years", t.Format("2 Jan 2006"), age)
+	}
+	for _, layout := range []string{"--0102", "--01-02"} {
+		if t, err := time.Parse(layout, v); err == nil {
+			return t.Format("2 Jan")
+		}
+	}
+	return v
 }
 
 // applyValues returns a list as the form left it: rows in the order

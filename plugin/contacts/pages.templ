@@ -2,6 +2,7 @@ package contacts
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -9,592 +10,784 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
-templ contactsSidebar(books []AddressBook, activePath string) {
-	<nav class="sidebar">
-		<a href="/apps/contacts/" class={ sidebarClass(activePath, "/apps/contacts/") }>All Contacts</a>
-		<a href="/apps/contacts/starred" class={ sidebarClass(activePath, "/apps/contacts/starred") }>★ Starred</a>
-		<div class="sidebar-divider"></div>
-		<div style="padding:0.25rem 0.75rem;font-size:0.8rem;font-weight:600;text-transform:uppercase;color:var(--color-muted, #888)">Address Books</div>
-		for _, book := range books {
-			<a
-				href={ templ.SafeURL(fmt.Sprintf("/apps/contacts/?book=%d", book.ID)) }
-				class="sidebar-item"
-				style="display:flex;align-items:center;gap:0.5rem"
-			>
-				<span style={ fmt.Sprintf("display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s", book.Color) }></span>
-				{ book.Name }
-			</a>
+templ contactsSidebar(books []AddressBook, active string) {
+	<nav class="sidebar" aria-label="Contacts">
+		@sidebarLink("/apps/contacts/", active == "all") {
+			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+			All contacts
+		}
+		@sidebarLink("/apps/contacts/starred", active == "starred") {
+			<span class="contact-star-icon">
+				@ui.StarIcon()
+			</span>
+			Starred
+		}
+		if len(books) > 0 {
+			<div class="sidebar-heading">Address books</div>
+			for _, book := range books {
+				@sidebarLink(fmt.Sprintf("/apps/contacts/?book=%d", book.ID), active == strconv.FormatInt(book.ID, 10)) {
+					<span class="color-dot" style={ "background:" + book.Color }></span>
+					{ book.Name }
+				}
+			}
 		}
 		<div class="sidebar-divider"></div>
-		<a href="/apps/contacts/settings" class={ sidebarClass(activePath, "/apps/contacts/settings") }>Settings</a>
+		@sidebarLink("/apps/contacts/settings", active == "settings") {
+			@ui.Icon("settings")
+			Settings
+		}
 	</nav>
 }
 
-templ contactsIndexPage(books []AddressBook, cards []CardWithBook, csrfToken string) {
+templ sidebarLink(href string, active bool) {
+	<a
+		href={ templ.SafeURL(href) }
+		class={ "sidebar-item", templ.KV("active", active) }
+		if active {
+			aria-current="page"
+		}
+	>
+		{ children... }
+	</a>
+}
+
+// contactsListPage is every page that lists contacts: all of them, one
+// address book's, the starred ones. A row opens the contact's dialog.
+templ contactsListPage(v *listView, csrfToken string) {
 	<div class="sidebar-layout">
-		@contactsSidebar(books, "/apps/contacts/")
+		@contactsSidebar(v.Books, v.Active)
 		<div class="sidebar-content">
-			<div class="flex items-center gap-1 mb-2" style="justify-content:space-between">
-				<h1 style="margin:0">Contacts</h1>
-				<button class="btn btn-primary" onclick="document.getElementById('create-contact-modal').style.display='flex'">New Contact</button>
-			</div>
-			if len(cards) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No contacts yet. Create one or sync with a CardDAV client.</p>
-				}
-			} else {
-				<div id="contacts-list">
-					<table class="table">
-						<thead>
-							<tr>
-								<th></th>
-								<th>Name</th>
-								<th class="hide-mobile">Email</th>
-								<th class="hide-mobile">Phone</th>
-								<th class="hide-mobile">Org</th>
-								<th>Book</th>
-							</tr>
-						</thead>
-						<tbody>
-							for _, c := range cards {
-								<tr
-									id={ fmt.Sprintf("contact-%d", c.ID) }
-									style="cursor:pointer"
-									onclick={ templ.ComponentScript{Call: fmt.Sprintf("showContactDetail(%d)", c.ID)} }
-								>
-									<td>
-										if c.HasPhoto() {
-											<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover"/>
-										} else {
-											<span class="avatar-initials" style={ fmt.Sprintf("background:%s", c.BookColor) }>{ contactInitials(c.FN) }</span>
-										}
-									</td>
-									<td style="font-weight:500">
-										{ c.FN }
-										if c.IsStarred {
-											<span class="btn-star active" style="cursor:default">
-												@ui.StarIcon()
-											</span>
-										}
-									</td>
-									<td class="hide-mobile">{ c.Email }</td>
-									<td class="hide-mobile">{ c.Tel }</td>
-									<td class="hide-mobile">{ c.Org }</td>
-									<td>
-										<span style={ fmt.Sprintf("display:inline-block;width:8px;height:8px;border-radius:50%%;background:%s;vertical-align:middle;margin-right:4px", c.BookColor) }></span>
-										{ c.BookName }
-									</td>
-								</tr>
+			<header class="page-header">
+				<div class="page-heading">
+					<h1>{ v.Title }</h1>
+					if len(v.Cards) > 0 {
+						<p class="page-subtitle">{ contactCount(len(v.Cards)) }</p>
+					}
+				</div>
+				<div class="page-actions">
+					if v.CanWrite {
+						<button type="button" class="btn btn-primary" data-modal-open="create-contact-modal">
+							@ui.Icon("plus")
+							New contact
+						</button>
+					}
+				</div>
+			</header>
+			if len(v.Cards) == 0 {
+				<div class="card">
+					if v.Starred {
+						@ui.EmptyState("No starred contacts", "Open a contact and select its star to keep it here, and on your dashboard.")
+					} else if v.Filtered != nil {
+						@ui.EmptyState("No contacts in "+v.Filtered.Name, "Add one here, or move a contact into this book from its dialog.") {
+							if v.CanWrite {
+								<button type="button" class="btn btn-primary" data-modal-open="create-contact-modal">New contact</button>
 							}
-						</tbody>
-					</table>
+						}
+					} else {
+						@ui.EmptyState("No contacts yet", "Add your first contact, or sync the ones on your phone with a CardDAV app.") {
+							if v.CanWrite {
+								<button type="button" class="btn btn-primary" data-modal-open="create-contact-modal">New contact</button>
+							}
+							<a class="btn" href="/apps/contacts/settings#carddav">Set up CardDAV sync</a>
+						}
+					}
+				</div>
+			} else {
+				<div class="card card-flush">
+					<div class="table-wrap">
+						<table class="table contacts-table" id="contacts-list">
+							<thead class="hide-mobile">
+								<tr>
+									<th class="col-shrink"><span class="sr-only">Photo</span></th>
+									<th>Name</th>
+									<th class="hide-mobile">Email</th>
+									<th class="hide-mobile">Phone</th>
+									if v.Filtered == nil {
+										<th class="hide-mobile">Address book</th>
+									}
+								</tr>
+							</thead>
+							<tbody>
+								for _, c := range v.Cards {
+									<tr id={ fmt.Sprintf("contact-%d", c.ID) }>
+										<td class="col-shrink">
+											@contactAvatar(&c.Card, c.BookColor, false)
+										</td>
+										<td>
+											<div class="contact-name">
+												<a class="row-link" href={ templ.SafeURL(contactHref(v.Path, c.ID)) } data-contact-id={ strconv.FormatInt(c.ID, 10) }>{ c.FN }</a>
+												if c.IsStarred {
+													<span class="contact-star-icon" title="Starred">
+														@ui.StarIcon()
+														<span class="sr-only">(starred)</span>
+													</span>
+												}
+											</div>
+											if c.Org != "" {
+												<div class="contact-sub">{ c.Org }</div>
+											}
+											if line := contactSubtext(c); line != "" {
+												<div class="contact-sub show-mobile">{ line }</div>
+											}
+										</td>
+										<td class="hide-mobile break-anywhere">{ c.Email }</td>
+										<td class="hide-mobile nowrap">{ c.Tel }</td>
+										if v.Filtered == nil {
+											<td class="hide-mobile">
+												<span class="contact-book">
+													<span class="color-dot" style={ "background:" + c.BookColor }></span>
+													{ c.BookName }
+												</span>
+											</td>
+										}
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
 				</div>
 			}
 		</div>
 	</div>
-	<!-- Contact detail modal -->
-	<div id="contact-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-		<div class="modal-content" id="contact-modal-body"></div>
-	</div>
-	<!-- Create contact modal -->
-	<div id="create-contact-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-		<div class="modal-content">
-			<h2 style="margin-top:0">New Contact</h2>
+	if v.CanWrite {
+		@ui.Modal("create-contact-modal", "New contact") {
 			<form method="post" action="/apps/contacts/contacts">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<div class="form-group">
-					<label for="cc-book">Address Book</label>
-					<select class="form-control" id="cc-book" name="address_book_id">
-						for _, book := range books {
-							<option value={ strconv.FormatInt(book.ID, 10) }>{ book.Name }</option>
-						}
-					</select>
+				<div class="modal-body">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					@contactFormFields("cc", nil, v.Writable, bookIDOf(v.Filtered))
 				</div>
-				<div class="flex gap-1">
-					<div class="form-group" style="flex:1">
-						<label for="cc-given">First name</label>
-						<input class="form-control" type="text" id="cc-given" name="given"/>
-					</div>
-					<div class="form-group" style="flex:1">
-						<label for="cc-family">Last name</label>
-						<input class="form-control" type="text" id="cc-family" name="family"/>
-					</div>
-				</div>
-				<div class="form-group">
-					<label for="cc-fn">Display name</label>
-					<input class="form-control" type="text" id="cc-fn" name="fn" placeholder="First and last name"/>
-				</div>
-				<!-- Emails -->
-				<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
-					<legend style="font-weight:500;font-size:0.9rem">Emails</legend>
-					<div id="cc-emails">
-						@valueRow("email", -1, "INTERNET", "", emailTypes)
-					</div>
-					<button type="button" class="btn btn-outline btn-sm" onclick="addField('cc-emails','email')">+ Add email</button>
-				</fieldset>
-				<!-- Phones -->
-				<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
-					<legend style="font-weight:500;font-size:0.9rem">Phones</legend>
-					<div id="cc-phones">
-						@valueRow("phone", -1, "CELL", "", phoneTypes)
-					</div>
-					<button type="button" class="btn btn-outline btn-sm" onclick="addField('cc-phones','phone')">+ Add phone</button>
-				</fieldset>
-				<!-- Business fields -->
-				<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
-					<legend style="font-weight:500;font-size:0.9rem">Work</legend>
-					<div class="form-group">
-						<label for="cc-org">Organization</label>
-						<input class="form-control" type="text" id="cc-org" name="org"/>
-					</div>
-					<div class="form-group">
-						<label for="cc-title">Title</label>
-						<input class="form-control" type="text" id="cc-title" name="title"/>
-					</div>
-				</fieldset>
-				<div class="form-group">
-					<label for="cc-note">Note</label>
-					<textarea class="form-control" id="cc-note" name="note" rows="3"></textarea>
-				</div>
-				<div class="flex gap-1" style="justify-content:flex-end">
-					<button type="button" class="btn" onclick="document.getElementById('create-contact-modal').style.display='none'">Cancel</button>
+				<div class="modal-footer">
+					<button type="button" class="btn" data-modal-close>Cancel</button>
 					<button type="submit" class="btn btn-primary">Create</button>
 				</div>
 			</form>
-		</div>
-	</div>
-	<style>
-		.avatar-initials {
-			display: inline-flex;
-			align-items: center;
-			justify-content: center;
-			width: 32px;
-			height: 32px;
-			border-radius: 50%;
-			color: #fff;
-			font-weight: 600;
-			font-size: 0.8rem;
 		}
-		.typed-label {
-			font-size: 0.75rem;
-			color: var(--color-muted, #888);
-			text-transform: uppercase;
-		}
-	</style>
-	<script>
-		function showContactDetail(id) {
-			fetch("/apps/contacts/contacts/" + id, {
-				headers: {
-					"X-CSRF-Token": document.querySelector("[name=csrf_token]").value,
-				},
-			})
-				.then(function (r) {
-					return r.text();
-				})
-				.then(function (html) {
-					var el = document.getElementById("contact-modal-body");
-					el.innerHTML = html;
-					htmx.process(el);
-					document.getElementById("contact-modal").style.display = "flex";
-				});
-		}
-		function addField(containerId, kind) {
-			var container = document.getElementById(containerId);
-			var row = document.createElement("div");
-			row.className = "flex gap-1 items-end mb-1";
-			if (kind === "email") {
-				row.innerHTML =
-					'<input type="hidden" name="email_index" value="new"/>' +
-					'<select class="form-control" name="email_type" style="width:100px">' +
-					'<option value="INTERNET">Personal</option><option value="WORK">Work</option><option value="HOME">Home</option>' +
-					"</select>" +
-					'<input class="form-control" type="email" name="email_value" placeholder="email@example.com" style="flex:1"/>' +
-					'<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>';
-			} else {
-				row.innerHTML =
-					'<input type="hidden" name="phone_index" value="new"/>' +
-					'<select class="form-control" name="phone_type" style="width:100px">' +
-					'<option value="CELL">Cell</option><option value="WORK">Work</option><option value="HOME">Home</option><option value="FAX">Fax</option>' +
-					"</select>" +
-					'<input class="form-control" type="tel" name="phone_value" placeholder="+1 555-1234" style="flex:1"/>' +
-					'<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>';
-			}
-			container.appendChild(row);
-		}
-	</script>
+	}
+	<div id="contact-modal-slot"></div>
+	@rowTemplates()
+	@contactsScript()
 }
 
-templ contactsStarredPage(books []AddressBook, cards []CardWithBook) {
-	<div class="sidebar-layout">
-		@contactsSidebar(books, "/apps/contacts/starred")
-		<div class="sidebar-content">
-			<h1>Starred Contacts</h1>
-			if len(cards) == 0 {
-				@ui.Card("") {
-					<p class="text-muted">No starred contacts. Open a contact and click the star to add them here.</p>
-				}
-			} else {
-				<div id="contacts-list">
-					<table class="table">
-						<thead>
-							<tr>
-								<th></th>
-								<th>Name</th>
-								<th class="hide-mobile">Email</th>
-								<th class="hide-mobile">Phone</th>
-								<th class="hide-mobile">Org</th>
-								<th>Book</th>
-							</tr>
-						</thead>
-						<tbody>
-							for _, c := range cards {
-								<tr
-									id={ fmt.Sprintf("contact-%d", c.ID) }
-									style="cursor:pointer"
-									onclick={ templ.ComponentScript{Call: fmt.Sprintf("showContactDetail(%d)", c.ID)} }
-								>
-									<td>
-										if c.HasPhoto() {
-											<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover"/>
-										} else {
-											<span class="avatar-initials" style={ fmt.Sprintf("background:%s", c.BookColor) }>{ contactInitials(c.FN) }</span>
-										}
-									</td>
-									<td style="font-weight:500">
-										{ c.FN }
-										if c.IsStarred {
-											<span class="btn-star active" style="cursor:default">
-												@ui.StarIcon()
-											</span>
-										}
-									</td>
-									<td class="hide-mobile">{ c.Email }</td>
-									<td class="hide-mobile">{ c.Tel }</td>
-									<td class="hide-mobile">{ c.Org }</td>
-									<td>
-										<span style={ fmt.Sprintf("display:inline-block;width:8px;height:8px;border-radius:50%%;background:%s;vertical-align:middle;margin-right:4px", c.BookColor) }></span>
-										{ c.BookName }
-									</td>
-								</tr>
-							}
-						</tbody>
-					</table>
+// contactAvatar is a contact's photo, or initials on its book's colour.
+// large is the dialog's size, otherwise the list's.
+templ contactAvatar(c *Card, color string, large bool) {
+	if c.HasPhoto() {
+		<img
+			src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) }
+			alt=""
+			class={ templ.KV("avatar-md", !large), templ.KV("avatar-lg", large) }
+		/>
+	} else {
+		<span class={ "contact-initials", templ.KV("contact-initials-lg", large) } style={ "background:" + avatarColor(color) } aria-hidden="true">{ contactInitials(c.FN) }</span>
+	}
+}
+
+// contactDialog is the contact's dialog: what is known about them, and the
+// form that edits it behind Edit.
+templ contactDialog(d *detailView, csrfToken string) {
+	{{ c := d.Card }}
+	@ui.Modal("contact-modal", c.FN) {
+		<div class="modal-body" data-view>
+			<div class="contact-hero">
+				@contactAvatar(c, contactColor(c, d.Book), true)
+				<div class="contact-hero-text">
+					if line := jobLine(c.VCard); line != "" {
+						<div class="contact-hero-job">{ line }</div>
+					}
+					if d.Book != nil {
+						<div class="contact-book text-sm text-muted">
+							<span class="color-dot" style={ "background:" + d.Book.Color }></span>
+							{ d.Book.Name }
+						</div>
+					}
 				</div>
+				if d.CanStar {
+					@ui.Star(c.IsStarred, fmt.Sprintf("/apps/contacts/contacts/%d/star", c.ID))
+				}
+			</div>
+			<dl class="kv contact-fields">
+				for _, e := range c.VCard.Emails {
+					<dt>{ valueLabel(&e.Meta, "Email") }</dt>
+					<dd><a href={ templ.SafeURL("mailto:" + e.Value) }>{ e.Value }</a></dd>
+				}
+				for _, p := range c.VCard.Phones {
+					<dt>{ valueLabel(&p.Meta, "Phone") }</dt>
+					<dd><a href={ templ.SafeURL("tel:" + p.Value) }>{ p.Value }</a></dd>
+				}
+				for _, a := range c.VCard.Addresses {
+					<dt>{ valueLabel(&a.Meta, "Address") }</dt>
+					<dd>
+						for i, line := range addressLines(&a) {
+							if i > 0 {
+								<br/>
+							}
+							{ line }
+						}
+					</dd>
+				}
+				for _, u := range c.VCard.URLs {
+					<dt>{ valueLabel(&u.Meta, "Website") }</dt>
+					<dd>
+						if isWebURL(u.Value) {
+							<a href={ templ.SafeURL(u.Value) } target="_blank" rel="noopener noreferrer">{ u.Value }</a>
+						} else {
+							{ u.Value }
+						}
+					</dd>
+				}
+				if c.VCard.Birthday != "" {
+					<dt>Birthday</dt>
+					<dd>{ formatBirthday(c.VCard.Birthday, d.Now) }</dd>
+				}
+				if c.VCard.Note != "" {
+					<dt>Note</dt>
+					<dd class="contact-note">{ c.VCard.Note }</dd>
+				}
+			</dl>
+			if !hasDetails(c.VCard) {
+				<p class="text-muted">No email, phone or other details yet.</p>
 			}
 		</div>
-	</div>
-	<!-- Contact detail modal -->
-	<div id="contact-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-		<div class="modal-content" id="contact-modal-body"></div>
-	</div>
-	<style>
-		.avatar-initials {
-			display: inline-flex;
-			align-items: center;
-			justify-content: center;
-			width: 32px;
-			height: 32px;
-			border-radius: 50%;
-			color: #fff;
-			font-weight: 600;
-			font-size: 0.8rem;
+		if d.Writable {
+			<div class="modal-body" data-edit hidden>
+				<div class="contact-photo-edit">
+					@contactAvatar(c, contactColor(c, d.Book), true)
+					@ui.Upload(fmt.Sprintf("/apps/contacts/contacts/%d/photo", c.ID), "photo", "image/*", csrfToken, "Change photo", "btn btn-sm")
+				</div>
+				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/contacts/contacts/%d", c.ID)) } id="contact-form">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					@contactFormFields("em", c.VCard, d.Books, c.AddressBookID)
+				</form>
+			</div>
 		}
-	</style>
-	<script>
-		function showContactDetail(id) {
-			fetch("/apps/contacts/contacts/" + id, {
-				headers: {
-					"X-CSRF-Token": document.querySelector("[name=csrf_token]").value,
-				},
-			})
-				.then(function (r) {
-					return r.text();
-				})
-				.then(function (html) {
-					var el = document.getElementById("contact-modal-body");
-					el.innerHTML = html;
-					htmx.process(el);
-					document.getElementById("contact-modal").style.display = "flex";
-				});
-		}
-	</script>
+		<div class="modal-footer">
+			if d.Writable {
+				<button
+					type="button"
+					class="btn btn-outline-danger modal-footer-start"
+					hx-delete={ fmt.Sprintf("/apps/contacts/contacts/%d", c.ID) }
+					hx-confirm={ fmt.Sprintf("Delete %s?", c.FN) }
+					hx-on::after-request="if(event.detail.successful){cogModal.close('contact-modal');location.reload()}"
+				>Delete</button>
+				<button type="button" class="btn" data-modal-close data-view>Close</button>
+				<button type="button" class="btn btn-primary" data-show-edit data-view>
+					@ui.Icon("edit")
+					Edit
+				</button>
+				<button type="button" class="btn" data-show-view data-edit hidden>Cancel</button>
+				<button type="submit" class="btn btn-primary" form="contact-form" data-edit hidden>Save</button>
+			} else {
+				<button type="button" class="btn" data-modal-close>Close</button>
+			}
+		</div>
+	}
 }
 
+// contactFormFields are the fields of the new-contact and edit forms; prefix
+// keeps their IDs apart, card is nil for a new contact.
+templ contactFormFields(prefix string, card *vcard.Card, books []AddressBook, bookID int64) {
+	if len(books) > 1 || card == nil {
+		<div class="form-group">
+			<label for={ prefix + "-book" }>Address book</label>
+			<select class="form-control" id={ prefix + "-book" } name="address_book_id">
+				for _, b := range books {
+					<option value={ strconv.FormatInt(b.ID, 10) } selected?={ b.ID == bookID }>{ b.Name }</option>
+				}
+			</select>
+		</div>
+	}
+	<div class="form-row">
+		<div class="form-group">
+			<label for={ prefix + "-given" }>First name</label>
+			<input class="form-control" type="text" id={ prefix + "-given" } name="given" value={ givenName(card) } autocomplete="off"/>
+		</div>
+		<div class="form-group">
+			<label for={ prefix + "-family" }>Last name</label>
+			<input class="form-control" type="text" id={ prefix + "-family" } name="family" value={ familyName(card) } autocomplete="off"/>
+		</div>
+	</div>
+	<div class="form-group">
+		<label for={ prefix + "-fn" }>Display name</label>
+		<input class="form-control" type="text" id={ prefix + "-fn" } name="fn" value={ cardFN(card) } placeholder="First and last name"/>
+	</div>
+	<fieldset class="contact-fieldset">
+		<legend>Email</legend>
+		<div id={ prefix + "-emails" } class="contact-rows">
+			if card != nil {
+				for i, e := range card.Emails {
+					@valueRow("email", i, shownType(&e.Meta, emailTypes), e.Value, emailTypes)
+				}
+			}
+			if card == nil || len(card.Emails) == 0 {
+				@valueRow("email", -1, "INTERNET", "", emailTypes)
+			}
+		</div>
+		<button type="button" class="btn btn-ghost btn-sm" data-add-row={ prefix + "-emails" } data-template="tpl-email-row">
+			@ui.Icon("plus")
+			Add email
+		</button>
+	</fieldset>
+	<fieldset class="contact-fieldset">
+		<legend>Phone</legend>
+		<div id={ prefix + "-phones" } class="contact-rows">
+			if card != nil {
+				for i, p := range card.Phones {
+					@valueRow("phone", i, shownType(&p.Meta, phoneTypes), p.Value, phoneTypes)
+				}
+			}
+			if card == nil || len(card.Phones) == 0 {
+				@valueRow("phone", -1, "CELL", "", phoneTypes)
+			}
+		</div>
+		<button type="button" class="btn btn-ghost btn-sm" data-add-row={ prefix + "-phones" } data-template="tpl-phone-row">
+			@ui.Icon("plus")
+			Add phone
+		</button>
+	</fieldset>
+	<fieldset class="contact-fieldset">
+		<legend>Address</legend>
+		<input type="hidden" name="addresses_shown" value="1"/>
+		<div id={ prefix + "-addresses" } class="contact-rows">
+			if card != nil {
+				for i, a := range card.Addresses {
+					@addressRow(i, &a)
+				}
+			}
+		</div>
+		<button type="button" class="btn btn-ghost btn-sm" data-add-row={ prefix + "-addresses" } data-template="tpl-address-row">
+			@ui.Icon("plus")
+			Add address
+		</button>
+	</fieldset>
+	<fieldset class="contact-fieldset">
+		<legend>Website</legend>
+		<input type="hidden" name="urls_shown" value="1"/>
+		<div id={ prefix + "-urls" } class="contact-rows">
+			if card != nil {
+				for i, u := range card.URLs {
+					@valueRow("url", i, "", u.Value, nil)
+				}
+			}
+		</div>
+		<button type="button" class="btn btn-ghost btn-sm" data-add-row={ prefix + "-urls" } data-template="tpl-url-row">
+			@ui.Icon("plus")
+			Add website
+		</button>
+	</fieldset>
+	<div class="form-row">
+		<div class="form-group">
+			<label for={ prefix + "-org" }>Organization</label>
+			<input class="form-control" type="text" id={ prefix + "-org" } name="org" value={ cardOrg(card) }/>
+		</div>
+		<div class="form-group">
+			<label for={ prefix + "-title" }>Job title</label>
+			<input class="form-control" type="text" id={ prefix + "-title" } name="title" value={ cardTitle(card) }/>
+		</div>
+	</div>
+	<div class="form-group">
+		<label for={ prefix + "-birthday" }>Birthday</label>
+		if b := cardBirthday(card); b == "" || isFullDate(b) {
+			<input class="form-control w-sm" type="date" id={ prefix + "-birthday" } name="birthday" value={ shownBirthday(b) }/>
+		} else {
+			<input class="form-control w-sm" type="text" id={ prefix + "-birthday" } name="birthday" value={ b }/>
+		}
+	</div>
+	<div class="form-group">
+		<label for={ prefix + "-note" }>Note</label>
+		<textarea class="form-control" id={ prefix + "-note" } name="note" rows="3">{ cardNote(card) }</textarea>
+	</div>
+}
+
+// valueRow is one email, phone or website: its type, its value and a
+// remove button. options nil means the value has no type menu.
 templ valueRow(kind string, index int, typ, value string, options []typeOption) {
-	<div class="flex gap-1 items-end mb-1">
+	<div class={ "contact-value-row", templ.KV("contact-value-row-untyped", options == nil) }>
 		if index < 0 {
 			<input type="hidden" name={ kind + "_index" } value="new"/>
 		} else {
 			<input type="hidden" name={ kind + "_index" } value={ strconv.Itoa(index) }/>
 		}
-		<select class="form-control" name={ kind + "_type" } style="width:100px">
-			for _, o := range options {
-				<option value={ o.Type } selected?={ o.Type == typ }>{ o.Label }</option>
-			}
-			if index >= 0 {
-				<option value="" selected?={ typ == "" }>Other</option>
-			}
-		</select>
-		if kind == "email" {
-			<input class="form-control" type="email" name="email_value" value={ value } placeholder="email@example.com" style="flex:1"/>
+		if options == nil {
+			<input type="hidden" name={ kind + "_type" } value={ typ }/>
 		} else {
-			<input class="form-control" type="tel" name="phone_value" value={ value } placeholder="+1 555-1234" style="flex:1"/>
-		}
-		if index >= 0 {
-			<button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">X</button>
-		}
-	</div>
-}
-
-templ contactDetailModal(c *Card, book *AddressBook, books []AddressBook, csrfToken string) {
-	if c.HasPhoto() {
-		<img src={ fmt.Sprintf("/apps/contacts/photos/%d", c.ID) } alt="" style="width:80px;height:80px;border-radius:50%;object-fit:cover;margin-bottom:0.75rem;display:block"/>
-	} else {
-		<span class="avatar-initials" style={ fmt.Sprintf("width:80px;height:80px;font-size:1.5rem;margin-bottom:0.75rem;display:inline-flex;background:%s", contactColor(c, book)) }>{ contactInitials(c.FN) }</span>
-	}
-	<div class="flex items-center gap-1" style="margin-bottom:0.5rem">
-		<h2 style="margin:0">{ c.FN }</h2>
-		@ui.Star(c.IsStarred, fmt.Sprintf("/apps/contacts/contacts/%d/star", c.ID))
-	</div>
-	for _, e := range c.VCard.Emails {
-		<p>
-			<span class="typed-label">{ displayLabel(&e.Meta) }</span>
-			<br/>
-			<a href={ templ.SafeURL("mailto:" + e.Value) }>{ e.Value }</a>
-		</p>
-	}
-	for _, p := range c.VCard.Phones {
-		<p>
-			<span class="typed-label">{ displayLabel(&p.Meta) }</span>
-			<br/>
-			<a href={ templ.SafeURL("tel:" + p.Value) }>{ p.Value }</a>
-		</p>
-	}
-	if c.Org != "" {
-		<p><strong>Organization:</strong> { c.Org }</p>
-	}
-	if c.VCard.Title != "" {
-		<p><strong>Title:</strong> { c.VCard.Title }</p>
-	}
-	if c.VCard.Birthday != "" {
-		<p><strong>Birthday:</strong> { c.VCard.Birthday }</p>
-	}
-	if c.VCard.Note != "" {
-		<p style="white-space:pre-line"><strong>Note:</strong> { c.VCard.Note }</p>
-	}
-	for _, a := range c.VCard.Addresses {
-		<p>
-			<span class="typed-label">{ displayLabel(&a.Meta) } Address</span>
-			for _, line := range addressLines(&a) {
-				<br/>
-				{ line }
-			}
-		</p>
-	}
-	for _, u := range c.VCard.URLs {
-		<p>
-			<span class="typed-label">{ displayLabel(&u.Meta) } Website</span>
-			<br/>
-			{ u.Value }
-		</p>
-	}
-	if book != nil {
-		<p class="text-muted" style="font-size:0.85rem">
-			<span style={ fmt.Sprintf("display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s;vertical-align:middle", book.Color) }></span>
-			{ " " + book.Name }
-		</p>
-	}
-	<div class="sidebar-divider" style="margin:1rem 0"></div>
-	<h3>Edit Contact</h3>
-	<!-- Photo upload -->
-	<div class="form-group">
-		<label>Photo</label>
-		@ui.Upload(fmt.Sprintf("/apps/contacts/contacts/%d/photo", c.ID), "photo", "image/*", csrfToken, "Upload Photo", "btn btn-outline btn-sm")
-	</div>
-	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/contacts/contacts/%d", c.ID)) }>
-		<input type="hidden" name="csrf_token" value={ csrfToken }/>
-		<div class="form-group">
-			<label for="em-book">Address Book</label>
-			<select class="form-control" id="em-book" name="address_book_id">
-				for _, b := range books {
-					if b.ID == c.AddressBookID {
-						<option value={ strconv.FormatInt(b.ID, 10) } selected>{ b.Name }</option>
-					} else {
-						<option value={ strconv.FormatInt(b.ID, 10) }>{ b.Name }</option>
-					}
+			<select class="form-control contact-type" name={ kind + "_type" } aria-label={ kindLabel(kind) + " type" }>
+				for _, o := range options {
+					<option value={ o.Type } selected?={ o.Type == typ }>{ o.Label }</option>
 				}
+				<option value="" selected?={ typ == "" }>Other</option>
 			</select>
-		</div>
-		<div class="flex gap-1">
-			<div class="form-group" style="flex:1">
-				<label for="em-given">First name</label>
-				<input class="form-control" type="text" id="em-given" name="given" value={ givenName(c.VCard) }/>
-			</div>
-			<div class="form-group" style="flex:1">
-				<label for="em-family">Last name</label>
-				<input class="form-control" type="text" id="em-family" name="family" value={ familyName(c.VCard) }/>
-			</div>
-		</div>
-		<div class="form-group">
-			<label for="em-fn">Display name</label>
-			<input class="form-control" type="text" id="em-fn" name="fn" value={ c.VCard.FN } placeholder="First and last name"/>
-		</div>
-		<!-- Edit emails -->
-		<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
-			<legend style="font-weight:500;font-size:0.9rem">Emails</legend>
-			<div id="em-emails">
-				for i, e := range c.VCard.Emails {
-					@valueRow("email", i, shownType(&e.Meta, emailTypes), e.Value, emailTypes)
-				}
-				if len(c.VCard.Emails) == 0 {
-					@valueRow("email", -1, "INTERNET", "", emailTypes)
-				}
-			</div>
-			<button type="button" class="btn btn-outline btn-sm" onclick="addField('em-emails','email')">+ Add email</button>
-		</fieldset>
-		<!-- Edit phones -->
-		<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
-			<legend style="font-weight:500;font-size:0.9rem">Phones</legend>
-			<div id="em-phones">
-				for i, p := range c.VCard.Phones {
-					@valueRow("phone", i, shownType(&p.Meta, phoneTypes), p.Value, phoneTypes)
-				}
-				if len(c.VCard.Phones) == 0 {
-					@valueRow("phone", -1, "CELL", "", phoneTypes)
-				}
-			</div>
-			<button type="button" class="btn btn-outline btn-sm" onclick="addField('em-phones','phone')">+ Add phone</button>
-		</fieldset>
-		<!-- Business fields -->
-		<fieldset style="border:1px solid var(--color-border, #ddd);border-radius:var(--radius, 6px);padding:0.75rem;margin-bottom:1rem">
-			<legend style="font-weight:500;font-size:0.9rem">Work</legend>
-			<div class="form-group">
-				<label for="em-org">Organization</label>
-				<input class="form-control" type="text" id="em-org" name="org" value={ c.Org }/>
-			</div>
-			<div class="form-group">
-				<label for="em-title">Title</label>
-				<input class="form-control" type="text" id="em-title" name="title" value={ c.VCard.Title }/>
-			</div>
-		</fieldset>
-		<div class="form-group">
-			<label for="em-note">Note</label>
-			<textarea class="form-control" id="em-note" name="note" rows="3">{ c.VCard.Note }</textarea>
-		</div>
-		<div class="flex gap-1" style="justify-content:space-between">
-			<button
-				type="button"
-				class="btn btn-danger"
-				hx-delete={ fmt.Sprintf("/apps/contacts/contacts/%d", c.ID) }
-				hx-confirm="Delete this contact?"
-				hx-on::after-request="document.getElementById('contact-modal').style.display='none';location.reload()"
-			>Delete</button>
-			<div class="flex gap-1">
-				<button type="button" class="btn" onclick="document.getElementById('contact-modal').style.display='none'">Cancel</button>
-				<button type="submit" class="btn btn-primary">Save</button>
-			</div>
-		</div>
-	</form>
+		}
+		switch kind {
+			case "email":
+				<input class="form-control" type="email" name="email_value" value={ value } placeholder="name@example.com" aria-label="Email"/>
+			case "phone":
+				<input class="form-control" type="tel" name="phone_value" value={ value } placeholder="+1 555 0100" aria-label="Phone"/>
+			default:
+				<input class="form-control" type="url" name="url_value" value={ value } placeholder="https://example.com" aria-label="Website"/>
+		}
+		<button type="button" class="btn-icon btn-icon-danger contact-remove" data-remove-row aria-label={ "Remove " + strings.ToLower(kindLabel(kind)) }>
+			@ui.Icon("x")
+		</button>
+	</div>
 }
 
-templ contactsSettingsPage(books []AddressBook, csrfToken string) {
+// addressRow is one address in the form. index is -1 for a new one.
+templ addressRow(index int, a *vcard.Address) {
+	<div class="contact-address-row">
+		if index < 0 {
+			<input type="hidden" name="adr_index" value="new"/>
+		} else {
+			<input type="hidden" name="adr_index" value={ strconv.Itoa(index) }/>
+		}
+		<div class="contact-address-head">
+			<select class="form-control contact-type" name="adr_type" aria-label="Address type">
+				for _, o := range addressTypes {
+					<option value={ o.Type } selected?={ o.Type == shownType(&a.Meta, addressTypes) }>{ o.Label }</option>
+				}
+				<option value="" selected?={ index >= 0 && shownType(&a.Meta, addressTypes) == "" }>Other</option>
+			</select>
+			<button type="button" class="btn-icon btn-icon-danger contact-remove" data-remove-row aria-label="Remove address">
+				@ui.Icon("x")
+			</button>
+		</div>
+		<textarea class="form-control contact-street" name="adr_street" rows="2" placeholder="Street" aria-label="Street">{ streetOf(a) }</textarea>
+		<div class="contact-address-grid">
+			<input class="form-control" type="text" name="adr_locality" value={ joined(a.Locality) } placeholder="City" aria-label="City"/>
+			<input class="form-control" type="text" name="adr_region" value={ joined(a.Region) } placeholder="State or region" aria-label="State or region"/>
+			<input class="form-control" type="text" name="adr_code" value={ joined(a.Code) } placeholder="Postcode" aria-label="Postcode"/>
+			<input class="form-control" type="text" name="adr_country" value={ joined(a.Country) } placeholder="Country" aria-label="Country"/>
+		</div>
+	</div>
+}
+
+// rowTemplates are the blank rows "Add email" and the like copy.
+templ rowTemplates() {
+	<template id="tpl-email-row">
+		@valueRow("email", -1, "INTERNET", "", emailTypes)
+	</template>
+	<template id="tpl-phone-row">
+		@valueRow("phone", -1, "CELL", "", phoneTypes)
+	</template>
+	<template id="tpl-url-row">
+		@valueRow("url", -1, "", "", nil)
+	</template>
+	<template id="tpl-address-row">
+		@addressRow(-1, &vcard.Address{Meta: vcard.Meta{Types: []string{"HOME"}}})
+	</template>
+}
+
+// contactsScript opens a row's contact in its dialog (and the one ?contact=
+// names on load), switches the dialog between viewing and editing, and adds
+// and removes the form's rows.
+templ contactsScript() {
+	<script>
+		(function () {
+			function openContact(id) {
+				fetch("/apps/contacts/contacts/" + id)
+					.then(function (r) {
+						if (!r.ok) throw new Error("HTTP " + r.status);
+						return r.text();
+					})
+					.then(function (html) {
+						var slot = document.getElementById("contact-modal-slot");
+						slot.innerHTML = html;
+						htmx.process(slot);
+						cogModal.open("contact-modal");
+					})
+					.catch(function (err) {
+						console.error("open contact", id, err);
+					});
+			}
+			function show(dialog, edit) {
+				dialog.querySelectorAll("[data-view]").forEach(function (el) {
+					el.hidden = edit;
+				});
+				dialog.querySelectorAll("[data-edit]").forEach(function (el) {
+					el.hidden = !edit;
+				});
+				var first = edit && dialog.querySelector("[data-edit] input:not([type=hidden]), [data-edit] select");
+				if (first) first.focus();
+			}
+			document.addEventListener("click", function (e) {
+				var link = e.target.closest("a[data-contact-id]");
+				if (link && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+					e.preventDefault();
+					openContact(link.dataset.contactId);
+					return;
+				}
+				var edit = e.target.closest("[data-show-edit]");
+				if (edit) {
+					show(edit.closest("dialog"), true);
+					return;
+				}
+				var view = e.target.closest("[data-show-view]");
+				if (view) {
+					show(view.closest("dialog"), false);
+					return;
+				}
+				var add = e.target.closest("[data-add-row]");
+				if (add) {
+					var tpl = document.getElementById(add.dataset.template);
+					var rows = document.getElementById(add.dataset.addRow);
+					var row = tpl.content.firstElementChild.cloneNode(true);
+					rows.appendChild(row);
+					var input = row.querySelector("input:not([type=hidden]), textarea");
+					if (input) input.focus();
+					return;
+				}
+				var remove = e.target.closest("[data-remove-row]");
+				if (remove) {
+					remove.closest(".contact-value-row, .contact-address-row").remove();
+				}
+			});
+			var id = new URLSearchParams(location.search).get("contact");
+			if (/^[0-9]+$/.test(id || "")) openContact(id);
+		})();
+	</script>
+}
+
+templ contactsSettingsPage(books []AddressBook, davURL, username, csrfToken string) {
 	<div class="sidebar-layout">
-		@contactsSidebar(books, "/apps/contacts/settings")
+		@contactsSidebar(books, "settings")
 		<div class="sidebar-content">
-			<h1>Contacts Settings</h1>
-			@ui.Card("Create Address Book") {
-				<form method="post" action="/apps/contacts/books" class="flex gap-1 items-end">
+			@ui.PageHeader("Contacts settings", nil)
+			@ui.Card("New address book") {
+				<form method="post" action="/apps/contacts/books">
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					<div class="form-group" style="margin-bottom:0">
-						<label for="name">Name</label>
-						<input class="form-control" type="text" id="name" name="name" placeholder="Work" required/>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="name">Name</label>
+							<input class="form-control" type="text" id="name" name="name" placeholder="Work" required/>
+						</div>
+						<div class="form-group">
+							<label for="uid">Address (optional)</label>
+							<input class="form-control" type="text" id="uid" name="uid" placeholder="work" aria-describedby="uid-help"/>
+						</div>
+						<div class="form-group form-group-auto">
+							<label for="color">Colour</label>
+							<input class="form-control" type="color" id="color" name="color" value="#0082c9"/>
+						</div>
+						<button class="btn btn-primary" type="submit">Create</button>
 					</div>
-					<div class="form-group" style="margin-bottom:0">
-						<label for="uid">URL slug</label>
-						<input class="form-control" type="text" id="uid" name="uid" placeholder="work"/>
-					</div>
-					<div class="form-group" style="margin-bottom:0">
-						<label for="color">Color</label>
-						<input class="form-control" type="color" id="color" name="color" value="#0082c9"/>
-					</div>
-					<button class="btn btn-primary" type="submit">Create</button>
+					<p class="form-help" id="uid-help">The address is the book's name in CardDAV URLs; it is made from the name when left empty.</p>
 				</form>
 			}
-			@ui.Card("Address Books") {
+			<div class="card card-flush">
+				<h2 class="card-title">Address books</h2>
 				if len(books) == 0 {
-					<p class="text-muted">No address books.</p>
+					@ui.EmptyState("", "No address books yet. Create one above.")
 				} else {
-					<table class="table">
-						<thead>
-							<tr>
-								<th>Color</th>
-								<th>Name</th>
-								<th>UID</th>
-								<th class="text-right">Actions</th>
-							</tr>
-						</thead>
-						<tbody>
-							for _, book := range books {
-								<tr id={ fmt.Sprintf("book-%d", book.ID) }>
-									<td><span style={ fmt.Sprintf("display:inline-block;width:16px;height:16px;border-radius:50%%;background:%s", book.Color) }></span></td>
-									<td>{ book.Name }</td>
-									<td>{ book.UID }</td>
-									<td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
-										<cog-share-button resource="dav:collection" resource-id={ strconv.FormatInt(book.ID, 10) }>Share</cog-share-button>
-										<button
-											class="btn btn-danger btn-sm"
-											hx-delete={ fmt.Sprintf("/apps/contacts/books/%d", book.ID) }
-											hx-target={ fmt.Sprintf("#book-%d", book.ID) }
-											hx-swap="outerHTML"
-											hx-confirm="Delete this address book and all its contacts?"
-										>Delete</button>
-									</td>
-								</tr>
-							}
-						</tbody>
-					</table>
+					<ul class="list contact-books">
+						for _, book := range books {
+							<li class="list-row" id={ fmt.Sprintf("book-%d", book.ID) }>
+								<span class="color-dot" style={ "background:" + book.Color }></span>
+								<div class="list-row-main">
+									<a class="list-row-title" href={ templ.SafeURL(fmt.Sprintf("/apps/contacts/?book=%d", book.ID)) }>{ book.Name }</a>
+									<div class="list-row-meta">{ book.UID }</div>
+								</div>
+								<div class="list-row-actions">
+									<button type="button" class="btn btn-sm" data-modal-open={ fmt.Sprintf("book-edit-%d", book.ID) }>Edit</button>
+									<cog-share-button resource="dav:collection" resource-id={ strconv.FormatInt(book.ID, 10) } share-title={ book.Name } btn-class="btn btn-sm">Share</cog-share-button>
+									<button
+										type="button"
+										class="btn-icon btn-icon-danger"
+										aria-label={ "Delete " + book.Name }
+										title="Delete"
+										hx-delete={ fmt.Sprintf("/apps/contacts/books/%d", book.ID) }
+										hx-target={ fmt.Sprintf("#book-%d", book.ID) }
+										hx-swap="outerHTML"
+										hx-confirm={ fmt.Sprintf("Delete “%s” and all its contacts?", book.Name) }
+									>
+										@ui.Icon("trash")
+									</button>
+								</div>
+							</li>
+						}
+					</ul>
+					for _, book := range books {
+						@ui.Modal(fmt.Sprintf("book-edit-%d", book.ID), "Edit address book") {
+							<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/contacts/books/%d", book.ID)) }>
+								<div class="modal-body">
+									<input type="hidden" name="csrf_token" value={ csrfToken }/>
+									<div class="form-row">
+										<div class="form-group">
+											<label for={ fmt.Sprintf("book-%d-name", book.ID) }>Name</label>
+											<input class="form-control" type="text" id={ fmt.Sprintf("book-%d-name", book.ID) } name="name" value={ book.Name } required/>
+										</div>
+										<div class="form-group form-group-auto">
+											<label for={ fmt.Sprintf("book-%d-color", book.ID) }>Colour</label>
+											<input class="form-control" type="color" id={ fmt.Sprintf("book-%d-color", book.ID) } name="color" value={ book.Color }/>
+										</div>
+									</div>
+									<p class="form-help">Address: <code>{ book.UID }</code></p>
+								</div>
+								<div class="modal-footer">
+									<button type="button" class="btn" data-modal-close>Cancel</button>
+									<button type="submit" class="btn btn-primary">Save</button>
+								</div>
+							</form>
+						}
+					}
 				}
-			}
-			@ui.Card("CardDAV Access") {
-				<p class="text-muted">
-					Configure your CardDAV client with:
-				</p>
-				<ul>
-					<li><strong>Server:</strong> <code>your-server-url</code></li>
-					<li><strong>Path:</strong> <code>/remote.php/dav</code></li>
-					<li><strong>Username/Password:</strong> your Cog credentials or an app password</li>
-				</ul>
-			}
+			</div>
+			@davAccessCard("carddav", "CardDAV sync", "Contacts on your phone or computer stay in step with these address books through CardDAV.", davURL, username)
 		</div>
 	</div>
 }
 
-func sidebarClass(activePath, itemPath string) string {
-	if activePath == itemPath {
-		return "sidebar-item active"
+// davAccessCard says how to connect a CalDAV or CardDAV app.
+templ davAccessCard(id, title, intro, davURL, username string) {
+	<div class="card" id={ id }>
+		<h2 class="card-title">{ title }</h2>
+		<p class="card-desc">{ intro }</p>
+		<dl class="kv">
+			if davURL != "" {
+				<dt>Server</dt>
+				<dd>
+					@ui.ShareLink(davURL, "")
+				</dd>
+			}
+			<dt>Username</dt>
+			<dd><code>{ username }</code></dd>
+			<dt>Password</dt>
+			<dd>Your Cog password, or better, an <a href="/settings/security">app password</a> per device.</dd>
+		</dl>
+	</div>
+}
+
+func contactCount(n int) string {
+	if n == 1 {
+		return "1 contact"
 	}
-	return "sidebar-item"
+	return strconv.Itoa(n) + " contacts"
+}
+
+// contactHref is the URL that opens a contact's dialog on the page at path.
+func contactHref(path string, id int64) string {
+	u, err := url.Parse(path)
+	if err != nil {
+		return "/apps/contacts/?contact=" + strconv.FormatInt(id, 10)
+	}
+	q := u.Query()
+	q.Set("contact", strconv.FormatInt(id, 10))
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func bookIDOf(b *AddressBook) int64 {
+	if b == nil {
+		return 0
+	}
+	return b.ID
 }
 
 func contactColor(c *Card, book *AddressBook) string {
 	if book != nil && book.Color != "" {
 		return book.Color
 	}
-	return "#888"
+	return ""
+}
+
+func avatarColor(c string) string {
+	if c == "" {
+		return "#757575"
+	}
+	return c
+}
+
+// jobLine is a contact's job title and organization, as one line.
+func jobLine(c *vcard.Card) string {
+	var parts []string
+	if c.Title != "" {
+		parts = append(parts, c.Title)
+	}
+	if len(c.Org) > 0 && c.Org[0] != "" {
+		parts = append(parts, c.Org[0])
+	}
+	return strings.Join(parts, ", ")
+}
+
+// valueLabel is the label of an email, phone, address or website: its own
+// label or types ("Work email"), or the kind alone.
+func valueLabel(m *vcard.Meta, kind string) string {
+	l := displayLabel(m)
+	if l == "" {
+		return kind
+	}
+	r := []rune(l)
+	return strings.ToUpper(string(r[:1])) + string(r[1:]) + " " + strings.ToLower(kind)
+}
+
+func kindLabel(kind string) string {
+	switch kind {
+	case "email":
+		return "Email"
+	case "phone":
+		return "Phone"
+	}
+	return "Website"
+}
+
+func hasDetails(c *vcard.Card) bool {
+	return len(c.Emails)+len(c.Phones)+len(c.Addresses)+len(c.URLs) > 0 || c.Birthday != "" || c.Note != ""
+}
+
+func isWebURL(v string) bool {
+	return strings.HasPrefix(v, "https://") || strings.HasPrefix(v, "http://")
+}
+
+func isFullDate(v string) bool {
+	_, ok := birthdayDate(v)
+	return ok
 }
 
 func givenName(c *vcard.Card) string {
-	if c.N == nil {
+	if c == nil || c.N == nil {
 		return ""
 	}
 	return joined(c.N.Given)
 }
 
 func familyName(c *vcard.Card) string {
-	if c.N == nil {
+	if c == nil || c.N == nil {
 		return ""
 	}
 	return joined(c.N.Family)
+}
+
+func cardFN(c *vcard.Card) string {
+	if c == nil {
+		return ""
+	}
+	return c.FN
+}
+
+func cardOrg(c *vcard.Card) string {
+	if c == nil || len(c.Org) == 0 {
+		return ""
+	}
+	return c.Org[0]
+}
+
+func cardTitle(c *vcard.Card) string {
+	if c == nil {
+		return ""
+	}
+	return c.Title
+}
+
+func cardBirthday(c *vcard.Card) string {
+	if c == nil {
+		return ""
+	}
+	return c.Birthday
+}
+
+func cardNote(c *vcard.Card) string {
+	if c == nil {
+		return ""
+	}
+	return c.Note
 }
 
 // addressLines is how an address reads: street lines, the town line, the
@@ -628,30 +821,13 @@ func contactInitials(fn string) string {
 	if fn == "" {
 		return "?"
 	}
-	parts := splitName(fn)
+	parts := strings.Fields(fn)
 	if len(parts) >= 2 {
-		return string([]rune(parts[0])[:1]) + string([]rune(parts[len(parts)-1])[:1])
+		return strings.ToUpper(string([]rune(parts[0])[:1]) + string([]rune(parts[len(parts)-1])[:1]))
 	}
 	runes := []rune(fn)
 	if len(runes) >= 2 {
-		return string(runes[:2])
+		return strings.ToUpper(string(runes[:2]))
 	}
-	return string(runes[:1])
-}
-
-func splitName(s string) []string {
-	var parts []string
-	start := 0
-	for i, r := range s {
-		if r == ' ' {
-			if i > start {
-				parts = append(parts, s[start:i])
-			}
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		parts = append(parts, s[start:])
-	}
-	return parts
+	return strings.ToUpper(string(runes[:1]))
 }

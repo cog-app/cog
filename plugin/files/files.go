@@ -82,6 +82,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterWidget(plugin.Widget{
 		Title:    "Recent Files",
 		Priority: 30,
+		URL:      "/apps/files/",
 		Render:   p.renderWidget,
 	})
 	ctx.RegisterResource(plugin.ResourceDef{
@@ -146,10 +147,13 @@ func (p *Plugin) registerRoutes(priv plugin.PrivilegedContext) {
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
 	db, err := p.DB(userID)
 	if err != nil {
-		return nil
+		return fmt.Errorf("recent files widget: %w", err)
 	}
-	files, _ := RecentFiles(db, 5)
-	return recentFilesWidget(files).Render(ctx, w)
+	files, err := RecentFiles(db, 5)
+	if err != nil {
+		return fmt.Errorf("recent files widget: %w", err)
+	}
+	return recentFilesWidget(files, p.ctx.Now()).Render(ctx, w)
 }
 
 func (p *Plugin) Start(ctx context.Context) error {
@@ -354,26 +358,21 @@ func (p *Plugin) Download(username, filePath string) (io.ReadCloser, *FileMeta, 
 	if err != nil {
 		return nil, nil, err
 	}
-
-	if fs := p.userFS(username); fs != nil {
-		rc, err := fs.Get(filePath)
-		if err != nil {
-			return nil, nil, fmt.Errorf("open file: %w", err)
-		}
-		return rc, meta, nil
-	}
-
-	fsPath := filepath.Join(p.ctx.UserFilesDir(username), filePath)
-	f, err := os.Open(fsPath)
+	rc, err := p.open(username, filePath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open file: %w", err)
+		return nil, nil, err
 	}
-	return f, meta, nil
+	return rc, meta, nil
 }
 
 // List returns files/directories within a given directory, performing
 // lazy reconciliation between disk and metadata.
 func (p *Plugin) List(username, dirPath string) ([]FileMeta, error) {
+	return p.list(username, dirPath, false)
+}
+
+// list is List, or with dirsOnly just the folders.
+func (p *Plugin) list(username, dirPath string, dirsOnly bool) ([]FileMeta, error) {
 	dirPath = normalizePath(dirPath)
 
 	db, err := p.DB(username)
@@ -388,8 +387,8 @@ func (p *Plugin) List(username, dirPath string) ([]FileMeta, error) {
 
 	rows, err := db.Query(`
 		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
-		FROM files WHERE parent_path = ?
-		ORDER BY is_dir DESC, name ASC`, dirPath)
+		FROM files WHERE parent_path = ? AND (is_dir = 1 OR NOT ?)
+		ORDER BY is_dir DESC, name COLLATE NOCASE ASC, name ASC`, dirPath, dirsOnly)
 	if err != nil {
 		return nil, fmt.Errorf("list files: %w", err)
 	}
@@ -856,7 +855,7 @@ func (p *Plugin) Favorites(username string) ([]FileMeta, error) {
 	rows, err := db.Query(`
 		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
 		FROM files WHERE favorite = 1
-		ORDER BY is_dir DESC, name ASC`)
+		ORDER BY is_dir DESC, name COLLATE NOCASE ASC, name ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("favorites: %w", err)
 	}
@@ -1048,7 +1047,7 @@ func (p *Plugin) Search(username, query string) ([]FileMeta, error) {
 	rows, err := db.Query(`
 		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
 		FROM files WHERE name LIKE ? ESCAPE '\'
-		ORDER BY is_dir DESC, name ASC
+		ORDER BY is_dir DESC, name COLLATE NOCASE ASC, name ASC
 		LIMIT 50`, pattern)
 	if err != nil {
 		return nil, fmt.Errorf("search files: %w", err)

@@ -89,7 +89,9 @@ func (p *Plugin) FetchAndImport(db *sql.DB, username, rawURL, userAgent string) 
 		} else {
 			ext := imageExtFromURL(recipe.ImageURL)
 			imgPath := fmt.Sprintf("%d%s", id, ext)
-			db.Exec(`UPDATE recipes SET image_path = ? WHERE id = ?`, imgPath, id)
+			if _, err := db.Exec(`UPDATE recipes SET image_path = ? WHERE id = ?`, imgPath, id); err != nil {
+				p.log.Error("save recipe image path", "recipe", id, "err", err)
+			}
 		}
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"time"
+	"github.com/a-h/templ"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/query"
@@ -43,30 +44,21 @@ type pageFlash struct {
 	Message string `json:"m"`
 }
 
+// setFlash leaves a message for the host to show on the page the response
+// redirects to. The cookie is written directly, not through plugin.SetFlash,
+// because some of these handlers (the admin settings page) are not plugin
+// actions and so have no one to carry the header across.
 func (h *Pages) setFlash(w http.ResponseWriter, kind, message string) {
-	data, _ := json.Marshal(pageFlash{Kind: kind, Message: message})
+	data, err := json.Marshal(pageFlash{Kind: kind, Message: message})
+	if err != nil {
+		slog.Error("feed: encode flash", "err", err)
+		return
+	}
 	h.plugin.ctx.Cookies().Set(w, &http.Cookie{
 		Name:   flashCookieName,
 		Value:  url.QueryEscape(string(data)),
 		MaxAge: 60,
 	})
-}
-
-func (h *Pages) getFlash(w http.ResponseWriter, r *http.Request) *pageFlash {
-	cookie, err := r.Cookie(flashCookieName)
-	if err != nil {
-		return nil
-	}
-	h.plugin.ctx.Cookies().Clear(w, flashCookieName)
-	val, err := url.QueryUnescape(cookie.Value)
-	if err != nil {
-		return nil
-	}
-	var f pageFlash
-	if err := json.Unmarshal([]byte(val), &f); err != nil {
-		return nil
-	}
-	return &f
 }
 
 func (h *Pages) userStore(r *http.Request) (*Store, error) {
@@ -92,12 +84,22 @@ func (h *Pages) SettingsSubscriptions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	subs, _ := store.ListSubscriptions()
-	folders, _ := store.ListFolders()
-	msg, kind := h.flashParts(w, r)
-	sb := h.buildSidebar(store, "/apps/feed/settings/subscriptions")
-	plugin.SetTitle(w, "Feed Settings")
-	feedSettingsSubscriptionsPage(sb, subs, folders, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
+	subs, err := store.ListSubscriptions()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	folders, err := store.ListFolders()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	sb, ok := h.sidebar(w, store, "/apps/feed/settings/subscriptions")
+	if !ok {
+		return
+	}
+	plugin.SetTitle(w, "Subscriptions")
+	ui.Render(w, r, feedSettingsSubscriptionsPage(sb, subs, folders, plugin.CSRFToken(r)))
 }
 
 func (h *Pages) SettingsFilters(w http.ResponseWriter, r *http.Request) {
@@ -106,10 +108,17 @@ func (h *Pages) SettingsFilters(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	filters, _ := store.ListFilters()
-	msg, kind := h.flashParts(w, r)
-	sb := h.buildSidebar(store, "/apps/feed/settings/filters")
-	feedSettingsFiltersPage(sb, filters, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
+	filters, err := store.ListFilters()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	sb, ok := h.sidebar(w, store, "/apps/feed/settings/filters")
+	if !ok {
+		return
+	}
+	plugin.SetTitle(w, "Filters")
+	ui.Render(w, r, feedSettingsFiltersPage(sb, filters, plugin.CSRFToken(r)))
 }
 
 func (h *Pages) SettingsPlaylists(w http.ResponseWriter, r *http.Request) {
@@ -118,18 +127,17 @@ func (h *Pages) SettingsPlaylists(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	playlists, _ := store.ListPlaylists()
-	msg, kind := h.flashParts(w, r)
-	sb := h.buildSidebar(store, "/apps/feed/settings/playlists")
-	feedSettingsPlaylistsPage(sb, playlists, msg, kind, plugin.CSRFToken(r)).Render(r.Context(), w)
-}
-
-// flashParts reads the flash (if any) into message+kind for templates.
-func (h *Pages) flashParts(w http.ResponseWriter, r *http.Request) (msg, kind string) {
-	if f := h.getFlash(w, r); f != nil {
-		return f.Message, f.Kind
+	playlists, err := store.ListPlaylists()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	return "", ""
+	sb, ok := h.sidebar(w, store, "/apps/feed/settings/playlists")
+	if !ok {
+		return
+	}
+	plugin.SetTitle(w, "Playlists")
+	ui.Render(w, r, feedSettingsPlaylistsPage(sb, playlists, plugin.CSRFToken(r)))
 }
 
 // allowedKinds is the set of subscription kinds accepted on the add form.
@@ -364,16 +372,31 @@ func (h *Pages) DeletePlaylist(w http.ResponseWriter, r *http.Request) {
 // sortSubscriptionsForSidebar sorts subscriptions so those with errors appear
 // first, then alphabetically by display title (case-insensitive).
 // buildSidebar assembles sidebar data for the given active path.
-func (h *Pages) buildSidebar(store *Store, activePath string) sidebarData {
-	folders, _ := store.ListFolders()
-	subs, _ := store.ListSubscriptions()
-	tags, _ := store.ListTags()
-	playlists, _ := store.ListPlaylists()
+func (h *Pages) buildSidebar(store *Store, activePath string) (sidebarData, error) {
+	folders, err := store.ListFolders()
+	if err != nil {
+		return sidebarData{}, fmt.Errorf("list folders: %w", err)
+	}
+	subs, err := store.ListSubscriptions()
+	if err != nil {
+		return sidebarData{}, fmt.Errorf("list subscriptions: %w", err)
+	}
+	tags, err := store.ListTags()
+	if err != nil {
+		return sidebarData{}, fmt.Errorf("list tags: %w", err)
+	}
+	playlists, err := store.ListPlaylists()
+	if err != nil {
+		return sidebarData{}, fmt.Errorf("list playlists: %w", err)
+	}
 	counts, err := store.LoadSidebarCounts()
 	if err != nil {
-		slog.Error("feed: sidebar counts", "err", err)
+		return sidebarData{}, fmt.Errorf("sidebar counts: %w", err)
 	}
-	prefs, _ := store.LoadPlayerPrefs() // HideEmpty defaults false on error
+	prefs, err := store.LoadPlayerPrefs()
+	if err != nil {
+		return sidebarData{}, fmt.Errorf("load prefs: %w", err)
+	}
 	return sidebarData{
 		Folders:       folders,
 		Subscriptions: subs,
@@ -385,7 +408,43 @@ func (h *Pages) buildSidebar(store *Store, activePath string) sidebarData {
 		UnreadCounts:  counts.BySubscription,
 		FolderUnread:  counts.ByFolder,
 		HideEmpty:     prefs.HideEmpty,
+	}, nil
+}
+
+// sidebar builds the sidebar for a page. It writes the error response itself
+// and returns ok=false when it fails.
+func (h *Pages) sidebar(w http.ResponseWriter, store *Store, activePath string) (sidebarData, bool) {
+	sb, err := h.buildSidebar(store, activePath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return sidebarData{}, false
 	}
+	return sb, true
+}
+
+// prefs loads the user's preferences for a list page. It writes the error
+// response itself and returns ok=false when it fails.
+func (h *Pages) prefs(w http.ResponseWriter, store *Store) (PlayerPrefs, bool) {
+	prefs, err := store.LoadPlayerPrefs()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return PlayerPrefs{}, false
+	}
+	return prefs, true
+}
+
+// currentPath is the path of the page an HTMX request was made from.
+func currentPath(r *http.Request) string {
+	u, err := url.Parse(r.Header.Get("HX-Current-URL"))
+	if err != nil {
+		return ""
+	}
+	return u.Path
+}
+
+// rows is how a list page renders its rows.
+func (h *Pages) rows(c viewCtx) rowOpts {
+	return rowOpts{Ctx: c.encode(), HideSub: c.Kind == "sub", Now: h.plugin.ctx.Now()}
 }
 
 // PlaylistView renders items matching a saved playlist's query.
@@ -405,8 +464,14 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	sb := h.buildSidebar(store, fmt.Sprintf("/apps/feed/playlists/%d", id))
-	prefs, _ := store.LoadPlayerPrefs()
+	sb, ok := h.sidebar(w, store, fmt.Sprintf("/apps/feed/playlists/%d", id))
+	if !ok {
+		return
+	}
+	prefs, ok := h.prefs(w, store)
+	if !ok {
+		return
+	}
 	var expr query.Expr
 	if pl.Query != "" {
 		if e, perr := query.Parse(pl.Query); perr == nil {
@@ -414,7 +479,7 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if expr != nil {
-		expr = query.ResolveRelativeDates(expr, *SearchSchema(), time.Now())
+		expr = query.ResolveRelativeDates(expr, *SearchSchema(), h.plugin.ctx.Now())
 	}
 	items, plErr := store.ListItemsForView(ViewSpec{
 		All:      true,
@@ -436,7 +501,7 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 	}
 	c := viewCtx{Kind: "playlist", ID: id}
 	plugin.SetTitle(w, "Feed — "+pl.Name)
-	feedPlaylistPage(sb, pl, items, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
+	ui.Render(w, r, feedPlaylistPage(sb, pl, items, h.rows(c)))
 }
 
 // resolveViewItems returns the same ordered item slice the originating view
@@ -470,7 +535,7 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 			}
 		}
 		if expr != nil {
-			expr = query.ResolveRelativeDates(expr, *SearchSchema(), time.Now())
+			expr = query.ResolveRelativeDates(expr, *SearchSchema(), h.plugin.ctx.Now())
 		}
 		items, err = store.ListItemsForView(ViewSpec{
 			All: true, Query: expr, Schema: SearchSchema(),
@@ -497,7 +562,7 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 			}
 		}
 		if expr != nil {
-			expr = query.ResolveRelativeDates(expr, *SearchSchema(), time.Now())
+			expr = query.ResolveRelativeDates(expr, *SearchSchema(), h.plugin.ctx.Now())
 		}
 		items, err = store.ListItemsForView(ViewSpec{
 			All: true, Query: expr, Schema: SearchSchema(),
@@ -566,16 +631,21 @@ func (h *Pages) refineItems(store *Store, items []ItemWithSubscription, expr que
 	for _, it := range items {
 		sub, ok := subCache[it.SubscriptionID]
 		if !ok {
-			sub, _ = store.GetSubscription(it.SubscriptionID)
+			sub, err = store.GetSubscription(it.SubscriptionID)
+			if err != nil {
+				return nil, fmt.Errorf("refine subscription: %w", err)
+			}
 			subCache[it.SubscriptionID] = sub
 		}
 		folderName := ""
 		if sub.FolderID.Valid {
 			fn, ok := folderCache[sub.FolderID.Int64]
 			if !ok {
-				if f, ferr := store.GetFolder(sub.FolderID.Int64); ferr == nil {
-					fn = f.Name
+				f, err := store.GetFolder(sub.FolderID.Int64)
+				if err != nil {
+					return nil, fmt.Errorf("refine folder: %w", err)
 				}
+				fn = f.Name
 				folderCache[sub.FolderID.Int64] = fn
 			}
 			folderName = fn
@@ -598,7 +668,10 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query().Get("q")
-	prefs, _ := store.LoadPlayerPrefs()
+	prefs, ok := h.prefs(w, store)
+	if !ok {
+		return
+	}
 
 	var expr query.Expr
 	if q != "" {
@@ -607,7 +680,7 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if expr != nil {
-		expr = query.ResolveRelativeDates(expr, *SearchSchema(), time.Now())
+		expr = query.ResolveRelativeDates(expr, *SearchSchema(), h.plugin.ctx.Now())
 	}
 
 	items, err := store.ListItemsForView(ViewSpec{
@@ -629,10 +702,13 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	sb := h.buildSidebar(store, "/apps/feed/")
+	sb, ok := h.sidebar(w, store, "/apps/feed/")
+	if !ok {
+		return
+	}
 	c := viewCtx{Kind: "all", Q: q}
 	plugin.SetTitle(w, "Feed")
-	feedIndexPage(sb, items, q, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
+	ui.Render(w, r, feedIndexPage(sb, items, q, plugin.CSRFToken(r), h.rows(c)))
 }
 
 // SubscriptionView shows items for a single subscription.
@@ -653,13 +729,23 @@ func (h *Pages) SubscriptionView(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	sb := h.buildSidebar(store, "/apps/feed/subscription/"+idStr)
-	prefs, _ := store.LoadPlayerPrefs()
-	items, _ := store.ListItemsForView(ViewSpec{SubscriptionID: sql.NullInt64{Int64: id, Valid: true}, HideRead: prefs.HideEmpty}, feedViewLimit)
+	sb, ok := h.sidebar(w, store, "/apps/feed/subscription/"+idStr)
+	if !ok {
+		return
+	}
+	prefs, ok := h.prefs(w, store)
+	if !ok {
+		return
+	}
+	items, err := store.ListItemsForView(ViewSpec{SubscriptionID: sql.NullInt64{Int64: id, Valid: true}, HideRead: prefs.HideEmpty}, feedViewLimit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	c := viewCtx{Kind: "sub", ID: id}
 	plugin.SetTitle(w, subscriptionDisplayTitle(sub))
-	feedSubscriptionPage(sb, &sub, items, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
+	ui.Render(w, r, feedSubscriptionPage(sb, &sub, items, plugin.CSRFToken(r), h.rows(c)))
 }
 
 // FolderView shows items for all subscriptions in a folder.
@@ -680,13 +766,23 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	sb := h.buildSidebar(store, "/apps/feed/folder/"+idStr)
-	prefs, _ := store.LoadPlayerPrefs()
-	items, _ := store.ListItemsForView(ViewSpec{FolderID: sql.NullInt64{Int64: id, Valid: true}, HideRead: prefs.HideEmpty}, feedViewLimit)
+	sb, ok := h.sidebar(w, store, "/apps/feed/folder/"+idStr)
+	if !ok {
+		return
+	}
+	prefs, ok := h.prefs(w, store)
+	if !ok {
+		return
+	}
+	items, err := store.ListItemsForView(ViewSpec{FolderID: sql.NullInt64{Int64: id, Valid: true}, HideRead: prefs.HideEmpty}, feedViewLimit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	c := viewCtx{Kind: "folder", ID: id}
 	plugin.SetTitle(w, folder.Name)
-	feedFolderPage(sb, &folder, items, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
+	ui.Render(w, r, feedFolderPage(sb, &folder, items, plugin.CSRFToken(r), h.rows(c)))
 }
 
 // StarredView shows all starred items.
@@ -696,12 +792,19 @@ func (h *Pages) StarredView(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	sb := h.buildSidebar(store, "/apps/feed/starred")
-	items, _ := store.ListItemsForView(ViewSpec{Starred: true}, feedViewLimit)
+	sb, ok := h.sidebar(w, store, "/apps/feed/starred")
+	if !ok {
+		return
+	}
+	items, err := store.ListItemsForView(ViewSpec{Starred: true}, feedViewLimit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	c := viewCtx{Kind: "starred"}
 	plugin.SetTitle(w, "Starred")
-	feedStarredPage(sb, items, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
+	ui.Render(w, r, feedStarredPage(sb, items, h.rows(c)))
 }
 
 // TagView shows items with a specific tag.
@@ -712,13 +815,23 @@ func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tagName := r.PathValue("name")
-	sb := h.buildSidebar(store, "/apps/feed/tag/"+tagName)
-	prefs, _ := store.LoadPlayerPrefs()
-	items, _ := store.ListItemsForView(ViewSpec{TagName: tagName, HideRead: prefs.HideEmpty}, feedViewLimit)
+	sb, ok := h.sidebar(w, store, "/apps/feed/tag/"+url.PathEscape(tagName))
+	if !ok {
+		return
+	}
+	prefs, ok := h.prefs(w, store)
+	if !ok {
+		return
+	}
+	items, err := store.ListItemsForView(ViewSpec{TagName: tagName, HideRead: prefs.HideEmpty}, feedViewLimit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	c := viewCtx{Kind: "tag", Name: tagName}
 	plugin.SetTitle(w, "Tag: "+tagName)
-	feedTagPage(sb, tagName, items, plugin.CSRFToken(r), c.encode()).Render(r.Context(), w)
+	ui.Render(w, r, feedTagPage(sb, tagName, items, h.rows(c)))
 }
 
 // RefreshSubscription sets next_check_at=1 on a subscription to trigger immediate re-poll.
@@ -838,23 +951,23 @@ func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
 		prefs = PlayerPrefs{Speed: 1, SkipBackSec: 15, SkipFwdSec: 30, Volume: 1, AutoplayNext: true}
 	}
 	artwork := ip.ThumbnailURL
-	tags, _ := store.ItemTags(id)
+	tags, err := store.ItemTags(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	c := parseViewCtx(r)
 	items, rerr := h.resolveViewItems(store, c)
 	if rerr != nil {
 		slog.Error("feed: resolve view items", "err", rerr)
 	}
-	prev, next := neighbors(items, id, false)
-	nav := itemNav{Ctx: c.encode(), Label: c.label(store)}
-	if prev != nil {
-		nav.PrevID, nav.PrevTitle = prev.ID, prev.Title
+	nav := buildItemNav(store, c, items, id)
+	sb, ok := h.sidebar(w, store, c.path())
+	if !ok {
+		return
 	}
-	if next != nil {
-		nav.NextID, nav.NextTitle = next.ID, next.Title
-	}
-	sb := h.buildSidebar(store, c.path())
 	plugin.SetTitle(w, ip.Title)
-	feedItemDetail(sb, nav, ip, tags, prefs, artwork, plugin.CSRFToken(r)).Render(r.Context(), w)
+	ui.Render(w, r, feedItemDetail(sb, nav, ip, tags, prefs, artwork, plugin.CSRFToken(r), h.plugin.ctx.Now()))
 }
 
 // UpdateProgress handles POST to save playback position.
@@ -925,16 +1038,12 @@ func renderPlayerFragment(w http.ResponseWriter, r *http.Request, h *Pages, stor
 	if perr != nil {
 		prefs = PlayerPrefs{Speed: 1, SkipBackSec: 15, SkipFwdSec: 30, Volume: 1, AutoplayNext: true}
 	}
-	items, _ := h.resolveViewItems(store, c)
-	prev, next := neighbors(items, itemID, false) // any-type neighbors for the bar
-	nav := itemNav{Ctx: c.encode(), Label: c.label(store)}
-	if prev != nil {
-		nav.PrevID, nav.PrevTitle = prev.ID, prev.Title
+	items, err := h.resolveViewItems(store, c)
+	if err != nil {
+		slog.Error("feed: resolve view items", "err", err)
 	}
-	if next != nil {
-		nav.NextID, nav.NextTitle = next.ID, next.Title
-	}
-	feedPlayer(ip, prefs, ip.ThumbnailURL, plugin.CSRFToken(r), nav).Render(r.Context(), w)
+	nav := buildItemNav(store, c, items, itemID) // any-type neighbors for the bar
+	ui.Render(w, r, feedPlayer(ip, prefs, ip.ThumbnailURL, plugin.CSRFToken(r), nav))
 	return true
 }
 
@@ -1089,7 +1198,11 @@ func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	dl, _ := store.GetDownload(id)
+	dl, err := store.FindDownload(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	if dl.CleanAudioPath != "" {
 		http.ServeFile(w, r, dl.CleanAudioPath)
 		return
@@ -1119,21 +1232,31 @@ func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	it, err := store.GetItem(id)
-	if err == nil {
-		if err := store.MarkRead(id, !it.IsRead); err != nil {
-			slog.Error("feed: toggle read", "id", id, "err", err)
-		}
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
 	}
-	// If HTMX triggered this request, return the updated row for outerHTML swap.
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := store.MarkRead(id, !it.IsRead); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	it.IsRead = !it.IsRead
+	// If HTMX triggered this request, return the updated row for outerHTML
+	// swap, and the sidebar with its new unread counts.
 	if r.Header.Get("HX-Request") == "true" {
-		it, err = store.GetItem(id)
+		sub, err := store.GetSubscription(it.SubscriptionID)
 		if err != nil {
-			w.WriteHeader(http.StatusOK)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		sub, _ := store.GetSubscription(it.SubscriptionID)
+		page := currentPath(r)
+		o := rowOpts{HideSub: strings.HasPrefix(page, "/apps/feed/subscription/"), Now: h.plugin.ctx.Now()}
 		iws := ItemWithSubscription{Item: it, SubscriptionTitle: subscriptionDisplayTitle(sub)}
-		feedItemRow(iws, plugin.CSRFToken(r), "").Render(r.Context(), w)
+		h.renderRowUpdate(w, r, store, feedItemRow(iws, o))
 		return
 	}
 	ref := r.Header.Get("Referer")
@@ -1150,7 +1273,11 @@ func (h *Pages) AddItemTag(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
 	name := strings.TrimSpace(r.FormValue("tag"))
 	if name == "" {
 		h.setFlash(w, "error", "Tag name is required.")
@@ -1163,8 +1290,12 @@ func (h *Pages) AddItemTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Header.Get("HX-Request") == "true" {
-		tags, _ := store.ItemTags(id)
-		feedItemTagRow(id, tags, plugin.CSRFToken(r)).Render(r.Context(), w)
+		tags, err := store.ItemTags(id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		ui.Render(w, r, feedItemTagRow(id, tags, plugin.CSRFToken(r)))
 		return
 	}
 	http.Redirect(w, r, r.Header.Get("Referer"), http.StatusSeeOther)
@@ -1177,7 +1308,11 @@ func (h *Pages) RemoveItemTag(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
 	name := r.PathValue("name")
 	if err := store.RemoveTag(id, name); err != nil {
 		h.setFlash(w, "error", "Could not remove tag: "+err.Error())
@@ -1185,8 +1320,12 @@ func (h *Pages) RemoveItemTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Header.Get("HX-Request") == "true" {
-		tags, _ := store.ItemTags(id)
-		feedItemTagRow(id, tags, plugin.CSRFToken(r)).Render(r.Context(), w)
+		tags, err := store.ItemTags(id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		ui.Render(w, r, feedItemTagRow(id, tags, plugin.CSRFToken(r)))
 		return
 	}
 	http.Redirect(w, r, r.Header.Get("Referer"), http.StatusSeeOther)
@@ -1205,7 +1344,7 @@ func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	if q == "" {
 		// Empty query: render empty results without error.
-		feedFilterPreviewResults(nil).Render(r.Context(), w)
+		ui.Render(w, r, feedFilterPreviewResults(nil))
 		return
 	}
 	expr, err := query.Parse(q)
@@ -1223,21 +1362,36 @@ func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 		if len(matched) >= 10 {
 			break
 		}
-		sub, _ := store.GetSubscription(it.SubscriptionID)
+		sub, err := store.GetSubscription(it.SubscriptionID)
+		if err != nil {
+			http.Error(w, "Could not load subscription: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		folder := ""
 		if sub.FolderID.Valid {
-			if f, ferr := store.GetFolder(sub.FolderID.Int64); ferr == nil {
-				folder = f.Name
+			f, err := store.GetFolder(sub.FolderID.Int64)
+			if err != nil {
+				http.Error(w, "Could not load folder: "+err.Error(), http.StatusInternalServerError)
+				return
 			}
+			folder = f.Name
 		}
-		tagsList, _ := store.ItemTags(it.ID)
-		dl, _ := store.GetDownload(it.ID)
+		tagsList, err := store.ItemTags(it.ID)
+		if err != nil {
+			http.Error(w, "Could not load tags: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		dl, err := store.FindDownload(it.ID)
+		if err != nil {
+			http.Error(w, "Could not load download: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		rec := BuildRecord(it.Item, sub, folder, tagsList, !it.IsRead, it.IsStarred, dl.State == "ready")
 		if search.ExactMatch(expr, rec, *SearchSchema()) {
 			matched = append(matched, it)
 		}
 	}
-	feedFilterPreviewResults(matched).Render(r.Context(), w)
+	ui.Render(w, r, feedFilterPreviewResults(matched))
 }
 
 // SystemSettings renders the admin-only feed system settings page.
@@ -1251,12 +1405,8 @@ func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
 	model := string(SettingWhisperModel.MustGet(db))
 	modelsDir := SettingWhisperModelsDir.MustGet(db)
 	cliPath := SettingWhisperCLIPath.MustGet(db)
-	var flashMsg, flashKind string
-	if f := h.getFlash(w, r); f != nil {
-		flashMsg, flashKind = f.Message, f.Kind
-	}
 	plugin.SetTitle(w, "Feed System Settings")
-	feedSystemSettingsPage(model, modelsDir, cliPath, flashMsg, flashKind).Render(r.Context(), w)
+	ui.Render(w, r, feedSystemSettingsPage(model, modelsDir, cliPath))
 }
 
 // SaveSystemSettings persists model selection + paths.
@@ -1402,7 +1552,9 @@ func (h *Pages) ExportOPML(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/xml")
 	w.Header().Set("Content-Disposition", `attachment; filename="cog-feeds.opml"`)
-	_, _ = w.Write(data)
+	if _, err := w.Write(data); err != nil {
+		slog.Warn("feed: write opml export", "err", err)
+	}
 }
 
 // HistoryView shows items the user has played, ordered by last_played_at DESC.
@@ -1412,10 +1564,17 @@ func (h *Pages) HistoryView(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	items, _ := store.ListPlaybackHistory(feedViewLimit)
-	sb := h.buildSidebar(store, "/apps/feed/history")
+	items, err := store.ListPlaybackHistory(feedViewLimit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	sb, ok := h.sidebar(w, store, "/apps/feed/history")
+	if !ok {
+		return
+	}
 	plugin.SetTitle(w, "Feed — History")
-	feedHistoryPage(sb, items, plugin.CSRFToken(r)).Render(r.Context(), w)
+	ui.Render(w, r, feedHistoryPage(sb, items, h.plugin.ctx.Now()))
 }
 
 // SubscriptionSettings shows per-subscription options.
@@ -1435,14 +1594,17 @@ func (h *Pages) SubscriptionSettings(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	folders, _ := store.ListFolders()
-	var flashMsg, flashKind string
-	if f := h.getFlash(w, r); f != nil {
-		flashMsg, flashKind = f.Message, f.Kind
+	folders, err := store.ListFolders()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	sb := h.buildSidebar(store, fmt.Sprintf("/apps/feed/subscription/%d", id))
+	sb, ok := h.sidebar(w, store, fmt.Sprintf("/apps/feed/subscription/%d", id))
+	if !ok {
+		return
+	}
 	plugin.SetTitle(w, "Feed — "+subscriptionDisplayTitle(sub))
-	feedSubscriptionSettingsPage(sb, sub, folders, flashMsg, flashKind, plugin.CSRFToken(r)).Render(r.Context(), w)
+	ui.Render(w, r, feedSubscriptionSettingsPage(sb, sub, folders, plugin.CSRFToken(r)))
 }
 
 // SaveSubscriptionSettings handles POST of the per-subscription settings form.
@@ -1504,19 +1666,22 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	it, err := store.GetItem(id)
-	if err == nil {
-		if err := store.MarkStarred(id, !it.IsStarred); err != nil {
-			slog.Error("feed: toggle star", "id", id, "err", err)
-		}
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
 	}
-	// If HTMX triggered this, return the updated star button for outerHTML swap.
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := store.MarkStarred(id, !it.IsStarred); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// If HTMX triggered this, return the updated star button for outerHTML
+	// swap, and the sidebar with its new starred count.
 	if r.Header.Get("HX-Request") == "true" {
-		it, err = store.GetItem(id)
-		if err != nil {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		ui.Star(it.IsStarred, fmt.Sprintf("/apps/feed/items/%d/star", it.ID)).Render(r.Context(), w)
+		h.renderRowUpdate(w, r, store, ui.Star(!it.IsStarred, fmt.Sprintf("/apps/feed/items/%d/star", it.ID)))
 		return
 	}
 	ref := r.Header.Get("Referer")
@@ -1574,9 +1739,54 @@ func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Header.Get("HX-Target") == "feed-sidebar" {
-		sb := h.buildSidebar(store, "/apps/feed/")
-		feedSidebar(sb).Render(r.Context(), w)
+		sb, ok := h.sidebar(w, store, sidebarPath(currentPath(r)))
+		if !ok {
+			return
+		}
+		ui.Render(w, r, feedSidebar(sb))
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// renderRowUpdate answers a row action: the swapped element and, out of
+// band, the sidebar with its new counts, highlighted for the page the
+// request came from.
+func (h *Pages) renderRowUpdate(w http.ResponseWriter, r *http.Request, store *Store, swapped templ.Component) {
+	sb, ok := h.sidebar(w, store, sidebarPath(currentPath(r)))
+	if !ok {
+		return
+	}
+	sb.OOB = true
+	ui.Render(w, r, feedRowUpdate(swapped, sb))
+}
+
+// sidebarPath is the sidebar entry to highlight for a page: the page itself,
+// or for an item the list it was opened from.
+func sidebarPath(page string) string {
+	if page == "" || strings.HasPrefix(page, "/apps/feed/items/") {
+		return "/apps/feed/"
+	}
+	return page
+}
+
+// buildItemNav works out an item's place in the list it was opened from.
+func buildItemNav(store *Store, c viewCtx, items []ItemWithSubscription, id int64) itemNav {
+	prev, next := neighbors(items, id, false)
+	nav := itemNav{Ctx: c.encode(), Label: c.label(store), Path: c.path(), Total: len(items)}
+	for i := range items {
+		if items[i].ID == id {
+			nav.Pos = i + 1
+		}
+	}
+	if nav.Pos == 0 {
+		nav.Total = 0
+	}
+	if prev != nil {
+		nav.PrevID, nav.PrevTitle = prev.ID, prev.Title
+	}
+	if next != nil {
+		nav.NextID, nav.NextTitle = next.ID, next.Title
+	}
+	return nav
 }

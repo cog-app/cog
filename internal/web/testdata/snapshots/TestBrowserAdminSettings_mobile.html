@@ -1,0 +1,393 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      Email — Cog
+    </title>
+    <link href="/static/style.css?v=22be9710446b" rel="stylesheet" />
+    <link href="/static/favicon.svg" rel="icon" type="image/svg+xml" />
+    <style>
+      .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
+  <body hx-headers="{\"X-CSRF-Token\":\"«hex»\"}">
+    <nav aria-label="Main" class="navbar">
+      <a aria-label="Cog home" class="navbar-brand" href="/">
+        <svg aria-hidden="true" fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        <span class="brand-text">
+          Cog
+        </span>
+      </a>
+      <ul class="navbar-nav">
+        <li>
+          <a href="/" title="Dashboard">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            <span class="nav-label">
+              Dashboard
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="/apps/files" title="Files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <span class="nav-label">
+              Files
+            </span>
+          </a>
+        </li>
+      </ul>
+      <div class="dropdown navbar-apps">
+        <button aria-controls="apps-menu" aria-expanded="false" aria-label="Apps" class="btn-icon" data-dropdown-toggle="" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <rect height="7" width="7" x="3" y="3" />
+            <rect height="7" width="7" x="14" y="3" />
+            <rect height="7" width="7" x="3" y="14" />
+            <rect height="7" width="7" x="14" y="14" />
+          </svg>
+        </button>
+        <div class="dropdown-menu" id="apps-menu">
+          <a href="/">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            Dashboard
+          </a>
+          <a href="/apps/files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            Files
+          </a>
+          <div class="dropdown-divider" />
+          <button data-search-open="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" x2="16.65" y1="21" y2="16.65" />
+            </svg>
+            Search
+          </button>
+          <a class="" href="/settings/profile">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="4" x2="4" y1="21" y2="14" />
+              <line x1="4" x2="4" y1="10" y2="3" />
+              <line x1="12" x2="12" y1="21" y2="12" />
+              <line x1="12" x2="12" y1="8" y2="3" />
+              <line x1="20" x2="20" y1="21" y2="16" />
+              <line x1="20" x2="20" y1="12" y2="3" />
+              <line x1="1" x2="7" y1="14" y2="14" />
+              <line x1="9" x2="15" y1="8" y2="8" />
+              <line x1="17" x2="23" y1="16" y2="16" />
+            </svg>
+            Settings
+          </a>
+          <a class="active" href="/admin/">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            Admin
+          </a>
+        </div>
+      </div>
+      <div class="navbar-spacer" />
+      <div class="navbar-search" role="search">
+        <label class="sr-only" for="search-box">
+          Search
+        </label>
+        <input aria-controls="search-results" autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)…" type="search" />
+        <div aria-live="polite" class="search-results" id="search-results" />
+      </div>
+      <button aria-controls="search-box" aria-expanded="false" aria-label="Search" class="btn-icon search-toggle" data-search-open="" type="button">
+        <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+          <circle cx="11" cy="11" r="7" />
+          <line x1="21" x2="16.65" y1="21" y2="16.65" />
+        </svg>
+      </button>
+      <div class="navbar-end">
+        <div class="dropdown notif-dropdown" hidden="" id="notif">
+          <button aria-controls="notif-panel" aria-expanded="false" aria-label="Notifications" class="btn-icon" data-dropdown-toggle="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <span class="notif-badge" id="notif-badge" />
+          </button>
+          <div class="dropdown-menu" id="notif-panel" />
+        </div>
+        <div class="dropdown">
+          <button aria-controls="user-menu" aria-expanded="false" aria-label="Account menu for admin" class="dropdown-toggle" data-dropdown-toggle="" type="button">
+            <img alt="" class="avatar-sm" src="/avatar/«hex»" />
+            <span class="dropdown-username">
+              admin
+            </span>
+            <span aria-hidden="true" class="dropdown-caret">
+              ▾
+            </span>
+          </button>
+          <div class="dropdown-menu" id="user-menu">
+            <div class="dropdown-header">
+              <strong>
+                admin
+              </strong>
+            </div>
+            <div class="dropdown-divider" />
+            <a class="" href="/settings/profile">
+              Profile
+            </a>
+            <a class="" href="/settings/security">
+              Security
+            </a>
+            <a class="" href="/settings/storage">
+              Storage
+            </a>
+            <a class="" href="/settings/groups">
+              Groups
+            </a>
+            <a class="" href="/settings/data">
+              Import and export
+            </a>
+            <div class="dropdown-divider" />
+            <a class="active" href="/admin/">
+              Admin
+            </a>
+            <div class="dropdown-divider" />
+            <form action="/logout" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <button type="submit">
+                Log out
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <main class="content">
+      <div class="sidebar-layout has-sidebar-toggle">
+        <button aria-controls="sidebar-1" aria-expanded="false" aria-label="Menu: Email" class="sidebar-toggle" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <line x1="3" x2="21" y1="6" y2="6" />
+            <line x1="3" x2="21" y1="12" y2="12" />
+            <line x1="3" x2="21" y1="18" y2="18" />
+          </svg>
+          <span class="sidebar-toggle-label" data-label="Email" />
+          <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        <nav aria-label="Administration" class="sidebar" id="sidebar-1">
+          <a class="sidebar-item" href="/admin/settings">
+            General
+          </a>
+          <a aria-current="page" class="sidebar-item active" href="/admin/email">
+            Email
+          </a>
+          <a class="sidebar-item" href="/admin/users">
+            Users
+          </a>
+          <a class="sidebar-item" href="/admin/groups">
+            Groups
+          </a>
+          <a class="sidebar-item" href="/admin/volumes">
+            Volumes
+          </a>
+          <a class="sidebar-item" href="/admin/plugins">
+            Plugins
+          </a>
+          <a class="sidebar-item" href="/admin/logs">
+            Logs
+          </a>
+        </nav>
+        <div class="sidebar-content">
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                Email
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
+          <div class="alert alert-success" role="status">
+            <button aria-label="Dismiss" class="alert-dismiss" onclick="this.parentElement.remove()" type="button">
+              ×
+            </button>
+            Email settings saved.
+          </div>
+          <form action="/admin/email" method="post">
+            <input name="csrf_token" type="hidden" value="«hex»" />
+            <div class="card">
+              <h2 class="card-title">
+                SMTP
+              </h2>
+              <p class="card-desc">
+                The mail server used for invitations, password resets and sign-in codes.
+              </p>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="smtp_host">
+                    Host
+                  </label>
+                  <input class="form-control" id="smtp_host" name="smtp_host" placeholder="smtp.example.com" type="text" value="mail.example.com" />
+                </div>
+                <div class="form-group form-group-auto">
+                  <label for="smtp_port">
+                    Port
+                  </label>
+                  <input class="form-control w-xs" id="smtp_port" max="65535" min="1" name="smtp_port" type="number" value="465" />
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="smtp_user">
+                    Username
+                  </label>
+                  <input autocomplete="off" class="form-control" id="smtp_user" name="smtp_user" type="text" value="" />
+                </div>
+                <div class="form-group">
+                  <label for="smtp_pass">
+                    Password
+                  </label>
+                  <input autocomplete="new-password" class="form-control" id="smtp_pass" name="smtp_pass" type="password" value="" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="smtp_from">
+                  From address
+                </label>
+                <input autocomplete="" class="form-control" id="smtp_from" name="smtp_from" placeholder="noreply@example.com" type="email" value="noreply@example.com" />
+              </div>
+              <div class="btn-group">
+                <button class="btn btn-secondary" hx-headers="{\"X-CSRF-Token\":\"«hex»\"}" hx-post="/admin/email/test-smtp" hx-swap="innerHTML" hx-target="#smtp-test-result" type="button">
+                  Test connection
+                </button>
+                <span class="text-sm text-muted">
+                  Tests the values above, saved or not.
+                </span>
+              </div>
+              <div class="mt-1" id="smtp-test-result" />
+            </div>
+            <div class="card">
+              <h2 class="card-title">
+                HTML template override
+              </h2>
+              <p class="card-desc">
+                Override the default HTML email templates using Go
+                <code>
+                  html/template
+                </code>
+                syntax. Define blocks to replace:
+                <code>
+                  layout
+                </code>
+                ,
+                <code>
+                  group_invite
+                </code>
+                ,
+                <code>
+                  password_reset
+                </code>
+                ,
+                <code>
+                  otp
+                </code>
+                . The layout uses
+                <code>
+                  {{content}}
+                </code>
+                to render the email body.
+              </p>
+              <details class="mb-1">
+                <summary class="text-sm text-muted">
+                  View default HTML template
+                </summary>
+                <pre class="code-block mt-1">
+                  {{define "layout"}}<!DOCTYPE html> <html><head><meta charset="utf-8"></head> <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#333"> <div style="margin-bottom:1.5rem"> <a href="{{.BaseURL}}" target="_blank" style="text-decoration:none;color:#333;display:inline-flex;align-items:center;gap:0.4rem"> <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg> <span style="font-size:1.1rem;font-weight:600">{{.InstanceName}}</span> </a> </div> {{content}} <hr style="border:none;border-top:1px solid #eee;margin:2rem 0"> <p style="color:#999;font-size:0.85rem">Sent by <a href="{{.BaseURL}}" target="_blank" style="color:#999">{{.InstanceName}}</a></p> </body></html>{{end}} {{define "group_invite"}}<h2 style="margin-top:0">Group Invitation</h2> <p>{{.Inviter.DisplayName}} has invited you to join <strong>{{.GroupName}}</strong>.</p> <p><a href="{{.InviteURL}}" target="_blank" style="display:inline-block;padding:0.6rem 1.2rem;background:#0066cc;color:#fff;border-radius:4px;text-decoration:none;font-weight:600">Accept Invitation</a></p> <p style="color:#666;font-size:0.85rem">This invitation expires in 7 days.</p>{{end}} {{define "password_reset"}}<h2 style="margin-top:0">Password Reset</h2> <p>A password reset was requested for your account ({{.User.Username}}).</p> <p><a href="{{.ResetURL}}" target="_blank" style="display:inline-block;padding:0.6rem 1.2rem;background:#0066cc;color:#fff;border-radius:4px;text-decoration:none;font-weight:600">Reset Password</a></p> <p style="color:#666;font-size:0.85rem">This link expires in 1 hour. If you didn't request this, you can safely ignore this email.</p>{{end}} {{define "otp"}}<h2 style="margin-top:0">Verification Code</h2> <p>Your verification code is:</p> <p style="font-size:1.75rem;font-weight:bold;letter-spacing:0.3rem;padding:0.75rem 1rem;background:#f5f5f5;display:inline-block;border-radius:6px;font-family:monospace">{{.Code}}</p> <p style="color:#666;font-size:0.85rem">This code expires in 10 minutes. If you didn't request this, you can safely ignore this email.</p>{{end}}
+                </pre>
+              </details>
+              <label class="sr-only" for="override-html">
+                HTML template override
+              </label>
+              <textarea class="form-control mono" id="override-html" name="override_html" oninput="schedulePreview()" placeholder="Leave empty to use defaults" rows="10" />
+              <details class="mt-1">
+                <summary class="text-sm font-semibold">
+                  Preview
+                </summary>
+                <div class="mt-1">
+                  <div class="btn-group mb-1">
+                    <button class="btn btn-secondary btn-sm" onclick="showHTMLPreview('group_invite')" type="button">
+                      Group invite
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="showHTMLPreview('password_reset')" type="button">
+                      Password reset
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="showHTMLPreview('otp')" type="button">
+                      Sign-in code
+                    </button>
+                  </div>
+                  <iframe class="email-preview" id="preview-html" title="HTML email preview" />
+                </div>
+              </details>
+            </div>
+            <div class="card">
+              <h2 class="card-title">
+                Text template override
+              </h2>
+              <p class="card-desc">
+                Override the default plain-text email templates using Go
+                <code>
+                  text/template
+                </code>
+                syntax. Same block names as HTML.
+              </p>
+              <details class="mb-1">
+                <summary class="text-sm text-muted">
+                  View default text template
+                </summary>
+                <pre class="code-block mt-1">
+                  {{define "layout"}}{{content}} -- Sent by {{.InstanceName}} ({{.BaseURL}}) {{end}} {{define "group_invite"}}{{.Inviter.DisplayName}} has invited you to join "{{.GroupName}}". Accept the invitation: {{.InviteURL}} This invitation expires in 7 days. {{end}} {{define "password_reset"}}A password reset was requested for your account ({{.User.Username}}). Reset your password: {{.ResetURL}} This link expires in 1 hour. If you didn't request this, you can safely ignore this email. {{end}} {{define "otp"}}Your verification code is: {{.Code}} This code expires in 10 minutes. If you didn't request this, you can safely ignore this email. {{end}}
+                </pre>
+              </details>
+              <label class="sr-only" for="override-text">
+                Text template override
+              </label>
+              <textarea class="form-control mono" id="override-text" name="override_text" oninput="schedulePreview()" placeholder="Leave empty to use defaults" rows="8" />
+              <details class="mt-1">
+                <summary class="text-sm font-semibold">
+                  Preview
+                </summary>
+                <div class="mt-1">
+                  <div class="btn-group mb-1">
+                    <button class="btn btn-secondary btn-sm" onclick="showTextPreview('group_invite')" type="button">
+                      Group invite
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="showTextPreview('password_reset')" type="button">
+                      Password reset
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="showTextPreview('otp')" type="button">
+                      Sign-in code
+                    </button>
+                  </div>
+                  <iframe class="email-preview" id="preview-text" title="Text email preview" />
+                </div>
+              </details>
+            </div>
+            <div class="page-actions-bar">
+              <button class="btn btn-primary" type="submit">
+                Save email settings
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

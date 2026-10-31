@@ -2,281 +2,717 @@ package calendar
 
 import (
 	"fmt"
-	"git.duckfam.us/jj-software/cog/ui"
 	"strconv"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/ui"
 )
 
-templ calSidebar(calendars []Calendar, activePath string, csrfToken string) {
-	<nav class="sidebar">
-		<a href="/apps/calendar/" class={ sidebarClass(activePath, "/apps/calendar/") }>All Events</a>
-		<div class="sidebar-divider"></div>
-		<div style="padding:0.25rem 0.75rem;font-size:0.8rem;font-weight:600;text-transform:uppercase;color:var(--color-muted, #888)">Calendars</div>
-		for _, cal := range calendars {
-			<label class="sidebar-item" style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
-				<input
-					type="checkbox"
-					class="cal-toggle"
-					data-calendar-id={ strconv.FormatInt(cal.ID, 10) }
-					checked
-					style="accent-color:var(--cal-color);--cal-color:inherit"
-				/>
-				<span style={ fmt.Sprintf("display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s;flex-shrink:0", cal.Color) }></span>
-				{ cal.Name }
-			</label>
+// calSidebar is the calendar app's navigation. On the calendar page it also
+// lists the calendars, each with a checkbox that shows or hides its events.
+templ calSidebar(calendars []Calendar, active string) {
+	{{ onIndex, onSettings := active == "index", active == "settings" }}
+	<nav class="sidebar" aria-label="Calendar">
+		<a
+			href="/apps/calendar/"
+			class={ sidebarItemClass(onIndex) }
+			if active == "index" {
+				aria-current="page"
+			}
+		>
+			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+			Calendar
+		</a>
+		if active == "index" && len(calendars) > 0 {
+			<div class="sidebar-heading">Calendars</div>
+			for _, cal := range calendars {
+				<label class="sidebar-item cal-toggle">
+					<input
+						type="checkbox"
+						data-cal-toggle={ strconv.FormatInt(cal.ID, 10) }
+						checked
+						style={ "accent-color:" + cal.Color }
+					/>
+					<span class="cal-toggle-name">{ cal.Name }</span>
+				</label>
+			}
 		}
 		<div class="sidebar-divider"></div>
-		<a href="/apps/calendar/settings" class={ sidebarClass(activePath, "/apps/calendar/settings") }>Settings</a>
+		<a
+			href="/apps/calendar/settings"
+			class={ sidebarItemClass(onSettings) }
+			if active == "settings" {
+				aria-current="page"
+			}
+		>
+			@ui.Icon("settings")
+			Settings
+		</a>
 	</nav>
 }
 
 templ calIndexPage(calendars []Calendar, csrfToken string) {
 	<script src={ ui.Static.URL("vendor/fullcalendar.min.js") }></script>
 	<div class="sidebar-layout">
-		@calSidebar(calendars, "/apps/calendar/", csrfToken)
+		@calSidebar(calendars, "index")
 		<div class="sidebar-content">
-			<div id="calendar" style="min-height:600px"></div>
+			<div class="cal-card">
+				<div id="calendar" data-can-create?={ len(writable(calendars)) > 0 }></div>
+			</div>
 		</div>
 	</div>
-	<!-- Event detail modal -->
-	<div id="event-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-		<div class="modal-content" id="event-modal-body"></div>
-	</div>
-	<!-- Create event modal -->
-	<div id="create-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-		<div class="modal-content">
-			<h2 style="margin-top:0">New Event</h2>
-			<form method="post" action="/apps/calendar/events" id="create-event-form" onsubmit="clearColorIfUnchecked('ce-color-enable','ce-color')">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<input type="hidden" name="tz" data-browser-tz/>
-				<div class="form-group">
-					<label for="ce-calendar">Calendar</label>
-					<select class="form-control" id="ce-calendar" name="calendar_id" onchange="syncCalColor(this,'ce-color','ce-color-enable')">
-						for _, cal := range writable(calendars) {
-							<option value={ strconv.FormatInt(cal.ID, 10) } data-color={ cal.Color }>{ cal.Name }</option>
-						}
-					</select>
+	if len(writable(calendars)) > 0 {
+		@ui.Modal("create-modal", "New event") {
+			<form method="post" action="/apps/calendar/events" id="create-event-form">
+				<div class="modal-body">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					@eventFormFields("ce", nil, nil, calendars, nil)
 				</div>
-				<div class="form-group">
-					<label for="ce-summary">Title</label>
-					<input class="form-control" type="text" id="ce-summary" name="summary" required/>
-				</div>
-				<div class="form-group">
-					<label>
-						<input type="checkbox" id="ce-allday" name="all_day"/> All day
-					</label>
-				</div>
-				<div id="ce-datetime-fields">
-					<div class="form-group">
-						<label for="ce-start">Start</label>
-						<input class="form-control" type="datetime-local" id="ce-start" name="datetime_start" required/>
-					</div>
-					<div class="form-group">
-						<label for="ce-end">End</label>
-						<input class="form-control" type="datetime-local" id="ce-end" name="datetime_end"/>
-					</div>
-				</div>
-				<div id="ce-date-fields" style="display:none">
-					<div class="form-group">
-						<label for="ce-date-start">Start Date</label>
-						<input class="form-control" type="date" id="ce-date-start" name="date_start"/>
-					</div>
-					<div class="form-group">
-						<label for="ce-date-end">End Date</label>
-						<input class="form-control" type="date" id="ce-date-end" name="date_end"/>
-					</div>
-				</div>
-				<div class="form-group">
-					<label for="ce-location">Location</label>
-					<input class="form-control" type="text" id="ce-location" name="location"/>
-				</div>
-				<div class="form-group">
-					<label for="ce-description">Description</label>
-					<textarea class="form-control" id="ce-description" name="description" rows="3"></textarea>
-				</div>
-				<div class="form-group">
-					<label for="ce-freq">Repeat</label>
-					<select class="form-control" id="ce-freq" name="rrule_freq" onchange="toggleRecurrenceOpts('ce')">
-						<option value="NONE" selected>None</option>
-						<option value="DAILY">Daily</option>
-						<option value="WEEKLY">Weekly</option>
-						<option value="MONTHLY">Monthly</option>
-						<option value="YEARLY">Yearly</option>
-						<option value="CUSTOM">Custom…</option>
-					</select>
-				</div>
-				<div id="ce-rrule-opts" style="display:none">
-					<div class="form-group">
-						<label for="ce-interval">Every</label>
-						<input class="form-control" type="number" id="ce-interval" name="rrule_interval" value="1" min="1" style="max-width:100px"/>
-					</div>
-					<div id="ce-byday" class="form-group" style="display:none">
-						<label>On days</label>
-						<div class="flex gap-1" style="flex-wrap:wrap">
-							@emByDayCheckbox("ce", "MO", "Mon", false)
-							@emByDayCheckbox("ce", "TU", "Tue", false)
-							@emByDayCheckbox("ce", "WE", "Wed", false)
-							@emByDayCheckbox("ce", "TH", "Thu", false)
-							@emByDayCheckbox("ce", "FR", "Fri", false)
-							@emByDayCheckbox("ce", "SA", "Sat", false)
-							@emByDayCheckbox("ce", "SU", "Sun", false)
-						</div>
-					</div>
-					<div class="form-group">
-						<label for="ce-until">Until (optional)</label>
-						<input class="form-control" type="date" id="ce-until" name="rrule_until" style="max-width:200px"/>
-					</div>
-				</div>
-				<div id="ce-rrule-custom" style="display:none">
-					<div class="form-group">
-						<label for="ce-rrule">Custom RRULE</label>
-						<input class="form-control" type="text" id="ce-rrule" name="rrule" placeholder="e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10" hx-get="/apps/calendar/rrule-preview" hx-trigger="input changed delay:300ms" hx-target="#ce-rrule-desc"/>
-						<div id="ce-rrule-desc" class="text-muted" style="font-size:0.85rem;margin-top:0.25rem"></div>
-					</div>
-				</div>
-				<div class="form-group">
-					<label>Attendees</label>
-					<div id="ce-attendees"></div>
-					<button type="button" class="btn btn-sm" onclick="addAttendeeRow('ce-attendees')">Add attendee</button>
-				</div>
-				<div class="form-group">
-					<label for="ce-color">Event Color</label>
-					<div class="flex gap-1 items-center">
-						<input class="form-control" type="color" id="ce-color" name="color" value="#0082c9" style="width:60px;padding:2px"/>
-						<label style="font-size:0.8rem;font-weight:normal"><input type="checkbox" id="ce-color-enable" onchange="handleColorToggle(this,'ce-color','ce-calendar')"/> Custom color</label>
-					</div>
-				</div>
-				<div class="flex gap-1" style="justify-content:flex-end">
-					<button type="button" class="btn" onclick="document.getElementById('create-modal').style.display='none'">Cancel</button>
+				<div class="modal-footer">
+					<button type="button" class="btn" data-modal-close>Cancel</button>
 					<button type="submit" class="btn btn-primary">Create</button>
 				</div>
 			</form>
+		}
+	}
+	<div id="event-modal-slot"></div>
+	@timezoneList()
+	<template id="tpl-attendee-row">
+		@attendeeRow(Attendee{})
+	</template>
+	@calScript()
+}
+
+templ timezoneList() {
+	<datalist id="cal-timezones">
+		for _, tz := range commonTimezones {
+			<option value={ tz }></option>
+		}
+	</datalist>
+}
+
+// calEventModal is an event's dialog: what it is, and behind Edit the form
+// that changes it. For one occurrence of a series it asks what a change or
+// a delete applies to.
+templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee, myStatus string, attachments []AttachmentView, now time.Time) {
+	@ui.Modal("event-modal", ev.Summary) {
+		if ev.Occurrence != 0 && !readOnly(cal) {
+			<div class="cal-scope">
+				<label for="em-scope">Apply to</label>
+				<select class="form-control form-control-sm form-control-auto" id="em-scope" name="scope" form="em-form">
+					<option value="this" selected>This event</option>
+					<option value="following">This and following events</option>
+					<option value="all">All events in the series</option>
+				</select>
+			</div>
+		}
+		<div class="modal-body" data-view>
+			<div
+				class="cal-event-when"
+				data-when
+				data-start={ strconv.FormatInt(ev.DTStart, 10) }
+				data-end={ strconv.FormatInt(ev.DTEnd, 10) }
+				data-all-day?={ ev.IsAllDay }
+				data-tz={ zoneName(eventEditZone(ev, cal)) }
+			>{ formatEventTime(ev.DTStart, ev.DTEnd, ev.IsAllDay, displayZone(ev, cal), now) }</div>
+			<dl class="cal-event-facts">
+				if eventRRule(ev) != "" {
+					<dt>Repeats</dt>
+					<dd>{ eventRRule(ev) }</dd>
+				}
+				if ev.Location != "" {
+					<dt>Where</dt>
+					<dd>{ ev.Location }</dd>
+				}
+				if cal != nil {
+					<dt>Calendar</dt>
+					<dd>
+						<span class="color-dot" style={ "background:" + cal.Color }></span>
+						{ cal.Name }
+					</dd>
+				}
+			</dl>
+			if ev.Description != "" {
+				<p class="cal-event-desc">{ ev.Description }</p>
+			}
+			if myStatus != "" && !readOnly(cal) {
+				<div class="cal-rsvp">
+					<span class="cal-rsvp-label">Going?</span>
+					<div class="btn-group">
+						for _, opt := range []struct{ status, label string }{{"ACCEPTED", "Yes"}, {"TENTATIVE", "Maybe"}, {"DECLINED", "No"}} {
+							<button
+								type="button"
+								class={ "btn btn-sm", templ.KV("btn-primary", myStatus == opt.status) }
+								aria-pressed={ strconv.FormatBool(myStatus == opt.status) }
+								hx-post={ fmt.Sprintf("/apps/calendar/events/%d/respond", ev.ID) }
+								hx-vals={ fmt.Sprintf(`{"status":%q}`, opt.status) }
+								hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":%q}`, csrfToken) }
+								hx-swap="none"
+								hx-on::after-request="if(event.detail.successful){cogModal.close('event-modal');location.reload()}"
+							>{ opt.label }</button>
+						}
+					</div>
+				</div>
+			}
+			if len(attendees) > 0 {
+				<h3 class="cal-section">Attendees</h3>
+				<ul class="cal-attendees">
+					for _, att := range attendees {
+						<li>
+							<div class="cal-attendee-who">
+								if att.DisplayName != "" {
+									<span class="font-medium">{ att.DisplayName }</span>
+									<span class="text-sm text-muted">{ att.Email }</span>
+								} else {
+									<span class="font-medium">{ att.Email }</span>
+								}
+							</div>
+							@attendeeStatus(att.Status)
+						</li>
+					}
+				</ul>
+			}
+			if len(attachments) > 0 || !readOnly(cal) {
+				<h3 class="cal-section">Attachments</h3>
+				if len(attachments) > 0 {
+					<ul class="cal-attachments">
+						for _, att := range attachments {
+							<li>
+								<span class="file-name">
+									@ui.Icon("file")
+									if att.URL != "" {
+										<a href={ templ.SafeURL(att.URL) } download?={ att.Local() } target="_blank" rel="noopener noreferrer">{ att.Name }</a>
+									} else {
+										<span>{ att.Name }</span>
+									}
+								</span>
+								if att.Size != "" {
+									<span class="text-sm text-muted nowrap">{ att.Size }</span>
+								}
+								if att.ManagedID != "" && !readOnly(cal) {
+									<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d/attachments/remove", ev.ID)) } class="ml-auto">
+										<input type="hidden" name="csrf_token" value={ csrfToken }/>
+										<input type="hidden" name="managed_id" value={ att.ManagedID }/>
+										<button type="submit" class="btn-icon btn-icon-sm btn-icon-danger" aria-label={ "Remove " + att.Name } title="Remove">
+											@ui.Icon("x")
+										</button>
+									</form>
+								}
+							</li>
+						}
+					</ul>
+				}
+				if !readOnly(cal) {
+					<form method="post" enctype="multipart/form-data" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d/attachments", ev.ID)) } class="upload-form">
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<label class="btn btn-sm">
+							@ui.Icon("upload")
+							Attach a file
+							<input type="file" class="sr-only" name="file" required onchange="this.form.submit()"/>
+						</label>
+					</form>
+				}
+			}
+		</div>
+		if !readOnly(cal) {
+			<div class="modal-body" data-edit hidden>
+				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d", ev.ID)) } id="em-form">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					if ev.Occurrence != 0 {
+						<input type="hidden" name="occurrence" value={ strconv.FormatInt(ev.Occurrence, 10) }/>
+					}
+					@eventFormFields("em", ev, cal, calendars, attendees)
+				</form>
+			</div>
+		}
+		<div class="modal-footer">
+			if readOnly(cal) {
+				<span class="text-sm text-muted modal-footer-start">{ readOnlyReason(cal) }</span>
+				<button type="button" class="btn" data-modal-close>Close</button>
+			} else {
+				<button
+					type="button"
+					class="btn btn-outline-danger modal-footer-start"
+					hx-delete={ deleteURL(ev) }
+					if ev.Occurrence != 0 {
+						hx-include="#em-scope"
+					}
+					hx-confirm="Delete this event?"
+					hx-on::after-request="if(event.detail.successful){cogModal.close('event-modal');location.reload()}"
+				>Delete</button>
+				<button type="button" class="btn" data-modal-close data-view>Close</button>
+				<button type="button" class="btn btn-primary" data-show-edit data-view>
+					@ui.Icon("edit")
+					Edit
+				</button>
+				<button type="button" class="btn" data-show-view data-edit hidden>Cancel</button>
+				<button type="submit" class="btn btn-primary" form="em-form" data-edit hidden>Save</button>
+			}
+		</div>
+	}
+}
+
+templ attendeeStatus(status string) {
+	switch status {
+		case "ACCEPTED":
+			<span class="badge badge-success">Going</span>
+		case "DECLINED":
+			<span class="badge badge-danger">Not going</span>
+		case "TENTATIVE":
+			<span class="badge badge-warning">Maybe</span>
+		default:
+			<span class="badge badge-outline">No reply</span>
+	}
+}
+
+// eventFormFields are the new-event and edit forms' fields; prefix keeps
+// their IDs apart and ev is nil for a new event.
+templ eventFormFields(prefix string, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee) {
+	{{ freq := eventRRuleFreq(ev) }}
+	<div class="form-group">
+		<label for={ prefix + "-summary" }>Title</label>
+		<input class="form-control" type="text" id={ prefix + "-summary" } name="summary" value={ evSummary(ev) } required/>
+	</div>
+	<div class="form-row">
+		<div class="form-group">
+			<label for={ prefix + "-calendar" }>Calendar</label>
+			<select class="form-control" id={ prefix + "-calendar" } name="calendar_id" data-cal-select>
+				for _, c := range writable(calendars) {
+					<option value={ strconv.FormatInt(c.ID, 10) } data-color={ c.Color } selected?={ ev != nil && c.ID == ev.CalendarID }>{ c.Name }</option>
+				}
+			</select>
+		</div>
+		<div class="form-group form-group-auto cal-allday">
+			<label class="form-check">
+				<input type="checkbox" id={ prefix + "-allday" } name="all_day" data-all-day checked?={ ev != nil && ev.IsAllDay }/>
+				All day
+			</label>
 		</div>
 	</div>
-	<script>
-		function addAttendeeRow(containerId) {
-			var container = document.getElementById(containerId);
-			var row = document.createElement("div");
-			row.className = "flex gap-1 items-center";
-			row.style.marginBottom = "0.25rem";
-			row.innerHTML =
-				'<input class="form-control" type="email" name="attendee_email" placeholder="email@example.com" style="flex:1"/>' +
-				'<input class="form-control" type="text" name="attendee_name" placeholder="Name" style="flex:1"/>' +
-				'<select class="form-control" name="attendee_role" style="width:auto">' +
-				'<option value="REQ-PARTICIPANT" selected>Required</option>' +
-				'<option value="OPT-PARTICIPANT">Optional</option>' +
-				'<option value="CHAIR">Chair</option></select>' +
-				'<button type="button" class="btn btn-sm" onclick="this.parentElement.remove()">Remove</button>';
-			container.appendChild(row);
-		}
-		function toggleRecurrenceOpts(prefix) {
-			var freq = document.getElementById(prefix + "-freq").value;
-			var opts = document.getElementById(prefix + "-rrule-opts");
-			var custom = document.getElementById(prefix + "-rrule-custom");
-			var byday = document.getElementById(prefix + "-byday");
-			if (freq === "NONE") {
-				if (opts) opts.style.display = "none";
-				if (custom) custom.style.display = "none";
-			} else if (freq === "CUSTOM") {
-				if (opts) opts.style.display = "none";
-				if (custom) custom.style.display = "";
+	<div class="form-row" data-timed hidden?={ ev != nil && ev.IsAllDay }>
+		<div class="form-group">
+			<label for={ prefix + "-start" }>Starts</label>
+			<input class="form-control" type="datetime-local" id={ prefix + "-start" } name="datetime_start" required?={ ev == nil || !ev.IsAllDay } { timedValue(ev, cal, true)... }/>
+		</div>
+		<div class="form-group">
+			<label for={ prefix + "-end" }>Ends</label>
+			<input class="form-control" type="datetime-local" id={ prefix + "-end" } name="datetime_end" { timedValue(ev, cal, false)... }/>
+		</div>
+	</div>
+	<div class="form-row" data-dated hidden?={ ev == nil || !ev.IsAllDay }>
+		<div class="form-group">
+			<label for={ prefix + "-date-start" }>Starts</label>
+			<input class="form-control" type="date" id={ prefix + "-date-start" } name="date_start" value={ dateValue(ev, true) } required?={ ev != nil && ev.IsAllDay }/>
+		</div>
+		<div class="form-group">
+			<label for={ prefix + "-date-end" }>Ends</label>
+			<input class="form-control" type="date" id={ prefix + "-date-end" } name="date_end" value={ dateValue(ev, false) }/>
+		</div>
+	</div>
+	<details class="cal-tz" data-timed hidden?={ ev != nil && ev.IsAllDay }>
+		<summary>Time zone: <span data-tz-label>{ zoneName(eventEditZone(ev, cal)) }</span></summary>
+		<div class="form-group">
+			<label class="sr-only" for={ prefix + "-tz" }>Time zone</label>
+			if z := eventEditZone(ev, cal); z != nil {
+				<input class="form-control w-md" type="text" id={ prefix + "-tz" } name="tz" list="cal-timezones" value={ z.String() } data-tz-input/>
 			} else {
-				if (opts) opts.style.display = "";
-				if (custom) custom.style.display = "none";
-				if (byday) byday.style.display = freq === "WEEKLY" ? "" : "none";
+				<input class="form-control w-md" type="text" id={ prefix + "-tz" } name="tz" list="cal-timezones" data-browser-tz data-tz-input/>
 			}
-		}
-		// Fill fields that depend on the browser's zone: [data-browser-tz] gets
-		// the IANA zone name, [data-unix] datetime inputs get local wall time.
-		function fillBrowserTimes(root) {
-			var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-			root.querySelectorAll("[data-browser-tz]").forEach(function (el) {
-				if (!el.value) el.value = tz;
-			});
-			root.querySelectorAll("input[data-unix]").forEach(function (el) {
-				var d = new Date(Number(el.dataset.unix) * 1000);
-				var pad = function (n) {
-					return String(n).padStart(2, "0");
-				};
-				el.value =
-					d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
-					"T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
-			});
-		}
-		// The markup above is already parsed; this also works after an
-		// hx-boost navigation, when DOMContentLoaded has long since fired.
-		fillBrowserTimes(document);
-		function clearColorIfUnchecked(cbId, colorId) {
-			var cb = document.getElementById(cbId);
-			if (cb && !cb.checked) document.getElementById(colorId).value = "";
-		}
-		// Color picker: sync with calendar default when toggling custom off
-		function syncCalColor(sel, colorId, checkboxId) {
-			var opt = sel.options[sel.selectedIndex];
-			var color = opt.getAttribute("data-color") || "#0082c9";
-			var cb = document.getElementById(checkboxId);
-			if (!cb || !cb.checked) {
-				document.getElementById(colorId).value = color;
+			<p class="form-help">The start and end are times in this zone.</p>
+		</div>
+	</details>
+	<div class="form-group">
+		<label for={ prefix + "-location" }>Location</label>
+		<input class="form-control" type="text" id={ prefix + "-location" } name="location" value={ evLocation(ev) }/>
+	</div>
+	<div class="form-group">
+		<label for={ prefix + "-description" }>Description</label>
+		<textarea class="form-control" id={ prefix + "-description" } name="description" rows="3">{ evDescription(ev) }</textarea>
+	</div>
+	<div class="form-group">
+		<label for={ prefix + "-freq" }>Repeat</label>
+		<select class="form-control w-sm" id={ prefix + "-freq" } name="rrule_freq" data-freq>
+			for _, f := range freqOptions {
+				<option value={ f.Value } selected?={ f.Value == freq }>{ f.Label }</option>
 			}
-		}
-		function handleColorToggle(cb, colorId, calSelId) {
-			if (!cb.checked) {
-				var sel = document.getElementById(calSelId);
-				var opt = sel.options[sel.selectedIndex];
-				document.getElementById(colorId).value =
-					opt.getAttribute("data-color") || "#0082c9";
+		</select>
+	</div>
+	<div data-rrule-opts hidden?={ freq == "NONE" || freq == "CUSTOM" }>
+		<div class="form-group">
+			<label for={ prefix + "-interval" }>Every</label>
+			<div class="cal-every">
+				<input class="form-control w-xs" type="number" id={ prefix + "-interval" } name="rrule_interval" value={ eventRRuleInterval(ev) } min="1"/>
+				<span data-freq-unit>{ freqUnit(freq) }</span>
+			</div>
+		</div>
+		<fieldset class="form-group" data-byday hidden?={ freq != "WEEKLY" }>
+			<legend>On</legend>
+			<div class="chip-group cal-days">
+				for _, d := range weekdays {
+					<label class="chip" title={ d.Name }>
+						<input type="checkbox" name="rrule_byday" value={ d.Code } checked?={ eventRRuleByDay(ev)[d.Code] }/>
+						{ d.Short }
+						<span class="sr-only">{ d.Name }</span>
+					</label>
+				}
+			</div>
+		</fieldset>
+		<div class="form-group">
+			<label for={ prefix + "-until" }>Until <span class="text-muted">(optional)</span></label>
+			<input class="form-control w-sm" type="date" id={ prefix + "-until" } name="rrule_until" value={ eventRRuleUntil(ev) }/>
+		</div>
+	</div>
+	<div class="form-group" data-rrule-custom hidden?={ freq != "CUSTOM" }>
+		<label for={ prefix + "-rrule" }>Recurrence rule</label>
+		<input
+			class="form-control mono"
+			type="text"
+			id={ prefix + "-rrule" }
+			name="rrule"
+			value={ customRRule(ev) }
+			placeholder="FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10"
+			hx-get="/apps/calendar/rrule-preview"
+			hx-trigger="input changed delay:300ms"
+			hx-target={ "#" + prefix + "-rrule-desc" }
+		/>
+		<p id={ prefix + "-rrule-desc" } class="form-help">
+			if freq == "CUSTOM" {
+				{ eventRRule(ev) }
+			} else {
+				An iCalendar RRULE, for repeats the choices above cannot describe.
 			}
-		}
-		function handleColorToggleEdit(cb, colorId) {
-			// For edit modal, unchecking resets to calendar default (stored in data attr)
-			if (!cb.checked) {
-				var picker = document.getElementById(colorId);
-				picker.value = picker.getAttribute("data-default") || "#0082c9";
+		</p>
+	</div>
+	<fieldset class="form-group">
+		<legend>Attendees</legend>
+		<div class="cal-attendee-rows" data-attendees>
+			for _, att := range attendees {
+				@attendeeRow(att)
 			}
+		</div>
+		<button type="button" class="btn btn-ghost btn-sm" data-add-attendee>
+			@ui.Icon("plus")
+			Add attendee
+		</button>
+	</fieldset>
+	<fieldset class="form-group">
+		<legend>Colour</legend>
+		@colorSwatches(prefix, ev, cal, calendars)
+	</fieldset>
+}
+
+templ attendeeRow(att Attendee) {
+	<div class="cal-attendee-row">
+		<input class="form-control" type="email" name="attendee_email" value={ att.Email } placeholder="name@example.com" aria-label="Attendee email"/>
+		<input class="form-control" type="text" name="attendee_name" value={ att.DisplayName } placeholder="Name (optional)" aria-label="Attendee name"/>
+		<select class="form-control form-control-auto" name="attendee_role" aria-label="Attendee role">
+			<option value="REQ-PARTICIPANT" selected?={ att.Role != "OPT-PARTICIPANT" && att.Role != "CHAIR" }>Required</option>
+			<option value="OPT-PARTICIPANT" selected?={ att.Role == "OPT-PARTICIPANT" }>Optional</option>
+			<option value="CHAIR" selected?={ att.Role == "CHAIR" }>Chair</option>
+		</select>
+		<button type="button" class="btn-icon btn-icon-danger" data-remove-attendee aria-label="Remove attendee">
+			@ui.Icon("x")
+		</button>
+	</div>
+}
+
+// colorSwatches picks an event's colour: its calendar's (no colour of its
+// own), one of a few, or any.
+templ colorSwatches(prefix string, ev *Event, cal *Calendar, calendars []Calendar) {
+	{{ own := evColor(ev) }}
+	<div class="cal-swatches" role="radiogroup" aria-label="Event colour">
+		<label class="cal-swatch cal-swatch-default">
+			<input type="radio" name="color" value="" checked?={ own == "" }/>
+			<span class="cal-swatch-dot" data-cal-swatch style={ "background:" + formCalColor(ev, cal, calendars) }></span>
+			<span>Calendar’s</span>
+		</label>
+		for _, c := range swatchColors {
+			<label class="cal-swatch" title={ c.Name }>
+				<input type="radio" name="color" value={ c.Hex } checked?={ own == c.Hex }/>
+				<span class="cal-swatch-dot" style={ "background:" + c.Hex }></span>
+				<span class="sr-only">{ c.Name }</span>
+			</label>
 		}
-		function openEventModal(url) {
-			fetch(url, {
-				headers: {
-					"X-CSRF-Token": document.querySelector("[name=csrf_token]").value,
-				},
-			})
-				.then(function (r) {
-					if (!r.ok) throw new Error(r.status);
-					return r.text();
-				})
-				.then(function (html) {
-					var body = document.getElementById("event-modal-body");
-					body.innerHTML = html;
-					fillBrowserTimes(body);
-					htmx.process(body);
-					document.getElementById("event-modal").style.display = "flex";
-				})
-				.catch(function (err) {
-					console.error("open event", url, err);
-				});
-		}
+		<label class="cal-swatch" title="Another colour">
+			<input type="radio" name="color" value={ customColor(own) } checked?={ own != "" && !isSwatch(own) } data-swatch-custom/>
+			<input class="cal-swatch-picker" type="color" value={ customColor(own) } aria-label="Another colour" data-swatch-picker/>
+		</label>
+	</div>
+}
+
+// calScript runs the calendar page: FullCalendar, the calendar checkboxes,
+// the new-event dialog and the event dialog.
+templ calScript() {
+	<script>
 		(function () {
 			var calEl = document.getElementById("calendar");
-			var params = new URLSearchParams(window.location.search);
-			// A form about an event redirects back with ?event=<id>, so its
-			// modal opens again.
-			if (/^[0-9]+$/.test(params.get("event") || "")) {
-				openEventModal("/apps/calendar/events/" + params.get("event"));
+			var NARROW = window.matchMedia("(max-width: 640px)");
+			var HIDDEN_KEY = "cog.calendar.hidden";
+			var browserTZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+			var pad = function (n) {
+				return String(n).padStart(2, "0");
+			};
+			function localDate(d) {
+				return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
 			}
-			var initDate = params.get("date");
-			var calOpts = {
+			function localDateTime(d) {
+				return localDate(d) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+			}
+
+			// --- Forms -------------------------------------------------------
+			// [data-browser-tz] fields get the browser's zone and
+			// [data-unix] datetime inputs its wall time.
+			function fillBrowserTimes(root) {
+				root.querySelectorAll("[data-browser-tz]").forEach(function (el) {
+					if (!el.value) el.value = browserTZ;
+				});
+				root.querySelectorAll("input[data-unix]").forEach(function (el) {
+					el.value = localDateTime(new Date(Number(el.dataset.unix) * 1000));
+				});
+				root.querySelectorAll("[data-tz-label]").forEach(function (el) {
+					var input = el.closest("details").querySelector("[data-tz-input]");
+					el.textContent = input.value || browserTZ;
+				});
+			}
+			// [data-when]: the event's time in the browser's locale, in its own
+			// zone when it has one, relative to today.
+			function formatWhen(root) {
+				root.querySelectorAll("[data-when]").forEach(function (el) {
+					var tz = el.dataset.tz || undefined;
+					var allDay = el.hasAttribute("data-all-day");
+					var start = new Date(Number(el.dataset.start) * 1000);
+					var end = new Date(Number(el.dataset.end) * 1000);
+					if (allDay) {
+						tz = "UTC";
+						end = new Date(end.getTime() - 86400000);
+					}
+					var dayKey = function (d) {
+						return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+					};
+					var now = new Date();
+					var today = dayKey(now);
+					var tomorrow = dayKey(new Date(now.getTime() + 86400000));
+					var sameYear = new Intl.DateTimeFormat("en", { timeZone: tz, year: "numeric" }).format(start) ===
+						new Intl.DateTimeFormat("en", { timeZone: tz, year: "numeric" }).format(now);
+					var dayFmt = new Intl.DateTimeFormat(undefined, {
+						timeZone: tz, weekday: "short", month: "short", day: "numeric",
+						year: sameYear ? undefined : "numeric",
+					});
+					var day = function (d) {
+						var k = dayKey(d);
+						if (k === today) return "Today";
+						if (k === tomorrow) return "Tomorrow";
+						return dayFmt.format(d);
+					};
+					var time = new Intl.DateTimeFormat(undefined, { timeZone: tz, hour: "numeric", minute: "2-digit" });
+					var text;
+					if (allDay) {
+						text = dayKey(start) === dayKey(end) ? day(start) : day(start) + " – " + day(end);
+					} else if (dayKey(start) === dayKey(end)) {
+						text = day(start) + " · " + time.formatRange(start, end);
+					} else {
+						text = day(start) + ", " + time.format(start) + " – " + day(end) + ", " + time.format(end);
+					}
+					if (!allDay && tz && tz !== browserTZ) {
+						var zone = new Intl.DateTimeFormat(undefined, { timeZone: tz, timeZoneName: "short" })
+							.formatToParts(start)
+							.find(function (p) {
+								return p.type === "timeZoneName";
+							});
+						if (zone) text += " " + zone.value;
+					}
+					el.textContent = text;
+				});
+			}
+			function setTimed(form, allDay) {
+				form.querySelectorAll("[data-timed]").forEach(function (el) {
+					el.hidden = allDay;
+				});
+				form.querySelectorAll("[data-dated]").forEach(function (el) {
+					el.hidden = !allDay;
+				});
+				form.querySelector('[name="datetime_start"]').required = !allDay;
+				form.querySelector('[name="date_start"]').required = allDay;
+			}
+			function setFreq(form, freq) {
+				form.querySelector("[data-rrule-opts]").hidden = freq === "NONE" || freq === "CUSTOM";
+				form.querySelector("[data-rrule-custom]").hidden = freq !== "CUSTOM";
+				form.querySelector("[data-byday]").hidden = freq !== "WEEKLY";
+				var units = { DAILY: "days", WEEKLY: "weeks", MONTHLY: "months", YEARLY: "years" };
+				form.querySelector("[data-freq-unit]").textContent = units[freq] || "";
+			}
+			function syncCalColor(form) {
+				var sel = form.querySelector("[data-cal-select]");
+				var dot = form.querySelector("[data-cal-swatch]");
+				if (!sel || !dot || sel.selectedIndex < 0) return;
+				dot.style.background = sel.options[sel.selectedIndex].dataset.color || "";
+			}
+			document.addEventListener("change", function (e) {
+				var form = e.target.closest("form");
+				if (!form) return;
+				if (e.target.matches("[data-all-day]")) setTimed(form, e.target.checked);
+				if (e.target.matches("[data-freq]")) setFreq(form, e.target.value);
+				if (e.target.matches("[data-cal-select]")) syncCalColor(form);
+				if (e.target.matches("[data-tz-input]")) {
+					e.target.closest("details").querySelector("[data-tz-label]").textContent =
+						e.target.value || browserTZ;
+				}
+			});
+			document.addEventListener("input", function (e) {
+				if (!e.target.matches("[data-swatch-picker]")) return;
+				var radio = e.target.parentElement.querySelector("[data-swatch-custom]");
+				radio.value = e.target.value;
+				radio.checked = true;
+			});
+			document.addEventListener("click", function (e) {
+				var add = e.target.closest("[data-add-attendee]");
+				if (add) {
+					var row = document.getElementById("tpl-attendee-row").content.firstElementChild.cloneNode(true);
+					add.parentElement.querySelector("[data-attendees]").appendChild(row);
+					row.querySelector("input").focus();
+					return;
+				}
+				var remove = e.target.closest("[data-remove-attendee]");
+				if (remove) {
+					remove.closest(".cal-attendee-row").remove();
+					return;
+				}
+				var edit = e.target.closest("[data-show-edit], [data-show-view]");
+				if (edit) {
+					var dialog = edit.closest("dialog");
+					var editing = edit.hasAttribute("data-show-edit");
+					dialog.querySelectorAll("[data-view]").forEach(function (el) {
+						el.hidden = editing;
+					});
+					dialog.querySelectorAll("[data-edit]").forEach(function (el) {
+						el.hidden = !editing;
+					});
+					if (editing) dialog.querySelector("[data-edit] input:not([type=hidden])").focus();
+				}
+			});
+
+			// --- New event ---------------------------------------------------
+			// openCreate opens the new-event dialog, emptied, for a time
+			// (start, end) or a range of days (allDay, end exclusive).
+			function openCreate(start, end, allDay) {
+				var form = document.getElementById("create-event-form");
+				if (!form) return;
+				form.reset();
+				form.querySelectorAll(".cal-attendee-row").forEach(function (r) {
+					r.remove();
+				});
+				fillBrowserTimes(form);
+				form.querySelector("[data-all-day]").checked = allDay;
+				setTimed(form, allDay);
+				setFreq(form, "NONE");
+				syncCalColor(form);
+				if (allDay) {
+					form.querySelector('[name="date_start"]').value = localDate(start);
+					form.querySelector('[name="date_end"]').value = localDate(end);
+				} else {
+					form.querySelector('[name="datetime_start"]').value = localDateTime(start);
+					form.querySelector('[name="datetime_end"]').value = localDateTime(end);
+				}
+				cogModal.open("create-modal");
+				form.querySelector('[name="summary"]').focus();
+			}
+			function newEventNow() {
+				var start = new Date();
+				start.setMinutes(0, 0, 0);
+				start = new Date(start.getTime() + 3600000);
+				openCreate(start, new Date(start.getTime() + 3600000), false);
+			}
+
+			// --- Event dialog ------------------------------------------------
+			function openEvent(url) {
+				fetch(url)
+					.then(function (r) {
+						if (!r.ok) throw new Error("HTTP " + r.status);
+						return r.text();
+					})
+					.then(function (html) {
+						var slot = document.getElementById("event-modal-slot");
+						slot.innerHTML = html;
+						fillBrowserTimes(slot);
+						formatWhen(slot);
+						htmx.process(slot);
+						cogModal.open("event-modal");
+					})
+					.catch(function (err) {
+						console.error("open event", url, err);
+					});
+			}
+
+			// --- Calendar ----------------------------------------------------
+			var hidden = {};
+			try {
+				hidden = JSON.parse(localStorage.getItem(HIDDEN_KEY) || "{}") || {};
+			} catch (err) {
+				console.warn("calendar: read hidden calendars", err);
+			}
+			function toolbars(narrow) {
+				var views = narrow ? "dayGridMonth,timeGridThreeDay,listWeek" : "dayGridMonth,timeGridWeek,timeGridDay,listWeek";
+				var create = calEl.hasAttribute("data-can-create") ? "newEvent" : "";
+				if (narrow) {
+					return {
+						headerToolbar: { left: "prev,next", center: "title", right: create },
+						footerToolbar: { left: "today", center: "", right: views },
+					};
+				}
+				return {
+					headerToolbar: { left: "prev,next today", center: "title", right: views + (create ? " " + create : "") },
+					footerToolbar: false,
+				};
+			}
+			var params = new URLSearchParams(window.location.search);
+			var narrow = NARROW.matches;
+			var opts = Object.assign(toolbars(narrow), {
 				initialView: "dayGridMonth",
-				headerToolbar: {
-					left: "prev,next today",
-					center: "title",
-					right: "dayGridMonth,timeGridWeek,timeGridDay",
+				customButtons: { newEvent: { text: "New event", hint: "New event", click: newEventNow } },
+				buttonText: { today: "Today" },
+				views: {
+					dayGridMonth: { buttonText: "Month" },
+					timeGridWeek: { buttonText: "Week" },
+					timeGridDay: { buttonText: "Day" },
+					timeGridThreeDay: {
+						type: "timeGrid",
+						duration: { days: 3 },
+						buttonText: "3 days",
+						titleFormat: { month: "short", day: "numeric" },
+					},
+					listWeek: { buttonText: "Agenda" },
 				},
 				events: "/apps/calendar/events.json",
+				eventDataTransform: function (ev) {
+					if (hidden[ev.extendedProps.calendarId]) ev.display = "none";
+					return ev;
+				},
 				editable: false,
-				selectable: true,
+				selectable: calEl.hasAttribute("data-can-create"),
+				height: "auto",
+				dayMaxEvents: narrow ? 3 : 4,
+				// A phone's day cell is too narrow for "+2 more".
+				moreLinkContent: function (arg) {
+					return narrow ? "+" + arg.num : arg.text;
+				},
+				nowIndicator: true,
+				scrollTime: "08:00:00",
+				slotEventOverlap: false,
+				eventMinHeight: 24,
+				displayEventTime: !narrow,
+				eventTimeFormat: { hour: "numeric", minute: "2-digit", meridiem: "short" },
 				datesSet: function (info) {
-					var d = info.view.currentStart.toISOString().slice(0, 10);
+					var d = localDate(info.view.currentStart);
 					history.replaceState(null, "", "/apps/calendar/?date=" + d);
+				},
+				viewDidMount: function (info) {
+					// The time grids get a fixed height so they open scrolled to
+					// the working day instead of showing midnight to midnight.
+					var timeGrid = info.view.type.indexOf("timeGrid") === 0;
+					setTimeout(function () {
+						calendar.setOption("height", timeGrid ? Math.max(480, window.innerHeight - 180) : "auto");
+						if (timeGrid) calendar.scrollToTime("08:00:00");
+					});
 				},
 				eventClick: function (info) {
 					info.jsEvent.preventDefault();
@@ -284,569 +720,157 @@ templ calIndexPage(calendars []Calendar, csrfToken string) {
 					if (info.event.extendedProps.occurrence) {
 						url += "?occurrence=" + info.event.extendedProps.occurrence;
 					}
-					openEventModal(url);
+					openEvent(url);
 				},
-				dateClick: function (info) {
-					var modal = document.getElementById("create-modal");
-					var isAllDay = info.allDay;
-					if (isAllDay) {
-						document.getElementById("ce-allday").checked = true;
-						document.getElementById("ce-datetime-fields").style.display =
-							"none";
-						document.getElementById("ce-date-fields").style.display = "";
-						document.getElementById("ce-date-start").value = info.dateStr;
+				// A click on a day starts a 9:00 event that day, a drag over days
+				// an all-day one; in the time grids a click starts an hour at
+				// that time.
+				select: function (info) {
+					calendar.unselect();
+					var days = Math.round((info.end - info.start) / 86400000);
+					if (info.view.type.indexOf("dayGrid") === 0 && days === 1) {
+						var s = new Date(info.start);
+						s.setHours(9, 0, 0, 0);
+						openCreate(s, new Date(s.getTime() + 3600000), false);
+					} else if (info.allDay) {
+						openCreate(info.start, info.end, true);
 					} else {
-						document.getElementById("ce-allday").checked = false;
-						document.getElementById("ce-datetime-fields").style.display = "";
-						document.getElementById("ce-date-fields").style.display = "none";
-						document.getElementById("ce-start").value = info.dateStr.slice(
-							0,
-							16,
-						);
+						var end = info.end - info.start < 3600000 ? new Date(info.start.getTime() + 3600000) : info.end;
+						openCreate(info.start, end, false);
 					}
-					modal.style.display = "flex";
-					document.getElementById("ce-summary").focus();
 				},
-				height: "auto",
-			};
-			if (initDate) {
-				calOpts.initialDate = initDate;
-			}
-			var calendar = new FullCalendar.Calendar(calEl, calOpts);
+				windowResize: function () {
+					if (NARROW.matches === narrow) return;
+					narrow = NARROW.matches;
+					var t = toolbars(narrow);
+					calendar.setOption("headerToolbar", t.headerToolbar);
+					calendar.setOption("footerToolbar", t.footerToolbar);
+					calendar.setOption("displayEventTime", !narrow);
+					calendar.setOption("dayMaxEvents", narrow ? 3 : 4);
+					var type = calendar.view.type;
+					if (narrow && type === "timeGridWeek") calendar.changeView("timeGridThreeDay");
+					if (!narrow && type === "timeGridThreeDay") calendar.changeView("timeGridWeek");
+				},
+			});
+			if (params.get("date")) opts.initialDate = params.get("date");
+			var calendar = new FullCalendar.Calendar(calEl, opts);
 			calendar.render();
-			// Calendar toggle checkboxes
-			document.querySelectorAll(".cal-toggle").forEach(function (cb) {
+			// FullCalendar measures itself when it renders and when the window
+			// resizes; the page around it can settle later than either.
+			if (window.ResizeObserver) {
+				new ResizeObserver(function () {
+					calendar.updateSize();
+				}).observe(calEl.parentElement);
+			}
+
+			document.querySelectorAll("[data-cal-toggle]").forEach(function (cb) {
+				var id = Number(cb.dataset.calToggle);
+				cb.checked = !hidden[id];
 				cb.addEventListener("change", function () {
-					var calId = parseInt(this.dataset.calendarId);
+					if (cb.checked) delete hidden[id];
+					else hidden[id] = true;
+					try {
+						localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden));
+					} catch (err) {
+						console.warn("calendar: save hidden calendars", err);
+					}
 					calendar.getEvents().forEach(function (ev) {
-						if (ev.extendedProps.calendarId === calId) {
-							ev.setProp("display", cb.checked ? "auto" : "none");
-						}
+						if (ev.extendedProps.calendarId === id) ev.setProp("display", cb.checked ? "auto" : "none");
 					});
 				});
 			});
-			// Init create modal: sync color to first calendar's default
-			(function () {
-				var sel = document.getElementById("ce-calendar");
-				if (sel && sel.options.length)
-					syncCalColor(sel, "ce-color", "ce-color-enable");
-			})();
-			// All-day toggle in create modal
-			document
-				.getElementById("ce-allday")
-				.addEventListener("change", function () {
-					document.getElementById("ce-datetime-fields").style.display = this
-						.checked
-						? "none"
-						: "";
-					document.getElementById("ce-date-fields").style.display = this.checked
-						? ""
-						: "none";
-				});
+
+			// A form about an event redirects back with ?event=<id>, so its
+			// dialog opens again.
+			if (/^[0-9]+$/.test(params.get("event") || "")) {
+				openEvent("/apps/calendar/events/" + params.get("event"));
+			}
 		})();
 	</script>
 }
 
-templ calEventModal(csrfToken string, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee, myStatus string, attachments []AttachmentView) {
-	<h2 style="margin-top:0">{ ev.Summary }</h2>
-	<div class="text-muted" style="margin-bottom:1rem">
-		{ formatEventTime(ev.DTStart, ev.DTEnd, ev.IsAllDay) }
-		if ev.Location != "" {
-			<span>· { ev.Location }</span>
-		}
-	</div>
-	if ev.Description != "" {
-		<p>{ ev.Description }</p>
-	}
-	if eventRRule(ev) != "" {
-		<p class="text-muted" style="font-size:0.85rem">Repeats: { eventRRule(ev) }</p>
-	}
-	if cal != nil {
-		<p class="text-muted" style="font-size:0.85rem">
-			<span style={ fmt.Sprintf("display:inline-block;width:10px;height:10px;border-radius:50%%;background:%s;vertical-align:middle", cal.Color) }></span>
-			{ " " + cal.Name }
-		</p>
-	}
-	if len(attendees) > 0 {
-		<div style="margin-top:0.75rem">
-			<strong style="font-size:0.85rem">Attendees</strong>
-			<ul style="list-style:none;padding:0;margin:0.25rem 0">
-				for _, att := range attendees {
-					<li style="padding:0.25rem 0;font-size:0.85rem">
-						if att.DisplayName != "" {
-							{ att.DisplayName }
-						} else {
-							{ att.Email }
-						}
-						<span class="text-muted">
-							({ att.Email }) —
-							if att.Status == "ACCEPTED" {
-								<span style="color:green">Accepted</span>
-							} else if att.Status == "DECLINED" {
-								<span style="color:red">Declined</span>
-							} else if att.Status == "TENTATIVE" {
-								<span style="color:orange">Tentative</span>
-							} else {
-								<span>Pending</span>
-							}
-						</span>
-					</li>
-				}
-			</ul>
-		</div>
-	}
-	if myStatus != "" && !readOnly(cal) {
-		<div class="flex gap-1" style="margin-top:0.75rem;align-items:center">
-			<strong style="font-size:0.85rem">Going?</strong>
-			for _, opt := range []struct{ status, label string }{{"ACCEPTED", "Yes"}, {"TENTATIVE", "Maybe"}, {"DECLINED", "No"}} {
-				<button
-					type="button"
-					if myStatus == opt.status {
-						class="btn btn-sm btn-primary"
-					} else {
-						class="btn btn-sm"
-					}
-					hx-post={ fmt.Sprintf("/apps/calendar/events/%d/respond", ev.ID) }
-					hx-vals={ fmt.Sprintf(`{"status":%q}`, opt.status) }
-					hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":%q}`, csrfToken) }
-					hx-swap="none"
-					hx-on::after-request="document.getElementById('event-modal').style.display='none';location.reload()"
-				>{ opt.label }</button>
-			}
-		</div>
-	}
-	<div style="margin-top:0.75rem" id="em-attachments">
-		<strong style="font-size:0.85rem">Attachments</strong>
-		if len(attachments) > 0 {
-			<ul style="list-style:none;padding:0;margin:0.25rem 0">
-				for _, att := range attachments {
-					<li class="flex gap-1 items-center" style="padding:0.25rem 0;font-size:0.85rem">
-						if att.URL != "" {
-							<a href={ templ.SafeURL(att.URL) } download?={ att.Local() } target="_blank" rel="noopener noreferrer">{ att.Name }</a>
-						} else {
-							<span>{ att.Name }</span>
-						}
-						if att.Size != "" {
-							<span class="text-muted">({ att.Size })</span>
-						}
-						if att.ManagedID != "" && !readOnly(cal) {
-							<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d/attachments/remove", ev.ID)) } style="display:inline">
-								<input type="hidden" name="csrf_token" value={ csrfToken }/>
-								<input type="hidden" name="managed_id" value={ att.ManagedID }/>
-								<button type="submit" class="btn btn-sm">Remove</button>
-							</form>
-						}
-					</li>
-				}
-			</ul>
-		}
-		if !readOnly(cal) {
-			<form method="post" enctype="multipart/form-data" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d/attachments", ev.ID)) } class="flex gap-1 items-center" style="margin-top:0.25rem">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<input type="file" name="file" required/>
-				<button type="submit" class="btn btn-sm">Attach</button>
-			</form>
-		}
-	</div>
-	<div class="sidebar-divider" style="margin:1rem 0"></div>
-	if readOnly(cal) {
-		<p class="text-muted">{ readOnlyReason(cal) }</p>
-		<div class="flex gap-1" style="justify-content:flex-end">
-			<button type="button" class="btn" onclick="document.getElementById('event-modal').style.display='none'">Close</button>
-		</div>
-	} else {
-		@calEventEditForm(csrfToken, ev, cal, calendars, attendees)
-	}
-}
-
-templ calEventEditForm(csrfToken string, ev *Event, cal *Calendar, calendars []Calendar, attendees []Attendee) {
-	<h3>Edit Event</h3>
-	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/events/%d", ev.ID)) } onsubmit="clearColorIfUnchecked('em-color-enable','em-color')">
-		<input type="hidden" name="csrf_token" value={ csrfToken }/>
-		if ev.Occurrence != 0 {
-			<input type="hidden" name="occurrence" value={ strconv.FormatInt(ev.Occurrence, 10) }/>
-			<div class="form-group">
-				<label for="em-scope">Apply to</label>
-				<select class="form-control" id="em-scope" name="scope">
-					<option value="this" selected>This event</option>
-					<option value="following">This and following events</option>
-					<option value="all">All events</option>
-				</select>
-			</div>
-		}
-		<div class="form-group">
-			<label for="em-calendar">Calendar</label>
-			<select class="form-control" id="em-calendar" name="calendar_id">
-				for _, c := range writable(calendars) {
-					if c.ID == ev.CalendarID {
-						<option value={ strconv.FormatInt(c.ID, 10) } selected>{ c.Name }</option>
-					} else {
-						<option value={ strconv.FormatInt(c.ID, 10) }>{ c.Name }</option>
-					}
-				}
-			</select>
-		</div>
-		<div class="form-group">
-			<label for="em-summary">Title</label>
-			<input class="form-control" type="text" id="em-summary" name="summary" value={ ev.Summary } required/>
-		</div>
-		<div class="form-group">
-			<label>
-				if ev.IsAllDay {
-					<input type="checkbox" name="all_day" checked/> All day
-				} else {
-					<input type="checkbox" name="all_day"/> All day
-				}
-			</label>
-		</div>
-		if ev.IsAllDay {
-			<div class="form-group">
-				<label for="em-date-start">Start Date</label>
-				<input class="form-control" type="date" id="em-date-start" name="date_start" value={ time.Unix(ev.DTStart, 0).UTC().Format("2006-01-02") }/>
-			</div>
-			<div class="form-group">
-				<label for="em-date-end">End Date</label>
-				<input class="form-control" type="date" id="em-date-end" name="date_end" value={ time.Unix(ev.DTEnd, 0).UTC().Format("2006-01-02") }/>
-			</div>
-		} else {
-			if z := eventEditZone(ev, cal); z != nil {
-				<input type="hidden" name="tz" value={ z.String() }/>
-				<div class="form-group">
-					<label for="em-start">Start</label>
-					<input class="form-control" type="datetime-local" id="em-start" name="datetime_start" value={ time.Unix(ev.DTStart, 0).In(z).Format("2006-01-02T15:04") }/>
-				</div>
-				<div class="form-group">
-					<label for="em-end">End</label>
-					<input class="form-control" type="datetime-local" id="em-end" name="datetime_end" value={ time.Unix(ev.DTEnd, 0).In(z).Format("2006-01-02T15:04") }/>
-				</div>
-				<p class="text-muted" style="font-size:0.85rem;margin-top:-0.5rem">Times in { z.String() }</p>
-			} else {
-				<input type="hidden" name="tz" data-browser-tz/>
-				<div class="form-group">
-					<label for="em-start">Start</label>
-					<input class="form-control" type="datetime-local" id="em-start" name="datetime_start" data-unix={ strconv.FormatInt(ev.DTStart, 10) }/>
-				</div>
-				<div class="form-group">
-					<label for="em-end">End</label>
-					<input class="form-control" type="datetime-local" id="em-end" name="datetime_end" data-unix={ strconv.FormatInt(ev.DTEnd, 10) }/>
-				</div>
-			}
-		}
-		<div class="form-group">
-			<label for="em-location">Location</label>
-			<input class="form-control" type="text" id="em-location" name="location" value={ ev.Location }/>
-		</div>
-		<div class="form-group">
-			<label for="em-description">Description</label>
-			<textarea class="form-control" id="em-description" name="description" rows="3">{ ev.Description }</textarea>
-		</div>
-		<div class="form-group">
-			<label for="em-freq">Repeat</label>
-			<select class="form-control" id="em-freq" name="rrule_freq" onchange="toggleRecurrenceOpts('em')">
-				@emFreqOption("NONE", "None", eventRRuleFreq(ev))
-				@emFreqOption("DAILY", "Daily", eventRRuleFreq(ev))
-				@emFreqOption("WEEKLY", "Weekly", eventRRuleFreq(ev))
-				@emFreqOption("MONTHLY", "Monthly", eventRRuleFreq(ev))
-				@emFreqOption("YEARLY", "Yearly", eventRRuleFreq(ev))
-				@emFreqOption("CUSTOM", "Custom…", eventRRuleFreq(ev))
-			</select>
-		</div>
-		if eventRRuleIsSimple(ev) && eventRRuleFreq(ev) != "NONE" {
-			<div id="em-rrule-opts">
-				<div class="form-group">
-					<label for="em-interval">Every</label>
-					<input class="form-control" type="number" id="em-interval" name="rrule_interval" value={ eventRRuleInterval(ev) } min="1" style="max-width:100px"/>
-				</div>
-				if eventRRuleFreq(ev) == "WEEKLY" {
-					<div id="em-byday" class="form-group">
-						<label>On days</label>
-						<div class="flex gap-1" style="flex-wrap:wrap">
-							@emByDayCheckbox("em", "MO", "Mon", hasByDay(eventRRuleByDay(ev), "MO"))
-							@emByDayCheckbox("em", "TU", "Tue", hasByDay(eventRRuleByDay(ev), "TU"))
-							@emByDayCheckbox("em", "WE", "Wed", hasByDay(eventRRuleByDay(ev), "WE"))
-							@emByDayCheckbox("em", "TH", "Thu", hasByDay(eventRRuleByDay(ev), "TH"))
-							@emByDayCheckbox("em", "FR", "Fri", hasByDay(eventRRuleByDay(ev), "FR"))
-							@emByDayCheckbox("em", "SA", "Sat", hasByDay(eventRRuleByDay(ev), "SA"))
-							@emByDayCheckbox("em", "SU", "Sun", hasByDay(eventRRuleByDay(ev), "SU"))
-						</div>
-					</div>
-				} else {
-					<div id="em-byday" class="form-group" style="display:none">
-						<label>On days</label>
-						<div class="flex gap-1" style="flex-wrap:wrap">
-							@emByDayCheckbox("em", "MO", "Mon", false)
-							@emByDayCheckbox("em", "TU", "Tue", false)
-							@emByDayCheckbox("em", "WE", "Wed", false)
-							@emByDayCheckbox("em", "TH", "Thu", false)
-							@emByDayCheckbox("em", "FR", "Fri", false)
-							@emByDayCheckbox("em", "SA", "Sat", false)
-							@emByDayCheckbox("em", "SU", "Sun", false)
-						</div>
-					</div>
-				}
-				<div class="form-group">
-					<label for="em-until">Until (optional)</label>
-					<input class="form-control" type="date" id="em-until" name="rrule_until" value={ eventRRuleUntil(ev) } style="max-width:200px"/>
-				</div>
-			</div>
-			<div id="em-rrule-custom" style="display:none">
-				<div class="form-group">
-					<label for="em-rrule">Custom RRULE</label>
-					<input class="form-control" type="text" id="em-rrule" name="rrule" placeholder="e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10" hx-get="/apps/calendar/rrule-preview" hx-trigger="input changed delay:300ms" hx-target="#em-rrule-desc"/>
-					<div id="em-rrule-desc" class="text-muted" style="font-size:0.85rem;margin-top:0.25rem"></div>
-				</div>
-			</div>
-		} else if eventRRuleFreq(ev) == "CUSTOM" {
-			<div id="em-rrule-opts" style="display:none">
-				<div class="form-group">
-					<label for="em-interval">Every</label>
-					<input class="form-control" type="number" id="em-interval" name="rrule_interval" value="1" min="1" style="max-width:100px"/>
-				</div>
-				<div id="em-byday" class="form-group" style="display:none">
-					<label>On days</label>
-					<div class="flex gap-1" style="flex-wrap:wrap">
-						@emByDayCheckbox("em", "MO", "Mon", false)
-						@emByDayCheckbox("em", "TU", "Tue", false)
-						@emByDayCheckbox("em", "WE", "Wed", false)
-						@emByDayCheckbox("em", "TH", "Thu", false)
-						@emByDayCheckbox("em", "FR", "Fri", false)
-						@emByDayCheckbox("em", "SA", "Sat", false)
-						@emByDayCheckbox("em", "SU", "Sun", false)
-					</div>
-				</div>
-				<div class="form-group">
-					<label for="em-until">Until (optional)</label>
-					<input class="form-control" type="date" id="em-until" name="rrule_until" style="max-width:200px"/>
-				</div>
-			</div>
-			<div id="em-rrule-custom">
-				<div class="form-group">
-					<label for="em-rrule">Custom RRULE</label>
-					<input class="form-control" type="text" id="em-rrule" name="rrule" value={ eventRRuleRaw(ev) } placeholder="e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10" hx-get="/apps/calendar/rrule-preview" hx-trigger="input changed delay:300ms" hx-target="#em-rrule-desc"/>
-					<div id="em-rrule-desc" class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">{ eventRRule(ev) }</div>
-				</div>
-			</div>
-		} else {
-			<div id="em-rrule-opts" style="display:none">
-				<div class="form-group">
-					<label for="em-interval">Every</label>
-					<input class="form-control" type="number" id="em-interval" name="rrule_interval" value="1" min="1" style="max-width:100px"/>
-				</div>
-				<div id="em-byday" class="form-group" style="display:none">
-					<label>On days</label>
-					<div class="flex gap-1" style="flex-wrap:wrap">
-						@emByDayCheckbox("em", "MO", "Mon", false)
-						@emByDayCheckbox("em", "TU", "Tue", false)
-						@emByDayCheckbox("em", "WE", "Wed", false)
-						@emByDayCheckbox("em", "TH", "Thu", false)
-						@emByDayCheckbox("em", "FR", "Fri", false)
-						@emByDayCheckbox("em", "SA", "Sat", false)
-						@emByDayCheckbox("em", "SU", "Sun", false)
-					</div>
-				</div>
-				<div class="form-group">
-					<label for="em-until">Until (optional)</label>
-					<input class="form-control" type="date" id="em-until" name="rrule_until" style="max-width:200px"/>
-				</div>
-			</div>
-			<div id="em-rrule-custom" style="display:none">
-				<div class="form-group">
-					<label for="em-rrule">Custom RRULE</label>
-					<input class="form-control" type="text" id="em-rrule" name="rrule" placeholder="e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10" hx-get="/apps/calendar/rrule-preview" hx-trigger="input changed delay:300ms" hx-target="#em-rrule-desc"/>
-					<div id="em-rrule-desc" class="text-muted" style="font-size:0.85rem;margin-top:0.25rem"></div>
-				</div>
-			</div>
-		}
-		<div class="form-group">
-			<label>Attendees</label>
-			<div id="em-attendees">
-				for _, att := range attendees {
-					<div class="flex gap-1 items-center" style="margin-bottom:0.25rem">
-						<input class="form-control" type="email" name="attendee_email" value={ att.Email } placeholder="email@example.com" style="flex:1"/>
-						<input class="form-control" type="text" name="attendee_name" value={ att.DisplayName } placeholder="Name" style="flex:1"/>
-						<select class="form-control" name="attendee_role" style="width:auto">
-							if att.Role == "CHAIR" {
-								<option value="REQ-PARTICIPANT">Required</option>
-								<option value="OPT-PARTICIPANT">Optional</option>
-								<option value="CHAIR" selected>Chair</option>
-							} else if att.Role == "OPT-PARTICIPANT" {
-								<option value="REQ-PARTICIPANT">Required</option>
-								<option value="OPT-PARTICIPANT" selected>Optional</option>
-								<option value="CHAIR">Chair</option>
-							} else {
-								<option value="REQ-PARTICIPANT" selected>Required</option>
-								<option value="OPT-PARTICIPANT">Optional</option>
-								<option value="CHAIR">Chair</option>
-							}
-						</select>
-						<button type="button" class="btn btn-sm" onclick="this.parentElement.remove()">Remove</button>
-					</div>
-				}
-			</div>
-			<button type="button" class="btn btn-sm" onclick="addAttendeeRow('em-attendees')">Add attendee</button>
-		</div>
-		<div class="form-group">
-			<label for="em-color">Event Color</label>
-			<div class="flex gap-1 items-center">
-				<input class="form-control" type="color" id="em-color" name="color" value={ eventColorOrDefault(ev, cal) } data-default={ calDefaultColor(cal) } style="width:60px;padding:2px"/>
-				if ev.Color != "" {
-					<label style="font-size:0.8rem;font-weight:normal"><input type="checkbox" id="em-color-enable" checked onchange="handleColorToggleEdit(this,'em-color')"/> Custom color</label>
-				} else {
-					<label style="font-size:0.8rem;font-weight:normal"><input type="checkbox" id="em-color-enable" onchange="handleColorToggleEdit(this,'em-color')"/> Custom color</label>
-				}
-			</div>
-		</div>
-		<div class="flex gap-1" style="justify-content:space-between">
-			<button
-				type="button"
-				class="btn btn-danger"
-				hx-delete={ deleteURL(ev) }
-				if ev.Occurrence != 0 {
-					hx-include="#em-scope"
-				}
-				hx-confirm="Delete this event?"
-				hx-on::after-request="document.getElementById('event-modal').style.display='none';location.reload()"
-			>Delete</button>
-			<div class="flex gap-1">
-				<button type="button" class="btn" onclick="document.getElementById('event-modal').style.display='none'">Cancel</button>
-				<button type="submit" class="btn btn-primary">Save</button>
-			</div>
-		</div>
-	</form>
-}
-
-templ emFreqOption(value, label, selected string) {
-	if value == selected {
-		<option value={ value } selected>{ label }</option>
-	} else {
-		<option value={ value }>{ label }</option>
-	}
-}
-
-templ emByDayCheckbox(prefix, day, label string, checked bool) {
-	<label style="font-size:0.85rem;font-weight:normal">
-		if checked {
-			<input type="checkbox" name="rrule_byday" value={ day } checked/> { label }
-		} else {
-			<input type="checkbox" name="rrule_byday" value={ day }/> { label }
-		}
-	</label>
-}
-
-// deleteURL deletes the event, or with the scope chosen in the form, part of
-// a series.
-func deleteURL(ev *Event) string {
-	if ev.Occurrence != 0 {
-		return fmt.Sprintf("/apps/calendar/events/%d?occurrence=%d", ev.ID, ev.Occurrence)
-	}
-	return fmt.Sprintf("/apps/calendar/events/%d", ev.ID)
-}
-
-func eventColorOrDefault(ev *Event, cal *Calendar) string {
-	if ev.Color != "" {
-		return ev.Color
-	}
-	return calDefaultColor(cal)
-}
-func calDefaultColor(cal *Calendar) string {
-	if cal != nil && cal.Color != "" {
-		return cal.Color
-	}
-	return "#0082c9"
-}
-
 templ calSettingsPage(v *settingsView, csrfToken string) {
 	<div class="sidebar-layout">
-		@calSidebar(v.Calendars, "/apps/calendar/settings", csrfToken)
+		@calSidebar(v.Calendars, "settings")
 		<div class="sidebar-content">
-			<h1>Calendar Settings</h1>
-			@ui.Card("Create Calendar") {
-				<form method="post" action="/apps/calendar/calendars" class="flex gap-1 items-end">
+			@ui.PageHeader("Calendar settings", nil)
+			@ui.Card("New calendar") {
+				<form method="post" action="/apps/calendar/calendars">
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					<div class="form-group" style="margin-bottom:0">
-						<label for="name">Name</label>
-						<input class="form-control" type="text" id="name" name="name" placeholder="Work" required/>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="name">Name</label>
+							<input class="form-control" type="text" id="name" name="name" placeholder="Work" required/>
+						</div>
+						<div class="form-group">
+							<label for="timezone">Time zone</label>
+							<input class="form-control" type="text" id="timezone" name="timezone" list="cal-timezones" placeholder="America/Denver" data-browser-tz/>
+						</div>
+						<div class="form-group form-group-auto">
+							<label for="color">Colour</label>
+							<input class="form-control" type="color" id="color" name="color" value="#0082c9"/>
+						</div>
+						<button class="btn btn-primary" type="submit">Create</button>
 					</div>
-					<div class="form-group" style="margin-bottom:0">
-						<label for="uid">URL slug</label>
-						<input class="form-control" type="text" id="uid" name="uid" placeholder="work"/>
-					</div>
-					<div class="form-group" style="margin-bottom:0">
-						<label for="color">Color</label>
-						<input class="form-control" type="color" id="color" name="color" value="#0082c9"/>
-					</div>
-					<div class="form-group" style="margin-bottom:0">
-						<label for="timezone">Timezone</label>
-						<input class="form-control" type="text" id="timezone" name="timezone" list="cal-timezones" placeholder="America/Denver" data-browser-tz/>
-					</div>
-					<button class="btn btn-primary" type="submit">Create</button>
+					<details class="cal-more">
+						<summary>More options</summary>
+						<div class="form-group mt-1">
+							<label for="uid">Address</label>
+							<input class="form-control w-md" type="text" id="uid" name="uid" placeholder="work" aria-describedby="uid-help"/>
+							<p class="form-help" id="uid-help">The calendar's name in CalDAV URLs. Made from the name when left empty.</p>
+						</div>
+					</details>
 				</form>
 			}
-			@ui.Card("Calendars") {
+			<div class="card card-flush">
+				<h2 class="card-title">Calendars</h2>
 				if len(v.Calendars) == 0 {
-					<p class="text-muted">No calendars.</p>
+					@ui.EmptyState("", "No calendars yet. Create one above.")
 				} else {
-					<table class="table">
-						<thead>
-							<tr>
-								<th>Color</th>
-								<th>Name</th>
-								<th>Timezone</th>
-								<th>UID</th>
-								<th class="text-right">Actions</th>
-							</tr>
-						</thead>
-						<tbody>
-							for _, cal := range v.Calendars {
-								<tr id={ fmt.Sprintf("cal-%d", cal.ID) }>
-									<td>
-										<input class="form-control" type="color" name="color" value={ cal.Color } form={ fmt.Sprintf("cal-edit-%d", cal.ID) } aria-label="Color" style="width:3rem;padding:0.1rem"/>
-									</td>
-									<td>
-										<input class="form-control" type="text" name="name" value={ cal.Name } form={ fmt.Sprintf("cal-edit-%d", cal.ID) } aria-label="Name" required/>
-									</td>
-									<td>
-										<input class="form-control" type="text" name="timezone" value={ cal.Timezone } list="cal-timezones" placeholder="UTC" form={ fmt.Sprintf("cal-edit-%d", cal.ID) } aria-label="Timezone"/>
-									</td>
-									<td>
-										{ cal.UID }
+					<ul class="list cal-list">
+						for _, cal := range v.Calendars {
+							<li class="list-row" id={ fmt.Sprintf("cal-%d", cal.ID) }>
+								<span class="color-dot" style={ "background:" + cal.Color }></span>
+								<div class="list-row-main">
+									<div class="list-row-title">
+										{ cal.Name }
 										if cal.ReadOnly {
-											<span class="text-muted">(read-only)</span>
+											<span class="badge badge-outline">Read-only</span>
 										}
-									</td>
-									<td class="text-right" style="display:flex;gap:0.25rem;justify-content:flex-end">
-										<form id={ fmt.Sprintf("cal-edit-%d", cal.ID) } method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID)) }>
-											<input type="hidden" name="csrf_token" value={ csrfToken }/>
-											<button class="btn btn-sm btn-primary" type="submit">Save</button>
-										</form>
-										<cog-share-button resource="dav:collection" resource-id={ strconv.FormatInt(cal.ID, 10) }>Share</cog-share-button>
-										<button
-											class="btn btn-sm"
-											hx-delete={ fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID) }
-											hx-target={ fmt.Sprintf("#cal-%d", cal.ID) }
-											hx-swap="outerHTML"
-											hx-confirm="Delete this calendar and everything in it, tasks included?"
-										>Delete</button>
-									</td>
-								</tr>
-								<tr>
-									<td colspan="5" id={ fmt.Sprintf("cal-share-%d", cal.ID) }></td>
-								</tr>
-							}
-						</tbody>
-					</table>
+									</div>
+									<div class="list-row-meta">{ calendarMeta(cal) }</div>
+								</div>
+								<div class="list-row-actions">
+									<button type="button" class="btn btn-sm" data-modal-open={ fmt.Sprintf("cal-edit-%d", cal.ID) }>Edit</button>
+									<cog-share-button resource="dav:collection" resource-id={ strconv.FormatInt(cal.ID, 10) } share-title={ cal.Name } btn-class="btn btn-sm">Share</cog-share-button>
+									<button
+										type="button"
+										class="btn-icon btn-icon-danger"
+										aria-label={ "Delete " + cal.Name }
+										title="Delete"
+										hx-delete={ fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID) }
+										hx-target={ fmt.Sprintf("#cal-%d", cal.ID) }
+										hx-swap="outerHTML"
+										hx-confirm={ fmt.Sprintf("Delete “%s” and everything in it, tasks included?", cal.Name) }
+									>
+										@ui.Icon("trash")
+									</button>
+								</div>
+							</li>
+						}
+					</ul>
+					for _, cal := range v.Calendars {
+						@calEditDialog(cal, csrfToken)
+					}
 				}
-			}
+			</div>
 			if v.CanFeed {
 				@calFeedsCard(v, csrfToken)
 			}
 			@calSubscriptionsCard(v, csrfToken)
 			@calBirthdaysCard(v, csrfToken)
-			<datalist id="cal-timezones">
-				for _, tz := range commonTimezones {
-					<option value={ tz }></option>
-				}
-			</datalist>
+			@davAccessCard("caldav", "CalDAV sync", "Calendar apps on your phone or computer (and task apps) stay in step with these calendars through CalDAV.", v.DAVURL, v.Username)
+			@timezoneList()
 			<script>
 				(function () {
 					var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
@@ -855,177 +879,189 @@ templ calSettingsPage(v *settingsView, csrfToken string) {
 					});
 				})();
 			</script>
-			@ui.Card("CalDAV Access") {
-				<p class="text-muted">
-					Configure your CalDAV client with:
-				</p>
-				<ul>
-					<li><strong>Server:</strong> <code>your-server-url</code></li>
-					<li><strong>Path:</strong> <code>/remote.php/dav</code></li>
-					<li><strong>Username/Password:</strong> your Cog credentials or an app password</li>
-				</ul>
-			}
 		</div>
 	</div>
 }
 
+templ calEditDialog(cal Calendar, csrfToken string) {
+	@ui.Modal(fmt.Sprintf("cal-edit-%d", cal.ID), "Edit calendar") {
+		<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/calendars/%d", cal.ID)) }>
+			<div class="modal-body">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<div class="form-row">
+					<div class="form-group">
+						<label for={ fmt.Sprintf("cal-%d-name", cal.ID) }>Name</label>
+						<input class="form-control" type="text" id={ fmt.Sprintf("cal-%d-name", cal.ID) } name="name" value={ cal.Name } required/>
+					</div>
+					<div class="form-group form-group-auto">
+						<label for={ fmt.Sprintf("cal-%d-color", cal.ID) }>Colour</label>
+						<input class="form-control" type="color" id={ fmt.Sprintf("cal-%d-color", cal.ID) } name="color" value={ cal.Color }/>
+					</div>
+				</div>
+				<div class="form-group">
+					<label for={ fmt.Sprintf("cal-%d-tz", cal.ID) }>Time zone</label>
+					<input class="form-control" type="text" id={ fmt.Sprintf("cal-%d-tz", cal.ID) } name="timezone" value={ cal.Timezone } list="cal-timezones" placeholder="UTC" aria-describedby={ fmt.Sprintf("cal-%d-tz-help", cal.ID) }/>
+					<p class="form-help" id={ fmt.Sprintf("cal-%d-tz-help", cal.ID) }>For events without a zone of their own. Empty means UTC.</p>
+				</div>
+				<p class="form-help">Address: <code>{ cal.UID }</code></p>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn" data-modal-close>Cancel</button>
+				<button type="submit" class="btn btn-primary">Save</button>
+			</div>
+		</form>
+	}
+}
+
 templ calFeedsCard(v *settingsView, csrfToken string) {
-	@ui.Card("Feeds") {
-		<p class="text-muted">
+	<div class="card">
+		<h2 class="card-title">Feeds</h2>
+		<p class="card-desc">
 			A feed is a secret address any calendar app can subscribe to (webcal), without an account.
 			Anyone with the address sees the calendar, or only when you are busy; a new address or revoking it stops the old one at once.
 		</p>
-		<table class="table">
-			<thead>
-				<tr>
-					<th>Calendar</th>
-					<th>Whole calendar</th>
-					<th>Busy times only</th>
-				</tr>
-			</thead>
-			<tbody>
-				for _, cal := range v.Calendars {
-					<tr id={ fmt.Sprintf("cal-feed-%d", cal.ID) }>
-						<td>{ cal.Name }</td>
-						<td>
+		<ul class="divided-list cal-feeds">
+			for _, cal := range v.Calendars {
+				<li id={ fmt.Sprintf("cal-feed-%d", cal.ID) }>
+					<div class="cal-feed-name">
+						<span class="color-dot" style={ "background:" + cal.Color }></span>
+						{ cal.Name }
+					</div>
+					<div class="cal-feed-kinds">
+						<div class="cal-feed-kind">
+							<div class="cal-feed-label">Whole calendar</div>
 							@calFeedCell(cal, "full", v.Feeds[cal.ID].Full, csrfToken)
-						</td>
-						<td>
+						</div>
+						<div class="cal-feed-kind">
+							<div class="cal-feed-label">Busy times only</div>
 							@calFeedCell(cal, "busy", v.Feeds[cal.ID].Busy, csrfToken)
-						</td>
-					</tr>
-				}
-			</tbody>
-		</table>
-	}
+						</div>
+					</div>
+				</li>
+			}
+		</ul>
+	</div>
 }
 
 templ calFeedCell(cal Calendar, kind, url, csrfToken string) {
 	if url != "" {
 		@ui.ShareLink(url, "")
-		<div class="flex gap-1" style="margin-top:0.25rem">
-			<a class="btn btn-sm" href={ templ.SafeURL(webcalURL(url)) }>Open in calendar app</a>
-			@calFeedButton(cal, kind, "renew", "New address", csrfToken)
-			@calFeedButton(cal, kind, "revoke", "Revoke", csrfToken)
+		<div class="btn-group mt-1">
+			<a class="btn btn-sm" href={ templ.SafeURL(webcalURL(url)) }>
+				@ui.Icon("external")
+				Open in app
+			</a>
+			@calFeedButton(cal, kind, "renew", "New address", "btn btn-sm", csrfToken)
+			@calFeedButton(cal, kind, "revoke", "Revoke", "btn btn-sm btn-outline-danger", csrfToken)
 		</div>
 	} else {
-		@calFeedButton(cal, kind, "renew", "Create feed", csrfToken)
+		@calFeedButton(cal, kind, "renew", "Create feed", "btn btn-sm", csrfToken)
 	}
 }
 
-templ calFeedButton(cal Calendar, kind, action, label, csrfToken string) {
-	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/calendars/%d/feed", cal.ID)) } style="display:inline">
+templ calFeedButton(cal Calendar, kind, action, label, class, csrfToken string) {
+	<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/calendars/%d/feed", cal.ID)) } class="inline-flex">
 		<input type="hidden" name="csrf_token" value={ csrfToken }/>
 		<input type="hidden" name="kind" value={ kind }/>
 		<input type="hidden" name="action" value={ action }/>
-		<button class="btn btn-sm" type="submit">{ label }</button>
+		<button class={ class } type="submit">{ label }</button>
 	</form>
 }
 
 templ calSubscriptionsCard(v *settingsView, csrfToken string) {
-	@ui.Card("Subscriptions") {
-		<p class="text-muted">
+	<div class="card">
+		<h2 class="card-title">Subscriptions</h2>
+		<p class="card-desc">
 			A subscription is a read-only calendar filled from a feed elsewhere (a school's holidays, a team's fixtures), fetched again every hour or as often as the feed asks.
 		</p>
-		<form method="post" action="/apps/calendar/subscriptions" class="flex gap-1 items-end">
+		<form method="post" action="/apps/calendar/subscriptions" class="form-row">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
-			<div class="form-group" style="margin-bottom:0;flex:1">
+			<div class="form-group cal-sub-url">
 				<label for="sub-url">Feed address</label>
 				<input class="form-control" type="url" id="sub-url" name="url" placeholder="webcal://example.com/calendar.ics" required/>
 			</div>
-			<div class="form-group" style="margin-bottom:0">
+			<div class="form-group">
 				<label for="sub-name">Name</label>
 				<input class="form-control" type="text" id="sub-name" name="name" placeholder="School holidays"/>
 			</div>
-			<div class="form-group" style="margin-bottom:0">
-				<label for="sub-color">Color</label>
+			<div class="form-group form-group-auto">
+				<label for="sub-color">Colour</label>
 				<input class="form-control" type="color" id="sub-color" name="color" value="#7a7a7a"/>
 			</div>
 			<button class="btn btn-primary" type="submit">Subscribe</button>
 		</form>
 		if len(v.Subscriptions) > 0 {
-			<table class="table" style="margin-top:1rem">
-				<thead>
-					<tr>
-						<th>Name</th>
-						<th>Feed</th>
-						<th>Last fetched</th>
-						<th class="text-right">Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					for _, sub := range v.Subscriptions {
-						<tr id={ fmt.Sprintf("sub-%d", sub.ID) }>
-							<td>{ sub.Name }</td>
-							<td style="word-break:break-all"><code>{ sub.Source }</code></td>
-							<td>
+			<ul class="divided-list cal-subs">
+				for _, sub := range v.Subscriptions {
+					<li id={ fmt.Sprintf("sub-%d", sub.ID) }>
+						<div class="cal-sub-main">
+							<div class="font-medium">
+								<span class="color-dot" style={ "background:" + sub.Color }></span>
+								{ sub.Name }
+							</div>
+							<div class="cal-sub-source"><code>{ sub.Source }</code></div>
+							<div class="text-sm text-muted">
 								if sub.LastSuccess != "" {
-									{ sub.LastSuccess }
+									Last fetched { sub.LastSuccess }
 								} else {
-									<span class="text-muted">never</span>
+									Not fetched yet
 								}
-								if sub.LastError != "" {
-									<div class="text-danger" style="font-size:0.85rem">
-										{ fmt.Sprintf("Failed %d× — %s. Next try %s.", sub.Failures, sub.LastError, sub.NextPoll) }
-									</div>
-								}
-								if sub.Skipped > 0 {
-									<div class="text-muted" style="font-size:0.85rem">{ fmt.Sprintf("%d entries skipped (not events Cog can read).", sub.Skipped) }</div>
-								}
-							</td>
-							<td class="text-right">
-								<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/subscriptions/%d/refresh", sub.ID)) } style="display:inline">
-									<input type="hidden" name="csrf_token" value={ csrfToken }/>
-									<button class="btn btn-sm" type="submit">Refresh now</button>
-								</form>
-							</td>
-						</tr>
-					}
-				</tbody>
-			</table>
-			<p class="text-muted" style="font-size:0.85rem">Rename, recolour or delete a subscription in the calendar list above.</p>
+							</div>
+							if sub.LastError != "" {
+								<div class="text-sm text-danger">
+									{ fmt.Sprintf("Failed %d× — %s. Next try %s.", sub.Failures, sub.LastError, sub.NextPoll) }
+								</div>
+							}
+							if sub.Skipped > 0 {
+								<div class="text-sm text-muted">{ fmt.Sprintf("%d entries skipped (not events Cog can read).", sub.Skipped) }</div>
+							}
+						</div>
+						<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/calendar/subscriptions/%d/refresh", sub.ID)) }>
+							<input type="hidden" name="csrf_token" value={ csrfToken }/>
+							<button class="btn btn-sm" type="submit">Refresh now</button>
+						</form>
+					</li>
+				}
+			</ul>
+			<p class="form-help">Rename, recolour or delete a subscription in the calendar list above.</p>
 		}
-	}
+	</div>
 }
 
 templ calBirthdaysCard(v *settingsView, csrfToken string) {
-	@ui.Card("Birthdays") {
-		<form method="post" action="/apps/calendar/birthdays" class="flex gap-1 items-center">
+	<div class="card">
+		<h2 class="card-title">Birthdays</h2>
+		<form method="post" action="/apps/calendar/birthdays" class="cal-birthdays">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			if v.Birthdays != nil {
-				<p style="margin:0;flex:1">The <strong>{ v.Birthdays.Name }</strong> calendar shows the birthdays and anniversaries of your contacts, and follows them as they change.</p>
+				<p>The <strong>{ v.Birthdays.Name }</strong> calendar shows the birthdays and anniversaries of your contacts, and follows them as they change.</p>
 				<input type="hidden" name="enable" value="0"/>
-				<button class="btn btn-sm" type="submit">Turn off</button>
+				<button class="btn" type="submit">Turn off</button>
 			} else {
-				<p style="margin:0;flex:1" class="text-muted">Show your contacts' birthdays and anniversaries in a read-only calendar.</p>
+				<p class="text-muted">Show your contacts' birthdays and anniversaries in a read-only calendar.</p>
 				<input type="hidden" name="enable" value="1"/>
-				<button class="btn btn-sm btn-primary" type="submit">Turn on</button>
+				<button class="btn btn-primary" type="submit">Turn on</button>
 			}
 		</form>
-	}
+	</div>
 }
 
-func sidebarClass(activePath, itemPath string) string {
-	if activePath == itemPath {
-		return "sidebar-item active"
-	}
-	return "sidebar-item"
-}
-func formatEventTime(dtstart, dtend int64, isAllDay bool) string {
-	if dtstart == 0 {
-		return ""
-	}
-	start := time.Unix(dtstart, 0)
-	if isAllDay {
-		return start.Format("Mon, Jan 2 2006")
-	}
-	end := time.Unix(dtend, 0)
-	now := time.Now()
-	if start.Year() == now.Year() && start.YearDay() == now.YearDay() {
-		return fmt.Sprintf("Today %s – %s", start.Format("15:04"), end.Format("15:04"))
-	}
-	if start.Year() == now.Year() {
-		return fmt.Sprintf("%s %s – %s", start.Format("Mon, Jan 2"), start.Format("15:04"), end.Format("15:04"))
-	}
-	return fmt.Sprintf("%s %s – %s", start.Format("2006-01-02"), start.Format("15:04"), end.Format("15:04"))
+// davAccessCard says how to connect a CalDAV app.
+templ davAccessCard(id, title, intro, davURL, username string) {
+	<div class="card" id={ id }>
+		<h2 class="card-title">{ title }</h2>
+		<p class="card-desc">{ intro }</p>
+		<dl class="kv">
+			if davURL != "" {
+				<dt>Server</dt>
+				<dd>
+					@ui.ShareLink(davURL, "")
+				</dd>
+			}
+			<dt>Username</dt>
+			<dd><code>{ username }</code></dd>
+			<dt>Password</dt>
+			<dd>Your Cog password, or better, an <a href="/settings/security">app password</a> per device.</dd>
+		</dl>
+	</div>
 }

@@ -1,23 +1,27 @@
 package files
 
 import (
-	"path/filepath"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/ui"
 )
 
-templ recentFilesWidget(files []FileMeta) {
+templ recentFilesWidget(files []FileMeta, now time.Time) {
 	if len(files) == 0 {
-		<p class="text-muted">No files yet.</p>
+		@ui.WidgetEmpty("No files yet.", "Upload files", "/apps/files/")
 	} else {
-		for _, f := range files {
-			<div style="padding:0.4rem 0;border-bottom:1px solid var(--color-border)">
-				<a href={ templ.SafeURL("/apps/files" + filepath.Dir(f.Path)) } style="font-weight:500">
-					{ f.Name }
-				</a>
-				<div class="text-muted" style="font-size:0.85rem">
-					{ formatSize(f.Size) } — { time.Unix(f.MTime, 0).UTC().Format("Jan 2, 15:04") }
-				</div>
-			</div>
-		}
+		<ul class="widget-list">
+			for _, f := range files {
+				<li>
+					<a href={ templ.SafeURL(fileURL(f.Path)) } class="file-name font-medium">
+						@fileIcon(f.MimeType, f.IsDir, "")
+						<span>{ f.Name }</span>
+					</a>
+					<div class="text-muted text-sm">
+						{ formatSize(f.Size) } · { dirTitle(f.ParentPath) } · <span title={ fullTime(f.MTime) }>{ shortTime(f.MTime, now) }</span>
+					</div>
+				</li>
+			}
+		</ul>
 	}
 }

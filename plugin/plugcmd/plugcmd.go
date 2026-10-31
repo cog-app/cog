@@ -329,6 +329,7 @@ func (r *capturingRegistrar) RegisterWidget(w cogplugin.Widget) {
 				Title:     w.Title,
 				Priority:  int32(w.Priority),
 				WidgetKey: key,
+				Url:       w.URL,
 			},
 		},
 	})

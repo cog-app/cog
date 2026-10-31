@@ -219,7 +219,7 @@ func GetMediaByFileID(db *sql.DB, fileID int64) (*Media, error) {
 // RecentMedia returns the most recent media items by date_taken.
 func RecentMedia(db *sql.DB, limit int) ([]Media, error) {
 	rows, err := db.Query(`SELECT `+mediaCols+` FROM media m
-		ORDER BY COALESCE(m.date_taken, m.date_indexed) DESC LIMIT ?`, limit)
+		ORDER BY COALESCE(m.date_taken, m.date_indexed) DESC, m.id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -436,10 +436,15 @@ func AllMediaFileIDs(db *sql.DB) (map[int64]string, error) {
 
 // --- Albums ---
 
+// albumCoverCol selects the album's cover: the one chosen for it, or else its
+// first photo, so an album never shows an empty card when it has photos.
+const albumCoverCol = `COALESCE(a.cover_media_id, (SELECT am.media_id FROM album_media am
+		WHERE am.album_id = a.id ORDER BY am.sort_order, am.added_at, am.media_id LIMIT 1))`
+
 // ListAlbums returns all albums with their media counts.
 func ListAlbums(db *sql.DB, albumType int) ([]Album, error) {
 	q := `SELECT a.id, a.name, a.description, a.album_type, a.auto_key,
-		a.cover_media_id, a.sort_order, a.created_at, a.updated_at,
+		` + albumCoverCol + `, a.sort_order, a.created_at, a.updated_at,
 		(SELECT COUNT(*) FROM album_media am WHERE am.album_id = a.id) AS media_count
 		FROM albums a`
 	var args []any
@@ -459,7 +464,7 @@ func ListAlbums(db *sql.DB, albumType int) ([]Album, error) {
 // GetAlbum returns a single album by ID.
 func GetAlbum(db *sql.DB, id int64) (*Album, error) {
 	row := db.QueryRow(`SELECT a.id, a.name, a.description, a.album_type, a.auto_key,
-		a.cover_media_id, a.sort_order, a.created_at, a.updated_at,
+		`+albumCoverCol+`, a.sort_order, a.created_at, a.updated_at,
 		(SELECT COUNT(*) FROM album_media am WHERE am.album_id = a.id) AS media_count
 		FROM albums a WHERE a.id = ?`, id)
 	return scanAlbum(row)
@@ -507,21 +512,16 @@ func CreateAlbumRow(db *sql.DB, name, description string) (int64, error) {
 	return res.LastInsertId()
 }
 
-// UpsertAutoAlbum creates or finds an auto-album and returns its ID.
+// UpsertAutoAlbum creates or finds an auto-album and returns its ID. The
+// conflict target names the partial index's condition, which is what lets
+// SQLite match it.
 func UpsertAutoAlbum(db *sql.DB, albumType int, autoKey, name string) (int64, error) {
-	res, err := db.Exec(`INSERT INTO albums (name, album_type, auto_key)
+	var id int64
+	err := db.QueryRow(`INSERT INTO albums (name, album_type, auto_key)
 		VALUES (?, ?, ?)
-		ON CONFLICT(album_type, auto_key) DO UPDATE SET updated_at = unixepoch()`,
-		name, albumType, autoKey)
-	if err != nil {
-		return 0, err
-	}
-	id, err := res.LastInsertId()
-	if err != nil || id == 0 {
-		// ON CONFLICT hit — look up existing
-		err = db.QueryRow(`SELECT id FROM albums WHERE album_type = ? AND auto_key = ?`,
-			albumType, autoKey).Scan(&id)
-	}
+		ON CONFLICT(album_type, auto_key) WHERE album_type != 0 DO UPDATE SET updated_at = unixepoch()
+		RETURNING id`,
+		name, albumType, autoKey).Scan(&id)
 	return id, err
 }
 
@@ -545,10 +545,57 @@ func DeleteAlbumRow(db *sql.DB, id int64) error {
 	return err
 }
 
-// SetAlbumCover sets the cover media for an album.
-func SetAlbumCover(db *sql.DB, albumID, mediaID int64) error {
-	_, err := db.Exec(`UPDATE albums SET cover_media_id = ? WHERE id = ?`, mediaID, albumID)
+// RenameAlbumRow changes an album's name and description.
+func RenameAlbumRow(db *sql.DB, id int64, name, description string) error {
+	_, err := db.Exec(`UPDATE albums SET name = ?, description = ?, updated_at = unixepoch() WHERE id = ?`,
+		name, description, id)
 	return err
+}
+
+// NeighbourMedia returns the photos either side of m in timeline order
+// (newest first): newer is the one before it, older the one after. Either is
+// 0 at the end of the timeline.
+func NeighbourMedia(db *sql.DB, m *Media) (newer, older int64, err error) {
+	when := m.DateIndexed
+	if m.DateTaken != nil {
+		when = *m.DateTaken
+	}
+	err = db.QueryRow(`SELECT id FROM media
+		WHERE (COALESCE(date_taken, date_indexed), id) > (?, ?)
+		ORDER BY COALESCE(date_taken, date_indexed), id LIMIT 1`, when, m.ID).Scan(&newer)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, 0, err
+	}
+	err = db.QueryRow(`SELECT id FROM media
+		WHERE (COALESCE(date_taken, date_indexed), id) < (?, ?)
+		ORDER BY COALESCE(date_taken, date_indexed) DESC, id DESC LIMIT 1`, when, m.ID).Scan(&older)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, 0, err
+	}
+	return newer, older, nil
+}
+
+// ErrNotInAlbum is a cover chosen from outside the album.
+var ErrNotInAlbum = errors.New("the photo is not in this album")
+
+// SetAlbumCover makes one of an album's photos its cover. The choice lasts
+// until that photo leaves the album (the album_cover_removed trigger), when
+// the album goes back to showing its first photo.
+func SetAlbumCover(db *sql.DB, albumID, mediaID int64) error {
+	res, err := db.Exec(`UPDATE albums SET cover_media_id = ?
+		WHERE id = ? AND EXISTS (SELECT 1 FROM album_media WHERE album_id = ? AND media_id = ?)`,
+		mediaID, albumID, albumID, mediaID)
+	if err != nil {
+		return fmt.Errorf("set album cover: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set album cover: %w", err)
+	}
+	if n == 0 {
+		return ErrNotInAlbum
+	}
+	return nil
 }
 
 // --- Tags ---

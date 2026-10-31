@@ -66,16 +66,18 @@ func ListBookmarks(db *sql.DB, folderID *int64, tags []string, search string, so
 		return nil, 0, err
 	}
 
-	order := "b.updated_at DESC"
+	// Every order ends on the id, so rows that tie (created in the same
+	// second, say) still come back in the same order every time.
+	order := "b.updated_at DESC, b.id DESC"
 	switch sortBy {
 	case "title":
-		order = "b.title COLLATE NOCASE ASC"
+		order = "b.title COLLATE NOCASE ASC, b.id ASC"
 	case "clickcount":
-		order = "b.click_count DESC"
+		order = "b.click_count DESC, b.id DESC"
 	case "url":
-		order = "b.url ASC"
+		order = "b.url ASC, b.id ASC"
 	case "added":
-		order = "b.created_at DESC"
+		order = "b.created_at DESC, b.id DESC"
 	}
 
 	query := fmt.Sprintf("SELECT b.id, b.url, b.title, b.description, b.click_count, b.available, b.created_at, b.updated_at FROM bookmarks b WHERE %s ORDER BY %s LIMIT ? OFFSET ?", whereClause, order)
@@ -184,7 +186,7 @@ func RecordClick(db *sql.DB, url string) error {
 
 func RecentBookmarks(db *sql.DB, limit int) ([]Bookmark, error) {
 	rows, err := db.Query(
-		`SELECT id, url, title, description, click_count, available, created_at, updated_at FROM bookmarks ORDER BY updated_at DESC LIMIT ?`, limit,
+		`SELECT id, url, title, description, click_count, available, created_at, updated_at FROM bookmarks ORDER BY updated_at DESC, id DESC LIMIT ?`, limit,
 	)
 	if err != nil {
 		return nil, err
@@ -205,7 +207,7 @@ func RecentBookmarks(db *sql.DB, limit int) ([]Bookmark, error) {
 // --- Folder CRUD ---
 
 func ListFolders(db *sql.DB) ([]Folder, error) {
-	rows, err := db.Query(`SELECT id, parent_id, title, created_at, updated_at FROM folders ORDER BY title`)
+	rows, err := db.Query(`SELECT id, parent_id, title, created_at, updated_at FROM folders ORDER BY title COLLATE NOCASE, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -251,10 +253,23 @@ func DeleteFolder(db *sql.DB, id int64) error {
 	return err
 }
 
-func FolderBookmarkCount(db *sql.DB, folderID int64) int {
-	var n int
-	db.QueryRow(`SELECT COUNT(*) FROM bookmark_folders WHERE folder_id = ?`, folderID).Scan(&n)
-	return n
+// FolderCounts returns how many bookmarks each folder holds, by folder id.
+func FolderCounts(db *sql.DB) (map[int64]int, error) {
+	rows, err := db.Query(`SELECT folder_id, COUNT(*) FROM bookmark_folders GROUP BY folder_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[int64]int{}
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		counts[id] = n
+	}
+	return counts, rows.Err()
 }
 
 // --- Tag Operations ---
@@ -276,9 +291,45 @@ func ListAllTags(db *sql.DB) ([]string, error) {
 	return tags, rows.Err()
 }
 
+// TagCount is a tag and the number of bookmarks that carry it.
+type TagCount struct {
+	Tag   string
+	Count int
+}
+
+// ListTagCounts returns every tag with its number of bookmarks, by name.
+func ListTagCounts(db *sql.DB) ([]TagCount, error) {
+	rows, err := db.Query(`SELECT tag, COUNT(*) FROM tags GROUP BY tag ORDER BY tag COLLATE NOCASE, tag`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tags []TagCount
+	for rows.Next() {
+		var t TagCount
+		if err := rows.Scan(&t.Tag, &t.Count); err != nil {
+			return nil, err
+		}
+		tags = append(tags, t)
+	}
+	return tags, rows.Err()
+}
+
+// RenameTag renames a tag on every bookmark. A bookmark that already has the
+// new tag keeps one copy of it.
 func RenameTag(db *sql.DB, oldTag, newTag string) error {
-	_, err := db.Exec(`UPDATE tags SET tag = ? WHERE tag = ?`, newTag, oldTag)
-	return err
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO tags (bookmark_id, tag) SELECT bookmark_id, ? FROM tags WHERE tag = ?`, newTag, oldTag); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM tags WHERE tag = ?`, oldTag); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func DeleteTag(db *sql.DB, tag string) error {
@@ -342,8 +393,8 @@ func setFolders(db *sql.DB, bookmarkID int64, folders []int64) {
 	}
 }
 
-func BookmarkCount(db *sql.DB) int {
+func BookmarkCount(db *sql.DB) (int, error) {
 	var n int
-	db.QueryRow(`SELECT COUNT(*) FROM bookmarks`).Scan(&n)
-	return n
+	err := db.QueryRow(`SELECT COUNT(*) FROM bookmarks`).Scan(&n)
+	return n, err
 }

@@ -1,9 +1,18 @@
 package recipes_test
 
 import (
+	"database/sql"
+	"fmt"
+	"image"
+	"image/color"
+	"image/png"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
+	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/internal/testing/webtest"
 	"git.duckfam.us/jj-software/cog/plugin/recipes"
 )
@@ -19,6 +28,10 @@ func TestBrowser(t *testing.T) {
 	env.CreateUser(t, "delete", "pass")
 	env.CreateUser(t, "category", "pass")
 	env.CreateUser(t, "import", "pass")
+	env.CreateUser(t, "full", "pass")
+	fullID := seedRecipes(t, env, "full")
+	env.CreateUser(t, "rowdelete", "pass")
+	seedOne(t, env, "rowdelete", recipes.Recipe{Name: "Only soup", Category: "Soups"})
 
 	t.Run("EmptyState", func(t *testing.T) {
 		b := eng.Start(t)
@@ -71,9 +84,24 @@ func TestBrowser(t *testing.T) {
 		b.Type(t, "#name", "Delete Me")
 		b.Click(t, `main button[type="submit"]`)
 		b.WaitText(t, "Delete Me")
+		// The recipe's own page: deleting it goes back to the list.
 		b.AcceptConfirms(t)
-		b.Click(t, `[hx-delete]`)
-		b.WaitNotVisible(t, `[hx-delete]`)
+		b.Click(t, `.page-actions [hx-delete]`)
+		b.WaitText(t, "Deleted “Delete Me”.")
+		b.WaitText(t, "No recipes yet")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("DeleteFromList", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "rowdelete", "pass")
+		b.Navigate(t, "/apps/recipes/category/Soups")
+		b.WaitText(t, "Only soup")
+		b.AcceptConfirms(t)
+		b.Click(t, `.list-row [hx-delete]`)
+		b.WaitText(t, "No recipes in this category")
+		require.False(t, b.HasElement(t, ".sidebar .count"), "sidebar still counts the deleted recipe")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -97,8 +125,134 @@ func TestBrowser(t *testing.T) {
 		b := eng.Start(t)
 		b.Login(t, "import", "pass")
 		b.Navigate(t, "/apps/recipes/import")
-		b.WaitText(t, "Import Recipe")
+		b.WaitText(t, "Import recipe")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
+
+	t.Run("FullRecipe", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "full", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/recipes/recipe/%d", fullID))
+		b.WaitText(t, "Ingredients")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("FullEditForm", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "full", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/recipes/recipe/%d/edit", fullID))
+		b.WaitVisible(t, "#ingredients")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("ManyRecipes", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "full", "pass")
+		b.Navigate(t, "/apps/recipes/")
+		b.WaitText(t, "Overnight oats")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("KeywordView", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "full", "pass")
+		b.Navigate(t, "/apps/recipes/keyword/vegetarian")
+		b.WaitText(t, "Overnight oats")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+}
+
+// seedRecipes gives a user several recipes, one of them complete (times,
+// yield, cuisine, calories, source, many ingredients, long steps, tags),
+// with the clock advanced between inserts so the list order is fixed. It
+// returns the complete recipe's id.
+func seedRecipes(t *testing.T, env *cogtest.Env, username string) int64 {
+	t.Helper()
+	raw, ok := env.Providers.Plugins.Plugin(recipes.PluginID)
+	require.True(t, ok, "recipes plugin not registered")
+	db, err := raw.(*recipes.Plugin).DB(username)
+	require.NoError(t, err)
+
+	add := func(r recipes.Recipe, ingredients, steps, keywords []string) int64 {
+		t.Helper()
+		env.Clock.Advance(time.Minute)
+		id, err := recipes.CreateRecipe(db, &r)
+		require.NoError(t, err)
+		require.NoError(t, recipes.SetIngredients(db, id, ingredients))
+		require.NoError(t, recipes.SetInstructions(db, id, steps))
+		require.NoError(t, recipes.SetKeywords(db, id, keywords))
+		return id
+	}
+
+	full := add(recipes.Recipe{
+		Name:        "Slow-roasted tomato and white bean soup with crispy garlic croutons",
+		Description: "A thick, smoky soup that tastes like it took all day. Most of the time is hands-off in the oven, and the croutons can be made while the tomatoes roast.",
+		SourceURL:   "https://www.recipes.example.com/soups/slow-roasted-tomato-and-white-bean-soup-with-crispy-garlic-croutons-1234567",
+		Category:    "Soups",
+		Cuisine:     "Italian",
+		RecipeYield: "6 servings",
+		PrepTime:    "PT20M",
+		CookTime:    "PT1H30M",
+		TotalTime:   "PT1H50M",
+		Calories:    "410 kcal",
+	}, []string{
+		"1.5 kg ripe plum tomatoes, halved",
+		"1 head garlic, cloves separated and peeled",
+		"3 tbsp olive oil, plus more for drizzling",
+		"2 × 400 g tins cannellini beans, drained and rinsed",
+		"750 ml vegetable stock",
+		"1 tsp smoked paprika",
+		"Salt and freshly ground black pepper",
+		"4 thick slices day-old sourdough, torn into bite-sized pieces",
+		"A small handful of basil leaves, to serve",
+	}, []string{
+		"Heat the oven to 160°C (140°C fan). Spread the tomatoes cut-side up on a large roasting tray with half the garlic, drizzle with 2 tbsp oil, season generously, and roast for 1 hour 15 minutes until collapsed and caramelised at the edges.",
+		"Scrape everything into a large pan, add the beans, stock and paprika, and simmer for 15 minutes.",
+		"Meanwhile, toss the bread with the remaining oil and garlic (finely sliced) and bake for 10–12 minutes until golden.",
+		"Blend half the soup until smooth, stir it back in, and adjust the seasoning.",
+		"Serve topped with croutons, basil and a final drizzle of oil.",
+	}, []string{"soup", "vegetarian", "make-ahead", "freezer-friendly", "winter"})
+	giveImage(t, raw.(*recipes.Plugin), db, username, full)
+
+	add(recipes.Recipe{Name: "Overnight oats", Category: "Breakfast", TotalTime: "PT5M", RecipeYield: "1 serving"},
+		[]string{"50 g oats", "150 ml milk"}, []string{"Mix and refrigerate overnight."}, []string{"vegetarian", "quick"})
+	add(recipes.Recipe{Name: "Untitled experiment"}, nil, nil, nil)
+	return full
+}
+
+// seedOne gives a user a single recipe.
+func seedOne(t *testing.T, env *cogtest.Env, username string, r recipes.Recipe) {
+	t.Helper()
+	raw, ok := env.Providers.Plugins.Plugin(recipes.PluginID)
+	require.True(t, ok, "recipes plugin not registered")
+	db, err := raw.(*recipes.Plugin).DB(username)
+	require.NoError(t, err)
+	_, err = recipes.CreateRecipe(db, &r)
+	require.NoError(t, err)
+}
+
+// giveImage stores a generated photo for a recipe, as an import would. It is
+// a fixed gradient, so the snapshot does not depend on a download.
+func giveImage(t *testing.T, p *recipes.Plugin, db *sql.DB, username string, id int64) {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 320, 180))
+	for y := range 180 {
+		for x := range 320 {
+			img.Set(x, y, color.RGBA{R: uint8(200 + x/8), G: uint8(90 + y/3), B: 60, A: 255})
+		}
+	}
+	dir := p.ImagesDir(username)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	name := fmt.Sprintf("%d.png", id)
+	f, err := os.Create(filepath.Join(dir, name))
+	require.NoError(t, err)
+	require.NoError(t, png.Encode(f, img))
+	require.NoError(t, f.Close())
+	_, err = db.Exec(`UPDATE recipes SET image_path = ? WHERE id = ?`, name, id)
+	require.NoError(t, err)
 }

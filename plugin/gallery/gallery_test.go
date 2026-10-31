@@ -3,6 +3,7 @@ package gallery_test
 import (
 	"fmt"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -161,8 +162,9 @@ func TestGalleryPeopleAndTags(t *testing.T) {
 	// Verify tag detail page shows linked media.
 	env.Get(t, "/apps/gallery/tag/groom", alice.Auth).Status(200).Contains("/apps/gallery/photo/")
 
-	// Verify person detail page shows linked media and face overlays.
-	env.Get(t, "/apps/gallery/person/1", alice.Auth).Status(200).Contains("/apps/gallery/photo/").Contains("position:absolute")
+	// Verify person detail page shows linked media, each with a way to say
+	// it is someone else.
+	env.Get(t, "/apps/gallery/person/1", alice.Auth).Status(200).Contains("/apps/gallery/photo/").Contains("/remove-face")
 
 	// Verify photo detail page shows faces sidebar.
 	env.Get(t, "/apps/gallery/photo/1", alice.Auth).Status(200).Contains("Faces")
@@ -211,13 +213,18 @@ func TestGalleryPeopleUnnamedFilter(t *testing.T) {
 		VALUES (1, 1, 0.1, 0.1, 0.2, 0.2, 5.0), (1, 2, 0.5, 0.5, 0.2, 0.2, 5.0)`)
 	require.NoError(t, err)
 
+	const (
+		allTab      = `All <span class="count">2</span>`
+		unnamedTab  = `Unnamed <span class="count">1</span>`
+		unnamedCard = `gallery-unnamed">Unnamed</span>`
+	)
 	env.Get(t, "/apps/gallery/people", alice.Auth).Status(200).
-		Contains("All (2)").Contains("Unnamed (1)").
-		Contains("Dieter").Contains("Unknown")
+		Contains(allTab).Contains(unnamedTab).
+		Contains("Dieter").Contains(unnamedCard)
 
 	env.Get(t, "/apps/gallery/people?filter=unnamed", alice.Auth).Status(200).
-		Contains("All (2)").Contains("Unnamed (1)").
-		NotContains("Dieter").Contains("Unknown")
+		Contains(allTab).Contains(unnamedTab).
+		NotContains("Dieter").Contains(unnamedCard)
 }
 
 func TestGalleryTagsPage(t *testing.T) {
@@ -352,6 +359,30 @@ func TestGalleryAlbumsCRUD(t *testing.T) {
 	require.Equal(t, 0, len(albums))
 }
 
+// A user can have any number of manual albums, while automatic albums stay
+// one per key.
+func TestManualAlbumsAreNotUnique(t *testing.T) {
+	env := cogtest.New(t, gallery.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	db, err := env.Providers.Plugins.PluginDB(alice.Username, "gallery")
+	require.NoError(t, err)
+
+	_, err = gallery.CreateAlbumRow(db, "First", "")
+	require.NoError(t, err)
+	_, err = gallery.CreateAlbumRow(db, "Second", "")
+	require.NoError(t, err)
+
+	a, err := gallery.UpsertAutoAlbum(db, gallery.AlbumCamera, "canon", "Canon")
+	require.NoError(t, err)
+	b, err := gallery.UpsertAutoAlbum(db, gallery.AlbumCamera, "canon", "Canon")
+	require.NoError(t, err)
+	require.Equal(t, a, b)
+
+	albums, err := gallery.ListAlbums(db, -1)
+	require.NoError(t, err)
+	require.Equal(t, 3, len(albums))
+}
+
 func TestGalleryToggleStar(t *testing.T) {
 	env := cogtest.New(t, gallery.New())
 	alice := env.CreateUser(t, "alice", "pass")
@@ -415,4 +446,63 @@ func TestGalleryTagMedia(t *testing.T) {
 	mediaTags, err := gallery.TagsForMedia(db, mediaID)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(mediaTags))
+}
+
+// TestGallerySetCoverAndRemove drives the album page's tile menu: "Set as
+// album cover" and "Remove from album", each a form POST that redirects back
+// to the album with a flash saying what happened.
+func TestGallerySetCoverAndRemove(t *testing.T) {
+	env := cogtest.New(t, gallery.New()).WithCookieJar(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	db, err := env.Providers.Plugins.PluginDB(alice.Username, "gallery")
+	require.NoError(t, err)
+
+	now := time.Now().Unix()
+	var ids []int64
+	for i, name := range []string{"one.jpg", "two.jpg", "elsewhere.jpg"} {
+		when := now - int64(i)*60
+		id, err := gallery.InsertMedia(db, &gallery.Media{
+			FileID: int64(100 + i), FilePath: "/Photos/" + name, FileETag: "e",
+			MimeType: "image/jpeg", Width: 800, Height: 600, DateTaken: &when, DateIndexed: now,
+		})
+		require.NoError(t, err)
+		ids = append(ids, id)
+	}
+	album, err := gallery.CreateAlbumRow(db, "Trip", "")
+	require.NoError(t, err)
+	require.NoError(t, gallery.AddMediaToAlbum(db, album, ids[0]))
+	require.NoError(t, gallery.AddMediaToAlbum(db, album, ids[1]))
+	cover := func() int64 {
+		t.Helper()
+		a, err := gallery.GetAlbum(db, album)
+		require.NoError(t, err)
+		return *a.CoverMediaID
+	}
+	require.Equal(t, ids[0], cover())
+
+	cookie, csrf := sessionAuth(t, env, alice)
+	post := func(action string, media int64) *cogtest.Response {
+		t.Helper()
+		return env.PostForm(t, fmt.Sprintf("/apps/gallery/albums/%d/%s", album, action),
+			url.Values{"media_id": {fmt.Sprint(media)}}, cookie, csrf).Status(200)
+	}
+
+	post("cover", ids[1]).Contains("“two.jpg” is now the cover of “Trip”.")
+	require.Equal(t, ids[1], cover())
+
+	// A photo that is not in the album cannot be its cover.
+	post("cover", ids[2]).Contains("“elsewhere.jpg” is not in “Trip”, so it cannot be its cover.")
+	require.Equal(t, ids[1], cover())
+
+	// The album page marks the cover and offers the others.
+	page := env.Get(t, fmt.Sprintf("/apps/gallery/album/%d", album), cookie).Status(200).ReadBody()
+	require.Equal(t, 1, strings.Count(page, `class="gallery-cover-badge"`))
+	require.Equal(t, 1, strings.Count(page, "data-set-cover"))
+
+	// Taking the cover out falls back to the first photo.
+	post("remove", ids[1]).Contains("Removed “two.jpg” from “Trip”.")
+	require.Equal(t, ids[0], cover())
+	media, err := gallery.AlbumMedia(db, album, 10, 0)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(media))
 }

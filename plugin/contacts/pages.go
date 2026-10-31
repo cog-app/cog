@@ -13,6 +13,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/a-h/templ"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -138,21 +141,49 @@ func httpError(w http.ResponseWriter, err error) {
 	http.Error(w, err.Error(), http.StatusInternalServerError)
 }
 
-// Index shows all contacts, including contacts from shared address books.
+// listView is what a page of contacts shows: all of them, one book's, or
+// the starred ones.
+type listView struct {
+	Title    string
+	Active   string // the sidebar item: "all", "starred", or a book's ID
+	Path     string // the page's URL, without ?contact
+	Books    []AddressBook
+	Cards    []CardWithBook
+	Filtered *AddressBook // the book shown, when one is
+	Starred  bool
+	CanWrite bool          // a book the user may add contacts to exists
+	Writable []AddressBook // the books a new contact may go in
+}
+
+// Index shows all contacts, including contacts from shared address books,
+// or one book's with ?book=.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	u, a, err := h.access(r)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	plugin.SetTitle(w, "Contacts")
+	v := &listView{Title: "Contacts", Active: "all", Path: "/apps/contacts/", Books: a.books(), Writable: a.writableBooks()}
+	v.CanWrite = len(v.Writable) > 0
 
 	var filter int64 = -1
-	if v := r.URL.Query().Get("book"); v != "" {
-		if filter, err = strconv.ParseInt(v, 10, 64); err != nil {
+	if s := r.URL.Query().Get("book"); s != "" {
+		if filter, err = strconv.ParseInt(s, 10, 64); err != nil {
 			http.Error(w, "invalid book", http.StatusBadRequest)
 			return
 		}
+		for i := range v.Books {
+			if v.Books[i].ID == filter {
+				v.Filtered = &v.Books[i]
+			}
+		}
+		if v.Filtered == nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		v.Title = v.Filtered.Name
+		v.Active = s
+		v.Path = "/apps/contacts/?book=" + s
 	}
 	own := a.own
 	if filter >= 0 {
@@ -166,8 +197,7 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	cards, err := store.In(own, "", 500)
-	if err != nil {
+	if v.Cards, err = store.In(own, "", 500); err != nil {
 		httpError(w, err)
 		return
 	}
@@ -191,10 +221,11 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 			sharedCards[i].OwnerUsername = sb.OwnerUsername
 			sharedCards[i].BookName = sb.Book.Name + " (" + sb.OwnerUsername + ")"
 		}
-		cards = append(cards, sharedCards...)
+		v.Cards = append(v.Cards, sharedCards...)
 	}
 
-	contactsIndexPage(a.books(), cards, plugin.CSRFToken(r)).Render(r.Context(), w)
+	plugin.SetTitle(w, v.Title)
+	h.render(w, r, contactsListPage(v, plugin.CSRFToken(r)))
 }
 
 // Starred shows starred contacts.
@@ -209,13 +240,38 @@ func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	cards, err := store.Starred(a.own, 500)
-	if err != nil {
+	v := &listView{Title: "Starred", Active: "starred", Path: "/apps/contacts/starred", Books: a.books(), Starred: true, Writable: a.writableBooks()}
+	v.CanWrite = len(v.Writable) > 0
+	if v.Cards, err = store.Starred(a.own, 500); err != nil {
 		httpError(w, err)
 		return
 	}
 	plugin.SetTitle(w, "Starred Contacts")
-	contactsStarredPage(a.books(), cards).Render(r.Context(), w)
+	h.render(w, r, contactsListPage(v, plugin.CSRFToken(r)))
+}
+
+// writableBooks lists the books a new contact may go in: the user's own,
+// then shared ones they may write to.
+func (a *access) writableBooks() []AddressBook {
+	var out []AddressBook
+	for _, b := range a.books() {
+		if _, ok := a.own[b.ID]; ok {
+			out = append(out, b)
+		}
+	}
+	for _, sb := range a.shared {
+		if sb.Perms&plugin.PermWrite != 0 {
+			out = append(out, sb.Book)
+		}
+	}
+	return out
+}
+
+// render writes a page, logging a failure: the response has begun.
+func (h *Pages) render(w http.ResponseWriter, r *http.Request, c templ.Component) {
+	if err := c.Render(r.Context(), w); err != nil {
+		h.plugin.log.Error("render contacts page", "err", err)
+	}
 }
 
 // Settings shows address book management.
@@ -226,11 +282,15 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	davURL := ""
+	if h.plugin.dav != nil {
+		davURL = strings.TrimSuffix(h.plugin.dav.BaseURL, "/") + "/remote.php/dav/"
+	}
 	plugin.SetTitle(w, "Contacts Settings")
-	contactsSettingsPage(books, plugin.CSRFToken(r)).Render(r.Context(), w)
+	h.render(w, r, contactsSettingsPage(books, davURL, u.Username, plugin.CSRFToken(r)))
 }
 
-// ContactDetail returns a contact detail partial for the modal.
+// ContactDetail returns the contact dialog for the page to open.
 func (h *Pages) ContactDetail(w http.ResponseWriter, r *http.Request) {
 	u, a, err := h.access(r)
 	if err != nil {
@@ -242,12 +302,31 @@ func (h *Pages) ContactDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	_, c, book, _, err := h.card(u, a, id, true)
+	_, c, book, writable, err := h.card(u, a, id, true)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	contactDetailModal(c, book, a.books(), plugin.CSRFToken(r)).Render(r.Context(), w)
+	d := &detailView{Card: c, Book: book, Writable: writable, CanStar: book.OwnerID == u.ID, Now: h.plugin.ctx.Now()}
+	if writable {
+		// A card moves only within its owner's books.
+		for _, b := range a.writableBooks() {
+			if b.OwnerID == book.OwnerID {
+				d.Books = append(d.Books, b)
+			}
+		}
+	}
+	h.render(w, r, contactDialog(d, plugin.CSRFToken(r)))
+}
+
+// detailView is what the contact dialog shows.
+type detailView struct {
+	Card     *Card
+	Book     *AddressBook
+	Books    []AddressBook // where the card can move to
+	Writable bool
+	CanStar  bool
+	Now      time.Time
 }
 
 // CreateContact handles POST to create a new contact, in one of the user's
@@ -281,6 +360,7 @@ func (h *Pages) CreateContact(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	plugin.SetFlash(w, plugin.Flash{Kind: "success", Message: "Added " + c.FN + "."})
 	http.Redirect(w, r, "/apps/contacts/", http.StatusSeeOther)
 }
 
@@ -332,6 +412,7 @@ func (h *Pages) UpdateContact(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	plugin.SetFlash(w, plugin.Flash{Kind: "success", Message: "Saved " + c.VCard.FN + "."})
 	http.Redirect(w, r, "/apps/contacts/", http.StatusSeeOther)
 }
 
@@ -373,6 +454,36 @@ func (h *Pages) CreateAddressBookHandler(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
+	http.Redirect(w, r, "/apps/contacts/settings", http.StatusSeeOther)
+}
+
+// UpdateAddressBookHandler handles POST to rename or recolor an address
+// book.
+func (h *Pages) UpdateAddressBookHandler(w http.ResponseWriter, r *http.Request) {
+	u := plugin.UserFromContext(r.Context())
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	b, err := h.plugin.Book(u.ID, id)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		name = b.Name
+	}
+	color := r.FormValue("color")
+	if color == "" {
+		color = b.Color
+	}
+	if err := h.plugin.UpdateBook(u.ID, id, name, color); err != nil {
+		httpError(w, err)
+		return
+	}
+	plugin.SetFlash(w, plugin.Flash{Kind: "success", Message: "Saved " + name + "."})
 	http.Redirect(w, r, "/apps/contacts/settings", http.StatusSeeOther)
 }
 
@@ -522,5 +633,5 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Return updated star button for HTMX swap.
-	ui.Star(newStarred, fmt.Sprintf("/apps/contacts/contacts/%d/star", id)).Render(r.Context(), w)
+	ui.Render(w, r, ui.Star(newStarred, fmt.Sprintf("/apps/contacts/contacts/%d/star", id)))
 }

@@ -19,20 +19,37 @@ import (
 )
 
 // sharedBrowser is one Chrome process for every engine in the test binary.
-// It is launched when the first engine needs it and closed when the last one
-// closes; a later engine launches it again. (It used to launch once, so every
-// engine created after the first one closed got a dead browser and its tests
-// skipped.) While it runs, the binary holds a browser slot (slot.go).
+// It is launched when the first engine needs it. When the last engine closes
+// it lingers for browserIdle before closing, and a later engine launches it
+// again. (It used to launch once, so every engine created after the first one
+// closed got a dead browser and its tests skipped.) While it runs, the binary
+// holds a browser slot (slot.go).
+//
+// Most suites give each subtest an engine of its own, so without the linger
+// every subtest relaunched Chrome and queued for a slot again: binaries took
+// turns subtest by subtest, each paid for every other's runtime against its
+// own go test timeout, and the largest package timed out. Lingering keeps a
+// binary's run of subtests together. Leakless (the launcher's default) kills
+// Chrome if the binary exits while it lingers.
 var sharedBrowser struct {
 	mu       sync.Mutex
 	browser  *rod.Browser
 	refCount int
-	release  func() // frees this binary's browser slot
+	release  func()      // frees this binary's browser slot
+	idle     *time.Timer // closes the browser once no engine has used it for browserIdle
 }
+
+// browserIdle is how long an unused browser keeps its slot, waiting for the
+// next subtest's engine.
+const browserIdle = 2 * time.Second
 
 func acquireBrowser() (*rod.Browser, error) {
 	sharedBrowser.mu.Lock()
 	defer sharedBrowser.mu.Unlock()
+	if sharedBrowser.idle != nil {
+		sharedBrowser.idle.Stop()
+		sharedBrowser.idle = nil
+	}
 	if sharedBrowser.browser == nil {
 		path, found := launcher.LookPath()
 		if !found {
@@ -63,12 +80,26 @@ func releaseBrowser() {
 	defer sharedBrowser.mu.Unlock()
 	sharedBrowser.refCount--
 	if sharedBrowser.refCount == 0 && sharedBrowser.browser != nil {
-		if err := sharedBrowser.browser.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "webtest: close browser: %v\n", err)
-		}
-		sharedBrowser.browser = nil
-		sharedBrowser.release()
+		var t *time.Timer
+		t = time.AfterFunc(browserIdle, func() { closeIdleBrowser(t) })
+		sharedBrowser.idle = t
 	}
+}
+
+// closeIdleBrowser closes the browser and frees the slot, unless an engine
+// took the browser again after timer t was set.
+func closeIdleBrowser(t *time.Timer) {
+	sharedBrowser.mu.Lock()
+	defer sharedBrowser.mu.Unlock()
+	if sharedBrowser.idle != t || sharedBrowser.refCount != 0 || sharedBrowser.browser == nil {
+		return
+	}
+	sharedBrowser.idle = nil
+	if err := sharedBrowser.browser.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "webtest: close browser: %v\n", err)
+	}
+	sharedBrowser.browser = nil
+	sharedBrowser.release()
 }
 
 // Engine manages a test HTTP server and opens tabs on the shared Chrome process.
