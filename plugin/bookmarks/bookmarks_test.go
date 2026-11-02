@@ -305,6 +305,36 @@ func TestBookmarksImportExport(t *testing.T) {
 	require.True(t, strings.Contains(body, "Go Website"))
 }
 
+// Export once went through ListBookmarks, whose limit clamp silently cut it
+// to 10 bookmarks, and wrote titles without escaping them.
+func TestBookmarksExportRoundTrip(t *testing.T) {
+	env := cogtest.New(t, bookmarks.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	plug, _ := env.Providers.Plugins.Plugin("bookmarks")
+	db, err := plug.(*bookmarks.Plugin).DB(alice.Username)
+	require.NoError(t, err)
+
+	const n = 15
+	for i := range n {
+		_, err := bookmarks.CreateBookmark(db, "https://example.com/?a=1&b="+strconv.Itoa(i), "Tom & Jerry <"+strconv.Itoa(i)+">", "", []string{"x&y"}, nil)
+		require.NoError(t, err)
+	}
+	body := env.Get(t, "/apps/bookmarks/export", alice.Auth).Status(200).ReadBody()
+	require.Equal(t, n, strings.Count(body, "<DT>"))
+	require.True(t, strings.Contains(body, "Tom &amp; Jerry &lt;3&gt;"))
+
+	bob := env.CreateUser(t, "bob", "pass")
+	bobDB, err := plug.(*bookmarks.Plugin).DB(bob.Username)
+	require.NoError(t, err)
+	count, err := bookmarks.ImportNetscapeHTML(bobDB, strings.NewReader(body))
+	require.NoError(t, err)
+	require.Equal(t, n, count)
+	bm, err := bookmarks.GetBookmarkByURL(bobDB, "https://example.com/?a=1&b=3")
+	require.NoError(t, err)
+	require.Equal(t, "Tom & Jerry <3>", bm.Title)
+	require.Equal(t, []string{"x&y"}, bm.Tags)
+}
+
 func TestBookmarksPage(t *testing.T) {
 	env := cogtest.New(t, bookmarks.New())
 	alice := env.CreateUser(t, "alice", "pass")

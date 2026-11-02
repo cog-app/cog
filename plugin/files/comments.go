@@ -60,7 +60,10 @@ func (p *Plugin) CreateComment(username string, fileID int64, actorID, message s
 		return nil, fmt.Errorf("create comment: %w", err)
 	}
 
-	id, _ := res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("create comment id: %w", err)
+	}
 	return &Comment{
 		ID:        id,
 		FileID:    fileID,

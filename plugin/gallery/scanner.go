@@ -138,7 +138,11 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	}
 
 	// Load system settings for feature gating.
-	sysDB, _ := p.SystemDB()
+	sysDB, err := p.SystemDB()
+	if err != nil {
+		p.log.Warn("system db; using default settings", "err", err)
+		sysDB = nil
+	}
 
 	// Stage 2.5: Pre-generate thumbnails for grid view.
 	if sysDB == nil || SettingPreviewGenerationEnabled.MustGet(sysDB) {
@@ -167,7 +171,10 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	}
 
 	// Stage 4: Reverse geocoding
-	p.reverseGeocode(galleryDB)
+	if err := p.reverseGeocode(galleryDB); err != nil {
+		p.log.Warn("geocode", "user", username, "err", err)
+		warnings = append(warnings, fmt.Sprintf("%s: geocode: %v", username, err))
+	}
 
 	// Stage 5: Auto-album generation
 	if err := p.generateAutoAlbums(ctx, galleryDB); err != nil {
@@ -359,7 +366,9 @@ func (p *Plugin) extractOCR(ctx context.Context, db *sql.DB, username string) er
 		if err != nil {
 			p.log.Warn("ocr failed", "path", m.FilePath, "err", err)
 			// Mark as attempted so we don't retry — store a sentinel.
-			db.Exec(`UPDATE media SET ocr_text = ' ' WHERE id = ?`, m.ID)
+			if _, err := db.Exec(`UPDATE media SET ocr_text = ' ' WHERE id = ?`, m.ID); err != nil {
+				return fmt.Errorf("mark %s ocr attempted: %w", m.FilePath, err)
+			}
 			continue
 		}
 		if text == "" {
@@ -367,7 +376,9 @@ func (p *Plugin) extractOCR(ctx context.Context, db *sql.DB, username string) er
 			text = " "
 		}
 
-		db.Exec(`UPDATE media SET ocr_text = ? WHERE id = ?`, text, m.ID)
+		if _, err := db.Exec(`UPDATE media SET ocr_text = ? WHERE id = ?`, text, m.ID); err != nil {
+			return fmt.Errorf("store ocr for %s: %w", m.FilePath, err)
+		}
 	}
 
 	return nil
@@ -415,11 +426,11 @@ func extractVideoMetadata(path string, m *Media) {
 }
 
 // reverseGeocode fills in place_name for media with GPS coordinates but no city.
-func (p *Plugin) reverseGeocode(db *sql.DB) {
+func (p *Plugin) reverseGeocode(db *sql.DB) error {
 	rows, err := db.Query(`SELECT id, latitude, longitude FROM media
 		WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND city = ''`)
 	if err != nil {
-		return
+		return fmt.Errorf("list ungeocoded media: %w", err)
 	}
 	defer rows.Close()
 
@@ -427,12 +438,15 @@ func (p *Plugin) reverseGeocode(db *sql.DB) {
 		var id int64
 		var lat, lon float64
 		if err := rows.Scan(&id, &lat, &lon); err != nil {
-			continue
+			return fmt.Errorf("scan ungeocoded media: %w", err)
 		}
 		city, region, country, placeName := p.geocoder.Reverse(lat, lon)
-		db.Exec(`UPDATE media SET city = ?, region = ?, country = ?, place_name = ? WHERE id = ?`,
-			city, region, country, placeName, id)
+		if _, err := db.Exec(`UPDATE media SET city = ?, region = ?, country = ?, place_name = ? WHERE id = ?`,
+			city, region, country, placeName, id); err != nil {
+			return fmt.Errorf("store place for media %d: %w", id, err)
+		}
 	}
+	return rows.Err()
 }
 
 // generateAutoAlbums creates auto-albums by date (month) and folder.
@@ -480,8 +494,8 @@ func (p *Plugin) generateAutoAlbums(ctx context.Context, db *sql.DB) error {
 		// Date album (by month)
 		monthKey := fmtMonth(ts)
 		monthName := fmtMonthName(monthKey)
-		if albumID, err := UpsertAutoAlbum(db, AlbumDate, monthKey, monthName); err == nil {
-			AddMediaToAlbum(db, albumID, r.ID)
+		if err := addToAutoAlbum(db, AlbumDate, monthKey, monthName, r.ID); err != nil {
+			return err
 		}
 
 		// Folder album
@@ -491,8 +505,8 @@ func (p *Plugin) generateAutoAlbums(ctx context.Context, db *sql.DB) error {
 			if i := strings.LastIndex(dir, "/"); i >= 0 {
 				folderName = dir[i+1:]
 			}
-			if albumID, err := UpsertAutoAlbum(db, AlbumFolder, dir, folderName); err == nil {
-				AddMediaToAlbum(db, albumID, r.ID)
+			if err := addToAutoAlbum(db, AlbumFolder, dir, folderName, r.ID); err != nil {
+				return err
 			}
 		}
 
@@ -500,8 +514,8 @@ func (p *Plugin) generateAutoAlbums(ctx context.Context, db *sql.DB) error {
 		if r.CameraModel != "" {
 			cameraKey := r.CameraMake + "/" + r.CameraModel
 			cameraName := strings.TrimSpace(r.CameraMake + " " + r.CameraModel)
-			if albumID, err := UpsertAutoAlbum(db, AlbumCamera, cameraKey, cameraName); err == nil {
-				AddMediaToAlbum(db, albumID, r.ID)
+			if err := addToAutoAlbum(db, AlbumCamera, cameraKey, cameraName, r.ID); err != nil {
+				return err
 			}
 		}
 
@@ -512,12 +526,23 @@ func (p *Plugin) generateAutoAlbums(ctx context.Context, db *sql.DB) error {
 			if r.Country != "" {
 				locationName = r.City + ", " + r.Country
 			}
-			if albumID, err := UpsertAutoAlbum(db, AlbumLocation, locationKey, locationName); err == nil {
-				AddMediaToAlbum(db, albumID, r.ID)
+			if err := addToAutoAlbum(db, AlbumLocation, locationKey, locationName, r.ID); err != nil {
+				return err
 			}
 		}
 	}
 
+	return nil
+}
+
+func addToAutoAlbum(db *sql.DB, albumType int, key, name string, mediaID int64) error {
+	albumID, err := UpsertAutoAlbum(db, albumType, key, name)
+	if err != nil {
+		return fmt.Errorf("auto-album %q: %w", key, err)
+	}
+	if err := AddMediaToAlbum(db, albumID, mediaID); err != nil {
+		return fmt.Errorf("add media %d to auto-album %q: %w", mediaID, key, err)
+	}
 	return nil
 }
 

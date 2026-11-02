@@ -30,9 +30,10 @@ func killProcess(pid int) {
 
 // rssWatchdog monitors the worker's RSS and triggers memory release or kill.
 func (p *Plugin) rssWatchdog(ctx context.Context, pid int, client scannerClient, done <-chan struct{}) {
-	sysDB, _ := p.SystemDB()
 	maxMB := uint64(2048)
-	if sysDB != nil {
+	if sysDB, err := p.SystemDB(); err != nil {
+		p.log.Warn("system db; using default worker RSS limit", "err", err)
+	} else {
 		maxMB = uint64(SettingWorkerMaxRSS.MustGet(sysDB))
 	}
 	maxBytes := maxMB * 1024 * 1024

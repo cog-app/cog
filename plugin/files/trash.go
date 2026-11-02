@@ -222,16 +222,13 @@ func (p *Plugin) PermanentDelete(username, trashName string) error {
 		return err
 	}
 
-	item, err := p.GetTrashItem(username, trashName)
-	if err != nil {
+	if _, err := p.GetTrashItem(username, trashName); err != nil {
 		return err
 	}
 
 	trashPath := filepath.Join(p.trashDir(username), trashName)
-	if item.IsDir {
-		os.RemoveAll(trashPath)
-	} else {
-		os.Remove(trashPath)
+	if err := os.RemoveAll(trashPath); err != nil {
+		return fmt.Errorf("remove trashed item: %w", err)
 	}
 
 	if _, err := db.Exec(`DELETE FROM trash WHERE trash_name = ?`, trashName); err != nil {
@@ -249,7 +246,9 @@ func (p *Plugin) EmptyTrash(username string) error {
 	}
 
 	trashDir := p.trashDir(username)
-	os.RemoveAll(trashDir)
+	if err := os.RemoveAll(trashDir); err != nil {
+		return fmt.Errorf("remove trash dir: %w", err)
+	}
 
 	if _, err := db.Exec(`DELETE FROM trash`); err != nil {
 		return fmt.Errorf("empty trash: %w", err)

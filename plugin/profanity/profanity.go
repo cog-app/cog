@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -121,7 +122,9 @@ func (p *Plugin) rootDB() (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.Exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`)
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`); err != nil {
+		return nil, fmt.Errorf("create profanity settings table: %w", err)
+	}
 	return db, nil
 }
 

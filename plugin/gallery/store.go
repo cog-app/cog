@@ -639,15 +639,12 @@ func MediaByTag(db *sql.DB, tagName string, limit, offset int) ([]Media, error) 
 
 // UpsertTag ensures a tag exists and returns its ID.
 func UpsertTag(db *sql.DB, name string, tagType int) (int64, error) {
-	res, err := db.Exec(`INSERT INTO tags (name, tag_type) VALUES (?, ?)
-		ON CONFLICT(name) DO UPDATE SET tag_type = excluded.tag_type`, name, tagType)
-	if err != nil {
-		return 0, err
-	}
-	id, err := res.LastInsertId()
-	if err != nil || id == 0 {
-		err = db.QueryRow(`SELECT id FROM tags WHERE name = ?`, name).Scan(&id)
-	}
+	// RETURNING, not LastInsertId: when the upsert updates, SQLite leaves
+	// last_insert_rowid at whatever this connection inserted before.
+	var id int64
+	err := db.QueryRow(`INSERT INTO tags (name, tag_type) VALUES (?, ?)
+		ON CONFLICT(name) DO UPDATE SET tag_type = excluded.tag_type
+		RETURNING id`, name, tagType).Scan(&id)
 	return id, err
 }
 
@@ -828,21 +825,20 @@ func DeleteFace(db *sql.DB, faceID int64) error {
 func CreatePersonFromFace(db *sql.DB, faceID int64) (int64, error) {
 	tx, err := db.Begin()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("begin new person: %w", err)
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec(`INSERT INTO people (name) VALUES ('')`)
-	if err != nil {
-		return 0, err
+	var personID int64
+	if err := tx.QueryRow(`INSERT INTO people (name, representative_face_id) VALUES ('', ?) RETURNING id`, faceID).Scan(&personID); err != nil {
+		return 0, fmt.Errorf("create person for face %d: %w", faceID, err)
 	}
-	personID, _ := res.LastInsertId()
 	if _, err := tx.Exec(`UPDATE faces SET person_id = ? WHERE id = ?`, personID, faceID); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("assign face %d: %w", faceID, err)
 	}
-	if _, err := tx.Exec(`UPDATE people SET representative_face_id = ? WHERE id = ?`, faceID, personID); err != nil {
-		return 0, err
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit new person: %w", err)
 	}
-	return personID, tx.Commit()
+	return personID, nil
 }
 
 // --- People ---
@@ -1014,11 +1010,17 @@ func PurgeRecognitions(db *sql.DB) error {
 		return err
 	}
 	defer tx.Rollback()
-	tx.Exec(`DELETE FROM media_tags`)
-	tx.Exec(`DELETE FROM faces`)
-	tx.Exec(`DELETE FROM people`)
-	tx.Exec(`DELETE FROM tags`)
-	tx.Exec(`UPDATE media SET recognition_state = 0, recognition_at = NULL, recognition_error = '' WHERE mime_type LIKE 'image/%'`)
+	for _, q := range []string{
+		`DELETE FROM media_tags`,
+		`DELETE FROM faces`,
+		`DELETE FROM people`,
+		`DELETE FROM tags`,
+		`UPDATE media SET recognition_state = 0, recognition_at = NULL, recognition_error = '' WHERE mime_type LIKE 'image/%'`,
+	} {
+		if _, err := tx.Exec(q); err != nil {
+			return fmt.Errorf("purge recognitions: %s: %w", q, err)
+		}
+	}
 	return tx.Commit()
 }
 

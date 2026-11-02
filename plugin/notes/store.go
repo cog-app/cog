@@ -71,7 +71,10 @@ func CreateNoteMeta(db *sql.DB, filename, category, etag string) (*Note, error) 
 	if err != nil {
 		return nil, err
 	}
-	id, _ := res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
 	return GetNote(db, id)
 }
 

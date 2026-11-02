@@ -235,7 +235,10 @@ func (p *Plugin) CreateDir(username, dirPath string) (*FileMeta, error) {
 		return nil, fmt.Errorf("insert dir: %w", err)
 	}
 
-	id, _ := res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("insert dir id: %w", err)
+	}
 	p.logActivity(username, "file_created", username+" created folder "+name, strconv.FormatInt(id, 10), dirPath)
 	return &FileMeta{
 		ID:         id,
@@ -310,21 +313,23 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 	etag := generateETag()
 	mimeType := detectMimeType(name)
 
-	// Upsert: if the path already exists, update it
-	res, err := db.Exec(`
+	// Upsert: if the path already exists, update it. RETURNING, not
+	// LastInsertId: when the upsert updates, SQLite leaves last_insert_rowid
+	// at whatever this connection inserted before.
+	var id int64
+	if err := db.QueryRow(`
 		INSERT INTO files (path, parent_path, name, size, mtime, mime_type, etag, is_dir)
 		VALUES (?, ?, ?, ?, ?, ?, ?, 0)
 		ON CONFLICT(path) DO UPDATE SET
 			size = excluded.size,
 			mtime = excluded.mtime,
 			mime_type = excluded.mime_type,
-			etag = excluded.etag`,
-		filePath, parentPath, name, size, now, mimeType, etag)
-	if err != nil {
+			etag = excluded.etag
+		RETURNING id`,
+		filePath, parentPath, name, size, now, mimeType, etag).Scan(&id); err != nil {
 		return nil, fmt.Errorf("upsert file: %w", err)
 	}
 
-	id, _ := res.LastInsertId()
 	p.logActivity(username, "file_created", username+" uploaded "+name, strconv.FormatInt(id, 10), filePath)
 	return &FileMeta{
 		ID:         id,
