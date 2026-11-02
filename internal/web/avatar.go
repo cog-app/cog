@@ -2,11 +2,13 @@ package web
 
 import (
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
 	"image/png"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,6 +30,9 @@ func (h *avatarHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	u, err := h.p.Users.GetByID(id)
 	if err != nil {
+		if !errors.Is(err, user.ErrNotFound) {
+			h.p.Log.Error("avatar: look up user", "user", id, "err", err)
+		}
 		h.serveInitials(w, "?", id)
 		return
 	}
@@ -39,7 +44,11 @@ func (h *avatarHandler) Serve(w http.ResponseWriter, r *http.Request) {
 		// or "..". filepath.Base strips any directory component so the
 		// lookup stays inside avatarsDir() (audit security.md #42).
 		path := filepath.Join(h.avatarsDir(), filepath.Base(u.Avatar))
-		if f, err := os.Open(path); err == nil {
+		f, err := os.Open(path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			h.p.Log.Error("avatar: open image", "user", u.ID, "err", err)
+		}
+		if err == nil {
 			defer f.Close()
 			ext := filepath.Ext(u.Avatar)
 			switch ext {
@@ -62,6 +71,9 @@ func (h *avatarHandler) ServeInitials(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	u, err := h.p.Users.GetByID(id)
 	if err != nil {
+		if !errors.Is(err, user.ErrNotFound) {
+			h.p.Log.Error("avatar: look up user", "user", id, "err", err)
+		}
 		h.serveInitials(w, "?", id)
 		return
 	}
@@ -125,10 +137,9 @@ func (h *avatarHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Remove old avatar if exists. Use filepath.Base so a malformed DB
-	// value can't redirect the Remove to a path outside avatarsDir().
+	// Remove old avatar if exists.
 	if u.Avatar != "" {
-		os.Remove(filepath.Join(h.avatarsDir(), filepath.Base(u.Avatar)))
+		h.removeFile(u.Avatar)
 	}
 
 	filename := u.ID + ext
@@ -138,7 +149,6 @@ func (h *avatarHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
 	}
-	defer out.Close()
 
 	switch ext {
 	case ".png":
@@ -146,13 +156,19 @@ func (h *avatarHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	default:
 		err = jpeg.Encode(out, img, &jpeg.Options{Quality: 85})
 	}
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
 	if err != nil {
+		h.p.Log.Error("avatar: write image", "user", u.ID, "err", err)
 		http.Error(w, "failed to encode image", http.StatusInternalServerError)
 		return
 	}
 
 	if err := h.p.Users.Update(u.ID, user.UpdateOpts{Avatar: &filename}); err != nil {
 		h.p.Log.Error("avatar update failed", "user", u.ID, "err", err)
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
 	}
 
 	http.Redirect(w, r, "/settings", http.StatusSeeOther)
@@ -162,13 +178,26 @@ func (h *avatarHandler) Upload(w http.ResponseWriter, r *http.Request) {
 func (h *avatarHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u.Avatar != "" {
-		os.Remove(filepath.Join(h.avatarsDir(), filepath.Base(u.Avatar)))
+		h.removeFile(u.Avatar)
 	}
 	empty := ""
 	if err := h.p.Users.Update(u.ID, user.UpdateOpts{Avatar: &empty}); err != nil {
 		h.p.Log.Error("avatar update failed", "user", u.ID, "err", err)
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// removeFile deletes a stored avatar image. Use filepath.Base so a malformed
+// DB value can't redirect the Remove to a path outside avatarsDir(). A file
+// that is already gone is not an error; any other failure leaves an orphan
+// behind, which is logged rather than failing the request.
+func (h *avatarHandler) removeFile(name string) {
+	err := os.Remove(filepath.Join(h.avatarsDir(), filepath.Base(name)))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		h.p.Log.Error("avatar: remove old image", "file", name, "err", err)
+	}
 }
 
 func initials(username, displayName string) string {

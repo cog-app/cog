@@ -1,6 +1,8 @@
 package gallery
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -228,9 +230,14 @@ func (a *MemoriesAPI) handlePlaces(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var p placeResp
 		if err := rows.Scan(&p.Name, &p.Country, &p.Count); err != nil {
-			continue
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		result = append(result, p)
+	}
+	if err := rows.Err(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	plugin.WriteJSON(w, http.StatusOK, result)
 }
@@ -248,8 +255,12 @@ func (a *MemoriesAPI) handleImageInfo(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 	m, err := GetMedia(db, id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	plugin.WriteJSON(w, http.StatusOK, m)
@@ -268,8 +279,12 @@ func (a *MemoriesAPI) handleImagePreview(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	m, err := GetMedia(db, id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -282,6 +297,7 @@ func (a *MemoriesAPI) handleImagePreview(w http.ResponseWriter, r *http.Request,
 
 	f, err := a.plugin.PreviewPath(u.Username, m, size)
 	if err != nil {
+		a.plugin.log.Warn("memories preview", "media", m.ID, "err", err)
 		http.Error(w, "preview unavailable", http.StatusNotFound)
 		return
 	}

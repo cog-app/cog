@@ -17,7 +17,9 @@ func (p *Plugin) Seed(username string) error {
 	store := NewStore(db)
 
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM items`).Scan(&count)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM items`).Scan(&count); err != nil {
+		return fmt.Errorf("seed feed: count items: %w", err)
+	}
 	if count > 0 {
 		return nil
 	}

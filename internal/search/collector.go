@@ -232,21 +232,11 @@ func (c *Collector) FullSync() error {
 
 		// Query all rowIDs from each table.
 		for _, table := range src.Tables() {
-			rows, err := db.Query(fmt.Sprintf("SELECT rowid FROM %s", table))
+			rowIDs, err := tableRowIDs(db, table)
 			if err != nil {
 				c.log.Error("full sync query failed", "table", table, "err", err)
 				continue
 			}
-
-			var rowIDs []int64
-			for rows.Next() {
-				var id int64
-				if err := rows.Scan(&id); err != nil {
-					continue
-				}
-				rowIDs = append(rowIDs, id)
-			}
-			rows.Close()
 
 			if len(rowIDs) == 0 {
 				continue
@@ -267,4 +257,26 @@ func (c *Collector) FullSync() error {
 		}
 	}
 	return nil
+}
+
+// tableRowIDs returns every rowid in table.
+func tableRowIDs(db *sql.DB, table string) ([]int64, error) {
+	rows, err := db.Query(fmt.Sprintf("SELECT rowid FROM %s", table))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rowIDs []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan rowid of %s: %w", table, err)
+		}
+		rowIDs = append(rowIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list rowids of %s: %w", table, err)
+	}
+	return rowIDs, nil
 }

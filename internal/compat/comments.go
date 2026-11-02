@@ -3,6 +3,7 @@ package compat
 import (
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -49,8 +50,12 @@ func (h *CommentsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify file exists
-	if _, err := h.Files.GetByID(u.Username, fileID); err != nil {
+	if _, err := h.Files.GetByID(u.Username, fileID); errors.Is(err, files.ErrNotFound) {
 		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		h.Log.Error("comments: look up file", "user", u.Username, "file", fileID, "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
@@ -78,8 +83,34 @@ func (h *CommentsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *CommentsHandler) handlePropfind(w http.ResponseWriter, username string, fileID int64) {
 	comments, err := h.Files.ListComments(username, fileID)
 	if err != nil {
+		h.Log.Error("comments: list", "user", username, "file", fileID, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Resolve the actors together, before writing the response, so a
+	// lookup failure can still be an error status. An actor whose account
+	// is gone is shown by username.
+	names := make(map[string]string, len(comments))
+	for _, c := range comments {
+		names[c.ActorID] = c.ActorID
+	}
+	if h.Users != nil {
+		actors := make([]string, 0, len(names))
+		for name := range names {
+			actors = append(actors, name)
+		}
+		found, err := h.Users.GetByUsernames(actors)
+		if err != nil {
+			h.Log.Error("comments: look up actors", "user", username, "file", fileID, "err", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		for name, u := range found {
+			if u.DisplayName != "" {
+				names[name] = u.DisplayName
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
@@ -88,15 +119,7 @@ func (h *CommentsHandler) handlePropfind(w http.ResponseWriter, username string,
 	io.WriteString(w, xml.Header)
 	io.WriteString(w, `<d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">`)
 	for _, c := range comments {
-		displayName := c.ActorID
-		if h.Users != nil {
-			if u, err := h.Users.GetByUsername(c.ActorID); err == nil {
-				displayName = u.DisplayName
-				if displayName == "" {
-					displayName = u.Username
-				}
-			}
-		}
+		displayName := names[c.ActorID]
 		fmt.Fprintf(w, `
   <d:response>
     <d:href>/remote.php/dav/comments/files/%d/%d</d:href>
@@ -140,11 +163,13 @@ func (h *CommentsHandler) handleCreate(w http.ResponseWriter, r *http.Request, u
 			ActorID string `json:"actorId"`
 			Verb    string `json:"verb"`
 		}
-		if err := json.Unmarshal(body, &jb); err == nil {
-			message = jb.Message
-			actorID = jb.ActorID
-			verb = jb.Verb
+		if err := json.Unmarshal(body, &jb); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
 		}
+		message = jb.Message
+		actorID = jb.ActorID
+		verb = jb.Verb
 	}
 
 	// Fallback: try XML, then plain text
@@ -174,6 +199,7 @@ func (h *CommentsHandler) handleCreate(w http.ResponseWriter, r *http.Request, u
 
 	comment, err := h.Files.CreateComment(username, fileID, actorID, message)
 	if err != nil {
+		h.Log.Error("comments: create", "user", username, "file", fileID, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -183,8 +209,15 @@ func (h *CommentsHandler) handleCreate(w http.ResponseWriter, r *http.Request, u
 }
 
 func (h *CommentsHandler) handleDelete(w http.ResponseWriter, username string, commentID int64) {
-	if err := h.Files.DeleteComment(username, commentID, username); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+	err := h.Files.DeleteComment(username, commentID, username)
+	if errors.Is(err, files.ErrNotFound) {
+		// Not there, or not theirs to delete.
+		http.Error(w, "comment not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.Log.Error("comments: delete", "user", username, "comment", commentID, "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

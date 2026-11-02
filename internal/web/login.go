@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -100,6 +101,7 @@ func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	if u.MFAMethod != "" {
 		pending, err := h.p.MFAPending.Create(u.ID, next)
 		if err != nil {
+			h.p.Log.Error("create mfa pending", "user", u.ID, "err", err)
 			http.Error(w, "Internal error", http.StatusInternalServerError)
 			return
 		}
@@ -136,6 +138,7 @@ func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 func (h *loginHandler) createSessionAndRedirect(w http.ResponseWriter, r *http.Request, userID, next string) {
 	sess, err := h.p.Sessions.Create(userID)
 	if err != nil {
+		h.p.Log.Error("create session", "user", userID, "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -145,7 +148,11 @@ func (h *loginHandler) createSessionAndRedirect(w http.ResponseWriter, r *http.R
 	// to confirm the cookie maps to a real session before deleting — we
 	// don't want a spoofed cookie to wipe an unrelated session.
 	if cookie, cerr := r.Cookie(auth.SessionCookieName); cerr == nil {
-		if prior, _ := h.p.Sessions.Validate(cookie.Value); prior != nil && prior.UserID == userID {
+		prior, verr := h.p.Sessions.Validate(cookie.Value)
+		if verr != nil {
+			h.p.Log.Warn("validate prior session on re-login", "err", verr)
+		}
+		if prior != nil && prior.UserID == userID {
 			if derr := h.p.Sessions.Delete(prior.ID); derr != nil {
 				h.p.Log.Warn("delete prior session on re-login", "err", derr)
 			}
@@ -167,6 +174,9 @@ func (h *loginHandler) ShowMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pending, err := h.p.MFAPending.Validate(cookie.Value)
+	if err != nil {
+		h.p.Log.Error("validate mfa pending", "err", err)
+	}
 	if err != nil || pending == nil {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
@@ -175,6 +185,7 @@ func (h *loginHandler) ShowMFA(w http.ResponseWriter, r *http.Request) {
 	// Look up the user to determine MFA method.
 	u, err := h.p.Users.GetByID(pending.UserID)
 	if err != nil {
+		h.p.Log.Error("mfa: look up user", "user", pending.UserID, "err", err)
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
@@ -200,7 +211,11 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 
 	pending, err := h.p.MFAPending.Validate(cookie.Value)
 	if err != nil || pending == nil {
-		setFlash(w, "error", "Session expired. Please log in again.")
+		var errs []error
+		if err != nil {
+			errs = append(errs, err)
+		}
+		setFlash(w, "error", "Session expired. Please log in again.", errs...)
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
@@ -218,7 +233,7 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 	// Validate the code based on the user's MFA method.
 	u, err := h.p.Users.GetByID(pending.UserID)
 	if err != nil {
-		setFlash(w, "error", "Session expired. Please log in again.")
+		setFlash(w, "error", "Session expired. Please log in again.", err)
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
@@ -231,6 +246,9 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 		valid, err = h.p.EmailOTP.Validate(pending.UserID, code)
 	default:
 		valid = false
+	}
+	if err != nil {
+		h.p.Log.Error("validate mfa code", "user", pending.UserID, "method", u.MFAMethod, "err", err)
 	}
 	if err != nil || !valid {
 		if h.p.RateLimiter != nil {
@@ -260,16 +278,10 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 
 func (h *loginHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(auth.SessionCookieName); err == nil {
-		// Identify the user from the session before deleting so we can
-		// also invalidate any concurrent MFA-pending and WebAuthn
-		// sessions for that user (audit security.md #46).
-		if sess, _ := h.p.Sessions.Validate(cookie.Value); sess != nil {
-			// Best-effort cleanup of MFA-pending tokens for this user.
-			// MFAPendingStore has no list-by-user, so we rely on the
-			// short (5m) TTL plus the per-user cleanup that fires on the
-			// next Create. Just close the active session.
-			_ = sess
-		}
+		// MFA-pending tokens for this user are not cleaned up here:
+		// MFAPendingStore has no list-by-user, so we rely on the short (5m)
+		// TTL plus the per-user cleanup that fires on the next Create
+		// (audit security.md #46). Just close the active session.
 		if err := h.p.Sessions.Delete(cookie.Value); err != nil {
 			h.p.Log.Warn("delete session on logout", "err", err)
 		}
@@ -344,14 +356,10 @@ func (h *loginHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create root mount.
-	if h.p.Volumes != nil && h.p.Mounts != nil {
-		if defVol, err := h.p.Volumes.GetByName("default"); err == nil {
-			subpath := u.Username + "/files"
-			if _, err := h.p.Mounts.Create(u.ID, "/", defVol.ID, subpath, false); err != nil {
-				h.p.Log.Error("create root mount on register", "user", u.Username, "err", err)
-			}
-		}
+	// The account exists either way, so a failed mount is logged rather
+	// than undoing the registration; an admin can add the mount later.
+	if err := createRootMount(h.p, u); err != nil {
+		h.p.Log.Error("create root mount on register", "user", u.Username, "err", err)
 	}
 
 	h.createSessionAndRedirect(w, r, u.ID, next)
@@ -401,8 +409,15 @@ func (h *loginHandler) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	// (audit security.md #23).
 	u, err := h.p.Users.GetByUsername(identifier)
 	if err != nil {
-		if eu, eerr := h.p.Users.GetByEmail(identifier); eerr == nil {
+		if !errors.Is(err, user.ErrNotFound) {
+			h.p.Log.Error("forgot password: look up username", "err", err)
+		}
+		eu, eerr := h.p.Users.GetByEmail(identifier)
+		switch {
+		case eerr == nil:
 			u = eu
+		case !errors.Is(eerr, user.ErrNotFound):
+			h.p.Log.Error("forgot password: look up email", "err", eerr)
 		}
 	}
 
@@ -435,8 +450,13 @@ func (h *loginHandler) ShowResetPassword(w http.ResponseWriter, r *http.Request)
 	}
 
 	if _, err := h.p.PasswordResets.Validate(token); err != nil {
-		setFlash(w, "error", "Invalid or expired reset link. Please request a new one.")
-		http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
+		if errors.Is(err, auth.ErrInvalidResetToken) {
+			setFlash(w, "error", "Invalid or expired reset link. Please request a new one.")
+			http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
+			return
+		}
+		h.p.Log.Error("validate password reset token", "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -465,14 +485,21 @@ func (h *loginHandler) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	}
 
 	userID, err := h.p.PasswordResets.Validate(token)
-	if err != nil {
+	if errors.Is(err, auth.ErrInvalidResetToken) {
 		setFlash(w, "error", "Invalid or expired reset link. Please request a new one.")
 		http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
 		return
 	}
+	if err != nil {
+		// Not a bad link: the check itself failed. Send the user back to the
+		// form to try again rather than telling them the link is dead.
+		setFlash(w, "error", "Something went wrong checking the reset link. Please try again.", err)
+		http.Redirect(w, r, "/reset-password?token="+url.QueryEscape(token), http.StatusSeeOther)
+		return
+	}
 
 	if err := h.p.Users.UpdatePassword(userID, password); err != nil {
-		setFlash(w, "error", "Failed to update password.")
+		setFlash(w, "error", "Failed to update password.", err)
 		http.Redirect(w, r, "/reset-password?token="+token, http.StatusSeeOther)
 		return
 	}
@@ -505,13 +532,19 @@ func (h *loginHandler) BeginWebAuthnLogin(w http.ResponseWriter, r *http.Request
 		return
 	}
 	pending, err := h.p.MFAPending.Validate(cookie.Value)
-	if err != nil || pending == nil {
+	if err != nil {
+		h.p.Log.Error("validate mfa pending", "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if pending == nil {
 		http.Error(w, "session expired", http.StatusUnauthorized)
 		return
 	}
 
 	u, err := h.p.Users.GetByID(pending.UserID)
 	if err != nil {
+		h.p.Log.Error("webauthn login: look up user", "user", pending.UserID, "err", err)
 		http.Error(w, "user not found", http.StatusInternalServerError)
 		return
 	}
@@ -523,6 +556,7 @@ func (h *loginHandler) BeginWebAuthnLogin(w http.ResponseWriter, r *http.Request
 
 	data, err := h.p.WebAuthn.BeginLogin(u.ID, u.Username, displayName)
 	if err != nil {
+		h.p.Log.Error("begin webauthn login", "user", u.ID, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -544,13 +578,19 @@ func (h *loginHandler) FinishWebAuthnLogin(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	pending, err := h.p.MFAPending.Validate(cookie.Value)
-	if err != nil || pending == nil {
+	if err != nil {
+		h.p.Log.Error("validate mfa pending", "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if pending == nil {
 		http.Error(w, "session expired", http.StatusUnauthorized)
 		return
 	}
 
 	u, err := h.p.Users.GetByID(pending.UserID)
 	if err != nil {
+		h.p.Log.Error("webauthn login: look up user", "user", pending.UserID, "err", err)
 		http.Error(w, "user not found", http.StatusInternalServerError)
 		return
 	}
@@ -566,8 +606,13 @@ func (h *loginHandler) FinishWebAuthnLogin(w http.ResponseWriter, r *http.Reques
 		displayName = u.Username
 	}
 
-	if err := h.p.WebAuthn.FinishLogin(u.ID, u.Username, displayName, body); err != nil {
+	if err := h.p.WebAuthn.FinishLogin(u.ID, u.Username, displayName, body); errors.Is(err, auth.ErrWebAuthnRejected) {
+		h.p.Log.Info("webauthn login verification failed", "user", u.ID, "err", err)
 		http.Error(w, "verification failed", http.StatusForbidden)
+		return
+	} else if err != nil {
+		h.p.Log.Error("webauthn login", "user", u.ID, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -579,6 +624,7 @@ func (h *loginHandler) FinishWebAuthnLogin(w http.ResponseWriter, r *http.Reques
 
 	sess, err := h.p.Sessions.Create(u.ID)
 	if err != nil {
+		h.p.Log.Error("create session", "user", u.ID, "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}

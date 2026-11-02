@@ -1,6 +1,7 @@
 package cog
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -9,8 +10,29 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
+
+// createRootMount mounts the default volume at the root of u's files. With
+// no volume or mount store, or no volume named "default", there is nothing to
+// mount and it does nothing.
+func createRootMount(p *services.Providers, u *user.User) error {
+	if p.Volumes == nil || p.Mounts == nil {
+		return nil
+	}
+	defVol, err := p.Volumes.GetByName("default")
+	if errors.Is(err, volume.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("create root mount for %s: %w", u.Username, err)
+	}
+	if _, err := p.Mounts.Create(u.ID, "/", defVol.ID, u.Username+"/files", false); err != nil {
+		return fmt.Errorf("create root mount for %s: %w", u.Username, err)
+	}
+	return nil
+}
 
 // --- user commands ---
 
@@ -66,21 +88,19 @@ func userCmd(plugins []plugin.Plugin) *cobra.Command {
 			isAdmin, _ := c.Flags().GetBool("admin")
 			if isAdmin {
 				admin := true
-				p.Users.Update(u.ID, user.UpdateOpts{IsAdmin: &admin})
-			}
-
-			// Create root mount pointing to default volume.
-			if p.Volumes != nil && p.Mounts != nil {
-				if defVol, volErr := p.Volumes.GetByName("default"); volErr == nil {
-					subpath := u.Username + "/files"
-					if _, err := p.Mounts.Create(u.ID, "/", defVol.ID, subpath, false); err != nil {
-						fmt.Printf("warning: create mount: %v\n", err)
-					}
+				if err := p.Users.Update(u.ID, user.UpdateOpts{IsAdmin: &admin}); err != nil {
+					return fmt.Errorf("make %s an admin: %w", u.Username, err)
 				}
 			}
 
+			if err := createRootMount(p, u); err != nil {
+				fmt.Printf("warning: %v\n", err)
+			}
+
 			// Bootstrap mounts so files directory is created.
-			mount.Bootstrap(p.Config.DataDir, p.Users, p.Volumes, p.Mounts)
+			if err := mount.Bootstrap(p.Config.DataDir, p.Users, p.Volumes, p.Mounts); err != nil {
+				return fmt.Errorf("bootstrap mounts: %w", err)
+			}
 
 			fmt.Printf("Created user %q (id: %s)\n", u.Username, u.ID)
 			return nil

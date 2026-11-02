@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -56,13 +57,10 @@ func EnsureWhisperModel(modelsDir string, model WhisperModel) (string, error) {
 		return "", fmt.Errorf("create tmp: %w", err)
 	}
 	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
-		os.Remove(tmp) //nolint:errcheck
-		return "", fmt.Errorf("copy: %w", err)
+		return "", fmt.Errorf("copy: %w", errors.Join(err, f.Close(), os.Remove(tmp)))
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(tmp) //nolint:errcheck
-		return "", err
+		return "", fmt.Errorf("close tmp: %w", errors.Join(err, os.Remove(tmp)))
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		return "", fmt.Errorf("rename: %w", err)

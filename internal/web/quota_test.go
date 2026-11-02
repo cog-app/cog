@@ -2,11 +2,13 @@ package web_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 )
@@ -57,7 +59,7 @@ func TestDeleteQuota(t *testing.T) {
 		Status(http.StatusOK)
 
 	q, err = env.Providers.Quotas.Get(vol.ID, "DEFAULT", "")
-	require.NoError(t, err)
+	require.True(t, errors.Is(err, quota.ErrNotFound), err)
 	require.Nil(t, q)
 }
 

@@ -319,6 +319,29 @@ func TestShowResetPasswordInvalidToken(t *testing.T) {
 		Status(http.StatusSeeOther)
 }
 
+// TestResetPasswordLookupFailure checks that a failure to check a reset
+// link is reported as an error, not as the link being invalid.
+func TestResetPasswordLookupFailure(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	token, err := env.Providers.PasswordResets.Create(alice.ID)
+	require.NoError(t, err)
+
+	_, err = env.Providers.DB.Exec(`ALTER TABLE password_reset_tokens RENAME TO password_reset_tokens_gone`)
+	require.NoError(t, err)
+
+	env.Get(t, "/reset-password?token="+token, cogtest.StopRedirect).
+		Status(http.StatusInternalServerError).
+		NotContains("Invalid or expired")
+
+	resp := env.PostForm(t, "/reset-password", url.Values{
+		"token":    {token},
+		"password": {"newpass"},
+		"confirm":  {"newpass"},
+	}, cogtest.StopRedirect).Status(http.StatusSeeOther)
+	require.Equal(t, "/reset-password?token="+token, resp.Header.Get("Location"))
+}
+
 func TestShowResetPasswordMissingToken(t *testing.T) {
 	env := cogtest.New(t)
 

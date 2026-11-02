@@ -1,6 +1,7 @@
 package quota_test
 
 import (
+	"errors"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/quota"
@@ -39,7 +40,7 @@ func TestGet(t *testing.T) {
 
 	// Not found returns nil, not error.
 	q, err := store.Get("nonexistent", "DEFAULT", "")
-	require.NoError(t, err)
+	require.True(t, errors.Is(err, quota.ErrNotFound), err)
 	require.Nil(t, q)
 }
 
@@ -61,7 +62,7 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 
 	q, err = store.Get(vol.ID, "DEFAULT", "")
-	require.NoError(t, err)
+	require.True(t, errors.Is(err, quota.ErrNotFound), err)
 	require.Nil(t, q)
 }
 
@@ -97,23 +98,27 @@ func TestEffectiveQuota(t *testing.T) {
 	require.NoError(t, err)
 
 	// No quotas → unlimited (-1).
-	got := store.EffectiveQuota("user1", vol.ID, nil)
+	got, err := store.EffectiveQuota("user1", vol.ID, nil)
+	require.NoError(t, err)
 	require.Equal(t, int64(-1), got)
 
 	// DEFAULT only.
 	require.NoError(t, store.Set(vol.ID, "DEFAULT", "", 5000))
-	got = store.EffectiveQuota("user1", vol.ID, nil)
+	got, err = store.EffectiveQuota("user1", vol.ID, nil)
+	require.NoError(t, err)
 	require.Equal(t, int64(5000), got)
 
 	// GROUP overrides DEFAULT, picks max across groups.
 	require.NoError(t, store.Set(vol.ID, "GROUP", "g1", 8000))
 	require.NoError(t, store.Set(vol.ID, "GROUP", "g2", 10000))
-	got = store.EffectiveQuota("user1", vol.ID, []string{"g1", "g2"})
+	got, err = store.EffectiveQuota("user1", vol.ID, []string{"g1", "g2"})
+	require.NoError(t, err)
 	require.Equal(t, int64(10000), got)
 
 	// USER overrides GROUP and DEFAULT.
 	require.NoError(t, store.Set(vol.ID, "USER", "user1", 3000))
-	got = store.EffectiveQuota("user1", vol.ID, []string{"g1", "g2"})
+	got, err = store.EffectiveQuota("user1", vol.ID, []string{"g1", "g2"})
+	require.NoError(t, err)
 	require.Equal(t, int64(3000), got)
 }
 

@@ -371,7 +371,8 @@ func (s *Server) putScheduled(bes []Backend, c *Collection, owner *User, a acces
 }
 
 // normalise writes a parsed request back out, with Cog's folding and line
-// endings.
+// endings. It returns nil when the request does not write out, which only
+// costs the client the ETag (it fetches the stored version instead).
 func normalise(obj *contentline.Component) []byte {
 	var b bytes.Buffer
 	if err := contentline.Write(&b, []*contentline.Component{obj}); err != nil {

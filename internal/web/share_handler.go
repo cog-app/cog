@@ -15,11 +15,19 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/share"
-	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
 type shareHandler struct{ handler }
+
+// shareSubjectRefs lists the subjects of recs, for a subjectNamer.
+func shareSubjectRefs(recs []share.Record) []subjectRef {
+	refs := make([]subjectRef, len(recs))
+	for i, rec := range recs {
+		refs[i] = subjectRef{rec.SubjectType, rec.SubjectID}
+	}
+	return refs
+}
 
 // SharePanel serves the HTMX share panel partial for a resource.
 // GET /api/shares/panel?type=calendar:calendar&id=5
@@ -67,7 +75,7 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 		}
 		feedHome = c.Home
 	}
-	var shares []ui.ShareDisplayItem
+	var recs []share.Record
 	for rec, err := range h.p.Shares.ListByResource(resType, resID) {
 		if err != nil {
 			h.p.Log.Error("share panel: list shares", "type", resType, "id", resID, "err", err)
@@ -77,31 +85,24 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 		if rec.OwnerUserID != u.ID {
 			continue // only show shares owned by this user
 		}
+		recs = append(recs, rec)
+	}
+	namer, err := newSubjectNamer(h.p, shareSubjectRefs(recs))
+	if err != nil {
+		h.p.Log.Error("share panel: look up sharees", "type", resType, "id", resID, "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	var shares []ui.ShareDisplayItem
+	for _, rec := range recs {
 		sd := ui.ShareDisplayItem{
 			ID:          rec.ID,
 			SubjectType: rec.SubjectType,
 			PermLabel:   permissionLabel(rec.Permissions, levels),
+			SubjectName: namer.name(subjectRef{rec.SubjectType, rec.SubjectID}, "(deleted user)"),
 		}
 		switch rec.SubjectType {
-		case "USER":
-			su, err := h.p.Users.GetByID(rec.SubjectID)
-			switch {
-			case errors.Is(err, user.ErrNotFound):
-				sd.SubjectName = "(deleted user)"
-			case err != nil:
-				h.p.Log.Error("share panel: look up sharee", "user", rec.SubjectID, "err", err)
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-				return
-			default:
-				sd.SubjectName = su.DisplayName
-				if sd.SubjectName == "" {
-					sd.SubjectName = su.Username
-				}
-			}
-		case "GROUP":
-			sd.SubjectName = rec.SubjectID
 		case "PUBLIC":
-			sd.SubjectName = "Public link"
 			if rec.Token != nil {
 				sd.Token = *rec.Token
 				sd.LinkPath = "/s/" + sd.Token
@@ -112,8 +113,6 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 					sd.LinkPath = strings.TrimPrefix(h.p.DAV.FeedURL(sd.Token, feedHome), strings.TrimSuffix(h.p.Config.BaseURL, "/"))
 				}
 			}
-		case "INSTANCE":
-			sd.SubjectName = "Everyone"
 		}
 		shares = append(shares, sd)
 	}
@@ -191,13 +190,13 @@ func (h *shareHandler) CreatePublicLinkForm(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	rec, err := h.p.Shares.CreatePublicLink(u.ID, resType, resID, perms, nil)
-	if err != nil {
+	// Public links don't propagate to specific users, so the record
+	// isn't needed.
+	if _, err := h.p.Shares.CreatePublicLink(u.ID, resType, resID, perms, nil); err != nil {
 		h.p.Log.Error("public link create failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = rec // public links don't propagate to specific users
 
 	scope := r.FormValue("panel_id")
 	r.URL.RawQuery = fmt.Sprintf("type=%s&id=%s&scope=%s", resType, resID, scope)
@@ -210,8 +209,13 @@ func (h *shareHandler) DeleteShareHTMX(w http.ResponseWriter, r *http.Request) {
 	shareID := r.PathValue("id")
 
 	rec, err := h.p.Shares.Get(shareID)
-	if err != nil {
+	if errors.Is(err, share.ErrNotFound) {
 		http.Error(w, "share not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("delete share: look up share", "share", shareID, "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 	if rec.OwnerUserID != u.ID {
@@ -222,6 +226,7 @@ func (h *shareHandler) DeleteShareHTMX(w http.ResponseWriter, r *http.Request) {
 	h.propagateShareDelete(rec)
 
 	if err := h.p.Shares.Delete(shareID); err != nil {
+		h.p.Log.Error("delete share", "share", shareID, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -418,12 +423,20 @@ func (h *shareHandler) CreateFederatedShareForm(w http.ResponseWriter, r *http.R
 	if err != nil {
 		h.p.Log.Error("send federated share", "remote", remoteHost, "err", err)
 		// Clean up.
-		h.p.Shares.Delete(rec.ID)
-		h.p.Federation.Remove(fs.ID)
+		if err := h.p.Shares.Delete(rec.ID); err != nil {
+			h.p.Log.Error("clean up federated share link", "share", rec.ID, "err", err)
+		}
+		if err := h.p.Federation.Remove(fs.ID); err != nil {
+			h.p.Log.Error("clean up federation record", "id", fs.ID, "err", err)
+		}
 		http.Error(w, "Remote server rejected: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	h.p.Federation.SetRemoteID(fs.ID, remoteID)
+	if err := h.p.Federation.SetRemoteID(fs.ID, remoteID); err != nil {
+		// The remote accepted the share, so keep it; without its remote ID
+		// a later unshare can't be sent to the remote.
+		h.p.Log.Error("record federated share remote id", "id", fs.ID, "remote", remoteHost, "err", err)
+	}
 
 	h.propagateShareCreate(rec)
 

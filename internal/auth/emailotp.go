@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"time"
 
@@ -26,16 +25,10 @@ func NewEmailOTPStore(db *sql.DB, c clock.Clock) *EmailOTPStore {
 }
 
 // Create generates a 6-digit OTP for the user. Invalidates any existing
-// unused codes for the user. Returns the plaintext code.
+// unused codes for the user in the same transaction as the insert, so a new
+// code is only handed out once the old ones have stopped working. Returns the
+// plaintext code.
 func (s *EmailOTPStore) Create(userID string) (string, error) {
-	// Lazy cleanup — best-effort but errors get logged so they're visible.
-	if _, err := s.db.Exec(`DELETE FROM email_otp WHERE expires_at < ?`, s.clock().Unix()); err != nil {
-		slog.Warn("email otp cleanup expired", "err", err)
-	}
-	if _, err := s.db.Exec(`DELETE FROM email_otp WHERE user_id = ? AND used = 0`, userID); err != nil {
-		slog.Warn("email otp invalidate previous", "user", userID, "err", err)
-	}
-
 	code, err := generateOTPCode()
 	if err != nil {
 		return "", err
@@ -44,21 +37,32 @@ func (s *EmailOTPStore) Create(userID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("hash otp: %w", err)
 	}
-
 	id, err := generateToken(16)
 	if err != nil {
 		return "", err
 	}
+	now := s.clock()
+	expires := now.Add(emailOTPDuration)
 
-	expires := s.clock().Add(emailOTPDuration)
-	_, err = s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("create email otp: begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	// The user's unused codes, and anyone's expired ones.
+	if _, err := tx.Exec(`DELETE FROM email_otp WHERE (user_id = ? AND used = 0) OR expires_at < ?`, userID, now.Unix()); err != nil {
+		return "", fmt.Errorf("invalidate previous email otp: %w", err)
+	}
+	if _, err := tx.Exec(
 		`INSERT INTO email_otp (id, user_id, code_hash, expires_at) VALUES (?, ?, ?, ?)`,
 		id, userID, string(hash), expires.Unix(),
-	)
-	if err != nil {
+	); err != nil {
 		return "", fmt.Errorf("insert email otp: %w", err)
 	}
-
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("create email otp: commit: %w", err)
+	}
 	return code, nil
 }
 
@@ -95,10 +99,17 @@ func (s *EmailOTPStore) Validate(userID, code string) (bool, error) {
 	if matched == "" {
 		return false, nil
 	}
-	if _, err := s.db.Exec(`UPDATE email_otp SET used = 1 WHERE id = ?`, matched); err != nil {
+	// used = 0 in the WHERE makes the claim atomic: of two requests racing
+	// with the same code, only one changes the row.
+	res, err := s.db.Exec(`UPDATE email_otp SET used = 1 WHERE id = ? AND used = 0`, matched)
+	if err != nil {
 		return false, fmt.Errorf("mark email otp used: %w", err)
 	}
-	return true, nil
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("rows affected: %w", err)
+	}
+	return n == 1, nil
 }
 
 // generateOTPCode returns a random 6-digit numeric code. crypto/rand failure

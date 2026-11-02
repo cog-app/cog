@@ -10,8 +10,7 @@ import (
 )
 
 // TestAppPassword_PerUserCap_Enforced verifies that Create refuses to mint
-// more than MaxAppPasswordsPerUser tokens. This bounds Validate's O(N)
-// bcrypt cost (audit security.md #11).
+// more than MaxAppPasswordsPerUser tokens.
 func TestAppPassword_PerUserCap_Enforced(t *testing.T) {
 	env := cogtest.New(t)
 	alice := env.CreateUser(t, "alice", "pass")

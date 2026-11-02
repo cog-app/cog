@@ -1,9 +1,8 @@
 package compat
 
 import (
-	"encoding/xml"
+	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -66,8 +65,13 @@ func (h *TrashbinHandler) handlePropfind(w http.ResponseWriter, r *http.Request,
 	if trashName != "" {
 		// Single item PROPFIND
 		item, err := h.Files.GetTrashItem(u.Username, trashName)
-		if err != nil {
+		if errors.Is(err, files.ErrNotFound) {
 			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			h.Log.Error("get trash item", "user", u.Username, "item", trashName, "err", err)
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
@@ -146,26 +150,15 @@ func (h *TrashbinHandler) trashToEntry(hrefPrefix string, item *files.TrashItem)
 }
 
 func (h *TrashbinHandler) writeMultiStatus(w http.ResponseWriter, entries []propfindEntry) {
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.Header().Set("DAV", "1, 3, extended-mkcol")
-	w.WriteHeader(207)
-
-	io.WriteString(w, xml.Header)
-	enc := xml.NewEncoder(w)
-	enc.Indent("", "  ")
-	enc.Encode(multiStatus{
-		DAV:       "DAV:",
-		OC:        "http://owncloud.org/ns",
-		NC:        "http://nextcloud.org/ns",
-		Responses: entries,
-	})
-	enc.Flush()
+	writeMultiStatus(h.Log, w, entries)
 }
 
 func (h *TrashbinHandler) handleDelete(w http.ResponseWriter, u *user.User, trashName string) {
 	if trashName == "" {
 		// Empty entire trash
 		if err := h.Files.EmptyTrash(u.Username); err != nil {
+			h.Log.Error("empty trash", "user", u.Username, "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -173,8 +166,12 @@ func (h *TrashbinHandler) handleDelete(w http.ResponseWriter, u *user.User, tras
 		return
 	}
 
-	if err := h.Files.PermanentDelete(u.Username, trashName); err != nil {
+	if err := h.Files.PermanentDelete(u.Username, trashName); errors.Is(err, files.ErrNotFound) {
 		w.WriteHeader(http.StatusNotFound)
+		return
+	} else if err != nil {
+		h.Log.Error("delete trash item", "user", u.Username, "item", trashName, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -186,7 +183,13 @@ func (h *TrashbinHandler) handleRestore(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	if err := h.Files.RestoreFromTrash(u.Username, trashName); err != nil {
+	err := h.Files.RestoreFromTrash(u.Username, trashName)
+	if errors.Is(err, files.ErrNotFound) {
+		http.Error(w, "trash item not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.Log.Warn("restore from trash", "user", u.Username, "item", trashName, "err", err)
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}

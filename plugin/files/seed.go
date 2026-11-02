@@ -5,9 +5,11 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -21,14 +23,26 @@ func (p *Plugin) Seed(username string) error {
 		path    string
 		content string
 	}
+	pngData, err := generatePatternPNG()
+	if err != nil {
+		return fmt.Errorf("seed png: %w", err)
+	}
+	zipData, err := generateSeedZip()
+	if err != nil {
+		return fmt.Errorf("seed zip: %w", err)
+	}
+	tarData, err := generateSeedTarGz()
+	if err != nil {
+		return fmt.Errorf("seed tar.gz: %w", err)
+	}
 	seeds := []seedFile{
 		{"Documents/welcome.md", "# Welcome to Cog\n\nThis is a sample document.\n"},
 		{"Documents/notes.txt", "Some quick notes for testing.\n"},
 		{"Photos/readme.txt", "Drop images here.\n"},
-		{"Photos/pattern.png", string(generatePatternPNG())},
+		{"Photos/pattern.png", string(pngData)},
 		{"Projects/hello.go", "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello from Cog!\")\n}\n"},
-		{"Archives/sample.zip", string(generateSeedZip())},
-		{"Archives/project.tar.gz", string(generateSeedTarGz())},
+		{"Archives/sample.zip", string(zipData)},
+		{"Archives/project.tar.gz", string(tarData)},
 	}
 
 	if fs := p.userFS(username); fs != nil {
@@ -69,7 +83,7 @@ func (p *Plugin) Seed(username string) error {
 	return nil
 }
 
-func generateSeedZip() []byte {
+func generateSeedZip() ([]byte, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
@@ -90,15 +104,19 @@ func generateSeedZip() []byte {
 		}
 		w, err := zw.CreateHeader(fh)
 		if err != nil {
-			continue
+			return nil, err
 		}
-		w.Write([]byte(content))
+		if _, err := io.WriteString(w, content); err != nil {
+			return nil, err
+		}
 	}
-	zw.Close()
-	return buf.Bytes()
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
-func generateSeedTarGz() []byte {
+func generateSeedTarGz() ([]byte, error) {
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
@@ -112,20 +130,28 @@ func generateSeedTarGz() []byte {
 
 	mtime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	for name, content := range files {
-		tw.WriteHeader(&tar.Header{
+		if err := tw.WriteHeader(&tar.Header{
 			Name:    name,
 			Size:    int64(len(content)),
 			Mode:    0644,
 			ModTime: mtime,
-		})
-		tw.Write([]byte(content))
+		}); err != nil {
+			return nil, err
+		}
+		if _, err := io.WriteString(tw, content); err != nil {
+			return nil, err
+		}
 	}
-	tw.Close()
-	gw.Close()
-	return buf.Bytes()
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	if err := gw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
-func generatePatternPNG() []byte {
+func generatePatternPNG() ([]byte, error) {
 	const size = 256
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
 	for y := range size {
@@ -138,6 +164,8 @@ func generatePatternPNG() []byte {
 		}
 	}
 	var buf bytes.Buffer
-	png.Encode(&buf, img)
-	return buf.Bytes()
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }

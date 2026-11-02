@@ -38,7 +38,7 @@ func (s *Shell) resolve(base, path string) (string, error) {
 		resolved = filepath.Join(resolved, filepath.Base(path))
 	}
 
-	if !strings.HasPrefix(resolved, s.filesDir) {
+	if !Within(resolved, s.filesDir) {
 		return "", fmt.Errorf("access denied: path outside home directory")
 	}
 	return resolved, nil
@@ -82,4 +82,11 @@ func (s *Shell) virtualToReal(vp string) string {
 		return vp
 	}
 	return ""
+}
+
+// Within reports whether path is dir or lies beneath it. A string prefix test
+// is not enough: "/data/alice/files2" starts with "/data/alice/files".
+func Within(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && (rel == "." || filepath.IsLocal(rel))
 }

@@ -2,6 +2,7 @@ package bookmarks
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -101,10 +102,8 @@ func ListBookmarks(db *sql.DB, folderID *int64, tags []string, search string, so
 		return nil, 0, err
 	}
 
-	// Load tags and folders for each bookmark.
-	for i := range bookmarks {
-		bookmarks[i].Tags = loadTags(db, bookmarks[i].ID)
-		bookmarks[i].Folders = loadFolders(db, bookmarks[i].ID)
+	if err := loadRelationsBatch(db, bookmarks, true); err != nil {
+		return nil, 0, err
 	}
 	return bookmarks, total, nil
 }
@@ -117,8 +116,9 @@ func GetBookmark(db *sql.DB, id int64) (*Bookmark, error) {
 	if err != nil {
 		return nil, err
 	}
-	bm.Tags = loadTags(db, bm.ID)
-	bm.Folders = loadFolders(db, bm.ID)
+	if err := loadRelations(db, &bm); err != nil {
+		return nil, err
+	}
 	return &bm, nil
 }
 
@@ -130,8 +130,9 @@ func GetBookmarkByURL(db *sql.DB, url string) (*Bookmark, error) {
 	if err != nil {
 		return nil, err
 	}
-	bm.Tags = loadTags(db, bm.ID)
-	bm.Folders = loadFolders(db, bm.ID)
+	if err := loadRelations(db, &bm); err != nil {
+		return nil, err
+	}
 	return &bm, nil
 }
 
@@ -142,34 +143,64 @@ func CreateBookmark(db *sql.DB, url, title, description string, tags []string, f
 		// Upsert: update existing.
 		return UpdateBookmark(db, existing.ID, &title, &description, tags, folders)
 	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("find bookmark by url: %w", err)
+	}
 
-	res, err := db.Exec(
-		`INSERT INTO bookmarks (url, title, description) VALUES (?, ?, ?)`,
-		url, title, description,
-	)
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("begin create bookmark: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(`INSERT INTO bookmarks (url, title, description) VALUES (?, ?, ?)`, url, title, description)
 	if err != nil {
 		return nil, fmt.Errorf("insert bookmark: %w", err)
 	}
-	id, _ := res.LastInsertId()
-
-	setTags(db, id, tags)
-	setFolders(db, id, folders)
-
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("insert bookmark id: %w", err)
+	}
+	if err := setTags(tx, id, tags); err != nil {
+		return nil, err
+	}
+	if err := setFolders(tx, id, folders); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit bookmark: %w", err)
+	}
 	return GetBookmark(db, id)
 }
 
 func UpdateBookmark(db *sql.DB, id int64, title, description *string, tags []string, folders []int64) (*Bookmark, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("begin update bookmark: %w", err)
+	}
+	defer tx.Rollback()
 	if title != nil {
-		db.Exec(`UPDATE bookmarks SET title = ?, updated_at = unixepoch() WHERE id = ?`, *title, id)
+		if _, err := tx.Exec(`UPDATE bookmarks SET title = ?, updated_at = unixepoch() WHERE id = ?`, *title, id); err != nil {
+			return nil, fmt.Errorf("update bookmark title: %w", err)
+		}
 	}
 	if description != nil {
-		db.Exec(`UPDATE bookmarks SET description = ?, updated_at = unixepoch() WHERE id = ?`, *description, id)
+		if _, err := tx.Exec(`UPDATE bookmarks SET description = ?, updated_at = unixepoch() WHERE id = ?`, *description, id); err != nil {
+			return nil, fmt.Errorf("update bookmark description: %w", err)
+		}
 	}
 	if tags != nil {
-		setTags(db, id, tags)
+		if err := setTags(tx, id, tags); err != nil {
+			return nil, err
+		}
 	}
 	if folders != nil {
-		setFolders(db, id, folders)
+		if err := setFolders(tx, id, folders); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit bookmark: %w", err)
 	}
 	return GetBookmark(db, id)
 }
@@ -198,10 +229,15 @@ func RecentBookmarks(db *sql.DB, limit int) ([]Bookmark, error) {
 		if err := rows.Scan(&bm.ID, &bm.URL, &bm.Title, &bm.Description, &bm.ClickCount, &bm.Available, &bm.CreatedAt, &bm.UpdatedAt); err != nil {
 			return nil, err
 		}
-		bm.Tags = loadTags(db, bm.ID)
 		bookmarks = append(bookmarks, bm)
 	}
-	return bookmarks, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := loadRelationsBatch(db, bookmarks, false); err != nil {
+		return nil, err
+	}
+	return bookmarks, nil
 }
 
 // --- Folder CRUD ---
@@ -239,7 +275,10 @@ func CreateFolder(db *sql.DB, title string, parentID *int64) (*Folder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("insert folder: %w", err)
 	}
-	id, _ := res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("insert folder id: %w", err)
+	}
 	return GetFolder(db, id)
 }
 
@@ -339,58 +378,132 @@ func DeleteTag(db *sql.DB, tag string) error {
 
 // --- Helpers ---
 
-func loadTags(db *sql.DB, bookmarkID int64) []string {
+func loadRelations(db *sql.DB, bm *Bookmark) error {
+	var err error
+	if bm.Tags, err = loadTags(db, bm.ID); err != nil {
+		return err
+	}
+	bm.Folders, err = loadFolders(db, bm.ID)
+	return err
+}
+
+// loadRelationsBatch fills in the tags, and with folders the folders, of
+// every bookmark in bms with one query each, rather than one per bookmark.
+// Callers pass at most a page (ListBookmarks caps it at 300), well under
+// SQLite's limit on bound parameters.
+func loadRelationsBatch(db *sql.DB, bms []Bookmark, folders bool) error {
+	if len(bms) == 0 {
+		return nil
+	}
+	byID := make(map[int64]*Bookmark, len(bms))
+	args := make([]any, len(bms))
+	for i := range bms {
+		byID[bms[i].ID] = &bms[i]
+		args[i] = bms[i].ID
+	}
+	in := "(?" + strings.Repeat(",?", len(bms)-1) + ")"
+
+	rows, err := db.Query(`SELECT bookmark_id, tag FROM tags WHERE bookmark_id IN `+in+` ORDER BY bookmark_id, tag`, args...)
+	if err != nil {
+		return fmt.Errorf("load tags: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var t string
+		if err := rows.Scan(&id, &t); err != nil {
+			return fmt.Errorf("scan tag: %w", err)
+		}
+		byID[id].Tags = append(byID[id].Tags, t)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("load tags: %w", err)
+	}
+	if !folders {
+		return nil
+	}
+
+	frows, err := db.Query(`SELECT bookmark_id, folder_id FROM bookmark_folders WHERE bookmark_id IN `+in+` ORDER BY bookmark_id, sort_order`, args...)
+	if err != nil {
+		return fmt.Errorf("load folders: %w", err)
+	}
+	defer frows.Close()
+	for frows.Next() {
+		var id, f int64
+		if err := frows.Scan(&id, &f); err != nil {
+			return fmt.Errorf("scan folder: %w", err)
+		}
+		byID[id].Folders = append(byID[id].Folders, f)
+	}
+	if err := frows.Err(); err != nil {
+		return fmt.Errorf("load folders: %w", err)
+	}
+	return nil
+}
+
+func loadTags(db *sql.DB, bookmarkID int64) ([]string, error) {
 	rows, err := db.Query(`SELECT tag FROM tags WHERE bookmark_id = ? ORDER BY tag`, bookmarkID)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("load tags: %w", err)
 	}
 	defer rows.Close()
 	var tags []string
 	for rows.Next() {
 		var t string
 		if err := rows.Scan(&t); err != nil {
-			return tags
+			return nil, fmt.Errorf("scan tag: %w", err)
 		}
 		tags = append(tags, t)
 	}
-	return tags
+	return tags, rows.Err()
 }
 
-func loadFolders(db *sql.DB, bookmarkID int64) []int64 {
+func loadFolders(db *sql.DB, bookmarkID int64) ([]int64, error) {
 	rows, err := db.Query(`SELECT folder_id FROM bookmark_folders WHERE bookmark_id = ? ORDER BY sort_order`, bookmarkID)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("load folders: %w", err)
 	}
 	defer rows.Close()
 	var folders []int64
 	for rows.Next() {
 		var f int64
 		if err := rows.Scan(&f); err != nil {
-			return folders
+			return nil, fmt.Errorf("scan folder: %w", err)
 		}
 		folders = append(folders, f)
 	}
-	return folders
+	return folders, rows.Err()
 }
 
-func setTags(db *sql.DB, bookmarkID int64, tags []string) {
-	db.Exec(`DELETE FROM tags WHERE bookmark_id = ?`, bookmarkID)
+func setTags(tx *sql.Tx, bookmarkID int64, tags []string) error {
+	if _, err := tx.Exec(`DELETE FROM tags WHERE bookmark_id = ?`, bookmarkID); err != nil {
+		return fmt.Errorf("clear tags: %w", err)
+	}
 	for _, t := range tags {
 		t = strings.TrimSpace(t)
-		if t != "" {
-			db.Exec(`INSERT OR IGNORE INTO tags (bookmark_id, tag) VALUES (?, ?)`, bookmarkID, t)
+		if t == "" {
+			continue
+		}
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO tags (bookmark_id, tag) VALUES (?, ?)`, bookmarkID, t); err != nil {
+			return fmt.Errorf("add tag %q: %w", t, err)
 		}
 	}
+	return nil
 }
 
-func setFolders(db *sql.DB, bookmarkID int64, folders []int64) {
-	db.Exec(`DELETE FROM bookmark_folders WHERE bookmark_id = ?`, bookmarkID)
+func setFolders(tx *sql.Tx, bookmarkID int64, folders []int64) error {
+	if _, err := tx.Exec(`DELETE FROM bookmark_folders WHERE bookmark_id = ?`, bookmarkID); err != nil {
+		return fmt.Errorf("clear folders: %w", err)
+	}
 	if len(folders) == 0 {
 		folders = []int64{-1} // root folder
 	}
 	for i, f := range folders {
-		db.Exec(`INSERT OR IGNORE INTO bookmark_folders (bookmark_id, folder_id, sort_order) VALUES (?, ?, ?)`, bookmarkID, f, i)
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO bookmark_folders (bookmark_id, folder_id, sort_order) VALUES (?, ?, ?)`, bookmarkID, f, i); err != nil {
+			return fmt.Errorf("add folder %d: %w", f, err)
+		}
 	}
+	return nil
 }
 
 func BookmarkCount(db *sql.DB) (int, error) {

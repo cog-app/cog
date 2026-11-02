@@ -3,6 +3,7 @@ package profanity
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -90,7 +91,11 @@ func CleanAudioFile(ctx context.Context, cfg TTSConfig, inputURL, outputPath str
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			slog.Error("remove audio cleaning temp dir", "path", tmpDir, "err", err)
+		}
+	}()
 
 	// Build ffmpeg filter graph.
 	// Input 0: original audio
@@ -145,6 +150,7 @@ func spliceWithTTS(ctx context.Context, cfg TTSConfig, tmpDir, inputURL, outputP
 		}
 		clipPath := filepath.Join(tmpDir, fmt.Sprintf("clip_%d.wav", i))
 		if err := GenerateTTSClip(ctx, cfg, r.ReplacementText, clipPath); err != nil {
+			slog.Error("tts clip, muting instead", "start", r.Start, "err", err)
 			clipPaths = append(clipPaths, "") // fallback to mute
 			continue
 		}
@@ -199,7 +205,9 @@ func spliceWithTTS(ctx context.Context, cfg TTSConfig, tmpDir, inputURL, outputP
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		// Fallback: use muted version without TTS.
-		os.Rename(mutedPath, outputPath)
+		if rerr := os.Rename(mutedPath, outputPath); rerr != nil {
+			return fmt.Errorf("ffmpeg splice: %w: %s (and the muted fallback could not be kept: %v)", err, out, rerr)
+		}
 		return fmt.Errorf("ffmpeg splice (falling back to muted): %w: %s", err, out)
 	}
 	return nil

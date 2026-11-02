@@ -76,6 +76,19 @@ func TestFeedIndex_HTTP(t *testing.T) {
 		}
 	})
 
+	// A search that does not parse says why, keeps what was typed, and lists
+	// nothing: falling back to every item would read as "all of these match".
+	t.Run("UnparsableSearchShowsTheError", func(t *testing.T) {
+		env.Get(t, "/apps/feed/?q="+url.QueryEscape("(TextItem"), u.Auth).
+			Status(http.StatusOK).
+			Contains(`id="feed-q-error"`).
+			Contains("unclosed parenthesis").
+			Contains(`value="(TextItem"`).
+			Contains(`aria-invalid="true"`).
+			NotContains("AudioItem").
+			NotContains("No matches")
+	})
+
 	t.Run("ItemDetailMarksRead", func(t *testing.T) {
 		url := "/apps/feed/items/" + strconv.FormatInt(textID, 10)
 		resp := env.Get(t, url, u.Auth)

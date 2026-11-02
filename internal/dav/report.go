@@ -199,8 +199,15 @@ func (q *request) calendarQuery(c *Collection, owner *User, a access, n *node) {
 			}
 			comp = cc
 			if tr := inner.child(caldav("time-range")); tr != nil {
-				start, _ = parseUTC(tr.attr("start"))
-				end, _ = parseUTC(tr.attr("end"))
+				// Either bound may be absent (open-ended); one that is present
+				// but unreadable is a bad filter, not an unbounded one.
+				var okStart, okEnd bool
+				start, okStart = parseUTC(tr.attr("start"))
+				end, okEnd = parseUTC(tr.attr("end"))
+				if (!okStart && tr.attr("start") != "") || (!okEnd && tr.attr("end") != "") {
+					writeError(q.w, http.StatusForbidden, caldav("valid-filter"), "")
+					return
+				}
 			}
 		}
 	}

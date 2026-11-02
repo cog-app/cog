@@ -1,6 +1,7 @@
 package volume
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -55,8 +56,11 @@ func (b *fileBackend) List(path string) ([]vfs.FileInfo, error) {
 	var items []vfs.FileInfo
 	for _, e := range entries {
 		info, err := e.Info()
+		if errors.Is(err, fs.ErrNotExist) {
+			continue // removed since ReadDir
+		}
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("stat %s: %w", e.Name(), err)
 		}
 		relPath := filepath.Join(path, e.Name())
 		fi := vfs.FileInfo{

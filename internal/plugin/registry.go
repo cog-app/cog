@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io/fs"
 	"iter"
@@ -190,8 +191,10 @@ func (r *Registry) Stop() {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, db := range r.dbs {
-		db.Close()
+	for key, db := range r.dbs {
+		if err := db.Close(); err != nil {
+			r.log.Error("close plugin db failed", "db", key, "err", err)
+		}
 	}
 }
 
@@ -238,8 +241,7 @@ func (r *Registry) PluginDBWith(username, pluginID string, opts cogplugin.DBOpti
 	// Assert the change-capture triggers alongside the schema, so a database
 	// cannot exist in a state where writes go unrecorded.
 	if err := db.EnsureChangeCapture(pdb, r.searchTablesFor(pluginID)); err != nil {
-		pdb.Close()
-		return nil, err
+		return nil, errors.Join(err, pdb.Close())
 	}
 
 	r.dbs[key] = pdb
@@ -271,7 +273,8 @@ func (r *Registry) schemaFor(pluginID string) fs.FS {
 
 // UserDB returns (or opens) the per-user database.
 // Path: {dataDir}/{username}/user.db
-// Creates user_settings and ssh_keys tables on first access.
+// Creates the user_settings table on first access. (SSH keys used to live
+// here too; internal/ssh/keys moves them to the system database.)
 func (r *Registry) UserDB(username string) (*sql.DB, error) {
 	key := username + ":__user__"
 	r.mu.Lock()
@@ -293,8 +296,7 @@ func (r *Registry) UserDB(username string) (*sql.DB, error) {
 	}
 
 	if err := migrateUserDB(db); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate user db: %w", err)
+		return nil, errors.Join(fmt.Errorf("migrate user db: %w", err), db.Close())
 	}
 
 	r.dbs[key] = db
@@ -307,12 +309,6 @@ func migrateUserDB(db *sql.DB) error {
 		key TEXT PRIMARY KEY,
 		value BLOB,
 		updated_at INTEGER NOT NULL
-	);
-	CREATE TABLE IF NOT EXISTS ssh_keys (
-		id TEXT PRIMARY KEY,
-		name TEXT NOT NULL,
-		public_key TEXT NOT NULL,
-		created_at INTEGER NOT NULL
 	);
 	`
 	_, err := db.Exec(schema)
@@ -371,9 +367,11 @@ func (r *Registry) SetMountResolver(mr MountResolver) {
 // If a mount resolver is set, it delegates to it; otherwise falls back to the hardcoded path.
 func (r *Registry) UserFilesDir(username string) string {
 	if r.mountResolver != nil {
-		if dir, err := r.mountResolver.UserFilesDir(username); err == nil {
+		dir, err := r.mountResolver.UserFilesDir(username)
+		if err == nil {
 			return dir
 		}
+		r.log.Warn("mount resolver UserFilesDir failed, falling back", "user", username, "err", err)
 	}
 	return filepath.Join(r.dataDir, username, "files")
 }
@@ -405,9 +403,11 @@ func (r *Registry) EnsureUserDirs(username string) error {
 // UserVFS returns a mount-aware VFS for the given user, or nil on error.
 func (r *Registry) UserVFS(username string) vfs.FS {
 	if r.mountResolver != nil {
-		if fs, err := r.mountResolver.UserFS(username); err == nil {
+		fs, err := r.mountResolver.UserFS(username)
+		if err == nil {
 			return fs
 		}
+		r.log.Error("mount resolver UserFS failed", "user", username, "err", err)
 	}
 	return nil
 }
@@ -1033,7 +1033,7 @@ func (pr *pluginRegistrar) RegisterSettingsPage(page SettingsPage) {
 	}
 	if page.Action != nil {
 		postHandler := auth.RequireAuthWeb(auth.RequireAdmin(
-			pr.injectPluginContext(pr.csrf().Require(page.Action))))
+			pr.injectPluginContext(pr.csrf().Require(pr.carryFlash(page.Action)))))
 		pr.mux.Handle("POST "+basePath, pr.wrap(postHandler))
 	}
 }
@@ -1178,6 +1178,10 @@ func (r *Registry) DiscoverProcessPlugins() {
 	for _, dir := range filepath.SplitList(pathEnv) {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
+			// PATH routinely names directories that do not exist.
+			if !errors.Is(err, fs.ErrNotExist) {
+				r.log.Warn("scan PATH for plugins", "dir", dir, "err", err)
+			}
 			continue
 		}
 		for _, entry := range entries {
@@ -1203,7 +1207,11 @@ func (r *Registry) DiscoverProcessPlugins() {
 
 			// Check if the binary is executable.
 			info, err := entry.Info()
-			if err != nil || info.Mode()&0o111 == 0 {
+			if err != nil {
+				r.log.Warn("stat process plugin", "path", filepath.Join(dir, name), "err", err)
+				continue
+			}
+			if info.Mode()&0o111 == 0 {
 				continue
 			}
 

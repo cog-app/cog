@@ -2,6 +2,7 @@ package gallery
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -121,24 +122,39 @@ func (p *Plugin) ApplyRename(username string, previews []RenamePreview) error {
 		return fmt.Errorf("next batch id: %w", err)
 	}
 
+	// One file that cannot be renamed does not stop the rest; the failures
+	// are reported together at the end.
+	var errs []error
 	for _, pr := range previews {
 		if _, err := fp.Rename(username, pr.OldPath, pr.NewPath); err != nil {
 			p.log.Error("rename", "from", pr.OldPath, "to", pr.NewPath, "err", err)
+			errs = append(errs, fmt.Errorf("%s: %w", pr.OldPath, err))
 			continue
+		}
+
+		// Log for undo first: a renamed file the batch does not know of
+		// could not be put back.
+		if err := LogRename(db, batchID, pr.FileID, pr.OldPath, pr.NewPath); err != nil {
+			p.log.Error("log rename", "from", pr.OldPath, "err", err)
+			errs = append(errs, fmt.Errorf("%s: record for undo: %w", pr.OldPath, err))
 		}
 
 		// Update gallery media path.
 		if _, err := db.Exec(`UPDATE media SET file_path = ? WHERE id = ?`, pr.NewPath, pr.MediaID); err != nil {
 			p.log.Error("update media path", "media_id", pr.MediaID, "err", err)
-		}
-
-		// Log for undo.
-		if err := LogRename(db, batchID, pr.FileID, pr.OldPath, pr.NewPath); err != nil {
-			p.log.Error("log rename", "err", err)
+			errs = append(errs, fmt.Errorf("%s: update gallery: %w", pr.OldPath, err))
 		}
 	}
 
-	return nil
+	return renameErrors(errs, len(previews))
+}
+
+// renameErrors summarises the failures of a batch of n renames, or is nil.
+func renameErrors(errs []error, n int) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%d of %d failed: %w", len(errs), n, errors.Join(errs...))
 }
 
 // UndoLastRename reverses the most recent rename batch.
@@ -161,19 +177,24 @@ func (p *Plugin) UndoLastRename(username string) error {
 	}
 
 	// Reverse in reverse order.
+	var errs []error
 	for _, e := range slices.Backward(entries) {
-
 		if _, err := fp.Rename(username, e.NewPath, e.OldPath); err != nil {
 			p.log.Error("undo rename", "from", e.NewPath, "to", e.OldPath, "err", err)
+			errs = append(errs, fmt.Errorf("%s: %w", e.NewPath, err))
 			continue
 		}
 		// Update gallery media path.
 		if _, err := db.Exec(`UPDATE media SET file_path = ? WHERE file_id = ?`, e.OldPath, e.FileID); err != nil {
 			p.log.Error("undo update media path", "file_id", e.FileID, "err", err)
+			errs = append(errs, fmt.Errorf("%s: update gallery: %w", e.OldPath, err))
 		}
 	}
 
-	return DeleteRenameBatch(db, batchID)
+	if err := DeleteRenameBatch(db, batchID); err != nil {
+		errs = append(errs, fmt.Errorf("forget batch: %w", err))
+	}
+	return renameErrors(errs, len(entries))
 }
 
 func buildRenameData(m *Media, seq int) RenameData {

@@ -6,6 +6,8 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -85,6 +87,9 @@ func tickOnce(ctx context.Context, plug *feed.Plugin, prof *profanity.Plugin, da
 		username := entry.Name()
 		dbPath := filepath.Join(dataDir, username, "app_data", feed.PluginID, "plugin.db")
 		if _, err := os.Stat(dbPath); err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				log.Error("feed orchestrator: stat db", "user", username, "err", err)
+			}
 			continue
 		}
 		if err := ctx.Err(); err != nil {

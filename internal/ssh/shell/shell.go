@@ -34,11 +34,10 @@ type Shell struct {
 	search     *search.Manager          // may be nil
 	log        *slog.Logger
 	runner     *interp.Runner // current interpreter runner (set after newRunner)
-	exited     bool
-	termWidth  int  // terminal width for SSH pty sessions (0 = unknown)
-	termHeight int  // terminal height for SSH pty sessions (0 = unknown)
-	sshMode    bool // true when running over an SSH channel
-	color      bool // true during RunInteractive for ANSI color output
+	termWidth  int            // terminal width for SSH pty sessions (0 = unknown)
+	termHeight int            // terminal height for SSH pty sessions (0 = unknown)
+	sshMode    bool           // true when running over an SSH channel
+	color      bool           // true during RunInteractive for ANSI color output
 }
 
 // SetSSHMode configures the shell for use over an SSH channel with a pty.
@@ -57,7 +56,9 @@ func (s *Shell) SetSSHMode(width, height int) {
 func New(username, filesDir string, userFS vfs.FS, pluginCmds map[string][]plugin.CommandDef, usernames func() ([]string, error), searchMgr *search.Manager, log *slog.Logger) *Shell {
 	// Resolve symlinks so containment checks and virtual path mapping
 	// work consistently with paths returned by the interpreter.
-	if resolved, err := filepath.EvalSymlinks(filesDir); err == nil {
+	if resolved, err := filepath.EvalSymlinks(filesDir); err != nil {
+		log.Warn("shell: resolve files directory", "dir", filesDir, "err", err)
+	} else {
 		filesDir = resolved
 	}
 	return &Shell{
@@ -224,8 +225,11 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 		if err == readline.ErrInterrupt {
 			continue
 		}
-		if err != nil { // io.EOF or other
+		if errors.Is(err, io.EOF) {
 			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read line: %w", err)
 		}
 
 		line = strings.TrimSpace(line)
@@ -247,8 +251,10 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 		if mux != nil {
 			mux.setRunnerActive(false)
 		}
-		if s.exited {
-			return nil
+		if runner.Exited() {
+			// exit N ends the session with N: runErr is its status,
+			// or nil for 0.
+			return runErr
 		}
 		if runErr != nil {
 			if _, ok := errors.AsType[interp.ExitStatus](runErr); !ok {
@@ -370,8 +376,9 @@ func (m *sshStdinMux) runnerStdin() *os.File { return m.runnerR }
 
 // closeRunnerStdin closes both ends of the runner's stdin pipe.
 func (m *sshStdinMux) closeRunnerStdin() {
-	m.runnerW.Close()
-	m.runnerR.Close()
+	if err := errors.Join(m.runnerW.Close(), m.runnerR.Close()); err != nil {
+		slog.Warn("ssh stdin mux: close runner pipe", "err", err)
+	}
 }
 
 // setRunnerActive switches whether stdin data goes to the runner or readline.

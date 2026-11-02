@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -47,8 +48,7 @@ func OpenPluginDB(path string, schemaFS fs.FS, readOnly bool, hooks ...ConnectHo
 	// need to: whoever owns the database has already done it.
 	if schemaFS != nil && !readOnly {
 		if err := migrate.Migrate(sdb, schemaFS); err != nil {
-			sdb.Close()
-			return nil, fmt.Errorf("migrate plugin db %s: %w", path, err)
+			return nil, errors.Join(fmt.Errorf("migrate plugin db %s: %w", path, err), sdb.Close())
 		}
 	}
 

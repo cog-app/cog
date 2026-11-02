@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -49,7 +50,11 @@ func (h *groupHandler) canManageGroup(groupID string, u *user.User) bool {
 		return true
 	}
 	isOwner, err := h.p.Groups.IsOwnerMember(groupID, u.ID)
-	return err == nil && isOwner
+	if err != nil {
+		h.p.Log.Error("check group ownership", "group", groupID, "user", u.ID, "err", err)
+		return false
+	}
+	return isOwner
 }
 
 // ListGroups shows owned + member groups at GET /settings/groups.
@@ -59,6 +64,7 @@ func (h *groupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 
 	ownedGroups, err := seq.Collect(h.p.Groups.ListOwnedByUser(u.ID))
 	if err != nil {
+		h.p.Log.Error("list owned groups", "user", u.ID, "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -69,6 +75,7 @@ func (h *groupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 
 	allMember, err := seq.Collect(h.p.Groups.ListGroupsForUser(u.ID))
 	if err != nil {
+		h.p.Log.Error("list member groups", "user", u.ID, "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -92,8 +99,13 @@ func (h *groupHandler) ShowGroup(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	id := r.PathValue("id")
 	g, err := h.p.Groups.Get(id)
-	if err != nil {
+	if errors.Is(err, group.ErrNotFound) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("show group: look up group", "group", id, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -104,7 +116,9 @@ func (h *groupHandler) ShowGroup(w http.ResponseWriter, r *http.Request) {
 		isMember := false
 		for m, err := range h.p.Groups.ListMembers(id) {
 			if err != nil {
-				break
+				h.p.Log.Error("show group: list members", "group", id, "err", err)
+				http.Error(w, "Internal error", http.StatusInternalServerError)
+				return
 			}
 			if m.MemberID == u.ID {
 				isMember = true
@@ -165,6 +179,7 @@ func (h *groupHandler) renderGroupDetail(w http.ResponseWriter, r *http.Request,
 	pd := pageDataWithNav(r, "Group: "+g.Name, h.p.CSRFSecret, h.p.Plugins)
 	d, err := h.buildGroupDetailData(w, r, g, isOwner, "/settings/groups")
 	if err != nil {
+		h.p.Log.Error("group detail", "group", g.ID, "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -203,8 +218,12 @@ func (h *groupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 func (h *groupHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	id := r.PathValue("id")
-	if _, err := h.p.Groups.Get(id); err != nil {
+	if _, err := h.p.Groups.Get(id); errors.Is(err, group.ErrNotFound) {
 		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		h.p.Log.Error("update group: look up group", "group", id, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 	if !h.canManageGroup(id, u) {
@@ -215,7 +234,7 @@ func (h *groupHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	base := groupBasePath(r)
 	name := r.FormValue("name")
 	if err := h.p.Groups.Update(id, name); err != nil {
-		setFlash(w, "error", "Failed to update group.")
+		setFlash(w, "error", "Failed to update group.", err)
 	} else {
 		setFlash(w, "success", "Group updated.")
 	}
@@ -287,7 +306,7 @@ func (h *groupHandler) UpdateMemberType(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.p.Groups.UpdateMemberType(groupID, memberID, memberType); err != nil {
-		setFlash(w, "error", "Failed to update member type.")
+		setFlash(w, "error", "Failed to update member type.", err)
 	}
 
 	http.Redirect(w, r, groupBasePath(r)+"/"+groupID, http.StatusSeeOther)
@@ -323,7 +342,12 @@ func (h *groupHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 
 	// Send email if configured and email provided.
 	if sender := h.p.EmailSender(); sender != nil && inviteEmail != "" {
-		g, _ := h.p.Groups.Get(groupID)
+		g, err := h.p.Groups.Get(groupID)
+		if err != nil {
+			setFlashURL(w, "error", "Invite created, but the email could not be sent: "+err.Error(), inviteURL)
+			http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
+			return
+		}
 		if err := sender.SendGroupInvite(h.p.Settings, email.EmailData{
 			BaseURL:      h.p.Config.BaseURL,
 			InstanceName: "Cog",
@@ -383,12 +407,22 @@ func (h *groupHandler) AcceptInviteForm(w http.ResponseWriter, r *http.Request) 
 	token := r.PathValue("token")
 	inv, err := h.p.Invitations.GetByToken(token)
 	if err != nil {
+		if !errors.Is(err, group.ErrNotFound) {
+			h.p.Log.Error("look up invitation", "err", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
 		http.Error(w, "Invalid or expired invitation.", http.StatusNotFound)
 		return
 	}
 
 	g, err := h.p.Groups.Get(inv.GroupID)
 	if err != nil {
+		if !errors.Is(err, group.ErrNotFound) {
+			h.p.Log.Error("invitation: look up group", "group", inv.GroupID, "err", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
 		http.Error(w, "Group not found.", http.StatusNotFound)
 		return
 	}
@@ -426,6 +460,11 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	inv, err := h.p.Invitations.GetByToken(token)
 	if err != nil {
+		if !errors.Is(err, group.ErrNotFound) {
+			h.p.Log.Error("look up invitation", "err", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
 		http.Error(w, "Invalid or expired invitation.", http.StatusNotFound)
 		return
 	}
@@ -446,7 +485,7 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := h.p.Invitations.Delete(inv.ID); err != nil {
 			// Group joined but invite cleanup failed — non-fatal.
-			_ = err
+			h.p.Log.Error("delete accepted invitation", "invitation", inv.ID, "err", err)
 		}
 		http.Redirect(w, r, "/settings/groups/"+inv.GroupID, http.StatusSeeOther)
 		return
@@ -481,16 +520,10 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create root mount.
-	if h.p.Volumes != nil && h.p.Mounts != nil {
-		if defVol, err := h.p.Volumes.GetByName("default"); err == nil {
-			subpath := newUser.Username + "/files"
-			if _, err := h.p.Mounts.Create(newUser.ID, "/", defVol.ID, subpath, false); err != nil {
-				setFlash(w, "error", "Account created but mount setup failed: "+err.Error())
-				http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
-				return
-			}
-		}
+	if err := createRootMount(h.p, newUser); err != nil {
+		setFlash(w, "error", "Account created but mount setup failed: "+err.Error())
+		http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
+		return
 	}
 
 	// Add to group and delete invite.
@@ -500,12 +533,14 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.p.Invitations.Delete(inv.ID); err != nil {
-		_ = err // Non-fatal: group joined but invite cleanup failed.
+		// Non-fatal: group joined but invite cleanup failed.
+		h.p.Log.Error("delete accepted invitation", "invitation", inv.ID, "err", err)
 	}
 
 	// Create session and log in.
 	sess, err := h.p.Sessions.Create(newUser.ID)
 	if err != nil {
+		h.p.Log.Error("create session after invite registration", "user", newUser.ID, "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}

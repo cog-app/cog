@@ -3,6 +3,7 @@ package profanity
 import (
 	"bufio"
 	"io"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -51,6 +52,10 @@ func ParseVTT(r io.Reader) []plugin.CaptionSegment {
 			})
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		// Callers take what parsed; the rest of the captions are lost.
+		slog.Error("read captions", "segments", len(segments), "err", err)
+	}
 	return segments
 }
 
@@ -61,25 +66,21 @@ func parseVTTTime(s string) float64 {
 		s = s[:idx]
 	}
 
+	// Seconds, then minutes, then hours: a part that is not a number makes
+	// the whole timestamp invalid (-1) rather than silently zero.
 	parts := strings.Split(s, ":")
-	switch len(parts) {
-	case 3:
-		h, _ := strconv.ParseFloat(parts[0], 64)
-		m, _ := strconv.ParseFloat(parts[1], 64)
-		sec := parseSeconds(parts[2])
-		return h*3600 + m*60 + sec
-	case 2:
-		m, _ := strconv.ParseFloat(parts[0], 64)
-		sec := parseSeconds(parts[1])
-		return m*60 + sec
-	default:
+	if len(parts) < 2 || len(parts) > 3 {
 		return -1
 	}
-}
-
-func parseSeconds(s string) float64 {
-	v, _ := strconv.ParseFloat(s, 64)
-	return v
+	var total float64
+	for _, part := range parts {
+		v, err := strconv.ParseFloat(part, 64)
+		if err != nil || v < 0 {
+			return -1
+		}
+		total = total*60 + v
+	}
+	return total
 }
 
 func stripVTTTags(s string) string {

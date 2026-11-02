@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"compress/bzip2"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -257,7 +258,7 @@ func readZipFile(f io.ReaderAt, size int64, entryPath string) (io.ReadCloser, *A
 			return rc, entry, nil
 		}
 	}
-	return nil, nil, fmt.Errorf("entry not found: %s", entryPath)
+	return nil, nil, fmt.Errorf("%w: %s", errEntryNotFound, entryPath)
 }
 
 // --- TAR implementation ---
@@ -377,7 +378,7 @@ func readTarFile(r io.Reader, format, entryPath string) (io.ReadCloser, *Archive
 			return io.NopCloser(tr), entry, nil
 		}
 	}
-	return nil, nil, fmt.Errorf("entry not found: %s", entryPath)
+	return nil, nil, fmt.Errorf("%w: %s", errEntryNotFound, entryPath)
 }
 
 func wrapTarReader(r io.Reader, format string) (*tar.Reader, error) {
@@ -426,19 +427,22 @@ func sortArchiveEntries(entries []ArchiveEntry) {
 
 // isArchiveEntryDir checks if an internal path represents a directory in the archive.
 // Used when navigating into archive subdirectories.
-func isArchiveEntryDir(f archiveReader, size int64, format, entryPath string) bool {
+func isArchiveEntryDir(f archiveReader, size int64, format, entryPath string) (bool, error) {
 	entryPath = cleanInternalPath(entryPath)
 	if entryPath == "" {
-		return true // root
+		return true, nil // root
 	}
 
 	// Check if any entry has this path as a prefix → it's a directory.
 	entries, err := ListArchive(f, size, format, entryPath)
 	if err != nil {
-		return false
+		return false, err
 	}
-	return len(entries) > 0
+	return len(entries) > 0, nil
 }
+
+// errEntryNotFound is a path an archive has no file at.
+var errEntryNotFound = errors.New("entry not found")
 
 // dosEpoch is 1980-01-01, the earliest time a zip entry can record. An
 // archive written without timestamps stores zero, which decodes to just

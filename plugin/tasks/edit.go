@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,18 +20,31 @@ const (
 
 // inputValue writes a stored time as the edit form shows it: wall time in
 // the list's zone, or a DATE at midnight.
-func inputValue(d ical.DateTime, z ical.Zones, zone *time.Location) string {
+func inputValue(d ical.DateTime, z ical.Zones, zone *time.Location) (string, error) {
 	if d.IsZero() {
-		return ""
+		return "", nil
 	}
 	t, err := d.Time(z)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	if d.IsDate {
-		return t.Format(layoutInput)
+		return t.Format(layoutInput), nil
 	}
-	return t.In(zone).Format(layoutInput)
+	return t.In(zone).Format(layoutInput), nil
+}
+
+// shownValue is inputValue for the task uid's field, as the edit form showed
+// it. A time Cog cannot place (a zone it does not know, say) is shown empty
+// and logged. Empty is also what applyForm compares the submitted value
+// with, so leaving the field alone keeps the stored time rather than
+// clearing it; refusing the form instead would make the task uneditable.
+func shownValue(uid, field string, d ical.DateTime, z ical.Zones, zone *time.Location) string {
+	v, err := inputValue(d, z, zone)
+	if err != nil {
+		slog.Warn("tasks: stored time cannot be shown on the edit form", "uid", uid, "field", field, "err", err)
+	}
+	return v
 }
 
 // taskForm is the task edit form as submitted.
@@ -133,7 +147,7 @@ func applyForm(o *ical.Object, f *taskForm, zone *time.Location, now time.Time) 
 	if e.PercentComplete != nil {
 		shownPercent = *e.PercentComplete
 	}
-	shownDue, shownStart := inputValue(e.Due, z, zone), inputValue(e.Start, z, zone)
+	shownDue, shownStart := shownValue(o.UID, "DUE", e.Due, z, zone), shownValue(o.UID, "DTSTART", e.Start, z, zone)
 
 	if e.Summary != f.summary {
 		e.Summary = f.summary
@@ -232,8 +246,8 @@ func formTimesOf(o *ical.Object, list *TaskList) formTimes {
 	z := ical.ZonesFor(o, list.Zone())
 	m := o.Components[0]
 	var f formTimes
-	f.DueDate, f.DueTime = splitInput(m.Due, inputValue(m.Due, z, list.Zone()))
-	f.StartDate, f.StartTime = splitInput(m.Start, inputValue(m.Start, z, list.Zone()))
+	f.DueDate, f.DueTime = splitInput(m.Due, shownValue(o.UID, "DUE", m.Due, z, list.Zone()))
+	f.StartDate, f.StartTime = splitInput(m.Start, shownValue(o.UID, "DTSTART", m.Start, z, list.Zone()))
 	if list.Timezone != "" {
 		f.Zone = list.Zone().String()
 	}

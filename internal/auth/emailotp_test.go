@@ -75,3 +75,23 @@ func TestEmailOTP_CrossUser(t *testing.T) {
 	ok, _ := env.Providers.EmailOTP.Validate(bob.ID, code)
 	require.False(t, ok)
 }
+
+// TestEmailOTP_InvalidateFailureSurfaces checks that a new code is not
+// handed out when the user's earlier codes could not be invalidated.
+func TestEmailOTP_InvalidateFailureSurfaces(t *testing.T) {
+	env := cogtest.New(t)
+	u := env.CreateUser(t, "alice", "pass")
+
+	_, err := env.Providers.EmailOTP.Create(u.ID)
+	require.NoError(t, err)
+
+	_, err = env.Providers.DB.Exec(`CREATE TRIGGER no_otp_delete BEFORE DELETE ON email_otp BEGIN SELECT RAISE(ABORT, 'delete refused'); END`)
+	require.NoError(t, err)
+
+	_, err = env.Providers.EmailOTP.Create(u.ID)
+	require.Error(t, err)
+
+	var n int
+	require.NoError(t, env.Providers.DB.QueryRow(`SELECT COUNT(*) FROM email_otp WHERE user_id = ?`, u.ID).Scan(&n))
+	require.Equal(t, 1, n)
+}

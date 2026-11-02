@@ -71,7 +71,9 @@ func (i *Index) Close() error {
 func (i *Index) Batch(docs []Document, deleteIDs []string) error {
 	b := i.idx.NewBatch()
 	for _, doc := range docs {
-		b.Index(doc.ID, doc.Fields)
+		if err := b.Index(doc.ID, doc.Fields); err != nil {
+			return fmt.Errorf("index %s: %w", doc.ID, err)
+		}
 	}
 	for _, id := range deleteIDs {
 		b.Delete(id)

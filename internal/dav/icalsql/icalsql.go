@@ -409,6 +409,10 @@ type Stored struct {
 	Data    []byte // the text served for this version
 }
 
+// bounds and utcOf compute the UTC columns that index an object's times.
+// A time that does not resolve (a value the parser kept but cannot place)
+// leaves its column NULL: the columns are derived from text that has
+// already been accepted, and an unplaceable time must not refuse the write.
 func bounds(o *ical.Object, z ical.Zones) (startUTC, endUTC any) {
 	if start, end, unbounded, err := o.Bounds(z); err == nil {
 		startUTC = start.Unix()
@@ -547,7 +551,8 @@ func (t *Tables) Store(tx *sql.Tx, collID int64, floating *time.Location, uri st
 	return &Stored{ID: id, Version: version, Created: cur == nil, Data: data}, nil
 }
 
-// sameJSON reports whether a stored component encodes to js.
+// sameJSON reports whether a stored component encodes to js. A component
+// that cannot be encoded counts as changed, so it is rewritten.
 func sameJSON(c *contentline.Component, js []byte) bool {
 	old, err := json.Marshal(c)
 	return err == nil && bytes.Equal(old, js)

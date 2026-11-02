@@ -5,6 +5,7 @@ package gallery
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -18,21 +19,27 @@ func useSubprocess() bool {
 	return os.Getenv("COG_NO_WORKER") == ""
 }
 
-// setNice sets the niceness (priority) of a process. Errors are ignored.
+// setNice sets the niceness (priority) of a process. A failure only costs
+// the server some priority over the worker, so it is logged, not returned.
 func setNice(pid, niceness int) {
-	syscall.Setpriority(syscall.PRIO_PROCESS, pid, niceness)
+	if err := syscall.Setpriority(syscall.PRIO_PROCESS, pid, niceness); err != nil {
+		slog.Warn("set worker priority", "pid", pid, "nice", niceness, "err", err)
+	}
 }
 
 // killProcess sends SIGKILL to a process.
 func killProcess(pid int) {
-	syscall.Kill(pid, syscall.SIGKILL)
+	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+		slog.Error("kill worker", "pid", pid, "err", err)
+	}
 }
 
 // rssWatchdog monitors the worker's RSS and triggers memory release or kill.
 func (p *Plugin) rssWatchdog(ctx context.Context, pid int, client scannerClient, done <-chan struct{}) {
-	sysDB, _ := p.SystemDB()
 	maxMB := uint64(2048)
-	if sysDB != nil {
+	if sysDB, err := p.SystemDB(); err != nil {
+		p.log.Warn("system db; using default worker RSS limit", "err", err)
+	} else {
 		maxMB = uint64(SettingWorkerMaxRSS.MustGet(sysDB))
 	}
 	maxBytes := maxMB * 1024 * 1024
@@ -52,7 +59,9 @@ func (p *Plugin) rssWatchdog(ctx context.Context, pid int, client scannerClient,
 			}
 			p.log.Warn("scan worker RSS exceeds limit",
 				"rss", formatBytes(rss), "limit", formatBytes(maxBytes))
-			client.ReleaseMemory()
+			if err := client.ReleaseMemory(); err != nil {
+				p.log.Warn("ask scan worker to release memory", "err", err)
+			}
 
 			// Give it time to free memory.
 			time.Sleep(15 * time.Second)
@@ -79,6 +88,10 @@ func readRSS(pid int) uint64 {
 	if len(fields) < 2 {
 		return 0
 	}
-	pages, _ := strconv.ParseUint(fields[1], 10, 64)
+	pages, err := strconv.ParseUint(fields[1], 10, 64)
+	if err != nil {
+		slog.Error("parse worker statm", "pid", pid, "statm", string(data), "err", err)
+		return 0
+	}
 	return pages * uint64(os.Getpagesize())
 }

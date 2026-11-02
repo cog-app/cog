@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/url"
 )
@@ -81,6 +82,7 @@ func (c CookieConfig) setFlashValue(w http.ResponseWriter, value string) {
 func encodeFlash(f Flash) string {
 	data, err := json.Marshal(f)
 	if err != nil {
+		slog.Error("encode flash", "err", err)
 		return ""
 	}
 	return url.QueryEscape(string(data))
@@ -89,17 +91,30 @@ func encodeFlash(f Flash) string {
 // TakeFlash reads the pending message and clears it, so a reload does not show
 // it again. It returns nil when there is none.
 func (c CookieConfig) TakeFlash(w http.ResponseWriter, r *http.Request) *Flash {
+	if _, err := r.Cookie(FlashCookieName); err != nil {
+		return nil
+	}
+	c.Clear(w, FlashCookieName)
+	return RequestFlash(r)
+}
+
+// RequestFlash decodes the message pending on r without clearing it, or
+// returns nil when there is none. A page handler uses it to refill a form from
+// Flash.Form; the host's page shell is what renders the message and clears the
+// cookie, so a plugin never has to.
+func RequestFlash(r *http.Request) *Flash {
 	cookie, err := r.Cookie(FlashCookieName)
 	if err != nil {
 		return nil
 	}
-	c.Clear(w, FlashCookieName)
 	val, err := url.QueryUnescape(cookie.Value)
 	if err != nil {
+		slog.Warn("decode flash cookie", "err", err)
 		return nil
 	}
 	var f Flash
 	if err := json.Unmarshal([]byte(val), &f); err != nil {
+		slog.Warn("decode flash cookie", "err", err)
 		return nil
 	}
 	return &f

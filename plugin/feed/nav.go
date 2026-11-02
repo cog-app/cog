@@ -1,7 +1,10 @@
 package feed
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -55,30 +58,42 @@ func (c viewCtx) encode() string {
 }
 
 // label returns a human-readable name for the context, doing best-effort store
-// lookups for folder/sub/playlist names. Errors degrade to a generic label.
+// lookups for folder/sub/playlist names. Errors degrade to a generic label,
+// and are logged unless the thing named no longer exists.
 func (c viewCtx) label(store *Store) string {
+	logErr := func(err error) {
+		if !errors.Is(err, sql.ErrNoRows) {
+			slog.Error("feed: view label", "kind", c.Kind, "id", c.ID, "err", err)
+		}
+	}
 	switch c.Kind {
 	case "starred":
 		return "Starred"
 	case "history":
 		return "History"
 	case "folder":
-		if f, err := store.GetFolder(c.ID); err == nil {
-			return f.Name
+		f, err := store.GetFolder(c.ID)
+		if err != nil {
+			logErr(err)
+			return "Folder"
 		}
-		return "Folder"
+		return f.Name
 	case "sub":
-		if s, err := store.GetSubscription(c.ID); err == nil {
-			return subscriptionDisplayTitle(s)
+		s, err := store.GetSubscription(c.ID)
+		if err != nil {
+			logErr(err)
+			return "Subscription"
 		}
-		return "Subscription"
+		return subscriptionDisplayTitle(s)
 	case "tag":
 		return "Tag: " + c.Name
 	case "playlist":
-		if pl, err := store.GetPlaylist(c.ID); err == nil {
-			return "Playlist: " + pl.Name
+		pl, err := store.GetPlaylist(c.ID)
+		if err != nil {
+			logErr(err)
+			return "Playlist"
 		}
-		return "Playlist"
+		return "Playlist: " + pl.Name
 	default:
 		return "All articles"
 	}

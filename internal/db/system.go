@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 
 	"git.duckfam.us/jj-software/cog/internal/migrate"
@@ -23,8 +24,7 @@ func OpenSystem(path string) (*sql.DB, error) {
 	TunePool(db, path)
 
 	if err := Migrate(db); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate system db: %w", err)
+		return nil, errors.Join(fmt.Errorf("migrate system db: %w", err), db.Close())
 	}
 
 	return db, nil

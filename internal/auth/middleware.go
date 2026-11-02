@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -46,7 +48,9 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			// If authenticated via Basic Auth (no session), create a session
 			// so that CSRF tokens work for web form submissions.
 			if sessionID == "" && m.Sessions != nil {
-				if sess, err := m.Sessions.Create(u.ID); err == nil {
+				if sess, err := m.Sessions.Create(u.ID); err != nil {
+					slog.Error("auth: create session for basic auth", "user", u.ID, "err", err)
+				} else {
 					sessionID = sess.ID
 					m.Cookies.Set(w, &http.Cookie{
 						Name:  SessionCookieName,
@@ -68,8 +72,12 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 func (m *Middleware) authenticate(r *http.Request) (*user.User, string) {
 	// 1. Session cookie
 	if cookie, err := r.Cookie(SessionCookieName); err == nil {
-		if sess, err := m.Sessions.Validate(cookie.Value); err == nil && sess != nil {
-			if u, err := m.Users.GetByID(sess.UserID); err == nil {
+		sess, err := m.Sessions.Validate(cookie.Value)
+		logAuthErr("validate session", err)
+		if sess != nil {
+			u, err := m.Users.GetByID(sess.UserID)
+			logAuthErr("session user", err)
+			if u != nil {
 				return u, sess.ID
 			}
 		}
@@ -84,20 +92,17 @@ func (m *Middleware) authenticate(r *http.Request) (*user.User, string) {
 	// 2. Basic Auth
 	if username, password, ok := r.BasicAuth(); ok {
 		// Try user password first
-		if u, err := m.Users.Authenticate(username, password); err == nil {
+		u, err := m.Users.Authenticate(username, password)
+		logAuthErr("basic auth", err)
+		if u == nil {
+			// Try app password with username as a hint
+			u = m.appPasswordUser(password)
+		}
+		if u != nil {
 			if m.RateLimiter != nil {
 				m.RateLimiter.Reset(ip)
 			}
 			return u, ""
-		}
-		// Try app password with username as a hint
-		if userID, err := m.AppPasswords.Validate(password); err == nil {
-			if u, err := m.Users.GetByID(userID); err == nil {
-				if m.RateLimiter != nil {
-					m.RateLimiter.Reset(ip)
-				}
-				return u, ""
-			}
 		}
 		// Basic auth failed — record failure.
 		if m.RateLimiter != nil {
@@ -107,14 +112,11 @@ func (m *Middleware) authenticate(r *http.Request) (*user.User, string) {
 
 	// 3. Bearer token (app password)
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-		token := strings.TrimPrefix(auth, "Bearer ")
-		if userID, err := m.AppPasswords.Validate(token); err == nil {
-			if u, err := m.Users.GetByID(userID); err == nil {
-				if m.RateLimiter != nil {
-					m.RateLimiter.Reset(ip)
-				}
-				return u, ""
+		if u := m.appPasswordUser(strings.TrimPrefix(auth, "Bearer ")); u != nil {
+			if m.RateLimiter != nil {
+				m.RateLimiter.Reset(ip)
 			}
+			return u, ""
 		}
 		// Bearer auth failed — record failure.
 		if m.RateLimiter != nil {
@@ -123,6 +125,28 @@ func (m *Middleware) authenticate(r *http.Request) (*user.User, string) {
 	}
 
 	return nil, ""
+}
+
+// appPasswordUser returns the user an app password belongs to, or nil.
+func (m *Middleware) appPasswordUser(token string) *user.User {
+	userID, err := m.AppPasswords.Validate(token)
+	if err != nil {
+		logAuthErr("validate app password", err)
+		return nil
+	}
+	u, err := m.Users.GetByID(userID)
+	logAuthErr("app password user", err)
+	return u
+}
+
+// logAuthErr logs err unless it only says the credentials were wrong. The
+// request still goes on unauthenticated: the middleware cannot fail it, and
+// a handler that needs a user rejects it.
+func logAuthErr(step string, err error) {
+	if err == nil || errors.Is(err, user.ErrAuthFailed) || errors.Is(err, user.ErrNotFound) || errors.Is(err, ErrInvalidAppPassword) {
+		return
+	}
+	slog.Error("auth: "+step, "err", err)
 }
 
 // RequireAuth wraps a handler and returns 401 if no user is authenticated.

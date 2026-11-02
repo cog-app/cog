@@ -51,8 +51,11 @@ type UserInfo struct {
 func Render(s *settings.Store, name string, data EmailData) (string, string, error) {
 	var htmlOverride, textOverride string
 	if s != nil {
-		htmlOverride, _ = s.Get(settings.KeyEmailOverrideHTML)
-		textOverride, _ = s.Get(settings.KeyEmailOverrideText)
+		vals, err := s.GetMany(settings.KeyEmailOverrideHTML, settings.KeyEmailOverrideText)
+		if err != nil {
+			return "", "", fmt.Errorf("read template overrides: %w", err)
+		}
+		htmlOverride, textOverride = vals[settings.KeyEmailOverrideHTML], vals[settings.KeyEmailOverrideText]
 	}
 	return render(name, data, htmlOverride, textOverride)
 }

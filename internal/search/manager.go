@@ -237,14 +237,18 @@ func (m *Manager) Stop() {
 		m.systemCollector.Stop()
 	}
 	if m.systemIndex != nil {
-		m.systemIndex.Close()
+		if err := m.systemIndex.Close(); err != nil {
+			m.log.Error("close system index", "err", err)
+		}
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for _, us := range m.userIndices {
+	for username, us := range m.userIndices {
 		us.collector.Stop()
-		us.index.Close()
+		if err := us.index.Close(); err != nil {
+			m.log.Error("close user index", "user", username, "err", err)
+		}
 	}
 }
 
@@ -349,7 +353,9 @@ func (m *Manager) openUserIndex(username string) (*userSearch, error) {
 		m.mu.Unlock()
 		// Lost the race: shut down our duplicate and return the winner.
 		collector.Stop()
-		idx.Close()
+		if err := idx.Close(); err != nil {
+			m.log.Error("close duplicate user index", "user", username, "err", err)
+		}
 		return existing, nil
 	}
 	us := &userSearch{index: idx, collector: collector}
@@ -407,21 +413,11 @@ func (s *userPluginSource) SelfSync() ([]Document, error) {
 
 	var allDocs []Document
 	for _, table := range s.inner.Tables() {
-		rows, err := db.Query(fmt.Sprintf("SELECT rowid FROM %s", table))
+		rowIDs, err := tableRowIDs(db, table)
 		if err != nil {
 			slog.Error("self-sync query failed", "table", table, "err", err)
 			continue
 		}
-
-		var rowIDs []int64
-		for rows.Next() {
-			var id int64
-			if err := rows.Scan(&id); err != nil {
-				continue
-			}
-			rowIDs = append(rowIDs, id)
-		}
-		rows.Close()
 
 		if len(rowIDs) == 0 {
 			continue

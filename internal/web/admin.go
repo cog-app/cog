@@ -18,8 +18,10 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/seq"
+	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/internal/volume"
 )
 
 type adminHandler struct{ handler }
@@ -83,22 +85,40 @@ func (h *adminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	if r.FormValue("is_admin") == "1" {
 		isAdmin := true
 		if err := h.p.Users.Update(u.ID, user.UpdateOpts{IsAdmin: &isAdmin}); err != nil {
-			h.p.Log.Error("set admin failed", "user", u.ID, "err", err)
+			setFlash(w, "error", fmt.Sprintf("User “%s” was created, but could not be made an admin.", u.Username), err)
+			http.Redirect(w, r, "/admin/users/"+u.ID, http.StatusSeeOther)
+			return
 		}
 	}
 
-	// Create root mount pointing to default volume.
-	if h.p.Volumes != nil && h.p.Mounts != nil {
-		if defVol, err := h.p.Volumes.GetByName("default"); err == nil {
-			subpath := u.Username + "/files"
-			if _, err := h.p.Mounts.Create(u.ID, "/", defVol.ID, subpath, false); err != nil {
-				h.p.Log.Error("create mount failed", "user", u.Username, "err", err)
-			}
-		}
+	if err := createRootMount(h.p, u); err != nil {
+		setFlash(w, "error", fmt.Sprintf("User “%s” was created, but their home folder could not be set up.", u.Username), err)
+		http.Redirect(w, r, "/admin/users/"+u.ID, http.StatusSeeOther)
+		return
 	}
 
 	setFlash(w, "success", fmt.Sprintf("User “%s” created.", u.Username))
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+}
+
+// createRootMount gives a new user a root mount on the default volume. With
+// no volume or mount store, or no volume named "default", there is nothing to
+// mount and it does nothing.
+func createRootMount(p *services.Providers, u *user.User) error {
+	if p.Volumes == nil || p.Mounts == nil {
+		return nil
+	}
+	defVol, err := p.Volumes.GetByName("default")
+	if errors.Is(err, volume.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("create root mount for %s: %w", u.Username, err)
+	}
+	if _, err := p.Mounts.Create(u.ID, "/", defVol.ID, u.Username+"/files", false); err != nil {
+		return fmt.Errorf("create root mount for %s: %w", u.Username, err)
+	}
+	return nil
 }
 
 // newUserForm is what the new-user form shows: empty, or what was typed
@@ -112,8 +132,13 @@ func (h *adminHandler) EditUserForm(w http.ResponseWriter, r *http.Request) {
 	pd := pageDataWithNav(r, "Edit User", h.p.CSRFSecret, h.p.Plugins)
 	id := r.PathValue("id")
 	u, err := h.p.Users.GetByID(id)
-	if err != nil {
+	if errors.Is(err, user.ErrNotFound) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("edit user: look up user", "user", id, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 	flash := getFlash(w, r)
@@ -127,15 +152,20 @@ func (h *adminHandler) EditUserForm(w http.ResponseWriter, r *http.Request) {
 func (h *adminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	before, err := h.p.Users.GetByID(id)
-	if err != nil {
+	if errors.Is(err, user.ErrNotFound) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		setFlash(w, "error", "Failed to update user.", err)
+		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 		return
 	}
 
 	displayName := r.FormValue("display_name")
 	isAdmin := r.FormValue("is_admin") == "1"
 	if err := h.p.Users.Update(id, user.UpdateOpts{DisplayName: &displayName, IsAdmin: &isAdmin}); err != nil {
-		setFlash(w, "error", "Failed to update user.")
+		setFlash(w, "error", "Failed to update user.", err)
 		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 		return
 	}
@@ -156,8 +186,12 @@ func (h *adminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 func (h *adminHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := h.p.Users.GetByID(id); err != nil {
+	if _, err := h.p.Users.GetByID(id); errors.Is(err, user.ErrNotFound) {
 		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		setFlash(w, "error", "Failed to reset password.", err)
+		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 		return
 	}
 	newPass := r.FormValue("new_password")
@@ -167,7 +201,7 @@ func (h *adminHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.p.Users.UpdatePassword(id, newPass); err != nil {
-		setFlash(w, "error", "Failed to reset password.")
+		setFlash(w, "error", "Failed to reset password.", err)
 		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 		return
 	}
@@ -175,11 +209,6 @@ func (h *adminHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	// any captured cookie can't survive an admin-driven password reset.
 	if err := h.p.Sessions.DeleteAllForUser(id); err != nil {
 		h.p.Log.Warn("revoke sessions on admin password reset", "user", id, "err", err)
-	}
-
-	// Invalidate all sessions for the target user.
-	if err := h.p.Sessions.DeleteAllForUser(id); err != nil {
-		h.p.Log.Error("delete sessions after admin password reset", "err", err)
 	}
 
 	setFlash(w, "success", "Password reset.")
@@ -192,9 +221,12 @@ func (h *adminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	if h.p.Mounts != nil {
 		if err := h.p.Mounts.DeleteByUser(id); err != nil {
 			h.p.Log.Error("delete mounts failed", "user", id, "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
 	if err := h.p.Users.Delete(id); err != nil {
+		h.p.Log.Error("delete user failed", "user", id, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -213,6 +245,7 @@ func (h *adminHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	groups, err := seq.Collect(h.p.Groups.List())
 	if err != nil {
+		h.p.Log.Error("list groups", "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -239,7 +272,9 @@ func (h *adminHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	if ownerID != "" {
 		if err := h.p.Groups.AddMember(g.ID, ownerID, group.Owner); err != nil {
-			h.p.Log.Error("add owner to group failed", "owner", ownerID, "group", g.ID, "err", err)
+			setFlash(w, "error", "Group created, but its owner could not be added.", err)
+			http.Redirect(w, r, "/admin/groups/"+g.ID, http.StatusSeeOther)
+			return
 		}
 	}
 	http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
@@ -248,14 +283,20 @@ func (h *adminHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 func (h *adminHandler) EditGroupForm(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	g, err := h.p.Groups.Get(id)
-	if err != nil {
+	if errors.Is(err, group.ErrNotFound) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("edit group: look up group", "group", id, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 	pd := pageDataWithNav(r, "Group: "+g.Name, h.p.CSRFSecret, h.p.Plugins)
 	gh := groupHandler{h.handler}
 	d, err := gh.buildGroupDetailData(w, r, g, true, "/admin/groups")
 	if err != nil {
+		h.p.Log.Error("edit group: build detail", "group", id, "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -287,6 +328,7 @@ func (h *adminHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("id")
 	memberID := r.PathValue("member_id")
 	if err := h.p.Groups.RemoveMember(groupID, memberID); err != nil {
+		h.p.Log.Error("remove group member", "group", groupID, "member", memberID, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -507,7 +549,12 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 
 	var mfaRequired string
 	if h.p.Settings != nil {
-		mfaRequired, _ = h.p.Settings.Get(settings.KeyMFARequired)
+		var err error
+		if mfaRequired, err = h.p.Settings.Get(settings.KeyMFARequired); err != nil {
+			h.p.Log.Error("admin settings: read mfa setting", "err", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	env := envConfigData{
@@ -535,27 +582,23 @@ func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		expiryHours = settings.DefaultInviteExpiryHours
 	}
 	if h.p.Settings != nil {
-		if err := h.p.Settings.SetBool(settings.KeyPublicRegistration, pubReg); err != nil {
-			h.p.Log.Error("save setting failed", "key", "public_registration", "err", err)
-		}
-		if err := h.p.Settings.SetInt(settings.KeyInviteExpiryHours, expiryHours); err != nil {
-			h.p.Log.Error("save setting failed", "key", "invite_expiry_hours", "err", err)
-		}
 		days, err := strconv.Atoi(r.FormValue("dav_tombstone_days"))
 		if err != nil || days < 1 {
 			days = settings.DefaultDAVTombstoneDays
 		}
-		if err := h.p.Settings.SetInt(settings.KeyDAVTombstoneDays, days); err != nil {
-			h.p.Log.Error("save setting failed", "key", settings.KeyDAVTombstoneDays, "err", err)
-		}
-
-		// Save MFA enforcement setting.
 		mfaRequired := r.FormValue("mfa_required")
 		if mfaRequired != "all" && mfaRequired != "admins" {
 			mfaRequired = ""
 		}
-		if err := h.p.Settings.Set(settings.KeyMFARequired, mfaRequired); err != nil {
-			h.p.Log.Error("save setting failed", "key", "mfa_required", "err", err)
+		if err := h.p.Settings.SetMany(map[string]string{
+			settings.KeyPublicRegistration: settings.FormatBool(pubReg),
+			settings.KeyInviteExpiryHours:  strconv.Itoa(expiryHours),
+			settings.KeyDAVTombstoneDays:   strconv.Itoa(days),
+			settings.KeyMFARequired:        mfaRequired,
+		}); err != nil {
+			setFlash(w, "error", "Settings could not be saved.", err)
+			http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
+			return
 		}
 	}
 	setFlash(w, "success", "Settings saved.")
@@ -570,13 +613,19 @@ func (h *adminHandler) ShowEmail(w http.ResponseWriter, r *http.Request) {
 	var smtpData smtpSettingsData
 	var overrideHTML, overrideText string
 	if h.p.Settings != nil {
-		smtpData.Host, _ = h.p.Settings.Get(settings.KeySMTPHost)
+		vals, err := h.p.Settings.GetMany(settings.KeySMTPHost, settings.KeySMTPUser, settings.KeySMTPPass, settings.KeySMTPFrom, settings.KeyEmailOverrideHTML, settings.KeyEmailOverrideText)
+		if err != nil {
+			h.p.Log.Error("admin email: read settings", "err", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		smtpData.Host = vals[settings.KeySMTPHost]
 		smtpData.Port = strconv.Itoa(h.p.Settings.GetInt(settings.KeySMTPPort, 587))
-		smtpData.User, _ = h.p.Settings.Get(settings.KeySMTPUser)
-		smtpData.Pass, _ = h.p.Settings.Get(settings.KeySMTPPass)
-		smtpData.From, _ = h.p.Settings.Get(settings.KeySMTPFrom)
-		overrideHTML, _ = h.p.Settings.Get(settings.KeyEmailOverrideHTML)
-		overrideText, _ = h.p.Settings.Get(settings.KeyEmailOverrideText)
+		smtpData.User = vals[settings.KeySMTPUser]
+		smtpData.Pass = vals[settings.KeySMTPPass]
+		smtpData.From = vals[settings.KeySMTPFrom]
+		overrideHTML = vals[settings.KeyEmailOverrideHTML]
+		overrideText = vals[settings.KeyEmailOverrideText]
 	}
 
 	flash := getFlash(w, r)
@@ -589,31 +638,10 @@ func (h *adminHandler) ShowEmail(w http.ResponseWriter, r *http.Request) {
 
 func (h *adminHandler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
 	if h.p.Settings != nil {
-		// Save SMTP settings.
-		if err := h.p.Settings.Set(settings.KeySMTPHost, r.FormValue("smtp_host")); err != nil {
-			h.p.Log.Error("save setting failed", "key", "smtp_host", "err", err)
-		}
-		smtpPort, err := strconv.Atoi(r.FormValue("smtp_port"))
-		if err != nil || smtpPort < 1 {
-			smtpPort = 587
-		}
-		if err := h.p.Settings.SetInt(settings.KeySMTPPort, smtpPort); err != nil {
-			h.p.Log.Error("save setting failed", "key", "smtp_port", "err", err)
-		}
-		if err := h.p.Settings.Set(settings.KeySMTPUser, r.FormValue("smtp_user")); err != nil {
-			h.p.Log.Error("save setting failed", "key", "smtp_user", "err", err)
-		}
-		if err := h.p.Settings.Set(settings.KeySMTPPass, r.FormValue("smtp_pass")); err != nil {
-			h.p.Log.Error("save setting failed", "key", "smtp_pass", "err", err)
-		}
-		if err := h.p.Settings.Set(settings.KeySMTPFrom, r.FormValue("smtp_from")); err != nil {
-			h.p.Log.Error("save setting failed", "key", "smtp_from", "err", err)
-		}
-
-		// Save template overrides — validate by parsing first.
+		// Validate template overrides before saving anything, so a bad
+		// template doesn't leave the SMTP half of the form saved.
 		htmlOverride := r.FormValue("override_html")
 		textOverride := r.FormValue("override_text")
-
 		if htmlOverride != "" {
 			if _, err := email.ValidateHTMLOverride(htmlOverride); err != nil {
 				setFlash(w, "error", "Invalid HTML template: "+err.Error())
@@ -629,8 +657,23 @@ func (h *adminHandler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		h.p.Settings.Set(settings.KeyEmailOverrideHTML, htmlOverride)
-		h.p.Settings.Set(settings.KeyEmailOverrideText, textOverride)
+		smtpPort, err := strconv.Atoi(r.FormValue("smtp_port"))
+		if err != nil || smtpPort < 1 {
+			smtpPort = 587
+		}
+		if err := h.p.Settings.SetMany(map[string]string{
+			settings.KeySMTPHost:          r.FormValue("smtp_host"),
+			settings.KeySMTPPort:          strconv.Itoa(smtpPort),
+			settings.KeySMTPUser:          r.FormValue("smtp_user"),
+			settings.KeySMTPPass:          r.FormValue("smtp_pass"),
+			settings.KeySMTPFrom:          r.FormValue("smtp_from"),
+			settings.KeyEmailOverrideHTML: htmlOverride,
+			settings.KeyEmailOverrideText: textOverride,
+		}); err != nil {
+			setFlash(w, "error", "Email settings could not be saved.", err)
+			http.Redirect(w, r, "/admin/email", http.StatusSeeOther)
+			return
+		}
 	}
 	setFlash(w, "success", "Email settings saved.")
 	http.Redirect(w, r, "/admin/email", http.StatusSeeOther)
@@ -689,6 +732,9 @@ func (h *adminHandler) TestSMTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	c.Quit()
+	if err := c.Quit(); err != nil {
+		ui.Render(w, r, smtpTestAlert("error", "QUIT failed", err.Error()))
+		return
+	}
 	ui.Render(w, r, smtpTestAlert("success", "Connection successful", fmt.Sprintf("Connected to %s and authenticated.", addr)))
 }

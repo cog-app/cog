@@ -6,7 +6,9 @@ package maildev
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"io"
+	"log"
 	"mime"
 	"mime/multipart"
 	"net/mail"
@@ -175,6 +177,8 @@ func ParseRaw(to []string, raw []byte) Message {
 
 	parsed, err := mail.ReadMessage(strings.NewReader(string(raw)))
 	if err != nil {
+		// Show what arrived rather than drop it.
+		log.Printf("[maildev] parse message: %v", err)
 		msg.Body = string(raw)
 		return msg
 	}
@@ -196,10 +200,11 @@ func ParseRaw(to []string, raw []byte) Message {
 		}
 	}
 
-	body, err := readBody(parsed)
-	if err == nil {
-		msg.Body = body
+	body, err := io.ReadAll(parsed.Body)
+	if err != nil {
+		log.Printf("[maildev] read message body: %v", err)
 	}
+	msg.Body = string(body)
 
 	return msg
 }
@@ -209,10 +214,16 @@ func parseMultipart(r io.Reader, boundary string, msg *Message) {
 	for {
 		part, err := mr.NextPart()
 		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				log.Printf("[maildev] read multipart: %v", err)
+			}
 			break
 		}
 		ct := part.Header.Get("Content-Type")
-		body, _ := io.ReadAll(part)
+		body, err := io.ReadAll(part)
+		if err != nil {
+			log.Printf("[maildev] read part %q: %v", ct, err)
+		}
 		mt, _, _ := mime.ParseMediaType(ct)
 		switch mt {
 		case "text/plain":
@@ -221,19 +232,6 @@ func parseMultipart(r io.Reader, boundary string, msg *Message) {
 			msg.HTMLBody = string(body)
 		}
 	}
-}
-
-func readBody(msg *mail.Message) (string, error) {
-	buf := make([]byte, 0, 4096)
-	tmp := make([]byte, 1024)
-	for {
-		n, err := msg.Body.Read(tmp)
-		buf = append(buf, tmp[:n]...)
-		if err != nil {
-			break
-		}
-	}
-	return string(buf), nil
 }
 
 func randomID() string {

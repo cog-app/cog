@@ -1,14 +1,16 @@
 package auth
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type AppPassword struct {
@@ -20,15 +22,44 @@ type AppPassword struct {
 }
 
 // MaxAppPasswordsPerUser caps how many app passwords a single user can have
-// outstanding. Validate iterates every app_passwords row and runs bcrypt
-// against each, so an unbounded count is a DoS surface (audit security.md
-// #11). Beyond this limit, Create returns ErrTooManyAppPasswords and the
-// user must delete an existing one.
+// outstanding. Beyond this limit, Create returns ErrTooManyAppPasswords and
+// the user must delete an existing one.
 const MaxAppPasswordsPerUser = 32
 
 // ErrTooManyAppPasswords is returned by Create when a user already has
 // MaxAppPasswordsPerUser tokens.
 var ErrTooManyAppPasswords = errors.New("too many app passwords for user")
+
+// ErrInvalidAppPassword is returned by Validate when no app password matches.
+var ErrInvalidAppPassword = errors.New("invalid app password")
+
+// ErrAppPasswordNotFound is returned by Delete when the user has no app
+// password with that id.
+var ErrAppPasswordNotFound = errors.New("app password not found")
+
+// appPasswordSep separates the public id from the secret in a token. It must
+// not be ':' (Basic auth splits on it) and must not occur in either half.
+const appPasswordSep = "."
+
+// An app password token is "<id>.<secret>": id is the row's primary key and
+// secret is 32 random bytes, hex encoded. The id makes validation one
+// indexed lookup; only SHA-256(secret) is stored. A fast hash is enough
+// because the secret is 256 bits of randomness, not something a person
+// chose, so there is nothing for a slow hash to protect against guessing.
+func hashAppPasswordSecret(secret string) string {
+	sum := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(sum[:])
+}
+
+// splitAppPassword returns the id and secret of a token, or ok=false if the
+// token is not in the "<id>.<secret>" form.
+func splitAppPassword(token string) (id, secret string, ok bool) {
+	id, secret, ok = strings.Cut(token, appPasswordSep)
+	if !ok || id == "" || secret == "" {
+		return "", "", false
+	}
+	return id, secret, true
+}
 
 type AppPasswordStore struct {
 	db    *sql.DB
@@ -39,8 +70,8 @@ func NewAppPasswordStore(db *sql.DB, c clock.Clock) *AppPasswordStore {
 	return &AppPasswordStore{db: db, clock: c}
 }
 
-// Create generates a new app password and returns the plaintext token.
-// The token is hashed before storage; the caller must present the plaintext to the user.
+// Create generates a new app password and returns the plaintext token, in
+// the form "<id>.<secret>". Only a hash of the secret is stored; the caller must present the plaintext to the user.
 // Refuses creation once the user is at the per-user cap.
 func (s *AppPasswordStore) Create(userID, name string) (plaintext string, ap *AppPassword, err error) {
 	var count int
@@ -51,25 +82,22 @@ func (s *AppPasswordStore) Create(userID, name string) (plaintext string, ap *Ap
 		return "", nil, ErrTooManyAppPasswords
 	}
 
-	token, err := generateToken(32)
+	secret, err := generateToken(32)
 	if err != nil {
 		return "", nil, err
 	}
-
-	hash, err := bcrypt.GenerateFromPassword([]byte(token), bcrypt.DefaultCost)
-	if err != nil {
-		return "", nil, fmt.Errorf("hash app password: %w", err)
-	}
+	hash := hashAppPasswordSecret(secret)
 
 	id, err := generateToken(16)
 	if err != nil {
 		return "", nil, err
 	}
+	token := id + appPasswordSep + secret
 
 	now := s.clock()
 	_, err = s.db.Exec(
 		`INSERT INTO app_passwords (id, user_id, name, token_hash, created_at) VALUES (?, ?, ?, ?, ?)`,
-		id, userID, name, string(hash), now.Unix(),
+		id, userID, name, hash, now.Unix(),
 	)
 	if err != nil {
 		return "", nil, fmt.Errorf("insert app password: %w", err)
@@ -79,7 +107,7 @@ func (s *AppPasswordStore) Create(userID, name string) (plaintext string, ap *Ap
 		ID:        id,
 		UserID:    userID,
 		Name:      name,
-		TokenHash: string(hash),
+		TokenHash: hash,
 		CreatedAt: now,
 	}, nil
 }
@@ -114,39 +142,34 @@ func (s *AppPasswordStore) Delete(id, userID string) error {
 	if err != nil {
 		return fmt.Errorf("delete app password: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
-		return errors.New("app password not found")
+		return ErrAppPasswordNotFound
 	}
 	return nil
 }
 
-// Validate checks a plaintext token against all app passwords and returns the
-// owning user ID if valid. It iterates all candidates to prevent timing leaks.
+// Validate checks a plaintext token and returns the owning user ID if valid.
+// The token's id selects at most one row by primary key, and its secret is
+// compared against that row's hash in constant time.
 func (s *AppPasswordStore) Validate(token string) (userID string, err error) {
-	rows, err := s.db.Query(`SELECT id, user_id, token_hash FROM app_passwords`)
+	id, secret, ok := splitAppPassword(token)
+	if !ok {
+		return "", ErrInvalidAppPassword
+	}
+	var uid, stored string
+	err = s.db.QueryRow(`SELECT user_id, token_hash FROM app_passwords WHERE id = ?`, id).Scan(&uid, &stored)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrInvalidAppPassword
+	}
 	if err != nil {
-		return "", fmt.Errorf("query app passwords: %w", err)
+		return "", fmt.Errorf("look up app password: %w", err)
 	}
-	defer rows.Close()
-
-	var matchedUID string
-	matched := 0
-	for rows.Next() {
-		var id, uid, hash string
-		if err := rows.Scan(&id, &uid, &hash); err != nil {
-			return "", fmt.Errorf("scan app password: %w", err)
-		}
-		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(token)) == nil {
-			matchedUID = uid
-			matched = 1
-		}
+	if subtle.ConstantTimeCompare([]byte(hashAppPasswordSecret(secret)), []byte(stored)) != 1 {
+		return "", ErrInvalidAppPassword
 	}
-	if err := rows.Err(); err != nil {
-		return "", err
-	}
-	if subtle.ConstantTimeEq(int32(matched), 1) == 1 {
-		return matchedUID, nil
-	}
-	return "", errors.New("invalid app password")
+	return uid, nil
 }

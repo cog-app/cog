@@ -3,11 +3,15 @@ package notes
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
 	"net/http"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 // NotesAPI implements the NextCloud Notes API v1 endpoints.
@@ -96,7 +100,10 @@ func (a *NotesAPI) listNotes(w http.ResponseWriter, r *http.Request, db *sql.DB,
 
 	out := make([]map[string]any, len(notes))
 	for i := range notes {
-		out[i] = a.noteToAPI(&notes[i], username, exclude != "content")
+		if out[i], err = a.noteToAPI(&notes[i], username, exclude != "content"); err != nil {
+			a.serverError(w, err)
+			return
+		}
 	}
 	plugin.WriteJSON(w, http.StatusOK, out)
 }
@@ -104,7 +111,7 @@ func (a *NotesAPI) listNotes(w http.ResponseWriter, r *http.Request, db *sql.DB,
 func (a *NotesAPI) getNote(w http.ResponseWriter, r *http.Request, db *sql.DB, username string, id int64) {
 	note, err := GetNote(db, id)
 	if err != nil {
-		plugin.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		a.noteError(w, err)
 		return
 	}
 
@@ -114,8 +121,7 @@ func (a *NotesAPI) getNote(w http.ResponseWriter, r *http.Request, db *sql.DB, u
 		return
 	}
 
-	w.Header().Set("ETag", note.ETag)
-	plugin.WriteJSON(w, http.StatusOK, a.noteToAPI(note, username, true))
+	a.writeNote(w, http.StatusOK, note, username)
 }
 
 func (a *NotesAPI) createNote(w http.ResponseWriter, r *http.Request, db *sql.DB, username string) {
@@ -133,7 +139,11 @@ func (a *NotesAPI) createNote(w http.ResponseWriter, r *http.Request, db *sql.DB
 		body.Title = "New Note"
 	}
 
-	filename := FilenameFromTitle(body.Title)
+	filename, err := a.plugin.freeNoteFilename(db, username, body.Title, nil)
+	if err != nil {
+		a.serverError(w, err)
+		return
+	}
 	etag := ComputeETag(body.Content)
 
 	if err := a.plugin.writeNoteContent(username, filename, body.Content); err != nil {
@@ -148,25 +158,29 @@ func (a *NotesAPI) createNote(w http.ResponseWriter, r *http.Request, db *sql.DB
 	}
 
 	if body.Favorite {
-		ToggleFavorite(db, note.ID)
-		note, _ = GetNote(db, note.ID)
+		if err := ToggleFavorite(db, note.ID); err != nil {
+			a.serverError(w, err)
+			return
+		}
+		if note, err = GetNote(db, note.ID); err != nil {
+			a.serverError(w, err)
+			return
+		}
 	}
 
-	w.Header().Set("ETag", note.ETag)
-	plugin.WriteJSON(w, http.StatusOK, a.noteToAPI(note, username, true))
+	a.writeNote(w, http.StatusOK, note, username)
 }
 
 func (a *NotesAPI) updateNote(w http.ResponseWriter, r *http.Request, db *sql.DB, username string, id int64) {
 	note, err := GetNote(db, id)
 	if err != nil {
-		plugin.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		a.noteError(w, err)
 		return
 	}
 
 	// If-Match concurrency check
 	if match := r.Header.Get("If-Match"); match != "" && match != note.ETag {
-		w.Header().Set("ETag", note.ETag)
-		plugin.WriteJSON(w, http.StatusPreconditionFailed, a.noteToAPI(note, username, true))
+		a.writeNote(w, http.StatusPreconditionFailed, note, username)
 		return
 	}
 
@@ -185,7 +199,11 @@ func (a *NotesAPI) updateNote(w http.ResponseWriter, r *http.Request, db *sql.DB
 	category := note.Category
 
 	if body.Title != nil {
-		newFilename := FilenameFromTitle(*body.Title)
+		newFilename, err := a.plugin.freeNoteFilename(db, username, *body.Title, note)
+		if err != nil {
+			a.serverError(w, err)
+			return
+		}
 		if newFilename != filename {
 			if err := a.plugin.renameNoteFile(username, filename, newFilename); err != nil {
 				plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -207,7 +225,11 @@ func (a *NotesAPI) updateNote(w http.ResponseWriter, r *http.Request, db *sql.DB
 	}
 
 	// Compute etag from current file content
-	content, _ := a.plugin.readNoteContent(username, filename)
+	content, err := a.plugin.readNoteContent(username, filename)
+	if err != nil {
+		a.serverError(w, fmt.Errorf("read %s: %w", filename, err))
+		return
+	}
 	etag := ComputeETag(content)
 
 	if err := UpdateNoteMeta(db, id, filename, category, etag); err != nil {
@@ -215,22 +237,25 @@ func (a *NotesAPI) updateNote(w http.ResponseWriter, r *http.Request, db *sql.DB
 		return
 	}
 
-	if body.Favorite != nil {
-		currentNote, _ := GetNote(db, id)
-		if currentNote != nil && currentNote.Favorite != *body.Favorite {
-			ToggleFavorite(db, id)
+	// UpdateNoteMeta leaves the favourite alone, so note still has it.
+	if body.Favorite != nil && note.Favorite != *body.Favorite {
+		if err := ToggleFavorite(db, id); err != nil {
+			a.serverError(w, err)
+			return
 		}
 	}
 
-	note, _ = GetNote(db, id)
-	w.Header().Set("ETag", note.ETag)
-	plugin.WriteJSON(w, http.StatusOK, a.noteToAPI(note, username, true))
+	if note, err = GetNote(db, id); err != nil {
+		a.noteError(w, err)
+		return
+	}
+	a.writeNote(w, http.StatusOK, note, username)
 }
 
 func (a *NotesAPI) deleteNote(w http.ResponseWriter, db *sql.DB, username string, id int64) {
 	note, err := GetNote(db, id)
 	if err != nil {
-		plugin.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		a.noteError(w, err)
 		return
 	}
 	if err := a.plugin.deleteNote(db, username, note); err != nil {
@@ -248,8 +273,12 @@ func (a *NotesAPI) getSettings(w http.ResponseWriter) {
 }
 
 func (a *NotesAPI) putSettings(w http.ResponseWriter, r *http.Request) {
+	// The settings are fixed; the body is read only to reject a malformed one.
 	var body map[string]any
-	json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		plugin.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
 	plugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"notesPath":  "Notes",
 		"fileSuffix": ".md",
@@ -258,7 +287,35 @@ func (a *NotesAPI) putSettings(w http.ResponseWriter, r *http.Request) {
 
 // --- Helpers ---
 
-func (a *NotesAPI) noteToAPI(n *Note, username string, includeContent bool) map[string]any {
+// writeNote answers with a note, its content included, and its ETag.
+func (a *NotesAPI) writeNote(w http.ResponseWriter, code int, n *Note, username string) {
+	out, err := a.noteToAPI(n, username, true)
+	if err != nil {
+		a.serverError(w, err)
+		return
+	}
+	w.Header().Set("ETag", n.ETag)
+	plugin.WriteJSON(w, code, out)
+}
+
+// noteError answers 404 for a note that does not exist and 500 otherwise.
+func (a *NotesAPI) noteError(w http.ResponseWriter, err error) {
+	if errors.Is(err, sql.ErrNoRows) {
+		plugin.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	a.serverError(w, err)
+}
+
+func (a *NotesAPI) serverError(w http.ResponseWriter, err error) {
+	a.plugin.log.Error("notes api", "err", err)
+	plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+}
+
+// noteToAPI is a note as the Notes API shows it. A note whose file has gone
+// (deleted through the files app) shows as empty rather than failing the
+// whole listing.
+func (a *NotesAPI) noteToAPI(n *Note, username string, includeContent bool) (map[string]any, error) {
 	m := map[string]any{
 		"id":       n.ID,
 		"etag":     n.ETag,
@@ -269,8 +326,11 @@ func (a *NotesAPI) noteToAPI(n *Note, username string, includeContent bool) map[
 		"readonly": false,
 	}
 	if includeContent {
-		content, _ := a.plugin.readNoteContent(username, n.Filename)
+		content, err := a.plugin.readNoteContent(username, n.Filename)
+		if err != nil && !errors.Is(err, vfs.ErrNotFound) && !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("read %s: %w", n.Filename, err)
+		}
 		m["content"] = content
 	}
-	return m
+	return m, nil
 }

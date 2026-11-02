@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"strings"
 )
 
 var ErrNotFound = errors.New("group not found")
@@ -81,6 +82,88 @@ func (s *Store) Get(id string) (*Group, error) {
 	return &g, nil
 }
 
+// ErrAmbiguousName is returned by GetByName when more than one group has the
+// name, so a name alone does not say which is meant.
+var ErrAmbiguousName = errors.New("group name is ambiguous")
+
+// GetByName returns the one group called name. Names are not unique: when
+// several groups share it, GetByName returns ErrAmbiguousName.
+func (s *Store) GetByName(name string) (*Group, error) {
+	rows, err := s.db.Query(
+		`SELECT g.id, g.name, g.parent_group_id, g.owner_id, (SELECT COUNT(*) FROM group_members gm WHERE gm.group_id = g.id) FROM groups g WHERE g.name = ? LIMIT 2`, name,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get group by name: %w", err)
+	}
+	defer rows.Close()
+	var found []Group
+	for rows.Next() {
+		var g Group
+		if err := rows.Scan(&g.ID, &g.Name, &g.ParentGroupID, &g.OwnerID, &g.MemberCount); err != nil {
+			return nil, fmt.Errorf("scan group: %w", err)
+		}
+		found = append(found, g)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get group by name: %w", err)
+	}
+	switch len(found) {
+	case 0:
+		return nil, ErrNotFound
+	case 1:
+		return &found[0], nil
+	default:
+		return nil, fmt.Errorf("%q: %w", name, ErrAmbiguousName)
+	}
+}
+
+// idChunk bounds the bound parameters in one GetByIDs query, well under
+// SQLite's SQLITE_MAX_VARIABLE_NUMBER on any build.
+const idChunk = 500
+
+// GetByIDs returns the groups with the given ids, keyed by id, in as few
+// queries as the parameter limit allows. Unknown ids are absent from the
+// result.
+func (s *Store) GetByIDs(ids []string) (map[string]*Group, error) {
+	out := make(map[string]*Group, len(ids))
+	seen := make(map[string]bool, len(ids))
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			args = append(args, id)
+		}
+	}
+	for start := 0; start < len(args); start += idChunk {
+		chunk := args[start:min(start+idChunk, len(args))]
+		if err := s.getByIDs(chunk, out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) getByIDs(args []any, out map[string]*Group) error {
+	rows, err := s.db.Query(
+		`SELECT g.id, g.name, g.parent_group_id, g.owner_id, (SELECT COUNT(*) FROM group_members gm WHERE gm.group_id = g.id) FROM groups g WHERE g.id IN (?`+strings.Repeat(",?", len(args)-1)+`)`, args...,
+	)
+	if err != nil {
+		return fmt.Errorf("groups by id: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var g Group
+		if err := rows.Scan(&g.ID, &g.Name, &g.ParentGroupID, &g.OwnerID, &g.MemberCount); err != nil {
+			return fmt.Errorf("scan group: %w", err)
+		}
+		out[g.ID] = &g
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("groups by id: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) List() iter.Seq2[Group, error] {
 	return func(yield func(Group, error) bool) {
 		rows, err := s.db.Query(`SELECT g.id, g.name, g.parent_group_id, g.owner_id, (SELECT COUNT(*) FROM group_members gm WHERE gm.group_id = g.id) FROM groups g ORDER BY g.name`)
@@ -110,7 +193,10 @@ func (s *Store) Update(id, name string) error {
 	if err != nil {
 		return fmt.Errorf("update group: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -131,7 +217,10 @@ func (s *Store) Delete(id string) error {
 	if err != nil {
 		return fmt.Errorf("delete group: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -172,58 +261,36 @@ func (s *Store) AddMember(groupID, memberID string, memberType MemberType) error
 	return tx.Commit()
 }
 
-// isCyclicMembershipTx checks if parentGroupID already appears as a descendant
-// of candidateChildGroupID via the closure table, or if they are the same group.
+// isCyclicMembershipTx reports whether making candidateChildGroupID a member
+// of parentGroupID would close a loop: that is, whether parentGroupID is
+// candidateChildGroupID or already one of its group descendants. The closure
+// table cannot answer this, since it records only user descendants.
 func isCyclicMembershipTx(tx *sql.Tx, parentGroupID, candidateChildGroupID string) (bool, error) {
 	if parentGroupID == candidateChildGroupID {
 		return true, nil
 	}
-	// Check if parentGroupID is already reachable from candidateChildGroupID.
-	var exists int
-	err := tx.QueryRow(
-		`SELECT 1 FROM group_membership_closure WHERE ancestor_group_id = ? AND descendant_user_id IN (
-			SELECT member_id FROM group_members WHERE group_id = ? AND member_type = 'GROUP'
-		)`, candidateChildGroupID, parentGroupID,
-	).Scan(&exists)
-	if errors.Is(err, sql.ErrNoRows) {
-		// Also do a recursive walk through GROUP members since the closure table
-		// only tracks user descendants. Walk the group_members graph directly.
-		return isGroupDescendant(tx, candidateChildGroupID, parentGroupID, make(map[string]bool)), nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return true, nil
+	return isGroupDescendant(tx, candidateChildGroupID, parentGroupID)
 }
 
-// isGroupDescendant returns true if target appears as a GROUP-type descendant of start.
-func isGroupDescendant(tx *sql.Tx, start, target string, visited map[string]bool) bool {
-	if start == target {
-		return true
-	}
-	if visited[start] {
-		return false
-	}
-	visited[start] = true
-
-	rows, err := tx.Query(
-		`SELECT member_id FROM group_members WHERE group_id = ? AND member_type = 'GROUP'`, start,
-	)
+// isGroupDescendant reports whether target appears as a GROUP-type
+// descendant of start (or is start). One recursive query rather than a
+// query per group; UNION (not UNION ALL) stops at groups already visited.
+func isGroupDescendant(tx *sql.Tx, start, target string) (bool, error) {
+	var found bool
+	err := tx.QueryRow(`
+		WITH RECURSIVE descendants(id) AS (
+			SELECT ?
+			UNION
+			SELECT gm.member_id FROM group_members gm
+			JOIN descendants d ON gm.group_id = d.id
+			WHERE gm.member_type = 'GROUP'
+		)
+		SELECT EXISTS (SELECT 1 FROM descendants WHERE id = ?)`, start, target,
+	).Scan(&found)
 	if err != nil {
-		return false
+		return false, fmt.Errorf("walk group descendants of %s: %w", start, err)
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var childID string
-		if err := rows.Scan(&childID); err != nil {
-			continue
-		}
-		if isGroupDescendant(tx, childID, target, visited) {
-			return true
-		}
-	}
-	return false
+	return found, nil
 }
 
 // UpdateMemberType changes the member_type for an existing group member.
@@ -241,7 +308,10 @@ func (s *Store) UpdateMemberType(groupID, memberID string, memberType MemberType
 	if err != nil {
 		return fmt.Errorf("update member type: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -428,7 +498,10 @@ func rebuildClosureTx(tx *sql.Tx) error {
 		if err != nil {
 			return fmt.Errorf("rebuild closure depth %d: %w", depth, err)
 		}
-		n, _ := res.RowsAffected()
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("rows affected: %w", err)
+		}
 		if n == 0 {
 			break
 		}

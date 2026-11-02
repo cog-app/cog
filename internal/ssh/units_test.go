@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -13,6 +14,7 @@ import (
 
 	gossh "golang.org/x/crypto/ssh"
 
+	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 )
 
@@ -423,7 +425,7 @@ func TestPublicKeyCallback_WrongUser(t *testing.T) {
 	// Alice's key presented as bob — must be refused.
 	_, err = ac.publicKeyCallback(&stubConnMeta{user: "bob"}, pk)
 	require.True(t, err != nil)
-	require.True(t, strings.Contains(err.Error(), "belongs to"))
+	require.True(t, errors.Is(err, keys.ErrNotFound), "got %v", err)
 }
 
 func TestPublicKeyCallback_UnknownKey(t *testing.T) {

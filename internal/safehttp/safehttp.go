@@ -126,6 +126,7 @@ func (dl dialer) DialContext(ctx context.Context, network, addr string) (net.Con
 	// Dial the first resolvable, non-blocked address. Pin to IP to defeat rebinding.
 	var d net.Dialer
 	d.Timeout = 5 * time.Second
+	var errs []error
 	for _, ipRaw := range ips {
 		ip, ok := netip.AddrFromSlice(ipRaw)
 		if !ok {
@@ -135,6 +136,10 @@ func (dl dialer) DialContext(ctx context.Context, network, addr string) (net.Con
 		if err == nil {
 			return conn, nil
 		}
+		errs = append(errs, err)
+	}
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("dial %s: %w", host, errors.Join(errs...))
 	}
 	return nil, fmt.Errorf("dial %s: no usable address", host)
 }

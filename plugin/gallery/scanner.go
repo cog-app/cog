@@ -9,6 +9,7 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,10 +26,12 @@ import (
 func (p *Plugin) resolveLocalPath(username, filePath string) string {
 	if fs := p.ctx.UserVFS(username); fs != nil {
 		if u, ok := fs.(vfs.Unwrapper); ok {
-			if backend, subpath, err := u.Unwrap("/" + filePath); err == nil {
-				if lr, ok := backend.(vfs.LocalRooter); ok {
-					return filepath.Join(lr.LocalRoot(), subpath)
-				}
+			backend, subpath, err := u.Unwrap("/" + filePath)
+			if err != nil {
+				p.log.Warn("resolve media path through the user's VFS failed; falling back to their files directory",
+					"user", username, "path", filePath, "err", err)
+			} else if lr, ok := backend.(vfs.LocalRooter); ok {
+				return filepath.Join(lr.LocalRoot(), subpath)
 			}
 		}
 	}
@@ -138,7 +141,11 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	}
 
 	// Load system settings for feature gating.
-	sysDB, _ := p.SystemDB()
+	sysDB, err := p.SystemDB()
+	if err != nil {
+		p.log.Warn("system db; using default settings", "err", err)
+		sysDB = nil
+	}
 
 	// Stage 2.5: Pre-generate thumbnails for grid view.
 	if sysDB == nil || SettingPreviewGenerationEnabled.MustGet(sysDB) {
@@ -167,7 +174,10 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	}
 
 	// Stage 4: Reverse geocoding
-	p.reverseGeocode(galleryDB)
+	if err := p.reverseGeocode(galleryDB); err != nil {
+		p.log.Warn("geocode", "user", username, "err", err)
+		warnings = append(warnings, fmt.Sprintf("%s: geocode: %v", username, err))
+	}
 
 	// Stage 5: Auto-album generation
 	if err := p.generateAutoAlbums(ctx, galleryDB); err != nil {
@@ -309,10 +319,20 @@ func (p *Plugin) extractMetadata(ctx context.Context, db *sql.DB, username strin
 		m := &items[i]
 		srcPath := p.resolveLocalPath(username, m.FilePath)
 
+		var err error
 		if m.IsVideo() {
-			extractVideoMetadata(srcPath, m)
+			err = extractVideoMetadata(srcPath, m)
 		} else {
-			extractImageMetadata(srcPath, m)
+			err = extractImageMetadata(srcPath, m)
+		}
+		switch {
+		case errors.Is(err, image.ErrFormat):
+			// A format Go cannot measure (HEIC, TIFF): expected, and seen
+			// again every scan, so not worth a warning each time.
+			p.log.Debug("extract metadata", "path", m.FilePath, "err", err)
+		case err != nil:
+			// Whatever was read is still stored below.
+			p.log.Warn("extract metadata", "path", m.FilePath, "err", err)
 		}
 
 		m.DateIndexed = p.ctx.Now().Unix()
@@ -330,7 +350,9 @@ func (p *Plugin) extractOCR(ctx context.Context, db *sql.DB, username string) er
 		return nil
 	}
 	sysDB, err := p.SystemDB()
-	if err == nil && !SettingOCREnabled.MustGet(sysDB) {
+	if err != nil {
+		p.log.Warn("system db; running ocr by default", "err", err)
+	} else if !SettingOCREnabled.MustGet(sysDB) {
 		return nil
 	}
 
@@ -359,7 +381,9 @@ func (p *Plugin) extractOCR(ctx context.Context, db *sql.DB, username string) er
 		if err != nil {
 			p.log.Warn("ocr failed", "path", m.FilePath, "err", err)
 			// Mark as attempted so we don't retry — store a sentinel.
-			db.Exec(`UPDATE media SET ocr_text = ' ' WHERE id = ?`, m.ID)
+			if _, err := db.Exec(`UPDATE media SET ocr_text = ' ' WHERE id = ?`, m.ID); err != nil {
+				return fmt.Errorf("mark %s ocr attempted: %w", m.FilePath, err)
+			}
 			continue
 		}
 		if text == "" {
@@ -367,40 +391,49 @@ func (p *Plugin) extractOCR(ctx context.Context, db *sql.DB, username string) er
 			text = " "
 		}
 
-		db.Exec(`UPDATE media SET ocr_text = ? WHERE id = ?`, text, m.ID)
+		if _, err := db.Exec(`UPDATE media SET ocr_text = ? WHERE id = ?`, text, m.ID); err != nil {
+			return fmt.Errorf("store ocr for %s: %w", m.FilePath, err)
+		}
 	}
 
 	return nil
 }
 
 // extractImageMetadata reads EXIF and image dimensions from an image file.
-func extractImageMetadata(path string, m *Media) {
+// A format Go cannot decode leaves the dimensions unset but still reads the
+// EXIF; that is reported as an error along with any failure to read the file.
+func extractImageMetadata(path string, m *Media) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return
+		return err
 	}
 	defer f.Close()
 
 	// Read image dimensions.
-	cfg, _, err := image.DecodeConfig(f)
-	if err == nil {
+	cfg, _, decodeErr := image.DecodeConfig(f)
+	if decodeErr == nil {
 		m.Width = cfg.Width
 		m.Height = cfg.Height
+	} else {
+		decodeErr = fmt.Errorf("dimensions: %w", decodeErr)
 	}
 
 	// Reset for EXIF reading.
-	f.Seek(0, 0)
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("rewind for exif: %w", err)
+	}
 	readEXIF(f, m)
+	return decodeErr
 }
 
 // extractVideoMetadata extracts metadata from a video file using ffprobe.
-func extractVideoMetadata(path string, m *Media) {
+func extractVideoMetadata(path string, m *Media) error {
 	info, err := ffprobeInfo(path)
 	if err != nil {
 		// ffprobe not available or failed — set dimensions to 1x1 so we don't retry.
 		m.Width = 1
 		m.Height = 1
-		return
+		return fmt.Errorf("ffprobe: %w", err)
 	}
 
 	m.Width = info.Width
@@ -412,14 +445,15 @@ func extractVideoMetadata(path string, m *Media) {
 		ts := info.CreationTime.Unix()
 		m.DateTaken = &ts
 	}
+	return nil
 }
 
 // reverseGeocode fills in place_name for media with GPS coordinates but no city.
-func (p *Plugin) reverseGeocode(db *sql.DB) {
+func (p *Plugin) reverseGeocode(db *sql.DB) error {
 	rows, err := db.Query(`SELECT id, latitude, longitude FROM media
 		WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND city = ''`)
 	if err != nil {
-		return
+		return fmt.Errorf("list ungeocoded media: %w", err)
 	}
 	defer rows.Close()
 
@@ -427,12 +461,15 @@ func (p *Plugin) reverseGeocode(db *sql.DB) {
 		var id int64
 		var lat, lon float64
 		if err := rows.Scan(&id, &lat, &lon); err != nil {
-			continue
+			return fmt.Errorf("scan ungeocoded media: %w", err)
 		}
 		city, region, country, placeName := p.geocoder.Reverse(lat, lon)
-		db.Exec(`UPDATE media SET city = ?, region = ?, country = ?, place_name = ? WHERE id = ?`,
-			city, region, country, placeName, id)
+		if _, err := db.Exec(`UPDATE media SET city = ?, region = ?, country = ?, place_name = ? WHERE id = ?`,
+			city, region, country, placeName, id); err != nil {
+			return fmt.Errorf("store place for media %d: %w", id, err)
+		}
 	}
+	return rows.Err()
 }
 
 // generateAutoAlbums creates auto-albums by date (month) and folder.
@@ -480,8 +517,8 @@ func (p *Plugin) generateAutoAlbums(ctx context.Context, db *sql.DB) error {
 		// Date album (by month)
 		monthKey := fmtMonth(ts)
 		monthName := fmtMonthName(monthKey)
-		if albumID, err := UpsertAutoAlbum(db, AlbumDate, monthKey, monthName); err == nil {
-			AddMediaToAlbum(db, albumID, r.ID)
+		if err := addToAutoAlbum(db, AlbumDate, monthKey, monthName, r.ID); err != nil {
+			return err
 		}
 
 		// Folder album
@@ -491,8 +528,8 @@ func (p *Plugin) generateAutoAlbums(ctx context.Context, db *sql.DB) error {
 			if i := strings.LastIndex(dir, "/"); i >= 0 {
 				folderName = dir[i+1:]
 			}
-			if albumID, err := UpsertAutoAlbum(db, AlbumFolder, dir, folderName); err == nil {
-				AddMediaToAlbum(db, albumID, r.ID)
+			if err := addToAutoAlbum(db, AlbumFolder, dir, folderName, r.ID); err != nil {
+				return err
 			}
 		}
 
@@ -500,8 +537,8 @@ func (p *Plugin) generateAutoAlbums(ctx context.Context, db *sql.DB) error {
 		if r.CameraModel != "" {
 			cameraKey := r.CameraMake + "/" + r.CameraModel
 			cameraName := strings.TrimSpace(r.CameraMake + " " + r.CameraModel)
-			if albumID, err := UpsertAutoAlbum(db, AlbumCamera, cameraKey, cameraName); err == nil {
-				AddMediaToAlbum(db, albumID, r.ID)
+			if err := addToAutoAlbum(db, AlbumCamera, cameraKey, cameraName, r.ID); err != nil {
+				return err
 			}
 		}
 
@@ -512,12 +549,23 @@ func (p *Plugin) generateAutoAlbums(ctx context.Context, db *sql.DB) error {
 			if r.Country != "" {
 				locationName = r.City + ", " + r.Country
 			}
-			if albumID, err := UpsertAutoAlbum(db, AlbumLocation, locationKey, locationName); err == nil {
-				AddMediaToAlbum(db, albumID, r.ID)
+			if err := addToAutoAlbum(db, AlbumLocation, locationKey, locationName, r.ID); err != nil {
+				return err
 			}
 		}
 	}
 
+	return nil
+}
+
+func addToAutoAlbum(db *sql.DB, albumType int, key, name string, mediaID int64) error {
+	albumID, err := UpsertAutoAlbum(db, albumType, key, name)
+	if err != nil {
+		return fmt.Errorf("auto-album %q: %w", key, err)
+	}
+	if err := AddMediaToAlbum(db, albumID, mediaID); err != nil {
+		return fmt.Errorf("add media %d to auto-album %q: %w", mediaID, key, err)
+	}
 	return nil
 }
 
@@ -534,7 +582,7 @@ func (p *Plugin) preGenerateThumbnails(ctx context.Context, db *sql.DB, username
 		return err
 	}
 
-	var generated int
+	var generated, failed int
 	for i := range items {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -545,6 +593,10 @@ func (p *Plugin) preGenerateThumbnails(ctx context.Context, db *sql.DB, username
 		}
 		f, err := p.PreviewPath(username, m, 256)
 		if err != nil {
+			// Formats with no previewer fail here every scan; one summary
+			// line below says how many, this says which.
+			p.log.Debug("thumbnail", "path", m.FilePath, "err", err)
+			failed++
 			continue
 		}
 		f.Close()
@@ -553,8 +605,8 @@ func (p *Plugin) preGenerateThumbnails(ctx context.Context, db *sql.DB, username
 			p.log.Info("thumbnails", "user", username, "generated", generated)
 		}
 	}
-	if generated > 0 {
-		p.log.Info("thumbnails done", "user", username, "generated", generated)
+	if generated > 0 || failed > 0 {
+		p.log.Info("thumbnails done", "user", username, "generated", generated, "failed", failed)
 	}
 	return nil
 }
@@ -581,15 +633,19 @@ func (p *Plugin) computeQualityScores(ctx context.Context, db *sql.DB, username 
 		m := &items[i]
 		f, err := p.PreviewPath(username, m, 256)
 		if err != nil {
+			p.log.Debug("quality score: thumbnail", "path", m.FilePath, "err", err)
 			continue
 		}
 		img, _, err := image.Decode(f)
 		f.Close()
 		if err != nil {
+			p.log.Warn("quality score: decode thumbnail", "path", m.FilePath, "err", err)
 			continue
 		}
 		score := laplacianVariance(img)
-		UpdateQualityScore(db, m.ID, score)
+		if err := UpdateQualityScore(db, m.ID, score); err != nil {
+			return fmt.Errorf("store quality score for %s: %w", m.FilePath, err)
+		}
 	}
 	return nil
 }

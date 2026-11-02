@@ -60,7 +60,10 @@ func (p *Plugin) CreateComment(username string, fileID int64, actorID, message s
 		return nil, fmt.Errorf("create comment: %w", err)
 	}
 
-	id, _ := res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("create comment id: %w", err)
+	}
 	return &Comment{
 		ID:        id,
 		FileID:    fileID,
@@ -87,14 +90,18 @@ func (p *Plugin) UpdateComment(username string, commentID int64, actorID, messag
 	if err != nil {
 		return fmt.Errorf("update comment: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update comment rows: %w", err)
+	}
 	if n == 0 {
-		return fmt.Errorf("comment not found or not owned")
+		return fmt.Errorf("comment %d not found or not owned: %w", commentID, ErrNotFound)
 	}
 	return nil
 }
 
-// DeleteComment removes a comment.
+// DeleteComment removes a comment. A comment that doesn't exist, or that
+// actorID didn't write, is ErrNotFound.
 func (p *Plugin) DeleteComment(username string, commentID int64, actorID string) error {
 	db, err := p.DB(username)
 	if err != nil {
@@ -106,9 +113,12 @@ func (p *Plugin) DeleteComment(username string, commentID int64, actorID string)
 	if err != nil {
 		return fmt.Errorf("delete comment: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete comment rows: %w", err)
+	}
 	if n == 0 {
-		return fmt.Errorf("comment not found or not owned")
+		return fmt.Errorf("comment %d not found or not owned: %w", commentID, ErrNotFound)
 	}
 	return nil
 }

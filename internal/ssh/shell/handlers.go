@@ -5,7 +5,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"strings"
 
 	"git.duckfam.us/jj-software/cog/vfs"
 
@@ -18,7 +17,7 @@ import (
 // handlers, so the path is always absolute — either a real path under filesDir
 // or an absolute virtual path that doesn't live under filesDir (e.g., /.ssh).
 func (s *Shell) interpreterToVirtualPath(name string) string {
-	if strings.HasPrefix(name, s.filesDir) {
+	if Within(name, s.filesDir) {
 		return s.virtualPath(name)
 	}
 	return name

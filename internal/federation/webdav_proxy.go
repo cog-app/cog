@@ -69,6 +69,7 @@ func (p *WebDAVProxy) Proxy(w http.ResponseWriter, r *http.Request, fs *Federate
 	if r.Method == "PROPFIND" && resp.StatusCode == 207 {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
+			p.Log.Error("federation proxy read failed", "remote", fs.RemoteHost, "err", err)
 			http.Error(w, "proxy read error", http.StatusBadGateway)
 			return
 		}
@@ -80,5 +81,8 @@ func (p *WebDAVProxy) Proxy(w http.ResponseWriter, r *http.Request, fs *Federate
 	}
 
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		// The status is already sent; the client sees a truncated body.
+		p.Log.Error("federation proxy copy failed", "remote", fs.RemoteHost, "err", err)
+	}
 }

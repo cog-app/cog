@@ -71,6 +71,10 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		ContentFunc: func(filesDir string, cols map[string]string) string {
 			data, err := os.ReadFile(filepath.Join(filesDir, "Notes", cols["filename"]))
 			if err != nil {
+				// Gone since the change was queued: nothing to index.
+				if !errors.Is(err, fs.ErrNotExist) {
+					p.log.Error("index note content", "file", cols["filename"], "err", err)
+				}
 				return ""
 			}
 			return StripMarkdown(string(data))
@@ -201,4 +205,50 @@ func (p *Plugin) FolderIcon(_, folderPath string) (string, bool) {
 		return notesFolderIcon, true
 	}
 	return "", false
+}
+
+// freeNoteFilename returns a filename for title that no other note uses,
+// in the database or on disk: "Title.md", then "Title (2).md", and so on.
+// Taking an existing name would overwrite that note's file. self is the
+// note being renamed, whose own name is not a clash; nil for a new note.
+func (p *Plugin) freeNoteFilename(db *sql.DB, username, title string, self *Note) (string, error) {
+	base := strings.TrimSuffix(FilenameFromTitle(title), ".md")
+	for n := 1; ; n++ {
+		name := base + ".md"
+		if n > 1 {
+			name = fmt.Sprintf("%s (%d).md", base, n)
+		}
+		if self != nil && name == self.Filename {
+			return name, nil
+		}
+		taken, err := p.noteNameTaken(db, username, name)
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			return name, nil
+		}
+	}
+}
+
+func (p *Plugin) noteNameTaken(db *sql.DB, username, filename string) (bool, error) {
+	if _, err := GetNoteByFilename(db, filename); err == nil {
+		return true, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("look up %s: %w", filename, err)
+	}
+	var err error
+	if vf := p.userFS(username); vf != nil {
+		_, err = vf.Stat(notesPath(filename))
+	} else {
+		_, err = os.Stat(filepath.Join(p.NotesDir(username), filename))
+	}
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, vfs.ErrNotFound) || errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	default:
+		return false, fmt.Errorf("stat %s: %w", filename, err)
+	}
 }

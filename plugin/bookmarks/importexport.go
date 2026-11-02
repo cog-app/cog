@@ -2,6 +2,7 @@ package bookmarks
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -9,28 +10,40 @@ import (
 	"strings"
 )
 
-// ImportNetscapeHTML parses a Netscape Bookmark HTML file and imports bookmarks.
-// Returns the number of bookmarks imported.
+// The parts of a Netscape Bookmark file the import reads: each
+// <DT><A HREF="..." ...>Title</A> entry, and its HREF and TAGS attributes.
+var (
+	netscapeLinkRe = regexp.MustCompile(`(?i)<DT>\s*<A\s+([^>]*)>(.*?)</A>`)
+	netscapeHrefRe = regexp.MustCompile(`(?i)HREF="([^"]*)"`)
+	netscapeTagsRe = regexp.MustCompile(`(?i)TAGS="([^"]*)"`)
+)
+
+// ImportNetscapeHTML parses a Netscape Bookmark HTML file and imports its
+// bookmarks, returning how many. The import is one transaction: if any
+// bookmark fails, none is kept and the count is 0, so a retry after fixing
+// the file does not start from a half-imported state.
+//
+// A bookmark whose URL is already saved is updated as CreateBookmark would:
+// its title and description are replaced, its tags only when the file gives
+// some, and its folders are kept.
 func ImportNetscapeHTML(db *sql.DB, r io.Reader) (int, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return 0, fmt.Errorf("read import file: %w", err)
 	}
 
-	doc := string(data)
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin import: %w", err)
+	}
+	defer tx.Rollback()
+
 	count := 0
-
-	// Parse <DT><A HREF="..." ...>Title</A> entries.
-	linkRe := regexp.MustCompile(`(?i)<DT>\s*<A\s+([^>]*)>(.*?)</A>`)
-	hrefRe := regexp.MustCompile(`(?i)HREF="([^"]*)"`)
-	tagsRe := regexp.MustCompile(`(?i)TAGS="([^"]*)"`)
-
-	matches := linkRe.FindAllStringSubmatch(doc, -1)
-	for _, m := range matches {
+	for _, m := range netscapeLinkRe.FindAllStringSubmatch(string(data), -1) {
 		attrs := m[1]
 		title := html.UnescapeString(strings.TrimSpace(m[2]))
 
-		hrefMatch := hrefRe.FindStringSubmatch(attrs)
+		hrefMatch := netscapeHrefRe.FindStringSubmatch(attrs)
 		if hrefMatch == nil || hrefMatch[1] == "" {
 			continue
 		}
@@ -40,7 +53,7 @@ func ImportNetscapeHTML(db *sql.DB, r io.Reader) (int, error) {
 		}
 
 		var tags []string
-		if tagsMatch := tagsRe.FindStringSubmatch(attrs); tagsMatch != nil && tagsMatch[1] != "" {
+		if tagsMatch := netscapeTagsRe.FindStringSubmatch(attrs); tagsMatch != nil && tagsMatch[1] != "" {
 			for t := range strings.SplitSeq(html.UnescapeString(tagsMatch[1]), ",") {
 				t = strings.TrimSpace(t)
 				if t != "" {
@@ -49,13 +62,44 @@ func ImportNetscapeHTML(db *sql.DB, r io.Reader) (int, error) {
 			}
 		}
 
-		if _, err := CreateBookmark(db, url, title, "", tags, nil); err != nil {
-			return count, fmt.Errorf("import %s: %w", url, err)
+		if err := importBookmark(tx, url, title, tags); err != nil {
+			return 0, fmt.Errorf("import %s: %w", url, err)
 		}
 		count++
 	}
 
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit import: %w", err)
+	}
 	return count, nil
+}
+
+// importBookmark saves one imported bookmark in tx: a new one in the root
+// folder, or an update of the one already saved under url.
+func importBookmark(tx *sql.Tx, url, title string, tags []string) error {
+	var id int64
+	err := tx.QueryRow(`SELECT id FROM bookmarks WHERE url = ?`, url).Scan(&id)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		if err := tx.QueryRow(`INSERT INTO bookmarks (url, title, description) VALUES (?, ?, '') RETURNING id`, url, title).Scan(&id); err != nil {
+			return fmt.Errorf("insert bookmark: %w", err)
+		}
+		if err := setFolders(tx, id, nil); err != nil {
+			return err
+		}
+	case err != nil:
+		return fmt.Errorf("find bookmark by url: %w", err)
+	default:
+		if _, err := tx.Exec(`UPDATE bookmarks SET title = ?, description = '', updated_at = unixepoch() WHERE id = ?`, title, id); err != nil {
+			return fmt.Errorf("update bookmark: %w", err)
+		}
+	}
+	if tags != nil {
+		if err := setTags(tx, id, tags); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ExportNetscapeHTML writes all bookmarks in Netscape Bookmark HTML format.

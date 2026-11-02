@@ -11,6 +11,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"html"
@@ -28,7 +29,10 @@ func main() {
 	snapshotsOnly := flag.Bool("snapshots", false, "only regenerate the snapshot gallery")
 	flag.Parse()
 
-	os.MkdirAll("tmp", 0o755)
+	if err := os.MkdirAll("tmp", 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "mkdir tmp: %v\n", err)
+		os.Exit(1)
+	}
 
 	if *snapshotsOnly {
 		generateGallery()
@@ -112,8 +116,11 @@ func generateGallery() {
 	groups := map[string][]snapshot{}
 	var pkgOrder []string
 
-	filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			// Report and carry on: one unreadable directory should not
+			// cost the rest of the gallery.
+			fmt.Fprintf(os.Stderr, "  walk %s: %v\n", path, err)
 			return nil
 		}
 		// Skip hidden dirs and tmp (but not the root ".").
@@ -137,6 +144,7 @@ func generateGallery() {
 
 		entries, err := os.ReadDir(path)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "  read %s: %v\n", path, err)
 			return nil
 		}
 
@@ -180,6 +188,9 @@ func generateGallery() {
 		}
 		return nil
 	})
+	if walkErr != nil {
+		fmt.Fprintf(os.Stderr, "  walk: %v\n", walkErr)
+	}
 
 	sort.Strings(pkgOrder)
 
@@ -189,12 +200,14 @@ func generateGallery() {
 	}
 
 	outPath := filepath.Join("tmp", "snapshots.html")
-	f, err := os.Create(outPath)
+	file, err := os.Create(outPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  create %s: %v\n", outPath, err)
 		return
 	}
-	defer f.Close()
+	// Write through a bufio.Writer: its error is sticky, so the Flush at the
+	// end reports any write that failed along the way.
+	f := bufio.NewWriter(file)
 
 	// Write HTML.
 	fmt.Fprintf(f, `<!DOCTYPE html>
@@ -265,6 +278,10 @@ summary .count{color:#999;font-weight:400;font-size:0.85rem;margin-left:0.5rem}
 	fmt.Fprintf(f, `</body>
 </html>
 `)
+	if err := errors.Join(f.Flush(), file.Close()); err != nil {
+		fmt.Fprintf(os.Stderr, "  write %s: %v\n", outPath, err)
+		return
+	}
 
 	fmt.Printf("  wrote %s (%d snapshots, %d packages)\n", outPath, totalSnaps, len(pkgOrder))
 }

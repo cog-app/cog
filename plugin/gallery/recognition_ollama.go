@@ -44,7 +44,10 @@ List 5-15 tags describing objects, activities, colors, and setting visible in th
 			"temperature": 0.3,
 		},
 	}
-	body, _ := json.Marshal(reqBody)
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("encode ollama request: %w", err)
+	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", b.URL+"/api/generate", bytes.NewReader(body))
 	if err != nil {

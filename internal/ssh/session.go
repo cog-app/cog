@@ -3,12 +3,16 @@ package ssh
 import (
 	"context"
 	"encoding/binary"
+	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/ssh/shell"
 	"git.duckfam.us/jj-software/cog/vfs"
 
 	gossh "golang.org/x/crypto/ssh"
+	"mvdan.cc/sh/v3/interp"
 )
 
 // handleSession dispatches SSH session requests (exec, subsystem, shell).
@@ -16,7 +20,12 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 	defer channel.Close()
 
 	filesDir := s.providers.Plugins.UserFilesDir(username)
-	userFS, _ := s.providers.Plugins.UserFS(username)
+	userFS, err := s.providers.Plugins.UserFS(username)
+	if err != nil {
+		// Without a mount resolver the session still runs, on filesDir alone.
+		s.log.Warn("ssh session: user filesystem unavailable", "user", username, "err", err)
+		userFS = nil
+	}
 
 	// Build a composite VFS with user files at /files and .ssh/authorized_keys
 	// at the virtual root, so ssh-copy-id and cat .ssh/authorized_keys work
@@ -110,11 +119,22 @@ func (s *Server) execShell(ctx context.Context, channel gossh.Channel, username,
 	if hasPTY {
 		sh.SetSSHMode(termWidth, termHeight)
 	}
-	if err := sh.Run(ctx, command, channel, channel, channel.Stderr()); err != nil {
-		s.log.Debug("exec error", "user", username, "cmd", command, "err", err)
-		return 1
+	return s.exitCode(channel, username, sh.Run(ctx, command, channel, channel, channel.Stderr()))
+}
+
+// exitCode turns a shell's result into the session's exit status. A command's
+// own exit status passes through, and it has already said why it failed; any
+// other error (a parse error, a runner failure) is the user's to see too.
+func (s *Server) exitCode(channel gossh.Channel, username string, err error) int {
+	if err == nil {
+		return 0
 	}
-	return 0
+	if status, ok := errors.AsType[interp.ExitStatus](err); ok {
+		return int(status)
+	}
+	s.log.Debug("shell error", "user", username, "err", err)
+	fmt.Fprintf(channel.Stderr(), "cog: %v\n", err)
+	return 1
 }
 
 func (s *Server) interactiveShell(ctx context.Context, channel gossh.Channel, username, filesDir string, userFS vfs.FS, hasPTY bool, termWidth, termHeight int) int {
@@ -122,11 +142,7 @@ func (s *Server) interactiveShell(ctx context.Context, channel gossh.Channel, us
 	if hasPTY {
 		sh.SetSSHMode(termWidth, termHeight)
 	}
-	if err := sh.RunInteractive(ctx, channel, channel, channel.Stderr()); err != nil {
-		s.log.Debug("shell error", "user", username, "err", err)
-		return 1
-	}
-	return 0
+	return s.exitCode(channel, username, sh.RunInteractive(ctx, channel, channel, channel.Stderr()))
 }
 
 // parsePtyReq extracts terminal dimensions from a pty-req payload.
@@ -136,6 +152,9 @@ func parsePtyReq(payload []byte) (width, height int) {
 		return 80, 24
 	}
 	termLen := int(binary.BigEndian.Uint32(payload[:4]))
+	if termLen > len(payload)-4 {
+		return 80, 24
+	}
 	rest := payload[4+termLen:]
 	if len(rest) < 8 {
 		return 80, 24
@@ -157,9 +176,14 @@ func parseStringPayload(payload []byte) string {
 	return string(payload[4 : 4+n])
 }
 
-// sendExitStatus sends the exit-status message to the channel.
+// sendExitStatus sends the exit-status message to the channel. A status is
+// a byte, as a POSIX shell's is: code is taken modulo 256, so a negative or
+// oversized code does not reach the client as some huge uint32.
 func sendExitStatus(channel gossh.Channel, code int) {
 	payload := make([]byte, 4)
-	binary.BigEndian.PutUint32(payload, uint32(code))
-	channel.SendRequest("exit-status", false, payload)
+	binary.BigEndian.PutUint32(payload, uint32(code&0xff))
+	if _, err := channel.SendRequest("exit-status", false, payload); err != nil {
+		// The client has gone; there is no one left to tell.
+		slog.Debug("send exit-status", "err", err)
+	}
 }

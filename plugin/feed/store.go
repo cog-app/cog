@@ -140,6 +140,28 @@ func (s *Store) CreateSubscription(sub Subscription) (int64, error) {
 	return id, nil
 }
 
+// importSubscription creates sub unless a subscription with the same URL
+// already exists, reporting whether a row was added. Importers use it so that
+// a duplicate is skipped while any other failure is reported.
+func (s *Store) importSubscription(sub Subscription) (bool, error) {
+	res, err := s.db.Exec(`
+		INSERT INTO subscriptions
+			(folder_id, kind, url, title, site_url, image_url, poll_interval_sec, next_check_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(url) DO NOTHING`,
+		sub.FolderID, sub.Kind, sub.URL, sub.Title, sub.SiteURL, sub.ImageURL,
+		sub.PollIntervalSec, sub.NextCheckAt,
+	)
+	if err != nil {
+		return false, fmt.Errorf("import subscription %q: %w", sub.URL, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("import subscription %q rows affected: %w", sub.URL, err)
+	}
+	return n > 0, nil
+}
+
 // GetSubscription returns a single subscription by ID.
 func (s *Store) GetSubscription(id int64) (Subscription, error) {
 	var sub Subscription

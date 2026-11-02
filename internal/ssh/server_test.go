@@ -52,7 +52,8 @@ func newTestEnv(t *testing.T) *testEnv {
 		t.Fatalf("start plugins: %v", err)
 	}
 
-	ks := keys.NewStore(p.Plugins, p.Users, clock.System())
+	ks, err := keys.NewStore(p.DB, p.Plugins, p.Users, clock.System())
+	require.NoError(t, err)
 	sshSrv, err := New(cfg, p, ks, log)
 	require.NoError(t, err)
 

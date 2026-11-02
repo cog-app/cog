@@ -41,9 +41,10 @@ func (e *FilterEngine) Apply(itemID int64) error {
 	folder := ""
 	if sub.FolderID.Valid {
 		f, err := e.store.GetFolder(sub.FolderID.Int64)
-		if err == nil {
-			folder = f.Name
+		if err != nil {
+			return fmt.Errorf("filter apply: load folder: %w", err)
 		}
+		folder = f.Name
 	}
 
 	filters, err := e.store.ListFilters()

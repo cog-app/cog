@@ -51,6 +51,8 @@ type ctx struct {
 }
 
 func (x *ctx) sink(ptr string, val any) {
+	// val was decoded from the request's JSON, so it encodes again: Sink
+	// cannot fail on it.
 	if p, err := jsobj.Sink(ptr, val); err == nil {
 		x.extra = append(x.extra, p)
 	}
@@ -258,6 +260,8 @@ const compsParam = "X-COG-JSCOMPS"
 func stashed(params []contentline.Param) []any {
 	for _, p := range params {
 		if strings.EqualFold(p.Name, compsParam) && len(p.Values) == 1 {
+			// A stash that does not decode (edited by hand, or by another
+			// client) is ignored: the vCard properties still stand on their own.
 			b, err := base64.RawURLEncoding.DecodeString(p.Values[0])
 			if err != nil {
 				return nil

@@ -19,8 +19,10 @@ func (p *Plugin) Seed(username string) error {
 		return fmt.Errorf("seed notes: %w", err)
 	}
 
-	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM notes`).Scan(&count)
+	count, err := NoteCount(db)
+	if err != nil {
+		return fmt.Errorf("seed notes: %w", err)
+	}
 	if count > 0 {
 		return nil
 	}
@@ -62,7 +64,9 @@ func (p *Plugin) Seed(username string) error {
 		}
 
 		if favorite {
-			ToggleFavorite(db, note.ID)
+			if err := ToggleFavorite(db, note.ID); err != nil {
+				p.log.Error("seed note: favorite failed", "title", title, "error", err)
+			}
 		}
 
 		p.log.Info("seeded note", "title", title)

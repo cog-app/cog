@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"git.duckfam.us/jj-software/cog/ui"
 	"image/png"
 	"io"
@@ -11,8 +12,10 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/seq"
+	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/plugin/files"
@@ -57,7 +60,7 @@ func (h *settingsHandler) ShowSecurity(w http.ResponseWriter, r *http.Request) {
 
 	var flash securityFlash
 	if f := getFlash(w, r); f != nil {
-		flash = securityFlash{Message: f.Message, Kind: f.Kind, For: f.Value("form"), Invalid: f.Value("invalid")}
+		flash = securityFlash{Message: f.Message, Kind: f.Kind, For: f.Value("form"), Invalid: f.Value("invalid"), Fields: f.Form}
 	}
 	smtpConfigured := h.p.EmailSender() != nil
 	var webauthnCreds []auth.WebAuthnCredential
@@ -68,7 +71,14 @@ func (h *settingsHandler) ShowSecurity(w http.ResponseWriter, r *http.Request) {
 			h.p.Log.Error("list passkeys", "user", u.Username, "err", err)
 		}
 	}
-	if err := settingsSecurityPage(pd, flash, appPasswords, u.MFAMethod, backupCodeCount, smtpConfigured, webauthnAvailable, webauthnCreds).Render(r.Context(), w); err != nil {
+	var sshKeys []keys.SSHKey
+	if h.p.Config.SSHEnabled {
+		sshKeys, err = h.p.SSHKeys.List(u.Username)
+		if err != nil {
+			h.p.Log.Error("list ssh keys", "user", u.Username, "err", err)
+		}
+	}
+	if err := settingsSecurityPage(pd, flash, appPasswords, u.MFAMethod, backupCodeCount, smtpConfigured, webauthnAvailable, webauthnCreds, h.p.Config.SSHEnabled, sshKeys).Render(r.Context(), w); err != nil {
 		h.p.Log.Error("render security page", "err", err)
 	}
 }
@@ -130,8 +140,66 @@ func (h *settingsHandler) DeleteAppPassword(w http.ResponseWriter, r *http.Reque
 	u := auth.UserFromContext(r.Context())
 	id := r.PathValue("id")
 
-	if err := h.p.AppPasswords.Delete(id, u.ID); err != nil {
+	err := h.p.AppPasswords.Delete(id, u.ID)
+	if errors.Is(err, auth.ErrAppPasswordNotFound) {
 		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("delete app password", "user", u.Username, "id", id, "err", err)
+		http.Error(w, "The app password could not be revoked.", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// AddSSHKey adds a public key the user pasted, for SSH, SCP and SFTP logins.
+func (h *settingsHandler) AddSSHKey(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	name := strings.TrimSpace(r.FormValue("name"))
+	line := strings.TrimSpace(r.FormValue("public_key"))
+	back := func(kind, msg string) {
+		form := map[string]string{"form": "ssh-key"}
+		if kind == "error" {
+			form["invalid"] = "public_key"
+			form["name"] = name
+			form["public_key"] = line
+		}
+		setFlashForm(w, kind, msg, form)
+		http.Redirect(w, r, "/settings/security#ssh-keys", http.StatusSeeOther)
+	}
+
+	if line == "" {
+		back("error", "Paste a public key.")
+		return
+	}
+	_, err := h.p.SSHKeys.Add(u.Username, name, line)
+	switch {
+	case errors.Is(err, keys.ErrInvalidKey):
+		back("error", "That is not an SSH public key. Paste one line, such as the contents of ~/.ssh/id_ed25519.pub.")
+	case errors.Is(err, keys.ErrKeyExists):
+		back("error", "You have already added that key.")
+	case err != nil:
+		h.p.Log.Error("add ssh key", "user", u.Username, "err", err)
+		back("error", "The key could not be added. Try again.")
+	default:
+		back("success", "SSH key added.")
+	}
+}
+
+// DeleteSSHKey removes one of the user's SSH keys. It answers the HTMX
+// request that removes the key's row.
+func (h *settingsHandler) DeleteSSHKey(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	id := r.PathValue("id")
+	err := h.p.SSHKeys.Delete(u.Username, id)
+	if errors.Is(err, keys.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("delete ssh key", "user", u.Username, "id", id, "err", err)
+		http.Error(w, "The key could not be removed.", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -205,8 +273,10 @@ func (h *settingsHandler) ShowStorage(w http.ResponseWriter, r *http.Request) {
 				}
 				groupIDs = append(groupIDs, g.ID)
 			}
-			usageInfo.Quota = h.p.Quotas.EffectiveQuota(u.ID, rootMount.VolumeID, groupIDs)
-			if usageInfo.Quota > 0 {
+			usageInfo.Quota, err = h.p.Quotas.EffectiveQuota(u.ID, rootMount.VolumeID, groupIDs)
+			if err != nil {
+				h.p.Log.Error("effective quota", "user", u.Username, "err", err)
+			} else if usageInfo.Quota > 0 {
 				usageInfo.QuotaLabel = quota.FormatBytes(usageInfo.Quota)
 				usageInfo.Percent = min(int(usageInfo.Used*100/usageInfo.Quota), 100)
 			}
@@ -247,7 +317,7 @@ func (h *settingsHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) 
 	displayName := r.FormValue("display_name")
 	email := r.FormValue("email")
 	if err := h.p.Users.Update(u.ID, user.UpdateOpts{DisplayName: &displayName, Email: &email}); err != nil {
-		setFlash(w, "error", "Failed to update profile.")
+		setFlash(w, "error", "Failed to update profile.", err)
 	} else {
 		setFlash(w, "success", "Profile updated.")
 	}
@@ -310,7 +380,13 @@ func (h *settingsHandler) CreateMount(w http.ResponseWriter, r *http.Request) {
 
 	// Access check on the volume.
 	if h.p.Access != nil {
-		if ok, _ := h.p.Access.CanAccess(u.ID, volumeID); !ok {
+		ok, err := h.p.Access.CanAccess(u.ID, volumeID)
+		if err != nil {
+			setFlash(w, "error", "Could not check access to that volume.", err)
+			http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
+			return
+		}
+		if !ok {
 			setFlash(w, "error", "You do not have access to that volume.")
 			http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
 			return
@@ -356,8 +432,13 @@ func (h *settingsHandler) DeleteVolume(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	vol, err := h.p.Volumes.GetByID(id)
-	if err != nil {
+	if errors.Is(err, volume.ErrNotFound) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("delete volume: look up volume", "volume", id, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 	// Only owner can delete their volume.
@@ -367,6 +448,7 @@ func (h *settingsHandler) DeleteVolume(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.p.Volumes.Delete(id); err != nil {
+		h.p.Log.Error("delete volume", "volume", id, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -379,8 +461,13 @@ func (h *settingsHandler) DeleteMount(w http.ResponseWriter, r *http.Request) {
 
 	// Prevent deleting root mount.
 	m, err := h.p.Mounts.GetByID(id)
-	if err != nil {
+	if errors.Is(err, mount.ErrNotFound) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("delete mount: look up mount", "mount", id, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 	if m.UserID != u.ID {
@@ -393,6 +480,7 @@ func (h *settingsHandler) DeleteMount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.p.Mounts.Delete(id); err != nil {
+		h.p.Log.Error("delete mount", "mount", id, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -424,7 +512,7 @@ func (h *settingsHandler) SetupTOTP(w http.ResponseWriter, r *http.Request) {
 
 	key, err := h.p.TOTP.BeginSetup(u.ID, u.Username, "Cog")
 	if err != nil {
-		setFlash(w, "error", "Failed to set up TOTP: "+err.Error())
+		setFlash(w, "error", "Failed to set up TOTP: "+err.Error(), err)
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
@@ -432,13 +520,13 @@ func (h *settingsHandler) SetupTOTP(w http.ResponseWriter, r *http.Request) {
 	// Encode QR code as data URI.
 	img, err := key.Image(200, 200)
 	if err != nil {
-		setFlash(w, "error", "Failed to generate QR code.")
+		setFlash(w, "error", "Failed to generate QR code.", err)
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
-		setFlash(w, "error", "Failed to encode QR code.")
+		setFlash(w, "error", "Failed to encode QR code.", err)
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
@@ -456,6 +544,9 @@ func (h *settingsHandler) ConfirmTOTP(w http.ResponseWriter, r *http.Request) {
 
 	backupCodes, err := h.p.TOTP.ConfirmSetup(u.ID, code)
 	if err != nil {
+		// Usually a mistyped code, but this is also where a database
+		// failure surfaces, so keep the reason in the log.
+		h.p.Log.Info("confirm totp setup", "user", u.Username, "err", err)
 		setFlash(w, "error", "Invalid code. Please try again.")
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
@@ -486,7 +577,7 @@ func (h *settingsHandler) DisableTOTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.p.TOTP.Disable(u.ID); err != nil {
-		setFlash(w, "error", "Failed to disable TOTP.")
+		setFlash(w, "error", "Failed to disable TOTP.", err)
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
@@ -513,7 +604,7 @@ func (h *settingsHandler) EnableEmailOTP(w http.ResponseWriter, r *http.Request)
 
 	_, err := h.p.Users.SetMFAMethod(u.ID, "email")
 	if err != nil {
-		setFlash(w, "error", "Failed to enable email OTP.")
+		setFlash(w, "error", "Failed to enable email OTP.", err)
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
@@ -534,7 +625,7 @@ func (h *settingsHandler) DisableEmailOTP(w http.ResponseWriter, r *http.Request
 	}
 
 	if _, err := h.p.Users.SetMFAMethod(u.ID, ""); err != nil {
-		setFlash(w, "error", "Failed to disable email OTP.")
+		setFlash(w, "error", "Failed to disable email OTP.", err)
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
@@ -556,7 +647,7 @@ func (h *settingsHandler) RegenerateBackupCodes(w http.ResponseWriter, r *http.R
 
 	backupCodes, err := h.p.TOTP.RegenerateBackupCodes(u.ID)
 	if err != nil {
-		setFlash(w, "error", "Failed to regenerate backup codes.")
+		setFlash(w, "error", "Failed to regenerate backup codes.", err)
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
@@ -588,6 +679,7 @@ func (h *settingsHandler) BeginWebAuthnRegistration(w http.ResponseWriter, r *ht
 
 	data, err := h.p.WebAuthn.BeginRegistration(u.ID, u.Username, displayName)
 	if err != nil {
+		h.p.Log.Error("begin passkey registration", "user", u.Username, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -627,14 +719,21 @@ func (h *settingsHandler) FinishWebAuthnRegistration(w http.ResponseWriter, r *h
 		displayName = u.Username
 	}
 
-	if err := h.p.WebAuthn.FinishRegistration(u.ID, u.Username, displayName, req.Name, req.Credential); err != nil {
+	if err := h.p.WebAuthn.FinishRegistration(u.ID, u.Username, displayName, req.Name, req.Credential); errors.Is(err, auth.ErrWebAuthnRejected) {
+		h.p.Log.Info("finish passkey registration", "user", u.Username, "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	} else if err != nil {
+		h.p.Log.Error("finish passkey registration", "user", u.Username, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
 	if u.MFAMethod == "" {
 		if _, err := h.p.Users.SetMFAMethod(u.ID, "webauthn"); err != nil {
 			h.p.Log.Error("set mfa method after passkey registration", "user", u.Username, "err", err)
+			http.Error(w, "Passkey saved, but it could not be made your sign-in method.", http.StatusInternalServerError)
+			return
 		}
 	}
 
@@ -652,19 +751,42 @@ func (h *settingsHandler) DeleteWebAuthnCredential(w http.ResponseWriter, r *htt
 		return
 	}
 
-	if err := h.p.WebAuthn.DeleteCredential(id, u.ID); err != nil {
+	if err := h.p.WebAuthn.DeleteCredential(id, u.ID); errors.Is(err, auth.ErrCredentialNotFound) {
+		http.Error(w, "Passkey not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		h.p.Log.Error("delete passkey", "user", u.Username, "id", id, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	// Leaving "webauthn" as the MFA method with no passkeys left would lock
+	// the user out at the next login, so a failure here is the request's.
 	count, err := h.p.WebAuthn.CredentialCount(u.ID)
 	if err != nil {
 		h.p.Log.Error("count passkeys", "user", u.Username, "err", err)
-	} else if count == 0 && u.MFAMethod == "webauthn" {
+		http.Error(w, "Passkey removed, but your sign-in method could not be updated.", http.StatusInternalServerError)
+		return
+	}
+	if count == 0 && u.MFAMethod == "webauthn" {
 		if _, err := h.p.Users.SetMFAMethod(u.ID, ""); err != nil {
 			h.p.Log.Error("clear mfa method after last passkey", "user", u.Username, "err", err)
+			http.Error(w, "Passkey removed, but your sign-in method could not be updated.", http.StatusInternalServerError)
+			return
 		}
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// sshKeyName is how a key is shown: its name, or its type for a key added
+// with neither a name nor a comment.
+func sshKeyName(k keys.SSHKey) string {
+	if k.Name != "" {
+		return k.Name
+	}
+	if typ, _, ok := strings.Cut(k.PublicKey, " "); ok {
+		return typ + " key"
+	}
+	return "Unnamed key"
 }

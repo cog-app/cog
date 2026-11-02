@@ -323,3 +323,20 @@ func TestDirectSFTP_Resolve_SymlinkEscapeRejected(t *testing.T) {
 	require.True(t, err != nil)
 	require.True(t, strings.Contains(err.Error(), "outside"))
 }
+
+func TestDirectSFTP_Resolve_SiblingPrefixRejected(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "files")
+	sibling := filepath.Join(root, "files2")
+	require.NoError(t, os.Mkdir(dir, 0o755))
+	require.NoError(t, os.Mkdir(sibling, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sibling, "secret"), []byte("x"), 0o644))
+
+	// A symlink to a sibling whose name merely starts with the home directory.
+	require.NoError(t, os.Symlink(sibling, filepath.Join(dir, "esc")))
+
+	h := &directSFTPHandler{filesDir: dir}
+	_, err := h.resolve("/esc/secret")
+	require.True(t, err != nil)
+	require.True(t, strings.Contains(err.Error(), "outside"))
+}

@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/pprof"
@@ -11,6 +12,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/compat"
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/jmap"
+	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
@@ -129,6 +131,8 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("DELETE /settings/webauthn/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteWebAuthnCredential)))
 	mux.Handle("POST /settings/app-passwords", csrfWeb(http.HandlerFunc(settingsH.CreateAppPassword)))
 	mux.Handle("DELETE /settings/app-passwords/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteAppPassword)))
+	mux.Handle("POST /settings/ssh-keys", csrfWeb(http.HandlerFunc(settingsH.AddSSHKey)))
+	mux.Handle("DELETE /settings/ssh-keys/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteSSHKey)))
 	mux.Handle("POST /settings/avatar", csrfWeb(http.HandlerFunc(avatarH.Upload)))
 	mux.Handle("DELETE /settings/avatar", csrfWeb(http.HandlerFunc(avatarH.Delete)))
 
@@ -345,12 +349,11 @@ func New(p *services.Providers) http.Handler {
 
 	// Federation token-based WebDAV (remote servers access our shared files).
 	fedWebDAV := &federation.TokenWebDAVHandler{
-		Log:     p.Log.With("component", "fed-webdav"),
-		Store:   p.Federation,
-		Shares:  p.Shares,
-		Users:   p.Users,
-		Files:   fp,
-		DataDir: p.Config.DataDir,
+		Log:    p.Log.With("component", "fed-webdav"),
+		Store:  p.Federation,
+		Shares: p.Shares,
+		Users:  p.Users,
+		Files:  fp,
 	}
 	mux.Handle("/public.php/webdav/", fedWebDAV)
 
@@ -425,20 +428,32 @@ func buildOCSQuotaFunc(p *services.Providers, fp *filesPlugin.Plugin) compat.Quo
 		}
 		u, err := p.Users.GetByUsername(username)
 		if err != nil {
+			p.Log.Error("quota: look up user", "user", username, "err", err)
 			return used, -1
 		}
 		m, err := p.Mounts.GetUserRoot(u.ID)
+		if errors.Is(err, mount.ErrNotFound) {
+			// No root mount (no default volume when the user was made):
+			// no volume to fill, so no quota, as quota.Checker treats it.
+			return used, -1
+		}
 		if err != nil {
+			p.Log.Error("quota: root mount", "user", username, "err", err)
 			return used, -1
 		}
 		var groupIDs []string
 		for g, gErr := range p.Groups.ListGroupsForUser(u.ID) {
 			if gErr != nil {
-				break
+				p.Log.Error("quota: list groups", "user", username, "err", gErr)
+				return used, -1
 			}
 			groupIDs = append(groupIDs, g.ID)
 		}
-		total = p.Quotas.EffectiveQuota(u.ID, m.VolumeID, groupIDs)
+		total, err = p.Quotas.EffectiveQuota(u.ID, m.VolumeID, groupIDs)
+		if err != nil {
+			p.Log.Error("effective quota", "user", username, "err", err)
+			return used, -1
+		}
 		return used, total
 	}
 }

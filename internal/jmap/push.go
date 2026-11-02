@@ -522,6 +522,7 @@ func (s *Server) eventSource(w http.ResponseWriter, r *http.Request) {
 		}
 		b, err := json.Marshal(st)
 		if err != nil {
+			s.logger().Error("jmap: event source encode state", "user", u.Username, "err", err)
 			return false
 		}
 		if string(b) == last {

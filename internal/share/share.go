@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -400,17 +401,19 @@ func (s *Store) CheckAccessWithHierarchy(userID, resourceType, resourceID string
 
 // Update modifies a share's permissions and/or expiration.
 func (s *Store) Update(id string, permissions *uint32, expiration **int64) error {
-	now := s.clock().Unix()
+	// One statement, so permissions and expiration change together.
+	var sets []string
+	var args []any
 	if permissions != nil {
-		if _, err := s.db.Exec(`UPDATE shares SET permissions = ?, updated_at = ? WHERE id = ?`,
-			*permissions, now, id); err != nil {
-			return fmt.Errorf("update share permissions: %w", err)
-		}
+		sets, args = append(sets, "permissions = ?"), append(args, *permissions)
 	}
 	if expiration != nil {
-		if _, err := s.db.Exec(`UPDATE shares SET expiration = ?, updated_at = ? WHERE id = ?`,
-			*expiration, now, id); err != nil {
-			return fmt.Errorf("update share expiration: %w", err)
+		sets, args = append(sets, "expiration = ?"), append(args, *expiration)
+	}
+	if len(sets) > 0 {
+		sets, args = append(sets, "updated_at = ?"), append(args, s.clock().Unix(), id)
+		if _, err := s.db.Exec(`UPDATE shares SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...); err != nil {
+			return fmt.Errorf("update share: %w", err)
 		}
 	}
 	if s.OnChange != nil {
@@ -463,15 +466,60 @@ func (s *Store) NCIDFor(shareID string) (int64, error) {
 	if !errors.Is(err, sql.ErrNoRows) {
 		return 0, fmt.Errorf("lookup nc id: %w", err)
 	}
-	res, err := s.db.Exec(`INSERT INTO share_nc_ids (share_id) VALUES (?)`, shareID)
+	// A concurrent caller may have inserted between the SELECT and here; the
+	// no-op update makes RETURNING yield the existing id instead of failing
+	// on the unique constraint.
+	err = s.db.QueryRow(`INSERT INTO share_nc_ids (share_id) VALUES (?)
+		ON CONFLICT (share_id) DO UPDATE SET share_id = excluded.share_id
+		RETURNING nc_id`, shareID).Scan(&ncID)
 	if err != nil {
 		return 0, fmt.Errorf("create nc id: %w", err)
 	}
-	ncID, err = res.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("get nc id: %w", err)
-	}
 	return ncID, nil
+}
+
+// NCIDsFor is NCIDFor for several shares: two queries however many there
+// are, creating the ids that do not exist yet.
+func (s *Store) NCIDsFor(shareIDs []string) (map[string]int64, error) {
+	out := make(map[string]int64, len(shareIDs))
+	// Chunked under SQLite's limit on bound parameters.
+	const chunk = 500
+	for start := 0; start < len(shareIDs); start += chunk {
+		if err := s.ncIDsChunk(shareIDs[start:min(start+chunk, len(shareIDs))], out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) ncIDsChunk(shareIDs []string, out map[string]int64) error {
+	args := make([]any, len(shareIDs))
+	for i, id := range shareIDs {
+		args[i] = id
+	}
+	values := "(?)" + strings.Repeat(",(?)", len(shareIDs)-1)
+	if _, err := s.db.Exec(`INSERT INTO share_nc_ids (share_id) VALUES `+values+`
+		ON CONFLICT (share_id) DO NOTHING`, args...); err != nil {
+		return fmt.Errorf("create nc ids: %w", err)
+	}
+	rows, err := s.db.Query(`SELECT share_id, nc_id FROM share_nc_ids
+		WHERE share_id IN (?`+strings.Repeat(",?", len(shareIDs)-1)+`)`, args...)
+	if err != nil {
+		return fmt.Errorf("lookup nc ids: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var ncID int64
+		if err := rows.Scan(&id, &ncID); err != nil {
+			return fmt.Errorf("scan nc id: %w", err)
+		}
+		out[id] = ncID
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("lookup nc ids: %w", err)
+	}
+	return nil
 }
 
 // ShareIDFromNC looks up the internal share ID from an NC integer ID.

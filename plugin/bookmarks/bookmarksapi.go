@@ -3,6 +3,7 @@ package bookmarks
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -117,15 +118,23 @@ func (a *BookmarksAPI) listBookmarks(w http.ResponseWriter, r *http.Request, db 
 	// Exact URL lookup.
 	if urlQ := q.Get("url"); urlQ != "" {
 		bm, err := GetBookmarkByURL(db, urlQ)
-		if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			apiJSON(w, http.StatusOK, apiResp("bookmarks", []any{}))
+			return
+		}
+		if err != nil {
+			a.serverError(w, "find bookmark by url", err)
 			return
 		}
 		apiJSON(w, http.StatusOK, apiResp("bookmarks", []any{bookmarkToAPI(bm)}))
 		return
 	}
 
-	bms, _, _ := ListBookmarks(db, folderID, tags, search, sortby, page, limit)
+	bms, _, err := ListBookmarks(db, folderID, tags, search, sortby, page, limit)
+	if err != nil {
+		a.serverError(w, "list bookmarks", err)
+		return
+	}
 	out := make([]any, len(bms))
 	for i := range bms {
 		out[i] = bookmarkToAPI(&bms[i])
@@ -161,8 +170,12 @@ func (a *BookmarksAPI) createBookmark(w http.ResponseWriter, r *http.Request, db
 func (a *BookmarksAPI) getBookmark(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	id := apiPathID(r.URL.Path, "/bookmark/")
 	bm, err := GetBookmark(db, id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		apiJSON(w, http.StatusNotFound, apiErr("not found"))
+		return
+	}
+	if err != nil {
+		a.serverError(w, "get bookmark", err)
 		return
 	}
 	apiJSON(w, http.StatusOK, apiResp("item", bookmarkToAPI(bm)))
@@ -194,7 +207,7 @@ func (a *BookmarksAPI) updateBookmark(w http.ResponseWriter, r *http.Request, db
 func (a *BookmarksAPI) deleteBookmark(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	id := apiPathID(r.URL.Path, "/bookmark/")
 	if err := DeleteBookmark(db, id); err != nil {
-		apiJSON(w, http.StatusNotFound, apiErr("not found"))
+		a.serverError(w, "delete bookmark", err)
 		return
 	}
 	apiJSON(w, http.StatusOK, apiResp("status", "success"))
@@ -208,7 +221,10 @@ func (a *BookmarksAPI) recordClick(w http.ResponseWriter, r *http.Request, db *s
 		apiJSON(w, http.StatusBadRequest, apiErr("invalid body"))
 		return
 	}
-	RecordClick(db, body.URL)
+	if err := RecordClick(db, body.URL); err != nil {
+		a.serverError(w, "record click", err)
+		return
+	}
 	apiJSON(w, http.StatusOK, apiResp("status", "success"))
 }
 
@@ -247,8 +263,12 @@ func (a *BookmarksAPI) createFolder(w http.ResponseWriter, r *http.Request, db *
 func (a *BookmarksAPI) getFolder(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	id := apiPathID(r.URL.Path, "/folder/")
 	f, err := GetFolder(db, id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		apiJSON(w, http.StatusNotFound, apiErr("not found"))
+		return
+	}
+	if err != nil {
+		a.serverError(w, "get folder", err)
 		return
 	}
 	apiJSON(w, http.StatusOK, apiResp("item", folderToAPI(f)))
@@ -272,14 +292,22 @@ func (a *BookmarksAPI) updateFolder(w http.ResponseWriter, r *http.Request, db *
 		apiJSON(w, http.StatusInternalServerError, apiErr(err.Error()))
 		return
 	}
-	f, _ := GetFolder(db, id)
+	f, err := GetFolder(db, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		apiJSON(w, http.StatusNotFound, apiErr("not found"))
+		return
+	}
+	if err != nil {
+		a.serverError(w, "get folder", err)
+		return
+	}
 	apiJSON(w, http.StatusOK, apiResp("item", folderToAPI(f)))
 }
 
 func (a *BookmarksAPI) deleteFolder(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	id := apiPathID(r.URL.Path, "/folder/")
 	if err := DeleteFolder(db, id); err != nil {
-		apiJSON(w, http.StatusNotFound, apiErr("not found"))
+		a.serverError(w, "delete folder", err)
 		return
 	}
 	apiJSON(w, http.StatusOK, apiResp("status", "success"))
@@ -305,7 +333,10 @@ func (a *BookmarksAPI) renameTag(w http.ResponseWriter, r *http.Request, db *sql
 		apiJSON(w, http.StatusBadRequest, apiErr("invalid body"))
 		return
 	}
-	RenameTag(db, body.Old, body.New)
+	if err := RenameTag(db, body.Old, body.New); err != nil {
+		a.serverError(w, "rename tag", err)
+		return
+	}
 	apiJSON(w, http.StatusOK, apiResp("status", "success"))
 }
 
@@ -317,11 +348,20 @@ func (a *BookmarksAPI) deleteTag(w http.ResponseWriter, r *http.Request, db *sql
 		apiJSON(w, http.StatusBadRequest, apiErr("invalid body"))
 		return
 	}
-	DeleteTag(db, body.Old)
+	if err := DeleteTag(db, body.Old); err != nil {
+		a.serverError(w, "delete tag", err)
+		return
+	}
 	apiJSON(w, http.StatusOK, apiResp("status", "success"))
 }
 
 // --- API helpers ---
+
+// serverError logs err and answers 500 in the API's error shape.
+func (a *BookmarksAPI) serverError(w http.ResponseWriter, what string, err error) {
+	a.plugin.log.Error("bookmarks api: "+what, "err", err)
+	apiJSON(w, http.StatusInternalServerError, apiErr(err.Error()))
+}
 
 func bookmarkToAPI(bm *Bookmark) map[string]any {
 	tags := bm.Tags

@@ -14,12 +14,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	cogssh "git.duckfam.us/jj-software/cog/internal/ssh"
-	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
@@ -150,6 +148,9 @@ func Main(plugins ...plugin.Plugin) {
 func addPluginCommands(root *cobra.Command, plugins []plugin.Plugin) *services.Providers {
 	p, err := openProviders(plugins...)
 	if err != nil {
+		// The built-in commands still work without services, so this is not
+		// fatal; say why the plugin commands are missing.
+		fmt.Fprintf(os.Stderr, "warning: plugin commands unavailable: %v\n", err)
 		return nil
 	}
 
@@ -218,8 +219,7 @@ func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 
 	// Start SSH server if enabled.
 	if cfg.SSHEnabled {
-		ks := keys.NewStore(p.Plugins, p.Users, clock.System())
-		sshSrv, err := cogssh.New(cfg, p, ks, log)
+		sshSrv, err := cogssh.New(cfg, p, p.SSHKeys, log)
 		if err != nil {
 			return err
 		}

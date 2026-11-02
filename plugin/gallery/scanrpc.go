@@ -3,6 +3,7 @@ package gallery
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -55,7 +56,7 @@ func (s *ScanRPC) ScanUser(args *ScanUserArgs, result *ScanResult) error {
 	s.mu.Lock()
 	if s.status.Running {
 		s.mu.Unlock()
-		result.Error = "scan already running"
+		result.Error = errScanRunning.Error()
 		return nil
 	}
 	s.mu.Unlock()
@@ -71,7 +72,7 @@ func (s *ScanRPC) ScanAllUsers(args *ScanAllArgs, result *ScanResult) error {
 	s.mu.Lock()
 	if s.status.Running {
 		s.mu.Unlock()
-		result.Error = "scan already running"
+		result.Error = errScanRunning.Error()
 		return nil
 	}
 	s.mu.Unlock()
@@ -120,13 +121,47 @@ func (s *ScanRPC) startScan() {
 func (s *ScanRPC) persistStatus() {
 	db, err := s.plugin.SystemDB()
 	if err != nil {
+		slog.Error("persist scan status: system db", "err", err)
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	SettingScanRunning.Set(db, s.status.Running)
-	SettingScanLastRun.Set(db, int(s.status.LastRun.Unix()))
-	SettingScanLastError.Set(db, s.status.LastError)
+	if err := SettingScanRunning.Set(db, s.status.Running); err != nil {
+		slog.Error("persist scan status", "key", SettingScanRunning.key, "err", err)
+	}
+	if err := SettingScanLastRun.Set(db, int(s.status.LastRun.Unix())); err != nil {
+		slog.Error("persist scan status", "key", SettingScanLastRun.key, "err", err)
+	}
+	if err := SettingScanLastError.Set(db, s.status.LastError); err != nil {
+		slog.Error("persist scan status", "key", SettingScanLastError.key, "err", err)
+	}
+}
+
+// clearStaleScanRunning clears a "running" flag left by a worker that
+// crashed mid-scan.
+func (p *Plugin) clearStaleScanRunning() {
+	db, err := p.SystemDB()
+	if err == nil {
+		err = SettingScanRunning.Set(db, false)
+	}
+	if err != nil {
+		p.log.Error("clear stale scan status", "err", err)
+	}
+}
+
+// errScanRunning is a scan request made while a scan is already running.
+var errScanRunning = errors.New("scan already running")
+
+// scanResultErr is the error a ScanResult reports, if any.
+func scanResultErr(r ScanResult) error {
+	switch r.Error {
+	case "":
+		return nil
+	case errScanRunning.Error():
+		return errScanRunning
+	default:
+		return errors.New(r.Error)
+	}
 }
 
 func (s *ScanRPC) GetStatus(args *ScanStatusArgs, result *ScanStatusResult) error {
@@ -221,9 +256,7 @@ func (p *Plugin) runScanWorker(ctx context.Context) error {
 	p.isWorker = true
 
 	// Clear stale "running" flag from a previous crashed worker.
-	if db, err := p.SystemDB(); err == nil {
-		SettingScanRunning.Set(db, false)
-	}
+	p.clearStaleScanRunning()
 
 	svc := &ScanRPC{plugin: p, ctx: ctx}
 	server := rpc.NewServer()
@@ -265,14 +298,20 @@ func (c *rpcScanClient) ScanUser(username string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var result ScanResult
-	return c.client.Call("ScanRPC.ScanUser", &ScanUserArgs{Username: username}, &result)
+	if err := c.client.Call("ScanRPC.ScanUser", &ScanUserArgs{Username: username}, &result); err != nil {
+		return err
+	}
+	return scanResultErr(result)
 }
 
 func (c *rpcScanClient) ScanAllUsers() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var result ScanResult
-	return c.client.Call("ScanRPC.ScanAllUsers", &ScanAllArgs{}, &result)
+	if err := c.client.Call("ScanRPC.ScanAllUsers", &ScanAllArgs{}, &result); err != nil {
+		return err
+	}
+	return scanResultErr(result)
 }
 
 func (c *rpcScanClient) GetStatus() (ScanStatus, error) {
@@ -332,20 +371,24 @@ type inProcessScanClient struct {
 }
 
 func newInProcessScanClient(p *Plugin, ctx context.Context) *inProcessScanClient {
-	if db, err := p.SystemDB(); err == nil {
-		SettingScanRunning.Set(db, false)
-	}
+	p.clearStaleScanRunning()
 	return &inProcessScanClient{svc: &ScanRPC{plugin: p, ctx: ctx}}
 }
 
 func (c *inProcessScanClient) ScanUser(username string) error {
 	var result ScanResult
-	return c.svc.ScanUser(&ScanUserArgs{Username: username}, &result)
+	if err := c.svc.ScanUser(&ScanUserArgs{Username: username}, &result); err != nil {
+		return err
+	}
+	return scanResultErr(result)
 }
 
 func (c *inProcessScanClient) ScanAllUsers() error {
 	var result ScanResult
-	return c.svc.ScanAllUsers(&ScanAllArgs{}, &result)
+	if err := c.svc.ScanAllUsers(&ScanAllArgs{}, &result); err != nil {
+		return err
+	}
+	return scanResultErr(result)
 }
 
 func (c *inProcessScanClient) GetStatus() (ScanStatus, error) {

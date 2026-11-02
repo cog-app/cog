@@ -150,11 +150,27 @@ func DuplicateGroupMembers(db *sql.DB, groupID int64) ([]DuplicateMember, error)
 		return nil, err
 	}
 
+	// The members' media in one query, not one each.
+	rows, err := db.Query(`SELECT `+mediaCols+` FROM media m
+		WHERE m.id IN (SELECT media_id FROM duplicate_members WHERE group_id = ?)`, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	media, err := scanMediaRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[int64]*Media, len(media))
+	for i := range media {
+		byID[media[i].ID] = &media[i]
+	}
+
 	var members []DuplicateMember
 	for _, mi := range infos {
-		m, err := GetMedia(db, mi.MediaID)
-		if err != nil {
-			continue // media may have been deleted
+		m, ok := byID[mi.MediaID]
+		if !ok {
+			continue // media deleted since the group was built
 		}
 		members = append(members, DuplicateMember{
 			Media:    *m,
@@ -163,6 +179,39 @@ func DuplicateGroupMembers(db *sql.DB, groupID int64) ([]DuplicateMember, error)
 		})
 	}
 	return members, nil
+}
+
+// NonKeepDuplicates returns, in one query, the media of every member that is
+// not its group's keep item, across the groups ListDuplicateGroups shows (two
+// or more members). A media item in more than one group comes back once.
+func NonKeepDuplicates(db *sql.DB) ([]DuplicateMember, error) {
+	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m
+		WHERE m.id IN (
+			SELECT media_id FROM duplicate_members
+			WHERE is_keep = 0 AND group_id IN (
+				SELECT group_id FROM duplicate_members GROUP BY group_id HAVING COUNT(*) >= 2))`)
+	if err != nil {
+		return nil, fmt.Errorf("list non-keep duplicates: %w", err)
+	}
+	defer rows.Close()
+	media, err := scanMediaRows(rows)
+	if err != nil {
+		return nil, fmt.Errorf("scan non-keep duplicates: %w", err)
+	}
+	members := make([]DuplicateMember, len(media))
+	for i, m := range media {
+		members[i] = DuplicateMember{Media: m}
+	}
+	return members, nil
+}
+
+// PruneDuplicateGroups deletes every group left with fewer than two members.
+func PruneDuplicateGroups(db *sql.DB) error {
+	if _, err := db.Exec(`DELETE FROM duplicate_groups
+		WHERE (SELECT COUNT(*) FROM duplicate_members WHERE group_id = duplicate_groups.id) < 2`); err != nil {
+		return fmt.Errorf("prune duplicate groups: %w", err)
+	}
+	return nil
 }
 
 // DeleteDuplicateGroup removes a group (CASCADE removes members).
@@ -230,46 +279,38 @@ func (p *Plugin) computeFingerprints(ctx context.Context, db *sql.DB, username s
 			return fmt.Errorf("clear fingerprints: %w", err)
 		}
 	}
-	SettingDuplicateAlgorithmUsed.Set(db, string(algorithm))
+	if err := SettingDuplicateAlgorithmUsed.Set(db, string(algorithm)); err != nil {
+		return fmt.Errorf("record duplicate algorithm: %w", err)
+	}
 
 	hasher, err := getHasher(algorithm)
 	if err != nil {
 		return err
 	}
 
-	rows, err := db.Query(`SELECT id FROM media WHERE fingerprint = '' AND mime_type LIKE 'image/%' AND width > 0 LIMIT 100`)
+	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m
+		WHERE m.fingerprint = '' AND m.mime_type LIKE 'image/%' AND m.width > 0 LIMIT 100`)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
-
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return err
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
+	items, err := scanMediaRows(rows)
+	if err != nil {
 		return err
 	}
 
 	var computed int
-	for _, id := range ids {
+	for i := range items {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-
-		m, err := GetMedia(db, id)
-		if err != nil {
-			continue
-		}
+		m := &items[i]
+		id := m.ID
 
 		srcPath := p.resolveLocalPath(username, m.FilePath)
 		f, err := os.Open(srcPath)
 		if err != nil {
-			p.log.Debug("fingerprint: open failed", "id", id, "err", err)
+			p.log.Warn("fingerprint: open failed", "id", id, "err", err)
 			continue
 		}
 
@@ -278,7 +319,9 @@ func (p *Plugin) computeFingerprints(ctx context.Context, db *sql.DB, username s
 		if err != nil {
 			p.log.Debug("fingerprint: decode failed", "id", id, "err", err)
 			// Mark with a sentinel so we don't retry.
-			UpdateFingerprint(db, id, "-")
+			if err := UpdateFingerprint(db, id, "-"); err != nil {
+				return fmt.Errorf("mark fingerprint %d undecodable: %w", id, err)
+			}
 			continue
 		}
 
@@ -350,6 +393,7 @@ func (p *Plugin) detectDuplicates(db *sql.DB) error {
 	for i, e := range entries {
 		b, err := hex.DecodeString(e.Fingerprint)
 		if err != nil {
+			p.log.Warn("duplicates: bad fingerprint, skipping", "id", e.ID, "err", err)
 			continue
 		}
 		hashes[i] = hashtype.Binary(b)

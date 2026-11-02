@@ -2,7 +2,9 @@ package maildev
 
 import (
 	"encoding/json"
+	"errors"
 	"html/template"
+	"log"
 	"net"
 	"net/http"
 )
@@ -30,7 +32,11 @@ func (s *WebServer) Start() error {
 	}
 	s.listener = ln
 	s.Addr = ln.Addr().String()
-	go http.Serve(ln, s.mux)
+	go func() {
+		if err := http.Serve(ln, s.mux); err != nil && !errors.Is(err, net.ErrClosed) {
+			log.Printf("[maildev] web: %v", err)
+		}
+	}()
 	return nil
 }
 
@@ -57,7 +63,7 @@ func (s *WebServer) Handler() http.Handler {
 
 func (s *WebServer) handleInboxList(w http.ResponseWriter, r *http.Request) {
 	inboxes := s.Mailbox.Inboxes()
-	tmplInboxList.Execute(w, struct {
+	render(w, tmplInboxList, struct {
 		Inboxes    []Inbox
 		TotalCount int
 	}{
@@ -69,13 +75,21 @@ func (s *WebServer) handleInboxList(w http.ResponseWriter, r *http.Request) {
 func (s *WebServer) handleInbox(w http.ResponseWriter, r *http.Request) {
 	addr := r.PathValue("address")
 	msgs := s.Mailbox.ForRecipient(addr)
-	tmplInbox.Execute(w, struct {
+	render(w, tmplInbox, struct {
 		Address  string
 		Messages []Message
 	}{
 		Address:  addr,
 		Messages: msgs,
 	})
+}
+
+// render executes t. Once it has written, the status is sent, so a failure
+// can only be logged.
+func render(w http.ResponseWriter, t *template.Template, data any) {
+	if err := t.Execute(w, data); err != nil {
+		log.Printf("[maildev] render %s: %v", t.Name(), err)
+	}
 }
 
 func (s *WebServer) handleMessage(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +99,7 @@ func (s *WebServer) handleMessage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	tmplMessage.Execute(w, msg)
+	render(w, tmplMessage, msg)
 }
 
 func (s *WebServer) handleClear(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +109,9 @@ func (s *WebServer) handleClear(w http.ResponseWriter, r *http.Request) {
 
 func (s *WebServer) handleAPIMessages(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(s.Mailbox.All())
+	if err := json.NewEncoder(w).Encode(s.Mailbox.All()); err != nil {
+		log.Printf("[maildev] encode messages: %v", err)
+	}
 }
 
 const pageCSS = `

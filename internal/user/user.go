@@ -120,6 +120,64 @@ func (s *Store) GetByID(id string) (*User, error) {
 	))
 }
 
+// idChunk bounds the number of bound parameters in one GetByIDs query, well
+// under SQLite's SQLITE_MAX_VARIABLE_NUMBER on any build.
+const idChunk = 500
+
+// GetByIDs looks users up by id in as few queries as the parameter limit
+// allows. The result is keyed by id; ids that match nobody are absent, and
+// duplicates and empty ids are ignored.
+func (s *Store) GetByIDs(ids []string) (map[string]*User, error) {
+	return s.getByColumn("id", ids, func(u *User) string { return u.ID })
+}
+
+// GetByUsernames is GetByIDs by username: the result is keyed by username.
+func (s *Store) GetByUsernames(usernames []string) (map[string]*User, error) {
+	return s.getByColumn("username", usernames, func(u *User) string { return u.Username })
+}
+
+// getByColumn looks up the users whose column (a trusted constant) is one of
+// values, chunked under SQLite's parameter limit.
+func (s *Store) getByColumn(column string, values []string, key func(*User) string) (map[string]*User, error) {
+	out := make(map[string]*User, len(values))
+	seen := make(map[string]bool, len(values))
+	args := make([]any, 0, len(values))
+	for _, v := range values {
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		args = append(args, v)
+	}
+	for start := 0; start < len(args); start += idChunk {
+		chunk := args[start:min(start+idChunk, len(args))]
+		if err := s.getChunk(column, chunk, key, out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) getChunk(column string, args []any, key func(*User) string, out map[string]*User) error {
+	rows, err := s.db.Query(`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method
+		FROM users WHERE `+column+` IN (?`+strings.Repeat(",?", len(args)-1)+`)`, args...)
+	if err != nil {
+		return fmt.Errorf("users by %s: %w", column, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		u, err := s.scanUser(rows)
+		if err != nil {
+			return err
+		}
+		out[key(u)] = u
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("users by %s: %w", column, err)
+	}
+	return nil
+}
+
 // GetByEmail looks up a user by exact email match. Empty email returns
 // ErrNotFound to prevent matching accounts that haven't set one.
 func (s *Store) GetByEmail(email string) (*User, error) {
@@ -247,30 +305,30 @@ func (s *Store) Count() (int, error) {
 
 // Update modifies user fields specified in opts.
 func (s *Store) Update(id string, opts UpdateOpts) error {
+	// One statement, so the fields change together or not at all.
+	var sets []string
+	var args []any
 	if opts.DisplayName != nil {
-		if _, err := s.db.Exec(`UPDATE users SET display_name = ? WHERE id = ?`, *opts.DisplayName, id); err != nil {
-			return fmt.Errorf("update display_name: %w", err)
-		}
+		sets, args = append(sets, "display_name = ?"), append(args, *opts.DisplayName)
 	}
 	if opts.IsAdmin != nil {
 		admin := 0
 		if *opts.IsAdmin {
 			admin = 1
 		}
-		if _, err := s.db.Exec(`UPDATE users SET is_admin = ? WHERE id = ?`, admin, id); err != nil {
-			return fmt.Errorf("update is_admin: %w", err)
-		}
+		sets, args = append(sets, "is_admin = ?"), append(args, admin)
 	}
 	if opts.Avatar != nil {
-		now := s.clock().Unix()
-		if _, err := s.db.Exec(`UPDATE users SET avatar = ?, avatar_updated_at = ? WHERE id = ?`, *opts.Avatar, now, id); err != nil {
-			return fmt.Errorf("update avatar: %w", err)
-		}
+		sets, args = append(sets, "avatar = ?", "avatar_updated_at = ?"), append(args, *opts.Avatar, s.clock().Unix())
 	}
 	if opts.Email != nil {
-		if _, err := s.db.Exec(`UPDATE users SET email = ? WHERE id = ?`, *opts.Email, id); err != nil {
-			return fmt.Errorf("update email: %w", err)
-		}
+		sets, args = append(sets, "email = ?"), append(args, *opts.Email)
+	}
+	if len(sets) == 0 {
+		return nil
+	}
+	if _, err := s.db.Exec(`UPDATE users SET `+strings.Join(sets, ", ")+` WHERE id = ?`, append(args, id)...); err != nil {
+		return fmt.Errorf("update user: %w", err)
 	}
 	return nil
 }
@@ -291,27 +349,39 @@ func (s *Store) SetMFAMethod(id, method string) (string, error) {
 	return method, err
 }
 
-// Delete removes a user and their sessions and app passwords.
+// Delete removes a user and their sessions, app passwords and group
+// memberships, in one transaction so a failure part way cannot leave a
+// user who can no longer log in but still exists.
 func (s *Store) Delete(id string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
 	// No ON DELETE CASCADE in schema, so delete manually.
-	if _, err := s.db.Exec(`DELETE FROM sessions WHERE user_id = ?`, id); err != nil {
-		return fmt.Errorf("delete sessions: %w", err)
+	for _, q := range []struct{ what, sql string }{
+		{"sessions", `DELETE FROM sessions WHERE user_id = ?`},
+		{"app_passwords", `DELETE FROM app_passwords WHERE user_id = ?`},
+		{"group_members", `DELETE FROM group_members WHERE member_type = 'USER' AND member_id = ?`},
+		{"group_membership_closure", `DELETE FROM group_membership_closure WHERE descendant_user_id = ?`},
+	} {
+		if _, err := tx.Exec(q.sql, id); err != nil {
+			return fmt.Errorf("delete %s: %w", q.what, err)
+		}
 	}
-	if _, err := s.db.Exec(`DELETE FROM app_passwords WHERE user_id = ?`, id); err != nil {
-		return fmt.Errorf("delete app_passwords: %w", err)
-	}
-	if _, err := s.db.Exec(`DELETE FROM group_members WHERE member_type = 'USER' AND member_id = ?`, id); err != nil {
-		return fmt.Errorf("delete group_members: %w", err)
-	}
-	res, err := s.db.Exec(`DELETE FROM users WHERE id = ?`, id)
+	res, err := tx.Exec(`DELETE FROM users WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete user: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *Store) scanUser(row interface{ Scan(...any) error }) (*User, error) {

@@ -4,11 +4,15 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"iter"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
 )
+
+// ErrNotFound is returned when no federated share matches a lookup.
+var ErrNotFound = errors.New("federated share not found")
 
 // Store provides CRUD operations on the federated_shares table.
 type Store struct {
@@ -78,8 +82,11 @@ func (s *Store) Get(id string) (*FederatedShare, error) {
 		&fs.ID, &fs.Direction, &fs.State, &fs.ShareID, &fs.RemoteID, &fs.RemoteHost, &fs.RemoteUser,
 		&fs.LocalUserID, &fs.Token, &fs.ResourceName, &fs.ResourceType, &fs.OwnerName, &fs.OwnerHost,
 		&fs.Permissions, &fs.MountPath, &fs.CreatedAt, &fs.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get federated share: %w", err)
 	}
 	return &fs, nil
 }
@@ -94,8 +101,11 @@ func (s *Store) GetByToken(token string) (*FederatedShare, error) {
 		&fs.ID, &fs.Direction, &fs.State, &fs.ShareID, &fs.RemoteID, &fs.RemoteHost, &fs.RemoteUser,
 		&fs.LocalUserID, &fs.Token, &fs.ResourceName, &fs.ResourceType, &fs.OwnerName, &fs.OwnerHost,
 		&fs.Permissions, &fs.MountPath, &fs.CreatedAt, &fs.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get federated share: %w", err)
 	}
 	return &fs, nil
 }
@@ -110,8 +120,11 @@ func (s *Store) GetByRemoteID(remoteHost, remoteID string) (*FederatedShare, err
 		&fs.ID, &fs.Direction, &fs.State, &fs.ShareID, &fs.RemoteID, &fs.RemoteHost, &fs.RemoteUser,
 		&fs.LocalUserID, &fs.Token, &fs.ResourceName, &fs.ResourceType, &fs.OwnerName, &fs.OwnerHost,
 		&fs.Permissions, &fs.MountPath, &fs.CreatedAt, &fs.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get federated share: %w", err)
 	}
 	return &fs, nil
 }
@@ -153,6 +166,9 @@ func (s *Store) ListInbound(userID, state string) iter.Seq2[FederatedShare, erro
 				return
 			}
 		}
+		if err := rows.Err(); err != nil {
+			yield(FederatedShare{}, err)
+		}
 	}
 }
 
@@ -182,6 +198,9 @@ func (s *Store) ListOutbound(userID string) iter.Seq2[FederatedShare, error] {
 				return
 			}
 		}
+		if err := rows.Err(); err != nil {
+			yield(FederatedShare{}, err)
+		}
 	}
 }
 
@@ -193,7 +212,10 @@ func (s *Store) Accept(id, mountPath string) error {
 	if err != nil {
 		return err
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("federated share %s not found or not pending", id)
 	}
@@ -235,18 +257,32 @@ func (s *Store) NCIDFor(fedShareID string) (int64, error) {
 	if err == nil {
 		return ncID, nil
 	}
-	res, err := s.db.Exec(`INSERT INTO federated_share_nc_ids (federated_share_id) VALUES (?)`, fedShareID)
-	if err != nil {
-		return 0, err
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("lookup federated nc id: %w", err)
 	}
-	return res.LastInsertId()
+	// A concurrent caller may have inserted between the SELECT and here; the
+	// no-op update makes RETURNING yield the existing id instead of failing
+	// on the unique constraint.
+	err = s.db.QueryRow(`INSERT INTO federated_share_nc_ids (federated_share_id) VALUES (?)
+		ON CONFLICT (federated_share_id) DO UPDATE SET federated_share_id = excluded.federated_share_id
+		RETURNING nc_id`, fedShareID).Scan(&ncID)
+	if err != nil {
+		return 0, fmt.Errorf("create federated nc id: %w", err)
+	}
+	return ncID, nil
 }
 
 // FedShareIDFromNC returns the federated share ID for a NC integer ID.
 func (s *Store) FedShareIDFromNC(ncID int64) (string, error) {
 	var id string
 	err := s.db.QueryRow(`SELECT federated_share_id FROM federated_share_nc_ids WHERE nc_id = ?`, ncID).Scan(&id)
-	return id, err
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("federated share of nc id %d: %w", ncID, err)
+	}
+	return id, nil
 }
 
 // ListAcceptedMounts returns all accepted inbound federated shares for a user.

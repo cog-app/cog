@@ -25,9 +25,8 @@ func shellCmd(plugins []plugin.Plugin) *cobra.Command {
 			}
 			defer p.Close()
 
-			_, err = p.Users.GetByUsername(username)
-			if err != nil {
-				return fmt.Errorf("user %q not found", username)
+			if _, err := p.Users.GetByUsername(username); err != nil {
+				return fmt.Errorf("user %q: %w", username, err)
 			}
 
 			filesDir := p.Plugins.UserFilesDir(username)
@@ -35,7 +34,10 @@ func shellCmd(plugins []plugin.Plugin) *cobra.Command {
 				return fmt.Errorf("no files directory for user %q", username)
 			}
 
-			userFS, _ := p.Plugins.UserFS(username)
+			userFS, err := p.Plugins.UserFS(username)
+			if err != nil {
+				return fmt.Errorf("files for %q: %w", username, err)
+			}
 			// Wrap in OverlayFS to mount user files at /files, matching
 			// the SSH session setup. The shell's virtual path system
 			// expects /files as the root prefix.

@@ -1,6 +1,7 @@
 package group_test
 
 import (
+	"errors"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/group"
@@ -204,6 +205,38 @@ func TestCycleDetection(t *testing.T) {
 	require.Equal(t, group.ErrCyclicMembership, err)
 }
 
+func TestCycleDetectionTransitive(t *testing.T) {
+	env := cogtest.New(t)
+	owner := env.CreateUser(t, "owner", "pass")
+	member := env.CreateUser(t, "member", "pass")
+
+	var ids []string
+	for _, name := range []string{"A", "B", "C"} {
+		g, err := env.Providers.Groups.Create(name, nil, &owner.ID)
+		require.NoError(t, err)
+		// A user in every group gives the closure table rows, so a check
+		// that consulted it would have something to (mis)match.
+		require.NoError(t, env.Providers.Groups.AddMember(g.ID, member.ID, group.User))
+		ids = append(ids, g.ID)
+	}
+	a, b, c := ids[0], ids[1], ids[2]
+
+	// A ⊃ B ⊃ C.
+	require.NoError(t, env.Providers.Groups.AddMember(a, b, group.GroupMember))
+	require.NoError(t, env.Providers.Groups.AddMember(b, c, group.GroupMember))
+
+	// C ⊃ A closes a loop two levels down.
+	err := env.Providers.Groups.AddMember(c, a, group.GroupMember)
+	require.Equal(t, group.ErrCyclicMembership, err)
+
+	// A group can't contain itself.
+	err = env.Providers.Groups.AddMember(a, a, group.GroupMember)
+	require.Equal(t, group.ErrCyclicMembership, err)
+
+	// A ⊃ C again is redundant but not a cycle.
+	require.NoError(t, env.Providers.Groups.AddMember(a, c, group.GroupMember))
+}
+
 func TestDeepNesting(t *testing.T) {
 	env := cogtest.New(t)
 	owner := env.CreateUser(t, "owner", "pass")
@@ -327,4 +360,32 @@ func TestRebuildClosure(t *testing.T) {
 	decision, err := env.Providers.Shares.CheckAccess(u.ID, "files:file", "res1")
 	require.NoError(t, err)
 	require.True(t, decision.Allowed)
+}
+
+func TestGetByNameAndIDs(t *testing.T) {
+	env := cogtest.New(t)
+	owner := env.CreateUser(t, "owner", "pass")
+
+	devs, err := env.Providers.Groups.Create("devs", nil, &owner.ID)
+	require.NoError(t, err)
+	ops1, err := env.Providers.Groups.Create("ops", nil, &owner.ID)
+	require.NoError(t, err)
+	_, err = env.Providers.Groups.Create("ops", nil, &owner.ID)
+	require.NoError(t, err)
+
+	got, err := env.Providers.Groups.GetByName("devs")
+	require.NoError(t, err)
+	require.Equal(t, devs.ID, got.ID)
+
+	_, err = env.Providers.Groups.GetByName("ops")
+	require.True(t, errors.Is(err, group.ErrAmbiguousName), err)
+
+	_, err = env.Providers.Groups.GetByName("nobody")
+	require.True(t, errors.Is(err, group.ErrNotFound), err)
+
+	byID, err := env.Providers.Groups.GetByIDs([]string{devs.ID, ops1.ID, devs.ID, "missing"})
+	require.NoError(t, err)
+	require.Equal(t, 2, len(byID))
+	require.Equal(t, "devs", byID[devs.ID].Name)
+	require.Equal(t, "ops", byID[ops1.ID].Name)
 }

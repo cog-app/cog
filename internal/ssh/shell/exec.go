@@ -23,6 +23,9 @@ func (s *Shell) execHandler(ctx context.Context, args []string) error {
 	root.SetArgs(args)
 	err := root.Execute()
 	if err != nil {
+		if req, ok := errors.AsType[exitRequest](err); ok {
+			return req.err
+		}
 		// The interpreter panics on non-ExitStatus errors, so we must
 		// always convert cobra errors to ExitStatus.
 		if _, ok := errors.AsType[interp.ExitStatus](err); ok {

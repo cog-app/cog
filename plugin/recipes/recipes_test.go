@@ -417,10 +417,10 @@ func TestRecipesCreateValidation(t *testing.T) {
 	ensureMigrated(t, env, alice.Username)
 	cookie, csrf := sessionAuth(t, env, alice)
 
-	// Missing name via form
+	// Missing name via form: back to the form (see TestRecipesFormRejectionKeepsInput).
 	postFormAction(t, env, "/apps/recipes/recipes", url.Values{
 		"description": {"no name given"},
-	}, cookie, csrf).Status(400)
+	}, cookie, csrf).Status(303)
 
 	// Missing name via API
 	postAction(t, env, "/apps/recipes/api/recipes",
@@ -432,6 +432,87 @@ func TestRecipesCreateValidation(t *testing.T) {
 		strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
 	env.Do(t, req, cookie, csrf).Status(400)
+}
+
+// flashCookie returns the flash cookie a response set, as a request option.
+func flashCookie(t testing.TB, resp *cogtest.Response) cogtest.HTTPOpt {
+	t.Helper()
+	for _, ck := range resp.Cookies() {
+		if ck.Name == cogplugin.FlashCookieName {
+			return cogtest.Header("Cookie", ck.Name+"="+ck.Value)
+		}
+	}
+	t.Fatal("response set no flash cookie")
+	return nil
+}
+
+// A save the form rejects goes back to the form with the reason and with
+// everything the user typed, rather than an error page that loses the input
+// and offers to re-submit on reload. The method is long enough that it would
+// not fit in the flash cookie.
+func TestRecipesFormRejectionKeepsInput(t *testing.T) {
+	env := cogtest.New(t, recipes.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	ensureMigrated(t, env, alice.Username)
+	cookie, csrf := sessionAuth(t, env, alice)
+
+	method := strings.Repeat("Stir the pot and wait patiently. ", 300)
+	typed := url.Values{
+		"name":         {"   "},
+		"description":  {"Grandma's <best> soup"},
+		"ingredients":  {"1 onion\n2 carrots"},
+		"instructions": {method},
+		"keywords":     {"soup, winter"},
+		"prep_h":       {"1"},
+		"cook_m":       {"40"},
+	}
+
+	resp := postFormAction(t, env, "/apps/recipes/recipes", typed, cookie, csrf)
+	resp.Status(303)
+	require.Equal(t, "/apps/recipes/new", resp.Header.Get("Location"))
+	flash := flashCookie(t, resp)
+
+	env.Get(t, "/apps/recipes/new", alice.Auth, flash).
+		Status(200).
+		Contains("The recipe was not saved: recipe name is required.").
+		Contains("Grandma&#39;s &lt;best&gt; soup").
+		Contains("1 onion\n2 carrots").
+		Contains(method).
+		Contains(`value="soup, winter"`).
+		Contains(`name="prep_h" value="1"`).
+		Contains(`name="cook_m" value="40"`)
+
+	// The draft is taken by the page that shows it: a reload is a blank form.
+	env.Get(t, "/apps/recipes/new", alice.Auth, flash).
+		Status(200).
+		NotContains("Grandma")
+
+	var list []map[string]any
+	env.Get(t, "/apps/recipes/api/recipes", alice.Auth).Status(200).JSON(&list)
+	require.Equal(t, 0, len(list))
+
+	// Editing: a bad time sends the edit form back with what was typed, and
+	// the stored recipe is untouched.
+	postFormAction(t, env, "/apps/recipes/recipes", url.Values{"name": {"Soup"}}, cookie, csrf).Status(303)
+	env.Get(t, "/apps/recipes/api/recipes", alice.Auth).Status(200).JSON(&list)
+	require.Equal(t, 1, len(list))
+	id := fmt.Sprintf("%.0f", list[0]["recipe_id"])
+
+	resp = postFormAction(t, env, "/apps/recipes/recipes/"+id, url.Values{
+		"name":   {"Better soup"},
+		"prep_m": {"soon"},
+	}, cookie, csrf)
+	resp.Status(303)
+	require.Equal(t, "/apps/recipes/recipe/"+id+"/edit", resp.Header.Get("Location"))
+	env.Get(t, "/apps/recipes/recipe/"+id+"/edit", alice.Auth, flashCookie(t, resp)).
+		Status(200).
+		Contains("is not a whole number").
+		Contains(`value="Better soup"`).
+		Contains(`name="prep_m" value="soon"`)
+	env.Get(t, "/apps/recipes/recipe/"+id, alice.Auth).
+		Status(200).
+		Contains("Soup").
+		NotContains("Better soup")
 }
 
 func TestRecipesImportValidation(t *testing.T) {

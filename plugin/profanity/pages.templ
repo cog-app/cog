@@ -2,11 +2,8 @@ package profanity
 
 import "git.duckfam.us/jj-software/cog/ui"
 
-templ profanitySettingsPage(content string, flash string, csrfToken string) {
+templ profanitySettingsPage(content string, csrfToken string) {
 	<h1>Profanity Filter</h1>
-	if flash != "" {
-		@ui.Alert("success", flash)
-	}
 	@ui.Card("Word List") {
 		<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">
 			One entry per line. Format: <code>word=replacement</code> or just <code>word</code> (defaults to <code>***</code>).
@@ -29,10 +26,7 @@ templ profanitySettingsPage(content string, flash string, csrfToken string) {
 	}
 }
 
-templ profanityAdminPage(cfg adminSettingsData, flash string, csrfToken string) {
-	if flash != "" {
-		@ui.Alert("success", flash)
-	}
+templ profanityAdminPage(cfg adminSettingsData, csrfToken string) {
 	@ui.Card("Text-to-Speech Engine") {
 		<p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem">
 			When profane audio segments are detected, the TTS engine generates clean replacement audio that gets spliced into the file.

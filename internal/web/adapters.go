@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"iter"
+	"log/slog"
 
 	"git.duckfam.us/jj-software/cog/internal/email"
 	"git.duckfam.us/jj-software/cog/internal/group"
@@ -163,7 +164,9 @@ func (a *volumeAccessAdapter) ListAccessible(userID string) ([]plugin.VolumeInfo
 			return nil, err
 		}
 		scheme := ""
-		if parsed, err := volume.ParseURI(v.URI); err == nil {
+		if parsed, err := volume.ParseURI(v.URI); err != nil {
+			slog.Warn("volume has an unparsable URI", "volume", v.ID, "err", err)
+		} else {
 			scheme = parsed.Scheme
 		}
 		result = append(result, plugin.VolumeInfo{

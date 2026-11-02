@@ -4,6 +4,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/mount"
+	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/ui"
 	"strconv"
@@ -64,13 +65,14 @@ type securityFlash struct {
 	Kind    string
 	For     string
 	Invalid string
+	Fields  map[string]string // form values to put back after an error
 }
 
 func (f securityFlash) top() bool {
 	return f.Message != "" && f.For == ""
 }
 
-templ settingsSecurityPage(pd ui.PageData, flash securityFlash, appPasswords []auth.AppPassword, mfaMethod string, backupCodeCount int, smtpConfigured bool, webauthnAvailable bool, webauthnCreds []auth.WebAuthnCredential) {
+templ settingsSecurityPage(pd ui.PageData, flash securityFlash, appPasswords []auth.AppPassword, mfaMethod string, backupCodeCount int, smtpConfigured bool, webauthnAvailable bool, webauthnCreds []auth.WebAuthnCredential, sshEnabled bool, sshKeys []keys.SSHKey) {
 	@ui.SidebarPage(pd, settingsSidebar("security")) {
 		@ui.PageHeader("Security", nil)
 		if flash.top() {
@@ -130,6 +132,72 @@ templ settingsSecurityPage(pd ui.PageData, flash securityFlash, appPasswords []a
 				<button class="btn btn-primary" type="submit">Create</button>
 			</form>
 		}
+		if sshEnabled {
+			@settingsSSHKeysCard(pd, flash, sshKeys)
+		}
+	}
+}
+
+// settingsSSHKeysCard lists the user's SSH public keys, for SSH, SCP and
+// SFTP logins, with a form to add one.
+templ settingsSSHKeysCard(pd ui.PageData, flash securityFlash, sshKeys []keys.SSHKey) {
+	@ui.Card("SSH keys") {
+		<div id="ssh-keys">
+			<p class="card-desc">Public keys that can sign in over SSH, SCP and SFTP without a password.</p>
+			if flash.For == "ssh-key" {
+				@ui.Alert(flash.Kind, flash.Message)
+			}
+			if len(sshKeys) == 0 {
+				<p class="empty-state empty-state-sm">No SSH keys yet.</p>
+			} else {
+				<div class="table-wrap">
+					<table class="table">
+						<thead>
+							<tr>
+								<th>Name</th>
+								<th>Fingerprint</th>
+								<th class="col-shrink">Added</th>
+								<th class="col-actions"><span class="sr-only">Actions</span></th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, k := range sshKeys {
+								<tr id={ "sshkey-" + k.ID }>
+									<td class="break-anywhere">{ sshKeyName(k) }</td>
+									<td class="break-anywhere"><code>{ k.Fingerprint }</code></td>
+									<td class="nowrap">{ k.CreatedAt.Format("2006-01-02") }</td>
+									<td class="col-actions">
+										<button
+											type="button"
+											class="btn btn-outline-danger btn-sm"
+											hx-delete={ "/settings/ssh-keys/" + k.ID }
+											hx-target={ "#sshkey-" + k.ID }
+											hx-swap="outerHTML"
+											hx-confirm={ "Remove " + sshKeyName(k) + "? It will no longer sign in." }
+										>Remove</button>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+			<h3 class="card-subtitle">Add an SSH key</h3>
+			<form method="post" action="/settings/ssh-keys">
+				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+				<div class="form-group">
+					<label for="ssh-key-name">Name</label>
+					<input class="form-control w-md" type="text" id="ssh-key-name" name="name" placeholder="Optional; defaults to the key's comment" value={ flash.Fields["name"] }/>
+				</div>
+				<div class="form-group">
+					<label for="ssh-public-key">Public key</label>
+					<textarea class="form-control" id="ssh-public-key" name="public_key" rows="3" required spellcheck="false" placeholder="ssh-ed25519 AAAA… you@laptop" aria-invalid={ ariaInvalid(flash.For == "ssh-key" && flash.Invalid == "public_key") }>{ flash.Fields["public_key"] }</textarea>
+				</div>
+				<div class="form-actions">
+					<button class="btn btn-primary" type="submit">Add key</button>
+				</div>
+			</form>
+		</div>
 	}
 }
 

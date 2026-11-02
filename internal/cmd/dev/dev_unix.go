@@ -20,9 +20,14 @@ func runRebuild(bin string, ppid int) {
 	build(bin)
 
 	if ppid != 0 {
+		// Without this signal the dev process never restarts cog, so a
+		// failure is worth saying.
 		p, err := os.FindProcess(ppid)
 		if err == nil {
-			p.Signal(syscall.SIGUSR1)
+			err = p.Signal(syscall.SIGUSR1)
+		}
+		if err != nil {
+			log.Printf("signal dev process %d: %v", ppid, err)
 		}
 	}
 
@@ -119,7 +124,9 @@ func runWatch(bin, dbPath, devDir string, logRequests, stale bool) {
 		select {
 		case <-restart:
 			log.Println("Rebuild complete, restarting cog...")
-			srv.Process.Signal(syscall.SIGTERM)
+			if err := srv.Process.Signal(syscall.SIGTERM); err != nil {
+				log.Printf("stop cog: %v", err)
+			}
 			<-srvDone // wait for old server to exit
 			srv = startServer(bin, dbPath, devDir, watchAddr, logRequests, teeOut, teeErr)
 			srvDone = make(chan error, 1)

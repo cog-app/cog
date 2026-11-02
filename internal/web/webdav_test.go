@@ -1,9 +1,12 @@
 package web_test
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -55,6 +58,19 @@ func TestWebDAV_PUTThenGET(t *testing.T) {
 	env.Get(t, prefix+"/hello.txt", alice.Auth).
 		Status(200).
 		Equals("hello webdav")
+}
+
+// A file whose metadata outlived its bytes (removed behind Cog's back) is
+// gone to the client: 404, as the federated endpoint answers, not 500.
+func TestWebDAV_GETMissingBytes(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	prefix := "/remote.php/dav/files/" + alice.ID
+
+	webdavReq(t, env, "PUT", prefix+"/hello.txt", "hello", alice.Auth).Status(201)
+	require.NoError(t, os.Remove(filepath.Join(env.Providers.Plugins.UserFilesDir("alice"), "hello.txt")))
+
+	env.Get(t, prefix+"/hello.txt", alice.Auth).Status(404)
 }
 
 func TestWebDAV_PUTThenPROPFIND(t *testing.T) {
@@ -457,6 +473,12 @@ func TestCommentsCRUD(t *testing.T) {
 	// DELETE the comment
 	webdavReq(t, env, "DELETE", fmt.Sprintf("%s/%d", commentPath, comments[0].ID), "", alice.Auth).
 		Status(204)
+
+	// Deleting it again finds nothing: a 404, not a server error.
+	webdavReq(t, env, "DELETE", fmt.Sprintf("%s/%d", commentPath, comments[0].ID), "", alice.Auth).
+		Status(404)
+	err = fp.DeleteComment(alice.Username, comments[0].ID, alice.Username)
+	require.True(t, errors.Is(err, files.ErrNotFound), err)
 
 	// PROPFIND should no longer contain the comment message
 	resp4 := webdavReq(t, env, "PROPFIND", commentPath+"/", "", alice.Auth)

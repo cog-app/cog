@@ -9,6 +9,14 @@
 //	-- IF COLUMN table.column NOT EXIST
 //
 // When present, the migration only runs if the specified column does not exist.
+//
+// Every other migration runs on every open, so it must be idempotent. One
+// that is not — a data repair, say — is marked
+//
+//	-- ONCE
+//
+// and runs a single time per database: its name is recorded in
+// _cog_migrations in the same transaction as its statements.
 package migrate
 
 import (
@@ -45,6 +53,13 @@ func Migrate(db *sql.DB, fsys fs.FS) error {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
 		body := string(data)
+
+		if hasOnceGuard(body) {
+			if err := runOnce(db, path, body); err != nil {
+				return fmt.Errorf("exec %s: %w", path, err)
+			}
+			continue
+		}
 
 		table, col, hasGuard := parseColumnGuard(body)
 		if hasGuard {
@@ -90,6 +105,48 @@ func execTx(db *sql.DB, script string) error {
 			return errors.Join(scriptError{err}, fmt.Errorf("rollback: %w", rerr))
 		}
 		return scriptError{err}
+	}
+	return tx.Commit()
+}
+
+func hasOnceGuard(sql string) bool {
+	for line := range strings.SplitSeq(sql, "\n") {
+		if strings.TrimSpace(line) == "-- ONCE" {
+			return true
+		}
+	}
+	return false
+}
+
+// runOnce runs a -- ONCE migration unless _cog_migrations says it has run,
+// recording it in the same transaction so it cannot run twice or be
+// recorded without having run.
+func runOnce(db *sql.DB, name, script string) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS _cog_migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`); err != nil {
+		return fmt.Errorf("create _cog_migrations: %w", err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	res, err := tx.Exec(`INSERT INTO _cog_migrations (name, applied_at) VALUES (?, unixepoch()) ON CONFLICT (name) DO NOTHING`, name)
+	if err == nil {
+		var n int64
+		if n, err = res.RowsAffected(); err == nil && n == 0 {
+			return tx.Rollback() // already applied
+		}
+	}
+	if err == nil {
+		_, err = tx.Exec(script)
+		if err != nil {
+			err = scriptError{err}
+		}
+	}
+	if err != nil {
+		if rerr := tx.Rollback(); rerr != nil {
+			return errors.Join(err, fmt.Errorf("rollback: %w", rerr))
+		}
+		return err
 	}
 	return tx.Commit()
 }

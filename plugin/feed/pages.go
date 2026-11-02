@@ -61,6 +61,17 @@ func (h *Pages) setFlash(w http.ResponseWriter, kind, message string) {
 	})
 }
 
+// lookupError answers a failed lookup of the thing a request names: 404 when
+// it does not exist, 500 for anything else.
+func lookupError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	slog.Error("feed: lookup", "path", r.URL.Path, "err", err)
+	http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+
 func (h *Pages) userStore(r *http.Request) (*Store, error) {
 	u := plugin.UserFromContext(r.Context())
 	if u == nil {
@@ -461,7 +472,7 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 	}
 	pl, err := store.GetPlaylist(id)
 	if err != nil {
-		http.NotFound(w, r)
+		lookupError(w, r, err)
 		return
 	}
 	sb, ok := h.sidebar(w, store, fmt.Sprintf("/apps/feed/playlists/%d", id))
@@ -476,6 +487,8 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 	if pl.Query != "" {
 		if e, perr := query.Parse(pl.Query); perr == nil {
 			expr = e
+		} else {
+			slog.Warn("feed: playlist query does not parse; showing all items", "playlist_id", pl.ID, "query", pl.Query, "err", perr)
 		}
 	}
 	if expr != nil {
@@ -532,6 +545,8 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 		if pl.Query != "" {
 			if e, qerr := query.Parse(pl.Query); qerr == nil {
 				expr = e
+			} else {
+				slog.Warn("feed: playlist query does not parse; showing all items", "playlist_id", pl.ID, "query", pl.Query, "err", qerr)
 			}
 		}
 		if expr != nil {
@@ -557,9 +572,14 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 	default: // all
 		var expr query.Expr
 		if c.Q != "" {
-			if e, qerr := query.Parse(c.Q); qerr == nil {
-				expr = e
+			e, qerr := query.Parse(c.Q)
+			if qerr != nil {
+				// The list this came from showed the parse error and no
+				// items, so there is nothing to step through.
+				slog.Warn("feed: search query in view context does not parse", "query", c.Q, "err", qerr)
+				return nil, nil
 			}
+			expr = e
 		}
 		if expr != nil {
 			expr = query.ResolveRelativeDates(expr, *SearchSchema(), h.plugin.ctx.Now())
@@ -673,33 +693,11 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var expr query.Expr
-	if q != "" {
-		if e, perr := query.Parse(q); perr == nil {
-			expr = e
-		}
-	}
-	if expr != nil {
-		expr = query.ResolveRelativeDates(expr, *SearchSchema(), h.plugin.ctx.Now())
-	}
-
-	items, err := store.ListItemsForView(ViewSpec{
-		All:      true,
-		HideRead: prefs.HideEmpty,
-		Query:    expr,
-		Schema:   SearchSchema(),
-	}, feedViewLimit)
+	items, qErr, err := h.searchItems(store, q, prefs.HideEmpty)
 	if err != nil {
-		http.Error(w, "could not list items: "+err.Error(), http.StatusInternalServerError)
+		slog.Error("feed: index items", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-	if expr != nil && queryNeedsRefine(expr) {
-		items, err = h.refineItems(store, items, expr)
-		if err != nil {
-			slog.Error("feed: index refine", "err", err)
-			http.Error(w, "could not refine items: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
 	}
 
 	sb, ok := h.sidebar(w, store, "/apps/feed/")
@@ -708,7 +706,37 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	}
 	c := viewCtx{Kind: "all", Q: q}
 	plugin.SetTitle(w, "Feed")
-	ui.Render(w, r, feedIndexPage(sb, items, q, plugin.CSRFToken(r), h.rows(c)))
+	ui.Render(w, r, feedIndexPage(sb, items, q, qErr, plugin.CSRFToken(r), h.rows(c)))
+}
+
+// searchItems lists the items the all-articles page shows for the search q.
+// A q that does not parse is the user's mistake, not the server's: it comes
+// back as qErr, the reason to show beside the search box, with no items —
+// showing every item instead would read as "all of these match".
+func (h *Pages) searchItems(store *Store, q string, hideRead bool) (items []ItemWithSubscription, qErr string, err error) {
+	var expr query.Expr
+	if q != "" {
+		e, perr := query.Parse(q)
+		if perr != nil {
+			return nil, perr.Error(), nil
+		}
+		expr = query.ResolveRelativeDates(e, *SearchSchema(), h.plugin.ctx.Now())
+	}
+	items, err = store.ListItemsForView(ViewSpec{
+		All:      true,
+		HideRead: hideRead,
+		Query:    expr,
+		Schema:   SearchSchema(),
+	}, feedViewLimit)
+	if err != nil {
+		return nil, "", fmt.Errorf("could not list items: %w", err)
+	}
+	if expr != nil && queryNeedsRefine(expr) {
+		if items, err = h.refineItems(store, items, expr); err != nil {
+			return nil, "", fmt.Errorf("could not refine items: %w", err)
+		}
+	}
+	return items, "", nil
 }
 
 // SubscriptionView shows items for a single subscription.
@@ -726,7 +754,7 @@ func (h *Pages) SubscriptionView(w http.ResponseWriter, r *http.Request) {
 	}
 	sub, err := store.GetSubscription(id)
 	if err != nil {
-		http.NotFound(w, r)
+		lookupError(w, r, err)
 		return
 	}
 	sb, ok := h.sidebar(w, store, "/apps/feed/subscription/"+idStr)
@@ -763,7 +791,7 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 	}
 	folder, err := store.GetFolder(id)
 	if err != nil {
-		http.NotFound(w, r)
+		lookupError(w, r, err)
 		return
 	}
 	sb, ok := h.sidebar(w, store, "/apps/feed/folder/"+idStr)
@@ -935,7 +963,7 @@ func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	ip, err := store.GetItemPlayback(id)
 	if err != nil {
-		http.NotFound(w, r)
+		lookupError(w, r, err)
 		return
 	}
 	// Text items are "read" once viewed. Audio/video are only considered
@@ -1032,10 +1060,12 @@ func (h *Pages) MarkComplete(w http.ResponseWriter, r *http.Request) {
 func renderPlayerFragment(w http.ResponseWriter, r *http.Request, h *Pages, store *Store, itemID int64, c viewCtx) bool {
 	ip, err := store.GetItemPlayback(itemID)
 	if err != nil {
+		slog.Error("feed: player fragment playback", "item_id", itemID, "err", err)
 		return false
 	}
 	prefs, perr := store.LoadPlayerPrefs()
 	if perr != nil {
+		slog.Error("feed: player fragment prefs", "err", perr)
 		prefs = PlayerPrefs{Speed: 1, SkipBackSec: 15, SkipFwdSec: 30, Volume: 1, AutoplayNext: true}
 	}
 	items, err := h.resolveViewItems(store, c)
@@ -1101,7 +1131,7 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	}
 	it, err := store.GetItem(id)
 	if err != nil {
-		http.NotFound(w, r)
+		lookupError(w, r, err)
 		return
 	}
 	streamURL, err := ResolveYouTubeStreamURL(r.Context(), it.MediaURL)
@@ -1126,9 +1156,13 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d, err := store.GetDownload(id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		// No download row yet — nothing to analyze.
 		plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": []Range{}})
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -1195,7 +1229,7 @@ func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	it, err := store.GetItem(id)
 	if err != nil {
-		http.NotFound(w, r)
+		lookupError(w, r, err)
 		return
 	}
 	dl, err := store.FindDownload(id)
@@ -1357,39 +1391,15 @@ func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Could not load items: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	var matched []ItemWithSubscription
-	for _, it := range items {
-		if len(matched) >= 10 {
-			break
-		}
-		sub, err := store.GetSubscription(it.SubscriptionID)
-		if err != nil {
-			http.Error(w, "Could not load subscription: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		folder := ""
-		if sub.FolderID.Valid {
-			f, err := store.GetFolder(sub.FolderID.Int64)
-			if err != nil {
-				http.Error(w, "Could not load folder: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			folder = f.Name
-		}
-		tagsList, err := store.ItemTags(it.ID)
-		if err != nil {
-			http.Error(w, "Could not load tags: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		dl, err := store.FindDownload(it.ID)
-		if err != nil {
-			http.Error(w, "Could not load download: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		rec := BuildRecord(it.Item, sub, folder, tagsList, !it.IsRead, it.IsStarred, dl.State == "ready")
-		if search.ExactMatch(expr, rec, *SearchSchema()) {
-			matched = append(matched, it)
-		}
+	// refineItems batch-loads each row's tags and download state rather than
+	// querying per row.
+	matched, err := h.refineItems(store, items, expr)
+	if err != nil {
+		http.Error(w, "Could not match items: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if len(matched) > 10 {
+		matched = matched[:10]
 	}
 	ui.Render(w, r, feedFilterPreviewResults(matched))
 }
@@ -1591,7 +1601,7 @@ func (h *Pages) SubscriptionSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	sub, err := store.GetSubscription(id)
 	if err != nil {
-		http.NotFound(w, r)
+		lookupError(w, r, err)
 		return
 	}
 	folders, err := store.ListFolders()

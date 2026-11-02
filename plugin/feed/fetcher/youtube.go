@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os/exec"
 
 	"git.duckfam.us/jj-software/cog/plugin/feed"
@@ -62,6 +63,7 @@ func ytdlpListEntries(ctx context.Context, url string) ([]ytdlpInfo, error) {
 	for scanner.Scan() {
 		var info ytdlpInfo
 		if err := json.Unmarshal(scanner.Bytes(), &info); err != nil {
+			slog.Warn("feed youtube: skip unparseable yt-dlp entry", "url", url, "err", err)
 			continue
 		}
 		entries = append(entries, info)
@@ -103,7 +105,12 @@ func fetchYouTube(ctx context.Context, sub feed.Subscription) (feed.FetchResult,
 	if err != nil {
 		return feed.FetchResult{}, err
 	}
-	meta, _ := ytdlpChannelMeta(ctx, sub.URL) // best-effort; ignore failure
+	// Channel metadata only enriches the subscription; the entries are
+	// what matters, so a failure here is logged rather than fatal.
+	meta, err := ytdlpChannelMeta(ctx, sub.URL)
+	if err != nil {
+		slog.Warn("feed youtube: channel metadata", "subscription_id", sub.ID, "url", sub.URL, "err", err)
+	}
 
 	items := make([]feed.Item, 0, len(entries))
 	for _, e := range entries {

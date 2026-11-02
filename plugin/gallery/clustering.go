@@ -3,7 +3,7 @@ package gallery
 import (
 	"database/sql"
 	"encoding/binary"
-	"log/slog"
+	"fmt"
 	"math"
 	"time"
 )
@@ -62,7 +62,7 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 		var f unassignedFace
 		var blob []byte
 		if err := rows.Scan(&f.id, &f.mediaID, &blob, &f.estimatedAge, &f.photoDate); err != nil {
-			continue
+			return fmt.Errorf("scan unassigned face: %w", err)
 		}
 		f.embedding = bytesToFloat32Slice(blob)
 		if len(f.embedding) > 0 {
@@ -103,17 +103,15 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 
 		if bestPersonID > 0 {
 			// Assign to existing person.
-			db.Exec(`UPDATE faces SET person_id = ? WHERE id = ?`, bestPersonID, face.id)
+			if _, err := db.Exec(`UPDATE faces SET person_id = ? WHERE id = ?`, bestPersonID, face.id); err != nil {
+				return fmt.Errorf("assign face %d: %w", face.id, err)
+			}
 		} else {
 			// Create new person cluster.
-			res, err := db.Exec(`INSERT INTO people (name) VALUES ('')`)
+			personID, err := CreatePersonFromFace(db, face.id)
 			if err != nil {
-				slog.Error("create person cluster", "err", err)
-				continue
+				return err
 			}
-			personID, _ := res.LastInsertId()
-			db.Exec(`UPDATE faces SET person_id = ? WHERE id = ?`, personID, face.id)
-			db.Exec(`UPDATE people SET representative_face_id = ? WHERE id = ?`, face.id, personID)
 			centroids[personID] = face.embedding
 		}
 	}
@@ -129,21 +127,20 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 	for noEmbRows.Next() {
 		var faceID int64
 		if err := noEmbRows.Scan(&faceID); err != nil {
-			continue
+			noEmbRows.Close()
+			return fmt.Errorf("scan embeddingless face: %w", err)
 		}
 		noEmbFaceIDs = append(noEmbFaceIDs, faceID)
 	}
 	noEmbRows.Close()
+	if err := noEmbRows.Err(); err != nil {
+		return err
+	}
 
 	for _, faceID := range noEmbFaceIDs {
-		res, err := db.Exec(`INSERT INTO people (name) VALUES ('')`)
-		if err != nil {
-			slog.Error("create person for embeddingless face", "err", err)
-			continue
+		if _, err := CreatePersonFromFace(db, faceID); err != nil {
+			return err
 		}
-		personID, _ := res.LastInsertId()
-		db.Exec(`UPDATE faces SET person_id = ? WHERE id = ?`, personID, faceID)
-		db.Exec(`UPDATE people SET representative_face_id = ? WHERE id = ?`, faceID, personID)
 	}
 
 	return nil
@@ -181,7 +178,7 @@ func loadPersonCentroids(db *sql.DB) (map[int64][]float32, error) {
 		var cropArea float64
 		var dateTaken int64
 		if err := rows.Scan(&personID, &blob, &cropArea, &dateTaken); err != nil {
-			continue
+			return nil, err
 		}
 		emb := bytesToFloat32Slice(blob)
 		if len(emb) == 0 {
@@ -240,7 +237,7 @@ func loadRecentFaces(db *sql.DB, k int) (map[int64][][]float32, error) {
 		var personID int64
 		var blob []byte
 		if err := rows.Scan(&personID, &blob); err != nil {
-			continue
+			return nil, err
 		}
 		emb := bytesToFloat32Slice(blob)
 		if len(emb) > 0 {
@@ -268,7 +265,7 @@ func loadPersonBirthYears(db *sql.DB) (map[int64]float64, error) {
 		var personID int64
 		var birthYear float64
 		if err := rows.Scan(&personID, &birthYear); err != nil {
-			continue
+			return nil, err
 		}
 		result[personID] = birthYear
 	}

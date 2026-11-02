@@ -87,6 +87,7 @@ var (
 	UserDB               = cogplugin.UserDB
 	SetTitle             = cogplugin.SetTitle
 	SetFlash             = cogplugin.SetFlash
+	RequestFlash         = cogplugin.RequestFlash
 	Username             = cogplugin.Username
 	WriteJSON            = cogplugin.WriteJSON
 	PathID               = cogplugin.PathID

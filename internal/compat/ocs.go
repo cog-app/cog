@@ -3,6 +3,7 @@ package compat
 import (
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -347,12 +348,14 @@ func HandleUserByID(users *user.Store) http.HandlerFunc {
 		}
 
 		// Try by ID first, then by username
-		target, err := users.GetByID(userID)
-		if err != nil {
-			target, err = users.GetByUsername(userID)
+		target, err := userByIDOrName(users, userID)
+		if errors.Is(err, user.ErrNotFound) {
+			writeOCSErrorReq(w, r, http.StatusNotFound, 404, "user not found")
+			return
 		}
 		if err != nil {
-			writeOCSErrorReq(w, r, http.StatusNotFound, 404, "user not found")
+			slog.Error("ocs: look up user", "user", userID, "err", err)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
 
@@ -385,4 +388,14 @@ func HandleStatus(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		slog.Error("status json encode", "err", err)
 	}
+}
+
+// userByIDOrName looks a user up by ID, then by username: NextCloud clients
+// use either in the same places.
+func userByIDOrName(users *user.Store, idOrName string) (*user.User, error) {
+	u, err := users.GetByID(idOrName)
+	if errors.Is(err, user.ErrNotFound) {
+		u, err = users.GetByUsername(idOrName)
+	}
+	return u, err
 }

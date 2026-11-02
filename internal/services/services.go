@@ -35,6 +35,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/share"
+	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/internal/webpush"
@@ -66,6 +67,7 @@ type Providers struct {
 	MFAPending     *auth.MFAPendingStore
 	EmailOTP       *auth.EmailOTPStore
 	WebAuthn       *auth.WebAuthnStore
+	SSHKeys        *keys.Store
 	PasswordResets *auth.PasswordResetStore
 	Activities     *activity.Store
 	DAV            *dav.Server
@@ -93,7 +95,9 @@ func New(log *slog.Logger, cfg config.Config, plugins ...plugin.Plugin) (*Provid
 		return nil, fmt.Errorf("open system db: %w", err)
 	}
 	if err := db.Migrate(sysDB); err != nil {
-		sysDB.Close()
+		if cerr := sysDB.Close(); cerr != nil {
+			log.Error("close system db after failed migration", "err", cerr)
+		}
 		return nil, fmt.Errorf("migrate system db: %w", err)
 	}
 
@@ -101,7 +105,9 @@ func New(log *slog.Logger, cfg config.Config, plugins ...plugin.Plugin) (*Provid
 
 	p, err := NewFromDB(log, cfg, sysDB, clock.System(), plugins...)
 	if err != nil {
-		sysDB.Close()
+		if cerr := sysDB.Close(); cerr != nil {
+			log.Error("close system db after failed setup", "err", cerr)
+		}
 		return nil, err
 	}
 	WireSearch(log, p, mgr)
@@ -136,31 +142,35 @@ func WireSearch(log *slog.Logger, p *Providers, mgr *search.Manager) {
 		switch rec.SubjectType {
 		case "USER":
 			u, err := p.Users.GetByID(rec.SubjectID)
+			if errors.Is(err, user.ErrNotFound) {
+				return nil
+			}
 			if err != nil {
+				log.Error("share recipients: look up user", "share", rec.ID, "user", rec.SubjectID, "err", err)
 				return nil
 			}
 			return []string{u.Username}
 		case "GROUP":
 			userIDs, err := p.Groups.ListClosureUserIDs(rec.SubjectID)
 			if err != nil {
+				log.Error("share recipients: list group members", "share", rec.ID, "group", rec.SubjectID, "err", err)
 				return nil
 			}
-			var names []string
-			for _, id := range userIDs {
-				u, err := p.Users.GetByID(id)
-				if err != nil {
-					continue
-				}
+			members, err := p.Users.GetByIDs(userIDs)
+			if err != nil {
+				log.Error("share recipients: look up members", "share", rec.ID, "group", rec.SubjectID, "err", err)
+				return nil
+			}
+			names := make([]string, 0, len(members))
+			for _, u := range members {
 				names = append(names, u.Username)
 			}
 			return names
 		case "INSTANCE":
-			var names []string
-			for u, err := range p.Users.List() {
-				if err != nil {
-					break
-				}
-				names = append(names, u.Username)
+			names, err := p.Users.Usernames()
+			if err != nil {
+				log.Error("share recipients: list users", "share", rec.ID, "err", err)
+				return nil
 			}
 			return names
 		default:
@@ -292,6 +302,10 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	activities := activity.NewStore(sysDB, c)
 	fedStore := federation.NewStore(sysDB, c)
 	fedClient := federation.NewClient(cfg.BaseURL)
+	sshKeys, err := keys.NewStore(sysDB, registry, users, c)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Providers{
 		Config:         cfg,
@@ -314,6 +328,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		EmailOTP:       auth.NewEmailOTPStore(sysDB, c),
 		PasswordResets: auth.NewPasswordResetStore(sysDB, c, secret),
 		WebAuthn:       newWebAuthnStore(sysDB, c, cfg.BaseURL, secret, log),
+		SSHKeys:        sshKeys,
 		RateLimiter:    ratelimit.New(10, 15*time.Minute, c),
 		Activities:     activities,
 		DAV:            davServer,
@@ -339,7 +354,7 @@ func (p *Providers) SeedPlugins(username string) error {
 
 	// Seed plugin data for the admin user concurrently.
 	var wg sync.WaitGroup
-	for i, id := range p.Plugins.PluginIDs() {
+	for i, id := range pluginIDs {
 		plug, ok := p.Plugins.Plugin(id)
 		if !ok {
 			continue

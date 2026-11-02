@@ -116,6 +116,10 @@ func (ib *inbox) Deliver(owner, uid string, data []byte, cutoff time.Time) error
 		}
 		expired = append(expired, uri)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("expire messages: %w", err)
+	}
 	if err := rows.Close(); err != nil {
 		return fmt.Errorf("expire messages: %w", err)
 	}

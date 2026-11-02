@@ -2,7 +2,10 @@ package federation_test
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -10,6 +13,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
 // --- Auth gating ---
@@ -201,6 +205,90 @@ func TestTokenWebDAV_Outbound_DeleteThroughFilesPlugin(t *testing.T) {
 	// File metadata gone from owner namespace.
 	env.Get(t, "/api/files/info?path=/Bin/disposable.txt", alice.Auth).
 		Status(http.StatusNotFound)
+}
+
+// TestTokenWebDAV_OwnerMountElsewhere shares a folder whose owner's files
+// live on a volume outside the data directory. The handler must find them
+// through the owner's mounts, as the owner's own WebDAV does, rather than by
+// assuming a layout under the data directory.
+func TestTokenWebDAV_OwnerMountElsewhere(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+
+	volDir := t.TempDir()
+	vol, err := env.Providers.Volumes.Create("elsewhere", "", "file://"+volDir, nil, "{}")
+	require.NoError(t, err)
+	_, err = env.Providers.Mounts.Create(alice.ID, "/", vol.ID, "alice", false)
+	require.NoError(t, err)
+
+	mkdirViaAPI(t, env, alice, "/Docs")
+	mkdirViaAPI(t, env, alice, "/Docs/Sub")
+	putFileViaAPI(t, env, alice, "/Docs/readme.txt", "hello from a mount")
+	putFileViaAPI(t, env, alice, "/secret.txt", "not shared")
+	dirMeta := infoViaAPI(t, env, alice, "/Docs")
+
+	// The bytes are on the volume, not under the data directory.
+	onVolume, err := os.ReadFile(filepath.Join(volDir, "alice", "Docs", "readme.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "hello from a mount", string(onVolume))
+
+	rec, err := env.Providers.Shares.CreatePublicLink(
+		alice.ID, "files:directory", strconv.FormatInt(dirMeta.ID, 10), 1, nil,
+	)
+	require.NoError(t, err)
+	fs := &federation.FederatedShare{
+		Direction:    "outbound",
+		State:        "accepted",
+		ShareID:      &rec.ID,
+		RemoteHost:   "remote.example.com",
+		RemoteUser:   "bob",
+		LocalUserID:  alice.ID,
+		Token:        *rec.Token,
+		ResourceName: "Docs",
+		ResourceType: "directory",
+		Permissions:  1,
+	}
+	require.NoError(t, env.Providers.Federation.Create(fs))
+	tok := cogtest.BasicAuth("", *rec.Token)
+
+	// The listing shows the folder and both children.
+	env.Do(t, mkReq(t, env, "PROPFIND", "/public.php/webdav/"), tok).
+		Status(207).
+		Contains("<d:href>/public.php/webdav/</d:href>").
+		Contains("<d:href>/public.php/webdav/readme.txt</d:href>").
+		Contains("<d:getcontentlength>18</d:getcontentlength>").
+		Contains("<d:href>/public.php/webdav/Sub/</d:href>")
+
+	// Depth 0 is the folder alone.
+	req := mkReq(t, env, "PROPFIND", "/public.php/webdav/")
+	req.Header.Set("Depth", "0")
+	env.Do(t, req, tok).Status(207).NotContains("readme.txt")
+
+	env.Get(t, "/public.php/webdav/readme.txt", tok).
+		Status(200).Equals("hello from a mount")
+	env.Get(t, "/public.php/webdav/missing.txt", tok).Status(http.StatusNotFound)
+
+	// Climbing out of the share stays inside it. Through the server mux a
+	// ".." never arrives (the mux redirects to the cleaned path), so the
+	// handler is called directly with the raw path: it must resolve to the
+	// share's own secret.txt, which doesn't exist, not alice's /secret.txt.
+	fp, ok := env.Providers.Plugins.Plugin("files")
+	require.True(t, ok)
+	h := &federation.TokenWebDAVHandler{
+		Log:    env.Providers.Log,
+		Store:  env.Providers.Federation,
+		Shares: env.Providers.Shares,
+		Users:  env.Providers.Users,
+		Files:  fp.(*files.Plugin),
+	}
+	for _, p := range []string{"/public.php/webdav/../secret.txt", "/public.php/webdav/Sub/../../secret.txt"} {
+		req := httptest.NewRequest(http.MethodGet, p, nil)
+		req.SetBasicAuth("", *rec.Token)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code)
+		require.False(t, strings.Contains(w.Body.String(), "not shared"))
+	}
 }
 
 // --- Direction enforcement: inbound shares must not be accessible from this endpoint ---

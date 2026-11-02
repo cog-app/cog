@@ -63,7 +63,10 @@ List 5-15 tags describing objects, activities, colors, and setting.`,
 		},
 		"max_tokens": 300,
 	}
-	body, _ := json.Marshal(reqBody)
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("encode openai request: %w", err)
+	}
 
 	url := strings.TrimSuffix(b.URL, "/") + "/chat/completions"
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
