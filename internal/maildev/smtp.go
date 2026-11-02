@@ -3,6 +3,7 @@ package maildev
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -40,7 +41,10 @@ func (s *SMTPServer) accept() {
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
-			return // listener closed
+			if !errors.Is(err, net.ErrClosed) {
+				log.Printf("[maildev] smtp accept: %v", err)
+			}
+			return
 		}
 		go s.handleConn(conn)
 	}
@@ -58,6 +62,11 @@ func (s *SMTPServer) handleConn(conn net.Conn) {
 	var inData bool
 	var data bytes.Buffer
 
+	defer func() {
+		if err := scanner.Err(); err != nil {
+			log.Printf("[maildev] smtp read: %v", err)
+		}
+	}()
 	for scanner.Scan() {
 		line := scanner.Text()
 

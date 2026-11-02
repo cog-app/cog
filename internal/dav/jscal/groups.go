@@ -236,6 +236,8 @@ func setParamJSID(params *map[string][]contentline.Param, prop, id string) {
 }
 
 func (x *ctx) sink(ptr string, val any) {
+	// val was decoded from the request's JSON, so it encodes again: Sink
+	// cannot fail on it.
 	p, err := jsobj.Sink(ptr, val)
 	if err == nil {
 		x.extra = append(x.extra, p)

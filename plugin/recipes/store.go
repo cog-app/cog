@@ -2,8 +2,33 @@ package recipes
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 )
+
+// execer is satisfied by *sql.DB and *sql.Tx, so the write helpers below can
+// run on their own or as part of a transaction that saves a whole recipe.
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+// inTx runs fn in a transaction, committing if it succeeds. A recipe and its
+// ingredients, steps and tags are saved together so that a failure part way
+// through does not leave a recipe with half its lists.
+func inTx(db *sql.DB, fn func(*sql.Tx) error) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
 
 // Recipe is a recipe with metadata stored in SQLite.
 type Recipe struct {
@@ -114,7 +139,7 @@ func GetRecipe(db *sql.DB, id int64) (*Recipe, error) {
 		FROM recipes WHERE id = ?`, id))
 }
 
-func CreateRecipe(db *sql.DB, r *Recipe) (int64, error) {
+func CreateRecipe(db execer, r *Recipe) (int64, error) {
 	res, err := db.Exec(`INSERT INTO recipes (name, description, source_url, image_path,
 		category, cuisine, recipe_yield, prep_time, cook_time, total_time, calories, json_ld, etag)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -127,7 +152,7 @@ func CreateRecipe(db *sql.DB, r *Recipe) (int64, error) {
 	return res.LastInsertId()
 }
 
-func UpdateRecipe(db *sql.DB, r *Recipe) error {
+func UpdateRecipe(db execer, r *Recipe) error {
 	_, err := db.Exec(`UPDATE recipes SET name = ?, description = ?, source_url = ?,
 		image_path = ?, category = ?, cuisine = ?, recipe_yield = ?,
 		prep_time = ?, cook_time = ?, total_time = ?, calories = ?,
@@ -170,7 +195,7 @@ func GetIngredients(db *sql.DB, recipeID int64) ([]Ingredient, error) {
 	return items, rows.Err()
 }
 
-func SetIngredients(db *sql.DB, recipeID int64, texts []string) error {
+func SetIngredients(db execer, recipeID int64, texts []string) error {
 	if _, err := db.Exec(`DELETE FROM recipe_ingredients WHERE recipe_id = ?`, recipeID); err != nil {
 		return err
 	}
@@ -185,19 +210,6 @@ func SetIngredients(db *sql.DB, recipeID int64, texts []string) error {
 		}
 	}
 	return nil
-}
-
-// IngredientsText returns all ingredients for a recipe as a single string (for search indexing).
-func IngredientsText(db *sql.DB, recipeID int64) string {
-	items, err := GetIngredients(db, recipeID)
-	if err != nil {
-		return ""
-	}
-	var parts []string
-	for _, i := range items {
-		parts = append(parts, i.Text)
-	}
-	return strings.Join(parts, "\n")
 }
 
 // --- Instructions ---
@@ -220,7 +232,7 @@ func GetInstructions(db *sql.DB, recipeID int64) ([]Instruction, error) {
 	return items, rows.Err()
 }
 
-func SetInstructions(db *sql.DB, recipeID int64, texts []string) error {
+func SetInstructions(db execer, recipeID int64, texts []string) error {
 	if _, err := db.Exec(`DELETE FROM recipe_instructions WHERE recipe_id = ?`, recipeID); err != nil {
 		return err
 	}
@@ -235,19 +247,6 @@ func SetInstructions(db *sql.DB, recipeID int64, texts []string) error {
 		}
 	}
 	return nil
-}
-
-// InstructionsText returns all instructions as a single string (for search indexing).
-func InstructionsText(db *sql.DB, recipeID int64) string {
-	items, err := GetInstructions(db, recipeID)
-	if err != nil {
-		return ""
-	}
-	var parts []string
-	for _, i := range items {
-		parts = append(parts, i.Text)
-	}
-	return strings.Join(parts, "\n")
 }
 
 // --- Keywords ---
@@ -269,7 +268,27 @@ func GetKeywords(db *sql.DB, recipeID int64) ([]string, error) {
 	return kws, rows.Err()
 }
 
-func SetKeywords(db *sql.DB, recipeID int64, keywords []string) error {
+// KeywordsByRecipe returns every recipe's keywords, sorted, keyed by recipe
+// id, in one query.
+func KeywordsByRecipe(db *sql.DB) (map[int64][]string, error) {
+	rows, err := db.Query(`SELECT recipe_id, keyword FROM keywords ORDER BY recipe_id, keyword`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	kws := make(map[int64][]string)
+	for rows.Next() {
+		var id int64
+		var kw string
+		if err := rows.Scan(&id, &kw); err != nil {
+			return nil, err
+		}
+		kws[id] = append(kws[id], kw)
+	}
+	return kws, rows.Err()
+}
+
+func SetKeywords(db execer, recipeID int64, keywords []string) error {
 	if _, err := db.Exec(`DELETE FROM keywords WHERE recipe_id = ?`, recipeID); err != nil {
 		return err
 	}

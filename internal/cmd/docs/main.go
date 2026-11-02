@@ -87,7 +87,9 @@ func main() {
 	nav := buildNav(pages)
 
 	// Clean output directory to remove stale files.
-	os.RemoveAll(*outDir)
+	if err := os.RemoveAll(*outDir); err != nil {
+		log.Fatal(err)
+	}
 
 	if err := renderAll(pages, nav, *outDir); err != nil {
 		log.Fatal(err)

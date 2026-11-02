@@ -3,6 +3,7 @@ package federation
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -142,6 +143,11 @@ func (h *OCMHandler) HandleNotification(w http.ResponseWriter, r *http.Request) 
 	}
 
 	fs, err := h.Store.Get(notif.ProviderID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		h.Log.Error("federation notification: look up share", "id", notif.ProviderID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 	if err != nil {
 		// Don't leak whether the share existed.
 		http.Error(w, "not found", http.StatusNotFound)

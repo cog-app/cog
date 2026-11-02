@@ -3,6 +3,7 @@
 package ssh
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -66,9 +67,11 @@ func (s *Server) ListenAndServe() error {
 
 	for {
 		conn, err := s.listener.Accept()
+		if errors.Is(err, net.ErrClosed) {
+			return nil // Close was called
+		}
 		if err != nil {
-			// listener closed
-			return nil
+			return fmt.Errorf("ssh accept: %w", err)
 		}
 		go s.handleConn(conn)
 	}

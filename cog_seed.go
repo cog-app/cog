@@ -1,6 +1,8 @@
 package cog
 
 import (
+	"errors"
+
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/services"
@@ -37,23 +39,23 @@ func runSeed(p *services.Providers) {
 	var memberIDs []string
 	for _, su := range seedUsers {
 		u, err := p.Users.GetByUsername(su.username)
+		if err != nil && !errors.Is(err, user.ErrNotFound) {
+			p.Log.Error("seed: look up user failed", "user", su.username, "err", err)
+			continue
+		}
 		if err != nil {
 			u, err = p.Users.Create(su.username, su.password)
 			if err != nil {
 				p.Log.Error("seed: create user failed", "user", su.username, "err", err)
 				continue
 			}
-			// Create root mount for the user.
-			if p.Volumes != nil && p.Mounts != nil {
-				if defVol, volErr := p.Volumes.GetByName("default"); volErr == nil {
-					subpath := u.Username + "/files"
-					if _, err := p.Mounts.Create(u.ID, "/", defVol.ID, subpath, false); err != nil {
-						p.Log.Error("seed: create mount failed", "user", u.Username, "err", err)
-					}
-				}
+			if err := createRootMount(p, u); err != nil {
+				p.Log.Error("seed: create mount failed", "user", u.Username, "err", err)
 			}
 			if su.displayName != "" {
-				p.Users.Update(u.ID, user.UpdateOpts{DisplayName: &su.displayName})
+				if err := p.Users.Update(u.ID, user.UpdateOpts{DisplayName: &su.displayName}); err != nil {
+					p.Log.Error("seed: set display name failed", "user", u.Username, "err", err)
+				}
 			}
 			p.Log.Info("seeded user", "user", su.username)
 		}
@@ -64,7 +66,9 @@ func runSeed(p *services.Providers) {
 	seedGroup(p, admin.ID, memberIDs)
 
 	// Bootstrap mounts for new users so plugin DBs resolve correctly.
-	mount.Bootstrap(p.Config.DataDir, p.Users, p.Volumes, p.Mounts)
+	if err := mount.Bootstrap(p.Config.DataDir, p.Users, p.Volumes, p.Mounts); err != nil {
+		p.Log.Error("seed: bootstrap mounts failed", "err", err)
+	}
 
 	// Seed plugin data for the admin user concurrently.
 	if err := p.SeedPlugins("admin"); err != nil {
@@ -80,7 +84,8 @@ func seedGroup(p *services.Providers, adminID string, memberIDs []string) {
 	// Check if group already exists.
 	for g, err := range p.Groups.List() {
 		if err != nil {
-			break
+			p.Log.Error("seed: list groups failed", "err", err)
+			return
 		}
 		if g.Name == groupName {
 			return // already seeded

@@ -1,11 +1,21 @@
 package profanity
 
 import (
+	"io"
 	"strings"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/plugin"
 )
+
+func mustParseWordList(t *testing.T, r io.Reader) *WordList {
+	t.Helper()
+	wl, err := ParseWordList(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return wl
+}
 
 func TestParseWordList(t *testing.T) {
 	input := `
@@ -16,7 +26,7 @@ shit=crap
 
 ass=butt
 `
-	wl := ParseWordList(strings.NewReader(input))
+	wl := mustParseWordList(t, strings.NewReader(input))
 	if wl.Empty() {
 		t.Fatal("word list should not be empty")
 	}
@@ -26,7 +36,7 @@ ass=butt
 }
 
 func TestFilterText(t *testing.T) {
-	wl := ParseWordList(strings.NewReader("damn=darn\nhell=heck"))
+	wl := mustParseWordList(t, strings.NewReader("damn=darn\nhell=heck"))
 
 	got := wl.FilterText("What the damn hell is going on")
 	want := "What the [darn] [heck] is going on"
@@ -36,7 +46,7 @@ func TestFilterText(t *testing.T) {
 }
 
 func TestFilterTextCaseInsensitive(t *testing.T) {
-	wl := ParseWordList(strings.NewReader("damn=darn"))
+	wl := mustParseWordList(t, strings.NewReader("damn=darn"))
 
 	got := wl.FilterText("DAMN it")
 	want := "[darn] it"
@@ -46,7 +56,7 @@ func TestFilterTextCaseInsensitive(t *testing.T) {
 }
 
 func TestFilterTextWholeWord(t *testing.T) {
-	wl := ParseWordList(strings.NewReader("ass=butt"))
+	wl := mustParseWordList(t, strings.NewReader("ass=butt"))
 
 	got := wl.FilterText("The class was assembled")
 	// "ass" should not match inside "class" or "assembled"
@@ -56,7 +66,7 @@ func TestFilterTextWholeWord(t *testing.T) {
 }
 
 func TestFilterTextDefaultReplacement(t *testing.T) {
-	wl := ParseWordList(strings.NewReader("damn"))
+	wl := mustParseWordList(t, strings.NewReader("damn"))
 
 	got := wl.FilterText("damn it")
 	want := "[***] it"
@@ -66,7 +76,7 @@ func TestFilterTextDefaultReplacement(t *testing.T) {
 }
 
 func TestFilterHTML(t *testing.T) {
-	wl := ParseWordList(strings.NewReader("damn=darn"))
+	wl := mustParseWordList(t, strings.NewReader("damn=darn"))
 
 	got := wl.FilterHTML("<p>What the <b>damn</b> thing</p>")
 	if !strings.Contains(got, "[darn]") {
@@ -78,7 +88,7 @@ func TestFilterHTML(t *testing.T) {
 }
 
 func TestFilterHTMLPreservesTags(t *testing.T) {
-	wl := ParseWordList(strings.NewReader("damn=darn"))
+	wl := mustParseWordList(t, strings.NewReader("damn=darn"))
 
 	got := wl.FilterHTML(`<a href="http://example.com/damn">damn link</a>`)
 	// Should not filter inside attribute values, only text nodes.
@@ -91,7 +101,7 @@ func TestFilterHTMLPreservesTags(t *testing.T) {
 }
 
 func TestEmptyWordList(t *testing.T) {
-	wl := ParseWordList(strings.NewReader(""))
+	wl := mustParseWordList(t, strings.NewReader(""))
 	if !wl.Empty() {
 		t.Fatal("should be empty")
 	}
@@ -101,7 +111,7 @@ func TestEmptyWordList(t *testing.T) {
 }
 
 func TestAudioRanges(t *testing.T) {
-	wl := ParseWordList(strings.NewReader("damn=darn\nhell=heck"))
+	wl := mustParseWordList(t, strings.NewReader("damn=darn\nhell=heck"))
 
 	captions := []plugin.CaptionSegment{
 		{Start: 0, End: 3, Text: "Hello world"},

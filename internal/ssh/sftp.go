@@ -7,9 +7,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/ssh/shell"
 	"git.duckfam.us/jj-software/cog/vfs"
 
 	"github.com/pkg/sftp"
@@ -30,9 +30,14 @@ func (s *Server) serveSFTP(channel gossh.Channel, filesDir string, userFS vfs.FS
 		}
 	} else {
 		// Resolve symlinks so containment checks work consistently.
-		if resolved, err := filepath.EvalSymlinks(filesDir); err == nil {
-			filesDir = resolved
+		resolved, err := filepath.EvalSymlinks(filesDir)
+		if err != nil {
+			// Every path is checked against the resolved directory; an
+			// unresolved one would reject them all.
+			s.log.Error("sftp: resolve home directory", "dir", filesDir, "err", err)
+			return
 		}
+		filesDir = resolved
 		dh := &directSFTPHandler{filesDir: filesDir}
 		h = sftp.Handlers{
 			FileGet:  dh,
@@ -158,8 +163,11 @@ func (h *vfsSFTPHandler) Filelist(r *sftp.Request) (sftp.ListerAt, error) {
 			infos := make([]fs.FileInfo, 0, len(entries))
 			for _, e := range entries {
 				info, err := e.Info()
+				if errors.Is(err, fs.ErrNotExist) {
+					continue // removed since the directory was read
+				}
 				if err != nil {
-					continue
+					return nil, err
 				}
 				infos = append(infos, info)
 			}
@@ -251,7 +259,7 @@ func (h *directSFTPHandler) resolve(vpath string) (string, error) {
 		resolved = filepath.Join(parent, filepath.Base(real))
 	}
 
-	if !strings.HasPrefix(resolved, h.filesDir) {
+	if !shell.Within(resolved, h.filesDir) {
 		return "", fmt.Errorf("access denied: path outside home directory")
 	}
 	return resolved, nil
@@ -362,8 +370,11 @@ func (h *directSFTPHandler) Filelist(r *sftp.Request) (sftp.ListerAt, error) {
 		infos := make([]fs.FileInfo, 0, len(entries))
 		for _, e := range entries {
 			info, err := e.Info()
+			if errors.Is(err, fs.ErrNotExist) {
+				continue // removed since the directory was read
+			}
 			if err != nil {
-				continue
+				return nil, err
 			}
 			infos = append(infos, info)
 		}

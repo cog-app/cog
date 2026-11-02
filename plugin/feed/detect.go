@@ -2,6 +2,7 @@ package feed
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -44,11 +45,13 @@ func sniffKind(ctx context.Context, method, rawURL string) string {
 	defer cancel()
 	req, err := http.NewRequestWithContext(rctx, method, rawURL, nil)
 	if err != nil {
+		slog.Debug("feed detect: build sniff request", "url", rawURL, "method", method, "err", err)
 		return ""
 	}
 	req.Header.Set("User-Agent", "cog-feed/1.0")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		slog.Debug("feed detect: sniff request", "url", rawURL, "method", method, "err", err)
 		return ""
 	}
 	defer resp.Body.Close()

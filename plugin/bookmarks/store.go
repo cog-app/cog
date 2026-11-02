@@ -102,11 +102,8 @@ func ListBookmarks(db *sql.DB, folderID *int64, tags []string, search string, so
 		return nil, 0, err
 	}
 
-	// Load tags and folders for each bookmark.
-	for i := range bookmarks {
-		if err := loadRelations(db, &bookmarks[i]); err != nil {
-			return nil, 0, err
-		}
+	if err := loadRelationsBatch(db, bookmarks, true); err != nil {
+		return nil, 0, err
 	}
 	return bookmarks, total, nil
 }
@@ -232,12 +229,15 @@ func RecentBookmarks(db *sql.DB, limit int) ([]Bookmark, error) {
 		if err := rows.Scan(&bm.ID, &bm.URL, &bm.Title, &bm.Description, &bm.ClickCount, &bm.Available, &bm.CreatedAt, &bm.UpdatedAt); err != nil {
 			return nil, err
 		}
-		if bm.Tags, err = loadTags(db, bm.ID); err != nil {
-			return nil, err
-		}
 		bookmarks = append(bookmarks, bm)
 	}
-	return bookmarks, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := loadRelationsBatch(db, bookmarks, false); err != nil {
+		return nil, err
+	}
+	return bookmarks, nil
 }
 
 // --- Folder CRUD ---
@@ -385,6 +385,58 @@ func loadRelations(db *sql.DB, bm *Bookmark) error {
 	}
 	bm.Folders, err = loadFolders(db, bm.ID)
 	return err
+}
+
+// loadRelationsBatch fills in the tags, and with folders the folders, of
+// every bookmark in bms with one query each, rather than one per bookmark.
+func loadRelationsBatch(db *sql.DB, bms []Bookmark, folders bool) error {
+	if len(bms) == 0 {
+		return nil
+	}
+	byID := make(map[int64]*Bookmark, len(bms))
+	args := make([]any, len(bms))
+	for i := range bms {
+		byID[bms[i].ID] = &bms[i]
+		args[i] = bms[i].ID
+	}
+	in := "(?" + strings.Repeat(",?", len(bms)-1) + ")"
+
+	rows, err := db.Query(`SELECT bookmark_id, tag FROM tags WHERE bookmark_id IN `+in+` ORDER BY bookmark_id, tag`, args...)
+	if err != nil {
+		return fmt.Errorf("load tags: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var t string
+		if err := rows.Scan(&id, &t); err != nil {
+			return fmt.Errorf("scan tag: %w", err)
+		}
+		byID[id].Tags = append(byID[id].Tags, t)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("load tags: %w", err)
+	}
+	if !folders {
+		return nil
+	}
+
+	frows, err := db.Query(`SELECT bookmark_id, folder_id FROM bookmark_folders WHERE bookmark_id IN `+in+` ORDER BY bookmark_id, sort_order`, args...)
+	if err != nil {
+		return fmt.Errorf("load folders: %w", err)
+	}
+	defer frows.Close()
+	for frows.Next() {
+		var id, f int64
+		if err := frows.Scan(&id, &f); err != nil {
+			return fmt.Errorf("scan folder: %w", err)
+		}
+		byID[id].Folders = append(byID[id].Folders, f)
+	}
+	if err := frows.Err(); err != nil {
+		return fmt.Errorf("load folders: %w", err)
+	}
+	return nil
 }
 
 func loadTags(db *sql.DB, bookmarkID int64) ([]string, error) {

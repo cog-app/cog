@@ -2,7 +2,9 @@ package feed
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 )
 
@@ -15,11 +17,14 @@ func ImportAntennaPod(s *Store, data []byte) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("import antennapod: create temp: %w", err)
 	}
-	defer os.Remove(tmp.Name())
+	defer func() {
+		if err := os.Remove(tmp.Name()); err != nil {
+			slog.Warn("feed import antennapod: remove temp", "path", tmp.Name(), "err", err)
+		}
+	}()
 
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return 0, fmt.Errorf("import antennapod: write temp: %w", err)
+		return 0, fmt.Errorf("import antennapod: write temp: %w", errors.Join(err, tmp.Close()))
 	}
 	if err := tmp.Close(); err != nil {
 		return 0, fmt.Errorf("import antennapod: close temp: %w", err)
@@ -41,19 +46,22 @@ func ImportAntennaPod(s *Store, data []byte) (int, error) {
 	for rows.Next() {
 		var feedURL, title, imageURL string
 		if err := rows.Scan(&feedURL, &title, &imageURL); err != nil {
-			continue
+			return count, fmt.Errorf("import antennapod: scan: %w", err)
 		}
-		if _, err := s.CreateSubscription(Subscription{
+		created, err := s.importSubscription(Subscription{
 			Kind:            "rss",
 			URL:             feedURL,
 			Title:           title,
 			ImageURL:        imageURL,
 			PollIntervalSec: 1800,
 			NextCheckAt:     1,
-		}); err == nil {
+		})
+		if err != nil {
+			return count, fmt.Errorf("import antennapod: %w", err)
+		}
+		if created {
 			count++
 		}
-		// Duplicate URLs are rejected by the UNIQUE constraint; skip silently.
 	}
 	if err := rows.Err(); err != nil {
 		return count, fmt.Errorf("import antennapod: rows: %w", err)

@@ -236,8 +236,12 @@ func (h *dataHandler) Import(w http.ResponseWriter, r *http.Request) {
 		}
 	default:
 		c, err = h.ownCollection(r, target)
-		if err != nil {
+		if errors.Is(err, dav.ErrNotFound) {
 			back("error", "Choose where to import the file.")
+			return
+		}
+		if err != nil {
+			back("error", "Could not open the collection.", err)
 			return
 		}
 	}

@@ -1,6 +1,9 @@
 package maildev
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // Server combines the SMTP and Web servers with a shared mailbox.
 type Server struct {
@@ -25,7 +28,9 @@ func (s *Server) Start() error {
 		return fmt.Errorf("smtp: %w", err)
 	}
 	if err := s.Web.Start(); err != nil {
-		s.SMTP.Close()
+		if cerr := s.SMTP.Close(); cerr != nil {
+			return errors.Join(fmt.Errorf("web: %w", err), fmt.Errorf("close smtp: %w", cerr))
+		}
 		return fmt.Errorf("web: %w", err)
 	}
 	return nil
@@ -33,7 +38,12 @@ func (s *Server) Start() error {
 
 // Close stops both servers.
 func (s *Server) Close() error {
-	s.SMTP.Close()
-	s.Web.Close()
-	return nil
+	var errs []error
+	if err := s.SMTP.Close(); err != nil {
+		errs = append(errs, fmt.Errorf("close smtp: %w", err))
+	}
+	if err := s.Web.Close(); err != nil {
+		errs = append(errs, fmt.Errorf("close web: %w", err))
+	}
+	return errors.Join(errs...)
 }

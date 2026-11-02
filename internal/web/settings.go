@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"git.duckfam.us/jj-software/cog/ui"
 	"image/png"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -131,6 +133,7 @@ func (h *settingsHandler) DeleteAppPassword(w http.ResponseWriter, r *http.Reque
 	id := r.PathValue("id")
 
 	if err := h.p.AppPasswords.Delete(id, u.ID); err != nil {
+		h.p.Log.Warn("delete app password", "user", u.Username, "id", id, "err", err)
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -205,8 +208,10 @@ func (h *settingsHandler) ShowStorage(w http.ResponseWriter, r *http.Request) {
 				}
 				groupIDs = append(groupIDs, g.ID)
 			}
-			usageInfo.Quota = h.p.Quotas.EffectiveQuota(u.ID, rootMount.VolumeID, groupIDs)
-			if usageInfo.Quota > 0 {
+			usageInfo.Quota, err = h.p.Quotas.EffectiveQuota(u.ID, rootMount.VolumeID, groupIDs)
+			if err != nil {
+				h.p.Log.Error("effective quota", "user", u.Username, "err", err)
+			} else if usageInfo.Quota > 0 {
 				usageInfo.QuotaLabel = quota.FormatBytes(usageInfo.Quota)
 				usageInfo.Percent = min(int(usageInfo.Used*100/usageInfo.Quota), 100)
 			}
@@ -247,7 +252,7 @@ func (h *settingsHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) 
 	displayName := r.FormValue("display_name")
 	email := r.FormValue("email")
 	if err := h.p.Users.Update(u.ID, user.UpdateOpts{DisplayName: &displayName, Email: &email}); err != nil {
-		setFlash(w, "error", "Failed to update profile.")
+		setFlash(w, "error", "Failed to update profile.", err)
 	} else {
 		setFlash(w, "success", "Profile updated.")
 	}
@@ -310,7 +315,13 @@ func (h *settingsHandler) CreateMount(w http.ResponseWriter, r *http.Request) {
 
 	// Access check on the volume.
 	if h.p.Access != nil {
-		if ok, _ := h.p.Access.CanAccess(u.ID, volumeID); !ok {
+		ok, err := h.p.Access.CanAccess(u.ID, volumeID)
+		if err != nil {
+			setFlash(w, "error", "Could not check access to that volume.", err)
+			http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
+			return
+		}
+		if !ok {
 			setFlash(w, "error", "You do not have access to that volume.")
 			http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
 			return
@@ -356,8 +367,13 @@ func (h *settingsHandler) DeleteVolume(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	vol, err := h.p.Volumes.GetByID(id)
-	if err != nil {
+	if errors.Is(err, volume.ErrNotFound) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("delete volume: look up volume", "volume", id, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 	// Only owner can delete their volume.
@@ -367,6 +383,7 @@ func (h *settingsHandler) DeleteVolume(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.p.Volumes.Delete(id); err != nil {
+		h.p.Log.Error("delete volume", "volume", id, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -379,8 +396,13 @@ func (h *settingsHandler) DeleteMount(w http.ResponseWriter, r *http.Request) {
 
 	// Prevent deleting root mount.
 	m, err := h.p.Mounts.GetByID(id)
-	if err != nil {
+	if errors.Is(err, mount.ErrNotFound) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("delete mount: look up mount", "mount", id, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 	if m.UserID != u.ID {
@@ -393,6 +415,7 @@ func (h *settingsHandler) DeleteMount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.p.Mounts.Delete(id); err != nil {
+		h.p.Log.Error("delete mount", "mount", id, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -424,7 +447,7 @@ func (h *settingsHandler) SetupTOTP(w http.ResponseWriter, r *http.Request) {
 
 	key, err := h.p.TOTP.BeginSetup(u.ID, u.Username, "Cog")
 	if err != nil {
-		setFlash(w, "error", "Failed to set up TOTP: "+err.Error())
+		setFlash(w, "error", "Failed to set up TOTP: "+err.Error(), err)
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
@@ -432,13 +455,13 @@ func (h *settingsHandler) SetupTOTP(w http.ResponseWriter, r *http.Request) {
 	// Encode QR code as data URI.
 	img, err := key.Image(200, 200)
 	if err != nil {
-		setFlash(w, "error", "Failed to generate QR code.")
+		setFlash(w, "error", "Failed to generate QR code.", err)
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
-		setFlash(w, "error", "Failed to encode QR code.")
+		setFlash(w, "error", "Failed to encode QR code.", err)
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
@@ -456,6 +479,9 @@ func (h *settingsHandler) ConfirmTOTP(w http.ResponseWriter, r *http.Request) {
 
 	backupCodes, err := h.p.TOTP.ConfirmSetup(u.ID, code)
 	if err != nil {
+		// Usually a mistyped code, but this is also where a database
+		// failure surfaces, so keep the reason in the log.
+		h.p.Log.Info("confirm totp setup", "user", u.Username, "err", err)
 		setFlash(w, "error", "Invalid code. Please try again.")
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
@@ -486,7 +512,7 @@ func (h *settingsHandler) DisableTOTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.p.TOTP.Disable(u.ID); err != nil {
-		setFlash(w, "error", "Failed to disable TOTP.")
+		setFlash(w, "error", "Failed to disable TOTP.", err)
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
@@ -513,7 +539,7 @@ func (h *settingsHandler) EnableEmailOTP(w http.ResponseWriter, r *http.Request)
 
 	_, err := h.p.Users.SetMFAMethod(u.ID, "email")
 	if err != nil {
-		setFlash(w, "error", "Failed to enable email OTP.")
+		setFlash(w, "error", "Failed to enable email OTP.", err)
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
@@ -534,7 +560,7 @@ func (h *settingsHandler) DisableEmailOTP(w http.ResponseWriter, r *http.Request
 	}
 
 	if _, err := h.p.Users.SetMFAMethod(u.ID, ""); err != nil {
-		setFlash(w, "error", "Failed to disable email OTP.")
+		setFlash(w, "error", "Failed to disable email OTP.", err)
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
@@ -556,7 +582,7 @@ func (h *settingsHandler) RegenerateBackupCodes(w http.ResponseWriter, r *http.R
 
 	backupCodes, err := h.p.TOTP.RegenerateBackupCodes(u.ID)
 	if err != nil {
-		setFlash(w, "error", "Failed to regenerate backup codes.")
+		setFlash(w, "error", "Failed to regenerate backup codes.", err)
 		http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 		return
 	}
@@ -588,6 +614,7 @@ func (h *settingsHandler) BeginWebAuthnRegistration(w http.ResponseWriter, r *ht
 
 	data, err := h.p.WebAuthn.BeginRegistration(u.ID, u.Username, displayName)
 	if err != nil {
+		h.p.Log.Error("begin passkey registration", "user", u.Username, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -628,6 +655,7 @@ func (h *settingsHandler) FinishWebAuthnRegistration(w http.ResponseWriter, r *h
 	}
 
 	if err := h.p.WebAuthn.FinishRegistration(u.ID, u.Username, displayName, req.Name, req.Credential); err != nil {
+		h.p.Log.Info("finish passkey registration", "user", u.Username, "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -635,6 +663,8 @@ func (h *settingsHandler) FinishWebAuthnRegistration(w http.ResponseWriter, r *h
 	if u.MFAMethod == "" {
 		if _, err := h.p.Users.SetMFAMethod(u.ID, "webauthn"); err != nil {
 			h.p.Log.Error("set mfa method after passkey registration", "user", u.Username, "err", err)
+			http.Error(w, "Passkey saved, but it could not be made your sign-in method.", http.StatusInternalServerError)
+			return
 		}
 	}
 
@@ -653,16 +683,24 @@ func (h *settingsHandler) DeleteWebAuthnCredential(w http.ResponseWriter, r *htt
 	}
 
 	if err := h.p.WebAuthn.DeleteCredential(id, u.ID); err != nil {
+		h.p.Log.Error("delete passkey", "user", u.Username, "id", id, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	// Leaving "webauthn" as the MFA method with no passkeys left would lock
+	// the user out at the next login, so a failure here is the request's.
 	count, err := h.p.WebAuthn.CredentialCount(u.ID)
 	if err != nil {
 		h.p.Log.Error("count passkeys", "user", u.Username, "err", err)
-	} else if count == 0 && u.MFAMethod == "webauthn" {
+		http.Error(w, "Passkey removed, but your sign-in method could not be updated.", http.StatusInternalServerError)
+		return
+	}
+	if count == 0 && u.MFAMethod == "webauthn" {
 		if _, err := h.p.Users.SetMFAMethod(u.ID, ""); err != nil {
 			h.p.Log.Error("clear mfa method after last passkey", "user", u.Username, "err", err)
+			http.Error(w, "Passkey removed, but your sign-in method could not be updated.", http.StatusInternalServerError)
+			return
 		}
 	}
 

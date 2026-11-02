@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -274,6 +275,7 @@ func (p *Plugin) AggregateRecognitionStats() RecognitionStats {
 	var total RecognitionStats
 	entries, err := os.ReadDir(p.ctx.DataDir())
 	if err != nil {
+		p.log.Error("recognition stats: read data dir", "err", err)
 		return total
 	}
 	for _, entry := range entries {
@@ -287,6 +289,7 @@ func (p *Plugin) AggregateRecognitionStats() RecognitionStats {
 		}
 		db, err := p.DB(username)
 		if err != nil {
+			p.log.Warn("recognition stats: open db", "user", username, "err", err)
 			continue
 		}
 		s, err := GetRecognitionStats(db)
@@ -379,7 +382,10 @@ func (p *Plugin) workerPprof(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		status, _ := client.GetStatus()
+		status, err := client.GetStatus()
+		if err != nil {
+			p.log.Warn("worker pprof: scan status", "err", err)
+		}
 
 		p.scanMu.Lock()
 		pid := p.workerPID
@@ -537,6 +543,7 @@ func (p *Plugin) GetScanStatus() ScanStatus {
 	}
 	status, err := client.GetStatus()
 	if err != nil {
+		p.log.Warn("scan worker status", "err", err)
 		return ScanStatus{}
 	}
 	return status
@@ -550,10 +557,17 @@ func (p *Plugin) requestScan(username string) {
 	if client == nil {
 		return
 	}
+	var err error
 	if username == "*" {
-		client.ScanAllUsers()
+		err = client.ScanAllUsers()
 	} else {
-		client.ScanUser(username)
+		err = client.ScanUser(username)
+	}
+	switch {
+	case errors.Is(err, errScanRunning):
+		p.log.Info("scan not started: one is already running", "user", username)
+	case err != nil:
+		p.log.Error("request scan", "user", username, "err", err)
 	}
 }
 
@@ -621,7 +635,9 @@ func (p *Plugin) manageScanWorker(ctx context.Context) {
 		p.scanClient = nil
 		p.workerPID = 0
 		p.scanMu.Unlock()
-		client.Close()
+		if err := client.Close(); err != nil {
+			p.log.Warn("close scan worker client", "err", err)
+		}
 
 		if ctx.Err() != nil {
 			return
@@ -658,6 +674,7 @@ func (p *Plugin) scanTimer(ctx context.Context) {
 func (p *Plugin) FolderIcon(username, folderPath string) (string, bool) {
 	db, err := p.DB(username)
 	if err != nil {
+		p.log.Error("folder icon: open db", "user", username, "err", err)
 		return "", false
 	}
 	patterns := ParseScanFolders(db)

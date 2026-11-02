@@ -3,6 +3,7 @@ package recipes
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -180,10 +181,13 @@ func (p *Plugin) downloadImage(username string, recipeID int64, imageURL, userAg
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-
-	_, err = io.Copy(f, io.LimitReader(resp.Body, maxBodySize))
-	return err
+	if _, err := io.Copy(f, io.LimitReader(resp.Body, maxBodySize)); err != nil {
+		return fmt.Errorf("save image: %w", errors.Join(err, f.Close(), os.Remove(path)))
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("save image: %w", errors.Join(err, os.Remove(path)))
+	}
+	return nil
 }
 
 func imageExtFromURL(rawURL string) string {
@@ -345,7 +349,10 @@ func extractFromObject(obj map[string]any, rawJSON string) (*ParsedRecipe, error
 			for _, item := range items {
 				if m, ok := item.(map[string]any); ok && isRecipeType(m) {
 					// Re-marshal just this object for the stored JSON-LD
-					itemJSON, _ := json.Marshal(m)
+					itemJSON, err := json.Marshal(m)
+					if err != nil {
+						return nil, fmt.Errorf("re-marshal recipe from @graph: %w", err)
+					}
 					return normalizeRecipe(m, string(itemJSON))
 				}
 			}
@@ -551,20 +558,31 @@ func SaveImportedRecipe(db *sql.DB, parsed *ParsedRecipe) (int64, error) {
 		JSONLD:      parsed.JSONLD,
 	}
 
-	id, err := CreateRecipe(db, r)
+	var id int64
+	err := inTx(db, func(tx *sql.Tx) error {
+		var err error
+		if id, err = CreateRecipe(tx, r); err != nil {
+			return fmt.Errorf("create recipe: %w", err)
+		}
+		return saveParsedLists(tx, id, parsed)
+	})
 	if err != nil {
 		return 0, err
 	}
+	return id, nil
+}
 
+// saveParsedLists replaces a recipe's ingredients, steps and keywords with
+// those of an imported recipe.
+func saveParsedLists(db execer, id int64, parsed *ParsedRecipe) error {
 	if err := SetIngredients(db, id, parsed.Ingredients); err != nil {
-		return 0, fmt.Errorf("set ingredients: %w", err)
+		return fmt.Errorf("set ingredients: %w", err)
 	}
 	if err := SetInstructions(db, id, parsed.Instructions); err != nil {
-		return 0, fmt.Errorf("set instructions: %w", err)
+		return fmt.Errorf("set instructions: %w", err)
 	}
 	if err := SetKeywords(db, id, parsed.Keywords); err != nil {
-		return 0, fmt.Errorf("set keywords: %w", err)
+		return fmt.Errorf("set keywords: %w", err)
 	}
-
-	return id, nil
+	return nil
 }

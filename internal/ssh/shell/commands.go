@@ -3,8 +3,10 @@ package shell
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -144,6 +146,9 @@ func (s *Shell) newLsCmd() *cobra.Command {
 			if len(args) == 0 {
 				args = []string{"."}
 			}
+			// An entry that can't be stat'ed is reported and skipped; the
+			// listing goes on, but the command fails, as GNU ls does.
+			failed := false
 
 			formatName := func(name string, isDir bool) string {
 				if classify && isDir {
@@ -198,6 +203,8 @@ func (s *Shell) newLsCmd() *cobra.Command {
 							if showLong {
 								info, err := e.Info()
 								if err != nil {
+									s.errorf(stderr, "ls: %s: %v\n", e.Name(), err)
+									failed = true
 									continue
 								}
 								printEntry(stdout, e.Name(), e.IsDir(), info)
@@ -237,6 +244,8 @@ func (s *Shell) newLsCmd() *cobra.Command {
 					if showLong {
 						info, err := e.Info()
 						if err != nil {
+							s.errorf(stderr, "ls: %s: %v\n", e.Name(), err)
+							failed = true
 							continue
 						}
 						printEntry(stdout, e.Name(), e.IsDir(), info)
@@ -244,6 +253,9 @@ func (s *Shell) newLsCmd() *cobra.Command {
 						printEntry(stdout, e.Name(), e.IsDir(), nil)
 					}
 				}
+			}
+			if failed {
+				return exitErr(1)
 			}
 			return nil
 		},
@@ -354,8 +366,11 @@ func (s *Shell) newCpCmd() *cobra.Command {
 				s.errorf(stderr, "cp: %v\n", err)
 				return exitErr(1)
 			}
-			defer out.Close()
-			if _, err := io.Copy(out, in); err != nil {
+			_, err = io.Copy(out, in)
+			if cerr := out.Close(); err == nil {
+				err = cerr
+			}
+			if err != nil {
 				s.errorf(stderr, "cp: %v\n", err)
 				return exitErr(1)
 			}
@@ -422,11 +437,9 @@ func (s *Shell) newRmCmd() *cobra.Command {
 						s.errorf(stderr, "rm: cannot remove root directory\n")
 						return exitErr(1)
 					}
-					if err := s.fs.Delete(vp); err != nil {
-						if !force {
-							s.errorf(stderr, "rm: %v\n", err)
-							return exitErr(1)
-						}
+					if err := s.fs.Delete(vp); err != nil && !(force && isNotExist(err)) {
+						s.errorf(stderr, "rm: %v\n", err)
+						return exitErr(1)
 					}
 					continue
 				}
@@ -444,11 +457,9 @@ func (s *Shell) newRmCmd() *cobra.Command {
 				} else {
 					err = os.Remove(resolved)
 				}
-				if err != nil {
-					if !force {
-						s.errorf(stderr, "rm: %v\n", err)
-						return exitErr(1)
-					}
+				if err != nil && !(force && isNotExist(err)) {
+					s.errorf(stderr, "rm: %v\n", err)
+					return exitErr(1)
 				}
 			}
 			return nil
@@ -512,11 +523,13 @@ func (s *Shell) newTouchCmd() *cobra.Command {
 					if opener, ok := s.fs.(vfs.FileOpener); ok {
 						vp := s.toVirtualPath(dir, name)
 						f, err := opener.OpenFile(vp, os.O_CREATE|os.O_WRONLY, 0o644)
+						if err == nil {
+							err = f.Close()
+						}
 						if err != nil {
 							s.errorf(stderr, "touch: %v\n", err)
 							return exitErr(1)
 						}
-						f.Close()
 						continue
 					}
 				}
@@ -526,11 +539,13 @@ func (s *Shell) newTouchCmd() *cobra.Command {
 					return exitErr(1)
 				}
 				f, err := os.OpenFile(resolved, os.O_CREATE|os.O_WRONLY, 0o644)
+				if err == nil {
+					err = f.Close()
+				}
 				if err != nil {
 					s.errorf(stderr, "touch: %v\n", err)
 					return exitErr(1)
 				}
-				f.Close()
 			}
 			return nil
 		},
@@ -649,18 +664,24 @@ func (s *Shell) newTreeCmd() *cobra.Command {
 			if len(args) == 0 {
 				args = []string{"."}
 			}
+			_, stderr, _, _ := getHC(cmd)
 			var dirs, files int
+			ok := true
 			for _, root := range args {
 				vp := s.toVirtualPath(dir, root)
 				if len(args) > 1 {
 					fmt.Fprintln(stdout, vp)
 				}
-				d, f := s.treeWalk(stdout, cmd.ErrOrStderr(), vp, "", showAll)
+				d, f, rootOK := s.treeWalk(stdout, stderr, vp, "", showAll)
 				dirs += d
 				files += f
+				ok = ok && rootOK
 			}
 			summary := fmt.Sprintf("\n%d directories, %d files\n", dirs, files)
 			fmt.Fprint(stdout, s.colorize(ansiGreen, summary))
+			if !ok {
+				return exitErr(1)
+			}
 			return nil
 		},
 	}
@@ -668,15 +689,18 @@ func (s *Shell) newTreeCmd() *cobra.Command {
 	return cmd
 }
 
-func (s *Shell) treeWalk(stdout, stderr io.Writer, dir, prefix string, showAll bool) (dirs, files int) {
+// treeWalk prints dir's subtree. A directory it can't read is reported on
+// stderr and skipped; ok is false if that happened anywhere below dir.
+func (s *Shell) treeWalk(stdout, stderr io.Writer, dir, prefix string, showAll bool) (dirs, files int, ok bool) {
 	var names []string
 	var isDir []bool
 
 	if s.fs != nil {
-		if dr, ok := s.fs.(vfs.DirReader); ok {
+		if dr, isReader := s.fs.(vfs.DirReader); isReader {
 			entries, err := dr.ReadDirEntries(dir)
 			if err != nil {
-				return 0, 0
+				s.errorf(stderr, "tree: %s: %v\n", dir, err)
+				return 0, 0, false
 			}
 			for _, e := range entries {
 				if !showAll && strings.HasPrefix(e.Name(), ".") {
@@ -689,11 +713,13 @@ func (s *Shell) treeWalk(stdout, stderr io.Writer, dir, prefix string, showAll b
 	} else {
 		resolved, err := s.resolve(s.filesDir, dir)
 		if err != nil {
-			return 0, 0
+			s.errorf(stderr, "tree: %v\n", err)
+			return 0, 0, false
 		}
 		entries, err := os.ReadDir(resolved)
 		if err != nil {
-			return 0, 0
+			s.errorf(stderr, "tree: %s: %v\n", dir, err)
+			return 0, 0, false
 		}
 		for _, e := range entries {
 			if !showAll && strings.HasPrefix(e.Name(), ".") {
@@ -705,6 +731,8 @@ func (s *Shell) treeWalk(stdout, stderr io.Writer, dir, prefix string, showAll b
 	}
 
 	sort.Sort(treeEntries{names: names, isDir: isDir})
+
+	ok = true
 
 	for i, name := range names {
 		connector := "├── "
@@ -720,14 +748,15 @@ func (s *Shell) treeWalk(stdout, stderr io.Writer, dir, prefix string, showAll b
 		fmt.Fprintf(stdout, "%s%s%s\n", prefix, s.colorize(ansiDim, connector), displayName)
 		if isDir[i] {
 			dirs++
-			d, f := s.treeWalk(stdout, stderr, path.Join(dir, name), prefix+childPrefix, showAll)
+			d, f, childOK := s.treeWalk(stdout, stderr, path.Join(dir, name), prefix+childPrefix, showAll)
 			dirs += d
 			files += f
+			ok = ok && childOK
 		} else {
 			files++
 		}
 	}
-	return dirs, files
+	return dirs, files, ok
 }
 
 // treeEntries sorts directory entries: directories first, then files, each group alphabetical.
@@ -862,8 +891,12 @@ func (s *Shell) newCdCmd() *cobra.Command {
 			// Validate via VFS first — show virtual paths in errors.
 			if s.fs != nil {
 				fi, err := s.fs.Stat(vp)
-				if err != nil {
+				if isNotExist(err) {
 					s.errorf(stderr, "cd: no such file or directory: %s\n", vp)
+					return exitErr(1)
+				}
+				if err != nil {
+					s.errorf(stderr, "cd: %s: %v\n", vp, err)
 					return exitErr(1)
 				}
 				if !fi.IsDir {
@@ -919,9 +952,14 @@ func (s *Shell) newExitCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			code := 0
 			if len(args) > 0 {
-				if v, err := strconv.Atoi(args[0]); err == nil {
-					code = v
+				v, err := strconv.Atoi(args[0])
+				if err != nil {
+					// As bash does: exit anyway, with status 2.
+					_, stderr, _, _ := getHC(cmd)
+					s.errorf(stderr, "exit: %s: numeric argument required\n", args[0])
+					v = 2
 				}
+				code = v
 			}
 			s.exited = true
 			if code == 0 {
@@ -1123,6 +1161,8 @@ func (s *Shell) completeUsernames(toComplete string) ([]cobra.Completion, cobra.
 	}
 	names, err := s.usernames()
 	if err != nil {
+		// Completion has nowhere to show an error; offer nothing.
+		s.log.Warn("shell: complete usernames", "err", err)
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	var candidates []cobra.Completion
@@ -1132,4 +1172,10 @@ func (s *Shell) completeUsernames(toComplete string) ([]cobra.Completion, cobra.
 		}
 	}
 	return candidates, cobra.ShellCompDirectiveNoFileComp
+}
+
+// isNotExist reports whether err means the path doesn't exist, from the
+// local filesystem or a VFS backend.
+func isNotExist(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, vfs.ErrNotFound)
 }

@@ -5,8 +5,10 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"iter"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
 )
@@ -108,49 +110,35 @@ func (s *Store) ListByVolume(volumeID string) iter.Seq2[Quota, error] {
 }
 
 // EffectiveQuota resolves the effective quota for a user on a volume.
-// Resolution order: USER > GROUP > DEFAULT > -1 (unlimited).
-func (s *Store) EffectiveQuota(userID, volumeID string, groupIDs []string) int64 {
-	// Check user-specific quota.
+// Resolution order: USER > GROUP (the largest of the user's groups) >
+// DEFAULT > -1 (unlimited). One query covers every level.
+func (s *Store) EffectiveQuota(userID, volumeID string, groupIDs []string) (int64, error) {
+	args := make([]any, 0, len(groupIDs)+2)
+	args = append(args, volumeID, userID)
+	groups := "0" // no groups: the GROUP arm matches nothing
+	if len(groupIDs) > 0 {
+		groups = "subject_id IN (?" + strings.Repeat(", ?", len(groupIDs)-1) + ")"
+		for _, g := range groupIDs {
+			args = append(args, g)
+		}
+	}
 	var bytes int64
 	err := s.db.QueryRow(`
 		SELECT quota_bytes FROM volume_quotas
-		WHERE volume_id = ? AND subject_type = 'USER' AND subject_id = ?`,
-		volumeID, userID).Scan(&bytes)
-	if err == nil {
-		return bytes
+		WHERE volume_id = ? AND (
+			(subject_type = 'USER' AND subject_id = ?)
+			OR (subject_type = 'GROUP' AND `+groups+`)
+			OR (subject_type = 'DEFAULT' AND subject_id = '')
+		)
+		ORDER BY CASE subject_type WHEN 'USER' THEN 0 WHEN 'GROUP' THEN 1 ELSE 2 END, quota_bytes DESC
+		LIMIT 1`, args...).Scan(&bytes)
+	if errors.Is(err, sql.ErrNoRows) {
+		return -1, nil // unlimited
 	}
-
-	// Check group quotas — pick the largest.
-	if len(groupIDs) > 0 {
-		var maxGroupQuota int64 = -1
-		found := false
-		for _, gid := range groupIDs {
-			err := s.db.QueryRow(`
-				SELECT quota_bytes FROM volume_quotas
-				WHERE volume_id = ? AND subject_type = 'GROUP' AND subject_id = ?`,
-				volumeID, gid).Scan(&bytes)
-			if err == nil {
-				found = true
-				if bytes > maxGroupQuota {
-					maxGroupQuota = bytes
-				}
-			}
-		}
-		if found {
-			return maxGroupQuota
-		}
+	if err != nil {
+		return 0, fmt.Errorf("effective quota for %s on %s: %w", userID, volumeID, err)
 	}
-
-	// Check default quota.
-	err = s.db.QueryRow(`
-		SELECT quota_bytes FROM volume_quotas
-		WHERE volume_id = ? AND subject_type = 'DEFAULT' AND subject_id = ''`,
-		volumeID).Scan(&bytes)
-	if err == nil {
-		return bytes
-	}
-
-	return -1 // unlimited
+	return bytes, nil
 }
 
 // FormatBytes formats a byte count into a human-readable string.

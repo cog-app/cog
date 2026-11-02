@@ -4,8 +4,10 @@ import (
 	"archive/zip"
 	"bytes"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 )
@@ -37,18 +39,21 @@ func ImportNewPipe(s *Store, data []byte) (int, error) {
 	for rows.Next() {
 		var channelURL, name string
 		if err := rows.Scan(&channelURL, &name); err != nil {
-			continue
+			return count, fmt.Errorf("import newpipe: scan: %w", err)
 		}
-		if _, err := s.CreateSubscription(Subscription{
+		created, err := s.importSubscription(Subscription{
 			Kind:            "youtube",
 			URL:             channelURL,
 			Title:           name,
 			PollIntervalSec: 1800,
 			NextCheckAt:     1,
-		}); err == nil {
+		})
+		if err != nil {
+			return count, fmt.Errorf("import newpipe: %w", err)
+		}
+		if created {
 			count++
 		}
-		// Duplicate URLs are rejected by the UNIQUE constraint; skip silently.
 	}
 	if err := rows.Err(); err != nil {
 		return count, fmt.Errorf("import newpipe: rows: %w", err)
@@ -75,22 +80,23 @@ func extractNewPipeDBFromBytes(data []byte) (string, func(), error) {
 		}
 		tmp, err := os.CreateTemp("", "newpipe-*.db")
 		if err != nil {
-			rc.Close()
-			return "", func() {}, fmt.Errorf("create temp: %w", err)
+			return "", func() {}, fmt.Errorf("create temp: %w", errors.Join(err, rc.Close()))
 		}
-		if _, err := io.Copy(tmp, rc); err != nil {
-			rc.Close()
-			tmp.Close()
-			os.Remove(tmp.Name())
-			return "", func() {}, fmt.Errorf("write temp: %w", err)
-		}
-		rc.Close()
 		tmpPath := tmp.Name()
-		if err := tmp.Close(); err != nil {
-			os.Remove(tmpPath)
-			return "", func() {}, fmt.Errorf("close temp: %w", err)
+		if _, err := io.Copy(tmp, rc); err != nil {
+			return "", func() {}, fmt.Errorf("write temp: %w", errors.Join(err, rc.Close(), tmp.Close(), os.Remove(tmpPath)))
 		}
-		return tmpPath, func() { os.Remove(tmpPath) }, nil
+		if err := rc.Close(); err != nil {
+			return "", func() {}, fmt.Errorf("read newpipe.db in zip: %w", errors.Join(err, tmp.Close(), os.Remove(tmpPath)))
+		}
+		if err := tmp.Close(); err != nil {
+			return "", func() {}, fmt.Errorf("close temp: %w", errors.Join(err, os.Remove(tmpPath)))
+		}
+		return tmpPath, func() {
+			if err := os.Remove(tmpPath); err != nil {
+				slog.Warn("feed import newpipe: remove temp", "path", tmpPath, "err", err)
+			}
+		}, nil
 	}
 
 	return "", func() {}, fmt.Errorf("newpipe.db not found in ZIP")

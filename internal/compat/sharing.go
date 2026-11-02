@@ -2,6 +2,7 @@ package compat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -173,15 +174,20 @@ func (h *SharingHandler) shareToOCS(rec *share.Record, ownerUser *user.User) (*o
 
 	if rec.SubjectType != "PUBLIC" && rec.SubjectType != "INSTANCE" {
 		ocs.ShareWith = rec.SubjectID
-		// Try to look up display name and username
-		if target, err := h.Users.GetByID(rec.SubjectID); err == nil {
+		ocs.ShareWithDisplayname = rec.SubjectID
+		// A user subject has a username and display name to show; a group
+		// subject, or a user since deleted, is shown by its ID.
+		target, err := h.Users.GetByID(rec.SubjectID)
+		switch {
+		case errors.Is(err, user.ErrNotFound):
+		case err != nil:
+			return nil, fmt.Errorf("share %s: look up subject: %w", rec.ID, err)
+		default:
 			ocs.ShareWith = target.Username
 			ocs.ShareWithDisplayname = target.DisplayName
 			if ocs.ShareWithDisplayname == "" {
 				ocs.ShareWithDisplayname = target.Username
 			}
-		} else {
-			ocs.ShareWithDisplayname = rec.SubjectID
 		}
 	}
 
@@ -190,10 +196,14 @@ func (h *SharingHandler) shareToOCS(rec *share.Record, ownerUser *user.User) (*o
 		ocs.Expiration = &exp
 	}
 
-	// Look up file metadata
-	fileID, err := strconv.ParseInt(rec.ResourceID, 10, 64)
-	if err == nil {
+	// Look up file metadata. A resource ID that isn't a number isn't a
+	// file, and a file since deleted has no metadata; both are listed
+	// without a path.
+	if fileID, perr := strconv.ParseInt(rec.ResourceID, 10, 64); perr == nil {
 		meta, err := h.Files.GetByID(ownerUser.Username, fileID)
+		if err != nil && !errors.Is(err, files.ErrNotFound) {
+			return nil, fmt.Errorf("share %s: look up file: %w", rec.ID, err)
+		}
 		if err == nil {
 			ocs.Path = meta.Path
 			ocs.FileTarget = meta.Path
@@ -225,6 +235,27 @@ func (h *SharingHandler) resolveShareID(pathVal string) (string, error) {
 	return pathVal, nil
 }
 
+// lookupShare finds the share the request's {shareId} names. When it can't,
+// it writes the OCS error itself — 404 for an unknown share, 500 for a
+// lookup failure — and reports false.
+func (h *SharingHandler) lookupShare(w http.ResponseWriter, r *http.Request) (*share.Record, bool) {
+	shareID, err := h.resolveShareID(r.PathValue("shareId"))
+	var rec *share.Record
+	if err == nil {
+		rec, err = h.Shares.Get(shareID)
+	}
+	if errors.Is(err, share.ErrNotFound) {
+		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share not found")
+		return nil, false
+	}
+	if err != nil {
+		h.Log.Error("look up share", "share", r.PathValue("shareId"), "err", err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "look up share failed")
+		return nil, false
+	}
+	return rec, true
+}
+
 // HandleListShares handles GET .../shares
 func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
@@ -244,14 +275,27 @@ func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request
 			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
 			return
 		}
+		// Most shares with one user come from a few owners: look each up once.
+		owners := make(map[string]*user.User)
 		for _, rec := range records {
-			owner, err := h.Users.GetByID(rec.OwnerUserID)
-			if err != nil {
-				continue
+			owner, seen := owners[rec.OwnerUserID]
+			if !seen {
+				owner, err = h.Users.GetByID(rec.OwnerUserID)
+				if err != nil && !errors.Is(err, user.ErrNotFound) {
+					h.Log.Error("list shares: look up owner", "owner", rec.OwnerUserID, "err", err)
+					writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+					return
+				}
+				owners[rec.OwnerUserID] = owner
+			}
+			if owner == nil {
+				continue // the owner's account is gone
 			}
 			ocs, err := h.shareToOCS(&rec, owner)
 			if err != nil {
-				continue
+				h.Log.Error("list shares", "share", rec.ID, "err", err)
+				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+				return
 			}
 			result = append(result, ocs)
 		}
@@ -264,7 +308,9 @@ func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request
 		for _, rec := range records {
 			ocs, err := h.shareToOCS(&rec, u)
 			if err != nil {
-				continue
+				h.Log.Error("list shares", "share", rec.ID, "err", err)
+				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+				return
 			}
 			// Filter by path if specified
 			if pathFilter != "" && ocs.Path != pathFilter {
@@ -300,8 +346,16 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	shareType, _ := strconv.Atoi(shareTypeStr)
-	permsNC, _ := strconv.Atoi(permStr)
+	shareType, ok := optionalInt(shareTypeStr)
+	if !ok {
+		writeOCSErrorReq(w, r, http.StatusBadRequest, 400, "invalid shareType")
+		return
+	}
+	permsNC, ok := optionalInt(permStr)
+	if !ok {
+		writeOCSErrorReq(w, r, http.StatusBadRequest, 400, "invalid permissions")
+		return
+	}
 	if permsNC == 0 {
 		permsNC = 1 // default: read
 	}
@@ -309,8 +363,13 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 
 	// Look up the file
 	meta, err := h.Files.GetByPath(u.Username, path)
-	if err != nil {
+	if errors.Is(err, files.ErrNotFound) {
 		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "file not found")
+		return
+	}
+	if err != nil {
+		h.Log.Error("create share: look up file", "user", u.Username, "path", path, "err", err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "look up file failed")
 		return
 	}
 
@@ -320,10 +379,12 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 	var expiration *int64
 	if expireDateStr != "" {
 		t, err := time.Parse("2006-01-02", expireDateStr)
-		if err == nil {
-			exp := t.Unix()
-			expiration = &exp
+		if err != nil {
+			writeOCSErrorReq(w, r, http.StatusBadRequest, 400, "invalid expireDate: want YYYY-MM-DD")
+			return
 		}
+		exp := t.Unix()
+		expiration = &exp
 	}
 
 	var rec *share.Record
@@ -344,8 +405,13 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 	default:
 		// Look up the target user by username
 		targetUser, lookupErr := h.Users.GetByUsername(shareWith)
-		if lookupErr != nil {
+		if errors.Is(lookupErr, user.ErrNotFound) {
 			writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share target not found")
+			return
+		}
+		if lookupErr != nil {
+			h.Log.Error("create share: look up target", "target", shareWith, "err", lookupErr)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "look up share target failed")
 			return
 		}
 		rec, err = h.Shares.Create(
@@ -449,12 +515,20 @@ func (h *SharingHandler) createFederatedShare(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		h.Log.Error("send federated share", "remote", remoteHost, "err", err)
 		// Clean up: remove the local records.
-		h.Shares.Delete(rec.ID)
-		h.Federation.Remove(fs.ID)
+		if err := h.Shares.Delete(rec.ID); err != nil {
+			h.Log.Error("clean up federated share link", "share", rec.ID, "err", err)
+		}
+		if err := h.Federation.Remove(fs.ID); err != nil {
+			h.Log.Error("clean up federation record", "id", fs.ID, "err", err)
+		}
 		writeOCSErrorReq(w, r, http.StatusBadGateway, 502, "remote server rejected share: "+err.Error())
 		return
 	}
-	h.Federation.SetRemoteID(fs.ID, remoteID)
+	if err := h.Federation.SetRemoteID(fs.ID, remoteID); err != nil {
+		// The remote accepted the share, so keep it; without its remote ID
+		// a later unshare can't be sent to the remote.
+		h.Log.Error("record federated share remote id", "id", fs.ID, "remote", remoteHost, "err", err)
+	}
 
 	if h.OnShareCreate != nil {
 		h.OnShareCreate(rec)
@@ -482,15 +556,8 @@ func (h *SharingHandler) HandleGetShare(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	shareID, err := h.resolveShareID(r.PathValue("shareId"))
-	if err != nil {
-		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share not found")
-		return
-	}
-
-	rec, err := h.Shares.Get(shareID)
-	if err != nil {
-		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share not found")
+	rec, ok := h.lookupShare(w, r)
+	if !ok {
 		return
 	}
 
@@ -501,6 +568,7 @@ func (h *SharingHandler) HandleGetShare(w http.ResponseWriter, r *http.Request) 
 
 	owner, err := h.Users.GetByID(rec.OwnerUserID)
 	if err != nil {
+		h.Log.Error("get share: look up owner", "owner", rec.OwnerUserID, "err", err)
 		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "owner not found")
 		return
 	}
@@ -531,6 +599,8 @@ func (h *SharingHandler) shareVisibleTo(rec *share.Record, u *user.User) bool {
 		}
 		for g, err := range h.Groups.ListGroupsForUser(u.ID) {
 			if err != nil {
+				// Deny rather than guess; the share reads as not found.
+				h.Log.Error("share visibility: list groups", "user", u.ID, "err", err)
 				return false
 			}
 			if g.ID == rec.SubjectID || g.Name == rec.SubjectID {
@@ -552,17 +622,11 @@ func (h *SharingHandler) HandleUpdateShare(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	shareID, err := h.resolveShareID(r.PathValue("shareId"))
-	if err != nil {
-		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share not found")
+	rec, ok := h.lookupShare(w, r)
+	if !ok {
 		return
 	}
-
-	rec, err := h.Shares.Get(shareID)
-	if err != nil {
-		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share not found")
-		return
-	}
+	shareID := rec.ID
 
 	if rec.OwnerUserID != u.ID {
 		writeOCSErrorReq(w, r, http.StatusForbidden, 403, "not your share")
@@ -575,7 +639,11 @@ func (h *SharingHandler) HandleUpdateShare(w http.ResponseWriter, r *http.Reques
 
 	var permsPtr *uint32
 	if permStr != "" {
-		nc, _ := strconv.Atoi(permStr)
+		nc, err := strconv.Atoi(permStr)
+		if err != nil {
+			writeOCSErrorReq(w, r, http.StatusBadRequest, 400, "invalid permissions")
+			return
+		}
 		cog := ncToCogPerms(nc)
 		permsPtr = &cog
 	}
@@ -587,11 +655,13 @@ func (h *SharingHandler) HandleUpdateShare(w http.ResponseWriter, r *http.Reques
 			expPtr = &nilExp
 		} else {
 			t, err := time.Parse("2006-01-02", expireDateStr)
-			if err == nil {
-				exp := t.Unix()
-				expVal := &exp
-				expPtr = &expVal
+			if err != nil {
+				writeOCSErrorReq(w, r, http.StatusBadRequest, 400, "invalid expireDate: want YYYY-MM-DD")
+				return
 			}
+			exp := t.Unix()
+			expVal := &exp
+			expPtr = &expVal
 		}
 	}
 
@@ -611,7 +681,7 @@ func (h *SharingHandler) HandleUpdateShare(w http.ResponseWriter, r *http.Reques
 
 	// Re-fetch — these were silently dropping errors and feeding nils into
 	// shareToOCS, which would then NPE.
-	rec, err = h.Shares.Get(shareID)
+	rec, err := h.Shares.Get(shareID)
 	if err != nil {
 		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "refetch share: "+err.Error())
 		return
@@ -637,17 +707,11 @@ func (h *SharingHandler) HandleDeleteShare(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	shareID, err := h.resolveShareID(r.PathValue("shareId"))
-	if err != nil {
-		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share not found")
+	rec, ok := h.lookupShare(w, r)
+	if !ok {
 		return
 	}
-
-	rec, err := h.Shares.Get(shareID)
-	if err != nil {
-		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share not found")
-		return
-	}
+	shareID := rec.ID
 
 	if rec.OwnerUserID != u.ID {
 		writeOCSErrorReq(w, r, http.StatusForbidden, 403, "not your share")
@@ -705,7 +769,9 @@ func (h *SharingHandler) HandleSharees(w http.ResponseWriter, r *http.Request) {
 
 	for usr, err := range h.Users.List() {
 		if err != nil {
-			break
+			h.Log.Error("sharees: list users", "err", err)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "list users failed")
+			return
 		}
 		if usr.ID == u.ID {
 			continue
@@ -740,7 +806,9 @@ func (h *SharingHandler) HandleSharees(w http.ResponseWriter, r *http.Request) {
 	if h.Groups != nil && total < perPage {
 		for grp, err := range h.Groups.List() {
 			if err != nil {
-				break
+				h.Log.Error("sharees: list groups", "err", err)
+				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "list groups failed")
+				return
 			}
 			if search != "" && !strings.Contains(strings.ToLower(grp.Name), search) {
 				continue
@@ -834,7 +902,9 @@ func (h *SharingHandler) HandleShareesRecommended(w http.ResponseWriter, r *http
 	// Collect unique share targets from existing shares
 	for rec, err := range h.Shares.ListByOwner(u.ID) {
 		if err != nil {
-			break
+			h.Log.Error("recommended sharees: list shares", "user", u.ID, "err", err)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "list shares failed")
+			return
 		}
 		switch rec.SubjectType {
 		case "USER":
@@ -843,8 +913,13 @@ func (h *SharingHandler) HandleShareesRecommended(w http.ResponseWriter, r *http
 			}
 			seenUsers[rec.SubjectID] = true
 			target, err := h.Users.GetByID(rec.SubjectID)
-			if err != nil {
+			if errors.Is(err, user.ErrNotFound) {
 				continue
+			}
+			if err != nil {
+				h.Log.Error("recommended sharees: look up user", "user", rec.SubjectID, "err", err)
+				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "look up user failed")
+				return
 			}
 			name := target.DisplayName
 			if name == "" {
@@ -863,8 +938,13 @@ func (h *SharingHandler) HandleShareesRecommended(w http.ResponseWriter, r *http
 			}
 			seenGroups[rec.SubjectID] = true
 			grp, err := h.Groups.Get(rec.SubjectID)
-			if err != nil {
+			if errors.Is(err, group.ErrNotFound) {
 				continue
+			}
+			if err != nil {
+				h.Log.Error("recommended sharees: look up group", "group", rec.SubjectID, "err", err)
+				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "look up group failed")
+				return
 			}
 			groupEntries = append(groupEntries, map[string]any{
 				"label": grp.Name,
@@ -881,7 +961,9 @@ func (h *SharingHandler) HandleShareesRecommended(w http.ResponseWriter, r *http
 		count := 0
 		for usr, err := range h.Users.List() {
 			if err != nil {
-				break
+				h.Log.Error("recommended sharees: list users", "err", err)
+				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "list users failed")
+				return
 			}
 			if usr.ID == u.ID {
 				continue
@@ -931,4 +1013,14 @@ func (h *SharingHandler) HandleShareesRecommended(w http.ResponseWriter, r *http
 		"lookup":        []any{},
 		"lookupEnabled": false,
 	})
+}
+
+// optionalInt parses an optional integer form value: empty is 0, anything
+// else must be a number.
+func optionalInt(v string) (int, bool) {
+	if v == "" {
+		return 0, true
+	}
+	n, err := strconv.Atoi(v)
+	return n, err == nil
 }

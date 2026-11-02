@@ -2,6 +2,7 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"iter"
 	"net/http"
 	"strconv"
@@ -101,7 +102,10 @@ func (a davLinks) CreateLink(ownerID string, id dav.CollectionID, permissions ui
 	if err != nil {
 		return nil, err
 	}
-	l, _ := davLink(rec)
+	l, ok := davLink(rec)
+	if !ok {
+		return nil, fmt.Errorf("create link for collection %d: share %s is not a feed link", id, rec.ID)
+	}
 	return &l, nil
 }
 

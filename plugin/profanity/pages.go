@@ -15,7 +15,12 @@ type Pages struct {
 // Settings shows the user's profanity word list editor.
 func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 	username := plugin.Username(r)
-	content := h.plugin.readWordListText(username)
+	content, err := h.plugin.readWordListText(username)
+	if err != nil {
+		h.plugin.log.Error("profanity settings", "user", username, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	flash := r.URL.Query().Get("flash")
 	plugin.SetTitle(w, "Profanity Filter")
 	ui.Render(w, r, profanitySettingsPage(content, flash, plugin.CSRFToken(r)))
@@ -26,6 +31,7 @@ func (h *Pages) SaveSettings(w http.ResponseWriter, r *http.Request) {
 	username := plugin.Username(r)
 	content := r.FormValue("wordlist")
 	if err := h.plugin.saveWordList(username, content); err != nil {
+		h.plugin.log.Error("save profanity word list", "user", username, "err", err)
 		http.Redirect(w, r, "/apps/profanity/settings?flash=Error+saving", http.StatusSeeOther)
 		return
 	}
@@ -39,10 +45,10 @@ func (h *Pages) AdminSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	cfg := adminSettingsData{
-		TTSEngine:  h.plugin.getSetting(db, "tts_engine", "none"),
-		TTSModel:   h.plugin.getSetting(db, "tts_model", ""),
-		TTSCommand: h.plugin.getSetting(db, "tts_command", ""),
+	cfg, err := h.plugin.settings(db)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	flash := r.URL.Query().Get("flash")
 	ui.Render(w, r, profanityAdminPage(cfg, flash, plugin.CSRFToken(r)))
@@ -55,9 +61,15 @@ func (h *Pages) SaveAdminSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	h.plugin.setSetting(db, "tts_engine", r.FormValue("tts_engine"))
-	h.plugin.setSetting(db, "tts_model", r.FormValue("tts_model"))
-	h.plugin.setSetting(db, "tts_command", r.FormValue("tts_command"))
+	if err := h.plugin.saveSettings(db, adminSettingsData{
+		TTSEngine:  r.FormValue("tts_engine"),
+		TTSModel:   r.FormValue("tts_model"),
+		TTSCommand: r.FormValue("tts_command"),
+	}); err != nil {
+		h.plugin.log.Error("save profanity admin settings", "err", err)
+		http.Redirect(w, r, "/admin/plugins/profanity?flash=Error+saving", http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/admin/plugins/profanity?flash=Saved", http.StatusSeeOther)
 }
 

@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/quota"
+	"git.duckfam.us/jj-software/cog/internal/share"
+	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -67,8 +70,13 @@ func (h *adminVolumeHandler) EditVolumeForm(w http.ResponseWriter, r *http.Reque
 	pd := pageDataWithNav(r, "Edit Volume", h.p.CSRFSecret, h.p.Plugins)
 	id := r.PathValue("id")
 	v, err := h.p.Volumes.GetByID(id)
-	if err != nil {
+	if errors.Is(err, volume.ErrNotFound) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("edit volume: look up volume", "volume", id, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -86,24 +94,42 @@ func (h *adminVolumeHandler) EditVolumeForm(w http.ResponseWriter, r *http.Reque
 	if fd.ConnType == "file" {
 		fd.FilePath = v.URIPath()
 	} else if fd.ConnType == "webdav" {
-		if cfg, err := volume.ParseWebDAVConfig(v.Config); err == nil {
+		cfg, err := volume.ParseWebDAVConfig(v.Config)
+		if err != nil {
+			// Show the form with empty WebDAV fields so the admin can
+			// re-enter them, rather than refusing to edit the volume.
+			h.p.Log.Error("edit volume: parse webdav config", "volume", v.ID, "err", err)
+		} else {
 			fd.WebDAV = *cfg
 		}
 	}
 
 	// Load shares for the volume.
-	shares := buildVolumeShares(h, v.ID)
+	shares, err := buildVolumeShares(h, v.ID)
+	if err != nil {
+		h.p.Log.Error("edit volume: list shares", "volume", v.ID, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
 
 	// Load quotas for the volume.
 	var quotas []quotaDisplayItem
 	for q, err := range h.p.Quotas.ListByVolume(v.ID) {
 		if err != nil {
-			break
+			h.p.Log.Error("edit volume: list quotas", "volume", v.ID, "err", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		name, err := resolveSubjectName(h, q.SubjectType, q.SubjectID)
+		if err != nil {
+			h.p.Log.Error("edit volume: quota subject", "volume", v.ID, "err", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
 		}
 		quotas = append(quotas, quotaDisplayItem{
 			ID:          q.ID,
 			SubjectType: q.SubjectType,
-			SubjectName: resolveSubjectName(h, q.SubjectType, q.SubjectID),
+			SubjectName: name,
 			QuotaBytes:  q.QuotaBytes,
 			QuotaLabel:  quota.FormatBytes(q.QuotaBytes),
 		})
@@ -119,8 +145,7 @@ func (h *adminVolumeHandler) EditVolumeForm(w http.ResponseWriter, r *http.Reque
 
 func (h *adminVolumeHandler) UpdateVolume(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := h.p.Volumes.GetByID(id); err != nil {
-		http.NotFound(w, r)
+	if !h.volumeExists(w, r, id) {
 		return
 	}
 
@@ -135,7 +160,7 @@ func (h *adminVolumeHandler) UpdateVolume(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.p.Volumes.Update(id, name, description, uri, config); err != nil {
-		setFlash(w, "error", "Failed to update: "+err.Error())
+		setFlash(w, "error", "Failed to update: "+err.Error(), err)
 	} else {
 		setFlash(w, "success", "Volume updated.")
 	}
@@ -145,8 +170,13 @@ func (h *adminVolumeHandler) UpdateVolume(w http.ResponseWriter, r *http.Request
 func (h *adminVolumeHandler) DeleteVolume(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	v, err := h.p.Volumes.GetByID(id)
-	if err != nil {
+	if errors.Is(err, volume.ErrNotFound) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("delete volume: look up volume", "volume", id, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 	if v.IsDefault() {
@@ -154,6 +184,7 @@ func (h *adminVolumeHandler) DeleteVolume(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := h.p.Volumes.Delete(id); err != nil {
+		h.p.Log.Error("delete volume", "volume", id, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -163,8 +194,7 @@ func (h *adminVolumeHandler) DeleteVolume(w http.ResponseWriter, r *http.Request
 // SetQuota handles POST /admin/volumes/{id}/quotas.
 func (h *adminVolumeHandler) SetQuota(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := h.p.Volumes.GetByID(id); err != nil {
-		http.NotFound(w, r)
+	if !h.volumeExists(w, r, id) {
 		return
 	}
 
@@ -196,7 +226,7 @@ func (h *adminVolumeHandler) SetQuota(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.p.Quotas.Set(id, subjectType, subjectID, amount); err != nil {
-		setFlash(w, "error", "Failed to set quota: "+err.Error())
+		setFlash(w, "error", "Failed to set quota: "+err.Error(), err)
 	} else {
 		setFlash(w, "success", "Quota set.")
 	}
@@ -207,10 +237,27 @@ func (h *adminVolumeHandler) SetQuota(w http.ResponseWriter, r *http.Request) {
 func (h *adminVolumeHandler) DeleteQuota(w http.ResponseWriter, r *http.Request) {
 	quotaID := r.PathValue("quota_id")
 	if err := h.p.Quotas.Delete(quotaID); err != nil {
+		h.p.Log.Error("delete quota", "quota", quotaID, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// volumeExists reports whether the volume exists, answering the request
+// itself (404, or 500 on a lookup failure) when it doesn't.
+func (h *adminVolumeHandler) volumeExists(w http.ResponseWriter, r *http.Request, id string) bool {
+	_, err := h.p.Volumes.GetByID(id)
+	if errors.Is(err, volume.ErrNotFound) {
+		http.NotFound(w, r)
+		return false
+	}
+	if err != nil {
+		h.p.Log.Error("look up volume", "volume", id, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return false
+	}
+	return true
 }
 
 // DirSuggest handles GET /api/admin/dir-suggest?q=/some/path and returns
@@ -296,7 +343,10 @@ func buildVolumeURIAndConfig(r *http.Request) (uri, config string, err error) {
 			Password: r.FormValue("webdav_password"),
 			Token:    r.FormValue("webdav_token"),
 		}
-		cfgJSON, _ := json.Marshal(cfg)
+		cfgJSON, err := json.Marshal(cfg)
+		if err != nil {
+			return "", "", fmt.Errorf("encode WebDAV config: %w", err)
+		}
 		return "webdav://" + name, string(cfgJSON), nil
 	case "mem":
 		return "mem://", "{}", nil
@@ -316,43 +366,50 @@ type quotaDisplayItem struct {
 
 // buildVolumeShares loads shares for a volume, building UI display items.
 // Admin mode: shows ALL shares for the resource, not filtered by owner.
-func buildVolumeShares(h *adminVolumeHandler, volumeID string) []ui.ShareDisplayItem {
+func buildVolumeShares(h *adminVolumeHandler, volumeID string) ([]ui.ShareDisplayItem, error) {
 	var shares []ui.ShareDisplayItem
 	for rec, err := range h.p.Shares.ListByResource(volume.ShareResourceType, volumeID) {
 		if err != nil {
-			break
+			return nil, err
 		}
-		sd := ui.ShareDisplayItem{
+		name, err := resolveSubjectName(h, rec.SubjectType, rec.SubjectID)
+		if err != nil {
+			return nil, err
+		}
+		shares = append(shares, ui.ShareDisplayItem{
 			ID:          rec.ID,
 			SubjectType: rec.SubjectType,
 			PermLabel:   permissionLabel(rec.Permissions, defaultPermissionLevels()),
-		}
-		sd.SubjectName = resolveSubjectName(h, rec.SubjectType, rec.SubjectID)
-		shares = append(shares, sd)
+			SubjectName: name,
+		})
 	}
-	return shares
+	return shares, nil
 }
 
-func resolveSubjectName(h *adminVolumeHandler, subjectType, subjectID string) string {
+func resolveSubjectName(h *adminVolumeHandler, subjectType, subjectID string) (string, error) {
 	switch subjectType {
 	case "USER":
-		if su, err := h.p.Users.GetByID(subjectID); err == nil {
-			if su.DisplayName != "" {
-				return su.DisplayName
-			}
-			return su.Username
+		su, err := h.p.Users.GetByID(subjectID)
+		if errors.Is(err, user.ErrNotFound) {
+			return subjectID, nil
 		}
-		return subjectID
+		if err != nil {
+			return "", fmt.Errorf("look up user %s: %w", subjectID, err)
+		}
+		if su.DisplayName != "" {
+			return su.DisplayName, nil
+		}
+		return su.Username, nil
 	case "GROUP":
-		return subjectID
+		return subjectID, nil
 	case "DEFAULT":
-		return "Default"
+		return "Default", nil
 	case "PUBLIC":
-		return "Public link"
+		return "Public link", nil
 	case "INSTANCE":
-		return "Everyone"
+		return "Everyone", nil
 	}
-	return subjectID
+	return subjectID, nil
 }
 
 // SharePanelAdmin serves the HTMX share panel for admin volume editing.
@@ -367,12 +424,7 @@ func (h *shareHandler) SharePanelAdmin(w http.ResponseWriter, r *http.Request) {
 
 	levels := defaultPermissionLevels()
 	if def, ok := h.p.Plugins.ResourceDefByType(resType); ok && len(def.PermissionLevels) > 0 {
-		var levelChoices []ui.PermissionLevelChoice
-		for _, l := range def.PermissionLevels {
-			levelChoices = append(levelChoices, ui.PermissionLevelChoice{Label: l.Label, Permissions: l.Permissions})
-		}
 		levels = def.PermissionLevels
-		_ = levelChoices
 	}
 
 	var levelChoices []ui.PermissionLevelChoice
@@ -384,7 +436,9 @@ func (h *shareHandler) SharePanelAdmin(w http.ResponseWriter, r *http.Request) {
 	var shares []ui.ShareDisplayItem
 	for rec, err := range h.p.Shares.ListByResource(resType, resID) {
 		if err != nil {
-			break
+			h.p.Log.Error("admin share panel: list shares", "type", resType, "id", resID, "err", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
 		}
 		sd := ui.ShareDisplayItem{
 			ID:          rec.ID,
@@ -393,7 +447,15 @@ func (h *shareHandler) SharePanelAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 		switch rec.SubjectType {
 		case "USER":
-			if su, err := h.p.Users.GetByID(rec.SubjectID); err == nil {
+			su, err := h.p.Users.GetByID(rec.SubjectID)
+			switch {
+			case errors.Is(err, user.ErrNotFound):
+				sd.SubjectName = "(deleted user)"
+			case err != nil:
+				h.p.Log.Error("admin share panel: look up sharee", "user", rec.SubjectID, "err", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			default:
 				sd.SubjectName = su.DisplayName
 				if sd.SubjectName == "" {
 					sd.SubjectName = su.Username
@@ -462,14 +524,20 @@ func (h *shareHandler) CreateShareAdmin(w http.ResponseWriter, r *http.Request) 
 func (h *shareHandler) DeleteShareAdmin(w http.ResponseWriter, r *http.Request) {
 	shareID := r.PathValue("id")
 	rec, err := h.p.Shares.Get(shareID)
-	if err != nil {
+	if errors.Is(err, share.ErrNotFound) {
 		http.Error(w, "share not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("admin delete share: look up share", "share", shareID, "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	h.propagateShareDelete(rec)
 
 	if err := h.p.Shares.Delete(shareID); err != nil {
+		h.p.Log.Error("admin delete share", "share", shareID, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

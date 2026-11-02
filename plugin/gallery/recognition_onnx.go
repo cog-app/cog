@@ -265,12 +265,16 @@ func ensureModel(path, url string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
+	_, err = io.Copy(f, resp.Body)
+	if cerr := f.Close(); err == nil {
+		err = cerr
 	}
-	f.Close()
+	if err != nil {
+		if rmErr := os.Remove(tmp); rmErr != nil {
+			slog.Warn("remove partial model download", "path", tmp, "err", rmErr)
+		}
+		return fmt.Errorf("download %s: %w", url, err)
+	}
 	return os.Rename(tmp, path)
 }
 

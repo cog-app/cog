@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/url"
 )
@@ -81,6 +82,7 @@ func (c CookieConfig) setFlashValue(w http.ResponseWriter, value string) {
 func encodeFlash(f Flash) string {
 	data, err := json.Marshal(f)
 	if err != nil {
+		slog.Error("encode flash", "err", err)
 		return ""
 	}
 	return url.QueryEscape(string(data))
@@ -96,10 +98,12 @@ func (c CookieConfig) TakeFlash(w http.ResponseWriter, r *http.Request) *Flash {
 	c.Clear(w, FlashCookieName)
 	val, err := url.QueryUnescape(cookie.Value)
 	if err != nil {
+		slog.Warn("decode flash cookie", "err", err)
 		return nil
 	}
 	var f Flash
 	if err := json.Unmarshal([]byte(val), &f); err != nil {
+		slog.Warn("decode flash cookie", "err", err)
 		return nil
 	}
 	return &f

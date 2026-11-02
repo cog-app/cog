@@ -1,7 +1,11 @@
 package quota
 
 import (
+	"errors"
 	"fmt"
+
+	"git.duckfam.us/jj-software/cog/internal/mount"
+	"git.duckfam.us/jj-software/cog/internal/user"
 
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 )
@@ -33,22 +37,39 @@ func (c *Checker) QuotaCheck(username string, additionalBytes int64) error {
 		return nil
 	}
 
+	// A user with no root mount (or no account) has no volume to fill, so
+	// there is nothing to enforce. Any other failure is reported: allowing
+	// the write would let a database error lift the quota.
 	volumeID, err := c.RootVolume(username)
-	if err != nil || volumeID == "" {
-		return nil // can't resolve, allow
+	if errors.Is(err, mount.ErrNotFound) || errors.Is(err, user.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("quota check: root volume of %s: %w", username, err)
+	}
+	if volumeID == "" {
+		return nil
 	}
 
 	userID, err := c.UserIDFromName(username)
+	if errors.Is(err, user.ErrNotFound) {
+		return nil
+	}
 	if err != nil {
-		return nil // can't resolve, allow
+		return fmt.Errorf("quota check: user id of %s: %w", username, err)
 	}
 
 	var groupIDs []string
 	if c.GroupIDs != nil {
-		groupIDs, _ = c.GroupIDs(userID)
+		if groupIDs, err = c.GroupIDs(userID); err != nil {
+			return fmt.Errorf("quota check: groups of %s: %w", username, err)
+		}
 	}
 
-	quota := c.Quotas.EffectiveQuota(userID, volumeID, groupIDs)
+	quota, err := c.Quotas.EffectiveQuota(userID, volumeID, groupIDs)
+	if err != nil {
+		return fmt.Errorf("quota check: %w", err)
+	}
 	if quota < 0 {
 		return nil // unlimited
 	}

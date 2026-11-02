@@ -142,7 +142,11 @@ func tryYouTubeCaptions(ctx context.Context, videoURL, outPath string) error {
 	if err != nil {
 		return fmt.Errorf("mkdtmp: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			slog.Warn("feed transcribe: remove temp dir", "path", tmpDir, "err", err)
+		}
+	}()
 
 	prefix := filepath.Join(tmpDir, "out")
 	cmd := exec.CommandContext(ctx, "yt-dlp",
@@ -157,7 +161,10 @@ func tryYouTubeCaptions(ctx context.Context, videoURL, outPath string) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("yt-dlp captions: %w: %s", err, string(out))
 	}
-	matches, _ := filepath.Glob(prefix + "*.vtt")
+	matches, err := filepath.Glob(prefix + "*.vtt")
+	if err != nil {
+		return fmt.Errorf("find captions: %w", err)
+	}
 	if len(matches) == 0 {
 		return errors.New("yt-dlp produced no captions file")
 	}

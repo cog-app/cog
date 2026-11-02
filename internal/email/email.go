@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"mime/multipart"
 	"net/smtp"
 	"net/textproto"
@@ -33,23 +34,27 @@ type Sender struct {
 	Hook SendHook // if set, called instead of smtp.SendMail
 }
 
-// NewFromSettings creates a Sender from the settings store. Returns nil if SMTP is not configured.
+// NewFromSettings creates a Sender from the settings store. Returns nil if
+// SMTP is not configured, or if its settings can't be read (which is logged):
+// either way there is no way to send.
 func NewFromSettings(s *settings.Store) *Sender {
 	if s == nil {
 		return nil
 	}
-	host, _ := s.Get(settings.KeySMTPHost)
-	from, _ := s.Get(settings.KeySMTPFrom)
+	vals, err := s.GetMany(settings.KeySMTPHost, settings.KeySMTPFrom, settings.KeySMTPUser, settings.KeySMTPPass)
+	if err != nil {
+		slog.Error("email: read SMTP settings", "err", err)
+		return nil
+	}
+	host, from := vals[settings.KeySMTPHost], vals[settings.KeySMTPFrom]
 	if host == "" || from == "" {
 		return nil
 	}
-	user, _ := s.Get(settings.KeySMTPUser)
-	pass, _ := s.Get(settings.KeySMTPPass)
 	return &Sender{
 		Host: host,
 		Port: s.GetInt(settings.KeySMTPPort, 587),
-		User: user,
-		Pass: pass,
+		User: vals[settings.KeySMTPUser],
+		Pass: vals[settings.KeySMTPPass],
 		From: from,
 	}
 }
@@ -101,7 +106,9 @@ func (s *Sender) Send(to []string, subject, body string, attachments ...Attachme
 		fmt.Fprintf(&buf, "Content-Type: multipart/mixed; boundary=%q\r\n\r\n", boundary)
 
 		w := multipart.NewWriter(&buf)
-		w.SetBoundary(boundary)
+		if err := w.SetBoundary(boundary); err != nil {
+			return fmt.Errorf("send: %w", err)
+		}
 
 		// Text part
 		textHeader := make(textproto.MIMEHeader)

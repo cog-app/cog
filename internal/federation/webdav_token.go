@@ -2,7 +2,9 @@ package federation
 
 import (
 	"encoding/xml"
+	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -39,11 +41,19 @@ func (h *TokenWebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Look up the share by token. Check federated_shares first, then regular shares.
 	fs, err := h.Store.GetByToken(token)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		h.serverError(w, "look up federated share", err)
+		return
+	}
 	if err != nil {
 		// Fall back to regular public link share.
 		shareRec, err := h.Shares.GetByToken(token)
-		if err != nil {
+		if errors.Is(err, share.ErrNotFound) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if err != nil {
+			h.serverError(w, "look up share", err)
 			return
 		}
 		h.servePublicShare(w, r, shareRec)
@@ -62,8 +72,12 @@ func (h *TokenWebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shareRec, err := h.Shares.Get(*fs.ShareID)
-	if err != nil {
+	if errors.Is(err, share.ErrNotFound) {
 		http.Error(w, "Share not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.serverError(w, "look up share", err)
 		return
 	}
 
@@ -74,7 +88,7 @@ func (h *TokenWebDAVHandler) servePublicShare(w http.ResponseWriter, r *http.Req
 	// Resolve the owner user.
 	owner, err := h.Users.GetByID(rec.OwnerUserID)
 	if err != nil {
-		http.Error(w, "Owner not found", http.StatusInternalServerError)
+		h.serverError(w, "look up share owner", err)
 		return
 	}
 
@@ -85,8 +99,12 @@ func (h *TokenWebDAVHandler) servePublicShare(w http.ResponseWriter, r *http.Req
 		return
 	}
 	meta, err := h.Files.GetByID(owner.Username, resourceID)
-	if err != nil {
+	if errors.Is(err, files.ErrNotFound) {
 		http.Error(w, "Resource not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.serverError(w, "look up shared resource", err)
 		return
 	}
 	resourcePath := meta.Path
@@ -140,6 +158,12 @@ func (h *TokenWebDAVHandler) servePublicShare(w http.ResponseWriter, r *http.Req
 	}
 }
 
+// serverError logs a failure the client cannot act on and reports a 500.
+func (h *TokenWebDAVHandler) serverError(w http.ResponseWriter, what string, err error) {
+	h.Log.Error("federated webdav: "+what, "err", err)
+	http.Error(w, "Internal server error", http.StatusInternalServerError)
+}
+
 func (h *TokenWebDAVHandler) extractToken(r *http.Request) string {
 	// Try Bearer token.
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
@@ -155,9 +179,25 @@ func (h *TokenWebDAVHandler) extractToken(r *http.Request) string {
 
 func (h *TokenWebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, localPath, basePath, subPath string) {
 	info, err := os.Stat(localPath)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
+	}
+	if err != nil {
+		h.Log.Error("federated propfind: stat", "path", localPath, "err", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Read the children before the 207 goes out, so a failure can still
+	// be reported as one.
+	var entries []os.DirEntry
+	if info.IsDir() && r.Header.Get("Depth") != "0" {
+		if entries, err = os.ReadDir(localPath); err != nil {
+			h.Log.Error("federated propfind: read directory", "path", localPath, "err", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
@@ -170,23 +210,21 @@ func (h *TokenWebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Reque
 
 	writePropResponse(w, href, info)
 
-	// If directory and depth != 0, list children.
-	depth := r.Header.Get("Depth")
-	if info.IsDir() && depth != "0" {
-		entries, err := os.ReadDir(localPath)
-		if err == nil {
-			for _, entry := range entries {
-				childInfo, err := entry.Info()
-				if err != nil {
-					continue
-				}
-				childHref := path.Join(href, entry.Name())
-				if entry.IsDir() {
-					childHref += "/"
-				}
-				writePropResponse(w, childHref, childInfo)
-			}
+	for _, entry := range entries {
+		childInfo, err := entry.Info()
+		if errors.Is(err, fs.ErrNotExist) {
+			continue // removed since ReadDir
 		}
+		if err != nil {
+			// The 207 is already sent; the listing goes out without this entry.
+			h.Log.Error("federated propfind: stat entry", "path", filepath.Join(localPath, entry.Name()), "err", err)
+			continue
+		}
+		childHref := path.Join(href, entry.Name())
+		if entry.IsDir() {
+			childHref += "/"
+		}
+		writePropResponse(w, childHref, childInfo)
 	}
 
 	io.WriteString(w, `</d:multistatus>`)

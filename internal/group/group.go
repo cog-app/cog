@@ -110,7 +110,10 @@ func (s *Store) Update(id, name string) error {
 	if err != nil {
 		return fmt.Errorf("update group: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -131,7 +134,10 @@ func (s *Store) Delete(id string) error {
 	if err != nil {
 		return fmt.Errorf("delete group: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -188,7 +194,7 @@ func isCyclicMembershipTx(tx *sql.Tx, parentGroupID, candidateChildGroupID strin
 	if errors.Is(err, sql.ErrNoRows) {
 		// Also do a recursive walk through GROUP members since the closure table
 		// only tracks user descendants. Walk the group_members graph directly.
-		return isGroupDescendant(tx, candidateChildGroupID, parentGroupID, make(map[string]bool)), nil
+		return isGroupDescendant(tx, candidateChildGroupID, parentGroupID)
 	}
 	if err != nil {
 		return false, err
@@ -196,34 +202,25 @@ func isCyclicMembershipTx(tx *sql.Tx, parentGroupID, candidateChildGroupID strin
 	return true, nil
 }
 
-// isGroupDescendant returns true if target appears as a GROUP-type descendant of start.
-func isGroupDescendant(tx *sql.Tx, start, target string, visited map[string]bool) bool {
-	if start == target {
-		return true
-	}
-	if visited[start] {
-		return false
-	}
-	visited[start] = true
-
-	rows, err := tx.Query(
-		`SELECT member_id FROM group_members WHERE group_id = ? AND member_type = 'GROUP'`, start,
-	)
+// isGroupDescendant reports whether target appears as a GROUP-type
+// descendant of start (or is start). One recursive query rather than a
+// query per group; UNION (not UNION ALL) stops at groups already visited.
+func isGroupDescendant(tx *sql.Tx, start, target string) (bool, error) {
+	var found bool
+	err := tx.QueryRow(`
+		WITH RECURSIVE descendants(id) AS (
+			SELECT ?
+			UNION
+			SELECT gm.member_id FROM group_members gm
+			JOIN descendants d ON gm.group_id = d.id
+			WHERE gm.member_type = 'GROUP'
+		)
+		SELECT EXISTS (SELECT 1 FROM descendants WHERE id = ?)`, start, target,
+	).Scan(&found)
 	if err != nil {
-		return false
+		return false, fmt.Errorf("walk group descendants of %s: %w", start, err)
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var childID string
-		if err := rows.Scan(&childID); err != nil {
-			continue
-		}
-		if isGroupDescendant(tx, childID, target, visited) {
-			return true
-		}
-	}
-	return false
+	return found, nil
 }
 
 // UpdateMemberType changes the member_type for an existing group member.
@@ -241,7 +238,10 @@ func (s *Store) UpdateMemberType(groupID, memberID string, memberType MemberType
 	if err != nil {
 		return fmt.Errorf("update member type: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -428,7 +428,10 @@ func rebuildClosureTx(tx *sql.Tx) error {
 		if err != nil {
 			return fmt.Errorf("rebuild closure depth %d: %w", depth, err)
 		}
-		n, _ := res.RowsAffected()
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("rows affected: %w", err)
+		}
 		if n == 0 {
 			break
 		}

@@ -240,7 +240,11 @@ func (h *Pages) CreateNote(w http.ResponseWriter, r *http.Request) {
 	content := r.FormValue("content")
 	category := r.FormValue("category")
 
-	filename := FilenameFromTitle(title)
+	filename, err := h.plugin.freeNoteFilename(db, username, title, nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	etag := ComputeETag(content)
 
 	if err := h.plugin.writeNoteContent(username, filename, content); err != nil {
@@ -285,7 +289,11 @@ func (h *Pages) UpdateNote(w http.ResponseWriter, r *http.Request) {
 
 	filename := note.Filename
 	if title != "" {
-		newFilename := FilenameFromTitle(title)
+		newFilename, err := h.plugin.freeNoteFilename(db, username, title, note)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		if newFilename != filename {
 			if err := h.plugin.renameNoteFile(username, filename, newFilename); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)

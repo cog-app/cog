@@ -29,23 +29,28 @@ func (p *Plugin) Seed(username string) error {
 		return fmt.Errorf("seed bookmarks: %w", err)
 	}
 
-	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM bookmarks`).Scan(&count)
+	count, err := BookmarkCount(db)
+	if err != nil {
+		return fmt.Errorf("seed bookmarks: %w", err)
+	}
 	if count > 0 {
 		return nil
 	}
 
 	// Create a couple of folders.
-	devFolder, _ := CreateFolder(db, "Development", nil)
-	_, _ = CreateFolder(db, "Reading", nil)
+	devFolder, err := CreateFolder(db, "Development", nil)
+	if err != nil {
+		return fmt.Errorf("seed bookmarks: %w", err)
+	}
+	if _, err := CreateFolder(db, "Reading", nil); err != nil {
+		return fmt.Errorf("seed bookmarks: %w", err)
+	}
 
 	for _, sb := range seedBookmarks {
 		var folders []int64
 		for _, t := range sb.tags {
 			if t == "dev" || t == "go" || t == "frontend" {
-				if devFolder != nil {
-					folders = []int64{devFolder.ID}
-				}
+				folders = []int64{devFolder.ID}
 				break
 			}
 		}

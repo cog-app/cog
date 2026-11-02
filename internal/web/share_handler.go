@@ -191,13 +191,13 @@ func (h *shareHandler) CreatePublicLinkForm(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	rec, err := h.p.Shares.CreatePublicLink(u.ID, resType, resID, perms, nil)
-	if err != nil {
+	// Public links don't propagate to specific users, so the record
+	// isn't needed.
+	if _, err := h.p.Shares.CreatePublicLink(u.ID, resType, resID, perms, nil); err != nil {
 		h.p.Log.Error("public link create failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = rec // public links don't propagate to specific users
 
 	scope := r.FormValue("panel_id")
 	r.URL.RawQuery = fmt.Sprintf("type=%s&id=%s&scope=%s", resType, resID, scope)
@@ -210,8 +210,13 @@ func (h *shareHandler) DeleteShareHTMX(w http.ResponseWriter, r *http.Request) {
 	shareID := r.PathValue("id")
 
 	rec, err := h.p.Shares.Get(shareID)
-	if err != nil {
+	if errors.Is(err, share.ErrNotFound) {
 		http.Error(w, "share not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("delete share: look up share", "share", shareID, "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 	if rec.OwnerUserID != u.ID {
@@ -222,6 +227,7 @@ func (h *shareHandler) DeleteShareHTMX(w http.ResponseWriter, r *http.Request) {
 	h.propagateShareDelete(rec)
 
 	if err := h.p.Shares.Delete(shareID); err != nil {
+		h.p.Log.Error("delete share", "share", shareID, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -418,12 +424,20 @@ func (h *shareHandler) CreateFederatedShareForm(w http.ResponseWriter, r *http.R
 	if err != nil {
 		h.p.Log.Error("send federated share", "remote", remoteHost, "err", err)
 		// Clean up.
-		h.p.Shares.Delete(rec.ID)
-		h.p.Federation.Remove(fs.ID)
+		if err := h.p.Shares.Delete(rec.ID); err != nil {
+			h.p.Log.Error("clean up federated share link", "share", rec.ID, "err", err)
+		}
+		if err := h.p.Federation.Remove(fs.ID); err != nil {
+			h.p.Log.Error("clean up federation record", "id", fs.ID, "err", err)
+		}
 		http.Error(w, "Remote server rejected: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	h.p.Federation.SetRemoteID(fs.ID, remoteID)
+	if err := h.p.Federation.SetRemoteID(fs.ID, remoteID); err != nil {
+		// The remote accepted the share, so keep it; without its remote ID
+		// a later unshare can't be sent to the remote.
+		h.p.Log.Error("record federated share remote id", "id", fs.ID, "remote", remoteHost, "err", err)
+	}
 
 	h.propagateShareCreate(rec)
 

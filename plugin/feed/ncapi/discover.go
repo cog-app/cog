@@ -3,6 +3,7 @@ package ncapi
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -87,15 +88,19 @@ func sniffContentType(ctx context.Context, rawURL string) string {
 		req, err := http.NewRequestWithContext(rctx, method, rawURL, nil)
 		if err != nil {
 			cancel()
+			slog.Debug("feed discover: build sniff request", "url", rawURL, "method", method, "err", err)
 			continue
 		}
 		req.Header.Set("User-Agent", "cog-feed/1.0")
 		resp, err := client.Do(req)
 		cancel()
 		if err != nil {
+			slog.Debug("feed discover: sniff request", "url", rawURL, "method", method, "err", err)
 			continue
 		}
-		resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			slog.Debug("feed discover: close sniff response", "url", rawURL, "err", err)
+		}
 		ct := strings.ToLower(resp.Header.Get("Content-Type"))
 		if ct == "" {
 			continue

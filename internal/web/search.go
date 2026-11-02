@@ -38,6 +38,7 @@ func (h searchHandler) Search(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.p.Search.SearchUser(u.Username, q, limit, offset)
 	if err != nil {
+		h.p.Log.Error("search", "user", u.Username, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -66,6 +67,7 @@ func (h searchHandler) SearchSystem(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.p.Search.SearchSystem(q, limit, offset)
 	if err != nil {
+		h.p.Log.Error("system search", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

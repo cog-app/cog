@@ -425,20 +425,27 @@ func buildOCSQuotaFunc(p *services.Providers, fp *filesPlugin.Plugin) compat.Quo
 		}
 		u, err := p.Users.GetByUsername(username)
 		if err != nil {
+			p.Log.Error("quota: look up user", "user", username, "err", err)
 			return used, -1
 		}
 		m, err := p.Mounts.GetUserRoot(u.ID)
 		if err != nil {
+			p.Log.Error("quota: root mount", "user", username, "err", err)
 			return used, -1
 		}
 		var groupIDs []string
 		for g, gErr := range p.Groups.ListGroupsForUser(u.ID) {
 			if gErr != nil {
-				break
+				p.Log.Error("quota: list groups", "user", username, "err", gErr)
+				return used, -1
 			}
 			groupIDs = append(groupIDs, g.ID)
 		}
-		total = p.Quotas.EffectiveQuota(u.ID, m.VolumeID, groupIDs)
+		total, err = p.Quotas.EffectiveQuota(u.ID, m.VolumeID, groupIDs)
+		if err != nil {
+			p.Log.Error("effective quota", "user", username, "err", err)
+			return used, -1
+		}
 		return used, total
 	}
 }

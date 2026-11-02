@@ -57,7 +57,9 @@ func (s *Shell) SetSSHMode(width, height int) {
 func New(username, filesDir string, userFS vfs.FS, pluginCmds map[string][]plugin.CommandDef, usernames func() ([]string, error), searchMgr *search.Manager, log *slog.Logger) *Shell {
 	// Resolve symlinks so containment checks and virtual path mapping
 	// work consistently with paths returned by the interpreter.
-	if resolved, err := filepath.EvalSymlinks(filesDir); err == nil {
+	if resolved, err := filepath.EvalSymlinks(filesDir); err != nil {
+		log.Warn("shell: resolve files directory", "dir", filesDir, "err", err)
+	} else {
 		filesDir = resolved
 	}
 	return &Shell{
@@ -224,8 +226,11 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 		if err == readline.ErrInterrupt {
 			continue
 		}
-		if err != nil { // io.EOF or other
+		if errors.Is(err, io.EOF) {
 			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read line: %w", err)
 		}
 
 		line = strings.TrimSpace(line)
@@ -370,8 +375,9 @@ func (m *sshStdinMux) runnerStdin() *os.File { return m.runnerR }
 
 // closeRunnerStdin closes both ends of the runner's stdin pipe.
 func (m *sshStdinMux) closeRunnerStdin() {
-	m.runnerW.Close()
-	m.runnerR.Close()
+	if err := errors.Join(m.runnerW.Close(), m.runnerR.Close()); err != nil {
+		slog.Warn("ssh stdin mux: close runner pipe", "err", err)
+	}
 }
 
 // setRunnerActive switches whether stdin data goes to the runner or readline.

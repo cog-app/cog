@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -123,8 +124,13 @@ func (h *WebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, u
 
 	// Get metadata for the target path
 	rootMeta, err := h.Files.GetByPath(u.Username, filePath)
-	if err != nil {
+	if errors.Is(err, files.ErrNotFound) {
 		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.Log.Error("PROPFIND", "user", u.Username, "path", filePath, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
@@ -145,32 +151,23 @@ func (h *WebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, u
 	// If depth=1 and target is a directory, list children
 	if depth == "1" && rootMeta.IsDir {
 		children, err := h.Files.List(u.Username, filePath)
-		if err == nil {
-			for i := range children {
-				child := &children[i]
-				childHref := hrefPrefix + child.Path
-				if child.IsDir && !strings.HasSuffix(childHref, "/") {
-					childHref += "/"
-				}
-				entries = append(entries, metaToEntry(childHref, child, u.Username, displayName))
+		if err != nil {
+			h.Log.Error("PROPFIND list", "user", u.Username, "path", filePath, "err", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for i := range children {
+			child := &children[i]
+			childHref := hrefPrefix + child.Path
+			if child.IsDir && !strings.HasSuffix(childHref, "/") {
+				childHref += "/"
 			}
+			entries = append(entries, metaToEntry(childHref, child, u.Username, displayName))
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.Header().Set("DAV", "1, 3, extended-mkcol")
-	w.WriteHeader(207) // Multi-Status
-
-	io.WriteString(w, xml.Header)
-	enc := xml.NewEncoder(w)
-	enc.Indent("", "  ")
-	enc.Encode(multiStatus{
-		DAV:       "DAV:",
-		OC:        "http://owncloud.org/ns",
-		NC:        "http://nextcloud.org/ns",
-		Responses: entries,
-	})
-	enc.Flush()
+	writeMultiStatus(h.Log, w, entries)
 }
 
 // --- GET ---
@@ -189,15 +186,23 @@ func (h *WebDAVHandler) handleGet(w http.ResponseWriter, r *http.Request, u *use
 
 	f, meta, err := h.Files.Download(u.Username, filePath)
 	if err != nil {
-		// Check if it's a directory
-		if r.Method == http.MethodHead {
-			if m, _ := h.Files.GetByPath(u.Username, filePath); m != nil && m.IsDir {
-				w.Header().Set("DAV", "1, 3, extended-mkcol")
-				w.WriteHeader(http.StatusOK)
-				return
-			}
+		// A directory has metadata but can't be opened as a file.
+		m, merr := h.Files.GetByPath(u.Username, filePath)
+		switch {
+		case errors.Is(merr, files.ErrNotFound):
+			w.WriteHeader(http.StatusNotFound)
+		case merr != nil:
+			h.Log.Error("GET", "user", u.Username, "path", filePath, "err", merr)
+			w.WriteHeader(http.StatusInternalServerError)
+		case m.IsDir && r.Method == http.MethodHead:
+			w.Header().Set("DAV", "1, 3, extended-mkcol")
+			w.WriteHeader(http.StatusOK)
+		case m.IsDir:
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			h.Log.Error("GET", "user", u.Username, "path", filePath, "err", err)
+			w.WriteHeader(http.StatusInternalServerError)
 		}
-		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	defer f.Close()
@@ -227,6 +232,7 @@ func (h *WebDAVHandler) handlePut(w http.ResponseWriter, r *http.Request, u *use
 
 	meta, err := h.Files.Upload(u.Username, filePath, r.Body)
 	if err != nil {
+		h.Log.Error("PUT", "user", u.Username, "path", filePath, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -244,8 +250,12 @@ func (h *WebDAVHandler) handleDelete(w http.ResponseWriter, _ *http.Request, u *
 		return
 	}
 
-	if err := h.Files.Delete(u.Username, filePath); err != nil {
+	if err := h.Files.Delete(u.Username, filePath); errors.Is(err, files.ErrNotFound) {
 		w.WriteHeader(http.StatusNotFound)
+		return
+	} else if err != nil {
+		h.Log.Error("DELETE", "user", u.Username, "path", filePath, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -261,6 +271,7 @@ func (h *WebDAVHandler) handleMkcol(w http.ResponseWriter, _ *http.Request, u *u
 
 	_, err := h.Files.CreateDir(u.Username, filePath)
 	if err != nil {
+		h.Log.Warn("MKCOL", "user", u.Username, "path", filePath, "err", err)
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
@@ -286,6 +297,7 @@ func (h *WebDAVHandler) handleMove(w http.ResponseWriter, r *http.Request, u *us
 
 	_, err := h.Files.Rename(u.Username, filePath, newPath)
 	if err != nil {
+		h.Log.Warn("MOVE", "user", u.Username, "from", filePath, "to", newPath, "err", err)
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
@@ -313,28 +325,37 @@ func (h *WebDAVHandler) handleCopy(w http.ResponseWriter, r *http.Request, u *us
 	}
 
 	// Check if destination exists.
-	destMeta, _ := h.Files.GetByPath(u.Username, newPath)
+	destMeta, err := h.Files.GetByPath(u.Username, newPath)
+	if err != nil && !errors.Is(err, files.ErrNotFound) {
+		h.Log.Error("COPY: look up destination", "user", u.Username, "path", newPath, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	if destMeta != nil && overwrite == "F" {
 		http.Error(w, "destination exists", http.StatusPreconditionFailed)
 		return
 	}
 
 	srcMeta, err := h.Files.GetByPath(u.Username, srcPath)
-	if err != nil {
+	if errors.Is(err, files.ErrNotFound) {
 		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.Log.Error("COPY: look up source", "user", u.Username, "path", srcPath, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	if srcMeta.IsDir {
-		if err := h.copyDir(u.Username, srcPath, newPath); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		err = h.copyDir(u.Username, srcPath, newPath)
 	} else {
-		if err := h.copyFile(u.Username, srcPath, newPath); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		err = h.copyFile(u.Username, srcPath, newPath)
+	}
+	if err != nil {
+		h.Log.Error("COPY", "user", u.Username, "from", srcPath, "to", newPath, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	if destMeta != nil {
@@ -400,8 +421,13 @@ func (h *WebDAVHandler) HandleDirectDownload(baseURL string) http.HandlerFunc {
 		}
 
 		meta, err := h.Files.GetByID(u.Username, fileID)
-		if err != nil {
+		if errors.Is(err, files.ErrNotFound) {
 			writeOCSError(w, http.StatusNotFound, 404, "file not found")
+			return
+		}
+		if err != nil {
+			h.Log.Error("direct download: look up file", "user", u.Username, "file", fileID, "err", err)
+			writeOCSError(w, http.StatusInternalServerError, 500, "look up file failed")
 			return
 		}
 
@@ -466,6 +492,7 @@ func (h *WebDAVHandler) HandleDirectServe(w http.ResponseWriter, r *http.Request
 
 	f, meta, err := h.Files.Download(dt.Username, dt.FilePath)
 	if err != nil {
+		h.Log.Warn("direct download", "user", dt.Username, "path", dt.FilePath, "err", err)
 		http.Error(w, "file not found", http.StatusNotFound)
 		return
 	}
@@ -554,8 +581,12 @@ func (h *WebDAVHandler) handleProppatch(w http.ResponseWriter, r *http.Request, 
 
 	if req.Set.Prop.Favorite != nil {
 		fav := *req.Set.Prop.Favorite != 0
-		if err := h.Files.SetFavorite(u.Username, filePath, fav); err != nil {
+		if err := h.Files.SetFavorite(u.Username, filePath, fav); errors.Is(err, files.ErrNotFound) {
 			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		} else if err != nil {
+			h.Log.Error("PROPPATCH favorite", "user", u.Username, "path", filePath, "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
@@ -600,6 +631,7 @@ func (h *WebDAVHandler) handleReport(w http.ResponseWriter, r *http.Request, u *
 
 	favorites, err := h.Files.Favorites(u.Username)
 	if err != nil {
+		h.Log.Error("REPORT favorites", "user", u.Username, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -620,19 +652,27 @@ func (h *WebDAVHandler) handleReport(w http.ResponseWriter, r *http.Request, u *
 		entries = append(entries, metaToEntry(href, f, u.Username, displayName))
 	}
 
+	writeMultiStatus(h.Log, w, entries)
+}
+
+// writeMultiStatus sends entries as a 207 Multi-Status response.
+func writeMultiStatus(log *slog.Logger, w http.ResponseWriter, entries []propfindEntry) {
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	w.WriteHeader(207)
+	w.WriteHeader(http.StatusMultiStatus)
 
 	io.WriteString(w, xml.Header)
 	enc := xml.NewEncoder(w)
 	enc.Indent("", "  ")
-	enc.Encode(multiStatus{
+	if err := enc.Encode(multiStatus{
 		DAV:       "DAV:",
 		OC:        "http://owncloud.org/ns",
 		NC:        "http://nextcloud.org/ns",
 		Responses: entries,
-	})
-	enc.Flush()
+	}); err != nil {
+		// The status is already sent; all that's left is to say why the
+		// body is short.
+		log.Error("write multistatus", "err", err)
+	}
 }
 
 // --- LOCK (stub) ---

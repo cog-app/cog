@@ -150,6 +150,9 @@ func Main(plugins ...plugin.Plugin) {
 func addPluginCommands(root *cobra.Command, plugins []plugin.Plugin) *services.Providers {
 	p, err := openProviders(plugins...)
 	if err != nil {
+		// The built-in commands still work without services, so this is not
+		// fatal; say why the plugin commands are missing.
+		fmt.Fprintf(os.Stderr, "warning: plugin commands unavailable: %v\n", err)
 		return nil
 	}
 

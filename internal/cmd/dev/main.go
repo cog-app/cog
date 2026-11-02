@@ -47,7 +47,9 @@ func main() {
 
 	if *reset {
 		log.Println("Resetting dev state...")
-		os.RemoveAll(devDir)
+		if err := os.RemoveAll(devDir); err != nil {
+			log.Fatalf("reset: %v", err)
+		}
 	}
 
 	if err := os.MkdirAll(devDir, 0o755); err != nil {
@@ -89,7 +91,9 @@ func runOnce(bin, dbPath, devDir string, logRequests, stale bool) {
 	signal.Notify(sig, os.Interrupt)
 	go func() {
 		<-sig
-		srv.Process.Kill()
+		if err := srv.Process.Kill(); err != nil {
+			log.Printf("kill cog: %v", err)
+		}
 	}()
 
 	if err := srv.Wait(); err != nil {

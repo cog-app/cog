@@ -2,6 +2,7 @@ package profanity
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"regexp"
 	"strings"
@@ -24,7 +25,7 @@ type WordList struct {
 
 // ParseWordList reads a word list from lines of "word=replacement" or just "word".
 // Lines starting with # are comments. Blank lines are ignored.
-func ParseWordList(r io.Reader) *WordList {
+func ParseWordList(r io.Reader) (*WordList, error) {
 	var entries []Entry
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
@@ -43,9 +44,12 @@ func ParseWordList(r io.Reader) *WordList {
 		}
 		entries = append(entries, Entry{Word: strings.ToLower(word), Replacement: replacement})
 	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read word list: %w", err)
+	}
 	wl := &WordList{entries: entries}
 	wl.compile()
-	return wl
+	return wl, nil
 }
 
 func (wl *WordList) compile() {

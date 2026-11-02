@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -67,13 +68,16 @@ type procHandle struct {
 	link   *grpcLink
 	stdout *procLogWriter
 	stderr *procLogWriter
+	log    *slog.Logger
 }
 
 // signalStop asks the process to exit. It deliberately does not reap it: the
 // supervisor goroutine owns cmd.Wait, and calling it twice is an error.
 func (h *procHandle) signalStop() {
 	if h.cmd.Process != nil {
-		h.cmd.Process.Kill()
+		if err := h.cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			h.log.Error("kill plugin process", "path", h.cmd.Path, "err", err)
+		}
 	}
 }
 
@@ -81,18 +85,23 @@ func (h *procHandle) signalStop() {
 // reaped by whoever called cmd.Wait.
 func (h *procHandle) release() {
 	if h.link != nil {
-		h.link.conn.Close()
+		if err := h.link.conn.Close(); err != nil {
+			h.log.Error("close plugin connection", "path", h.cmd.Path, "err", err)
+		}
 	}
 	h.stdout.Flush()
 	h.stderr.Flush()
-	os.RemoveAll(h.tmpDir)
+	if err := os.RemoveAll(h.tmpDir); err != nil {
+		h.log.Error("remove plugin temp dir", "dir", h.tmpDir, "err", err)
+	}
 }
 
 // terminate kills and reaps a process that never reached supervision, so a
 // failed startup leaves neither a zombie nor a temp directory behind.
 func (h *procHandle) terminate() {
 	h.signalStop()
-	h.cmd.Wait()
+	// Wait reports the kill as an error ("signal: killed"); only reaping matters.
+	_ = h.cmd.Wait()
 	h.release()
 }
 
@@ -425,8 +434,7 @@ func (r *Registry) startProcess(binaryPath string, trusted bool) (*procHandle, e
 	if trusted {
 		absDataDir, err := filepath.Abs(r.dataDir)
 		if err != nil {
-			os.RemoveAll(tmpDir)
-			return nil, fmt.Errorf("abs data dir: %w", err)
+			return nil, errors.Join(fmt.Errorf("abs data dir: %w", err), os.RemoveAll(tmpDir))
 		}
 		cmd.Env = append(cmd.Env,
 			"COG_TRUSTED=1",
@@ -444,13 +452,13 @@ func (r *Registry) startProcess(binaryPath string, trusted bool) (*procHandle, e
 		tmpDir: tmpDir,
 		stdout: newProcLogWriter(r.log, slog.LevelInfo, label),
 		stderr: newProcLogWriter(r.log, slog.LevelError, label),
+		log:    r.log,
 	}
 	cmd.Stdout = h.stdout
 	cmd.Stderr = h.stderr
 
 	if err := cmd.Start(); err != nil {
-		os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("start plugin %s: %w", binaryPath, err)
+		return nil, errors.Join(fmt.Errorf("start plugin %s: %w", binaryPath, err), os.RemoveAll(tmpDir))
 	}
 
 	if err := waitForSocket(socketPath); err != nil {
@@ -614,13 +622,15 @@ func (g *grpcPlugin) reregister(link *grpcLink) error {
 
 // waitForSocket polls until the unix socket is connectable.
 func waitForSocket(path string) error {
+	var err error
 	for range 50 {
-		conn, err := net.Dial("unix", path)
+		var conn net.Conn
+		conn, err = net.Dial("unix", path)
 		if err == nil {
 			conn.Close()
 			return nil
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return fmt.Errorf("timeout waiting for %s", path)
+	return fmt.Errorf("timeout waiting for %s: %w", path, err)
 }

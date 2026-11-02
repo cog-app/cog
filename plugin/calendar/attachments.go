@@ -70,17 +70,13 @@ func putFile(dir, hash string, data []byte) error {
 		return fmt.Errorf("store attachment: %w", err)
 	}
 	if _, err := f.Write(data); err != nil {
-		f.Close()
-		os.Remove(f.Name())
-		return fmt.Errorf("store attachment: %w", err)
+		return fmt.Errorf("store attachment: %w", errors.Join(err, f.Close(), os.Remove(f.Name())))
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(f.Name())
-		return fmt.Errorf("store attachment: %w", err)
+		return fmt.Errorf("store attachment: %w", errors.Join(err, os.Remove(f.Name())))
 	}
 	if err := os.Rename(f.Name(), path); err != nil {
-		os.Remove(f.Name())
-		return fmt.Errorf("store attachment: %w", err)
+		return fmt.Errorf("store attachment: %w", errors.Join(err, os.Remove(f.Name())))
 	}
 	return nil
 }

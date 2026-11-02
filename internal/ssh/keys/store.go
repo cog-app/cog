@@ -3,7 +3,9 @@ package keys
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
@@ -43,10 +45,12 @@ func NewStore(dbp DBProvider, up UsernameProvider, c clock.Clock) *Store {
 }
 
 // migrateFingerprint adds the fingerprint column if missing and backfills it.
-func migrateFingerprint(db *sql.DB) error {
+// It runs in one transaction: the column's presence is what marks the
+// migration done, so a backfill that failed halfway must not leave it behind.
+func migrateFingerprint(db *sql.DB) (err error) {
 	// Check if fingerprint column exists.
 	var count int
-	err := db.QueryRow(`SELECT count(*) FROM pragma_table_info('ssh_keys') WHERE name = 'fingerprint'`).Scan(&count)
+	err = db.QueryRow(`SELECT count(*) FROM pragma_table_info('ssh_keys') WHERE name = 'fingerprint'`).Scan(&count)
 	if err != nil {
 		return fmt.Errorf("check fingerprint column: %w", err)
 	}
@@ -54,35 +58,64 @@ func migrateFingerprint(db *sql.DB) error {
 		return nil
 	}
 
-	if _, err := db.Exec(`ALTER TABLE ssh_keys ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''`); err != nil {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("migrate fingerprint: begin: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err := tx.Exec(`ALTER TABLE ssh_keys ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''`); err != nil {
 		return fmt.Errorf("add fingerprint column: %w", err)
 	}
 
-	// Backfill fingerprints for existing keys.
-	rows, err := db.Query(`SELECT id, public_key FROM ssh_keys WHERE fingerprint = ''`)
+	// Backfill fingerprints for existing keys. Read them all first: the
+	// updates go through the same transaction.
+	rows, err := tx.Query(`SELECT id, public_key FROM ssh_keys WHERE fingerprint = ''`)
 	if err != nil {
 		return fmt.Errorf("query keys for backfill: %w", err)
 	}
-	defer rows.Close()
-
+	type keyRow struct{ id, pubKey string }
+	var pending []keyRow
 	for rows.Next() {
-		var id, pubKey string
-		if err := rows.Scan(&id, &pubKey); err != nil {
+		var k keyRow
+		if err := rows.Scan(&k.id, &k.pubKey); err != nil {
+			rows.Close()
 			return fmt.Errorf("scan key for backfill: %w", err)
 		}
-		pk, _, _, _, err := gossh.ParseAuthorizedKey([]byte(pubKey))
+		pending = append(pending, k)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("query keys for backfill: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("query keys for backfill: %w", err)
+	}
+
+	for _, k := range pending {
+		pk, _, _, _, err := gossh.ParseAuthorizedKey([]byte(k.pubKey))
 		if err != nil {
-			continue // skip unparseable keys
+			// The key can never authenticate; leave it with no fingerprint.
+			slog.Warn("ssh key backfill: unparsable key", "id", k.id, "err", err)
+			continue
 		}
-		fp := gossh.FingerprintSHA256(pk)
-		if _, err := db.Exec(`UPDATE ssh_keys SET fingerprint = ? WHERE id = ?`, fp, id); err != nil {
+		if _, err := tx.Exec(`UPDATE ssh_keys SET fingerprint = ? WHERE id = ?`, gossh.FingerprintSHA256(pk), k.id); err != nil {
 			return fmt.Errorf("backfill fingerprint: %w", err)
 		}
 	}
 
 	// Create unique index on fingerprint (exclude empty strings from old broken keys).
-	_, err = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ssh_keys_fingerprint ON ssh_keys(fingerprint) WHERE fingerprint != ''`)
-	return err
+	if _, err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ssh_keys_fingerprint ON ssh_keys(fingerprint) WHERE fingerprint != ''`); err != nil {
+		return fmt.Errorf("create fingerprint index: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("migrate fingerprint: commit: %w", err)
+	}
+	return nil
 }
 
 // Add stores a new SSH key for a user, parsing the authorized_keys line.
@@ -158,7 +191,10 @@ func (s *Store) Delete(username, id string) error {
 	if err != nil {
 		return fmt.Errorf("delete ssh key: %w", err)
 	}
-	n, _ := result.RowsAffected()
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete ssh key: rows affected: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("ssh key %q not found", id)
 	}
@@ -174,11 +210,15 @@ func (s *Store) FindByFingerprint(fingerprint string) (string, *SSHKey, error) {
 	}
 
 	for _, username := range usernames {
+		// One user's broken database must not lock everyone out, so a
+		// failure here is logged and the search goes on.
 		db, err := s.dbProvider.UserDB(username)
 		if err != nil {
+			slog.Error("find ssh key: open user db", "user", username, "err", err)
 			continue
 		}
 		if err := migrateFingerprint(db); err != nil {
+			slog.Error("find ssh key: migrate", "user", username, "err", err)
 			continue
 		}
 
@@ -188,7 +228,11 @@ func (s *Store) FindByFingerprint(fingerprint string) (string, *SSHKey, error) {
 			`SELECT id, name, public_key, fingerprint, created_at FROM ssh_keys WHERE fingerprint = ?`,
 			fingerprint,
 		).Scan(&k.ID, &k.Name, &k.PublicKey, &k.Fingerprint, &ts)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
 		if err != nil {
+			slog.Error("find ssh key", "user", username, "err", err)
 			continue
 		}
 		k.CreatedAt = time.Unix(ts, 0)

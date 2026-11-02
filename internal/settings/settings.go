@@ -3,7 +3,11 @@ package settings
 
 import (
 	"database/sql"
+	"errors"
+	"fmt"
+	"log/slog"
 	"strconv"
+	"strings"
 )
 
 const KeyPublicRegistration = "public_registration"
@@ -58,35 +62,108 @@ func NewStore(db *sql.DB) *Store {
 func (s *Store) Get(key string) (string, error) {
 	var val string
 	err := s.db.QueryRow(`SELECT value FROM system_settings WHERE key = ?`, key).Scan(&val)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
-	return val, err
+	if err != nil {
+		return "", fmt.Errorf("get setting %q: %w", key, err)
+	}
+	return val, nil
 }
+
+// GetMany returns the values for several keys in one query. Keys that are
+// not set are absent from the map, which reads as "" like Get.
+func (s *Store) GetMany(keys ...string) (map[string]string, error) {
+	out := make(map[string]string, len(keys))
+	if len(keys) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(keys))
+	for i, k := range keys {
+		args[i] = k
+	}
+	rows, err := s.db.Query(`SELECT key, value FROM system_settings WHERE key IN (?`+strings.Repeat(`, ?`, len(keys)-1)+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get settings: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, fmt.Errorf("get settings: scan: %w", err)
+		}
+		out[k] = v
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get settings: %w", err)
+	}
+	return out, nil
+}
+
+const upsertSQL = `INSERT INTO system_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`
 
 // Set upserts a key/value pair.
 func (s *Store) Set(key, value string) error {
-	_, err := s.db.Exec(
-		`INSERT INTO system_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-		key, value,
-	)
-	return err
+	if _, err := s.db.Exec(upsertSQL, key, value); err != nil {
+		return fmt.Errorf("set setting %q: %w", key, err)
+	}
+	return nil
 }
 
-// GetBool returns true if the value for key is "true".
+// SetMany upserts several key/value pairs in one transaction, so a form that
+// saves a group of settings either stores all of them or none.
+func (s *Store) SetMany(values map[string]string) (err error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("set settings: begin: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	stmt, err := tx.Prepare(upsertSQL)
+	if err != nil {
+		return fmt.Errorf("set settings: prepare: %w", err)
+	}
+	defer stmt.Close()
+	for k, v := range values {
+		if _, err := stmt.Exec(k, v); err != nil {
+			return fmt.Errorf("set setting %q: %w", k, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("set settings: commit: %w", err)
+	}
+	return nil
+}
+
+// GetBool returns true if the value for key is "true". A database error is
+// logged and reads as false.
 func (s *Store) GetBool(key string) bool {
 	val, err := s.Get(key)
-	return err == nil && val == "true"
+	if err != nil {
+		slog.Error("read setting", "key", key, "err", err)
+		return false
+	}
+	return val == "true"
 }
 
-// GetInt returns the integer value for a key, or the provided default if not found or invalid.
+// GetInt returns the integer value for a key, or the provided default if not
+// found or invalid. A database error or an unparsable stored value is logged
+// and reads as the default.
 func (s *Store) GetInt(key string, defaultVal int) int {
 	val, err := s.Get(key)
-	if err != nil || val == "" {
+	if err != nil {
+		slog.Error("read setting", "key", key, "err", err)
+		return defaultVal
+	}
+	if val == "" {
 		return defaultVal
 	}
 	n, err := strconv.Atoi(val)
 	if err != nil {
+		slog.Warn("setting is not an integer; using default", "key", key, "value", val, "default", defaultVal)
 		return defaultVal
 	}
 	return n
@@ -97,11 +174,15 @@ func (s *Store) SetInt(key string, val int) error {
 	return s.Set(key, strconv.Itoa(val))
 }
 
+// FormatBool is how SetBool stores a boolean, for use with SetMany.
+func FormatBool(val bool) string {
+	if val {
+		return "true"
+	}
+	return "false"
+}
+
 // SetBool sets a boolean value as "true" or "false".
 func (s *Store) SetBool(key string, val bool) error {
-	v := "false"
-	if val {
-		v = "true"
-	}
-	return s.Set(key, v)
+	return s.Set(key, FormatBool(val))
 }

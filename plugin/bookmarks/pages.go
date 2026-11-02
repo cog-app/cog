@@ -602,7 +602,12 @@ func (h *Pages) ImportBookmarks(w http.ResponseWriter, r *http.Request) {
 
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		plugin.SetFlash(w, plugin.Flash{Kind: "error", Message: "Choose a bookmarks file to import."})
+		msg := "Choose a bookmarks file to import."
+		if !errors.Is(err, http.ErrMissingFile) {
+			h.plugin.log.Error("read bookmarks import", "error", err)
+			msg = "The bookmarks file could not be read: " + err.Error()
+		}
+		plugin.SetFlash(w, plugin.Flash{Kind: "error", Message: msg})
 		http.Redirect(w, r, "/apps/bookmarks/import-export", http.StatusSeeOther)
 		return
 	}

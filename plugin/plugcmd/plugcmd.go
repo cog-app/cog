@@ -121,18 +121,26 @@ func (s *pluginServer) Register(_ *plugpb.Empty, stream grpc.ServerStreamingServ
 	}
 
 	// Use trusted registrar if trust env vars are set.
-	var reg cogplugin.PluginContext
-	if tr := newTrustedRegistrar(base); tr != nil {
+	var reg cogplugin.PluginContext = base
+	tr, err := newTrustedRegistrar(base)
+	if err != nil {
+		return err
+	}
+	if tr != nil {
 		reg = tr
-	} else {
-		reg = base
 	}
 
 	s.mu.Lock()
 	s.registrar = reg
 	s.mu.Unlock()
 
-	return s.plugin.Register(reg)
+	if err := s.plugin.Register(reg); err != nil {
+		return err
+	}
+	// The Register* methods cannot return an error, so a registration that
+	// never reached the host is reported here rather than leaving the plugin
+	// silently half-registered.
+	return base.sendErr
 }
 
 func (s *pluginServer) Start(ctx context.Context, _ *plugpb.Empty) (*plugpb.Empty, error) {
@@ -224,6 +232,18 @@ type capturingRegistrar struct {
 	server   *pluginServer
 	keySeq   int
 	schema   fs.FS
+	sendErr  error // first failure to stream a registration event
+}
+
+// send streams a registration event to the host, remembering the first
+// failure so Register can report it.
+func (r *capturingRegistrar) send(ev *plugpb.RegistrationEvent) {
+	if r.sendErr != nil {
+		return
+	}
+	if err := r.stream.Send(ev); err != nil {
+		r.sendErr = fmt.Errorf("send registration event: %w", err)
+	}
 }
 
 // RegisterSchema records the plugin's schema. A trusted plugin applies it when
@@ -247,7 +267,7 @@ func (r *capturingRegistrar) storeHandler(key string, h http.Handler) {
 func (r *capturingRegistrar) RegisterAPI(path string, handler http.Handler) {
 	key := r.nextKey("api")
 	r.storeHandler(key, handler)
-	r.stream.Send(&plugpb.RegistrationEvent{
+	r.send(&plugpb.RegistrationEvent{
 		Event: &plugpb.RegistrationEvent_Api{
 			Api: &plugpb.RegisterAPIEvent{Path: path, RouteKey: key},
 		},
@@ -257,7 +277,7 @@ func (r *capturingRegistrar) RegisterAPI(path string, handler http.Handler) {
 func (r *capturingRegistrar) RegisterPage(path string, handler http.Handler) {
 	key := r.nextKey("page")
 	r.storeHandler(key, handler)
-	r.stream.Send(&plugpb.RegistrationEvent{
+	r.send(&plugpb.RegistrationEvent{
 		Event: &plugpb.RegistrationEvent_Page{
 			Page: &plugpb.RegisterPageEvent{Path: path, RouteKey: key},
 		},
@@ -267,7 +287,7 @@ func (r *capturingRegistrar) RegisterPage(path string, handler http.Handler) {
 func (r *capturingRegistrar) RegisterAction(method, path string, handler http.Handler) {
 	key := r.nextKey("action")
 	r.storeHandler(key, handler)
-	r.stream.Send(&plugpb.RegistrationEvent{
+	r.send(&plugpb.RegistrationEvent{
 		Event: &plugpb.RegistrationEvent_Action{
 			Action: &plugpb.RegisterActionEvent{Method: method, Path: path, RouteKey: key},
 		},
@@ -282,7 +302,7 @@ func (r *capturingRegistrar) RegisterResource(def cogplugin.ResourceDef) {
 			def.Handler.ServeResource(w, req, resourceID)
 		}))
 	}
-	r.stream.Send(&plugpb.RegistrationEvent{
+	r.send(&plugpb.RegistrationEvent{
 		Event: &plugpb.RegistrationEvent_Resource{
 			Resource: &plugpb.RegisterResourceEvent{
 				Type:         def.Type,
@@ -299,7 +319,7 @@ func (r *capturingRegistrar) RegisterHook(hookName string, callback cogplugin.Ho
 	r.server.mu.Lock()
 	r.server.hooks[hookName] = append(r.server.hooks[hookName], callback)
 	r.server.mu.Unlock()
-	r.stream.Send(&plugpb.RegistrationEvent{
+	r.send(&plugpb.RegistrationEvent{
 		Event: &plugpb.RegistrationEvent_Hook{
 			Hook: &plugpb.RegisterHookEvent{HookName: hookName},
 		},
@@ -307,7 +327,7 @@ func (r *capturingRegistrar) RegisterHook(hookName string, callback cogplugin.Ho
 }
 
 func (r *capturingRegistrar) RegisterNavItem(item cogplugin.NavItem) {
-	r.stream.Send(&plugpb.RegistrationEvent{
+	r.send(&plugpb.RegistrationEvent{
 		Event: &plugpb.RegistrationEvent_NavItem{
 			NavItem: &plugpb.RegisterNavItemEvent{
 				Label: item.Label,
@@ -323,7 +343,7 @@ func (r *capturingRegistrar) RegisterWidget(w cogplugin.Widget) {
 	r.server.mu.Lock()
 	r.server.widgets[key] = w
 	r.server.mu.Unlock()
-	r.stream.Send(&plugpb.RegistrationEvent{
+	r.send(&plugpb.RegistrationEvent{
 		Event: &plugpb.RegistrationEvent_Widget{
 			Widget: &plugpb.RegisterWidgetEvent{
 				Title:     w.Title,

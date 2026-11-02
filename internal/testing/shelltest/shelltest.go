@@ -106,7 +106,10 @@ func NewFromEnv(t testing.TB, env *cogtest.Env, user *cogtest.User, opts ...Opti
 	t.Helper()
 
 	filesDir := env.Providers.Plugins.UserFilesDir(user.Username)
-	userFS, _ := env.Providers.Plugins.UserFS(user.Username)
+	userFS, err := env.Providers.Plugins.UserFS(user.Username)
+	if err != nil {
+		t.Fatalf("shelltest: user fs for %s: %v", user.Username, err)
+	}
 
 	cfg := config{
 		width:      80,

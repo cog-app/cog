@@ -3,8 +3,11 @@ package compat
 import (
 	"crypto/md5"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -167,19 +170,24 @@ func (nc *NCCompat) RegisterRoutes(mux *http.ServeMux) {
 func (nc *NCCompat) HandleAvatar(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("userID")
 
-	u, err := nc.Users.GetByID(userID)
+	u, err := userByIDOrName(nc.Users, userID)
 	if err != nil {
-		// Try by username (NC clients may use either)
-		u, err = nc.Users.GetByUsername(userID)
-	}
-	if err != nil {
+		if !errors.Is(err, user.ErrNotFound) {
+			slog.Error("nc avatar: look up user", "user", userID, "err", err)
+		}
 		serveInitialsSVG(w, "?", userID)
 		return
 	}
 
 	if u.Avatar != "" {
-		avatarPath := filepath.Join(nc.DataDir, "avatars", u.Avatar)
-		if f, err := os.Open(avatarPath); err == nil {
+		// filepath.Base keeps a malformed DB value from reaching outside
+		// the avatars directory (as in the web avatar handler).
+		avatarPath := filepath.Join(nc.DataDir, "avatars", filepath.Base(u.Avatar))
+		f, err := os.Open(avatarPath)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			slog.Error("nc avatar: open image", "user", u.ID, "err", err)
+		}
+		if err == nil {
 			defer f.Close()
 			ext := filepath.Ext(u.Avatar)
 			switch ext {
@@ -243,14 +251,19 @@ func (nc *NCCompat) HandleActivity(w http.ResponseWriter, r *http.Request) {
 		if objectType != "" && objectIDStr != "" {
 			entries, err = nc.Activities.ListByObject(objectType, objectIDStr, limit)
 		} else if sinceStr != "" {
-			sinceID, _ := strconv.ParseInt(sinceStr, 10, 64)
+			sinceID, perr := strconv.ParseInt(sinceStr, 10, 64)
+			if perr != nil {
+				writeOCSErrorReq(w, r, http.StatusBadRequest, 400, "invalid since")
+				return
+			}
 			entries, err = nc.Activities.ListSince(u.Username, sinceID, limit)
 		} else {
 			entries, err = nc.Activities.List(u.Username, limit, 0)
 		}
 	}
 	if err != nil {
-		writeOCSReq(w, r, http.StatusOK, []any{})
+		slog.Error("nc activity: list", "user", u.Username, "err", err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "list activities failed")
 		return
 	}
 
@@ -260,7 +273,10 @@ func (nc *NCCompat) HandleActivity(w http.ResponseWriter, r *http.Request) {
 		var subjectRich []any
 		if a.SubjectTemplate != "" {
 			var params map[string]any
-			if json.Unmarshal([]byte(a.SubjectParams), &params) == nil {
+			if err := json.Unmarshal([]byte(a.SubjectParams), &params); err != nil {
+				// Fall back to the plain subject below.
+				slog.Warn("nc activity: bad subject params", "activity", a.ID, "err", err)
+			} else {
 				subjectRich = []any{a.SubjectTemplate, params}
 			}
 		}
@@ -316,8 +332,13 @@ func (h *PreviewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	meta, err := h.Files.GetByID(u.Username, fileID)
-	if err != nil {
+	if errors.Is(err, files.ErrNotFound) {
 		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		slog.Error("nc preview: look up file", "user", u.Username, "file", fileID, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
@@ -335,6 +356,9 @@ func (h *PreviewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	f, err := h.Files.Preview(u.Username, meta.Path, size)
 	if err != nil {
+		// A file the thumbnailer can't read has no preview; clients fall
+		// back to an icon on 404.
+		slog.Warn("nc preview", "user", u.Username, "path", meta.Path, "err", err)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -368,11 +392,8 @@ func (nc *NCCompat) HandleSearch(w http.ResponseWriter, r *http.Request) {
 
 	results, err := nc.Files.Search(u.Username, term)
 	if err != nil {
-		writeOCSReq(w, r, http.StatusOK, map[string]any{
-			"name":    "Files",
-			"entries": []any{},
-			"cursor":  0,
-		})
+		slog.Error("nc search", "user", u.Username, "err", err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "search failed")
 		return
 	}
 
@@ -416,12 +437,14 @@ func (nc *NCCompat) HandleSearch(w http.ResponseWriter, r *http.Request) {
 func (nc *NCCompat) HandleProfile(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("userId")
 
-	target, err := nc.Users.GetByID(userID)
-	if err != nil {
-		target, err = nc.Users.GetByUsername(userID)
+	target, err := userByIDOrName(nc.Users, userID)
+	if errors.Is(err, user.ErrNotFound) {
+		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "user not found")
+		return
 	}
 	if err != nil {
-		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "user not found")
+		slog.Error("nc profile: look up user", "user", userID, "err", err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 		return
 	}
 

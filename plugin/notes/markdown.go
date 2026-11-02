@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/md5"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -72,6 +73,7 @@ func RenderMarkdown(markdown string) string {
 
 	var buf bytes.Buffer
 	if err := md.Convert([]byte(processed), &buf); err != nil {
+		slog.Error("render markdown", "err", err)
 		return ""
 	}
 	result := buf.String()

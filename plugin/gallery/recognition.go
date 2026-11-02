@@ -169,52 +169,44 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 		imagePath := p.resolveLocalPath(username, m.FilePath)
 		now := p.ctx.Now().Unix()
 
+		var tags []RecognizedTag
+		var faces []DetectedFace
+		var failure error
 		if shared {
 			// Both features share a backend — call Analyze once.
-			result, analyzeErr := tagBackend.Analyze(ctx, imagePath)
-			if analyzeErr != nil {
-				p.log.Error("recognize", "path", m.FilePath, "err", analyzeErr)
-				if err := markFailed(db, m.ID, now, analyzeErr); err != nil {
-					return err
-				}
-				continue
-			}
-			if err := storeTags(db, m.ID, result.Tags, tagMinConf); err != nil {
-				return err
-			}
-			if err := storeFaces(db, m.ID, result.Faces, faceMinConf); err != nil {
-				return err
+			result, err := tagBackend.Analyze(ctx, imagePath)
+			if err != nil {
+				failure = err
+			} else {
+				tags, faces = result.Tags, result.Faces
 			}
 		} else {
-			// Different backends — call each independently.
-			var anyErr error
+			// Different backends — call each independently. One failing
+			// still keeps what the other found.
 			if tagBackend != nil {
-				result, err := tagBackend.Analyze(ctx, imagePath)
-				if err != nil {
-					anyErr = err
-				} else if err := storeTags(db, m.ID, result.Tags, tagMinConf); err != nil {
-					return err
+				if result, err := tagBackend.Analyze(ctx, imagePath); err != nil {
+					failure = err
+				} else {
+					tags = result.Tags
 				}
 			}
 			if faceBackend != nil {
-				result, err := faceBackend.Analyze(ctx, imagePath)
-				if err != nil {
-					anyErr = err
-				} else if err := storeFaces(db, m.ID, result.Faces, faceMinConf); err != nil {
-					return err
+				if result, err := faceBackend.Analyze(ctx, imagePath); err != nil {
+					failure = err
+				} else {
+					faces = result.Faces
 				}
-			}
-			if anyErr != nil {
-				p.log.Error("recognize", "path", m.FilePath, "err", anyErr)
-				if err := markFailed(db, m.ID, now, anyErr); err != nil {
-					return err
-				}
-				continue
 			}
 		}
+		if failure != nil {
+			p.log.Error("recognize", "path", m.FilePath, "err", failure)
+		}
 
-		if _, err := db.Exec(`UPDATE media SET recognition_state = 1, recognition_at = ? WHERE id = ?`, now, m.ID); err != nil {
-			return fmt.Errorf("mark %s recognized: %w", m.FilePath, err)
+		if err := storeRecognition(db, m.ID, tags, faces, tagMinConf, faceMinConf, now, failure); err != nil {
+			return fmt.Errorf("store recognition for %s: %w", m.FilePath, err)
+		}
+		if failure != nil {
+			continue
 		}
 		processed++
 		if processed%50 == 0 {
@@ -227,17 +219,40 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 	return nil
 }
 
-// markFailed records that recognition failed for a media item, so the pass
-// does not retry it.
-func markFailed(db *sql.DB, mediaID, now int64, cause error) error {
-	if _, err := db.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ?, recognition_error = ? WHERE id = ?`,
-		now, cause.Error(), mediaID); err != nil {
-		return fmt.Errorf("mark media %d failed: %w", mediaID, err)
-	}
-	return nil
+// execQuerier is what the recognition writes need: a *sql.DB or a *sql.Tx.
+type execQuerier interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	QueryRow(query string, args ...any) *sql.Row
 }
 
-func storeTags(db *sql.DB, mediaID int64, tags []RecognizedTag, minConf float64) error {
+// storeRecognition stores what recognition found for a media item and marks
+// it done — or, with failure, failed, so the pass does not retry it — in one
+// transaction, so a crash part way neither loses the state nor stores the
+// tags and faces twice on the next pass.
+func storeRecognition(db *sql.DB, mediaID int64, tags []RecognizedTag, faces []DetectedFace, tagMinConf, faceMinConf float64, now int64, failure error) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback()
+	if err := storeTags(tx, mediaID, tags, tagMinConf); err != nil {
+		return err
+	}
+	if err := storeFaces(tx, mediaID, faces, faceMinConf); err != nil {
+		return err
+	}
+	if failure != nil {
+		if _, err := tx.Exec(`UPDATE media SET recognition_state = 2, recognition_at = ?, recognition_error = ? WHERE id = ?`,
+			now, failure.Error(), mediaID); err != nil {
+			return fmt.Errorf("mark media %d failed: %w", mediaID, err)
+		}
+	} else if _, err := tx.Exec(`UPDATE media SET recognition_state = 1, recognition_at = ? WHERE id = ?`, now, mediaID); err != nil {
+		return fmt.Errorf("mark media %d recognized: %w", mediaID, err)
+	}
+	return tx.Commit()
+}
+
+func storeTags(db execQuerier, mediaID int64, tags []RecognizedTag, minConf float64) error {
 	for _, tag := range tags {
 		if tag.Confidence < minConf {
 			continue
@@ -253,7 +268,7 @@ func storeTags(db *sql.DB, mediaID int64, tags []RecognizedTag, minConf float64)
 	return nil
 }
 
-func storeFaces(db *sql.DB, mediaID int64, faces []DetectedFace, minConf float64) error {
+func storeFaces(db execQuerier, mediaID int64, faces []DetectedFace, minConf float64) error {
 	for i := range faces {
 		if faces[i].Confidence < minConf {
 			continue
@@ -266,7 +281,7 @@ func storeFaces(db *sql.DB, mediaID int64, faces []DetectedFace, minConf float64
 }
 
 // storeFace inserts a detected face into the database.
-func storeFace(db *sql.DB, mediaID int64, face *DetectedFace) error {
+func storeFace(db execQuerier, mediaID int64, face *DetectedFace) error {
 	// Clamp bounding box.
 	x := clamp(face.X, 0, 1)
 	y := clamp(face.Y, 0, 1)

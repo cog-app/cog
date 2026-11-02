@@ -220,16 +220,25 @@ func (p *Plugin) Preview(username, filePath string, size int) (*os.File, error) 
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return nil, fmt.Errorf("mkdir cache: %w", err)
 	}
-	cacheFile, err := os.Create(cachePath)
+	// Written beside the cache entry and renamed into place, so a request
+	// for the same thumbnail meanwhile never opens a half-written one.
+	cacheFile, err := os.CreateTemp(cacheDir, meta.ETag+".*.tmp")
 	if err != nil {
 		return nil, fmt.Errorf("create cache: %w", err)
 	}
-	if err := jpeg.Encode(cacheFile, dst, &jpeg.Options{Quality: 80}); err != nil {
-		cacheFile.Close()
-		os.Remove(cachePath)
-		return nil, fmt.Errorf("encode jpeg: %w", err)
+	err = jpeg.Encode(cacheFile, dst, &jpeg.Options{Quality: 80})
+	if cerr := cacheFile.Close(); err == nil {
+		err = cerr
 	}
-	cacheFile.Close()
+	if err == nil {
+		err = os.Rename(cacheFile.Name(), cachePath)
+	}
+	if err != nil {
+		if rmErr := os.Remove(cacheFile.Name()); rmErr != nil {
+			p.log.Error("remove partial thumbnail", "path", cacheFile.Name(), "err", rmErr)
+		}
+		return nil, fmt.Errorf("write thumbnail: %w", err)
+	}
 
 	// Return the cached file.
 	return os.Open(cachePath)
@@ -317,7 +326,11 @@ func (p *Plugin) PreviewPDF(username, filePath string) (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			p.log.Error("remove libreoffice temp dir", "path", tmpDir, "err", err)
+		}
+	}()
 
 	// Copy source file with original extension (LO needs it).
 	srcPath := filepath.Join(filesDir, filePath)

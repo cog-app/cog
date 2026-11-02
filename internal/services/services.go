@@ -93,7 +93,9 @@ func New(log *slog.Logger, cfg config.Config, plugins ...plugin.Plugin) (*Provid
 		return nil, fmt.Errorf("open system db: %w", err)
 	}
 	if err := db.Migrate(sysDB); err != nil {
-		sysDB.Close()
+		if cerr := sysDB.Close(); cerr != nil {
+			log.Error("close system db after failed migration", "err", cerr)
+		}
 		return nil, fmt.Errorf("migrate system db: %w", err)
 	}
 
@@ -101,7 +103,9 @@ func New(log *slog.Logger, cfg config.Config, plugins ...plugin.Plugin) (*Provid
 
 	p, err := NewFromDB(log, cfg, sysDB, clock.System(), plugins...)
 	if err != nil {
-		sysDB.Close()
+		if cerr := sysDB.Close(); cerr != nil {
+			log.Error("close system db after failed setup", "err", cerr)
+		}
 		return nil, err
 	}
 	WireSearch(log, p, mgr)
@@ -136,31 +140,39 @@ func WireSearch(log *slog.Logger, p *Providers, mgr *search.Manager) {
 		switch rec.SubjectType {
 		case "USER":
 			u, err := p.Users.GetByID(rec.SubjectID)
+			if errors.Is(err, user.ErrNotFound) {
+				return nil
+			}
 			if err != nil {
+				log.Error("share recipients: look up user", "share", rec.ID, "user", rec.SubjectID, "err", err)
 				return nil
 			}
 			return []string{u.Username}
 		case "GROUP":
 			userIDs, err := p.Groups.ListClosureUserIDs(rec.SubjectID)
 			if err != nil {
+				log.Error("share recipients: list group members", "share", rec.ID, "group", rec.SubjectID, "err", err)
 				return nil
 			}
 			var names []string
 			for _, id := range userIDs {
 				u, err := p.Users.GetByID(id)
+				if errors.Is(err, user.ErrNotFound) {
+					continue
+				}
 				if err != nil {
+					// Index for the members we could resolve rather than none.
+					log.Error("share recipients: look up member", "share", rec.ID, "user", id, "err", err)
 					continue
 				}
 				names = append(names, u.Username)
 			}
 			return names
 		case "INSTANCE":
-			var names []string
-			for u, err := range p.Users.List() {
-				if err != nil {
-					break
-				}
-				names = append(names, u.Username)
+			names, err := p.Users.Usernames()
+			if err != nil {
+				log.Error("share recipients: list users", "share", rec.ID, "err", err)
+				return nil
 			}
 			return names
 		default:
@@ -339,7 +351,7 @@ func (p *Providers) SeedPlugins(username string) error {
 
 	// Seed plugin data for the admin user concurrently.
 	var wg sync.WaitGroup
-	for i, id := range p.Plugins.PluginIDs() {
+	for i, id := range pluginIDs {
 		plug, ok := p.Plugins.Plugin(id)
 		if !ok {
 			continue

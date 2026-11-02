@@ -244,7 +244,7 @@ func recipeFromForm(r *http.Request, recipe *Recipe) error {
 }
 
 // saveLists stores the recipe's ingredients, steps and tags from the form.
-func saveLists(db *sql.DB, id int64, r *http.Request) error {
+func saveLists(db execer, id int64, r *http.Request) error {
 	if err := SetIngredients(db, id, splitLines(r.FormValue("ingredients"))); err != nil {
 		return fmt.Errorf("save ingredients: %w", err)
 	}
@@ -269,12 +269,15 @@ func (h *Pages) CreateRecipe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	id, err := CreateRecipe(db, recipe)
+	var id int64
+	err = inTx(db, func(tx *sql.Tx) error {
+		var err error
+		if id, err = CreateRecipe(tx, recipe); err != nil {
+			return fmt.Errorf("create recipe: %w", err)
+		}
+		return saveLists(tx, id, r)
+	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := saveLists(db, id, r); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -306,11 +309,13 @@ func (h *Pages) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := UpdateRecipe(db, recipe); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := saveLists(db, id, r); err != nil {
+	err = inTx(db, func(tx *sql.Tx) error {
+		if err := UpdateRecipe(tx, recipe); err != nil {
+			return fmt.Errorf("update recipe: %w", err)
+		}
+		return saveLists(tx, id, r)
+	})
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

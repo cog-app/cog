@@ -39,16 +39,19 @@ func ImportYouTubeTakeout(s *Store, data []byte) (int, error) {
 			continue
 		}
 
-		if _, err := s.CreateSubscription(Subscription{
+		created, err := s.importSubscription(Subscription{
 			Kind:            "youtube",
 			URL:             channelURL,
 			Title:           channelTitle,
 			PollIntervalSec: 1800,
 			NextCheckAt:     1,
-		}); err == nil {
+		})
+		if err != nil {
+			return count, fmt.Errorf("import youtube takeout: %w", err)
+		}
+		if created {
 			count++
 		}
-		// Duplicate URLs are rejected by the UNIQUE constraint; skip silently.
 	}
 
 	return count, nil

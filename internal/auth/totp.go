@@ -65,12 +65,9 @@ func (s *TOTPStore) ConfirmSetup(userID, code string) ([]string, error) {
 		return nil, fmt.Errorf("invalid totp code")
 	}
 
-	_, err = s.db.Exec(`UPDATE users SET mfa_method = 'totp' WHERE id = ?`, userID)
-	if err != nil {
-		return nil, fmt.Errorf("enable totp: %w", err)
-	}
-
-	return s.regenerateBackupCodes(userID)
+	// Enabling MFA and issuing its backup codes happen together: a user must
+	// never have TOTP enabled with no way to recover from a lost device.
+	return s.regenerateBackupCodes(userID, `UPDATE users SET mfa_method = 'totp' WHERE id = ?`)
 }
 
 // Validate checks a TOTP code or backup code for the user.
@@ -90,21 +87,24 @@ func (s *TOTPStore) Validate(userID, code string) (bool, error) {
 
 // Disable removes TOTP configuration and all backup codes for the user.
 func (s *TOTPStore) Disable(userID string) error {
-	_, err := s.db.Exec(`UPDATE users SET totp_secret = '', mfa_method = '' WHERE id = ?`, userID)
+	tx, err := s.db.Begin()
 	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE users SET totp_secret = '', mfa_method = '' WHERE id = ?`, userID); err != nil {
 		return fmt.Errorf("disable totp: %w", err)
 	}
-	_, err = s.db.Exec(`DELETE FROM totp_backup_codes WHERE user_id = ?`, userID)
-	if err != nil {
+	if _, err := tx.Exec(`DELETE FROM totp_backup_codes WHERE user_id = ?`, userID); err != nil {
 		return fmt.Errorf("delete backup codes: %w", err)
 	}
-	return nil
+	return tx.Commit()
 }
 
 // RegenerateBackupCodes deletes existing codes and creates new ones.
 // Returns the plaintext codes.
 func (s *TOTPStore) RegenerateBackupCodes(userID string) ([]string, error) {
-	return s.regenerateBackupCodes(userID)
+	return s.regenerateBackupCodes(userID, "")
 }
 
 // BackupCodeCount returns the number of unused backup codes for the user.
@@ -160,46 +160,65 @@ func (s *TOTPStore) validateBackupCode(userID, code string) (bool, error) {
 	if matched == "" {
 		return false, nil
 	}
-	if _, err := s.db.Exec(`UPDATE totp_backup_codes SET used = 1 WHERE id = ?`, matched); err != nil {
+	// used = 0 in the WHERE makes the claim atomic: of two requests racing
+	// with the same code, only one changes the row.
+	res, err := s.db.Exec(`UPDATE totp_backup_codes SET used = 1 WHERE id = ? AND used = 0`, matched)
+	if err != nil {
 		return false, fmt.Errorf("mark backup code used: %w", err)
 	}
-	return true, nil
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("rows affected: %w", err)
+	}
+	return n == 1, nil
 }
 
-func (s *TOTPStore) regenerateBackupCodes(userID string) ([]string, error) {
-	// Delete existing codes.
-	if _, err := s.db.Exec(`DELETE FROM totp_backup_codes WHERE user_id = ?`, userID); err != nil {
-		return nil, fmt.Errorf("delete old backup codes: %w", err)
-	}
-
+// regenerateBackupCodes replaces the user's backup codes, and runs also (if
+// not empty, with userID as its argument) in the same transaction. The codes
+// are hashed first, so the transaction is not held open across bcrypt.
+func (s *TOTPStore) regenerateBackupCodes(userID, also string) ([]string, error) {
 	const numCodes = 10
 	codes := make([]string, numCodes)
+	ids := make([]string, numCodes)
+	hashes := make([][]byte, numCodes)
 	for i := range codes {
 		c, err := generateBackupCode()
 		if err != nil {
 			return nil, err
 		}
 		codes[i] = c
-	}
-
-	for _, code := range codes {
-		id, err := generateToken(16)
-		if err != nil {
+		if ids[i], err = generateToken(16); err != nil {
 			return nil, err
 		}
-		hash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
-		if err != nil {
+		if hashes[i], err = bcrypt.GenerateFromPassword([]byte(c), bcrypt.DefaultCost); err != nil {
 			return nil, fmt.Errorf("hash backup code: %w", err)
 		}
-		_, err = s.db.Exec(
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	if also != "" {
+		if _, err := tx.Exec(also, userID); err != nil {
+			return nil, fmt.Errorf("enable totp: %w", err)
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM totp_backup_codes WHERE user_id = ?`, userID); err != nil {
+		return nil, fmt.Errorf("delete old backup codes: %w", err)
+	}
+	for i := range codes {
+		if _, err := tx.Exec(
 			`INSERT INTO totp_backup_codes (id, user_id, code_hash) VALUES (?, ?, ?)`,
-			id, userID, string(hash),
-		)
-		if err != nil {
+			ids[i], userID, string(hashes[i]),
+		); err != nil {
 			return nil, fmt.Errorf("insert backup code: %w", err)
 		}
 	}
-
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit backup codes: %w", err)
+	}
 	return codes, nil
 }
 

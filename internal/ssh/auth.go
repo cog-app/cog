@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"errors"
 	"fmt"
 
 	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
@@ -25,6 +26,10 @@ type appPasswordValidator interface {
 func (a *authCallbacks) passwordCallback(conn gossh.ConnMetadata, password []byte) (*gossh.Permissions, error) {
 	// Try user password first.
 	u, err := a.users.Authenticate(conn.User(), string(password))
+	if err != nil && !errors.Is(err, user.ErrAuthFailed) {
+		// A lookup failure, not a wrong password: don't let it pass for one.
+		return nil, fmt.Errorf("authenticate %q: %w", conn.User(), err)
+	}
 	if err == nil {
 		return &gossh.Permissions{
 			Extensions: map[string]string{

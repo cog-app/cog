@@ -115,14 +115,18 @@ func (s *Store) ImportOPML(data []byte) (int, error) {
 	for _, outline := range doc.Body.Outlines {
 		if outline.XMLURL != "" {
 			// Top-level subscription, no folder.
-			if _, err := s.CreateSubscription(Subscription{
+			created, err := s.importSubscription(Subscription{
 				Kind:            "rss",
 				URL:             outline.XMLURL,
 				Title:           outlineTitle(outline),
 				SiteURL:         outline.HTMLURL,
 				PollIntervalSec: 1800,
 				NextCheckAt:     1,
-			}); err == nil {
+			})
+			if err != nil {
+				return count, fmt.Errorf("import opml: %w", err)
+			}
+			if created {
 				count++
 			}
 			continue
@@ -156,7 +160,7 @@ func (s *Store) ImportOPML(data []byte) (int, error) {
 			if child.XMLURL == "" {
 				continue
 			}
-			if _, err := s.CreateSubscription(Subscription{
+			created, err := s.importSubscription(Subscription{
 				Kind:            "rss",
 				URL:             child.XMLURL,
 				Title:           outlineTitle(child),
@@ -164,7 +168,11 @@ func (s *Store) ImportOPML(data []byte) (int, error) {
 				FolderID:        folderID,
 				PollIntervalSec: 1800,
 				NextCheckAt:     1,
-			}); err == nil {
+			})
+			if err != nil {
+				return count, fmt.Errorf("import opml: %w", err)
+			}
+			if created {
 				count++
 			}
 		}

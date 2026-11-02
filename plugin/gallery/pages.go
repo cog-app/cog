@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	"net/http"
 	"net/url"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -370,8 +371,12 @@ func (h *Pages) MediaDetailAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m, err := GetMedia(db, id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.serverError(w, r, err)
 		return
 	}
 	plugin.WriteJSON(w, http.StatusOK, m)
@@ -390,8 +395,12 @@ func (h *Pages) MediaThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m, err := GetMedia(db, id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -405,6 +414,7 @@ func (h *Pages) MediaThumbnail(w http.ResponseWriter, r *http.Request) {
 	username := plugin.Username(r)
 	f, err := h.plugin.PreviewPath(username, m, size)
 	if err != nil {
+		h.plugin.log.Warn("thumbnail", "media", m.ID, "err", err)
 		http.Error(w, "thumbnail unavailable", http.StatusNotFound)
 		return
 	}
@@ -428,19 +438,28 @@ func (h *Pages) FaceThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	face, err := GetFaceWithMedia(db, faceID)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
 		return
 	}
-	m, err := GetMedia(db, face.MediaID)
 	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	m, err := GetMedia(db, face.MediaID)
+	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.serverError(w, r, err)
 		return
 	}
 
 	username := plugin.Username(r)
 	thumbFile, err := h.plugin.PreviewPath(username, m, 1024)
 	if err != nil {
+		h.plugin.log.Warn("face thumbnail", "media", m.ID, "err", err)
 		http.Error(w, "thumbnail unavailable", http.StatusNotFound)
 		return
 	}
@@ -448,6 +467,7 @@ func (h *Pages) FaceThumbnail(w http.ResponseWriter, r *http.Request) {
 
 	img, _, err := image.Decode(thumbFile)
 	if err != nil {
+		h.plugin.log.Error("face thumbnail: decode", "media", m.ID, "err", err)
 		http.Error(w, "decode error", http.StatusInternalServerError)
 		return
 	}
@@ -885,31 +905,37 @@ func (h *Pages) setContactPhotoFromFace(username, contactUID string, galleryDB *
 	if h.plugin.contacts == nil {
 		return
 	}
+	if err := h.contactPhotoFromFace(username, contactUID, galleryDB, personID); err != nil {
+		h.plugin.log.Error("set contact photo from face", "person", personID, "err", err)
+	}
+}
+
+func (h *Pages) contactPhotoFromFace(username, contactUID string, galleryDB *sql.DB, personID int64) error {
 	person, err := GetPerson(galleryDB, personID)
-	if err != nil || person.BestFaceID == nil {
-		return
+	if err != nil {
+		return fmt.Errorf("person: %w", err)
+	}
+	if person.BestFaceID == nil {
+		return nil // no face to use
 	}
 	face, err := GetFaceWithMedia(galleryDB, *person.BestFaceID)
 	if err != nil {
-		return
+		return fmt.Errorf("face %d: %w", *person.BestFaceID, err)
 	}
 	m, err := GetMedia(galleryDB, face.MediaID)
 	if err != nil {
-		return
+		return fmt.Errorf("media %d: %w", face.MediaID, err)
 	}
 	thumbFile, err := h.plugin.PreviewPath(username, m, 1024)
 	if err != nil {
-		return
+		return fmt.Errorf("thumbnail: %w", err)
 	}
 	defer thumbFile.Close()
 	img, _, err := image.Decode(thumbFile)
 	if err != nil {
-		return
+		return fmt.Errorf("decode thumbnail: %w", err)
 	}
-	cropped := cropFace(img, &face.Face)
-	if err := h.plugin.contacts.SetPhoto(username, contactUID, cropped); err != nil {
-		h.plugin.log.Error("set contact photo from face", "err", err)
-	}
+	return h.plugin.contacts.SetPhoto(username, contactUID, cropFace(img, &face.Face))
 }
 
 // cropFace crops a face region from an image with padding.
@@ -1080,7 +1106,11 @@ func (h *Pages) SearchTagsAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query().Get("q")
-	tags, _ := SearchTags(db, q, 10)
+	tags, err := SearchTags(db, q, 10)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	items := make([]ui.PickerItem, len(tags))
 	for i, t := range tags {
 		items[i] = ui.PickerItem{ID: t.Name, Name: t.Name}
@@ -1101,7 +1131,11 @@ func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 		q = r.URL.Query().Get("q")
 	}
 	excludeID, _ := strconv.ParseInt(r.URL.Query().Get("exclude"), 10, 64)
-	people, _ := SearchPeople(db, q, excludeID, 10)
+	people, err := SearchPeople(db, q, excludeID, 10)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	items := make([]ui.PickerItem, len(people))
 	for i, p := range people {
 		items[i] = ui.PickerItem{
@@ -1128,6 +1162,9 @@ func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 		for _, card := range cards {
 			// Skip contacts already linked to a gallery person.
 			if _, err := PersonByContactUID(db, card.UID); err == nil {
+				continue
+			} else if !errors.Is(err, sql.ErrNoRows) {
+				h.plugin.log.Error("person for contact", "uid", card.UID, "err", err)
 				continue
 			}
 			item := ui.PickerItem{
@@ -1299,42 +1336,42 @@ func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 	// Each settings card is a separate form with a _section hidden field.
 	// Only save settings for the submitted section to avoid overwriting
 	// checkbox values from the other form (unchecked checkboxes are absent).
+	var kv [][2]string
+	set := func(key string) { kv = append(kv, [2]string{key, r.FormValue(key)}) }
+	setIfGiven := func(key string) {
+		if r.FormValue(key) != "" {
+			set(key)
+		}
+	}
 	switch r.FormValue("_section") {
 	case "tags":
-		SetSetting(db, "tag_backend", r.FormValue("tag_backend"))
-		if v := r.FormValue("tag_model"); v != "" {
-			SetSetting(db, "tag_model", v)
-		}
-		if v := r.FormValue("tag_min_confidence"); v != "" {
-			SetSetting(db, "tag_min_confidence", v)
-		}
+		set("tag_backend")
+		setIfGiven("tag_model")
+		setIfGiven("tag_min_confidence")
 	case "faces":
-		SetSetting(db, "face_backend", r.FormValue("face_backend"))
-		if v := r.FormValue("face_min_confidence"); v != "" {
-			SetSetting(db, "face_min_confidence", v)
-		}
-		if v := r.FormValue("cluster_threshold"); v != "" {
-			SetSetting(db, "cluster_threshold", v)
-		}
+		set("face_backend")
+		setIfGiven("face_min_confidence")
+		setIfGiven("cluster_threshold")
 	case "duplicates":
-		SetSetting(db, "duplicate_detection_enabled", r.FormValue("duplicate_detection_enabled"))
-		if v := r.FormValue("duplicate_algorithm"); v != "" {
-			SetSetting(db, "duplicate_algorithm", v)
-		}
-		if v := r.FormValue("duplicate_distance"); v != "" {
-			SetSetting(db, "duplicate_distance", v)
-		}
+		set("duplicate_detection_enabled")
+		setIfGiven("duplicate_algorithm")
+		setIfGiven("duplicate_distance")
 	case "ocr":
-		SetSetting(db, "ocr_enabled", r.FormValue("ocr_enabled"))
+		set("ocr_enabled")
 	case "processing":
-		SetSetting(db, "preview_generation_enabled", r.FormValue("preview_generation_enabled"))
-		SetSetting(db, "quality_scoring_enabled", r.FormValue("quality_scoring_enabled"))
+		set("preview_generation_enabled")
+		set("quality_scoring_enabled")
 	case "backend":
-		SetSetting(db, "onnx_library_path", r.FormValue("onnx_library_path"))
-		SetSetting(db, "onnx_models_dir", r.FormValue("onnx_models_dir"))
-		SetSetting(db, "recognition_url", r.FormValue("recognition_url"))
-		SetSetting(db, "recognition_api_key", r.FormValue("recognition_api_key"))
-		SetSetting(db, "recognition_model", r.FormValue("recognition_model"))
+		set("onnx_library_path")
+		set("onnx_models_dir")
+		set("recognition_url")
+		set("recognition_api_key")
+		set("recognition_model")
+	}
+	if err := SetSettings(db, kv); err != nil {
+		h.plugin.log.Error("save gallery settings", "err", err)
+		flashRedirect(w, r, "error", "The settings could not be saved: "+err.Error(), "/admin/plugins/gallery")
+		return
 	}
 
 	http.Redirect(w, r, "/admin/plugins/gallery", http.StatusSeeOther)
@@ -1384,8 +1421,12 @@ func (h *Pages) TogglePhotoStar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m, err := GetMedia(db, id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		h.serverError(w, r, err)
 		return
 	}
 	if h.plugin.files == nil {
@@ -1438,7 +1479,7 @@ func (h *Pages) DuplicateGroupView(w http.ResponseWriter, r *http.Request) {
 	}
 	members, err := DuplicateGroupMembers(db, id)
 	if err != nil {
-		http.NotFound(w, r)
+		h.serverError(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, "Duplicate Group")
@@ -1490,14 +1531,60 @@ func (h *Pages) UnmarkDuplicate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// Delete group if fewer than 2 members remain.
-	count, _ := DuplicateGroupMemberCount(db, groupID)
-	if count < 2 {
-		DeleteDuplicateGroup(db, groupID)
-		http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
+	h.redirectAfterDuplicateChange(w, r, db, groupID, nil)
+}
+
+// deleteDuplicateFiles moves each member's file to the trash and drops it
+// from the gallery (which drops it from its duplicate group). A file that
+// cannot be deleted stays in the gallery and is named in failed; err is a
+// database failure.
+func (h *Pages) deleteDuplicateFiles(db *sql.DB, username string, members []DuplicateMember) (failed []string, err error) {
+	for _, m := range members {
+		if err := h.plugin.files.Delete(username, m.Media.FilePath); err != nil {
+			h.plugin.log.Warn("delete duplicate", "path", m.Media.FilePath, "err", err)
+			failed = append(failed, path.Base(m.Media.FilePath))
+			continue
+		}
+		if err := DeleteMediaByFileID(db, m.Media.FileID); err != nil {
+			return failed, fmt.Errorf("forget %s: %w", m.Media.FilePath, err)
+		}
+	}
+	return failed, nil
+}
+
+// pruneDuplicateGroup deletes a group with fewer than two members left, and
+// reports whether it did.
+func pruneDuplicateGroup(db *sql.DB, groupID int64) (bool, error) {
+	count, err := DuplicateGroupMemberCount(db, groupID)
+	if err != nil {
+		return false, fmt.Errorf("count group %d: %w", groupID, err)
+	}
+	if count >= 2 {
+		return false, nil
+	}
+	if err := DeleteDuplicateGroup(db, groupID); err != nil {
+		return false, fmt.Errorf("delete group %d: %w", groupID, err)
+	}
+	return true, nil
+}
+
+// redirectAfterDuplicateChange prunes the group and goes back to it, or to
+// the list when it is gone, saying which files could not be deleted.
+func (h *Pages) redirectAfterDuplicateChange(w http.ResponseWriter, r *http.Request, db *sql.DB, groupID int64, failed []string) {
+	gone, err := pruneDuplicateGroup(db, groupID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/duplicates/%d", groupID), http.StatusSeeOther)
+	to := fmt.Sprintf("/apps/gallery/duplicates/%d", groupID)
+	if gone {
+		to = "/apps/gallery/duplicates"
+	}
+	if len(failed) > 0 {
+		flashRedirect(w, r, "error", "Could not delete "+strings.Join(failed, ", ")+".", to)
+		return
+	}
+	http.Redirect(w, r, to, http.StatusSeeOther)
 }
 
 // DeleteNonKeepDuplicates deletes non-keep files in a duplicate group.
@@ -1518,17 +1605,23 @@ func (h *Pages) DeleteNonKeepDuplicates(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	for _, m := range members {
-		if m.IsKeep {
-			continue
-		}
-		if err := h.plugin.files.Delete(username, m.Media.FilePath); err != nil {
-			h.plugin.log.Warn("delete duplicate", "path", m.Media.FilePath, "err", err)
-		}
-		DeleteMediaByFileID(db, m.Media.FileID)
+	failed, err := h.deleteDuplicateFiles(db, username, nonKeep(members))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	DeleteDuplicateGroup(db, groupID)
-	http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
+	h.redirectAfterDuplicateChange(w, r, db, groupID, failed)
+}
+
+// nonKeep is the members not marked to keep.
+func nonKeep(members []DuplicateMember) []DuplicateMember {
+	var out []DuplicateMember
+	for _, m := range members {
+		if !m.IsKeep {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // DeleteAllNonKeep deletes non-keep files across all duplicate groups.
@@ -1544,21 +1637,27 @@ func (h *Pages) DeleteAllNonKeep(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	var failed []string
 	for _, g := range groups {
 		members, err := DuplicateGroupMembers(db, g.ID)
 		if err != nil {
-			continue
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-		for _, m := range members {
-			if m.IsKeep {
-				continue
-			}
-			if err := h.plugin.files.Delete(username, m.Media.FilePath); err != nil {
-				h.plugin.log.Warn("delete duplicate", "path", m.Media.FilePath, "err", err)
-			}
-			DeleteMediaByFileID(db, m.Media.FileID)
+		f, err := h.deleteDuplicateFiles(db, username, nonKeep(members))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-		DeleteDuplicateGroup(db, g.ID)
+		failed = append(failed, f...)
+		if _, err := pruneDuplicateGroup(db, g.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	if len(failed) > 0 {
+		flashRedirect(w, r, "error", "Could not delete "+strings.Join(failed, ", ")+".", "/apps/gallery/duplicates")
+		return
 	}
 	http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
 }
@@ -1582,22 +1681,21 @@ func (h *Pages) DeleteDuplicateMember(w http.ResponseWriter, r *http.Request) {
 	}
 	username := plugin.Username(r)
 	m, err := GetMedia(db, mediaID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := h.plugin.files.Delete(username, m.FilePath); err != nil {
-		h.plugin.log.Warn("delete duplicate member", "path", m.FilePath, "err", err)
-	}
-	DeleteMediaByFileID(db, m.FileID)
-	RemoveDuplicateMember(db, groupID, mediaID)
-	count, _ := DuplicateGroupMemberCount(db, groupID)
-	if count < 2 {
-		DeleteDuplicateGroup(db, groupID)
-		http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
+	// Deleting the media drops its membership too (ON DELETE CASCADE).
+	failed, err := h.deleteDuplicateFiles(db, username, []DuplicateMember{{Media: *m}})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/duplicates/%d", groupID), http.StatusSeeOther)
+	h.redirectAfterDuplicateChange(w, r, db, groupID, failed)
 }
 
 // DeleteAllDuplicates deletes all files in a duplicate group, including the keep.
@@ -1618,14 +1716,12 @@ func (h *Pages) DeleteAllDuplicates(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	for _, m := range members {
-		if err := h.plugin.files.Delete(username, m.Media.FilePath); err != nil {
-			h.plugin.log.Warn("delete duplicate", "path", m.Media.FilePath, "err", err)
-		}
-		DeleteMediaByFileID(db, m.Media.FileID)
+	failed, err := h.deleteDuplicateFiles(db, username, members)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	DeleteDuplicateGroup(db, groupID)
-	http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
+	h.redirectAfterDuplicateChange(w, r, db, groupID, failed)
 }
 
 // DismissDuplicateGroup removes a group from the duplicates list without deleting files.

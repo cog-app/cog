@@ -12,8 +12,10 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -33,6 +35,9 @@ import (
 var sqlFS embed.FS
 
 const PluginID = "files"
+
+// ErrNotFound is a path or ID the metadata has no file for.
+var ErrNotFound = errors.New("file not found")
 
 // FileMeta represents a file or directory's metadata.
 type FileMeta struct {
@@ -110,11 +115,19 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 			}
 			fsPath := filepath.Join(filesDir, fpath)
 			info, err := os.Stat(fsPath)
-			if err != nil || info.Size() > 1<<20 { // skip >1MB
+			if err != nil {
+				// Gone since the change was queued: nothing to index.
+				if !errors.Is(err, iofs.ErrNotExist) {
+					p.log.Error("index file content", "path", fpath, "err", err)
+				}
+				return ""
+			}
+			if info.Size() > 1<<20 { // skip >1MB
 				return ""
 			}
 			data, err := os.ReadFile(fsPath)
 			if err != nil {
+				p.log.Error("index file content", "path", fpath, "err", err)
 				return ""
 			}
 			return string(data)
@@ -251,6 +264,26 @@ func (p *Plugin) CreateDir(username, dirPath string) (*FileMeta, error) {
 	}, nil
 }
 
+// ensureDir creates dirPath unless the metadata already has it, as when an
+// archive names a folder that an earlier entry, or an earlier extraction,
+// already made.
+func (p *Plugin) ensureDir(username, dirPath string) error {
+	dirPath = normalizePath(dirPath)
+	db, err := p.DB(username)
+	if err != nil {
+		return err
+	}
+	var exists bool
+	if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM files WHERE path = ?)`, dirPath).Scan(&exists); err != nil {
+		return fmt.Errorf("check dir %s: %w", dirPath, err)
+	}
+	if exists {
+		return nil
+	}
+	_, err = p.CreateDir(username, dirPath)
+	return err
+}
+
 // Upload writes a file to disk and records its metadata.
 func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta, error) {
 	filePath = normalizePath(filePath)
@@ -296,10 +329,14 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 	// Post-write quota check fires regardless of caller's reader type. If the
 	// upload pushed the user over quota, delete the file and refuse.
 	if err := p.ctx.QuotaCheck(username, size); err != nil {
+		var rmErr error
 		if fs := p.userFS(username); fs != nil {
-			_ = fs.Delete(filePath)
+			rmErr = fs.Delete(filePath)
 		} else {
-			_ = os.Remove(filepath.Join(p.ctx.UserFilesDir(username), filePath))
+			rmErr = os.Remove(filepath.Join(p.ctx.UserFilesDir(username), filePath))
+		}
+		if rmErr != nil {
+			p.log.Error("remove over-quota upload", "user", username, "path", filePath, "err", rmErr)
 		}
 		return nil, err
 	}
@@ -596,7 +633,10 @@ func (p *Plugin) reconcile(db *sql.DB, username, dirPath string) error {
 		var err error
 		vfsEntries, err = fs.List(dirPath)
 		if err != nil {
-			return nil // directory may not exist yet
+			if errors.Is(err, vfs.ErrNotFound) || errors.Is(err, iofs.ErrNotExist) {
+				return nil // directory may not exist yet
+			}
+			return fmt.Errorf("list %s: %w", dirPath, err)
 		}
 	} else {
 		fsPath := filepath.Join(p.ctx.UserFilesDir(username), dirPath)
@@ -610,7 +650,10 @@ func (p *Plugin) reconcile(db *sql.DB, username, dirPath string) error {
 		for _, e := range osEntries {
 			info, err := e.Info()
 			if err != nil {
-				continue
+				if errors.Is(err, iofs.ErrNotExist) {
+					continue // removed since the directory was read
+				}
+				return fmt.Errorf("stat %s: %w", e.Name(), err)
 			}
 			vfsEntries = append(vfsEntries, vfs.FileInfo{
 				Name:    e.Name(),
@@ -636,6 +679,9 @@ func (p *Plugin) reconcile(db *sql.DB, username, dirPath string) error {
 			return err
 		}
 		known[p] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
 	}
 
 	// Add new entries found on disk.
@@ -676,12 +722,40 @@ func getByID(db *sql.DB, id int64) (*FileMeta, error) {
 		&f.ID, &f.Path, &f.ParentPath, &f.Name,
 		&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir, &f.Favorite)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("file not found: id %d", id)
+		return nil, fmt.Errorf("%w: id %d", ErrNotFound, id)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get file by id: %w", err)
 	}
 	return &f, nil
+}
+
+// getByIDs returns the files among ids that exist, keyed by ID.
+func getByIDs(db *sql.DB, ids []int64) (map[int64]*FileMeta, error) {
+	out := make(map[int64]*FileMeta, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := db.Query(`
+		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
+		FROM files WHERE id IN (?`+strings.Repeat(",?", len(ids)-1)+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get files by id: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var f FileMeta
+		if err := rows.Scan(&f.ID, &f.Path, &f.ParentPath, &f.Name,
+			&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir, &f.Favorite); err != nil {
+			return nil, fmt.Errorf("scan file: %w", err)
+		}
+		out[f.ID] = &f
+	}
+	return out, rows.Err()
 }
 
 func getByPath(db *sql.DB, path string) (*FileMeta, error) {
@@ -692,7 +766,7 @@ func getByPath(db *sql.DB, path string) (*FileMeta, error) {
 		&f.ID, &f.Path, &f.ParentPath, &f.Name,
 		&f.Size, &f.MTime, &f.MimeType, &f.ETag, &f.IsDir, &f.Favorite)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("file not found: %s", path)
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, path)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get file by path: %w", err)
@@ -823,9 +897,12 @@ func (p *Plugin) SetFavorite(username, filePath string, fav bool) error {
 	if err != nil {
 		return fmt.Errorf("set favorite: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set favorite rows: %w", err)
+	}
 	if n == 0 {
-		return fmt.Errorf("file not found: %s", filePath)
+		return fmt.Errorf("%w: %s", ErrNotFound, filePath)
 	}
 	return nil
 }
@@ -844,9 +921,12 @@ func (p *Plugin) SetFavoriteByID(username string, id int64, fav bool) error {
 	if err != nil {
 		return fmt.Errorf("set favorite: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set favorite rows: %w", err)
+	}
 	if n == 0 {
-		return fmt.Errorf("file not found: id %d", id)
+		return fmt.Errorf("%w: id %d", ErrNotFound, id)
 	}
 	return nil
 }
@@ -946,7 +1026,7 @@ func (p *Plugin) extractZip(username string, ar archiveReader, size int64, destD
 
 		dest := filepath.Join(destDir, entryPath)
 		if strings.HasSuffix(zf.Name, "/") || zf.FileInfo().IsDir() {
-			if _, err := p.CreateDir(username, dest); err != nil {
+			if err := p.ensureDir(username, dest); err != nil {
 				p.log.Error("extract mkdir", "path", dest, "err", err)
 			}
 			count++
@@ -956,8 +1036,8 @@ func (p *Plugin) extractZip(username string, ar archiveReader, size int64, destD
 		// Ensure parent directory exists.
 		parentDir := filepath.Dir(dest)
 		if parentDir != destDir {
-			if _, err := p.CreateDir(username, parentDir); err != nil {
-				// Ignore — may already exist.
+			if err := p.ensureDir(username, parentDir); err != nil {
+				p.log.Error("extract mkdir", "path", parentDir, "err", err)
 			}
 		}
 
@@ -1004,7 +1084,7 @@ func (p *Plugin) extractTar(username string, r io.ReadSeeker, format, destDir st
 
 		dest := filepath.Join(destDir, entryPath)
 		if hdr.Typeflag == tar.TypeDir {
-			if _, err := p.CreateDir(username, dest); err != nil {
+			if err := p.ensureDir(username, dest); err != nil {
 				p.log.Error("extract mkdir", "path", dest, "err", err)
 			}
 			count++
@@ -1013,8 +1093,8 @@ func (p *Plugin) extractTar(username string, r io.ReadSeeker, format, destDir st
 
 		parentDir := filepath.Dir(dest)
 		if parentDir != destDir {
-			if _, err := p.CreateDir(username, parentDir); err != nil {
-				// Ignore — may already exist.
+			if err := p.ensureDir(username, parentDir); err != nil {
+				p.log.Error("extract mkdir", "path", parentDir, "err", err)
 			}
 		}
 

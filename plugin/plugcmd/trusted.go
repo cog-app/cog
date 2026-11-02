@@ -3,6 +3,7 @@ package plugcmd
 import (
 	"database/sql"
 	"encoding/base64"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -27,24 +28,27 @@ type trustedRegistrar struct {
 
 // newTrustedRegistrar creates a trusted registrar if the trust env vars are set.
 // Returns nil if not in trusted mode.
-func newTrustedRegistrar(base *capturingRegistrar) *trustedRegistrar {
+func newTrustedRegistrar(base *capturingRegistrar) (*trustedRegistrar, error) {
 	if os.Getenv("COG_TRUSTED") != "1" {
-		return nil
+		return nil, nil
 	}
 	dataDir := os.Getenv("COG_DATA_DIR")
 	if dataDir == "" {
-		return nil
+		return nil, nil
 	}
 	var csrfSecret []byte
 	if encoded := os.Getenv("COG_CSRF_SECRET"); encoded != "" {
-		csrfSecret, _ = base64.StdEncoding.DecodeString(encoded)
+		var err error
+		if csrfSecret, err = base64.StdEncoding.DecodeString(encoded); err != nil {
+			return nil, fmt.Errorf("decode COG_CSRF_SECRET: %w", err)
+		}
 	}
 	return &trustedRegistrar{
 		capturingRegistrar: base,
 		dataDir:            dataDir,
 		csrfSecret:         csrfSecret,
 		dbs:                make(map[string]*sql.DB),
-	}
+	}, nil
 }
 
 // openDB opens a database using the same layout, connection settings, and
@@ -120,8 +124,10 @@ func (t *trustedRegistrar) EnsureUserDirs(username string) error {
 func (t *trustedRegistrar) Close() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	for _, db := range t.dbs {
-		db.Close()
+	for key, db := range t.dbs {
+		if err := db.Close(); err != nil {
+			slog.Error("plugcmd: close plugin database", "db", key, "err", err)
+		}
 	}
 	t.dbs = make(map[string]*sql.DB)
 }

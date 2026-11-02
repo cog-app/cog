@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -20,21 +21,8 @@ func (h *volumeBrowserHandler) Browse(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	ok, err := h.p.Access.CanAccess(u.ID, volID)
-	if err != nil || !ok {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-
-	vol, err := h.p.Access.Volumes.GetByID(volID)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	backend, err := volume.NewBackend(vol)
-	if err != nil {
-		http.Error(w, "Cannot browse this volume: "+err.Error(), http.StatusBadRequest)
+	vol, backend, ok := h.open(w, r, u.ID, volID)
+	if !ok {
 		return
 	}
 
@@ -50,6 +38,7 @@ func (h *volumeBrowserHandler) Browse(w http.ResponseWriter, r *http.Request) {
 
 	all, err := backend.List(dirPath)
 	if err != nil {
+		h.p.Log.Error("volume list", "volume", volID, "path", dirPath, "err", err)
 		http.Error(w, "Failed to list: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -71,6 +60,39 @@ func (h *volumeBrowserHandler) Browse(w http.ResponseWriter, r *http.Request) {
 	if err := volumeBrowsePage(pd, vol, dirPath, items, hidden, back).Render(r.Context(), w); err != nil {
 		h.p.Log.Error("render volume browser", "volume", vol.ID, "err", err)
 	}
+}
+
+// open checks the user may use the volume and returns it with its backend.
+// When it can't, it answers the request itself and reports false.
+func (h *volumeBrowserHandler) open(w http.ResponseWriter, r *http.Request, userID, volID string) (*volume.Volume, volume.Backend, bool) {
+	ok, err := h.p.Access.CanAccess(userID, volID)
+	if err != nil {
+		h.p.Log.Error("volume access check", "volume", volID, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return nil, nil, false
+	}
+	if !ok {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return nil, nil, false
+	}
+
+	vol, err := h.p.Access.Volumes.GetByID(volID)
+	if errors.Is(err, volume.ErrNotFound) {
+		http.NotFound(w, r)
+		return nil, nil, false
+	}
+	if err != nil {
+		h.p.Log.Error("look up volume", "volume", volID, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return nil, nil, false
+	}
+
+	backend, err := volume.NewBackend(vol)
+	if err != nil {
+		http.Error(w, "Cannot open this volume: "+err.Error(), http.StatusBadRequest)
+		return nil, nil, false
+	}
+	return vol, backend, true
 }
 
 // serverInternal reports whether p, on vol, is one of the server's own files:
@@ -124,24 +146,8 @@ func (h *volumeBrowserHandler) Download(w http.ResponseWriter, r *http.Request) 
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	ok, err := h.p.Access.CanAccess(u.ID, volID)
-	if err != nil {
-		h.p.Log.Error("volume access check", "volume", volID, "err", err)
-	}
+	vol, backend, ok := h.open(w, r, u.ID, volID)
 	if !ok {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-
-	vol, err := h.p.Access.Volumes.GetByID(volID)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	backend, err := volume.NewBackend(vol)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -152,6 +158,7 @@ func (h *volumeBrowserHandler) Download(w http.ResponseWriter, r *http.Request) 
 	}
 	rc, err := backend.Get(filePath)
 	if err != nil {
+		h.p.Log.Info("volume download", "volume", volID, "path", filePath, "err", err)
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -173,24 +180,8 @@ func (h *volumeBrowserHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	ok, err := h.p.Access.CanAccess(u.ID, volID)
-	if err != nil {
-		h.p.Log.Error("volume access check", "volume", volID, "err", err)
-	}
+	vol, backend, ok := h.open(w, r, u.ID, volID)
 	if !ok {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-
-	vol, err := h.p.Access.Volumes.GetByID(volID)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	backend, err := volume.NewBackend(vol)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -218,6 +209,7 @@ func (h *volumeBrowserHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := backend.Put(dest, file); err != nil {
+		h.p.Log.Error("volume upload", "volume", volID, "path", dest, "err", err)
 		http.Error(w, "upload failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -229,24 +221,8 @@ func (h *volumeBrowserHandler) MkDir(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	ok, err := h.p.Access.CanAccess(u.ID, volID)
-	if err != nil {
-		h.p.Log.Error("volume access check", "volume", volID, "err", err)
-	}
+	vol, backend, ok := h.open(w, r, u.ID, volID)
 	if !ok {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-
-	vol, err := h.p.Access.Volumes.GetByID(volID)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	backend, err := volume.NewBackend(vol)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -263,6 +239,7 @@ func (h *volumeBrowserHandler) MkDir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := backend.Mkdir(dest); err != nil {
+		h.p.Log.Error("volume mkdir", "volume", volID, "path", dest, "err", err)
 		http.Error(w, "mkdir failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -274,24 +251,8 @@ func (h *volumeBrowserHandler) DeleteFile(w http.ResponseWriter, r *http.Request
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	ok, err := h.p.Access.CanAccess(u.ID, volID)
-	if err != nil {
-		h.p.Log.Error("volume access check", "volume", volID, "err", err)
-	}
+	vol, backend, ok := h.open(w, r, u.ID, volID)
 	if !ok {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-
-	vol, err := h.p.Access.Volumes.GetByID(volID)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	backend, err := volume.NewBackend(vol)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -301,6 +262,7 @@ func (h *volumeBrowserHandler) DeleteFile(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := backend.Delete(filePath); err != nil {
+		h.p.Log.Error("volume delete", "volume", volID, "path", filePath, "err", err)
 		http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

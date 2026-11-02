@@ -34,7 +34,14 @@ func mfaEnforcement(p *services.Providers) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			required, _ := p.Settings.Get(settings.KeyMFARequired)
+			required, err := p.Settings.Get(settings.KeyMFARequired)
+			if err != nil {
+				// Fail closed: without the policy we can't tell whether
+				// this user may proceed without MFA.
+				p.Log.Error("mfa enforcement: read policy", "err", err)
+				http.Error(w, "Internal error", http.StatusInternalServerError)
+				return
+			}
 			if required == "" {
 				next.ServeHTTP(w, r)
 				return

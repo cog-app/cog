@@ -30,6 +30,9 @@ const MaxAppPasswordsPerUser = 32
 // MaxAppPasswordsPerUser tokens.
 var ErrTooManyAppPasswords = errors.New("too many app passwords for user")
 
+// ErrInvalidAppPassword is returned by Validate when no app password matches.
+var ErrInvalidAppPassword = errors.New("invalid app password")
+
 type AppPasswordStore struct {
 	db    *sql.DB
 	clock clock.Clock
@@ -114,7 +117,10 @@ func (s *AppPasswordStore) Delete(id, userID string) error {
 	if err != nil {
 		return fmt.Errorf("delete app password: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		return errors.New("app password not found")
 	}
@@ -148,5 +154,5 @@ func (s *AppPasswordStore) Validate(token string) (userID string, err error) {
 	if subtle.ConstantTimeEq(int32(matched), 1) == 1 {
 		return matchedUID, nil
 	}
-	return "", errors.New("invalid app password")
+	return "", ErrInvalidAppPassword
 }

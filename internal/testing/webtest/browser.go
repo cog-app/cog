@@ -87,6 +87,9 @@ func (b *Browser) el(sel string) (*rod.Element, error) {
 	// in parallel looks like — burns the entire deadline here, leaving the
 	// lookup below to fail immediately with a context error even though the
 	// element was there all along.
+	//
+	// A page that never settles is not a failure in itself: the lookup below
+	// waits for the element and reports if it is not there.
 	_ = b.page.Timeout(5 * time.Second).WaitStable(300 * time.Millisecond)
 
 	return b.firstVisible(sel)
@@ -186,10 +189,8 @@ func (b *Browser) Type(t testing.TB, sel, text string) {
 	if err != nil {
 		t.Fatalf("webtest: type %s: %v", sel, err)
 	}
-	if err := el.SelectAllText(); err != nil {
-		// SelectAllText may fail on empty fields; ignore.
-		_ = err
-	}
+	// SelectAllText fails on an empty field, which has nothing to replace.
+	_ = el.SelectAllText()
 	if err := el.Input(text); err != nil {
 		t.Fatalf("webtest: type %s: %v", sel, err)
 	}
@@ -629,18 +630,28 @@ func (b *Browser) screenshotOnFailure(t testing.TB) {
 		dir = os.TempDir()
 	}
 
-	// Capture page source.
-	html, _ := b.page.HTML()
+	path := filepath.Join(dir, fmt.Sprintf("webtest-%s.png", t.Name()))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Logf("webtest: failed to create screenshot dir: %v", err)
+		return
+	}
+
+	// The page source first: it is what tells a server-side error from a
+	// slow page, so it should not depend on the screenshot working.
+	if html, err := b.page.HTML(); err != nil {
+		t.Logf("webtest: failed to capture page source: %v", err)
+	} else {
+		htmlPath := filepath.Join(dir, fmt.Sprintf("webtest-%s.html", t.Name()))
+		if err := os.WriteFile(htmlPath, []byte(html), 0o644); err != nil {
+			t.Logf("webtest: failed to write page source: %v", err)
+		} else {
+			t.Logf("webtest: page source saved to %s", htmlPath)
+		}
+	}
 
 	buf, err := b.page.Screenshot(true, nil)
 	if err != nil {
 		t.Logf("webtest: failed to capture screenshot: %v", err)
-		return
-	}
-
-	path := filepath.Join(dir, fmt.Sprintf("webtest-%s.png", t.Name()))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Logf("webtest: failed to create screenshot dir: %v", err)
 		return
 	}
 	if err := os.WriteFile(path, buf, 0o644); err != nil {
@@ -648,11 +659,4 @@ func (b *Browser) screenshotOnFailure(t testing.TB) {
 		return
 	}
 	t.Logf("webtest: screenshot saved to %s", path)
-
-	if html != "" {
-		htmlPath := filepath.Join(dir, fmt.Sprintf("webtest-%s.html", t.Name()))
-		if err := os.WriteFile(htmlPath, []byte(html), 0o644); err == nil {
-			t.Logf("webtest: page source saved to %s", htmlPath)
-		}
-	}
 }

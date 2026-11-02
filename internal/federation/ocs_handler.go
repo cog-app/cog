@@ -2,6 +2,8 @@ package federation
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -45,7 +47,13 @@ func (h *OCSHandler) fedToOCS(fs *FederatedShare) (*ocsRemoteShare, error) {
 
 	// Resolve local user for display name.
 	var displayName string
-	if u, err := h.Users.GetByID(fs.LocalUserID); err == nil {
+	u, err := h.Users.GetByID(fs.LocalUserID)
+	switch {
+	case errors.Is(err, user.ErrNotFound):
+		// The local user is gone; the share is still listed, unnamed.
+	case err != nil:
+		return nil, fmt.Errorf("look up local user of federated share %s: %w", fs.ID, err)
+	default:
 		displayName = u.DisplayName
 		if displayName == "" {
 			displayName = u.Username
@@ -84,7 +92,8 @@ func (h *OCSHandler) HandleListRemoteShares(w http.ResponseWriter, r *http.Reque
 		}
 		ocs, err := h.fedToOCS(&fs)
 		if err != nil {
-			continue
+			h.WriteOCSError(w, r, http.StatusInternalServerError, 500, err.Error())
+			return
 		}
 		shares = append(shares, *ocs)
 	}
@@ -110,7 +119,8 @@ func (h *OCSHandler) HandleListPendingShares(w http.ResponseWriter, r *http.Requ
 		}
 		ocs, err := h.fedToOCS(&fs)
 		if err != nil {
-			continue
+			h.WriteOCSError(w, r, http.StatusInternalServerError, 500, err.Error())
+			return
 		}
 		shares = append(shares, *ocs)
 	}
@@ -130,12 +140,16 @@ func (h *OCSHandler) HandleAcceptShare(w http.ResponseWriter, r *http.Request) {
 
 	fsID, err := h.resolveID(r.PathValue("id"))
 	if err != nil {
-		h.WriteOCSError(w, r, http.StatusNotFound, 404, "share not found")
+		h.writeLookupError(w, r, err)
 		return
 	}
 
 	fs, err := h.Store.Get(fsID)
-	if err != nil || fs.LocalUserID != u.ID || fs.Direction != "inbound" || fs.State != "pending" {
+	if err != nil {
+		h.writeLookupError(w, r, err)
+		return
+	}
+	if fs.LocalUserID != u.ID || fs.Direction != "inbound" || fs.State != "pending" {
 		h.WriteOCSError(w, r, http.StatusNotFound, 404, "share not found")
 		return
 	}
@@ -169,12 +183,16 @@ func (h *OCSHandler) HandleDeclineShare(w http.ResponseWriter, r *http.Request) 
 
 	fsID, err := h.resolveID(r.PathValue("id"))
 	if err != nil {
-		h.WriteOCSError(w, r, http.StatusNotFound, 404, "share not found")
+		h.writeLookupError(w, r, err)
 		return
 	}
 
 	fs, err := h.Store.Get(fsID)
-	if err != nil || fs.LocalUserID != u.ID || fs.Direction != "inbound" || fs.State != "pending" {
+	if err != nil {
+		h.writeLookupError(w, r, err)
+		return
+	}
+	if fs.LocalUserID != u.ID || fs.Direction != "inbound" || fs.State != "pending" {
 		h.WriteOCSError(w, r, http.StatusNotFound, 404, "share not found")
 		return
 	}
@@ -206,12 +224,16 @@ func (h *OCSHandler) HandleRemoveShare(w http.ResponseWriter, r *http.Request) {
 
 	fsID, err := h.resolveID(r.PathValue("id"))
 	if err != nil {
-		h.WriteOCSError(w, r, http.StatusNotFound, 404, "share not found")
+		h.writeLookupError(w, r, err)
 		return
 	}
 
 	fs, err := h.Store.Get(fsID)
-	if err != nil || fs.LocalUserID != u.ID || fs.Direction != "inbound" {
+	if err != nil {
+		h.writeLookupError(w, r, err)
+		return
+	}
+	if fs.LocalUserID != u.ID || fs.Direction != "inbound" {
 		h.WriteOCSError(w, r, http.StatusNotFound, 404, "share not found")
 		return
 	}
@@ -231,6 +253,17 @@ func (h *OCSHandler) HandleRemoveShare(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.WriteOCS(w, r, http.StatusOK, []any{})
+}
+
+// writeLookupError reports a failed share lookup: 404 when there is no such
+// share, 500 otherwise.
+func (h *OCSHandler) writeLookupError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, ErrNotFound) {
+		h.WriteOCSError(w, r, http.StatusNotFound, 404, "share not found")
+		return
+	}
+	h.Log.Error("federated share lookup", "err", err)
+	h.WriteOCSError(w, r, http.StatusInternalServerError, 500, err.Error())
 }
 
 func (h *OCSHandler) resolveID(idStr string) (string, error) {

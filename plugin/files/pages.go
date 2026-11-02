@@ -2,6 +2,7 @@ package files
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -128,8 +129,16 @@ func (h *Pages) ServeGet(w http.ResponseWriter, r *http.Request) {
 
 	meta, err := h.plugin.GetByPath(u.Username, fp)
 	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			h.serverError(w, "get file", err)
+			return
+		}
 		// Path not found — try archive boundary detection.
-		archiveMeta, archivePath, innerPath := h.resolveArchivePath(u.Username, fp)
+		archiveMeta, archivePath, innerPath, err := h.resolveArchivePath(u.Username, fp)
+		if err != nil {
+			h.serverError(w, "resolve archive path", err)
+			return
+		}
 		if archiveMeta != nil {
 			h.serveArchiveContent(w, r, u.Username, archiveMeta, archivePath, innerPath)
 			return
@@ -322,7 +331,9 @@ func (h *Pages) servePreview(w http.ResponseWriter, r *http.Request, username, f
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.Header().Set("ETag", `"`+meta.ETag+`"`)
-	io.Copy(w, f)
+	if _, err := io.Copy(w, f); err != nil {
+		h.plugin.log.Error("preview copy", "path", fp, "err", err)
+	}
 }
 
 func (h *Pages) serveDocumentPreview(w http.ResponseWriter, r *http.Request, username, fp string, meta *FileMeta) {
@@ -359,20 +370,23 @@ func (h *Pages) readText(username, fp string) (string, error) {
 
 // resolveArchivePath walks up the path looking for an archive file boundary.
 // Returns the archive metadata, archive path, and inner path (or nil if not found).
-func (h *Pages) resolveArchivePath(username, fullPath string) (*FileMeta, string, string) {
+func (h *Pages) resolveArchivePath(username, fullPath string) (*FileMeta, string, string, error) {
 	parts := splitPath(fullPath)
 	for i := 1; i <= len(parts); i++ {
 		candidate := "/" + path.Join(parts[:i]...)
 		meta, err := h.plugin.GetByPath(username, candidate)
-		if err != nil {
+		if errors.Is(err, ErrNotFound) {
 			continue
+		}
+		if err != nil {
+			return nil, "", "", err
 		}
 		if !meta.IsDir && isArchiveFile(meta) && i < len(parts) {
 			innerPath := path.Join(parts[i:]...)
-			return meta, candidate, innerPath
+			return meta, candidate, innerPath, nil
 		}
 	}
-	return nil, "", ""
+	return nil, "", "", nil
 }
 
 // openArchiveSeeker returns a seekable+readable handle to an archive file.
@@ -440,7 +454,12 @@ func (h *Pages) serveArchiveContent(w http.ResponseWriter, r *http.Request, user
 	format := ArchiveFormat(meta.Name)
 
 	// Check if it's a directory (has children).
-	if isArchiveEntryDir(ar, meta.Size, format, innerPath) {
+	isDir, err := isArchiveEntryDir(ar, meta.Size, format, innerPath)
+	if err != nil {
+		http.Error(w, "list archive: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if isDir {
 		// Reset reader position for listing.
 		if _, err := ar.Seek(0, io.SeekStart); err != nil {
 			http.Error(w, "seek: "+err.Error(), http.StatusInternalServerError)
@@ -463,7 +482,11 @@ func (h *Pages) serveArchiveContent(w http.ResponseWriter, r *http.Request, user
 	}
 	rc, entry, err := ReadArchiveFile(ar, meta.Size, format, innerPath)
 	if err != nil {
-		http.Error(w, "not found in archive", http.StatusNotFound)
+		if errors.Is(err, errEntryNotFound) {
+			http.Error(w, "not found in archive", http.StatusNotFound)
+		} else {
+			h.serverError(w, "read archive entry", err)
+		}
 		return
 	}
 
@@ -497,7 +520,11 @@ func (h *Pages) serveArchiveFileStream(w http.ResponseWriter, r *http.Request, u
 	format := ArchiveFormat(meta.Name)
 	rc, entry, err := ReadArchiveFile(ar, meta.Size, format, innerPath)
 	if err != nil {
-		http.Error(w, "not found in archive", http.StatusNotFound)
+		if errors.Is(err, errEntryNotFound) {
+			http.Error(w, "not found in archive", http.StatusNotFound)
+		} else {
+			h.serverError(w, "read archive entry", err)
+		}
 		return
 	}
 	defer rc.Close()
@@ -523,7 +550,10 @@ func (h *Pages) serveArchiveFileStream(w http.ResponseWriter, r *http.Request, u
 func (h *Pages) handleExtract(w http.ResponseWriter, r *http.Request, username, fp string) {
 	meta, err := h.plugin.GetByPath(username, fp)
 	if err != nil {
-		h.flashRedirect(w, r, "error", "File not found.", fileURL(parentDir(fp)))
+		if !errors.Is(err, ErrNotFound) {
+			h.plugin.log.Error("extract archive", "user", username, "path", fp, "err", err)
+		}
+		h.flashRedirect(w, r, "error", "The archive could not be opened: "+err.Error(), fileURL(parentDir(fp)))
 		return
 	}
 	if !isArchiveFile(meta) {
@@ -604,6 +634,12 @@ func (h *Pages) ServePost(w http.ResponseWriter, r *http.Request) {
 	default:
 		h.handleUpload(w, r, u.Username, fp)
 	}
+}
+
+// serverError logs err and answers 500 without exposing it.
+func (h *Pages) serverError(w http.ResponseWriter, what string, err error) {
+	h.plugin.log.Error(what, "err", err)
+	http.Error(w, "internal server error", http.StatusInternalServerError)
 }
 
 // flashRedirect leaves a message for the page at target and sends the
@@ -815,7 +851,11 @@ func (h *Pages) serveZip(w http.ResponseWriter, r *http.Request, username, fp st
 func (h *Pages) handleStar(w http.ResponseWriter, r *http.Request, username, fp string) {
 	meta, err := h.plugin.GetByPath(username, fp)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		if errors.Is(err, ErrNotFound) {
+			http.Error(w, "not found", http.StatusNotFound)
+		} else {
+			h.serverError(w, "star", err)
+		}
 		return
 	}
 	if err := h.plugin.SetFavorite(username, fp, !meta.Favorite); err != nil {

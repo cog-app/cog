@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"log/slog"
 	"path"
 	"strconv"
 	"strings"
@@ -388,10 +389,13 @@ func StarredMedia(db *sql.DB, fileIDs []int64) ([]Media, error) {
 }
 
 // StarredMediaCount returns the count of starred media items.
-func StarredMediaCount(filesDB, galleryDB *sql.DB) int {
+func StarredMediaCount(filesDB, galleryDB *sql.DB) (int, error) {
 	fileIDs, err := StarredFileIDs(filesDB)
-	if err != nil || len(fileIDs) == 0 {
-		return 0
+	if err != nil {
+		return 0, err
+	}
+	if len(fileIDs) == 0 {
+		return 0, nil
 	}
 	placeholders := strings.Repeat("?,", len(fileIDs))
 	placeholders = placeholders[:len(placeholders)-1]
@@ -400,8 +404,10 @@ func StarredMediaCount(filesDB, galleryDB *sql.DB) int {
 		args[i] = id
 	}
 	var count int
-	galleryDB.QueryRow(`SELECT COUNT(*) FROM media WHERE file_id IN (`+placeholders+`)`, args...).Scan(&count)
-	return count
+	if err := galleryDB.QueryRow(`SELECT COUNT(*) FROM media WHERE file_id IN (`+placeholders+`)`, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count starred media: %w", err)
+	}
+	return count, nil
 }
 
 // CleanOrphans removes recognition data that references non-existent media rows.
@@ -638,7 +644,7 @@ func MediaByTag(db *sql.DB, tagName string, limit, offset int) ([]Media, error) 
 }
 
 // UpsertTag ensures a tag exists and returns its ID.
-func UpsertTag(db *sql.DB, name string, tagType int) (int64, error) {
+func UpsertTag(db execQuerier, name string, tagType int) (int64, error) {
 	// RETURNING, not LastInsertId: when the upsert updates, SQLite leaves
 	// last_insert_rowid at whatever this connection inserted before.
 	var id int64
@@ -649,7 +655,7 @@ func UpsertTag(db *sql.DB, name string, tagType int) (int64, error) {
 }
 
 // AddMediaTag links a tag to a media item.
-func AddMediaTag(db *sql.DB, mediaID, tagID int64, confidence float64) error {
+func AddMediaTag(db execQuerier, mediaID, tagID int64, confidence float64) error {
 	_, err := db.Exec(`INSERT OR REPLACE INTO media_tags (media_id, tag_id, confidence) VALUES (?, ?, ?)`,
 		mediaID, tagID, confidence)
 	return err
@@ -989,14 +995,19 @@ func GetRecognitionStats(db *sql.DB) (RecognitionStats, error) {
 	if s.Errored > 0 {
 		rows, err := db.Query(`SELECT DISTINCT recognition_error FROM media
 			WHERE recognition_state = 2 AND recognition_error != '' LIMIT 10`)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var msg string
-				if rows.Scan(&msg) == nil {
-					s.Errors = append(s.Errors, msg)
-				}
+		if err != nil {
+			return s, fmt.Errorf("recognition errors: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var msg string
+			if err := rows.Scan(&msg); err != nil {
+				return s, fmt.Errorf("scan recognition error: %w", err)
 			}
+			s.Errors = append(s.Errors, msg)
+		}
+		if err := rows.Err(); err != nil {
+			return s, fmt.Errorf("recognition errors: %w", err)
 		}
 	}
 	return s, nil
@@ -1043,6 +1054,25 @@ func SetSetting(db *sql.DB, key, value string) error {
 	return err
 }
 
+// SetSettings writes several settings together: all of them or none.
+func SetSettings(db *sql.DB, kv [][2]string) error {
+	if len(kv) == 0 {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin settings: %w", err)
+	}
+	defer tx.Rollback()
+	for _, p := range kv {
+		if _, err := tx.Exec(`INSERT INTO gallery_settings (key, value) VALUES (?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value`, p[0], p[1]); err != nil {
+			return fmt.Errorf("set %s: %w", p[0], err)
+		}
+	}
+	return tx.Commit()
+}
+
 // --- Typed Settings ---
 
 // setting is a typed wrapper around gallery_settings key/value pairs.
@@ -1080,10 +1110,11 @@ func (s *setting[T]) Set(db *sql.DB, value T) error {
 	return err
 }
 
-// MustGet is like Get but returns the default on error.
+// MustGet is like Get but logs an error and returns the default.
 func (s *setting[T]) MustGet(db *sql.DB) T {
 	v, err := s.Get(db)
 	if err != nil {
+		slog.Warn("gallery setting; using default", "key", s.key, "default", s.defaultValue, "err", err)
 		return s.defaultValue
 	}
 	return v

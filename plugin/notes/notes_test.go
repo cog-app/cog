@@ -162,3 +162,32 @@ func TestNotesPage(t *testing.T) {
 
 	env.Get(t, "/apps/notes/", alice.Auth).Status(200)
 }
+
+// A title another note already has must not take over that note's file.
+func TestNotesAPI_DuplicateTitleKeepsBothNotes(t *testing.T) {
+	env := cogtest.New(t, notes.New())
+	alice := env.CreateUser(t, "alice", "pass")
+
+	var first, second, renamed map[string]any
+	env.PostJSON(t, notesAPI, map[string]any{"title": "Ideas", "content": "one"}, alice.Auth).
+		Status(200).JSON(&first)
+	env.PostJSON(t, notesAPI, map[string]any{"title": "Ideas", "content": "two"}, alice.Auth).
+		Status(200).JSON(&second)
+	require.Equal(t, "Ideas (2)", second["title"])
+
+	var third map[string]any
+	env.PostJSON(t, notesAPI, map[string]any{"title": "Other", "content": "three"}, alice.Auth).
+		Status(200).JSON(&third)
+	id := itoa(int64(third["id"].(float64)))
+	env.Do(t, cogtest.NewRequest(t, "PUT", env.Providers.Config.BaseURL+notesAPI+"/"+id,
+		jsonReader(map[string]any{"title": "Ideas"})),
+		alice.Auth, cogtest.Header("Content-Type", "application/json"),
+	).Status(200).JSON(&renamed)
+	require.Equal(t, "Ideas (3)", renamed["title"])
+
+	for want, n := range map[string]map[string]any{"one": first, "two": second, "three": third} {
+		var got map[string]any
+		env.Get(t, notesAPI+"/"+itoa(int64(n["id"].(float64))), alice.Auth).Status(200).JSON(&got)
+		require.Equal[any](t, want, got["content"])
+	}
+}

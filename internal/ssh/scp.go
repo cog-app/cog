@@ -2,31 +2,38 @@ package ssh
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"git.duckfam.us/jj-software/cog/internal/ssh/shell"
 	"git.duckfam.us/jj-software/cog/vfs"
 
 	gossh "golang.org/x/crypto/ssh"
 )
 
 // serveSCP handles an SCP exec request. Returns exit code.
-func (s *Server) serveSCP(channel gossh.Channel, filesDir string, userFS vfs.FS, command string) int {
-	// SCP relies heavily on os.FileInfo and direct file handles.
-	// VFS integration for SCP is deferred — it uses the filesDir fallback.
-	_ = userFS
-	// Resolve symlinks for containment.
-	if resolved, err := filepath.EvalSymlinks(filesDir); err == nil {
-		filesDir = resolved
+//
+// SCP relies heavily on os.FileInfo and direct file handles. VFS integration
+// for SCP is deferred, so the user's VFS is unused and it works on filesDir.
+func (s *Server) serveSCP(channel gossh.Channel, filesDir string, _ vfs.FS, command string) int {
+	// Resolve symlinks for containment: every path is checked against the
+	// resolved directory, so an unresolved one would reject them all.
+	resolved, err := filepath.EvalSymlinks(filesDir)
+	if err != nil {
+		s.log.Error("scp: resolve home directory", "dir", filesDir, "err", err)
+		fmt.Fprintf(channel.Stderr(), "scp: home directory unavailable\n")
+		return 1
 	}
+	filesDir = resolved
 
 	args := parseSCPArgs(command)
 
-	var err error
 	switch {
 	case args.sink:
 		err = scpSink(channel, filesDir, args)
@@ -101,7 +108,7 @@ func scpResolve(filesDir, vpath string) (string, error) {
 		resolved = filepath.Join(parent, filepath.Base(real))
 	}
 
-	if !strings.HasPrefix(resolved, filesDir) {
+	if !shell.Within(resolved, filesDir) {
 		return "", fmt.Errorf("access denied: path outside home directory")
 	}
 	return resolved, nil
@@ -156,7 +163,7 @@ func scpSinkLoop(reader *bufio.Reader, rw io.Writer, targetPath, filesDir string
 			}
 			dirName := parts[2]
 			dirPath := filepath.Join(targetPath, dirName)
-			if !strings.HasPrefix(dirPath, filesDir) {
+			if !shell.Within(dirPath, filesDir) {
 				return fmt.Errorf("access denied: path outside home directory")
 			}
 			if err := os.MkdirAll(dirPath, 0755); err != nil {
@@ -208,11 +215,14 @@ func scpReceiveFile(reader *bufio.Reader, rw io.Writer, targetPath, filesDir, li
 	// Determine destination: if targetPath is a directory, write inside it.
 	destPath := targetPath
 	info, statErr := os.Stat(targetPath)
+	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
+		return fmt.Errorf("stat %s: %w", targetPath, statErr)
+	}
 	if statErr == nil && info.IsDir() {
 		destPath = filepath.Join(targetPath, name)
 	}
 
-	if !strings.HasPrefix(destPath, filesDir) {
+	if !shell.Within(destPath, filesDir) {
 		return fmt.Errorf("access denied: path outside home directory")
 	}
 
@@ -318,8 +328,11 @@ func scpSendDir(reader *bufio.Reader, rw io.Writer, dirPath string, info os.File
 	for _, e := range entries {
 		childPath := filepath.Join(dirPath, e.Name())
 		childInfo, err := e.Info()
+		if errors.Is(err, fs.ErrNotExist) {
+			continue // removed since the directory was read
+		}
 		if err != nil {
-			continue
+			return err
 		}
 		if childInfo.IsDir() {
 			if err := scpSendDir(reader, rw, childPath, childInfo); err != nil {
@@ -348,12 +361,16 @@ func scpReadAck(reader *bufio.Reader) error {
 	switch b {
 	case 0:
 		return nil
-	case 1:
-		msg, _ := reader.ReadString('\n')
-		return fmt.Errorf("scp warning: %s", strings.TrimSpace(msg))
-	case 2:
-		msg, _ := reader.ReadString('\n')
-		return fmt.Errorf("scp error: %s", strings.TrimSpace(msg))
+	case 1, 2:
+		kind := "warning"
+		if b == 2 {
+			kind = "error"
+		}
+		msg, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("scp %s: %s (message cut short: %w)", kind, strings.TrimSpace(msg), err)
+		}
+		return fmt.Errorf("scp %s: %s", kind, strings.TrimSpace(msg))
 	default:
 		return fmt.Errorf("unexpected ack byte: %d", b)
 	}

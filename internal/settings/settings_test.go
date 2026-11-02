@@ -77,3 +77,18 @@ func TestSettings_NewStoreDirect(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "ok", got)
 }
+
+func TestSettings_ManyRoundtrip(t *testing.T) {
+	env := cogtest.New(t)
+	s := env.Providers.Settings
+
+	require.NoError(t, s.Set("a", "old"))
+	require.NoError(t, s.SetMany(map[string]string{"a": "1", "b": "2"}))
+
+	got, err := s.GetMany("a", "b", "missing")
+	require.NoError(t, err)
+	require.Equal(t, "1", got["a"])
+	require.Equal(t, "2", got["b"])
+	require.Equal(t, "", got["missing"])
+	require.Equal(t, 2, len(got))
+}

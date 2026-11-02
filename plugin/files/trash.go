@@ -1,10 +1,14 @@
 package files
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // TrashItem represents a trashed file or directory.
@@ -61,14 +65,14 @@ func (p *Plugin) Trash(username, filePath string) error {
 	// no metadata or vice versa.
 	tx, err := db.Begin()
 	if err != nil {
-		_ = os.Rename(dstPath, srcPath)
+		p.undoMove(dstPath, srcPath)
 		return fmt.Errorf("begin trash tx: %w", err)
 	}
 	commit := false
 	defer func() {
 		if !commit {
 			_ = tx.Rollback()
-			_ = os.Rename(dstPath, srcPath)
+			p.undoMove(dstPath, srcPath)
 		}
 	}()
 
@@ -150,7 +154,10 @@ func (p *Plugin) GetTrashItem(username, trashName string) (*TrashItem, error) {
 	return &item, nil
 }
 
-// RestoreFromTrash restores a trashed item to its original location.
+// RestoreFromTrash restores a trashed item to its original location. If
+// something has since taken that path, the item comes back beside it as
+// "name (restored).ext" (then "name (restored 2).ext", ...) rather than
+// replacing it, as Nextcloud does.
 func (p *Plugin) RestoreFromTrash(username, trashName string) error {
 	db, err := p.DB(username)
 	if err != nil {
@@ -162,9 +169,13 @@ func (p *Plugin) RestoreFromTrash(username, trashName string) error {
 		return err
 	}
 
-	trashDir := p.trashDir(username)
-	srcPath := filepath.Join(trashDir, trashName)
-	dstPath := filepath.Join(p.ctx.UserFilesDir(username), item.OriginalPath)
+	filesDir := p.ctx.UserFilesDir(username)
+	restorePath, err := freeRestorePath(db, filesDir, normalizePath(item.OriginalPath), item.IsDir)
+	if err != nil {
+		return err
+	}
+	srcPath := filepath.Join(p.trashDir(username), trashName)
+	dstPath := filepath.Join(filesDir, restorePath)
 
 	// Ensure parent directory exists
 	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
@@ -175,32 +186,24 @@ func (p *Plugin) RestoreFromTrash(username, trashName string) error {
 		return fmt.Errorf("restore from trash: %w", err)
 	}
 
-	parentPath := filepath.Dir(item.OriginalPath)
-	if parentPath == "." {
-		parentPath = "/"
-	}
-
 	tx, err := db.Begin()
 	if err != nil {
-		_ = os.Rename(dstPath, srcPath)
+		p.undoMove(dstPath, srcPath)
 		return fmt.Errorf("begin restore tx: %w", err)
 	}
 	commit := false
 	defer func() {
 		if !commit {
 			_ = tx.Rollback()
-			_ = os.Rename(dstPath, srcPath)
+			p.undoMove(dstPath, srcPath)
 		}
 	}()
 
-	isDirInt := 0
-	if item.IsDir {
-		isDirInt = 1
-	}
 	if _, err := tx.Exec(`
-		INSERT OR REPLACE INTO files (path, parent_path, name, size, mtime, mime_type, etag, is_dir)
+		INSERT INTO files (path, parent_path, name, size, mtime, mime_type, etag, is_dir)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		item.OriginalPath, parentPath, item.OriginalName, item.Size, item.MTime, item.MimeType, generateETag(), isDirInt); err != nil {
+		restorePath, filepath.Dir(restorePath), filepath.Base(restorePath),
+		item.Size, item.MTime, item.MimeType, generateETag(), boolToInt(item.IsDir)); err != nil {
 		return fmt.Errorf("restore metadata: %w", err)
 	}
 
@@ -213,6 +216,58 @@ func (p *Plugin) RestoreFromTrash(username, trashName string) error {
 	}
 	commit = true
 	return nil
+}
+
+// freeRestorePath returns origPath if nothing occupies it, on disk or in the
+// metadata, or else the first free "name (restored).ext", "name (restored
+// 2).ext", ... beside it. A folder's whole name is the stem.
+func freeRestorePath(db *sql.DB, filesDir, origPath string, isDir bool) (string, error) {
+	dir, name := filepath.Dir(origPath), filepath.Base(origPath)
+	stem, ext := name, ""
+	if !isDir {
+		if e := filepath.Ext(name); e != name {
+			stem, ext = strings.TrimSuffix(name, e), e
+		}
+	}
+	for n := 0; ; n++ {
+		candidate := origPath
+		switch n {
+		case 0:
+		case 1:
+			candidate = filepath.Join(dir, stem+" (restored)"+ext)
+		default:
+			candidate = filepath.Join(dir, stem+" (restored "+strconv.Itoa(n)+")"+ext)
+		}
+		taken, err := pathTaken(db, filesDir, candidate)
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			return candidate, nil
+		}
+	}
+}
+
+// pathTaken reports whether filePath exists on disk or in the metadata.
+func pathTaken(db *sql.DB, filesDir, filePath string) (bool, error) {
+	if _, err := os.Lstat(filepath.Join(filesDir, filePath)); err == nil {
+		return true, nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return false, fmt.Errorf("stat %s: %w", filePath, err)
+	}
+	var exists bool
+	if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM files WHERE path = ?)`, filePath).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check %s: %w", filePath, err)
+	}
+	return exists, nil
+}
+
+// undoMove puts back a rename whose metadata change failed. The failure is
+// already being returned; this one can only be logged.
+func (p *Plugin) undoMove(movedTo, from string) {
+	if err := os.Rename(movedTo, from); err != nil {
+		p.log.Error("undo move", "from", movedTo, "to", from, "err", err)
+	}
 }
 
 // PermanentDelete permanently removes a trashed item.

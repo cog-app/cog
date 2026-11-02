@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -101,20 +102,23 @@ func (p *Plugin) CleanAudioFile(ctx context.Context, username, inputURL, outputP
 		return nil
 	}
 
-	cfg := p.ttsConfig()
+	cfg, err := p.ttsConfig()
+	if err != nil {
+		return err
+	}
 	return CleanAudioFile(ctx, cfg, inputURL, outputPath, ranges)
 }
 
-func (p *Plugin) ttsConfig() TTSConfig {
+func (p *Plugin) ttsConfig() (TTSConfig, error) {
 	db, err := p.rootDB()
 	if err != nil {
-		return TTSConfig{Engine: TTSNone}
+		return TTSConfig{}, err
 	}
-	return TTSConfig{
-		Engine:  TTSEngine(p.getSetting(db, "tts_engine", "none")),
-		Model:   p.getSetting(db, "tts_model", ""),
-		Command: p.getSetting(db, "tts_command", ""),
+	s, err := p.settings(db)
+	if err != nil {
+		return TTSConfig{}, err
 	}
+	return TTSConfig{Engine: TTSEngine(s.TTSEngine), Model: s.TTSModel, Command: s.TTSCommand}, nil
 }
 
 func (p *Plugin) rootDB() (*sql.DB, error) {
@@ -128,18 +132,54 @@ func (p *Plugin) rootDB() (*sql.DB, error) {
 	return db, nil
 }
 
-func (p *Plugin) getSetting(db *sql.DB, key, defaultVal string) string {
+func (p *Plugin) getSetting(db *sql.DB, key, defaultVal string) (string, error) {
 	var val string
 	err := db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&val)
-	if err != nil {
-		return defaultVal
+	if errors.Is(err, sql.ErrNoRows) {
+		return defaultVal, nil
 	}
-	return val
+	if err != nil {
+		return "", fmt.Errorf("read setting %s: %w", key, err)
+	}
+	return val, nil
 }
 
-func (p *Plugin) setSetting(db *sql.DB, key, val string) error {
-	_, err := db.Exec(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, val)
-	return err
+// settings reads the admin's TTS settings, with their defaults.
+func (p *Plugin) settings(db *sql.DB) (adminSettingsData, error) {
+	var s adminSettingsData
+	var err error
+	if s.TTSEngine, err = p.getSetting(db, "tts_engine", "none"); err != nil {
+		return s, err
+	}
+	if s.TTSModel, err = p.getSetting(db, "tts_model", ""); err != nil {
+		return s, err
+	}
+	if s.TTSCommand, err = p.getSetting(db, "tts_command", ""); err != nil {
+		return s, err
+	}
+	return s, nil
+}
+
+// saveSettings writes the admin's TTS settings together.
+func (p *Plugin) saveSettings(db *sql.DB, s adminSettingsData) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin save settings: %w", err)
+	}
+	defer tx.Rollback()
+	for _, kv := range [][2]string{
+		{"tts_engine", s.TTSEngine},
+		{"tts_model", s.TTSModel},
+		{"tts_command", s.TTSCommand},
+	} {
+		if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, kv[0], kv[1]); err != nil {
+			return fmt.Errorf("save setting %s: %w", kv[0], err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit settings: %w", err)
+	}
+	return nil
 }
 
 // --- Word list management ---
@@ -166,15 +206,24 @@ func (p *Plugin) loadWordList(username string) *WordList {
 
 	path := p.wordListPath(username)
 	f, err := os.Open(path)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		// No custom list; return empty.
 		wl := &WordList{}
 		p.cache[username] = wl
 		return wl
 	}
+	if err != nil {
+		// Not cached, so the next call tries again.
+		p.log.Error("open profanity word list", "user", username, "err", err)
+		return &WordList{}
+	}
 	defer f.Close()
 
-	wl := ParseWordList(f)
+	wl, err := ParseWordList(f)
+	if err != nil {
+		p.log.Error("read profanity word list", "user", username, "err", err)
+		return &WordList{}
+	}
 	p.cache[username] = wl
 	return wl
 }
@@ -196,12 +245,15 @@ func (p *Plugin) saveWordList(username, content string) error {
 	return nil
 }
 
-func (p *Plugin) readWordListText(username string) string {
+func (p *Plugin) readWordListText(username string) (string, error) {
 	data, err := os.ReadFile(p.wordListPath(username))
-	if err != nil {
-		return ""
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
 	}
-	return string(data)
+	if err != nil {
+		return "", fmt.Errorf("read word list: %w", err)
+	}
+	return string(data), nil
 }
 
 // Seed creates a default profanity word list for a user.
@@ -209,6 +261,8 @@ func (p *Plugin) Seed(username string) error {
 	path := p.wordListPath(username)
 	if _, err := os.Stat(path); err == nil {
 		return nil // already exists
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("stat word list: %w", err)
 	}
 	data, err := fs.ReadFile(seedFS, "seed/default.txt")
 	if err != nil {

@@ -128,7 +128,10 @@ func (s *InvitationStore) Delete(id string) error {
 	if err != nil {
 		return fmt.Errorf("delete invitation: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}

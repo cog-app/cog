@@ -95,10 +95,17 @@ func (s *EmailOTPStore) Validate(userID, code string) (bool, error) {
 	if matched == "" {
 		return false, nil
 	}
-	if _, err := s.db.Exec(`UPDATE email_otp SET used = 1 WHERE id = ?`, matched); err != nil {
+	// used = 0 in the WHERE makes the claim atomic: of two requests racing
+	// with the same code, only one changes the row.
+	res, err := s.db.Exec(`UPDATE email_otp SET used = 1 WHERE id = ? AND used = 0`, matched)
+	if err != nil {
 		return false, fmt.Errorf("mark email otp used: %w", err)
 	}
-	return true, nil
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("rows affected: %w", err)
+	}
+	return n == 1, nil
 }
 
 // generateOTPCode returns a random 6-digit numeric code. crypto/rand failure

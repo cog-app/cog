@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -51,26 +52,20 @@ func (a *CookbookAPI) ListRecipes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	var items []recipeListItem
+	keywords, err := KeywordsByRecipe(db)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	items := make([]recipeListItem, 0, len(recipes))
 	for _, recipe := range recipes {
-		kws, _ := GetKeywords(db, recipe.ID)
-		var kwStr strings.Builder
-		for i, kw := range kws {
-			if i > 0 {
-				kwStr.WriteString(",")
-			}
-			kwStr.WriteString(kw)
-		}
 		items = append(items, recipeListItem{
 			RecipeID:     recipe.ID,
 			Name:         recipe.Name,
-			Keywords:     kwStr.String(),
+			Keywords:     strings.Join(keywords[recipe.ID], ","),
 			DateCreated:  formatUnixISO(recipe.CreatedAt),
 			DateModified: formatUnixISO(recipe.UpdatedAt),
 		})
-	}
-	if items == nil {
-		items = []recipeListItem{}
 	}
 	plugin.WriteJSON(w, http.StatusOK, items)
 }
@@ -88,8 +83,12 @@ func (a *CookbookAPI) GetRecipe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	recipe, err := GetRecipe(db, id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -101,9 +100,21 @@ func (a *CookbookAPI) GetRecipe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Otherwise, build JSON-LD from stored data
-	ingredients, _ := GetIngredients(db, id)
-	instructions, _ := GetInstructions(db, id)
-	keywords, _ := GetKeywords(db, id)
+	ingredients, err := GetIngredients(db, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	instructions, err := GetInstructions(db, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	keywords, err := GetKeywords(db, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	ld := buildJSONLD(recipe, ingredients, instructions, keywords)
 	plugin.WriteJSON(w, http.StatusOK, ld)
@@ -212,8 +223,12 @@ func (a *CookbookAPI) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	existing, err := GetRecipe(db, id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -240,13 +255,16 @@ func (a *CookbookAPI) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 	existing.Calories = parsed.Calories
 	existing.JSONLD = parsed.JSONLD
 
-	if err := UpdateRecipe(db, existing); err != nil {
+	err = inTx(db, func(tx *sql.Tx) error {
+		if err := UpdateRecipe(tx, existing); err != nil {
+			return fmt.Errorf("update recipe: %w", err)
+		}
+		return saveParsedLists(tx, id, parsed)
+	})
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	SetIngredients(db, id, parsed.Ingredients)
-	SetInstructions(db, id, parsed.Instructions)
-	SetKeywords(db, id, parsed.Keywords)
 
 	plugin.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -263,7 +281,10 @@ func (a *CookbookAPI) DeleteRecipe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	DeleteRecipe(db, id)
+	if err := DeleteRecipe(db, id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	plugin.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

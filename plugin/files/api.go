@@ -2,6 +2,7 @@ package files
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -396,7 +397,11 @@ func (a *API) handleShareCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Verify the resource exists and belongs to this user (for files)
 	if err := a.verifyOwnership(u, req.ResourceType, req.ResourceID); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
+		if errors.Is(err, errNotOwned) {
+			http.Error(w, err.Error(), http.StatusForbidden)
+		} else {
+			a.serverError(w, "verify ownership", err)
+		}
 		return
 	}
 
@@ -446,29 +451,58 @@ func (a *API) handleSharesWithMe(w http.ResponseWriter, r *http.Request) {
 		File          *FileMeta `json:"file,omitempty"`
 	}
 
-	var enriched []enrichedShare
-	for _, rec := range records {
-		es := enrichedShare{Record: rec}
-
-		owner, err := a.users.GetByID(rec.OwnerUserID)
-		if err == nil {
-			es.OwnerUsername = owner.Username
-		}
-
-		// If it's a files resource, fetch metadata
-		if rec.ResourceType == "files:file" || rec.ResourceType == "files:directory" {
-			fileID, err := strconv.ParseInt(rec.ResourceID, 10, 64)
-			if err == nil {
-				if owner != nil {
-					meta, err := a.files.GetByID(owner.Username, fileID)
-					if err == nil {
-						es.File = meta
-					}
-				}
+	// One lookup per owner, and one query per owner for the files shared:
+	// a page of shares from the same person is the usual case.
+	enriched := make([]enrichedShare, len(records))
+	owners := map[string]*user.User{}
+	fileIDs := map[string][]int64{} // owner username -> shared file IDs
+	for i, rec := range records {
+		enriched[i] = enrichedShare{Record: rec}
+		owner, seen := owners[rec.OwnerUserID]
+		if !seen {
+			owner, err = a.users.GetByID(rec.OwnerUserID)
+			if err != nil && !errors.Is(err, user.ErrNotFound) {
+				a.files.log.Error("shares with me: owner", "owner", rec.OwnerUserID, "err", err)
+				http.Error(w, "failed to load shares", http.StatusInternalServerError)
+				return
 			}
+			owners[rec.OwnerUserID] = owner // nil: the owner has since been deleted
 		}
+		if owner == nil {
+			continue
+		}
+		enriched[i].OwnerUsername = owner.Username
+		if rec.ResourceType != "files:file" && rec.ResourceType != "files:directory" {
+			continue
+		}
+		fileID, err := strconv.ParseInt(rec.ResourceID, 10, 64)
+		if err != nil {
+			a.files.log.Error("shares with me: bad file id", "share", rec.ID, "resource", rec.ResourceID, "err", err)
+			continue
+		}
+		fileIDs[owner.Username] = append(fileIDs[owner.Username], fileID)
+	}
 
-		enriched = append(enriched, es)
+	metas := map[string]map[int64]*FileMeta{}
+	for username, ids := range fileIDs {
+		db, err := a.files.DB(username)
+		if err == nil {
+			metas[username], err = getByIDs(db, ids)
+		}
+		if err != nil {
+			a.files.log.Error("shares with me: files", "owner", username, "err", err)
+			http.Error(w, "failed to load shares", http.StatusInternalServerError)
+			return
+		}
+	}
+	for i := range enriched {
+		es := &enriched[i]
+		if es.ResourceType != "files:file" && es.ResourceType != "files:directory" {
+			continue
+		}
+		if fileID, err := strconv.ParseInt(es.ResourceID, 10, 64); err == nil {
+			es.File = metas[es.OwnerUsername][fileID] // nil if the file has gone
+		}
 	}
 
 	plugin.WriteJSON(w, http.StatusOK, enriched)
@@ -485,7 +519,11 @@ func (a *API) handleShareDelete(w http.ResponseWriter, r *http.Request) {
 	// Verify ownership
 	rec, err := a.shares.Get(shareID)
 	if err != nil {
-		http.Error(w, "share not found", http.StatusNotFound)
+		if errors.Is(err, share.ErrNotFound) {
+			http.Error(w, "share not found", http.StatusNotFound)
+		} else {
+			a.serverError(w, "get share", err)
+		}
 		return
 	}
 	if rec.OwnerUserID != u.ID {
@@ -524,7 +562,11 @@ func (a *API) handlePublicLinkCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := a.verifyOwnership(u, req.ResourceType, req.ResourceID); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
+		if errors.Is(err, errNotOwned) {
+			http.Error(w, err.Error(), http.StatusForbidden)
+		} else {
+			a.serverError(w, "verify ownership", err)
+		}
 		return
 	}
 
@@ -549,7 +591,11 @@ func (a *API) handlePublicLinkAccess(w http.ResponseWriter, r *http.Request) {
 
 	rec, err := a.shares.GetByToken(token)
 	if err != nil {
-		http.Error(w, "link not found or expired", http.StatusNotFound)
+		if errors.Is(err, share.ErrNotFound) {
+			http.Error(w, "link not found or expired", http.StatusNotFound)
+		} else {
+			a.serverError(w, "public link", err)
+		}
 		return
 	}
 
@@ -569,7 +615,7 @@ func (a *API) handlePublicLinkAccess(w http.ResponseWriter, r *http.Request) {
 	if rec.ResourceType == "files:file" || rec.ResourceType == "files:directory" {
 		owner, err := a.users.GetByID(rec.OwnerUserID)
 		if err != nil {
-			http.Error(w, "owner not found", http.StatusInternalServerError)
+			a.serverError(w, "share owner", err)
 			return
 		}
 
@@ -581,7 +627,11 @@ func (a *API) handlePublicLinkAccess(w http.ResponseWriter, r *http.Request) {
 
 		meta, err := a.files.GetByID(owner.Username, fileID)
 		if err != nil {
-			http.Error(w, "file not found", http.StatusNotFound)
+			if errors.Is(err, ErrNotFound) {
+				http.Error(w, "file not found", http.StatusNotFound)
+			} else {
+				a.serverError(w, "shared file", err)
+			}
 			return
 		}
 
@@ -609,7 +659,11 @@ func (a *API) handlePublicLinkDownload(w http.ResponseWriter, r *http.Request) {
 
 	rec, err := a.shares.GetByToken(token)
 	if err != nil {
-		http.Error(w, "link not found or expired", http.StatusNotFound)
+		if errors.Is(err, share.ErrNotFound) {
+			http.Error(w, "link not found or expired", http.StatusNotFound)
+		} else {
+			a.serverError(w, "public link", err)
+		}
 		return
 	}
 
@@ -637,7 +691,7 @@ func (a *API) handlePublicLinkDownload(w http.ResponseWriter, r *http.Request) {
 
 	owner, err := a.users.GetByID(rec.OwnerUserID)
 	if err != nil {
-		http.Error(w, "owner not found", http.StatusInternalServerError)
+		a.serverError(w, "share owner", err)
 		return
 	}
 
@@ -649,13 +703,17 @@ func (a *API) handlePublicLinkDownload(w http.ResponseWriter, r *http.Request) {
 
 	meta, err := a.files.GetByID(owner.Username, fileID)
 	if err != nil {
-		http.Error(w, "file not found", http.StatusNotFound)
+		if errors.Is(err, ErrNotFound) {
+			http.Error(w, "file not found", http.StatusNotFound)
+		} else {
+			a.serverError(w, "shared file", err)
+		}
 		return
 	}
 
 	f, _, err := a.files.Download(owner.Username, meta.Path)
 	if err != nil {
-		http.Error(w, "download failed", http.StatusInternalServerError)
+		a.serverError(w, "shared download", err)
 		return
 	}
 	defer f.Close()
@@ -674,13 +732,22 @@ func (a *API) handleSharedDownload(w http.ResponseWriter, r *http.Request) {
 
 	rec, err := a.shares.Get(shareID)
 	if err != nil {
-		http.Error(w, "share not found", http.StatusNotFound)
+		if errors.Is(err, share.ErrNotFound) {
+			http.Error(w, "share not found", http.StatusNotFound)
+		} else {
+			a.serverError(w, "get share", err)
+		}
 		return
 	}
 
 	// Check access
 	decision, err := a.shares.CheckAccess(u.ID, rec.ResourceType, rec.ResourceID)
-	if err != nil || !decision.Allowed {
+	if err != nil {
+		a.files.log.Error("shared download: check access", "share", shareID, "err", err)
+		http.Error(w, "failed to check access", http.StatusInternalServerError)
+		return
+	}
+	if !decision.Allowed {
 		http.Error(w, "access denied", http.StatusForbidden)
 		return
 	}
@@ -692,7 +759,7 @@ func (a *API) handleSharedDownload(w http.ResponseWriter, r *http.Request) {
 
 	owner, err := a.users.GetByID(rec.OwnerUserID)
 	if err != nil {
-		http.Error(w, "owner not found", http.StatusInternalServerError)
+		a.serverError(w, "share owner", err)
 		return
 	}
 
@@ -704,13 +771,17 @@ func (a *API) handleSharedDownload(w http.ResponseWriter, r *http.Request) {
 
 	meta, err := a.files.GetByID(owner.Username, fileID)
 	if err != nil {
-		http.Error(w, "file not found", http.StatusNotFound)
+		if errors.Is(err, ErrNotFound) {
+			http.Error(w, "file not found", http.StatusNotFound)
+		} else {
+			a.serverError(w, "shared file", err)
+		}
 		return
 	}
 
 	f, _, err := a.files.Download(owner.Username, meta.Path)
 	if err != nil {
-		http.Error(w, "download failed", http.StatusInternalServerError)
+		a.serverError(w, "shared download", err)
 		return
 	}
 	defer f.Close()
@@ -723,19 +794,30 @@ func (a *API) handleSharedDownload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// errNotOwned is a share request for something the user cannot share.
+var errNotOwned = errors.New("forbidden")
+
+// serverError logs err and answers 500 without exposing it.
+func (a *API) serverError(w http.ResponseWriter, what string, err error) {
+	a.files.log.Error(what, "err", err)
+	http.Error(w, "internal server error", http.StatusInternalServerError)
+}
+
 func (a *API) verifyOwnership(u *user.User, resourceType, resourceID string) error {
 	if resourceType != "files:file" && resourceType != "files:directory" {
-		return fmt.Errorf("unsupported resource type: %s", resourceType)
+		return fmt.Errorf("%w: unsupported resource type: %s", errNotOwned, resourceType)
 	}
 
 	fileID, err := strconv.ParseInt(resourceID, 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid resource id: %s", resourceID)
+		return fmt.Errorf("%w: invalid resource id: %s", errNotOwned, resourceID)
 	}
 
-	_, err = a.files.GetByID(u.Username, fileID)
-	if err != nil {
-		return fmt.Errorf("resource not found or not owned")
+	if _, err := a.files.GetByID(u.Username, fileID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return fmt.Errorf("%w: resource not found or not owned", errNotOwned)
+		}
+		return err
 	}
 
 	return nil

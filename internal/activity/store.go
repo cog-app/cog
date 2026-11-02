@@ -4,6 +4,7 @@ package activity
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
 )
@@ -46,8 +47,11 @@ func (s *Store) Log(userID, actorID, app, typ, subject, objectType, objectID, ob
 
 // LogRich inserts an activity with a rich subject template and params.
 func (s *Store) LogRich(userID, actorID, app, typ, subject, template string, params map[string]any, objectType, objectID, objectName string) error {
-	paramsJSON, _ := json.Marshal(params)
-	_, err := s.db.Exec(`INSERT INTO activities
+	paramsJSON, err := json.Marshal(params)
+	if err != nil {
+		return fmt.Errorf("marshal activity params: %w", err)
+	}
+	_, err = s.db.Exec(`INSERT INTO activities
 		(user_id, actor_id, app, type, subject, subject_template, subject_params, object_type, object_id, object_name, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		userID, actorID, app, typ, subject, template, string(paramsJSON), objectType, objectID, objectName, s.clock().Unix())

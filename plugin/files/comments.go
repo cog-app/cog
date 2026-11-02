@@ -90,7 +90,10 @@ func (p *Plugin) UpdateComment(username string, commentID int64, actorID, messag
 	if err != nil {
 		return fmt.Errorf("update comment: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update comment rows: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("comment not found or not owned")
 	}
@@ -109,7 +112,10 @@ func (p *Plugin) DeleteComment(username string, commentID int64, actorID string)
 	if err != nil {
 		return fmt.Errorf("delete comment: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete comment rows: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("comment not found or not owned")
 	}

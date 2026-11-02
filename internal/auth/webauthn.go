@@ -305,12 +305,17 @@ func (s *WebAuthnStore) updateCredentialSignCount(userID string, cred *webauthn.
 		}
 		var stored webauthn.Credential
 		if err := json.Unmarshal([]byte(rowData), &stored); err != nil {
+			// One corrupt row must not lock the user out of their other keys.
+			slog.Error("webauthn store: decode stored credential", "user", userID, "credential", rowID, "err", err)
 			continue
 		}
 		if string(stored.ID) == string(cred.ID) {
 			_, err := s.db.Exec(`UPDATE webauthn_credentials SET credential_data = ? WHERE id = ?`, string(data), rowID)
 			return err
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("list webauthn credentials: %w", err)
 	}
 	return nil
 }
