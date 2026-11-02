@@ -14,12 +14,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	cogssh "git.duckfam.us/jj-software/cog/internal/ssh"
-	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
@@ -221,11 +219,7 @@ func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 
 	// Start SSH server if enabled.
 	if cfg.SSHEnabled {
-		ks, err := keys.NewStore(p.DB, p.Plugins, p.Users, clock.System())
-		if err != nil {
-			return err
-		}
-		sshSrv, err := cogssh.New(cfg, p, ks, log)
+		sshSrv, err := cogssh.New(cfg, p, p.SSHKeys, log)
 		if err != nil {
 			return err
 		}

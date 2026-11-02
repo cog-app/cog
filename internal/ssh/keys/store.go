@@ -3,6 +3,7 @@
 package keys
 
 import (
+	"bytes"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -30,6 +31,10 @@ var ErrNotFound = errors.New("ssh key not found")
 // ErrKeyInUse is returned by Add when the key is already registered, to this
 // or another user. A fingerprint identifies exactly one user at login.
 var ErrKeyInUse = errors.New("ssh key already registered")
+
+// ErrInvalidKey is returned by Add for text that is not one public key in
+// authorized_keys format.
+var ErrInvalidKey = errors.New("not a valid ssh public key")
 
 // LegacyDBProvider opens the per-user databases keys used to be kept in. It
 // is only read once, to move those keys into the system database.
@@ -169,9 +174,15 @@ func readLegacy(legacy LegacyDBProvider, username string) ([]legacyKey, error) {
 // Add stores a new SSH key for a user, parsing the authorized_keys line.
 // It returns ErrKeyInUse if any user already has the key.
 func (s *Store) Add(username, name, authorizedKeyLine string) (*SSHKey, error) {
-	pk, _, _, _, err := gossh.ParseAuthorizedKey([]byte(authorizedKeyLine))
+	pk, comment, _, rest, err := gossh.ParseAuthorizedKey([]byte(authorizedKeyLine))
 	if err != nil {
-		return nil, fmt.Errorf("parse public key: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidKey, err)
+	}
+	if len(bytes.TrimSpace(rest)) > 0 {
+		return nil, fmt.Errorf("%w: more than one key", ErrInvalidKey)
+	}
+	if name == "" {
+		name = comment
 	}
 
 	key := &SSHKey{

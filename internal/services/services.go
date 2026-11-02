@@ -35,6 +35,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/share"
+	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/internal/webpush"
@@ -66,6 +67,7 @@ type Providers struct {
 	MFAPending     *auth.MFAPendingStore
 	EmailOTP       *auth.EmailOTPStore
 	WebAuthn       *auth.WebAuthnStore
+	SSHKeys        *keys.Store
 	PasswordResets *auth.PasswordResetStore
 	Activities     *activity.Store
 	DAV            *dav.Server
@@ -300,6 +302,10 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	activities := activity.NewStore(sysDB, c)
 	fedStore := federation.NewStore(sysDB, c)
 	fedClient := federation.NewClient(cfg.BaseURL)
+	sshKeys, err := keys.NewStore(sysDB, registry, users, c)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Providers{
 		Config:         cfg,
@@ -322,6 +328,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		EmailOTP:       auth.NewEmailOTPStore(sysDB, c),
 		PasswordResets: auth.NewPasswordResetStore(sysDB, c, secret),
 		WebAuthn:       newWebAuthnStore(sysDB, c, cfg.BaseURL, secret, log),
+		SSHKeys:        sshKeys,
 		RateLimiter:    ratelimit.New(10, 15*time.Minute, c),
 		Activities:     activities,
 		DAV:            davServer,

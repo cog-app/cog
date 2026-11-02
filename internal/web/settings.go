@@ -15,6 +15,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/seq"
+	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/plugin/files"
@@ -59,7 +60,7 @@ func (h *settingsHandler) ShowSecurity(w http.ResponseWriter, r *http.Request) {
 
 	var flash securityFlash
 	if f := getFlash(w, r); f != nil {
-		flash = securityFlash{Message: f.Message, Kind: f.Kind, For: f.Value("form"), Invalid: f.Value("invalid")}
+		flash = securityFlash{Message: f.Message, Kind: f.Kind, For: f.Value("form"), Invalid: f.Value("invalid"), Fields: f.Form}
 	}
 	smtpConfigured := h.p.EmailSender() != nil
 	var webauthnCreds []auth.WebAuthnCredential
@@ -70,7 +71,14 @@ func (h *settingsHandler) ShowSecurity(w http.ResponseWriter, r *http.Request) {
 			h.p.Log.Error("list passkeys", "user", u.Username, "err", err)
 		}
 	}
-	if err := settingsSecurityPage(pd, flash, appPasswords, u.MFAMethod, backupCodeCount, smtpConfigured, webauthnAvailable, webauthnCreds).Render(r.Context(), w); err != nil {
+	var sshKeys []keys.SSHKey
+	if h.p.Config.SSHEnabled {
+		sshKeys, err = h.p.SSHKeys.List(u.Username)
+		if err != nil {
+			h.p.Log.Error("list ssh keys", "user", u.Username, "err", err)
+		}
+	}
+	if err := settingsSecurityPage(pd, flash, appPasswords, u.MFAMethod, backupCodeCount, smtpConfigured, webauthnAvailable, webauthnCreds, h.p.Config.SSHEnabled, sshKeys).Render(r.Context(), w); err != nil {
 		h.p.Log.Error("render security page", "err", err)
 	}
 }
@@ -132,9 +140,66 @@ func (h *settingsHandler) DeleteAppPassword(w http.ResponseWriter, r *http.Reque
 	u := auth.UserFromContext(r.Context())
 	id := r.PathValue("id")
 
-	if err := h.p.AppPasswords.Delete(id, u.ID); err != nil {
-		h.p.Log.Warn("delete app password", "user", u.Username, "id", id, "err", err)
+	err := h.p.AppPasswords.Delete(id, u.ID)
+	if errors.Is(err, auth.ErrAppPasswordNotFound) {
 		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("delete app password", "user", u.Username, "id", id, "err", err)
+		http.Error(w, "The app password could not be revoked.", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// AddSSHKey adds a public key the user pasted, for SSH, SCP and SFTP logins.
+func (h *settingsHandler) AddSSHKey(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	name := strings.TrimSpace(r.FormValue("name"))
+	line := strings.TrimSpace(r.FormValue("public_key"))
+	back := func(kind, msg string) {
+		form := map[string]string{"form": "ssh-key"}
+		if kind == "error" {
+			form["invalid"] = "public_key"
+			form["name"] = name
+			form["public_key"] = line
+		}
+		setFlashForm(w, kind, msg, form)
+		http.Redirect(w, r, "/settings/security#ssh-keys", http.StatusSeeOther)
+	}
+
+	if line == "" {
+		back("error", "Paste a public key.")
+		return
+	}
+	_, err := h.p.SSHKeys.Add(u.Username, name, line)
+	switch {
+	case errors.Is(err, keys.ErrInvalidKey):
+		back("error", "That is not an SSH public key. Paste one line, such as the contents of ~/.ssh/id_ed25519.pub.")
+	case errors.Is(err, keys.ErrKeyInUse):
+		back("error", "That key has already been added to an account.")
+	case err != nil:
+		h.p.Log.Error("add ssh key", "user", u.Username, "err", err)
+		back("error", "The key could not be added. Try again.")
+	default:
+		back("success", "SSH key added.")
+	}
+}
+
+// DeleteSSHKey removes one of the user's SSH keys. It answers the HTMX
+// request that removes the key's row.
+func (h *settingsHandler) DeleteSSHKey(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	id := r.PathValue("id")
+	err := h.p.SSHKeys.Delete(u.Username, id)
+	if errors.Is(err, keys.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("delete ssh key", "user", u.Username, "id", id, "err", err)
+		http.Error(w, "The key could not be removed.", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -712,4 +777,16 @@ func (h *settingsHandler) DeleteWebAuthnCredential(w http.ResponseWriter, r *htt
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// sshKeyName is how a key is shown: its name, or its type for a key added
+// with neither a name nor a comment.
+func sshKeyName(k keys.SSHKey) string {
+	if k.Name != "" {
+		return k.Name
+	}
+	if typ, _, ok := strings.Cut(k.PublicKey, " "); ok {
+		return typ + " key"
+	}
+	return "Unnamed key"
 }

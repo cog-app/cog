@@ -33,6 +33,10 @@ var ErrTooManyAppPasswords = errors.New("too many app passwords for user")
 // ErrInvalidAppPassword is returned by Validate when no app password matches.
 var ErrInvalidAppPassword = errors.New("invalid app password")
 
+// ErrAppPasswordNotFound is returned by Delete when the user has no app
+// password with that id.
+var ErrAppPasswordNotFound = errors.New("app password not found")
+
 // appPasswordSep separates the public id from the secret in a token. It must
 // not be ':' (Basic auth splits on it) and must not occur in either half.
 const appPasswordSep = "."
@@ -143,7 +147,7 @@ func (s *AppPasswordStore) Delete(id, userID string) error {
 		return fmt.Errorf("rows affected: %w", err)
 	}
 	if n == 0 {
-		return errors.New("app password not found")
+		return ErrAppPasswordNotFound
 	}
 	return nil
 }

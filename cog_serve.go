@@ -11,10 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/safehttp"
 	cogssh "git.duckfam.us/jj-software/cog/internal/ssh"
-	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
@@ -61,11 +59,7 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 
 			// Start SSH server if enabled.
 			if cfg.SSHEnabled {
-				ks, err := keys.NewStore(p.DB, p.Plugins, p.Users, clock.System())
-				if err != nil {
-					return err
-				}
-				sshSrv, err := cogssh.New(cfg, p, ks, p.Log)
+				sshSrv, err := cogssh.New(cfg, p, p.SSHKeys, p.Log)
 				if err != nil {
 					return err
 				}

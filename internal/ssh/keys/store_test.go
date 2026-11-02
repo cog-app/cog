@@ -253,8 +253,17 @@ func writeLegacyKey(t *testing.T, env *cogtest.Env, username, id, line string) {
 	require.NoError(t, err)
 }
 
+// asUpgraded makes env's system database look like one from before keys
+// moved: the server's own start already did the (empty) move and marked it.
+func asUpgraded(t *testing.T, env *cogtest.Env) {
+	t.Helper()
+	_, err := env.Providers.DB.Exec(`DELETE FROM system_settings WHERE key = 'ssh.keys_moved'`)
+	require.NoError(t, err)
+}
+
 func TestNewStore_MovesLegacyKeys(t *testing.T) {
 	env := cogtest.New(t)
+	asUpgraded(t, env)
 	env.CreateUser(t, "alice", "pass")
 	env.CreateUser(t, "bob", "pass")
 	env.CreateUser(t, "carol", "pass") // no legacy table at all
@@ -299,6 +308,7 @@ func (failingDB) UserDB(string) (*sql.DB, error) { return nil, errors.New("disk 
 
 func TestNewStore_MoveFailureSurfaces(t *testing.T) {
 	env := cogtest.New(t)
+	asUpgraded(t, env)
 	env.CreateUser(t, "alice", "pass")
 
 	_, err := keys.NewStore(env.Providers.DB, failingDB{}, &usernameProvider{env}, env.Clock.Clock())
@@ -312,4 +322,27 @@ func TestNewStore_MoveFailureSurfaces(t *testing.T) {
 	owner, _, err := s.FindByFingerprint(fp)
 	require.NoError(t, err)
 	require.Equal(t, "alice", owner)
+}
+
+func TestAdd_NameAndValidation(t *testing.T) {
+	s, env := newStore(t)
+	env.CreateUser(t, "alice", "pass")
+
+	line, _ := genAuthorizedKey(t, "alice@laptop")
+	k, err := s.Add("alice", "", line)
+	require.NoError(t, err)
+	require.Equal(t, "alice@laptop", k.Name)
+
+	other, _ := genAuthorizedKey(t, "ignored")
+	k, err = s.Add("alice", "work", other)
+	require.NoError(t, err)
+	require.Equal(t, "work", k.Name)
+
+	_, err = s.Add("alice", "", "not a key")
+	require.True(t, errors.Is(err, keys.ErrInvalidKey), "got %v", err)
+
+	a, _ := genAuthorizedKey(t, "a")
+	b, _ := genAuthorizedKey(t, "b")
+	_, err = s.Add("alice", "", a+"\n"+b)
+	require.True(t, errors.Is(err, keys.ErrInvalidKey), "got %v", err)
 }

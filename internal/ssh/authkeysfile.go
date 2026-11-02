@@ -107,7 +107,8 @@ func (f *authKeysFile) Close() error {
 	if f.buf == nil || f.buf.Len() == 0 {
 		return nil
 	}
-	// Parse written data as authorized_keys lines and add new keys.
+	// Parse written data as authorized_keys lines and add new keys, named
+	// by their comments as keys added in settings are.
 	// Get existing fingerprints to skip duplicates.
 	existing, err := f.handler.keys.List(f.handler.username)
 	if err != nil {
@@ -127,7 +128,7 @@ func (f *authKeysFile) Close() error {
 		fp := gossh.FingerprintSHA256(pk)
 		if !fps[fp] {
 			line := strings.TrimSpace(string(data[:len(data)-len(rest)]))
-			if _, err := f.handler.keys.Add(f.handler.username, "ssh-copy-id", line); err != nil {
+			if _, err := f.handler.keys.Add(f.handler.username, "", line); err != nil {
 				return fmt.Errorf("add key: %w", err)
 			}
 			fps[fp] = true

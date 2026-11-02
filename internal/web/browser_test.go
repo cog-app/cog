@@ -1,6 +1,8 @@
 package web_test
 
 import (
+	"bytes"
+	"crypto/ed25519"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +13,8 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/internal/testing/webtest"
 	"git.duckfam.us/jj-software/cog/internal/user"
+
+	gossh "golang.org/x/crypto/ssh"
 )
 
 func TestBrowserLoginFlow(t *testing.T) {
@@ -826,4 +830,29 @@ func TestBrowserNotFound(t *testing.T) {
 	b.WaitReady(t, "body")
 	b.Snapshot(t)
 	b.Snapshot(t, webtest.Mobile)
+}
+
+// Adding an SSH key from the security page. The key is fixed so the
+// fingerprint in the golden is too.
+func TestBrowserSettingsAddSSHKey(t *testing.T) {
+	env := cogtest.New(t)
+	env.Providers.Config.SSHEnabled = true
+	env.CreateUser(t, "alice", "pass")
+
+	priv := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{7}, ed25519.SeedSize))
+	pub, err := gossh.NewPublicKey(priv.Public())
+	require.NoError(t, err)
+	line := strings.TrimSpace(string(gossh.MarshalAuthorizedKey(pub))) + " alice@laptop"
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "pass")
+	b.Navigate(t, "/settings/security")
+	b.WaitVisible(t, "#ssh-public-key")
+	b.Type(t, "#ssh-public-key", line)
+	b.Click(t, `form[action="/settings/ssh-keys"] button[type="submit"]`)
+	b.WaitVisible(t, `#ssh-keys .alert-success`)
+	b.Snapshot(t)
 }
