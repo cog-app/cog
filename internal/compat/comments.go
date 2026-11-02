@@ -88,29 +88,29 @@ func (h *CommentsHandler) handlePropfind(w http.ResponseWriter, username string,
 		return
 	}
 
-	// Resolve each distinct actor once, before writing the response, so a
-	// lookup failure can still be an error status.
-	names := make(map[string]string)
+	// Resolve the actors together, before writing the response, so a
+	// lookup failure can still be an error status. An actor whose account
+	// is gone is shown by username.
+	names := make(map[string]string, len(comments))
 	for _, c := range comments {
-		if _, ok := names[c.ActorID]; ok {
-			continue
+		names[c.ActorID] = c.ActorID
+	}
+	if h.Users != nil {
+		actors := make([]string, 0, len(names))
+		for name := range names {
+			actors = append(actors, name)
 		}
-		name := c.ActorID
-		if h.Users != nil {
-			u, err := h.Users.GetByUsername(c.ActorID)
-			switch {
-			case errors.Is(err, user.ErrNotFound):
-			case err != nil:
-				h.Log.Error("comments: look up actor", "actor", c.ActorID, "err", err)
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-				return
-			case u.DisplayName != "":
-				name = u.DisplayName
-			default:
-				name = u.Username
+		found, err := h.Users.GetByUsernames(actors)
+		if err != nil {
+			h.Log.Error("comments: look up actors", "user", username, "file", fileID, "err", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		for name, u := range found {
+			if u.DisplayName != "" {
+				names[name] = u.DisplayName
 			}
 		}
-		names[c.ActorID] = name
 	}
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
@@ -209,11 +209,15 @@ func (h *CommentsHandler) handleCreate(w http.ResponseWriter, r *http.Request, u
 }
 
 func (h *CommentsHandler) handleDelete(w http.ResponseWriter, username string, commentID int64) {
-	if err := h.Files.DeleteComment(username, commentID, username); err != nil {
-		// Usually a comment that isn't there or isn't theirs, which the
-		// files plugin doesn't tell apart from a database failure.
-		h.Log.Warn("comments: delete", "user", username, "comment", commentID, "err", err)
-		http.Error(w, err.Error(), http.StatusNotFound)
+	err := h.Files.DeleteComment(username, commentID, username)
+	if errors.Is(err, files.ErrNotFound) {
+		// Not there, or not theirs to delete.
+		http.Error(w, "comment not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.Log.Error("comments: delete", "user", username, "comment", commentID, "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

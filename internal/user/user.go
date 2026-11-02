@@ -120,6 +120,64 @@ func (s *Store) GetByID(id string) (*User, error) {
 	))
 }
 
+// idChunk bounds the number of bound parameters in one GetByIDs query, well
+// under SQLite's SQLITE_MAX_VARIABLE_NUMBER on any build.
+const idChunk = 500
+
+// GetByIDs looks users up by id in as few queries as the parameter limit
+// allows. The result is keyed by id; ids that match nobody are absent, and
+// duplicates and empty ids are ignored.
+func (s *Store) GetByIDs(ids []string) (map[string]*User, error) {
+	return s.getByColumn("id", ids, func(u *User) string { return u.ID })
+}
+
+// GetByUsernames is GetByIDs by username: the result is keyed by username.
+func (s *Store) GetByUsernames(usernames []string) (map[string]*User, error) {
+	return s.getByColumn("username", usernames, func(u *User) string { return u.Username })
+}
+
+// getByColumn looks up the users whose column (a trusted constant) is one of
+// values, chunked under SQLite's parameter limit.
+func (s *Store) getByColumn(column string, values []string, key func(*User) string) (map[string]*User, error) {
+	out := make(map[string]*User, len(values))
+	seen := make(map[string]bool, len(values))
+	args := make([]any, 0, len(values))
+	for _, v := range values {
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		args = append(args, v)
+	}
+	for start := 0; start < len(args); start += idChunk {
+		chunk := args[start:min(start+idChunk, len(args))]
+		if err := s.getChunk(column, chunk, key, out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) getChunk(column string, args []any, key func(*User) string, out map[string]*User) error {
+	rows, err := s.db.Query(`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method
+		FROM users WHERE `+column+` IN (?`+strings.Repeat(",?", len(args)-1)+`)`, args...)
+	if err != nil {
+		return fmt.Errorf("users by %s: %w", column, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		u, err := s.scanUser(rows)
+		if err != nil {
+			return err
+		}
+		out[key(u)] = u
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("users by %s: %w", column, err)
+	}
+	return nil
+}
+
 // GetByEmail looks up a user by exact email match. Empty email returns
 // ErrNotFound to prevent matching accounts that haven't set one.
 func (s *Store) GetByEmail(email string) (*User, error) {

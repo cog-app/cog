@@ -21,9 +21,8 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	flash := r.URL.Query().Get("flash")
 	plugin.SetTitle(w, "Profanity Filter")
-	ui.Render(w, r, profanitySettingsPage(content, flash, plugin.CSRFToken(r)))
+	ui.Render(w, r, profanitySettingsPage(content, plugin.CSRFToken(r)))
 }
 
 // SaveSettings handles POST to save the word list.
@@ -32,10 +31,12 @@ func (h *Pages) SaveSettings(w http.ResponseWriter, r *http.Request) {
 	content := r.FormValue("wordlist")
 	if err := h.plugin.saveWordList(username, content); err != nil {
 		h.plugin.log.Error("save profanity word list", "user", username, "err", err)
-		http.Redirect(w, r, "/apps/profanity/settings?flash=Error+saving", http.StatusSeeOther)
+		plugin.SetFlash(w, plugin.Flash{Kind: "error", Message: "The word list was not saved: " + err.Error()})
+		http.Redirect(w, r, "/apps/profanity/settings", http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/apps/profanity/settings?flash=Saved", http.StatusSeeOther)
+	plugin.SetFlash(w, plugin.Flash{Kind: "success", Message: "Word list saved."})
+	http.Redirect(w, r, "/apps/profanity/settings", http.StatusSeeOther)
 }
 
 // AdminSettings shows the admin TTS/Whisper configuration page.
@@ -50,8 +51,7 @@ func (h *Pages) AdminSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	flash := r.URL.Query().Get("flash")
-	ui.Render(w, r, profanityAdminPage(cfg, flash, plugin.CSRFToken(r)))
+	ui.Render(w, r, profanityAdminPage(cfg, plugin.CSRFToken(r)))
 }
 
 // SaveAdminSettings handles POST to save admin TTS configuration.
@@ -67,10 +67,12 @@ func (h *Pages) SaveAdminSettings(w http.ResponseWriter, r *http.Request) {
 		TTSCommand: r.FormValue("tts_command"),
 	}); err != nil {
 		h.plugin.log.Error("save profanity admin settings", "err", err)
-		http.Redirect(w, r, "/admin/plugins/profanity?flash=Error+saving", http.StatusSeeOther)
+		plugin.SetFlash(w, plugin.Flash{Kind: "error", Message: "The settings were not saved: " + err.Error()})
+		http.Redirect(w, r, "/admin/plugins/profanity", http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/admin/plugins/profanity?flash=Saved", http.StatusSeeOther)
+	plugin.SetFlash(w, plugin.Flash{Kind: "success", Message: "Settings saved."})
+	http.Redirect(w, r, "/admin/plugins/profanity", http.StatusSeeOther)
 }
 
 type adminSettingsData struct {

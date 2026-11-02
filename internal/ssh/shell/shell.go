@@ -34,11 +34,10 @@ type Shell struct {
 	search     *search.Manager          // may be nil
 	log        *slog.Logger
 	runner     *interp.Runner // current interpreter runner (set after newRunner)
-	exited     bool
-	termWidth  int  // terminal width for SSH pty sessions (0 = unknown)
-	termHeight int  // terminal height for SSH pty sessions (0 = unknown)
-	sshMode    bool // true when running over an SSH channel
-	color      bool // true during RunInteractive for ANSI color output
+	termWidth  int            // terminal width for SSH pty sessions (0 = unknown)
+	termHeight int            // terminal height for SSH pty sessions (0 = unknown)
+	sshMode    bool           // true when running over an SSH channel
+	color      bool           // true during RunInteractive for ANSI color output
 }
 
 // SetSSHMode configures the shell for use over an SSH channel with a pty.
@@ -252,8 +251,10 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 		if mux != nil {
 			mux.setRunnerActive(false)
 		}
-		if s.exited {
-			return nil
+		if runner.Exited() {
+			// exit N ends the session with N: runErr is its status,
+			// or nil for 0.
+			return runErr
 		}
 		if runErr != nil {
 			if _, ok := errors.AsType[interp.ExitStatus](runErr); !ok {

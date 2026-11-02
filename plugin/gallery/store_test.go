@@ -31,3 +31,44 @@ func TestUpsertReturnsExistingID(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, albumID, againAlbum)
 }
+
+// Deleting every non-keep duplicate reads them all in one query: keep items
+// and groups too small to show are left out, and a media item in two groups
+// comes back once. Pruning then drops exactly the groups left with fewer
+// than two members.
+func TestNonKeepDuplicatesAndPrune(t *testing.T) {
+	db := testDB(t)
+	keepA, dupA, keepB, dupB, lone := insertTestMedia(t, db, 0), insertTestMedia(t, db, 0),
+		insertTestMedia(t, db, 0), insertTestMedia(t, db, 0), insertTestMedia(t, db, 0)
+
+	groupA, err := InsertDuplicateGroup(db)
+	require.NoError(t, err)
+	require.NoError(t, AddDuplicateMember(db, groupA, keepA, true, 0))
+	require.NoError(t, AddDuplicateMember(db, groupA, dupA, false, 1))
+	groupB, err := InsertDuplicateGroup(db)
+	require.NoError(t, err)
+	require.NoError(t, AddDuplicateMember(db, groupB, keepB, true, 0))
+	require.NoError(t, AddDuplicateMember(db, groupB, dupB, false, 1))
+	require.NoError(t, AddDuplicateMember(db, groupB, dupA, false, 2))
+	small, err := InsertDuplicateGroup(db)
+	require.NoError(t, err)
+	require.NoError(t, AddDuplicateMember(db, small, lone, false, 0))
+
+	members, err := NonKeepDuplicates(db)
+	require.NoError(t, err)
+	got := map[int64]bool{}
+	for _, m := range members {
+		require.False(t, got[m.Media.ID], "media returned twice")
+		got[m.Media.ID] = true
+	}
+	require.Equal(t, map[int64]bool{dupA: true, dupB: true}, got)
+
+	for id := range got {
+		_, err := db.Exec(`DELETE FROM media WHERE id = ?`, id)
+		require.NoError(t, err)
+	}
+	require.NoError(t, PruneDuplicateGroups(db))
+	var left int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM duplicate_groups`).Scan(&left))
+	require.Equal(t, 0, left)
+}

@@ -2,6 +2,8 @@ package recipes
 
 import (
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -337,4 +339,47 @@ func ListKeywords(db *sql.DB) ([]KeywordCount, error) {
 		kws = append(kws, k)
 	}
 	return kws, rows.Err()
+}
+
+// draftTTL is how long a saved form waits for the page that refills it.
+const draftTTL = 3600 // seconds
+
+// SaveDraft keeps form, the fields of a recipe form a save rejected, until
+// TakeDraft reads it. Drafts left unread past draftTTL are removed on the way.
+func SaveDraft(db *sql.DB, form map[string]string) (int64, error) {
+	data, err := json.Marshal(form)
+	if err != nil {
+		return 0, fmt.Errorf("encode draft: %w", err)
+	}
+	var id int64
+	err = inTx(db, func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM recipe_drafts WHERE created_at < unixepoch() - ?`, draftTTL); err != nil {
+			return fmt.Errorf("expire drafts: %w", err)
+		}
+		res, err := tx.Exec(`INSERT INTO recipe_drafts (form) VALUES (?)`, string(data))
+		if err != nil {
+			return fmt.Errorf("save draft: %w", err)
+		}
+		id, err = res.LastInsertId()
+		return err
+	})
+	return id, err
+}
+
+// TakeDraft returns the form SaveDraft kept under id and removes it, or nil
+// when there is none (already taken, or expired).
+func TakeDraft(db *sql.DB, id int64) (map[string]string, error) {
+	var data string
+	err := db.QueryRow(`DELETE FROM recipe_drafts WHERE id = ? AND created_at >= unixepoch() - ? RETURNING form`, id, draftTTL).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("take draft: %w", err)
+	}
+	var form map[string]string
+	if err := json.Unmarshal([]byte(data), &form); err != nil {
+		return nil, fmt.Errorf("decode draft: %w", err)
+	}
+	return form, nil
 }

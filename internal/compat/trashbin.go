@@ -1,7 +1,6 @@
 package compat
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -66,7 +65,7 @@ func (h *TrashbinHandler) handlePropfind(w http.ResponseWriter, r *http.Request,
 	if trashName != "" {
 		// Single item PROPFIND
 		item, err := h.Files.GetTrashItem(u.Username, trashName)
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, files.ErrNotFound) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -167,7 +166,7 @@ func (h *TrashbinHandler) handleDelete(w http.ResponseWriter, u *user.User, tras
 		return
 	}
 
-	if err := h.Files.PermanentDelete(u.Username, trashName); errors.Is(err, sql.ErrNoRows) {
+	if err := h.Files.PermanentDelete(u.Username, trashName); errors.Is(err, files.ErrNotFound) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	} else if err != nil {
@@ -184,7 +183,12 @@ func (h *TrashbinHandler) handleRestore(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	if err := h.Files.RestoreFromTrash(u.Username, trashName); err != nil {
+	err := h.Files.RestoreFromTrash(u.Username, trashName)
+	if errors.Is(err, files.ErrNotFound) {
+		http.Error(w, "trash item not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
 		h.Log.Warn("restore from trash", "user", u.Username, "item", trashName, "err", err)
 		http.Error(w, err.Error(), http.StatusConflict)
 		return

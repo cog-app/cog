@@ -478,6 +478,39 @@ func (s *Store) NCIDFor(shareID string) (int64, error) {
 	return ncID, nil
 }
 
+// NCIDsFor is NCIDFor for several shares: two queries however many there
+// are, creating the ids that do not exist yet.
+func (s *Store) NCIDsFor(shareIDs []string) (map[string]int64, error) {
+	out := make(map[string]int64, len(shareIDs))
+	if len(shareIDs) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(shareIDs))
+	for i, id := range shareIDs {
+		args[i] = id
+	}
+	values := "(?)" + strings.Repeat(",(?)", len(shareIDs)-1)
+	if _, err := s.db.Exec(`INSERT INTO share_nc_ids (share_id) VALUES `+values+`
+		ON CONFLICT (share_id) DO NOTHING`, args...); err != nil {
+		return nil, fmt.Errorf("create nc ids: %w", err)
+	}
+	rows, err := s.db.Query(`SELECT share_id, nc_id FROM share_nc_ids
+		WHERE share_id IN (?`+strings.Repeat(",?", len(shareIDs)-1)+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("lookup nc ids: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var ncID int64
+		if err := rows.Scan(&id, &ncID); err != nil {
+			return nil, fmt.Errorf("scan nc id: %w", err)
+		}
+		out[id] = ncID
+	}
+	return out, rows.Err()
+}
+
 // ShareIDFromNC looks up the internal share ID from an NC integer ID.
 func (s *Store) ShareIDFromNC(ncID int64) (string, error) {
 	var shareID string

@@ -221,7 +221,10 @@ func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 
 	// Start SSH server if enabled.
 	if cfg.SSHEnabled {
-		ks := keys.NewStore(p.Plugins, p.Users, clock.System())
+		ks, err := keys.NewStore(p.DB, p.Plugins, p.Users, clock.System())
+		if err != nil {
+			return err
+		}
 		sshSrv, err := cogssh.New(cfg, p, ks, log)
 		if err != nil {
 			return err

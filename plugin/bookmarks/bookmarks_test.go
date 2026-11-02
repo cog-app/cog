@@ -335,6 +335,41 @@ func TestBookmarksExportRoundTrip(t *testing.T) {
 	require.Equal(t, []string{"x&y"}, bm.Tags)
 }
 
+// An import is all or nothing: a bookmark that fails part way through takes
+// the ones before it with it, including updates to bookmarks already saved,
+// so the reported count never claims bookmarks that were rolled back.
+func TestBookmarksImportIsAtomic(t *testing.T) {
+	env := cogtest.New(t, bookmarks.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	plug, _ := env.Providers.Plugins.Plugin("bookmarks")
+	db, err := plug.(*bookmarks.Plugin).DB(alice.Username)
+	require.NoError(t, err)
+
+	_, err = bookmarks.CreateBookmark(db, "https://kept.example", "Kept", "", []string{"old"}, nil)
+	require.NoError(t, err)
+	// Make the third bookmark fail the way a constraint or I/O error would.
+	_, err = db.Exec(`CREATE TRIGGER test_fail_import BEFORE INSERT ON bookmarks
+		WHEN NEW.url = 'https://fails.example' BEGIN SELECT RAISE(ABORT, 'refused'); END`)
+	require.NoError(t, err)
+
+	file := `<DL><p>
+    <DT><A HREF="https://first.example">First</A>
+    <DT><A HREF="https://kept.example" TAGS="new">Renamed</A>
+    <DT><A HREF="https://fails.example">Fails</A>
+</DL><p>`
+	count, err := bookmarks.ImportNetscapeHTML(db, strings.NewReader(file))
+	require.Error(t, err)
+	require.Equal(t, 0, count)
+
+	n, err := bookmarks.BookmarkCount(db)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	bm, err := bookmarks.GetBookmarkByURL(db, "https://kept.example")
+	require.NoError(t, err)
+	require.Equal(t, "Kept", bm.Title)
+	require.Equal(t, []string{"old"}, bm.Tags)
+}
+
 func TestBookmarksPage(t *testing.T) {
 	env := cogtest.New(t, bookmarks.New())
 	alice := env.CreateUser(t, "alice", "pass")

@@ -176,10 +176,12 @@ func parseStringPayload(payload []byte) string {
 	return string(payload[4 : 4+n])
 }
 
-// sendExitStatus sends the exit-status message to the channel.
+// sendExitStatus sends the exit-status message to the channel. A status is
+// a byte, as a POSIX shell's is: code is taken modulo 256, so a negative or
+// oversized code does not reach the client as some huge uint32.
 func sendExitStatus(channel gossh.Channel, code int) {
 	payload := make([]byte, 4)
-	binary.BigEndian.PutUint32(payload, uint32(code))
+	binary.BigEndian.PutUint32(payload, uint32(code&0xff))
 	if _, err := channel.SendRequest("exit-status", false, payload); err != nil {
 		// The client has gone; there is no one left to tell.
 		slog.Debug("send exit-status", "err", err)

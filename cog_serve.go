@@ -61,7 +61,10 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 
 			// Start SSH server if enabled.
 			if cfg.SSHEnabled {
-				ks := keys.NewStore(p.Plugins, p.Users, clock.System())
+				ks, err := keys.NewStore(p.DB, p.Plugins, p.Users, clock.System())
+				if err != nil {
+					return err
+				}
 				sshSrv, err := cogssh.New(cfg, p, ks, p.Log)
 				if err != nil {
 					return err

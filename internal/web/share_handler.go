@@ -15,11 +15,19 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/share"
-	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
 type shareHandler struct{ handler }
+
+// shareSubjectRefs lists the subjects of recs, for a subjectNamer.
+func shareSubjectRefs(recs []share.Record) []subjectRef {
+	refs := make([]subjectRef, len(recs))
+	for i, rec := range recs {
+		refs[i] = subjectRef{rec.SubjectType, rec.SubjectID}
+	}
+	return refs
+}
 
 // SharePanel serves the HTMX share panel partial for a resource.
 // GET /api/shares/panel?type=calendar:calendar&id=5
@@ -67,7 +75,7 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 		}
 		feedHome = c.Home
 	}
-	var shares []ui.ShareDisplayItem
+	var recs []share.Record
 	for rec, err := range h.p.Shares.ListByResource(resType, resID) {
 		if err != nil {
 			h.p.Log.Error("share panel: list shares", "type", resType, "id", resID, "err", err)
@@ -77,31 +85,24 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 		if rec.OwnerUserID != u.ID {
 			continue // only show shares owned by this user
 		}
+		recs = append(recs, rec)
+	}
+	namer, err := newSubjectNamer(h.p, shareSubjectRefs(recs))
+	if err != nil {
+		h.p.Log.Error("share panel: look up sharees", "type", resType, "id", resID, "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	var shares []ui.ShareDisplayItem
+	for _, rec := range recs {
 		sd := ui.ShareDisplayItem{
 			ID:          rec.ID,
 			SubjectType: rec.SubjectType,
 			PermLabel:   permissionLabel(rec.Permissions, levels),
+			SubjectName: namer.name(subjectRef{rec.SubjectType, rec.SubjectID}, "(deleted user)"),
 		}
 		switch rec.SubjectType {
-		case "USER":
-			su, err := h.p.Users.GetByID(rec.SubjectID)
-			switch {
-			case errors.Is(err, user.ErrNotFound):
-				sd.SubjectName = "(deleted user)"
-			case err != nil:
-				h.p.Log.Error("share panel: look up sharee", "user", rec.SubjectID, "err", err)
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-				return
-			default:
-				sd.SubjectName = su.DisplayName
-				if sd.SubjectName == "" {
-					sd.SubjectName = su.Username
-				}
-			}
-		case "GROUP":
-			sd.SubjectName = rec.SubjectID
 		case "PUBLIC":
-			sd.SubjectName = "Public link"
 			if rec.Token != nil {
 				sd.Token = *rec.Token
 				sd.LinkPath = "/s/" + sd.Token
@@ -112,8 +113,6 @@ func (h *shareHandler) SharePanel(w http.ResponseWriter, r *http.Request) {
 					sd.LinkPath = strings.TrimPrefix(h.p.DAV.FeedURL(sd.Token, feedHome), strings.TrimSuffix(h.p.Config.BaseURL, "/"))
 				}
 			}
-		case "INSTANCE":
-			sd.SubjectName = "Everyone"
 		}
 		shares = append(shares, sd)
 	}

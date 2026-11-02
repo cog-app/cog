@@ -13,6 +13,9 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/clock"
 )
 
+// ErrNotFound is returned when no quota is set for a volume and subject.
+var ErrNotFound = errors.New("quota not found")
+
 // Quota represents a storage quota for a volume.
 type Quota struct {
 	ID          string
@@ -52,7 +55,8 @@ func (s *Store) Set(volumeID, subjectType, subjectID string, quotaBytes int64) e
 	return nil
 }
 
-// Get returns a specific quota by volume/subject.
+// Get returns a specific quota by volume/subject, or ErrNotFound when none
+// is set.
 func (s *Store) Get(volumeID, subjectType, subjectID string) (*Quota, error) {
 	var q Quota
 	err := s.db.QueryRow(`
@@ -61,8 +65,8 @@ func (s *Store) Get(volumeID, subjectType, subjectID string) (*Quota, error) {
 		WHERE volume_id = ? AND subject_type = ? AND subject_id = ?`,
 		volumeID, subjectType, subjectID).Scan(
 		&q.ID, &q.VolumeID, &q.SubjectType, &q.SubjectID, &q.QuotaBytes, &q.CreatedAt, &q.UpdatedAt)
-	if err == sql.ErrNoRows {
-		return nil, nil
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get quota: %w", err)

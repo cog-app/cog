@@ -457,6 +457,16 @@ func (p *Plugin) GetByID(username string, id int64) (*FileMeta, error) {
 	return getByID(db, id)
 }
 
+// GetByIDs returns file metadata for several ids in one query, keyed by id.
+// Ids with no file are absent from the map.
+func (p *Plugin) GetByIDs(username string, ids []int64) (map[int64]*FileMeta, error) {
+	db, err := p.DB(username)
+	if err != nil {
+		return nil, err
+	}
+	return getByIDs(db, ids)
+}
+
 // GetByPath returns file metadata by path.
 func (p *Plugin) GetByPath(username, path string) (*FileMeta, error) {
 	path = normalizePath(path)

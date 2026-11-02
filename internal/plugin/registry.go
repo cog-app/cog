@@ -273,7 +273,8 @@ func (r *Registry) schemaFor(pluginID string) fs.FS {
 
 // UserDB returns (or opens) the per-user database.
 // Path: {dataDir}/{username}/user.db
-// Creates user_settings and ssh_keys tables on first access.
+// Creates the user_settings table on first access. (SSH keys used to live
+// here too; internal/ssh/keys moves them to the system database.)
 func (r *Registry) UserDB(username string) (*sql.DB, error) {
 	key := username + ":__user__"
 	r.mu.Lock()
@@ -308,12 +309,6 @@ func migrateUserDB(db *sql.DB) error {
 		key TEXT PRIMARY KEY,
 		value BLOB,
 		updated_at INTEGER NOT NULL
-	);
-	CREATE TABLE IF NOT EXISTS ssh_keys (
-		id TEXT PRIMARY KEY,
-		name TEXT NOT NULL,
-		public_key TEXT NOT NULL,
-		created_at INTEGER NOT NULL
 	);
 	`
 	_, err := db.Exec(schema)
@@ -1038,7 +1033,7 @@ func (pr *pluginRegistrar) RegisterSettingsPage(page SettingsPage) {
 	}
 	if page.Action != nil {
 		postHandler := auth.RequireAuthWeb(auth.RequireAdmin(
-			pr.injectPluginContext(pr.csrf().Require(page.Action))))
+			pr.injectPluginContext(pr.csrf().Require(pr.carryFlash(page.Action)))))
 		pr.mux.Handle("POST "+basePath, pr.wrap(postHandler))
 	}
 }

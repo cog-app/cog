@@ -2,10 +2,12 @@ package auth_test
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 )
@@ -96,7 +98,7 @@ func TestWebAuthn_CredentialCRUD(t *testing.T) {
 	require.Equal(t, 1, count)
 
 	// Bob cannot delete Alice's credential by ID alone (scoped by user).
-	require.NoError(t, env.Providers.WebAuthn.DeleteCredential("alice-key-2", bob.ID))
+	require.True(t, errors.Is(env.Providers.WebAuthn.DeleteCredential("alice-key-2", bob.ID), auth.ErrCredentialNotFound))
 	count, _ = env.Providers.WebAuthn.CredentialCount(alice.ID)
 	require.Equal(t, 1, count) // unchanged: Bob's delete didn't touch Alice's
 }
@@ -126,4 +128,34 @@ func insertCred(t *testing.T, env *cogtest.Env, id, userID, name string) {
 		id, userID, name, string(data), time.Now().Unix(),
 	)
 	require.NoError(t, err)
+}
+
+// A finish with no ceremony in progress is the client's failure; a store
+// that cannot be read is the server's. Callers answer 403 for one and 500
+// for the other, so the two must be told apart.
+func TestWebAuthn_FinishErrorsAreClassified(t *testing.T) {
+	env := cogtest.New(t)
+	u := env.CreateUser(t, "alice", "pass")
+	wa := env.Providers.WebAuthn
+
+	err := wa.FinishLogin(u.ID, u.Username, u.Username, []byte("{}"))
+	require.True(t, errors.Is(err, auth.ErrWebAuthnRejected))
+
+	_, err = wa.BeginRegistration(u.ID, u.Username, u.Username)
+	require.NoError(t, err)
+	err = wa.FinishRegistration(u.ID, u.Username, u.Username, "key", []byte("not json"))
+	require.True(t, errors.Is(err, auth.ErrWebAuthnRejected))
+
+	_, err = env.Providers.DB.Exec(`ALTER TABLE webauthn_sessions RENAME TO webauthn_sessions_gone`)
+	require.NoError(t, err)
+	err = wa.FinishLogin(u.ID, u.Username, u.Username, []byte("{}"))
+	require.True(t, err != nil)
+	require.True(t, !errors.Is(err, auth.ErrWebAuthnRejected))
+}
+
+func TestWebAuthn_DeleteUnknownCredential(t *testing.T) {
+	env := cogtest.New(t)
+	u := env.CreateUser(t, "alice", "pass")
+	err := env.Providers.WebAuthn.DeleteCredential("nope", u.ID)
+	require.True(t, errors.Is(err, auth.ErrCredentialNotFound))
 }

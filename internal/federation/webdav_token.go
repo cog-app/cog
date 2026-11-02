@@ -7,11 +7,10 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -22,12 +21,11 @@ import (
 // Remote servers access our files at /public.php/webdav/ using the shared
 // secret token from the OCM share.
 type TokenWebDAVHandler struct {
-	Log     *slog.Logger
-	Store   *Store
-	Shares  *share.Store
-	Users   *user.Store
-	Files   *files.Plugin
-	DataDir string
+	Log    *slog.Logger
+	Store  *Store
+	Shares *share.Store
+	Users  *user.Store
+	Files  *files.Plugin
 }
 
 func (h *TokenWebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -109,26 +107,20 @@ func (h *TokenWebDAVHandler) servePublicShare(w http.ResponseWriter, r *http.Req
 	}
 	resourcePath := meta.Path
 
-	// Build the local filesystem path used only for PROPFIND read-listing and
-	// GET/HEAD serving. Writes go through the files plugin (see handlePut/Mkcol/Delete)
-	// so they update DB metadata, quota, indexing, and activity.
-	filesDir := filepath.Join(h.DataDir, owner.Username, "files")
-	basePath := filepath.Join(filesDir, filepath.FromSlash(resourcePath))
-
 	// Extract the sub-path from the request URL (slash-form, relative to the
-	// shared resource root).
+	// shared resource root). Everything below goes through the files plugin
+	// in the owner's namespace, so the owner's mounts decide where the bytes
+	// live, as they do for the owner's own WebDAV.
 	subPath := strings.TrimPrefix(r.URL.Path, "/public.php/webdav")
 	subPath = path.Clean("/" + subPath)
-	localPath := filepath.Join(basePath, filepath.FromSlash(subPath))
+	targetPath := path.Join(resourcePath, subPath)
 
-	// Security: ensure we don't escape the share root.
-	if localPath != basePath && !strings.HasPrefix(localPath, basePath+string(os.PathSeparator)) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	// Security: ensure we don't escape the share root. A shared file has no
+	// children to reach.
+	if !within(targetPath, resourcePath) || (!meta.IsDir && subPath != "/") {
+		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
-
-	// Owner-namespace path passed to the files plugin (slash-form).
-	targetPath := path.Join(resourcePath, subPath)
 
 	// Enforce permissions.
 	isReadOnly := rec.Permissions&2 == 0 // no write permission
@@ -140,9 +132,9 @@ func (h *TokenWebDAVHandler) servePublicShare(w http.ResponseWriter, r *http.Req
 
 	switch r.Method {
 	case "PROPFIND":
-		h.handlePropfind(w, r, localPath, basePath, subPath)
+		h.handlePropfind(w, r, owner.Username, targetPath, subPath)
 	case http.MethodGet, http.MethodHead:
-		http.ServeFile(w, r, localPath)
+		h.handleGet(w, r, owner.Username, targetPath)
 	case http.MethodPut:
 		h.handlePut(w, r, owner.Username, targetPath)
 	case "MKCOL":
@@ -177,25 +169,28 @@ func (h *TokenWebDAVHandler) extractToken(r *http.Request) string {
 	return ""
 }
 
-func (h *TokenWebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, localPath, basePath, subPath string) {
-	info, err := os.Stat(localPath)
-	if errors.Is(err, fs.ErrNotExist) {
+// within reports whether p is root or below it; both are clean slash paths.
+func within(p, root string) bool {
+	return root == "/" || p == root || strings.HasPrefix(p, root+"/")
+}
+
+func (h *TokenWebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, username, targetPath, subPath string) {
+	meta, err := h.Files.GetByPath(username, targetPath)
+	if errors.Is(err, files.ErrNotFound) {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 	if err != nil {
-		h.Log.Error("federated propfind: stat", "path", localPath, "err", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		h.serverError(w, "propfind: look up "+targetPath, err)
 		return
 	}
 
 	// Read the children before the 207 goes out, so a failure can still
 	// be reported as one.
-	var entries []os.DirEntry
-	if info.IsDir() && r.Header.Get("Depth") != "0" {
-		if entries, err = os.ReadDir(localPath); err != nil {
-			h.Log.Error("federated propfind: read directory", "path", localPath, "err", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+	var children []files.FileMeta
+	if meta.IsDir && r.Header.Get("Depth") != "0" {
+		if children, err = h.Files.List(username, targetPath); err != nil {
+			h.serverError(w, "propfind: list "+targetPath, err)
 			return
 		}
 	}
@@ -204,35 +199,81 @@ func (h *TokenWebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(207) // Multi-Status
 
 	href := "/public.php/webdav" + subPath
+	if meta.IsDir && !strings.HasSuffix(href, "/") {
+		href += "/"
+	}
 
 	io.WriteString(w, `<?xml version="1.0" encoding="utf-8"?>`)
 	io.WriteString(w, `<d:multistatus xmlns:d="DAV:">`)
 
-	writePropResponse(w, href, info)
-
-	for _, entry := range entries {
-		childInfo, err := entry.Info()
-		if errors.Is(err, fs.ErrNotExist) {
-			continue // removed since ReadDir
-		}
-		if err != nil {
-			// The 207 is already sent; the listing goes out without this entry.
-			h.Log.Error("federated propfind: stat entry", "path", filepath.Join(localPath, entry.Name()), "err", err)
-			continue
-		}
-		childHref := path.Join(href, entry.Name())
-		if entry.IsDir() {
+	writePropResponse(w, href, meta)
+	for i := range children {
+		child := &children[i]
+		childHref := path.Join(href, child.Name)
+		if child.IsDir {
 			childHref += "/"
 		}
-		writePropResponse(w, childHref, childInfo)
+		writePropResponse(w, childHref, child)
 	}
 
 	io.WriteString(w, `</d:multistatus>`)
 }
 
-func writePropResponse(w io.Writer, href string, info os.FileInfo) {
+func (h *TokenWebDAVHandler) handleGet(w http.ResponseWriter, r *http.Request, username, targetPath string) {
+	meta, err := h.Files.GetByPath(username, targetPath)
+	if errors.Is(err, files.ErrNotFound) {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.serverError(w, "get: look up "+targetPath, err)
+		return
+	}
+	if meta.IsDir {
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	rc, meta, err := h.Files.Download(username, targetPath)
+	if errors.Is(err, files.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.serverError(w, "get: open "+targetPath, err)
+		return
+	}
+	defer rc.Close()
+
+	if meta.MimeType != "" {
+		w.Header().Set("Content-Type", meta.MimeType)
+	}
+	w.Header().Set("ETag", `"`+meta.ETag+`"`)
+	modTime := time.Unix(meta.MTime, 0)
+
+	// A seekable body (a local file) gets ranges and conditional requests.
+	if rs, ok := rc.(io.ReadSeeker); ok {
+		http.ServeContent(w, r, meta.Name, modTime, rs)
+		return
+	}
+	w.Header().Set("Content-Length", strconv.FormatInt(meta.Size, 10))
+	w.Header().Set("Last-Modified", modTime.UTC().Format(http.TimeFormat))
+	if r.Method == http.MethodHead {
+		return
+	}
+	if _, err := io.Copy(w, rc); err != nil {
+		// The status is already sent; all that's left is to record it.
+		h.Log.Error("federated webdav: get: copy", "path", targetPath, "err", err)
+	}
+}
+
+func writePropResponse(w io.Writer, href string, meta *files.FileMeta) {
 	resourceType := ""
-	if info.IsDir() {
+	if meta.IsDir {
 		resourceType = "<d:collection/>"
 	}
 	// href incorporates the filename which is user-controlled; XML-escape it.
@@ -241,10 +282,10 @@ func writePropResponse(w io.Writer, href string, info os.FileInfo) {
 	io.WriteString(w, `<d:propstat>`)
 	io.WriteString(w, `<d:prop>`)
 	io.WriteString(w, `<d:resourcetype>`+resourceType+`</d:resourcetype>`)
-	if !info.IsDir() {
-		io.WriteString(w, `<d:getcontentlength>`+strconv.FormatInt(info.Size(), 10)+`</d:getcontentlength>`)
+	if !meta.IsDir {
+		io.WriteString(w, `<d:getcontentlength>`+strconv.FormatInt(meta.Size, 10)+`</d:getcontentlength>`)
 	}
-	io.WriteString(w, `<d:getlastmodified>`+info.ModTime().UTC().Format(http.TimeFormat)+`</d:getlastmodified>`)
+	io.WriteString(w, `<d:getlastmodified>`+time.Unix(meta.MTime, 0).UTC().Format(http.TimeFormat)+`</d:getlastmodified>`)
 	io.WriteString(w, `</d:prop>`)
 	io.WriteString(w, `<d:status>HTTP/1.1 200 OK</d:status>`)
 	io.WriteString(w, `</d:propstat>`)

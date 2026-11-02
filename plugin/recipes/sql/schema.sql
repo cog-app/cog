@@ -4,6 +4,12 @@ CREATE TABLE IF NOT EXISTS keywords (
     PRIMARY KEY (recipe_id, keyword)
 );
 
+CREATE TABLE IF NOT EXISTS recipe_drafts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    form TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
 CREATE TABLE IF NOT EXISTS recipe_ingredients (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     recipe_id INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,

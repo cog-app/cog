@@ -450,8 +450,13 @@ func (h *loginHandler) ShowResetPassword(w http.ResponseWriter, r *http.Request)
 	}
 
 	if _, err := h.p.PasswordResets.Validate(token); err != nil {
-		setFlash(w, "error", "Invalid or expired reset link. Please request a new one.")
-		http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
+		if errors.Is(err, auth.ErrInvalidResetToken) {
+			setFlash(w, "error", "Invalid or expired reset link. Please request a new one.")
+			http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
+			return
+		}
+		h.p.Log.Error("validate password reset token", "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -480,9 +485,16 @@ func (h *loginHandler) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	}
 
 	userID, err := h.p.PasswordResets.Validate(token)
-	if err != nil {
+	if errors.Is(err, auth.ErrInvalidResetToken) {
 		setFlash(w, "error", "Invalid or expired reset link. Please request a new one.")
 		http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
+		return
+	}
+	if err != nil {
+		// Not a bad link: the check itself failed. Send the user back to the
+		// form to try again rather than telling them the link is dead.
+		setFlash(w, "error", "Something went wrong checking the reset link. Please try again.", err)
+		http.Redirect(w, r, "/reset-password?token="+url.QueryEscape(token), http.StatusSeeOther)
 		return
 	}
 
@@ -594,9 +606,13 @@ func (h *loginHandler) FinishWebAuthnLogin(w http.ResponseWriter, r *http.Reques
 		displayName = u.Username
 	}
 
-	if err := h.p.WebAuthn.FinishLogin(u.ID, u.Username, displayName, body); err != nil {
+	if err := h.p.WebAuthn.FinishLogin(u.ID, u.Username, displayName, body); errors.Is(err, auth.ErrWebAuthnRejected) {
 		h.p.Log.Info("webauthn login verification failed", "user", u.ID, "err", err)
 		http.Error(w, "verification failed", http.StatusForbidden)
+		return
+	} else if err != nil {
+		h.p.Log.Error("webauthn login", "user", u.ID, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 

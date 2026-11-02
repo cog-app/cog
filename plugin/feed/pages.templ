@@ -210,7 +210,7 @@ templ markReadButton(action string, csrfToken string) {
 	</form>
 }
 
-templ feedIndexPage(sb sidebarData, items []ItemWithSubscription, q string, csrfToken string, o rowOpts) {
+templ feedIndexPage(sb sidebarData, items []ItemWithSubscription, q, qErr string, csrfToken string, o rowOpts) {
 	@feedLayout(sb) {
 		@ui.PageHeader("All articles", nil) {
 			if sb.TotalUnread > 0 {
@@ -220,13 +220,20 @@ templ feedIndexPage(sb sidebarData, items []ItemWithSubscription, q string, csrf
 		<form method="get" action="/apps/feed/" class="feed-search" role="search">
 			<div class="form-inline">
 				<label class="sr-only" for="feed-q">Search articles</label>
-				<input class="form-control" type="search" id="feed-q" name="q" value={ q } placeholder="Search articles" aria-describedby="feed-search-help"/>
+				if qErr != "" {
+					<input class="form-control" type="search" id="feed-q" name="q" value={ q } placeholder="Search articles" aria-invalid="true" aria-describedby="feed-q-error feed-search-help"/>
+				} else {
+					<input class="form-control" type="search" id="feed-q" name="q" value={ q } placeholder="Search articles" aria-describedby="feed-search-help"/>
+				}
 				<button class="btn" type="submit" aria-label="Search">
 					@ui.Icon("search")
 					<span class="hide-mobile">Search</span>
 				</button>
 			</div>
-			<details class="feed-search-help" id="feed-search-help">
+			if qErr != "" {
+				<p class="form-error" id="feed-q-error" role="alert">This search could not be understood: { qErr }. See the search syntax below.</p>
+			}
+			<details class="feed-search-help" id="feed-search-help" open?={ qErr != "" }>
 				<summary>Search syntax</summary>
 				<dl class="feed-search-help-body">
 					<dt><code>term</code></dt>
@@ -248,7 +255,9 @@ templ feedIndexPage(sb sidebarData, items []ItemWithSubscription, q string, csrf
 				</dl>
 			</details>
 		</form>
-		if len(items) == 0 {
+		// A search that did not parse shows its error above and no list:
+		// "no matches" would claim the search ran.
+		if qErr == "" && len(items) == 0 {
 			<div class="list">
 				if q != "" {
 					@ui.EmptyState("No matches", "No article matches “"+q+"”.")
@@ -261,7 +270,7 @@ templ feedIndexPage(sb sidebarData, items []ItemWithSubscription, q string, csrf
 					}
 				}
 			</div>
-		} else {
+		} else if qErr == "" {
 			@feedItemList(items, o)
 		}
 	}

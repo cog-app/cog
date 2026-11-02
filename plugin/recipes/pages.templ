@@ -266,12 +266,12 @@ func recipeStats(r *Recipe) []recipeStat {
 	return stats
 }
 
-templ recipeEditPage(sb sidebarData, d *recipeDetail, csrfToken string) {
+templ recipeEditPage(sb sidebarData, d *recipeDetail, form recipeForm, csrfToken string) {
 	@recipesLayout(sb) {
 		@ui.PageHeader("Edit recipe", append(recipeCrumbs(d.Recipe), ui.Crumb{Label: shorten(d.Recipe.Name, 40), URL: fmt.Sprintf("/apps/recipes/recipe/%d", d.Recipe.ID)}))
 		<form class="card" method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/recipes/recipes/%d", d.Recipe.ID)) }>
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
-			@recipeFields(sb, d)
+			@recipeFields(sb, form)
 			<div class="form-actions form-actions-sticky">
 				<button class="btn btn-primary" type="submit">Save</button>
 				<a href={ templ.SafeURL(fmt.Sprintf("/apps/recipes/recipe/%d", d.Recipe.ID)) } class="btn">Cancel</a>
@@ -280,12 +280,12 @@ templ recipeEditPage(sb sidebarData, d *recipeDetail, csrfToken string) {
 	}
 }
 
-templ recipeNewPage(sb sidebarData, csrfToken string) {
+templ recipeNewPage(sb sidebarData, form recipeForm, csrfToken string) {
 	@recipesLayout(sb) {
 		@ui.PageHeader("New recipe", []ui.Crumb{{Label: "Recipes", URL: "/apps/recipes/"}})
 		<form class="card" method="post" action="/apps/recipes/recipes">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
-			@recipeFields(sb, &recipeDetail{Recipe: &Recipe{}})
+			@recipeFields(sb, form)
 			<div class="form-actions form-actions-sticky">
 				<button class="btn btn-primary" type="submit">Create recipe</button>
 				<a href="/apps/recipes/" class="btn">Cancel</a>
@@ -295,19 +295,19 @@ templ recipeNewPage(sb sidebarData, csrfToken string) {
 }
 
 // recipeFields is the form shared by the new and edit pages.
-templ recipeFields(sb sidebarData, d *recipeDetail) {
+templ recipeFields(sb sidebarData, f recipeForm) {
 	<div class="form-group">
 		<label for="name">Name</label>
-		<input class="form-control" type="text" id="name" name="name" value={ d.Recipe.Name } placeholder="Chicken tikka masala" required/>
+		<input class="form-control" type="text" id="name" name="name" value={ f["name"] } placeholder="Chicken tikka masala" required/>
 	</div>
 	<div class="form-group">
 		<label for="description">Description</label>
-		<textarea class="form-control recipe-autosize" id="description" name="description" rows="3" placeholder="Optional">{ d.Recipe.Description }</textarea>
+		<textarea class="form-control recipe-autosize" id="description" name="description" rows="3" placeholder="Optional">{ f["description"] }</textarea>
 	</div>
 	<div class="form-row">
 		<div class="form-group">
 			<label for="category">Category</label>
-			<input class="form-control" type="text" id="category" name="category" value={ d.Recipe.Category } list="categories" placeholder="e.g. Main course"/>
+			<input class="form-control" type="text" id="category" name="category" value={ f["category"] } list="categories" placeholder="e.g. Main course"/>
 			<datalist id="categories">
 				for _, cat := range sb.Categories {
 					<option value={ cat.Name }></option>
@@ -316,45 +316,45 @@ templ recipeFields(sb sidebarData, d *recipeDetail) {
 		</div>
 		<div class="form-group">
 			<label for="cuisine">Cuisine</label>
-			<input class="form-control" type="text" id="cuisine" name="cuisine" value={ d.Recipe.Cuisine } placeholder="e.g. Italian"/>
+			<input class="form-control" type="text" id="cuisine" name="cuisine" value={ f["cuisine"] } placeholder="e.g. Italian"/>
 		</div>
 	</div>
 	<div class="recipe-times">
-		@durationField("prep", "Prep time", d.Recipe.PrepTime)
-		@durationField("cook", "Cook time", d.Recipe.CookTime)
-		@durationField("total", "Total time", d.Recipe.TotalTime)
+		@durationField(f, "prep", "Prep time")
+		@durationField(f, "cook", "Cook time")
+		@durationField(f, "total", "Total time")
 	</div>
 	<div class="form-row">
 		<div class="form-group">
 			<label for="recipe_yield">Serves</label>
-			<input class="form-control" type="text" id="recipe_yield" name="recipe_yield" value={ d.Recipe.RecipeYield } placeholder="e.g. 4 servings"/>
+			<input class="form-control" type="text" id="recipe_yield" name="recipe_yield" value={ f["recipe_yield"] } placeholder="e.g. 4 servings"/>
 		</div>
 		<div class="form-group">
 			<label for="calories">Calories</label>
-			<input class="form-control" type="text" id="calories" name="calories" value={ d.Recipe.Calories } placeholder="e.g. 410 kcal per serving"/>
+			<input class="form-control" type="text" id="calories" name="calories" value={ f["calories"] } placeholder="e.g. 410 kcal per serving"/>
 		</div>
 	</div>
 	<div class="form-group">
 		<label for="keywords">Tags</label>
-		<input class="form-control" type="text" id="keywords" name="keywords" value={ strings.Join(d.Keywords, ", ") } placeholder="dinner, kid friendly, quick"/>
+		<input class="form-control" type="text" id="keywords" name="keywords" value={ f["keywords"] } placeholder="dinner, kid friendly, quick"/>
 		<p class="form-help">Separate tags with commas.</p>
 	</div>
 	<div class="form-group">
 		<label for="ingredients">Ingredients</label>
-		<textarea class="form-control recipe-autosize" id="ingredients" name="ingredients" rows="8" placeholder={ "2 cups flour\n1 cup sugar\n3 eggs" }>{ joinIngredients(d.Ingredients) }</textarea>
+		<textarea class="form-control recipe-autosize" id="ingredients" name="ingredients" rows="8" placeholder={ "2 cups flour\n1 cup sugar\n3 eggs" }>{ f["ingredients"] }</textarea>
 		<p class="form-help">One ingredient per line.</p>
 	</div>
 	<div class="form-group">
 		<label for="instructions">Method</label>
-		<textarea class="form-control recipe-autosize" id="instructions" name="instructions" rows="8" placeholder={ "Heat the oven to 180°C.\nMix the dry ingredients.\nAdd the eggs." }>{ joinInstructions(d.Instructions) }</textarea>
+		<textarea class="form-control recipe-autosize" id="instructions" name="instructions" rows="8" placeholder={ "Heat the oven to 180°C.\nMix the dry ingredients.\nAdd the eggs." }>{ f["instructions"] }</textarea>
 		<p class="form-help">One step per line.</p>
 	</div>
 }
 
 // durationField is a time as hours and minutes. A stored value that is not
 // a plain duration travels in a hidden field until the user replaces it.
-templ durationField(name, label, iso string) {
-	{{ h, m, raw := durationParts(iso) }}
+templ durationField(f recipeForm, name, label string) {
+	{{ h, m, raw := f[name+"_h"], f[name+"_m"], f[name+"_raw"] }}
 	<fieldset class="form-group">
 		<legend>{ label }</legend>
 		<div class="recipe-duration-inputs">
@@ -370,7 +370,7 @@ templ durationField(name, label, iso string) {
 	</fieldset>
 }
 
-templ recipeImportPage(sb sidebarData, csrfToken string) {
+templ recipeImportPage(sb sidebarData, importURL, csrfToken string) {
 	@recipesLayout(sb) {
 		@ui.PageHeader("Import recipe", []ui.Crumb{{Label: "Recipes", URL: "/apps/recipes/"}})
 		<form class="card" method="post" action="/apps/recipes/recipes/import-url">
@@ -381,7 +381,7 @@ templ recipeImportPage(sb sidebarData, csrfToken string) {
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			<div class="form-group">
 				<label for="url">Recipe URL</label>
-				<input class="form-control" type="url" id="url" name="url" placeholder="https://www.example.com/recipes/…" required/>
+				<input class="form-control" type="url" id="url" name="url" value={ importURL } placeholder="https://www.example.com/recipes/…" required/>
 			</div>
 			<div class="form-actions">
 				<button class="btn btn-primary" type="submit">

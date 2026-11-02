@@ -572,9 +572,14 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 	default: // all
 		var expr query.Expr
 		if c.Q != "" {
-			if e, qerr := query.Parse(c.Q); qerr == nil {
-				expr = e
+			e, qerr := query.Parse(c.Q)
+			if qerr != nil {
+				// The list this came from showed the parse error and no
+				// items, so there is nothing to step through.
+				slog.Warn("feed: search query in view context does not parse", "query", c.Q, "err", qerr)
+				return nil, nil
 			}
+			expr = e
 		}
 		if expr != nil {
 			expr = query.ResolveRelativeDates(expr, *SearchSchema(), h.plugin.ctx.Now())
@@ -688,33 +693,11 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var expr query.Expr
-	if q != "" {
-		if e, perr := query.Parse(q); perr == nil {
-			expr = e
-		}
-	}
-	if expr != nil {
-		expr = query.ResolveRelativeDates(expr, *SearchSchema(), h.plugin.ctx.Now())
-	}
-
-	items, err := store.ListItemsForView(ViewSpec{
-		All:      true,
-		HideRead: prefs.HideEmpty,
-		Query:    expr,
-		Schema:   SearchSchema(),
-	}, feedViewLimit)
+	items, qErr, err := h.searchItems(store, q, prefs.HideEmpty)
 	if err != nil {
-		http.Error(w, "could not list items: "+err.Error(), http.StatusInternalServerError)
+		slog.Error("feed: index items", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-	if expr != nil && queryNeedsRefine(expr) {
-		items, err = h.refineItems(store, items, expr)
-		if err != nil {
-			slog.Error("feed: index refine", "err", err)
-			http.Error(w, "could not refine items: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
 	}
 
 	sb, ok := h.sidebar(w, store, "/apps/feed/")
@@ -723,7 +706,37 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	}
 	c := viewCtx{Kind: "all", Q: q}
 	plugin.SetTitle(w, "Feed")
-	ui.Render(w, r, feedIndexPage(sb, items, q, plugin.CSRFToken(r), h.rows(c)))
+	ui.Render(w, r, feedIndexPage(sb, items, q, qErr, plugin.CSRFToken(r), h.rows(c)))
+}
+
+// searchItems lists the items the all-articles page shows for the search q.
+// A q that does not parse is the user's mistake, not the server's: it comes
+// back as qErr, the reason to show beside the search box, with no items —
+// showing every item instead would read as "all of these match".
+func (h *Pages) searchItems(store *Store, q string, hideRead bool) (items []ItemWithSubscription, qErr string, err error) {
+	var expr query.Expr
+	if q != "" {
+		e, perr := query.Parse(q)
+		if perr != nil {
+			return nil, perr.Error(), nil
+		}
+		expr = query.ResolveRelativeDates(e, *SearchSchema(), h.plugin.ctx.Now())
+	}
+	items, err = store.ListItemsForView(ViewSpec{
+		All:      true,
+		HideRead: hideRead,
+		Query:    expr,
+		Schema:   SearchSchema(),
+	}, feedViewLimit)
+	if err != nil {
+		return nil, "", fmt.Errorf("could not list items: %w", err)
+	}
+	if expr != nil && queryNeedsRefine(expr) {
+		if items, err = h.refineItems(store, items, expr); err != nil {
+			return nil, "", fmt.Errorf("could not refine items: %w", err)
+		}
+	}
+	return items, "", nil
 }
 
 // SubscriptionView shows items for a single subscription.

@@ -3,8 +3,11 @@ package auth
 import (
 	"crypto/rand"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
+
+	"git.duckfam.us/jj-software/cog/internal/user"
 
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
@@ -117,6 +120,9 @@ func (s *TOTPStore) BackupCodeCount(userID string) (int, error) {
 func (s *TOTPStore) decryptUserSecret(userID string) (string, error) {
 	var encrypted string
 	err := s.db.QueryRow(`SELECT totp_secret FROM users WHERE id = ?`, userID).Scan(&encrypted)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", user.ErrNotFound
+	}
 	if err != nil {
 		return "", fmt.Errorf("get totp secret: %w", err)
 	}

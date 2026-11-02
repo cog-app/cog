@@ -358,8 +358,12 @@ func (a *API) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := a.files.DeleteComment(u.Username, commentID, u.Username); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+	if err := a.files.DeleteComment(u.Username, commentID, u.Username); errors.Is(err, ErrNotFound) {
+		http.Error(w, "comment not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		a.files.log.Error("delete comment", "user", u.Username, "comment", commentID, "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
@@ -451,25 +455,25 @@ func (a *API) handleSharesWithMe(w http.ResponseWriter, r *http.Request) {
 		File          *FileMeta `json:"file,omitempty"`
 	}
 
-	// One lookup per owner, and one query per owner for the files shared:
-	// a page of shares from the same person is the usual case.
+	// One query for the owners, and one per owner for the files shared: a
+	// page of shares from the same person is the usual case.
+	ownerIDs := make([]string, len(records))
+	for i, rec := range records {
+		ownerIDs[i] = rec.OwnerUserID
+	}
+	owners, err := a.users.GetByIDs(ownerIDs)
+	if err != nil {
+		a.files.log.Error("shares with me: owners", "err", err)
+		http.Error(w, "failed to load shares", http.StatusInternalServerError)
+		return
+	}
 	enriched := make([]enrichedShare, len(records))
-	owners := map[string]*user.User{}
 	fileIDs := map[string][]int64{} // owner username -> shared file IDs
 	for i, rec := range records {
 		enriched[i] = enrichedShare{Record: rec}
-		owner, seen := owners[rec.OwnerUserID]
-		if !seen {
-			owner, err = a.users.GetByID(rec.OwnerUserID)
-			if err != nil && !errors.Is(err, user.ErrNotFound) {
-				a.files.log.Error("shares with me: owner", "owner", rec.OwnerUserID, "err", err)
-				http.Error(w, "failed to load shares", http.StatusInternalServerError)
-				return
-			}
-			owners[rec.OwnerUserID] = owner // nil: the owner has since been deleted
-		}
+		owner := owners[rec.OwnerUserID]
 		if owner == nil {
-			continue
+			continue // the owner has since been deleted
 		}
 		enriched[i].OwnerUsername = owner.Username
 		if rec.ResourceType != "files:file" && rec.ResourceType != "files:directory" {

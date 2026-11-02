@@ -26,10 +26,12 @@ import (
 func (p *Plugin) resolveLocalPath(username, filePath string) string {
 	if fs := p.ctx.UserVFS(username); fs != nil {
 		if u, ok := fs.(vfs.Unwrapper); ok {
-			if backend, subpath, err := u.Unwrap("/" + filePath); err == nil {
-				if lr, ok := backend.(vfs.LocalRooter); ok {
-					return filepath.Join(lr.LocalRoot(), subpath)
-				}
+			backend, subpath, err := u.Unwrap("/" + filePath)
+			if err != nil {
+				p.log.Warn("resolve media path through the user's VFS failed; falling back to their files directory",
+					"user", username, "path", filePath, "err", err)
+			} else if lr, ok := backend.(vfs.LocalRooter); ok {
+				return filepath.Join(lr.LocalRoot(), subpath)
 			}
 		}
 	}

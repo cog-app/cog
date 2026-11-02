@@ -654,9 +654,13 @@ func (h *settingsHandler) FinishWebAuthnRegistration(w http.ResponseWriter, r *h
 		displayName = u.Username
 	}
 
-	if err := h.p.WebAuthn.FinishRegistration(u.ID, u.Username, displayName, req.Name, req.Credential); err != nil {
+	if err := h.p.WebAuthn.FinishRegistration(u.ID, u.Username, displayName, req.Name, req.Credential); errors.Is(err, auth.ErrWebAuthnRejected) {
 		h.p.Log.Info("finish passkey registration", "user", u.Username, "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	} else if err != nil {
+		h.p.Log.Error("finish passkey registration", "user", u.Username, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -682,7 +686,10 @@ func (h *settingsHandler) DeleteWebAuthnCredential(w http.ResponseWriter, r *htt
 		return
 	}
 
-	if err := h.p.WebAuthn.DeleteCredential(id, u.ID); err != nil {
+	if err := h.p.WebAuthn.DeleteCredential(id, u.ID); errors.Is(err, auth.ErrCredentialNotFound) {
+		http.Error(w, "Passkey not found", http.StatusNotFound)
+		return
+	} else if err != nil {
 		h.p.Log.Error("delete passkey", "user", u.Username, "id", id, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

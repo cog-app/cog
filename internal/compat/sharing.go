@@ -135,10 +135,90 @@ func subjectToShareType(subject string) int {
 	}
 }
 
-func (h *SharingHandler) shareToOCS(rec *share.Record, ownerUser *user.User) (*ocsShare, error) {
-	ncID, err := h.Shares.NCIDFor(rec.ID)
+// shareSubjects holds the users and groups that a batch of shares is with,
+// looked up together so converting a list costs one query per kind rather
+// than one per share.
+type shareSubjects struct {
+	users  map[string]*user.User
+	groups map[string]*group.Group
+
+	// Filled by loadForOCS: each share's NextCloud id, and the shared
+	// files, by owner username then file id.
+	ncIDs map[string]int64
+	files map[string]map[int64]*files.FileMeta
+}
+
+// loadSubjects looks up the user and group subjects of recs.
+func (h *SharingHandler) loadSubjects(recs ...share.Record) (*shareSubjects, error) {
+	var userIDs, groupIDs []string
+	for _, rec := range recs {
+		switch rec.SubjectType {
+		case "USER":
+			userIDs = append(userIDs, rec.SubjectID)
+		case "GROUP":
+			groupIDs = append(groupIDs, rec.SubjectID)
+		}
+	}
+	subj := &shareSubjects{}
+	var err error
+	if subj.users, err = h.Users.GetByIDs(userIDs); err != nil {
+		return nil, fmt.Errorf("look up share subjects: %w", err)
+	}
+	if h.Groups != nil {
+		if subj.groups, err = h.Groups.GetByIDs(groupIDs); err != nil {
+			return nil, fmt.Errorf("look up share subject groups: %w", err)
+		}
+	}
+	return subj, nil
+}
+
+// loadForOCS looks up everything converting recs needs: their subjects,
+// NextCloud ids and files. owners maps each record's owner user id to its
+// user; records whose owner is missing get no file lookup.
+func (h *SharingHandler) loadForOCS(recs []share.Record, owners map[string]*user.User) (*shareSubjects, error) {
+	subj, err := h.loadSubjects(recs...)
 	if err != nil {
-		return nil, fmt.Errorf("nc id for share %s: %w", rec.ID, err)
+		return nil, err
+	}
+	ids := make([]string, len(recs))
+	fileIDs := map[string][]int64{}
+	for i, rec := range recs {
+		ids[i] = rec.ID
+		owner := owners[rec.OwnerUserID]
+		if owner == nil {
+			continue
+		}
+		// A resource ID that isn't a number isn't a file.
+		if fileID, err := strconv.ParseInt(rec.ResourceID, 10, 64); err == nil {
+			fileIDs[owner.Username] = append(fileIDs[owner.Username], fileID)
+		}
+	}
+	if subj.ncIDs, err = h.Shares.NCIDsFor(ids); err != nil {
+		return nil, fmt.Errorf("nc ids for shares: %w", err)
+	}
+	subj.files = make(map[string]map[int64]*files.FileMeta, len(fileIDs))
+	for username, idsOf := range fileIDs {
+		if subj.files[username], err = h.Files.GetByIDs(username, idsOf); err != nil {
+			return nil, fmt.Errorf("look up shared files of %s: %w", username, err)
+		}
+	}
+	return subj, nil
+}
+
+// shareToOCS converts one share. For several, call loadForOCS once and
+// shareToOCSWith for each.
+func (h *SharingHandler) shareToOCS(rec *share.Record, ownerUser *user.User) (*ocsShare, error) {
+	subj, err := h.loadForOCS([]share.Record{*rec}, map[string]*user.User{rec.OwnerUserID: ownerUser})
+	if err != nil {
+		return nil, err
+	}
+	return h.shareToOCSWith(rec, ownerUser, subj)
+}
+
+func (h *SharingHandler) shareToOCSWith(rec *share.Record, ownerUser *user.User, subj *shareSubjects) (*ocsShare, error) {
+	ncID, ok := subj.ncIDs[rec.ID]
+	if !ok {
+		return nil, fmt.Errorf("share %s: no nc id loaded", rec.ID)
 	}
 
 	displayOwner := ownerUser.DisplayName
@@ -175,18 +255,21 @@ func (h *SharingHandler) shareToOCS(rec *share.Record, ownerUser *user.User) (*o
 	if rec.SubjectType != "PUBLIC" && rec.SubjectType != "INSTANCE" {
 		ocs.ShareWith = rec.SubjectID
 		ocs.ShareWithDisplayname = rec.SubjectID
-		// A user subject has a username and display name to show; a group
-		// subject, or a user since deleted, is shown by its ID.
-		target, err := h.Users.GetByID(rec.SubjectID)
-		switch {
-		case errors.Is(err, user.ErrNotFound):
-		case err != nil:
-			return nil, fmt.Errorf("share %s: look up subject: %w", rec.ID, err)
-		default:
-			ocs.ShareWith = target.Username
-			ocs.ShareWithDisplayname = target.DisplayName
-			if ocs.ShareWithDisplayname == "" {
-				ocs.ShareWithDisplayname = target.Username
+		// A user subject is shown by username and display name, a group by
+		// its ID (what sharees offers and create accepts) and name. A
+		// subject since deleted is shown by its ID.
+		switch rec.SubjectType {
+		case "USER":
+			if target := subj.users[rec.SubjectID]; target != nil {
+				ocs.ShareWith = target.Username
+				ocs.ShareWithDisplayname = target.DisplayName
+				if ocs.ShareWithDisplayname == "" {
+					ocs.ShareWithDisplayname = target.Username
+				}
+			}
+		case "GROUP":
+			if g := subj.groups[rec.SubjectID]; g != nil {
+				ocs.ShareWithDisplayname = g.Name
 			}
 		}
 	}
@@ -196,15 +279,10 @@ func (h *SharingHandler) shareToOCS(rec *share.Record, ownerUser *user.User) (*o
 		ocs.Expiration = &exp
 	}
 
-	// Look up file metadata. A resource ID that isn't a number isn't a
-	// file, and a file since deleted has no metadata; both are listed
-	// without a path.
+	// A resource ID that isn't a number isn't a file, and a file since
+	// deleted has no metadata; both are listed without a path.
 	if fileID, perr := strconv.ParseInt(rec.ResourceID, 10, 64); perr == nil {
-		meta, err := h.Files.GetByID(ownerUser.Username, fileID)
-		if err != nil && !errors.Is(err, files.ErrNotFound) {
-			return nil, fmt.Errorf("share %s: look up file: %w", rec.ID, err)
-		}
-		if err == nil {
+		if meta := subj.files[ownerUser.Username][fileID]; meta != nil {
 			ocs.Path = meta.Path
 			ocs.FileTarget = meta.Path
 			ocs.ItemSource = meta.ID
@@ -275,23 +353,28 @@ func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request
 			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
 			return
 		}
-		// Most shares with one user come from a few owners: look each up once.
-		owners := make(map[string]*user.User)
+		ownerIDs := make([]string, len(records))
+		for i, rec := range records {
+			ownerIDs[i] = rec.OwnerUserID
+		}
+		owners, err := h.Users.GetByIDs(ownerIDs)
+		if err != nil {
+			h.Log.Error("list shares: look up owners", "err", err)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+			return
+		}
+		subj, err := h.loadForOCS(records, owners)
+		if err != nil {
+			h.Log.Error("list shares", "err", err)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+			return
+		}
 		for _, rec := range records {
-			owner, seen := owners[rec.OwnerUserID]
-			if !seen {
-				owner, err = h.Users.GetByID(rec.OwnerUserID)
-				if err != nil && !errors.Is(err, user.ErrNotFound) {
-					h.Log.Error("list shares: look up owner", "owner", rec.OwnerUserID, "err", err)
-					writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
-					return
-				}
-				owners[rec.OwnerUserID] = owner
-			}
+			owner := owners[rec.OwnerUserID]
 			if owner == nil {
 				continue // the owner's account is gone
 			}
-			ocs, err := h.shareToOCS(&rec, owner)
+			ocs, err := h.shareToOCSWith(&rec, owner, subj)
 			if err != nil {
 				h.Log.Error("list shares", "share", rec.ID, "err", err)
 				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
@@ -305,8 +388,14 @@ func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request
 			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
 			return
 		}
+		subj, err := h.loadForOCS(records, map[string]*user.User{u.ID: u})
+		if err != nil {
+			h.Log.Error("list shares", "err", err)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+			return
+		}
 		for _, rec := range records {
-			ocs, err := h.shareToOCS(&rec, u)
+			ocs, err := h.shareToOCSWith(&rec, u, subj)
 			if err != nil {
 				h.Log.Error("list shares", "share", rec.ID, "err", err)
 				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
@@ -402,6 +491,14 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 		rec, err = h.Shares.Create(
 			u.ID, resourceType, resourceID, "INSTANCE", "", cogPerms,
 		)
+	case "GROUP":
+		target, ok := h.lookupGroupTarget(w, r, shareWith)
+		if !ok {
+			return
+		}
+		rec, err = h.Shares.Create(
+			u.ID, resourceType, resourceID, subjectType, target.ID, cogPerms,
+		)
 	default:
 		// Look up the target user by username
 		targetUser, lookupErr := h.Users.GetByUsername(shareWith)
@@ -435,6 +532,34 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeOCSReq(w, r, http.StatusOK, ocs)
+}
+
+// lookupGroupTarget resolves the shareWith of a group share. Sharees offers a
+// group by its ID, so that is tried first; NextCloud clients that send a
+// group's name are served when the name picks out exactly one group. When it
+// can't resolve the group it writes the OCS error itself and reports false.
+func (h *SharingHandler) lookupGroupTarget(w http.ResponseWriter, r *http.Request, shareWith string) (*group.Group, bool) {
+	if h.Groups == nil || shareWith == "" {
+		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share target not found")
+		return nil, false
+	}
+	g, err := h.Groups.Get(shareWith)
+	if errors.Is(err, group.ErrNotFound) {
+		g, err = h.Groups.GetByName(shareWith)
+	}
+	switch {
+	case errors.Is(err, group.ErrNotFound):
+		writeOCSErrorReq(w, r, http.StatusNotFound, 404, "share target not found")
+		return nil, false
+	case errors.Is(err, group.ErrAmbiguousName):
+		writeOCSErrorReq(w, r, http.StatusBadRequest, 400, "more than one group has that name; share by group id")
+		return nil, false
+	case err != nil:
+		h.Log.Error("create share: look up group", "target", shareWith, "err", err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "look up share target failed")
+		return nil, false
+	}
+	return g, true
 }
 
 func (h *SharingHandler) logShareActivity(u *user.User, rec *share.Record, typ, verb string) {
@@ -900,26 +1025,28 @@ func (h *SharingHandler) HandleShareesRecommended(w http.ResponseWriter, r *http
 	seenGroups := map[string]bool{}
 
 	// Collect unique share targets from existing shares
-	for rec, err := range h.Shares.ListByOwner(u.ID) {
-		if err != nil {
-			h.Log.Error("recommended sharees: list shares", "user", u.ID, "err", err)
-			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "list shares failed")
-			return
-		}
+	records, err := seq.Collect(h.Shares.ListByOwner(u.ID))
+	if err != nil {
+		h.Log.Error("recommended sharees: list shares", "user", u.ID, "err", err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "list shares failed")
+		return
+	}
+	subj, err := h.loadSubjects(records...)
+	if err != nil {
+		h.Log.Error("recommended sharees", "user", u.ID, "err", err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "look up share targets failed")
+		return
+	}
+	for _, rec := range records {
 		switch rec.SubjectType {
 		case "USER":
 			if seenUsers[rec.SubjectID] {
 				continue
 			}
 			seenUsers[rec.SubjectID] = true
-			target, err := h.Users.GetByID(rec.SubjectID)
-			if errors.Is(err, user.ErrNotFound) {
+			target := subj.users[rec.SubjectID]
+			if target == nil {
 				continue
-			}
-			if err != nil {
-				h.Log.Error("recommended sharees: look up user", "user", rec.SubjectID, "err", err)
-				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "look up user failed")
-				return
 			}
 			name := target.DisplayName
 			if name == "" {
@@ -937,14 +1064,9 @@ func (h *SharingHandler) HandleShareesRecommended(w http.ResponseWriter, r *http
 				continue
 			}
 			seenGroups[rec.SubjectID] = true
-			grp, err := h.Groups.Get(rec.SubjectID)
-			if errors.Is(err, group.ErrNotFound) {
+			grp := subj.groups[rec.SubjectID]
+			if grp == nil {
 				continue
-			}
-			if err != nil {
-				h.Log.Error("recommended sharees: look up group", "group", rec.SubjectID, "err", err)
-				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "look up group failed")
-				return
 			}
 			groupEntries = append(groupEntries, map[string]any{
 				"label": grp.Name,

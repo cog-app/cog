@@ -146,9 +146,8 @@ func TestConcurrent_ShareCreateRace(t *testing.T) {
 	}
 }
 
-// TestConcurrent_AppPasswordValidate exercises the O(N) bcrypt-per-row Validate
-// under concurrent reads. Surfaces SQLITE_BUSY in the read path and gives a
-// regression handle for the audit's "O(N) bcrypt" finding.
+// TestConcurrent_AppPasswordValidate exercises Validate under concurrent
+// reads, surfacing SQLITE_BUSY in the read path.
 func TestConcurrent_AppPasswordValidate(t *testing.T) {
 	env := cogtest.New(t)
 	alice := env.CreateUser(t, "alice", "pass")

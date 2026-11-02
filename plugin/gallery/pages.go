@@ -1631,29 +1631,19 @@ func (h *Pages) DeleteAllNonKeep(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	username := plugin.Username(r)
-	groups, err := ListDuplicateGroups(db)
+	members, err := NonKeepDuplicates(db)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	var failed []string
-	for _, g := range groups {
-		members, err := DuplicateGroupMembers(db, g.ID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		f, err := h.deleteDuplicateFiles(db, username, nonKeep(members))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		failed = append(failed, f...)
-		if _, err := pruneDuplicateGroup(db, g.ID); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+	failed, err := h.deleteDuplicateFiles(db, plugin.Username(r), members)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := PruneDuplicateGroups(db); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	if len(failed) > 0 {
 		flashRedirect(w, r, "error", "Could not delete "+strings.Join(failed, ", ")+".", "/apps/gallery/duplicates")

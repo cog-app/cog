@@ -345,12 +345,11 @@ func New(p *services.Providers) http.Handler {
 
 	// Federation token-based WebDAV (remote servers access our shared files).
 	fedWebDAV := &federation.TokenWebDAVHandler{
-		Log:     p.Log.With("component", "fed-webdav"),
-		Store:   p.Federation,
-		Shares:  p.Shares,
-		Users:   p.Users,
-		Files:   fp,
-		DataDir: p.Config.DataDir,
+		Log:    p.Log.With("component", "fed-webdav"),
+		Store:  p.Federation,
+		Shares: p.Shares,
+		Users:  p.Users,
+		Files:  fp,
 	}
 	mux.Handle("/public.php/webdav/", fedWebDAV)
 

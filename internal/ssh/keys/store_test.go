@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"database/sql"
+	"errors"
 	"strings"
 	"testing"
 
@@ -14,12 +15,15 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 )
 
-// dbProvider adapts the plugin registry's UserDB to keys.DBProvider.
+// dbProvider adapts the plugin registry's UserDB to keys.LegacyDBProvider,
+// counting the databases opened through it.
 type dbProvider struct {
-	env *cogtest.Env
+	env    *cogtest.Env
+	opened int
 }
 
 func (p *dbProvider) UserDB(username string) (*sql.DB, error) {
+	p.opened++
 	return p.env.Providers.Plugins.UserDB(username)
 }
 
@@ -47,7 +51,8 @@ func genAuthorizedKey(t *testing.T, comment string) (string, string) {
 func newStore(t *testing.T) (*keys.Store, *cogtest.Env) {
 	t.Helper()
 	env := cogtest.New(t)
-	s := keys.NewStore(&dbProvider{env}, &usernameProvider{env}, env.Clock.Clock())
+	s, err := keys.NewStore(env.Providers.DB, &dbProvider{env: env}, &usernameProvider{env}, env.Clock.Clock())
+	require.NoError(t, err)
 	return s, env
 }
 
@@ -165,18 +170,146 @@ func TestFindByFingerprint_OnlyHisOwn(t *testing.T) {
 	require.Equal(t, bobFP, key.Fingerprint)
 }
 
-// --- Fingerprint migration idempotency ---
-
-func TestAdd_MigrateFingerprintIdempotent(t *testing.T) {
+func TestAdd_SameKeyTwoUsersRefused(t *testing.T) {
 	s, env := newStore(t)
 	alice := env.CreateUser(t, "alice", "pass")
-	line, _ := genAuthorizedKey(t, "k")
+	bob := env.CreateUser(t, "bob", "pass")
+	line, _ := genAuthorizedKey(t, "shared")
 
-	// First Add triggers migrateFingerprint.
-	_, err := s.Add(alice.Username, "k1", line)
+	_, err := s.Add(alice.Username, "k", line)
 	require.NoError(t, err)
-	// Second Add re-enters migrateFingerprint with column already present.
-	line2, _ := genAuthorizedKey(t, "k2")
-	_, err = s.Add(alice.Username, "k2", line2)
+	_, err = s.Add(bob.Username, "k", line)
+	require.True(t, errors.Is(err, keys.ErrKeyInUse), "got %v", err)
+}
+
+func TestDelete_OtherUsersKeyRefused(t *testing.T) {
+	s, env := newStore(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	bob := env.CreateUser(t, "bob", "pass")
+	line, fp := genAuthorizedKey(t, "k")
+
+	k, err := s.Add(alice.Username, "k", line)
 	require.NoError(t, err)
+	err = s.Delete(bob.Username, k.ID)
+	require.True(t, errors.Is(err, keys.ErrNotFound), "got %v", err)
+
+	owner, _, err := s.FindByFingerprint(fp)
+	require.NoError(t, err)
+	require.Equal(t, "alice", owner)
+}
+
+func TestFindByFingerprint_UserDeletedRemovesKeys(t *testing.T) {
+	s, env := newStore(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	line, fp := genAuthorizedKey(t, "k")
+	_, err := s.Add(alice.Username, "k", line)
+	require.NoError(t, err)
+
+	require.NoError(t, env.Providers.Users.Delete(alice.ID))
+	_, _, err = s.FindByFingerprint(fp)
+	require.True(t, errors.Is(err, keys.ErrNotFound), "got %v", err)
+}
+
+// TestFindByFingerprint_NoUserDatabases checks that a login lookup is answered
+// from the system database alone: with many users, not one per-user database
+// is opened.
+func TestFindByFingerprint_NoUserDatabases(t *testing.T) {
+	env := cogtest.New(t)
+	legacy := &dbProvider{env: env}
+	s, err := keys.NewStore(env.Providers.DB, legacy, &usernameProvider{env}, env.Clock.Clock())
+	require.NoError(t, err)
+
+	for _, name := range []string{"alice", "bob", "carol", "dave"} {
+		env.CreateUser(t, name, "pass")
+	}
+	line, fp := genAuthorizedKey(t, "dave@laptop")
+	_, err = s.Add("dave", "laptop", line)
+	require.NoError(t, err)
+
+	opened := legacy.opened
+	owner, _, err := s.FindByFingerprint(fp)
+	require.NoError(t, err)
+	require.Equal(t, "dave", owner)
+	_, _, err = s.FindByFingerprint("SHA256:never-stored")
+	require.True(t, errors.Is(err, keys.ErrNotFound), "got %v", err)
+	require.Equal(t, opened, legacy.opened)
+}
+
+// --- Moving keys out of the per-user databases ---
+
+// writeLegacyKey stores a key the way the per-user databases used to.
+func writeLegacyKey(t *testing.T, env *cogtest.Env, username, id, line string) {
+	t.Helper()
+	db, err := env.Providers.Plugins.UserDB(username)
+	require.NoError(t, err)
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS ssh_keys (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		public_key TEXT NOT NULL,
+		created_at INTEGER NOT NULL
+	)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO ssh_keys (id, name, public_key, created_at) VALUES (?, ?, ?, ?)`, id, "legacy", line, 1700000000)
+	require.NoError(t, err)
+}
+
+func TestNewStore_MovesLegacyKeys(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "alice", "pass")
+	env.CreateUser(t, "bob", "pass")
+	env.CreateUser(t, "carol", "pass") // no legacy table at all
+
+	aliceLine, aliceFP := genAuthorizedKey(t, "alice")
+	bobLine, bobFP := genAuthorizedKey(t, "bob")
+	writeLegacyKey(t, env, "alice", "a1", aliceLine)
+	writeLegacyKey(t, env, "bob", "b1", bobLine)
+	writeLegacyKey(t, env, "bob", "b2", aliceLine) // same key as alice's: one owner only
+	writeLegacyKey(t, env, "bob", "b3", "not a key")
+
+	s, err := keys.NewStore(env.Providers.DB, &dbProvider{env: env}, &usernameProvider{env}, env.Clock.Clock())
+	require.NoError(t, err)
+
+	owner, k, err := s.FindByFingerprint(aliceFP)
+	require.NoError(t, err)
+	require.Equal(t, "alice", owner)
+	require.Equal(t, "a1", k.ID)
+	owner, k, err = s.FindByFingerprint(bobFP)
+	require.NoError(t, err)
+	require.Equal(t, "bob", owner)
+	require.Equal(t, "b1", k.ID)
+
+	got, err := s.List("bob")
+	require.NoError(t, err)
+	require.Equal(t, 1, len(got))
+
+	// The move runs once: a key deleted afterwards is not brought back.
+	require.NoError(t, s.Delete("bob", "b1"))
+	legacy := &dbProvider{env: env}
+	s, err = keys.NewStore(env.Providers.DB, legacy, &usernameProvider{env}, env.Clock.Clock())
+	require.NoError(t, err)
+	require.Equal(t, 0, legacy.opened)
+	_, _, err = s.FindByFingerprint(bobFP)
+	require.True(t, errors.Is(err, keys.ErrNotFound), "got %v", err)
+}
+
+// failingDB fails to open any user's database.
+type failingDB struct{}
+
+func (failingDB) UserDB(string) (*sql.DB, error) { return nil, errors.New("disk on fire") }
+
+func TestNewStore_MoveFailureSurfaces(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "alice", "pass")
+
+	_, err := keys.NewStore(env.Providers.DB, failingDB{}, &usernameProvider{env}, env.Clock.Clock())
+	require.Error(t, err)
+
+	// Nothing was marked done, so a later start tries again.
+	line, fp := genAuthorizedKey(t, "alice")
+	writeLegacyKey(t, env, "alice", "a1", line)
+	s, err := keys.NewStore(env.Providers.DB, &dbProvider{env: env}, &usernameProvider{env}, env.Clock.Clock())
+	require.NoError(t, err)
+	owner, _, err := s.FindByFingerprint(fp)
+	require.NoError(t, err)
+	require.Equal(t, "alice", owner)
 }

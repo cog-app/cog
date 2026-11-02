@@ -949,26 +949,37 @@ func (s *Shell) newExitCmd() *cobra.Command {
 		Use:     "exit [code]",
 		Aliases: []string{"_exit"},
 		Short:   "Exit the shell",
+		Args:    cobra.MaximumNArgs(1),
+		// A negative status ("exit -1") is an argument, not a flag.
+		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			code := 0
+			// The interpreter's own exit is what stops the rest of the
+			// script and makes Runner.Exited report it. It takes the status
+			// modulo 256, as POSIX shells do, and with no argument the last
+			// command's status.
+			builtin := []string{"exit"}
 			if len(args) > 0 {
-				v, err := strconv.Atoi(args[0])
-				if err != nil {
+				code := args[0]
+				if _, err := strconv.Atoi(code); err != nil {
 					// As bash does: exit anyway, with status 2.
 					_, stderr, _, _ := getHC(cmd)
-					s.errorf(stderr, "exit: %s: numeric argument required\n", args[0])
-					v = 2
+					s.errorf(stderr, "exit: %s: numeric argument required\n", code)
+					code = "2"
 				}
-				code = v
+				builtin = append(builtin, code)
 			}
-			s.exited = true
-			if code == 0 {
-				return nil
-			}
-			return exitErr(uint8(code))
+			return exitRequest{interp.HandlerCtx(cmd.Context()).Builtin(cmd.Context(), builtin)}
 		},
 	}
 }
+
+// exitRequest carries the interpreter's exit out through cobra. execHandler
+// returns what it holds unchanged: turning it into a plain status, as it does
+// other errors, would lose the instruction to stop the shell.
+type exitRequest struct{ err error }
+
+func (e exitRequest) Error() string { return e.err.Error() }
+func (e exitRequest) Unwrap() error { return e.err }
 
 // completePaths provides tab-completion for file/directory paths.
 func (s *Shell) completePaths(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {

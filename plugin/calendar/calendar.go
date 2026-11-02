@@ -203,15 +203,22 @@ func ensureNotifications(q davsql.Querier, eventID int64, o *ical.Object, z ical
 	}
 	from := time.Unix(now, 0)
 	ins, err := o.Instances(z, from, from.Add(upcomingHorizon))
-	if err != nil || len(ins) == 0 {
-		// Nothing ahead to remind about; a recurrence Cog cannot expand
-		// has no reminders either.
+	if err != nil {
+		// A recurrence Cog cannot expand has no reminders. The event is
+		// still saved: the client wrote it, and refusing it would lose it.
+		slog.Warn("calendar: event recurrence does not expand; it has no reminders",
+			"event_id", eventID, "uid", o.UID, "err", err)
 		return nil
 	}
+	if len(ins) == 0 {
+		return nil // nothing ahead to remind about
+	}
 	in := ins[0]
-	for _, a := range in.Event.Alarms {
-		at, ok := triggerTime(a, in)
-		if !ok {
+	for i, a := range in.Event.Alarms {
+		at, err := triggerTime(a, in)
+		if err != nil {
+			slog.Warn("calendar: alarm trigger does not parse; skipping that reminder",
+				"event_id", eventID, "uid", o.UID, "summary", in.Event.Summary, "alarm", i, "err", err)
 			continue
 		}
 		if _, err := q.Exec(`INSERT INTO notifications (event_id, trigger_at) VALUES (?, ?)`, eventID, at.Unix()); err != nil {
@@ -222,20 +229,23 @@ func ensureNotifications(q davsql.Querier, eventID int64, o *ical.Object, z ical
 }
 
 // triggerTime returns when an alarm fires for an instance.
-func triggerTime(a ical.Alarm, in ical.Instance) (time.Time, bool) {
+func triggerTime(a ical.Alarm, in ical.Instance) (time.Time, error) {
 	if a.Absolute {
 		t, err := time.Parse("20060102T150405Z", a.Trigger)
-		return t, err == nil
+		if err != nil {
+			return time.Time{}, fmt.Errorf("absolute trigger %q: %w", a.Trigger, err)
+		}
+		return t, nil
 	}
 	d, err := ical.ParseDuration(a.Trigger)
 	if err != nil {
-		return time.Time{}, false
+		return time.Time{}, fmt.Errorf("trigger duration %q: %w", a.Trigger, err)
 	}
 	base := in.Start
 	if strings.EqualFold(a.Related, "END") {
 		base = in.End
 	}
-	return d.Add(base), true
+	return d.Add(base), nil
 }
 
 // DueNotifications returns unfired notifications that are due (trigger_at <= now).

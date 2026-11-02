@@ -195,18 +195,26 @@ func (h *Pages) RecipeEdit(w http.ResponseWriter, r *http.Request) {
 	if d == nil {
 		return
 	}
+	form, ok := h.formOrDraft(w, r, db, formFromDetail(d))
+	if !ok {
+		return
+	}
 	plugin.SetTitle(w, "Edit "+d.Recipe.Name)
-	ui.Render(w, r, recipeEditPage(sb, d, plugin.CSRFToken(r)))
+	ui.Render(w, r, recipeEditPage(sb, d, form, plugin.CSRFToken(r)))
 }
 
 // NewRecipe shows the create form.
 func (h *Pages) NewRecipe(w http.ResponseWriter, r *http.Request) {
-	_, sb, ok := h.pageSetup(w, r, "")
+	db, sb, ok := h.pageSetup(w, r, "")
+	if !ok {
+		return
+	}
+	form, ok := h.formOrDraft(w, r, db, recipeForm{})
 	if !ok {
 		return
 	}
 	plugin.SetTitle(w, "New recipe")
-	ui.Render(w, r, recipeNewPage(sb, plugin.CSRFToken(r)))
+	ui.Render(w, r, recipeNewPage(sb, form, plugin.CSRFToken(r)))
 }
 
 // ImportPage shows the import from URL form.
@@ -216,7 +224,90 @@ func (h *Pages) ImportPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	plugin.SetTitle(w, "Import recipe")
-	ui.Render(w, r, recipeImportPage(sb, plugin.CSRFToken(r)))
+	ui.Render(w, r, recipeImportPage(sb, plugin.RequestFlash(r).Value("url"), plugin.CSRFToken(r)))
+}
+
+// recipeForm is the recipe form's fields as the user sees them, by input
+// name. It is text rather than a Recipe so that a value a save rejected, such
+// as a time that is not a number, comes back exactly as it was typed.
+type recipeForm map[string]string
+
+// recipeFormFields are the inputs recipeFields renders.
+var recipeFormFields = []string{
+	"name", "description", "category", "cuisine", "recipe_yield", "calories",
+	"keywords", "ingredients", "instructions",
+	"prep_h", "prep_m", "prep_raw",
+	"cook_h", "cook_m", "cook_raw",
+	"total_h", "total_m", "total_raw",
+}
+
+// draftField is the flash form field naming the draft a failed save left.
+const draftField = "draft"
+
+// formFromDetail is the form for editing a stored recipe.
+func formFromDetail(d *recipeDetail) recipeForm {
+	f := recipeForm{
+		"name":         d.Recipe.Name,
+		"description":  d.Recipe.Description,
+		"category":     d.Recipe.Category,
+		"cuisine":      d.Recipe.Cuisine,
+		"recipe_yield": d.Recipe.RecipeYield,
+		"calories":     d.Recipe.Calories,
+		"keywords":     strings.Join(d.Keywords, ", "),
+		"ingredients":  joinIngredients(d.Ingredients),
+		"instructions": joinInstructions(d.Instructions),
+	}
+	for name, iso := range map[string]string{"prep": d.Recipe.PrepTime, "cook": d.Recipe.CookTime, "total": d.Recipe.TotalTime} {
+		f[name+"_h"], f[name+"_m"], f[name+"_raw"] = durationParts(iso)
+	}
+	return f
+}
+
+// formOrDraft is the form a page shows: what the user typed before a save
+// was rejected, when the flash names a draft, or else def. It writes the error
+// response itself and returns ok=false when it fails.
+func (h *Pages) formOrDraft(w http.ResponseWriter, r *http.Request, db *sql.DB, def recipeForm) (recipeForm, bool) {
+	raw := plugin.RequestFlash(r).Value(draftField)
+	if raw == "" {
+		return def, true
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		h.plugin.log.Warn("recipe draft id in flash", "draft", raw, "err", err)
+		return def, true
+	}
+	form, err := TakeDraft(db, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return nil, false
+	}
+	if form == nil {
+		return def, true
+	}
+	return form, true
+}
+
+// saveRejected sends a save that did not validate back to the form it came
+// from, with the reason and everything the user typed. The input is kept in
+// the database rather than the flash cookie: a recipe's ingredients and
+// method outgrow the few kilobytes a cookie holds, and a browser drops an
+// oversized cookie without a word.
+func (h *Pages) saveRejected(w http.ResponseWriter, r *http.Request, db *sql.DB, to string, reason error) {
+	form := make(map[string]string, len(recipeFormFields))
+	for _, name := range recipeFormFields {
+		form[name] = r.FormValue(name)
+	}
+	id, err := SaveDraft(db, form)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	plugin.SetFlash(w, plugin.Flash{
+		Kind:    "error",
+		Message: "The recipe was not saved: " + reason.Error() + ".",
+		Form:    map[string]string{draftField: strconv.FormatInt(id, 10)},
+	})
+	http.Redirect(w, r, to, http.StatusSeeOther)
 }
 
 // recipeFromForm copies the form's fields onto recipe.
@@ -266,7 +357,7 @@ func (h *Pages) CreateRecipe(w http.ResponseWriter, r *http.Request) {
 	}
 	recipe := &Recipe{}
 	if err := recipeFromForm(r, recipe); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		h.saveRejected(w, r, db, "/apps/recipes/new", err)
 		return
 	}
 	var id int64
@@ -306,7 +397,7 @@ func (h *Pages) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := recipeFromForm(r, recipe); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		h.saveRejected(w, r, db, "/apps/recipes/recipe/"+strconv.FormatInt(id, 10)+"/edit", err)
 		return
 	}
 	err = inTx(db, func(tx *sql.Tx) error {

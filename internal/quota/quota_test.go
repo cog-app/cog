@@ -1,6 +1,7 @@
 package quota_test
 
 import (
+	"errors"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/quota"
@@ -39,7 +40,7 @@ func TestGet(t *testing.T) {
 
 	// Not found returns nil, not error.
 	q, err := store.Get("nonexistent", "DEFAULT", "")
-	require.NoError(t, err)
+	require.True(t, errors.Is(err, quota.ErrNotFound), err)
 	require.Nil(t, q)
 }
 
@@ -61,7 +62,7 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 
 	q, err = store.Get(vol.ID, "DEFAULT", "")
-	require.NoError(t, err)
+	require.True(t, errors.Is(err, quota.ErrNotFound), err)
 	require.Nil(t, q)
 }
 

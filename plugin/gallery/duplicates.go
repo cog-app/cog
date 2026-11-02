@@ -181,6 +181,39 @@ func DuplicateGroupMembers(db *sql.DB, groupID int64) ([]DuplicateMember, error)
 	return members, nil
 }
 
+// NonKeepDuplicates returns, in one query, the media of every member that is
+// not its group's keep item, across the groups ListDuplicateGroups shows (two
+// or more members). A media item in more than one group comes back once.
+func NonKeepDuplicates(db *sql.DB) ([]DuplicateMember, error) {
+	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m
+		WHERE m.id IN (
+			SELECT media_id FROM duplicate_members
+			WHERE is_keep = 0 AND group_id IN (
+				SELECT group_id FROM duplicate_members GROUP BY group_id HAVING COUNT(*) >= 2))`)
+	if err != nil {
+		return nil, fmt.Errorf("list non-keep duplicates: %w", err)
+	}
+	defer rows.Close()
+	media, err := scanMediaRows(rows)
+	if err != nil {
+		return nil, fmt.Errorf("scan non-keep duplicates: %w", err)
+	}
+	members := make([]DuplicateMember, len(media))
+	for i, m := range media {
+		members[i] = DuplicateMember{Media: m}
+	}
+	return members, nil
+}
+
+// PruneDuplicateGroups deletes every group left with fewer than two members.
+func PruneDuplicateGroups(db *sql.DB) error {
+	if _, err := db.Exec(`DELETE FROM duplicate_groups
+		WHERE (SELECT COUNT(*) FROM duplicate_members WHERE group_id = duplicate_groups.id) < 2`); err != nil {
+		return fmt.Errorf("prune duplicate groups: %w", err)
+	}
+	return nil
+}
+
 // DeleteDuplicateGroup removes a group (CASCADE removes members).
 func DeleteDuplicateGroup(db *sql.DB, groupID int64) error {
 	_, err := db.Exec(`DELETE FROM duplicate_groups WHERE id = ?`, groupID)

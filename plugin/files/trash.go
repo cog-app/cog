@@ -132,7 +132,7 @@ func (p *Plugin) ListTrash(username string) ([]TrashItem, error) {
 	return items, rows.Err()
 }
 
-// GetTrashItem returns a single trash item by trash name.
+// GetTrashItem returns a single trash item by trash name, or ErrNotFound.
 func (p *Plugin) GetTrashItem(username, trashName string) (*TrashItem, error) {
 	db, err := p.DB(username)
 	if err != nil {
@@ -147,6 +147,9 @@ func (p *Plugin) GetTrashItem(username, trashName string) (*TrashItem, error) {
 		&item.ID, &item.OriginalPath, &item.OriginalName,
 		&item.Size, &item.MTime, &item.MimeType, &isDir,
 		&item.DeletedAt, &item.TrashName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("trash item %q: %w", trashName, ErrNotFound)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("get trash item: %w", err)
 	}

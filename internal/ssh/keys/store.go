@@ -1,4 +1,5 @@
-// Package keys provides CRUD operations for SSH public keys stored in per-user databases.
+// Package keys provides CRUD operations for SSH public keys, stored in the
+// system database's ssh_keys table.
 package keys
 
 import (
@@ -10,6 +11,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"github.com/google/uuid"
+	"github.com/mattn/go-sqlite3"
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -22,8 +24,16 @@ type SSHKey struct {
 	CreatedAt   time.Time
 }
 
-// DBProvider provides access to per-user databases and the list of usernames.
-type DBProvider interface {
+// ErrNotFound is returned when no key matches.
+var ErrNotFound = errors.New("ssh key not found")
+
+// ErrKeyInUse is returned by Add when the key is already registered, to this
+// or another user. A fingerprint identifies exactly one user at login.
+var ErrKeyInUse = errors.New("ssh key already registered")
+
+// LegacyDBProvider opens the per-user databases keys used to be kept in. It
+// is only read once, to move those keys into the system database.
+type LegacyDBProvider interface {
 	UserDB(username string) (*sql.DB, error)
 }
 
@@ -32,137 +42,175 @@ type UsernameProvider interface {
 	Usernames() ([]string, error)
 }
 
-// Store manages SSH keys across per-user databases.
+// Store manages SSH keys in the system database.
 type Store struct {
-	dbProvider DBProvider
-	usernames  UsernameProvider
-	clock      clock.Clock
+	db    *sql.DB
+	clock clock.Clock
 }
 
-// NewStore creates a new SSH key store.
-func NewStore(dbp DBProvider, up UsernameProvider, c clock.Clock) *Store {
-	return &Store{dbProvider: dbp, usernames: up, clock: c}
-}
+// movedSetting marks, in system_settings, that keys from the per-user
+// databases have been copied into the system database.
+const movedSetting = "ssh.keys_moved"
 
-// migrateFingerprint adds the fingerprint column if missing and backfills it.
-// It runs in one transaction: the column's presence is what marks the
-// migration done, so a backfill that failed halfway must not leave it behind.
-func migrateFingerprint(db *sql.DB) (err error) {
-	// Check if fingerprint column exists.
-	var count int
-	err = db.QueryRow(`SELECT count(*) FROM pragma_table_info('ssh_keys') WHERE name = 'fingerprint'`).Scan(&count)
-	if err != nil {
-		return fmt.Errorf("check fingerprint column: %w", err)
+// NewStore returns a store over the system database. The first time it runs
+// against a database it copies keys from the per-user databases they used
+// to live in; that must succeed, or users would silently lose their keys.
+func NewStore(sysDB *sql.DB, legacy LegacyDBProvider, users UsernameProvider, c clock.Clock) (*Store, error) {
+	s := &Store{db: sysDB, clock: c}
+	if err := s.moveLegacy(legacy, users); err != nil {
+		return nil, fmt.Errorf("move ssh keys to system database: %w", err)
 	}
-	if count > 0 {
+	return s, nil
+}
+
+type legacyKey struct {
+	username, id, name, pubKey string
+	createdAt                  int64
+}
+
+// moveLegacy copies every user's per-user ssh_keys rows into the system
+// table, once. The copy and the marker commit together, so a failure part way
+// leaves nothing behind and the next start tries again.
+func (s *Store) moveLegacy(legacy LegacyDBProvider, users UsernameProvider) error {
+	var done int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM system_settings WHERE key = ?`, movedSetting).Scan(&done); err != nil {
+		return fmt.Errorf("check marker: %w", err)
+	}
+	if done > 0 {
 		return nil
 	}
 
-	tx, err := db.Begin()
+	usernames, err := users.Usernames()
 	if err != nil {
-		return fmt.Errorf("migrate fingerprint: begin: %w", err)
+		return fmt.Errorf("list usernames: %w", err)
 	}
-	defer func() {
+	var pending []legacyKey
+	for _, username := range usernames {
+		ks, err := readLegacy(legacy, username)
 		if err != nil {
-			_ = tx.Rollback()
+			return fmt.Errorf("user %q: %w", username, err)
 		}
-	}()
-
-	if _, err := tx.Exec(`ALTER TABLE ssh_keys ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''`); err != nil {
-		return fmt.Errorf("add fingerprint column: %w", err)
+		pending = append(pending, ks...)
 	}
 
-	// Backfill fingerprints for existing keys. Read them all first: the
-	// updates go through the same transaction.
-	rows, err := tx.Query(`SELECT id, public_key FROM ssh_keys WHERE fingerprint = ''`)
+	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("query keys for backfill: %w", err)
+		return fmt.Errorf("begin: %w", err)
 	}
-	type keyRow struct{ id, pubKey string }
-	var pending []keyRow
-	for rows.Next() {
-		var k keyRow
-		if err := rows.Scan(&k.id, &k.pubKey); err != nil {
-			rows.Close()
-			return fmt.Errorf("scan key for backfill: %w", err)
-		}
-		pending = append(pending, k)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return fmt.Errorf("query keys for backfill: %w", err)
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("query keys for backfill: %w", err)
-	}
-
+	defer tx.Rollback()
 	for _, k := range pending {
 		pk, _, _, _, err := gossh.ParseAuthorizedKey([]byte(k.pubKey))
 		if err != nil {
-			// The key can never authenticate; leave it with no fingerprint.
-			slog.Warn("ssh key backfill: unparsable key", "id", k.id, "err", err)
+			// It could never authenticate; there is nothing to move.
+			slog.Warn("ssh key move: unparsable key dropped", "user", k.username, "id", k.id, "err", err)
 			continue
 		}
-		if _, err := tx.Exec(`UPDATE ssh_keys SET fingerprint = ? WHERE id = ?`, gossh.FingerprintSHA256(pk), k.id); err != nil {
-			return fmt.Errorf("backfill fingerprint: %w", err)
+		res, err := tx.Exec(
+			`INSERT INTO ssh_keys (id, user_id, name, public_key, fingerprint, created_at)
+			 SELECT ?, id, ?, ?, ?, ? FROM users WHERE username = ?
+			 ON CONFLICT DO NOTHING`,
+			k.id, k.name, k.pubKey, gossh.FingerprintSHA256(pk), k.createdAt, k.username,
+		)
+		if err != nil {
+			return fmt.Errorf("insert key %s of %q: %w", k.id, k.username, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("rows affected: %w", err)
+		}
+		if n == 0 {
+			// The same key under two users: the old per-user lookup only ever
+			// let one of them log in with it, and now only the first keeps it.
+			slog.Warn("ssh key move: key already registered to another user, dropped", "user", k.username, "id", k.id, "fingerprint", gossh.FingerprintSHA256(pk))
 		}
 	}
-
-	// Create unique index on fingerprint (exclude empty strings from old broken keys).
-	if _, err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ssh_keys_fingerprint ON ssh_keys(fingerprint) WHERE fingerprint != ''`); err != nil {
-		return fmt.Errorf("create fingerprint index: %w", err)
+	if _, err := tx.Exec(`INSERT INTO system_settings (key, value) VALUES (?, '1') ON CONFLICT DO NOTHING`, movedSetting); err != nil {
+		return fmt.Errorf("set marker: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("migrate fingerprint: commit: %w", err)
+		return fmt.Errorf("commit: %w", err)
 	}
 	return nil
 }
 
+// readLegacy returns the keys in a user's per-user database, if it has an
+// ssh_keys table.
+func readLegacy(legacy LegacyDBProvider, username string) ([]legacyKey, error) {
+	db, err := legacy.UserDB(username)
+	if err != nil {
+		return nil, fmt.Errorf("open user db: %w", err)
+	}
+	var tables int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'ssh_keys'`).Scan(&tables); err != nil {
+		return nil, fmt.Errorf("check ssh_keys table: %w", err)
+	}
+	if tables == 0 {
+		return nil, nil
+	}
+	rows, err := db.Query(`SELECT id, name, public_key, created_at FROM ssh_keys`)
+	if err != nil {
+		return nil, fmt.Errorf("read ssh keys: %w", err)
+	}
+	defer rows.Close()
+	var out []legacyKey
+	for rows.Next() {
+		k := legacyKey{username: username}
+		if err := rows.Scan(&k.id, &k.name, &k.pubKey, &k.createdAt); err != nil {
+			return nil, fmt.Errorf("scan ssh key: %w", err)
+		}
+		out = append(out, k)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read ssh keys: %w", err)
+	}
+	return out, nil
+}
+
 // Add stores a new SSH key for a user, parsing the authorized_keys line.
+// It returns ErrKeyInUse if any user already has the key.
 func (s *Store) Add(username, name, authorizedKeyLine string) (*SSHKey, error) {
 	pk, _, _, _, err := gossh.ParseAuthorizedKey([]byte(authorizedKeyLine))
 	if err != nil {
 		return nil, fmt.Errorf("parse public key: %w", err)
 	}
 
-	db, err := s.dbProvider.UserDB(username)
-	if err != nil {
-		return nil, fmt.Errorf("open user db: %w", err)
-	}
-	if err := migrateFingerprint(db); err != nil {
-		return nil, err
-	}
-
-	fp := gossh.FingerprintSHA256(pk)
 	key := &SSHKey{
 		ID:          uuid.NewString(),
 		Name:        name,
 		PublicKey:   authorizedKeyLine,
-		Fingerprint: fp,
+		Fingerprint: gossh.FingerprintSHA256(pk),
 		CreatedAt:   s.clock(),
 	}
 
-	_, err = db.Exec(
-		`INSERT INTO ssh_keys (id, name, public_key, fingerprint, created_at) VALUES (?, ?, ?, ?, ?)`,
-		key.ID, key.Name, key.PublicKey, key.Fingerprint, key.CreatedAt.Unix(),
+	res, err := s.db.Exec(
+		`INSERT INTO ssh_keys (id, user_id, name, public_key, fingerprint, created_at)
+		 SELECT ?, id, ?, ?, ?, ? FROM users WHERE username = ?`,
+		key.ID, key.Name, key.PublicKey, key.Fingerprint, key.CreatedAt.Unix(), username,
 	)
+	if se, ok := errors.AsType[sqlite3.Error](err); ok && se.ExtendedCode == sqlite3.ErrConstraintUnique {
+		return nil, ErrKeyInUse
+	}
 	if err != nil {
 		return nil, fmt.Errorf("insert ssh key: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("insert ssh key: rows affected: %w", err)
+	}
+	if n == 0 {
+		return nil, fmt.Errorf("insert ssh key: no user %q", username)
 	}
 	return key, nil
 }
 
 // List returns all SSH keys for a user.
 func (s *Store) List(username string) ([]SSHKey, error) {
-	db, err := s.dbProvider.UserDB(username)
-	if err != nil {
-		return nil, fmt.Errorf("open user db: %w", err)
-	}
-	if err := migrateFingerprint(db); err != nil {
-		return nil, err
-	}
-
-	rows, err := db.Query(`SELECT id, name, public_key, fingerprint, created_at FROM ssh_keys ORDER BY created_at`)
+	rows, err := s.db.Query(
+		`SELECT k.id, k.name, k.public_key, k.fingerprint, k.created_at
+		 FROM ssh_keys k JOIN users u ON u.id = k.user_id
+		 WHERE u.username = ? ORDER BY k.created_at`,
+		username,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("query ssh keys: %w", err)
 	}
@@ -181,13 +229,12 @@ func (s *Store) List(username string) ([]SSHKey, error) {
 	return keys, rows.Err()
 }
 
-// Delete removes an SSH key by ID.
+// Delete removes one of a user's SSH keys by ID.
 func (s *Store) Delete(username, id string) error {
-	db, err := s.dbProvider.UserDB(username)
-	if err != nil {
-		return fmt.Errorf("open user db: %w", err)
-	}
-	result, err := db.Exec(`DELETE FROM ssh_keys WHERE id = ?`, id)
+	result, err := s.db.Exec(
+		`DELETE FROM ssh_keys WHERE id = ? AND user_id = (SELECT id FROM users WHERE username = ?)`,
+		id, username,
+	)
 	if err != nil {
 		return fmt.Errorf("delete ssh key: %w", err)
 	}
@@ -196,48 +243,29 @@ func (s *Store) Delete(username, id string) error {
 		return fmt.Errorf("delete ssh key: rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("ssh key %q not found", id)
+		return fmt.Errorf("ssh key %q: %w", id, ErrNotFound)
 	}
 	return nil
 }
 
-// FindByFingerprint searches all users' databases for a key matching the
-// given SHA256 fingerprint. Returns the username and key if found.
+// FindByFingerprint returns the username owning the key with the given
+// SHA256 fingerprint, and the key. It returns ErrNotFound if none does.
 func (s *Store) FindByFingerprint(fingerprint string) (string, *SSHKey, error) {
-	usernames, err := s.usernames.Usernames()
+	var username string
+	var k SSHKey
+	var ts int64
+	err := s.db.QueryRow(
+		`SELECT u.username, k.id, k.name, k.public_key, k.fingerprint, k.created_at
+		 FROM ssh_keys k JOIN users u ON u.id = k.user_id
+		 WHERE k.fingerprint = ?`,
+		fingerprint,
+	).Scan(&username, &k.ID, &k.Name, &k.PublicKey, &k.Fingerprint, &ts)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil, fmt.Errorf("fingerprint %s: %w", fingerprint, ErrNotFound)
+	}
 	if err != nil {
-		return "", nil, fmt.Errorf("list usernames: %w", err)
+		return "", nil, fmt.Errorf("find ssh key: %w", err)
 	}
-
-	for _, username := range usernames {
-		// One user's broken database must not lock everyone out, so a
-		// failure here is logged and the search goes on.
-		db, err := s.dbProvider.UserDB(username)
-		if err != nil {
-			slog.Error("find ssh key: open user db", "user", username, "err", err)
-			continue
-		}
-		if err := migrateFingerprint(db); err != nil {
-			slog.Error("find ssh key: migrate", "user", username, "err", err)
-			continue
-		}
-
-		var k SSHKey
-		var ts int64
-		err = db.QueryRow(
-			`SELECT id, name, public_key, fingerprint, created_at FROM ssh_keys WHERE fingerprint = ?`,
-			fingerprint,
-		).Scan(&k.ID, &k.Name, &k.PublicKey, &k.Fingerprint, &ts)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue
-		}
-		if err != nil {
-			slog.Error("find ssh key", "user", username, "err", err)
-			continue
-		}
-		k.CreatedAt = time.Unix(ts, 0)
-		return username, &k, nil
-	}
-
-	return "", nil, fmt.Errorf("no key found with fingerprint %s", fingerprint)
+	k.CreatedAt = time.Unix(ts, 0)
+	return username, &k, nil
 }

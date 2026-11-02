@@ -154,17 +154,13 @@ func WireSearch(log *slog.Logger, p *Providers, mgr *search.Manager) {
 				log.Error("share recipients: list group members", "share", rec.ID, "group", rec.SubjectID, "err", err)
 				return nil
 			}
-			var names []string
-			for _, id := range userIDs {
-				u, err := p.Users.GetByID(id)
-				if errors.Is(err, user.ErrNotFound) {
-					continue
-				}
-				if err != nil {
-					// Index for the members we could resolve rather than none.
-					log.Error("share recipients: look up member", "share", rec.ID, "user", id, "err", err)
-					continue
-				}
+			members, err := p.Users.GetByIDs(userIDs)
+			if err != nil {
+				log.Error("share recipients: look up members", "share", rec.ID, "group", rec.SubjectID, "err", err)
+				return nil
+			}
+			names := make([]string, 0, len(members))
+			for _, u := range members {
 				names = append(names, u.Username)
 			}
 			return names

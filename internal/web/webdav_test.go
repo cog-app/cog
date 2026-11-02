@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -457,6 +458,12 @@ func TestCommentsCRUD(t *testing.T) {
 	// DELETE the comment
 	webdavReq(t, env, "DELETE", fmt.Sprintf("%s/%d", commentPath, comments[0].ID), "", alice.Auth).
 		Status(204)
+
+	// Deleting it again finds nothing: a 404, not a server error.
+	webdavReq(t, env, "DELETE", fmt.Sprintf("%s/%d", commentPath, comments[0].ID), "", alice.Auth).
+		Status(404)
+	err = fp.DeleteComment(alice.Username, comments[0].ID, alice.Username)
+	require.True(t, errors.Is(err, files.ErrNotFound), err)
 
 	// PROPFIND should no longer contain the comment message
 	resp4 := webdavReq(t, env, "PROPFIND", commentPath+"/", "", alice.Auth)

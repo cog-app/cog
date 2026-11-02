@@ -95,12 +95,13 @@ func (p *Plugin) UpdateComment(username string, commentID int64, actorID, messag
 		return fmt.Errorf("update comment rows: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("comment not found or not owned")
+		return fmt.Errorf("comment %d not found or not owned: %w", commentID, ErrNotFound)
 	}
 	return nil
 }
 
-// DeleteComment removes a comment.
+// DeleteComment removes a comment. A comment that doesn't exist, or that
+// actorID didn't write, is ErrNotFound.
 func (p *Plugin) DeleteComment(username string, commentID int64, actorID string) error {
 	db, err := p.DB(username)
 	if err != nil {
@@ -117,7 +118,7 @@ func (p *Plugin) DeleteComment(username string, commentID int64, actorID string)
 		return fmt.Errorf("delete comment rows: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("comment not found or not owned")
+		return fmt.Errorf("comment %d not found or not owned: %w", commentID, ErrNotFound)
 	}
 	return nil
 }

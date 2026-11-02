@@ -13,8 +13,8 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/quota"
+	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/share"
-	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -113,23 +113,28 @@ func (h *adminVolumeHandler) EditVolumeForm(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Load quotas for the volume.
+	volQuotas, err := seq.Collect(h.p.Quotas.ListByVolume(v.ID))
+	if err != nil {
+		h.p.Log.Error("edit volume: list quotas", "volume", v.ID, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	quotaRefs := make([]subjectRef, len(volQuotas))
+	for i, q := range volQuotas {
+		quotaRefs[i] = subjectRef{q.SubjectType, q.SubjectID}
+	}
+	quotaNamer, err := newSubjectNamer(h.p, quotaRefs)
+	if err != nil {
+		h.p.Log.Error("edit volume: quota subjects", "volume", v.ID, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
 	var quotas []quotaDisplayItem
-	for q, err := range h.p.Quotas.ListByVolume(v.ID) {
-		if err != nil {
-			h.p.Log.Error("edit volume: list quotas", "volume", v.ID, "err", err)
-			http.Error(w, "Internal error", http.StatusInternalServerError)
-			return
-		}
-		name, err := resolveSubjectName(h, q.SubjectType, q.SubjectID)
-		if err != nil {
-			h.p.Log.Error("edit volume: quota subject", "volume", v.ID, "err", err)
-			http.Error(w, "Internal error", http.StatusInternalServerError)
-			return
-		}
+	for i, q := range volQuotas {
 		quotas = append(quotas, quotaDisplayItem{
 			ID:          q.ID,
 			SubjectType: q.SubjectType,
-			SubjectName: name,
+			SubjectName: quotaNamer.name(quotaRefs[i], ""),
 			QuotaBytes:  q.QuotaBytes,
 			QuotaLabel:  quota.FormatBytes(q.QuotaBytes),
 		})
@@ -367,49 +372,24 @@ type quotaDisplayItem struct {
 // buildVolumeShares loads shares for a volume, building UI display items.
 // Admin mode: shows ALL shares for the resource, not filtered by owner.
 func buildVolumeShares(h *adminVolumeHandler, volumeID string) ([]ui.ShareDisplayItem, error) {
+	recs, err := seq.Collect(h.p.Shares.ListByResource(volume.ShareResourceType, volumeID))
+	if err != nil {
+		return nil, err
+	}
+	namer, err := newSubjectNamer(h.p, shareSubjectRefs(recs))
+	if err != nil {
+		return nil, err
+	}
 	var shares []ui.ShareDisplayItem
-	for rec, err := range h.p.Shares.ListByResource(volume.ShareResourceType, volumeID) {
-		if err != nil {
-			return nil, err
-		}
-		name, err := resolveSubjectName(h, rec.SubjectType, rec.SubjectID)
-		if err != nil {
-			return nil, err
-		}
+	for _, rec := range recs {
 		shares = append(shares, ui.ShareDisplayItem{
 			ID:          rec.ID,
 			SubjectType: rec.SubjectType,
 			PermLabel:   permissionLabel(rec.Permissions, defaultPermissionLevels()),
-			SubjectName: name,
+			SubjectName: namer.name(subjectRef{rec.SubjectType, rec.SubjectID}, ""),
 		})
 	}
 	return shares, nil
-}
-
-func resolveSubjectName(h *adminVolumeHandler, subjectType, subjectID string) (string, error) {
-	switch subjectType {
-	case "USER":
-		su, err := h.p.Users.GetByID(subjectID)
-		if errors.Is(err, user.ErrNotFound) {
-			return subjectID, nil
-		}
-		if err != nil {
-			return "", fmt.Errorf("look up user %s: %w", subjectID, err)
-		}
-		if su.DisplayName != "" {
-			return su.DisplayName, nil
-		}
-		return su.Username, nil
-	case "GROUP":
-		return subjectID, nil
-	case "DEFAULT":
-		return "Default", nil
-	case "PUBLIC":
-		return "Public link", nil
-	case "INSTANCE":
-		return "Everyone", nil
-	}
-	return subjectID, nil
 }
 
 // SharePanelAdmin serves the HTMX share panel for admin volume editing.
@@ -433,44 +413,29 @@ func (h *shareHandler) SharePanelAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Admin mode: show ALL shares, not filtered by owner.
+	recs, err := seq.Collect(h.p.Shares.ListByResource(resType, resID))
+	if err != nil {
+		h.p.Log.Error("admin share panel: list shares", "type", resType, "id", resID, "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	namer, err := newSubjectNamer(h.p, shareSubjectRefs(recs))
+	if err != nil {
+		h.p.Log.Error("admin share panel: look up sharees", "type", resType, "id", resID, "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
 	var shares []ui.ShareDisplayItem
-	for rec, err := range h.p.Shares.ListByResource(resType, resID) {
-		if err != nil {
-			h.p.Log.Error("admin share panel: list shares", "type", resType, "id", resID, "err", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
+	for _, rec := range recs {
 		sd := ui.ShareDisplayItem{
 			ID:          rec.ID,
 			SubjectType: rec.SubjectType,
 			PermLabel:   permissionLabel(rec.Permissions, levels),
+			SubjectName: namer.name(subjectRef{rec.SubjectType, rec.SubjectID}, "(deleted user)"),
 		}
-		switch rec.SubjectType {
-		case "USER":
-			su, err := h.p.Users.GetByID(rec.SubjectID)
-			switch {
-			case errors.Is(err, user.ErrNotFound):
-				sd.SubjectName = "(deleted user)"
-			case err != nil:
-				h.p.Log.Error("admin share panel: look up sharee", "user", rec.SubjectID, "err", err)
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-				return
-			default:
-				sd.SubjectName = su.DisplayName
-				if sd.SubjectName == "" {
-					sd.SubjectName = su.Username
-				}
-			}
-		case "GROUP":
-			sd.SubjectName = rec.SubjectID
-		case "PUBLIC":
-			sd.SubjectName = "Public link"
-			if rec.Token != nil {
-				sd.Token = *rec.Token
-				sd.LinkPath = "/s/" + sd.Token
-			}
-		case "INSTANCE":
-			sd.SubjectName = "Everyone"
+		if rec.SubjectType == "PUBLIC" && rec.Token != nil {
+			sd.Token = *rec.Token
+			sd.LinkPath = "/s/" + sd.Token
 		}
 		shares = append(shares, sd)
 	}

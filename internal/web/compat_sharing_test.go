@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 )
@@ -369,3 +370,104 @@ func TestOCSShareUnauthenticated(t *testing.T) {
 }
 
 func itoa(n int64) string { return fmt.Sprintf("%d", n) }
+
+// TestOCSGroupShare creates a group share the way a NextCloud client does:
+// it finds the group through sharees and shares with the identifier sharees
+// offered. A member of the group sees the share; someone outside it doesn't.
+func TestOCSGroupShare(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	carol := env.CreateUser(t, "carol", "pass")
+	dave := env.CreateUser(t, "dave", "pass")
+
+	grp, err := env.Providers.Groups.Create("editors", nil, &alice.ID)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, carol.ID, group.User))
+
+	putFile(t, env, alice, "plan.txt", "draft")
+	putFile(t, env, alice, "notes.txt", "draft")
+
+	var sharees struct {
+		OCS struct {
+			Data struct {
+				Exact struct {
+					Groups []struct {
+						Label string `json:"label"`
+						Value struct {
+							ShareType int    `json:"shareType"`
+							ShareWith string `json:"shareWith"`
+						} `json:"value"`
+					} `json:"groups"`
+				} `json:"exact"`
+			} `json:"data"`
+		} `json:"ocs"`
+	}
+	env.Get(t, sharingPrefix+"/sharees?format=json&search=editors", alice.Auth).
+		Status(200).JSON(&sharees)
+	require.Equal(t, 1, len(sharees.OCS.Data.Exact.Groups))
+	offered := sharees.OCS.Data.Exact.Groups[0].Value
+	require.Equal(t, 1, offered.ShareType)
+
+	type ocsShare struct {
+		ID                   int64  `json:"id"`
+		ShareType            int    `json:"share_type"`
+		ShareWith            string `json:"share_with"`
+		ShareWithDisplayname string `json:"share_with_displayname"`
+		Path                 string `json:"path"`
+	}
+	var created struct {
+		OCS struct {
+			Data ocsShare `json:"data"`
+		} `json:"ocs"`
+	}
+	ocsPost(t, env, sharingPrefix+"/shares", url.Values{
+		"path":      {"/plan.txt"},
+		"shareType": {fmt.Sprint(offered.ShareType)},
+		"shareWith": {offered.ShareWith},
+	}, alice.Auth).Status(200).JSON(&created)
+	require.Equal(t, 1, created.OCS.Data.ShareType)
+	require.Equal(t, grp.ID, created.OCS.Data.ShareWith)
+	require.Equal(t, "editors", created.OCS.Data.ShareWithDisplayname)
+
+	// A client that sends the group's name, as NextCloud's gid, works too.
+	ocsPost(t, env, sharingPrefix+"/shares", url.Values{
+		"path":      {"/notes.txt"},
+		"shareType": {"1"},
+		"shareWith": {"editors"},
+	}, alice.Auth).Status(200)
+
+	// An unknown group is a 404, not a share with nobody.
+	ocsPost(t, env, sharingPrefix+"/shares", url.Values{
+		"path":      {"/plan.txt"},
+		"shareType": {"1"},
+		"shareWith": {"no-such-group"},
+	}, alice.Auth).Status(404)
+
+	var carolList struct {
+		OCS struct {
+			Data []ocsShare `json:"data"`
+		} `json:"ocs"`
+	}
+	env.Get(t, sharingPrefix+"/shares?format=json&shared_with_me=true", carol.Auth).
+		Status(200).JSON(&carolList)
+	require.Equal(t, 2, len(carolList.OCS.Data))
+	paths := map[string]bool{}
+	for _, s := range carolList.OCS.Data {
+		require.Equal(t, 1, s.ShareType)
+		require.Equal(t, "editors", s.ShareWithDisplayname)
+		paths[s.Path] = true
+	}
+	require.True(t, paths["/plan.txt"] && paths["/notes.txt"], paths)
+
+	ocsGet(t, env, fmt.Sprintf("%s/shares/%d", sharingPrefix, created.OCS.Data.ID), carol.Auth).Status(200)
+
+	var daveList struct {
+		OCS struct {
+			Data []ocsShare `json:"data"`
+		} `json:"ocs"`
+	}
+	env.Get(t, sharingPrefix+"/shares?format=json&shared_with_me=true", dave.Auth).
+		Status(200).JSON(&daveList)
+	require.Equal(t, 0, len(daveList.OCS.Data))
+	ocsGet(t, env, fmt.Sprintf("%s/shares/%d", sharingPrefix, created.OCS.Data.ID), dave.Auth).Status(404)
+}

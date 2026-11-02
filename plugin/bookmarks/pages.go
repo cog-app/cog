@@ -615,7 +615,8 @@ func (h *Pages) ImportBookmarks(w http.ResponseWriter, r *http.Request) {
 
 	count, err := ImportNetscapeHTML(db, file)
 	if err != nil {
-		plugin.SetFlash(w, plugin.Flash{Kind: "error", Message: fmt.Sprintf("Import stopped after %d bookmarks: %v", count, err)})
+		h.plugin.log.Warn("import bookmarks", "error", err)
+		plugin.SetFlash(w, plugin.Flash{Kind: "error", Message: fmt.Sprintf("Nothing was imported: %v", err)})
 		http.Redirect(w, r, "/apps/bookmarks/import-export", http.StatusSeeOther)
 		return
 	}

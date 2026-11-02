@@ -1,11 +1,13 @@
 package volume_test
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/internal/volume"
@@ -209,6 +211,6 @@ func TestDeleteQuotaHTTP(t *testing.T) {
 
 	// Verify removed.
 	q, err = env.Providers.Quotas.Get(vol.ID, "DEFAULT", "")
-	require.NoError(t, err)
+	require.True(t, errors.Is(err, quota.ErrNotFound), err)
 	require.Nil(t, q)
 }
