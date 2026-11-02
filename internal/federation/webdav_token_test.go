@@ -2,6 +2,7 @@ package federation_test
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
 // --- Auth gating ---
@@ -266,9 +268,27 @@ func TestTokenWebDAV_OwnerMountElsewhere(t *testing.T) {
 		Status(200).Equals("hello from a mount")
 	env.Get(t, "/public.php/webdav/missing.txt", tok).Status(http.StatusNotFound)
 
-	// Climbing out of the share stays inside it: the cleaned path is the
-	// share root's own secret.txt, which doesn't exist.
-	env.Get(t, "/public.php/webdav/../secret.txt", tok).Status(http.StatusNotFound)
+	// Climbing out of the share stays inside it. Through the server mux a
+	// ".." never arrives (the mux redirects to the cleaned path), so the
+	// handler is called directly with the raw path: it must resolve to the
+	// share's own secret.txt, which doesn't exist, not alice's /secret.txt.
+	fp, ok := env.Providers.Plugins.Plugin("files")
+	require.True(t, ok)
+	h := &federation.TokenWebDAVHandler{
+		Log:    env.Providers.Log,
+		Store:  env.Providers.Federation,
+		Shares: env.Providers.Shares,
+		Users:  env.Providers.Users,
+		Files:  fp.(*files.Plugin),
+	}
+	for _, p := range []string{"/public.php/webdav/../secret.txt", "/public.php/webdav/Sub/../../secret.txt"} {
+		req := httptest.NewRequest(http.MethodGet, p, nil)
+		req.SetBasicAuth("", *rec.Token)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code)
+		require.False(t, strings.Contains(w.Body.String(), "not shared"))
+	}
 }
 
 // --- Direction enforcement: inbound shares must not be accessible from this endpoint ---

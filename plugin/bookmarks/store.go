@@ -389,6 +389,8 @@ func loadRelations(db *sql.DB, bm *Bookmark) error {
 
 // loadRelationsBatch fills in the tags, and with folders the folders, of
 // every bookmark in bms with one query each, rather than one per bookmark.
+// Callers pass at most a page (ListBookmarks caps it at 300), well under
+// SQLite's limit on bound parameters.
 func loadRelationsBatch(db *sql.DB, bms []Bookmark, folders bool) error {
 	if len(bms) == 0 {
 		return nil

@@ -28,9 +28,10 @@ type SSHKey struct {
 // ErrNotFound is returned when no key matches.
 var ErrNotFound = errors.New("ssh key not found")
 
-// ErrKeyInUse is returned by Add when the key is already registered, to this
-// or another user. A fingerprint identifies exactly one user at login.
-var ErrKeyInUse = errors.New("ssh key already registered")
+// ErrKeyExists is returned by Add when the user already has the key. Other
+// users may have the same key: login names the user, so a key need only be
+// unique to one.
+var ErrKeyExists = errors.New("ssh key already added")
 
 // ErrInvalidKey is returned by Add for text that is not one public key in
 // authorized_keys format.
@@ -124,9 +125,8 @@ func (s *Store) moveLegacy(legacy LegacyDBProvider, users UsernameProvider) erro
 			return fmt.Errorf("rows affected: %w", err)
 		}
 		if n == 0 {
-			// The same key under two users: the old per-user lookup only ever
-			// let one of them log in with it, and now only the first keeps it.
-			slog.Warn("ssh key move: key already registered to another user, dropped", "user", k.username, "id", k.id, "fingerprint", gossh.FingerprintSHA256(pk))
+			// The same key twice for one user (or a user since deleted).
+			slog.Warn("ssh key move: duplicate key dropped", "user", k.username, "id", k.id, "fingerprint", gossh.FingerprintSHA256(pk))
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO system_settings (key, value) VALUES (?, '1') ON CONFLICT DO NOTHING`, movedSetting); err != nil {
@@ -172,7 +172,7 @@ func readLegacy(legacy LegacyDBProvider, username string) ([]legacyKey, error) {
 }
 
 // Add stores a new SSH key for a user, parsing the authorized_keys line.
-// It returns ErrKeyInUse if any user already has the key.
+// It returns ErrKeyExists if the user already has the key.
 func (s *Store) Add(username, name, authorizedKeyLine string) (*SSHKey, error) {
 	pk, comment, _, rest, err := gossh.ParseAuthorizedKey([]byte(authorizedKeyLine))
 	if err != nil {
@@ -199,7 +199,7 @@ func (s *Store) Add(username, name, authorizedKeyLine string) (*SSHKey, error) {
 		key.ID, key.Name, key.PublicKey, key.Fingerprint, key.CreatedAt.Unix(), username,
 	)
 	if se, ok := errors.AsType[sqlite3.Error](err); ok && se.ExtendedCode == sqlite3.ErrConstraintUnique {
-		return nil, ErrKeyInUse
+		return nil, ErrKeyExists
 	}
 	if err != nil {
 		return nil, fmt.Errorf("insert ssh key: %w", err)
@@ -259,24 +259,23 @@ func (s *Store) Delete(username, id string) error {
 	return nil
 }
 
-// FindByFingerprint returns the username owning the key with the given
-// SHA256 fingerprint, and the key. It returns ErrNotFound if none does.
-func (s *Store) FindByFingerprint(fingerprint string) (string, *SSHKey, error) {
-	var username string
+// Find returns username's key with the given SHA256 fingerprint, one
+// indexed lookup. It returns ErrNotFound if that user has no such key.
+func (s *Store) Find(username, fingerprint string) (*SSHKey, error) {
 	var k SSHKey
 	var ts int64
 	err := s.db.QueryRow(
-		`SELECT u.username, k.id, k.name, k.public_key, k.fingerprint, k.created_at
+		`SELECT k.id, k.name, k.public_key, k.fingerprint, k.created_at
 		 FROM ssh_keys k JOIN users u ON u.id = k.user_id
-		 WHERE k.fingerprint = ?`,
-		fingerprint,
-	).Scan(&username, &k.ID, &k.Name, &k.PublicKey, &k.Fingerprint, &ts)
+		 WHERE u.username = ? AND k.fingerprint = ?`,
+		username, fingerprint,
+	).Scan(&k.ID, &k.Name, &k.PublicKey, &k.Fingerprint, &ts)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil, fmt.Errorf("fingerprint %s: %w", fingerprint, ErrNotFound)
+		return nil, fmt.Errorf("%s key %s: %w", username, fingerprint, ErrNotFound)
 	}
 	if err != nil {
-		return "", nil, fmt.Errorf("find ssh key: %w", err)
+		return nil, fmt.Errorf("find ssh key: %w", err)
 	}
 	k.CreatedAt = time.Unix(ts, 0)
-	return username, &k, nil
+	return &k, nil
 }

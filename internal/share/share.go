@@ -482,9 +482,17 @@ func (s *Store) NCIDFor(shareID string) (int64, error) {
 // are, creating the ids that do not exist yet.
 func (s *Store) NCIDsFor(shareIDs []string) (map[string]int64, error) {
 	out := make(map[string]int64, len(shareIDs))
-	if len(shareIDs) == 0 {
-		return out, nil
+	// Chunked under SQLite's limit on bound parameters.
+	const chunk = 500
+	for start := 0; start < len(shareIDs); start += chunk {
+		if err := s.ncIDsChunk(shareIDs[start:min(start+chunk, len(shareIDs))], out); err != nil {
+			return nil, err
+		}
 	}
+	return out, nil
+}
+
+func (s *Store) ncIDsChunk(shareIDs []string, out map[string]int64) error {
 	args := make([]any, len(shareIDs))
 	for i, id := range shareIDs {
 		args[i] = id
@@ -492,23 +500,26 @@ func (s *Store) NCIDsFor(shareIDs []string) (map[string]int64, error) {
 	values := "(?)" + strings.Repeat(",(?)", len(shareIDs)-1)
 	if _, err := s.db.Exec(`INSERT INTO share_nc_ids (share_id) VALUES `+values+`
 		ON CONFLICT (share_id) DO NOTHING`, args...); err != nil {
-		return nil, fmt.Errorf("create nc ids: %w", err)
+		return fmt.Errorf("create nc ids: %w", err)
 	}
 	rows, err := s.db.Query(`SELECT share_id, nc_id FROM share_nc_ids
 		WHERE share_id IN (?`+strings.Repeat(",?", len(shareIDs)-1)+`)`, args...)
 	if err != nil {
-		return nil, fmt.Errorf("lookup nc ids: %w", err)
+		return fmt.Errorf("lookup nc ids: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id string
 		var ncID int64
 		if err := rows.Scan(&id, &ncID); err != nil {
-			return nil, fmt.Errorf("scan nc id: %w", err)
+			return fmt.Errorf("scan nc id: %w", err)
 		}
 		out[id] = ncID
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("lookup nc ids: %w", err)
+	}
+	return nil
 }
 
 // ShareIDFromNC looks up the internal share ID from an NC integer ID.

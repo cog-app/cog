@@ -122,9 +122,9 @@ func TestDelete_Missing(t *testing.T) {
 	require.True(t, strings.Contains(err.Error(), "not found"))
 }
 
-// --- FindByFingerprint ---
+// --- Find ---
 
-func TestFindByFingerprint_Match(t *testing.T) {
+func TestFind_Match(t *testing.T) {
 	s, env := newStore(t)
 	alice := env.CreateUser(t, "alice", "pass")
 	env.CreateUser(t, "bob", "pass")
@@ -133,20 +133,21 @@ func TestFindByFingerprint_Match(t *testing.T) {
 	_, err := s.Add(alice.Username, "laptop", line)
 	require.NoError(t, err)
 
-	username, key, err := s.FindByFingerprint(fp)
+	key, err := s.Find("alice", fp)
 	require.NoError(t, err)
-	require.Equal(t, "alice", username)
 	require.Equal(t, fp, key.Fingerprint)
 }
 
-func TestFindByFingerprint_NotFound(t *testing.T) {
+func TestFind_NotFound(t *testing.T) {
 	s, env := newStore(t)
 	env.CreateUser(t, "alice", "pass")
-	_, _, err := s.FindByFingerprint("SHA256:never-stored")
-	require.True(t, err != nil)
+	_, err := s.Find("alice", "SHA256:never-stored")
+	require.True(t, errors.Is(err, keys.ErrNotFound), "got %v", err)
 }
 
-func TestFindByFingerprint_OnlyHisOwn(t *testing.T) {
+// A key finds only the user it was added for: alice's key does not log in
+// as bob.
+func TestFind_OnlyOwnKeys(t *testing.T) {
 	s, env := newStore(t)
 	alice := env.CreateUser(t, "alice", "pass")
 	bob := env.CreateUser(t, "bob", "pass")
@@ -159,27 +160,33 @@ func TestFindByFingerprint_OnlyHisOwn(t *testing.T) {
 	_, err = s.Add(bob.Username, "k", bobLine)
 	require.NoError(t, err)
 
-	user, key, err := s.FindByFingerprint(aliceFP)
+	_, err = s.Find("alice", aliceFP)
 	require.NoError(t, err)
-	require.Equal(t, "alice", user)
-	require.Equal(t, aliceFP, key.Fingerprint)
-
-	user, key, err = s.FindByFingerprint(bobFP)
+	_, err = s.Find("bob", bobFP)
 	require.NoError(t, err)
-	require.Equal(t, "bob", user)
-	require.Equal(t, bobFP, key.Fingerprint)
+	_, err = s.Find("bob", aliceFP)
+	require.True(t, errors.Is(err, keys.ErrNotFound), "got %v", err)
 }
 
-func TestAdd_SameKeyTwoUsersRefused(t *testing.T) {
+// Public keys are public. Adding someone else's key must not stop them
+// adding it too, and only grants login as the account it was added to.
+func TestAdd_SameKeyTwoUsers(t *testing.T) {
 	s, env := newStore(t)
 	alice := env.CreateUser(t, "alice", "pass")
-	bob := env.CreateUser(t, "bob", "pass")
-	line, _ := genAuthorizedKey(t, "shared")
+	mallory := env.CreateUser(t, "mallory", "pass")
+	line, fp := genAuthorizedKey(t, "alice@laptop")
 
-	_, err := s.Add(alice.Username, "k", line)
+	_, err := s.Add(mallory.Username, "squat", line)
 	require.NoError(t, err)
-	_, err = s.Add(bob.Username, "k", line)
-	require.True(t, errors.Is(err, keys.ErrKeyInUse), "got %v", err)
+	_, err = s.Add(alice.Username, "k", line)
+	require.NoError(t, err)
+	_, err = s.Add(alice.Username, "again", line)
+	require.True(t, errors.Is(err, keys.ErrKeyExists), "got %v", err)
+
+	_, err = s.Find("alice", fp)
+	require.NoError(t, err)
+	_, err = s.Find("mallory", fp)
+	require.NoError(t, err)
 }
 
 func TestDelete_OtherUsersKeyRefused(t *testing.T) {
@@ -193,12 +200,11 @@ func TestDelete_OtherUsersKeyRefused(t *testing.T) {
 	err = s.Delete(bob.Username, k.ID)
 	require.True(t, errors.Is(err, keys.ErrNotFound), "got %v", err)
 
-	owner, _, err := s.FindByFingerprint(fp)
+	_, err = s.Find("alice", fp)
 	require.NoError(t, err)
-	require.Equal(t, "alice", owner)
 }
 
-func TestFindByFingerprint_UserDeletedRemovesKeys(t *testing.T) {
+func TestFind_UserDeletedRemovesKeys(t *testing.T) {
 	s, env := newStore(t)
 	alice := env.CreateUser(t, "alice", "pass")
 	line, fp := genAuthorizedKey(t, "k")
@@ -206,14 +212,17 @@ func TestFindByFingerprint_UserDeletedRemovesKeys(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, env.Providers.Users.Delete(alice.ID))
-	_, _, err = s.FindByFingerprint(fp)
+	var n int
+	require.NoError(t, env.Providers.DB.QueryRow(`SELECT COUNT(*) FROM ssh_keys WHERE fingerprint = ?`, fp).Scan(&n))
+	require.Equal(t, 0, n)
+	_, err = s.Find("alice", fp)
 	require.True(t, errors.Is(err, keys.ErrNotFound), "got %v", err)
 }
 
-// TestFindByFingerprint_NoUserDatabases checks that a login lookup is answered
+// TestFind_NoUserDatabases checks that a login lookup is answered
 // from the system database alone: with many users, not one per-user database
 // is opened.
-func TestFindByFingerprint_NoUserDatabases(t *testing.T) {
+func TestFind_NoUserDatabases(t *testing.T) {
 	env := cogtest.New(t)
 	legacy := &dbProvider{env: env}
 	s, err := keys.NewStore(env.Providers.DB, legacy, &usernameProvider{env}, env.Clock.Clock())
@@ -227,10 +236,9 @@ func TestFindByFingerprint_NoUserDatabases(t *testing.T) {
 	require.NoError(t, err)
 
 	opened := legacy.opened
-	owner, _, err := s.FindByFingerprint(fp)
+	_, err = s.Find("dave", fp)
 	require.NoError(t, err)
-	require.Equal(t, "dave", owner)
-	_, _, err = s.FindByFingerprint("SHA256:never-stored")
+	_, err = s.Find("dave", "SHA256:never-stored")
 	require.True(t, errors.Is(err, keys.ErrNotFound), "got %v", err)
 	require.Equal(t, opened, legacy.opened)
 }
@@ -272,32 +280,34 @@ func TestNewStore_MovesLegacyKeys(t *testing.T) {
 	bobLine, bobFP := genAuthorizedKey(t, "bob")
 	writeLegacyKey(t, env, "alice", "a1", aliceLine)
 	writeLegacyKey(t, env, "bob", "b1", bobLine)
-	writeLegacyKey(t, env, "bob", "b2", aliceLine) // same key as alice's: one owner only
-	writeLegacyKey(t, env, "bob", "b3", "not a key")
+	writeLegacyKey(t, env, "bob", "b2", aliceLine) // same key as alice's: both keep it
+	writeLegacyKey(t, env, "bob", "b3", bobLine)   // bob's twice: one is kept
+	writeLegacyKey(t, env, "bob", "b4", "not a key")
 
 	s, err := keys.NewStore(env.Providers.DB, &dbProvider{env: env}, &usernameProvider{env}, env.Clock.Clock())
 	require.NoError(t, err)
 
-	owner, k, err := s.FindByFingerprint(aliceFP)
+	k, err := s.Find("alice", aliceFP)
 	require.NoError(t, err)
-	require.Equal(t, "alice", owner)
 	require.Equal(t, "a1", k.ID)
-	owner, k, err = s.FindByFingerprint(bobFP)
+	k, err = s.Find("bob", aliceFP)
 	require.NoError(t, err)
-	require.Equal(t, "bob", owner)
-	require.Equal(t, "b1", k.ID)
+	require.Equal(t, "b2", k.ID)
+	k, err = s.Find("bob", bobFP)
+	require.NoError(t, err)
+	require.True(t, k.ID == "b1" || k.ID == "b3", "got %s", k.ID)
 
 	got, err := s.List("bob")
 	require.NoError(t, err)
-	require.Equal(t, 1, len(got))
+	require.Equal(t, 2, len(got))
 
 	// The move runs once: a key deleted afterwards is not brought back.
-	require.NoError(t, s.Delete("bob", "b1"))
+	require.NoError(t, s.Delete("bob", k.ID))
 	legacy := &dbProvider{env: env}
 	s, err = keys.NewStore(env.Providers.DB, legacy, &usernameProvider{env}, env.Clock.Clock())
 	require.NoError(t, err)
 	require.Equal(t, 0, legacy.opened)
-	_, _, err = s.FindByFingerprint(bobFP)
+	_, err = s.Find("bob", bobFP)
 	require.True(t, errors.Is(err, keys.ErrNotFound), "got %v", err)
 }
 
@@ -319,9 +329,8 @@ func TestNewStore_MoveFailureSurfaces(t *testing.T) {
 	writeLegacyKey(t, env, "alice", "a1", line)
 	s, err := keys.NewStore(env.Providers.DB, &dbProvider{env: env}, &usernameProvider{env}, env.Clock.Clock())
 	require.NoError(t, err)
-	owner, _, err := s.FindByFingerprint(fp)
+	_, err = s.Find("alice", fp)
 	require.NoError(t, err)
-	require.Equal(t, "alice", owner)
 }
 
 func TestAdd_NameAndValidation(t *testing.T) {

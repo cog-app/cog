@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/pprof"
@@ -11,6 +12,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/compat"
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/jmap"
+	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
@@ -430,6 +432,11 @@ func buildOCSQuotaFunc(p *services.Providers, fp *filesPlugin.Plugin) compat.Quo
 			return used, -1
 		}
 		m, err := p.Mounts.GetUserRoot(u.ID)
+		if errors.Is(err, mount.ErrNotFound) {
+			// No root mount (no default volume when the user was made):
+			// no volume to fill, so no quota, as quota.Checker treats it.
+			return used, -1
+		}
 		if err != nil {
 			p.Log.Error("quota: root mount", "user", username, "err", err)
 			return used, -1

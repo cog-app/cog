@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -20,6 +21,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/plugin/files"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 // directToken is a short-lived token for unauthenticated file downloads.
@@ -198,6 +200,11 @@ func (h *WebDAVHandler) handleGet(w http.ResponseWriter, r *http.Request, u *use
 			w.Header().Set("DAV", "1, 3, extended-mkcol")
 			w.WriteHeader(http.StatusOK)
 		case m.IsDir:
+			w.WriteHeader(http.StatusNotFound)
+		case errors.Is(err, fs.ErrNotExist) || errors.Is(err, vfs.ErrNotFound):
+			// The metadata outlived the bytes. To the client the file is
+			// gone, as the federated endpoint says; the mismatch is ours.
+			h.Log.Warn("GET: file has metadata but no content", "user", u.Username, "path", filePath, "err", err)
 			w.WriteHeader(http.StatusNotFound)
 		default:
 			h.Log.Error("GET", "user", u.Username, "path", filePath, "err", err)

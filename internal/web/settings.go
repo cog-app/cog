@@ -177,8 +177,8 @@ func (h *settingsHandler) AddSSHKey(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, keys.ErrInvalidKey):
 		back("error", "That is not an SSH public key. Paste one line, such as the contents of ~/.ssh/id_ed25519.pub.")
-	case errors.Is(err, keys.ErrKeyInUse):
-		back("error", "That key has already been added to an account.")
+	case errors.Is(err, keys.ErrKeyExists):
+		back("error", "You have already added that key.")
 	case err != nil:
 		h.p.Log.Error("add ssh key", "user", u.Username, "err", err)
 		back("error", "The key could not be added. Try again.")

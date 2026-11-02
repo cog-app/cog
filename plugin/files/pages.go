@@ -549,11 +549,13 @@ func (h *Pages) serveArchiveFileStream(w http.ResponseWriter, r *http.Request, u
 // handleExtract extracts an archive to the filesystem.
 func (h *Pages) handleExtract(w http.ResponseWriter, r *http.Request, username, fp string) {
 	meta, err := h.plugin.GetByPath(username, fp)
+	if errors.Is(err, ErrNotFound) {
+		h.flashRedirect(w, r, "error", "The archive no longer exists.", fileURL(parentDir(fp)))
+		return
+	}
 	if err != nil {
-		if !errors.Is(err, ErrNotFound) {
-			h.plugin.log.Error("extract archive", "user", username, "path", fp, "err", err)
-		}
-		h.flashRedirect(w, r, "error", "The archive could not be opened: "+err.Error(), fileURL(parentDir(fp)))
+		h.plugin.log.Error("extract archive", "user", username, "path", fp, "err", err)
+		h.flashRedirect(w, r, "error", "The archive could not be opened.", fileURL(parentDir(fp)))
 		return
 	}
 	if !isArchiveFile(meta) {
@@ -564,6 +566,9 @@ func (h *Pages) handleExtract(w http.ResponseWriter, r *http.Request, username, 
 	destDir := ExtractDestination(fp)
 	count, err := h.plugin.ExtractArchive(username, fp, destDir)
 	if err != nil {
+		// Usually the archive itself (corrupt, unsupported), which the
+		// message names; logged in case it is not.
+		h.plugin.log.Warn("extract archive", "user", username, "path", fp, "err", err)
 		h.flashRedirect(w, r, "error", "Extract failed: "+err.Error(), fileURL(fp))
 		return
 	}

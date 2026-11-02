@@ -54,12 +54,11 @@ func TestSettingsSSHKeys_AddListRemove(t *testing.T) {
 	require.Equal(t, 1, len(got))
 	require.Equal(t, "alice@laptop", got[0].Name) // the key's comment
 
-	owner, _, err := env.Providers.SSHKeys.FindByFingerprint(fp)
+	_, err = env.Providers.SSHKeys.Find("alice", fp)
 	require.NoError(t, err)
-	require.Equal(t, "alice", owner)
 
 	env.Delete(t, "/settings/ssh-keys/"+got[0].ID, cookie, cogtest.Header("X-CSRF-Token", token)).Status(200)
-	_, _, err = env.Providers.SSHKeys.FindByFingerprint(fp)
+	_, err = env.Providers.SSHKeys.Find("alice", fp)
 	require.True(t, errors.Is(err, keys.ErrNotFound))
 	env.Get(t, "/settings/security", cookie).Status(200).Contains("No SSH keys yet.")
 }
@@ -88,18 +87,23 @@ func TestSettingsSSHKeys_Rejected(t *testing.T) {
 		"public_key": {one + "\n" + two},
 	}, cookie).Status(200).Contains("That is not an SSH public key.")
 
-	// A key another account has.
+	// The same key twice. Another account having it is no obstacle: a
+	// key is unique per user, so nobody can claim someone else's.
 	line, _ := newSSHKey(t, "")
 	_, err := env.Providers.SSHKeys.Add(bob.Username, "bob's", line)
 	require.NoError(t, err)
 	env.PostForm(t, "/settings/ssh-keys", url.Values{
 		"csrf_token": {token},
 		"public_key": {line},
-	}, cookie).Status(200).Contains("already been added to an account")
+	}, cookie).Status(200).Contains("SSH key added.")
+	env.PostForm(t, "/settings/ssh-keys", url.Values{
+		"csrf_token": {token},
+		"public_key": {line},
+	}, cookie).Status(200).Contains("You have already added that key.")
 
 	got, err := env.Providers.SSHKeys.List("alice")
 	require.NoError(t, err)
-	require.Equal(t, 0, len(got))
+	require.Equal(t, 1, len(got))
 }
 
 func TestSettingsSSHKeys_CannotRemoveAnothersKey(t *testing.T) {
@@ -113,9 +117,8 @@ func TestSettingsSSHKeys_CannotRemoveAnothersKey(t *testing.T) {
 	require.NoError(t, err)
 
 	env.Delete(t, "/settings/ssh-keys/"+k.ID, cookie, cogtest.Header("X-CSRF-Token", token)).Status(http.StatusNotFound)
-	owner, _, err := env.Providers.SSHKeys.FindByFingerprint(fp)
+	_, err = env.Providers.SSHKeys.Find("bob", fp)
 	require.NoError(t, err)
-	require.Equal(t, "bob", owner)
 }
 
 func TestSettingsSSHKeys_HiddenWhenSSHOff(t *testing.T) {

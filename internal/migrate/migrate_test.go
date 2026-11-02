@@ -246,3 +246,37 @@ func TestMigrate_IncompatibleLeavesDatabaseAlone(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, exists)
 }
+
+// A -- ONCE migration runs a single time per database, however often the
+// database is opened, and a failed one is not recorded.
+func TestMigrate_Once(t *testing.T) {
+	db, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "once.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	fsys := fstest.MapFS{
+		"sql/schema.sql": &fstest.MapFile{Data: []byte(`
+			CREATE TABLE IF NOT EXISTS counter (n INTEGER NOT NULL);
+		`)},
+		"sql/migration001.sql": &fstest.MapFile{Data: []byte(`-- ONCE
+			INSERT INTO counter (n) VALUES (1);
+		`)},
+	}
+	for range 3 {
+		require.NoError(t, migrate.Migrate(db, fsys))
+	}
+	var rows int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM counter`).Scan(&rows))
+	require.Equal(t, 1, rows)
+
+	fsys["sql/migration002.sql"] = &fstest.MapFile{Data: []byte(`-- ONCE
+		INSERT INTO counter (n) VALUES (2);
+		INSERT INTO no_such_table VALUES (1);
+	`)}
+	require.Error(t, migrate.Migrate(db, fsys))
+	var recorded int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM _cog_migrations WHERE name = 'sql/migration002.sql'`).Scan(&recorded))
+	require.Equal(t, 0, recorded)
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM counter`).Scan(&rows))
+	require.Equal(t, 1, rows)
+}

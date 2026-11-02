@@ -65,18 +65,12 @@ func (a *authCallbacks) passwordCallback(conn gossh.ConnMetadata, password []byt
 
 // publicKeyCallback authenticates via SSH public key.
 func (a *authCallbacks) publicKeyCallback(conn gossh.ConnMetadata, key gossh.PublicKey) (*gossh.Permissions, error) {
-	fp := gossh.FingerprintSHA256(key)
-	username, _, err := a.keys.FindByFingerprint(fp)
-	if err != nil {
+	if _, err := a.keys.Find(conn.User(), gossh.FingerprintSHA256(key)); err != nil {
 		return nil, err
 	}
 
-	if username != conn.User() {
-		return nil, fmt.Errorf("key belongs to %q, not %q", username, conn.User())
-	}
-
 	// Look up user to get ID.
-	u, err := a.users.GetByUsername(username)
+	u, err := a.users.GetByUsername(conn.User())
 	if err != nil {
 		return nil, err
 	}

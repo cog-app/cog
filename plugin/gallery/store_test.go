@@ -7,8 +7,10 @@ import (
 )
 
 // An upsert that resolves to an update leaves SQLite's last_insert_rowid
-// untouched, so it reports whatever the connection inserted last. Pinning the
-// pool to one connection makes that stale id certain rather than likely.
+// untouched, so it reports whatever the connection inserted last. With one
+// idle connection, these sequential calls all reuse the same connection,
+// which makes that stale id certain rather than likely. (It caps idle
+// connections, not open ones; nothing here runs concurrently.)
 func TestUpsertReturnsExistingID(t *testing.T) {
 	db := testDB(t)
 	db.SetMaxIdleConns(1)

@@ -1,6 +1,7 @@
 package share_test
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -353,4 +354,21 @@ func TestNCIDsForBatch(t *testing.T) {
 	empty, err := shares.NCIDsFor(nil)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(empty))
+}
+
+// More shares than SQLite's parameter limit: NCIDsFor chunks.
+func TestNCIDsForManyShares(t *testing.T) {
+	env := cogtest.New(t)
+	owner := env.CreateUser(t, "owner", "pass")
+	shares := env.Providers.Shares
+
+	ids := make([]string, 1201)
+	for i := range ids {
+		rec, err := shares.Create(owner.ID, "files:file", strconv.Itoa(i), "USER", "t", plugin.PermRead)
+		require.NoError(t, err)
+		ids[i] = rec.ID
+	}
+	got, err := shares.NCIDsFor(ids)
+	require.NoError(t, err)
+	require.Equal(t, len(ids), len(got))
 }

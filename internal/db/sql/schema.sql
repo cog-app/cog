@@ -240,7 +240,7 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 CREATE INDEX IF NOT EXISTS idx_push_subscriptions_due ON push_subscriptions(next_attempt_at) WHERE pending != 0;
 CREATE INDEX IF NOT EXISTS idx_push_subscriptions_expiry ON push_subscriptions(expires_at);
 
--- SSH public keys; a fingerprint belongs to at most one user.
+-- SSH public keys, unique per user; login looks up (username, fingerprint).
 CREATE TABLE IF NOT EXISTS ssh_keys (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -249,5 +249,4 @@ CREATE TABLE IF NOT EXISTS ssh_keys (
 	fingerprint TEXT NOT NULL,
 	created_at INTEGER NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_ssh_keys_fingerprint ON ssh_keys(fingerprint);
-CREATE INDEX IF NOT EXISTS idx_ssh_keys_user ON ssh_keys(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ssh_keys_user_fingerprint ON ssh_keys(user_id, fingerprint);
