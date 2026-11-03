@@ -37,6 +37,9 @@ var ErrKeyExists = errors.New("ssh key already added")
 // authorized_keys format.
 var ErrInvalidKey = errors.New("not a valid ssh public key")
 
+// ErrSharedKey is returned by Owner when more than one user has the key.
+var ErrSharedKey = errors.New("ssh key belongs to more than one user")
+
 // LegacyDBProvider opens the per-user databases keys used to be kept in. It
 // is only read once, to move those keys into the system database.
 type LegacyDBProvider interface {
@@ -278,4 +281,39 @@ func (s *Store) Find(username, fingerprint string) (*SSHKey, error) {
 	}
 	k.CreatedAt = time.Unix(ts, 0)
 	return &k, nil
+}
+
+// Owner returns the one user with the given SHA256 fingerprint, for logins
+// that don't name the Cog user. A key that several users added names nobody,
+// since any of them could have added someone else's public key.
+func (s *Store) Owner(fingerprint string) (string, error) {
+	rows, err := s.db.Query(
+		`SELECT u.username FROM ssh_keys k JOIN users u ON u.id = k.user_id
+		 WHERE k.fingerprint = ? LIMIT 2`,
+		fingerprint,
+	)
+	if err != nil {
+		return "", fmt.Errorf("find ssh key owner: %w", err)
+	}
+	defer rows.Close()
+
+	var owners []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return "", fmt.Errorf("scan ssh key owner: %w", err)
+		}
+		owners = append(owners, u)
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("find ssh key owner: %w", err)
+	}
+	switch len(owners) {
+	case 0:
+		return "", fmt.Errorf("key %s: %w", fingerprint, ErrNotFound)
+	case 1:
+		return owners[0], nil
+	default:
+		return "", fmt.Errorf("key %s: %w", fingerprint, ErrSharedKey)
+	}
 }

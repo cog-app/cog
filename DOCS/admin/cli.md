@@ -58,6 +58,16 @@ cog setting get <key>                # Get a setting value
 cog setting set <key> <value>        # Set a setting value
 ```
 
+### `cog user find-key`
+
+Print the username that owns an SSH public key, given its SHA256 fingerprint
+(the `%f` token in sshd's `AuthorizedKeysCommand`). Exits non-zero if no user
+has the key, or if more than one user added it.
+
+```bash
+cog user find-key SHA256:uQ8hD3...
+```
+
 ### `cog shell`
 
 Start an interactive shell session (same shell available via SSH).

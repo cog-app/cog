@@ -182,6 +182,27 @@ func userCmd(plugins []plugin.Plugin) *cobra.Command {
 		},
 	})
 
+	// user find-key
+	cmd.AddCommand(&cobra.Command{
+		Use:   "find-key <SHA256:fingerprint>",
+		Short: "Print the user owning an SSH key (for sshd AuthorizedKeysCommand)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			p, err := openProviders(plugins...)
+			if err != nil {
+				return err
+			}
+			defer p.Close()
+
+			username, err := p.SSHKeys.Owner(args[0])
+			if err != nil {
+				return err
+			}
+			fmt.Println(username)
+			return nil
+		},
+	})
+
 	return cmd
 }
 

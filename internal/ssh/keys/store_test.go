@@ -355,3 +355,35 @@ func TestAdd_NameAndValidation(t *testing.T) {
 	_, err = s.Add("alice", "", a+"\n"+b)
 	require.True(t, errors.Is(err, keys.ErrInvalidKey), "got %v", err)
 }
+
+func TestOwner(t *testing.T) {
+	s, env := newStore(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	env.CreateUser(t, "bob", "pass")
+	line, fp := genAuthorizedKey(t, "alice@laptop")
+	_, err := s.Add(alice.Username, "laptop", line)
+	require.NoError(t, err)
+
+	owner, err := s.Owner(fp)
+	require.NoError(t, err)
+	require.Equal(t, "alice", owner)
+
+	_, err = s.Owner("SHA256:never-stored")
+	require.True(t, errors.Is(err, keys.ErrNotFound), "got %v", err)
+}
+
+// Mallory can add alice's public key to her own account; that must lock the
+// key out of owner lookups rather than pick either of them.
+func TestOwner_SharedKey(t *testing.T) {
+	s, env := newStore(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	mallory := env.CreateUser(t, "mallory", "pass")
+	line, fp := genAuthorizedKey(t, "alice@laptop")
+	_, err := s.Add(alice.Username, "k", line)
+	require.NoError(t, err)
+	_, err = s.Add(mallory.Username, "squat", line)
+	require.NoError(t, err)
+
+	_, err = s.Owner(fp)
+	require.True(t, errors.Is(err, keys.ErrSharedKey), "got %v", err)
+}
