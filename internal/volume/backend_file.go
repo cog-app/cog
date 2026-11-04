@@ -116,15 +116,7 @@ func (b *fileBackend) Put(path string, content io.Reader) error {
 	if err := os.MkdirAll(filepath.Dir(full), 0700); err != nil {
 		return fmt.Errorf("create parent dirs: %w", err)
 	}
-	f, err := os.Create(full)
-	if err != nil {
-		return fmt.Errorf("create file: %w", err)
-	}
-	defer f.Close()
-	if _, err := io.Copy(f, content); err != nil {
-		return fmt.Errorf("write file: %w", err)
-	}
-	return nil
+	return vfs.WriteFileAtomic(full, content, 0o644)
 }
 
 func (b *fileBackend) Mkdir(path string) error {
