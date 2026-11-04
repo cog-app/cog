@@ -72,7 +72,7 @@ func (f securityFlash) top() bool {
 	return f.Message != "" && f.For == ""
 }
 
-templ settingsSecurityPage(pd ui.PageData, flash securityFlash, appPasswords []auth.AppPassword, mfaMethod string, backupCodeCount int, smtpConfigured bool, webauthnAvailable bool, webauthnCreds []auth.WebAuthnCredential, sshEnabled bool, sshKeys []keys.SSHKey) {
+templ settingsSecurityPage(pd ui.PageData, flash securityFlash, appPasswords []auth.AppPassword, mfaMethod string, backupCodeCount int, smtpConfigured bool, webauthnAvailable bool, webauthnCreds []auth.WebAuthnCredential, sshEnabled bool, sshKeys []keys.SSHKey, sessions []signedInSession) {
 	@ui.SidebarPage(pd, settingsSidebar("security")) {
 		@ui.PageHeader("Security", nil)
 		if flash.top() {
@@ -112,6 +112,7 @@ templ settingsSecurityPage(pd ui.PageData, flash securityFlash, appPasswords []a
 				</div>
 			</form>
 		}
+		@settingsSessionsCard(pd, flash, sessions)
 		@ui.Card("App passwords") {
 			<p class="card-desc">App passwords let other apps, like the Nextcloud desktop client, sign in without your main password.</p>
 			<div id="app-passwords">
@@ -135,6 +136,65 @@ templ settingsSecurityPage(pd ui.PageData, flash securityFlash, appPasswords []a
 		if sshEnabled {
 			@settingsSSHKeysCard(pd, flash, sshKeys)
 		}
+	}
+}
+
+// settingsSessionsCard lists the browsers the user is signed in on, so a
+// lost or shared device can be signed out from here.
+templ settingsSessionsCard(pd ui.PageData, flash securityFlash, sessions []signedInSession) {
+	@ui.Card("Where you're signed in") {
+		<div id="sessions">
+			<p class="card-desc">You stay signed in on a device until you sign out or don't use Cog there for 30 days.</p>
+			if flash.For == "sessions" {
+				@ui.Alert(flash.Kind, flash.Message)
+			}
+			<div class="table-wrap">
+				<table class="table">
+					<thead>
+						<tr>
+							<th>Device</th>
+							<th class="col-shrink">Last active</th>
+							<th class="col-shrink hide-mobile">Signed in</th>
+							<th class="col-actions"><span class="sr-only">Actions</span></th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, s := range sessions {
+							<tr id={ "session-" + s.Handle() }>
+								<td title={ s.UserAgent }>
+									{ s.Device() }
+									if s.IP != "" {
+										<div class="text-sm text-muted break-anywhere">{ s.IP }</div>
+									}
+								</td>
+								<td class="nowrap">{ s.LastSeenAt.Format("2006-01-02") }</td>
+								<td class="nowrap hide-mobile">{ s.CreatedAt.Format("2006-01-02") }</td>
+								<td class="col-actions">
+									if s.Current {
+										<span class="badge badge-neutral">This device</span>
+									} else {
+										<button
+											type="button"
+											class="btn btn-outline-danger btn-sm"
+											hx-delete={ "/settings/sessions/" + s.Handle() }
+											hx-target={ "#session-" + s.Handle() }
+											hx-swap="outerHTML"
+											hx-confirm={ "Sign out " + s.Device() + "?" }
+										>Sign out</button>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+			if len(sessions) > 1 {
+				<form method="post" action="/settings/sessions/revoke-others" class="form-actions">
+					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+					<button class="btn btn-outline-danger" type="submit">Sign out everywhere else</button>
+				</form>
+			}
+		</div>
 	}
 }
 
