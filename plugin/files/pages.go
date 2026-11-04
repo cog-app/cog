@@ -272,6 +272,7 @@ func (h *Pages) serveDownload(w http.ResponseWriter, r *http.Request, username, 
 		ct = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", ct)
+	plugin.UntrustedContent(w, ct)
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+meta.Name+"\"")
 	serveContent(w, r, meta.Name, time.Unix(meta.MTime, 0), rc)
 }
@@ -289,6 +290,7 @@ func (h *Pages) serveRaw(w http.ResponseWriter, r *http.Request, username, fp st
 		ct = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", ct)
+	plugin.UntrustedContent(w, ct)
 	serveContent(w, r, meta.Name, time.Unix(meta.MTime, 0), rc)
 }
 
@@ -534,6 +536,7 @@ func (h *Pages) serveArchiveFileStream(w http.ResponseWriter, r *http.Request, u
 		ct = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", ct)
+	plugin.UntrustedContent(w, ct)
 	if download {
 		w.Header().Set("Content-Disposition", "attachment; filename=\""+entry.Name+"\"")
 	}

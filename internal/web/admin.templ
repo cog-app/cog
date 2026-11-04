@@ -167,7 +167,7 @@ templ adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashK
 }
 
 // --- Settings ---
-templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, davTombstoneDays string, env envConfigData, status statusData, flash string, flashKind string, mfaRequired string) {
+templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, davTombstoneDays string, env envConfigData, status statusData, flash string, flashKind string, mfaRequired string, fed federationData) {
 	@ui.AdminSidebarPage(pd, "settings") {
 		@ui.PageHeader("General", nil)
 		@ui.Alert(flashKind, flash)
@@ -234,6 +234,23 @@ templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHou
 						<option value="all" selected?={ mfaRequired == "all" }>All users</option>
 					</select>
 					<p class="form-help">When enabled, users without MFA are sent to set it up when they log in.</p>
+				</div>
+			}
+			@ui.Card("Federation") {
+				<div class="form-group">
+					<label class="form-check">
+						<input type="checkbox" name="federation_enabled" value="1" checked?={ fed.Enabled }/>
+						Share with other servers
+					</label>
+					<p class="form-help">Lets users share files with people on other Nextcloud-compatible servers, and receive shares from them. Off, this server neither sends shares nor accepts them, and servers it shared with lose access.</p>
+				</div>
+				<div class="form-group mb-0">
+					<label class="form-label" for="federation_peers">Allowed servers</label>
+					<textarea class="form-control" id="federation_peers" name="federation_peers" rows="3" placeholder="cloud.example.com">{ fed.Peers }</textarea>
+					<p class="form-help">One host name per line. Leave empty to allow any server.</p>
+					if fed.EnvPeers != "" {
+						<p class="form-help">Also allowed, by COG_FEDERATION_PEERS: <code>{ fed.EnvPeers }</code></p>
+					}
 				</div>
 			}
 			<div class="page-actions-bar">

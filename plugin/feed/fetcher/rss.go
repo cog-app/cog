@@ -32,7 +32,7 @@ func fetchRSS(ctx context.Context, sub feed.Subscription) (feed.FetchResult, err
 		req.Header.Set("If-Modified-Since", sub.LastModified)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := feed.HTTP.Do(req)
 	if err != nil {
 		return feed.FetchResult{}, fmt.Errorf("rss fetch do: %w", err)
 	}

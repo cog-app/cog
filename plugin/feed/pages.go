@@ -173,6 +173,12 @@ func (h *Pages) AddSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := CheckURL(rawURL); err != nil {
+		h.setFlash(w, "error", "Enter a web address starting with http:// or https://.")
+		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
+		return
+	}
+
 	// Kind may be supplied (override); otherwise auto-detect from the URL.
 	kind := r.FormValue("kind")
 	if kind == "" || !allowedKinds[kind] {

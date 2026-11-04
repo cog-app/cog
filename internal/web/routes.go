@@ -81,20 +81,25 @@ func New(p *services.Providers) http.Handler {
 	avatarH := avatarHandler{h}
 	groupH := groupHandler{h}
 
-	// Login/logout/register — unauthenticated
+	// Login/logout/register — unauthenticated, so there is no session for a
+	// CSRF token to belong to. These forms are refused when another site
+	// submits them instead: a forged login signs the victim into the
+	// attacker's account, where what they upload is the attacker's.
+	sameOrigin := http.NewCrossOriginProtection()
+	form := func(h http.HandlerFunc) http.Handler { return sameOrigin.Handler(h) }
 	mux.HandleFunc("GET /login", loginH.ShowLogin)
-	mux.HandleFunc("POST /login", loginH.HandleLogin)
-	mux.HandleFunc("POST /logout", loginH.HandleLogout)
+	mux.Handle("POST /login", form(loginH.HandleLogin))
+	mux.Handle("POST /logout", form(loginH.HandleLogout))
 	mux.HandleFunc("GET /register", loginH.ShowRegister)
-	mux.HandleFunc("POST /register", loginH.HandleRegister)
+	mux.Handle("POST /register", form(loginH.HandleRegister))
 	mux.HandleFunc("GET /login/mfa", loginH.ShowMFA)
-	mux.HandleFunc("POST /login/mfa", loginH.HandleMFA)
-	mux.HandleFunc("POST /login/mfa/webauthn/begin", loginH.BeginWebAuthnLogin)
-	mux.HandleFunc("POST /login/mfa/webauthn/finish", loginH.FinishWebAuthnLogin)
+	mux.Handle("POST /login/mfa", form(loginH.HandleMFA))
+	mux.Handle("POST /login/mfa/webauthn/begin", form(loginH.BeginWebAuthnLogin))
+	mux.Handle("POST /login/mfa/webauthn/finish", form(loginH.FinishWebAuthnLogin))
 	mux.HandleFunc("GET /forgot-password", loginH.ShowForgotPassword)
-	mux.HandleFunc("POST /forgot-password", loginH.HandleForgotPassword)
+	mux.Handle("POST /forgot-password", form(loginH.HandleForgotPassword))
 	mux.HandleFunc("GET /reset-password", loginH.ShowResetPassword)
-	mux.HandleFunc("POST /reset-password", loginH.HandleResetPassword)
+	mux.Handle("POST /reset-password", form(loginH.HandleResetPassword))
 
 	// Avatar
 	mux.Handle("GET /avatar/{id}", http.HandlerFunc(avatarH.Serve))
@@ -149,7 +154,7 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("POST /settings/groups/{id}/delete", csrfWeb(http.HandlerFunc(groupH.DeleteGroup)))
 	// Invite acceptance (works for both authenticated and unauthenticated users)
 	mux.HandleFunc("GET /invite/{token}", groupH.AcceptInviteForm)
-	mux.HandleFunc("POST /invite/{token}", groupH.AcceptInvite)
+	mux.Handle("POST /invite/{token}", form(groupH.AcceptInvite))
 
 	// Admin — require auth + admin + CSRF on mutations
 	adminAuth := func(h http.Handler) http.Handler {
@@ -267,6 +272,7 @@ func New(p *services.Providers) http.Handler {
 			Users:      p.Users,
 			Groups:     p.Groups,
 			Federation: p.Federation,
+			FedPolicy:  p.FedPolicy,
 			FedClient:  p.FedClient,
 			Activities: p.Activities,
 			BaseURL:    p.Config.BaseURL,
@@ -323,6 +329,7 @@ func New(p *services.Providers) http.Handler {
 		Store:   p.Federation,
 		Users:   p.Users,
 		BaseURL: p.Config.BaseURL,
+		Policy:  p.FedPolicy,
 	}
 	mux.HandleFunc("GET /.well-known/ocm-provider", ocmH.HandleOCMProvider)
 	mux.HandleFunc("POST /ocm/shares", ocmH.HandleReceiveShare)
@@ -334,6 +341,7 @@ func New(p *services.Providers) http.Handler {
 		Store:         p.Federation,
 		Users:         p.Users,
 		Client:        p.FedClient,
+		Policy:        p.FedPolicy,
 		WriteOCS:      compat.WriteOCSReq,
 		WriteOCSError: compat.WriteOCSErrorReq,
 	}
@@ -354,6 +362,7 @@ func New(p *services.Providers) http.Handler {
 		Shares: p.Shares,
 		Users:  p.Users,
 		Files:  fp,
+		Policy: p.FedPolicy,
 	}
 	mux.Handle("/public.php/webdav/", fedWebDAV)
 
@@ -391,7 +400,19 @@ func New(p *services.Providers) http.Handler {
 		filesAPI.RegisterRoutes(mux)
 	}
 
-	return authMW.Wrap(mfaEnforcement(p)(htmlNotFound(p, mux)))
+	return securityHeaders(authMW.Wrap(mfaEnforcement(p)(htmlNotFound(p, mux))))
+}
+
+// securityHeaders sets what every response carries: browsers keep to the
+// declared content type rather than sniffing one, and no other site may frame
+// a page, where a click could be steered onto a button the user cannot see.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "SAMEORIGIN")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // htmlNotFound answers a browser asking for a page no route serves with the

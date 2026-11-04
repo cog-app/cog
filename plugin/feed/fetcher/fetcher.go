@@ -10,6 +10,9 @@ import (
 
 // Fetch dispatches by subscription kind.
 func Fetch(ctx context.Context, sub feed.Subscription) (feed.FetchResult, error) {
+	if err := feed.CheckURL(sub.URL); err != nil {
+		return feed.FetchResult{}, err
+	}
 	switch sub.Kind {
 	case "rss":
 		return fetchRSS(ctx, sub)

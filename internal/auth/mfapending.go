@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
@@ -74,23 +73,40 @@ func (s *MFAPendingStore) Create(userID, nextURL string) (*MFAPending, error) {
 	return &MFAPending{Token: token, UserID: userID, NextURL: nextURL}, nil
 }
 
-// sanitizeNextURL returns next only when it is a same-origin in-app path:
-// starts with "/", does not start with "//", and is not a relative or
-// scheme-bearing URL. All other inputs return "" so the post-MFA redirect
-// falls back to the root.
 // maxNextURLLen caps the post-MFA redirect path to avoid an unbounded
 // write to mfa_pending.next_url (audit security.md #47). 2KB is well above
 // any legitimate same-origin path.
 const maxNextURLLen = 2048
 
+// sanitizeNextURL returns next only when it is a same-origin in-app path
+// (LocalPath) of a sane length. All other inputs return "" so the post-MFA
+// redirect falls back to the root.
 func sanitizeNextURL(next string) string {
-	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
-		return ""
-	}
-	if len(next) > maxNextURLLen {
+	if !LocalPath(next) || len(next) > maxNextURLLen {
 		return ""
 	}
 	return next
+}
+
+// LocalPath reports whether next, a redirect target a request supplied,
+// stays on this site: a path starting with "/" that a browser will not read
+// as another host. "//evil.example" is protocol-relative, and browsers treat
+// "\" as "/", so "/\evil.example" is too; a control character could hide
+// either from a check like this one, and browsers strip tabs and newlines
+// before resolving.
+func LocalPath(next string) bool {
+	if len(next) == 0 || next[0] != '/' {
+		return false
+	}
+	if len(next) > 1 && (next[1] == '/' || next[1] == '\\') {
+		return false
+	}
+	for i := 0; i < len(next); i++ {
+		if next[i] < 0x20 || next[i] == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // Validate checks the pending MFA token and returns it if valid.

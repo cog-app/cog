@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strconv"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/ffargs"
 )
 
 var (
@@ -48,12 +50,8 @@ func ffprobeInfo(path string) (*videoInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, ffprobePath,
-		"-v", "quiet",
-		"-print_format", "json",
-		"-show_format",
-		"-show_streams",
-		path)
+	args := append([]string{"-v", "quiet", "-print_format", "json", "-show_format", "-show_streams"}, ffargs.Probe(path)...)
+	cmd := exec.CommandContext(ctx, ffprobePath, args...)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("ffprobe: %w", err)
@@ -113,14 +111,8 @@ func ffmpegThumbnail(srcPath, dstPath string, size int) error {
 	defer cancel()
 
 	scaleFilter := fmt.Sprintf("scale='min(%d,iw)':'min(%d,ih)':force_original_aspect_ratio=decrease", size, size)
-	cmd := exec.CommandContext(ctx, ffmpegPath,
-		"-i", srcPath,
-		"-ss", "00:00:01",
-		"-vframes", "1",
-		"-vf", scaleFilter,
-		"-q:v", "5",
-		"-y",
-		dstPath)
+	args := append(ffargs.Input(srcPath), "-ss", "00:00:01", "-vframes", "1", "-vf", scaleFilter, "-q:v", "5", "-y", dstPath)
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg thumbnail: %w: %s", err, out)
 	}

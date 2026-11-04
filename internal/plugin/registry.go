@@ -683,10 +683,18 @@ func (pr *pluginRegistrar) csrf() auth.CSRF {
 }
 
 func (pr *pluginRegistrar) QuotaCheck(username string, additionalBytes int64) error {
-	if pr.registry.services.QuotaChecker == nil {
+	return pr.registry.QuotaCheck(username, additionalBytes)
+}
+
+// QuotaCheck returns nil if the user has room for additionalBytes more, or
+// plugin.ErrQuotaExceeded. Without a quota checker everything fits. Anything
+// that writes a user's files other than through the files plugin — SFTP,
+// SCP — asks here, so it is held to the same quota.
+func (r *Registry) QuotaCheck(username string, additionalBytes int64) error {
+	if r.services.QuotaChecker == nil {
 		return nil
 	}
-	return pr.registry.services.QuotaChecker.QuotaCheck(username, additionalBytes)
+	return r.services.QuotaChecker.QuotaCheck(username, additionalBytes)
 }
 
 func (pr *pluginRegistrar) UserVFS(username string) vfs.FS {

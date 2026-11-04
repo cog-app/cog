@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"git.duckfam.us/jj-software/cog/internal/ffargs"
 )
 
 // silenceNoiseDB and silenceMinDur control silencedetect sensitivity.
@@ -23,12 +25,9 @@ func detectSilence(ctx context.Context, mediaPath string) ([]Range, error) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		return nil, fmt.Errorf("ffmpeg not found: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, "ffmpeg",
-		"-hide_banner", "-nostats",
-		"-i", mediaPath,
-		"-af", "silencedetect=noise="+silenceNoiseDB+":d="+silenceMinDur,
-		"-f", "null", "-",
-	)
+	args := append([]string{"-hide_banner", "-nostats"}, ffargs.Input(mediaPath)...)
+	args = append(args, "-af", "silencedetect=noise="+silenceNoiseDB+":d="+silenceMinDur, "-f", "null", "-")
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

@@ -38,6 +38,8 @@ func TestSettingsUpdateProfile(t *testing.T) {
 		"csrf_token":   {token},
 		"display_name": {"Alice W"},
 		"email":        {"alice@example.com"},
+		// A new email address needs the password.
+		"current_password": {"pass"},
 	}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
 
 	u, err := env.Providers.Users.GetByID(alice.ID)

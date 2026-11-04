@@ -10,7 +10,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 )
 
-func TestPasswordReset_CreateValidateMarkUsed(t *testing.T) {
+func TestPasswordReset_CreateValidateConsume(t *testing.T) {
 	env := cogtest.New(t)
 	u := env.CreateUser(t, "alice", "pass")
 
@@ -22,8 +22,12 @@ func TestPasswordReset_CreateValidateMarkUsed(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, u.ID, userID)
 
-	// Mark used → Validate fails.
-	require.NoError(t, env.Providers.PasswordResets.MarkUsed(token))
+	// Consume returns the user once; after that the token is spent.
+	userID, err = env.Providers.PasswordResets.Consume(token)
+	require.NoError(t, err)
+	require.Equal(t, u.ID, userID)
+	_, err = env.Providers.PasswordResets.Consume(token)
+	require.True(t, errors.Is(err, auth.ErrInvalidResetToken), "second consume: got %v", err)
 	_, err = env.Providers.PasswordResets.Validate(token)
 	require.True(t, err != nil)
 }
@@ -90,7 +94,8 @@ func TestPasswordReset_InvalidSentinel(t *testing.T) {
 
 	used, err := resets.Create(u.ID)
 	require.NoError(t, err)
-	require.NoError(t, resets.MarkUsed(used))
+	_, err = resets.Consume(used)
+	require.NoError(t, err)
 	_, err = resets.Validate(used)
 	require.True(t, errors.Is(err, auth.ErrInvalidResetToken), "used: got %v", err)
 
@@ -99,6 +104,8 @@ func TestPasswordReset_InvalidSentinel(t *testing.T) {
 	env.Clock.Advance(2 * time.Hour)
 	_, err = resets.Validate(expired)
 	require.True(t, errors.Is(err, auth.ErrInvalidResetToken), "expired: got %v", err)
+	_, err = resets.Consume(expired)
+	require.True(t, errors.Is(err, auth.ErrInvalidResetToken), "consume expired: got %v", err)
 
 	_, err = env.Providers.DB.Exec(`ALTER TABLE password_reset_tokens RENAME TO password_reset_tokens_gone`)
 	require.NoError(t, err)

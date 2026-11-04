@@ -334,6 +334,29 @@
                 </p>
               </div>
             </div>
+            <div class="card">
+              <h2 class="card-title">
+                Federation
+              </h2>
+              <div class="form-group">
+                <label class="form-check">
+                  <input name="federation_enabled" type="checkbox" value="1" />
+                  Share with other servers
+                </label>
+                <p class="form-help">
+                  Lets users share files with people on other Nextcloud-compatible servers, and receive shares from them. Off, this server neither sends shares nor accepts them, and servers it shared with lose access.
+                </p>
+              </div>
+              <div class="form-group mb-0">
+                <label class="form-label" for="federation_peers">
+                  Allowed servers
+                </label>
+                <textarea class="form-control" id="federation_peers" name="federation_peers" placeholder="cloud.example.com" rows="3" />
+                <p class="form-help">
+                  One host name per line. Leave empty to allow any server.
+                </p>
+              </div>
+            </div>
             <div class="page-actions-bar">
               <button class="btn btn-primary" type="submit">
                 Save settings

@@ -55,7 +55,11 @@ func TestBrowserCore(t *testing.T) {
 	env.CreateUser(t, "apps-menu", "pass")
 	env.CreateUser(t, "searcher", "pass")
 	filled := env.CreateUser(t, "filled", "pass")
-	env.CreateUser(t, "storage", "pass")
+	storage := env.CreateUser(t, "storage", "pass")
+	// A volume of their own to mount: a user reaches the system volumes
+	// only through an admin's share.
+	_, err := env.Providers.Volumes.Create("scratch", "", "mem://", &storage.ID, "{}")
+	require.NoError(t, err)
 
 	t.Run("Login/Success", func(t *testing.T) {
 		b := eng.Start(t)

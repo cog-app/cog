@@ -92,6 +92,7 @@ var (
 	WriteJSON            = cogplugin.WriteJSON
 	PathID               = cogplugin.PathID
 	PathIDSuffix         = cogplugin.PathIDSuffix
+	UntrustedContent     = cogplugin.UntrustedContent
 )
 
 // Ensure function signatures stay in sync at compile time.

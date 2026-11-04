@@ -18,6 +18,7 @@ type OCSHandler struct {
 	Store  *Store
 	Users  *user.Store
 	Client *Client
+	Policy *Policy
 
 	// WriteOCS writes an OCS-formatted response. Injected to avoid importing compat.
 	WriteOCS      func(w http.ResponseWriter, r *http.Request, status int, data any)
@@ -151,6 +152,18 @@ func (h *OCSHandler) HandleAcceptShare(w http.ResponseWriter, r *http.Request) {
 	}
 	if fs.LocalUserID != u.ID || fs.Direction != "inbound" || fs.State != "pending" {
 		h.WriteOCSError(w, r, http.StatusNotFound, 404, "share not found")
+		return
+	}
+	// Accepting tells the sender's server, so only a server this one
+	// still federates with may be told.
+	allowed, err := h.Policy.PeerAllowed(fs.RemoteHost)
+	if err != nil {
+		h.Log.Error("accept federated share: read federation policy", "err", err)
+		h.WriteOCSError(w, r, http.StatusInternalServerError, 500, "internal error")
+		return
+	}
+	if !allowed {
+		h.WriteOCSError(w, r, http.StatusForbidden, 403, "federation with "+fs.RemoteHost+" is not allowed on this server")
 		return
 	}
 

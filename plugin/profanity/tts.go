@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"git.duckfam.us/jj-software/cog/internal/ffargs"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
@@ -61,9 +62,11 @@ func generateSystem(ctx context.Context, cmdTemplate, text, outputPath string) e
 	if cmdTemplate == "" {
 		return fmt.Errorf("system TTS command not configured")
 	}
-	cmdStr := strings.ReplaceAll(cmdTemplate, "$TEXT", text)
-	cmdStr = strings.ReplaceAll(cmdStr, "$OUTPUT", outputPath)
-	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
+	// $TEXT and $OUTPUT reach the template as environment variables, which
+	// the shell expands as data. Pasting them into the command instead would
+	// run whatever the text says: it is a user's replacement word.
+	cmd := exec.CommandContext(ctx, "sh", "-c", cmdTemplate)
+	cmd.Env = append(os.Environ(), "TEXT="+text, "OUTPUT="+outputPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("system TTS: %w: %s", err, out)
 	}
@@ -126,13 +129,9 @@ func muteSegments(ctx context.Context, inputURL, outputPath string, ranges []plu
 	}
 	filterStr := strings.Join(filters, ",")
 
-	cmd := exec.CommandContext(ctx, "ffmpeg",
-		"-y",
-		"-i", inputURL,
-		"-af", filterStr,
-		"-c:v", "copy",
-		outputPath,
-	)
+	args := append([]string{"-y"}, ffargs.Input(inputURL)...)
+	args = append(args, "-af", filterStr, "-c:v", "copy", outputPath)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg mute: %w: %s", err, out)
 	}

@@ -3,7 +3,10 @@ package ssh
 import (
 	"errors"
 	"fmt"
+	"net"
+	"strings"
 
+	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/user"
 
@@ -15,7 +18,15 @@ type authCallbacks struct {
 	users        *user.Store
 	appPasswords appPasswordValidator
 	keys         *keys.Store
+	// limiter, when set, throttles password guessing per client address
+	// and per account, as the web login does. A nil limiter allows every
+	// attempt.
+	limiter *ratelimit.Limiter
 }
+
+// errRateLimited refuses a password attempt from a client, or for an account,
+// that has failed too often.
+var errRateLimited = errors.New("too many failed attempts")
 
 // appPasswordValidator validates app password tokens.
 type appPasswordValidator interface {
@@ -24,11 +35,45 @@ type appPasswordValidator interface {
 
 // passwordCallback authenticates via user password or app password.
 func (a *authCallbacks) passwordCallback(conn gossh.ConnMetadata, password []byte) (*gossh.Permissions, error) {
+	if a.limiter == nil {
+		return a.checkPassword(conn, password)
+	}
+	ip := remoteIP(conn.RemoteAddr())
+	account := "ssh-user:" + strings.ToLower(conn.User())
+	if a.limiter.IsLimited(ip) || a.limiter.IsLimited(account) {
+		return nil, errRateLimited
+	}
+	perms, err := a.checkPassword(conn, password)
+	if err != nil {
+		a.limiter.RecordFailure(ip)
+		a.limiter.RecordFailure(account)
+		return nil, err
+	}
+	a.limiter.Reset(ip)
+	a.limiter.Reset(account)
+	return perms, nil
+}
+
+// remoteIP is the address part of a client's address, the key its failures
+// are counted under.
+func remoteIP(addr net.Addr) string {
+	if host, _, err := net.SplitHostPort(addr.String()); err == nil {
+		return host
+	}
+	return addr.String()
+}
+
+func (a *authCallbacks) checkPassword(conn gossh.ConnMetadata, password []byte) (*gossh.Permissions, error) {
 	// Try user password first.
 	u, err := a.users.Authenticate(conn.User(), string(password))
 	if err != nil && !errors.Is(err, user.ErrAuthFailed) {
 		// A lookup failure, not a wrong password: don't let it pass for one.
 		return nil, fmt.Errorf("authenticate %q: %w", conn.User(), err)
+	}
+	if err == nil && u.MFAMethod != "" {
+		// A password is one factor of this account's two; SSH asks for
+		// a key or an app password instead.
+		err = user.ErrAuthFailed
 	}
 	if err == nil {
 		return &gossh.Permissions{

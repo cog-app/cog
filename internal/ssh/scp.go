@@ -21,7 +21,7 @@ import (
 //
 // SCP relies heavily on os.FileInfo and direct file handles. VFS integration
 // for SCP is deferred, so the user's VFS is unused and it works on filesDir.
-func (s *Server) serveSCP(channel gossh.Channel, filesDir string, _ vfs.FS, command string) int {
+func (s *Server) serveSCP(channel gossh.Channel, username, filesDir string, _ vfs.FS, command string) int {
 	// Resolve symlinks for containment: every path is checked against the
 	// resolved directory, so an unresolved one would reject them all.
 	resolved, err := filepath.EvalSymlinks(filesDir)
@@ -36,7 +36,10 @@ func (s *Server) serveSCP(channel gossh.Channel, filesDir string, _ vfs.FS, comm
 
 	switch {
 	case args.sink:
-		err = scpSink(channel, filesDir, args)
+		// SCP writes the files directly, not through the files plugin,
+		// so it asks for room itself.
+		quota := func(n int64) error { return s.providers.Plugins.QuotaCheck(username, n) }
+		err = scpSink(channel, filesDir, args, quota)
 	case args.source:
 		err = scpSource(channel, filesDir, args)
 	default:
@@ -115,7 +118,9 @@ func scpResolve(filesDir, vpath string) (string, error) {
 }
 
 // scpSink receives files from the client (scp -t).
-func scpSink(rw io.ReadWriter, filesDir string, args scpArgs) error {
+// scpSink receives into filesDir; quota reports whether the user has room
+// for a file of the given size.
+func scpSink(rw io.ReadWriter, filesDir string, args scpArgs, quota func(int64) error) error {
 	targetPath, err := scpResolve(filesDir, args.path)
 	if err != nil {
 		return err
@@ -127,10 +132,10 @@ func scpSink(rw io.ReadWriter, filesDir string, args scpArgs) error {
 	}
 
 	reader := bufio.NewReader(rw)
-	return scpSinkLoop(reader, rw, targetPath, filesDir, args.recursive)
+	return scpSinkLoop(reader, rw, targetPath, filesDir, args.recursive, quota)
 }
 
-func scpSinkLoop(reader *bufio.Reader, rw io.Writer, targetPath, filesDir string, recursive bool) error {
+func scpSinkLoop(reader *bufio.Reader, rw io.Writer, targetPath, filesDir string, recursive bool, quota func(int64) error) error {
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -148,7 +153,7 @@ func scpSinkLoop(reader *bufio.Reader, rw io.Writer, targetPath, filesDir string
 		switch line[0] {
 		case 'C':
 			// C<mode> <size> <name>
-			if err := scpReceiveFile(reader, rw, targetPath, filesDir, line); err != nil {
+			if err := scpReceiveFile(reader, rw, targetPath, filesDir, line, quota); err != nil {
 				return err
 			}
 
@@ -172,7 +177,7 @@ func scpSinkLoop(reader *bufio.Reader, rw io.Writer, targetPath, filesDir string
 			if _, err := rw.Write([]byte{0}); err != nil {
 				return err
 			}
-			if err := scpSinkLoop(reader, rw, dirPath, filesDir, recursive); err != nil {
+			if err := scpSinkLoop(reader, rw, dirPath, filesDir, recursive, quota); err != nil {
 				return err
 			}
 
@@ -193,7 +198,7 @@ func scpSinkLoop(reader *bufio.Reader, rw io.Writer, targetPath, filesDir string
 	}
 }
 
-func scpReceiveFile(reader *bufio.Reader, rw io.Writer, targetPath, filesDir, line string) error {
+func scpReceiveFile(reader *bufio.Reader, rw io.Writer, targetPath, filesDir, line string, quota func(int64) error) error {
 	// Parse "C<mode> <size> <name>"
 	parts := strings.SplitN(line[1:], " ", 3)
 	if len(parts) < 3 {
@@ -211,6 +216,12 @@ func scpReceiveFile(reader *bufio.Reader, rw io.Writer, targetPath, filesDir, li
 	}
 
 	name := parts[2]
+	if size < 0 {
+		return fmt.Errorf("negative size for %s", name)
+	}
+	if err := quota(size); err != nil {
+		return fmt.Errorf("receive %s: %w", name, err)
+	}
 
 	// Determine destination: if targetPath is a directory, write inside it.
 	destPath := targetPath
@@ -231,7 +242,8 @@ func scpReceiveFile(reader *bufio.Reader, rw io.Writer, targetPath, filesDir, li
 		return err
 	}
 
-	f, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode))
+	// Permission bits only: a client does not get to make a setuid file.
+	f, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode)&os.ModePerm)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", name, err)
 	}

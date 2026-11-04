@@ -15,18 +15,29 @@ func secretEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
+// maxOCMBody bounds an inbound share or notification, a small JSON object
+// from a server nobody here has signed in.
+const maxOCMBody = 64 << 10
+
 // OCMHandler handles inbound OCM requests from remote servers.
 type OCMHandler struct {
 	Log     *slog.Logger
 	Store   *Store
 	Users   *user.Store
 	BaseURL string // e.g. "https://cog.example.com"
+	Policy  *Policy
 }
 
 // HandleOCMProvider serves /.well-known/ocm-provider.
 func (h *OCMHandler) HandleOCMProvider(w http.ResponseWriter, r *http.Request) {
+	enabled, err := h.Policy.Enabled()
+	if err != nil {
+		h.Log.Error("ocm provider: read federation policy", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	resp := OCMProviderResponse{
-		Enabled:    true,
+		Enabled:    enabled,
 		APIVersion: "1.1",
 		EndPoint:   h.BaseURL + "/ocm",
 		ResourceTypes: []OCMResourceType{{
@@ -49,13 +60,33 @@ func (h *OCMHandler) HandleReceiveShare(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var ocm OCMShare
-	if err := json.NewDecoder(r.Body).Decode(&ocm); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxOCMBody)).Decode(&ocm); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if ocm.ShareWith == "" || ocm.Name == "" {
 		http.Error(w, "shareWith and name are required", http.StatusBadRequest)
+		return
+	}
+
+	// Extract remote host from the owner field (user@host format).
+	remoteHost := ""
+	remoteUser := ocm.Owner
+	if at := strings.LastIndex(ocm.Owner, "@"); at >= 0 {
+		remoteUser = ocm.Owner[:at]
+		remoteHost = ocm.Owner[at+1:]
+	}
+
+	allowed, err := h.Policy.PeerAllowed(remoteHost)
+	if err != nil {
+		h.Log.Error("federation share: read federation policy", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
+		h.Log.Warn("federation share from disallowed peer", "host", remoteHost)
+		http.Error(w, "peer not allowed", http.StatusForbidden)
 		return
 	}
 
@@ -70,20 +101,6 @@ func (h *OCMHandler) HandleReceiveShare(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		h.Log.Warn("federation share for unknown user", "shareWith", ocm.ShareWith, "err", err)
 		http.Error(w, "user not found", http.StatusNotFound)
-		return
-	}
-
-	// Extract remote host from the owner field (user@host format).
-	remoteHost := ""
-	remoteUser := ocm.Owner
-	if at := strings.LastIndex(ocm.Owner, "@"); at >= 0 {
-		remoteUser = ocm.Owner[:at]
-		remoteHost = ocm.Owner[at+1:]
-	}
-
-	if !PeerAllowed(remoteHost) {
-		h.Log.Warn("federation share from disallowed peer", "host", remoteHost)
-		http.Error(w, "peer not allowed", http.StatusForbidden)
 		return
 	}
 
@@ -132,7 +149,7 @@ func (h *OCMHandler) HandleNotification(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var notif OCMNotification
-	if err := json.NewDecoder(r.Body).Decode(&notif); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxOCMBody)).Decode(&notif); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}

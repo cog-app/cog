@@ -19,11 +19,14 @@ func ResolveYouTubeStreamURL(ctx context.Context, watchURL string) (string, erro
 	if !ytdlpStreamAvailable() {
 		return "", fmt.Errorf("yt-dlp not found in PATH")
 	}
+	if err := CheckURL(watchURL); err != nil {
+		return "", err
+	}
 	cmd := exec.CommandContext(ctx, "yt-dlp",
 		"--get-url",
 		"--format", "best[height<=1080]",
 		"--no-warnings",
-		watchURL,
+		"--", watchURL,
 	)
 	out, err := cmd.Output()
 	if err != nil {

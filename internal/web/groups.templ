@@ -320,7 +320,7 @@ func inviterName(u *user.User) string {
 	return u.Username
 }
 
-templ inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, inviter *user.User, isLoggedIn bool, errMsg string) {
+templ inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, inviter *user.User, isLoggedIn bool, mayRegister bool, errMsg string) {
 	if isLoggedIn {
 		@ui.Base(pd) {
 			<div class="card content--narrow invite-card">
@@ -343,6 +343,14 @@ templ inviteAcceptPage(pd ui.PageData, g *group.Group, inv *group.Invitation, in
 					</form>
 				</div>
 			</div>
+		}
+	} else if !mayRegister {
+		@ui.AuthPage("Group invitation") {
+			<p class="login-lead">
+				<strong>{ inviterName(inviter) }</strong> invited you to join <strong>{ g.Name }</strong> on Cog. Log in to accept.
+			</p>
+			@ui.Alert("error", errMsg)
+			<a class="btn btn-primary btn-block" href={ templ.SafeURL("/login?next=/invite/" + inv.Token) }>Log in</a>
 		}
 	} else {
 		@ui.AuthPage("Group invitation") {

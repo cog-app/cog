@@ -299,6 +299,7 @@ func TestBrowserSettingsProfile(t *testing.T) {
 
 	b.Type(t, `input[name="display_name"]`, "Alice Wonder")
 	b.Type(t, `input[name="email"]`, "alice@example.com")
+	b.Type(t, `input[name="current_password"]`, "pass")
 	b.Click(t, `form[action="/settings/profile"] button[type="submit"]`)
 
 	b.WaitText(t, "Profile updated")

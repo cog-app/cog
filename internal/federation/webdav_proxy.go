@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
 )
 
 // WebDAVProxy proxies WebDAV requests to remote servers for received federated shares.
@@ -20,8 +22,11 @@ func NewWebDAVProxy(log *slog.Logger, store *Store) *WebDAVProxy {
 	return &WebDAVProxy{
 		Log:   log,
 		Store: store,
+		// The remote host comes from a share another server sent.
 		HTTP: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout:       60 * time.Second,
+			Transport:     safehttp.Transport(),
+			CheckRedirect: safehttp.NoRedirect,
 		},
 	}
 }

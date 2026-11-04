@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/contacts"
 	"git.duckfam.us/jj-software/cog/plugin/files"
@@ -154,9 +155,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAPI("api/user-scan-status", http.HandlerFunc(pages.UserScanStatusPartial))
 	ctx.RegisterAPI("api/tags/search", http.HandlerFunc(pages.SearchTagsAPI))
 	ctx.RegisterAPI("api/people/search", http.HandlerFunc(pages.SearchPeopleAPI))
-	// pprof endpoint is unauthenticated for debugging — registered via privileged route.
+	// The scan worker's profiles hold what it was working on — other users'
+	// photos and paths — so only an admin may read them.
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
-		priv.RegisterRoute("GET /apps/gallery/api/worker/pprof/{profile...}", http.HandlerFunc(p.workerPprof))
+		priv.RegisterRoute("GET /apps/gallery/api/worker/pprof/{profile...}",
+			auth.RequireAuth(auth.RequireAdmin(http.HandlerFunc(p.workerPprof))))
 	}
 
 	ctx.RegisterAction("POST", "albums", http.HandlerFunc(pages.CreateAlbum))
@@ -208,7 +211,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	// Memories API compatibility
 	memoriesAPI := NewMemoriesAPI(p)
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
-		priv.RegisterRoute("GET /apps/memories/api/{path...}", memoriesAPI)
+		priv.RegisterRoute("GET /apps/memories/api/{path...}", auth.RequireAuth(memoriesAPI))
 	}
 
 	return nil

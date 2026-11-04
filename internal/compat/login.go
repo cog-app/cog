@@ -3,6 +3,7 @@ package compat
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -172,7 +173,7 @@ func (h *LoginFlowHandler) HandleGrant(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	if u == nil {
 		// Bounce through /login and come back here with the token preserved.
-		http.Redirect(w, r, "/login?next=/index.php/login/v2/grant?token="+loginToken, http.StatusSeeOther)
+		http.Redirect(w, r, "/login?next="+url.QueryEscape("/index.php/login/v2/grant?token="+url.QueryEscape(loginToken)), http.StatusSeeOther)
 		return
 	}
 
@@ -204,7 +205,7 @@ func (h *LoginFlowHandler) HandleGrant(w http.ResponseWriter, r *http.Request) {
 		})
 	case http.MethodPost:
 		// Validate CSRF token bound to the current session.
-		if r.FormValue("csrf_token") != csrf {
+		if sessID == "" || subtle.ConstantTimeCompare([]byte(r.PostFormValue("csrf_token")), []byte(csrf)) != 1 {
 			http.Redirect(w, r, "/index.php/login/v2/grant?token="+url.QueryEscape(loginToken)+"&error=csrf", http.StatusSeeOther)
 			return
 		}

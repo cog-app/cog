@@ -20,6 +20,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/vfs"
 )
@@ -217,6 +218,7 @@ func (h *WebDAVHandler) handleGet(w http.ResponseWriter, r *http.Request, u *use
 	if meta.MimeType != "" {
 		w.Header().Set("Content-Type", meta.MimeType)
 	}
+	cogplugin.UntrustedContent(w, meta.MimeType)
 	w.Header().Set("ETag", `"`+meta.ETag+`"`)
 	w.Header().Set("Content-Length", strconv.FormatInt(meta.Size, 10))
 	w.Header().Set("Last-Modified", time.Unix(meta.MTime, 0).UTC().Format(http.TimeFormat))
@@ -508,6 +510,7 @@ func (h *WebDAVHandler) HandleDirectServe(w http.ResponseWriter, r *http.Request
 	if meta.MimeType != "" {
 		w.Header().Set("Content-Type", meta.MimeType)
 	}
+	cogplugin.UntrustedContent(w, meta.MimeType)
 	w.Header().Set("ETag", `"`+meta.ETag+`"`)
 	w.Header().Set("Content-Length", strconv.FormatInt(meta.Size, 10))
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))

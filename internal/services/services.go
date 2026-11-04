@@ -76,7 +76,8 @@ type Providers struct {
 	Pusher         *push.Deliverer // delivers to them; StartPush runs it
 	Federation     *federation.Store
 	FedClient      *federation.Client
-	EmailHook      email.SendHook // if set, all email goes through this instead of SMTP
+	FedPolicy      *federation.Policy // whether, and with whom, this server federates
+	EmailHook      email.SendHook     // if set, all email goes through this instead of SMTP
 	RateLimiter    *ratelimit.Limiter
 	CSRFSecret     []byte
 	Cookies        cogplugin.CookieConfig
@@ -239,7 +240,6 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	}
 
 	ratelimit.SetTrustedProxies(cfg.TrustedProxies)
-	federation.SetPeerAllowlist(cfg.FederationPeers)
 	plugin.SetTrustedProcessPlugins(cfg.TrustedProcessPlugins)
 
 	// The DAV core owns collections; plugins that hold DAV resources get it
@@ -280,11 +280,13 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		registry.DiscoverProcessPlugins()
 	}
 
+	shares := share.NewStore(sysDB, c)
+	access := &volume.Access{Volumes: volumes, Shares: shares, Users: users}
+
 	// Wire mount resolver into plugin registry.
-	resolver := mount.NewResolver(users, mounts, volumes)
+	resolver := mount.NewResolver(users, mounts, volumes, access)
 	registry.SetMountResolver(resolver)
 
-	shares := share.NewStore(sysDB, c)
 	// A shared address book's cards reach its sharees' birthday calendars.
 	shares.OnChange = func(rec share.Record) {
 		if rec.ResourceType != dav.ShareType {
@@ -300,6 +302,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	}
 	quotas := quota.NewStore(sysDB, c)
 	activities := activity.NewStore(sysDB, c)
+	settingsStore := settings.NewStore(sysDB)
 	fedStore := federation.NewStore(sysDB, c)
 	fedClient := federation.NewClient(cfg.BaseURL)
 	sshKeys, err := keys.NewStore(sysDB, registry, users, c)
@@ -320,9 +323,9 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		Invitations:    group.NewInvitationStore(sysDB, c),
 		Volumes:        volumes,
 		Mounts:         mounts,
-		Access:         &volume.Access{Volumes: volumes, Shares: shares},
+		Access:         access,
 		Quotas:         quotas,
-		Settings:       settings.NewStore(sysDB),
+		Settings:       settingsStore,
 		TOTP:           auth.NewTOTPStore(sysDB, secret),
 		MFAPending:     auth.NewMFAPendingStore(sysDB, c, secret),
 		EmailOTP:       auth.NewEmailOTPStore(sysDB, c),
@@ -337,6 +340,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		Pusher:         pusher,
 		Federation:     fedStore,
 		FedClient:      fedClient,
+		FedPolicy:      &federation.Policy{Settings: settingsStore, EnvPeers: cfg.FederationPeers},
 		CSRFSecret:     secret,
 		Cookies:        cogplugin.CookieConfigFromBaseURL(cfg.BaseURL),
 		Clock:          c,

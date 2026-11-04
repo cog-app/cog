@@ -2,10 +2,12 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/user"
 
@@ -80,12 +82,47 @@ func (s *TOTPStore) Validate(userID, code string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if secret != "" && totp.Validate(code, secret) {
-		return true, nil
+	if secret != "" {
+		if ok, err := s.validateCode(userID, secret, code, time.Now()); ok || err != nil {
+			return ok, err
+		}
 	}
 
 	// Try backup codes.
 	return s.validateBackupCode(userID, code)
+}
+
+// totpPeriod is the length of a TOTP time step, the authenticator apps'
+// default.
+const totpPeriod = 30
+
+// validateCode checks a code against the steps either side of now, as
+// totp.Validate does, and accepts it only if its step is later than the last
+// accepted one. Recording the step and checking it are one statement, so two
+// requests racing with the same code cannot both succeed.
+func (s *TOTPStore) validateCode(userID, secret, code string, now time.Time) (bool, error) {
+	step := now.Unix() / totpPeriod
+	for _, st := range []int64{step - 1, step, step + 1} {
+		want, err := totp.GenerateCodeCustom(secret, time.Unix(st*totpPeriod, 0), totp.ValidateOpts{
+			Period: totpPeriod, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1,
+		})
+		if err != nil {
+			return false, fmt.Errorf("generate totp code: %w", err)
+		}
+		if subtle.ConstantTimeCompare([]byte(want), []byte(code)) != 1 {
+			continue
+		}
+		res, err := s.db.Exec(`UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_last_step < ?`, st, userID, st)
+		if err != nil {
+			return false, fmt.Errorf("record totp step: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return false, fmt.Errorf("record totp step: %w", err)
+		}
+		return n == 1, nil
+	}
+	return false, nil
 }
 
 // Disable removes TOTP configuration and all backup codes for the user.

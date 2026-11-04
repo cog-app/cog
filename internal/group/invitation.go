@@ -138,6 +138,24 @@ func (s *InvitationStore) Delete(id string) error {
 	return nil
 }
 
+// DeleteFromGroup removes the group's invitation by ID, and reports
+// ErrNotFound for an invitation to any other group: whoever may manage one
+// group may not revoke another's invitations.
+func (s *InvitationStore) DeleteFromGroup(groupID, id string) error {
+	res, err := s.db.Exec(`DELETE FROM group_invitations WHERE id = ? AND group_id = ?`, id, groupID)
+	if err != nil {
+		return fmt.Errorf("delete invitation: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // DeleteExpired removes all expired invitations.
 func (s *InvitationStore) DeleteExpired() error {
 	_, err := s.db.Exec(`DELETE FROM group_invitations WHERE expires_at <= ?`, s.clock().Unix())

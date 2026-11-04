@@ -147,6 +147,9 @@ func (h *shareHandler) CreateShareForm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing fields", http.StatusBadRequest)
 		return
 	}
+	if !h.requireOwner(w, u, resType, resID) {
+		return
+	}
 
 	var perms uint32 = plugin.PermRead
 	if permStr != "" {
@@ -180,6 +183,9 @@ func (h *shareHandler) CreatePublicLinkForm(w http.ResponseWriter, r *http.Reque
 
 	if resType == "" || resID == "" {
 		http.Error(w, "missing fields", http.StatusBadRequest)
+		return
+	}
+	if !h.requireOwner(w, u, resType, resID) {
 		return
 	}
 
@@ -351,6 +357,15 @@ func (h *shareHandler) CreateFederatedShareForm(w http.ResponseWriter, r *http.R
 		http.Error(w, "missing fields or invalid remote user format", http.StatusBadRequest)
 		return
 	}
+	// A federated share is served by the files WebDAV endpoint, so only a
+	// file or folder can be one.
+	if resType != "files:file" && resType != "files:directory" {
+		http.Error(w, "Only files and folders can be shared with another server.", http.StatusBadRequest)
+		return
+	}
+	if !h.requireOwner(w, u, resType, resID) {
+		return
+	}
 
 	var perms uint32 = plugin.PermRead
 	if permStr != "" {
@@ -365,6 +380,16 @@ func (h *shareHandler) CreateFederatedShareForm(w http.ResponseWriter, r *http.R
 
 	if h.p.Federation == nil || h.p.FedClient == nil {
 		http.Error(w, "federation not configured", http.StatusInternalServerError)
+		return
+	}
+	allowed, err := h.p.FedPolicy.PeerAllowed(remoteHost)
+	if err != nil {
+		h.p.Log.Error("federated share: read federation policy", "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
+		http.Error(w, "Sharing with "+remoteHost+" is not allowed on this server.", http.StatusForbidden)
 		return
 	}
 
