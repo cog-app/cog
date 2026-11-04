@@ -5,6 +5,8 @@ Audit performed on `master` (commit `0c018ef`), 2026-05-23.
 Reports live in this directory:
 
 - [`security.md`](security.md) — auth, sessions, CSRF, federation, WebDAV, sharing, crypto.
+- [`security-2026-11.md`](security-2026-11.md) — November 2026 follow-up: volumes and mounts, sharing
+  ownership, SSH, feed/recipes/gallery/profanity plugins, federation policy. All findings fixed.
 - [`plugin-system.md`](plugin-system.md) — privilege boundary, gRPC bridge, lifecycle, registry, design-doc drift.
 - [`bugs-quality.md`](bugs-quality.md) — concurrency, error handling, resource leaks, SQL, HTTP semantics.
 - [`test-coverage.md`](test-coverage.md) — package coverage numbers and missing-coverage targets.

@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
@@ -21,7 +23,7 @@ func (h *volumeBrowserHandler) Browse(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	vol, backend, ok := h.open(w, r, u.ID, volID)
+	vol, backend, ok := h.open(w, r, u, volID, plugin.PermRead)
 	if !ok {
 		return
 	}
@@ -62,20 +64,10 @@ func (h *volumeBrowserHandler) Browse(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// open checks the user may use the volume and returns it with its backend.
-// When it can't, it answers the request itself and reports false.
-func (h *volumeBrowserHandler) open(w http.ResponseWriter, r *http.Request, userID, volID string) (*volume.Volume, volume.Backend, bool) {
-	ok, err := h.p.Access.CanAccess(userID, volID)
-	if err != nil {
-		h.p.Log.Error("volume access check", "volume", volID, "err", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
-		return nil, nil, false
-	}
-	if !ok {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return nil, nil, false
-	}
-
+// open checks the user may use the volume as need asks (plugin.PermRead to
+// look, plugin.PermWrite to change it) and returns it with its backend. When
+// the user may not, open answers the request itself and reports false.
+func (h *volumeBrowserHandler) open(w http.ResponseWriter, r *http.Request, u *user.User, volID string, need uint32) (*volume.Volume, volume.Backend, bool) {
 	vol, err := h.p.Access.Volumes.GetByID(volID)
 	if errors.Is(err, volume.ErrNotFound) {
 		http.NotFound(w, r)
@@ -84,6 +76,16 @@ func (h *volumeBrowserHandler) open(w http.ResponseWriter, r *http.Request, user
 	if err != nil {
 		h.p.Log.Error("look up volume", "volume", volID, "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return nil, nil, false
+	}
+	perms, err := h.p.Access.Permissions(u.ID, volID)
+	if err != nil {
+		h.p.Log.Error("volume access check", "volume", volID, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return nil, nil, false
+	}
+	if perms&need != need {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return nil, nil, false
 	}
 
@@ -146,7 +148,7 @@ func (h *volumeBrowserHandler) Download(w http.ResponseWriter, r *http.Request) 
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	vol, backend, ok := h.open(w, r, u.ID, volID)
+	vol, backend, ok := h.open(w, r, u, volID, plugin.PermRead)
 	if !ok {
 		return
 	}
@@ -170,7 +172,8 @@ func (h *volumeBrowserHandler) Download(w http.ResponseWriter, r *http.Request) 
 		ct = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", ct)
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+name+"\"")
+	plugin.UntrustedContent(w, ct)
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
 	if _, err := io.Copy(w, rc); err != nil {
 		h.p.Log.Warn("volume download", "volume", volID, "path", filePath, "err", err)
 	}
@@ -180,7 +183,7 @@ func (h *volumeBrowserHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	vol, backend, ok := h.open(w, r, u.ID, volID)
+	vol, backend, ok := h.open(w, r, u, volID, plugin.PermWrite)
 	if !ok {
 		return
 	}
@@ -221,7 +224,7 @@ func (h *volumeBrowserHandler) MkDir(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	vol, backend, ok := h.open(w, r, u.ID, volID)
+	vol, backend, ok := h.open(w, r, u, volID, plugin.PermWrite)
 	if !ok {
 		return
 	}
@@ -251,7 +254,7 @@ func (h *volumeBrowserHandler) DeleteFile(w http.ResponseWriter, r *http.Request
 	u := auth.UserFromContext(r.Context())
 	volID := r.PathValue("id")
 
-	vol, backend, ok := h.open(w, r, u.ID, volID)
+	vol, backend, ok := h.open(w, r, u, volID, plugin.PermWrite)
 	if !ok {
 		return
 	}

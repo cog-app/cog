@@ -14,6 +14,13 @@ const KeyPublicRegistration = "public_registration"
 const KeyInviteExpiryHours = "invite_expiry_hours"
 const DefaultInviteExpiryHours = 72
 
+// Federation: whether this server shares with other servers over OCM, and the
+// servers it may (comma or newline separated; empty allows any).
+const (
+	KeyFederationEnabled = "federation_enabled"
+	KeyFederationPeers   = "federation_peers"
+)
+
 // MFA enforcement: "" (disabled), "all" (all users), "admins" (admin users only).
 const KeyMFARequired = "mfa_required"
 

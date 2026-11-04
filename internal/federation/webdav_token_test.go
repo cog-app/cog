@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/federation"
+	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/files"
@@ -20,6 +21,7 @@ import (
 
 func TestTokenWebDAV_NoAuth(t *testing.T) {
 	env := cogtest.New(t)
+	enableFederation(t, env)
 	env.CreateUser(t, "alice", "pass")
 
 	resp := env.Get(t, "/public.php/webdav/anything")
@@ -29,6 +31,7 @@ func TestTokenWebDAV_NoAuth(t *testing.T) {
 
 func TestTokenWebDAV_UnknownToken(t *testing.T) {
 	env := cogtest.New(t)
+	enableFederation(t, env)
 	env.CreateUser(t, "alice", "pass")
 
 	env.Get(t, "/public.php/webdav/anything",
@@ -40,6 +43,7 @@ func TestTokenWebDAV_UnknownToken(t *testing.T) {
 
 func TestTokenWebDAV_PublicLink_DownloadsFile(t *testing.T) {
 	env := cogtest.New(t)
+	enableFederation(t, env)
 	alice := env.CreateUser(t, "alice", "pass")
 
 	meta := putFileViaAPI(t, env, alice, "/public.txt", "publicdata")
@@ -64,6 +68,7 @@ func TestTokenWebDAV_PublicLink_DownloadsFile(t *testing.T) {
 
 func TestTokenWebDAV_Outbound_Propfind(t *testing.T) {
 	env := cogtest.New(t)
+	enableFederation(t, env)
 	alice := env.CreateUser(t, "alice", "pass")
 
 	meta := putFileViaAPI(t, env, alice, "/shared.txt", "shared")
@@ -95,6 +100,7 @@ func TestTokenWebDAV_Outbound_Propfind(t *testing.T) {
 
 func TestTokenWebDAV_Outbound_PutGoesThroughFilesPlugin(t *testing.T) {
 	env := cogtest.New(t)
+	enableFederation(t, env)
 	alice := env.CreateUser(t, "alice", "pass")
 
 	// Use a directory as the shared root so PUT to a sub-path lands inside.
@@ -134,6 +140,7 @@ func TestTokenWebDAV_Outbound_PutGoesThroughFilesPlugin(t *testing.T) {
 
 func TestTokenWebDAV_Outbound_ReadOnlyRejectsWrite(t *testing.T) {
 	env := cogtest.New(t)
+	enableFederation(t, env)
 	alice := env.CreateUser(t, "alice", "pass")
 
 	mkdirViaAPI(t, env, alice, "/ROnly")
@@ -175,6 +182,7 @@ func TestTokenWebDAV_Outbound_ReadOnlyRejectsWrite(t *testing.T) {
 
 func TestTokenWebDAV_Outbound_DeleteThroughFilesPlugin(t *testing.T) {
 	env := cogtest.New(t)
+	enableFederation(t, env)
 	alice := env.CreateUser(t, "alice", "pass")
 
 	mkdirViaAPI(t, env, alice, "/Bin")
@@ -213,6 +221,7 @@ func TestTokenWebDAV_Outbound_DeleteThroughFilesPlugin(t *testing.T) {
 // assuming a layout under the data directory.
 func TestTokenWebDAV_OwnerMountElsewhere(t *testing.T) {
 	env := cogtest.New(t)
+	enableFederation(t, env)
 	alice := env.CreateUser(t, "alice", "pass")
 
 	volDir := t.TempDir()
@@ -280,6 +289,7 @@ func TestTokenWebDAV_OwnerMountElsewhere(t *testing.T) {
 		Shares: env.Providers.Shares,
 		Users:  env.Providers.Users,
 		Files:  fp.(*files.Plugin),
+		Policy: env.Providers.FedPolicy,
 	}
 	for _, p := range []string{"/public.php/webdav/../secret.txt", "/public.php/webdav/Sub/../../secret.txt"} {
 		req := httptest.NewRequest(http.MethodGet, p, nil)
@@ -295,6 +305,7 @@ func TestTokenWebDAV_OwnerMountElsewhere(t *testing.T) {
 
 func TestTokenWebDAV_InboundShareRejected(t *testing.T) {
 	env := cogtest.New(t)
+	enableFederation(t, env)
 	alice := env.CreateUser(t, "alice", "pass")
 
 	// An inbound share is something a remote sent us; the local token is the
@@ -322,6 +333,7 @@ func TestTokenWebDAV_InboundShareRejected(t *testing.T) {
 
 func TestTokenWebDAV_Options(t *testing.T) {
 	env := cogtest.New(t)
+	enableFederation(t, env)
 	alice := env.CreateUser(t, "alice", "pass")
 
 	meta := putFileViaAPI(t, env, alice, "/o.txt", "x")
@@ -379,4 +391,59 @@ func mkReq(t testing.TB, env *cogtest.Env, method, path string, body ...string) 
 		return cogtest.NewRequest(t, method, env.Providers.Config.BaseURL+path, nil)
 	}
 	return cogtest.NewRequest(t, method, env.Providers.Config.BaseURL+path, b)
+}
+
+// TestTokenWebDAV_Outbound_RefusedWhenFederationOff: a server this one no
+// longer federates with loses access to what was shared with it.
+func TestTokenWebDAV_Outbound_RefusedWhenFederationOff(t *testing.T) {
+	env := cogtest.New(t)
+	enableFederation(t, env)
+	alice := env.CreateUser(t, "alice", "pass")
+	putFileViaAPI(t, env, alice, "/note.txt", "hi")
+	meta := infoViaAPI(t, env, alice, "/note.txt")
+
+	rec, err := env.Providers.Shares.CreatePublicLink(alice.ID, "files:file", strconv.FormatInt(meta.ID, 10), 1, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Federation.Create(&federation.FederatedShare{
+		Direction: "outbound", State: "accepted", ShareID: &rec.ID,
+		RemoteHost: "remote.example.com", RemoteUser: "bob", LocalUserID: alice.ID,
+		Token: *rec.Token, ResourceName: "note.txt", ResourceType: "file", Permissions: 1,
+	}))
+	tok := cogtest.BasicAuth("", *rec.Token)
+	env.Get(t, "/public.php/webdav/", tok).Status(200).Equals("hi")
+
+	require.NoError(t, env.Providers.Settings.SetBool(settings.KeyFederationEnabled, false))
+	env.Get(t, "/public.php/webdav/", tok).Status(http.StatusForbidden)
+}
+
+// A public link with a password asks for it here too, as Nextcloud does: the
+// token is the username and the link's password the password.
+func TestTokenWebDAV_PublicLink_PasswordRequired(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	meta := putFileViaAPI(t, env, alice, "/secret.txt", "secret")
+
+	rec, err := env.Providers.Shares.CreatePublicLinkWithPassword(
+		alice.ID, "files:file", strconv.FormatInt(meta.ID, 10), 1, nil, "letmein",
+	)
+	require.NoError(t, err)
+
+	env.Get(t, "/public.php/webdav/", cogtest.BasicAuth("", *rec.Token)).Status(http.StatusUnauthorized)
+	env.Get(t, "/public.php/webdav/", cogtest.BasicAuth(*rec.Token, "wrong")).Status(http.StatusUnauthorized)
+	env.Get(t, "/public.php/webdav/", cogtest.BasicAuth(*rec.Token, "letmein")).Status(200).Equals("secret")
+}
+
+// Another kind of public link — a calendar's feed, whose URL is published —
+// is not a file share, though its collection ID may equal a file's ID.
+func TestTokenWebDAV_PublicLink_OtherTypeRefused(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	meta := putFileViaAPI(t, env, alice, "/private.txt", "private")
+
+	rec, err := env.Providers.Shares.CreatePublicLink(
+		alice.ID, "dav:collection", strconv.FormatInt(meta.ID, 10), 1, nil,
+	)
+	require.NoError(t, err)
+	env.Get(t, "/public.php/webdav/", cogtest.BasicAuth("", *rec.Token)).
+		Status(http.StatusUnauthorized).NotContains("private")
 }

@@ -151,6 +151,7 @@ func (a *API) handleDownload(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 
 	w.Header().Set("Content-Type", meta.MimeType)
+	plugin.UntrustedContent(w, meta.MimeType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
 	w.Header().Set("ETag", meta.ETag)
 	if _, err := io.Copy(w, f); err != nil {
@@ -723,6 +724,7 @@ func (a *API) handlePublicLinkDownload(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 
 	w.Header().Set("Content-Type", meta.MimeType)
+	plugin.UntrustedContent(w, meta.MimeType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
 	w.Header().Set("ETag", meta.ETag)
 	if _, err := io.Copy(w, f); err != nil {
@@ -744,8 +746,11 @@ func (a *API) handleSharedDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check access
-	decision, err := a.shares.CheckAccess(u.ID, rec.ResourceType, rec.ResourceID)
+	// The file is looked up in the share owner's files, so only that
+	// owner's shares of it count: a share of the same ID someone else made
+	// grants nothing here.
+	decision, err := a.shares.CheckAccessGrantedBy(u.ID, rec.ResourceType, rec.ResourceID,
+		func(ownerID string) (bool, error) { return ownerID == rec.OwnerUserID, nil })
 	if err != nil {
 		a.files.log.Error("shared download: check access", "share", shareID, "err", err)
 		http.Error(w, "failed to check access", http.StatusInternalServerError)
@@ -791,6 +796,7 @@ func (a *API) handleSharedDownload(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 
 	w.Header().Set("Content-Type", meta.MimeType)
+	plugin.UntrustedContent(w, meta.MimeType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
 	w.Header().Set("ETag", meta.ETag)
 	if _, err := io.Copy(w, f); err != nil {

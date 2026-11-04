@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"path"
 	"strings"
-	"time"
 
 	"git.duckfam.us/jj-software/cog/vfs"
 )
@@ -17,11 +16,8 @@ type webdavBackend struct {
 	client *http.Client
 }
 
-func newWebDAVBackend(cfg *WebDAVConfig) *webdavBackend {
-	return &webdavBackend{
-		cfg:    cfg,
-		client: &http.Client{Timeout: 30 * time.Second},
-	}
+func newWebDAVBackend(cfg *WebDAVConfig, client *http.Client) *webdavBackend {
+	return &webdavBackend{cfg: cfg, client: client}
 }
 
 func (b *webdavBackend) url(p string) string {

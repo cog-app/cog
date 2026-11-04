@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS users (
 	email TEXT NOT NULL DEFAULT '',
 	avatar_updated_at INTEGER NOT NULL DEFAULT 0,
 	totp_secret TEXT NOT NULL DEFAULT '',
-	mfa_method TEXT NOT NULL DEFAULT ''
+	mfa_method TEXT NOT NULL DEFAULT '',
+	totp_last_step INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

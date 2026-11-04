@@ -17,11 +17,14 @@ import (
 )
 
 // serveSFTP handles an SFTP subsystem session.
-func (s *Server) serveSFTP(channel gossh.Channel, filesDir string, userFS vfs.FS) {
+func (s *Server) serveSFTP(channel gossh.Channel, username, filesDir string, userFS vfs.FS) {
+	// SFTP writes the files directly, not through the files plugin, so it
+	// asks for room itself.
+	quota := func(n int64) error { return s.providers.Plugins.QuotaCheck(username, n) }
 	// If VFS is available, use it; otherwise fall back to direct filesystem.
 	var h sftp.Handlers
 	if userFS != nil {
-		vh := &vfsSFTPHandler{fs: userFS}
+		vh := &vfsSFTPHandler{fs: userFS, quota: quota}
 		h = sftp.Handlers{
 			FileGet:  vh,
 			FilePut:  vh,
@@ -63,6 +66,35 @@ func (s *Server) serveSFTP(channel gossh.Channel, filesDir string, userFS vfs.FS
 
 type vfsSFTPHandler struct {
 	fs vfs.FS
+	// quota reports whether the user has room for a file of the given
+	// size; a written file without room is removed when it is closed.
+	quota func(int64) error
+}
+
+// quotaFile is a file being written over SFTP. Its size is only known when
+// the client closes it, so that is when it is held to the quota.
+type quotaFile struct {
+	vfs.File
+	fs    vfs.FS
+	path  string
+	quota func(int64) error
+}
+
+func (f *quotaFile) Close() error {
+	if err := f.File.Close(); err != nil {
+		return err
+	}
+	info, err := f.fs.Stat(f.path)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", f.path, err)
+	}
+	if qerr := f.quota(info.Size); qerr != nil {
+		if err := f.fs.Delete(f.path); err != nil {
+			return errors.Join(qerr, fmt.Errorf("remove over-quota %s: %w", f.path, err))
+		}
+		return qerr
+	}
+	return nil
 }
 
 func (h *vfsSFTPHandler) Fileread(r *sftp.Request) (io.ReaderAt, error) {
@@ -98,7 +130,14 @@ func (h *vfsSFTPHandler) Filewrite(r *sftp.Request) (io.WriterAt, error) {
 		if pflags.Excl {
 			osFlags |= os.O_EXCL
 		}
-		return opener.OpenFile(r.Filepath, osFlags, 0644)
+		f, err := opener.OpenFile(r.Filepath, osFlags, 0644)
+		if err != nil {
+			return nil, err
+		}
+		if h.quota == nil {
+			return f, nil
+		}
+		return &quotaFile{File: f, fs: h.fs, path: r.Filepath, quota: h.quota}, nil
 	}
 	return nil, fmt.Errorf("backend does not support file writes")
 }

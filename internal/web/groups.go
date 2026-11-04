@@ -376,7 +376,10 @@ func (h *groupHandler) RevokeInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	inviteID := r.PathValue("invite_id")
-	if err := h.p.Invitations.Delete(inviteID); err != nil {
+	if err := h.p.Invitations.DeleteFromGroup(groupID, inviteID); errors.Is(err, group.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
 		http.Error(w, "Failed to revoke invite: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -399,6 +402,17 @@ func (h *groupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	setFlash(w, "success", "Group deleted.")
 	http.Redirect(w, r, base, http.StatusSeeOther)
+}
+
+// inviteMayRegister reports whether an invitation from inviter may create an
+// account. Any user can make a group and invite to it, so with public
+// registration off only an admin's invitation opens a new account; anyone
+// else's is for people who already have one.
+func (h *groupHandler) inviteMayRegister(inviter *user.User) bool {
+	if inviter != nil && inviter.IsAdmin {
+		return true
+	}
+	return h.p.Settings != nil && h.p.Settings.GetBool(settings.KeyPublicRegistration)
 }
 
 // AcceptInviteForm handles GET /invite/{token}.
@@ -449,7 +463,7 @@ func (h *groupHandler) AcceptInviteForm(w http.ResponseWriter, r *http.Request) 
 	if isLoggedIn {
 		pd = pageDataWithNav(r, "Group Invitation", h.p.CSRFSecret, h.p.Plugins)
 	}
-	if err := inviteAcceptPage(pd, g, inv, inviter, isLoggedIn, errMsg).Render(r.Context(), w); err != nil {
+	if err := inviteAcceptPage(pd, g, inv, inviter, isLoggedIn, h.inviteMayRegister(inviter), errMsg).Render(r.Context(), w); err != nil {
 		h.p.Log.Error("render invitation page", "err", err)
 	}
 }
@@ -495,6 +509,17 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	// Verify the invite token was submitted as a form field (CSRF protection).
 	if r.FormValue("invite_token") != token {
 		http.Error(w, "Invalid request", http.StatusForbidden)
+		return
+	}
+	inviter, err := h.p.Users.GetByID(inv.InvitedBy)
+	if err != nil && !errors.Is(err, user.ErrNotFound) {
+		h.p.Log.Error("invitation: look up inviter", "user", inv.InvitedBy, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if !h.inviteMayRegister(inviter) {
+		setFlash(w, "error", "Log in to accept this invitation. New accounts can only be made from an administrator's invitation.")
+		http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
 		return
 	}
 

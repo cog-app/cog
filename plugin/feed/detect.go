@@ -49,7 +49,7 @@ func sniffKind(ctx context.Context, method, rawURL string) string {
 		return ""
 	}
 	req.Header.Set("User-Agent", "cog-feed/1.0")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := HTTP.Do(req)
 	if err != nil {
 		slog.Debug("feed detect: sniff request", "url", rawURL, "method", method, "err", err)
 		return ""

@@ -138,6 +138,9 @@ func (w *Transcribe) recordCaptions(itemID int64, path string) error {
 // <prefix>.<lang>.vtt, so we ask it to write to a temp prefix and then copy
 // the resulting file.
 func tryYouTubeCaptions(ctx context.Context, videoURL, outPath string) error {
+	if err := feed.CheckURL(videoURL); err != nil {
+		return err
+	}
 	tmpDir, err := os.MkdirTemp("", "feed-yt-captions-*")
 	if err != nil {
 		return fmt.Errorf("mkdtmp: %w", err)
@@ -156,7 +159,7 @@ func tryYouTubeCaptions(ctx context.Context, videoURL, outPath string) error {
 		"--skip-download",
 		"--no-warnings",
 		"-o", prefix,
-		videoURL,
+		"--", videoURL,
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("yt-dlp captions: %w: %s", err, string(out))

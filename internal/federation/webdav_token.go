@@ -14,6 +14,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
@@ -26,6 +27,7 @@ type TokenWebDAVHandler struct {
 	Shares *share.Store
 	Users  *user.Store
 	Files  *files.Plugin
+	Policy *Policy
 }
 
 func (h *TokenWebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -54,12 +56,39 @@ func (h *TokenWebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, "look up share", err)
 			return
 		}
+		// Only a public link names one, and only a file or folder's is
+		// served here: another type's resource ID (a calendar's, whose
+		// link is a published feed) would be read as a file ID.
+		if shareRec.SubjectType != "PUBLIC" || !isFileShare(shareRec) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		// A link with a password asks for it as Nextcloud does: the
+		// token is the Basic username and the password its password.
+		if shareRec.PasswordHash != nil && *shareRec.PasswordHash != "" {
+			user, pass, ok := r.BasicAuth()
+			if !ok || user != token || share.CheckPassword(shareRec, pass) != nil {
+				w.Header().Set("WWW-Authenticate", `Basic realm="share"`)
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+		}
 		h.servePublicShare(w, r, shareRec)
 		return
 	}
 
 	// Only outbound shares should be accessed by remote servers.
 	if fs.Direction != "outbound" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	// Only while this server still federates with the remote.
+	allowed, err := h.Policy.PeerAllowed(fs.RemoteHost)
+	if err != nil {
+		h.serverError(w, "read federation policy", err)
+		return
+	}
+	if !allowed {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -76,6 +105,10 @@ func (h *TokenWebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		h.serverError(w, "look up share", err)
+		return
+	}
+	if !isFileShare(shareRec) {
+		http.Error(w, "Share not found", http.StatusNotFound)
 		return
 	}
 
@@ -156,17 +189,28 @@ func (h *TokenWebDAVHandler) serverError(w http.ResponseWriter, what string, err
 	http.Error(w, "Internal server error", http.StatusInternalServerError)
 }
 
+// isFileShare reports whether rec shares a file or folder, the only
+// resources this endpoint serves.
+func isFileShare(rec *share.Record) bool {
+	return rec.ResourceType == "files:file" || rec.ResourceType == "files:directory"
+}
+
 func (h *TokenWebDAVHandler) extractToken(r *http.Request) string {
 	// Try Bearer token.
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 		return strings.TrimPrefix(auth, "Bearer ")
 	}
-	// Try Basic Auth (empty username, token as password).
-	_, password, ok := r.BasicAuth()
-	if ok && password != "" {
-		return password
+	// Basic Auth: a federated server sends the token as the password with
+	// no username; a public link client sends it as the username, with the
+	// link's password, if any, as the password.
+	username, password, ok := r.BasicAuth()
+	if !ok {
+		return ""
 	}
-	return ""
+	if username != "" {
+		return username
+	}
+	return password
 }
 
 // within reports whether p is root or below it; both are clean slash paths.
@@ -252,6 +296,7 @@ func (h *TokenWebDAVHandler) handleGet(w http.ResponseWriter, r *http.Request, u
 	if meta.MimeType != "" {
 		w.Header().Set("Content-Type", meta.MimeType)
 	}
+	cogplugin.UntrustedContent(w, meta.MimeType)
 	w.Header().Set("ETag", `"`+meta.ETag+`"`)
 	modTime := time.Unix(meta.MTime, 0)
 

@@ -29,6 +29,7 @@ type SharingHandler struct {
 	Groups        *group.Store
 	Federation    *federation.Store
 	FedClient     *federation.Client
+	FedPolicy     *federation.Policy
 	Activities    *activity.Store
 	BaseURL       string
 	OnShareCreate func(rec *share.Record)
@@ -585,6 +586,16 @@ func (h *SharingHandler) createFederatedShare(w http.ResponseWriter, r *http.Req
 
 	if h.Federation == nil || h.FedClient == nil {
 		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "federation not configured")
+		return
+	}
+	allowed, err := h.FedPolicy.PeerAllowed(remoteHost)
+	if err != nil {
+		h.Log.Error("federated share: read federation policy", "err", err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
+		return
+	}
+	if !allowed {
+		writeOCSErrorReq(w, r, http.StatusForbidden, 403, "sharing with "+remoteHost+" is not allowed on this server")
 		return
 	}
 

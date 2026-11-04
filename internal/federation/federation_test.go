@@ -15,6 +15,7 @@ import (
 
 func TestFederationOCMDiscovery(t *testing.T) {
 	env := cogtest.New(t)
+	enableFederation(t, env)
 	env.CreateUser(t, "alice", "pass")
 
 	resp := env.Get(t, "/.well-known/ocm-provider")
@@ -32,7 +33,9 @@ func TestFederationOCMDiscovery(t *testing.T) {
 func TestFederationInboundShare(t *testing.T) {
 	// Set up two Cog instances.
 	sender := cogtest.New(t)
+	enableFederation(t, sender)
 	receiver := cogtest.New(t)
+	enableFederation(t, receiver)
 
 	alice := sender.CreateUser(t, "alice", "pass")
 	_ = alice
@@ -80,6 +83,7 @@ func TestFederationInboundShare(t *testing.T) {
 
 func TestFederationAcceptReject(t *testing.T) {
 	env := cogtest.New(t)
+	enableFederation(t, env)
 	bob := env.CreateUser(t, "bob", "pass")
 
 	// Create a pending inbound share directly.
@@ -138,7 +142,9 @@ func TestFederationCrossInstance(t *testing.T) {
 
 	// Set up two Cog instances with real httptest.Servers that can talk to each other.
 	sender := cogtest.New(t)
+	enableFederation(t, sender)
 	receiver := cogtest.New(t)
+	enableFederation(t, receiver)
 
 	alice := sender.CreateUser(t, "alice", "pass")
 	bob := receiver.CreateUser(t, "bob", "pass")
@@ -196,6 +202,7 @@ func TestFederationCrossInstance(t *testing.T) {
 
 func TestFederationNotification(t *testing.T) {
 	env := cogtest.New(t)
+	enableFederation(t, env)
 	alice := env.CreateUser(t, "alice", "pass")
 
 	// Create an outbound share.

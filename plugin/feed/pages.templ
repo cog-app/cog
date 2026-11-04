@@ -518,7 +518,7 @@ templ feedItemRow(item ItemWithSubscription, o rowOpts) {
 				<div class="feed-item-detail-actions">
 					<a class="btn btn-sm" href={ templ.SafeURL(itemHref(item.ID, o.Ctx)) }>Open in reader</a>
 					if item.URL != "" {
-						<a class="btn btn-sm" href={ templ.SafeURL(item.URL) } target="_blank" rel="noopener" data-feed-original>
+						<a class="btn btn-sm" href={ templ.URL(item.URL) } target="_blank" rel="noopener" data-feed-original>
 							@ui.Icon("external")
 							Original
 						</a>
@@ -553,7 +553,7 @@ templ feedRowMain(item ItemWithSubscription, o rowOpts) {
 // the reader has the rest.
 templ feedRowActions(item ItemWithSubscription) {
 	if item.URL != "" {
-		<a class="btn-icon btn-icon-sm hide-mobile" href={ templ.SafeURL(item.URL) } target="_blank" rel="noopener" aria-label={ "Open original of " + item.Title } title="Open original">
+		<a class="btn-icon btn-icon-sm hide-mobile" href={ templ.URL(item.URL) } target="_blank" rel="noopener" aria-label={ "Open original of " + item.Title } title="Open original">
 			@ui.Icon("external")
 		</a>
 	}
@@ -936,7 +936,7 @@ templ feedItemDetail(sb sidebarData, nav itemNav, ip ItemPlayback, tags []string
 			<div class="page-actions">
 				@ui.Star(ip.IsStarred, fmt.Sprintf("/apps/feed/items/%d/star", ip.ID))
 				if ip.URL != "" {
-					<a class="btn" href={ templ.SafeURL(ip.URL) } target="_blank" rel="noopener">
+					<a class="btn" href={ templ.URL(ip.URL) } target="_blank" rel="noopener">
 						@ui.Icon("external")
 						Open original
 					</a>

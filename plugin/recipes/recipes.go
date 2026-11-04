@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
 )
 
 //go:generate go tool migratesql .
@@ -37,9 +38,15 @@ type Plugin struct {
 
 // New creates a new Recipes plugin instance.
 func New() *Plugin {
+	// The recipe URL is one a user typed, so the importer dials only public
+	// addresses. HTTP/2 stays on as the default client has it: bot walls
+	// score the client's fingerprint (see fetch).
+	transport := safehttp.Transport()
+	transport.ForceAttemptHTTP2 = true
 	return &Plugin{
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
+			Transport: transport,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				if len(via) >= 5 {
 					return fmt.Errorf("too many redirects")

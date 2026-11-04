@@ -13,7 +13,9 @@ func TestSharePanel(t *testing.T) {
 	alice := env.CreateUser(t, "alice", "pass")
 	cookie, _ := sessionAndCSRF(t, env, alice.ID)
 
-	vol, err := env.Providers.Volumes.GetByName("default")
+	// A volume of alice's own: the system volumes are shared from the admin
+	// pages, not this panel.
+	vol, err := env.Providers.Volumes.Create("alices", "", "mem://", &alice.ID, "{}")
 	require.NoError(t, err)
 
 	env.Get(t, "/api/shares/panel?type=files:volume&id="+vol.ID, cookie).Status(200)
@@ -33,7 +35,9 @@ func TestCreateShareForm(t *testing.T) {
 	bob := env.CreateUser(t, "bob", "pass")
 	cookie, token := sessionAndCSRF(t, env, alice.ID)
 
-	vol, err := env.Providers.Volumes.GetByName("default")
+	// A volume of alice's own: the system volumes are shared from the admin
+	// pages, not this panel.
+	vol, err := env.Providers.Volumes.Create("alices", "", "mem://", &alice.ID, "{}")
 	require.NoError(t, err)
 
 	env.PostForm(t, "/api/shares/create", url.Values{
@@ -59,7 +63,9 @@ func TestCreatePublicLinkForm(t *testing.T) {
 	alice := env.CreateUser(t, "alice", "pass")
 	cookie, token := sessionAndCSRF(t, env, alice.ID)
 
-	vol, err := env.Providers.Volumes.GetByName("default")
+	// A volume of alice's own: the system volumes are shared from the admin
+	// pages, not this panel.
+	vol, err := env.Providers.Volumes.Create("alices", "", "mem://", &alice.ID, "{}")
 	require.NoError(t, err)
 
 	env.PostForm(t, "/api/shares/public-link-form", url.Values{
@@ -85,7 +91,9 @@ func TestDeleteShareHTMX(t *testing.T) {
 	alice := env.CreateUser(t, "alice", "pass")
 	cookie, token := sessionAndCSRF(t, env, alice.ID)
 
-	vol, err := env.Providers.Volumes.GetByName("default")
+	// A volume of alice's own: the system volumes are shared from the admin
+	// pages, not this panel.
+	vol, err := env.Providers.Volumes.Create("alices", "", "mem://", &alice.ID, "{}")
 	require.NoError(t, err)
 
 	rec, err := env.Providers.Shares.Create(alice.ID, "files:volume", vol.ID, "USER", alice.ID, 1)
@@ -104,7 +112,9 @@ func TestDeleteShareNotOwnerForbidden(t *testing.T) {
 	bob := env.CreateUser(t, "bob", "pass")
 	bobCookie, bobToken := sessionAndCSRF(t, env, bob.ID)
 
-	vol, err := env.Providers.Volumes.GetByName("default")
+	// A volume of alice's own: the system volumes are shared from the admin
+	// pages, not this panel.
+	vol, err := env.Providers.Volumes.Create("alices", "", "mem://", &alice.ID, "{}")
 	require.NoError(t, err)
 
 	rec, err := env.Providers.Shares.Create(alice.ID, "files:volume", vol.ID, "USER", bob.ID, 1)

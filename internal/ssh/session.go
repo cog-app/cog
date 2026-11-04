@@ -77,7 +77,7 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 				req.Reply(name == "sftp", nil)
 			}
 			if name == "sftp" {
-				s.serveSFTP(channel, filesDir, userFS)
+				s.serveSFTP(channel, username, filesDir, userFS)
 			}
 			return
 
@@ -89,7 +89,7 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 			var exitCode int
 			switch {
 			case strings.HasPrefix(command, "scp "):
-				exitCode = s.serveSCP(channel, filesDir, userFS, command)
+				exitCode = s.serveSCP(channel, username, filesDir, userFS, command)
 			case strings.HasPrefix(command, "rsync "):
 				exitCode = s.serveRsync(channel, filesDir, command)
 			default:

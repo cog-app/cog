@@ -96,8 +96,20 @@ func (s *PasswordResetStore) Validate(token string) (string, error) {
 	return userID, nil
 }
 
-// MarkUsed marks a token as used.
-func (s *PasswordResetStore) MarkUsed(token string) error {
-	_, err := s.db.Exec(`UPDATE password_reset_tokens SET used = 1 WHERE token = ?`, s.hash(token))
-	return err
+// Consume marks the token used and returns its user, if it is valid: known,
+// unused and unexpired. Checking and marking are one statement, so of two
+// requests racing with the same token only one gets the user.
+func (s *PasswordResetStore) Consume(token string) (string, error) {
+	var userID string
+	err := s.db.QueryRow(
+		`UPDATE password_reset_tokens SET used = 1 WHERE token = ? AND used = 0 AND expires_at >= ? RETURNING user_id`,
+		s.hash(token), s.clock().Unix(),
+	).Scan(&userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrInvalidResetToken
+	}
+	if err != nil {
+		return "", fmt.Errorf("consume reset token: %w", err)
+	}
+	return userID, nil
 }

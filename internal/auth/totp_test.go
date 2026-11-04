@@ -33,7 +33,8 @@ func TestTOTP_BeginSetupConfirmValidate(t *testing.T) {
 
 	// Before ConfirmSetup, Validate against a real code still works (decrypts secret),
 	// but mfa_method isn't set so login flow won't redirect — that's a handler concern.
-	ok, err := env.Providers.TOTP.Validate(u.ID, otpCode(t, env, secret))
+	first := otpCode(t, env, secret)
+	ok, err := env.Providers.TOTP.Validate(u.ID, first)
 	require.NoError(t, err)
 	require.True(t, ok)
 
@@ -46,8 +47,16 @@ func TestTOTP_BeginSetupConfirmValidate(t *testing.T) {
 	_, err = env.Providers.TOTP.ConfirmSetup(u.ID, "000000")
 	require.True(t, err != nil)
 
-	// Validate succeeds with a fresh code.
-	ok, err = env.Providers.TOTP.Validate(u.ID, otpCode(t, env, secret))
+	// A code is good once: the one Validate already accepted is refused.
+	ok, err = env.Providers.TOTP.Validate(u.ID, first)
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	// Validate succeeds with the next step's code, which the allowed
+	// clock skew accepts now.
+	next, err := totp.GenerateCode(secret, time.Now().Add(30*time.Second))
+	require.NoError(t, err)
+	ok, err = env.Providers.TOTP.Validate(u.ID, next)
 	require.NoError(t, err)
 	require.True(t, ok)
 

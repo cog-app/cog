@@ -38,6 +38,18 @@ type uploadSession struct {
 	Username  string
 	Dir       string // temp directory holding chunks
 	CreatedAt time.Time
+	Bytes     int64 // size of the chunks received, guarded by the handler's mu
+}
+
+// staged returns the bytes username's upload sessions hold. h.mu must be held.
+func (h *ChunkedUploadHandler) staged(username string) int64 {
+	var n int64
+	for _, s := range h.sessions {
+		if s.Username == username {
+			n += s.Bytes
+		}
+	}
+	return n
 }
 
 func (h *ChunkedUploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -139,12 +151,31 @@ func (h *ChunkedUploadHandler) handlePut(w http.ResponseWriter, r *http.Request,
 	}
 
 	chunkPath := filepath.Join(sess.Dir, chunk)
+
+	// Chunks sit in the data directory until the upload is assembled, and
+	// assembling is where the quota is checked; without a check here a
+	// client could stage any amount and never assemble it.
+	var replaced int64
+	if info, err := os.Stat(chunkPath); err == nil {
+		replaced = info.Size()
+	}
+	h.mu.Lock()
+	staged := h.staged(u.Username) - replaced
+	h.mu.Unlock()
+	if r.ContentLength > 0 {
+		if err := h.Files.QuotaCheck(u.Username, staged+r.ContentLength); err != nil {
+			http.Error(w, err.Error(), http.StatusInsufficientStorage)
+			return
+		}
+	}
+
 	f, err := os.Create(chunkPath)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if _, err := io.Copy(f, r.Body); err != nil {
+	written, err := io.Copy(f, r.Body)
+	if err != nil {
 		f.Close()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -153,6 +184,20 @@ func (h *ChunkedUploadHandler) handlePut(w http.ResponseWriter, r *http.Request,
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if err := h.Files.QuotaCheck(u.Username, staged+written); err != nil {
+		if rmErr := os.Remove(chunkPath); rmErr != nil {
+			h.Log.Error("remove over-quota chunk", "path", chunkPath, "err", rmErr)
+		}
+		// The chunk this one replaced went with it.
+		h.mu.Lock()
+		sess.Bytes -= replaced
+		h.mu.Unlock()
+		http.Error(w, err.Error(), http.StatusInsufficientStorage)
+		return
+	}
+	h.mu.Lock()
+	sess.Bytes += written - replaced
+	h.mu.Unlock()
 
 	w.WriteHeader(http.StatusCreated)
 }

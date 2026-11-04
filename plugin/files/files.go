@@ -1168,6 +1168,13 @@ func (p *Plugin) extractTar(username string, r io.ReadSeeker, format, destDir st
 	return count, nil
 }
 
+// QuotaCheck returns nil if the user has room for additionalBytes more, or
+// plugin.ErrQuotaExceeded. Writers that stage bytes before they become a file
+// (chunked uploads) ask here, so staging cannot hold more than the quota.
+func (p *Plugin) QuotaCheck(username string, additionalBytes int64) error {
+	return p.ctx.QuotaCheck(username, additionalBytes)
+}
+
 // Usage returns the total bytes used by non-directory files for a user.
 func (p *Plugin) Usage(username string) (int64, error) {
 	db, err := p.DB(username)

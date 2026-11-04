@@ -340,6 +340,16 @@ func (s *Store) ListByResource(resourceType, resourceID string) iter.Seq2[Record
 // It checks direct user shares, group membership shares, and
 // hierarchical parent shares (for files).
 func (s *Store) CheckAccess(userID, resourceType, resourceID string) (*AccessDecision, error) {
+	return s.CheckAccessGrantedBy(userID, resourceType, resourceID, nil)
+}
+
+// CheckAccessGrantedBy is CheckAccess counting only the shares whose owner
+// grantedBy accepts. A share's owner is whoever created it, and nothing
+// stops a user creating a share of a resource they do not own, so a caller
+// that resolves the resource by ID alone — not within the share owner's own
+// data — must say whose shares count: the resource's owner's. A nil
+// grantedBy counts every share.
+func (s *Store) CheckAccessGrantedBy(userID, resourceType, resourceID string, grantedBy func(ownerID string) (bool, error)) (*AccessDecision, error) {
 	decision := &AccessDecision{}
 
 	// Check direct shares (user + groups + instance)
@@ -367,6 +377,15 @@ func (s *Store) CheckAccess(userID, resourceType, resourceID string) (*AccessDec
 		var perms uint32
 		if err := rows.Scan(&shareID, &perms, &ownerID); err != nil {
 			return nil, fmt.Errorf("scan access: %w", err)
+		}
+		if grantedBy != nil {
+			ok, err := grantedBy(ownerID)
+			if err != nil {
+				return nil, fmt.Errorf("check access: share %s: %w", shareID, err)
+			}
+			if !ok {
+				continue
+			}
 		}
 		decision.Allowed = true
 		decision.EffectivePerms |= perms

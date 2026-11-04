@@ -5,6 +5,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/vfs"
 )
 
@@ -13,11 +14,14 @@ type Resolver struct {
 	users   *user.Store
 	mounts  *Store
 	volumes *volume.Store
+	access  *volume.Access
 }
 
-// NewResolver creates a new mount resolver.
-func NewResolver(users *user.Store, mounts *Store, volumes *volume.Store) *Resolver {
-	return &Resolver{users: users, mounts: mounts, volumes: volumes}
+// NewResolver creates a new mount resolver. Access decides what a mount of a
+// volume other than the user's root may do: a mount outlives the share that
+// allowed it, so it is checked each time it is used.
+func NewResolver(users *user.Store, mounts *Store, volumes *volume.Store, access *volume.Access) *Resolver {
+	return &Resolver{users: users, mounts: mounts, volumes: volumes, access: access}
 }
 
 // UserFilesDir looks up the user's root mount and resolves the concrete filesystem path.
@@ -89,6 +93,21 @@ func (r *Resolver) UserFS(username string) (vfs.FS, error) {
 			return nil, fmt.Errorf("resolve volume %q for mount %q: %w", m.VolumeID, m.UserPath, err)
 		}
 
+		readOnly := m.ReadOnly
+		if m.UserPath != "/" {
+			// The root mount is the one the server made for the user. Any
+			// other reaches a volume only while the user may: a share
+			// revoked, or narrowed to read-only, takes effect here.
+			perms, err := r.access.Permissions(u.ID, v.ID)
+			if err != nil {
+				return nil, fmt.Errorf("check access to volume %q for mount %q: %w", v.Name, m.UserPath, err)
+			}
+			if perms&plugin.PermRead == 0 {
+				continue
+			}
+			readOnly = readOnly || perms&plugin.PermWrite == 0
+		}
+
 		backend, err := volume.NewBackend(v)
 		if err != nil {
 			return nil, fmt.Errorf("create backend for volume %q: %w", v.Name, err)
@@ -98,7 +117,7 @@ func (r *Resolver) UserFS(username string) (vfs.FS, error) {
 			UserPath:      m.UserPath,
 			VolumeSubpath: m.VolumeSubpath,
 			Backend:       backend,
-			ReadOnly:      m.ReadOnly,
+			ReadOnly:      readOnly,
 		})
 	}
 

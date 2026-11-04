@@ -25,7 +25,7 @@ func fetchURL(ctx context.Context, sub feed.Subscription) (feed.FetchResult, err
 	if err != nil {
 		return feed.FetchResult{}, fmt.Errorf("url fetch new request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := feed.HTTP.Do(req)
 	if err != nil {
 		return feed.FetchResult{}, fmt.Errorf("url fetch %s: %w", sub.URL, err)
 	}

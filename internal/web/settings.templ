@@ -49,6 +49,11 @@ templ settingsProfilePage(pd ui.PageData, flash string, flashKind string) {
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 				@ui.FormField("Display name", "display_name", "text", pd.User.DisplayName, "Your display name")
 				@ui.FormField("Email", "email", "email", pd.User.Email, "your@email.com")
+				<div class="form-group">
+					<label for="profile-current-password">Current password</label>
+					<input class="form-control" type="password" id="profile-current-password" name="current_password" autocomplete="current-password"/>
+					<p class="form-help">Needed only to change your email address.</p>
+				</div>
 				<div class="form-actions">
 					<button class="btn btn-primary" type="submit">Save</button>
 				</div>
@@ -363,28 +368,32 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 				</div>
 			}
 			<h3 class="card-subtitle">Add a mount</h3>
-			<form method="post" action="/settings/mounts">
-				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-				<div class="form-row mb-0">
-					<div class="form-group">
-						<label class="form-label" for="mount-path">Path</label>
-						<input class="form-control" type="text" id="mount-path" name="user_path" placeholder="/mnt/extra" required/>
+			if len(volumes) == 0 {
+				<p class="card-desc">You have no volumes to mount. Add one of your own below, or ask someone to share theirs with you.</p>
+			} else {
+				<form method="post" action="/settings/mounts">
+					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+					<div class="form-row mb-0">
+						<div class="form-group">
+							<label class="form-label" for="mount-path">Path</label>
+							<input class="form-control" type="text" id="mount-path" name="user_path" placeholder="/mnt/extra" required/>
+						</div>
+						<div class="form-group">
+							<label class="form-label" for="mount-volume">Volume</label>
+							<select class="form-control" id="mount-volume" name="volume_id" required>
+								for _, v := range volumes {
+									<option value={ v.ID }>{ v.Name }</option>
+								}
+							</select>
+						</div>
+						<div class="form-group">
+							<label class="form-label" for="mount-subpath">Subpath</label>
+							<input class="form-control" type="text" id="mount-subpath" name="volume_subpath" placeholder="optional"/>
+						</div>
+						<button class="btn btn-primary" type="submit">Add</button>
 					</div>
-					<div class="form-group">
-						<label class="form-label" for="mount-volume">Volume</label>
-						<select class="form-control" id="mount-volume" name="volume_id" required>
-							for _, v := range volumes {
-								<option value={ v.ID }>{ v.Name }</option>
-							}
-						</select>
-					</div>
-					<div class="form-group">
-						<label class="form-label" for="mount-subpath">Subpath</label>
-						<input class="form-control" type="text" id="mount-subpath" name="volume_subpath" placeholder="optional"/>
-					</div>
-					<button class="btn btn-primary" type="submit">Add</button>
-				</div>
-			</form>
+				</form>
+			}
 		}
 		@ui.Card("My volumes") {
 			if len(ownedVolumes) == 0 {

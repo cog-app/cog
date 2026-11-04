@@ -63,9 +63,13 @@ func (d *Downloader) processOne(ctx context.Context, itemID int64) error {
 
 	dst := filepath.Join(d.root, strconv.FormatInt(itemID, 10)+extForMIME(it.MediaMIME, it.Type))
 
+	// The media URL is whatever the feed wrote.
+	if err := feed.CheckURL(it.MediaURL); err != nil {
+		return d.fail(itemID, err)
+	}
 	switch sub.Kind {
 	case "youtube":
-		cmd := exec.CommandContext(ctx, "yt-dlp", "-o", dst, it.MediaURL)
+		cmd := exec.CommandContext(ctx, "yt-dlp", "-o", dst, "--", it.MediaURL)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return d.fail(itemID, fmt.Errorf("yt-dlp: %w: %s", err, string(out)))
 		}
@@ -97,7 +101,7 @@ func httpFetch(ctx context.Context, src, dst string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := feed.HTTP.Do(req)
 	if err != nil {
 		return err
 	}

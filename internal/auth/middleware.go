@@ -113,6 +113,13 @@ func (m *Middleware) authenticate(r *http.Request) (*user.User, *Session) {
 		// Try user password first
 		u, err := m.Users.Authenticate(username, password)
 		logAuthErr("basic auth", err)
+		if u != nil && u.MFAMethod != "" {
+			// The password is only the first of this user's factors, and
+			// Basic auth has no way to ask for the second. Their clients
+			// sign in with an app password, which Login Flow issues after
+			// both.
+			u = nil
+		}
 		if u == nil {
 			// Try app password with username as a hint
 			u = m.appPasswordUser(password)

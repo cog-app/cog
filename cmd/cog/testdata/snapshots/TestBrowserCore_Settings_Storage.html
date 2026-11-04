@@ -381,7 +381,7 @@
                   </label>
                   <select class="form-control" id="mount-volume" name="volume_id" required="">
                     <option value="«hex»">
-                      default
+                      scratch
                     </option>
                   </select>
                 </div>
@@ -401,9 +401,51 @@
             <h2 class="card-title">
               My volumes
             </h2>
-            <p class="empty-state empty-state-sm">
-              You haven't added any volumes. Add a WebDAV server below to use its storage here.
-            </p>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>
+                      Name
+                    </th>
+                    <th class="hide-mobile">
+                      URI
+                    </th>
+                    <th class="col-actions">
+                      <span class="sr-only">
+                        Actions
+                      </span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr id="uservol-«hex»">
+                    <td class="break-anywhere font-medium">
+                      scratch
+                    </td>
+                    <td class="hide-mobile">
+                      <code>
+                        mem://
+                      </code>
+                    </td>
+                    <td class="col-actions">
+                      <div class="row-actions">
+                        <a class="btn btn-secondary btn-sm" href="/volumes/«hex»/browse">
+                          Browse
+                        </a>
+                        <button class="btn btn-secondary btn-sm" hx-get="/api/shares/panel?type=files:volume&id=«hex»&scope=vol-share" hx-swap="innerHTML" hx-target="#vol-share" type="button">
+                          Share
+                        </button>
+                        <button class="btn btn-outline-danger btn-sm" hx-confirm="Delete the volume scratch?" hx-delete="/settings/volumes/«hex»" hx-swap="outerHTML" hx-target="#uservol-«hex»" type="button">
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div id="vol-share" />
             <h3 class="card-subtitle">
               Add a WebDAV volume
             </h3>

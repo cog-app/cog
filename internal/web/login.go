@@ -29,7 +29,7 @@ func userInfo(u *user.User, baseURL string) email.UserInfo {
 
 // safeNext validates a next-redirect parameter to prevent open redirects.
 func safeNext(next string) string {
-	if next != "" && strings.HasPrefix(next, "/") && !strings.HasPrefix(next, "//") {
+	if auth.LocalPath(next) {
 		return next
 	}
 	return "/"
@@ -217,10 +217,13 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Rate limit MFA attempts.
+	// Rate limit MFA attempts by client and by account: whoever holds a
+	// pending login already has the password, and a six-digit code falls
+	// to enough guesses spread over many addresses.
+	mfaKey := "mfa:" + pending.UserID
 	if h.p.RateLimiter != nil {
 		ip := ratelimit.ClientIP(r)
-		if h.p.RateLimiter.IsLimited(ip) {
+		if h.p.RateLimiter.IsLimited(ip) || h.p.RateLimiter.IsLimited(mfaKey) {
 			setFlash(w, "error", "Too many failed attempts. Please try again later.")
 			http.Redirect(w, r, loginRedirect("/login/mfa", next), http.StatusSeeOther)
 			return
@@ -250,6 +253,7 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 	if err != nil || !valid {
 		if h.p.RateLimiter != nil {
 			h.p.RateLimiter.RecordFailure(ratelimit.ClientIP(r))
+			h.p.RateLimiter.RecordFailure(mfaKey)
 		}
 		setFlash(w, "error", "Invalid authentication code.")
 		http.Redirect(w, r, loginRedirect("/login/mfa", next), http.StatusSeeOther)
@@ -264,6 +268,7 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 
 	if h.p.RateLimiter != nil {
 		h.p.RateLimiter.Reset(ratelimit.ClientIP(r))
+		h.p.RateLimiter.Reset(mfaKey)
 	}
 
 	// Use next from the pending token if not provided in form.
@@ -470,18 +475,21 @@ func (h *loginHandler) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	password := r.FormValue("password")
 	confirm := r.FormValue("confirm")
 
+	back := "/reset-password?token=" + url.QueryEscape(token)
 	if password != confirm {
 		setFlash(w, "error", "Passwords do not match.")
-		http.Redirect(w, r, "/reset-password?token="+token, http.StatusSeeOther)
+		http.Redirect(w, r, back, http.StatusSeeOther)
 		return
 	}
 	if password == "" {
 		setFlash(w, "error", "Password cannot be empty.")
-		http.Redirect(w, r, "/reset-password?token="+token, http.StatusSeeOther)
+		http.Redirect(w, r, back, http.StatusSeeOther)
 		return
 	}
 
-	userID, err := h.p.PasswordResets.Validate(token)
+	// Using the token and checking it are one step, so the same link cannot
+	// set two passwords.
+	userID, err := h.p.PasswordResets.Consume(token)
 	if errors.Is(err, auth.ErrInvalidResetToken) {
 		setFlash(w, "error", "Invalid or expired reset link. Please request a new one.")
 		http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
@@ -491,23 +499,19 @@ func (h *loginHandler) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		// Not a bad link: the check itself failed. Send the user back to the
 		// form to try again rather than telling them the link is dead.
 		setFlash(w, "error", "Something went wrong checking the reset link. Please try again.", err)
-		http.Redirect(w, r, "/reset-password?token="+url.QueryEscape(token), http.StatusSeeOther)
+		http.Redirect(w, r, back, http.StatusSeeOther)
 		return
 	}
 
 	if err := h.p.Users.UpdatePassword(userID, password); err != nil {
-		setFlash(w, "error", "Failed to update password.", err)
-		http.Redirect(w, r, "/reset-password?token="+token, http.StatusSeeOther)
+		// The link is spent; a new one is the way to try again.
+		setFlash(w, "error", "Your password could not be changed. Please request a new reset link.", err)
+		http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
 		return
 	}
 
-	// MarkUsed errors don't block the user from logging in — but they DO
-	// matter for one-shot-token semantics. If MarkUsed fails the token
-	// stays usable until expiry; flag it loudly. Same for revoking other
-	// sessions — log the failure so admins notice if sessions linger.
-	if err := h.p.PasswordResets.MarkUsed(token); err != nil {
-		h.p.Log.Error("mark password reset used", "user", userID, "err", err)
-	}
+	// Revoking the user's sessions is what makes a reset lock out whoever
+	// had the old password; log the failure so admins notice if they linger.
 	if err := h.p.Sessions.DeleteAllForUser(userID); err != nil {
 		h.p.Log.Error("revoke sessions after reset", "user", userID, "err", err)
 	}

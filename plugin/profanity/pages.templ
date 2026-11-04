@@ -59,8 +59,8 @@ templ profanityAdminPage(cfg adminSettingsData, csrfToken string) {
 			</div>
 			<div class="form-group" id="tts-system" style={ systemDisplay(cfg.TTSEngine) }>
 				<label for="tts_command">System Command</label>
-				<input class="form-control" type="text" id="tts_command" name="tts_command" value={ cfg.TTSCommand } placeholder="echo $TEXT | piper --output_file $OUTPUT"/>
-				<div class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">Command template. Use $TEXT and $OUTPUT as placeholders.</div>
+				<input class="form-control" type="text" id="tts_command" name="tts_command" value={ cfg.TTSCommand } placeholder='echo "$TEXT" | piper --output_file "$OUTPUT"'/>
+				<div class="text-muted" style="font-size:0.85rem;margin-top:0.25rem">Run by sh with the text in $TEXT and the file to write in $OUTPUT. Quote them: "$TEXT".</div>
 			</div>
 			<button class="btn btn-primary" type="submit">Save</button>
 		</form>

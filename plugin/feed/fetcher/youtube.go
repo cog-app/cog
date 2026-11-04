@@ -47,7 +47,7 @@ func ytdlpListEntries(ctx context.Context, url string) ([]ytdlpInfo, error) {
 		"--no-warnings",
 		"--no-download",
 		"--playlist-end", "50",
-		url,
+		"--", url,
 	)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -86,7 +86,7 @@ func ytdlpChannelMeta(ctx context.Context, url string) (*ytdlpPlaylistMeta, erro
 		"--flat-playlist",
 		"--playlist-items", "0",
 		"--no-warnings",
-		url,
+		"--", url,
 	)
 	out, err := cmd.Output()
 	if err != nil {

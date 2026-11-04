@@ -18,6 +18,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -316,6 +317,16 @@ func (h *settingsHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) 
 	u := auth.UserFromContext(r.Context())
 	displayName := r.FormValue("display_name")
 	email := r.FormValue("email")
+	// The email address is where password resets and email codes go, so
+	// whoever changes it must know the password: a session left signed in
+	// is not enough to take the account over.
+	if email != u.Email {
+		if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(r.FormValue("current_password"))); err != nil {
+			setFlash(w, "error", "Enter your current password to change your email address.")
+			http.Redirect(w, r, "/settings/profile", http.StatusSeeOther)
+			return
+		}
+	}
 	if err := h.p.Users.Update(u.ID, user.UpdateOpts{DisplayName: &displayName, Email: &email}); err != nil {
 		setFlash(w, "error", "Failed to update profile.", err)
 	} else {
@@ -378,22 +389,25 @@ func (h *settingsHandler) CreateMount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Access check on the volume.
-	if h.p.Access != nil {
-		ok, err := h.p.Access.CanAccess(u.ID, volumeID)
-		if err != nil {
-			setFlash(w, "error", "Could not check access to that volume.", err)
-			http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
-			return
-		}
-		if !ok {
-			setFlash(w, "error", "You do not have access to that volume.")
-			http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
-			return
-		}
+	// The mount reaches anything in the volume, so the user needs access to
+	// all of it, and a mount of a volume shared read-only is read-only.
+	perms, err := h.p.Access.Permissions(u.ID, volumeID)
+	if errors.Is(err, volume.ErrNotFound) {
+		perms, err = 0, nil
 	}
+	if err != nil {
+		setFlash(w, "error", "Could not check access to that volume.", err)
+		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
+		return
+	}
+	if perms&plugin.PermRead == 0 {
+		setFlash(w, "error", "You do not have access to that volume.")
+		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
+		return
+	}
+	readOnly := perms&plugin.PermWrite == 0
 
-	_, err := h.p.Mounts.Create(u.ID, userPath, volumeID, volumeSubpath, false)
+	_, err = h.p.Mounts.Create(u.ID, userPath, volumeID, volumeSubpath, readOnly)
 	if err != nil {
 		setFlash(w, "error", "Failed to create mount: "+err.Error())
 	} else {
@@ -411,6 +425,14 @@ func (h *settingsHandler) CreateVolume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A user's own volume is a remote one. A local path is the server's
+	// filesystem — the data directory, other users' files, the host — and
+	// only an admin, on the admin page, may make a volume of one.
+	if r.FormValue("conn_type") != "webdav" {
+		setFlash(w, "error", "Only WebDAV volumes can be added here.")
+		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
+		return
+	}
 	uri, config, err := buildVolumeURIAndConfig(r)
 	if err != nil {
 		setFlash(w, "error", err.Error())

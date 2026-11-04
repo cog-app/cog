@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/email"
+	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/seq"
@@ -471,6 +472,15 @@ type envConfigData struct {
 	DataDir string
 }
 
+// federationData is the federation card of the admin settings page.
+type federationData struct {
+	Enabled bool
+	Peers   string // the admin's allowed servers, one per line
+	// EnvPeers is COG_FEDERATION_PEERS, servers allowed whatever the
+	// admin's list says.
+	EnvPeers string
+}
+
 // statusData holds runtime status information for the admin settings page.
 type statusData struct {
 	InstanceUptime time.Duration
@@ -548,6 +558,7 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var mfaRequired string
+	fed := federationData{EnvPeers: h.p.Config.FederationPeers}
 	if h.p.Settings != nil {
 		var err error
 		if mfaRequired, err = h.p.Settings.Get(settings.KeyMFARequired); err != nil {
@@ -555,6 +566,18 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal error", http.StatusInternalServerError)
 			return
 		}
+		if fed.Enabled, err = h.p.FedPolicy.Enabled(); err != nil {
+			h.p.Log.Error("admin settings: read federation setting", "err", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		peers, err := h.p.Settings.Get(settings.KeyFederationPeers)
+		if err != nil {
+			h.p.Log.Error("admin settings: read federation peers", "err", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		fed.Peers = strings.Join(federation.ParsePeers(peers), "\n")
 	}
 
 	env := envConfigData{
@@ -571,7 +594,7 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	ui.Render(w, r, adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), strconv.Itoa(tombstoneDays), env, status, flashMsg, flashKind, mfaRequired))
+	ui.Render(w, r, adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), strconv.Itoa(tombstoneDays), env, status, flashMsg, flashKind, mfaRequired, fed))
 }
 
 func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -595,6 +618,8 @@ func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			settings.KeyInviteExpiryHours:  strconv.Itoa(expiryHours),
 			settings.KeyDAVTombstoneDays:   strconv.Itoa(days),
 			settings.KeyMFARequired:        mfaRequired,
+			settings.KeyFederationEnabled:  settings.FormatBool(r.FormValue("federation_enabled") == "1"),
+			settings.KeyFederationPeers:    strings.Join(federation.ParsePeers(r.FormValue("federation_peers")), ","),
 		}); err != nil {
 			setFlash(w, "error", "Settings could not be saved.", err)
 			http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
