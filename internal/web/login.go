@@ -136,7 +136,7 @@ func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *loginHandler) createSessionAndRedirect(w http.ResponseWriter, r *http.Request, userID, next string) {
-	sess, err := h.p.Sessions.Create(userID)
+	sess, err := h.p.Sessions.Start(userID, r)
 	if err != nil {
 		h.p.Log.Error("create session", "user", userID, "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
@@ -159,10 +159,7 @@ func (h *loginHandler) createSessionAndRedirect(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	cookieCfg.Set(w, &http.Cookie{
-		Name:  auth.SessionCookieName,
-		Value: sess.ID,
-	})
+	sess.SetCookie(w, cookieCfg)
 	http.Redirect(w, r, safeNext(next), http.StatusSeeOther)
 }
 
@@ -622,17 +619,14 @@ func (h *loginHandler) FinishWebAuthnLogin(w http.ResponseWriter, r *http.Reques
 	}
 	cookieCfg.Clear(w, auth.MFAPendingCookieName)
 
-	sess, err := h.p.Sessions.Create(u.ID)
+	sess, err := h.p.Sessions.Start(u.ID, r)
 	if err != nil {
 		h.p.Log.Error("create session", "user", u.ID, "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
-	cookieCfg.Set(w, &http.Cookie{
-		Name:  auth.SessionCookieName,
-		Value: sess.ID,
-	})
+	sess.SetCookie(w, cookieCfg)
 
 	next := pending.NextURL
 	if next == "" {
