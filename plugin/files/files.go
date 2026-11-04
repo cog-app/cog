@@ -21,8 +21,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -61,6 +63,48 @@ type Plugin struct {
 	log           *slog.Logger
 	priv          plugin.PrivilegedContext
 	iconProviders []cogplugin.FolderIconProvider
+
+	// uploads serializes writes of the same file (see lockPath).
+	uploadsMu sync.Mutex
+	uploads   map[string]*pathLock
+}
+
+// pathLock is the lock of one file being uploaded, and how many uploads
+// hold or wait for it.
+type pathLock struct {
+	sync.Mutex
+	refs int
+}
+
+// lockPath locks username's filePath for an upload, from writing the bytes
+// to recording them, and returns the unlock. Two uploads of one file, each
+// writing and then upserting its row, could otherwise finish in opposite
+// orders and leave one upload's size and ETag on the other's bytes. Only
+// uploads of the same file wait for each other, and a lock is dropped once
+// nobody holds it, so the map holds only files being uploaded.
+func (p *Plugin) lockPath(username, filePath string) (unlock func()) {
+	key := username + "\x00" + filePath
+	p.uploadsMu.Lock()
+	if p.uploads == nil {
+		p.uploads = make(map[string]*pathLock)
+	}
+	l := p.uploads[key]
+	if l == nil {
+		l = &pathLock{}
+		p.uploads[key] = l
+	}
+	l.refs++
+	p.uploadsMu.Unlock()
+
+	l.Lock()
+	return func() {
+		l.Unlock()
+		p.uploadsMu.Lock()
+		if l.refs--; l.refs == 0 {
+			delete(p.uploads, key)
+		}
+		p.uploadsMu.Unlock()
+	}
 }
 
 // New creates a new files plugin instance.
@@ -287,6 +331,7 @@ func (p *Plugin) ensureDir(username, dirPath string) error {
 // Upload writes a file to disk and records its metadata.
 func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta, error) {
 	filePath = normalizePath(filePath)
+	defer p.lockPath(username, filePath)()
 	parentPath := filepath.Dir(filePath)
 	name := filepath.Base(filePath)
 
@@ -312,16 +357,8 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 			return nil, fmt.Errorf("mkdir parent: %w", err)
 		}
 		fsPath := filepath.Join(p.ctx.UserFilesDir(username), filePath)
-		f, err := os.Create(fsPath)
-		if err != nil {
-			return nil, fmt.Errorf("create file: %w", err)
-		}
-		_, err = io.Copy(f, counter)
-		if closeErr := f.Close(); closeErr != nil && err == nil {
-			err = closeErr
-		}
-		if err != nil {
-			return nil, fmt.Errorf("write file: %w", err)
+		if err := vfs.WriteFileAtomic(fsPath, counter, 0o644); err != nil {
+			return nil, err
 		}
 	}
 	size := counter.n
@@ -403,6 +440,17 @@ func (p *Plugin) Download(username, filePath string) (io.ReadCloser, *FileMeta, 
 	rc, err := p.open(username, filePath)
 	if err != nil {
 		return nil, nil, err
+	}
+	// The size is the bytes being served, not the row's: they part when the
+	// file changed outside the plugin (SFTP, another server on the same
+	// data) and the row has not caught up, and a response promising the
+	// row's size would end early.
+	if st, ok := rc.(interface{ Stat() (iofs.FileInfo, error) }); ok {
+		info, err := st.Stat()
+		if err != nil {
+			return nil, nil, errors.Join(fmt.Errorf("stat %s: %w", filePath, err), rc.Close())
+		}
+		meta.Size = info.Size()
 	}
 	return rc, meta, nil
 }
@@ -674,6 +722,9 @@ func (p *Plugin) reconcile(db *sql.DB, username, dirPath string) error {
 			})
 		}
 	}
+
+	// A file still being uploaded is not one yet.
+	vfsEntries = slices.DeleteFunc(vfsEntries, func(e vfs.FileInfo) bool { return vfs.IsPartial(e.Name) })
 
 	// Build set of known paths from metadata.
 	rows, err := db.Query(`SELECT path FROM files WHERE parent_path = ?`, dirPath)

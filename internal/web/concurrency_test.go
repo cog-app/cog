@@ -9,6 +9,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
 // TestConcurrent_PUTSamePath exercises the single-writer SQLite path under
@@ -32,9 +33,20 @@ func TestConcurrent_PUTSamePath(t *testing.T) {
 	}
 	wg.Wait()
 
-	// One file should exist; content is one of the writers'.
+	// One file exists, holding exactly one writer's bytes — not a mix of
+	// two, and not cut short by a size recorded for another writer.
 	body := env.Get(t, prefix+"/race.txt", alice.Auth).Status(200).ReadBody()
-	require.True(t, len(body) > 0)
+	var n int
+	_, err := fmt.Sscanf(body, "writer-%d", &n)
+	require.NoError(t, err)
+	require.Equal(t, fmt.Sprintf("writer-%d", n), body)
+
+	// The listing's size is that file's.
+	fp, ok := env.Providers.Plugins.Plugin("files")
+	require.True(t, ok)
+	meta, err := fp.(*files.Plugin).GetByPath(alice.Username, "/race.txt")
+	require.NoError(t, err)
+	require.Equal(t, int64(len(body)), meta.Size)
 }
 
 // TestConcurrent_PUTDifferentPaths writes N distinct files in parallel from
