@@ -563,15 +563,12 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create session and log in.
-	sess, err := h.p.Sessions.Create(newUser.ID)
+	sess, err := h.p.Sessions.Start(newUser.ID, r)
 	if err != nil {
 		h.p.Log.Error("create session after invite registration", "user", newUser.ID, "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
-	cookieCfg.Set(w, &http.Cookie{
-		Name:  auth.SessionCookieName,
-		Value: sess.ID,
-	})
+	sess.SetCookie(w, cookieCfg)
 	http.Redirect(w, r, "/settings/groups/"+inv.GroupID, http.StatusSeeOther)
 }

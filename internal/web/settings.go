@@ -79,7 +79,7 @@ func (h *settingsHandler) ShowSecurity(w http.ResponseWriter, r *http.Request) {
 			h.p.Log.Error("list ssh keys", "user", u.Username, "err", err)
 		}
 	}
-	if err := settingsSecurityPage(pd, flash, appPasswords, u.MFAMethod, backupCodeCount, smtpConfigured, webauthnAvailable, webauthnCreds, h.p.Config.SSHEnabled, sshKeys).Render(r.Context(), w); err != nil {
+	if err := settingsSecurityPage(pd, flash, appPasswords, u.MFAMethod, backupCodeCount, smtpConfigured, webauthnAvailable, webauthnCreds, h.p.Config.SSHEnabled, sshKeys, h.listSignedInSessions(r, u.ID)).Render(r.Context(), w); err != nil {
 		h.p.Log.Error("render security page", "err", err)
 	}
 }

@@ -136,6 +136,8 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("DELETE /settings/webauthn/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteWebAuthnCredential)))
 	mux.Handle("POST /settings/app-passwords", csrfWeb(http.HandlerFunc(settingsH.CreateAppPassword)))
 	mux.Handle("DELETE /settings/app-passwords/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteAppPassword)))
+	mux.Handle("DELETE /settings/sessions/{handle}", csrfWeb(http.HandlerFunc(settingsH.RevokeSession)))
+	mux.Handle("POST /settings/sessions/revoke-others", csrfWeb(http.HandlerFunc(settingsH.RevokeOtherSessions)))
 	mux.Handle("POST /settings/ssh-keys", csrfWeb(http.HandlerFunc(settingsH.AddSSHKey)))
 	mux.Handle("DELETE /settings/ssh-keys/{id}", csrfWeb(http.HandlerFunc(settingsH.DeleteSSHKey)))
 	mux.Handle("POST /settings/avatar", csrfWeb(http.HandlerFunc(avatarH.Upload)))
