@@ -128,7 +128,8 @@ CREATE TABLE IF NOT EXISTS group_invitations (
 	invited_by TEXT NOT NULL REFERENCES users(id),
 	created_at INTEGER NOT NULL,
 	expires_at INTEGER NOT NULL,
-	member_type TEXT NOT NULL DEFAULT 'USER'
+	member_type TEXT NOT NULL DEFAULT 'USER',
+	invitee_id TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_group_invitations_token ON group_invitations(token);
 

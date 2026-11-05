@@ -382,7 +382,7 @@ func (s *Store) Delete(id string) error {
 		{"email_otp", `DELETE FROM email_otp WHERE user_id = ?`},
 		{"group_members", `DELETE FROM group_members WHERE member_type = 'USER' AND member_id = ?`},
 		{"group_membership_closure", `DELETE FROM group_membership_closure WHERE descendant_user_id = ?`},
-		{"group_invitations", `DELETE FROM group_invitations WHERE invited_by = ?`},
+		{"group_invitations", `DELETE FROM group_invitations WHERE invited_by = ?1 OR invitee_id = ?1`},
 		{"groups", `UPDATE groups SET owner_id = NULL WHERE owner_id = ?`},
 		{"shares", `DELETE FROM shares WHERE owner_user_id = ?1 OR (subject_type = 'USER' AND subject_id = ?1)`},
 		{"mounts", `DELETE FROM mounts WHERE user_id = ?1 OR volume_id IN (` + owned + `)`},

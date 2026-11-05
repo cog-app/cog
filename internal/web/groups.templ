@@ -7,10 +7,36 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
-templ settingsGroupsPage(pd ui.PageData, ownedGroups []group.Group, memberGroups []group.Group, flash string, flashKind string) {
+// pendingInvite is an invitation to the current user, with the names to
+// show for it.
+type pendingInvite struct {
+	Invitation group.Invitation
+	GroupName  string
+	Inviter    string
+}
+
+templ settingsGroupsPage(pd ui.PageData, ownedGroups []group.Group, memberGroups []group.Group, invites []pendingInvite, flash string, flashKind string) {
 	@ui.SidebarPage(pd, settingsSidebar("groups")) {
 		@ui.PageHeader("Groups", nil)
 		@ui.Alert(flashKind, flash)
+		if len(invites) > 0 {
+			@ui.Card("Invitations") {
+				<p class="card-desc">Joining a group shares with you whatever is shared with it.</p>
+				for _, inv := range invites {
+					<div class="flex items-center gap-2 mb-2">
+						<div class="flex-1 break-anywhere">{ inv.Inviter } invited you to <strong>{ inv.GroupName }</strong></div>
+						<form method="post" action={ templ.SafeURL("/settings/groups/invitations/" + inv.Invitation.ID + "/accept") }>
+							<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+							<button class="btn btn-primary btn-sm" type="submit">Join</button>
+						</form>
+						<form method="post" action={ templ.SafeURL("/settings/groups/invitations/" + inv.Invitation.ID + "/decline") }>
+							<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+							<button class="btn btn-secondary btn-sm" type="submit">Decline</button>
+						</form>
+					</div>
+				}
+			}
+		}
 		@ui.Card("Create group") {
 			<form method="post" action="/settings/groups" class="form-inline">
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>

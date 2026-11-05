@@ -1,6 +1,7 @@
 package web
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net/http"
@@ -86,12 +87,82 @@ func (h *groupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	invites, err := h.pendingInvites(u.ID)
+	if err != nil {
+		h.p.Log.Error("list invitations", "user", u.ID, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
 	flash := getFlash(w, r)
 	var flashMsg, flashKind string
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	ui.Render(w, r, settingsGroupsPage(pd, ownedGroups, memberGroups, flashMsg, flashKind))
+	ui.Render(w, r, settingsGroupsPage(pd, ownedGroups, memberGroups, invites, flashMsg, flashKind))
+}
+
+// pendingInvites lists the invitations waiting for userID, with group and
+// inviter names.
+func (h *groupHandler) pendingInvites(userID string) ([]pendingInvite, error) {
+	invs, err := seq.Collect(h.p.Invitations.ListForInvitee(userID))
+	if err != nil {
+		return nil, err
+	}
+	var gids, uids []string
+	for _, inv := range invs {
+		gids, uids = append(gids, inv.GroupID), append(uids, inv.InvitedBy)
+	}
+	groups, err := h.p.Groups.GetByIDs(gids)
+	if err != nil {
+		return nil, err
+	}
+	users, err := h.p.Users.GetByIDs(uids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]pendingInvite, 0, len(invs))
+	for _, inv := range invs {
+		g, ok := groups[inv.GroupID]
+		if !ok {
+			continue
+		}
+		name := "Someone"
+		if u, ok := users[inv.InvitedBy]; ok {
+			name = cmp.Or(u.DisplayName, u.Username)
+		}
+		out = append(out, pendingInvite{Invitation: inv, GroupName: g.Name, Inviter: name})
+	}
+	return out, nil
+}
+
+// AnswerInvite handles POST /settings/groups/invitations/{id}/{answer}: the
+// invited user joins the group or declines.
+func (h *groupHandler) AnswerInvite(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	inv, err := h.p.Invitations.Get(r.PathValue("id"))
+	if err != nil || inv.InviteeID != u.ID {
+		if err != nil && !errors.Is(err, group.ErrNotFound) {
+			h.p.Log.Error("look up invitation", "err", err)
+		}
+		setFlash(w, "error", "That invitation is no longer open.")
+		http.Redirect(w, r, "/settings/groups", http.StatusSeeOther)
+		return
+	}
+	if r.PathValue("answer") == "accept" {
+		if err := h.p.Groups.AddMember(inv.GroupID, u.ID, inv.MemberType); err != nil {
+			setFlash(w, "error", "You could not join the group.", err)
+			http.Redirect(w, r, "/settings/groups", http.StatusSeeOther)
+			return
+		}
+		setFlash(w, "success", "You joined the group.")
+	} else {
+		setFlash(w, "success", "Invitation declined.")
+	}
+	if err := h.p.Invitations.Delete(inv.ID); err != nil {
+		h.p.Log.Error("delete answered invitation", "invitation", inv.ID, "err", err)
+	}
+	http.Redirect(w, r, "/settings/groups", http.StatusSeeOther)
 }
 
 // ShowGroup shows group detail at GET /settings/groups/{id}.
@@ -263,8 +334,26 @@ func (h *groupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		memberType = group.User
 	}
 
-	if err := h.p.Groups.AddMember(groupID, memberID, memberType); err != nil {
-		setFlash(w, "error", "Failed to add member: "+err.Error())
+	// Being put in a group shares with you whatever is shared with it, so
+	// a user joins only by accepting an invitation, and a group is nested
+	// only by someone who manages both. An admin adds directly.
+	switch {
+	case u.IsAdmin:
+		if err := h.p.Groups.AddMember(groupID, memberID, memberType); err != nil {
+			setFlash(w, "error", "Failed to add member: "+err.Error())
+		}
+	case memberType == group.GroupMember:
+		if !h.canManageGroup(memberID, u) {
+			setFlash(w, "error", "You can add only a group you manage.")
+		} else if err := h.p.Groups.AddMember(groupID, memberID, memberType); err != nil {
+			setFlash(w, "error", "Failed to add member: "+err.Error())
+		}
+	default:
+		if _, err := h.p.Invitations.InviteUser(groupID, memberID, u.ID, memberType); err != nil {
+			setFlash(w, "error", "The invitation could not be made.", err)
+		} else {
+			setFlash(w, "success", "Invitation sent. They join when they accept it in their group settings.")
+		}
 	}
 	http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
 }
@@ -490,6 +579,10 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 		sessID := auth.SessionIDFromContext(r.Context())
 		if sessID != "" && !auth.ValidateCSRF(r, sessID, h.p.CSRFSecret) {
 			http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+			return
+		}
+		if inv.InviteeID != "" && inv.InviteeID != u.ID {
+			http.Error(w, "This invitation is for someone else.", http.StatusForbidden)
 			return
 		}
 		if err := h.p.Groups.AddMember(inv.GroupID, u.ID, inv.MemberType); err != nil {
