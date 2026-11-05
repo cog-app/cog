@@ -18,15 +18,10 @@ type authCallbacks struct {
 	users        *user.Store
 	appPasswords appPasswordValidator
 	keys         *keys.Store
-	// limiter, when set, throttles password guessing per client address
-	// and per account, as the web login does. A nil limiter allows every
-	// attempt.
-	limiter *ratelimit.Limiter
+	// guard throttles password guessing per client address and per
+	// account, as it does for HTTP. A nil guard allows every attempt.
+	guard *ratelimit.Guard
 }
-
-// errRateLimited refuses a password attempt from a client, or for an account,
-// that has failed too often.
-var errRateLimited = errors.New("too many failed attempts")
 
 // appPasswordValidator validates app password tokens.
 type appPasswordValidator interface {
@@ -35,28 +30,24 @@ type appPasswordValidator interface {
 
 // passwordCallback authenticates via user password or app password.
 func (a *authCallbacks) passwordCallback(conn gossh.ConnMetadata, password []byte) (*gossh.Permissions, error) {
-	if a.limiter == nil {
-		return a.checkPassword(conn, password)
-	}
-	ip := remoteIP(conn.RemoteAddr())
-	account := "ssh-user:" + strings.ToLower(conn.User())
-	if a.limiter.IsLimited(ip) || a.limiter.IsLimited(account) {
-		return nil, errRateLimited
-	}
-	perms, err := a.checkPassword(conn, password)
+	var perms *gossh.Permissions
+	var checkErr error
+	_, err := a.guard.Try(remoteIP(conn.RemoteAddr()), ratelimit.AccountKey(conn.User()), func() bool {
+		perms, checkErr = a.checkPassword(conn, password)
+		return checkErr == nil
+	})
 	if err != nil {
-		a.limiter.RecordFailure(ip)
-		a.limiter.RecordFailure(account)
 		return nil, err
 	}
-	a.limiter.Reset(ip)
-	a.limiter.Reset(account)
-	return perms, nil
+	return perms, checkErr
 }
 
 // remoteIP is the address part of a client's address, the key its failures
 // are counted under.
 func remoteIP(addr net.Addr) string {
+	if addr == nil {
+		return ""
+	}
 	if host, _, err := net.SplitHostPort(addr.String()); err == nil {
 		return host
 	}
@@ -96,7 +87,7 @@ func (a *authCallbacks) checkPassword(conn gossh.ConnMetadata, password []byte) 
 	}
 
 	// Verify that the app password belongs to the user logging in.
-	if u.Username != conn.User() {
+	if !strings.EqualFold(u.Username, conn.User()) {
 		return nil, fmt.Errorf("app password does not belong to user %q", conn.User())
 	}
 

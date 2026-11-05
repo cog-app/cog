@@ -3,7 +3,10 @@ package dav_test
 import (
 	"strings"
 	"testing"
+	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/group"
+	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -302,12 +305,14 @@ func TestFreeBusyQuery(t *testing.T) {
 	assert.NotContains(t, body, "Dentist")
 
 	// Without a share, bob may not ask; with a free/busy share he may, and
-	// sees nothing else.
+	// may make no other report, which would list her events by name.
 	req(t, env, bob, "REPORT", cal+"alice/personal/", fbQuery).Status(403)
 	share(t, env, alice, bob, alices.ID, plugin.PermFreeBusy)
 	req(t, env, bob, "REPORT", cal+"alice/personal/", fbQuery).Status(200).Contains("FREEBUSY:20261102T090000Z/20261102T100000Z")
 	req(t, env, bob, "REPORT", cal+"alice/personal/", `<C:calendar-query xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">
-<D:prop><C:calendar-data/></D:prop><C:filter><C:comp-filter name="VCALENDAR"/></C:filter></C:calendar-query>`).Status(207).NotContains("Dentist")
+<D:prop><C:calendar-data/></D:prop><C:filter><C:comp-filter name="VCALENDAR"/></C:filter></C:calendar-query>`).Status(403)
+	req(t, env, bob, "REPORT", cal+"alice/personal/", `<D:sync-collection xmlns:D="DAV:"><D:sync-token/><D:prop><D:getetag/></D:prop></D:sync-collection>`).Status(403)
+	req(t, env, bob, "PROPFIND", cal+"alice/personal/", "", "Depth", "1").Status(207).NotContains("busy.ics")
 
 	req(t, env, alice, "REPORT", cal+"alice/personal/", `<C:free-busy-query xmlns:C="urn:ietf:params:xml:ns:caldav"/>`).Status(400)
 }
@@ -358,4 +363,94 @@ func TestOutboxFreeBusy(t *testing.T) {
 	req(t, env, bob, "POST", cal+"bob/outbox/", outboxRequest("mailto:a@example.com", "mailto:b@example.com")).Status(403).Contains("organizer-allowed")
 	req(t, env, bob, "POST", cal+"bob/outbox/", meeting).Status(400)
 	req(t, env, alice, "POST", cal+"bob/outbox/", outboxRequest("mailto:a@example.com", "mailto:b@example.com")).Status(403)
+}
+
+// TestSchedulingOnlyOrganizerChangesCopy is the UID hijack (audit H13): bob
+// organizes an event reusing the UID of alice's private event and invites
+// her. Her event must stay hers, unchanged and uncancelled, and the forged
+// messages must not wait in her inbox for a client to apply.
+func TestSchedulingOnlyOrganizerChangesCopy(t *testing.T) {
+	env, alice, bob := schedEnv(t)
+	private := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\n" +
+		"BEGIN:VEVENT\r\nUID:secret-1\r\nDTSTAMP:20261020T000000Z\r\nSUMMARY:Doctor\r\n" +
+		"DTSTART:20261103T090000Z\r\nDTEND:20261103T100000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	req(t, env, alice, "PUT", cal+"alice/personal/secret-1.ics", private).Status(201)
+
+	forged := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\n" +
+		"BEGIN:VEVENT\r\nUID:secret-1\r\nDTSTAMP:20261020T000000Z\r\nSEQUENCE:99\r\nSUMMARY:Owned\r\n" +
+		"DTSTART:20261103T090000Z\r\nDTEND:20261103T100000Z\r\n" +
+		"ORGANIZER:mailto:b@example.com\r\n" +
+		"ATTENDEE;PARTSTAT=ACCEPTED:mailto:b@example.com\r\n" +
+		"ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:a@example.com\r\n" +
+		"END:VEVENT\r\nEND:VCALENDAR\r\n"
+	req(t, env, bob, "PUT", cal+"bob/personal/secret-1.ics", forged).Status(201)
+	got := unfold(req(t, env, alice, "GET", cal+"alice/personal/secret-1.ics", "").Status(200).ReadBody())
+	assert.Contains(t, got, "SUMMARY:Doctor\r\n")
+	assert.NotContains(t, got, "Owned")
+
+	// Deleting his copy sends a CANCEL, which must not cancel hers.
+	req(t, env, bob, "DELETE", cal+"bob/personal/secret-1.ics", "").Status(204)
+	got = unfold(req(t, env, alice, "GET", cal+"alice/personal/secret-1.ics", "").Status(200).ReadBody())
+	assert.NotContains(t, got, "CANCELLED")
+	assert.Equal(t, 0, len(inboxItems(t, env, alice)))
+}
+
+// TestSchedulingAttendeeCannotCancelForOrganizer: someone who knows a
+// meeting's UID cannot cancel the organizer's copy by organizing one of
+// their own under it.
+func TestSchedulingAttendeeCannotCancelForOrganizer(t *testing.T) {
+	env, alice, _ := schedEnv(t)
+	mallory := env.CreateUser(t, "mallory", "pass")
+	withEmail(t, env, mallory, "m@example.com")
+	personal(t, env, mallory)
+	req(t, env, alice, "PUT", cal+"alice/personal/meet-1.ics", meeting).Status(201)
+
+	hijack := strings.NewReplacer(
+		"ORGANIZER;CN=Alice:mailto:a@example.com", "ORGANIZER:mailto:m@example.com",
+		"ATTENDEE;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:a@example.com", "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:a@example.com",
+		"SEQUENCE:0", "SEQUENCE:50",
+	).Replace(meeting)
+	req(t, env, mallory, "PUT", cal+"mallory/personal/hijack.ics", hijack).Status(201)
+	req(t, env, mallory, "DELETE", cal+"mallory/personal/hijack.ics", "").Status(204)
+	got := unfold(req(t, env, alice, "GET", cal+"alice/personal/meet-1.ics", "").Status(200).ReadBody())
+	assert.Contains(t, got, "ORGANIZER;CN=Alice:mailto:a@example.com")
+	assert.NotContains(t, got, "CANCELLED")
+}
+
+// TestSchedulingMailIsLimited: once a user has sent their share of
+// invitation email, further external attendees are marked unreachable
+// rather than mailed.
+func TestSchedulingMailIsLimited(t *testing.T) {
+	env, alice, _ := schedEnv(t)
+	env.Providers.DAV.MailLimit = ratelimit.New(1, time.Hour, env.Clock.Clock())
+	req(t, env, alice, "PUT", cal+"alice/personal/meet-1.ics", meeting).Status(201)
+	second := strings.ReplaceAll(meeting, "UID:meet-1", "UID:meet-2")
+	req(t, env, alice, "PUT", cal+"alice/personal/meet-2.ics", second).Status(201)
+
+	assert.Equal(t, 1, len(env.Mailbox.ForRecipient("carol@elsewhere.example")))
+	got := unfold(req(t, env, alice, "GET", cal+"alice/personal/meet-2.ics", "").Status(200).ReadBody())
+	assert.Contains(t, got, "SCHEDULE-STATUS=5.1:mailto:carol@elsewhere.example\r\n")
+}
+
+// TestPrincipalEmailNeedsAGroup: a user sees another's email only when they
+// share a group (audit Low: principal enumeration).
+func TestPrincipalEmailNeedsAGroup(t *testing.T) {
+	env := davEnv(t)
+	env.CreateUser(t, "admin", "pass") // the first user is an admin, who sees every email
+	alice := env.CreateUser(t, "alice", "pass")
+	bob := env.CreateUser(t, "bob", "pass")
+	withEmail(t, env, alice, "a@example.com")
+	propfind := `<D:propfind xmlns:D="DAV:"><D:prop><C:calendar-user-address-set xmlns:C="urn:ietf:params:xml:ns:caldav"/></D:prop></D:propfind>`
+
+	body := req(t, env, bob, "PROPFIND", "/remote.php/dav/principals/users/alice/", propfind).Status(207).ReadBody()
+	assert.NotContains(t, body, "a@example.com")
+	body = req(t, env, alice, "PROPFIND", "/remote.php/dav/principals/users/alice/", propfind).Status(207).ReadBody()
+	assert.Contains(t, body, "mailto:a@example.com")
+
+	g, err := env.Providers.Groups.Create("team", nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(g.ID, alice.ID, group.User))
+	require.NoError(t, env.Providers.Groups.AddMember(g.ID, bob.ID, group.User))
+	body = req(t, env, bob, "PROPFIND", "/remote.php/dav/principals/users/alice/", propfind).Status(207).ReadBody()
+	assert.Contains(t, body, "mailto:a@example.com")
 }

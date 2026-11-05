@@ -34,7 +34,12 @@ const maxUserAgent = 512
 // belongs to someone else.
 var ErrSessionNotFound = errors.New("session not found")
 
+// Session is a signed-in browser. The table keeps the SHA-256 of its token,
+// not the token, so a copy of the database signs nobody in.
 type Session struct {
+	// ID is the token, the cookie's value. It is known only for a session
+	// just started or just validated from its cookie; ListByUser leaves it
+	// empty.
 	ID         string
 	UserID     string
 	CreatedAt  time.Time
@@ -42,13 +47,35 @@ type Session struct {
 	LastSeenAt time.Time
 	UserAgent  string
 	IP         string
+
+	stored string // the row's id: the digest, or the token in a row from before hashing
+	digest string // hashToken of the token
+}
+
+// hashToken is what the table stores for a token. A plain hash suffices: the
+// token is 256 random bits, so there is nothing to guess.
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 // Handle identifies the session on pages and in URLs. The ID is the bearer
 // token in the HttpOnly cookie, so it must never be written into a page.
 func (s *Session) Handle() string {
-	sum := sha256.Sum256([]byte(s.ID))
-	return hex.EncodeToString(sum[:8])
+	return s.digest[:16]
+}
+
+// Is reports whether token is this session's.
+func (s *Session) Is(token string) bool {
+	return s.digest == hashToken(token)
+}
+
+// tokenMatch is the WHERE clause matching the row of a token, with its
+// arguments: a hashed row by its digest, or a row from before hashing by
+// the token itself. The hashed flag keeps a digest read from the table from
+// passing for a token.
+func tokenMatch(token string) (string, []any) {
+	return `((id = ? AND hashed = 1) OR (id = ? AND hashed = 0))`, []any{hashToken(token), token}
 }
 
 // SetCookie writes the session cookie. It lasts as long as the session, so
@@ -106,9 +133,10 @@ func (s *SessionStore) create(userID, userAgent, ip string) (*Session, error) {
 	if _, err := s.db.Exec(`DELETE FROM sessions WHERE user_id = ? AND expires_at <= ?`, userID, now.Unix()); err != nil {
 		return nil, fmt.Errorf("prune sessions: %w", err)
 	}
+	digest := hashToken(token)
 	_, err = s.db.Exec(
-		`INSERT INTO sessions (id, user_id, created_at, expires_at, last_seen_at, user_agent, ip) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		token, userID, now.Unix(), expires.Unix(), now.Unix(), userAgent, ip,
+		`INSERT INTO sessions (id, user_id, created_at, expires_at, last_seen_at, user_agent, ip, hashed) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+		digest, userID, now.Unix(), expires.Unix(), now.Unix(), userAgent, ip,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
@@ -122,16 +150,23 @@ func (s *SessionStore) create(userID, userAgent, ip string) (*Session, error) {
 		LastSeenAt: now,
 		UserAgent:  userAgent,
 		IP:         ip,
+		stored:     digest,
+		digest:     digest,
 	}, nil
 }
 
-const sessionColumns = `id, user_id, created_at, expires_at, last_seen_at, user_agent, ip`
+const sessionColumns = `id, user_id, created_at, expires_at, last_seen_at, user_agent, ip, hashed`
 
 func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	var sess Session
 	var createdAt, expiresAt, lastSeenAt int64
-	if err := row.Scan(&sess.ID, &sess.UserID, &createdAt, &expiresAt, &lastSeenAt, &sess.UserAgent, &sess.IP); err != nil {
+	var hashed bool
+	if err := row.Scan(&sess.stored, &sess.UserID, &createdAt, &expiresAt, &lastSeenAt, &sess.UserAgent, &sess.IP, &hashed); err != nil {
 		return nil, err
+	}
+	sess.digest = sess.stored
+	if !hashed {
+		sess.digest = hashToken(sess.stored)
 	}
 	sess.CreatedAt = time.Unix(createdAt, 0)
 	sess.ExpiresAt = time.Unix(expiresAt, 0)
@@ -144,15 +179,24 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 }
 
 func (s *SessionStore) Validate(token string) (*Session, error) {
+	match, args := tokenMatch(token)
 	sess, err := scanSession(s.db.QueryRow(
-		`SELECT `+sessionColumns+` FROM sessions WHERE id = ? AND expires_at > ?`,
-		token, s.clock().Unix(),
+		`SELECT `+sessionColumns+` FROM sessions WHERE `+match+` AND expires_at > ?`,
+		append(args, s.clock().Unix())...,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("validate session: %w", err)
+	}
+	sess.ID = token
+	if sess.stored != sess.digest {
+		// A row from before hashing: store its digest instead.
+		if _, err := s.db.Exec(`UPDATE sessions SET id = ?, hashed = 1 WHERE id = ? AND hashed = 0`, sess.digest, sess.stored); err != nil {
+			return nil, fmt.Errorf("hash session: %w", err)
+		}
+		sess.stored = sess.digest
 	}
 	return sess, nil
 }
@@ -169,7 +213,7 @@ func (s *SessionStore) Renew(sess *Session) (bool, error) {
 	expires := now.Add(sessionDuration)
 	res, err := s.db.Exec(
 		`UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE id = ? AND last_seen_at < ?`,
-		now.Unix(), expires.Unix(), sess.ID, now.Add(-sessionRenewInterval).Unix(),
+		now.Unix(), expires.Unix(), sess.stored, now.Add(-sessionRenewInterval).Unix(),
 	)
 	if err != nil {
 		return false, fmt.Errorf("renew session: %w", err)
@@ -220,20 +264,25 @@ func (s *SessionStore) DeleteByHandle(userID, handle string) error {
 	}
 	for _, sess := range sessions {
 		if sess.Handle() == handle {
-			return s.Delete(sess.ID)
+			_, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, sess.stored)
+			return err
 		}
 	}
 	return ErrSessionNotFound
 }
 
+// Delete ends the session whose token is token.
 func (s *SessionStore) Delete(token string) error {
-	_, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, token)
+	match, args := tokenMatch(token)
+	_, err := s.db.Exec(`DELETE FROM sessions WHERE `+match, args...)
 	return err
 }
 
-// DeleteAllExcept removes all sessions for a user except the given session.
-func (s *SessionStore) DeleteAllExcept(userID, exceptSessionID string) error {
-	_, err := s.db.Exec(`DELETE FROM sessions WHERE user_id = ? AND id != ?`, userID, exceptSessionID)
+// DeleteAllExcept removes all sessions for a user except the one whose token
+// is exceptToken.
+func (s *SessionStore) DeleteAllExcept(userID, exceptToken string) error {
+	match, args := tokenMatch(exceptToken)
+	_, err := s.db.Exec(`DELETE FROM sessions WHERE user_id = ? AND NOT `+match, append([]any{userID}, args...)...)
 	return err
 }
 

@@ -22,6 +22,11 @@ var ErrAccessDenied = errors.New("access denied")
 var ErrPasswordRequired = errors.New("password required")
 var ErrPasswordIncorrect = errors.New("incorrect password")
 
+// ErrSubjectNotAllowed refuses a share with an audience its owner may not
+// reach: everyone on the server, unless they are an admin, or a group they
+// neither belong to nor own.
+var ErrSubjectNotAllowed = errors.New("you may not share with that audience")
+
 // Record is a canonical global share record.
 type Record struct {
 	ID           string
@@ -70,6 +75,9 @@ func NewStore(db *sql.DB, c clock.Clock) *Store {
 
 // Create inserts a new share record. Returns the created record.
 func (s *Store) Create(ownerUserID, resourceType, resourceID, subjectType, subjectID string, permissions uint32) (*Record, error) {
+	if err := s.mayShareWith(ownerUserID, subjectType, subjectID); err != nil {
+		return nil, err
+	}
 	id, err := generateID()
 	if err != nil {
 		return nil, err
@@ -100,6 +108,33 @@ func (s *Store) Create(ownerUserID, resourceType, resourceID, subjectType, subje
 	}
 	s.changed(rec)
 	return rec, nil
+}
+
+// mayShareWith checks the audience of a new share. Every way of sharing ends
+// in Create, so this is the one place the rule lives: a share reaches its
+// audience without their consent, so a user may not put something before
+// everyone on the server, or before a group they are not part of.
+func (s *Store) mayShareWith(ownerUserID, subjectType, subjectID string) error {
+	var ok bool
+	var err error
+	switch subjectType {
+	case SubjectInstance:
+		err = s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM users WHERE id = ? AND is_admin != 0)`, ownerUserID).Scan(&ok)
+	case "GROUP":
+		err = s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM group_membership_closure WHERE ancestor_group_id = ? AND descendant_user_id = ?)
+			OR EXISTS (SELECT 1 FROM groups WHERE id = ? AND owner_id = ?)
+			OR EXISTS (SELECT 1 FROM users WHERE id = ? AND is_admin != 0)`,
+			subjectID, ownerUserID, subjectID, ownerUserID, ownerUserID).Scan(&ok)
+	default:
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check share audience: %w", err)
+	}
+	if !ok {
+		return ErrSubjectNotAllowed
+	}
+	return nil
 }
 
 // CreatePublicLink creates a share with a public token.

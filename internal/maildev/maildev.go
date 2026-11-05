@@ -185,6 +185,11 @@ func ParseRaw(to []string, raw []byte) Message {
 
 	msg.From = parsed.Header.Get("From")
 	msg.Subject = parsed.Header.Get("Subject")
+	if dec, err := new(mime.WordDecoder).DecodeHeader(msg.Subject); err == nil {
+		msg.Subject = dec
+	} else {
+		log.Printf("[maildev] decode subject: %v", err)
+	}
 	if msg.Date, err = parsed.Header.Date(); err != nil {
 		msg.Date = time.Now()
 	}

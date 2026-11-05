@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/httphdr"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/plugin"
@@ -173,7 +174,7 @@ func (h *volumeBrowserHandler) Download(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", ct)
 	plugin.UntrustedContent(w, ct)
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+	w.Header().Set("Content-Disposition", httphdr.Attachment(name))
 	if _, err := io.Copy(w, rc); err != nil {
 		h.p.Log.Warn("volume download", "volume", volID, "path", filePath, "err", err)
 	}

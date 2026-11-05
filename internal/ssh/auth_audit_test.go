@@ -42,7 +42,7 @@ func TestPasswordCallback_RateLimited(t *testing.T) {
 	env.createUser(t, "alice", "secret")
 	ac := &authCallbacks{
 		users: env.providers.Users, appPasswords: env.providers.AppPasswords, keys: env.keys,
-		limiter: ratelimit.New(3, time.Minute, clock.System()),
+		guard: &ratelimit.Guard{Limiter: ratelimit.New(3, time.Minute, clock.System())},
 	}
 	conn := &stubConnMeta{user: "alice", remoteAddr: &net.TCPAddr{IP: net.ParseIP("203.0.113.9"), Port: 2222}}
 	for range 3 {
@@ -50,5 +50,5 @@ func TestPasswordCallback_RateLimited(t *testing.T) {
 		require.True(t, err != nil)
 	}
 	_, err := ac.passwordCallback(conn, []byte("secret"))
-	require.True(t, err == errRateLimited, "got %v", err)
+	require.True(t, err == ratelimit.ErrLimited, "got %v", err)
 }

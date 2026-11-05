@@ -23,11 +23,7 @@ func NewWebDAVProxy(log *slog.Logger, store *Store) *WebDAVProxy {
 		Log:   log,
 		Store: store,
 		// The remote host comes from a share another server sent.
-		HTTP: &http.Client{
-			Timeout:       60 * time.Second,
-			Transport:     safehttp.Transport(),
-			CheckRedirect: safehttp.NoRedirect,
-		},
+		HTTP: safehttp.ClientWith(60*time.Second, safehttp.Options{NoRedirect: true}),
 	}
 }
 

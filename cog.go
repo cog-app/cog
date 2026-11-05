@@ -8,9 +8,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -100,15 +100,26 @@ func newLogger(cfg config.Config) (*slog.Logger, *logbuf.Buffer) {
 }
 
 // openProviders creates a services.Providers from env-var config.
+// openProviders returns the process's one service graph, building it on
+// first use. Main builds it to find plugin commands before the command line
+// is parsed, and the command then runs on the same graph: a second would
+// start every process plugin twice and leave the first set running.
 func openProviders(plugins ...plugin.Plugin) (*services.Providers, error) {
-	cfg := configFromEnv()
-	log, buf := newLogger(cfg)
-	p, err := services.New(log, cfg, plugins...)
-	if err != nil {
-		return nil, err
-	}
-	p.LogBuffer = buf
-	return p, nil
+	shared.once.Do(func() {
+		cfg := configFromEnv()
+		log, buf := newLogger(cfg)
+		shared.p, shared.err = services.New(log, cfg, plugins...)
+		if shared.err == nil {
+			shared.p.LogBuffer = buf
+		}
+	})
+	return shared.p, shared.err
+}
+
+var shared struct {
+	once sync.Once
+	p    *services.Providers
+	err  error
 }
 
 // Main starts a Cog server with optional additional plugins.
@@ -135,7 +146,11 @@ func Main(plugins ...plugin.Plugin) {
 	// Close providers after Execute — not via OnFinalize or PersistentPostRun
 	// which interfere with shell tab-completion and subcommand lifecycle.
 	if pluginProviders := addPluginCommands(root, plugins); pluginProviders != nil {
-		defer pluginProviders.DB.Close()
+		defer func() {
+			if err := pluginProviders.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "close: %v\n", err)
+			}
+		}()
 	}
 
 	if err := root.Execute(); err != nil {
@@ -232,5 +247,5 @@ func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 	}
 
 	log.Info("Cog listening", "addr", cfg.Addr)
-	return http.ListenAndServe(cfg.Addr, handler)
+	return serve(ctx, newServer(cfg.Addr, handler), log)
 }

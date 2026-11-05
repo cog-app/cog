@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdh"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -98,4 +99,30 @@ func TestDeliverWhileMarked(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, uint(1), got.Pending)
 	assert.Equal(t, 1, got.Failures)
+}
+
+// TestRegisterLimit: a user may hold MaxPerUser live subscriptions, and may
+// still renew one at the limit.
+func TestRegisterLimit(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	st := env.Providers.Push
+	k := keys(t)
+	var first *push.Subscription
+	for i := range push.MaxPerUser {
+		sub := &push.Subscription{UserID: alice.ID, Protocol: "test", Resource: "r", Endpoint: fmt.Sprintf("https://example.invalid/%d", i),
+			Keys: k, Expires: env.Clock.Now().Add(time.Hour)}
+		_, err := st.Register(sub)
+		require.NoError(t, err)
+		if first == nil {
+			first = sub
+		}
+	}
+	_, err := st.Register(&push.Subscription{UserID: alice.ID, Protocol: "test", Resource: "r", Endpoint: "https://example.invalid/more",
+		Keys: k, Expires: env.Clock.Now().Add(time.Hour)})
+	assert.True(t, errors.Is(err, push.ErrTooMany))
+	renew := *first
+	renew.Expires = env.Clock.Now().Add(2 * time.Hour)
+	_, err = st.Register(&renew)
+	require.NoError(t, err)
 }

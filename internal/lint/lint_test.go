@@ -1,0 +1,184 @@
+package lint_test
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+// root is the module root, relative to this package.
+const root = "../.."
+
+// sourceFiles parses every hand-written, non-test Go file in the module.
+func sourceFiles(t *testing.T) (*token.FileSet, map[string]*ast.File) {
+	t.Helper()
+	fset := token.NewFileSet()
+	files := map[string]*ast.File{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		name := d.Name()
+		if d.IsDir() {
+			if path != root && (strings.HasPrefix(name, ".") || name == "tmp" || name == "testdata" || name == "vendor" || name == "node_modules") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || strings.HasSuffix(name, "_templ.go") || strings.HasSuffix(name, ".pb.go") {
+			return nil
+		}
+		f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		files[filepath.ToSlash(rel)] = f
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk source: %v", err)
+	}
+	return fset, files
+}
+
+// isCall reports whether e calls pkg.name.
+func isCall(e ast.Expr, pkg, name string) (*ast.CallExpr, bool) {
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		return nil, false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != name {
+		return nil, false
+	}
+	id, ok := sel.X.(*ast.Ident)
+	return call, ok && id.Name == pkg
+}
+
+// nonNumericVerb matches a format verb other than a number's, so a format
+// it does not match cannot produce a quote or a line break.
+var nonNumericVerb = regexp.MustCompile(`%[-+# 0-9.*]*[^-+# 0-9.*dxXob%]`)
+
+// TestNoFormattedHeaderValues refuses header values built with fmt.Sprintf
+// from anything but numbers. A string formatted into a header can end the
+// value or start another header (email header injection, H12; an unquoted
+// Content-Disposition filename). Use the typed builders instead:
+// internal/httphdr, mime.FormatMediaType, internal/email.Message.
+func TestNoFormattedHeaderValues(t *testing.T) {
+	fset, files := sourceFiles(t)
+	for _, f := range files {
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || len(call.Args) != 2 {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || (sel.Sel.Name != "Set" && sel.Sel.Name != "Add") {
+				return true
+			}
+			recv, ok := sel.X.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if rs, ok := recv.Fun.(*ast.SelectorExpr); !ok || rs.Sel.Name != "Header" {
+				return true
+			}
+			sprintf, ok := isCall(call.Args[1], "fmt", "Sprintf")
+			if !ok || len(sprintf.Args) == 0 {
+				return true
+			}
+			lit, ok := sprintf.Args[0].(*ast.BasicLit)
+			if ok {
+				format, err := strconv.Unquote(lit.Value)
+				if err == nil && !nonNumericVerb.MatchString(format) {
+					return true
+				}
+			}
+			t.Errorf("%s: header value built with fmt.Sprintf; use a typed builder", fset.Position(call.Pos()))
+			return true
+		})
+	}
+}
+
+// TestHTTPClientsAreSafe refuses outbound HTTP that bypasses safehttp: the
+// default client, its http.Get-style helpers, and hand-made clients and
+// transports. Their URLs usually come from users or remote servers, and only
+// safehttp keeps those off loopback, the LAN and cloud metadata. A client for
+// a URL an admin configured may say so with a "trusted URL:" comment on its
+// line or the one above.
+func TestHTTPClientsAreSafe(t *testing.T) {
+	fset, files := sourceFiles(t)
+	for path, f := range files {
+		if strings.HasPrefix(path, "internal/safehttp/") || strings.HasPrefix(path, "internal/cmd/") {
+			continue
+		}
+		trusted := map[int]bool{}
+		for _, cg := range f.Comments {
+			for _, c := range cg.List {
+				if strings.Contains(c.Text, "trusted URL:") {
+					line := fset.Position(c.Pos()).Line
+					trusted[line], trusted[line+1] = true, true
+				}
+			}
+		}
+		flag := func(n ast.Node, what string) {
+			if pos := fset.Position(n.Pos()); !trusted[pos.Line] {
+				t.Errorf("%s: %s bypasses safehttp; use safehttp.Client or ClientWith", pos, what)
+			}
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.SelectorExpr:
+				if id, ok := n.X.(*ast.Ident); ok && id.Name == "http" {
+					switch n.Sel.Name {
+					case "DefaultClient", "DefaultTransport", "Get", "Post", "Head", "PostForm":
+						flag(n, "http."+n.Sel.Name)
+					}
+				}
+			case *ast.CompositeLit:
+				if sel, ok := n.Type.(*ast.SelectorExpr); ok {
+					if id, ok := sel.X.(*ast.Ident); ok && id.Name == "http" && (sel.Sel.Name == "Client" || sel.Sel.Name == "Transport") {
+						flag(n, "http."+sel.Sel.Name+" literal")
+					}
+				}
+			}
+			return true
+		})
+	}
+}
+
+var publicDirective = regexp.MustCompile(`(^|[ ,])public([ ,]|$)`)
+
+// TestNoPublicCaching refuses Cache-Control: public outside the static
+// assets. Every other response is for a signed-in user, or names something by
+// an ID that means a different thing to each user (audit M17); a shared cache
+// would serve it to the next client.
+func TestNoPublicCaching(t *testing.T) {
+	fset, files := sourceFiles(t)
+	for path, f := range files {
+		if strings.HasPrefix(path, "internal/assets/") {
+			continue
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			v, err := strconv.Unquote(lit.Value)
+			if err == nil && publicDirective.MatchString(v) && strings.Contains(v, "max-age") {
+				t.Errorf("%s: Cache-Control public outside internal/assets", fset.Position(lit.Pos()))
+			}
+			return true
+		})
+	}
+}

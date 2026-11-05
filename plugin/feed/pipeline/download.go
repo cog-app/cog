@@ -109,16 +109,30 @@ func httpFetch(ctx context.Context, src, dst string) error {
 	if resp.StatusCode >= 400 {
 		return errors.New(resp.Status)
 	}
+	if resp.ContentLength > maxMediaBytes {
+		return fmt.Errorf("media is %d bytes, over the %d byte limit", resp.ContentLength, maxMediaBytes)
+	}
 	f, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	n, err := io.Copy(f, io.LimitReader(resp.Body, maxMediaBytes+1))
+	if err == nil && n > maxMediaBytes {
+		err = fmt.Errorf("media is over the %d byte limit", maxMediaBytes)
+	}
+	if err != nil {
 		f.Close()
+		if rmErr := os.Remove(dst); rmErr != nil {
+			return errors.Join(err, rmErr)
+		}
 		return err
 	}
 	return f.Close()
 }
+
+// maxMediaBytes bounds one downloaded episode, so a feed cannot fill the
+// disk with an endless body. It is far above any real podcast or video.
+const maxMediaBytes = 8 << 30
 
 func extForMIME(mime, typ string) string {
 	switch mime {

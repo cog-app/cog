@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/bodylimit"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/vfs"
@@ -197,7 +198,8 @@ func (p *Plugin) registerRoutes(priv plugin.PrivilegedContext) {
 	priv.RegisterRoute("GET /apps/files/favorites", auth.RequireAuthWeb(http.HandlerFunc(pages.ServeFavorites)))
 	priv.RegisterRoute("GET /apps/files/volumes", auth.RequireAuthWeb(http.HandlerFunc(pages.ServeVolumes)))
 	priv.RegisterRoute("GET /apps/files/{path...}", auth.RequireAuthWeb(http.HandlerFunc(pages.ServeGet)))
-	priv.RegisterRoute("POST /apps/files/{path...}", csrfWrap(http.HandlerFunc(pages.ServePost)))
+	// Uploads post here; quota bounds them.
+	priv.RegisterRoute("POST /apps/files/{path...}", bodylimit.Unlimited(csrfWrap(http.HandlerFunc(pages.ServePost))))
 	priv.RegisterRoute("DELETE /apps/files/{path...}", csrfWrap(http.HandlerFunc(pages.ServeDelete)))
 }
 

@@ -10,8 +10,9 @@ import (
 // HTTP fetches what subscriptions name: feeds, pages and media. Their URLs
 // are typed by users or written by the feeds themselves, so it dials only
 // public addresses — never the server's own network or a cloud metadata
-// service. Requests are bounded by their contexts, not by a client timeout,
-// because a podcast episode can take a long time to download.
+// service. Requests are bounded by their contexts and by safehttp's idle
+// timeout, not by a client timeout, because a podcast episode can take a long
+// time to download.
 var HTTP = safehttp.Client(0)
 
 // CheckURL reports whether raw is a URL the plugin may fetch, or pass to

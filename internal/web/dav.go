@@ -18,7 +18,10 @@ import (
 )
 
 // davUsers adapts *user.Store to dav.Users.
-type davUsers struct{ s *user.Store }
+type davUsers struct {
+	s       *user.Store
+	visible func(viewer *user.User, targetID string) (bool, error)
+}
 
 func davUser(u *user.User, err error) (*dav.User, error) {
 	if errors.Is(err, user.ErrNotFound) {
@@ -32,6 +35,14 @@ func davUser(u *user.User, err error) (*dav.User, error) {
 
 func (a davUsers) ByUsername(name string) (*dav.User, error) { return davUser(a.s.GetByUsername(name)) }
 func (a davUsers) ByID(id string) (*dav.User, error)         { return davUser(a.s.GetByID(id)) }
+
+func (a davUsers) EmailVisible(viewerID, targetID string) (bool, error) {
+	viewer, err := a.s.GetByID(viewerID)
+	if err != nil {
+		return false, err
+	}
+	return a.visible(viewer, targetID)
+}
 
 func (a davUsers) ByEmails(emails []string) (map[string]*dav.User, error) {
 	found, err := a.s.GetByEmails(emails)
@@ -184,10 +195,9 @@ func mountDAV(mux *http.ServeMux, p *services.Providers, shares dav.Shares) {
 		}
 	}
 	srv := p.DAV
-	srv.Users = davUsers{p.Users}
+	srv.Users = davUsers{p.Users, p.EmailVisible}
 	srv.Shares = shares
 	srv.BaseURL = p.Config.BaseURL
-	srv.Secret = p.CSRFSecret
 	srv.Links = davLinks{p.Shares}
 	srv.Backends = func() []dav.Backend {
 		var out []dav.Backend

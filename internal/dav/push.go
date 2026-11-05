@@ -192,6 +192,9 @@ func (q *request) pushRegister(n *node, resource string, property bool) {
 	if _, err := q.s.Push.Register(s); errors.Is(err, push.ErrTaken) {
 		writeError(q.w, http.StatusForbidden, pushName("invalid-subscription"), "")
 		return
+	} else if errors.Is(err, push.ErrTooMany) {
+		writeError(q.w, http.StatusForbidden, pushName("push-not-available"), "")
+		return
 	} else if err != nil {
 		q.fail(err)
 		return

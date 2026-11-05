@@ -9,6 +9,7 @@ import (
 	"github.com/mattn/go-sqlite3"
 	"iter"
 	"strings"
+	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
@@ -56,6 +57,9 @@ type UpdateOpts struct {
 type Store struct {
 	db    *sql.DB
 	clock clock.Clock
+
+	reservedMu sync.RWMutex
+	reserved   []string // lower-cased, beyond reservedNames
 }
 
 func NewStore(db *sql.DB, c clock.Clock) *Store {
@@ -63,6 +67,9 @@ func NewStore(db *sql.DB, c clock.Clock) *Store {
 }
 
 func (s *Store) Create(username, password string) (*User, error) {
+	if err := s.ValidateUsername(username); err != nil {
+		return nil, err
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
@@ -76,20 +83,20 @@ func (s *Store) Create(username, password string) (*User, error) {
 	now := s.clock().Unix()
 	homeMount := fmt.Sprintf("local://data/%s", username)
 
-	// Auto-admin: first user becomes admin.
-	isAdmin := false
-	count, err := s.Count()
-	if err != nil {
-		return nil, fmt.Errorf("count users: %w", err)
+	// One statement, so two concurrent registrations can neither both become
+	// the first user (who is made admin) nor take names differing only in
+	// case, which would share a directory on a case-insensitive file system.
+	var isAdmin bool
+	err = s.db.QueryRow(
+		`INSERT INTO users (id, username, password_hash, home_mount, created_at, is_admin, display_name)
+		SELECT ?, ?, ?, ?, ?, NOT EXISTS (SELECT 1 FROM users), ''
+		WHERE NOT EXISTS (SELECT 1 FROM users WHERE lower(username) = lower(?))
+		RETURNING is_admin`,
+		id, username, string(hash), homeMount, now, username,
+	).Scan(&isAdmin)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("insert user %q: %w", username, ErrUsernameTaken)
 	}
-	if count == 0 {
-		isAdmin = true
-	}
-
-	_, err = s.db.Exec(
-		`INSERT INTO users (id, username, password_hash, home_mount, created_at, is_admin, display_name) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, username, string(hash), homeMount, now, isAdmin, "",
-	)
 	if err != nil {
 		var se sqlite3.Error
 		if errors.As(err, &se) && se.ExtendedCode == sqlite3.ErrConstraintUnique {

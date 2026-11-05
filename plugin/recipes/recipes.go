@@ -41,23 +41,7 @@ func New() *Plugin {
 	// The recipe URL is one a user typed, so the importer dials only public
 	// addresses. HTTP/2 stays on as the default client has it: bot walls
 	// score the client's fingerprint (see fetch).
-	transport := safehttp.Transport()
-	transport.ForceAttemptHTTP2 = true
-	return &Plugin{
-		client: &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: transport,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= 5 {
-					return fmt.Errorf("too many redirects")
-				}
-				if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
-					return fmt.Errorf("non-HTTP redirect")
-				}
-				return nil
-			},
-		},
-	}
+	return &Plugin{client: safehttp.ClientWith(30*time.Second, safehttp.Options{HTTP2: true})}
 }
 
 func (p *Plugin) ID() string { return PluginID }

@@ -84,7 +84,7 @@ func (h *settingsHandler) listSignedInSessions(r *http.Request, userID string) [
 	current := auth.SessionIDFromContext(r.Context())
 	out := make([]signedInSession, len(sessions))
 	for i, s := range sessions {
-		out[i] = signedInSession{Session: s, Current: s.ID == current}
+		out[i] = signedInSession{Session: s, Current: current != "" && s.Is(current)}
 	}
 	return out
 }

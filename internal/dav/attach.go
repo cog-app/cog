@@ -21,6 +21,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
 	"git.duckfam.us/jj-software/cog/internal/dav/ical"
 	"git.duckfam.us/jj-software/cog/internal/dav/itip"
+	"git.duckfam.us/jj-software/cog/internal/httphdr"
 	"git.duckfam.us/jj-software/cog/plugin"
 	"github.com/google/uuid"
 )
@@ -217,7 +218,7 @@ func (s *Server) serveAttachment(w http.ResponseWriter, r *http.Request, user *U
 	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "sandbox")
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": safeFilename(info.Filename, id)}))
+	w.Header().Set("Content-Disposition", httphdr.Attachment(safeFilename(info.Filename, id)))
 	w.Header().Set("ETag", `"`+id+`"`) // an update makes a new ID
 	w.Header().Set("Cache-Control", "private")
 	http.ServeContent(w, r, "", time.Time{}, f)

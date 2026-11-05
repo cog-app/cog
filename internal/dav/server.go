@@ -15,6 +15,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/push"
+	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/webpush"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
@@ -37,6 +38,9 @@ type Users interface {
 	// ByEmails finds users by email, ignoring case, keyed by the
 	// lower-cased address. Unknown addresses are absent.
 	ByEmails(emails []string) (map[string]*User, error)
+	// EmailVisible reports whether the user with viewerID may see the
+	// email address of the user with targetID.
+	EmailVisible(viewerID, targetID string) (bool, error)
 }
 
 // DefaultRetention is how long tombstones are kept unless an admin changes it.
@@ -57,6 +61,10 @@ type Server struct {
 	// Mail returns the sender for iMIP messages to external calendar users,
 	// or nil when email is not configured. Mail itself may be nil.
 	Mail func() plugin.EmailSender
+	// MailLimit bounds the iMIP messages each user's changes send, so no
+	// account can use the server to mail strangers in bulk. Nil sends
+	// without a limit.
+	MailLimit *ratelimit.Limiter
 	// BaseURL is the server's external URL, for the absolute URLs of
 	// managed attachments.
 	BaseURL string
@@ -428,6 +436,16 @@ func (q *request) principal(name string) {
 }
 
 func (q *request) principalProps(u *User) []prop {
+	email := u.Email
+	if email != "" && u.ID != q.user.ID {
+		ok, err := q.s.Users.EmailVisible(q.user.ID, u.ID)
+		if err != nil {
+			q.s.Log.Error("dav: email visibility", "user", u.Username, "err", err)
+		}
+		if !ok {
+			email = ""
+		}
+	}
 	name := u.DisplayName
 	if name == "" {
 		name = u.Username
@@ -442,8 +460,8 @@ func (q *request) principalProps(u *User) []prop {
 	}
 	if q.hasHome(HomeCalendars) {
 		addrs := hrefEl(href)
-		if u.Email != "" {
-			addrs = hrefEl("mailto:"+u.Email) + addrs
+		if email != "" {
+			addrs = hrefEl("mailto:"+email) + addrs
 		}
 		props = append(props,
 			prop{caldav("calendar-home-set"), hrefEl(homeHref(HomeCalendars, u.Username))},
@@ -460,8 +478,8 @@ func (q *request) principalProps(u *User) []prop {
 	if q.hasHome(HomeAddressBooks) {
 		props = append(props, prop{carddav("addressbook-home-set"), hrefEl(homeHref(HomeAddressBooks, u.Username))})
 	}
-	if u.Email != "" {
-		props = append(props, prop{cs("email-address-set"), el(cs("email-address"), escape(u.Email))})
+	if email != "" {
+		props = append(props, prop{cs("email-address-set"), el(cs("email-address"), escape(email))})
 	}
 	return props
 }
@@ -744,7 +762,6 @@ func (q *request) collectionProps(c *Collection, a access, ownerName string, tok
 			prop{caldav("supported-calendar-component-set"), comps.String()},
 			prop{caldav("supported-calendar-data"), `<C:calendar-data content-type="text/calendar" version="2.0"/>`},
 			prop{caldav("max-resource-size"), maxSize},
-			prop{caldav("calendar-description"), escape(c.Description)},
 			prop{apple("calendar-color"), escape(c.Color)},
 			prop{apple("calendar-order"), fmt.Sprint(c.SortOrder)},
 		)
@@ -756,21 +773,33 @@ func (q *request) collectionProps(c *Collection, a access, ownerName string, tok
 			prop{carddav("supported-address-data"),
 				`<CR:address-data-type content-type="text/vcard" version="3.0"/><CR:address-data-type content-type="text/vcard" version="4.0"/>`},
 			prop{carddav("max-resource-size"), maxSize},
-			prop{carddav("addressbook-description"), escape(c.Description)},
 			prop{carddav("supported-collation-set"),
 				`<CR:supported-collation>i;unicode-casemap</CR:supported-collation><CR:supported-collation>i;ascii-casemap</CR:supported-collation><CR:supported-collation>i;octet</CR:supported-collation>`},
 		)
 	}
-	if c.Kind == KindSubscription {
+	// A sharee who may only see when the owner is busy learns nothing else
+	// about the collection: not its description, nor what the owner noted
+	// on it in dead properties.
+	if a.read() {
+		desc := caldav("calendar-description")
+		if c.Home != HomeCalendars {
+			desc = carddav("addressbook-description")
+		}
+		props = append(props, prop{desc, escape(c.Description)})
+	}
+	if c.Kind == KindSubscription && a.owner {
 		// Apple clients show where a subscribed calendar comes from. The
 		// resource type stays calendar, not CS:subscribed: Cog holds the
 		// events, and a client that saw subscribed would fetch the feed
-		// itself instead of syncing them.
+		// itself instead of syncing them. Only the owner sees it: a feed
+		// URL often carries its own secret.
 		props = append(props, prop{cs("source"), hrefEl(c.Source)})
 	}
 	props = append(props, sharing...)
-	for _, d := range c.DeadProps {
-		props = append(props, prop{xml.Name{Space: d.Space, Local: d.Local}, d.Inner})
+	if a.read() {
+		for _, d := range c.DeadProps {
+			props = append(props, prop{xml.Name{Space: d.Space, Local: d.Local}, d.Inner})
+		}
 	}
 	var extra []prop
 	if c.Home == HomeCalendars && c.Has(VEVENT) && q.s.attachments(q.bes) != nil {

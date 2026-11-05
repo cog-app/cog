@@ -269,19 +269,20 @@ func (p *Plugin) convertToPNG(srcPath, mimeType, etag string) (string, error) {
 		cmd = exec.CommandContext(ctx, inkscapePath,
 			srcPath, "--export-type=png", "--export-filename="+cachePath)
 	case (isXCF(mimeType) || isPSD(mimeType)) && MagickAvailable() && !magickIsGM:
-		// ImageMagick handles both XCF and PSD.
+		// ImageMagick handles both XCF and PSD. The coder prefixes stop it
+		// sniffing the content and picking a coder that reads other files,
+		// such as MVG's text:@/path.
 		cmd = exec.CommandContext(ctx, magickPath,
-			srcPath+"[0]", "-flatten", cachePath)
+			magickCoder(mimeType)+":"+srcPath+"[0]", "-flatten", "png:"+cachePath)
 	case isXCF(mimeType) && magickIsGM:
 		// GraphicsMagick handles XCF but not PSD.
 		cmd = exec.CommandContext(ctx, magickPath,
-			"convert", srcPath+"[0]", "-flatten", cachePath)
+			"convert", "xcf:"+srcPath+"[0]", "-flatten", "png:"+cachePath)
 	case isPSD(mimeType) && PillowAvailable():
-		// Pillow handles PSD reliably.
-		script := fmt.Sprintf(
-			"from PIL import Image; Image.open(%q).convert('RGBA').save(%q)",
+		// Pillow handles PSD reliably. The paths are arguments, not source.
+		cmd = exec.CommandContext(ctx, pythonPath, "-c",
+			"import sys; from PIL import Image; Image.open(sys.argv[1], formats=['PSD']).convert('RGBA').save(sys.argv[2], 'PNG')",
 			srcPath, cachePath)
-		cmd = exec.CommandContext(ctx, pythonPath, "-c", script)
 	default:
 		return "", fmt.Errorf("unsupported format: %s", mimeType)
 	}
@@ -295,6 +296,15 @@ func (p *Plugin) convertToPNG(srcPath, mimeType, etag string) (string, error) {
 	}
 
 	return cachePath, nil
+}
+
+// magickCoder names the ImageMagick coder for a layered format convertToPNG
+// hands it.
+func magickCoder(mimeType string) string {
+	if isPSD(mimeType) {
+		return "psd"
+	}
+	return "xcf"
 }
 
 // PreviewPDF converts an office document to PDF via LibreOffice and caches the result.

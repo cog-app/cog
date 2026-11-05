@@ -19,6 +19,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
+	"git.duckfam.us/jj-software/cog/internal/httphdr"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/files"
@@ -513,7 +514,7 @@ func (h *WebDAVHandler) HandleDirectServe(w http.ResponseWriter, r *http.Request
 	cogplugin.UntrustedContent(w, meta.MimeType)
 	w.Header().Set("ETag", `"`+meta.ETag+`"`)
 	w.Header().Set("Content-Length", strconv.FormatInt(meta.Size, 10))
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
+	w.Header().Set("Content-Disposition", httphdr.Attachment(meta.Name))
 	if _, err := io.Copy(w, f); err != nil {
 		h.Log.Error("direct download copy error", "err", err)
 	}

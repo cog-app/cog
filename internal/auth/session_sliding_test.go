@@ -117,8 +117,11 @@ func TestSession_CreatePrunesExpired(t *testing.T) {
 	require.NoError(t, err)
 
 	var n int
-	require.NoError(t, env.Providers.DB.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, old.ID).Scan(&n))
-	require.Equal(t, 0, n)
+	require.NoError(t, env.Providers.DB.QueryRow(`SELECT COUNT(*) FROM sessions WHERE user_id = ?`, u.ID).Scan(&n))
+	require.Equal(t, 1, n)
+	got, err := env.Providers.Sessions.Validate(old.ID)
+	require.NoError(t, err)
+	require.Nil(t, got)
 }
 
 // TestSession_DeleteByHandle verifies a session is revoked by its handle and

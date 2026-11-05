@@ -114,6 +114,8 @@ func TestAdminResetPassword(t *testing.T) {
 	admin := env.CreateUser(t, "admin", "pass")
 	target := env.CreateUser(t, "target", "pass")
 	cookie, token := sessionAndCSRF(t, env, admin.ID)
+	appPW, _, err := env.Providers.AppPasswords.Create(target.ID, "minted by an intruder")
+	require.NoError(t, err)
 
 	env.PostForm(t, "/admin/users/"+target.ID+"/password", url.Values{
 		"csrf_token":   {token},
@@ -121,8 +123,11 @@ func TestAdminResetPassword(t *testing.T) {
 	}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
 
 	// Old password should no longer work, new one should.
-	_, err := env.Providers.Users.Authenticate("target", "newpassword")
+	_, err = env.Providers.Users.Authenticate("target", "newpassword")
 	require.NoError(t, err)
+	// Nor does an app password made with the old one (audit H8).
+	_, err = env.Providers.AppPasswords.Validate(appPW)
+	require.Error(t, err)
 }
 
 func TestAdminIndex(t *testing.T) {

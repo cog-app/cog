@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 	expires_at INTEGER NOT NULL,
 	last_seen_at INTEGER NOT NULL DEFAULT 0,
 	user_agent TEXT NOT NULL DEFAULT '',
-	ip TEXT NOT NULL DEFAULT ''
+	ip TEXT NOT NULL DEFAULT '',
+	hashed INTEGER NOT NULL DEFAULT 0 -- id is the SHA-256 of the token, not the token
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 

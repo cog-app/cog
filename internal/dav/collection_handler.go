@@ -114,7 +114,8 @@ func (q *request) propfindCollection(c *Collection, owner *User, a access) {
 	ms := multistatus{Responses: []response{{
 		Href: collectionHref(c, owner.Username), Propstats: pf.evaluate(props, extra),
 	}}}
-	if q.depth() == 1 {
+	// A free/busy-only sharee sees the collection, not what is in it.
+	if q.depth() == 1 && a.read() {
 		withData := pf.wants(dataName(c.Home))
 		for _, b := range q.backends(c) {
 			list, err := b.List(owner.Username, c, withData)
@@ -220,6 +221,10 @@ func (q *request) create(home Home, owner *User, name string) {
 	if err := q.s.Collections.Create(c); err != nil {
 		if errors.Is(err, ErrExists) {
 			writeError(q.w, http.StatusMethodNotAllowed, dav("resource-must-be-null"), "")
+			return
+		}
+		if errors.Is(err, ErrTooMany) {
+			writeError(q.w, http.StatusInsufficientStorage, dav("quota-not-exceeded"), "")
 			return
 		}
 		q.fail(err)

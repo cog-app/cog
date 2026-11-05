@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/bodylimit"
 	"git.duckfam.us/jj-software/cog/internal/compat"
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/jmap"
@@ -31,7 +32,7 @@ func New(p *services.Providers) http.Handler {
 		Users:        p.Users,
 		Sessions:     p.Sessions,
 		AppPasswords: p.AppPasswords,
-		RateLimiter:  p.RateLimiter,
+		Guard:        p.Guard,
 		Cookies:      p.Cookies,
 	}
 
@@ -213,7 +214,7 @@ func New(p *services.Providers) http.Handler {
 	// Volume browser
 	mux.Handle("GET /volumes/{id}/browse", auth.RequireAuthWeb(http.HandlerFunc(volBrowserH.Browse)))
 	mux.Handle("GET /volumes/{id}/download", auth.RequireAuthWeb(http.HandlerFunc(volBrowserH.Download)))
-	mux.Handle("POST /volumes/{id}/upload", csrfWeb(http.HandlerFunc(volBrowserH.Upload)))
+	mux.Handle("POST /volumes/{id}/upload", bodylimit.Unlimited(csrfWeb(http.HandlerFunc(volBrowserH.Upload))))
 	mux.Handle("POST /volumes/{id}/mkdir", csrfWeb(http.HandlerFunc(volBrowserH.MkDir)))
 	mux.Handle("DELETE /volumes/{id}/file", csrfWeb(http.HandlerFunc(volBrowserH.DeleteFile)))
 
@@ -224,16 +225,16 @@ func New(p *services.Providers) http.Handler {
 	ocsQuotaFn := buildOCSQuotaFunc(p, fp)
 	mux.Handle("GET /ocs/v1.php/cloud/user", auth.RequireAuth(compat.HandleCurrentUser(ocsQuotaFn)))
 	mux.Handle("GET /ocs/v2.php/cloud/user", auth.RequireAuth(compat.HandleCurrentUser(ocsQuotaFn)))
-	mux.Handle("GET /ocs/v1.php/cloud/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users)))
-	mux.Handle("GET /ocs/v2.php/cloud/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users)))
+	mux.Handle("GET /ocs/v1.php/cloud/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users, p.EmailVisible)))
+	mux.Handle("GET /ocs/v2.php/cloud/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users, p.EmailVisible)))
 	// Provisioning API path variant (NC Android app uses this path for user info)
-	mux.Handle("GET /ocs/v1.php/apps/provisioning_api/api/v2/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users)))
-	mux.Handle("GET /ocs/v2.php/apps/provisioning_api/api/v2/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users)))
+	mux.Handle("GET /ocs/v1.php/apps/provisioning_api/api/v2/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users, p.EmailVisible)))
+	mux.Handle("GET /ocs/v2.php/apps/provisioning_api/api/v2/users/{id}", auth.RequireAuth(compat.HandleUserByID(p.Users, p.EmailVisible)))
 
 	// --- WebDAV file operations (NC clients) ---
 	if fp != nil {
 		webdav := &compat.WebDAVHandler{Log: p.Log.With("component", "webdav"), Files: fp, Clock: p.Clock}
-		mux.Handle("/remote.php/dav/files/", auth.RequireAuth(webdav))
+		mux.Handle("/remote.php/dav/files/", bodylimit.Unlimited(auth.RequireAuth(webdav)))
 
 		// Chunked uploads (NC v2 protocol)
 		chunked := &compat.ChunkedUploadHandler{
@@ -242,7 +243,7 @@ func New(p *services.Providers) http.Handler {
 			TempDir: p.Config.DataDir,
 			Clock:   p.Clock,
 		}
-		mux.Handle("/remote.php/dav/uploads/", auth.RequireAuth(chunked))
+		mux.Handle("/remote.php/dav/uploads/", bodylimit.Unlimited(auth.RequireAuth(chunked)))
 
 		// Trashbin (NC Android app uses this for deleted files)
 		trashbin := &compat.TrashbinHandler{
@@ -366,7 +367,7 @@ func New(p *services.Providers) http.Handler {
 		Files:  fp,
 		Policy: p.FedPolicy,
 	}
-	mux.Handle("/public.php/webdav/", fedWebDAV)
+	mux.Handle("/public.php/webdav/", bodylimit.Unlimited(fedWebDAV))
 
 	// --- Login Flow v2 ---
 	mux.HandleFunc("POST /index.php/login/v2", loginFlow.HandleInit)
@@ -398,11 +399,18 @@ func New(p *services.Providers) http.Handler {
 
 	// --- Files & Sharing API ---
 	if fp != nil {
-		filesAPI := filesPlugin.NewAPI(fp, p.Shares, p.Users)
+		filesAPI := filesPlugin.NewAPI(fp, p.Shares, p.Users, p.Guard)
 		filesAPI.RegisterRoutes(mux)
 	}
 
-	return securityHeaders(authMW.Wrap(mfaEnforcement(p)(htmlNotFound(p, mux))))
+	// Every route refuses a state-changing request a browser sends from
+	// another origin, including a sibling subdomain, whether it carries a
+	// session cookie or Basic credentials the browser remembered. The CSRF
+	// token checks on forms stay as a second line; this one needs no route
+	// to opt in. Sync and API clients send neither Sec-Fetch-Site nor Origin
+	// and pass.
+	crossOrigin := http.NewCrossOriginProtection()
+	return bodylimit.Middleware(bodylimit.Default, crossOrigin.Handler(securityHeaders(authMW.Wrap(mfaEnforcement(p)(htmlNotFound(p, mux))))))
 }
 
 // securityHeaders sets what every response carries: browsers keep to the

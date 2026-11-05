@@ -152,7 +152,10 @@ func userCmd(plugins []plugin.Plugin) *cobra.Command {
 			if err := p.Users.UpdatePassword(u.ID, args[1]); err != nil {
 				return err
 			}
-			fmt.Printf("Password updated for %q\n", args[0])
+			if err := p.SignOutEverywhere(u.ID); err != nil {
+				return fmt.Errorf("password updated, but signing %q out failed: %w", args[0], err)
+			}
+			fmt.Printf("Password updated for %q, and signed out everywhere\n", args[0])
 			return nil
 		},
 	})

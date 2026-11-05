@@ -79,11 +79,20 @@ type Providers struct {
 	FedPolicy      *federation.Policy // whether, and with whom, this server federates
 	EmailHook      email.SendHook     // if set, all email goes through this instead of SMTP
 	RateLimiter    *ratelimit.Limiter
-	CSRFSecret     []byte
-	Cookies        cogplugin.CookieConfig
-	Clock          clock.Clock
-	StartedAt      time.Time
+	// Guard checks every credential against guessing, over RateLimiter.
+	Guard      *ratelimit.Guard
+	CSRFSecret []byte
+	Cookies    cogplugin.CookieConfig
+	Clock      clock.Clock
+	StartedAt  time.Time
+
+	closeOnce sync.Once
+	closeErr  error
 }
+
+// maxInvitationMailPerHour bounds the invitation email one user's calendar
+// changes send to people outside Cog.
+const maxInvitationMailPerHour = 100
 
 // New opens the system database and constructs all service providers.
 // It sets up the search manager with a hooked system DB for real-time indexing.
@@ -244,9 +253,14 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 
 	// The DAV core owns collections; plugins that hold DAV resources get it
 	// before they register. web.New finishes wiring it.
-	davServer := &dav.Server{Collections: dav.NewStore(sysDB, c), Clock: c, Log: log.With("component", "dav")}
+	davServer := &dav.Server{Collections: dav.NewStore(sysDB, c), Clock: c, Log: log.With("component", "dav"),
+		Secret: secret, MailLimit: ratelimit.New(maxInvitationMailPerHour, time.Hour, c)}
 
-	registry := plugin.NewRegistry(log, cfg.DataDir, http.NewServeMux(), sysDB, secret, c)
+	// CSRF tokens use a key of their own, derived from the master secret,
+	// because trusted process plugins are given it: a plugin can then mint
+	// form tokens but not decrypt TOTP secrets or forge reset links.
+	csrfKey := auth.DerivedKey(secret, "csrf")
+	registry := plugin.NewRegistry(log, cfg.DataDir, http.NewServeMux(), sysDB, csrfKey, c)
 
 	// WebDAV-Push: every committed write to a collection's sync state, in
 	// any plugin database, is noticed by the DAV core; the deliverer turns
@@ -280,6 +294,17 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		registry.DiscoverProcessPlugins()
 	}
 
+	// Plugins keep directories in the data dir under their IDs, beside the
+	// users' own.
+	users.Reserve(registry.PluginIDs()...)
+	bad, err := users.Invalid()
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range bad {
+		log.Error("existing username is not allowed for new accounts and may share a directory with another user or the server; rename or remove it", "username", name)
+	}
+
 	shares := share.NewStore(sysDB, c)
 	access := &volume.Access{Volumes: volumes, Shares: shares, Users: users}
 
@@ -310,6 +335,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		return nil, err
 	}
 
+	limiter := ratelimit.New(10, 15*time.Minute, c)
 	return &Providers{
 		Config:         cfg,
 		Log:            log,
@@ -332,7 +358,8 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		PasswordResets: auth.NewPasswordResetStore(sysDB, c, secret),
 		WebAuthn:       newWebAuthnStore(sysDB, c, cfg.BaseURL, secret, log),
 		SSHKeys:        sshKeys,
-		RateLimiter:    ratelimit.New(10, 15*time.Minute, c),
+		RateLimiter:    limiter,
+		Guard:          &ratelimit.Guard{Limiter: limiter, Delay: time.Second},
 		Activities:     activities,
 		DAV:            davServer,
 		JMAP:           jmapServer,
@@ -341,7 +368,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		Federation:     fedStore,
 		FedClient:      fedClient,
 		FedPolicy:      &federation.Policy{Settings: settingsStore, EnvPeers: cfg.FederationPeers},
-		CSRFSecret:     secret,
+		CSRFSecret:     csrfKey,
 		Cookies:        cogplugin.CookieConfigFromBaseURL(cfg.BaseURL),
 		Clock:          c,
 		StartedAt:      c(),
@@ -404,12 +431,17 @@ func (p *Providers) EmailSender() *email.Sender {
 }
 
 // Close releases resources held by the providers.
+// Close stops the background work and closes the database. Only the first
+// call does anything, so a command and Main may both defer it.
 func (p *Providers) Close() error {
-	if p.Search != nil {
-		p.Search.Stop()
-	}
-	p.Plugins.Stop()
-	return p.DB.Close()
+	p.closeOnce.Do(func() {
+		if p.Search != nil {
+			p.Search.Stop()
+		}
+		p.Plugins.Stop()
+		p.closeErr = p.DB.Close()
+	})
+	return p.closeErr
 }
 
 // newWebAuthnStore creates a WebAuthn store, returning nil on error
@@ -479,4 +511,26 @@ func (p *Providers) StartPush(ctx context.Context) {
 	if p.Pusher != nil {
 		go p.Pusher.Run(ctx)
 	}
+}
+
+// SignOutEverywhere ends every sign-in a password reset must end: the user's
+// browser sessions and app passwords. Whoever had the old password may have
+// minted an app password with it, which would otherwise outlive the reset.
+// SSH keys and passkeys stay; the user reviews those in Settings.
+func (p *Providers) SignOutEverywhere(userID string) error {
+	return errors.Join(p.Sessions.DeleteAllForUser(userID), p.AppPasswords.DeleteAllForUser(userID))
+}
+
+// EmailVisible reports whether viewer may see the email address of the user
+// with targetID: their own, any for an admin, and otherwise only that of
+// someone they share a group with. Everyone else is known by name alone, so
+// a signed-in user cannot collect every address on the server.
+func (p *Providers) EmailVisible(viewer *user.User, targetID string) (bool, error) {
+	if viewer == nil {
+		return false, nil
+	}
+	if viewer.ID == targetID || viewer.IsAdmin {
+		return true, nil
+	}
+	return p.Groups.ShareAGroup(viewer.ID, targetID)
 }

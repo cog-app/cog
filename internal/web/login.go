@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/email"
@@ -65,36 +64,28 @@ func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	next := r.FormValue("next")
 
-	// Rate limit by client IP *and* by username (audit security.md #51).
-	// Per-IP catches one attacker hammering many accounts; per-user catches
-	// a distributed attacker rotating IPs against a single account.
-	userKey := "user:" + strings.ToLower(username)
-	if h.p.RateLimiter != nil {
-		ip := ratelimit.ClientIP(r)
-		if h.p.RateLimiter.IsLimited(ip) || (username != "" && h.p.RateLimiter.IsLimited(userKey)) {
-			setFlash(w, "error", "Too many failed login attempts. Please try again later.")
-			http.Redirect(w, r, loginRedirect("/login", next), http.StatusSeeOther)
-			return
-		}
+	// The guard counts failures by client and by account (audit
+	// security.md #51): one attacker hammering many accounts is refused,
+	// and a distributed one rotating addresses against one account is
+	// slowed.
+	var u *user.User
+	var authErr error
+	_, err := h.p.Guard.Try(ratelimit.ClientIP(r), ratelimit.AccountKey(username), func() bool {
+		u, authErr = h.p.Users.Authenticate(username, password)
+		return authErr == nil
+	})
+	if errors.Is(err, ratelimit.ErrLimited) {
+		setFlash(w, "error", "Too many failed login attempts. Please try again later.")
+		http.Redirect(w, r, loginRedirect("/login", next), http.StatusSeeOther)
+		return
 	}
-
-	u, err := h.p.Users.Authenticate(username, password)
-	if err != nil {
-		if h.p.RateLimiter != nil {
-			h.p.RateLimiter.RecordFailure(ratelimit.ClientIP(r))
-			if username != "" {
-				h.p.RateLimiter.RecordFailure(userKey)
-			}
+	if authErr != nil {
+		if !errors.Is(authErr, user.ErrAuthFailed) {
+			h.p.Log.Error("authenticate", "username", username, "err", authErr)
 		}
 		setFlashForm(w, "error", "Invalid username or password.", map[string]string{"username": username})
 		http.Redirect(w, r, loginRedirect("/login", next), http.StatusSeeOther)
 		return
-	}
-
-	// Clear rate limit on success.
-	if h.p.RateLimiter != nil {
-		h.p.RateLimiter.Reset(ratelimit.ClientIP(r))
-		h.p.RateLimiter.Reset(userKey)
 	}
 
 	// If MFA is enabled, redirect to verification instead of creating a session.
@@ -220,17 +211,6 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 	// Rate limit MFA attempts by client and by account: whoever holds a
 	// pending login already has the password, and a six-digit code falls
 	// to enough guesses spread over many addresses.
-	mfaKey := "mfa:" + pending.UserID
-	if h.p.RateLimiter != nil {
-		ip := ratelimit.ClientIP(r)
-		if h.p.RateLimiter.IsLimited(ip) || h.p.RateLimiter.IsLimited(mfaKey) {
-			setFlash(w, "error", "Too many failed attempts. Please try again later.")
-			http.Redirect(w, r, loginRedirect("/login/mfa", next), http.StatusSeeOther)
-			return
-		}
-	}
-
-	// Validate the code based on the user's MFA method.
 	u, err := h.p.Users.GetByID(pending.UserID)
 	if err != nil {
 		setFlash(w, "error", "Session expired. Please log in again.", err)
@@ -238,23 +218,27 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var valid bool
-	switch u.MFAMethod {
-	case "totp":
-		valid, err = h.p.TOTP.Validate(pending.UserID, code)
-	case "email":
-		valid, err = h.p.EmailOTP.Validate(pending.UserID, code)
-	default:
-		valid = false
-	}
-	if err != nil {
-		h.p.Log.Error("validate mfa code", "user", pending.UserID, "method", u.MFAMethod, "err", err)
-	}
-	if err != nil || !valid {
-		if h.p.RateLimiter != nil {
-			h.p.RateLimiter.RecordFailure(ratelimit.ClientIP(r))
-			h.p.RateLimiter.RecordFailure(mfaKey)
+	// Validate the code based on the user's MFA method.
+	valid, err := h.p.Guard.Try(ratelimit.ClientIP(r), "mfa:"+pending.UserID, func() bool {
+		var ok bool
+		var vErr error
+		switch u.MFAMethod {
+		case "totp":
+			ok, vErr = h.p.TOTP.Validate(pending.UserID, code)
+		case "email":
+			ok, vErr = h.p.EmailOTP.Validate(pending.UserID, code)
 		}
+		if vErr != nil {
+			h.p.Log.Error("validate mfa code", "user", pending.UserID, "method", u.MFAMethod, "err", vErr)
+		}
+		return vErr == nil && ok
+	})
+	if errors.Is(err, ratelimit.ErrLimited) {
+		setFlash(w, "error", "Too many failed attempts. Please try again later.")
+		http.Redirect(w, r, loginRedirect("/login/mfa", next), http.StatusSeeOther)
+		return
+	}
+	if !valid {
 		setFlash(w, "error", "Invalid authentication code.")
 		http.Redirect(w, r, loginRedirect("/login/mfa", next), http.StatusSeeOther)
 		return
@@ -265,11 +249,6 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 		h.p.Log.Warn("delete mfa pending after success", "err", err)
 	}
 	cookieCfg.Clear(w, auth.MFAPendingCookieName)
-
-	if h.p.RateLimiter != nil {
-		h.p.RateLimiter.Reset(ratelimit.ClientIP(r))
-		h.p.RateLimiter.Reset(mfaKey)
-	}
 
 	// Use next from the pending token if not provided in form.
 	if next == "" {
@@ -320,15 +299,15 @@ func (h *loginHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Rate limit registration by client IP.
-	if h.p.RateLimiter != nil {
-		ip := ratelimit.ClientIP(r)
-		if h.p.RateLimiter.IsLimited(ip) {
-			setFlash(w, "error", "Too many attempts. Please try again later.")
-			http.Redirect(w, r, "/register", http.StatusSeeOther)
-			return
-		}
+	// Every registration counts against the client's limit, so one client
+	// cannot create accounts without end.
+	ip := ratelimit.ClientIP(r)
+	if h.p.Guard.Limited(ip) {
+		setFlash(w, "error", "Too many attempts. Please try again later.")
+		http.Redirect(w, r, "/register", http.StatusSeeOther)
+		return
 	}
+	h.p.Guard.Record(ip)
 
 	username := r.FormValue("username")
 	password := r.FormValue("password")
@@ -348,6 +327,12 @@ func (h *loginHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	u, err := h.p.Users.Create(username, password)
+	if errors.Is(err, user.ErrInvalidUsername) {
+		// Says nothing about other accounts, so it is safe to show.
+		setFlashForm(w, "error", err.Error(), keep)
+		http.Redirect(w, r, loginRedirect("/register", next), http.StatusSeeOther)
+		return
+	}
 	if err != nil {
 		// Log the real error for ops; tell the user nothing specific so
 		// "username already exists" doesn't leak account existence
@@ -381,15 +366,14 @@ func (h *loginHandler) ShowForgotPassword(w http.ResponseWriter, r *http.Request
 }
 
 func (h *loginHandler) HandleForgotPassword(w http.ResponseWriter, r *http.Request) {
-	// Rate limit.
-	if h.p.RateLimiter != nil {
-		ip := ratelimit.ClientIP(r)
-		if h.p.RateLimiter.IsLimited(ip) {
-			setFlash(w, "error", "Too many attempts. Please try again later.")
-			http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
-			return
-		}
+	// Each request may send an email, so each counts against the client.
+	ip := ratelimit.ClientIP(r)
+	if h.p.Guard.Limited(ip) {
+		setFlash(w, "error", "Too many attempts. Please try again later.")
+		http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
+		return
 	}
+	h.p.Guard.Record(ip)
 
 	identifier := r.FormValue("identifier")
 
@@ -510,13 +494,14 @@ func (h *loginHandler) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Revoking the user's sessions is what makes a reset lock out whoever
-	// had the old password; log the failure so admins notice if they linger.
-	if err := h.p.Sessions.DeleteAllForUser(userID); err != nil {
-		h.p.Log.Error("revoke sessions after reset", "user", userID, "err", err)
+	// Signing the user out everywhere is what makes a reset lock out
+	// whoever had the old password; log the failure so admins notice if
+	// their sessions linger.
+	if err := h.p.SignOutEverywhere(userID); err != nil {
+		h.p.Log.Error("sign out after reset", "user", userID, "err", err)
 	}
 
-	setFlash(w, "success", "Password reset successfully. Please log in with your new password.")
+	setFlash(w, "success", "Password reset. Sign in with your new password, and sign your apps in again.")
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 

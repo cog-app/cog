@@ -134,7 +134,7 @@ func (dl dialer) DialContext(ctx context.Context, network, addr string) (net.Con
 		}
 		conn, err := d.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
 		if err == nil {
-			return conn, nil
+			return &idleConn{Conn: conn}, nil
 		}
 		errs = append(errs, err)
 	}
@@ -142,6 +142,28 @@ func (dl dialer) DialContext(ctx context.Context, network, addr string) (net.Con
 		return nil, fmt.Errorf("dial %s: %w", host, errors.Join(errs...))
 	}
 	return nil, fmt.Errorf("dial %s: no usable address", host)
+}
+
+// IdleTimeout is how long a connection may go without moving a byte. A
+// client with no overall timeout, such as one downloading a podcast episode
+// of unknown length, still gives up on a server that stops sending.
+const IdleTimeout = 60 * time.Second
+
+// idleConn fails a read or write that makes no progress for IdleTimeout.
+type idleConn struct{ net.Conn }
+
+func (c *idleConn) Read(b []byte) (int, error) {
+	if err := c.SetReadDeadline(time.Now().Add(IdleTimeout)); err != nil {
+		return 0, err
+	}
+	return c.Conn.Read(b)
+}
+
+func (c *idleConn) Write(b []byte) (int, error) {
+	if err := c.SetWriteDeadline(time.Now().Add(IdleTimeout)); err != nil {
+		return 0, err
+	}
+	return c.Conn.Write(b)
 }
 
 // Transport returns an http.Transport that dials through DialContext.
@@ -178,13 +200,23 @@ type Options struct {
 	Allow []netip.Prefix
 	// TLS configures the client's TLS, such as an httptest server's roots.
 	TLS *tls.Config
+	// NoRedirect refuses every redirect rather than following up to five.
+	NoRedirect bool
+	// HTTP2 attempts HTTP/2 as the default client does, for servers that
+	// score the client's fingerprint.
+	HTTP2 bool
 }
 
 // ClientWith is Client with options.
 func ClientWith(timeout time.Duration, o Options) *http.Client {
+	t := transport(o)
+	t.ForceAttemptHTTP2 = o.HTTP2
+	if o.NoRedirect {
+		return &http.Client{Timeout: timeout, Transport: t, CheckRedirect: NoRedirect}
+	}
 	return &http.Client{
 		Timeout:   timeout,
-		Transport: transport(o),
+		Transport: t,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return errors.New("safehttp: too many redirects")

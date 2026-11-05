@@ -372,8 +372,20 @@ func (h *settingsHandler) UpdatePassword(w http.ResponseWriter, r *http.Request)
 	if err := h.p.Sessions.DeleteAllExcept(u.ID, sessID); err != nil {
 		h.p.Log.Error("delete sessions after password change", "err", err)
 	}
+	// App passwords outlive a change unless the user asks: a routine change
+	// should not sign out every sync client, but one made because the old
+	// password leaked must.
+	msg := "Password changed."
+	if r.FormValue("revoke_app_passwords") != "" {
+		if err := h.p.AppPasswords.DeleteAllForUser(u.ID); err != nil {
+			h.p.Log.Error("delete app passwords after password change", "user", u.Username, "err", err)
+			fail("Your password was changed, but your app passwords could not be revoked. Revoke them below.", "")
+			return
+		}
+		msg = "Password changed, and your apps signed out. Sign them in again."
+	}
 
-	setFlash(w, "success", "Password changed.")
+	setFlash(w, "success", msg)
 	http.Redirect(w, r, "/settings/security", http.StatusSeeOther)
 }
 

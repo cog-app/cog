@@ -75,6 +75,11 @@ func (h *adminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
 		return
 	}
+	if errors.Is(err, user.ErrInvalidUsername) {
+		setFlashForm(w, "error", err.Error(), keep)
+		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
+		return
+	}
 	if err != nil {
 		h.p.Log.Error("create user", "username", username, "err", err)
 		setFlashForm(w, "error", "The user could not be created. The server log has the details.", keep)
@@ -206,13 +211,13 @@ func (h *adminHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 		return
 	}
-	// Audit security.md #37: revoke the target user's existing sessions so
-	// any captured cookie can't survive an admin-driven password reset.
-	if err := h.p.Sessions.DeleteAllForUser(id); err != nil {
-		h.p.Log.Warn("revoke sessions on admin password reset", "user", id, "err", err)
+	// Audit security.md #37: no captured cookie or app password minted
+	// with the old password survives an admin-driven reset.
+	if err := h.p.SignOutEverywhere(id); err != nil {
+		h.p.Log.Error("sign out on admin password reset", "user", id, "err", err)
 	}
 
-	setFlash(w, "success", "Password reset.")
+	setFlash(w, "success", "Password reset. The user is signed out everywhere, including their apps.")
 	http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 }
 

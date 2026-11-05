@@ -9,8 +9,8 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 )
 
-// TestPublicLink_PasswordThrottle locks out a (token, IP) after enough wrong
-// attempts (audit security.md #36).
+// TestPublicLink_PasswordThrottle refuses a client after enough wrong
+// attempts (audit security.md #36), even with the right password.
 func TestPublicLink_PasswordThrottle(t *testing.T) {
 	env := cogtest.New(t)
 	alice := env.CreateUser(t, "alice", "pass")
@@ -27,19 +27,19 @@ func TestPublicLink_PasswordThrottle(t *testing.T) {
 	require.NotNil(t, rec.Token)
 	tok := *rec.Token
 
-	// 5 wrong attempts get individually rejected with 401.
-	for range 5 {
+	// 10 wrong attempts get individually rejected with 401.
+	for range 10 {
 		env.Get(t, "/s/"+tok, cogtest.BasicAuth("", "wrong")).Status(401)
 	}
 
-	// Sixth attempt — even with the CORRECT password — is rejected because
-	// the lockout fires for the (token, IP) pair. Without the throttle, the
-	// correct password would unlock and return 200.
+	// The next — even with the CORRECT password — is rejected because the
+	// client is limited. Without the throttle, the correct password would
+	// unlock and return 200.
 	env.Get(t, "/s/"+tok, cogtest.BasicAuth("", "correct-horse")).Status(401)
 }
 
-// TestPublicLink_ThrottleIsolatedByToken: hitting wrong on link A doesn't
-// lock out link B.
+// TestPublicLink_ThrottleIsolatedByToken: wrong guesses at link A, short of
+// the client's limit, don't count against link B.
 func TestPublicLink_ThrottleIsolatedByToken(t *testing.T) {
 	env := cogtest.New(t)
 	alice := env.CreateUser(t, "alice", "pass")
@@ -59,11 +59,9 @@ func TestPublicLink_ThrottleIsolatedByToken(t *testing.T) {
 		"password":      "pwb",
 	}, alice.Auth).Status(201).JSON(&recB)
 
-	// Burn out A.
 	for range 5 {
 		env.Get(t, "/s/"+*recA.Token, cogtest.BasicAuth("", "wrong")).Status(401)
 	}
-	env.Get(t, "/s/"+*recA.Token, cogtest.BasicAuth("", "pwa")).Status(401)
 
 	// B still works on first try.
 	env.Get(t, "/s/"+*recB.Token, cogtest.BasicAuth("", "pwb")).Status(200)

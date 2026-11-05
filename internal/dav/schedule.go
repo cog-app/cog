@@ -196,7 +196,13 @@ func (s *Server) Plan(ch ScheduleChange) (*Delivery, error) {
 			status = itip.StatusInvalidUser
 		case s.mailer() == nil:
 			status = itip.StatusUnavailable
+		case s.MailLimit != nil && s.MailLimit.IsLimited(ch.Owner.ID):
+			s.Log.Warn("dav: invitation email limit reached", "user", ch.Owner.Username, "to", m.Recipient)
+			status = itip.StatusUnavailable
 		default:
+			if s.MailLimit != nil {
+				s.MailLimit.RecordFailure(ch.Owner.ID)
+			}
 			status = itip.StatusSent
 			m.Object = s.forExternal(ch.Owner.Username, m.Object, m.Recipient)
 			d.sends = append(d.sends, send{msg: m, email: ical.Email(m.Recipient)})
@@ -272,7 +278,7 @@ func (d *Delivery) Send() {
 	for _, sd := range d.sends {
 		var err error
 		if sd.to != nil {
-			err = d.s.deliver(sd.to, sd.msg)
+			err = d.s.deliver(d.from, sd.to, sd.msg)
 		} else {
 			err = d.s.sendMail(d.from, sd.email, sd.msg)
 		}
@@ -282,11 +288,22 @@ func (d *Delivery) Send() {
 	}
 }
 
-// deliver applies a message to a Cog user's calendar (itip.Apply) and keeps
-// it in their inbox. A REQUEST for an event they do not have yet lands in
-// their default calendar; a reply or cancellation of one they do not have
-// only reaches the inbox.
-func (s *Server) deliver(u *User, m itip.Message) error {
+// errNotAuthorized is a message its sender may not send about the object it
+// names: a REQUEST or CANCEL from someone other than the organizer of the
+// recipient's copy, or a REPLY from someone answering for another attendee.
+// Such a message is dropped, not kept in the inbox, where a client could
+// apply it.
+var errNotAuthorized = errors.New("sender may not change this event")
+
+// deliver applies a message from a Cog user to another's calendar
+// (itip.Apply) and keeps it in their inbox. A REQUEST for an event they do
+// not have yet lands in their default calendar; a reply or cancellation of
+// one they do not have only reaches the inbox.
+func (s *Server) deliver(from, u *User, m itip.Message) error {
+	m.Object = s.fromSender(from, m.Object)
+	if err := mayOriginate(from, m); err != nil {
+		return err
+	}
 	bes := s.Backends()
 	var events Backend
 	for _, b := range bes {
@@ -310,7 +327,10 @@ func (s *Server) deliver(u *User, m itip.Message) error {
 	cols = slices.DeleteFunc(cols, func(c Collection) bool { return !c.Has(VEVENT) || c.ReadOnly() })
 	var applyErr error
 	if len(cols) > 0 {
-		applyErr = s.apply(bes, events, u, cols, m)
+		applyErr = s.apply(bes, events, from, u, cols, m)
+	}
+	if errors.Is(applyErr, errNotAuthorized) {
+		return applyErr
 	}
 	if err := inbox.Deliver(u.Username, m.Object.UID, text.Bytes(), s.Clock().Add(-s.retention())); err != nil {
 		return errors.Join(applyErr, err)
@@ -318,9 +338,67 @@ func (s *Server) deliver(u *User, m itip.Message) error {
 	return applyErr
 }
 
+// mayOriginate checks that a message speaks only for its sender: a REQUEST
+// or CANCEL names them as ORGANIZER, and a REPLY answers only for them.
+func mayOriginate(from *User, m itip.Message) error {
+	self := selfOf(from)
+	switch m.Method {
+	case itip.Request, itip.Cancel:
+		if org := itip.Organizer(m.Object); org == nil || !self(itip.Normalize(org.Address)) {
+			return errNotAuthorized
+		}
+	case itip.Reply:
+		for _, e := range m.Object.Components {
+			for _, a := range e.Attendees {
+				if !self(itip.Normalize(a.Address)) {
+					return errNotAuthorized
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// mayApply checks that a message may change the recipient's copy of an
+// event, cur: only its organizer may update or cancel it, and replies go
+// only to a copy the recipient organizes.
+func mayApply(from, to *User, m itip.Message, cur *ical.Object) error {
+	if cur == nil {
+		return nil
+	}
+	org := itip.Organizer(cur)
+	if org == nil {
+		return errNotAuthorized
+	}
+	owner := from
+	if m.Method == itip.Reply {
+		owner = to
+	}
+	if !selfOf(owner)(itip.Normalize(org.Address)) {
+		return errNotAuthorized
+	}
+	return nil
+}
+
+// fromSender drops the MANAGED-ID of every attachment that is not one of
+// the sender's own, served from their attachment URL: an ID the sender made
+// up must not come to name an attachment of the recipient's.
+func (s *Server) fromSender(from *User, o *ical.Object) *ical.Object {
+	out := o.Clone()
+	for _, e := range out.Components {
+		for i := range e.Attachments {
+			a := &e.Attachments[i]
+			if a.ManagedID != "" && a.Value != s.AttachmentURL(from.Username, a.ManagedID) {
+				a.ManagedID = ""
+			}
+		}
+	}
+	return out
+}
+
 // apply stores the recipient's copy as a message changes it, retrying when
 // the copy changed between reading and writing it.
-func (s *Server) apply(bes []Backend, events Backend, u *User, cols []Collection, m itip.Message) error {
+func (s *Server) apply(bes []Backend, events Backend, from, u *User, cols []Collection, m itip.Message) error {
 	for attempt := 0; ; attempt++ {
 		c, r, err := s.locate(events, u.Username, cols, m.Object.UID)
 		if err != nil {
@@ -334,6 +412,9 @@ func (s *Server) apply(bes []Backend, events Backend, u *User, cols []Collection
 				return fmt.Errorf("read %s: %w", r.URI, err)
 			}
 			cond, uri = davsql.Conditions{IfMatch: []int64{r.Version}}, r.URI
+			if err := mayApply(from, u, m, cur); err != nil {
+				return err
+			}
 		} else {
 			c, uri = &cols[0], resourceName(m.Object.UID)
 		}

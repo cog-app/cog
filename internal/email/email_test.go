@@ -1,6 +1,9 @@
 package email_test
 
 import (
+	"bytes"
+	"mime"
+	"net/mail"
 	"strings"
 	"testing"
 
@@ -82,8 +85,59 @@ func TestSend_WithAttachment_UsesMultipart(t *testing.T) {
 
 	msg := string(captured)
 	require.True(t, strings.Contains(msg, "multipart/mixed"))
-	require.True(t, strings.Contains(msg, `filename="data.bin"`))
+	require.True(t, strings.Contains(msg, "filename=data.bin"))
 	require.True(t, strings.Contains(msg, "Content-Transfer-Encoding: base64"))
+}
+
+func TestSend_SubjectCannotAddHeaders(t *testing.T) {
+	var captured []byte
+	s := &email.Sender{
+		From: "test@example.com",
+		Hook: func(_ []string, msg []byte) { captured = msg },
+	}
+	require.NoError(t, s.Send([]string{"a@b.com"}, "Hi\r\nBcc: victim@example.com\n\nforged body", "real body"))
+	msg, err := mail.ReadMessage(bytes.NewReader(captured))
+	require.NoError(t, err)
+	require.Equal(t, "", msg.Header.Get("Bcc"))
+	subject, err := new(mime.WordDecoder).DecodeHeader(msg.Header.Get("Subject"))
+	require.NoError(t, err)
+	require.Equal(t, "Hi Bcc: victim@example.com forged body", subject)
+}
+
+func TestSend_NonASCIISubjectIsEncoded(t *testing.T) {
+	var captured []byte
+	s := &email.Sender{
+		From: "test@example.com",
+		Hook: func(_ []string, msg []byte) { captured = msg },
+	}
+	require.NoError(t, s.Send([]string{"a@b.com"}, "Café ☕", "body"))
+	msg, err := mail.ReadMessage(bytes.NewReader(captured))
+	require.NoError(t, err)
+	subject, err := new(mime.WordDecoder).DecodeHeader(msg.Header.Get("Subject"))
+	require.NoError(t, err)
+	require.Equal(t, "Café ☕", subject)
+}
+
+func TestSend_RejectsRecipientWithHeaders(t *testing.T) {
+	s := &email.Sender{From: "test@example.com", Hook: func([]string, []byte) { t.Fatal("sent") }}
+	require.Error(t, s.Send([]string{"a@b.com\r\nBcc: victim@example.com"}, "x", "body"))
+}
+
+func TestSendMessage_HTMLWithAttachment(t *testing.T) {
+	var captured []byte
+	s := &email.Sender{
+		From: "test@example.com",
+		Hook: func(_ []string, msg []byte) { captured = msg },
+	}
+	require.NoError(t, s.SendMessage(email.Message{
+		To: []string{"a@b.com"}, Subject: "s", Text: "plain", HTML: "<p>html</p>",
+		Attachments: []email.Attachment{{Filename: `in "vite".ics`, ContentType: "text/calendar; method=REQUEST", Data: []byte("BEGIN:VCALENDAR")}},
+	}))
+	msg := string(captured)
+	require.True(t, strings.Contains(msg, "multipart/mixed"))
+	require.True(t, strings.Contains(msg, "multipart/alternative"))
+	require.True(t, strings.Contains(msg, "<p>html</p>"))
+	require.True(t, strings.Contains(msg, `filename="in \"vite\".ics"`))
 }
 
 func TestSend_MultipleRecipients(t *testing.T) {

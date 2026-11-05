@@ -337,9 +337,14 @@ func HandleWebDAVStub(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HandleUserByID returns info about a user by their ID.
+// EmailVisible reports whether viewer may see the email of the user with
+// targetID.
+type EmailVisible func(viewer *user.User, targetID string) (bool, error)
+
+// HandleUserByID returns info about a user by their ID. The email is given
+// only to those emailVisible allows.
 // Route: GET /ocs/v2.php/cloud/users/{id}
-func HandleUserByID(users *user.Store) http.HandlerFunc {
+func HandleUserByID(users *user.Store, emailVisible EmailVisible) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := r.PathValue("id")
 		if userID == "" {
@@ -364,11 +369,19 @@ func HandleUserByID(users *user.Store) http.HandlerFunc {
 			displayName = target.Username
 		}
 
+		email := ""
+		ok, err := emailVisible(auth.UserFromContext(r.Context()), target.ID)
+		if err != nil {
+			slog.Error("ocs: email visibility", "user", target.Username, "err", err)
+		}
+		if ok {
+			email = target.Email
+		}
 		writeOCSReq(w, r, http.StatusOK, map[string]any{
 			"id":           target.Username,
 			"display-name": displayName,
 			"displayname":  displayName,
-			"email":        target.Email,
+			"email":        email,
 		})
 	}
 }
