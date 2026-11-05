@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/ffargs"
+	"git.duckfam.us/jj-software/cog/internal/sandbox"
 )
 
 var (
@@ -51,7 +53,7 @@ func ffprobeInfo(path string) (*videoInfo, error) {
 	defer cancel()
 
 	args := append([]string{"-v", "quiet", "-print_format", "json", "-show_format", "-show_streams"}, ffargs.Probe(path)...)
-	cmd := exec.CommandContext(ctx, ffprobePath, args...)
+	cmd := sandbox.CommandContext(ctx, sandbox.Spec{Read: []string{path}}, ffprobePath, args...)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("ffprobe: %w", err)
@@ -112,7 +114,7 @@ func ffmpegThumbnail(srcPath, dstPath string, size int) error {
 
 	scaleFilter := fmt.Sprintf("scale='min(%d,iw)':'min(%d,ih)':force_original_aspect_ratio=decrease", size, size)
 	args := append(ffargs.Input(srcPath), "-ss", "00:00:01", "-vframes", "1", "-vf", scaleFilter, "-q:v", "5", "-y", dstPath)
-	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+	cmd := sandbox.CommandContext(ctx, sandbox.Spec{Read: []string{srcPath}, Write: []string{filepath.Dir(dstPath)}}, ffmpegPath, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg thumbnail: %w: %s", err, out)
 	}

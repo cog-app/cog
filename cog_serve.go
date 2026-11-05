@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.duckfam.us/jj-software/cog/internal/safehttp"
+	"git.duckfam.us/jj-software/cog/internal/sandbox"
 	cogssh "git.duckfam.us/jj-software/cog/internal/ssh"
 	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/plugin"
@@ -79,6 +80,9 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+			if err := sandbox.Status(); err != nil {
+				p.Log.Warn("previews, OCR and media tools run unsandboxed", "reason", err)
+			}
 			p.Log.Info("Cog listening", "addr", cfg.Addr)
 			return serve(ctx, newServer(cfg.Addr, handler), p.Log)
 		},

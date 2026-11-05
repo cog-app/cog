@@ -589,6 +589,7 @@ func (p *Plugin) manageScanWorker(ctx context.Context) {
 			return
 		}
 
+		// unsandboxed: the server's own binary, which opens the user's database.
 		cmd := exec.CommandContext(ctx, exePath, "gallery", "scan", "worker")
 		cmd.Env = append(os.Environ(), "GOMEMLIMIT=512MiB", "COG_LOG_FORMAT=json")
 		// Pipe worker stderr through the server's logger so logs appear in the GUI.

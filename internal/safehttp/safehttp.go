@@ -95,6 +95,23 @@ func addressBlocked(ip netip.Addr, allow []netip.Prefix) bool {
 	return false
 }
 
+// CheckHost reports ErrBlockedIP when host resolves to a blocked address. It
+// is for a URL handed to a program that fetches by itself, such as yt-dlp,
+// which DialContext cannot guard: it stops the URL naming an internal
+// address, but not the program following a redirect or a manifest to one.
+func CheckHost(ctx context.Context, host string) error {
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", host, err)
+	}
+	for _, ipRaw := range ips {
+		if ip, ok := netip.AddrFromSlice(ipRaw); ok && addressBlocked(ip, nil) {
+			return fmt.Errorf("%w: %s resolves to %s", ErrBlockedIP, host, ip)
+		}
+	}
+	return nil
+}
+
 // DialContext resolves and dials only if the resolved IP is not in a
 // blocked range. The dial target is pinned to the IP that was validated, so
 // DNS rebinding between lookup and dial is impossible.

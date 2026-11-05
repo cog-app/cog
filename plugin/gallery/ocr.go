@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/sandbox"
 )
 
 var tesseractPath string
@@ -29,7 +31,7 @@ func tesseractOCR(imagePath string) (string, error) {
 	defer cancel()
 
 	// tesseract <input> stdout -l eng --psm 3
-	cmd := exec.CommandContext(ctx, tesseractPath, imagePath, "stdout", "-l", "eng", "--psm", "3")
+	cmd := sandbox.CommandContext(ctx, sandbox.Spec{Read: []string{imagePath}}, tesseractPath, imagePath, "stdout", "-l", "eng", "--psm", "3")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("tesseract: %w", err)

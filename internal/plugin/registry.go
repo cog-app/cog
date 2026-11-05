@@ -29,6 +29,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/internal/sandbox"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
@@ -1083,9 +1084,16 @@ func (r *Registry) UserCommands() map[string][]CommandDef {
 	return cmds
 }
 
-// DoctorChecks runs doctor checks on all plugins that implement the Doctor interface.
+// DoctorChecks runs doctor checks on all plugins that implement the Doctor
+// interface, and reports under "sandbox" whether the programs they run on
+// uploads are confined.
 func (r *Registry) DoctorChecks(ctx context.Context) map[string][]CheckResult {
 	results := make(map[string][]CheckResult)
+	check := CheckResult{Name: "bwrap", Status: CheckOK}
+	if err := sandbox.Status(); err != nil {
+		check = CheckResult{Name: "bwrap", Status: CheckWarn, Message: "converters run unsandboxed: " + err.Error()}
+	}
+	results["sandbox"] = []CheckResult{check}
 	for _, id := range r.order {
 		if d, ok := r.plugins[id].(Doctor); ok {
 			results[id] = d.DoctorChecks(ctx)

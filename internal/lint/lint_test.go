@@ -157,6 +157,40 @@ func TestHTTPClientsAreSafe(t *testing.T) {
 	}
 }
 
+// TestProgramsAreSandboxed refuses exec.Command in the plugins outside
+// internal/sandbox: the programs plugins run parse what users upload and
+// feeds supply. A program that reads none of it says why on the line before,
+// with "// unsandboxed:".
+func TestProgramsAreSandboxed(t *testing.T) {
+	fset, files := sourceFiles(t)
+	for path, f := range files {
+		if !strings.HasPrefix(path, "plugin/") {
+			continue
+		}
+		exempt := map[int]bool{}
+		for _, cg := range f.Comments {
+			for _, c := range cg.List {
+				if strings.Contains(c.Text, "unsandboxed:") {
+					line := fset.Position(c.Pos()).Line
+					exempt[line], exempt[line+1] = true, true
+				}
+			}
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if id, ok := sel.X.(*ast.Ident); ok && id.Name == "exec" && (sel.Sel.Name == "Command" || sel.Sel.Name == "CommandContext") {
+				if pos := fset.Position(sel.Pos()); !exempt[pos.Line] {
+					t.Errorf("%s: exec.%s runs a program unsandboxed; use sandbox.CommandContext", pos, sel.Sel.Name)
+				}
+			}
+			return true
+		})
+	}
+}
+
 var publicDirective = regexp.MustCompile(`(^|[ ,])public([ ,]|$)`)
 
 // TestNoPublicCaching refuses Cache-Control: public outside the static

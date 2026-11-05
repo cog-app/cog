@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 
+	"git.duckfam.us/jj-software/cog/internal/sandbox"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
 )
 
@@ -107,7 +107,8 @@ func (w *Transcribe) processOne(ctx context.Context, itemID int64) error {
 	}
 
 	prefix := filepath.Join(w.captionsRoot, fmt.Sprintf("%d", itemID))
-	cmd := exec.CommandContext(ctx, cliPath,
+	// whisper.cpp decodes the downloaded media itself.
+	cmd := sandbox.CommandContext(ctx, sandbox.Spec{Read: []string{modelPath, d.LocalPath}, Write: []string{w.captionsRoot}}, cliPath,
 		"-m", modelPath,
 		"-f", d.LocalPath,
 		"--output-vtt",
@@ -152,15 +153,17 @@ func tryYouTubeCaptions(ctx context.Context, videoURL, outPath string) error {
 	}()
 
 	prefix := filepath.Join(tmpDir, "out")
-	cmd := exec.CommandContext(ctx, "yt-dlp",
+	cmd, err := feed.YTDLP(ctx, videoURL, []string{tmpDir},
 		"--write-auto-sub",
 		"--sub-lang", "en",
 		"--sub-format", "vtt",
 		"--skip-download",
 		"--no-warnings",
 		"-o", prefix,
-		"--", videoURL,
 	)
+	if err != nil {
+		return err
+	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("yt-dlp captions: %w: %s", err, string(out))
 	}

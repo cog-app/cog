@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/ffargs"
+	"git.duckfam.us/jj-software/cog/internal/sandbox"
 )
 
 // silenceNoiseDB and silenceMinDur control silencedetect sensitivity.
@@ -27,7 +28,7 @@ func detectSilence(ctx context.Context, mediaPath string) ([]Range, error) {
 	}
 	args := append([]string{"-hide_banner", "-nostats"}, ffargs.Input(mediaPath)...)
 	args = append(args, "-af", "silencedetect=noise="+silenceNoiseDB+":d="+silenceMinDur, "-f", "null", "-")
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd := sandbox.CommandContext(ctx, sandbox.Spec{Read: []string{mediaPath}}, "ffmpeg", args...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

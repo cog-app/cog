@@ -183,3 +183,14 @@ func TestClientWithAllow(t *testing.T) {
 		t.Fatalf("client allowed elsewhere: expected ErrBlockedIP, got %v", err)
 	}
 }
+
+func TestCheckHost(t *testing.T) {
+	for _, host := range []string{"127.0.0.1", "localhost", "169.254.169.254", "::1"} {
+		if err := CheckHost(context.Background(), host); !errors.Is(err, ErrBlockedIP) {
+			t.Errorf("CheckHost(%q) = %v, want ErrBlockedIP", host, err)
+		}
+	}
+	if err := CheckHost(context.Background(), "93.184.215.14"); err != nil {
+		t.Errorf("public address refused: %v", err)
+	}
+}

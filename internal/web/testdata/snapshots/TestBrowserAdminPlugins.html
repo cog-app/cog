@@ -215,6 +215,12 @@
             </div>
             <div class="page-actions" />
           </header>
+          <div class="alert alert-warning" role="status">
+            <button aria-label="Dismiss" class="alert-dismiss" onclick="this.parentElement.remove()" type="button">
+              ×
+            </button>
+            Previews, OCR and media tools run unsandboxed, with access to every user's files: turned off by COG_SANDBOX=off
+          </div>
           <div class="card card-flush">
             <div class="table-wrap">
               <table class="table">

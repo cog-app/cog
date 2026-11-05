@@ -41,14 +41,16 @@ func ytdlpListEntries(ctx context.Context, url string) ([]ytdlpInfo, error) {
 	if !ytdlpAvailable() {
 		return nil, fmt.Errorf("yt-dlp not found in PATH")
 	}
-	cmd := exec.CommandContext(ctx, "yt-dlp",
+	cmd, err := feed.YTDLP(ctx, url, nil,
 		"--flat-playlist",
 		"--dump-json",
 		"--no-warnings",
 		"--no-download",
 		"--playlist-end", "50",
-		"--", url,
 	)
+	if err != nil {
+		return nil, err
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("yt-dlp pipe: %w", err)
@@ -81,13 +83,15 @@ func ytdlpChannelMeta(ctx context.Context, url string) (*ytdlpPlaylistMeta, erro
 	if !ytdlpAvailable() {
 		return nil, fmt.Errorf("yt-dlp not found in PATH")
 	}
-	cmd := exec.CommandContext(ctx, "yt-dlp",
+	cmd, err := feed.YTDLP(ctx, url, nil,
 		"--dump-single-json",
 		"--flat-playlist",
 		"--playlist-items", "0",
 		"--no-warnings",
-		"--", url,
 	)
+	if err != nil {
+		return nil, err
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("yt-dlp channel meta: %w", err)

@@ -19,6 +19,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
+	"git.duckfam.us/jj-software/cog/internal/sandbox"
 	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/settings"
@@ -493,7 +494,11 @@ func (h *adminHandler) ListPlugins(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-	ui.Render(w, r, adminPluginsPage(pd, plugins))
+	var unsandboxed string
+	if err := sandbox.Status(); err != nil {
+		unsandboxed = "Previews, OCR and media tools run unsandboxed, with access to every user's files: " + err.Error()
+	}
+	ui.Render(w, r, adminPluginsPage(pd, plugins, unsandboxed))
 }
 
 func (h *adminHandler) TogglePlugin(w http.ResponseWriter, r *http.Request) {

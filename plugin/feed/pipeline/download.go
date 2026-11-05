@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 
@@ -69,7 +68,10 @@ func (d *Downloader) processOne(ctx context.Context, itemID int64) error {
 	}
 	switch sub.Kind {
 	case "youtube":
-		cmd := exec.CommandContext(ctx, "yt-dlp", "-o", dst, "--", it.MediaURL)
+		cmd, err := feed.YTDLP(ctx, it.MediaURL, []string{d.root}, "-o", dst)
+		if err != nil {
+			return d.fail(itemID, err)
+		}
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return d.fail(itemID, fmt.Errorf("yt-dlp: %w: %s", err, string(out)))
 		}
