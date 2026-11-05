@@ -255,40 +255,50 @@ func (b *Browser) WaitNotVisible(t testing.TB, sel string) {
 // noneVisible polls until nothing matching sel is visible. It used to wait
 // for a match to exist and then for it to hide, so an element that was
 // already removed held the test for the whole action timeout.
+//
+// Each poll is one script returning a count. Fetching the matches as
+// element handles broke when the action navigated, as submitting a login
+// form does: rod retries an evaluation whose page context is gone, but not
+// the call that reads the handles it returned, so every poll failed with
+// "Cannot find context" until the timeout.
 func (b *Browser) noneVisible(sel string) error {
 	deadline := time.Now().Add(b.actionTimeout())
 	xpath := len(sel) > 1 && sel[:2] == "//"
 	for {
-		var (
-			els rod.Elements
-			err error
-		)
-		if xpath {
-			els, err = b.page.ElementsX(sel)
-		} else {
-			els, err = b.page.Elements(sel)
-		}
-		visible := 0
-		if err == nil {
-			for _, el := range els {
-				// An element detached since the query is no longer visible.
-				if v, verr := el.Visible(); verr == nil && v {
-					visible++
-				}
-			}
-		}
-		if err == nil && visible == 0 {
+		res, err := b.page.Eval(countVisible, sel, xpath)
+		if err == nil && res.Value.Int() == 0 {
 			return nil
 		}
 		if time.Now().After(deadline) {
 			if err != nil {
 				return fmt.Errorf("find %s: %w", sel, err)
 			}
-			return fmt.Errorf("%d elements matching %s still visible: %w", visible, sel, context.DeadlineExceeded)
+			return fmt.Errorf("%d elements matching %s still visible: %w", res.Value.Int(), sel, context.DeadlineExceeded)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+
+// countVisible counts the nodes matching a CSS selector, or an XPath
+// expression, that are visible by rod's test (lib/js helper.js visible):
+// displayed, not hidden, and with a box.
+const countVisible = `(sel, xpath) => {
+	let els = [];
+	if (xpath) {
+		const r = document.evaluate(sel, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+		for (let i = 0; i < r.snapshotLength; i++) els.push(r.snapshotItem(i));
+	} else {
+		els = Array.from(document.querySelectorAll(sel));
+	}
+	return els.filter(node => {
+		// A text node an XPath matched is judged by its element, as rod does.
+		const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+		if (!el) return false;
+		const box = el.getBoundingClientRect();
+		const style = getComputedStyle(el);
+		return style.display !== 'none' && style.visibility !== 'hidden' && !!(box.top || box.bottom || box.width || box.height);
+	}).length;
+}`
 
 // WaitReady waits for the element to exist in the DOM.
 func (b *Browser) WaitReady(t testing.TB, sel string) {
