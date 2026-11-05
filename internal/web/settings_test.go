@@ -1,8 +1,10 @@
 package web_test
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,7 +47,51 @@ func TestSettingsUpdateProfile(t *testing.T) {
 	u, err := env.Providers.Users.GetByID(alice.ID)
 	require.NoError(t, err)
 	require.Equal(t, "Alice W", u.DisplayName)
+	// The address counts only once its owner opens the link sent to it.
+	require.Equal(t, "", u.Email)
+	confirmEmail(t, env, cookie, "alice@example.com")
+	u, err = env.Providers.Users.GetByID(alice.ID)
+	require.NoError(t, err)
 	require.Equal(t, "alice@example.com", u.Email)
+}
+
+// confirmEmail opens the confirmation link last mailed to addr.
+func confirmEmail(t *testing.T, env *cogtest.Env, auth cogtest.HTTPOpt, addr string) {
+	t.Helper()
+	mail := env.Mailbox.ForRecipient(addr)
+	require.True(t, len(mail) > 0, "no mail to %s", addr)
+	_, link, ok := strings.Cut(mail[0].Body, "/settings/email/verify?")
+	require.True(t, ok, "no confirmation link in %q", mail[0].Body)
+	link, _, _ = strings.Cut(link, "\n")
+	env.Get(t, "/settings/email/verify?"+strings.TrimSpace(link), auth, cogtest.StopRedirect).Status(http.StatusSeeOther)
+}
+
+// TestEmailChangeNeedsConfirmation: claiming someone else's address changes
+// nothing until a link that only they receive is opened, and an address
+// belongs to one account (audit H14).
+func TestEmailChangeNeedsConfirmation(t *testing.T) {
+	env := cogtest.New(t)
+	bob := env.CreateUser(t, "bob", "pass")
+	addr := "bob@example.com"
+	require.NoError(t, env.Providers.Users.Update(bob.ID, user.UpdateOpts{Email: &addr}))
+	mallory := env.CreateUser(t, "mallory", "pass")
+	cookie, token := sessionAndCSRF(t, env, mallory.ID)
+
+	env.PostForm(t, "/settings/profile", url.Values{
+		"csrf_token": {token}, "display_name": {"M"}, "email": {"bob@example.com"}, "current_password": {"pass"},
+	}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+	m, err := env.Providers.Users.GetByID(mallory.ID)
+	require.NoError(t, err)
+	require.Equal(t, "", m.Email)
+	// Even holding the link, the address is bob's.
+	confirmEmail(t, env, cookie, "bob@example.com")
+	m, err = env.Providers.Users.GetByID(mallory.ID)
+	require.NoError(t, err)
+	require.Equal(t, "", m.Email)
+
+	// Nor can an admin give it to a second account.
+	err = env.Providers.Users.Update(mallory.ID, user.UpdateOpts{Email: &addr})
+	require.True(t, errors.Is(err, user.ErrEmailTaken), "got %v", err)
 }
 
 func TestSettingsCreateMount(t *testing.T) {

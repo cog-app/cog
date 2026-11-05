@@ -114,6 +114,7 @@ func New(p *services.Providers) http.Handler {
 
 	mux.Handle("GET /settings/{$}", auth.RequireAuthWeb(http.HandlerFunc(settingsH.RedirectToProfile)))
 	mux.Handle("GET /settings/profile", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowProfile)))
+	mux.Handle("GET /settings/email/verify", auth.RequireAuthWeb(http.HandlerFunc(settingsH.VerifyEmail)))
 	mux.Handle("GET /settings/security", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowSecurity)))
 	mux.Handle("GET /settings/storage", auth.RequireAuthWeb(http.HandlerFunc(settingsH.ShowStorage)))
 	mux.Handle("GET /settings/data", auth.RequireAuthWeb(http.HandlerFunc(dataH.ShowData)))

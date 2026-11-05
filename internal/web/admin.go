@@ -6,6 +6,7 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"net/smtp"
 	"os"
 	"regexp"
@@ -170,7 +171,22 @@ func (h *adminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	displayName := r.FormValue("display_name")
 	isAdmin := r.FormValue("is_admin") == "1"
-	if err := h.p.Users.Update(id, user.UpdateOpts{DisplayName: &displayName, IsAdmin: &isAdmin}); err != nil {
+	// An address an admin sets counts as confirmed: they vouch for it.
+	addr := strings.TrimSpace(r.FormValue("email"))
+	if addr != "" {
+		if parsed, err := mail.ParseAddress(addr); err != nil || parsed.Name != "" || parsed.Address != addr {
+			setFlash(w, "error", "That doesn't look like an email address.")
+			http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
+			return
+		}
+	}
+	err = h.p.Users.Update(id, user.UpdateOpts{DisplayName: &displayName, IsAdmin: &isAdmin, Email: &addr})
+	if errors.Is(err, user.ErrEmailTaken) {
+		setFlash(w, "error", "Another account has that email address.")
+		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
+		return
+	}
+	if err != nil {
 		setFlash(w, "error", "Failed to update user.", err)
 		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 		return

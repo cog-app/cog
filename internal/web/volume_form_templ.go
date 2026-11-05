@@ -123,7 +123,7 @@ func volumeForm(fd volumeFormData) templ.Component {
 		var templ_7745c5c3_Var3 templ.SafeURL
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fd.Action))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volume_form.templ`, Line: 104, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `volume_form.templ`, Line: 104, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -136,7 +136,7 @@ func volumeForm(fd volumeFormData) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(fd.CSRFToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volume_form.templ`, Line: 105, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `volume_form.templ`, Line: 105, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -197,7 +197,7 @@ func volumeForm(fd volumeFormData) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(fd.ConnType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volume_form.templ`, Line: 118, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `volume_form.templ`, Line: 118, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -215,7 +215,7 @@ func volumeForm(fd volumeFormData) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(connTypeDisplay(fd.ShowTypeSelector, fd.ConnType, "file"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volume_form.templ`, Line: 120, Col: 94}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `volume_form.templ`, Line: 120, Col: 94}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -228,7 +228,7 @@ func volumeForm(fd volumeFormData) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fd.FilePath)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volume_form.templ`, Line: 129, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `volume_form.templ`, Line: 129, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -249,7 +249,7 @@ func volumeForm(fd volumeFormData) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(connTypeDisplay(fd.ShowTypeSelector, fd.ConnType, "webdav"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volume_form.templ`, Line: 142, Col: 98}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `volume_form.templ`, Line: 142, Col: 98}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -290,7 +290,7 @@ func volumeForm(fd volumeFormData) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(authTypeDisplay(fd.WebDAV.AuthType, "basic"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volume_form.templ`, Line: 151, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `volume_form.templ`, Line: 151, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -315,7 +315,7 @@ func volumeForm(fd volumeFormData) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(authTypeDisplay(fd.WebDAV.AuthType, "bearer"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volume_form.templ`, Line: 155, Col: 85}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `volume_form.templ`, Line: 155, Col: 85}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -336,7 +336,7 @@ func volumeForm(fd volumeFormData) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(connTypeDisplay(fd.ShowTypeSelector, fd.ConnType, "mem"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volume_form.templ`, Line: 159, Col: 92}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `volume_form.templ`, Line: 159, Col: 92}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -349,7 +349,7 @@ func volumeForm(fd volumeFormData) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(fd.SubmitLabel)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volume_form.templ`, Line: 163, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `volume_form.templ`, Line: 163, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -367,7 +367,7 @@ func volumeForm(fd volumeFormData) templ.Component {
 			var templ_7745c5c3_Var13 templ.SafeURL
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fd.CancelURL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/volume_form.templ`, Line: 165, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `volume_form.templ`, Line: 165, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {

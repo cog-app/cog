@@ -112,6 +112,7 @@ templ adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind st
 						@ui.FormField("Display name", "display_name", "text", u.DisplayName, "")
 					</div>
 				</div>
+				@ui.FormField("Email", "email", "email", u.Email, "")
 				<div class="form-group">
 					<label class="form-check">
 						<input type="checkbox" name="is_admin" value="1" checked?={ u.IsAdmin }/>

@@ -14,6 +14,16 @@ CREATE TABLE IF NOT EXISTS users (
 	totp_last_step INTEGER NOT NULL DEFAULT 0
 );
 
+-- An address a user asked to change to, kept until they open the link sent
+-- to it. users.email holds only confirmed addresses (or ones an admin set).
+CREATE TABLE IF NOT EXISTS email_verifications (
+	token_hash TEXT PRIMARY KEY,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	email TEXT NOT NULL,
+	expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_email_verifications_user ON email_verifications(user_id);
+
 CREATE TABLE IF NOT EXISTS sessions (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id),

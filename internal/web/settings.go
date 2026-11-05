@@ -5,10 +5,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"git.duckfam.us/jj-software/cog/internal/email"
 	"git.duckfam.us/jj-software/cog/ui"
 	"image/png"
 	"io"
 	"net/http"
+	"net/mail"
+	"net/url"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -37,7 +40,11 @@ func (h *settingsHandler) ShowProfile(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	if err := settingsProfilePage(pd, flashMsg, flashKind).Render(r.Context(), w); err != nil {
+	pending, err := h.p.Users.PendingEmail(pd.User.ID)
+	if err != nil {
+		h.p.Log.Error("pending email", "user", pd.User.Username, "err", err)
+	}
+	if err := settingsProfilePage(pd, flashMsg, flashKind, pending).Render(r.Context(), w); err != nil {
 		h.p.Log.Error("render profile page", "err", err)
 	}
 }
@@ -327,10 +334,75 @@ func (h *settingsHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	if err := h.p.Users.Update(u.ID, user.UpdateOpts{DisplayName: &displayName, Email: &email}); err != nil {
+	opts := user.UpdateOpts{DisplayName: &displayName}
+	if email == "" {
+		opts.Email = &email // removing an address needs no proof
+	}
+	if err := h.p.Users.Update(u.ID, opts); err != nil {
 		setFlash(w, "error", "Failed to update profile.", err)
-	} else {
-		setFlash(w, "success", "Profile updated.")
+		http.Redirect(w, r, "/settings/profile", http.StatusSeeOther)
+		return
+	}
+	msg := "Profile updated."
+	if email != "" && email != u.Email {
+		var ok bool
+		if msg, ok = h.requestEmail(u, email); !ok {
+			setFlash(w, "error", msg)
+			http.Redirect(w, r, "/settings/profile", http.StatusSeeOther)
+			return
+		}
+	}
+	setFlash(w, "success", msg)
+	http.Redirect(w, r, "/settings/profile", http.StatusSeeOther)
+}
+
+// requestEmail sends a link to a new address; the address becomes the
+// user's only once they open it, since it decides who receives their
+// invitations and password resets (audit H14). It returns what to tell the
+// user and whether the request was made.
+func (h *settingsHandler) requestEmail(u *user.User, addr string) (string, bool) {
+	parsed, err := mail.ParseAddress(addr)
+	if err != nil || parsed.Name != "" || parsed.Address != addr {
+		return "That doesn't look like an email address.", false
+	}
+	sender := h.p.EmailSender()
+	if sender == nil {
+		return "This server can't send email, so it can't confirm a new address. Ask an admin to set it for you.", false
+	}
+	token, err := h.p.Users.RequestEmail(u.ID, addr)
+	if err != nil {
+		h.p.Log.Error("request email change", "user", u.Username, "err", err)
+		return "Your email address could not be changed. Try again.", false
+	}
+	info := userInfo(u, h.p.Config.BaseURL)
+	info.Email = addr
+	if err := sender.SendEmailVerify(h.p.Settings, email.EmailData{
+		BaseURL:      h.p.Config.BaseURL,
+		InstanceName: "Cog",
+		User:         info,
+		VerifyURL:    h.p.Config.BaseURL + "/settings/email/verify?token=" + url.QueryEscape(token),
+	}); err != nil {
+		h.p.Log.Error("send email confirmation", "user", u.Username, "err", err)
+		return "The confirmation email could not be sent. Try again later.", false
+	}
+	return "We sent a link to " + addr + ". Your address changes when you open it.", true
+}
+
+// VerifyEmail opens the link sent by requestEmail. It must be opened signed
+// in as the user who asked, so a link that reached someone else is useless
+// to them.
+func (h *settingsHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	addr, err := h.p.Users.ConfirmEmail(u.ID, r.URL.Query().Get("token"))
+	switch {
+	case errors.Is(err, user.ErrInvalidVerification):
+		setFlash(w, "error", "That confirmation link is invalid or has expired. Change your address again for a new one.")
+	case errors.Is(err, user.ErrEmailTaken):
+		setFlash(w, "error", "That address now belongs to another account.")
+	case err != nil:
+		setFlash(w, "error", "Your address could not be confirmed. Try the link again.", err)
+	default:
+		setFlash(w, "success", "Your email address is now "+addr+".")
 	}
 	http.Redirect(w, r, "/settings/profile", http.StatusSeeOther)
 }

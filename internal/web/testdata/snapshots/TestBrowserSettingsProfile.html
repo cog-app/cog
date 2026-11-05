@@ -214,7 +214,7 @@
             <button aria-label="Dismiss" class="alert-dismiss" onclick="this.parentElement.remove()" type="button">
               ×
             </button>
-            Profile updated.
+            We sent a link to alice@example.com. Your address changes when you open it.
           </div>
           <div class="card">
             <h2 class="card-title">
@@ -254,8 +254,11 @@
                 <label for="email">
                   Email
                 </label>
-                <input autocomplete="" class="form-control" id="email" name="email" placeholder="your@email.com" type="email" value="alice@example.com" />
+                <input autocomplete="" class="form-control" id="email" name="email" placeholder="your@email.com" type="email" value="" />
               </div>
+              <p class="form-help">
+                Waiting for you to open the link sent to alice@example.com.
+              </p>
               <div class="form-group">
                 <label for="profile-current-password">
                   Current password

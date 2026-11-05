@@ -21,7 +21,7 @@ func settingsSidebar(active string) []ui.SidebarItem {
 	}
 }
 
-templ settingsProfilePage(pd ui.PageData, flash string, flashKind string) {
+templ settingsProfilePage(pd ui.PageData, flash string, flashKind string, pendingEmail string) {
 	@ui.SidebarPage(pd, settingsSidebar("profile")) {
 		@ui.PageHeader("Profile", nil)
 		@ui.Alert(flashKind, flash)
@@ -49,6 +49,9 @@ templ settingsProfilePage(pd ui.PageData, flash string, flashKind string) {
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 				@ui.FormField("Display name", "display_name", "text", pd.User.DisplayName, "Your display name")
 				@ui.FormField("Email", "email", "email", pd.User.Email, "your@email.com")
+				if pendingEmail != "" {
+					<p class="form-help">Waiting for you to open the link sent to { pendingEmail }.</p>
+				}
 				<div class="form-group">
 					<label for="profile-current-password">Current password</label>
 					<input class="form-control" type="password" id="profile-current-password" name="current_password" autocomplete="current-password"/>

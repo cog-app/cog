@@ -275,6 +275,16 @@ func (s *Sender) SendPasswordReset(ss *settings.Store, data EmailData) error {
 	return s.SendMessage(Message{To: []string{data.User.Email}, Subject: "Reset your password", Text: textBody, HTML: htmlBody})
 }
 
+// SendEmailVerify sends the link that confirms data.User.Email, to that
+// address.
+func (s *Sender) SendEmailVerify(ss *settings.Store, data EmailData) error {
+	htmlBody, textBody, err := Render(ss, "email_verify", data)
+	if err != nil {
+		return fmt.Errorf("render email_verify: %w", err)
+	}
+	return s.SendMessage(Message{To: []string{data.User.Email}, Subject: "Confirm your email address", Text: textBody, HTML: htmlBody})
+}
+
 // SendOTP sends a one-time authentication code using templates.
 func (s *Sender) SendOTP(ss *settings.Store, data EmailData) error {
 	htmlBody, textBody, err := Render(ss, "otp", data)

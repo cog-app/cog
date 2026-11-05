@@ -185,20 +185,20 @@ func (s *Store) getChunk(column string, args []any, key func(*User) string, out 
 	return nil
 }
 
-// GetByEmail looks up a user by exact email match. Empty email returns
+// GetByEmail looks up a user by email, ignoring case. Empty email returns
 // ErrNotFound to prevent matching accounts that haven't set one.
 func (s *Store) GetByEmail(email string) (*User, error) {
 	if email == "" {
 		return nil, ErrNotFound
 	}
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method FROM users WHERE email = ?`, email,
+		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method FROM users WHERE email != '' AND lower(email) = lower(?)`, email,
 	))
 }
 
 // GetByEmails looks users up by email, ignoring case, in one query. The
-// result is keyed by the lower-cased address; when several users share one,
-// the first by username wins. Empty addresses match nobody.
+// result is keyed by the lower-cased address, which at most one user holds.
+// Empty addresses match nobody.
 func (s *Store) GetByEmails(emails []string) (map[string]*User, error) {
 	var args []any
 	for _, e := range emails {
@@ -335,6 +335,9 @@ func (s *Store) Update(id string, opts UpdateOpts) error {
 		return nil
 	}
 	if _, err := s.db.Exec(`UPDATE users SET `+strings.Join(sets, ", ")+` WHERE id = ?`, append(args, id)...); err != nil {
+		if opts.Email != nil && isUniqueViolation(err) {
+			return ErrEmailTaken
+		}
 		return fmt.Errorf("update user: %w", err)
 	}
 	return nil
