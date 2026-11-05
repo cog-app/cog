@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"iter"
 	"log/slog"
 	"net/http"
@@ -234,11 +235,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		log.Warn("mount bootstrap failed", "err", err)
 	}
 
-	secret, err := loadOrCreateKey(sysDB, secretSettingKey, func() ([]byte, error) {
-		b := make([]byte, 32)
-		_, err := rand.Read(b)
-		return b, err
-	})
+	secret, err := loadSecret(sysDB, filepath.Join(cfg.DataDir, secretFileName))
 	if err != nil {
 		return nil, err
 	}
@@ -473,6 +470,83 @@ const (
 // loadOrCreateKey returns a key persisted in system_settings, generating
 // and storing one with gen on first run. Two processes starting at once
 // both generate; the first to store wins, and both use what was stored.
+// secretFileName is the master secret's file in the data dir. It starts with
+// a dot, so no username can take it.
+const secretFileName = ".cog-secret"
+
+// loadSecret returns the master secret, which encrypts TOTP secrets and
+// keys reset links, CSRF tokens and attachment links. It lives in a file
+// beside the data, not in the database it protects, so a copy of the
+// database alone reveals none of those. A secret from before is moved out of
+// system_settings; otherwise one is made. Back the file up with the
+// database: without it, TOTP secrets cannot be read and links stop working.
+func loadSecret(db *sql.DB, path string) ([]byte, error) {
+	if b, err := readSecret(path); err == nil {
+		return b, dropSetting(db, secretSettingKey)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	var key []byte
+	var hexVal string
+	err := db.QueryRow(`SELECT value FROM system_settings WHERE key = ?`, secretSettingKey).Scan(&hexVal)
+	switch {
+	case err == nil:
+		if key, err = hex.DecodeString(hexVal); err != nil || len(key) == 0 {
+			return nil, fmt.Errorf("system setting %s is not a hex key", secretSettingKey)
+		}
+	case errors.Is(err, sql.ErrNoRows):
+		key = make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return nil, fmt.Errorf("generate secret: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("read system setting %s: %w", secretSettingKey, err)
+	}
+	// Created whole or not at all, and never over another process's: a
+	// link fails if the name exists, and then that one is the secret.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, fmt.Errorf("create data dir: %w", err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".cog-secret-*")
+	if err != nil {
+		return nil, fmt.Errorf("write secret: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.WriteString(hex.EncodeToString(key) + "\n"); err != nil {
+		return nil, errors.Join(fmt.Errorf("write secret: %w", err), tmp.Close())
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, fmt.Errorf("write secret: %w", err)
+	}
+	if err := os.Link(tmp.Name(), path); err != nil && !errors.Is(err, fs.ErrExist) {
+		return nil, fmt.Errorf("store secret: %w", err)
+	}
+	b, err := readSecret(path)
+	if err != nil {
+		return nil, err
+	}
+	return b, dropSetting(db, secretSettingKey)
+}
+
+func readSecret(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read secret: %w", err)
+	}
+	b, err := hex.DecodeString(strings.TrimSpace(string(data)))
+	if err != nil || len(b) < 16 {
+		return nil, fmt.Errorf("%s does not hold a hex key", path)
+	}
+	return b, nil
+}
+
+func dropSetting(db *sql.DB, key string) error {
+	if _, err := db.Exec(`DELETE FROM system_settings WHERE key = ?`, key); err != nil {
+		return fmt.Errorf("remove system setting %s: %w", key, err)
+	}
+	return nil
+}
+
 func loadOrCreateKey(db *sql.DB, name string, gen func() ([]byte, error)) ([]byte, error) {
 	var hexVal string
 	err := db.QueryRow(`SELECT value FROM system_settings WHERE key = ?`, name).Scan(&hexVal)

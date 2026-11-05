@@ -126,6 +126,9 @@ func (h *volumeBrowserHandler) serverInternal(vol *volume.Volume, p string) bool
 			return true
 		}
 	}
+	if len(segs) == 1 && strings.HasPrefix(segs[0], ".cog-secret") {
+		return true // the master secret (services.loadSecret)
+	}
 	if len(segs) == 1 {
 		// The system database, when it lives in the data directory: where
 		// COG_DB puts it, or system.db when nothing says otherwise.
