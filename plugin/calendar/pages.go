@@ -106,6 +106,11 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	me, err := h.plugin.me(userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	if calIDStr != "" {
 		calID, err := strconv.ParseInt(calIDStr, 10, 64)
 		if err != nil {
@@ -171,12 +176,15 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type fcEvent struct {
-		ID            int64  `json:"id"`
-		Title         string `json:"title"`
-		Start         string `json:"start"`
-		End           string `json:"end"`
-		AllDay        bool   `json:"allDay"`
-		Color         string `json:"color,omitempty"`
+		ID              int64    `json:"id"`
+		Title           string   `json:"title"`
+		Start           string   `json:"start"`
+		End             string   `json:"end"`
+		AllDay          bool     `json:"allDay"`
+		Color           string   `json:"color,omitempty"`
+		BackgroundColor string   `json:"backgroundColor,omitempty"`
+		TextColor       string   `json:"textColor,omitempty"`
+		ClassNames      []string `json:"classNames,omitempty"`
 		ExtendedProps struct {
 			Location    string `json:"location"`
 			Description string `json:"description"`
@@ -196,6 +204,19 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 			Title:  ev.Summary,
 			AllDay: ev.IsAllDay,
 			Color:  color,
+		}
+		// An invitation shows as an outline until it is answered, as in
+		// other calendars: it landed in the user's calendar without them
+		// choosing it. A declined one stays visible, struck through, until
+		// they delete it.
+		if _, own := cals[ev.CalendarID]; own && ev.Component != nil {
+			switch myStatus(ev.Component, me) {
+			case "NEEDS-ACTION":
+				fc.BackgroundColor, fc.TextColor = "transparent", color
+				fc.ClassNames = []string{"cal-invite-pending"}
+			case "DECLINED":
+				fc.ClassNames = []string{"cal-invite-declined"}
+			}
 		}
 		if ev.IsAllDay {
 			fc.Start = time.Unix(ev.DTStart, 0).UTC().Format("2006-01-02")

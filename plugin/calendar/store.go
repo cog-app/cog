@@ -81,6 +81,9 @@ type EventWithCalendar struct {
 	CalendarName     string
 	CalendarColor    string
 	CalendarTimezone string
+	// Component is the component an instance comes from, the master or an
+	// override; nil before Instances.
+	Component *ical.Component
 }
 
 // Zone returns the owning calendar's timezone, used for floating times.
@@ -245,6 +248,7 @@ func Instances(ev EventWithCalendar, start, end time.Time) ([]EventWithCalendar,
 		e.Summary, e.Location, e.Description = in.Event.Summary, in.Event.Location, in.Event.Description
 		e.DTStart, e.DTEnd = in.Start.Unix(), in.End.Unix()
 		e.IsAllDay = in.Event.Start.IsDate
+		e.Component = in.Event
 		if !in.RecurrenceID.IsZero() {
 			e.Occurrence = in.RecurrenceID.Unix()
 		}

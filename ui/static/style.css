@@ -4373,6 +4373,18 @@ html:has(dialog.gallery-lightbox[open]) {
 .cal-rsvp-label {
   font-weight: 500;
 }
+/* An invitation not yet answered is an outline in the event's colour; a
+   declined one fades and is struck through until deleted. */
+.fc .cal-invite-pending {
+  border-style: dashed;
+  border-width: 1px;
+}
+.fc .cal-invite-declined {
+  opacity: 0.55;
+}
+.fc .cal-invite-declined .fc-event-title {
+  text-decoration: line-through;
+}
 .cal-attendees,
 .cal-attachments {
   list-style: none;

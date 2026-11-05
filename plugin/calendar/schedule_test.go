@@ -57,7 +57,12 @@ func TestWebScheduling(t *testing.T) {
 	assert.Equal(t, ev.UID, got[0].UID)
 	env.Get(t, fmt.Sprintf("/apps/calendar/events/%d", got[0].ID), bobAuth).Status(200).Contains("Going?")
 	env.Get(t, fmt.Sprintf("/apps/calendar/events/%d", ev.ID), aliceAuth).Status(200).NotContains("Going?")
+	// Until he answers, it shows as an outline (D6).
+	week := "/apps/calendar/events.json?start=2026-11-01T00:00:00Z&end=2026-11-08T00:00:00Z"
+	env.Get(t, week, bobAuth).Status(200).Contains(`"cal-invite-pending"`)
+	env.Get(t, week, aliceAuth).Status(200).NotContains(`"cal-invite-pending"`)
 	env.PostForm(t, fmt.Sprintf("/apps/calendar/events/%d/respond", got[0].ID), url.Values{"status": {"ACCEPTED"}}, bobAuth, bobCSRF).Status(200)
+	env.Get(t, week, bobAuth).Status(200).NotContains(`"cal-invite-pending"`)
 
 	ev, err = calendar.GetEvent(db, ev.ID)
 	require.NoError(t, err)
@@ -77,3 +82,4 @@ func TestWebScheduling(t *testing.T) {
 	require.Equal(t, 2, len(mail))
 	assert.Equal(t, "Cancelled: Lunch", mail[0].Subject)
 }
+
