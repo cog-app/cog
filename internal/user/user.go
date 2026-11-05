@@ -385,6 +385,7 @@ func (s *Store) Delete(id string) error {
 		{"group_invitations", `DELETE FROM group_invitations WHERE invited_by = ?1 OR invitee_id = ?1`},
 		{"groups", `UPDATE groups SET owner_id = NULL WHERE owner_id = ?`},
 		{"shares", `DELETE FROM shares WHERE owner_user_id = ?1 OR (subject_type = 'USER' AND subject_id = ?1)`},
+		{"federated_shares", `DELETE FROM federated_shares WHERE local_user_id = ?`},
 		{"mounts", `DELETE FROM mounts WHERE user_id = ?1 OR volume_id IN (` + owned + `)`},
 		{"volume_quotas", `DELETE FROM volume_quotas WHERE (subject_type = 'USER' AND subject_id = ?1) OR volume_id IN (` + owned + `)`},
 		{"volumes", `DELETE FROM volumes WHERE owner_id = ?`},

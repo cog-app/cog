@@ -637,9 +637,19 @@ func (p *Providers) DeleteUser(id string) error {
 			return fmt.Errorf("delete share %s: %w", sid, err)
 		}
 	}
+	var federated []federation.FederatedShare
+	for _, list := range []iter.Seq2[federation.FederatedShare, error]{p.Federation.ListInbound(id, ""), p.Federation.ListOutbound(id)} {
+		for fs, err := range list {
+			if err != nil {
+				return fmt.Errorf("list federated shares of %s: %w", u.Username, err)
+			}
+			federated = append(federated, fs)
+		}
+	}
 	if err := p.Users.Delete(id); err != nil {
 		return err
 	}
+	p.endFederatedShares(federated)
 	// The account is gone; what follows only frees what it left behind, so
 	// it carries on past a failure and reports them all.
 	errs := []error{p.Plugins.CloseUser(u.Username)}
@@ -656,4 +666,31 @@ func (p *Providers) DeleteUser(id string) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// endFederatedShares tells each remote server that a deleted user's share
+// with it has ended, so the remote drops its mount or its copy of the
+// secret instead of keeping a share that now leads nowhere. A remote that
+// cannot be reached is logged: the share is already gone here, and its
+// secret no longer opens anything.
+func (p *Providers) endFederatedShares(shares []federation.FederatedShare) {
+	for _, fs := range shares {
+		if fs.RemoteHost == "" || fs.State == "rejected" || fs.State == "removed" {
+			continue
+		}
+		notif := federation.OCMNotification{
+			NotificationType: federation.NotifyShareUnshared,
+			ResourceType:     fs.ResourceType,
+			ProviderID:       fs.RemoteID,
+			SharedSecret:     fs.Token,
+		}
+		if fs.Direction == "inbound" && fs.State == "pending" {
+			notif.NotificationType = federation.NotifyShareDeclined
+		}
+		go func() {
+			if err := p.FedClient.Notify(context.Background(), fs.RemoteHost, notif); err != nil {
+				p.Log.Warn("notify remote of deleted user's federated share", "remote", fs.RemoteHost, "share", fs.ID, "err", err)
+			}
+		}()
+	}
 }

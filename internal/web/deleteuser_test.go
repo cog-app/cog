@@ -1,10 +1,12 @@
 package web_test
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
 
+	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -31,6 +33,8 @@ func TestDeleteUserWithHistory(t *testing.T) {
 	require.NoError(t, err)
 	_, err = p.Volumes.Create("mine", "", "mem://", &victim.ID, "")
 	require.NoError(t, err)
+	inbound := &federation.FederatedShare{Direction: "inbound", State: "accepted", RemoteUser: "bob", LocalUserID: victim.ID}
+	require.NoError(t, p.Federation.Create(inbound))
 
 	require.NoError(t, p.DeleteUser(victim.ID))
 
@@ -46,5 +50,7 @@ func TestDeleteUserWithHistory(t *testing.T) {
 		n++
 	}
 	require.Equal(t, 0, n)
+	_, err = p.Federation.GetByToken(inbound.Token)
+	require.True(t, errors.Is(err, federation.ErrNotFound), "the deleted user's federated share is still there: %v", err)
 	require.False(t, strings.Contains(env.Get(t, "/apps/files/", again.Auth).ReadBody(), "secret.txt"))
 }
