@@ -8,8 +8,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"iter"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -533,4 +536,50 @@ func (p *Providers) EmailVisible(viewer *user.User, targetID string) (bool, erro
 		return true, nil
 	}
 	return p.Groups.ShareAGroup(viewer.ID, targetID)
+}
+
+// DeleteUser removes an account and everything it kept: its rows, its
+// shares (through the share store, so what they fed is updated), its open
+// database handles and search index, and its directories in the data dir.
+// A later account of the same name starts empty (audit H9).
+func (p *Providers) DeleteUser(id string) error {
+	u, err := p.Users.GetByID(id)
+	if err != nil {
+		return err
+	}
+	var shareIDs []string
+	for _, list := range []iter.Seq2[share.Record, error]{p.Shares.ListByOwner(id), p.Shares.ListBySubject(id)} {
+		for rec, err := range list {
+			if err != nil {
+				return fmt.Errorf("list shares of %s: %w", u.Username, err)
+			}
+			if rec.OwnerUserID == id || rec.SubjectType == "USER" {
+				shareIDs = append(shareIDs, rec.ID)
+			}
+		}
+	}
+	for _, sid := range shareIDs {
+		if err := p.Shares.Delete(sid); err != nil && !errors.Is(err, share.ErrNotFound) {
+			return fmt.Errorf("delete share %s: %w", sid, err)
+		}
+	}
+	if err := p.Users.Delete(id); err != nil {
+		return err
+	}
+	// The account is gone; what follows only frees what it left behind, so
+	// it carries on past a failure and reports them all.
+	errs := []error{p.Plugins.CloseUser(u.Username)}
+	if p.Search != nil {
+		errs = append(errs, p.Search.CloseUser(u.Username))
+	}
+	dirs := []string{filepath.Join(p.Config.DataDir, u.Username)}
+	for _, pluginID := range p.Plugins.PluginIDs() {
+		dirs = append(dirs, filepath.Join(p.Config.DataDir, pluginID, u.Username))
+	}
+	for _, dir := range dirs {
+		if err := os.RemoveAll(dir); err != nil {
+			errs = append(errs, fmt.Errorf("remove %s: %w", dir, err))
+		}
+	}
+	return errors.Join(errs...)
 }

@@ -239,15 +239,7 @@ func (h *adminHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 func (h *adminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	// Delete mounts before user (no ON DELETE CASCADE).
-	if h.p.Mounts != nil {
-		if err := h.p.Mounts.DeleteByUser(id); err != nil {
-			h.p.Log.Error("delete mounts failed", "user", id, "err", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-	if err := h.p.Users.Delete(id); err != nil {
+	if err := h.p.DeleteUser(id); err != nil {
 		h.p.Log.Error("delete user failed", "user", id, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

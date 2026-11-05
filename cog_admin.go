@@ -125,7 +125,7 @@ func userCmd(plugins []plugin.Plugin) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("user %q not found", args[0])
 			}
-			if err := p.Users.Delete(u.ID); err != nil {
+			if err := p.DeleteUser(u.ID); err != nil {
 				return err
 			}
 			fmt.Printf("Deleted user %q\n", args[0])

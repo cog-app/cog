@@ -359,9 +359,12 @@ func (s *Store) SetMFAMethod(id, method string) (string, error) {
 	return method, err
 }
 
-// Delete removes a user and their sessions, app passwords and group
-// memberships, in one transaction so a failure part way cannot leave a
-// user who can no longer log in but still exists.
+// Delete removes a user and every row that refers to them, in one
+// transaction, so a failure part way leaves the account as it was rather
+// than half gone (audit H9). Groups they own stay, without an owner, for an
+// admin to reassign; volumes they own go, with every mount of them. Shares
+// are the caller's to delete first, through the share store, so the
+// changes they cause (search, birthday calendars) are made.
 func (s *Store) Delete(id string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -369,12 +372,22 @@ func (s *Store) Delete(id string) error {
 	}
 	defer tx.Rollback()
 
-	// No ON DELETE CASCADE in schema, so delete manually.
+	// Tables without ON DELETE CASCADE, or with no foreign key at all.
+	owned := `SELECT id FROM volumes WHERE owner_id = ?1`
 	for _, q := range []struct{ what, sql string }{
 		{"sessions", `DELETE FROM sessions WHERE user_id = ?`},
 		{"app_passwords", `DELETE FROM app_passwords WHERE user_id = ?`},
+		{"mfa_pending", `DELETE FROM mfa_pending WHERE user_id = ?`},
+		{"webauthn_sessions", `DELETE FROM webauthn_sessions WHERE user_id = ?`},
+		{"email_otp", `DELETE FROM email_otp WHERE user_id = ?`},
 		{"group_members", `DELETE FROM group_members WHERE member_type = 'USER' AND member_id = ?`},
 		{"group_membership_closure", `DELETE FROM group_membership_closure WHERE descendant_user_id = ?`},
+		{"group_invitations", `DELETE FROM group_invitations WHERE invited_by = ?`},
+		{"groups", `UPDATE groups SET owner_id = NULL WHERE owner_id = ?`},
+		{"shares", `DELETE FROM shares WHERE owner_user_id = ?1 OR (subject_type = 'USER' AND subject_id = ?1)`},
+		{"mounts", `DELETE FROM mounts WHERE user_id = ?1 OR volume_id IN (` + owned + `)`},
+		{"volume_quotas", `DELETE FROM volume_quotas WHERE (subject_type = 'USER' AND subject_id = ?1) OR volume_id IN (` + owned + `)`},
+		{"volumes", `DELETE FROM volumes WHERE owner_id = ?`},
 	} {
 		if _, err := tx.Exec(q.sql, id); err != nil {
 			return fmt.Errorf("delete %s: %w", q.what, err)

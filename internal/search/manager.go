@@ -252,6 +252,23 @@ func (m *Manager) Stop() {
 	}
 }
 
+// CloseUser stops indexing for username and closes their index, so their
+// files can be removed and a later account of the same name starts empty.
+func (m *Manager) CloseUser(username string) error {
+	m.mu.Lock()
+	us, ok := m.userIndices[username]
+	delete(m.userIndices, username)
+	m.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	us.collector.Stop()
+	if err := us.index.Close(); err != nil {
+		return fmt.Errorf("close search index of %s: %w", username, err)
+	}
+	return nil
+}
+
 // SearchSystem queries the system index.
 func (m *Manager) SearchSystem(query string, limit, offset int) (*Result, error) {
 	if m.systemIndex == nil {

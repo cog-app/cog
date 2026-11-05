@@ -198,6 +198,21 @@ func (r *Registry) Stop() {
 	}
 }
 
+// CloseUser closes the cached database handles of username, so their files
+// can be removed and a later account of the same name gets new ones.
+func (r *Registry) CloseUser(username string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var errs []error
+	for key, db := range r.dbs {
+		if name, _, ok := strings.Cut(key, ":"); ok && name == username {
+			errs = append(errs, db.Close())
+			delete(r.dbs, key)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // PluginDB returns (or opens) the per-user plugin database, migrated to the
 // schema the plugin registered.
 //
