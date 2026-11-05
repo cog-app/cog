@@ -238,3 +238,17 @@ func TestRedefinedZoneMovesOtherEvents(t *testing.T) {
 	put("b", "+0500")
 	assert.Equal(t, "10-05T04 a, 10-05T04 b", instancesJSON(t, env, alice))
 }
+
+// TestEventsJSONCapsInstances: an event repeating every minute shows only
+// the first 1,000 in a day's view, not all 1,440.
+func TestEventsJSONCapsInstances(t *testing.T) {
+	env, alice, _, db, cal := calEnv(t)
+	saveICS(t, env, db, cal, "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\nBEGIN:VEVENT\r\nUID:every-minute\r\nDTSTAMP:20261001T000000Z\r\nDTSTART:20261001T000000Z\r\nDURATION:PT1M\r\nRRULE:FREQ=MINUTELY\r\nSUMMARY:Tick\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+
+	var events []struct {
+		Start string `json:"start"`
+	}
+	env.Get(t, "/apps/calendar/events.json?start=2026-10-01T00:00:00Z&end=2026-10-02T00:00:00Z", alice.Auth).Status(200).JSON(&events)
+	assert.Equal(t, 1000, len(events))
+	assert.Equal(t, "2026-10-01T00:00:00Z", events[0].Start)
+}

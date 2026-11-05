@@ -232,8 +232,15 @@ func attachObjects(db *sql.DB, events []Event) error {
 	return nil
 }
 
-// Instances returns an event's instances overlapping [start, end), each as
-// a copy of the event with that instance's fields and times.
+// maxViewInstances bounds how many instances of one event a view shows. A
+// rule repeating every minute would otherwise put tens of thousands of
+// entries in one month's page, all written out and drawn by the browser;
+// no one reads more than this of one event at once.
+const maxViewInstances = 1000
+
+// Instances returns an event's first maxViewInstances instances overlapping
+// [start, end), each as a copy of the event with that instance's fields and
+// times.
 func Instances(ev EventWithCalendar, start, end time.Time) ([]EventWithCalendar, error) {
 	if ev.Object == nil {
 		return nil, fmt.Errorf("event %d: object not loaded", ev.ID)
@@ -242,6 +249,7 @@ func Instances(ev EventWithCalendar, start, end time.Time) ([]EventWithCalendar,
 	if err != nil {
 		return nil, fmt.Errorf("expand event %s: %w", ev.UID, err)
 	}
+	ins = ins[:min(len(ins), maxViewInstances)]
 	out := make([]EventWithCalendar, 0, len(ins))
 	for _, in := range ins {
 		e := ev

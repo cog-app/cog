@@ -185,7 +185,7 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 		BackgroundColor string   `json:"backgroundColor,omitempty"`
 		TextColor       string   `json:"textColor,omitempty"`
 		ClassNames      []string `json:"classNames,omitempty"`
-		ExtendedProps struct {
+		ExtendedProps   struct {
 			Location    string `json:"location"`
 			Description string `json:"description"`
 			CalendarID  int64  `json:"calendarId"`

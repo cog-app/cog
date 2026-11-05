@@ -82,4 +82,3 @@ func TestWebScheduling(t *testing.T) {
 	require.Equal(t, 2, len(mail))
 	assert.Equal(t, "Cancelled: Lunch", mail[0].Subject)
 }
-
