@@ -32,6 +32,15 @@ CREATE TABLE IF NOT EXISTS share_declines (
 	PRIMARY KEY (share_id, user_id)
 );
 
+-- The usernames of deleted accounts, with the address each last had. Other
+-- servers and people still know the account by them, so no new account may
+-- take one until an admin releases it.
+CREATE TABLE IF NOT EXISTS retired_usernames (
+	username TEXT PRIMARY KEY COLLATE NOCASE,
+	email TEXT NOT NULL DEFAULT '',
+	retired_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id),

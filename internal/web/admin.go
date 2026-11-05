@@ -43,7 +43,30 @@ func (h *adminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	ui.Render(w, r, adminUsersPage(pd, h.p.Users.List(), flashMsg, flashKind))
+	retired, err := h.p.Users.Retired()
+	if err != nil {
+		h.p.Log.Error("list retired usernames", "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	ui.Render(w, r, adminUsersPage(pd, h.p.Users.List(), retired, flashMsg, flashKind))
+}
+
+// ReleaseUsername lets a new account take the name of a deleted one.
+func (h *adminHandler) ReleaseUsername(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	err := h.p.Users.Release(name)
+	if errors.Is(err, user.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		setFlash(w, "error", "The name could not be released.", err)
+		http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+		return
+	}
+	setFlash(w, "success", fmt.Sprintf("“%s” can be used by a new account.", name))
+	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
 func (h *adminHandler) NewUserForm(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +94,11 @@ func (h *adminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	u, err := h.p.Users.Create(username, password)
+	if errors.Is(err, user.ErrUsernameRetired) {
+		setFlashForm(w, "error", fmt.Sprintf("“%s” belonged to a deleted account. Release it under Users first if it should be reused.", username), keep)
+		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
+		return
+	}
 	if errors.Is(err, user.ErrUsernameTaken) {
 		setFlashForm(w, "error", fmt.Sprintf("A user named “%s” already exists.", username), keep)
 		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
@@ -176,6 +204,22 @@ func (h *adminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	if addr != "" {
 		if parsed, err := mail.ParseAddress(addr); err != nil || parsed.Name != "" || parsed.Address != addr {
 			setFlash(w, "error", "That doesn't look like an email address.")
+			http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
+			return
+		}
+	}
+	// A deleted account's address still reaches this server in replies to
+	// its invitations; it goes to someone else only once its name is
+	// released.
+	if addr != "" && !strings.EqualFold(addr, before.Email) {
+		name, err := h.p.Users.RetiredWithEmail(addr)
+		if err != nil {
+			setFlash(w, "error", "Failed to update user.", err)
+			http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
+			return
+		}
+		if name != "" {
+			setFlash(w, "error", fmt.Sprintf("That address belonged to the deleted account “%s”. Release that name under Users first if the address should be reused.", name))
 			http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 			return
 		}

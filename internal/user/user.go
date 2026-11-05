@@ -86,15 +86,24 @@ func (s *Store) Create(username, password string) (*User, error) {
 	// One statement, so two concurrent registrations can neither both become
 	// the first user (who is made admin) nor take names differing only in
 	// case, which would share a directory on a case-insensitive file system.
+	// The name of a deleted account stays taken until an admin releases it.
 	var isAdmin bool
 	err = s.db.QueryRow(
 		`INSERT INTO users (id, username, password_hash, home_mount, created_at, is_admin, display_name)
-		SELECT ?, ?, ?, ?, ?, NOT EXISTS (SELECT 1 FROM users), ''
-		WHERE NOT EXISTS (SELECT 1 FROM users WHERE lower(username) = lower(?))
+		SELECT ?1, ?2, ?3, ?4, ?5, NOT EXISTS (SELECT 1 FROM users), ''
+		WHERE NOT EXISTS (SELECT 1 FROM users WHERE lower(username) = lower(?2))
+		AND NOT EXISTS (SELECT 1 FROM retired_usernames WHERE username = ?2)
 		RETURNING is_admin`,
-		id, username, string(hash), homeMount, now, username,
+		id, username, string(hash), homeMount, now,
 	).Scan(&isAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
+		var retired bool
+		if err := s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM retired_usernames WHERE username = ?)`, username).Scan(&retired); err != nil {
+			return nil, fmt.Errorf("insert user %q: %w", username, err)
+		}
+		if retired {
+			return nil, fmt.Errorf("insert user %q: %w", username, ErrUsernameRetired)
+		}
 		return nil, fmt.Errorf("insert user %q: %w", username, ErrUsernameTaken)
 	}
 	if err != nil {
@@ -393,6 +402,10 @@ func (s *Store) Delete(id string) error {
 		if _, err := tx.Exec(q.sql, id); err != nil {
 			return fmt.Errorf("delete %s: %w", q.what, err)
 		}
+	}
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO retired_usernames (username, email, retired_at) SELECT username, email, ? FROM users WHERE id = ?`,
+		s.clock().Unix(), id); err != nil {
+		return fmt.Errorf("retire username: %w", err)
 	}
 	res, err := tx.Exec(`DELETE FROM users WHERE id = ?`, id)
 	if err != nil {
