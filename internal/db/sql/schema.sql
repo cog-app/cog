@@ -24,6 +24,14 @@ CREATE TABLE IF NOT EXISTS email_verifications (
 );
 CREATE INDEX IF NOT EXISTS idx_email_verifications_user ON email_verifications(user_id);
 
+-- A user's refusal of a share made to a group they are in, or to everyone:
+-- it stops reaching them without being taken from the others.
+CREATE TABLE IF NOT EXISTS share_declines (
+	share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	PRIMARY KEY (share_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id),

@@ -253,6 +253,27 @@ func (s *Store) GetByToken(token string) (*Record, error) {
 }
 
 // Delete removes a share record.
+// Decline stops a share reaching userID. A share with them alone is
+// deleted; one with a group they are in, or with everyone, stays for the
+// others and is recorded as declined by them.
+func (s *Store) Decline(id, userID string) error {
+	rec, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+	if rec.SubjectType == "USER" {
+		if rec.SubjectID != userID {
+			return ErrNotFound
+		}
+		return s.Delete(id)
+	}
+	if _, err := s.db.Exec(`INSERT INTO share_declines (share_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING`, id, userID); err != nil {
+		return fmt.Errorf("decline share: %w", err)
+	}
+	s.changed(rec)
+	return nil
+}
+
 func (s *Store) Delete(id string) error {
 	rec := Record{ID: id}
 	err := s.db.QueryRow(`DELETE FROM shares WHERE id = ?
@@ -315,7 +336,8 @@ func (s *Store) ListBySubject(subjectID string) iter.Seq2[Record, error] {
 				))
 			   OR (s.subject_type = 'INSTANCE'))
 			  AND (s.expiration IS NULL OR s.expiration > ?)
-			ORDER BY s.created_at DESC`, subjectID, subjectID, s.clock().Unix())
+			  AND s.id NOT IN (SELECT share_id FROM share_declines WHERE user_id = ?)
+			ORDER BY s.created_at DESC`, subjectID, subjectID, s.clock().Unix(), subjectID)
 		if err != nil {
 			yield(Record{}, fmt.Errorf("list shares by subject: %w", err))
 			return
@@ -400,8 +422,9 @@ func (s *Store) CheckAccessGrantedBy(userID, resourceType, resourceID string, gr
 			))
 			OR (s.subject_type = 'INSTANCE')
 		  )
-		  AND (s.expiration IS NULL OR s.expiration > ?)`,
-		resourceType, resourceID, userID, userID, s.clock().Unix())
+		  AND (s.expiration IS NULL OR s.expiration > ?)
+		  AND s.id NOT IN (SELECT share_id FROM share_declines WHERE user_id = ?)`,
+		resourceType, resourceID, userID, userID, s.clock().Unix(), userID)
 	if err != nil {
 		return nil, fmt.Errorf("check access: %w", err)
 	}

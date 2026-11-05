@@ -71,6 +71,10 @@ func (a *shareStoreAdapter) Create(ownerUserID, resourceType, resourceID, subjec
 	}, nil
 }
 
+func (a *shareStoreAdapter) Decline(id, userID string) error {
+	return a.s.Decline(id, userID)
+}
+
 func (a *shareStoreAdapter) Delete(id string) error {
 	return a.s.Delete(id)
 }

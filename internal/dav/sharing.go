@@ -30,6 +30,9 @@ type Shares interface {
 	Create(ownerUserID, resourceType, resourceID, subjectType, subjectID string, permissions uint32) (*plugin.ShareRecord, error)
 	UpdatePermissions(id string, permissions uint32) error
 	Delete(id string) error
+	// Decline stops a share reaching userID: deleting one with them alone,
+	// and recording a group or everyone share as declined by them.
+	Decline(id, userID string) error
 }
 
 // subjectUser is the subject type of a share with one user. Only these are
@@ -255,7 +258,8 @@ func (q *request) sharePost(c *Collection, owner *User, n *node) {
 
 // inviteReply answers a CS:invite-reply POSTed to the current user's
 // calendar home. Shares take effect when they are made, so accepting only
-// says where the collection is; declining removes the user's share of it.
+// says where the collection is; declining stops it reaching the user, and
+// only them when it was made to a group or to everyone.
 func (q *request) inviteReply(n *node) {
 	hostHref := n.child(cs("hosturl")).child(dav("href")).text()
 	c, ownerName, ok, err := q.collectionAt(hostHref)
@@ -273,8 +277,9 @@ func (q *request) inviteReply(n *node) {
 			q.fail(err)
 			return
 		}
-		if id, ok := collectionShare(rec); ok && id == c.ID && rec.OwnerUserID == c.OwnerID &&
-			rec.SubjectType == subjectUser && rec.SubjectID == q.user.ID {
+		// ListBySubject gives the user's own shares and those of groups
+		// they are in or of everyone, which they may decline for themselves.
+		if id, ok := collectionShare(rec); ok && id == c.ID && rec.OwnerUserID == c.OwnerID {
 			ids = append(ids, rec.ID)
 		}
 	}
@@ -284,7 +289,7 @@ func (q *request) inviteReply(n *node) {
 	}
 	if n.child(cs("invite-declined")) != nil {
 		for _, id := range ids {
-			if err := q.s.Shares.Delete(id); err != nil {
+			if err := q.s.Shares.Decline(id, q.user.ID); err != nil {
 				q.fail(err)
 				return
 			}
