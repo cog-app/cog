@@ -38,7 +38,7 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 				safehttp.SetAllowPrivate(true)
 			}
 
-			p, err := openProviders(plugins...)
+			p, err := openServerProviders(plugins...)
 			if err != nil {
 				return err
 			}

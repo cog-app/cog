@@ -99,24 +99,25 @@ func newLogger(cfg config.Config) (*slog.Logger, *logbuf.Buffer) {
 	return slog.New(logbuf.NewTeeHandler(handler, buf)), buf
 }
 
-// openProviders creates a services.Providers from env-var config.
-// openProviders returns the process's one service graph, building it on
-// first use. Main builds it to find plugin commands before the command line
-// is parsed, and the command then runs on the same graph: a second would
-// start every process plugin twice and leave the first set running.
+// openProviders returns the process's one service graph for a command,
+// building it on first use. Process plugins serve only HTTP: they register
+// no commands and no doctor checks, so a command finds their binaries, and
+// the names they hold stay reserved, without starting them. That includes
+// cog shell, which an SSH login runs for every session.
 func openProviders(plugins ...plugin.Plugin) (*services.Providers, error) {
-	return open(false, plugins)
-}
-
-// openAdminProviders is openProviders for an admin command, which uses
-// none of what process plugins serve: their binaries are found, so the
-// names they hold stay reserved, but not started.
-func openAdminProviders(plugins ...plugin.Plugin) (*services.Providers, error) {
 	return open(true, plugins)
 }
 
-// open builds the process's one service graph; the first caller decides
-// whether process plugins start.
+// openServerProviders returns the process's one service graph for the
+// server, with the process plugins started.
+func openServerProviders(plugins ...plugin.Plugin) (*services.Providers, error) {
+	return open(false, plugins)
+}
+
+// open builds the process's one service graph from env-var config; the
+// first caller decides whether process plugins start. Main may build it to
+// find plugin commands before the command line is parsed, and the command
+// then runs on the same graph: a second would open everything twice.
 func open(namesOnly bool, plugins []plugin.Plugin) (*services.Providers, error) {
 	shared.once.Do(func() {
 		cfg := configFromEnv()
@@ -156,14 +157,14 @@ func Main(plugins ...plugin.Plugin) {
 	root.AddCommand(shellCmd(plugins))
 	root.AddCommand(doctorCmd(plugins))
 
-	// Discover and register plugin CLI commands, which means starting the
-	// plugins — so only when the command line names no built-in command:
-	// `cog user list` or an SSH login shell should not start every plugin
-	// binary to find commands it will not run. Close providers after
-	// Execute — not via OnFinalize or PersistentPostRun, which interfere
-	// with shell tab-completion and subcommand lifecycle.
-	if !namesBuiltin(root, os.Args[1:]) {
-		if pluginProviders := addPluginCommands(root, plugins); pluginProviders != nil {
+	// Discover and register plugin CLI commands, which means opening the
+	// service graph — so only when the command line names no built-in
+	// command, which opens what it needs itself. Bare `cog` serves, so its
+	// graph starts the process plugins. Close providers after Execute — not
+	// via OnFinalize or PersistentPostRun, which interfere with shell
+	// tab-completion and subcommand lifecycle.
+	if args := os.Args[1:]; !namesBuiltin(root, args) {
+		if pluginProviders := addPluginCommands(root, plugins, len(args) == 0); pluginProviders != nil {
 			defer func() {
 				if err := pluginProviders.Close(); err != nil {
 					fmt.Fprintf(os.Stderr, "close: %v\n", err)
@@ -187,8 +188,12 @@ func namesBuiltin(root *cobra.Command, args []string) bool {
 
 // addPluginCommands registers plugin CLI commands by initializing services
 // (lightweight — no web server) and querying the registry for registered commands.
-func addPluginCommands(root *cobra.Command, plugins []plugin.Plugin) *services.Providers {
-	p, err := openProviders(plugins...)
+func addPluginCommands(root *cobra.Command, plugins []plugin.Plugin, serving bool) *services.Providers {
+	openGraph := openProviders
+	if serving {
+		openGraph = openServerProviders
+	}
+	p, err := openGraph(plugins...)
 	if err != nil {
 		// The built-in commands still work without services, so this is not
 		// fatal; say why the plugin commands are missing.
