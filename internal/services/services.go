@@ -306,7 +306,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	// The DAV core owns collections; plugins that hold DAV resources get it
 	// before they register. web.New finishes wiring it.
 	davServer := &dav.Server{Collections: dav.NewStore(sysDB, c), Clock: c, Log: log.With("component", "dav"),
-		Secret: secret, MailLimit: ratelimit.New(maxInvitationMailPerHour, time.Hour, c)}
+		Secret: secret, MailLimit: ratelimit.NewShared(sysDB, "invitation-mail", maxInvitationMailPerHour, time.Hour, c)}
 
 	// CSRF tokens use a key of their own, derived from the master secret,
 	// because trusted process plugins are given it: a plugin can then mint
@@ -387,7 +387,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		return nil, err
 	}
 
-	limiter := ratelimit.New(10, 15*time.Minute, c)
+	limiter := ratelimit.NewShared(sysDB, "auth", 10, 15*time.Minute, c)
 	return &Providers{
 		Config:         cfg,
 		Log:            log,

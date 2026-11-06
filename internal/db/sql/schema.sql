@@ -64,6 +64,17 @@ CREATE TABLE IF NOT EXISTS direct_tokens (
 	created_at INTEGER NOT NULL
 );
 
+-- Failed attempts the rate limiters count (internal/ratelimit), kept here
+-- so a restart does not forgive them and every replica counts the same.
+-- at is in milliseconds.
+CREATE TABLE IF NOT EXISTS rate_attempts (
+	limiter TEXT NOT NULL,
+	key TEXT NOT NULL,
+	at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rate_attempts_key ON rate_attempts(limiter, key, at);
+CREATE INDEX IF NOT EXISTS idx_rate_attempts_at ON rate_attempts(limiter, at);
+
 CREATE TABLE IF NOT EXISTS sessions (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id),

@@ -1,7 +1,11 @@
-// Package ratelimit provides a simple in-memory rate limiter for auth endpoints.
+// Package ratelimit limits how often a client or an account may fail to
+// sign in, and other attempts worth counting.
 package ratelimit
 
 import (
+	"database/sql"
+	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -53,12 +57,15 @@ func isTrusted(ip netip.Addr) bool {
 	return false
 }
 
-// Limiter tracks failed authentication attempts per key (IP or username)
-// and blocks requests that exceed the threshold within a sliding window.
+// Limiter tracks failed attempts per key (an address, an account) and
+// limits a key that exceeds MaxAttempts within the sliding Window.
+//
+// A server's limiters keep their attempts in the system database (NewShared),
+// so a restart does not forgive a guesser and every replica counts the same
+// attempts; New keeps them in memory, for a limiter nothing else shares.
 type Limiter struct {
-	mu       sync.Mutex
-	attempts map[string][]time.Time
-	clock    clock.Clock
+	store store
+	clock clock.Clock
 
 	// MaxAttempts is the number of failed attempts allowed in Window.
 	MaxAttempts int
@@ -66,72 +73,123 @@ type Limiter struct {
 	Window time.Duration
 }
 
-// New creates a rate limiter with the given threshold and window.
+// store holds a limiter's attempts.
+type store interface {
+	record(key string, at, cutoff time.Time) error
+	count(key string, cutoff time.Time) (int, error)
+	reset(key string) error
+}
+
+// New creates a rate limiter that keeps its attempts in memory.
 func New(maxAttempts int, window time.Duration, c clock.Clock) *Limiter {
-	l := &Limiter{
-		attempts:    make(map[string][]time.Time),
-		clock:       c,
-		MaxAttempts: maxAttempts,
-		Window:      window,
-	}
-	go l.cleanup()
-	return l
+	return &Limiter{store: &memStore{attempts: map[string][]time.Time{}}, clock: c, MaxAttempts: maxAttempts, Window: window}
+}
+
+// NewShared creates a rate limiter that keeps its attempts in db's
+// rate_attempts table under name, which keeps limiters apart.
+func NewShared(db *sql.DB, name string, maxAttempts int, window time.Duration, c clock.Clock) *Limiter {
+	return &Limiter{store: &dbStore{db: db, name: name}, clock: c, MaxAttempts: maxAttempts, Window: window}
 }
 
 // RecordFailure records a failed attempt for the given key.
 func (l *Limiter) RecordFailure(key string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.attempts[key] = append(l.attempts[key], l.clock())
+	now := l.clock()
+	if err := l.store.record(key, now, now.Add(-l.Window)); err != nil {
+		slog.Error("rate limit: record attempt", "err", err)
+	}
 }
 
-// IsLimited returns true if the key has exceeded the rate limit.
+// IsLimited returns true if the key has exceeded the rate limit. A limiter
+// that cannot count says yes: refusing is what keeps guessing slow.
 func (l *Limiter) IsLimited(key string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	cutoff := l.clock().Add(-l.Window)
-	attempts := l.attempts[key]
-
-	// Trim old entries.
-	start := 0
-	for start < len(attempts) && attempts[start].Before(cutoff) {
-		start++
+	n, err := l.store.count(key, l.clock().Add(-l.Window))
+	if err != nil {
+		slog.Error("rate limit: count attempts", "err", err)
+		return true
 	}
-	if start > 0 {
-		l.attempts[key] = attempts[start:]
-		attempts = l.attempts[key]
-	}
-
-	return len(attempts) >= l.MaxAttempts
+	return n >= l.MaxAttempts
 }
 
 // Reset clears rate limit state for a key (e.g. after successful login).
 func (l *Limiter) Reset(key string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	delete(l.attempts, key)
+	if err := l.store.reset(key); err != nil {
+		slog.Error("rate limit: reset", "err", err)
+	}
 }
 
-// cleanup periodically removes expired entries.
-func (l *Limiter) cleanup() {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-	for range ticker.C {
-		l.mu.Lock()
-		cutoff := l.clock().Add(-l.Window)
-		for key, attempts := range l.attempts {
-			start := 0
-			for start < len(attempts) && attempts[start].Before(cutoff) {
-				start++
-			}
-			if start >= len(attempts) {
-				delete(l.attempts, key)
-			} else if start > 0 {
-				l.attempts[key] = attempts[start:]
-			}
+// memStore keeps attempts in a map. Each record drops the attempts that
+// have left the window, so keys no one tries again do not pile up.
+type memStore struct {
+	mu       sync.Mutex
+	attempts map[string][]time.Time
+}
+
+func (m *memStore) record(key string, at, cutoff time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for k, a := range m.attempts {
+		a = slices.DeleteFunc(a, func(t time.Time) bool { return t.Before(cutoff) })
+		if len(a) == 0 {
+			delete(m.attempts, k)
+		} else {
+			m.attempts[k] = a
 		}
-		l.mu.Unlock()
 	}
+	m.attempts[key] = append(m.attempts[key], at)
+	return nil
+}
+
+func (m *memStore) count(key string, cutoff time.Time) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for _, t := range m.attempts[key] {
+		if !t.Before(cutoff) {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (m *memStore) reset(key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.attempts, key)
+	return nil
+}
+
+// dbStore keeps attempts in the rate_attempts table. Recording drops the
+// limiter's attempts that have left the window: only failures are recorded,
+// so the table stays small.
+type dbStore struct {
+	db   *sql.DB
+	name string
+}
+
+func (d *dbStore) record(key string, at, cutoff time.Time) error {
+	if _, err := d.db.Exec(`DELETE FROM rate_attempts WHERE limiter = ? AND at < ?`, d.name, cutoff.UnixMilli()); err != nil {
+		return fmt.Errorf("prune %s: %w", d.name, err)
+	}
+	if _, err := d.db.Exec(`INSERT INTO rate_attempts (limiter, key, at) VALUES (?, ?, ?)`, d.name, key, at.UnixMilli()); err != nil {
+		return fmt.Errorf("record %s: %w", d.name, err)
+	}
+	return nil
+}
+
+func (d *dbStore) count(key string, cutoff time.Time) (int, error) {
+	var n int
+	if err := d.db.QueryRow(`SELECT count(*) FROM rate_attempts WHERE limiter = ? AND key = ? AND at >= ?`,
+		d.name, key, cutoff.UnixMilli()).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count %s: %w", d.name, err)
+	}
+	return n, nil
+}
+
+func (d *dbStore) reset(key string) error {
+	if _, err := d.db.Exec(`DELETE FROM rate_attempts WHERE limiter = ? AND key = ?`, d.name, key); err != nil {
+		return fmt.Errorf("reset %s: %w", d.name, err)
+	}
+	return nil
 }
 
 // ClientIP extracts the client IP from a request.
