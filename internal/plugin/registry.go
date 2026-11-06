@@ -70,6 +70,8 @@ type RegistryServices struct {
 // Registry manages plugin lifecycle, per-user database provisioning,
 // and HTTP route mounting.
 type Registry struct {
+	// frame is where process plugins' pages render (D14); nil renders them in the host.
+	frame         *Frame
 	log           *slog.Logger
 	dataDir       string
 	rootDataDir   string
@@ -438,6 +440,42 @@ func (r *Registry) SetConnectHooks(hooks ...db.ConnectHook) {
 // SetMountResolver sets an optional mount resolver for path resolution.
 func (r *Registry) SetMountResolver(mr MountResolver) {
 	r.mountResolver = mr
+}
+
+// Frame is how process plugins' pages are kept on an origin of their own
+// (D14): where each plugin's is, how to tell a request is on one, and the
+// token the shell hands a frame so the user is signed in there.
+type Frame struct {
+	// Host is the shell's origin.
+	Host string
+	// OriginFor is the plugin's origin, or "" to render in the host.
+	OriginFor func(pluginID string) string
+	// IsOrigin reports whether a request host is a plugin origin.
+	IsOrigin func(host string) bool
+	// Token signs a short-lived handoff for userID into pluginID's origin.
+	Token func(userID, pluginID string) string
+}
+
+// SetFrame configures plugin origins; before it, pages render in the host.
+func (r *Registry) SetFrame(f Frame) {
+	r.frame = &f
+}
+
+// IsProcessPlugin reports whether pluginID is an out-of-process plugin.
+func (r *Registry) IsProcessPlugin(pluginID string) bool {
+	reg, ok := r.registrars[pluginID]
+	return ok && reg.scopedCSRF
+}
+
+// ProcessPluginsLoaded lists the out-of-process plugins registered.
+func (r *Registry) ProcessPluginsLoaded() []string {
+	var ids []string
+	for _, id := range r.order {
+		if r.IsProcessPlugin(id) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 // UserFilesDir returns the path to the user's files directory.
@@ -924,6 +962,20 @@ func (pr *pluginRegistrar) injectPluginContext(handler http.Handler) http.Handle
 // HTMX partial requests (HX-Request: true) skip the shell entirely.
 func (pr *pluginRegistrar) shellMiddleware(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A process plugin's page is framed from its own origin (D14): on
+		// the host the shell holds only the frame, and on the plugin
+		// origin the page is a document of its own.
+		if f := pr.registry.frame; f != nil && pr.scopedCSRF {
+			if origin := f.OriginFor(pr.pluginID); origin != "" {
+				if f.IsOrigin(r.Host) {
+					pr.serveFrameDoc(w, r, handler, f)
+				} else {
+					pr.serveFrameShell(w, r, f, origin)
+				}
+				return
+			}
+		}
+
 		// HTMX partials: serve the fragment directly, no shell.
 		if r.Header.Get("HX-Request") == "true" {
 			handler.ServeHTTP(w, r)
@@ -993,6 +1045,63 @@ func (pr *pluginRegistrar) shellMiddleware(handler http.Handler) http.Handler {
 
 		ui.Render(w, r, ui.Shell(pd, templ.Raw(rec.Body.String())))
 	})
+}
+
+// serveFrameShell renders the shell around a frame of the plugin's page on
+// its own origin, with a handoff token for the user in the frame's URL.
+func (pr *pluginRegistrar) serveFrameShell(w http.ResponseWriter, r *http.Request, f *Frame, origin string) {
+	u := auth.UserFromContext(r.Context())
+	csrf := cogplugin.CSRFTokenFromContext(r.Context())
+	q := r.URL.Query()
+	q.Set(auth.FrameParam, f.Token(u.ID, pr.pluginID))
+	src := origin + r.URL.Path + "?" + q.Encode()
+
+	var nav []ui.NavItem
+	var title, favicon string
+	for _, item := range pr.registry.NavItems() {
+		active := r.URL.Path == item.URL || (item.URL != "/" && strings.HasPrefix(r.URL.Path, item.URL))
+		nav = append(nav, ui.NavItem{Label: item.Label, URL: item.URL, Active: active, Icon: item.Icon})
+		if active && title == "" {
+			title, favicon = item.Label, ui.IconToFavicon(item.Icon)
+		}
+	}
+	if title == "" {
+		title = "Cog"
+	}
+	pd := ui.PageData{
+		Title: title, User: u, CSRFToken: csrf, Nav: nav, RequestPath: r.URL.Path,
+		IsAdmin: u != nil && u.IsAdmin, PluginID: pr.pluginID, Favicon: favicon,
+		Flash: pr.Cookies().TakeFlash(w, r),
+	}
+	ui.Render(w, r, ui.Shell(pd, ui.PluginFrame(src, origin)))
+}
+
+// serveFrameDoc renders the plugin's page as a document on its own origin.
+func (pr *pluginRegistrar) serveFrameDoc(w http.ResponseWriter, r *http.Request, handler http.Handler, f *Frame) {
+	if r.Header.Get("HX-Request") == "true" {
+		handler.ServeHTTP(w, r)
+		return
+	}
+	csrf := cogplugin.CSRFTokenFromContext(r.Context())
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, r)
+	if rec.Code >= 300 {
+		maps.Copy(w.Header(), rec.Header())
+		w.WriteHeader(rec.Code)
+		w.Write(rec.Body.Bytes())
+		return
+	}
+	title := rec.Header().Get("X-Page-Title")
+	if title == "" {
+		title = "Cog"
+	}
+	for k, v := range rec.Header() {
+		if k == "X-Page-Title" || k == "Content-Length" || k == "Content-Type" {
+			continue
+		}
+		w.Header()[k] = v
+	}
+	ui.Render(w, r, ui.FrameDoc(title, f.Host, "/apps/"+pr.pluginID+"/", csrf, templ.Raw(rec.Body.String())))
 }
 
 // adminSettingsShellMiddleware wraps a fragment handler with the HTML shell and admin sidebar.

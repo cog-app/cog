@@ -12,6 +12,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/jmap"
 	"git.duckfam.us/jj-software/cog/internal/mount"
+	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/pluginsvc"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	filesPlugin "git.duckfam.us/jj-software/cog/plugin/files"
@@ -23,12 +24,31 @@ import (
 func New(p *services.Providers) http.Handler {
 	cookieCfg = p.Cookies
 
+	frameKey := auth.DerivedKey(p.CSRFSecret, "plugin-frame")
 	authMW := &auth.Middleware{
-		Users:        p.Users,
-		Sessions:     p.Sessions,
-		AppPasswords: p.AppPasswords,
-		Guard:        p.Guard,
-		Cookies:      p.Cookies,
+		Users:            p.Users,
+		Sessions:         p.Sessions,
+		AppPasswords:     p.AppPasswords,
+		Guard:            p.Guard,
+		Cookies:          p.Cookies,
+		PluginOriginHost: p.Config.PluginOriginHost,
+		FrameKey:         frameKey,
+		Now:              p.Clock,
+	}
+	// Process plugins' pages render on their own origin (D14); the shell
+	// frames them with a token that signs the user in there.
+	p.Plugins.SetFrame(internalplugin.Frame{
+		Host:      strings.TrimSuffix(p.Config.BaseURL, "/"),
+		OriginFor: p.Config.PluginOriginFor,
+		IsOrigin:  func(host string) bool { _, ok := p.Config.PluginOriginHost(host); return ok },
+		Token: func(userID, pluginID string) string {
+			return auth.FrameToken(frameKey, userID, pluginID, p.Clock().Add(auth.FrameHandoffTTL))
+		},
+	})
+	if p.Config.PluginOrigin == "" {
+		if loaded := p.Plugins.ProcessPluginsLoaded(); len(loaded) > 0 {
+			p.Log.Warn("process plugins render in the host origin: their pages can act as any user who opens them; set COG_PLUGIN_ORIGIN", "plugins", loaded)
+		}
 	}
 
 	loginFlow := compat.NewLoginFlowHandler(p.DB, p.Users, p.AppPasswords, p.Sessions, p.Config.BaseURL, p.CSRFSecret)
@@ -384,17 +404,97 @@ func New(p *services.Providers) http.Handler {
 	// to opt in. Sync and API clients send neither Sec-Fetch-Site nor Origin
 	// and pass.
 	crossOrigin := http.NewCrossOriginProtection()
-	return bodylimit.Middleware(bodylimit.Default, crossOrigin.Handler(securityHeaders(authMW.Wrap(mfaEnforcement(p)(htmlNotFound(p, mux))))))
+	return bodylimit.Middleware(bodylimit.Default, crossOrigin.Handler(securityHeaders(p, authMW.Wrap(mfaEnforcement(p)(pluginOriginGate(p, htmlNotFound(p, mux)))))))
+}
+
+// pluginOriginGate keeps a plugin origin to the plugin's own routes and the
+// static assets. Anything else, such as a redirect out of the plugin,
+// gets a page that asks the shell to navigate instead. Cookies the plugin's
+// handlers set there (its flash, its session) are rewritten to cross-site
+// ones, since the origin is always inside the shell's frame.
+func pluginOriginGate(p *services.Providers, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		originPlugin, ok := p.Config.PluginOriginHost(r.Host)
+		if !ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+		pathPlugin := auth.PluginIDFromPath(r.URL.Path)
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/static/"):
+		case pathPlugin != "" && (originPlugin == "" || originPlugin == pathPlugin) && p.Plugins.IsProcessPlugin(pathPlugin):
+		default:
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusNotFound)
+			if err := ui.FrameEscape(strings.TrimSuffix(p.Config.BaseURL, "/"), r.URL.RequestURI()).Render(r.Context(), w); err != nil {
+				p.Log.Error("render frame escape", "err", err)
+			}
+			return
+		}
+		next.ServeHTTP(&crossSiteCookies{ResponseWriter: w}, r)
+	})
+}
+
+// crossSiteCookies rewrites every Set-Cookie on a plugin origin to
+// SameSite=None; Secure, the only kind a browser keeps for a framed origin.
+type crossSiteCookies struct {
+	http.ResponseWriter
+	done bool
+}
+
+func (c *crossSiteCookies) rewrite() {
+	if c.done {
+		return
+	}
+	c.done = true
+	h := c.Header()
+	set := h.Values("Set-Cookie")
+	if len(set) == 0 {
+		return
+	}
+	h.Del("Set-Cookie")
+	for _, raw := range set {
+		ck, err := http.ParseSetCookie(raw)
+		if err != nil {
+			continue // not a cookie a browser would keep either
+		}
+		ck.SameSite = http.SameSiteNoneMode
+		ck.Secure = true
+		h.Add("Set-Cookie", ck.String())
+	}
+}
+
+func (c *crossSiteCookies) WriteHeader(code int) {
+	c.rewrite()
+	c.ResponseWriter.WriteHeader(code)
+}
+
+func (c *crossSiteCookies) Write(b []byte) (int, error) {
+	c.rewrite()
+	return c.ResponseWriter.Write(b)
+}
+
+func (c *crossSiteCookies) Flush() {
+	c.rewrite()
+	if f, ok := c.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // securityHeaders sets what every response carries: browsers keep to the
 // declared content type rather than sniffing one, and no other site may frame
 // a page, where a click could be steered onto a button the user cannot see.
-func securityHeaders(next http.Handler) http.Handler {
+func securityHeaders(p *services.Providers, next http.Handler) http.Handler {
+	host := strings.TrimSuffix(p.Config.BaseURL, "/")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("X-Frame-Options", "SAMEORIGIN")
+		if _, ok := p.Config.PluginOriginHost(r.Host); ok {
+			// A plugin origin exists to be framed, by the shell alone.
+			h.Set("Content-Security-Policy", "frame-ancestors "+host)
+		} else {
+			h.Set("X-Frame-Options", "SAMEORIGIN")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

@@ -19,6 +19,10 @@ func (p *formPlugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "echo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "field=%q", r.FormValue("field"))
 	}))
+	ctx.RegisterPage("hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := plugin.UserFromContext(r.Context())
+		fmt.Fprintf(w, "<p id=\"hello\">hello %s</p>", u.Username)
+	}))
 	return nil
 }
 
