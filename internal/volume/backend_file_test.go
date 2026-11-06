@@ -134,6 +134,34 @@ func TestFileBackend_PathTraversal_AbsolutePath(t *testing.T) {
 	require.True(t, err != nil) // file doesn't exist under our temp root
 }
 
+// A symlink in the tree, however it got there (an archive, a converter, an
+// admin's copy), cannot carry a read or write outside the volume.
+func TestFileBackend_SymlinkEscape(t *testing.T) {
+	b, root := tempFileBackend(t)
+	outside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o644))
+	require.NoError(t, os.Symlink(outside, filepath.Join(root, "link")))
+
+	_, err := b.ReadFile("/link/secret.txt")
+	require.True(t, err != nil)
+	_, err = b.Get("/link/secret.txt")
+	require.True(t, err != nil)
+	require.True(t, b.Put("/link/planted.txt", strings.NewReader("x")) != nil)
+	_, err = os.Stat(filepath.Join(outside, "planted.txt"))
+	require.True(t, errors.Is(err, os.ErrNotExist))
+	_, err = b.List("/link")
+	require.True(t, err != nil)
+	require.True(t, b.Rename("/link/secret.txt", "/stolen.txt") != nil)
+}
+
+func TestFileBackend_DeleteRootRefused(t *testing.T) {
+	b, root := tempFileBackend(t)
+	require.NoError(t, b.Put("/keep.txt", strings.NewReader("x")))
+	require.True(t, b.Delete("/") != nil)
+	_, err := os.Stat(filepath.Join(root, "keep.txt"))
+	require.NoError(t, err)
+}
+
 // --- OpenFile ---
 
 func TestFileBackend_OpenFile_ReadWrite(t *testing.T) {
