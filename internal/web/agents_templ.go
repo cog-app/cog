@@ -209,7 +209,7 @@ func agentsBody(pd ui.PageData, agents []agentView, tokenFor string, token strin
 				}
 			}
 			for _, a := range agents {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div class=\"list-row\"><div class=\"flex items-center justify-between gap-2\"><div><strong>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div class=\"list-row\"><div class=\"flex flex-wrap items-center justify-between gap-2\"><div><strong>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -271,7 +271,7 @@ func agentsBody(pd ui.PageData, agents []agentView, tokenFor string, token strin
 						return templ_7745c5c3_Err
 					}
 					for _, t := range a.Tokens {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<li class=\"flex items-center justify-between gap-2\"><span>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<li class=\"flex flex-wrap items-center justify-between gap-2\"><span>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -333,14 +333,14 @@ func agentsBody(pd ui.PageData, agents []agentView, tokenFor string, token strin
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<form class=\"flex items-center gap-2\" method=\"post\" action=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<form class=\"flex flex-wrap items-center gap-2\" method=\"post\" action=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var17 templ.SafeURL
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/settings/agents/" + a.ID + "/tokens"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 57, Col: 118}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 57, Col: 128}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
@@ -359,7 +359,7 @@ func agentsBody(pd ui.PageData, agents []agentView, tokenFor string, token strin
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\"> <input class=\"form-control w-md\" name=\"name\" placeholder=\"Token name\" autocomplete=\"off\"> <button class=\"btn btn-secondary btn-sm\" type=\"submit\">New token</button></form></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\"> <input class=\"form-control agent-input\" name=\"name\" placeholder=\"Token name\" autocomplete=\"off\"> <button class=\"btn btn-secondary btn-sm\" type=\"submit\">New token</button></form></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -382,7 +382,7 @@ func agentsBody(pd ui.PageData, agents []agentView, tokenFor string, token strin
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<form class=\"flex items-center gap-2\" method=\"post\" action=\"/settings/agents\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<form class=\"flex flex-wrap items-center gap-2\" method=\"post\" action=\"/settings/agents\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -395,7 +395,7 @@ func agentsBody(pd ui.PageData, agents []agentView, tokenFor string, token strin
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\"> <input class=\"form-control w-md\" name=\"name\" placeholder=\"assistant\" required autocomplete=\"off\"> <button class=\"btn btn-primary\" type=\"submit\">Create agent</button></form><p class=\"form-help\">The name is a username: it must be free, and it is what the agent's changes show.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\"> <input class=\"form-control agent-input\" name=\"name\" placeholder=\"assistant\" required autocomplete=\"off\"> <button class=\"btn btn-primary\" type=\"submit\">Create agent</button></form><p class=\"form-help\">The name is a username: it must be free, and it is what the agent's changes show.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

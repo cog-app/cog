@@ -1,0 +1,87 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      Connect an app — Cog
+    </title>
+    <link href="/static/style.css?v=2f7682584a8a" rel="stylesheet" />
+    <link href="/static/favicon.svg?v=f043627311df" rel="icon" type="image/svg+xml" />
+  </head>
+  <body>
+    <main class="login-container">
+      <div class="card login-card">
+        <a class="login-title" href="/">
+          <svg aria-hidden="true" fill="none" height="28" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="28">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          <span>
+            Cog
+          </span>
+        </a>
+        <h1 class="login-heading">
+          Connect Go-http-client?
+        </h1>
+        <p class="login-lead">
+          <strong>
+            Go-http-client
+          </strong>
+          wants to access your Cog account
+          <strong>
+            alice
+          </strong>
+          : your files, calendars and contacts.
+        </p>
+        <p class="login-lead">
+          The request was started just now from
+          <strong>
+            127.0.0.1
+          </strong>
+          . If that is not an app you just set up, cancel: anyone who sends you this link is asking for your account.
+        </p>
+        <form action="/index.php/login/v2/grant?token=«hex»" method="post">
+          <input name="csrf_token" type="hidden" value="«hex»" />
+          <div class="form-group">
+            <label class="form-label" for="grant_as">
+              Sign the app in as
+            </label>
+            <select class="form-control" id="grant_as" name="grant_as">
+              <option value="me">
+                Me (alice): everything in my account
+              </option>
+              <option value="«hex»">
+                Agent assistant: only what I share with it
+              </option>
+              <option value="new">
+                A new agent: only what I share with it
+              </option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="agent_name">
+              Name for a new agent
+            </label>
+            <input autocomplete="off" class="form-control" id="agent_name" name="agent_name" placeholder="assistant" />
+            <p class="form-help">
+              An agent is an account of its own that you share folders, calendars and contacts with. It can change only what you share, and its changes carry its name.
+            </p>
+          </div>
+          <button class="btn btn-primary btn-block" name="action" type="submit" value="grant">
+            Grant access
+          </button>
+          <button class="btn btn-secondary btn-block" formnovalidate="" name="action" type="submit" value="cancel">
+            Cancel
+          </button>
+        </form>
+        <p class="login-note">
+          Granting creates an app password for this app. You can revoke it at any time in
+          <a href="/settings/security">
+            Settings › Security
+          </a>
+          .
+        </p>
+      </div>
+    </main>
+  </body>
+</html>

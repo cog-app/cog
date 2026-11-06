@@ -3,6 +3,7 @@ package web_test
 import (
 	"bytes"
 	"crypto/ed25519"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -856,4 +857,98 @@ func TestBrowserSettingsAddSSHKey(t *testing.T) {
 	b.Click(t, `form[action="/settings/ssh-keys"] button[type="submit"]`)
 	b.WaitVisible(t, `#ssh-keys .alert-success`)
 	b.Snapshot(t)
+}
+
+// Settings › Agents lists an owner's agents with their tokens.
+func TestBrowserSettingsAgents(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	agent, err := env.Providers.Users.CreateAgent(alice.ID, "assistant")
+	require.NoError(t, err)
+	_, _, err = env.Providers.AppPasswords.Create(agent.ID, "laptop")
+	require.NoError(t, err)
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "pass")
+	b.Navigate(t, "/settings/agents")
+	b.WaitText(t, "assistant")
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
+}
+
+// Creating an agent and issuing it a token through the page. The token
+// page is not snapshotted: the token is random.
+func TestBrowserSettingsAgentsCreateAndToken(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "alice", "pass")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "pass")
+	b.Navigate(t, "/settings/agents")
+	b.WaitText(t, "No agents yet")
+	b.Type(t, `form[action="/settings/agents"] input[name="name"]`, "helper")
+	b.Click(t, `form[action="/settings/agents"] button[type="submit"]`)
+	b.WaitText(t, "Agent “helper” created")
+	b.Snapshot(t)
+
+	b.Type(t, `form[action$="/tokens"] input[name="name"]`, "phone")
+	b.Click(t, `form[action$="/tokens"] button[type="submit"]`)
+	b.WaitText(t, "New token for helper")
+	b.WaitText(t, "Copy it now")
+	token := b.Text(t, ".token-display")
+	require.True(t, len(token) > 20, "no token shown: %q", token)
+
+	helper, err := env.Providers.Users.GetByUsername("helper")
+	require.NoError(t, err)
+	env.Get(t, "/api/shares/with-me", cogtest.BasicAuth("helper", token)).Status(200)
+	toks, err := env.Providers.AppPasswords.ListByUser(helper.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(toks))
+}
+
+// The grant page offers the user's agents, and granting as a new agent
+// creates it and signs the app in as it.
+func TestBrowserNCLoginFlowGrantAsAgent(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "secret")
+	_, err := env.Providers.Users.CreateAgent(alice.ID, "assistant")
+	require.NoError(t, err)
+
+	var init struct {
+		Login string                 `json:"login"`
+		Poll  struct{ Token string } `json:"poll"`
+	}
+	env.Post(t, "/index.php/login/v2").Status(200).JSON(&init)
+	i := strings.Index(init.Login, "/index.php/login/v2/grant")
+	require.True(t, i >= 0, "unexpected login URL %q", init.Login)
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "secret")
+	b.Navigate(t, init.Login[i:])
+	b.WaitText(t, "Grant access")
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
+
+	b.Select(t, "#grant_as", `option[value="new"]`)
+	b.Type(t, "#agent_name", "helper")
+	b.Click(t, `button[value="grant"]`)
+	b.WaitText(t, "Access granted")
+
+	var granted struct {
+		LoginName string `json:"loginName"`
+	}
+	env.PostForm(t, "/index.php/login/v2/poll", url.Values{"token": {init.Poll.Token}}).Status(200).JSON(&granted)
+	require.Equal(t, "helper", granted.LoginName)
+	helper, err := env.Providers.Users.GetByUsername("helper")
+	require.NoError(t, err)
+	require.Equal(t, alice.ID, helper.OwnerID)
 }
