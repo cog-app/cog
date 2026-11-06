@@ -225,6 +225,69 @@ func WireSearch(log *slog.Logger, p *Providers, mgr *search.Manager) {
 		prop.OnShareChange(searchShare(&rec))
 	}
 
+	prop.ResolveResourceTypes = func(source string) []string {
+		pluginID, table, ok := strings.Cut(source, ":")
+		if !ok {
+			return nil
+		}
+		var types []string
+		for _, def := range p.Plugins.ResourceDefs()[pluginID] {
+			if def.Table == table {
+				types = append(types, pluginID+":"+def.Type)
+			}
+		}
+		return types
+	}
+	prop.SharesOf = func(owner, resourceType string, resourceIDs []string) ([]*search.ShareRecord, error) {
+		u, err := p.Users.GetByUsername(owner)
+		if err != nil {
+			return nil, fmt.Errorf("shares of %s: %w", owner, err)
+		}
+		recs, err := p.Shares.ListByResources(u.ID, resourceType, resourceIDs)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]*search.ShareRecord, len(recs))
+		for i := range recs {
+			out[i] = searchShare(&recs[i])
+		}
+		return out, nil
+	}
+	prop.SharesFor = func(username string) ([]*search.ShareRecord, error) {
+		u, err := p.Users.GetByUsername(username)
+		if err != nil {
+			return nil, fmt.Errorf("shares for %s: %w", username, err)
+		}
+		var out []*search.ShareRecord
+		for rec, err := range p.Shares.ListBySubject(u.ID) {
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, searchShare(&rec))
+		}
+		return out, nil
+	}
+	// Joining a group brings what was shared with it before.
+	p.Groups.OnMemberAdded = func(memberID string, memberType group.MemberType) {
+		userIDs := []string{memberID}
+		if memberType == group.GroupMember {
+			ids, err := p.Groups.ListClosureUserIDs(memberID)
+			if err != nil {
+				log.Error("search copies for new group members", "group", memberID, "err", err)
+				return
+			}
+			userIDs = ids
+		}
+		members, err := p.Users.GetByIDs(userIDs)
+		if err != nil {
+			log.Error("search copies for new group members", "err", err)
+			return
+		}
+		for _, u := range members {
+			prop.OnRecipientChanged(u.Username)
+		}
+	}
+
 	mgr.SharedAccess = func(username string, refs []search.SharedRef) (map[search.SharedRef]bool, error) {
 		u, err := p.Users.GetByUsername(username)
 		if err != nil {

@@ -47,6 +47,10 @@ func (t MemberType) IsValid() bool {
 
 type Store struct {
 	db *sql.DB
+	// OnMemberAdded, when set, runs after a user or a group joins a group,
+	// so what follows membership (search copies of shares to the group)
+	// can catch up. It handles its own errors.
+	OnMemberAdded func(memberID string, memberType MemberType)
 }
 
 func NewStore(db *sql.DB) *Store {
@@ -258,7 +262,13 @@ func (s *Store) AddMember(groupID, memberID string, memberType MemberType) error
 	if err := rebuildClosureTx(tx); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if s.OnMemberAdded != nil {
+		s.OnMemberAdded(memberID, memberType)
+	}
+	return nil
 }
 
 // isCyclicMembershipTx reports whether making candidateChildGroupID a member

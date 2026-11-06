@@ -30,6 +30,11 @@ type Collector struct {
 	tableMap map[string]SearchSource // table name -> source
 	dbFunc   func() *sql.DB
 
+	// OnIndexed, when set, learns of every batch written to the index: the
+	// documents indexed and the IDs removed. A user's index tells the
+	// propagator, so copies of what they shared follow their edits.
+	OnIndexed func(docs []Document, deleted []string)
+
 	quit    chan struct{}
 	done    chan struct{}
 	once    sync.Once
@@ -200,7 +205,9 @@ func (c *Collector) flush(pending map[SearchSource]map[int64]Op) {
 		}
 		if err := c.index.Batch(docs, deleteIDs); err != nil {
 			c.log.Error("batch failed", "source", src.Name(), "err", err)
+			continue
 		}
+		c.indexed(docs, deleteIDs)
 	}
 }
 
@@ -220,6 +227,8 @@ func (c *Collector) FullSync() error {
 			if len(docs) > 0 {
 				if err := c.index.Batch(docs, nil); err != nil {
 					c.log.Error("full sync batch failed", "source", src.Name(), "err", err)
+				} else {
+					c.indexed(docs, nil)
 				}
 			}
 			continue
@@ -252,11 +261,19 @@ func (c *Collector) FullSync() error {
 				}
 				if err := c.index.Batch(docs, nil); err != nil {
 					c.log.Error("full sync batch failed", "source", src.Name(), "err", err)
+				} else {
+					c.indexed(docs, nil)
 				}
 			}
 		}
 	}
 	return nil
+}
+
+func (c *Collector) indexed(docs []Document, deleted []string) {
+	if c.OnIndexed != nil && (len(docs) > 0 || len(deleted) > 0) {
+		c.OnIndexed(docs, deleted)
+	}
 }
 
 // tableRowIDs returns every rowid in table.

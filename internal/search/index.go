@@ -164,6 +164,15 @@ func (i *Index) GetDocument(id string) (*Document, error) {
 	return &Document{ID: id, Fields: resp.Hits[0].Fields}, nil
 }
 
+// HasDocument reports whether the index holds a document with this ID.
+func (i *Index) HasDocument(id string) (bool, error) {
+	doc, err := i.idx.Document(id)
+	if err != nil {
+		return false, fmt.Errorf("get document %s: %w", id, err)
+	}
+	return doc != nil, nil
+}
+
 // Delete removes the index files from disk after closing.
 func Delete(path string) error {
 	return os.RemoveAll(path)

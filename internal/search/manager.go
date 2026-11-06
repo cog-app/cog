@@ -366,6 +366,15 @@ func (m *Manager) IndexSharedDocument(username string, doc Document) error {
 	return us.index.Batch([]Document{doc}, nil)
 }
 
+// hasSharedDocument reports whether a user's index holds docID.
+func (m *Manager) hasSharedDocument(username, docID string) (bool, error) {
+	us, err := m.ensureUserIndex(username)
+	if err != nil {
+		return false, err
+	}
+	return us.index.HasDocument(docID)
+}
+
 // DeleteSharedDocument removes a document from a user's search index.
 func (m *Manager) DeleteSharedDocument(username, docID string) error {
 	us, err := m.ensureUserIndex(username)
@@ -424,6 +433,11 @@ func (m *Manager) openUserIndex(username string) (*userSearch, error) {
 	}
 
 	collector := NewCollector(m.log, idx, func() *sql.DB { return nil })
+	collector.OnIndexed = func(docs []Document, deleted []string) {
+		if m.Propagator != nil {
+			m.Propagator.OnOwnerIndexed(username, docs, deleted)
+		}
+	}
 
 	// Register plugin sources for this user.
 	for pluginID, defs := range m.pluginSources {
@@ -454,6 +468,11 @@ func (m *Manager) openUserIndex(username string) (*userSearch, error) {
 	// per-user plugin DB and would otherwise block all other user-index opens.
 	if err := collector.FullSync(); err != nil {
 		m.log.Error("user full sync failed", "user", username, "err", err)
+	}
+	// Copies of what was shared with them while their index was closed —
+	// a group joined, an account created after the share — are added now.
+	if m.Propagator != nil {
+		m.Propagator.OnRecipientChanged(username)
 	}
 	return us, nil
 }

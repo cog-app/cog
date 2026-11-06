@@ -455,6 +455,42 @@ func (s *Store) CheckAccessGrantedBy(userID, resourceType, resourceID string, gr
 	return decision, rows.Err()
 }
 
+// ListByResources returns the live shares ownerUserID made of the given
+// resources of one type, in one query.
+func (s *Store) ListByResources(ownerUserID, resourceType string, resourceIDs []string) ([]Record, error) {
+	if len(resourceIDs) == 0 {
+		return nil, nil
+	}
+	ids, err := json.Marshal(resourceIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list shares by resources: %w", err)
+	}
+	rows, err := s.db.Query(`
+		SELECT s.id, s.owner_user_id, s.resource_type, s.resource_id,
+			s.subject_type, s.subject_id, s.permissions, s.token, s.password_hash,
+			s.expiration, s.created_at, s.updated_at
+		FROM shares s
+		WHERE s.owner_user_id = ? AND s.resource_type = ?
+		  AND s.resource_id IN (SELECT value FROM json_each(?))
+		  AND (s.expiration IS NULL OR s.expiration > ?)`,
+		ownerUserID, resourceType, string(ids), s.clock().Unix())
+	if err != nil {
+		return nil, fmt.Errorf("list shares by resources: %w", err)
+	}
+	defer rows.Close()
+	var out []Record
+	for rows.Next() {
+		var r Record
+		if err := rows.Scan(&r.ID, &r.OwnerUserID, &r.ResourceType, &r.ResourceID,
+			&r.SubjectType, &r.SubjectID, &r.Permissions, &r.Token, &r.PasswordHash,
+			&r.Expiration, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan share: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // OwnedRef names a resource as it was shared: the username of the share's
 // owner, and the resource's type and ID.
 type OwnedRef struct {
