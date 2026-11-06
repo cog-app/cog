@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/storage"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/internal/volume"
@@ -167,7 +168,8 @@ func TestRenameSubtree(t *testing.T) {
 }
 
 // TestUploadsShareQuota: an upload in progress holds the bytes it has
-// received, so another at the same time cannot be given them too.
+// received, so another write at the same time, an upload or a plugin's,
+// cannot be given them too.
 func TestUploadsShareQuota(t *testing.T) {
 	env := cogtest.New(t)
 	alice := env.CreateUser(t, "alice", "pass")
@@ -190,6 +192,11 @@ func TestUploadsShareQuota(t *testing.T) {
 
 	_, err = plug.Upload(alice.Username, "/fast.txt", strings.NewReader("12345"))
 	require.True(t, errors.Is(err, plugin.ErrQuotaExceeded), "second upload beside one in progress: %v", err)
+	// Plugin storage draws on the same budget.
+	notes, err := env.Providers.Plugins.Storage().Dir(storage.Counted, "notes", alice.Username)
+	require.NoError(t, err)
+	_, err = notes.Put("big.bin", strings.NewReader("12345"))
+	require.True(t, errors.Is(err, plugin.ErrQuotaExceeded), "plugin storage beside an upload in progress: %v", err)
 	require.NoError(t, w.Close())
 	require.NoError(t, <-done)
 

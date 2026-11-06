@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/internal/quota/budget"
 	"git.duckfam.us/jj-software/cog/internal/storage"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin"
@@ -44,16 +45,10 @@ func read(t *testing.T, s plugin.Storage, name string) string {
 func TestCounted(t *testing.T) {
 	s, _, _ := newStore(t, "alice")
 	limit := int64(10)
-	s.SetQuota(func(username string, n int64) error {
+	s.SetQuota(budget.New(func(username string) (int64, error) {
 		used, err := s.Usage(username)
-		if err != nil {
-			return err
-		}
-		if used+n > limit {
-			return plugin.ErrQuotaExceeded
-		}
-		return nil
-	})
+		return max(limit-used, 0), err
+	}).Begin)
 	d, err := s.Dir(storage.Counted, "notes", "alice")
 	require.NoError(t, err)
 
@@ -94,7 +89,7 @@ func TestCounted(t *testing.T) {
 // TestUncounted: caches and global storage take no quota.
 func TestUncounted(t *testing.T) {
 	s, _, _ := newStore(t, "alice")
-	s.SetQuota(func(string, int64) error { return plugin.ErrQuotaExceeded })
+	s.SetQuota(budget.New(func(string) (int64, error) { return 0, nil }).Begin)
 	c, err := s.Dir(storage.Cache, "gallery", "alice")
 	require.NoError(t, err)
 	_, err = c.Put("thumb.jpg", strings.NewReader("x"))
@@ -184,16 +179,10 @@ func TestMigrate(t *testing.T) {
 func TestTake(t *testing.T) {
 	s, _, _ := newStore(t, "alice")
 	limit := int64(10)
-	s.SetQuota(func(username string, n int64) error {
+	s.SetQuota(budget.New(func(username string) (int64, error) {
 		used, err := s.Usage(username)
-		if err != nil {
-			return err
-		}
-		if used+n > limit {
-			return plugin.ErrQuotaExceeded
-		}
-		return nil
-	})
+		return max(limit-used, 0), err
+	}).Begin)
 	cache, err := s.Dir(storage.Cache, "feed", "alice")
 	require.NoError(t, err)
 	own, err := s.Dir(storage.Counted, "feed", "alice")

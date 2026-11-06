@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	cogplugin "git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/internal/quota/budget"
 	"git.duckfam.us/jj-software/cog/vfs"
 )
 
@@ -99,104 +99,27 @@ func (p *Plugin) recordDirs(db *sql.DB, fsys vfs.FS, dir string) error {
 	return nil
 }
 
-// budget is what a user's writers in progress (uploads, and handles open
-// through FS) may still add to their files. The usage the quota is checked
-// against comes from the rows, which a writer updates only when it is done,
-// so writers at once share one budget instead of each being allowed the
-// whole of what is left.
-type budget struct {
-	handles int   // open write handles
-	left    int64 // bytes they may still add; negative for no limit
-	pending int64 // bytes they have added that no row records yet
+// beginWrite starts a write for username, drawing its growth from the
+// budget their writes in progress share, so that uploads, open handles and
+// plugins' storage at once cannot each take what is left of the quota.
+func (p *Plugin) beginWrite(username string) (*budget.Write, error) {
+	if p.priv == nil {
+		return new(budget.Write), nil
+	}
+	return p.priv.BeginWrite(username)
 }
 
-// openBudget joins username's budget, starting it from the quota when no
-// other handle has.
-func (p *Plugin) openBudget(username string) error {
-	p.budgetsMu.Lock()
-	defer p.budgetsMu.Unlock()
-	if b := p.budgets[username]; b != nil {
-		b.handles++
-		return nil
-	}
-	remaining, err := p.ctx.QuotaRemaining(username)
+// Exists reports whether path is on disk, row or no row.
+func (p *Plugin) Exists(username, path string) (bool, error) {
+	fsys, err := p.userFS(username)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if p.budgets == nil {
-		p.budgets = make(map[string]*budget)
+	_, err = fsys.Stat(normalizePath(path))
+	if errors.Is(err, vfs.ErrNotFound) || errors.Is(err, iofs.ErrNotExist) {
+		return false, nil
 	}
-	p.budgets[username] = &budget{handles: 1, left: remaining}
-	return nil
-}
-
-// grow takes delta bytes, which may be negative, from username's budget,
-// or fails without taking them when there is not room.
-func (p *Plugin) grow(username string, delta int64) error {
-	p.budgetsMu.Lock()
-	defer p.budgetsMu.Unlock()
-	b := p.budgets[username]
-	if b.left >= 0 {
-		if delta > b.left {
-			return fmt.Errorf("%w: the file would be larger than the space left", cogplugin.ErrQuotaExceeded)
-		}
-		b.left -= delta
-	}
-	b.pending += delta
-	return nil
-}
-
-// closeBudget leaves username's budget once a handle's grown bytes are in
-// its row.
-func (p *Plugin) closeBudget(username string, grown int64) {
-	p.budgetsMu.Lock()
-	defer p.budgetsMu.Unlock()
-	b := p.budgets[username]
-	b.pending -= grown
-	if b.handles--; b.handles == 0 {
-		delete(p.budgets, username)
-	}
-}
-
-// room returns what username's open writers may still add, or a negative
-// number for no limit. They must have joined the budget.
-func (p *Plugin) room(username string) int64 {
-	p.budgetsMu.Lock()
-	defer p.budgetsMu.Unlock()
-	return p.budgets[username].left
-}
-
-// give returns n bytes taken from username's budget.
-func (p *Plugin) give(username string, n int64) {
-	p.budgetsMu.Lock()
-	defer p.budgetsMu.Unlock()
-	b := p.budgets[username]
-	if b.left >= 0 {
-		b.left += n
-	}
-	b.pending -= n
-}
-
-// chargedReader takes what it reads beyond end from its writer's budget,
-// failing the read when there is not room.
-type chargedReader struct {
-	r        io.Reader
-	p        *Plugin
-	username string
-	n        int64 // bytes read
-	end      int64 // bytes charged for, counting the file replaced
-}
-
-func (c *chargedReader) Read(b []byte) (int, error) {
-	n, err := c.r.Read(b)
-	c.n += int64(n)
-	if c.n > c.end {
-		if gerr := c.p.grow(c.username, c.n-c.end); gerr != nil {
-			return n, gerr
-		}
-		c.end = c.n
-	}
-	return n, err
+	return err == nil, err
 }
 
 // FS returns username's files as a VFS that keeps the plugin's records:
@@ -342,21 +265,20 @@ func (f *recordedFS) Truncate(path string, size int64) error {
 	if err != nil {
 		return err
 	}
-	if err := f.p.openBudget(f.username); err != nil {
+	w, err := f.p.beginWrite(f.username)
+	if err != nil {
 		return err
 	}
-	delta := size - fi.Size
-	if err := f.p.grow(f.username, delta); err != nil {
-		f.p.closeBudget(f.username, 0)
+	if err := w.Grow(size - fi.Size); err != nil {
+		w.Abandon()
 		return err
 	}
 	if err := as.Truncate(path, size); err != nil {
-		err = errors.Join(err, f.p.grow(f.username, -delta))
-		f.p.closeBudget(f.username, 0)
+		w.Abandon()
 		return err
 	}
 	_, err = f.p.record(f.db, f.fs, path)
-	f.p.closeBudget(f.username, delta)
+	w.Done()
 	return err
 }
 
@@ -382,23 +304,20 @@ func (f *recordedFS) OpenFile(path string, flag int, perm os.FileMode) (vfs.File
 	} else if !errors.Is(err, vfs.ErrNotFound) && !errors.Is(err, iofs.ErrNotExist) {
 		return nil, fmt.Errorf("stat %s: %w", path, err)
 	}
-	if err := f.p.openBudget(f.username); err != nil {
+	w, err := f.p.beginWrite(f.username)
+	if err != nil {
 		return nil, err
 	}
 	file, err := opener.OpenFile(path, flag, perm)
 	if err != nil {
-		f.p.closeBudget(f.username, 0)
+		w.Abandon()
 		return nil, err
 	}
-	end := before
+	h := &recordedFile{File: file, fs: f, w: w, path: path, appending: flag&os.O_APPEND != 0, end: before}
 	if flag&os.O_TRUNC != 0 {
-		end = 0
-	}
-	h := &recordedFile{File: file, fs: f, path: path, appending: flag&os.O_APPEND != 0, before: before, end: before}
-	// Truncating on open freed what the file held.
-	if err := h.resize(end); err != nil {
-		f.p.closeBudget(f.username, 0)
-		return nil, errors.Join(err, file.Close())
+		// Truncating on open freed what the file held.
+		w.Shrink(h.end)
+		h.end = 0
 	}
 	return h, nil
 }
@@ -407,15 +326,15 @@ func (f *recordedFS) OpenFile(path string, flag int, perm os.FileMode) (vfs.File
 type recordedFile struct {
 	vfs.File
 	fs        *recordedFS
+	w         *budget.Write
 	path      string
 	appending bool
-	before    int64 // the size when opened
 	end       int64 // the size as far as its writes and truncations have made it
 }
 
 // resize moves the file's end to n, taking any growth from the budget first.
 func (h *recordedFile) resize(n int64) error {
-	if err := h.fs.p.grow(h.fs.username, n-h.end); err != nil {
+	if err := h.w.Grow(n - h.end); err != nil {
 		return err
 	}
 	h.end = n
@@ -461,6 +380,7 @@ func (h *recordedFile) Truncate(size int64) error {
 	if err := h.File.Truncate(size); err != nil {
 		return err
 	}
+	// Shrinking takes nothing, so cannot fail.
 	return h.resize(size)
 }
 
@@ -471,6 +391,6 @@ func (h *recordedFile) Close() error {
 	if _, rerr := h.fs.p.record(h.fs.db, h.fs.fs, h.path); rerr != nil {
 		err = errors.Join(err, rerr)
 	}
-	h.fs.p.closeBudget(h.fs.username, h.end-h.before)
+	h.w.Done()
 	return err
 }

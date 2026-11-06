@@ -145,6 +145,7 @@ func WireSearch(log *slog.Logger, p *Providers, mgr *search.Manager) {
 	p.Plugins.SetDBHookFactory(mgr.UserDBHook)
 	mgr.SetUserDBFunc(p.Plugins.PluginDB)
 	mgr.SetUserFSFunc(p.Plugins.UserFS)
+	mgr.SetUserGone(p.Users.IsRetired)
 
 	prop := search.NewPropagator(log, mgr)
 	prop.LookupUsername = func(userID string) (string, error) {
@@ -378,6 +379,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	// form tokens but not decrypt TOTP secrets or forge reset links.
 	csrfKey := auth.DerivedKey(secret, "csrf")
 	registry := plugin.NewRegistry(log, cfg.DataDir, http.NewServeMux(), sysDB, csrfKey, c)
+	registry.SetUserGone(users.IsRetired)
 
 	// WebDAV-Push: every committed write to a collection's sync state, in
 	// any plugin database, is noticed by the DAV core; the deliverer turns
@@ -497,6 +499,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	// The quota holds for every front end, so it is wired here, not by
 	// whichever of them is built; the web adds its services to it.
 	p.QuotaChecker = newQuotaChecker(p)
+	p.QuotaChecker.NewWrites()
 	registry.SetServices(plugin.RegistryServices{QuotaChecker: p.QuotaChecker})
 	return p, nil
 }

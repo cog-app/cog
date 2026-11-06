@@ -68,11 +68,6 @@ type Plugin struct {
 	// uploads serializes writes of the same file (see lockPath).
 	uploadsMu sync.Mutex
 	uploads   map[string]*pathLock
-
-	// budgets holds the quota shared by each user's open write handles
-	// (see FS).
-	budgetsMu sync.Mutex
-	budgets   map[string]*budget
 }
 
 // pathLock is the lock of one file being uploaded, and how many uploads
@@ -353,21 +348,21 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 	} else if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
-	// The bytes are drawn from the budget open writers share as they
+	// The bytes are drawn from the budget writers in progress share as they
 	// arrive, so uploads at once cannot each take the whole of what is left.
-	if err := p.openBudget(username); err != nil {
+	w, err := p.beginWrite(username)
+	if err != nil {
 		return nil, err
 	}
-	body := &chargedReader{r: content, p: p, username: username, end: replaced}
+	body := w.Reader(content, replaced)
 	recorded := false
 	defer func() {
 		if !recorded {
-			p.give(username, body.end-replaced)
-			p.closeBudget(username, 0)
+			w.Abandon()
 		}
 	}()
 	// A known length is refused before anything is read.
-	if room := p.room(username); room >= 0 {
+	if room := w.Room(); room >= 0 {
 		if lr, ok := content.(*io.LimitedReader); ok && lr.N-replaced > room {
 			return nil, fmt.Errorf("%w: the upload is larger than the space left", cogplugin.ErrQuotaExceeded)
 		}
@@ -390,7 +385,7 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 		}
 		return nil, fmt.Errorf("write file: %w", err)
 	}
-	size := body.n
+	size := body.N()
 	// What reconcile compares to notice a later change made elsewhere.
 	var diskMTime int64
 	if fi, err := fs.Stat(filePath); err != nil {
@@ -423,8 +418,8 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 
 	// The row counts the bytes now; they leave the budget, and a file
 	// smaller than what it replaced gives back the difference.
-	p.give(username, body.end-size)
-	p.closeBudget(username, size-replaced)
+	body.Settle(size)
+	w.Done()
 	recorded = true
 
 	p.logActivity(username, "file_created", username+" uploaded "+name, strconv.FormatInt(id, 10), filePath)

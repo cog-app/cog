@@ -2,13 +2,17 @@ package web_test
 
 import (
 	"errors"
+	"io/fs"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/group"
+	"git.duckfam.us/jj-software/cog/internal/storage"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -43,6 +47,20 @@ func TestDeleteUserWithHistory(t *testing.T) {
 	// The name is retired until an admin releases it.
 	_, err = p.Users.Create("Victim", "pass")
 	require.True(t, errors.Is(err, user.ErrUsernameRetired), "got %v", err)
+
+	// Nothing is opened or made for the name in the meantime: a late
+	// opener, such as search catching up on the share deletions, would
+	// make the removed files again.
+	_, err = p.Plugins.PluginDB("victim", "files")
+	require.True(t, errors.Is(err, storage.ErrUserGone), "a database opened for a deleted account: %v", err)
+	require.True(t, errors.Is(p.Plugins.EnsureUserDirs("victim"), storage.ErrUserGone), "directories made for a deleted account")
+	_, err = p.Plugins.Storage().Dir(storage.Counted, "notes", "victim")
+	require.True(t, errors.Is(err, storage.ErrUserGone), "storage handed out for a deleted account: %v", err)
+	_, err = p.Search.SearchUser("victim", "secret", 10, 0)
+	require.True(t, err != nil, "a search index opened for a deleted account")
+	_, err = os.Stat(filepath.Join(p.Config.DataDir, "victim"))
+	require.True(t, errors.Is(err, fs.ErrNotExist), "the deleted account's directory is back: %v", err)
+
 	require.NoError(t, p.Users.Release("victim"))
 	again := env.CreateUser(t, "victim", "pass")
 	resp := env.Get(t, "/remote.php/dav/files/victim/secret.txt", again.Auth)

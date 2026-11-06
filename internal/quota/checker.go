@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"git.duckfam.us/jj-software/cog/internal/mount"
+	"git.duckfam.us/jj-software/cog/internal/quota/budget"
 	"git.duckfam.us/jj-software/cog/internal/user"
 
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
@@ -29,6 +30,26 @@ type Checker struct {
 	RootVolume     RootVolumeFunc
 	GroupIDs       GroupIDsFunc
 	UserIDFromName UserIDFunc
+	// Writes is the budget writes in progress share; what they have
+	// written counts against the quota before it is recorded in usage.
+	Writes *budget.Budgets
+}
+
+// NewWrites gives c the budget writes in progress share, started from what
+// recorded usage leaves.
+func (c *Checker) NewWrites() {
+	c.Writes = budget.New(func(username string) (int64, error) {
+		quota, used, limited, err := c.limit(username)
+		if err != nil || !limited {
+			return -1, err
+		}
+		return max(quota-used, 0), nil
+	})
+}
+
+// BeginWrite starts a write for username, drawing on their budget.
+func (c *Checker) BeginWrite(username string) (*budget.Write, error) {
+	return c.Writes.Begin(username)
 }
 
 // QuotaCheck checks if a user has enough quota for additionalBytes.
@@ -37,6 +58,7 @@ func (c *Checker) QuotaCheck(username string, additionalBytes int64) error {
 	if err != nil || !limited {
 		return err
 	}
+	used += c.Writes.Pending(username)
 	if used+additionalBytes > quota {
 		return fmt.Errorf("%w: would use %s of %s limit",
 			cogplugin.ErrQuotaExceeded, FormatBytes(used+additionalBytes), FormatBytes(quota))
@@ -51,7 +73,7 @@ func (c *Checker) Remaining(username string) (int64, error) {
 	if err != nil || !limited {
 		return -1, err
 	}
-	return max(quota-used, 0), nil
+	return max(quota-used-c.Writes.Pending(username), 0), nil
 }
 
 // limit returns username's quota and what they use, and whether a quota

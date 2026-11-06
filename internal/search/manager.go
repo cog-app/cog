@@ -31,16 +31,22 @@ type Manager struct {
 	systemCollector *Collector
 	sysDB           *sql.DB
 
-	mu            sync.Mutex
-	userIndices   map[string]*userSearch // username -> {index, collector}
+	mu          sync.Mutex
+	userIndices map[string]*userSearch // username -> {index, collector}
+	// userLocks holds, per user, a lock an open holds while it runs and
+	// CloseUser takes, so closing waits for an open under way instead of
+	// leaving it to finish, and make files, after the user is removed.
+	userLocks     map[string]*sync.Mutex
 	pluginSources map[string][]plugin.SearchSourceDef
 
 	// userDBFunc returns the per-user plugin DB for a given username+pluginID.
 	userDBFunc func(username, pluginID string) (*sql.DB, error)
 	// userFSFunc returns a user's files, for content indexing.
 	userFSFunc func(username string) (vfs.FS, error)
-	ctx        context.Context
-	cancel     context.CancelFunc
+	// userGone reports whether a user's account was deleted.
+	userGone func(username string) (bool, error)
+	ctx      context.Context
+	cancel   context.CancelFunc
 
 	// Propagator handles indexing shared resources into recipients' indices.
 	Propagator *Propagator
@@ -90,6 +96,7 @@ func NewManager(log *slog.Logger, dataDir string) *Manager {
 		log:           log.With("component", "search"),
 		dataDir:       dataDir,
 		userIndices:   make(map[string]*userSearch),
+		userLocks:     make(map[string]*sync.Mutex),
 		pluginSources: make(map[string][]plugin.SearchSourceDef),
 		ctx:           ctx,
 		cancel:        cancel,
@@ -104,6 +111,12 @@ func (m *Manager) SetSystemDB(db *sql.DB) {
 // SetUserDBFunc sets the function to get per-user plugin databases.
 func (m *Manager) SetUserDBFunc(f func(username, pluginID string) (*sql.DB, error)) {
 	m.userDBFunc = f
+}
+
+// SetUserGone sets how the manager learns that a user's account was
+// deleted, so it opens no index for them.
+func (m *Manager) SetUserGone(f func(username string) (bool, error)) {
+	m.userGone = f
 }
 
 // SetUserFSFunc sets the function that returns a user's files.
@@ -264,6 +277,9 @@ func (m *Manager) Stop() {
 // CloseUser stops indexing for username and closes their index, so their
 // files can be removed and a later account of the same name starts empty.
 func (m *Manager) CloseUser(username string) error {
+	l := m.userLock(username)
+	l.Lock()
+	defer l.Unlock()
 	m.mu.Lock()
 	us, ok := m.userIndices[username]
 	delete(m.userIndices, username)
@@ -411,7 +427,22 @@ func (m *Manager) ensureUserIndex(username string) (*userSearch, error) {
 	return us.(*userSearch), nil
 }
 
+// userLock returns username's open lock (see userLocks).
+func (m *Manager) userLock(username string) *sync.Mutex {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	l := m.userLocks[username]
+	if l == nil {
+		l = &sync.Mutex{}
+		m.userLocks[username] = l
+	}
+	return l
+}
+
 func (m *Manager) openUserIndex(username string) (*userSearch, error) {
+	l := m.userLock(username)
+	l.Lock()
+	defer l.Unlock()
 	// Re-check: a caller that shared an in-flight open returns above, but a
 	// caller that arrives just after one finishes gets its own turn here.
 	m.mu.Lock()
@@ -424,6 +455,17 @@ func (m *Manager) openUserIndex(username string) (*userSearch, error) {
 
 	if stopped {
 		return nil, fmt.Errorf("search manager is stopped")
+	}
+	// A deleted account's files are being removed; opening its index would
+	// make them again.
+	if m.userGone != nil {
+		deleted, err := m.userGone(username)
+		if err != nil {
+			return nil, err
+		}
+		if deleted {
+			return nil, fmt.Errorf("search index of %s: the account was deleted", username)
+		}
 	}
 
 	indexPath := filepath.Join(m.dataDir, username, ".search", "user.bleve")

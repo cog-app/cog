@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"git.duckfam.us/jj-software/cog/internal/quota/budget"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
@@ -50,15 +51,16 @@ func (k Kind) dir() string {
 	}
 }
 
-// QuotaFunc reports whether username has room for additional more bytes,
-// returning plugin.ErrQuotaExceeded when they do not.
-type QuotaFunc func(username string, additional int64) error
+// BeginFunc starts a write for username, drawing on the budget their writes
+// in progress share (see budget).
+type BeginFunc func(username string) (*budget.Write, error)
 
 // Store hands out plugin storage under a data directory.
 type Store struct {
 	dataDir string
 	db      *sql.DB
-	quota   QuotaFunc
+	quota   BeginFunc
+	gone    func(username string) (bool, error)
 
 	mu    sync.Mutex
 	ready map[readyKey]bool        // directories migrated and counted
@@ -82,9 +84,9 @@ func New(dataDir string, db *sql.DB) *Store {
 	}
 }
 
-// SetQuota sets the check a counted Put makes before it replaces anything.
-// Without one, writes are counted but not limited.
-func (s *Store) SetQuota(q QuotaFunc) {
+// SetQuota sets where a counted write draws its growth from. Without it,
+// writes are counted but not limited.
+func (s *Store) SetQuota(q BeginFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.quota = q
@@ -109,6 +111,9 @@ func (s *Store) Dir(kind Kind, pluginID, username string) (*Dir, error) {
 		return nil, fmt.Errorf("storage: invalid plugin %q or user %q", pluginID, username)
 	}
 	d := &Dir{s: s, kind: kind, pluginID: pluginID, username: username, rel: rel(kind, pluginID, username)}
+	if err := d.refuseGone(); err != nil {
+		return nil, err
+	}
 	if err := s.prepare(d); err != nil {
 		return nil, err
 	}
@@ -279,14 +284,48 @@ func (s *Store) lock(d *Dir) func() {
 	return m.Unlock
 }
 
-func (s *Store) checkQuota(username string, n int64) error {
+// SetGone sets how the store learns that a user's account was deleted:
+// their directories are being removed, so none is made again.
+func (s *Store) SetGone(gone func(username string) (bool, error)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gone = gone
+}
+
+// ErrUserGone is a user whose account was deleted.
+var ErrUserGone = errors.New("the account was deleted")
+
+// refuseGone fails for a user's directory whose account was deleted.
+func (d *Dir) refuseGone() error {
+	if d.kind != Counted && d.kind != Cache {
+		return nil
+	}
+	d.s.mu.Lock()
+	gone := d.s.gone
+	d.s.mu.Unlock()
+	if gone == nil {
+		return nil
+	}
+	deleted, err := gone(d.username)
+	if err != nil {
+		return err
+	}
+	if deleted {
+		return fmt.Errorf("storage of %s: %w", d.username, ErrUserGone)
+	}
+	return nil
+}
+
+// begin starts a write to d: a counted one draws on its user's budget, and
+// any other is not limited.
+func (s *Store) begin(d *Dir) (*budget.Write, error) {
 	s.mu.Lock()
 	q := s.quota
 	s.mu.Unlock()
-	if q == nil || n <= 0 {
-		return nil
+	if q == nil || d.kind != Counted {
+		return new(budget.Write), nil
 	}
-	return q(username, n)
+	return q(d.username)
 }
 
 // Dir is one plugin directory. It implements plugin.Storage.
@@ -304,6 +343,11 @@ var _ plugin.Storage = (*Dir)(nil)
 // opened for each operation rather than held: there is one directory per
 // plugin per user, and holding each open would hold that many descriptors.
 func (d *Dir) with(fn func(r *os.Root) error) error {
+	// A handle taken before the account was deleted must not make its
+	// directory again.
+	if err := d.refuseGone(); err != nil {
+		return err
+	}
 	data, err := os.OpenRoot(d.s.dataDir)
 	if err != nil {
 		return fmt.Errorf("storage: open data dir: %w", err)
@@ -344,8 +388,8 @@ func (d *Dir) Open(n string) (plugin.StoredFile, error) {
 }
 
 // Put implements plugin.Storage. A counted Put writes the new bytes beside
-// the old file, checks the quota for the difference, and only then replaces
-// it, so a write over quota leaves the old file as it was.
+// the old file, held to the quota as they arrive, and only then replaces it,
+// so a write over quota leaves the old file as it was.
 func (d *Dir) Put(n string, content io.Reader) (int64, error) {
 	n, err := name(n)
 	if err != nil {
@@ -357,10 +401,21 @@ func (d *Dir) Put(n string, content io.Reader) (int64, error) {
 	if d.kind == Counted {
 		defer d.s.lock(d)()
 	}
+	w, err := d.s.begin(d)
+	if err != nil {
+		return 0, err
+	}
 	var written int64
 	err = d.with(func(r *os.Root) error {
 		if err := r.MkdirAll(filepath.Dir(n), 0o700); err != nil {
 			return fmt.Errorf("storage: create parent of %s: %w", n, err)
+		}
+		// The lock keeps the file as it is until the rename.
+		var old int64
+		if info, err := r.Stat(n); err == nil {
+			old = info.Size()
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("storage: stat %s: %w", n, err)
 		}
 		var suffix [8]byte
 		if _, err := rand.Read(suffix[:]); err != nil {
@@ -371,21 +426,15 @@ func (d *Dir) Put(n string, content io.Reader) (int64, error) {
 		if err != nil {
 			return fmt.Errorf("storage: create %s: %w", n, err)
 		}
-		written, err = io.Copy(f, content)
+		body := w.Reader(content, old)
+		written, err = io.Copy(f, body)
 		if err = errors.Join(err, f.Close()); err != nil {
-			return errors.Join(fmt.Errorf("storage: write %s: %w", n, err), r.Remove(tmp))
-		}
-		var old int64
-		if info, err := r.Stat(n); err == nil {
-			old = info.Size()
-		} else if !errors.Is(err, fs.ErrNotExist) {
-			return errors.Join(fmt.Errorf("storage: stat %s: %w", n, err), r.Remove(tmp))
-		}
-		if d.kind == Counted {
-			if err := d.s.checkQuota(d.username, written-old); err != nil {
+			if errors.Is(err, plugin.ErrQuotaExceeded) {
 				return errors.Join(err, r.Remove(tmp))
 			}
+			return errors.Join(fmt.Errorf("storage: write %s: %w", n, err), r.Remove(tmp))
 		}
+		body.Settle(written)
 		if err := r.Rename(tmp, n); err != nil {
 			return errors.Join(fmt.Errorf("storage: replace %s: %w", n, err), r.Remove(tmp))
 		}
@@ -394,7 +443,12 @@ func (d *Dir) Put(n string, content io.Reader) (int64, error) {
 		}
 		return nil
 	})
-	return written, err
+	if err != nil {
+		w.Abandon()
+		return 0, err
+	}
+	w.Done()
+	return written, nil
 }
 
 // Take implements plugin.Storage. Between one plugin's directories for one
@@ -414,6 +468,9 @@ func (d *Dir) Take(n string, from plugin.Storage, fromName string) (int64, error
 	}
 	if n == "." || fn == "." {
 		return 0, fmt.Errorf("storage: take: %w", fs.ErrInvalid)
+	}
+	if err := d.refuseGone(); err != nil {
+		return 0, err
 	}
 	if d.kind == Counted {
 		defer d.s.lock(d)()
@@ -451,15 +508,21 @@ func (d *Dir) Take(n string, from plugin.Storage, fromName string) (int64, error
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return 0, fmt.Errorf("storage: stat %s: %w", n, err)
 	}
-	if d.kind == Counted {
-		if err := d.s.checkQuota(d.username, info.Size()-old); err != nil {
-			return 0, err
-		}
+	w, err := d.s.begin(d)
+	if err != nil {
+		return 0, err
 	}
+	if err := w.Grow(info.Size() - old); err != nil {
+		w.Abandon()
+		return 0, err
+	}
+	// Recorded below, or not taken at all.
+	defer w.Done()
 	// Both names were checked within their roots above; the rename is
 	// made between the two directories on the data dir's root, which no
 	// name here can leave.
 	if err := data.Rename(filepath.Join(src.rel, fn), filepath.Join(d.rel, n)); err != nil {
+		w.Abandon()
 		return 0, fmt.Errorf("storage: take %s: %w", fromName, err)
 	}
 	if src.kind == Counted {

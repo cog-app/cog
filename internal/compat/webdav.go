@@ -303,10 +303,26 @@ func (h *WebDAVHandler) handleMove(w http.ResponseWriter, r *http.Request, u *us
 	// Strip the /remote.php/dav/files/{user_id}/ prefix
 	_, newPath := h.extractPath(destPath)
 
-	_, err := h.Files.Rename(u.Username, filePath, newPath)
+	// RFC 4918 §10.6: without Overwrite: F a MOVE replaces what is at the
+	// destination; with it, it must not.
+	exists, err := h.Files.Exists(u.Username, newPath)
 	if err != nil {
+		h.Log.Error("MOVE: look up destination", "user", u.Username, "path", newPath, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if exists && r.Header.Get("Overwrite") == "F" {
+		http.Error(w, "destination exists", http.StatusPreconditionFailed)
+		return
+	}
+
+	if _, err := h.Files.Rename(u.Username, filePath, newPath); err != nil {
 		h.Log.Warn("MOVE", "user", u.Username, "from", filePath, "to", newPath, "err", err)
 		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	if exists {
+		w.WriteHeader(http.StatusNoContent) // overwritten
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
@@ -332,14 +348,15 @@ func (h *WebDAVHandler) handleCopy(w http.ResponseWriter, r *http.Request, u *us
 		overwrite = "T"
 	}
 
-	// Check if destination exists.
-	destMeta, err := h.Files.GetByPath(u.Username, newPath)
-	if err != nil && !errors.Is(err, files.ErrNotFound) {
+	// Check if destination exists: what is on disk without a row yet is
+	// there all the same.
+	exists, err := h.Files.Exists(u.Username, newPath)
+	if err != nil {
 		h.Log.Error("COPY: look up destination", "user", u.Username, "path", newPath, "err", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if destMeta != nil && overwrite == "F" {
+	if exists && overwrite == "F" {
 		http.Error(w, "destination exists", http.StatusPreconditionFailed)
 		return
 	}
@@ -366,7 +383,7 @@ func (h *WebDAVHandler) handleCopy(w http.ResponseWriter, r *http.Request, u *us
 		return
 	}
 
-	if destMeta != nil {
+	if exists {
 		w.WriteHeader(http.StatusNoContent) // overwritten
 	} else {
 		w.WriteHeader(http.StatusCreated)
