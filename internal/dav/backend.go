@@ -49,6 +49,9 @@ type Backend interface {
 	Prune(owner string, c *Collection, cutoff time.Time) error
 	// Purge removes every row of a deleted collection.
 	Purge(owner string, id CollectionID) error
+	// Usage returns the bytes of every resource owner holds in this
+	// backend, as their text would be served: what counts toward quota.
+	Usage(owner string) (int64, error)
 }
 
 // Resource is one calendar object or vCard.
