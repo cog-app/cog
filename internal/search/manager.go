@@ -14,6 +14,7 @@ import (
 	cogdb "git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/internal/query"
 	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 type userSearch struct {
@@ -30,16 +31,22 @@ type Manager struct {
 	systemCollector *Collector
 	sysDB           *sql.DB
 
-	mu            sync.Mutex
-	userIndices   map[string]*userSearch // username -> {index, collector}
+	mu          sync.Mutex
+	userIndices map[string]*userSearch // username -> {index, collector}
+	// userLocks holds, per user, a lock an open holds while it runs and
+	// CloseUser takes, so closing waits for an open under way instead of
+	// leaving it to finish, and make files, after the user is removed.
+	userLocks     map[string]*sync.Mutex
 	pluginSources map[string][]plugin.SearchSourceDef
 
 	// userDBFunc returns the per-user plugin DB for a given username+pluginID.
 	userDBFunc func(username, pluginID string) (*sql.DB, error)
-	// filesDirFunc returns the files directory for a given username.
-	filesDirFunc func(username string) string
-	ctx          context.Context
-	cancel       context.CancelFunc
+	// userFSFunc returns a user's files, for content indexing.
+	userFSFunc func(username string) (vfs.FS, error)
+	// userGone reports whether a user's account was deleted.
+	userGone func(username string) (bool, error)
+	ctx      context.Context
+	cancel   context.CancelFunc
 
 	// Propagator handles indexing shared resources into recipients' indices.
 	Propagator *Propagator
@@ -89,6 +96,7 @@ func NewManager(log *slog.Logger, dataDir string) *Manager {
 		log:           log.With("component", "search"),
 		dataDir:       dataDir,
 		userIndices:   make(map[string]*userSearch),
+		userLocks:     make(map[string]*sync.Mutex),
 		pluginSources: make(map[string][]plugin.SearchSourceDef),
 		ctx:           ctx,
 		cancel:        cancel,
@@ -105,9 +113,15 @@ func (m *Manager) SetUserDBFunc(f func(username, pluginID string) (*sql.DB, erro
 	m.userDBFunc = f
 }
 
-// SetFilesDirFunc sets the function to resolve a user's files directory.
-func (m *Manager) SetFilesDirFunc(f func(username string) string) {
-	m.filesDirFunc = f
+// SetUserGone sets how the manager learns that a user's account was
+// deleted, so it opens no index for them.
+func (m *Manager) SetUserGone(f func(username string) (bool, error)) {
+	m.userGone = f
+}
+
+// SetUserFSFunc sets the function that returns a user's files.
+func (m *Manager) SetUserFSFunc(f func(username string) (vfs.FS, error)) {
+	m.userFSFunc = f
 }
 
 // RegisterPluginSource records a plugin's search source definition.
@@ -263,6 +277,9 @@ func (m *Manager) Stop() {
 // CloseUser stops indexing for username and closes their index, so their
 // files can be removed and a later account of the same name starts empty.
 func (m *Manager) CloseUser(username string) error {
+	l := m.userLock(username)
+	l.Lock()
+	defer l.Unlock()
 	m.mu.Lock()
 	us, ok := m.userIndices[username]
 	delete(m.userIndices, username)
@@ -410,7 +427,22 @@ func (m *Manager) ensureUserIndex(username string) (*userSearch, error) {
 	return us.(*userSearch), nil
 }
 
+// userLock returns username's open lock (see userLocks).
+func (m *Manager) userLock(username string) *sync.Mutex {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	l := m.userLocks[username]
+	if l == nil {
+		l = &sync.Mutex{}
+		m.userLocks[username] = l
+	}
+	return l
+}
+
 func (m *Manager) openUserIndex(username string) (*userSearch, error) {
+	l := m.userLock(username)
+	l.Lock()
+	defer l.Unlock()
 	// Re-check: a caller that shared an in-flight open returns above, but a
 	// caller that arrives just after one finishes gets its own turn here.
 	m.mu.Lock()
@@ -423,6 +455,17 @@ func (m *Manager) openUserIndex(username string) (*userSearch, error) {
 
 	if stopped {
 		return nil, fmt.Errorf("search manager is stopped")
+	}
+	// A deleted account's files are being removed; opening its index would
+	// make them again.
+	if m.userGone != nil {
+		deleted, err := m.userGone(username)
+		if err != nil {
+			return nil, err
+		}
+		if deleted {
+			return nil, fmt.Errorf("search index of %s: the account was deleted", username)
+		}
 	}
 
 	indexPath := filepath.Join(m.dataDir, username, ".search", "user.bleve")
@@ -442,7 +485,7 @@ func (m *Manager) openUserIndex(username string) (*userSearch, error) {
 	// Register plugin sources for this user.
 	for pluginID, defs := range m.pluginSources {
 		for _, def := range defs {
-			src := newUserPluginSource(username, pluginID, def, m.userDBFunc, m.filesDirFunc)
+			src := newUserPluginSource(username, pluginID, def, m.userDBFunc, m.userFSFunc)
 			collector.RegisterSource(src)
 		}
 	}
@@ -489,20 +532,20 @@ func (m *Manager) FullSyncUser(username string) error {
 
 // userPluginSource wraps PluginSearchSource but fetches the DB per-user.
 type userPluginSource struct {
-	username     string
-	pluginID     string
-	inner        *PluginSearchSource
-	dbFunc       func(username, pluginID string) (*sql.DB, error)
-	filesDirFunc func(username string) string
+	username   string
+	pluginID   string
+	inner      *PluginSearchSource
+	dbFunc     func(username, pluginID string) (*sql.DB, error)
+	userFSFunc func(username string) (vfs.FS, error)
 }
 
-func newUserPluginSource(username, pluginID string, def plugin.SearchSourceDef, dbFunc func(string, string) (*sql.DB, error), filesDirFunc func(string) string) *userPluginSource {
+func newUserPluginSource(username, pluginID string, def plugin.SearchSourceDef, dbFunc func(string, string) (*sql.DB, error), userFSFunc func(string) (vfs.FS, error)) *userPluginSource {
 	return &userPluginSource{
-		username:     username,
-		pluginID:     pluginID,
-		inner:        NewPluginSearchSource(pluginID, def),
-		dbFunc:       dbFunc,
-		filesDirFunc: filesDirFunc,
+		username:   username,
+		pluginID:   pluginID,
+		inner:      NewPluginSearchSource(pluginID, def),
+		dbFunc:     dbFunc,
+		userFSFunc: userFSFunc,
 	}
 }
 
@@ -548,8 +591,12 @@ func (s *userPluginSource) Enrich(_ *sql.DB, rowIDs []int64) ([]Document, error)
 	if err != nil {
 		return nil, err
 	}
-	if s.filesDirFunc != nil {
-		s.inner.FilesDir = s.filesDirFunc(s.username)
+	if s.userFSFunc != nil {
+		fsys, err := s.userFSFunc(s.username)
+		if err != nil {
+			return nil, fmt.Errorf("files of %s: %w", s.username, err)
+		}
+		s.inner.Files = fsys
 	}
 	return s.inner.Enrich(db, rowIDs)
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -35,37 +35,39 @@ func (c *captureProcessor) Process(_ context.Context, in, out string, captions [
 }
 
 func TestProfanityWorkerUsesCaptions(t *testing.T) {
-	s := newPipelineStore(t)
+	s, space := newPipeline(t)
 	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "u"})
 	id, _, _ := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g", Type: "audio"})
 	require.NoError(t, s.EnqueueDownload(id))
 	require.NoError(t, s.MarkDownloadStart(id))
 
-	dir := t.TempDir()
-	src := filepath.Join(dir, "in.mp3")
-	require.NoError(t, os.WriteFile(src, []byte("audio bytes"), 0o644))
-	require.NoError(t, s.MarkDownloadReady(id, src, 11))
+	_, err := space.Own.Put("media/in.mp3", strings.NewReader("audio bytes"))
+	require.NoError(t, err)
+	require.NoError(t, s.MarkDownloadReady(id, "media/in.mp3", 11))
 
 	// Captions file.
-	vtt := filepath.Join(dir, "g.vtt")
-	require.NoError(t, os.WriteFile(vtt, []byte(`WEBVTT
+	_, err = space.Own.Put("captions/g.vtt", strings.NewReader(`WEBVTT
 
 00:00:00.000 --> 00:00:02.000
 hello world
-`), 0o644))
-	require.NoError(t, s.SetCaptionsPath(id, vtt))
+`))
+	require.NoError(t, err)
+	require.NoError(t, s.SetCaptionsPath(id, "captions/g.vtt"))
 	require.NoError(t, s.EnqueueProfanity(id))
 
 	proc := &captureProcessor{}
-	w := pipeline.NewProfanity(s, proc)
+	w := pipeline.NewProfanity(s, space, proc)
 	require.NoError(t, w.RunOnce(context.Background()))
 
 	if len(proc.gotCaptions) == 0 {
 		t.Fatal("processor did not receive captions")
 	}
 	d, _ := s.GetDownload(id)
-	if d.CleanAudioPath == "" {
-		t.Fatal("clean_audio_path not set")
+	if d.CleanAudioPath != "media/in.clean.mp3" {
+		t.Fatalf("clean_audio_path %q", d.CleanAudioPath)
+	}
+	if got := readStored(t, space, d.CleanAudioPath); got != "audio bytes" {
+		t.Fatalf("clean audio %q", got)
 	}
 	if d.NeedsProfanity {
 		t.Fatal("needs_profanity not cleared")
@@ -73,7 +75,7 @@ hello world
 }
 
 func TestProfanityWorkerSkipsWithoutCaptions(t *testing.T) {
-	s := newPipelineStore(t)
+	s, space := newPipeline(t)
 	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "u"})
 	id, _, _ := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g", Type: "audio"})
 	require.NoError(t, s.EnqueueDownload(id))
@@ -83,7 +85,7 @@ func TestProfanityWorkerSkipsWithoutCaptions(t *testing.T) {
 	require.NoError(t, s.EnqueueProfanity(id))
 
 	proc := &captureProcessor{}
-	w := pipeline.NewProfanity(s, proc)
+	w := pipeline.NewProfanity(s, space, proc)
 	require.NoError(t, w.RunOnce(context.Background()))
 
 	if len(proc.gotCaptions) != 0 {

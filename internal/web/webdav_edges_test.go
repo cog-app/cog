@@ -156,12 +156,12 @@ func TestWebDAV_COPY_SourceNotFound(t *testing.T) {
 		Status(404)
 }
 
-// --- MOVE Overwrite=F (audit: not currently honored) ---
+// --- MOVE Overwrite ---
 
-// TestWebDAV_MOVE_OverwriteF_Documents_Current_Behavior pins the existing
-// behavior: MOVE ignores the Overwrite header today. If a future fix honors
-// Overwrite=F to existing destinations with 412, this test should be updated.
-func TestWebDAV_MOVE_OverwriteF_Documents_Current_Behavior(t *testing.T) {
+// TestWebDAV_MOVE_Overwrite: Overwrite: F refuses an existing destination
+// and leaves both files as they were; without it the destination is
+// replaced (RFC 4918 §10.6).
+func TestWebDAV_MOVE_Overwrite(t *testing.T) {
 	env := cogtest.New(t)
 	alice := env.CreateUser(t, "alice", "pass")
 	prefix := "/remote.php/dav/files/" + alice.ID
@@ -170,13 +170,18 @@ func TestWebDAV_MOVE_OverwriteF_Documents_Current_Behavior(t *testing.T) {
 	webdavReq(t, env, "PUT", prefix+"/dst.txt", "dst", alice.Auth).Status(201)
 
 	dest := env.Providers.Config.BaseURL + prefix + "/dst.txt"
-	resp := webdavReq(t, env, "MOVE", prefix+"/src.txt", "",
+	webdavReq(t, env, "MOVE", prefix+"/src.txt", "",
 		alice.Auth,
 		cogtest.Header("Destination", dest),
-		cogtest.Header("Overwrite", "F"))
-	// Current behavior: 409 because src rename fails (dst exists). If a
-	// future fix honors Overwrite=F it should be 412.
-	require.True(t, resp.StatusCode >= 400)
+		cogtest.Header("Overwrite", "F")).Status(412)
+	webdavReq(t, env, "GET", prefix+"/dst.txt", "", alice.Auth).Status(200).Equals("dst")
+	webdavReq(t, env, "GET", prefix+"/src.txt", "", alice.Auth).Status(200).Equals("src")
+
+	webdavReq(t, env, "MOVE", prefix+"/src.txt", "",
+		alice.Auth,
+		cogtest.Header("Destination", dest)).Status(204)
+	webdavReq(t, env, "GET", prefix+"/dst.txt", "", alice.Auth).Status(200).Equals("src")
+	webdavReq(t, env, "GET", prefix+"/src.txt", "", alice.Auth).Status(404)
 }
 
 func TestWebDAV_MOVE_MissingDestination(t *testing.T) {

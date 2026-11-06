@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"strconv"
 	"strings"
@@ -141,7 +142,27 @@ func (a *CookbookAPI) GetRecipeImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.ServeFile(w, r, a.plugin.imagePath(a.username(r), recipe.ImagePath))
+	store, err := a.plugin.ctx.UserStorage(a.username(r))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	f, err := store.Open(imageName(recipe.ImagePath))
+	if errors.Is(err, fs.ErrNotExist) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 }
 
 // ListCategories returns all categories with counts.

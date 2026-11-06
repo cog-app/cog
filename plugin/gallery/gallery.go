@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -276,20 +275,12 @@ func (p *Plugin) SystemDB() (*sql.DB, error) {
 // AggregateRecognitionStats sums recognition stats across all user gallery databases.
 func (p *Plugin) AggregateRecognitionStats() RecognitionStats {
 	var total RecognitionStats
-	entries, err := os.ReadDir(p.ctx.DataDir())
+	usernames, err := p.ctx.UsersOf("files")
 	if err != nil {
-		p.log.Error("recognition stats: read data dir", "err", err)
+		p.log.Error("recognition stats: list users", "err", err)
 		return total
 	}
-	for _, entry := range entries {
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		username := entry.Name()
-		filesDBPath := filepath.Join(p.ctx.DataDir(), username, "app_data", "files", "plugin.db")
-		if _, err := os.Stat(filesDBPath); err != nil {
-			continue
-		}
+	for _, username := range usernames {
 		db, err := p.DB(username)
 		if err != nil {
 			p.log.Warn("recognition stats: open db", "user", username, "err", err)
@@ -339,19 +330,11 @@ func (p *Plugin) DoctorChecks(ctx context.Context) []plugin.CheckResult {
 
 // PurgeAllRecognitions resets recognition state across all user databases.
 func (p *Plugin) PurgeAllRecognitions() error {
-	entries, err := os.ReadDir(p.ctx.DataDir())
+	usernames, err := p.ctx.UsersOf("files")
 	if err != nil {
 		return err
 	}
-	for _, entry := range entries {
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		username := entry.Name()
-		filesDBPath := filepath.Join(p.ctx.DataDir(), username, "app_data", "files", "plugin.db")
-		if _, err := os.Stat(filesDBPath); err != nil {
-			continue
-		}
+	for _, username := range usernames {
 		db, err := p.DB(username)
 		if err != nil {
 			p.log.Warn("purge: open db", "user", username, "err", err)

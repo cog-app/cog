@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -27,7 +26,8 @@ type NCCompat struct {
 	Users      *user.Store
 	Files      *files.Plugin
 	Activities *activity.Store
-	DataDir    string
+	// OpenAvatar opens a stored avatar image by the name users.avatar holds.
+	OpenAvatar func(name string) (io.ReadCloser, error)
 }
 
 // RegisterRoutes registers all NextCloud-compatible OCS and helper routes.
@@ -180,10 +180,7 @@ func (nc *NCCompat) HandleAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if u.Avatar != "" {
-		// filepath.Base keeps a malformed DB value from reaching outside
-		// the avatars directory (as in the web avatar handler).
-		avatarPath := filepath.Join(nc.DataDir, "avatars", filepath.Base(u.Avatar))
-		f, err := os.Open(avatarPath)
+		f, err := nc.OpenAvatar(u.Avatar)
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			slog.Error("nc avatar: open image", "user", u.ID, "err", err)
 		}

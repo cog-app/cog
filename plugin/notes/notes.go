@@ -11,8 +11,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
+	"path"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -68,11 +67,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterSearchSource(plugin.SearchSourceDef{
 		PrimaryTable: "notes",
 		EnrichSQL:    "SELECT rowid, filename FROM notes WHERE rowid IN (?)",
-		ContentFunc: func(filesDir string, cols map[string]string) string {
-			data, err := os.ReadFile(filepath.Join(filesDir, "Notes", cols["filename"]))
+		ContentFunc: func(files vfs.FS, cols map[string]string) string {
+			data, err := files.ReadFile(path.Join("/Notes", cols["filename"]))
 			if err != nil {
 				// Gone since the change was queued: nothing to index.
-				if !errors.Is(err, fs.ErrNotExist) {
+				if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, vfs.ErrNotFound) {
 					p.log.Error("index note content", "file", cols["filename"], "err", err)
 				}
 				return ""
@@ -115,13 +114,8 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 func (p *Plugin) Start(ctx context.Context) error { return nil }
 func (p *Plugin) Stop() error                     { return nil }
 
-// NotesDir returns the path to the user's Notes directory on disk.
-func (p *Plugin) NotesDir(username string) string {
-	return filepath.Join(p.ctx.UserFilesDir(username), "Notes")
-}
-
-// userFS returns the VFS for a user, or nil if unavailable.
-func (p *Plugin) userFS(username string) vfs.FS {
+// userFS returns the VFS for a user.
+func (p *Plugin) userFS(username string) (vfs.FS, error) {
 	return p.ctx.UserVFS(username)
 }
 
@@ -132,38 +126,42 @@ func notesPath(filename string) string {
 
 // ensureNotesDirFor ensures the Notes directory exists for a user.
 func (p *Plugin) ensureNotesDirFor(username string) error {
-	if fs := p.userFS(username); fs != nil {
-		return fs.Mkdir("/Notes")
+	fs, err := p.userFS(username)
+	if err != nil {
+		return err
 	}
-	return EnsureNotesDir(p.NotesDir(username))
+	return fs.Mkdir("/Notes")
 }
 
 // readNoteContent reads a note file's content for a user.
 func (p *Plugin) readNoteContent(username, filename string) (string, error) {
-	if fs := p.userFS(username); fs != nil {
-		data, err := fs.ReadFile(notesPath(filename))
-		if err != nil {
-			return "", err
-		}
-		return string(data), nil
+	fs, err := p.userFS(username)
+	if err != nil {
+		return "", err
 	}
-	return ReadContent(p.NotesDir(username), filename)
+	data, err := fs.ReadFile(notesPath(filename))
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 // writeNoteContent writes content to a note file for a user.
 func (p *Plugin) writeNoteContent(username, filename, content string) error {
-	if fs := p.userFS(username); fs != nil {
-		return fs.Put(notesPath(filename), strings.NewReader(content))
+	fs, err := p.userFS(username)
+	if err != nil {
+		return err
 	}
-	return WriteContent(p.NotesDir(username), filename, content)
+	return fs.Put(notesPath(filename), strings.NewReader(content))
 }
 
 // deleteNoteFile deletes a note file for a user.
 func (p *Plugin) deleteNoteFile(username, filename string) error {
-	if fs := p.userFS(username); fs != nil {
-		return fs.Delete(notesPath(filename))
+	fs, err := p.userFS(username)
+	if err != nil {
+		return err
 	}
-	return DeleteFile(p.NotesDir(username), filename)
+	return fs.Delete(notesPath(filename))
 }
 
 // deleteNote removes a note's file and its metadata. A file that is already
@@ -181,10 +179,11 @@ func (p *Plugin) deleteNote(db *sql.DB, username string, note *Note) error {
 
 // renameNoteFile renames a note file for a user.
 func (p *Plugin) renameNoteFile(username, oldName, newName string) error {
-	if fs := p.userFS(username); fs != nil {
-		return fs.Rename(notesPath(oldName), notesPath(newName))
+	fs, err := p.userFS(username)
+	if err != nil {
+		return err
 	}
-	return RenameFile(p.NotesDir(username), oldName, newName)
+	return fs.Rename(notesPath(oldName), notesPath(newName))
 }
 
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {
@@ -237,12 +236,11 @@ func (p *Plugin) noteNameTaken(db *sql.DB, username, filename string) (bool, err
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return false, fmt.Errorf("look up %s: %w", filename, err)
 	}
-	var err error
-	if vf := p.userFS(username); vf != nil {
-		_, err = vf.Stat(notesPath(filename))
-	} else {
-		_, err = os.Stat(filepath.Join(p.NotesDir(username), filename))
+	vf, err := p.userFS(username)
+	if err != nil {
+		return false, err
 	}
+	_, err = vf.Stat(notesPath(filename))
 	switch {
 	case err == nil:
 		return true, nil

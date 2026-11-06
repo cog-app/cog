@@ -5,14 +5,11 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -82,13 +79,6 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 			FROM keywords GROUP BY recipe_id
 		) k ON k.recipe_id = r.id
 		WHERE r.rowid IN (?)`,
-		ContentFunc: func(filesDir string, cols map[string]string) string {
-			// We can't query the DB from here, but cols has the enrichment columns.
-			// The description is already in content. For ingredient search, we rely
-			// on the enrichment SQL including description. To get ingredients and
-			// instructions indexed, we use a richer EnrichSQL that includes them.
-			return ""
-		},
 	})
 	ctx.RegisterResource(plugin.ResourceDef{
 		Type:     "recipe",
@@ -128,29 +118,20 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 func (p *Plugin) Start(ctx context.Context) error { return nil }
 func (p *Plugin) Stop() error                     { return nil }
 
-// imagesDir returns the path to the recipe images directory for a user.
-//
-// TODO(host): this is the one place the plugin knows a storage layout. The
-// host has no per-plugin file store to hand out yet; when it does, images
-// belong there.
-func (p *Plugin) imagesDir(username string) string {
-	return filepath.Join(p.ctx.DataDir(), username, "app_data", "recipes", "images")
-}
-
-// imagePath is where a recipe's stored image file lives. The name comes from
-// the database, so only its base is used: it cannot point outside the
-// directory.
-func (p *Plugin) imagePath(username, name string) string {
-	return filepath.Join(p.imagesDir(username), filepath.Base(name))
+// imageName is where a recipe's image lives in the user's storage. The
+// name comes from the database, so only its base is used.
+func imageName(name string) string {
+	return "images/" + path.Base(name)
 }
 
 // removeImage deletes a recipe's image file. One that is already gone is not
 // an error.
 func (p *Plugin) removeImage(username, name string) error {
-	if err := os.Remove(p.imagePath(username, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	store, err := p.ctx.UserStorage(username)
+	if err != nil {
 		return err
 	}
-	return nil
+	return store.Remove(imageName(name))
 }
 
 func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, userID string) error {

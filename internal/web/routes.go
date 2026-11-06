@@ -2,7 +2,6 @@ package web
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/pprof"
 	"strings"
@@ -13,9 +12,8 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/jmap"
 	"git.duckfam.us/jj-software/cog/internal/mount"
-	"git.duckfam.us/jj-software/cog/internal/quota"
+	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/services"
-	"git.duckfam.us/jj-software/cog/plugin"
 	filesPlugin "git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -60,7 +58,11 @@ func New(p *services.Providers) http.Handler {
 	if plug, ok := p.Plugins.Plugin("files"); ok {
 		fp, _ = plug.(*filesPlugin.Plugin)
 	}
-	qc := buildQuotaChecker(p, fp)
+	// Typed nil would make a non-nil interface.
+	var qc internalplugin.QuotaChecker
+	if p.QuotaChecker != nil {
+		qc = p.QuotaChecker
+	}
 
 	// --- Wire optional services for plugins ---
 	p.Plugins.SetServices(buildRegistryServices(p.Shares, p.EmailSender, p.Users, p.Groups, qc, p.Access, p.Activities, p.Cookies))
@@ -303,7 +305,7 @@ func New(p *services.Providers) http.Handler {
 	mux.HandleFunc("/remote.php/dav/", compat.HandleWebDAVStub)
 
 	// NC-compatible OCS routes (avatar, notifications, user status, etc.)
-	ncCompat := &compat.NCCompat{Users: p.Users, Files: fp, Activities: p.Activities, DataDir: p.Config.DataDir}
+	ncCompat := &compat.NCCompat{Users: p.Users, Files: fp, Activities: p.Activities, OpenAvatar: avatarH.openAvatar}
 	ncCompat.RegisterRoutes(mux)
 
 	// --- OCM Federation ---
@@ -431,9 +433,8 @@ func buildOCSQuotaFunc(p *services.Providers, fp *filesPlugin.Plugin) compat.Quo
 	if fp == nil || p.Quotas == nil || p.Mounts == nil {
 		return nil
 	}
-	usage := storageUsage(p, fp)
 	return func(username string) (used, total int64) {
-		used, err := usage(username)
+		used, err := p.StorageUsage(username)
 		if err != nil {
 			p.Log.Error("storage usage", "user", username, "err", err)
 		}
@@ -466,67 +467,5 @@ func buildOCSQuotaFunc(p *services.Providers, fp *filesPlugin.Plugin) compat.Quo
 			return used, -1
 		}
 		return used, total
-	}
-}
-
-// storageUsage is what a user stores: their files, and what enabled plugins
-// keep for them elsewhere (plugin.StorageUser).
-func storageUsage(p *services.Providers, fp *filesPlugin.Plugin) quota.UsageFunc {
-	return func(username string) (int64, error) {
-		total, err := fp.Usage(username)
-		if err != nil {
-			return 0, err
-		}
-		for plug := range p.Plugins.Plugins() {
-			su, ok := plug.(plugin.StorageUser)
-			if !ok || !p.Plugins.IsEnabled(plug.ID()) {
-				continue
-			}
-			n, err := su.StorageUsage(username)
-			if err != nil {
-				return 0, fmt.Errorf("%s storage usage: %w", plug.ID(), err)
-			}
-			total += n
-		}
-		return total, nil
-	}
-}
-
-// buildQuotaChecker creates a QuotaChecker wired to the services layer.
-func buildQuotaChecker(p *services.Providers, fp *filesPlugin.Plugin) *quota.Checker {
-	if fp == nil || p.Quotas == nil || p.Mounts == nil {
-		return nil
-	}
-	return &quota.Checker{
-		Quotas: p.Quotas,
-		Usage:  storageUsage(p, fp),
-		RootVolume: func(username string) (string, error) {
-			u, err := p.Users.GetByUsername(username)
-			if err != nil {
-				return "", err
-			}
-			m, err := p.Mounts.GetUserRoot(u.ID)
-			if err != nil {
-				return "", err
-			}
-			return m.VolumeID, nil
-		},
-		GroupIDs: func(userID string) ([]string, error) {
-			var ids []string
-			for g, err := range p.Groups.ListGroupsForUser(userID) {
-				if err != nil {
-					return nil, err
-				}
-				ids = append(ids, g.ID)
-			}
-			return ids, nil
-		},
-		UserIDFromName: func(username string) (string, error) {
-			u, err := p.Users.GetByUsername(username)
-			if err != nil {
-				return "", err
-			}
-			return u.ID, nil
-		},
 	}
 }

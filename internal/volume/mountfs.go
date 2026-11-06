@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -63,24 +64,49 @@ type MountEntry struct {
 // resolve finds the mount matching the given path and returns the backend,
 // the subpath within the backend, and whether the mount is read-only.
 func (m *MountFS) resolve(p string) (vfs.FS, string, bool, error) {
+	me, sub, err := m.match(p)
+	if err != nil {
+		return nil, "", false, err
+	}
+	// The trash at a mount's root is reached only through MountRoot.
+	if first, _, _ := strings.Cut(strings.TrimPrefix(sub, "/"), "/"); first == vfs.TrashDir {
+		return nil, "", false, fmt.Errorf("%s: %w", p, vfs.ErrNotFound)
+	}
+	return me.backend, path.Join(me.volumeSubpath, sub), me.readOnly, nil
+}
+
+// match finds the mount holding p, and p's path within the mount.
+func (m *MountFS) match(p string) (*mountEntry, string, error) {
 	p = path.Clean("/" + p)
-	for _, me := range m.mounts {
-		var sub string
+	for i := range m.mounts {
+		me := &m.mounts[i]
 		switch {
 		case p == me.userPath:
-			sub = "/"
+			return me, "/", nil
 		case me.userPath == "/":
 			// Root mount matches all paths; sub retains the leading slash.
-			sub = p
+			return me, p, nil
 		case strings.HasPrefix(p, me.userPath+"/"):
-			sub = strings.TrimPrefix(p, me.userPath)
-		default:
-			continue
+			return me, strings.TrimPrefix(p, me.userPath), nil
 		}
-		backendPath := path.Join(me.volumeSubpath, sub)
-		return me.backend, backendPath, me.readOnly, nil
 	}
-	return nil, "", false, fmt.Errorf("no mount for path: %s", p)
+	return nil, "", fmt.Errorf("no mount for path: %s", p)
+}
+
+// atMountRoot reports whether p is the root of a mount, whose listing hides
+// the trash.
+func (m *MountFS) atMountRoot(p string) bool {
+	_, sub, err := m.match(p)
+	return err == nil && sub == "/"
+}
+
+// MountRoot implements vfs.MountRooter.
+func (m *MountFS) MountRoot(p string) (vfs.FS, string, string, bool, error) {
+	me, _, err := m.match(p)
+	if err != nil {
+		return nil, "", "", false, err
+	}
+	return me.backend, path.Join("/", me.volumeSubpath), me.userPath, me.readOnly, nil
 }
 
 // Unwrap resolves a path to the underlying FS and the subpath within it.
@@ -111,6 +137,9 @@ func (m *MountFS) List(p string) ([]vfs.FileInfo, error) {
 	items, err := backend.List(subpath)
 	if err != nil {
 		return nil, err
+	}
+	if m.atMountRoot(p) {
+		items = slices.DeleteFunc(items, func(fi vfs.FileInfo) bool { return fi.Name == vfs.TrashDir })
 	}
 
 	// Rewrite paths from backend-relative to user-relative.
@@ -369,6 +398,9 @@ func (m *MountFS) ReadDirEntries(p string) ([]fs.DirEntry, error) {
 
 // mergeDirEntries adds synthetic entries for mount points within p.
 func (m *MountFS) mergeDirEntries(p string, entries []fs.DirEntry) []fs.DirEntry {
+	if m.atMountRoot(p) {
+		entries = slices.DeleteFunc(entries, func(e fs.DirEntry) bool { return e.Name() == vfs.TrashDir })
+	}
 	cleanP := path.Clean("/" + p)
 	existing := make(map[string]bool)
 	for _, e := range entries {

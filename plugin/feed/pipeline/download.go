@@ -19,12 +19,12 @@ import (
 // Downloader processes queued downloads from the feed store.
 type Downloader struct {
 	store *feed.Store
-	root  string
+	space feed.Space
 }
 
-// NewDownloader creates a Downloader that writes files under root.
-func NewDownloader(s *feed.Store, root string) *Downloader {
-	return &Downloader{store: s, root: root}
+// NewDownloader creates a Downloader that keeps media in space.
+func NewDownloader(s *feed.Store, space feed.Space) *Downloader {
+	return &Downloader{store: s, space: space}
 }
 
 // RunOnce processes all currently-queued downloads sequentially and returns.
@@ -56,11 +56,12 @@ func (d *Downloader) processOne(ctx context.Context, itemID int64) error {
 	if err != nil {
 		return d.fail(itemID, err)
 	}
-	if err := os.MkdirAll(d.root, 0o755); err != nil {
+	file := strconv.FormatInt(itemID, 10) + extForMIME(it.MediaMIME, it.Type)
+	tmp := "downloads/" + file
+	dst, err := d.space.Cache.LocalPath(tmp)
+	if err != nil {
 		return d.fail(itemID, err)
 	}
-
-	dst := filepath.Join(d.root, strconv.FormatInt(itemID, 10)+extForMIME(it.MediaMIME, it.Type))
 
 	// The media URL is whatever the feed wrote.
 	if err := feed.CheckURL(it.MediaURL); err != nil {
@@ -68,7 +69,7 @@ func (d *Downloader) processOne(ctx context.Context, itemID int64) error {
 	}
 	switch sub.Kind {
 	case "youtube":
-		cmd, err := feed.YTDLP(ctx, it.MediaURL, []string{d.root}, "-o", dst)
+		cmd, err := feed.YTDLP(ctx, it.MediaURL, []string{filepath.Dir(dst)}, "-o", dst)
 		if err != nil {
 			return d.fail(itemID, err)
 		}
@@ -81,11 +82,12 @@ func (d *Downloader) processOne(ctx context.Context, itemID int64) error {
 		}
 	}
 
-	info, err := os.Stat(dst)
+	name := "media/" + file
+	size, err := d.space.Keep(name, tmp)
 	if err != nil {
-		return d.fail(itemID, err)
+		return d.fail(itemID, errors.Join(err, d.space.Cache.Remove(tmp)))
 	}
-	if err := d.store.MarkDownloadReady(itemID, dst, info.Size()); err != nil {
+	if err := d.store.MarkDownloadReady(itemID, name, size); err != nil {
 		return fmt.Errorf("mark ready: %w", err)
 	}
 	return nil

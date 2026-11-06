@@ -77,3 +77,14 @@ func (s *Store) RetiredWithEmail(email string) (string, error) {
 	}
 	return name, nil
 }
+
+// IsRetired reports whether username belonged to a deleted account and has
+// not been released. Nothing should be opened or made for such a name: what
+// the account left is being, or has been, removed.
+func (s *Store) IsRetired(username string) (bool, error) {
+	var retired bool
+	if err := s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM retired_usernames WHERE username = ?)`, username).Scan(&retired); err != nil {
+		return false, fmt.Errorf("check retired username %q: %w", username, err)
+	}
+	return retired, nil
+}

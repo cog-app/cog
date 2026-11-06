@@ -150,7 +150,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterSearchSource(plugin.SearchSourceDef{
 		PrimaryTable: "files",
 		EnrichSQL:    "SELECT rowid, name, path, mime_type FROM files WHERE rowid IN (?)",
-		ContentFunc: func(filesDir string, cols map[string]string) string {
+		ContentFunc: func(files vfs.FS, cols map[string]string) string {
 			if !isTextMIME(cols["mime_type"]) {
 				return ""
 			}
@@ -158,19 +158,18 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 			if fpath == "" {
 				return ""
 			}
-			fsPath := filepath.Join(filesDir, fpath)
-			info, err := os.Stat(fsPath)
+			info, err := files.Stat(fpath)
 			if err != nil {
 				// Gone since the change was queued: nothing to index.
-				if !errors.Is(err, iofs.ErrNotExist) {
+				if !errors.Is(err, iofs.ErrNotExist) && !errors.Is(err, vfs.ErrNotFound) {
 					p.log.Error("index file content", "path", fpath, "err", err)
 				}
 				return ""
 			}
-			if info.Size() > 1<<20 { // skip >1MB
+			if info.Size > 1<<20 { // skip >1MB
 				return ""
 			}
-			data, err := os.ReadFile(fsPath)
+			data, err := files.ReadFile(fpath)
 			if err != nil {
 				p.log.Error("index file content", "path", fpath, "err", err)
 				return ""
@@ -240,7 +239,7 @@ func (p *Plugin) folderIcon(username, folderPath string) string {
 func (p *Plugin) Stop() error { return nil }
 
 // userFS returns the mount-aware VFS for the given user.
-func (p *Plugin) userFS(username string) vfs.FS {
+func (p *Plugin) userFS(username string) (vfs.FS, error) {
 	return p.ctx.UserVFS(username)
 }
 
@@ -267,15 +266,12 @@ func (p *Plugin) CreateDir(username, dirPath string) (*FileMeta, error) {
 	name := filepath.Base(dirPath)
 
 	// Create on disk via VFS.
-	if fs := p.userFS(username); fs != nil {
-		if err := fs.Mkdir(dirPath); err != nil {
-			return nil, fmt.Errorf("mkdir: %w", err)
-		}
-	} else {
-		fsPath := filepath.Join(p.ctx.UserFilesDir(username), dirPath)
-		if err := os.MkdirAll(fsPath, 0755); err != nil {
-			return nil, fmt.Errorf("mkdir: %w", err)
-		}
+	fs, err := p.userFS(username)
+	if err != nil {
+		return nil, err
+	}
+	if err := fs.Mkdir(dirPath); err != nil {
+		return nil, fmt.Errorf("mkdir: %w", err)
 	}
 
 	db, err := p.DB(username)
@@ -337,52 +333,65 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 	parentPath := filepath.Dir(filePath)
 	name := filepath.Base(filePath)
 
-	// Pre-check quota if content length is known.
-	if lr, ok := content.(*io.LimitedReader); ok {
-		if err := p.ctx.QuotaCheck(username, lr.N); err != nil {
-			return nil, err
-		}
-	}
-
-	// Write to disk via VFS, counting bytes.
-	counter := &countingReader{r: content}
-	if fs := p.userFS(username); fs != nil {
-		if err := fs.Mkdir(parentPath); err != nil {
-			return nil, fmt.Errorf("mkdir parent: %w", err)
-		}
-		if err := fs.Put(filePath, counter); err != nil {
-			return nil, fmt.Errorf("write file: %w", err)
-		}
-	} else {
-		fsDir := filepath.Join(p.ctx.UserFilesDir(username), parentPath)
-		if err := os.MkdirAll(fsDir, 0755); err != nil {
-			return nil, fmt.Errorf("mkdir parent: %w", err)
-		}
-		fsPath := filepath.Join(p.ctx.UserFilesDir(username), filePath)
-		if err := vfs.WriteFileAtomic(fsPath, counter, 0o644); err != nil {
-			return nil, err
-		}
-	}
-	size := counter.n
-
-	// Post-write quota check fires regardless of caller's reader type. If the
-	// upload pushed the user over quota, delete the file and refuse.
-	if err := p.ctx.QuotaCheck(username, size); err != nil {
-		var rmErr error
-		if fs := p.userFS(username); fs != nil {
-			rmErr = fs.Delete(filePath)
-		} else {
-			rmErr = os.Remove(filepath.Join(p.ctx.UserFilesDir(username), filePath))
-		}
-		if rmErr != nil {
-			p.log.Error("remove over-quota upload", "user", username, "path", filePath, "err", rmErr)
-		}
-		return nil, err
-	}
-
 	db, err := p.DB(username)
 	if err != nil {
 		return nil, err
+	}
+
+	// The quota is checked as the bytes arrive, against the room left plus
+	// what the file replaces, so an edit near the quota is not refused for
+	// counting both, and a write that would go over fails before it
+	// replaces anything: Put writes beside the file and renames.
+	var replaced int64
+	if old, err := getByPath(db, filePath); err == nil && !old.IsDir {
+		replaced = old.Size
+	} else if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	// The bytes are drawn from the budget writers in progress share as they
+	// arrive, so uploads at once cannot each take the whole of what is left.
+	w, err := p.beginWrite(username)
+	if err != nil {
+		return nil, err
+	}
+	body := w.Reader(content, replaced)
+	recorded := false
+	defer func() {
+		if !recorded {
+			w.Abandon()
+		}
+	}()
+	// A known length is refused before anything is read.
+	if room := w.Room(); room >= 0 {
+		if lr, ok := content.(*io.LimitedReader); ok && lr.N-replaced > room {
+			return nil, fmt.Errorf("%w: the upload is larger than the space left", cogplugin.ErrQuotaExceeded)
+		}
+	}
+
+	fs, err := p.userFS(username)
+	if err != nil {
+		return nil, err
+	}
+	if err := fs.Mkdir(parentPath); err != nil {
+		return nil, fmt.Errorf("mkdir parent: %w", err)
+	}
+	// Folders the upload made are folders a client can address.
+	if err := p.recordDirs(db, fs, parentPath); err != nil {
+		return nil, err
+	}
+	if err := fs.Put(filePath, body); err != nil {
+		if errors.Is(err, cogplugin.ErrQuotaExceeded) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("write file: %w", err)
+	}
+	size := body.N()
+	// What reconcile compares to notice a later change made elsewhere.
+	var diskMTime int64
+	if fi, err := fs.Stat(filePath); err != nil {
+		p.log.Warn("stat uploaded file; reconcile will record it", "path", filePath, "err", err)
+	} else {
+		diskMTime = fi.ModTime.Unix()
 	}
 
 	now := p.ctx.Now().Unix()
@@ -394,17 +403,24 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 	// at whatever this connection inserted before.
 	var id int64
 	if err := db.QueryRow(`
-		INSERT INTO files (path, parent_path, name, size, mtime, mime_type, etag, is_dir)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+		INSERT INTO files (path, parent_path, name, size, mtime, disk_mtime, mime_type, etag, is_dir)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
 		ON CONFLICT(path) DO UPDATE SET
 			size = excluded.size,
 			mtime = excluded.mtime,
+			disk_mtime = excluded.disk_mtime,
 			mime_type = excluded.mime_type,
 			etag = excluded.etag
 		RETURNING id`,
-		filePath, parentPath, name, size, now, mimeType, etag).Scan(&id); err != nil {
+		filePath, parentPath, name, size, now, diskMTime, mimeType, etag).Scan(&id); err != nil {
 		return nil, fmt.Errorf("upsert file: %w", err)
 	}
+
+	// The row counts the bytes now; they leave the budget, and a file
+	// smaller than what it replaced gives back the difference.
+	body.Settle(size)
+	w.Done()
+	recorded = true
 
 	p.logActivity(username, "file_created", username+" uploaded "+name, strconv.FormatInt(id, 10), filePath)
 	return &FileMeta{
@@ -553,21 +569,12 @@ func (p *Plugin) HardDelete(username, filePath string) error {
 	// orphan metadata row referencing a missing file — recoverable by lazy
 	// reconcile — which is preferable to deleting metadata while the file
 	// still exists on disk.
-	if fs := p.userFS(username); fs != nil {
-		if err := fs.Delete(filePath); err != nil {
-			return fmt.Errorf("remove: %w", err)
-		}
-	} else {
-		fsPath := filepath.Join(p.ctx.UserFilesDir(username), filePath)
-		if meta.IsDir {
-			if err := os.RemoveAll(fsPath); err != nil {
-				return fmt.Errorf("remove dir: %w", err)
-			}
-		} else {
-			if err := os.Remove(fsPath); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("remove file: %w", err)
-			}
-		}
+	fs, err := p.userFS(username)
+	if err != nil {
+		return err
+	}
+	if err := fs.Delete(filePath); err != nil {
+		return fmt.Errorf("remove: %w", err)
 	}
 
 	tx, err := db.Begin()
@@ -576,15 +583,8 @@ func (p *Plugin) HardDelete(username, filePath string) error {
 	}
 	defer tx.Rollback()
 
-	if meta.IsDir {
-		if _, err := tx.Exec(`DELETE FROM files WHERE path LIKE ? OR path = ?`,
-			filePath+"/%", filePath); err != nil {
-			return fmt.Errorf("delete dir metadata: %w", err)
-		}
-	} else {
-		if _, err := tx.Exec(`DELETE FROM files WHERE path = ?`, filePath); err != nil {
-			return fmt.Errorf("delete file metadata: %w", err)
-		}
+	if err := forgetRows(tx, filePath); err != nil {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit hard-delete: %w", err)
@@ -604,23 +604,16 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 	}
 
 	// Rename on disk via VFS.
-	if fs := p.userFS(username); fs != nil {
-		newParentDir := filepath.Dir(newPath)
-		if err := fs.Mkdir(newParentDir); err != nil {
-			return nil, fmt.Errorf("mkdir new parent: %w", err)
-		}
-		if err := fs.Rename(oldPath, newPath); err != nil {
-			return nil, fmt.Errorf("rename: %w", err)
-		}
-	} else {
-		oldFsPath := filepath.Join(p.ctx.UserFilesDir(username), oldPath)
-		newFsPath := filepath.Join(p.ctx.UserFilesDir(username), newPath)
-		if err := os.MkdirAll(filepath.Dir(newFsPath), 0755); err != nil {
-			return nil, fmt.Errorf("mkdir new parent: %w", err)
-		}
-		if err := os.Rename(oldFsPath, newFsPath); err != nil {
-			return nil, fmt.Errorf("rename: %w", err)
-		}
+	fs, err := p.userFS(username)
+	if err != nil {
+		return nil, err
+	}
+	newParentDir := filepath.Dir(newPath)
+	if err := fs.Mkdir(newParentDir); err != nil {
+		return nil, fmt.Errorf("mkdir new parent: %w", err)
+	}
+	if err := fs.Rename(oldPath, newPath); err != nil {
+		return nil, fmt.Errorf("rename: %w", err)
 	}
 
 	newParent := filepath.Dir(newPath)
@@ -636,21 +629,34 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(`
+	// What the rename replaced on disk is gone; its rows would collide.
+	if newPath != oldPath {
+		if err := forgetRows(tx, newPath); err != nil {
+			return nil, err
+		}
+	}
+
+	res, err := tx.Exec(`
 		UPDATE files SET path = ?, parent_path = ?, name = ?, mtime = ?, etag = ?
 		WHERE path = ?`,
-		newPath, newParent, newName, now, etag, oldPath); err != nil {
+		newPath, newParent, newName, now, etag, oldPath)
+	if err != nil {
+		return nil, fmt.Errorf("update file metadata: %w", err)
+	}
+	moved, err := res.RowsAffected()
+	if err != nil {
 		return nil, fmt.Errorf("update file metadata: %w", err)
 	}
 
+	n, prefix := subtree(oldPath)
 	if _, err := tx.Exec(`
 		UPDATE files SET
 			path = ? || substr(path, ?),
 			parent_path = ? || substr(parent_path, ?)
-		WHERE path LIKE ?`,
-		newPath, len(oldPath)+1,
-		newPath, len(oldPath)+1,
-		oldPath+"/%"); err != nil {
+		WHERE substr(path, 1, ?) = ?`,
+		newPath, n,
+		newPath, n,
+		n, prefix); err != nil {
 		return nil, fmt.Errorf("update children metadata: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -658,6 +664,11 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 	}
 
 	p.logActivity(username, "file_changed", username+" renamed "+filepath.Base(oldPath)+" to "+newName, "", newPath)
+	if moved == 0 {
+		// Written outside the plugin and not yet reconciled: it has no row
+		// to carry over, so it gets one now.
+		return p.record(db, fs, newPath)
+	}
 	return p.GetByPath(username, newPath)
 }
 
@@ -685,95 +696,98 @@ func (p *Plugin) ParentID(username string, fileID int64) (string, error) {
 	return strconv.FormatInt(parent.ID, 10), nil
 }
 
-// reconcile performs lazy synchronization between disk and metadata.
+// reconcile brings the rows of dirPath's children in step with what is on
+// disk, for changes made outside the plugin: it adds rows for new entries,
+// updates those whose file changed, and forgets those that are gone.
 func (p *Plugin) reconcile(db *sql.DB, username, dirPath string) error {
-	// List entries via VFS or direct filesystem.
-	var vfsEntries []vfs.FileInfo
-	if fs := p.userFS(username); fs != nil {
-		var err error
-		vfsEntries, err = fs.List(dirPath)
-		if err != nil {
-			if errors.Is(err, vfs.ErrNotFound) || errors.Is(err, iofs.ErrNotExist) {
-				return nil // directory may not exist yet
-			}
-			return fmt.Errorf("list %s: %w", dirPath, err)
+	fs, err := p.userFS(username)
+	if err != nil {
+		return err
+	}
+	vfsEntries, err := fs.List(dirPath)
+	if err != nil {
+		if errors.Is(err, vfs.ErrNotFound) || errors.Is(err, iofs.ErrNotExist) {
+			return nil // directory may not exist yet
 		}
-	} else {
-		fsPath := filepath.Join(p.ctx.UserFilesDir(username), dirPath)
-		osEntries, err := os.ReadDir(fsPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return err
-		}
-		for _, e := range osEntries {
-			info, err := e.Info()
-			if err != nil {
-				if errors.Is(err, iofs.ErrNotExist) {
-					continue // removed since the directory was read
-				}
-				return fmt.Errorf("stat %s: %w", e.Name(), err)
-			}
-			vfsEntries = append(vfsEntries, vfs.FileInfo{
-				Name:    e.Name(),
-				Path:    filepath.Join(dirPath, e.Name()),
-				Size:    info.Size(),
-				ModTime: info.ModTime(),
-				IsDir:   e.IsDir(),
-			})
-		}
+		return fmt.Errorf("list %s: %w", dirPath, err)
 	}
 
 	// A file still being uploaded is not one yet.
 	vfsEntries = slices.DeleteFunc(vfsEntries, func(e vfs.FileInfo) bool { return vfs.IsPartial(e.Name) })
 
-	// Build set of known paths from metadata.
-	rows, err := db.Query(`SELECT path FROM files WHERE parent_path = ?`, dirPath)
+	type row struct {
+		size      int64
+		isDir     bool
+		diskMTime int64
+	}
+	rows, err := db.Query(`SELECT path, size, is_dir, disk_mtime FROM files WHERE parent_path = ?`, dirPath)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
-
-	known := make(map[string]bool)
+	known := make(map[string]row)
 	for rows.Next() {
-		var p string
-		if err := rows.Scan(&p); err != nil {
+		var path string
+		var r row
+		if err := rows.Scan(&path, &r.size, &r.isDir, &r.diskMTime); err != nil {
 			return err
 		}
-		known[p] = true
+		known[path] = r
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
 
-	// Add new entries found on disk.
 	for _, fi := range vfsEntries {
 		childPath := filepath.Join(dirPath, fi.Name)
-		if known[childPath] {
+		r, ok := known[childPath]
+		delete(known, childPath)
+		diskMTime := fi.ModTime.Unix()
+		switch {
+		case ok && r.isDir != fi.IsDir:
+			// Replaced by the other kind: nothing of the old one carries over.
+			if err := forgetRows(db, childPath); err != nil {
+				return err
+			}
+		case ok && !fi.IsDir && (r.size != fi.Size || r.diskMTime != 0 && r.diskMTime != diskMTime):
+			if _, err := db.Exec(`UPDATE files SET size = ?, mtime = ?, disk_mtime = ?, etag = ? WHERE path = ?`,
+				fi.Size, p.ctx.Now().Unix(), diskMTime, generateETag(), childPath); err != nil {
+				return fmt.Errorf("reconcile %s: %w", childPath, err)
+			}
+			continue
+		case ok && r.diskMTime != diskMTime:
+			// Not known before, or a directory's: nothing a client sees.
+			if _, err := db.Exec(`UPDATE files SET disk_mtime = ? WHERE path = ?`, diskMTime, childPath); err != nil {
+				return fmt.Errorf("reconcile %s: %w", childPath, err)
+			}
+			continue
+		case ok:
 			continue
 		}
 
-		etag := generateETag()
-		isDir := 0
-		if fi.IsDir {
-			isDir = 1
-		}
+		var size int64
 		mimeType := ""
 		if !fi.IsDir {
+			size = fi.Size
 			mimeType = detectMimeType(fi.Name)
 		}
-
-		_, err = db.Exec(`
-			INSERT OR IGNORE INTO files (path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			childPath, dirPath, fi.Name, fi.Size,
-			fi.ModTime.Unix(), mimeType, etag, isDir)
-		if err != nil {
-			p.log.Error("reconcile insert", "path", childPath, "err", err)
+		if _, err := db.Exec(`
+			INSERT OR IGNORE INTO files (path, parent_path, name, size, mtime, disk_mtime, mime_type, etag, is_dir, favorite)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			childPath, dirPath, fi.Name, size, diskMTime, diskMTime, mimeType, generateETag(), boolToInt(fi.IsDir)); err != nil {
+			return fmt.Errorf("reconcile %s: %w", childPath, err)
 		}
 	}
 
+	// What has a row but is no longer on disk.
+	for gone := range known {
+		if err := forgetRows(db, gone); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -1171,20 +1185,22 @@ func (p *Plugin) extractTar(username string, r io.ReadSeeker, format, destDir st
 }
 
 // QuotaCheck returns nil if the user has room for additionalBytes more, or
-// plugin.ErrQuotaExceeded. Writers that stage bytes before they become a file
+// cogplugin.ErrQuotaExceeded. Writers that stage bytes before they become a file
 // (chunked uploads) ask here, so staging cannot hold more than the quota.
 func (p *Plugin) QuotaCheck(username string, additionalBytes int64) error {
 	return p.ctx.QuotaCheck(username, additionalBytes)
 }
 
-// Usage returns the total bytes used by non-directory files for a user.
+// Usage returns the bytes a user's files take, trashed ones included: they
+// are still on disk.
 func (p *Plugin) Usage(username string) (int64, error) {
 	db, err := p.DB(username)
 	if err != nil {
 		return 0, err
 	}
 	var used int64
-	err = db.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM files WHERE is_dir = 0`).Scan(&used)
+	err = db.QueryRow(`SELECT (SELECT coalesce(sum(size), 0) FROM files WHERE is_dir = 0)
+		+ (SELECT coalesce(sum(size), 0) FROM trash)`).Scan(&used)
 	if err != nil {
 		return 0, fmt.Errorf("usage query: %w", err)
 	}

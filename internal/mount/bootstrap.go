@@ -34,16 +34,26 @@ func Bootstrap(dataDir string, users *user.Store, volumes *volume.Store, mounts 
 		if err != nil {
 			return fmt.Errorf("list users: %w", err)
 		}
-		_, err = mounts.GetUserRoot(u.ID)
-		if errors.Is(err, ErrNotFound) {
-			subpath := u.Username + "/files"
-			if _, err := mounts.Create(u.ID, "/", defaultVol.ID, subpath, false); err != nil {
-				return fmt.Errorf("create root mount for %q: %w", u.Username, err)
-			}
-		} else if err != nil {
-			return fmt.Errorf("check root mount for %q: %w", u.Username, err)
+		if _, err := ensureRoot(mounts, defaultVol.ID, &u); err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+// ensureRoot returns u's root mount, making one on the volume volumeID if
+// they have none: every account has its files somewhere.
+func ensureRoot(mounts *Store, volumeID string, u *user.User) (*Mount, error) {
+	m, err := mounts.GetUserRoot(u.ID)
+	if errors.Is(err, ErrNotFound) {
+		if _, err := mounts.Create(u.ID, "/", volumeID, u.Username+"/files", false); err != nil {
+			return nil, fmt.Errorf("create root mount for %q: %w", u.Username, err)
+		}
+		m, err = mounts.GetUserRoot(u.ID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("root mount for %q: %w", u.Username, err)
+	}
+	return m, nil
 }

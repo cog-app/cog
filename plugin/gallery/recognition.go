@@ -65,7 +65,13 @@ func (p *Plugin) resolveBackend(db *sql.DB, backendType RecognitionBackendType) 
 	case BackendOnnx:
 		modelsDir := SettingOnnxModelsDir.MustGet(db)
 		if modelsDir == "" {
-			modelsDir = p.ctx.DataDir() + "/onnx_models"
+			global, err := p.ctx.GlobalStorage()
+			if err != nil {
+				return nil, err
+			}
+			if modelsDir, err = global.LocalPath("onnx_models"); err != nil {
+				return nil, err
+			}
 		}
 		b := &OnnxBackend{
 			ModelsDir:   modelsDir,
@@ -166,13 +172,15 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 			return ctx.Err()
 		}
 
-		imagePath := p.resolveLocalPath(username, m.FilePath)
+		imagePath, failure := p.resolveLocalPath(username, m.FilePath)
 		now := p.ctx.Now().Unix()
 
 		var tags []RecognizedTag
 		var faces []DetectedFace
-		var failure error
-		if shared {
+		switch {
+		case failure != nil:
+			// Recorded below as this image's failure, like a backend's.
+		case shared:
 			// Both features share a backend — call Analyze once.
 			result, err := tagBackend.Analyze(ctx, imagePath)
 			if err != nil {
@@ -180,7 +188,7 @@ func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string
 			} else {
 				tags, faces = result.Tags, result.Faces
 			}
-		} else {
+		default:
 			// Different backends — call each independently. One failing
 			// still keeps what the other found.
 			if tagBackend != nil {

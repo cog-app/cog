@@ -216,3 +216,74 @@ func TestNoPublicCaching(t *testing.T) {
 		})
 	}
 }
+
+// dataDirOwners are the files that own a piece of the data directory's
+// layout, and why. Everything else asks one of them: plugins get
+// plugin.Storage, databases come from the registry, and nothing else
+// builds a path into the data directory, so the layout can change in one
+// place and no hand-built path is a traversal risk (D8, C1, M12).
+var dataDirOwners = map[string]string{
+	"internal/storage/":                   "plugin storage, user and legacy directories",
+	"internal/db/plugindb.go":             "where plugin databases live",
+	"internal/plugin/registry.go":         "per-user directories, root databases",
+	"internal/search/manager.go":          "search indexes",
+	"internal/ssh/hostkey.go":             "the SSH host key",
+	"internal/services/services.go":       "the master secret",
+	"plugin/plugcmd/trusted.go":           "a trusted process plugin's mirror of the registry",
+	"internal/testing/cogtest/cogtest.go": "the test server's system database",
+}
+
+// mentionsDataDir reports whether e names a data directory: an identifier
+// or field called dataDir, DataDir, rootDataDir and the like.
+func mentionsDataDir(e ast.Expr) bool {
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && strings.Contains(strings.ToLower(id.Name), "datadir") {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// hasSlash reports whether e is a string literal holding a path separator.
+func hasSlash(e ast.Expr) bool {
+	lit, ok := e.(*ast.BasicLit)
+	return ok && lit.Kind == token.STRING && strings.Contains(lit.Value, "/")
+}
+
+// TestNoDataDirPaths refuses paths built from the data directory outside
+// the files that own its layout (dataDirOwners).
+func TestNoDataDirPaths(t *testing.T) {
+	fset, files := sourceFiles(t)
+	for name, f := range files {
+		owned := false
+		for prefix := range dataDirOwners {
+			if strings.HasPrefix(name, prefix) {
+				owned = true
+			}
+		}
+		if owned {
+			continue
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.CallExpr:
+				_, fp := isCall(n, "filepath", "Join")
+				_, pp := isCall(n, "path", "Join")
+				if fp || pp {
+					for _, arg := range n.Args {
+						if mentionsDataDir(arg) {
+							t.Errorf("%s: path built from the data directory; use internal/storage or plugin.Storage", fset.Position(n.Pos()))
+						}
+					}
+				}
+			case *ast.BinaryExpr:
+				if n.Op == token.ADD && (mentionsDataDir(n.X) && hasSlash(n.Y) || hasSlash(n.X) && mentionsDataDir(n.Y)) {
+					t.Errorf("%s: path built from the data directory; use internal/storage or plugin.Storage", fset.Position(n.Pos()))
+				}
+			}
+			return true
+		})
+	}
+}

@@ -10,32 +10,63 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/vfs"
 
 	_ "golang.org/x/image/webp"
 )
 
-// resolveLocalPath resolves a user's file path to a local filesystem path.
-// It tries VFS Unwrap + LocalRooter first, then falls back to UserFilesDir.
-func (p *Plugin) resolveLocalPath(username, filePath string) string {
-	if fs := p.ctx.UserVFS(username); fs != nil {
-		if u, ok := fs.(vfs.Unwrapper); ok {
-			backend, subpath, err := u.Unwrap("/" + filePath)
-			if err != nil {
-				p.log.Warn("resolve media path through the user's VFS failed; falling back to their files directory",
-					"user", username, "path", filePath, "err", err)
-			} else if lr, ok := backend.(vfs.LocalRooter); ok {
-				return filepath.Join(lr.LocalRoot(), subpath)
-			}
-		}
+// resolveLocalPath returns the local path of a user's media file, for the
+// programs and decoders that read one: the file must be on a mount backed
+// by a local directory. The path is checked to stay within that directory
+// once symlinks are followed, so a link in the user's files cannot hand a
+// reader something outside them.
+func (p *Plugin) resolveLocalPath(username, filePath string) (string, error) {
+	fsys, err := p.ctx.UserVFS(username)
+	if err != nil {
+		return "", err
 	}
-	return filepath.Join(p.ctx.UserFilesDir(username), filePath)
+	u, ok := fsys.(vfs.Unwrapper)
+	if !ok {
+		return "", fmt.Errorf("media %s: no mounts", filePath)
+	}
+	backend, subpath, err := u.Unwrap("/" + filePath)
+	if err != nil {
+		return "", fmt.Errorf("media %s: %w", filePath, err)
+	}
+	lr, ok := backend.(vfs.LocalRooter)
+	if !ok {
+		return "", fmt.Errorf("media %s: not on a local volume", filePath)
+	}
+	root, err := filepath.EvalSymlinks(lr.LocalRoot())
+	if err != nil {
+		return "", fmt.Errorf("media %s: %w", filePath, err)
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(root, filepath.FromSlash(path.Clean("/"+subpath))))
+	if err != nil {
+		return "", fmt.Errorf("media %s: %w", filePath, err)
+	}
+	if rel, err := filepath.Rel(root, real); err != nil || !filepath.IsLocal(rel) {
+		return "", fmt.Errorf("media %s: leads outside its volume", filePath)
+	}
+	return real, nil
+}
+
+// openMedia opens a user's media file for reading, on any mount.
+func (p *Plugin) openMedia(username, filePath string) (io.ReadCloser, error) {
+	fsys, err := p.ctx.UserVFS(username)
+	if err != nil {
+		return nil, err
+	}
+	return fsys.Get("/" + filePath)
 }
 
 // isMediaMIME reports whether the MIME type is a supported image or video type.
@@ -45,26 +76,15 @@ func isMediaMIME(mimeType string) bool {
 
 // scanAllUsersErr scans all user data directories for new/changed media.
 func (p *Plugin) scanAllUsersErr(ctx context.Context) (warnings []string, err error) {
-	dataDir := p.ctx.DataDir()
-	entries, err := os.ReadDir(dataDir)
+	usernames, err := p.ctx.UsersOf("files")
 	if err != nil {
-		return nil, fmt.Errorf("read data dir: %w", err)
+		return nil, err
 	}
 
 	var scanned int
-	for _, entry := range entries {
+	for _, username := range usernames {
 		if ctx.Err() != nil {
 			return warnings, ctx.Err()
-		}
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		username := entry.Name()
-		// Only scan users that have a files plugin DB.
-		filesDBPath := filepath.Join(dataDir, username, "app_data", "files", "plugin.db")
-		if _, err := os.Stat(filesDBPath); err != nil {
-			p.log.Debug("skip user (no files db)", "user", username)
-			continue
 		}
 		p.log.Info("scanning user", "user", username)
 		userWarnings, err := p.scanUser(ctx, username)
@@ -77,7 +97,7 @@ func (p *Plugin) scanAllUsersErr(ctx context.Context) (warnings []string, err er
 	}
 
 	if scanned == 0 {
-		p.log.Warn("no users with files found to scan", "data_dir", dataDir)
+		p.log.Warn("no users with files found to scan")
 	}
 	return warnings, nil
 }
@@ -317,13 +337,13 @@ func (p *Plugin) extractMetadata(ctx context.Context, db *sql.DB, username strin
 		}
 
 		m := &items[i]
-		srcPath := p.resolveLocalPath(username, m.FilePath)
-
-		var err error
-		if m.IsVideo() {
-			err = extractVideoMetadata(srcPath, m)
-		} else {
-			err = extractImageMetadata(srcPath, m)
+		srcPath, err := p.resolveLocalPath(username, m.FilePath)
+		if err == nil {
+			if m.IsVideo() {
+				err = extractVideoMetadata(srcPath, m)
+			} else {
+				err = extractImageMetadata(srcPath, m)
+			}
 		}
 		switch {
 		case errors.Is(err, image.ErrFormat):
@@ -375,9 +395,11 @@ func (p *Plugin) extractOCR(ctx context.Context, db *sql.DB, username string) er
 		}
 
 		m := &items[i]
-		srcPath := p.resolveLocalPath(username, m.FilePath)
-
-		text, err := tesseractOCR(srcPath)
+		srcPath, err := p.resolveLocalPath(username, m.FilePath)
+		var text string
+		if err == nil {
+			text, err = tesseractOCR(srcPath)
+		}
 		if err != nil {
 			p.log.Warn("ocr failed", "path", m.FilePath, "err", err)
 			// Mark as attempted so we don't retry — store a sentinel.
@@ -652,7 +674,7 @@ func (p *Plugin) computeQualityScores(ctx context.Context, db *sql.DB, username 
 
 // PreviewPath returns the path for a media thumbnail, using the files plugin for images
 // or the video thumbnail cache for videos.
-func (p *Plugin) PreviewPath(username string, m *Media, size int) (*os.File, error) {
+func (p *Plugin) PreviewPath(username string, m *Media, size int) (cogplugin.StoredFile, error) {
 	if m.IsVideo() {
 		return p.videoThumbnail(username, m, size)
 	}
@@ -677,27 +699,34 @@ func (p *Plugin) filesPlugin() (*files.Plugin, error) {
 }
 
 // videoThumbnail returns a cached video thumbnail, generating it if needed.
-func (p *Plugin) videoThumbnail(username string, m *Media, size int) (*os.File, error) {
-	cacheDir := filepath.Join(p.ctx.DataDir(), username, "app_data", PluginID, "video_thumbs")
-	cachePath := filepath.Join(cacheDir, fmt.Sprintf("%s_%d.jpg", m.FileETag, size))
-
-	if f, err := os.Open(cachePath); err == nil {
+func (p *Plugin) videoThumbnail(username string, m *Media, size int) (cogplugin.StoredFile, error) {
+	cache, err := p.ctx.UserCache(username)
+	if err != nil {
+		return nil, err
+	}
+	size = cogplugin.ThumbnailSize(size)
+	name := fmt.Sprintf("video_thumbs/%s_%d.jpg", path.Base(m.FileETag), size)
+	if f, err := cache.Open(name); err == nil {
 		return f, nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
 	}
 
 	if !FFmpegAvailable() {
 		return nil, fmt.Errorf("ffmpeg not available")
 	}
 
-	srcPath := p.resolveLocalPath(username, m.FilePath)
-
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	srcPath, err := p.resolveLocalPath(username, m.FilePath)
+	if err != nil {
 		return nil, err
 	}
-
+	cachePath, err := cache.LocalPath(name)
+	if err != nil {
+		return nil, err
+	}
 	if err := ffmpegThumbnail(srcPath, cachePath, size); err != nil {
 		return nil, err
 	}
 
-	return os.Open(cachePath)
+	return cache.Open(name)
 }

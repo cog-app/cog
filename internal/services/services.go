@@ -40,6 +40,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
+	"git.duckfam.us/jj-software/cog/internal/storage"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/internal/webpush"
@@ -64,6 +65,7 @@ type Providers struct {
 	Mounts         *mount.Store
 	Access         *volume.Access
 	Quotas         *quota.Store
+	QuotaChecker   *quota.Checker // holds every write to Quotas
 	Settings       *settings.Store
 	Search         *search.Manager
 	LogBuffer      *logbuf.Buffer
@@ -142,7 +144,8 @@ func WireSearch(log *slog.Logger, p *Providers, mgr *search.Manager) {
 
 	p.Plugins.SetDBHookFactory(mgr.UserDBHook)
 	mgr.SetUserDBFunc(p.Plugins.PluginDB)
-	mgr.SetFilesDirFunc(p.Plugins.UserFilesDir)
+	mgr.SetUserFSFunc(p.Plugins.UserFS)
+	mgr.SetUserGone(p.Users.IsRetired)
 
 	prop := search.NewPropagator(log, mgr)
 	prop.LookupUsername = func(userID string) (string, error) {
@@ -376,6 +379,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	// form tokens but not decrypt TOTP secrets or forge reset links.
 	csrfKey := auth.DerivedKey(secret, "csrf")
 	registry := plugin.NewRegistry(log, cfg.DataDir, http.NewServeMux(), sysDB, csrfKey, c)
+	registry.SetUserGone(users.IsRetired)
 
 	// WebDAV-Push: every committed write to a collection's sync state, in
 	// any plugin database, is noticed by the DAV core; the deliverer turns
@@ -455,7 +459,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	}
 
 	limiter := ratelimit.NewShared(sysDB, "auth", 10, 15*time.Minute, c)
-	return &Providers{
+	p := &Providers{
 		Config:         cfg,
 		Log:            log,
 		DB:             sysDB,
@@ -491,7 +495,13 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		Cookies:        cogplugin.CookieConfigFromBaseURL(cfg.BaseURL),
 		Clock:          c,
 		StartedAt:      c(),
-	}, nil
+	}
+	// The quota holds for every front end, so it is wired here, not by
+	// whichever of them is built; the web adds its services to it.
+	p.QuotaChecker = newQuotaChecker(p)
+	p.QuotaChecker.NewWrites()
+	registry.SetServices(plugin.RegistryServices{QuotaChecker: p.QuotaChecker})
+	return p, nil
 }
 
 func (p *Providers) SeedPlugins(username string) error {
@@ -702,6 +712,40 @@ func vapidSubject(baseURL string) string {
 	return ""
 }
 
+// cacheMaxAge is how long a cache entry may go unused before the sweep
+// removes it, and cacheSweepEvery how often the sweep runs.
+const (
+	cacheMaxAge     = 30 * 24 * time.Hour
+	cacheSweepEvery = 24 * time.Hour
+)
+
+// StartCacheSweep removes stale entries from users' caches (thumbnails,
+// converted previews, fetched photos) at start and then daily, until ctx
+// ends. They are made again when next wanted.
+func (p *Providers) StartCacheSweep(ctx context.Context) {
+	sweep := func() {
+		n, err := p.Plugins.Storage().SweepCaches(cacheMaxAge)
+		if err != nil {
+			p.Log.Error("sweep caches", "removed", n, "err", err)
+			return
+		}
+		p.Log.Debug("swept caches", "removed", n)
+	}
+	go func() {
+		sweep()
+		t := time.NewTicker(cacheSweepEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				sweep()
+			}
+		}
+	}()
+}
+
 // StartPush runs push delivery until ctx ends.
 func (p *Providers) StartPush(ctx context.Context) {
 	if p.Pusher != nil {
@@ -775,14 +819,13 @@ func (p *Providers) DeleteUser(id string) error {
 	if p.Search != nil {
 		errs = append(errs, p.Search.CloseUser(u.Username))
 	}
-	dirs := []string{filepath.Join(p.Config.DataDir, u.Username)}
-	for _, pluginID := range p.Plugins.PluginIDs() {
-		dirs = append(dirs, filepath.Join(p.Config.DataDir, pluginID, u.Username))
-	}
-	for _, dir := range dirs {
-		if err := os.RemoveAll(dir); err != nil {
-			errs = append(errs, fmt.Errorf("remove %s: %w", dir, err))
+	errs = append(errs, p.Plugins.Storage().RemoveUser(u.Username, p.Plugins.PluginIDs()...))
+	if u.Avatar != "" {
+		avatars, err := p.Plugins.Storage().Dir(storage.Host, "avatars", "")
+		if err == nil {
+			err = avatars.Remove(u.Avatar)
 		}
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }

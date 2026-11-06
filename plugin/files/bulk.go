@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -203,16 +202,13 @@ func incompressible(mimeType string) bool {
 
 // open opens a file's content for reading, without looking up its metadata.
 func (p *Plugin) open(username, filePath string) (io.ReadCloser, error) {
-	if fs := p.userFS(username); fs != nil {
-		rc, err := fs.Get(filePath)
-		if err != nil {
-			return nil, fmt.Errorf("open file: %w", err)
-		}
-		return rc, nil
+	fs, err := p.userFS(username)
+	if err != nil {
+		return nil, err
 	}
-	f, err := os.Open(filepath.Join(p.ctx.UserFilesDir(username), filePath))
+	rc, err := fs.Get(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("open file: %w", err)
 	}
-	return f, nil
+	return rc, nil
 }

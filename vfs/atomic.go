@@ -1,6 +1,8 @@
 package vfs
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -44,6 +46,37 @@ func WriteFileAtomic(path string, content io.Reader, perm os.FileMode) error {
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		return errors.Join(fmt.Errorf("replace file: %w", err), os.Remove(tmp))
+	}
+	return nil
+}
+
+// WriteFileAtomicIn is WriteFileAtomic for name within root: neither the
+// temporary file nor the result can land outside it, whatever name says or
+// whatever symlinks the tree holds.
+func WriteFileAtomicIn(root *os.Root, name string, content io.Reader, perm os.FileMode) error {
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return fmt.Errorf("create temporary file: %w", err)
+	}
+	tmp := filepath.Join(filepath.Dir(name), "."+filepath.Base(name)+"."+hex.EncodeToString(suffix[:])+atomicTempSuffix)
+	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("create temporary file: %w", err)
+	}
+	fail := func(err error) error {
+		return errors.Join(err, f.Close(), root.Remove(tmp))
+	}
+	if _, err := io.Copy(f, content); err != nil {
+		return fail(fmt.Errorf("write file: %w", err))
+	}
+	if err := f.Chmod(perm); err != nil {
+		return fail(fmt.Errorf("set file mode: %w", err))
+	}
+	if err := f.Close(); err != nil {
+		return errors.Join(fmt.Errorf("close file: %w", err), root.Remove(tmp))
+	}
+	if err := root.Rename(tmp, name); err != nil {
+		return errors.Join(fmt.Errorf("replace file: %w", err), root.Remove(tmp))
 	}
 	return nil
 }

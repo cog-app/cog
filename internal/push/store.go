@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/webpush"
@@ -339,8 +340,8 @@ func anys[T any](xs []T) []any {
 
 // ForPrefix returns the unexpired subscriptions of a protocol to resources
 // that start with prefix, for a change that reaches resources the caller
-// cannot list.
+// cannot list. substr counts characters, not bytes, so the length is too.
 func (st *Store) ForPrefix(p Protocol, prefix string) ([]Subscription, error) {
 	return st.query(`SELECT `+columns+` FROM push_subscriptions WHERE protocol = ? AND expires_at > ? AND substr(resource, 1, ?) = ?`,
-		p, st.clock().Unix(), len(prefix), prefix)
+		p, st.clock().Unix(), utf8.RuneCountInString(prefix), prefix)
 }

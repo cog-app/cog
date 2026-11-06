@@ -8,7 +8,10 @@ import (
 	"log/slog"
 	"strings"
 
+	"git.duckfam.us/jj-software/cog/internal/services"
+	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/ssh/shell"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/vfs"
 
 	gossh "golang.org/x/crypto/ssh"
@@ -19,25 +22,12 @@ import (
 func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Request, username string) {
 	defer channel.Close()
 
-	filesDir := s.providers.Plugins.UserFilesDir(username)
-	userFS, err := s.providers.Plugins.UserFS(username)
+	userFS, err := SessionFS(s.providers, s.keys, username)
 	if err != nil {
-		// Without a mount resolver the session still runs, on filesDir alone.
-		s.log.Warn("ssh session: user filesystem unavailable", "user", username, "err", err)
-		userFS = nil
-	}
-
-	// Build a composite VFS with user files at /files and .ssh/authorized_keys
-	// at the virtual root, so ssh-copy-id and cat .ssh/authorized_keys work
-	// transparently while keeping user files in a clean namespace.
-	if userFS != nil {
-		ofs := vfs.NewOverlayFS(nil) // nil base — pure virtual root
-		ofs.Mount("/files", userFS)
-		ofs.Bind("/.ssh/authorized_keys", newAuthKeysFileHandler(s.keys, username))
-		ofs.Bind("/dev/null", newDevHandler(devNull, "null"))
-		ofs.Bind("/dev/zero", newDevHandler(devZero, "zero"))
-		ofs.Bind("/dev/urandom", newDevHandler(devURandom, "urandom"))
-		userFS = ofs
+		s.log.Error("ssh session: user files unavailable", "user", username, "err", err)
+		fmt.Fprintf(channel.Stderr(), "cog: your files are unavailable\n")
+		sendExitStatus(channel, 1)
+		return
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -77,7 +67,7 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 				req.Reply(name == "sftp", nil)
 			}
 			if name == "sftp" {
-				s.serveSFTP(channel, username, filesDir, userFS)
+				s.serveSFTP(channel, userFS)
 			}
 			return
 
@@ -89,11 +79,11 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 			var exitCode int
 			switch {
 			case strings.HasPrefix(command, "scp "):
-				exitCode = s.serveSCP(channel, username, filesDir, userFS, command)
+				exitCode = s.serveSCP(channel, userFS, command)
 			case strings.HasPrefix(command, "rsync "):
-				exitCode = s.serveRsync(channel, filesDir, command)
+				exitCode = s.serveRsync(channel, command)
 			default:
-				exitCode = s.execShell(ctx, channel, username, filesDir, userFS, command, hasPTY, termWidth, termHeight)
+				exitCode = s.execShell(ctx, channel, username, userFS, command, hasPTY, termWidth, termHeight)
 			}
 			sendExitStatus(channel, exitCode)
 			return
@@ -102,7 +92,7 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 			if req.WantReply {
 				req.Reply(true, nil)
 			}
-			exitCode := s.interactiveShell(ctx, channel, username, filesDir, userFS, hasPTY, termWidth, termHeight)
+			exitCode := s.interactiveShell(ctx, channel, username, userFS, hasPTY, termWidth, termHeight)
 			sendExitStatus(channel, exitCode)
 			return
 
@@ -114,8 +104,8 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 	}
 }
 
-func (s *Server) execShell(ctx context.Context, channel gossh.Channel, username, filesDir string, userFS vfs.FS, command string, hasPTY bool, termWidth, termHeight int) int {
-	sh := shell.New(username, filesDir, userFS, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.providers.Search, s.log)
+func (s *Server) execShell(ctx context.Context, channel gossh.Channel, username string, userFS vfs.FS, command string, hasPTY bool, termWidth, termHeight int) int {
+	sh := shell.New(username, userFS, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.providers.Search, s.log)
 	if hasPTY {
 		sh.SetSSHMode(termWidth, termHeight)
 	}
@@ -137,8 +127,8 @@ func (s *Server) exitCode(channel gossh.Channel, username string, err error) int
 	return 1
 }
 
-func (s *Server) interactiveShell(ctx context.Context, channel gossh.Channel, username, filesDir string, userFS vfs.FS, hasPTY bool, termWidth, termHeight int) int {
-	sh := shell.New(username, filesDir, userFS, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.providers.Search, s.log)
+func (s *Server) interactiveShell(ctx context.Context, channel gossh.Channel, username string, userFS vfs.FS, hasPTY bool, termWidth, termHeight int) int {
+	sh := shell.New(username, userFS, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.providers.Search, s.log)
 	if hasPTY {
 		sh.SetSSHMode(termWidth, termHeight)
 	}
@@ -186,4 +176,35 @@ func sendExitStatus(channel gossh.Channel, code int) {
 		// The client has gone; there is no one left to tell.
 		slog.Debug("send exit-status", "err", err)
 	}
+}
+
+// SessionFS returns the filesystem an SSH session, or a shell run for
+// username, works in: their files at /files as the files plugin keeps them,
+// so what is written is held to the quota and recorded, beside
+// .ssh/authorized_keys and a few devices at the virtual root, so ssh-copy-id
+// and cat .ssh/authorized_keys work while the files keep a clean namespace.
+func SessionFS(p *services.Providers, ks *keys.Store, username string) (vfs.FS, error) {
+	plug, ok := p.Plugins.Plugin(files.PluginID)
+	if !ok {
+		return nil, errors.New("the files plugin is not loaded")
+	}
+	fp, ok := plug.(*files.Plugin)
+	if !ok {
+		return nil, fmt.Errorf("the files plugin is a %T", plug)
+	}
+	if err := fp.EnsureRootDir(username); err != nil {
+		return nil, err
+	}
+	userFiles, err := fp.FS(username)
+	if err != nil {
+		return nil, err
+	}
+
+	ofs := vfs.NewOverlayFS(nil) // nil base — pure virtual root
+	ofs.Mount("/files", userFiles)
+	ofs.Bind("/.ssh/authorized_keys", newAuthKeysFileHandler(ks, username))
+	ofs.Bind("/dev/null", newDevHandler(devNull, "null"))
+	ofs.Bind("/dev/zero", newDevHandler(devZero, "zero"))
+	ofs.Bind("/dev/urandom", newDevHandler(devURandom, "urandom"))
+	return ofs, nil
 }

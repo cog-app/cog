@@ -91,7 +91,11 @@ func (p *Plugin) Store(username string) (*Store, error) {
 		}
 		return p.dav.CardsChanged(username)
 	}
-	return &Store{DB: db, photos: p.photoStore(username), fetch: p.fetch, log: p.log, changed: changed}, nil
+	photos, err := p.photoStore(username)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{DB: db, photos: photos, fetch: p.fetch, log: p.log, changed: changed}, nil
 }
 
 // preferred orders a card's values: by PREF, then TYPE=pref, then as

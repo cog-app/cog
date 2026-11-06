@@ -1,20 +1,26 @@
 package files
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
+	"io"
+	iofs "io/fs"
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/sandbox"
+	"git.duckfam.us/jj-software/cog/plugin"
 
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
@@ -151,14 +157,10 @@ func HasPreview(mimeType string) bool {
 	return canConvertToPNG(mimeType)
 }
 
-// Preview returns a JPEG thumbnail for an image file.
-// It caches thumbnails on disk keyed by ETag + size.
-func (p *Plugin) Preview(username, filePath string, size int) (*os.File, error) {
-	if size < 16 {
-		size = 16
-	} else if size > 1024 {
-		size = 1024
-	}
+// Preview returns a JPEG thumbnail for an image file, on any mount. It
+// caches thumbnails in the user's cache keyed by ETag + size.
+func (p *Plugin) Preview(username, filePath string, size int) (plugin.StoredFile, error) {
+	size = plugin.ThumbnailSize(size)
 
 	meta, err := p.GetByPath(username, filePath)
 	if err != nil {
@@ -167,30 +169,30 @@ func (p *Plugin) Preview(username, filePath string, size int) (*os.File, error) 
 	if !HasPreview(meta.MimeType) {
 		return nil, fmt.Errorf("no preview for %s", meta.MimeType)
 	}
+	cache, err := p.ctx.UserCache(username)
+	if err != nil {
+		return nil, err
+	}
 
-	// Cache path: {dataDir}/{username}/thumbnails/{size}/{etag}.jpg
-	filesDir := p.ctx.UserFilesDir(username)
-	cacheDir := filepath.Join(filesDir, "..", "thumbnails", fmt.Sprintf("%d", size))
-	cachePath := filepath.Join(cacheDir, meta.ETag+".jpg")
-
-	// Cache hit?
-	if f, err := os.Open(cachePath); err == nil {
+	name := fmt.Sprintf("thumbnails/%d/%s.jpg", size, path.Base(meta.ETag))
+	if f, err := cache.Open(name); err == nil {
 		return f, nil
+	} else if !errors.Is(err, iofs.ErrNotExist) {
+		return nil, fmt.Errorf("open thumbnail: %w", err)
 	}
 
 	// Cache miss — generate thumbnail.
-	srcPath := filepath.Join(filesDir, filePath)
-
-	// For non-native formats, convert to PNG first.
-	if !isNativeImage(meta.MimeType) {
-		pngPath, err := p.convertToPNG(srcPath, meta.MimeType, meta.ETag)
-		if err != nil {
+	var srcFile io.ReadCloser
+	if isNativeImage(meta.MimeType) {
+		srcFile, err = p.open(username, filePath)
+	} else {
+		// For non-native formats, convert to PNG first.
+		var png string
+		if png, err = p.convertToPNG(username, cache, filePath, meta); err != nil {
 			return nil, fmt.Errorf("convert to png: %w", err)
 		}
-		srcPath = pngPath
+		srcFile, err = cache.Open(png)
 	}
-
-	srcFile, err := os.Open(srcPath)
 	if err != nil {
 		return nil, fmt.Errorf("open source: %w", err)
 	}
@@ -220,56 +222,65 @@ func (p *Plugin) Preview(username, filePath string, size int) (*os.File, error) 
 	dst := image.NewRGBA(image.Rect(0, 0, dw, dh))
 	draw.CatmullRom.Scale(dst, dst.Bounds(), src, bounds, draw.Over, nil)
 
-	// Write to cache.
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		return nil, fmt.Errorf("mkdir cache: %w", err)
+	// Put replaces in one step, so a request for the same thumbnail
+	// meanwhile never opens a half-written one.
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 80}); err != nil {
+		return nil, fmt.Errorf("encode thumbnail: %w", err)
 	}
-	// Written beside the cache entry and renamed into place, so a request
-	// for the same thumbnail meanwhile never opens a half-written one.
-	cacheFile, err := os.CreateTemp(cacheDir, meta.ETag+".*.tmp")
-	if err != nil {
-		return nil, fmt.Errorf("create cache: %w", err)
-	}
-	err = jpeg.Encode(cacheFile, dst, &jpeg.Options{Quality: 80})
-	if cerr := cacheFile.Close(); err == nil {
-		err = cerr
-	}
-	if err == nil {
-		err = os.Rename(cacheFile.Name(), cachePath)
-	}
-	if err != nil {
-		if rmErr := os.Remove(cacheFile.Name()); rmErr != nil {
-			p.log.Error("remove partial thumbnail", "path", cacheFile.Name(), "err", rmErr)
-		}
+	if _, err := cache.Put(name, &buf); err != nil {
 		return nil, fmt.Errorf("write thumbnail: %w", err)
 	}
-
-	// Return the cached file.
-	return os.Open(cachePath)
+	return cache.Open(name)
 }
 
-// convertToPNG converts a non-native image format to PNG, caching the result.
-// Returns the path to the cached PNG file.
-func (p *Plugin) convertToPNG(srcPath, mimeType, etag string) (string, error) {
-	// Cache converted PNGs alongside thumbnails.
-	cacheDir := filepath.Join(filepath.Dir(srcPath), "..", "converted")
-	cachePath := filepath.Join(cacheDir, etag+".png")
+// localCopy copies a user's file into the cache under name, for a program
+// that needs a local path, and returns that path. The program reads the
+// copy whatever mount the file is on.
+func (p *Plugin) localCopy(username string, cache plugin.Storage, filePath, name string) (string, error) {
+	rc, err := p.open(username, filePath)
+	if err != nil {
+		return "", err
+	}
+	_, err = cache.Put(name, rc)
+	if err = errors.Join(err, rc.Close()); err != nil {
+		return "", fmt.Errorf("copy %s: %w", filePath, err)
+	}
+	return cache.LocalPath(name)
+}
 
-	// Cache hit?
-	if _, err := os.Stat(cachePath); err == nil {
-		return cachePath, nil
+// convertToPNG converts a non-native image format to PNG, caching the
+// result, and returns the cache's name for it.
+func (p *Plugin) convertToPNG(username string, cache plugin.Storage, filePath string, meta *FileMeta) (string, error) {
+	mimeType := meta.MimeType
+	name := "converted/" + path.Base(meta.ETag) + ".png"
+	if _, err := cache.Stat(name); err == nil {
+		return name, nil
+	} else if !errors.Is(err, iofs.ErrNotExist) {
+		return "", fmt.Errorf("stat converted: %w", err)
+	}
+	cachePath, err := cache.LocalPath(name)
+	if err != nil {
+		return "", err
 	}
 
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		return "", fmt.Errorf("mkdir cache: %w", err)
+	input := "sources/" + path.Base(meta.ETag) + path.Ext(meta.Name)
+	srcPath, err := p.localCopy(username, cache, filePath, input)
+	if err != nil {
+		return "", err
 	}
+	defer func() {
+		if err := cache.Remove(input); err != nil {
+			p.log.Error("remove converter input", "user", username, "err", err)
+		}
+	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	// The converters parse what a user uploaded, so each runs sandboxed,
 	// reading only the upload and writing only the cache.
-	spec := sandbox.Spec{Read: []string{srcPath}, Write: []string{cacheDir}}
+	spec := sandbox.Spec{Read: []string{srcPath}, Write: []string{filepath.Dir(cachePath)}}
 	var cmd *exec.Cmd
 	switch {
 	case isInkscapeFormat(mimeType):
@@ -306,11 +317,11 @@ func (p *Plugin) convertToPNG(srcPath, mimeType, etag string) (string, error) {
 		return "", fmt.Errorf("convert %s: %w: %s", mimeType, err, out)
 	}
 
-	if _, err := os.Stat(cachePath); err != nil {
+	if _, err := cache.Stat(name); err != nil {
 		return "", fmt.Errorf("conversion produced no output")
 	}
 
-	return cachePath, nil
+	return name, nil
 }
 
 // magickCoder names the ImageMagick coder for a layered format convertToPNG
@@ -323,7 +334,7 @@ func magickCoder(mimeType string) string {
 }
 
 // PreviewPDF converts an office document to PDF via LibreOffice and caches the result.
-func (p *Plugin) PreviewPDF(username, filePath string) (*os.File, error) {
+func (p *Plugin) PreviewPDF(username, filePath string) (plugin.StoredFile, error) {
 	if !LibreOfficeAvailable() {
 		return nil, fmt.Errorf("libreoffice not available")
 	}
@@ -336,14 +347,15 @@ func (p *Plugin) PreviewPDF(username, filePath string) (*os.File, error) {
 		return nil, fmt.Errorf("not an office document: %s", meta.MimeType)
 	}
 
-	// Cache path: {filesDir}/../previews/{etag}.pdf
-	filesDir := p.ctx.UserFilesDir(username)
-	cacheDir := filepath.Join(filesDir, "..", "previews")
-	cachePath := filepath.Join(cacheDir, meta.ETag+".pdf")
-
-	// Cache hit?
-	if f, err := os.Open(cachePath); err == nil {
+	cache, err := p.ctx.UserCache(username)
+	if err != nil {
+		return nil, err
+	}
+	name := "previews/" + path.Base(meta.ETag) + ".pdf"
+	if f, err := cache.Open(name); err == nil {
 		return f, nil
+	} else if !errors.Is(err, iofs.ErrNotExist) {
+		return nil, fmt.Errorf("open preview: %w", err)
 	}
 
 	// Cache miss — convert via LibreOffice.
@@ -358,15 +370,10 @@ func (p *Plugin) PreviewPDF(username, filePath string) (*os.File, error) {
 	}()
 
 	// Copy source file with original extension (LO needs it).
-	srcPath := filepath.Join(filesDir, filePath)
-	srcData, err := os.ReadFile(srcPath)
-	if err != nil {
-		return nil, fmt.Errorf("read source: %w", err)
-	}
 	ext := filepath.Ext(meta.Name)
 	tmpFile := filepath.Join(tmpDir, "input"+ext)
-	if err := os.WriteFile(tmpFile, srcData, 0600); err != nil {
-		return nil, fmt.Errorf("write temp: %w", err)
+	if err := p.copyOut(username, filePath, tmpFile); err != nil {
+		return nil, err
 	}
 
 	// Each conversion gets a fresh profile, so one document cannot change
@@ -400,22 +407,34 @@ func (p *Plugin) PreviewPDF(username, filePath string) (*os.File, error) {
 		return nil, fmt.Errorf("conversion produced no PDF")
 	}
 
-	// Move to cache.
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		return nil, fmt.Errorf("mkdir cache: %w", err)
+	pdf, err := os.Open(pdfPath)
+	if err != nil {
+		return nil, fmt.Errorf("read converted pdf: %w", err)
 	}
-	if err := os.Rename(pdfPath, cachePath); err != nil {
-		// Rename may fail across filesystems; fall back to copy.
-		data, readErr := os.ReadFile(pdfPath)
-		if readErr != nil {
-			return nil, fmt.Errorf("read converted pdf: %w", readErr)
-		}
-		if writeErr := os.WriteFile(cachePath, data, 0644); writeErr != nil {
-			return nil, fmt.Errorf("write cache: %w", writeErr)
-		}
+	_, err = cache.Put(name, pdf)
+	if err = errors.Join(err, pdf.Close()); err != nil {
+		return nil, fmt.Errorf("write cache: %w", err)
 	}
+	return cache.Open(name)
+}
 
-	return os.Open(cachePath)
+// copyOut copies a user's file to the local path dst, outside the data
+// directory, for a program to read.
+func (p *Plugin) copyOut(username, filePath, dst string) error {
+	rc, err := p.open(username, filePath)
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	f, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("write temp: %w", err)
+	}
+	_, err = io.Copy(f, rc)
+	if err = errors.Join(err, f.Close()); err != nil {
+		return fmt.Errorf("write temp: %w", err)
+	}
+	return nil
 }
 
 // libreOfficeSettings lock down the profile a conversion runs with: no

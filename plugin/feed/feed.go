@@ -46,7 +46,7 @@ func playerAssetURL() string {
 // OrchestratorRunner is a function that drives background workers until ctx is
 // canceled. It is swappable so the orchestrator sub-package can be injected
 // without an import cycle (the orchestrator imports feed, not vice-versa).
-type OrchestratorRunner func(ctx context.Context, plug *Plugin, profPlugin *profanity.Plugin, dataDir string, tick time.Duration, log *slog.Logger)
+type OrchestratorRunner func(ctx context.Context, plug *Plugin, profPlugin *profanity.Plugin, tick time.Duration, log *slog.Logger)
 
 // PokeRequest asks the orchestrator to do an out-of-cycle fetch.
 // If SubID is 0, all subscriptions for Username are checked.
@@ -220,7 +220,7 @@ func (p *Plugin) Start(parent context.Context) error {
 
 	go func() {
 		defer close(p.done)
-		p.runOrchestra(ctx, p, p.profanity, p.ctx.DataDir(), p.tickInterval, p.log)
+		p.runOrchestra(ctx, p, p.profanity, p.tickInterval, p.log)
 	}()
 	return nil
 }
@@ -233,10 +233,9 @@ func (p *Plugin) Stop() error {
 	return nil
 }
 
-// DataDir returns the root data directory for all users.
-// Exposed so the orchestrator sub-package can construct per-user paths.
-func (p *Plugin) DataDir() string {
-	return p.ctx.DataDir()
+// Users returns the users who have used the feed, for the orchestrator.
+func (p *Plugin) Users() ([]string, error) {
+	return p.ctx.UsersOf("")
 }
 
 // ncapiBackend adapts the plugin to the narrow interface the NextCloud News

@@ -1,6 +1,7 @@
 package mount
 
 import (
+	"errors"
 	"fmt"
 
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -24,6 +25,21 @@ func NewResolver(users *user.Store, mounts *Store, volumes *volume.Store, access
 	return &Resolver{users: users, mounts: mounts, volumes: volumes, access: access}
 }
 
+// root returns the user's root mount. An account made since the server
+// started (registration, an invitation) has none until this makes it, on
+// the default volume, as Bootstrap does at startup.
+func (r *Resolver) root(u *user.User) (*Mount, error) {
+	m, err := r.mounts.GetUserRoot(u.ID)
+	if !errors.Is(err, ErrNotFound) {
+		return m, err
+	}
+	v, err := r.volumes.GetByName(volume.DefaultVolumeName)
+	if err != nil {
+		return nil, fmt.Errorf("root mount for %q: default volume: %w", u.Username, err)
+	}
+	return ensureRoot(r.mounts, v.ID, u)
+}
+
 // UserFilesDir looks up the user's root mount and resolves the concrete filesystem path.
 func (r *Resolver) UserFilesDir(username string) (string, error) {
 	u, err := r.users.GetByUsername(username)
@@ -31,7 +47,7 @@ func (r *Resolver) UserFilesDir(username string) (string, error) {
 		return "", fmt.Errorf("resolve user %q: %w", username, err)
 	}
 
-	m, err := r.mounts.GetUserRoot(u.ID)
+	m, err := r.root(u)
 	if err != nil {
 		return "", fmt.Errorf("resolve root mount for %q: %w", username, err)
 	}
@@ -56,7 +72,7 @@ func (r *Resolver) EnsureUserDirs(username string) error {
 		return fmt.Errorf("resolve user %q: %w", username, err)
 	}
 
-	m, err := r.mounts.GetUserRoot(u.ID)
+	m, err := r.root(u)
 	if err != nil {
 		return fmt.Errorf("resolve root mount for %q: %w", username, err)
 	}
@@ -82,6 +98,9 @@ func (r *Resolver) UserFS(username string) (vfs.FS, error) {
 		return nil, fmt.Errorf("resolve user %q: %w", username, err)
 	}
 
+	if _, err := r.root(u); err != nil {
+		return nil, err
+	}
 	var entries []volume.MountEntry
 	for m, err := range r.mounts.ListByUser(u.ID) {
 		if err != nil {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/storage"
 	"image"
 	"image/color"
 	"image/png"
@@ -199,8 +200,9 @@ func TestPhotoUpload(t *testing.T) {
 	_, s := store(t, env, alice.Username)
 	card, err := s.FindByUID("jane")
 	require.NoError(t, err)
-	dir := filepath.Join(env.Providers.Config.DataDir, "contacts", "alice", "photos")
-	files, err := os.ReadDir(dir)
+	photos, err := env.Providers.Plugins.Storage().Dir(storage.Counted, "contacts", "alice")
+	require.NoError(t, err)
+	files, err := photos.ReadDir("photos")
 	require.NoError(t, err)
 	require.Equal(t, 1, len(files))
 	old := files[0].Name()
@@ -235,16 +237,19 @@ func TestPhotoUpload(t *testing.T) {
 	assert.Contains(t, text, "PHOTO;ENCODING=b;TYPE=JPEG:")
 	env.Get(t, fmt.Sprintf("/apps/contacts/photos/%d", card.ID), cookie).Status(200)
 
-	files, err = os.ReadDir(dir)
+	files, err = photos.ReadDir("photos")
 	require.NoError(t, err)
 	require.Equal(t, 1, len(files))
 	assert.True(t, files[0].Name() != old, "the replaced photo's file is removed")
 
 	// Deleting the card removes its photo.
 	carddavReq(t, env, "DELETE", davPath("alice", "jane.vcf"), "", alice.Auth).Status(204)
-	files, err = os.ReadDir(dir)
+	files, err = photos.ReadDir("photos")
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(files))
+	used, err := env.Providers.Plugins.Storage().Usage("alice")
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), used, "removed photos stop counting")
 }
 
 // TestCreateFromForm creates a contact with only a display name: it gets an

@@ -730,6 +730,27 @@ func (s *Store) SetCleanAudioPath(itemID int64, path string) error {
 	return nil
 }
 
+// DownloadFiles returns every file a download row names: media, cleaned
+// audio and captions.
+func (s *Store) DownloadFiles() ([]string, error) {
+	rows, err := s.db.Query(`SELECT local_path FROM downloads WHERE local_path != ''
+		UNION SELECT clean_audio_path FROM downloads WHERE clean_audio_path != ''
+		UNION SELECT captions_path FROM downloads WHERE captions_path != ''`)
+	if err != nil {
+		return nil, fmt.Errorf("download files: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, fmt.Errorf("download files: %w", err)
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
 // SetCaptionsPath updates the captions_path for a download row.
 func (s *Store) SetCaptionsPath(itemID int64, path string) error {
 	_, err := s.db.Exec(`UPDATE downloads SET captions_path = ? WHERE item_id = ?`, path, itemID)

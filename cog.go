@@ -263,6 +263,7 @@ func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 		return fmt.Errorf("start plugins: %w", err)
 	}
 	p.StartPush(ctx)
+	p.StartCacheSweep(ctx)
 
 	// Start SSH server if enabled.
 	if cfg.SSHEnabled {

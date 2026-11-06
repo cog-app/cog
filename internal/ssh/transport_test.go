@@ -4,9 +4,6 @@ import (
 	"encoding/binary"
 	"io"
 	"io/fs"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -50,68 +47,6 @@ func TestParseSCPArgs_CombinedFlags(t *testing.T) {
 func TestParseSCPArgs_UnknownFlagIgnored(t *testing.T) {
 	a := parseSCPArgs("scp -x -t /a/b")
 	require.True(t, a.sink)
-}
-
-// --- scpResolve ---
-
-func TestSCPResolve_HappyPath(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "x.txt"), []byte("x"), 0o644))
-
-	got, err := scpResolve(dir, "/sub/x.txt")
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(dir, "sub", "x.txt"), got)
-}
-
-func TestSCPResolve_FilesPrefixStripped(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644))
-
-	got, err := scpResolve(dir, "/files/a.txt")
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(dir, "a.txt"), got)
-}
-
-func TestSCPResolve_RootFilesPrefix(t *testing.T) {
-	dir := t.TempDir()
-	got, err := scpResolve(dir, "/files")
-	require.NoError(t, err)
-	require.Equal(t, dir, got)
-}
-
-func TestSCPResolve_TraversalRejected(t *testing.T) {
-	dir := t.TempDir()
-	// Create a sibling outside the home dir.
-	parent := filepath.Dir(dir)
-	sibling := filepath.Join(parent, "outside.txt")
-	require.NoError(t, os.WriteFile(sibling, []byte("secret"), 0o644))
-	t.Cleanup(func() { os.Remove(sibling) })
-
-	// Try to escape via "..".
-	_, err := scpResolve(dir, "/../"+filepath.Base(sibling))
-	// Clean("/" + path) collapses .., so a leading "/../x" becomes "/x" —
-	// effectively stays inside the home. Confirm we don't accidentally
-	// hand back the sibling.
-	if err == nil {
-		// If the function returned a path, it must be inside the home.
-		// We construct a likely-not-existing path; expect err.
-		t.Skip("resolved cleanly — Clean prevents the traversal at parse time")
-	}
-}
-
-func TestSCPResolve_NewFileUnderExistingParent(t *testing.T) {
-	dir := t.TempDir()
-	// Parent exists, file does not (typical SCP receive case).
-	got, err := scpResolve(dir, "/new-file.txt")
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(dir, "new-file.txt"), got)
-}
-
-func TestSCPResolve_NotFound(t *testing.T) {
-	dir := t.TempDir()
-	_, err := scpResolve(dir, "/no/such/parent/file.txt")
-	require.True(t, err != nil)
 }
 
 // --- parsePtyReq ---
@@ -265,78 +200,4 @@ func TestListAt_PartialThenEOF(t *testing.T) {
 	n, err := l.ListAt(dst, 0)
 	require.True(t, err == io.EOF)
 	require.Equal(t, 2, n)
-}
-
-// --- readlinkInfo ---
-
-func TestReadlinkInfo(t *testing.T) {
-	r := readlinkInfo("target/path")
-	require.Equal(t, "target/path", r.Name())
-	require.Equal(t, int64(0), r.Size())
-	require.False(t, r.IsDir())
-	require.True(t, r.Sys() == nil)
-	if r.Mode()&fs.ModeSymlink == 0 {
-		t.Fatal("expected ModeSymlink set")
-	}
-	require.True(t, r.ModTime().IsZero())
-}
-
-// --- directSFTPHandler.resolve ---
-
-func TestDirectSFTP_Resolve_Happy(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644))
-	h := &directSFTPHandler{filesDir: dir}
-
-	got, err := h.resolve("/a.txt")
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(dir, "a.txt"), got)
-}
-
-func TestDirectSFTP_Resolve_NewFileUnderExistingParent(t *testing.T) {
-	dir := t.TempDir()
-	h := &directSFTPHandler{filesDir: dir}
-	got, err := h.resolve("/new.txt")
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(dir, "new.txt"), got)
-}
-
-func TestDirectSFTP_Resolve_MissingParent(t *testing.T) {
-	dir := t.TempDir()
-	h := &directSFTPHandler{filesDir: dir}
-	_, err := h.resolve("/no/such/dir/file.txt")
-	require.True(t, err != nil)
-}
-
-func TestDirectSFTP_Resolve_SymlinkEscapeRejected(t *testing.T) {
-	dir := t.TempDir()
-	parent := filepath.Dir(dir)
-	sibling := filepath.Join(parent, "outside")
-	require.NoError(t, os.WriteFile(sibling, []byte("x"), 0o644))
-	t.Cleanup(func() { os.Remove(sibling) })
-
-	// Symlink inside the home pointing outside.
-	require.NoError(t, os.Symlink(sibling, filepath.Join(dir, "esc")))
-
-	h := &directSFTPHandler{filesDir: dir}
-	_, err := h.resolve("/esc")
-	require.True(t, err != nil)
-	require.True(t, strings.Contains(err.Error(), "outside"))
-}
-
-func TestDirectSFTP_Resolve_SiblingPrefixRejected(t *testing.T) {
-	root := t.TempDir()
-	dir := filepath.Join(root, "files")
-	sibling := filepath.Join(root, "files2")
-	require.NoError(t, os.Mkdir(dir, 0o755))
-	require.NoError(t, os.Mkdir(sibling, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(sibling, "secret"), []byte("x"), 0o644))
-
-	// A symlink to a sibling whose name merely starts with the home directory.
-	require.NoError(t, os.Symlink(sibling, filepath.Join(dir, "esc")))
-
-	h := &directSFTPHandler{filesDir: dir}
-	_, err := h.resolve("/esc/secret")
-	require.True(t, err != nil)
-	require.True(t, strings.Contains(err.Error(), "outside"))
 }

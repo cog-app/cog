@@ -11,7 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
+	"path"
 	"strings"
 	"sync/atomic"
 
@@ -27,8 +27,7 @@ import (
 // Shell is a sandboxed POSIX shell for a single cog user.
 type Shell struct {
 	username   string
-	filesDir   string
-	fs         vfs.FS // mount-aware VFS; may be nil
+	fs         vfs.FS // the session's VFS, with the user's files at /files
 	pluginCmds map[string][]plugin.CommandDef
 	usernames  func() ([]string, error) // lists all usernames for completion
 	search     *search.Manager          // may be nil
@@ -49,21 +48,14 @@ func (s *Shell) SetSSHMode(width, height int) {
 	s.termHeight = height
 }
 
-// New creates a shell for the given user. filesDir is the absolute path to the
-// user's files directory on the real filesystem. pluginCmds maps plugin IDs to
+// New creates a shell for the given user on userFS, which every path the
+// shell names is in: the interpreter never sees the real filesystem, and its
+// working directory is a path in userFS. pluginCmds maps plugin IDs to
 // their registered CLI commands. usernames is called to list usernames for
 // tab completion of "username" arguments.
-func New(username, filesDir string, userFS vfs.FS, pluginCmds map[string][]plugin.CommandDef, usernames func() ([]string, error), searchMgr *search.Manager, log *slog.Logger) *Shell {
-	// Resolve symlinks so containment checks and virtual path mapping
-	// work consistently with paths returned by the interpreter.
-	if resolved, err := filepath.EvalSymlinks(filesDir); err != nil {
-		log.Warn("shell: resolve files directory", "dir", filesDir, "err", err)
-	} else {
-		filesDir = resolved
-	}
+func New(username string, userFS vfs.FS, pluginCmds map[string][]plugin.CommandDef, usernames func() ([]string, error), searchMgr *search.Manager, log *slog.Logger) *Shell {
 	return &Shell{
 		username:   username,
-		filesDir:   filesDir,
 		fs:         userFS,
 		pluginCmds: pluginCmds,
 		usernames:  usernames,
@@ -84,7 +76,8 @@ func (s *Shell) newRunner(stdin io.Reader, stdout, stderr io.Writer) (*interp.Ru
 		interp.StatHandler(s.statHandler),
 		interp.ReadDirHandler2(s.readDirHandler),
 		interp.Env(s.environ()),
-		interp.Dir(s.filesDir),
+		// Not interp.Dir: it stats the directory on the real filesystem.
+		func(r *interp.Runner) error { r.Dir = home; return nil },
 	)
 	if err != nil {
 		return nil, err
@@ -93,13 +86,16 @@ func (s *Shell) newRunner(stdin io.Reader, stdout, stderr io.Writer) (*interp.Ru
 	return r, nil
 }
 
-// toVirtualPath converts a relative or absolute shell path to a clean virtual
-// (VFS) absolute path. base is the real filesystem directory from the interpreter.
+// home is where a session starts, and where cd with no argument goes.
+const home = "/files"
+
+// toVirtualPath converts a relative or absolute shell path to a clean
+// absolute VFS path. base is the interpreter's working directory.
 func (s *Shell) toVirtualPath(base, p string) string {
-	if filepath.IsAbs(p) {
-		return filepath.Clean(p)
+	if path.IsAbs(p) {
+		return path.Clean(p)
 	}
-	return filepath.Clean(filepath.Join(s.virtualPath(base), p))
+	return path.Join(base, p)
 }
 
 // callHandler intercepts all commands before execution, including shell builtins.
@@ -270,7 +266,7 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 // prompt returns the shell prompt string for the current state.
 func (s *Shell) prompt(runner *interp.Runner) string {
 	user := s.username + "@cog"
-	dir := s.virtualPath(runner.Dir)
+	dir := runner.Dir
 	if s.color {
 		return ansiBoldGreen + user + ansiReset + ":" + ansiBoldBlue + dir + ansiReset + "$ "
 	}

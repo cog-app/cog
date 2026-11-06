@@ -1,6 +1,7 @@
 package calendar
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -8,15 +9,14 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
-	"path/filepath"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/dav/icalsql"
+	"git.duckfam.us/jj-software/cog/plugin"
 )
 
-// Managed attachments (RFC 8607) are files under the plugin's data
-// directory, one per user, named by the SHA-256 of their bytes, as contact
+// Managed attachments (RFC 8607) are files in the user's plugin storage,
+// under attachments/, named by the SHA-256 of their bytes, as contact
 // photos are: the same bytes are stored once however many attachments name
 // them. managed_attachments maps each MANAGED-ID to its file; a row lives
 // while an ATTACH in the user's events names it.
@@ -28,9 +28,8 @@ import (
 
 var _ dav.AttachmentStore = (*backend)(nil)
 
-func (p *Plugin) attachmentDir(username string) string {
-	return filepath.Join(p.ctx.DataDir(), PluginID, username, "attachments")
-}
+// storedAttachment is where an attachment's file lives in the user's storage.
+func storedAttachment(hash string) string { return "attachments/" + hash }
 
 func attachmentHash(data []byte) string {
 	sum := sha256.Sum256(data)
@@ -40,10 +39,10 @@ func attachmentHash(data []byte) string {
 // storeAttachments stores the files of new managed attachments and their
 // rows, inside tx, which must already hold the write lock (it has bumped a
 // version).
-func storeAttachments(tx *sql.Tx, dir string, atts []dav.NewAttachment, now int64) error {
+func storeAttachments(tx *sql.Tx, store plugin.Storage, atts []dav.NewAttachment, now int64) error {
 	for _, a := range atts {
 		hash := attachmentHash(a.Data)
-		if err := putFile(dir, hash, a.Data); err != nil {
+		if err := putFile(store, hash, a.Data); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`INSERT INTO managed_attachments (managed_id, hash, size, fmttype, filename, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -55,28 +54,14 @@ func storeAttachments(tx *sql.Tx, dir string, atts []dav.NewAttachment, now int6
 }
 
 // putFile writes data as the file named hash, unless it is there already.
-func putFile(dir, hash string, data []byte) error {
-	path := filepath.Join(dir, hash)
-	if _, err := os.Stat(path); err == nil {
+func putFile(store plugin.Storage, hash string, data []byte) error {
+	if _, err := store.Stat(storedAttachment(hash)); err == nil {
 		return nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("store attachment: %w", err)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if _, err := store.Put(storedAttachment(hash), bytes.NewReader(data)); err != nil {
 		return fmt.Errorf("store attachment: %w", err)
-	}
-	f, err := os.CreateTemp(dir, ".tmp-*")
-	if err != nil {
-		return fmt.Errorf("store attachment: %w", err)
-	}
-	if _, err := f.Write(data); err != nil {
-		return fmt.Errorf("store attachment: %w", errors.Join(err, f.Close(), os.Remove(f.Name())))
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("store attachment: %w", errors.Join(err, os.Remove(f.Name())))
-	}
-	if err := os.Rename(f.Name(), path); err != nil {
-		return fmt.Errorf("store attachment: %w", errors.Join(err, os.Remove(f.Name())))
 	}
 	return nil
 }
@@ -106,7 +91,10 @@ func (p *Plugin) collectAttachments(username string) error {
 	if err != nil {
 		return fmt.Errorf("collect attachments: %w", err)
 	}
-	dir := p.attachmentDir(username)
+	store, err := p.ctx.UserStorage(username)
+	if err != nil {
+		return fmt.Errorf("collect attachments: %w", err)
+	}
 	for _, h := range hashes {
 		var used bool
 		if err := tx.QueryRow(`SELECT EXISTS (SELECT 1 FROM managed_attachments WHERE hash = ?)`, h).Scan(&used); err != nil {
@@ -115,7 +103,7 @@ func (p *Plugin) collectAttachments(username string) error {
 		if used {
 			continue
 		}
-		if err := os.Remove(filepath.Join(dir, h)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := store.Remove(storedAttachment(h)); err != nil {
 			return fmt.Errorf("remove attachment %s: %w", h, err)
 		}
 	}
@@ -129,21 +117,6 @@ func (p *Plugin) collected(username string) {
 	if err := p.collectAttachments(username); err != nil {
 		p.log.Error("remove unused attachments", "user", username, "err", err)
 	}
-}
-
-// StorageUsage implements plugin.StorageUser: the bytes a user's managed
-// attachments take, each file counted once.
-func (p *Plugin) StorageUsage(username string) (int64, error) {
-	db, err := p.DB(username)
-	if err != nil {
-		return 0, err
-	}
-	var n int64
-	err = db.QueryRow(`SELECT coalesce(sum(size), 0) FROM (SELECT max(size) AS size FROM managed_attachments GROUP BY hash)`).Scan(&n)
-	if err != nil {
-		return 0, fmt.Errorf("attachment usage: %w", err)
-	}
-	return n, nil
 }
 
 // ManagedAttachments implements dav.AttachmentStore.
@@ -245,7 +218,11 @@ func (b *backend) OpenAttachment(owner, id string) (*dav.AttachmentInfo, io.Read
 	if err != nil {
 		return nil, nil, fmt.Errorf("find attachment: %w", err)
 	}
-	f, err := os.Open(filepath.Join(b.p.attachmentDir(owner), hash))
+	store, err := b.p.ctx.UserStorage(owner)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open attachment: %w", err)
+	}
+	f, err := store.Open(storedAttachment(hash))
 	if errors.Is(err, fs.ErrNotExist) {
 		b.p.log.Error("attachment file missing", "user", owner, "id", id, "hash", hash)
 		return nil, nil, dav.ErrNotFound

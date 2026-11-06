@@ -1,12 +1,15 @@
 package plugin
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/assert"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func testErrorPlugin(name string) *grpcPlugin {
@@ -95,4 +98,15 @@ func TestErrorPage_LeaksNoTransportDetail(t *testing.T) {
 		assert.NotContains(t, body, "plugin.sock")
 		assert.NotContains(t, body, "connection refused")
 	}
+}
+
+// A call canceled by the host closing a reaped process's connection is an
+// outage; one canceled because the browser went away is not.
+func TestStatusForRPCError_Canceled(t *testing.T) {
+	closing := status.Error(codes.Canceled, "grpc: the client connection is closing")
+	assert.Equal(t, http.StatusServiceUnavailable, statusForRPCError(context.Background(), closing))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	assert.Equal(t, http.StatusInternalServerError, statusForRPCError(ctx, closing))
 }

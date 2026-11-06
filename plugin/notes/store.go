@@ -3,8 +3,6 @@ package notes
 import (
 	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -138,32 +136,6 @@ func queryNotes(db *sql.DB, query string, args ...any) ([]Note, error) {
 		notes = append(notes, n)
 	}
 	return notes, rows.Err()
-}
-
-// --- File I/O ---
-
-func ReadContent(notesDir, filename string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(notesDir, filename))
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-func WriteContent(notesDir, filename, content string) error {
-	return os.WriteFile(filepath.Join(notesDir, filename), []byte(content), 0644)
-}
-
-func DeleteFile(notesDir, filename string) error {
-	return os.Remove(filepath.Join(notesDir, filename))
-}
-
-func RenameFile(notesDir, oldName, newName string) error {
-	return os.Rename(filepath.Join(notesDir, oldName), filepath.Join(notesDir, newName))
-}
-
-func EnsureNotesDir(notesDir string) error {
-	return os.MkdirAll(notesDir, 0755)
 }
 
 // TitleFromFilename strips the .md extension to get the display title.

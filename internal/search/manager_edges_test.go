@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/vfs"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -185,7 +186,7 @@ func TestUserDBHook_FastPathWhenIndexOpen(t *testing.T) {
 	hook(18, "main", "files", 1) // synchronously forwards to collector
 }
 
-// --- RegisterPluginSource + SetUserDBFunc + SetFilesDirFunc ---
+// --- RegisterPluginSource + SetUserDBFunc + SetUserFSFunc ---
 
 func TestRegisterPluginSource_StoresDef(t *testing.T) {
 	mgr, _ := newMgr(t)
@@ -199,18 +200,19 @@ func TestRegisterPluginSource_StoresDef(t *testing.T) {
 	}
 }
 
-func TestSetUserDBFunc_SetFilesDirFunc(t *testing.T) {
+func TestSetUserDBFunc_SetUserFSFunc(t *testing.T) {
 	mgr, _ := newMgr(t)
 	mgr.SetUserDBFunc(func(u, p string) (*sql.DB, error) { return nil, nil })
-	mgr.SetFilesDirFunc(func(u string) string { return "/tmp/" + u })
+	want := vfs.NewOverlayFS(nil)
+	mgr.SetUserFSFunc(func(u string) (vfs.FS, error) { return want, nil })
 	if mgr.userDBFunc == nil {
 		t.Fatal("userDBFunc not set")
 	}
-	if mgr.filesDirFunc == nil {
-		t.Fatal("filesDirFunc not set")
+	if mgr.userFSFunc == nil {
+		t.Fatal("userFSFunc not set")
 	}
-	if got := mgr.filesDirFunc("alice"); got != "/tmp/alice" {
-		t.Fatalf("got %q, want /tmp/alice", got)
+	if got, err := mgr.userFSFunc("alice"); err != nil || got != vfs.FS(want) {
+		t.Fatalf("got %v, %v; want the FS it was given", got, err)
 	}
 }
 
@@ -338,11 +340,11 @@ func TestPluginSearchSource_Enrich_ContentFunc(t *testing.T) {
 	src := NewPluginSearchSource("files", plugin.SearchSourceDef{
 		PrimaryTable: "files",
 		EnrichSQL:    `SELECT rowid, name, path FROM files WHERE rowid IN (?)`,
-		ContentFunc: func(filesDir string, cols map[string]string) string {
+		ContentFunc: func(files vfs.FS, cols map[string]string) string {
 			return "fake-content-for-" + cols["name"]
 		},
 	})
-	src.FilesDir = "/tmp/files"
+	src.Files = vfs.NewOverlayFS(nil)
 
 	docs, err := src.Enrich(db, []int64{1})
 	if err != nil {

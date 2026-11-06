@@ -11,7 +11,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
@@ -121,15 +120,19 @@ func (p *Plugin) renderWidget(ctx context.Context, w io.Writer, username string)
 	return starredContactsWidget(cards).Render(ctx, w)
 }
 
-// StorageUsage implements plugin.StorageUser: contact photos count toward
-// the user's quota.
-func (p *Plugin) StorageUsage(username string) (int64, error) {
-	return p.photoStore(username).usage()
-}
-
-// photoStore returns where a user's contact photos are kept.
-func (p *Plugin) photoStore(username string) *photoStore {
-	return &photoStore{dir: filepath.Join(p.ctx.DataDir(), "contacts", username, "photos"), log: p.log}
+// photoStore returns where a user's contact photos are kept: their own in
+// their storage, which counts toward their quota, and copies of photos given
+// by URL in their cache, which does not.
+func (p *Plugin) photoStore(username string) (*photoStore, error) {
+	own, err := p.ctx.UserStorage(username)
+	if err != nil {
+		return nil, fmt.Errorf("contact photos: %w", err)
+	}
+	cache, err := p.ctx.UserCache(username)
+	if err != nil {
+		return nil, fmt.Errorf("contact photos: %w", err)
+	}
+	return &photoStore{own: own, cache: cache, log: p.log}, nil
 }
 
 // NewCard returns a vCard 3.0 for a contact Cog creates: the version most

@@ -7,8 +7,8 @@ import (
 	"io/fs"
 	"mime"
 	"os"
+	"path"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/vfs"
@@ -23,6 +23,9 @@ var (
 	_ vfs.LocalRooter = (*fileBackend)(nil)
 )
 
+// fileBackend serves a local directory. Every operation goes through an
+// os.Root opened on that directory, so no name — "..", an absolute path, or
+// a symlink someone planted in the tree — reaches a file outside it.
 type fileBackend struct {
 	root string
 }
@@ -34,62 +37,65 @@ func newFileBackend(root string) *fileBackend {
 // LocalRoot returns the root directory on the local filesystem.
 func (b *fileBackend) LocalRoot() string { return b.root }
 
-func (b *fileBackend) resolve(path string) (string, error) {
-	cleaned := filepath.Clean("/" + path)
-	full := filepath.Join(b.root, cleaned)
-	// Ensure we don't escape the root.
-	if !strings.HasPrefix(full, filepath.Clean(b.root)) {
-		return "", fmt.Errorf("path traversal detected")
+// rel turns a volume path ("/a/b", "a/b", "/") into a name within the root.
+func rel(p string) string {
+	cleaned := path.Clean("/" + filepath.ToSlash(p))
+	if cleaned == "/" {
+		return "."
 	}
-	return full, nil
+	return filepath.FromSlash(cleaned[1:])
 }
 
-func (b *fileBackend) List(path string) ([]vfs.FileInfo, error) {
-	full, err := b.resolve(path)
+// with runs fn on the volume's root. A backend is built per request and
+// never closed, so the root is opened for each operation rather than held.
+func (b *fileBackend) with(fn func(r *os.Root) error) error {
+	r, err := os.OpenRoot(b.root)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("open volume: %w", err)
 	}
-	entries, err := os.ReadDir(full)
-	if err != nil {
-		return nil, fmt.Errorf("list directory: %w", err)
-	}
+	return errors.Join(fn(r), r.Close())
+}
+
+func (b *fileBackend) List(p string) ([]vfs.FileInfo, error) {
 	var items []vfs.FileInfo
-	for _, e := range entries {
-		info, err := e.Info()
-		if errors.Is(err, fs.ErrNotExist) {
-			continue // removed since ReadDir
-		}
+	err := b.with(func(r *os.Root) error {
+		entries, err := fs.ReadDir(r.FS(), filepath.ToSlash(rel(p)))
 		if err != nil {
-			return nil, fmt.Errorf("stat %s: %w", e.Name(), err)
+			return fmt.Errorf("list directory: %w", err)
 		}
-		relPath := filepath.Join(path, e.Name())
-		fi := vfs.FileInfo{
-			Name:    e.Name(),
-			Path:    relPath,
-			Size:    info.Size(),
-			ModTime: info.ModTime(),
-			IsDir:   e.IsDir(),
+		for _, e := range entries {
+			info, err := e.Info()
+			if errors.Is(err, fs.ErrNotExist) {
+				continue // removed since ReadDir
+			}
+			if err != nil {
+				return fmt.Errorf("stat %s: %w", e.Name(), err)
+			}
+			fi := vfs.FileInfo{
+				Name:    e.Name(),
+				Path:    filepath.Join(p, e.Name()),
+				Size:    info.Size(),
+				ModTime: info.ModTime(),
+				IsDir:   e.IsDir(),
+			}
+			if !e.IsDir() {
+				fi.MimeType = mime.TypeByExtension(filepath.Ext(e.Name()))
+			}
+			items = append(items, fi)
 		}
-		if !e.IsDir() {
-			fi.MimeType = mime.TypeByExtension(filepath.Ext(e.Name()))
-		}
-		items = append(items, fi)
-	}
-	return items, nil
+		return nil
+	})
+	return items, err
 }
 
-func (b *fileBackend) Stat(path string) (*vfs.FileInfo, error) {
-	full, err := b.resolve(path)
-	if err != nil {
-		return nil, err
-	}
-	info, err := os.Stat(full)
+func (b *fileBackend) Stat(p string) (*vfs.FileInfo, error) {
+	info, err := b.StatInfo(p)
 	if err != nil {
 		return nil, fmt.Errorf("stat: %w", err)
 	}
 	fi := &vfs.FileInfo{
 		Name:    info.Name(),
-		Path:    path,
+		Path:    p,
 		Size:    info.Size(),
 		ModTime: info.ModTime(),
 		IsDir:   info.IsDir(),
@@ -100,131 +106,116 @@ func (b *fileBackend) Stat(path string) (*vfs.FileInfo, error) {
 	return fi, nil
 }
 
-func (b *fileBackend) Get(path string) (io.ReadCloser, error) {
-	full, err := b.resolve(path)
+func (b *fileBackend) Get(p string) (io.ReadCloser, error) {
+	var f *os.File
+	err := b.with(func(r *os.Root) (err error) {
+		f, err = r.Open(rel(p))
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
-	return os.Open(full)
+	return f, nil
 }
 
-func (b *fileBackend) Put(path string, content io.Reader) error {
-	full, err := b.resolve(path)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(full), 0700); err != nil {
-		return fmt.Errorf("create parent dirs: %w", err)
-	}
-	return vfs.WriteFileAtomic(full, content, 0o644)
+func (b *fileBackend) Put(p string, content io.Reader) error {
+	name := rel(p)
+	return b.with(func(r *os.Root) error {
+		if err := r.MkdirAll(filepath.Dir(name), 0700); err != nil {
+			return fmt.Errorf("create parent dirs: %w", err)
+		}
+		return vfs.WriteFileAtomicIn(r, name, content, 0o644)
+	})
 }
 
-func (b *fileBackend) Mkdir(path string) error {
-	full, err := b.resolve(path)
-	if err != nil {
-		return err
-	}
-	return os.MkdirAll(full, 0700)
+func (b *fileBackend) Mkdir(p string) error {
+	return b.with(func(r *os.Root) error { return r.MkdirAll(rel(p), 0700) })
 }
 
-func (b *fileBackend) Delete(path string) error {
-	full, err := b.resolve(path)
-	if err != nil {
-		return err
+func (b *fileBackend) Delete(p string) error {
+	name := rel(p)
+	if name == "." {
+		return errors.New("delete: refusing to delete the volume root")
 	}
-	return os.RemoveAll(full)
+	return b.with(func(r *os.Root) error { return r.RemoveAll(name) })
 }
 
 func (b *fileBackend) Rename(oldPath, newPath string) error {
-	oldFull, err := b.resolve(oldPath)
-	if err != nil {
-		return err
-	}
-	newFull, err := b.resolve(newPath)
-	if err != nil {
-		return err
-	}
-	return os.Rename(oldFull, newFull)
+	return b.with(func(r *os.Root) error { return r.Rename(rel(oldPath), rel(newPath)) })
 }
 
-func (b *fileBackend) ReadFile(path string) ([]byte, error) {
-	full, err := b.resolve(path)
-	if err != nil {
-		return nil, err
-	}
-	return os.ReadFile(full)
+func (b *fileBackend) ReadFile(p string) ([]byte, error) {
+	var data []byte
+	err := b.with(func(r *os.Root) (err error) {
+		data, err = r.ReadFile(rel(p))
+		return err
+	})
+	return data, err
 }
 
 // --- vfs.FileOpener ---
 
-func (b *fileBackend) OpenFile(path string, flag int, perm os.FileMode) (vfs.File, error) {
-	full, err := b.resolve(path)
+func (b *fileBackend) OpenFile(p string, flag int, perm os.FileMode) (vfs.File, error) {
+	var f *os.File
+	err := b.with(func(r *os.Root) (err error) {
+		f, err = r.OpenFile(rel(p), flag, perm)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
-	return os.OpenFile(full, flag, perm)
+	return f, nil
 }
 
 // --- vfs.AttrSetter ---
 
-func (b *fileBackend) Chmod(path string, mode os.FileMode) error {
-	full, err := b.resolve(path)
-	if err != nil {
-		return err
-	}
-	return os.Chmod(full, mode)
+func (b *fileBackend) Chmod(p string, mode os.FileMode) error {
+	return b.with(func(r *os.Root) error { return r.Chmod(rel(p), mode) })
 }
 
-func (b *fileBackend) Chtimes(path string, atime, mtime time.Time) error {
-	full, err := b.resolve(path)
-	if err != nil {
-		return err
-	}
-	return os.Chtimes(full, atime, mtime)
+func (b *fileBackend) Chtimes(p string, atime, mtime time.Time) error {
+	return b.with(func(r *os.Root) error { return r.Chtimes(rel(p), atime, mtime) })
 }
 
-func (b *fileBackend) Truncate(path string, size int64) error {
-	full, err := b.resolve(path)
-	if err != nil {
-		return err
-	}
-	return os.Truncate(full, size)
+func (b *fileBackend) Truncate(p string, size int64) error {
+	return b.with(func(r *os.Root) error {
+		f, err := r.OpenFile(rel(p), os.O_WRONLY, 0)
+		if err != nil {
+			return err
+		}
+		return errors.Join(f.Truncate(size), f.Close())
+	})
 }
 
 func (b *fileBackend) Link(oldname, newname string) error {
-	oldFull, err := b.resolve(oldname)
-	if err != nil {
-		return err
-	}
-	newFull, err := b.resolve(newname)
-	if err != nil {
-		return err
-	}
-	return os.Link(oldFull, newFull)
+	return b.with(func(r *os.Root) error { return r.Link(rel(oldname), rel(newname)) })
 }
 
 // --- vfs.DirReader ---
 
-func (b *fileBackend) StatInfo(path string) (fs.FileInfo, error) {
-	full, err := b.resolve(path)
-	if err != nil {
-		return nil, err
-	}
-	return os.Stat(full)
+func (b *fileBackend) StatInfo(p string) (fs.FileInfo, error) {
+	var info fs.FileInfo
+	err := b.with(func(r *os.Root) (err error) {
+		info, err = r.Stat(rel(p))
+		return err
+	})
+	return info, err
 }
 
-func (b *fileBackend) LstatInfo(path string) (fs.FileInfo, error) {
-	full, err := b.resolve(path)
-	if err != nil {
-		return nil, err
-	}
-	return os.Lstat(full)
+func (b *fileBackend) LstatInfo(p string) (fs.FileInfo, error) {
+	var info fs.FileInfo
+	err := b.with(func(r *os.Root) (err error) {
+		info, err = r.Lstat(rel(p))
+		return err
+	})
+	return info, err
 }
 
-func (b *fileBackend) ReadDirEntries(path string) ([]fs.DirEntry, error) {
-	full, err := b.resolve(path)
-	if err != nil {
-		return nil, err
-	}
-	return os.ReadDir(full)
+func (b *fileBackend) ReadDirEntries(p string) ([]fs.DirEntry, error) {
+	var entries []fs.DirEntry
+	err := b.with(func(r *os.Root) (err error) {
+		entries, err = fs.ReadDir(r.FS(), filepath.ToSlash(rel(p)))
+		return err
+	})
+	return entries, err
 }

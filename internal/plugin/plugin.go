@@ -12,6 +12,7 @@ import (
 	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/assets"
+	"git.duckfam.us/jj-software/cog/internal/quota/budget"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/vfs"
 )
@@ -137,4 +138,8 @@ type PrivilegedContext interface {
 	RegisterAdminCommand(def cogplugin.CommandDef)
 	// Plugins returns all registered plugins for cross-plugin discovery.
 	Plugins() iter.Seq[cogplugin.Plugin]
+	// BeginWrite starts a write for username, drawing its growth from the
+	// budget their writes in progress share, for a writer whose bytes are
+	// recorded only when it is done (see budget).
+	BeginWrite(username string) (*budget.Write, error)
 }
