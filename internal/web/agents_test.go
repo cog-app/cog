@@ -92,3 +92,33 @@ func TestLoginFlowGrantsAsNewAgent(t *testing.T) {
 	require.Equal(t, alice.ID, helper.OwnerID)
 	webdavReq(t, env, "PROPFIND", "/remote.php/dav/files/"+helper.ID+"/", "", cogtest.BasicAuth("helper", granted.AppPassword), cogtest.Header("Depth", "0")).Status(http.StatusMultiStatus)
 }
+
+// Only an agent's owner shares with it; someone who received a share and
+// may reshare it reaches their own agents, not anyone else's. Other users'
+// agents are not offered as sharees.
+func TestOnlyOwnerSharesWithAgent(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	bob := env.CreateUser(t, "bob", "pass")
+	abot, err := env.Providers.Users.CreateAgent(alice.ID, "abot")
+	require.NoError(t, err)
+	bbot, err := env.Providers.Users.CreateAgent(bob.ID, "bbot")
+	require.NoError(t, err)
+
+	env.Put(t, "/remote.php/dav/files/"+alice.ID+"/doc.txt", nil, alice.Auth).Status(http.StatusCreated)
+	fp, ok := env.Providers.Plugins.Plugin(files.PluginID)
+	require.True(t, ok)
+	meta, err := fp.(*files.Plugin).GetByPath("alice", "/doc.txt")
+	require.NoError(t, err)
+	fileID := strconv.FormatInt(meta.ID, 10)
+
+	_, err = env.Providers.Shares.Create(alice.ID, "files:file", fileID, "USER", abot.ID, plugin.PermRead)
+	require.NoError(t, err)
+	_, err = env.Providers.Shares.Create(bob.ID, "files:file", fileID, "USER", abot.ID, plugin.PermRead)
+	require.True(t, err != nil, "bob shared with alice's agent")
+	_, err = env.Providers.Shares.Create(bob.ID, "files:file", fileID, "USER", bbot.ID, plugin.PermRead)
+	require.NoError(t, err)
+
+	env.Get(t, "/api/users/search?q=bot", bob.Auth).Status(200).Contains("bbot").NotContains("abot")
+	env.Get(t, "/ocs/v2.php/apps/files_sharing/api/v1/sharees?search=bot&itemType=file&format=json", bob.Auth).Status(200).Contains("bbot").NotContains("abot")
+}

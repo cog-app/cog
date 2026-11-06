@@ -248,8 +248,8 @@ func (h *shareHandler) UserSearch(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		if u2.ID == u.ID {
-			continue
+		if u2.ID == u.ID || (u2.IsAgent() && u2.OwnerID != u.ID) {
+			continue // another user's agent is theirs to share with
 		}
 		if q != "" && !strings.Contains(strings.ToLower(u2.Username), q) &&
 			!strings.Contains(strings.ToLower(u2.DisplayName), q) {
@@ -310,7 +310,7 @@ func (h *shareHandler) PickerSearch(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				return
 			}
-			if u2.ID == u.ID {
+			if u2.ID == u.ID || (u2.IsAgent() && u2.OwnerID != u.ID) {
 				continue
 			}
 			name := u2.DisplayName

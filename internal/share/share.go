@@ -130,6 +130,11 @@ func (s *Store) mayShareWith(ownerUserID, subjectType, subjectID string) error {
 	var ok bool
 	var err error
 	switch subjectType {
+	case "USER":
+		// An agent is shared with by its owner alone. A user who received
+		// a share and may reshare it reaches their own agents the same way.
+		err = s.db.QueryRow(`SELECT NOT EXISTS (SELECT 1 FROM users WHERE id = ? AND owner_id != '' AND owner_id != ?)`,
+			subjectID, ownerUserID).Scan(&ok)
 	case SubjectInstance:
 		err = s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM users WHERE id = ? AND is_admin != 0)`, ownerUserID).Scan(&ok)
 	case "GROUP":

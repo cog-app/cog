@@ -918,8 +918,8 @@ func (h *SharingHandler) HandleSharees(w http.ResponseWriter, r *http.Request) {
 			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "list users failed")
 			return
 		}
-		if usr.ID == u.ID {
-			continue
+		if usr.ID == u.ID || (usr.IsAgent() && usr.OwnerID != u.ID) {
+			continue // another user's agent is theirs to share with
 		}
 		name := usr.DisplayName
 		if name == "" {
