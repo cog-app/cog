@@ -160,11 +160,7 @@ func HasPreview(mimeType string) bool {
 // Preview returns a JPEG thumbnail for an image file, on any mount. It
 // caches thumbnails in the user's cache keyed by ETag + size.
 func (p *Plugin) Preview(username, filePath string, size int) (plugin.StoredFile, error) {
-	if size < 16 {
-		size = 16
-	} else if size > 1024 {
-		size = 1024
-	}
+	size = plugin.ThumbnailSize(size)
 
 	meta, err := p.GetByPath(username, filePath)
 	if err != nil {

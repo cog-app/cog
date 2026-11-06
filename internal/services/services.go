@@ -712,6 +712,40 @@ func vapidSubject(baseURL string) string {
 	return ""
 }
 
+// cacheMaxAge is how long a cache entry may go unused before the sweep
+// removes it, and cacheSweepEvery how often the sweep runs.
+const (
+	cacheMaxAge     = 30 * 24 * time.Hour
+	cacheSweepEvery = 24 * time.Hour
+)
+
+// StartCacheSweep removes stale entries from users' caches (thumbnails,
+// converted previews, fetched photos) at start and then daily, until ctx
+// ends. They are made again when next wanted.
+func (p *Providers) StartCacheSweep(ctx context.Context) {
+	sweep := func() {
+		n, err := p.Plugins.Storage().SweepCaches(cacheMaxAge)
+		if err != nil {
+			p.Log.Error("sweep caches", "removed", n, "err", err)
+			return
+		}
+		p.Log.Debug("swept caches", "removed", n)
+	}
+	go func() {
+		sweep()
+		t := time.NewTicker(cacheSweepEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				sweep()
+			}
+		}
+	}()
+}
+
 // StartPush runs push delivery until ctx ends.
 func (p *Providers) StartPush(ctx context.Context) {
 	if p.Pusher != nil {

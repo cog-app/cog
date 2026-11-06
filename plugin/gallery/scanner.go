@@ -704,6 +704,7 @@ func (p *Plugin) videoThumbnail(username string, m *Media, size int) (cogplugin.
 	if err != nil {
 		return nil, err
 	}
+	size = cogplugin.ThumbnailSize(size)
 	name := fmt.Sprintf("video_thumbs/%s_%d.jpg", path.Base(m.FileETag), size)
 	if f, err := cache.Open(name); err == nil {
 		return f, nil

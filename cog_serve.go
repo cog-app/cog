@@ -59,6 +59,8 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 			}
 			// Deliver WebDAV-Push notifications.
 			p.StartPush(context.Background())
+			// Remove cache entries nothing has used in a while.
+			p.StartCacheSweep(context.Background())
 
 			if envBool("COG_LOG_REQUESTS") {
 				handler = requestLogger(handler)

@@ -133,6 +133,7 @@ func NewRegistry(log *slog.Logger, dataDir string, mux *http.ServeMux, sysDB *sq
 	r.discovered = make(map[string]string)
 	r.storage = storage.New(dataDir, sysDB)
 	r.storage.SetQuota(r.BeginWrite)
+	r.storage.SetClock(c)
 	r.loadEnabledState()
 	return r
 }

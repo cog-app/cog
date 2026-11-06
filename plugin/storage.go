@@ -52,3 +52,18 @@ type StoredFile interface {
 	io.ReadSeekCloser
 	Stat() (fs.FileInfo, error)
 }
+
+// thumbnailSizes are the sizes ThumbnailSize rounds to.
+var thumbnailSizes = []int{32, 64, 128, 256, 512, 1024}
+
+// ThumbnailSize rounds a requested thumbnail size up to one of a few, so a
+// cache holds a handful of sizes of an image rather than one per size
+// asked for. Clients scale what they get to fit.
+func ThumbnailSize(n int) int {
+	for _, s := range thumbnailSizes {
+		if n <= s {
+			return s
+		}
+	}
+	return thumbnailSizes[len(thumbnailSizes)-1]
+}

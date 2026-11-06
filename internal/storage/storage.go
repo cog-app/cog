@@ -21,6 +21,7 @@ import (
 	"path"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/quota/budget"
 	"git.duckfam.us/jj-software/cog/plugin"
@@ -61,6 +62,7 @@ type Store struct {
 	db      *sql.DB
 	quota   BeginFunc
 	gone    func(username string) (bool, error)
+	clock   func() time.Time
 
 	mu    sync.Mutex
 	ready map[readyKey]bool        // directories migrated and counted
@@ -378,8 +380,16 @@ func (d *Dir) Open(n string) (plugin.StoredFile, error) {
 	}
 	var f *os.File
 	err = d.with(func(r *os.Root) (err error) {
-		f, err = r.Open(n)
-		return err
+		if f, err = r.Open(n); err != nil {
+			return err
+		}
+		if d.kind == Cache {
+			// A hit keeps the entry from the sweep.
+			if err := touch(r, n, d.s.now()); err != nil {
+				return errors.Join(err, f.Close())
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
