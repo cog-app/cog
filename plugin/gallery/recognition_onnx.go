@@ -5,6 +5,7 @@ package gallery
 import (
 	"context"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/safeimage"
 	"image"
 	"image/color"
 	_ "image/gif"
@@ -425,7 +426,7 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 	}
 	defer f.Close()
 
-	img, _, err := image.Decode(f)
+	img, _, err := safeimage.Decode(f)
 	if err != nil {
 		return nil, err
 	}

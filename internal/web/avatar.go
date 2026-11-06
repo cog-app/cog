@@ -5,8 +5,8 @@ import (
 	"crypto/md5"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/safeimage"
 	"html"
-	"image"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -125,7 +125,7 @@ func (h *avatarHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate it's actually an image.
-	img, _, err := image.Decode(file)
+	img, _, err := safeimage.Decode(file)
 	if err != nil {
 		http.Error(w, "invalid image", http.StatusBadRequest)
 		return

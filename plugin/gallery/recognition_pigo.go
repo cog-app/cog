@@ -3,7 +3,7 @@ package gallery
 import (
 	"context"
 	_ "embed"
-	"image"
+	"git.duckfam.us/jj-software/cog/internal/safeimage"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
@@ -50,7 +50,7 @@ func (b *PigoBackend) Analyze(_ context.Context, imagePath string) (*Recognition
 	}
 	defer f.Close()
 
-	img, _, err := image.Decode(f)
+	img, _, err := safeimage.Decode(f)
 	if err != nil {
 		return nil, err
 	}

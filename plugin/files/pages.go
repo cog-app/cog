@@ -295,19 +295,34 @@ func (h *Pages) serveRaw(w http.ResponseWriter, r *http.Request, username, fp st
 }
 
 // serveContent serves an io.ReadCloser via http.ServeContent. If the reader
-// implements io.ReadSeeker (e.g. *os.File), it is used directly; otherwise
-// the content is buffered into a bytes.ReadSeeker.
+// implements io.ReadSeeker (e.g. *os.File), it is used directly, with
+// ranges and conditional requests; otherwise the bytes are streamed as they
+// come, since a file on a remote volume may be larger than memory.
 func serveContent(w http.ResponseWriter, r *http.Request, name string, modtime time.Time, rc io.ReadCloser) {
 	if rs, ok := rc.(io.ReadSeeker); ok {
 		http.ServeContent(w, r, name, modtime, rs)
 		return
 	}
-	data, err := io.ReadAll(rc)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	streamContent(w, r, modtime, -1, rc)
+}
+
+// streamContent sends rc as the whole response, with its length when known
+// (size >= 0). It is for a reader that cannot seek, which ServeContent
+// needs; the status is sent before the first byte, so a read failure can
+// only cut the body short, which the length lets the client notice.
+func streamContent(w http.ResponseWriter, r *http.Request, modtime time.Time, size int64, rc io.Reader) {
+	if !modtime.IsZero() {
+		w.Header().Set("Last-Modified", modtime.UTC().Format(http.TimeFormat))
+	}
+	if size >= 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	}
+	if r.Method == http.MethodHead {
 		return
 	}
-	http.ServeContent(w, r, name, modtime, bytes.NewReader(data))
+	if _, err := io.Copy(w, rc); err != nil {
+		panic(http.ErrAbortHandler)
+	}
 }
 
 func (h *Pages) servePreview(w http.ResponseWriter, r *http.Request, username, fp string, meta *FileMeta) {
@@ -540,13 +555,10 @@ func (h *Pages) serveArchiveFileStream(w http.ResponseWriter, r *http.Request, u
 	if download {
 		w.Header().Set("Content-Disposition", httphdr.Attachment(path.Base(entry.Name)))
 	}
-	// Buffer for range request support.
-	data, err := io.ReadAll(rc)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	http.ServeContent(w, r, entry.Name, time.Unix(entry.MTime, 0), bytes.NewReader(data))
+	// An entry decompresses as it is read: it is never held whole, so an
+	// archive that expands to more than memory cannot take the server
+	// down. Ranges are not offered; a compressed entry has no offsets.
+	streamContent(w, r, time.Unix(entry.MTime, 0), entry.Size, rc)
 }
 
 // handleExtract extracts an archive to the filesystem.

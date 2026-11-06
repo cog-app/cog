@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"image"
+	"git.duckfam.us/jj-software/cog/internal/safeimage"
 	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
@@ -538,7 +538,7 @@ func (h *Pages) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, "Only image files can be a contact's photo.")
 		return
 	}
-	img, _, err := image.Decode(file)
+	img, _, err := safeimage.Decode(file)
 	if err != nil {
 		fail(w, r, "The photo could not be read as an image.")
 		return
