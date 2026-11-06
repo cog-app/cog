@@ -899,9 +899,9 @@ func TestBrowserSettingsAgentsCreateAndToken(t *testing.T) {
 
 	b.Type(t, `form[action$="/tokens"] input[name="name"]`, "phone")
 	b.Click(t, `form[action$="/tokens"] button[type="submit"]`)
-	b.WaitText(t, "New token for helper")
+	b.WaitText(t, "Token created")
 	b.WaitText(t, "Copy it now")
-	token := b.Text(t, ".token-display")
+	token := b.Text(t, ".secret-box code")
 	require.True(t, len(token) > 20, "no token shown: %q", token)
 
 	helper, err := env.Providers.Users.GetByUsername("helper")

@@ -27,7 +27,7 @@ func TestAgentIsAUserWithoutSettingsOrShares(t *testing.T) {
 	require.Equal(t, alice.ID, bot.OwnerID)
 
 	page := env.PostForm(t, "/settings/agents/"+bot.ID+"/tokens", url.Values{"csrf_token": {csrf}, "name": {"laptop"}}, cookie).Status(200).ReadBody()
-	m := regexp.MustCompile(`token-display[^>]*>([^<]+)<`).FindStringSubmatch(page)
+	m := regexp.MustCompile(`secret-box[^>]*><code>([^<]+)<`).FindStringSubmatch(page)
 	require.True(t, m != nil, "no token shown")
 	token := m[1]
 	asBot := cogtest.BasicAuth("bot", token)

@@ -5,7 +5,7 @@
     <title>
       Agents — Cog
     </title>
-    <link href="/static/style.css?v=2f7682584a8a" rel="stylesheet" />
+    <link href="/static/style.css?v=a9bd325ca6ae" rel="stylesheet" />
     <link href="/static/favicon.svg" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -214,67 +214,92 @@
           </header>
           <div class="card">
             <h2 class="card-title">
-              Your agents
-            </h2>
-            <p class="card-desc">
-              An agent is an account of its own. Share folders, calendars or contacts with it and it reaches those alone; what it changes carries its name. It cannot sign in with a password, share, or change settings.
-            </p>
-            <div class="list-row">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <strong>
-                    assistant
-                  </strong>
-                  <span class="text-sm text-muted">
-                    2026-03-14
-                  </span>
-                </div>
-                <form action="/settings/agents/«hex»/delete" method="post" onsubmit="return confirm('Delete this agent, its tokens and the shares made with it?')">
-                  <input name="csrf_token" type="hidden" value="«hex»" />
-                  <button class="btn btn-ghost text-danger" type="submit">
-                    Delete agent
-                  </button>
-                </form>
-              </div>
-              <ul class="list-plain">
-                <li class="flex flex-wrap items-center justify-between gap-2">
-                  <span>
-                    laptop
-                    <span class="text-sm text-muted">
-                      2026-03-14
-                    </span>
-                  </span>
-                  <form action="/settings/agents/«hex»/tokens/«hex»/delete" method="post">
-                    <input name="csrf_token" type="hidden" value="«hex»" />
-                    <button class="btn btn-ghost btn-sm" type="submit">
-                      Revoke
-                    </button>
-                  </form>
-                </li>
-              </ul>
-              <form action="/settings/agents/«hex»/tokens" class="flex flex-wrap items-center gap-2" method="post">
-                <input name="csrf_token" type="hidden" value="«hex»" />
-                <input autocomplete="off" class="form-control agent-input" name="name" placeholder="Token name" />
-                <button class="btn btn-secondary btn-sm" type="submit">
-                  New token
-                </button>
-              </form>
-            </div>
-          </div>
-          <div class="card">
-            <h2 class="card-title">
               Add an agent
             </h2>
-            <form action="/settings/agents" class="flex flex-wrap items-center gap-2" method="post">
+            <p class="card-desc">
+              An agent is an account of its own for a script or an assistant. It reaches only the folders, calendars and contacts you share with it, and what it changes carries its name. It cannot sign in with a password, share, or change settings.
+            </p>
+            <form action="/settings/agents" class="form-inline" method="post">
               <input name="csrf_token" type="hidden" value="«hex»" />
-              <input autocomplete="off" class="form-control agent-input" name="name" placeholder="assistant" required="" />
+              <label class="sr-only" for="agent-name">
+                Agent name
+              </label>
+              <input autocomplete="off" class="form-control" id="agent-name" name="name" placeholder="Name, e.g. assistant" required="" type="text" />
               <button class="btn btn-primary" type="submit">
-                Create agent
+                Add agent
               </button>
             </form>
             <p class="form-help">
-              The name is a username: it must be free, and it is what the agent's changes show.
+              The name is a username, so it must not be taken.
             </p>
+          </div>
+          <div class="card">
+            <h2 class="card-title">
+              assistant
+            </h2>
+            <p class="card-desc">
+              Added 2026-03-14. Share with
+              <strong>
+                assistant
+              </strong>
+              to give it access.
+            </p>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>
+                      Token
+                    </th>
+                    <th class="col-shrink">
+                      Created
+                    </th>
+                    <th class="col-actions">
+                      <span class="sr-only">
+                        Actions
+                      </span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="break-anywhere">
+                      laptop
+                    </td>
+                    <td class="nowrap">
+                      2026-03-14
+                    </td>
+                    <td class="col-actions">
+                      <form action="/settings/agents/«hex»/tokens/«hex»/delete" method="post" onsubmit="return confirm('Revoke this token? Anything using it will be signed out.')">
+                        <input name="csrf_token" type="hidden" value="«hex»" />
+                        <button class="btn btn-outline-danger btn-sm" type="submit">
+                          Revoke
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <h3 class="card-subtitle">
+              Create a token
+            </h3>
+            <form action="/settings/agents/«hex»/tokens" class="form-inline" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <label class="sr-only" for="agent-token-«hex»">
+                Token name
+              </label>
+              <input autocomplete="off" class="form-control" id="agent-token-«hex»" name="name" placeholder="Name, e.g. Laptop" type="text" />
+              <button class="btn btn-secondary" type="submit">
+                Create token
+              </button>
+            </form>
+            <form action="/settings/agents/«hex»/delete" class="form-actions" method="post" onsubmit="return confirm('Delete this agent, its tokens and the shares made with it?')">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <button class="btn btn-outline-danger" type="submit">
+                Delete agent
+              </button>
+            </form>
           </div>
         </div>
       </div>
