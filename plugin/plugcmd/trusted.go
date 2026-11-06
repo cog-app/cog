@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/internal/storage"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -24,6 +25,10 @@ type trustedRegistrar struct {
 
 	mu  sync.Mutex
 	dbs map[string]*sql.DB // cached DB connections keyed by path
+
+	// storage follows the host's layout and confinement. A trusted plugin
+	// has no system database, so its writes are not counted toward quota.
+	storage *storage.Store
 }
 
 // newTrustedRegistrar creates a trusted registrar if the trust env vars are set.
@@ -48,6 +53,7 @@ func newTrustedRegistrar(base *capturingRegistrar) (*trustedRegistrar, error) {
 		dataDir:            dataDir,
 		csrfSecret:         csrfSecret,
 		dbs:                make(map[string]*sql.DB),
+		storage:            storage.New(dataDir, nil),
 	}, nil
 }
 
@@ -91,12 +97,16 @@ func (t *trustedRegistrar) RootDB() (*sql.DB, error) {
 	return t.openDB(path, nil, cogplugin.DBOptions{})
 }
 
-func (t *trustedRegistrar) UserFilesDir(username string) string {
-	return filepath.Join(t.dataDir, username, "files")
+func (t *trustedRegistrar) UserStorage(username string) (cogplugin.Storage, error) {
+	return t.storage.Dir(storage.Counted, t.pluginID, username)
 }
 
-func (t *trustedRegistrar) DataDir() string {
-	return t.dataDir
+func (t *trustedRegistrar) UserCache(username string) (cogplugin.Storage, error) {
+	return t.storage.Dir(storage.Cache, t.pluginID, username)
+}
+
+func (t *trustedRegistrar) GlobalStorage() (cogplugin.Storage, error) {
+	return t.storage.Dir(storage.Global, t.pluginID, "")
 }
 
 func (t *trustedRegistrar) CSRFSecret() []byte {
@@ -145,3 +155,6 @@ func (t *trustedRegistrar) GroupStore() cogplugin.GroupStore     { return nil }
 func (t *trustedRegistrar) FilesAccess() cogplugin.FilesAccess   { return nil }
 func (t *trustedRegistrar) VolumeAccess() cogplugin.VolumeAccess { return nil }
 func (t *trustedRegistrar) Cookies() cogplugin.CookieConfig      { return cogplugin.CookieConfig{} }
+
+// QuotaRemaining reports no limit: quota is enforced host-side.
+func (t *trustedRegistrar) QuotaRemaining(username string) (int64, error) { return -1, nil }

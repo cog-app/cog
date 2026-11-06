@@ -318,3 +318,12 @@ CREATE TABLE IF NOT EXISTS ssh_keys (
 	created_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ssh_keys_user_fingerprint ON ssh_keys(user_id, fingerprint);
+
+-- Bytes each plugin keeps in a user's storage (internal/storage), counted
+-- toward their quota with their files.
+CREATE TABLE IF NOT EXISTS storage_usage (
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	plugin_id TEXT NOT NULL,
+	bytes INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (user_id, plugin_id)
+);

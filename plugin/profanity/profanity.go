@@ -8,11 +8,10 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -184,9 +183,8 @@ func (p *Plugin) saveSettings(db *sql.DB, s adminSettingsData) error {
 
 // --- Word list management ---
 
-func (p *Plugin) wordListPath(username string) string {
-	return filepath.Join(p.ctx.DataDir(), username, "profanity.txt")
-}
+// wordList is the name of a user's word list in their storage.
+const wordList = "words.txt"
 
 func (p *Plugin) loadWordList(username string) *WordList {
 	p.mu.RLock()
@@ -204,8 +202,13 @@ func (p *Plugin) loadWordList(username string) *WordList {
 		return wl
 	}
 
-	path := p.wordListPath(username)
-	f, err := os.Open(path)
+	store, err := p.ctx.UserStorage(username)
+	if err != nil {
+		// Not cached, so the next call tries again.
+		p.log.Error("open profanity word list", "user", username, "err", err)
+		return &WordList{}
+	}
+	f, err := store.Open(wordList)
 	if errors.Is(err, fs.ErrNotExist) {
 		// No custom list; return empty.
 		wl := &WordList{}
@@ -229,11 +232,11 @@ func (p *Plugin) loadWordList(username string) *WordList {
 }
 
 func (p *Plugin) saveWordList(username, content string) error {
-	path := p.wordListPath(username)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	store, err := p.ctx.UserStorage(username)
+	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if _, err := store.Put(wordList, strings.NewReader(content)); err != nil {
 		return err
 	}
 
@@ -246,10 +249,19 @@ func (p *Plugin) saveWordList(username, content string) error {
 }
 
 func (p *Plugin) readWordListText(username string) (string, error) {
-	data, err := os.ReadFile(p.wordListPath(username))
+	store, err := p.ctx.UserStorage(username)
+	if err != nil {
+		return "", fmt.Errorf("read word list: %w", err)
+	}
+	f, err := store.Open(wordList)
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", nil
 	}
+	if err != nil {
+		return "", fmt.Errorf("read word list: %w", err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return "", fmt.Errorf("read word list: %w", err)
 	}
@@ -258,20 +270,22 @@ func (p *Plugin) readWordListText(username string) (string, error) {
 
 // Seed creates a default profanity word list for a user.
 func (p *Plugin) Seed(username string) error {
-	path := p.wordListPath(username)
-	if _, err := os.Stat(path); err == nil {
+	store, err := p.ctx.UserStorage(username)
+	if err != nil {
+		return err
+	}
+	if _, err := store.Stat(wordList); err == nil {
 		return nil // already exists
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("stat word list: %w", err)
 	}
-	data, err := fs.ReadFile(seedFS, "seed/default.txt")
+	f, err := seedFS.Open("seed/default.txt")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o644)
+	defer f.Close()
+	_, err = store.Put(wordList, f)
+	return err
 }
 
 // Ensure Plugin implements ContentFilter at compile time.

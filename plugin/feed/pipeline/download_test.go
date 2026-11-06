@@ -2,10 +2,14 @@ package pipeline_test
 
 import (
 	"context"
+	"errors"
+	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
@@ -14,14 +18,27 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/feed/pipeline"
 )
 
-func newPipelineStore(t *testing.T) *feed.Store {
+func newPipeline(t *testing.T) (*feed.Store, feed.Space) {
 	t.Helper()
 	env := cogtest.New(t, feed.New())
 	u := env.CreateUser(t, "u", "pass")
 	p, _ := env.Providers.Plugins.Plugin(feed.PluginID)
 	db, err := p.(*feed.Plugin).DB(u.User.Username)
 	require.NoError(t, err)
-	return feed.NewStore(db)
+	space, err := p.(*feed.Plugin).Space(u.User.Username)
+	require.NoError(t, err)
+	return feed.NewStore(db), space
+}
+
+// readStored returns the contents of a file a downloads row names.
+func readStored(t *testing.T, space feed.Space, name string) string {
+	t.Helper()
+	f, err := space.Own.Open(feed.Name(name))
+	require.NoError(t, err)
+	defer f.Close()
+	b, err := io.ReadAll(f)
+	require.NoError(t, err)
+	return string(b)
 }
 
 func TestDownloadHTTP(t *testing.T) {
@@ -31,7 +48,7 @@ func TestDownloadHTTP(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := newPipelineStore(t)
+	s, space := newPipeline(t)
 	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "u"})
 	id, _, _ := s.UpsertItem(feed.Item{
 		SubscriptionID: subID, GUID: "g", Type: "audio",
@@ -39,25 +56,37 @@ func TestDownloadHTTP(t *testing.T) {
 	})
 	require.NoError(t, s.EnqueueDownload(id))
 
-	dir := t.TempDir()
-	dl := pipeline.NewDownloader(s, dir)
+	dl := pipeline.NewDownloader(s, space)
 	require.NoError(t, dl.RunOnce(context.Background()))
 
 	d, _ := s.GetDownload(id)
 	if d.State != "ready" {
 		t.Fatalf("state %q", d.State)
 	}
-	b, err := os.ReadFile(d.LocalPath)
-	require.NoError(t, err)
-	if string(b) != "AAAAAAAA" {
-		t.Fatalf("body %q", string(b))
+	if got := readStored(t, space, d.LocalPath); got != "AAAAAAAA" {
+		t.Fatalf("body %q", got)
 	}
-	if filepath.Dir(d.LocalPath) != dir {
-		t.Errorf("local_path not under root: %s", d.LocalPath)
+	if !strings.HasPrefix(d.LocalPath, "media/") {
+		t.Errorf("local_path is not a media name: %s", d.LocalPath)
 	}
 	if d.Bytes != 8 {
 		t.Errorf("bytes: %d", d.Bytes)
 	}
+	entries, err := space.Cache.ReadDir("downloads")
+	require.NoError(t, err)
+	require.Equal(t, 0, len(entries), "download left in the cache")
+
+	// Collect keeps what a row names, and removes what none does.
+	_, err = space.Own.Put("media/orphan.mp3", strings.NewReader("x"))
+	require.NoError(t, err)
+	require.NoError(t, pipeline.Collect(s, space))
+	_, err = space.Own.Stat("media/orphan.mp3")
+	require.True(t, errors.Is(err, fs.ErrNotExist), "orphan kept: %v", err)
+	require.Equal(t, "AAAAAAAA", readStored(t, space, d.LocalPath))
+	require.NoError(t, s.DeleteItem(id))
+	require.NoError(t, pipeline.Collect(s, space))
+	_, err = space.Own.Stat(d.LocalPath)
+	require.True(t, errors.Is(err, fs.ErrNotExist), "deleted item's media kept: %v", err)
 }
 
 func TestDownloadHTTPError(t *testing.T) {
@@ -66,14 +95,14 @@ func TestDownloadHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := newPipelineStore(t)
+	s, space := newPipeline(t)
 	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "u"})
 	id, _, _ := s.UpsertItem(feed.Item{
 		SubscriptionID: subID, GUID: "g", Type: "audio", MediaURL: srv.URL,
 	})
 	require.NoError(t, s.EnqueueDownload(id))
 
-	dl := pipeline.NewDownloader(s, t.TempDir())
+	dl := pipeline.NewDownloader(s, space)
 	_ = dl.RunOnce(context.Background())
 
 	d, _ := s.GetDownload(id)
@@ -90,7 +119,7 @@ func TestDownloadYouTube(t *testing.T) {
 	require.NoError(t, err)
 	t.Setenv("PATH", abs+":"+os.Getenv("PATH"))
 
-	s := newPipelineStore(t)
+	s, space := newPipeline(t)
 	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "youtube", URL: "https://yt/channel"})
 	id, _, _ := s.UpsertItem(feed.Item{
 		SubscriptionID: subID, GUID: "vid1", Type: "video",
@@ -98,14 +127,14 @@ func TestDownloadYouTube(t *testing.T) {
 	})
 	require.NoError(t, s.EnqueueDownload(id))
 
-	dl := pipeline.NewDownloader(s, t.TempDir())
+	dl := pipeline.NewDownloader(s, space)
 	require.NoError(t, dl.RunOnce(context.Background()))
 
 	d, _ := s.GetDownload(id)
 	if d.State != "ready" {
 		t.Fatalf("state %q error=%q", d.State, d.Error)
 	}
-	if _, err := os.Stat(d.LocalPath); err != nil {
+	if _, err := space.Own.Stat(d.LocalPath); err != nil {
 		t.Fatalf("downloaded file missing: %v", err)
 	}
 }

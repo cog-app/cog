@@ -14,13 +14,6 @@ import (
 // ErrQuotaExceeded is returned when a file upload would exceed the user's quota.
 var ErrQuotaExceeded = errors.New("quota exceeded")
 
-// StorageUser is implemented by plugins that keep a user's bytes outside
-// Files (calendar attachments, contact photos). They count toward the user's
-// quota with Files.
-type StorageUser interface {
-	StorageUsage(username string) (int64, error)
-}
-
 // PluginContext is the combined registration and service interface passed to
 // Plugin.Register(). It embeds Registrar for route/resource/hook registration
 // and adds service accessors that plugins use at runtime.
@@ -34,13 +27,8 @@ type PluginContext interface {
 	// build their own path or connection string are betting on the database
 	// being a local SQLite file, which is only true for some deployments.
 	PluginDB(username string, opts ...DBOption) (*sql.DB, error)
-	// UserFilesDir returns the path to the user's files directory on the local
-	// filesystem. Deprecated: prefer UserVFS for mount-aware file access.
-	UserFilesDir(username string) string
 	// EnsureUserDirs creates the standard directory structure for a user.
 	EnsureUserDirs(username string) error
-	// DataDir returns the root data directory.
-	DataDir() string
 	// NavItems returns nav items from all enabled plugins.
 	NavItems() []NavItem
 	// Widgets returns widgets from all enabled plugins.
@@ -56,14 +44,33 @@ type PluginContext interface {
 	// RootDB returns a plugin-global database (not per-user).
 	RootDB() (*sql.DB, error)
 
-	// UserVFS returns the mount-aware virtual filesystem for a user.
-	// Returns nil if VFS is not available (e.g., gRPC plugin without VFS permission).
-	UserVFS(username string) vfs.FS
+	// UserStorage returns the plugin's storage for a user: files it keeps
+	// for them outside its database. They count toward the user's quota.
+	UserStorage(username string) (Storage, error)
+	// UserCache returns the plugin's cache for a user: files it can make
+	// again (thumbnails, fetched copies), which do not count toward quota.
+	UserCache(username string) (Storage, error)
+	// GlobalStorage returns the plugin's own storage, belonging to no user.
+	GlobalStorage() (Storage, error)
+	// UsersOf returns the usernames of the users who have used a plugin,
+	// its database having been opened for them: pluginID's, or this
+	// plugin's own when it is empty. A background job walks these rather
+	// than every account, or the data directory.
+	UsersOf(pluginID string) ([]string, error)
+
+	// UserVFS returns the mount-aware virtual filesystem for a user: the
+	// only way a plugin reaches their files.
+	UserVFS(username string) (vfs.FS, error)
 
 	// QuotaCheck checks if a user has enough quota for additionalBytes.
 	// Returns nil if within quota or quotas are not configured.
 	// Returns ErrQuotaExceeded if the upload would exceed the user's quota.
 	QuotaCheck(username string, additionalBytes int64) error
+	// QuotaRemaining returns how many more bytes a user may store, or -1
+	// when nothing limits them. A writer that does not know its size up
+	// front reads through LimitQuota with it, so it fails before replacing
+	// anything rather than after.
+	QuotaRemaining(username string) (int64, error)
 
 	// Cookies returns the cookie configuration (Secure flag) for this deployment.
 	Cookies() CookieConfig

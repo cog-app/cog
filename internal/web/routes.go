@@ -2,7 +2,6 @@ package web
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/pprof"
 	"strings"
@@ -15,7 +14,6 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/services"
-	"git.duckfam.us/jj-software/cog/plugin"
 	filesPlugin "git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -303,7 +301,7 @@ func New(p *services.Providers) http.Handler {
 	mux.HandleFunc("/remote.php/dav/", compat.HandleWebDAVStub)
 
 	// NC-compatible OCS routes (avatar, notifications, user status, etc.)
-	ncCompat := &compat.NCCompat{Users: p.Users, Files: fp, Activities: p.Activities, DataDir: p.Config.DataDir}
+	ncCompat := &compat.NCCompat{Users: p.Users, Files: fp, Activities: p.Activities, OpenAvatar: avatarH.openAvatar}
 	ncCompat.RegisterRoutes(mux)
 
 	// --- OCM Federation ---
@@ -469,26 +467,19 @@ func buildOCSQuotaFunc(p *services.Providers, fp *filesPlugin.Plugin) compat.Quo
 	}
 }
 
-// storageUsage is what a user stores: their files, and what enabled plugins
-// keep for them elsewhere (plugin.StorageUser).
+// storageUsage is what a user stores: their files, and what plugins keep
+// in their storage.
 func storageUsage(p *services.Providers, fp *filesPlugin.Plugin) quota.UsageFunc {
 	return func(username string) (int64, error) {
-		total, err := fp.Usage(username)
+		files, err := fp.Usage(username)
 		if err != nil {
 			return 0, err
 		}
-		for plug := range p.Plugins.Plugins() {
-			su, ok := plug.(plugin.StorageUser)
-			if !ok || !p.Plugins.IsEnabled(plug.ID()) {
-				continue
-			}
-			n, err := su.StorageUsage(username)
-			if err != nil {
-				return 0, fmt.Errorf("%s storage usage: %w", plug.ID(), err)
-			}
-			total += n
+		kept, err := p.Plugins.Storage().Usage(username)
+		if err != nil {
+			return 0, err
 		}
-		return total, nil
+		return files + kept, nil
 	}
 }
 

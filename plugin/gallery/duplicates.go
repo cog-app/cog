@@ -9,7 +9,6 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"os"
 
 	"github.com/ajdnik/imghash"
 	"github.com/ajdnik/imghash/hashtype"
@@ -307,8 +306,7 @@ func (p *Plugin) computeFingerprints(ctx context.Context, db *sql.DB, username s
 		m := &items[i]
 		id := m.ID
 
-		srcPath := p.resolveLocalPath(username, m.FilePath)
-		f, err := os.Open(srcPath)
+		f, err := p.openMedia(username, m.FilePath)
 		if err != nil {
 			p.log.Warn("fingerprint: open failed", "id", id, "err", err)
 			continue

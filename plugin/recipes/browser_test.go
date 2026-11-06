@@ -1,13 +1,12 @@
 package recipes_test
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -246,13 +245,10 @@ func giveImage(t *testing.T, p *recipes.Plugin, db *sql.DB, username string, id 
 			img.Set(x, y, color.RGBA{R: uint8(200 + x/8), G: uint8(90 + y/3), B: 60, A: 255})
 		}
 	}
-	dir := p.ImagesDir(username)
-	require.NoError(t, os.MkdirAll(dir, 0o755))
 	name := fmt.Sprintf("%d.png", id)
-	f, err := os.Create(filepath.Join(dir, name))
-	require.NoError(t, err)
-	require.NoError(t, png.Encode(f, img))
-	require.NoError(t, f.Close())
-	_, err = db.Exec(`UPDATE recipes SET image_path = ? WHERE id = ?`, name, id)
+	var buf bytes.Buffer
+	require.NoError(t, png.Encode(&buf, img))
+	require.NoError(t, p.SaveImage(username, name, &buf))
+	_, err := db.Exec(`UPDATE recipes SET image_path = ? WHERE id = ?`, name, id)
 	require.NoError(t, err)
 }

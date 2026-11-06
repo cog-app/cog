@@ -84,3 +84,16 @@ var (
 	ErrReadOnly   = errors.New("read-only mount")
 	ErrCrossMount = errors.New("operation crosses mount boundaries")
 )
+
+// TrashDir is the directory at the root of each mount that holds what was
+// trashed from it, so trashing is a rename within one backend. A mount-routing
+// FS hides it: only code that reaches the backend through MountRooter sees it.
+const TrashDir = ".cog-trash"
+
+// MountRooter is implemented by mount-routing FS implementations.
+type MountRooter interface {
+	// MountRoot returns the mount holding path: its backend, its root
+	// within that backend, the path it is mounted at, and whether it is
+	// read-only.
+	MountRoot(path string) (fsys FS, root, mountPath string, readOnly bool, err error)
+}

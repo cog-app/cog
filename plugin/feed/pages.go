@@ -7,10 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 
@@ -228,6 +228,10 @@ func (h *Pages) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 	if err := store.DeleteSubscription(id); err != nil {
 		h.setFlash(w, "error", "Could not delete subscription.")
 		slog.Error("feed: delete subscription", "id", id, "err", err)
+	} else {
+		// Its downloads count toward the user's quota; have the
+		// orchestrator collect them now rather than on its next tick.
+		h.plugin.TriggerFetch(plugin.Username(r), 0)
 	}
 
 	http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
@@ -1173,14 +1177,21 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ranges := []Range{}
+	u := plugin.UserFromContext(r.Context())
+	space, err := h.plugin.Space(u.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	// Mute ranges from profanity captions (when captions + plugin present).
 	if d.CaptionsPath != "" {
 		if prof := h.plugin.Profanity(); prof != nil {
-			if f, ferr := os.Open(d.CaptionsPath); ferr == nil {
-				u := plugin.UserFromContext(r.Context())
+			if f, ferr := space.Own.Open(Name(d.CaptionsPath)); ferr == nil {
 				captions := profanity.ParseVTT(f)
-				f.Close()
+				if err := f.Close(); err != nil {
+					slog.Error("feed: close captions", "id", id, "err", err)
+				}
 				for _, ar := range prof.AudioRanges(u.Username, captions) {
 					ranges = append(ranges, Range{Start: ar.Start, End: ar.End, Action: "mute"})
 				}
@@ -1192,7 +1203,7 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 
 	// Skip ranges from silence detection (lazy, cached, requires local file).
 	if d.LocalPath != "" {
-		skips, derr := h.silenceRanges(r.Context(), store, id, d)
+		skips, derr := h.silenceRanges(r.Context(), store, space, id, d)
 		if derr != nil {
 			slog.Error("feed: silence ranges", "id", id, "err", derr)
 		}
@@ -1203,11 +1214,15 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 }
 
 // silenceRanges returns cached silence ranges, computing them once if not yet done.
-func (h *Pages) silenceRanges(ctx context.Context, store *Store, id int64, d Download) ([]Range, error) {
+func (h *Pages) silenceRanges(ctx context.Context, store *Store, space Space, id int64, d Download) ([]Range, error) {
 	if d.SilenceState == "done" {
 		return store.GetSilenceRanges(id)
 	}
-	rs, err := detectSilence(ctx, d.LocalPath)
+	media, err := space.Path(d.LocalPath)
+	if err != nil {
+		return nil, err
+	}
+	rs, err := detectSilence(ctx, media)
 	if err != nil {
 		// Cache an empty "done" result so we don't recompute in a tight loop.
 		if serr := store.SetSilenceRanges(id, nil); serr != nil {
@@ -1243,12 +1258,30 @@ func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if dl.CleanAudioPath != "" {
-		http.ServeFile(w, r, dl.CleanAudioPath)
-		return
-	}
-	if dl.LocalPath != "" {
-		http.ServeFile(w, r, dl.LocalPath)
+	for _, stored := range []string{dl.CleanAudioPath, dl.LocalPath} {
+		if stored == "" {
+			continue
+		}
+		space, err := h.plugin.Space(plugin.Username(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		f, err := space.Own.Open(Name(stored))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer f.Close()
+		info, err := f.Stat()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 		return
 	}
 	if it.MediaURL != "" {

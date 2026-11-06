@@ -1,6 +1,7 @@
 package contacts
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,12 +11,11 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/dav/davsql"
+	"git.duckfam.us/jj-software/cog/plugin"
 )
 
 // photoStore keeps one user's contact photos as files named by the SHA-256
@@ -29,8 +29,9 @@ import (
 // files no card refers to are removed under that lock too (Store.collect), so
 // a file is never removed while a write that refers to it is in flight.
 type photoStore struct {
-	dir string
-	log *slog.Logger
+	own   plugin.Storage // photos/<hash>
+	cache plugin.Storage // photos/u-<hash of URL>
+	log   *slog.Logger
 }
 
 func hashOf(data []byte) string {
@@ -38,14 +39,23 @@ func hashOf(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *photoStore) path(hash string) string { return filepath.Join(s.dir, hash) }
+// photoName is where a photo lives in its storage.
+func photoName(hash string) string { return "photos/" + hash }
+
+// in is the storage a photo named hash lives in.
+func (s *photoStore) in(hash string) plugin.Storage {
+	if strings.HasPrefix(hash, "u-") {
+		return s.cache
+	}
+	return s.own
+}
 
 // urlHash names the cached copy of a photo given by URL.
 func urlHash(uri string) string { return "u-" + hashOf([]byte(uri)) }
 
 // put stores a photo under its hash (hashOf).
 func (s *photoStore) put(hash string, data []byte) error {
-	if _, err := os.Stat(s.path(hash)); err == nil {
+	if _, err := s.in(hash).Stat(photoName(hash)); err == nil {
 		return nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("store photo: %w", err)
@@ -55,21 +65,8 @@ func (s *photoStore) put(hash string, data []byte) error {
 
 // write replaces the file named hash with data.
 func (s *photoStore) write(hash string, data []byte) error {
-	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+	if _, err := s.in(hash).Put(photoName(hash), bytes.NewReader(data)); err != nil {
 		return fmt.Errorf("store photo: %w", err)
-	}
-	f, err := os.CreateTemp(s.dir, ".tmp-*")
-	if err != nil {
-		return fmt.Errorf("store photo: %w", err)
-	}
-	if _, err := f.Write(data); err != nil {
-		return fmt.Errorf("store photo: %w", errors.Join(err, f.Close(), os.Remove(f.Name())))
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("store photo: %w", errors.Join(err, os.Remove(f.Name())))
-	}
-	if err := os.Rename(f.Name(), s.path(hash)); err != nil {
-		return fmt.Errorf("store photo: %w", errors.Join(err, os.Remove(f.Name())))
 	}
 	return nil
 }
@@ -93,15 +90,12 @@ func (e *remoteError) Unwrap() error { return e.err }
 // remote returns the photo at uri, from the cache when it is fresh. A stale
 // copy is served when fetching fails.
 func (s *photoStore) remote(ctx context.Context, client *http.Client, hash, uri string) ([]byte, error) {
-	path := s.path(hash)
-	cached, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("read photo %s: %w", hash, err)
+	cached, fresh, err := s.cached(hash)
+	if err != nil {
+		return nil, err
 	}
-	if cached != nil {
-		if fi, err := os.Stat(path); err == nil && time.Since(fi.ModTime()) < remotePhotoTTL {
-			return cached, nil
-		}
+	if fresh {
+		return cached, nil
 	}
 	data, err := fetchPhoto(ctx, client, uri)
 	if err != nil {
@@ -115,6 +109,28 @@ func (s *photoStore) remote(ctx context.Context, client *http.Client, hash, uri 
 		return nil, err
 	}
 	return data, nil
+}
+
+// cached returns the cached copy named hash, if there is one, and whether
+// it is fresh.
+func (s *photoStore) cached(hash string) ([]byte, bool, error) {
+	f, err := s.cache.Open(photoName(hash))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("read photo %s: %w", hash, err)
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, false, fmt.Errorf("read photo %s: %w", hash, err)
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, false, fmt.Errorf("read photo %s: %w", hash, err)
+	}
+	return data, time.Since(fi.ModTime()) < remotePhotoTTL, nil
 }
 
 func fetchPhoto(ctx context.Context, client *http.Client, uri string) ([]byte, error) {
@@ -153,11 +169,16 @@ func isImage(data []byte) bool {
 // read returns a photo's bytes. A missing file is logged and read as no
 // photo, so one lost file does not make the card unreadable.
 func (s *photoStore) read(hash string) ([]byte, error) {
-	data, err := os.ReadFile(s.path(hash))
+	f, err := s.in(hash).Open(photoName(hash))
 	if errors.Is(err, fs.ErrNotExist) {
 		s.log.Error("contact photo missing", "hash", hash)
 		return nil, nil
 	}
+	if err != nil {
+		return nil, fmt.Errorf("read photo %s: %w", hash, err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return nil, fmt.Errorf("read photo %s: %w", hash, err)
 	}
@@ -177,36 +198,9 @@ func (s *photoStore) collect(q davsql.Querier, hashes ...string) error {
 		if used {
 			continue
 		}
-		if err := os.Remove(s.path(h)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := s.in(h).Remove(photoName(h)); err != nil {
 			return fmt.Errorf("remove photo %s: %w", h, err)
 		}
 	}
 	return nil
-}
-
-// usage is the bytes the user's photos take. Cached copies of photos given
-// by URL are not theirs and do not count.
-func (s *photoStore) usage() (int64, error) {
-	entries, err := os.ReadDir(s.dir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, fmt.Errorf("photo usage: %w", err)
-	}
-	var n int64
-	for _, e := range entries {
-		if e.IsDir() || strings.HasPrefix(e.Name(), "u-") || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		fi, err := e.Info()
-		if errors.Is(err, fs.ErrNotExist) {
-			continue // collected meanwhile
-		}
-		if err != nil {
-			return 0, fmt.Errorf("photo usage: %w", err)
-		}
-		n += fi.Size()
-	}
-	return n, nil
 }

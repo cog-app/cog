@@ -40,6 +40,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
+	"git.duckfam.us/jj-software/cog/internal/storage"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/internal/webpush"
@@ -775,14 +776,13 @@ func (p *Providers) DeleteUser(id string) error {
 	if p.Search != nil {
 		errs = append(errs, p.Search.CloseUser(u.Username))
 	}
-	dirs := []string{filepath.Join(p.Config.DataDir, u.Username)}
-	for _, pluginID := range p.Plugins.PluginIDs() {
-		dirs = append(dirs, filepath.Join(p.Config.DataDir, pluginID, u.Username))
-	}
-	for _, dir := range dirs {
-		if err := os.RemoveAll(dir); err != nil {
-			errs = append(errs, fmt.Errorf("remove %s: %w", dir, err))
+	errs = append(errs, p.Plugins.Storage().RemoveUser(u.Username, p.Plugins.PluginIDs()...))
+	if u.Avatar != "" {
+		avatars, err := p.Plugins.Storage().Dir(storage.Host, "avatars", "")
+		if err == nil {
+			err = avatars.Remove(u.Avatar)
 		}
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }

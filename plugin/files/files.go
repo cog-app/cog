@@ -240,7 +240,7 @@ func (p *Plugin) folderIcon(username, folderPath string) string {
 func (p *Plugin) Stop() error { return nil }
 
 // userFS returns the mount-aware VFS for the given user.
-func (p *Plugin) userFS(username string) vfs.FS {
+func (p *Plugin) userFS(username string) (vfs.FS, error) {
 	return p.ctx.UserVFS(username)
 }
 
@@ -267,15 +267,12 @@ func (p *Plugin) CreateDir(username, dirPath string) (*FileMeta, error) {
 	name := filepath.Base(dirPath)
 
 	// Create on disk via VFS.
-	if fs := p.userFS(username); fs != nil {
-		if err := fs.Mkdir(dirPath); err != nil {
-			return nil, fmt.Errorf("mkdir: %w", err)
-		}
-	} else {
-		fsPath := filepath.Join(p.ctx.UserFilesDir(username), dirPath)
-		if err := os.MkdirAll(fsPath, 0755); err != nil {
-			return nil, fmt.Errorf("mkdir: %w", err)
-		}
+	fs, err := p.userFS(username)
+	if err != nil {
+		return nil, err
+	}
+	if err := fs.Mkdir(dirPath); err != nil {
+		return nil, fmt.Errorf("mkdir: %w", err)
 	}
 
 	db, err := p.DB(username)
@@ -337,53 +334,50 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 	parentPath := filepath.Dir(filePath)
 	name := filepath.Base(filePath)
 
-	// Pre-check quota if content length is known.
-	if lr, ok := content.(*io.LimitedReader); ok {
-		if err := p.ctx.QuotaCheck(username, lr.N); err != nil {
-			return nil, err
-		}
-	}
-
-	// Write to disk via VFS, counting bytes.
-	counter := &countingReader{r: content}
-	if fs := p.userFS(username); fs != nil {
-		if err := fs.Mkdir(parentPath); err != nil {
-			return nil, fmt.Errorf("mkdir parent: %w", err)
-		}
-		if err := fs.Put(filePath, counter); err != nil {
-			return nil, fmt.Errorf("write file: %w", err)
-		}
-	} else {
-		fsDir := filepath.Join(p.ctx.UserFilesDir(username), parentPath)
-		if err := os.MkdirAll(fsDir, 0755); err != nil {
-			return nil, fmt.Errorf("mkdir parent: %w", err)
-		}
-		fsPath := filepath.Join(p.ctx.UserFilesDir(username), filePath)
-		if err := vfs.WriteFileAtomic(fsPath, counter, 0o644); err != nil {
-			return nil, err
-		}
-	}
-	size := counter.n
-
-	// Post-write quota check fires regardless of caller's reader type. If the
-	// upload pushed the user over quota, delete the file and refuse.
-	if err := p.ctx.QuotaCheck(username, size); err != nil {
-		var rmErr error
-		if fs := p.userFS(username); fs != nil {
-			rmErr = fs.Delete(filePath)
-		} else {
-			rmErr = os.Remove(filepath.Join(p.ctx.UserFilesDir(username), filePath))
-		}
-		if rmErr != nil {
-			p.log.Error("remove over-quota upload", "user", username, "path", filePath, "err", rmErr)
-		}
-		return nil, err
-	}
-
 	db, err := p.DB(username)
 	if err != nil {
 		return nil, err
 	}
+
+	// The quota is checked as the bytes arrive, against the room left plus
+	// what the file replaces, so an edit near the quota is not refused for
+	// counting both, and a write that would go over fails before it
+	// replaces anything: Put writes beside the file and renames.
+	var replaced int64
+	if old, err := getByPath(db, filePath); err == nil && !old.IsDir {
+		replaced = old.Size
+	} else if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	remaining, err := p.ctx.QuotaRemaining(username)
+	if err != nil {
+		return nil, err
+	}
+	allowance := int64(-1)
+	if remaining >= 0 {
+		allowance = remaining + replaced
+		// A known length is refused before anything is read.
+		if lr, ok := content.(*io.LimitedReader); ok && lr.N > allowance {
+			return nil, fmt.Errorf("%w: the upload is larger than the space left", cogplugin.ErrQuotaExceeded)
+		}
+	}
+
+	// Write to disk via VFS, counting bytes.
+	counter := &countingReader{r: cogplugin.LimitQuota(content, allowance)}
+	fs, err := p.userFS(username)
+	if err != nil {
+		return nil, err
+	}
+	if err := fs.Mkdir(parentPath); err != nil {
+		return nil, fmt.Errorf("mkdir parent: %w", err)
+	}
+	if err := fs.Put(filePath, counter); err != nil {
+		if errors.Is(err, cogplugin.ErrQuotaExceeded) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("write file: %w", err)
+	}
+	size := counter.n
 
 	now := p.ctx.Now().Unix()
 	etag := generateETag()
@@ -553,21 +547,12 @@ func (p *Plugin) HardDelete(username, filePath string) error {
 	// orphan metadata row referencing a missing file — recoverable by lazy
 	// reconcile — which is preferable to deleting metadata while the file
 	// still exists on disk.
-	if fs := p.userFS(username); fs != nil {
-		if err := fs.Delete(filePath); err != nil {
-			return fmt.Errorf("remove: %w", err)
-		}
-	} else {
-		fsPath := filepath.Join(p.ctx.UserFilesDir(username), filePath)
-		if meta.IsDir {
-			if err := os.RemoveAll(fsPath); err != nil {
-				return fmt.Errorf("remove dir: %w", err)
-			}
-		} else {
-			if err := os.Remove(fsPath); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("remove file: %w", err)
-			}
-		}
+	fs, err := p.userFS(username)
+	if err != nil {
+		return err
+	}
+	if err := fs.Delete(filePath); err != nil {
+		return fmt.Errorf("remove: %w", err)
 	}
 
 	tx, err := db.Begin()
@@ -604,23 +589,16 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 	}
 
 	// Rename on disk via VFS.
-	if fs := p.userFS(username); fs != nil {
-		newParentDir := filepath.Dir(newPath)
-		if err := fs.Mkdir(newParentDir); err != nil {
-			return nil, fmt.Errorf("mkdir new parent: %w", err)
-		}
-		if err := fs.Rename(oldPath, newPath); err != nil {
-			return nil, fmt.Errorf("rename: %w", err)
-		}
-	} else {
-		oldFsPath := filepath.Join(p.ctx.UserFilesDir(username), oldPath)
-		newFsPath := filepath.Join(p.ctx.UserFilesDir(username), newPath)
-		if err := os.MkdirAll(filepath.Dir(newFsPath), 0755); err != nil {
-			return nil, fmt.Errorf("mkdir new parent: %w", err)
-		}
-		if err := os.Rename(oldFsPath, newFsPath); err != nil {
-			return nil, fmt.Errorf("rename: %w", err)
-		}
+	fs, err := p.userFS(username)
+	if err != nil {
+		return nil, err
+	}
+	newParentDir := filepath.Dir(newPath)
+	if err := fs.Mkdir(newParentDir); err != nil {
+		return nil, fmt.Errorf("mkdir new parent: %w", err)
+	}
+	if err := fs.Rename(oldPath, newPath); err != nil {
+		return nil, fmt.Errorf("rename: %w", err)
 	}
 
 	newParent := filepath.Dir(newPath)
@@ -687,42 +665,16 @@ func (p *Plugin) ParentID(username string, fileID int64) (string, error) {
 
 // reconcile performs lazy synchronization between disk and metadata.
 func (p *Plugin) reconcile(db *sql.DB, username, dirPath string) error {
-	// List entries via VFS or direct filesystem.
-	var vfsEntries []vfs.FileInfo
-	if fs := p.userFS(username); fs != nil {
-		var err error
-		vfsEntries, err = fs.List(dirPath)
-		if err != nil {
-			if errors.Is(err, vfs.ErrNotFound) || errors.Is(err, iofs.ErrNotExist) {
-				return nil // directory may not exist yet
-			}
-			return fmt.Errorf("list %s: %w", dirPath, err)
+	fs, err := p.userFS(username)
+	if err != nil {
+		return err
+	}
+	vfsEntries, err := fs.List(dirPath)
+	if err != nil {
+		if errors.Is(err, vfs.ErrNotFound) || errors.Is(err, iofs.ErrNotExist) {
+			return nil // directory may not exist yet
 		}
-	} else {
-		fsPath := filepath.Join(p.ctx.UserFilesDir(username), dirPath)
-		osEntries, err := os.ReadDir(fsPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return err
-		}
-		for _, e := range osEntries {
-			info, err := e.Info()
-			if err != nil {
-				if errors.Is(err, iofs.ErrNotExist) {
-					continue // removed since the directory was read
-				}
-				return fmt.Errorf("stat %s: %w", e.Name(), err)
-			}
-			vfsEntries = append(vfsEntries, vfs.FileInfo{
-				Name:    e.Name(),
-				Path:    filepath.Join(dirPath, e.Name()),
-				Size:    info.Size(),
-				ModTime: info.ModTime(),
-				IsDir:   e.IsDir(),
-			})
-		}
+		return fmt.Errorf("list %s: %w", dirPath, err)
 	}
 
 	// A file still being uploaded is not one yet.
@@ -1171,20 +1123,22 @@ func (p *Plugin) extractTar(username string, r io.ReadSeeker, format, destDir st
 }
 
 // QuotaCheck returns nil if the user has room for additionalBytes more, or
-// plugin.ErrQuotaExceeded. Writers that stage bytes before they become a file
+// cogplugin.ErrQuotaExceeded. Writers that stage bytes before they become a file
 // (chunked uploads) ask here, so staging cannot hold more than the quota.
 func (p *Plugin) QuotaCheck(username string, additionalBytes int64) error {
 	return p.ctx.QuotaCheck(username, additionalBytes)
 }
 
-// Usage returns the total bytes used by non-directory files for a user.
+// Usage returns the bytes a user's files take, trashed ones included: they
+// are still on disk.
 func (p *Plugin) Usage(username string) (int64, error) {
 	db, err := p.DB(username)
 	if err != nil {
 		return 0, err
 	}
 	var used int64
-	err = db.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM files WHERE is_dir = 0`).Scan(&used)
+	err = db.QueryRow(`SELECT (SELECT coalesce(sum(size), 0) FROM files WHERE is_dir = 0)
+		+ (SELECT coalesce(sum(size), 0) FROM trash)`).Scan(&used)
 	if err != nil {
 		return 0, fmt.Errorf("usage query: %w", err)
 	}

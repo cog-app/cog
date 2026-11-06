@@ -366,11 +366,9 @@ func (r *capturingRegistrar) RegisterSearchSource(def cogplugin.SearchSourceDef)
 func (r *capturingRegistrar) PluginDB(username string, opts ...cogplugin.DBOption) (*sql.DB, error) {
 	return nil, fmt.Errorf("PluginDB not available for gRPC plugins")
 }
-func (r *capturingRegistrar) UserFilesDir(username string) string { return "" }
 func (r *capturingRegistrar) EnsureUserDirs(username string) error {
 	return fmt.Errorf("EnsureUserDirs not available for gRPC plugins")
 }
-func (r *capturingRegistrar) DataDir() string                      { return "" }
 func (r *capturingRegistrar) NavItems() []cogplugin.NavItem        { return nil }
 func (r *capturingRegistrar) Widgets() []cogplugin.Widget          { return nil }
 func (r *capturingRegistrar) CSRFSecret() []byte                   { return nil }
@@ -383,9 +381,23 @@ func (r *capturingRegistrar) VolumeAccess() cogplugin.VolumeAccess { return nil 
 func (r *capturingRegistrar) QuotaCheck(username string, additionalBytes int64) error {
 	return nil
 }
-func (r *capturingRegistrar) UserVFS(username string) vfs.FS { return nil }
-func (r *capturingRegistrar) Logger() *slog.Logger           { return slog.Default() }
-func (r *capturingRegistrar) Now() time.Time                 { return time.Now() }
+func (r *capturingRegistrar) UserVFS(username string) (vfs.FS, error) {
+	return nil, fmt.Errorf("UserVFS not available for gRPC plugins")
+}
+func (r *capturingRegistrar) UserStorage(username string) (cogplugin.Storage, error) {
+	return nil, fmt.Errorf("UserStorage not available for gRPC plugins")
+}
+func (r *capturingRegistrar) UserCache(username string) (cogplugin.Storage, error) {
+	return nil, fmt.Errorf("UserCache not available for gRPC plugins")
+}
+func (r *capturingRegistrar) GlobalStorage() (cogplugin.Storage, error) {
+	return nil, fmt.Errorf("GlobalStorage not available for gRPC plugins")
+}
+func (r *capturingRegistrar) UsersOf(pluginID string) ([]string, error) {
+	return nil, fmt.Errorf("UsersOf not available for gRPC plugins")
+}
+func (r *capturingRegistrar) Logger() *slog.Logger { return slog.Default() }
+func (r *capturingRegistrar) Now() time.Time       { return time.Now() }
 func (r *capturingRegistrar) RootDB() (*sql.DB, error) {
 	return nil, fmt.Errorf("RootDB not available for gRPC plugins")
 }
@@ -405,3 +417,6 @@ type responseCapture struct {
 func (r *responseCapture) Header() http.Header         { return r.header }
 func (r *responseCapture) WriteHeader(code int)        { r.statusCode = code }
 func (r *responseCapture) Write(b []byte) (int, error) { return r.body.Write(b) }
+
+// QuotaRemaining reports no limit: quota is enforced host-side.
+func (r *capturingRegistrar) QuotaRemaining(username string) (int64, error) { return -1, nil }

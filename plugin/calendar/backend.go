@@ -96,7 +96,11 @@ func (b *backend) Put(owner string, c *dav.Collection, req *dav.PutRequest) (*da
 	}
 	// Store has bumped the version, so tx holds the write lock that
 	// collectAttachments takes to remove files.
-	if err := storeAttachments(tx, b.p.attachmentDir(owner), req.Attachments, now); err != nil {
+	store, err := b.p.ctx.UserStorage(owner)
+	if err != nil {
+		return nil, err
+	}
+	if err := storeAttachments(tx, store, req.Attachments, now); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {

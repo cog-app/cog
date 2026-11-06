@@ -30,6 +30,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/internal/sandbox"
+	"git.duckfam.us/jj-software/cog/internal/storage"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
@@ -44,6 +45,9 @@ type MountResolver interface {
 type QuotaChecker interface {
 	// QuotaCheck returns nil if the user has sufficient quota, or plugin.ErrQuotaExceeded.
 	QuotaCheck(username string, additionalBytes int64) error
+	// Remaining returns how many more bytes the user may store, or -1
+	// when nothing limits them.
+	Remaining(username string) (int64, error)
 }
 
 // RegistryServices holds optional services that are wired into plugin contexts.
@@ -81,6 +85,7 @@ type Registry struct {
 	enabled    map[string]bool // true = enabled (default)
 	protected  map[string]bool // plugins that cannot be disabled
 	sysDB      *sql.DB         // system database for persisting plugin settings
+	storage    *storage.Store  // plugins' files outside their databases
 	csrfSecret []byte          // CSRF secret for plugin-scoped tokens
 	clock      clock.Clock     // virtual clock for testability
 
@@ -121,8 +126,15 @@ func NewRegistry(log *slog.Logger, dataDir string, mux *http.ServeMux, sysDB *sq
 		clock:       c,
 	}
 	r.discovered = make(map[string]string)
+	r.storage = storage.New(dataDir, sysDB)
+	r.storage.SetQuota(r.QuotaCheck)
 	r.loadEnabledState()
 	return r
+}
+
+// Storage returns the store plugins keep their files in.
+func (r *Registry) Storage() *storage.Store {
+	return r.storage
 }
 
 // Mux returns the ServeMux that plugin routes are registered on.
@@ -413,19 +425,7 @@ func (r *Registry) EnsureUserDirs(username string) error {
 		return fmt.Errorf("create user dir %s: %w", filesDir, err)
 	}
 
-	return nil
-}
-
-// UserVFS returns a mount-aware VFS for the given user, or nil on error.
-func (r *Registry) UserVFS(username string) vfs.FS {
-	if r.mountResolver != nil {
-		fs, err := r.mountResolver.UserFS(username)
-		if err == nil {
-			return fs
-		}
-		r.log.Error("mount resolver UserFS failed", "user", username, "err", err)
-	}
-	return nil
+	return r.storage.MoveLegacyTrash(username, filesDir)
 }
 
 // UserFS returns a mount-aware VFS for the given user.
@@ -628,16 +628,8 @@ func (pr *pluginRegistrar) PluginDB(username string, opts ...cogplugin.DBOption)
 	return pr.registry.PluginDBWith(username, pr.pluginID, o)
 }
 
-func (pr *pluginRegistrar) UserFilesDir(username string) string {
-	return pr.registry.UserFilesDir(username)
-}
-
 func (pr *pluginRegistrar) EnsureUserDirs(username string) error {
 	return pr.registry.EnsureUserDirs(username)
-}
-
-func (pr *pluginRegistrar) DataDir() string {
-	return pr.registry.dataDir
 }
 
 func (pr *pluginRegistrar) NavItems() []NavItem {
@@ -713,8 +705,73 @@ func (r *Registry) QuotaCheck(username string, additionalBytes int64) error {
 	return r.services.QuotaChecker.QuotaCheck(username, additionalBytes)
 }
 
-func (pr *pluginRegistrar) UserVFS(username string) vfs.FS {
-	return pr.registry.UserVFS(username)
+// QuotaRemaining returns how many more bytes username may store, or -1 when
+// nothing limits them.
+func (r *Registry) QuotaRemaining(username string) (int64, error) {
+	if r.services.QuotaChecker == nil {
+		return -1, nil
+	}
+	return r.services.QuotaChecker.Remaining(username)
+}
+
+func (pr *pluginRegistrar) QuotaRemaining(username string) (int64, error) {
+	return pr.registry.QuotaRemaining(username)
+}
+
+func (pr *pluginRegistrar) UserVFS(username string) (vfs.FS, error) {
+	return pr.registry.UserFS(username)
+}
+
+func (pr *pluginRegistrar) UserStorage(username string) (cogplugin.Storage, error) {
+	return pr.registry.storage.Dir(storage.Counted, pr.pluginID, username)
+}
+
+func (pr *pluginRegistrar) UserCache(username string) (cogplugin.Storage, error) {
+	return pr.registry.storage.Dir(storage.Cache, pr.pluginID, username)
+}
+
+func (pr *pluginRegistrar) GlobalStorage() (cogplugin.Storage, error) {
+	return pr.registry.storage.Dir(storage.Global, pr.pluginID, "")
+}
+
+func (pr *pluginRegistrar) UsersOf(pluginID string) ([]string, error) {
+	if pluginID == "" {
+		pluginID = pr.pluginID
+	}
+	return pr.registry.UsersOf(pluginID)
+}
+
+// UsersOf returns the users with a database for pluginID, in username order.
+func (r *Registry) UsersOf(pluginID string) ([]string, error) {
+	rows, err := r.sysDB.Query(`SELECT username FROM users ORDER BY username`)
+	if err != nil {
+		return nil, fmt.Errorf("users of %s: %w", pluginID, err)
+	}
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("users of %s: %w", pluginID, err)
+		}
+		names = append(names, name)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("users of %s: %w", pluginID, err)
+	}
+	var out []string
+	for _, name := range names {
+		_, err := os.Stat(db.PluginDBPath(r.dataDir, name, pluginID))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("users of %s: %w", pluginID, err)
+		}
+		out = append(out, name)
+	}
+	return out, nil
 }
 
 // wrap applies RequirePluginEnabled + panic recovery to a handler.

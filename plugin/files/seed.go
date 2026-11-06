@@ -11,7 +11,6 @@ import (
 	"image/png"
 	"io"
 	"math"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -45,41 +44,27 @@ func (p *Plugin) Seed(username string) error {
 		{"Archives/project.tar.gz", string(tarData)},
 	}
 
-	if fs := p.userFS(username); fs != nil {
-		for _, s := range seeds {
-			vpath := "/" + s.path
-			if _, err := fs.Stat(vpath); err == nil {
-				continue
-			}
-			parentDir := "/" + filepath.Dir(s.path)
-			if err := fs.Mkdir(parentDir); err != nil {
-				p.log.Error("seed mkdir", "path", parentDir, "err", err)
-				continue
-			}
-			if err := fs.Put(vpath, strings.NewReader(s.content)); err != nil {
-				p.log.Error("seed write", "path", s.path, "err", err)
-				continue
-			}
-			p.log.Info("seeded file", "path", s.path)
-		}
-	} else {
-		filesDir := p.ctx.UserFilesDir(username)
-		for _, s := range seeds {
-			fp := filepath.Join(filesDir, s.path)
-			if _, err := os.Stat(fp); err == nil {
-				continue
-			}
-			if err := os.MkdirAll(filepath.Dir(fp), 0o755); err != nil {
-				p.log.Error("seed mkdir", "path", filepath.Dir(fp), "err", err)
-				continue
-			}
-			if err := os.WriteFile(fp, []byte(s.content), 0o644); err != nil {
-				p.log.Error("seed write", "path", fp, "err", err)
-				continue
-			}
-			p.log.Info("seeded file", "path", s.path)
-		}
+	fs, err := p.userFS(username)
+	if err != nil {
+		return err
 	}
+	for _, s := range seeds {
+		vpath := "/" + s.path
+		if _, err := fs.Stat(vpath); err == nil {
+			continue
+		}
+		parentDir := "/" + filepath.Dir(s.path)
+		if err := fs.Mkdir(parentDir); err != nil {
+			p.log.Error("seed mkdir", "path", parentDir, "err", err)
+			continue
+		}
+		if err := fs.Put(vpath, strings.NewReader(s.content)); err != nil {
+			p.log.Error("seed write", "path", s.path, "err", err)
+			continue
+		}
+		p.log.Info("seeded file", "path", s.path)
+	}
+
 	return nil
 }
 

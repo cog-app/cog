@@ -3,12 +3,10 @@ package recipes
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -85,11 +83,9 @@ func (p *Plugin) FetchAndImport(db *sql.DB, username, rawURL, userAgent string) 
 
 	// Try to download the image
 	if recipe.ImageURL != "" {
-		if err := p.downloadImage(username, id, recipe.ImageURL, ua); err != nil {
+		if imgPath, err := p.downloadImage(username, id, recipe.ImageURL, ua); err != nil {
 			p.log.Warn("failed to download recipe image", "url", recipe.ImageURL, "err", err)
 		} else {
-			ext := imageExtFromURL(recipe.ImageURL)
-			imgPath := fmt.Sprintf("%d%s", id, ext)
 			if _, err := db.Exec(`UPDATE recipes SET image_path = ? WHERE id = ?`, imgPath, id); err != nil {
 				p.log.Error("save recipe image path", "recipe", id, "err", err)
 			}
@@ -149,45 +145,37 @@ func isBotWall(resp *http.Response) bool {
 	}
 }
 
-// downloadImage fetches an image and saves it to the recipes images directory.
-func (p *Plugin) downloadImage(username string, recipeID int64, imageURL, userAgent string) error {
+// downloadImage fetches an image into the user's storage and returns the
+// name to record for it.
+func (p *Plugin) downloadImage(username string, recipeID int64, imageURL, userAgent string) (string, error) {
 	if err := validateURL(imageURL); err != nil {
-		return err
+		return "", err
 	}
 
 	resp, err := p.fetch(imageURL, sanitizeUserAgent(userAgent), acceptImage)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	ct := resp.Header.Get("Content-Type")
 	if !strings.HasPrefix(ct, "image/") {
-		return fmt.Errorf("not an image: %s", ct)
-	}
-
-	dir := p.imagesDir(username)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+		return "", fmt.Errorf("not an image: %s", ct)
 	}
 
 	ext := imageExtFromURL(imageURL)
 	if ext == "" {
 		ext = imageExtFromContentType(ct)
 	}
-	path := filepath.Join(dir, strconv.FormatInt(recipeID, 10)+ext)
-
-	f, err := os.Create(path)
+	name := strconv.FormatInt(recipeID, 10) + ext
+	store, err := p.ctx.UserStorage(username)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if _, err := io.Copy(f, io.LimitReader(resp.Body, maxBodySize)); err != nil {
-		return fmt.Errorf("save image: %w", errors.Join(err, f.Close(), os.Remove(path)))
+	if _, err := store.Put(imageName(name), io.LimitReader(resp.Body, maxBodySize)); err != nil {
+		return "", fmt.Errorf("save image: %w", err)
 	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("save image: %w", errors.Join(err, os.Remove(path)))
-	}
-	return nil
+	return name, nil
 }
 
 func imageExtFromURL(rawURL string) string {

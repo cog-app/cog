@@ -40,7 +40,11 @@ func (b *backend) load(q davsql.Querier, c *dav.Collection, ids []int64) (map[in
 	if err != nil {
 		return nil, err
 	}
-	cards, err := loadCards(q, b.p.photoStore(owner), ids)
+	photos, err := b.p.photoStore(owner)
+	if err != nil {
+		return nil, err
+	}
+	cards, err := loadCards(q, photos, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +62,11 @@ func (b *backend) render(q davsql.Querier, c *dav.Collection, ids []int64) (map[
 	if err != nil {
 		return nil, err
 	}
-	return renderIDs(q, b.p.photoStore(owner), ids)
+	photos, err := b.p.photoStore(owner)
+	if err != nil {
+		return nil, err
+	}
+	return renderIDs(q, photos, ids)
 }
 
 func (b *backend) Put(owner string, c *dav.Collection, req *dav.PutRequest) (*dav.PutResult, error) {

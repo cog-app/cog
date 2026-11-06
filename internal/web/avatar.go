@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"crypto/md5"
 	"errors"
 	"fmt"
@@ -11,19 +12,19 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/storage"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
 type avatarHandler struct{ handler }
 
-func (h *avatarHandler) avatarsDir() string {
-	return filepath.Join(h.p.Config.DataDir, "avatars")
+func (h *avatarHandler) avatars() (*storage.Dir, error) {
+	return h.p.Plugins.Storage().Dir(storage.Host, "avatars", "")
 }
 
 // Serve serves a user's avatar image or falls back to initials SVG.
@@ -42,10 +43,8 @@ func (h *avatarHandler) Serve(w http.ResponseWriter, r *http.Request) {
 		// Defense-in-depth: the Avatar column is written by Upload as
 		// `<id><ext>`, but a DB-level write (admin shell, future bug,
 		// migration mishap) could plant a value containing path separators
-		// or "..". filepath.Base strips any directory component so the
-		// lookup stays inside avatarsDir() (audit security.md #42).
-		path := filepath.Join(h.avatarsDir(), filepath.Base(u.Avatar))
-		f, err := os.Open(path)
+		// or "..". The storage refuses any name leading out of it.
+		f, err := h.openAvatar(u.Avatar)
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			h.p.Log.Error("avatar: open image", "user", u.ID, "err", err)
 		}
@@ -132,8 +131,9 @@ func (h *avatarHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure avatars directory exists.
-	if err := os.MkdirAll(h.avatarsDir(), 0755); err != nil {
+	avatars, err := h.avatars()
+	if err != nil {
+		h.p.Log.Error("avatar: storage", "user", u.ID, "err", err)
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
 	}
@@ -144,21 +144,15 @@ func (h *avatarHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filename := u.ID + ext
-	outPath := filepath.Join(h.avatarsDir(), filename)
-	out, err := os.Create(outPath)
-	if err != nil {
-		http.Error(w, "server error", http.StatusInternalServerError)
-		return
-	}
-
+	var buf bytes.Buffer
 	switch ext {
 	case ".png":
-		err = png.Encode(out, img)
+		err = png.Encode(&buf, img)
 	default:
-		err = jpeg.Encode(out, img, &jpeg.Options{Quality: 85})
+		err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: 85})
 	}
-	if cerr := out.Close(); err == nil {
-		err = cerr
+	if err == nil {
+		_, err = avatars.Put(filename, &buf)
 	}
 	if err != nil {
 		h.p.Log.Error("avatar: write image", "user", u.ID, "err", err)
@@ -190,13 +184,24 @@ func (h *avatarHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// removeFile deletes a stored avatar image. Use filepath.Base so a malformed
-// DB value can't redirect the Remove to a path outside avatarsDir(). A file
-// that is already gone is not an error; any other failure leaves an orphan
-// behind, which is logged rather than failing the request.
+// openAvatar opens a stored avatar image.
+func (h *avatarHandler) openAvatar(name string) (io.ReadCloser, error) {
+	avatars, err := h.avatars()
+	if err != nil {
+		return nil, err
+	}
+	return avatars.Open(name)
+}
+
+// removeFile deletes a stored avatar image. A file that is already gone is
+// not an error; any other failure leaves an orphan behind, which is logged
+// rather than failing the request.
 func (h *avatarHandler) removeFile(name string) {
-	err := os.Remove(filepath.Join(h.avatarsDir(), filepath.Base(name)))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	avatars, err := h.avatars()
+	if err == nil {
+		err = avatars.Remove(name)
+	}
+	if err != nil {
 		h.p.Log.Error("avatar: remove old image", "file", name, "err", err)
 	}
 }

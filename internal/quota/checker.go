@@ -33,8 +33,32 @@ type Checker struct {
 
 // QuotaCheck checks if a user has enough quota for additionalBytes.
 func (c *Checker) QuotaCheck(username string, additionalBytes int64) error {
+	quota, used, limited, err := c.limit(username)
+	if err != nil || !limited {
+		return err
+	}
+	if used+additionalBytes > quota {
+		return fmt.Errorf("%w: would use %s of %s limit",
+			cogplugin.ErrQuotaExceeded, FormatBytes(used+additionalBytes), FormatBytes(quota))
+	}
+	return nil
+}
+
+// Remaining returns how many more bytes username may store, or -1 when
+// nothing limits them; zero when they are at or over quota.
+func (c *Checker) Remaining(username string) (int64, error) {
+	quota, used, limited, err := c.limit(username)
+	if err != nil || !limited {
+		return -1, err
+	}
+	return max(quota-used, 0), nil
+}
+
+// limit returns username's quota and what they use, and whether a quota
+// applies at all.
+func (c *Checker) limit(username string) (quota, used int64, limited bool, err error) {
 	if c.Quotas == nil || c.RootVolume == nil {
-		return nil
+		return 0, 0, false, nil
 	}
 
 	// A user with no root mount (or no account) has no volume to fill, so
@@ -42,49 +66,43 @@ func (c *Checker) QuotaCheck(username string, additionalBytes int64) error {
 	// the write would let a database error lift the quota.
 	volumeID, err := c.RootVolume(username)
 	if errors.Is(err, mount.ErrNotFound) || errors.Is(err, user.ErrNotFound) {
-		return nil
+		return 0, 0, false, nil
 	}
 	if err != nil {
-		return fmt.Errorf("quota check: root volume of %s: %w", username, err)
+		return 0, 0, false, fmt.Errorf("quota check: root volume of %s: %w", username, err)
 	}
 	if volumeID == "" {
-		return nil
+		return 0, 0, false, nil
 	}
 
 	userID, err := c.UserIDFromName(username)
 	if errors.Is(err, user.ErrNotFound) {
-		return nil
+		return 0, 0, false, nil
 	}
 	if err != nil {
-		return fmt.Errorf("quota check: user id of %s: %w", username, err)
+		return 0, 0, false, fmt.Errorf("quota check: user id of %s: %w", username, err)
 	}
 
 	var groupIDs []string
 	if c.GroupIDs != nil {
 		if groupIDs, err = c.GroupIDs(userID); err != nil {
-			return fmt.Errorf("quota check: groups of %s: %w", username, err)
+			return 0, 0, false, fmt.Errorf("quota check: groups of %s: %w", username, err)
 		}
 	}
 
-	quota, err := c.Quotas.EffectiveQuota(userID, volumeID, groupIDs)
+	quota, err = c.Quotas.EffectiveQuota(userID, volumeID, groupIDs)
 	if err != nil {
-		return fmt.Errorf("quota check: %w", err)
+		return 0, 0, false, fmt.Errorf("quota check: %w", err)
 	}
 	if quota < 0 {
-		return nil // unlimited
+		return 0, 0, false, nil // unlimited
 	}
 
-	var used int64
 	if c.Usage != nil {
 		used, err = c.Usage(username)
 		if err != nil {
-			return fmt.Errorf("quota check: %w", err)
+			return 0, 0, false, fmt.Errorf("quota check: %w", err)
 		}
 	}
-
-	if used+additionalBytes > quota {
-		return fmt.Errorf("%w: would use %s of %s limit",
-			cogplugin.ErrQuotaExceeded, FormatBytes(used+additionalBytes), FormatBytes(quota))
-	}
-	return nil
+	return quota, used, true, nil
 }
