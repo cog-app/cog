@@ -305,7 +305,7 @@ func New(p *services.Providers) http.Handler {
 	mux.HandleFunc("/remote.php/dav/", compat.HandleWebDAVStub)
 
 	// NC-compatible OCS routes (avatar, notifications, user status, etc.)
-	ncCompat := &compat.NCCompat{Users: p.Users, Files: fp, Activities: p.Activities, OpenAvatar: avatarH.openAvatar}
+	ncCompat := &compat.NCCompat{Users: p.Users, Files: fp, Activities: p.Activities, OpenAvatar: avatarH.openAvatar, EmailVisible: p.EmailVisible}
 	ncCompat.RegisterRoutes(mux)
 
 	// --- OCM Federation ---
@@ -315,6 +315,7 @@ func New(p *services.Providers) http.Handler {
 		Users:   p.Users,
 		BaseURL: p.Config.BaseURL,
 		Policy:  p.FedPolicy,
+		Client:  p.FedClient,
 	}
 	mux.HandleFunc("GET /.well-known/ocm-provider", ocmH.HandleOCMProvider)
 	mux.HandleFunc("POST /ocm/shares", ocmH.HandleReceiveShare)

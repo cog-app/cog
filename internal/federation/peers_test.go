@@ -26,12 +26,37 @@ func TestPolicy_OffByDefault(t *testing.T) {
 	require.False(t, allowed(t, p, "any.example.com"))
 }
 
-func TestPolicy_EnabledEmptyListAllowsAny(t *testing.T) {
+func TestPolicy_EnabledEmptyListAllowsNobody(t *testing.T) {
 	env := cogtest.New(t)
 	require.NoError(t, env.Providers.Settings.SetBool(settings.KeyFederationEnabled, true))
 	p := &federation.Policy{Settings: env.Providers.Settings}
 
+	require.False(t, allowed(t, p, "any.example.com"))
+	require.False(t, allowed(t, p, ""))
+}
+
+func TestPolicy_StarOpensFederation(t *testing.T) {
+	env := cogtest.New(t)
+	require.NoError(t, env.Providers.Settings.SetMany(map[string]string{
+		settings.KeyFederationEnabled: "true",
+		settings.KeyFederationPeers:   "good.example.com, *",
+	}))
+	p := &federation.Policy{Settings: env.Providers.Settings}
+
 	require.True(t, allowed(t, p, "any.example.com"))
+}
+
+func TestPolicy_HostWithUserinfoOrPathMatchesNothing(t *testing.T) {
+	env := cogtest.New(t)
+	require.NoError(t, env.Providers.Settings.SetMany(map[string]string{
+		settings.KeyFederationEnabled: "true",
+		settings.KeyFederationPeers:   "good.example.com",
+	}))
+	p := &federation.Policy{Settings: env.Providers.Settings}
+
+	require.False(t, allowed(t, p, "good.example.com@evil.example.com"))
+	require.False(t, allowed(t, p, "evil.example.com/good.example.com"))
+	require.False(t, allowed(t, p, "good.example.com?x"))
 }
 
 func TestPolicy_AllowlistMatchesNormalizedHosts(t *testing.T) {
@@ -80,5 +105,8 @@ func TestFederationInboundShareRefusedWhenOff(t *testing.T) {
 // enableFederation turns federation on for env, with any server allowed.
 func enableFederation(t *testing.T, env *cogtest.Env) {
 	t.Helper()
-	require.NoError(t, env.Providers.Settings.SetBool(settings.KeyFederationEnabled, true))
+	require.NoError(t, env.Providers.Settings.SetMany(map[string]string{
+		settings.KeyFederationEnabled: "true",
+		settings.KeyFederationPeers:   federation.AnyPeer,
+	}))
 }

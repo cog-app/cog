@@ -8,11 +8,16 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/settings"
 )
 
+// AnyPeer in the allowlist opens federation to every server. It is a
+// choice an admin makes by writing it, not what an empty list means.
+const AnyPeer = "*"
+
 // Policy decides whether this server federates, and with whom. Federation is
 // off until an admin turns it on: an inbound share is a request from a server
 // nobody here has vouched for, landing in a user's pending shares. Once on,
-// the allowed servers are the admin's list, or any server when the list is
-// empty.
+// the allowed servers are the admin's list, and no server when the list is
+// empty: a server joins federation with the peers it names, or with anyone
+// by naming AnyPeer.
 type Policy struct {
 	Settings *settings.Store
 	// EnvPeers is COG_FEDERATION_PEERS, a comma-separated allowlist from
@@ -49,10 +54,11 @@ func (p *Policy) PeerAllowed(host string) (bool, error) {
 		return false, fmt.Errorf("read federation peers: %w", err)
 	}
 	allowed := append(ParsePeers(peers), ParsePeers(p.EnvPeers)...)
-	if len(allowed) == 0 {
+	if slices.Contains(allowed, AnyPeer) {
 		return true, nil
 	}
-	return slices.Contains(allowed, normalizePeer(host)), nil
+	h := normalizePeer(host)
+	return h != "" && slices.Contains(allowed, h), nil
 }
 
 // ParsePeers splits a list of servers separated by commas, spaces or
@@ -69,10 +75,15 @@ func ParsePeers(spec string) []string {
 	return out
 }
 
-// normalizePeer is host compared case-insensitively, without a scheme or a
-// trailing slash.
+// normalizePeer is host compared case-insensitively, without a scheme, a
+// path or a trailing slash. A host carrying userinfo is nobody: "a@b" would
+// let the name of a server stand in for a host.
 func normalizePeer(host string) string {
 	h := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), "/")
 	h = strings.TrimPrefix(h, "https://")
-	return strings.TrimPrefix(h, "http://")
+	h = strings.TrimPrefix(h, "http://")
+	if strings.ContainsAny(h, "@/?# ") {
+		return ""
+	}
+	return h
 }

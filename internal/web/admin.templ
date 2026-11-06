@@ -282,7 +282,7 @@ templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHou
 				<div class="form-group mb-0">
 					<label class="form-label" for="federation_peers">Allowed servers</label>
 					<textarea class="form-control" id="federation_peers" name="federation_peers" rows="3" placeholder="cloud.example.com">{ fed.Peers }</textarea>
-					<p class="form-help">One host name per line. Leave empty to allow any server.</p>
+					<p class="form-help">One host name per line. Shares from any other server are refused. A line of <code>*</code> accepts shares from any server that runs federation; anyone can then put a share in a user's pending list.</p>
 					if fed.EnvPeers != "" {
 						<p class="form-help">Also allowed, by COG_FEDERATION_PEERS: <code>{ fed.EnvPeers }</code></p>
 					}

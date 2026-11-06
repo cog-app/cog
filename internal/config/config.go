@@ -18,7 +18,8 @@ type Config struct {
 	TrustedProxies string `json:"trusted_proxies"`
 
 	// FederationPeers is a comma-separated allowlist of remote hosts whose
-	// inbound OCM shares are accepted. Empty = allow any.
+	// inbound OCM shares are accepted, alongside the admin's list. "*"
+	// accepts any server that runs federation.
 	FederationPeers string `json:"federation_peers"`
 
 	// TrustedProcessPlugins lists process plugin IDs (without the "cog-plugin-"

@@ -1,12 +1,14 @@
 package federation
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
@@ -19,6 +21,16 @@ func secretEqual(a, b string) bool {
 // from a server nobody here has signed in.
 const maxOCMBody = 64 << 10
 
+// MaxPendingInbound is how many shares may wait for one user's answer. An
+// inbound share is accepted on the sender's word, so without a cap any
+// server could fill a user's pending list without end.
+const MaxPendingInbound = 100
+
+// discoverTimeout bounds the question put to a sender's host. The sender is
+// waiting on this request, and a host that takes longer is not one it
+// would be safe to go on waiting for.
+const discoverTimeout = 10 * time.Second
+
 // OCMHandler handles inbound OCM requests from remote servers.
 type OCMHandler struct {
 	Log     *slog.Logger
@@ -26,6 +38,8 @@ type OCMHandler struct {
 	Users   *user.Store
 	BaseURL string // e.g. "https://cog.example.com"
 	Policy  *Policy
+	// Client asks a sender's host whether it federates.
+	Client *Client
 }
 
 // HandleOCMProvider serves /.well-known/ocm-provider.
@@ -49,7 +63,9 @@ func (h *OCMHandler) HandleOCMProvider(w http.ResponseWriter, r *http.Request) {
 		}},
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		h.Log.Error("ocm provider: write response", "err", err)
+	}
 }
 
 // HandleReceiveShare processes POST /ocm/shares — a remote server sends us a share.
@@ -104,11 +120,43 @@ func (h *OCMHandler) HandleReceiveShare(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Nothing proves who sent this, so a user's pending shares are capped:
+	// past the cap a sender, genuine or not, waits for the user to answer
+	// some before more are kept.
+	pending, err := h.Store.CountInbound(u.ID, "pending")
+	if err != nil {
+		h.Log.Error("federation share: count pending", "user", u.ID, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if pending >= MaxPendingInbound {
+		h.Log.Warn("federation share refused: too many pending", "to", localUsername, "from", ocm.Owner)
+		http.Error(w, "too many pending shares for this user", http.StatusTooManyRequests)
+		return
+	}
+
 	// Extract the shared secret token. Required: notifications cannot be
 	// authenticated without one.
 	token := ocm.Protocol.Options.SharedSecret
 	if token == "" {
 		http.Error(w, "missing sharedSecret", http.StatusBadRequest)
+		return
+	}
+
+	// OCM 1.1 signs nothing, so the sender is whoever the request says. The
+	// claimed host is at least asked whether it federates: a name that runs
+	// no OCM provider, or one that has federation off, sent nothing.
+	ctx, cancel := context.WithTimeout(r.Context(), discoverTimeout)
+	defer cancel()
+	provider, err := h.Client.Discover(ctx, remoteHost)
+	if err != nil {
+		h.Log.Warn("federation share from unverifiable host", "host", remoteHost, "err", err)
+		http.Error(w, "sender could not be verified", http.StatusForbidden)
+		return
+	}
+	if !provider.Enabled {
+		h.Log.Warn("federation share from host with federation off", "host", remoteHost)
+		http.Error(w, "sender does not federate", http.StatusForbidden)
 		return
 	}
 
@@ -138,7 +186,9 @@ func (h *OCMHandler) HandleReceiveShare(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{"id": fs.ID})
+	if err := json.NewEncoder(w).Encode(map[string]string{"id": fs.ID}); err != nil {
+		h.Log.Error("federation share: write response", "err", err)
+	}
 }
 
 // HandleNotification processes POST /ocm/notifications — state changes from remote.
@@ -177,22 +227,31 @@ func (h *OCMHandler) HandleNotification(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	state := ""
 	switch notif.NotificationType {
 	case NotifyShareAccepted:
 		if fs.Direction == "outbound" {
-			h.Store.UpdateState(fs.ID, "accepted")
-			h.Log.Info("outbound share accepted", "id", fs.ID)
+			state = "accepted"
 		}
 	case NotifyShareDeclined:
 		if fs.Direction == "outbound" {
-			h.Store.UpdateState(fs.ID, "rejected")
-			h.Log.Info("outbound share declined", "id", fs.ID)
+			state = "rejected"
 		}
 	case NotifyShareUnshared:
-		h.Store.UpdateState(fs.ID, "removed")
-		h.Log.Info("share unshared by remote", "id", fs.ID)
+		state = "removed"
+	}
+	if state != "" {
+		if err := h.Store.UpdateState(fs.ID, state); err != nil {
+			h.Log.Error("federation notification: update share", "id", fs.ID, "state", state, "err", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		h.Log.Info("federated share state changed by remote", "id", fs.ID, "state", state)
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+		h.Log.Error("federation notification: write response", "err", err)
+	}
 }

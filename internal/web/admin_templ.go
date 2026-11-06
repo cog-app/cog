@@ -1128,7 +1128,7 @@ func adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHour
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "</textarea><p class=\"form-help\">One host name per line. Leave empty to allow any server.</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "</textarea><p class=\"form-help\">One host name per line. Shares from any other server are refused. A line of <code>*</code> accepts shares from any server that runs federation; anyone can then put a share in a user's pending list.</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
