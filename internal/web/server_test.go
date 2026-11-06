@@ -1,8 +1,10 @@
 package web_test
 
 import (
+	"encoding/hex"
 	"net/url"
 	"regexp"
+	"strings"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
@@ -74,6 +76,12 @@ func TestNCLoginFlow(t *testing.T) {
 		"csrf_token": {csrf},
 	}).Status(200).Contains("Access granted")
 
+	// The granted flow waits in the system database, where a restart or
+	// another replica finds it, holding neither token nor the password.
+	var stored string
+	require.NoError(t, env.Providers.DB.QueryRow(
+		`SELECT poll_hash || login_hash || client || login_name || hex(sealed) FROM login_flows`).Scan(&stored))
+
 	// Step 7: POST /index.php/login/v2/poll — poll after grant
 	var pollResp struct {
 		Server      string `json:"server"`
@@ -84,6 +92,11 @@ func TestNCLoginFlow(t *testing.T) {
 		Status(200).JSON(&pollResp)
 	require.Equal(t, "admin", pollResp.LoginName)
 	require.NotEmpty(t, pollResp.AppPassword)
+	for _, secret := range []string{initResp.Poll.Token, grantToken, pollResp.AppPassword, strings.ToUpper(hex.EncodeToString([]byte(pollResp.AppPassword)))} {
+		require.False(t, strings.Contains(stored, secret), "the stored flow holds a secret")
+	}
+	// A flow is collected once.
+	env.PostForm(t, "/index.php/login/v2/poll", url.Values{"token": {initResp.Poll.Token}}).Status(404)
 
 	appAuth := cogtest.BasicAuth("admin", pollResp.AppPassword)
 

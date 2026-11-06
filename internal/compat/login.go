@@ -1,18 +1,17 @@
 package compat
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
-	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
@@ -20,18 +19,6 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/ui"
 )
-
-const loginFlowExpiry = 10 * time.Minute
-
-type loginFlowEntry struct {
-	Token     string
-	CreatedAt time.Time
-	Client    string // who started the flow, named from its User-Agent
-	// Filled when user grants access
-	LoginName   string
-	AppPassword string
-	Granted     bool
-}
 
 // LoginFlowHandler implements NextCloud Login Flow v2.
 //
@@ -42,8 +29,7 @@ type loginFlowEntry struct {
 // minting an app password against their (the victim's) account, since the
 // granted credentials always come from the browser session, not form input.
 type LoginFlowHandler struct {
-	mu          sync.Mutex
-	pending     map[string]*loginFlowEntry // keyed by poll token
+	DB          *sql.DB // the system database, which holds pending flows
 	Users       *user.Store
 	AppPWs      *auth.AppPasswordStore
 	Sessions    *auth.SessionStore
@@ -53,9 +39,9 @@ type LoginFlowHandler struct {
 	CSRFSecret  []byte
 }
 
-func NewLoginFlowHandler(users *user.Store, appPWs *auth.AppPasswordStore, sessions *auth.SessionStore, baseURL string, csrfSecret []byte) *LoginFlowHandler {
+func NewLoginFlowHandler(db *sql.DB, users *user.Store, appPWs *auth.AppPasswordStore, sessions *auth.SessionStore, baseURL string, csrfSecret []byte) *LoginFlowHandler {
 	return &LoginFlowHandler{
-		pending:    make(map[string]*loginFlowEntry),
+		DB:         db,
 		Users:      users,
 		AppPWs:     appPWs,
 		Sessions:   sessions,
@@ -84,13 +70,11 @@ func (h *LoginFlowHandler) HandleInit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.mu.Lock()
-	h.pending[pollToken] = &loginFlowEntry{
-		Token:     loginToken,
-		CreatedAt: h.Clock(),
-		Client:    clientName(r.UserAgent()),
+	if err := h.flows().start(pollToken, loginToken, clientName(r.UserAgent())); err != nil {
+		slog.Error("login flow: start", "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
 	}
-	h.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]any{
@@ -129,32 +113,25 @@ func (h *LoginFlowHandler) HandlePoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.mu.Lock()
-	entry, ok := h.pending[token]
-	if !ok || h.Clock().Sub(entry.CreatedAt) > loginFlowExpiry {
-		if ok {
-			delete(h.pending, token)
-		}
-		h.mu.Unlock()
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
-
-	if !entry.Granted {
-		h.mu.Unlock()
+	loginName, appPassword, err := h.flows().collect(token)
+	switch {
+	case errors.Is(err, errFlowPending):
 		http.Error(w, "Not yet granted", http.StatusNotFound)
 		return
+	case errors.Is(err, errFlowNotFound):
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	case err != nil:
+		slog.Error("login flow: poll", "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
 	}
-
-	// Granted — remove from pending and return credentials
-	delete(h.pending, token)
-	h.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]any{
 		"server":      h.BaseURL,
-		"loginName":   entry.LoginName,
-		"appPassword": entry.AppPassword,
+		"loginName":   loginName,
+		"appPassword": appPassword,
 	}); err != nil {
 		slog.Error("login poll json encode", "err", err)
 	}
@@ -180,8 +157,13 @@ func (h *LoginFlowHandler) HandleGrant(w http.ResponseWriter, r *http.Request) {
 	sessID := auth.SessionIDFromContext(r.Context())
 	csrf := auth.CSRFToken(sessID, h.CSRFSecret)
 
-	client, ok := h.pendingClient(loginToken)
-	if !ok {
+	client, err := h.flows().pendingClient(loginToken)
+	if err != nil && !errors.Is(err, errFlowNotFound) {
+		slog.Error("login flow: look up", "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusNotFound)
 		if err := ui.LoginFlowExpiredPage().Render(r.Context(), w); err != nil {
@@ -210,7 +192,11 @@ func (h *LoginFlowHandler) HandleGrant(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if r.FormValue("action") == "cancel" {
-			h.cancel(loginToken)
+			if err := h.flows().cancel(loginToken); err != nil {
+				slog.Error("login flow: cancel", "err", err)
+				http.Error(w, "Internal error", http.StatusInternalServerError)
+				return
+			}
 			http.Redirect(w, r, "/index.php/login/v2/done?result=cancelled", http.StatusSeeOther)
 			return
 		}
@@ -220,60 +206,44 @@ func (h *LoginFlowHandler) HandleGrant(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// pendingClient returns the name of the app waiting on loginToken, and
-// whether the flow is still pending.
-func (h *LoginFlowHandler) pendingClient(loginToken string) (string, bool) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for _, e := range h.pending {
-		if e.Token == loginToken && !e.Granted && h.Clock().Sub(e.CreatedAt) <= loginFlowExpiry {
-			return e.Client, true
-		}
-	}
-	return "", false
-}
-
-// cancel drops a pending flow, so the app's polling ends without credentials.
-func (h *LoginFlowHandler) cancel(loginToken string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for poll, e := range h.pending {
-		if e.Token == loginToken && !e.Granted {
-			delete(h.pending, poll)
-			return
-		}
-	}
+// flows is the store of pending flows, on the handler's database and clock.
+func (h *LoginFlowHandler) flows() *loginFlowStore {
+	return &loginFlowStore{db: h.DB, clock: h.Clock}
 }
 
 func (h *LoginFlowHandler) processGrant(w http.ResponseWriter, r *http.Request, loginToken string, u *user.User) {
-	// Find the pending flow by login token
-	h.mu.Lock()
-	var entry *loginFlowEntry
-	for _, e := range h.pending {
-		if e.Token == loginToken && !e.Granted {
-			entry = e
-			break
-		}
-	}
-	if entry == nil {
-		h.mu.Unlock()
+	client, err := h.flows().pendingClient(loginToken)
+	if errors.Is(err, errFlowNotFound) {
 		http.Error(w, "Login flow expired or not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		slog.Error("login flow: look up", "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
 	// Create an app password tied to the authenticated browser session's user.
-	appPW, _, err := h.AppPWs.Create(u.ID, fmt.Sprintf("%s (%s)", entry.Client, h.Clock().Format("2006-01-02 15:04")))
+	appPW, ap, err := h.AppPWs.Create(u.ID, fmt.Sprintf("%s (%s)", client, h.Clock().Format("2006-01-02 15:04")))
 	if err != nil {
-		h.mu.Unlock()
 		slog.Error("login flow: create app password", "user", u.Username, "err", err)
 		http.Error(w, "Failed to create app password", http.StatusInternalServerError)
 		return
 	}
-
-	entry.LoginName = u.Username
-	entry.AppPassword = appPW
-	entry.Granted = true
-	h.mu.Unlock()
+	if err := h.flows().grant(loginToken, u.Username, appPW); err != nil {
+		// Granted twice at once, or expired meanwhile: the password minted
+		// for it would reach nobody.
+		if derr := h.AppPWs.Delete(ap.ID, u.ID); derr != nil {
+			slog.Error("login flow: remove unused app password", "user", u.Username, "err", derr)
+		}
+		if errors.Is(err, errFlowNotFound) {
+			http.Error(w, "Login flow expired or not found", http.StatusNotFound)
+			return
+		}
+		slog.Error("login flow: grant", "user", u.Username, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
 
 	http.Redirect(w, r, "/index.php/login/v2/done?result=granted", http.StatusSeeOther)
 }
@@ -321,36 +291,6 @@ func clientName(ua string) string {
 		name = name[:40]
 	}
 	return name
-}
-
-// Cleanup removes expired login flows. Call periodically.
-func (h *LoginFlowHandler) Cleanup() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for token, entry := range h.pending {
-		if h.Clock().Sub(entry.CreatedAt) > loginFlowExpiry {
-			delete(h.pending, token)
-		}
-	}
-}
-
-// StartCleanup runs Cleanup every loginFlowExpiry/2 until ctx is canceled.
-// Without this the pending map grows unboundedly if clients abandon their
-// polls (audit security.md #56).
-func (h *LoginFlowHandler) StartCleanup(ctx context.Context) {
-	interval := loginFlowExpiry / 2
-	go func() {
-		t := time.NewTicker(interval)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				h.Cleanup()
-			}
-		}
-	}()
 }
 
 func randomHex(n int) (string, error) {

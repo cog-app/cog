@@ -1,7 +1,6 @@
 package web
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -34,12 +33,9 @@ func New(p *services.Providers) http.Handler {
 		Cookies:      p.Cookies,
 	}
 
-	loginFlow := compat.NewLoginFlowHandler(p.Users, p.AppPasswords, p.Sessions, p.Config.BaseURL, p.CSRFSecret)
+	loginFlow := compat.NewLoginFlowHandler(p.DB, p.Users, p.AppPasswords, p.Sessions, p.Config.BaseURL, p.CSRFSecret)
 	loginFlow.RateLimiter = p.RateLimiter
 	loginFlow.Clock = p.Clock
-	// Run periodic GC on the in-memory pending-poll map so abandoned flows
-	// don't leak (audit security.md #56). Goroutine lifetime = process.
-	loginFlow.StartCleanup(context.Background())
 
 	// Use the plugin registry's mux so plugin-registered routes share the same router.
 	mux := p.Plugins.Mux()

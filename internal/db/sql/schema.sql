@@ -41,6 +41,19 @@ CREATE TABLE IF NOT EXISTS retired_usernames (
 	retired_at INTEGER NOT NULL
 );
 
+-- Nextcloud Login Flow v2 sign-ins waiting for their user to grant them.
+-- The tokens are stored hashed; the app password a grant mints is sealed
+-- (HPKE) to public_key, whose private half only the poll token derives.
+CREATE TABLE IF NOT EXISTS login_flows (
+	poll_hash TEXT PRIMARY KEY,
+	login_hash TEXT NOT NULL UNIQUE,
+	public_key BLOB NOT NULL,
+	client TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	login_name TEXT NOT NULL DEFAULT '',
+	sealed BLOB
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id),
