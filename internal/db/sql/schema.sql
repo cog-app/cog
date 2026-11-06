@@ -54,6 +54,16 @@ CREATE TABLE IF NOT EXISTS login_flows (
 	sealed BLOB
 );
 
+-- One-time links to a user's file for Nextcloud apps' media players. The
+-- token is stored hashed; the file is named by ID, so a rename before the
+-- link is used does not break it.
+CREATE TABLE IF NOT EXISTS direct_tokens (
+	token_hash TEXT PRIMARY KEY,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	file_id INTEGER NOT NULL,
+	created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id),

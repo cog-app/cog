@@ -230,7 +230,7 @@ func New(p *services.Providers) http.Handler {
 
 	// --- WebDAV file operations (NC clients) ---
 	if fp != nil {
-		webdav := &compat.WebDAVHandler{Log: p.Log.With("component", "webdav"), Files: fp, Clock: p.Clock}
+		webdav := &compat.WebDAVHandler{Log: p.Log.With("component", "webdav"), Files: fp, Clock: p.Clock, DB: p.DB}
 		mux.Handle("/remote.php/dav/files/", bodylimit.Unlimited(auth.RequireAuth(webdav)))
 
 		// Chunked uploads (NC v2 protocol)

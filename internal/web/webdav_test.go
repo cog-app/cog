@@ -199,10 +199,24 @@ func TestWebDAV_DirectDownload(t *testing.T) {
 	require.Equal(t, "ok", ocsResp.OCS.Meta.Status)
 	require.Contains(t, ocsResp.OCS.Data.URL, "/remote.php/dav/direct/")
 
+	// The link names the file, not its path: renaming it first is fine.
+	webdavReq(t, env, "MOVE", prefix+"/music.mp3", "", alice.Auth,
+		cogtest.Header("Destination", env.Providers.Config.BaseURL+prefix+"/renamed.mp3")).Status(201)
+
 	// Fetch the token URL WITHOUT auth — should return the file content
-	env.Get(t, ocsResp.OCS.Data.URL[len(env.Providers.Config.BaseURL):]).
+	link := ocsResp.OCS.Data.URL[len(env.Providers.Config.BaseURL):]
+	env.Get(t, link).
 		Status(200).
 		Equals("fake mp3 data")
+	// It works once.
+	env.Get(t, link).Status(404)
+
+	// And only for a while.
+	env.PostForm(t, "/ocs/v2.php/apps/dav/api/v1/direct",
+		url.Values{"fileId": {fmt.Sprintf("%d", meta.ID)}}, alice.Auth).
+		Status(200).JSON(&ocsResp)
+	env.Clock.Advance(11 * time.Minute)
+	env.Get(t, ocsResp.OCS.Data.URL[len(env.Providers.Config.BaseURL):]).Status(404)
 }
 
 func TestWebDAV_COPY(t *testing.T) {
