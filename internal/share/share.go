@@ -140,6 +140,13 @@ func (s *Store) mayShareWith(ownerUserID, subjectType, subjectID string) error {
 
 // CreatePublicLink creates a share with a public token.
 func (s *Store) CreatePublicLink(ownerUserID, resourceType, resourceID string, permissions uint32, expiration *int64) (*Record, error) {
+	return s.CreatePublicLinkWithPassword(ownerUserID, resourceType, resourceID, permissions, expiration, "")
+}
+
+// CreatePublicLinkWithPassword creates a public link, protected by password
+// when one is given. The link and its password are one insert, so there is
+// no moment at which the link is open without it.
+func (s *Store) CreatePublicLinkWithPassword(ownerUserID, resourceType, resourceID string, permissions uint32, expiration *int64, password string) (*Record, error) {
 	id, err := generateID()
 	if err != nil {
 		return nil, err
@@ -148,14 +155,23 @@ func (s *Store) CreatePublicLink(ownerUserID, resourceType, resourceID string, p
 	if err != nil {
 		return nil, err
 	}
+	var passwordHash *string
+	if password != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("hash password: %w", err)
+		}
+		h := string(hash)
+		passwordHash = &h
+	}
 	now := s.clock().Unix()
 
 	_, err = s.db.Exec(`
 		INSERT INTO shares (id, owner_user_id, resource_type, resource_id,
-			subject_type, subject_id, permissions, token, expiration, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 'PUBLIC', '', ?, ?, ?, ?, ?)`,
+			subject_type, subject_id, permissions, token, password_hash, expiration, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'PUBLIC', '', ?, ?, ?, ?, ?, ?)`,
 		id, ownerUserID, resourceType, resourceID,
-		permissions, token, expiration, now, now,
+		permissions, token, passwordHash, expiration, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert public share: %w", err)
@@ -169,24 +185,11 @@ func (s *Store) CreatePublicLink(ownerUserID, resourceType, resourceID string, p
 		SubjectType:  "PUBLIC",
 		Permissions:  permissions,
 		Token:        &token,
+		PasswordHash: passwordHash,
 		Expiration:   expiration,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}, nil
-}
-
-// CreatePublicLinkWithPassword creates a password-protected public link.
-func (s *Store) CreatePublicLinkWithPassword(ownerUserID, resourceType, resourceID string, permissions uint32, expiration *int64, password string) (*Record, error) {
-	rec, err := s.CreatePublicLink(ownerUserID, resourceType, resourceID, permissions, expiration)
-	if err != nil {
-		return nil, err
-	}
-	if password != "" {
-		if err := s.SetPassword(rec.ID, password); err != nil {
-			return nil, err
-		}
-	}
-	return rec, nil
 }
 
 // SetPassword sets a bcrypt-hashed password on a share.

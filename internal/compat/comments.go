@@ -198,9 +198,13 @@ func (h *CommentsHandler) handleCreate(w http.ResponseWriter, r *http.Request, u
 	}
 
 	comment, err := h.Files.CreateComment(username, fileID, actorID, message)
+	if errors.Is(err, files.ErrCommentTooLong) {
+		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+		return
+	}
 	if err != nil {
 		h.Log.Error("comments: create", "user", username, "file", fileID, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 

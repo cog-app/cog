@@ -95,7 +95,8 @@ func (h *WebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Path format: /remote.php/dav/files/{user_id}/path/to/file
 // The user_id in the URL may be stale (NC clients cache it), so we return
 // it separately for use in response hrefs while relying on the authenticated
-// user for authorization.
+// user for authorization. urlPath is already decoded, as r.URL.Path is: a
+// name holding a literal "%41" stays "%41".
 func (h *WebDAVHandler) extractPath(urlPath string) (urlUserID string, filePath string) {
 	const prefix = "/remote.php/dav/files/"
 	rest, ok := strings.CutPrefix(urlPath, prefix)
@@ -104,16 +105,26 @@ func (h *WebDAVHandler) extractPath(urlPath string) (urlUserID string, filePath 
 	}
 	// Split into user_id and file path
 	if uid, fp, ok := strings.Cut(rest, "/"); ok {
-		// Unescape percent-encoded characters (e.g. %20 → space).
-		// r.URL.Path is already decoded, but the Destination header in
-		// MOVE/COPY is a raw URL that may contain percent-encoding.
-		decoded, err := url.PathUnescape(fp)
-		if err == nil {
-			fp = decoded
-		}
 		return uid, path.Clean("/" + fp)
 	}
 	return rest, "/"
+}
+
+// destinationPath returns the file path a MOVE or COPY's Destination names,
+// or false when it is not under the files root. The header is a URL, so its
+// path is percent-encoded, unlike the request path.
+func (h *WebDAVHandler) destinationPath(dest string) (string, bool) {
+	if idx := strings.Index(dest, "/remote.php/"); idx >= 0 {
+		dest = dest[idx:]
+	}
+	if decoded, err := url.PathUnescape(dest); err == nil {
+		dest = decoded
+	}
+	if !strings.HasPrefix(dest, "/remote.php/dav/files/") {
+		return "", false
+	}
+	_, p := h.extractPath(dest)
+	return p, true
 }
 
 // --- PROPFIND ---
@@ -239,9 +250,14 @@ func (h *WebDAVHandler) handlePut(w http.ResponseWriter, r *http.Request, u *use
 	}
 
 	meta, err := h.Files.Upload(u.Username, filePath, r.Body)
+	if errors.Is(err, cogplugin.ErrQuotaExceeded) {
+		// What clients show as "not enough space" rather than a failure.
+		http.Error(w, err.Error(), http.StatusInsufficientStorage)
+		return
+	}
 	if err != nil {
 		h.Log.Error("PUT", "user", u.Username, "path", filePath, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
@@ -289,19 +305,23 @@ func (h *WebDAVHandler) handleMkcol(w http.ResponseWriter, _ *http.Request, u *u
 // --- MOVE ---
 
 func (h *WebDAVHandler) handleMove(w http.ResponseWriter, r *http.Request, u *user.User, filePath string) {
-	dest := r.Header.Get("Destination")
-	if dest == "" {
-		http.Error(w, "missing Destination header", http.StatusBadRequest)
+	if r.Header.Get("Destination") == "" {
+		http.Error(w, "Destination header required", http.StatusBadRequest)
 		return
 	}
-
-	// Destination is a full URL; extract the path portion
-	destPath := dest
-	if idx := strings.Index(dest, "/remote.php/"); idx >= 0 {
-		destPath = dest[idx:]
+	newPath, ok := h.destinationPath(r.Header.Get("Destination"))
+	if !ok {
+		http.Error(w, "Destination must be under /remote.php/dav/files/", http.StatusBadGateway)
+		return
 	}
-	// Strip the /remote.php/dav/files/{user_id}/ prefix
-	_, newPath := h.extractPath(destPath)
+	if filePath == "/" || newPath == "/" {
+		http.Error(w, "the root cannot be moved or replaced", http.StatusForbidden)
+		return
+	}
+	if newPath == filePath || strings.HasPrefix(newPath, filePath+"/") {
+		http.Error(w, "a folder cannot be moved into itself", http.StatusForbidden)
+		return
+	}
 
 	// RFC 4918 §10.6: without Overwrite: F a MOVE replaces what is at the
 	// destination; with it, it must not.
@@ -331,17 +351,25 @@ func (h *WebDAVHandler) handleMove(w http.ResponseWriter, r *http.Request, u *us
 // --- COPY ---
 
 func (h *WebDAVHandler) handleCopy(w http.ResponseWriter, r *http.Request, u *user.User, srcPath string) {
-	dest := r.Header.Get("Destination")
-	if dest == "" {
-		http.Error(w, "missing Destination header", http.StatusBadRequest)
+	if r.Header.Get("Destination") == "" {
+		http.Error(w, "Destination header required", http.StatusBadRequest)
 		return
 	}
-
-	destPath := dest
-	if idx := strings.Index(dest, "/remote.php/"); idx >= 0 {
-		destPath = dest[idx:]
+	newPath, ok := h.destinationPath(r.Header.Get("Destination"))
+	if !ok {
+		http.Error(w, "Destination must be under /remote.php/dav/files/", http.StatusBadGateway)
+		return
 	}
-	_, newPath := h.extractPath(destPath)
+	if newPath == "/" {
+		http.Error(w, "the root cannot be replaced", http.StatusForbidden)
+		return
+	}
+	// A copy of a folder into itself would copy its own output until the
+	// disk filled.
+	if newPath == srcPath || strings.HasPrefix(newPath, srcPath+"/") {
+		http.Error(w, "a folder cannot be copied into itself", http.StatusForbidden)
+		return
+	}
 
 	overwrite := r.Header.Get("Overwrite")
 	if overwrite == "" {

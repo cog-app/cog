@@ -320,8 +320,12 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	comment, err := a.files.CreateComment(u.Username, req.FileID, u.Username, req.Message)
+	if errors.Is(err, ErrCommentTooLong) {
+		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+		return
+	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		a.serverError(w, "create comment", err)
 		return
 	}
 
@@ -819,12 +823,14 @@ func (a *API) checkSharePassword(rec *share.Record, r *http.Request) error {
 		return nil
 	}
 
-	var password string
-	if _, p, ok := r.BasicAuth(); ok {
-		password = p
-	} else {
-		password = r.URL.Query().Get("password")
+	// The password travels as Basic credentials, never in the URL, where it
+	// would land in access logs and browser history. A client still sending
+	// it there is logged, so a client that stops working is explained.
+	if r.URL.Query().Has("password") {
+		a.files.log.Warn("share password sent in URL query is ignored; send it as Basic auth",
+			"share", rec.ID, "ip", ratelimit.ClientIP(r))
 	}
+	_, password, _ := r.BasicAuth()
 
 	var checkErr error
 	if _, err := a.guard.Try(ratelimit.ClientIP(r), "share:"+rec.ID, func() bool {

@@ -903,6 +903,12 @@ func RecentFiles(db *sql.DB, limit int) ([]FileMeta, error) {
 	return files, rows.Err()
 }
 
+// likeEscape quotes what LIKE … ESCAPE '\' would otherwise read as a
+// wildcard or an escape, so a query matches the text typed.
+func likeEscape(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
+
 func formatSize(b int64) string {
 	const (
 		kb = 1024
@@ -1214,7 +1220,7 @@ func (p *Plugin) Search(username, query string) ([]FileMeta, error) {
 		return nil, err
 	}
 
-	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
+	pattern := "%" + likeEscape(query) + "%"
 	rows, err := db.Query(`
 		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
 		FROM files WHERE name LIKE ? ESCAPE '\'
