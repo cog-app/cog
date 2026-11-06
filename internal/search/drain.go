@@ -61,6 +61,18 @@ func newDrainer(m *Manager) *drainer {
 // nudge marks a database as worth draining soon. Safe to call from a SQLite
 // update hook: it takes a mutex and a non-blocking send, and never touches the
 // database it was called about.
+// maxClosedQueue is how many changes a database whose index is closed may
+// hold before the queue is emptied.
+const maxClosedQueue = 10_000
+
+func discardIfOverfull(ctx context.Context, sdb *sql.DB) error {
+	n, err := db.QueuedChanges(ctx, sdb)
+	if err != nil || n <= maxClosedQueue {
+		return err
+	}
+	return db.DiscardChanges(ctx, sdb)
+}
+
 func (d *drainer) nudge(username, pluginID string) {
 	d.mu.Lock()
 	d.dirty[dirtyKey{username, pluginID}] = struct{}{}
@@ -168,18 +180,21 @@ func (d *drainer) drainOne(ctx context.Context, k dirtyKey) error {
 		d.m.mu.Lock()
 		us, open := d.m.userIndices[k.username]
 		d.m.mu.Unlock()
-		if !open {
-			// Nothing to feed. Changes stay queued until the index is opened,
-			// whose full sync covers them anyway.
-			return nil
-		}
-		collector = us.collector
 
 		var err error
 		sdb, err = d.m.userDBFunc(k.username, k.pluginID)
 		if err != nil {
 			return err
 		}
+		if !open {
+			// Nothing to feed. Opening the index runs a full sync that
+			// covers every queued change, so the queue is kept only up to
+			// a point: a user whose index nobody opens (a feed polled for
+			// an account nobody signs in to) must not fill their database
+			// with a log of changes nothing will read.
+			return discardIfOverfull(ctx, sdb)
+		}
+		collector = us.collector
 	}
 
 	for {

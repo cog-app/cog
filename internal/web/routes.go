@@ -12,7 +12,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/jmap"
 	"git.duckfam.us/jj-software/cog/internal/mount"
-	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/pluginsvc"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	filesPlugin "git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/ui"
@@ -58,15 +58,6 @@ func New(p *services.Providers) http.Handler {
 	if plug, ok := p.Plugins.Plugin("files"); ok {
 		fp, _ = plug.(*filesPlugin.Plugin)
 	}
-	// Typed nil would make a non-nil interface.
-	var qc internalplugin.QuotaChecker
-	if p.QuotaChecker != nil {
-		qc = p.QuotaChecker
-	}
-
-	// --- Wire optional services for plugins ---
-	p.Plugins.SetServices(buildRegistryServices(p.Shares, p.EmailSender, p.Users, p.Groups, qc, p.Access, p.Activities, p.Cookies))
-
 	// --- Web UI handlers ---
 	h := handler{p}
 	loginH := loginHandler{h}
@@ -292,7 +283,7 @@ func New(p *services.Providers) http.Handler {
 
 	// CalDAV/CardDAV: the root, principals and homes, over the plugins'
 	// backends.
-	mountDAV(mux, p, davShares{&shareStoreAdapter{p.Shares}, p})
+	mountDAV(mux, p, davShares{&pluginsvc.ShareStoreAdapter{S: p.Shares}, p})
 
 	// JMAP (RFC 8620) over the same collections: contacts, and calendars
 	// when configured.

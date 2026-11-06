@@ -1,4 +1,7 @@
-package web
+// Package pluginsvc adapts the host's stores to the interfaces plugins see
+// through their PluginContext. The registry is given them before any
+// plugin registers, so what a plugin reads during Register is there.
+package pluginsvc
 
 import (
 	"fmt"
@@ -14,23 +17,23 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
-// shareStoreAdapter adapts *share.Store to plugin.ShareStore.
-type shareStoreAdapter struct {
-	s *share.Store
+// ShareStoreAdapter adapts *share.Store to plugin.ShareStore.
+type ShareStoreAdapter struct {
+	S *share.Store
 }
 
-func (a *shareStoreAdapter) ListBySubject(subjectID string) iter.Seq2[plugin.ShareRecord, error] {
+func (a *ShareStoreAdapter) ListBySubject(subjectID string) iter.Seq2[plugin.ShareRecord, error] {
 	return func(yield func(plugin.ShareRecord, error) bool) {
-		for rec, err := range a.s.ListBySubject(subjectID) {
-			if !yield(pluginShare(&rec), err) {
+		for rec, err := range a.S.ListBySubject(subjectID) {
+			if !yield(Share(&rec), err) {
 				return
 			}
 		}
 	}
 }
 
-// pluginShare is a share record as plugins see it.
-func pluginShare(rec *share.Record) plugin.ShareRecord {
+// Share is a share record as plugins see it.
+func Share(rec *share.Record) plugin.ShareRecord {
 	return plugin.ShareRecord{
 		ID:           rec.ID,
 		OwnerUserID:  rec.OwnerUserID,
@@ -42,8 +45,8 @@ func pluginShare(rec *share.Record) plugin.ShareRecord {
 	}
 }
 
-func (a *shareStoreAdapter) CheckAccess(userID, resourceType, resourceID string) (*plugin.AccessDecision, error) {
-	dec, err := a.s.CheckAccess(userID, resourceType, resourceID)
+func (a *ShareStoreAdapter) CheckAccess(userID, resourceType, resourceID string) (*plugin.AccessDecision, error) {
+	dec, err := a.S.CheckAccess(userID, resourceType, resourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -55,8 +58,8 @@ func (a *shareStoreAdapter) CheckAccess(userID, resourceType, resourceID string)
 	}, nil
 }
 
-func (a *shareStoreAdapter) Create(ownerUserID, resourceType, resourceID, subjectType, subjectID string, permissions uint32) (*plugin.ShareRecord, error) {
-	rec, err := a.s.Create(ownerUserID, resourceType, resourceID, subjectType, subjectID, permissions)
+func (a *ShareStoreAdapter) Create(ownerUserID, resourceType, resourceID, subjectType, subjectID string, permissions uint32) (*plugin.ShareRecord, error) {
+	rec, err := a.S.Create(ownerUserID, resourceType, resourceID, subjectType, subjectID, permissions)
 	if err != nil {
 		return nil, err
 	}
@@ -71,29 +74,29 @@ func (a *shareStoreAdapter) Create(ownerUserID, resourceType, resourceID, subjec
 	}, nil
 }
 
-func (a *shareStoreAdapter) Decline(id, userID string) error {
-	return a.s.Decline(id, userID)
+func (a *ShareStoreAdapter) Decline(id, userID string) error {
+	return a.S.Decline(id, userID)
 }
 
-func (a *shareStoreAdapter) Delete(id string) error {
-	return a.s.Delete(id)
+func (a *ShareStoreAdapter) Delete(id string) error {
+	return a.S.Delete(id)
 }
 
-// emailSenderAdapter adapts a dynamic email.Sender provider to plugin.EmailSender.
-type emailSenderAdapter struct {
-	senderFunc func() *email.Sender
+// EmailSenderAdapter adapts a dynamic email.Sender provider to plugin.EmailSender.
+type EmailSenderAdapter struct {
+	SenderFunc func() *email.Sender
 }
 
-func (a *emailSenderAdapter) Send(to []string, subject, body string, attachments ...plugin.EmailAttachment) error {
+func (a *EmailSenderAdapter) Send(to []string, subject, body string, attachments ...plugin.EmailAttachment) error {
 	return a.send(email.Message{To: to, Subject: subject, Text: body}, attachments)
 }
 
-func (a *emailSenderAdapter) SendWithAttachments(to, subject, textBody, htmlBody string, attachments []plugin.EmailAttachment) error {
+func (a *EmailSenderAdapter) SendWithAttachments(to, subject, textBody, htmlBody string, attachments []plugin.EmailAttachment) error {
 	return a.send(email.Message{To: []string{to}, Subject: subject, Text: textBody, HTML: htmlBody}, attachments)
 }
 
-func (a *emailSenderAdapter) send(m email.Message, attachments []plugin.EmailAttachment) error {
-	s := a.senderFunc()
+func (a *EmailSenderAdapter) send(m email.Message, attachments []plugin.EmailAttachment) error {
+	s := a.SenderFunc()
 	if s == nil {
 		return fmt.Errorf("SMTP not configured")
 	}
@@ -186,15 +189,15 @@ func (a *volumeAccessAdapter) ListAccessible(userID string) ([]plugin.VolumeInfo
 	return result, nil
 }
 
-// buildRegistryServices constructs the adapter layer from internal services.
-func buildRegistryServices(shares *share.Store, emailFunc func() *email.Sender, users *user.Store, groups *group.Store, qc internalplugin.QuotaChecker, access *volume.Access, activityLog internalplugin.ActivityLogger, cookies plugin.CookieConfig) internalplugin.RegistryServices {
+// Build constructs the adapter layer from internal services.
+func Build(shares *share.Store, emailFunc func() *email.Sender, users *user.Store, groups *group.Store, qc internalplugin.QuotaChecker, access *volume.Access, activityLog internalplugin.ActivityLogger, cookies plugin.CookieConfig) internalplugin.RegistryServices {
 	var ss plugin.ShareStore
 	if shares != nil {
-		ss = &shareStoreAdapter{shares}
+		ss = &ShareStoreAdapter{S: shares}
 	}
 	var es plugin.EmailSender
 	if emailFunc != nil {
-		es = &emailSenderAdapter{emailFunc}
+		es = &EmailSenderAdapter{SenderFunc: emailFunc}
 	}
 	var ul plugin.UserLookup
 	if users != nil {

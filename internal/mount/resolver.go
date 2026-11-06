@@ -3,6 +3,8 @@ package mount
 import (
 	"errors"
 	"fmt"
+	"sync"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
@@ -11,18 +13,53 @@ import (
 )
 
 // Resolver bridges the mount system to the plugin registry.
+//
+// A user's VFS is built from their mounts, each mount's volume and what a
+// share lets them do with it, and every file operation needs it, so it is
+// kept once built. The mount and volume stores, and the share store through
+// services, say when any of that changes; cacheTTL bounds what they might
+// miss.
 type Resolver struct {
 	users   *user.Store
 	mounts  *Store
 	volumes *volume.Store
 	access  *volume.Access
+
+	mu    sync.Mutex
+	cache map[string]cachedFS // by username
 }
+
+type cachedFS struct {
+	fs      vfs.FS
+	expires time.Time
+}
+
+// cacheTTL is how long a user's VFS is trusted without a change notice.
+const cacheTTL = 30 * time.Second
 
 // NewResolver creates a new mount resolver. Access decides what a mount of a
 // volume other than the user's root may do: a mount outlives the share that
 // allowed it, so it is checked each time it is used.
 func NewResolver(users *user.Store, mounts *Store, volumes *volume.Store, access *volume.Access) *Resolver {
-	return &Resolver{users: users, mounts: mounts, volumes: volumes, access: access}
+	r := &Resolver{users: users, mounts: mounts, volumes: volumes, access: access, cache: map[string]cachedFS{}}
+	mounts.Changed = append(mounts.Changed, r.InvalidateAll)
+	volumes.Changed = append(volumes.Changed, r.InvalidateAll)
+	return r
+}
+
+// InvalidateAll forgets every cached VFS: something a mount depends on
+// changed, and the next use rebuilds it.
+func (r *Resolver) InvalidateAll() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	clear(r.cache)
+}
+
+// Invalidate forgets username's cached VFS.
+func (r *Resolver) Invalidate(username string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.cache, username)
 }
 
 // root returns the user's root mount. An account made since the server
@@ -90,9 +127,28 @@ func (r *Resolver) EnsureUserDirs(username string) error {
 	return parsed.EnsureDir(m.VolumeSubpath)
 }
 
-// UserFS builds a mount-aware VFS for the given user, loading all mounts
-// and creating backends for each.
+// UserFS returns a mount-aware VFS for the given user, built from their
+// mounts and kept until something changes or cacheTTL passes.
 func (r *Resolver) UserFS(username string) (vfs.FS, error) {
+	now := time.Now()
+	r.mu.Lock()
+	c, ok := r.cache[username]
+	r.mu.Unlock()
+	if ok && now.Before(c.expires) {
+		return c.fs, nil
+	}
+	fs, err := r.buildUserFS(username)
+	if err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	r.cache[username] = cachedFS{fs: fs, expires: now.Add(cacheTTL)}
+	r.mu.Unlock()
+	return fs, nil
+}
+
+// buildUserFS loads the user's mounts and creates a backend for each.
+func (r *Resolver) buildUserFS(username string) (vfs.FS, error) {
 	u, err := r.users.GetByUsername(username)
 	if err != nil {
 		return nil, fmt.Errorf("resolve user %q: %w", username, err)
