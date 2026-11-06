@@ -491,6 +491,24 @@ func (h *settingsHandler) CreateMount(w http.ResponseWriter, r *http.Request) {
 	}
 	readOnly := perms&plugin.PermWrite == 0
 
+	// The volume browser keeps the server's own files out of reach; a
+	// mount of them would hand them to the files plugin, and to WebDAV.
+	vol, err := h.p.Volumes.GetByID(volumeID)
+	if err != nil {
+		setFlash(w, "error", "Could not check access to that volume.", err)
+		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
+		return
+	}
+	isUser := func(name string) bool {
+		_, err := h.p.Users.GetByUsername(name)
+		return err == nil
+	}
+	if mountExposesInternal(&h.p.Config, vol, volumeSubpath, isUser) {
+		setFlash(w, "error", "That path holds the server's own files; mount a folder inside a user's files directory instead.")
+		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
+		return
+	}
+
 	_, err = h.p.Mounts.Create(u.ID, userPath, volumeID, volumeSubpath, readOnly)
 	if err != nil {
 		setFlash(w, "error", "Failed to create mount: "+err.Error())

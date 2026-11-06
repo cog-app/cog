@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/httphdr"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
@@ -104,15 +105,44 @@ func (h *volumeBrowserHandler) open(w http.ResponseWriter, r *http.Request, u *u
 // and deleting one under a running server destroys data. The browser neither
 // lists them nor lets them be read, replaced or deleted.
 func (h *volumeBrowserHandler) serverInternal(vol *volume.Volume, p string) bool {
-	if vol.Scheme() != "file" || h.p.Config.DataDir == "" {
+	return serverInternalPath(&h.p.Config, vol, p)
+}
+
+// isDataDir reports whether vol is the data directory itself.
+func isDataDir(cfg *config.Config, vol *volume.Volume) bool {
+	if vol.Scheme() != "file" || cfg.DataDir == "" {
 		return false
 	}
 	root, err := filepath.Abs(vol.URIPath())
 	if err != nil {
 		return false
 	}
-	dataDir, err := filepath.Abs(h.p.Config.DataDir)
-	if err != nil || root != dataDir {
+	dataDir, err := filepath.Abs(cfg.DataDir)
+	return err == nil && root == dataDir
+}
+
+// mountExposesInternal reports whether a mount of subpath on vol would put
+// one of the server's own files in a user's tree. It refuses the internal
+// files themselves and the directories that hold them: the data directory
+// itself, with the system database, and a user's directory, with their
+// plugin databases. isUser says whether a name is an account's.
+func mountExposesInternal(cfg *config.Config, vol *volume.Volume, subpath string, isUser func(name string) bool) bool {
+	if !isDataDir(cfg, vol) {
+		return false
+	}
+	clean := strings.TrimPrefix(path.Clean("/"+subpath), "/")
+	if clean == "" || serverInternalPath(cfg, vol, clean) {
+		return true
+	}
+	return !strings.Contains(clean, "/") && isUser(clean)
+}
+
+func serverInternalPath(cfg *config.Config, vol *volume.Volume, p string) bool {
+	if !isDataDir(cfg, vol) {
+		return false
+	}
+	dataDir, err := filepath.Abs(cfg.DataDir)
+	if err != nil {
 		return false
 	}
 
@@ -136,8 +166,8 @@ func (h *volumeBrowserHandler) serverInternal(vol *volume.Volume, p string) bool
 		// The system database, when it lives in the data directory: where
 		// COG_DB puts it, or system.db when nothing says otherwise.
 		db := "system.db"
-		if h.p.Config.DBPath != "" {
-			dbPath, err := filepath.Abs(h.p.Config.DBPath)
+		if cfg.DBPath != "" {
+			dbPath, err := filepath.Abs(cfg.DBPath)
 			if err != nil || filepath.Dir(dbPath) != dataDir {
 				return false
 			}

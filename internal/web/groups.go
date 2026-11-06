@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -411,10 +412,25 @@ func (h *groupHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	base := groupBasePath(r)
-	inviteEmail := r.FormValue("email")
+	inviteEmail := strings.TrimSpace(r.FormValue("email"))
 	memberType := group.MemberType(r.FormValue("member_type"))
 	if memberType != group.Owner {
 		memberType = group.User
+	}
+	if inviteEmail != "" {
+		// The server mails whatever address is given, under its own name,
+		// with the group's name in the message: an address that is not one,
+		// or more mail than the sender's share of the hour, is refused.
+		if parsed, err := mail.ParseAddress(inviteEmail); err != nil || parsed.Name != "" || parsed.Address != inviteEmail {
+			setFlash(w, "error", "That doesn't look like an email address.")
+			http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
+			return
+		}
+		if h.p.EmailSender() != nil && h.p.DAV.MailLimit != nil && h.p.DAV.MailLimit.IsLimited(u.ID) {
+			setFlash(w, "error", "You have sent too many invitations recently. Try again later.")
+			http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
+			return
+		}
 	}
 	expiryHours := settings.DefaultInviteExpiryHours
 	if h.p.Settings != nil {
@@ -436,6 +452,9 @@ func (h *groupHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 			setFlashURL(w, "error", "Invite created, but the email could not be sent: "+err.Error(), inviteURL)
 			http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
 			return
+		}
+		if h.p.DAV.MailLimit != nil {
+			h.p.DAV.MailLimit.RecordFailure(u.ID)
 		}
 		if err := sender.SendGroupInvite(h.p.Settings, email.EmailData{
 			BaseURL:      h.p.Config.BaseURL,
@@ -575,9 +594,10 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 
 	if u != nil {
-		// Authenticated user — verify CSRF and accept.
+		// Authenticated user — verify CSRF and accept. The form carries a
+		// session's token, so a request without a session has none to check.
 		sessID := auth.SessionIDFromContext(r.Context())
-		if sessID != "" && !auth.ValidateCSRF(r, sessID, h.p.CSRFSecret) {
+		if sessID == "" || !auth.ValidateCSRF(r, sessID, h.p.CSRFSecret) {
 			http.Error(w, "Invalid CSRF token", http.StatusForbidden)
 			return
 		}
