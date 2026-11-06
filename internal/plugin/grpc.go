@@ -248,8 +248,14 @@ func (g *grpcPlugin) proxy(w http.ResponseWriter, r *http.Request, routeKey, res
 		g.errorPage(w, r, http.StatusBadRequest)
 		return
 	}
+	// The user is identified below; their credentials stay with the host.
+	// A plugin given the session cookie or Basic credentials could act as
+	// the user anywhere on the server.
 	headers := make(map[string]*plugpb.HeaderValues, len(r.Header))
 	for k, v := range r.Header {
+		if credentialHeader(k) {
+			continue
+		}
 		headers[k] = &plugpb.HeaderValues{Values: v}
 	}
 
@@ -280,13 +286,46 @@ func (g *grpcPlugin) proxy(w http.ResponseWriter, r *http.Request, routeKey, res
 		return
 	}
 
+	// A plugin's response is its page or data, not the browser's state on
+	// this origin: it may not set cookies, which is how the host keeps a
+	// session, nor headers the connection itself owns.
 	for k, vals := range resp.Headers {
+		if cookieHeader(k) || hopByHopHeader(k) {
+			continue
+		}
 		for _, v := range vals.Values {
 			w.Header().Add(k, v)
 		}
 	}
 	w.WriteHeader(int(resp.StatusCode))
-	w.Write(resp.Body)
+	if _, err := w.Write(resp.Body); err != nil {
+		g.log.Debug("write plugin response", "plugin", g.id, "path", r.URL.Path, "err", err)
+	}
+}
+
+// credentialHeader reports whether a request header carries what signs the
+// user in.
+func credentialHeader(name string) bool {
+	switch strings.ToLower(name) {
+	case "cookie", "authorization", "proxy-authorization":
+		return true
+	}
+	return false
+}
+
+// cookieHeader reports whether a response header sets a cookie.
+func cookieHeader(name string) bool {
+	return strings.EqualFold(name, "set-cookie")
+}
+
+// hopByHopHeader reports whether a header describes the connection the
+// plugin's answer came over, which is not the client's.
+func hopByHopHeader(name string) bool {
+	switch strings.ToLower(name) {
+	case "connection", "keep-alive", "transfer-encoding", "upgrade", "te", "trailer", "content-length":
+		return true
+	}
+	return false
 }
 
 // statusForRPCError maps a failed plugin call to a status for the browser. A

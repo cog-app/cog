@@ -28,3 +28,29 @@ func TestProcessPluginIDsDoesNotStart(t *testing.T) {
 	_, err := os.Stat(ran)
 	require.True(t, os.IsNotExist(err), "the plugin binary was run")
 }
+
+// H11: a process plugin found on PATH that no admin has enabled does not
+// run. Naming it, or every plugin, in COG_TRUSTED_PROCESS_PLUGINS does.
+func TestDiscoveredProcessPluginIsOffUntilEnabled(t *testing.T) {
+	bin := t.TempDir()
+	ran := filepath.Join(t.TempDir(), "ran")
+	// PATH is the test's, so the script uses no program but the shell.
+	script := "#!/bin/sh\n: > " + ran + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "cog-plugin-widgets"), []byte(script), 0o755))
+	t.Setenv("PATH", bin)
+	t.Cleanup(func() { SetTrustedProcessPlugins("") })
+
+	SetTrustedProcessPlugins("")
+	r := NewRegistry(slog.New(slog.DiscardHandler), t.TempDir(), http.NewServeMux(), nil, nil, clock.System())
+	r.DiscoverProcessPlugins()
+	require.False(t, r.IsEnabled("widgets"))
+	_, err := os.Stat(ran)
+	require.True(t, os.IsNotExist(err), "an unconfigured plugin binary was run")
+
+	SetTrustedProcessPlugins("*")
+	r = NewRegistry(slog.New(slog.DiscardHandler), t.TempDir(), http.NewServeMux(), nil, nil, clock.System())
+	r.DiscoverProcessPlugins()
+	require.True(t, r.IsEnabled("widgets"))
+	_, err = os.Stat(ran)
+	require.NoError(t, err, "a trusted plugin binary was not run")
+}

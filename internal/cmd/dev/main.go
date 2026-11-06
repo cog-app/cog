@@ -216,6 +216,11 @@ func startServer(bin, dbPath, devDir, addr string, logRequests bool, teeOut, tee
 		"COG_SEED=true",
 		"COG_PRIVATE_IPS=true",
 	)
+	if os.Getenv("COG_TRUSTED_PROCESS_PLUGINS") == "" {
+		// A process plugin found on PATH is off until an admin enables it.
+		// In development the developer put it there.
+		srv.Env = append(srv.Env, "COG_TRUSTED_PROCESS_PLUGINS=*")
+	}
 	if logRequests {
 		srv.Env = append(srv.Env, "COG_LOG_REQUESTS=true")
 	}

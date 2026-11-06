@@ -187,9 +187,15 @@ func TestGRPCBridge_FormBodySurvivesCSRFCheck(t *testing.T) {
 	cookie := cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID)
 
 	form := url.Values{
-		"csrf_token": {auth.CSRFToken(sess.ID, env.Providers.CSRFSecret)},
+		"csrf_token": {auth.CSRFTokenFor(sess.ID, "grpcform", env.Providers.CSRFSecret)},
 		"field":      {"kept"},
 	}
 	body := env.PostForm(t, "/apps/grpcform/echo", form, cookie).Status(200).ReadBody()
 	assert.Equal(t, `field="kept"`, body)
+
+	// A process plugin's forms carry a token bound to the plugin. The
+	// session-wide token, which would let the plugin's pages post to the
+	// host, is not accepted in its place.
+	form.Set("csrf_token", auth.CSRFToken(sess.ID, env.Providers.CSRFSecret))
+	env.PostForm(t, "/apps/grpcform/echo", form, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
 }

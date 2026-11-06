@@ -170,6 +170,10 @@ func (r *Registry) Add(p Plugin) error {
 		resources:  make(map[string]ResourceDef),
 		hooks:      make(map[string][]HookCallback),
 	}
+	// A process plugin is handed its own CSRF token, good for its routes
+	// alone: with the session's token it could submit any form on the
+	// server as the user.
+	_, reg.scopedCSRF = p.(*grpcPlugin)
 	r.registrars[id] = reg
 
 	return p.Register(reg)
@@ -661,6 +665,25 @@ type pluginRegistrar struct {
 	adminCommands []CommandDef
 	settingsPages []SettingsPage
 	schema        fs.FS
+	// scopedCSRF issues and checks tokens bound to this plugin rather than
+	// the session's, for a plugin that runs out of process.
+	scopedCSRF bool
+}
+
+// csrfToken is the token this plugin's forms carry for sessID.
+func (pr *pluginRegistrar) csrfToken(sessID string) string {
+	if pr.scopedCSRF {
+		return auth.CSRFTokenFor(sessID, pr.pluginID, pr.csrfSecret)
+	}
+	return auth.CSRFToken(sessID, pr.csrfSecret)
+}
+
+// requireCSRF checks the token this plugin's forms carry on a mutation.
+func (pr *pluginRegistrar) requireCSRF(h http.Handler) http.Handler {
+	if pr.scopedCSRF {
+		return pr.csrf().RequireFor(pr.pluginID, h)
+	}
+	return pr.csrf().Require(h)
 }
 
 // --- PluginContext service methods ---
@@ -876,7 +899,7 @@ func (pr *pluginRegistrar) injectPluginContext(handler http.Handler) http.Handle
 		sessID := auth.SessionIDFromContext(r.Context())
 		var csrf string
 		if sessID != "" {
-			csrf = auth.CSRFToken(sessID, pr.csrfSecret)
+			csrf = pr.csrfToken(sessID)
 		}
 
 		ctx := cogplugin.WithCSRFToken(r.Context(), csrf)
@@ -1043,7 +1066,7 @@ func (pr *pluginRegistrar) RegisterAPI(path string, handler http.Handler) {
 
 func (pr *pluginRegistrar) RegisterAction(method, path string, handler http.Handler) {
 	pattern := fmt.Sprintf("%s /apps/%s/%s", method, pr.pluginID, path)
-	wrapped := auth.RequireAuthWeb(pr.injectPluginContext(pr.csrf().Require(pr.carryFlash(handler))))
+	wrapped := auth.RequireAuthWeb(pr.injectPluginContext(pr.requireCSRF(pr.carryFlash(handler))))
 	pr.mux.Handle(pattern, pr.wrap(wrapped))
 }
 
@@ -1108,16 +1131,19 @@ func (pr *pluginRegistrar) Plugins() iter.Seq[Plugin] {
 func (pr *pluginRegistrar) RegisterResource(def ResourceDef) {
 	pr.resources[def.Type] = def
 	if def.Handler != nil {
-		// Mount the resource handler at /apps/{plugin_id}/{type}/{id}
+		// Mount the resource handler at /apps/{plugin_id}/{type}/{id}. A
+		// resource is a user's, so the route is theirs to open, and a
+		// change to one carries the plugin's form token like any action.
 		pattern := fmt.Sprintf("/apps/%s/%s/", pr.pluginID, def.Type)
-		pr.mux.Handle(pattern, pr.wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serve := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resourceID := r.PathValue("id")
 			if resourceID == "" {
 				// Extract from URL path
 				resourceID = filepath.Base(r.URL.Path)
 			}
 			def.Handler.ServeResource(w, r, resourceID)
-		})))
+		})
+		pr.mux.Handle(pattern, pr.wrap(auth.RequireAuth(pr.injectPluginContext(pr.requireCSRF(serve)))))
 	}
 }
 
@@ -1241,7 +1267,10 @@ func (r *Registry) IsPluginProtected(pluginID string) bool {
 	return r.protected[pluginID]
 }
 
-// IsEnabled returns true if the plugin is currently enabled.
+// IsEnabled returns true if the plugin is currently enabled. A plugin
+// nobody has configured is enabled when it was built in, and disabled when
+// it was found on PATH: an executable someone dropped in a directory on the
+// path runs only once an admin turns it on, or names it trusted.
 func (r *Registry) IsEnabled(pluginID string) bool {
 	if r.IsPluginProtected(pluginID) {
 		return true
@@ -1249,10 +1278,13 @@ func (r *Registry) IsEnabled(pluginID string) bool {
 	r.mu.Lock()
 	enabled, ok := r.enabled[pluginID]
 	r.mu.Unlock()
-	if !ok {
-		return true // default enabled
+	if ok {
+		return enabled
 	}
-	return enabled
+	if _, found := r.discovered[pluginID]; found {
+		return isTrustedProcessPlugin(pluginID)
+	}
+	return true
 }
 
 // SetEnabled enables or disables a plugin and persists the state.
@@ -1393,9 +1425,11 @@ func (r *Registry) ProcessPluginIDs() []string {
 func (r *Registry) DiscoverProcessPlugins() {
 	for _, pp := range r.scanProcessPlugins() {
 		pluginID, binaryPath := pp.id, pp.path
+		// Recorded first, so IsEnabled knows it was found rather than
+		// built in and treats "never configured" as off.
+		r.discovered[pluginID] = binaryPath
 		if !r.IsEnabled(pluginID) {
-			r.discovered[pluginID] = binaryPath
-			r.log.Info("discovered process plugin (disabled)", "plugin", pluginID, "path", binaryPath)
+			r.log.Info("discovered process plugin (disabled until an admin enables it)", "plugin", pluginID, "path", binaryPath)
 			continue
 		}
 
@@ -1412,8 +1446,6 @@ func (r *Registry) DiscoverProcessPlugins() {
 			r.log.Error("failed to load process plugin", "plugin", pluginID, "path", binaryPath, "err", err)
 			continue
 		}
-		// Track that this loaded plugin came from discovery.
-		r.discovered[pluginID] = binaryPath
 	}
 }
 
@@ -1422,8 +1454,11 @@ func (r *Registry) DiscoverProcessPlugins() {
 var trustedProcessPlugins map[string]bool
 
 // SetTrustedProcessPlugins configures which discovered process plugin IDs are
-// loaded as trusted (handed the host CSRF secret and direct DB access).
-// Comma-separated list of plugin IDs.
+// loaded as trusted (handed the host CSRF secret and direct DB access), and
+// which run at all before an admin enables them. Comma-separated list of
+// plugin IDs; "*" trusts every plugin found, which is for development: a
+// process plugin runs as the server, so trusting whatever is on PATH is
+// trusting whatever can write to PATH.
 func SetTrustedProcessPlugins(spec string) {
 	out := make(map[string]bool)
 	for raw := range strings.SplitSeq(spec, ",") {
@@ -1436,7 +1471,7 @@ func SetTrustedProcessPlugins(spec string) {
 }
 
 func isTrustedProcessPlugin(id string) bool {
-	return trustedProcessPlugins[id]
+	return trustedProcessPlugins[id] || trustedProcessPlugins["*"]
 }
 
 // NavItems returns nav items from all enabled plugins.
