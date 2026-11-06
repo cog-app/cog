@@ -153,8 +153,13 @@ func (h *dataHandler) ExportAll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
+	// The zip streams to the client as it is built: an export is as big as
+	// the account, which is not a thing to hold in memory. Once the headers
+	// are out a failure can only cut the download short, so the connection
+	// is dropped rather than a truncated archive passed off as complete.
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="cog-export.zip"`)
+	zw := zip.NewWriter(w)
 	for i := range cols {
 		f, err := zw.Create(string(cols[i].Home) + "/" + filename(&cols[i]))
 		if err == nil {
@@ -162,19 +167,12 @@ func (h *dataHandler) ExportAll(w http.ResponseWriter, r *http.Request) {
 		}
 		if err != nil {
 			h.p.Log.Error("export all", "user", u.Username, "collection", cols[i].ID, "err", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
+			panic(http.ErrAbortHandler)
 		}
 	}
 	if err := zw.Close(); err != nil {
 		h.p.Log.Error("export all", "user", u.Username, "err", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", `attachment; filename="cog-export.zip"`)
-	if _, err := w.Write(buf.Bytes()); err != nil {
-		h.p.Log.Error("send export", "user", u.Username, "err", err)
+		panic(http.ErrAbortHandler)
 	}
 }
 

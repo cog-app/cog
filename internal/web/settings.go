@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"git.duckfam.us/jj-software/cog/internal/email"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"git.duckfam.us/jj-software/cog/ui"
 	"image/png"
 	"io"
 	"net/http"
 	"net/mail"
 	"net/url"
+	"path"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -23,6 +25,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/files"
+	"git.duckfam.us/jj-software/cog/vfs"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -472,6 +475,15 @@ func (h *settingsHandler) CreateMount(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
 		return
 	}
+	// The mount point is a directory in the user's tree: not the root,
+	// which is their home, and not the trash, which the tree hides.
+	userPath = path.Clean("/" + userPath)
+	if first, _, _ := strings.Cut(strings.TrimPrefix(userPath, "/"), "/"); userPath == "/" || first == vfs.TrashDir {
+		setFlash(w, "error", "Mount at a folder inside your files, not at the root.")
+		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
+		return
+	}
+	volumeSubpath = strings.TrimPrefix(path.Clean("/"+volumeSubpath), "/")
 
 	// The mount reaches anything in the volume, so the user needs access to
 	// all of it, and a mount of a volume shared read-only is read-only.
@@ -573,7 +585,7 @@ func (h *settingsHandler) DeleteVolume(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.p.Volumes.Delete(id); err != nil {
 		h.p.Log.Error("delete volume", "volume", id, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -605,7 +617,7 @@ func (h *settingsHandler) DeleteMount(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.p.Mounts.Delete(id); err != nil {
 		h.p.Log.Error("delete mount", "mount", id, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -804,7 +816,7 @@ func (h *settingsHandler) BeginWebAuthnRegistration(w http.ResponseWriter, r *ht
 	data, err := h.p.WebAuthn.BeginRegistration(u.ID, u.Username, displayName)
 	if err != nil {
 		h.p.Log.Error("begin passkey registration", "user", u.Username, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -880,7 +892,7 @@ func (h *settingsHandler) DeleteWebAuthnCredential(w http.ResponseWriter, r *htt
 		return
 	} else if err != nil {
 		h.p.Log.Error("delete passkey", "user", u.Username, "id", id, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 

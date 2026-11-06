@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -243,17 +244,17 @@ func (h *ChunkedUploadHandler) handlePut(w http.ResponseWriter, r *http.Request,
 
 	f, err := os.Create(chunkPath)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	written, err := io.Copy(f, r.Body)
 	if err != nil {
 		f.Close()
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := f.Close(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := h.Files.QuotaCheck(u.Username, staged+written); err != nil {
@@ -264,6 +265,29 @@ func (h *ChunkedUploadHandler) handlePut(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+}
+
+// consumedChunk is a chunk removed as soon as it has been read in full, so
+// assembling an upload holds about one chunk beyond the file's own size
+// rather than the whole upload twice. An assembly that fails after that
+// point has lost its chunks, and the client starts the upload again; a
+// client does not retry the MOVE on a 5xx, so nothing is lost that would
+// have been kept.
+type consumedChunk struct {
+	*os.File
+	log  *slog.Logger
+	done bool
+}
+
+func (c *consumedChunk) Read(p []byte) (int, error) {
+	n, err := c.File.Read(p)
+	if errors.Is(err, io.EOF) && !c.done {
+		c.done = true
+		if rmErr := os.Remove(c.File.Name()); rmErr != nil {
+			c.log.Error("chunked upload: remove consumed chunk", "path", c.File.Name(), "err", rmErr)
+		}
+	}
+	return n, err
 }
 
 func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request, u *user.User, dir string) {
@@ -295,7 +319,7 @@ func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	sortChunks(entries)
@@ -315,10 +339,10 @@ func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request
 		}
 		f, err := os.Open(filepath.Join(dir, entry.Name()))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
-		readers = append(readers, f)
+		readers = append(readers, &consumedChunk{File: f, log: h.Log})
 		closers = append(closers, f)
 	}
 
@@ -330,7 +354,7 @@ func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request
 	combined := io.MultiReader(readers...)
 
 	if err := h.Files.EnsureRootDir(u.Username); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 

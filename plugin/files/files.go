@@ -239,6 +239,21 @@ func (p *Plugin) folderIcon(username, folderPath string) string {
 func (p *Plugin) Stop() error { return nil }
 
 // userFS returns the mount-aware VFS for the given user.
+// ReadOnlyChecker returns a function that reports whether a path of the
+// user's is on a read-only mount. It is built once per listing: the VFS
+// is resolved once and the check itself touches no disk.
+func (p *Plugin) ReadOnlyChecker(username string) (func(path string) bool, error) {
+	fs, err := p.userFS(username)
+	if err != nil {
+		return nil, err
+	}
+	ro, ok := fs.(interface{ ReadOnly(string) bool })
+	if !ok {
+		return func(string) bool { return false }, nil
+	}
+	return func(path string) bool { return ro.ReadOnly(normalizePath(path)) }, nil
+}
+
 func (p *Plugin) userFS(username string) (vfs.FS, error) {
 	return p.ctx.UserVFS(username)
 }

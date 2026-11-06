@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -349,7 +350,8 @@ func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request
 	if sharedWithMe {
 		records, err := seq.Collect(h.Shares.ListBySubject(u.ID))
 		if err != nil {
-			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+			httperr.Log(r, err)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
 		ownerIDs := make([]string, len(records))
@@ -359,13 +361,15 @@ func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request
 		owners, err := h.Users.GetByIDs(ownerIDs)
 		if err != nil {
 			h.Log.Error("list shares: look up owners", "err", err)
-			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+			httperr.Log(r, err)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
 		subj, err := h.loadForOCS(records, owners)
 		if err != nil {
 			h.Log.Error("list shares", "err", err)
-			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+			httperr.Log(r, err)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
 		for _, rec := range records {
@@ -376,7 +380,8 @@ func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request
 			ocs, err := h.shareToOCSWith(&rec, owner, subj)
 			if err != nil {
 				h.Log.Error("list shares", "share", rec.ID, "err", err)
-				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+				httperr.Log(r, err)
+				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 				return
 			}
 			result = append(result, ocs)
@@ -384,20 +389,23 @@ func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request
 	} else {
 		records, err := seq.Collect(h.Shares.ListByOwner(u.ID))
 		if err != nil {
-			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+			httperr.Log(r, err)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
 		subj, err := h.loadForOCS(records, map[string]*user.User{u.ID: u})
 		if err != nil {
 			h.Log.Error("list shares", "err", err)
-			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+			httperr.Log(r, err)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
 		for _, rec := range records {
 			ocs, err := h.shareToOCSWith(&rec, u, subj)
 			if err != nil {
 				h.Log.Error("list shares", "share", rec.ID, "err", err)
-				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+				httperr.Log(r, err)
+				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 				return
 			}
 			// Filter by path if specified
@@ -471,7 +479,8 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 			writeOCSErrorReq(w, r, http.StatusBadRequest, 400, "invalid expireDate: want YYYY-MM-DD")
 			return
 		}
-		exp := t.Unix()
+		// The share lasts through the chosen day, as a client shows it.
+		exp := t.AddDate(0, 0, 1).Unix()
 		expiration = &exp
 	}
 
@@ -516,7 +525,8 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err != nil {
-		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+		httperr.Log(r, err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 		return
 	}
 
@@ -524,7 +534,8 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 
 	ocs, err := h.shareToOCS(rec, u)
 	if err != nil {
-		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+		httperr.Log(r, err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 		return
 	}
 	writeOCSReq(w, r, http.StatusOK, ocs)
@@ -597,7 +608,8 @@ func (h *SharingHandler) createFederatedShare(w http.ResponseWriter, r *http.Req
 	// Create a public-link share with a token (reuse existing token mechanism).
 	rec, err := h.Shares.CreatePublicLink(u.ID, resourceType, resourceID, cogPerms, nil)
 	if err != nil {
-		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "create share: "+err.Error())
+		httperr.Log(r, fmt.Errorf("create share: %w", err))
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 		return
 	}
 
@@ -617,7 +629,8 @@ func (h *SharingHandler) createFederatedShare(w http.ResponseWriter, r *http.Req
 		Permissions:  cogPerms,
 	}
 	if err := h.Federation.Create(fs); err != nil {
-		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "create federation record: "+err.Error())
+		httperr.Log(r, fmt.Errorf("create federation record: %w", err))
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 		return
 	}
 
@@ -663,7 +676,8 @@ func (h *SharingHandler) createFederatedShare(w http.ResponseWriter, r *http.Req
 
 	ocs, err := h.shareToOCS(rec, u)
 	if err != nil {
-		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+		httperr.Log(r, err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 		return
 	}
 	// Override share_type to 6 (FEDERATED) and share_with to the remote user.
@@ -702,7 +716,8 @@ func (h *SharingHandler) HandleGetShare(w http.ResponseWriter, r *http.Request) 
 
 	ocs, err := h.shareToOCS(rec, owner)
 	if err != nil {
-		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+		httperr.Log(r, err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 		return
 	}
 	writeOCSReq(w, r, http.StatusOK, ocs)
@@ -786,7 +801,8 @@ func (h *SharingHandler) HandleUpdateShare(w http.ResponseWriter, r *http.Reques
 				writeOCSErrorReq(w, r, http.StatusBadRequest, 400, "invalid expireDate: want YYYY-MM-DD")
 				return
 			}
-			exp := t.Unix()
+			// The share lasts through the chosen day, as a client shows it.
+			exp := t.AddDate(0, 0, 1).Unix()
 			expVal := &exp
 			expPtr = &expVal
 		}
@@ -794,14 +810,16 @@ func (h *SharingHandler) HandleUpdateShare(w http.ResponseWriter, r *http.Reques
 
 	if permsPtr != nil || expPtr != nil {
 		if err := h.Shares.Update(shareID, permsPtr, expPtr); err != nil {
-			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+			httperr.Log(r, err)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
 	}
 
 	if password != "" {
 		if err := h.Shares.SetPassword(shareID, password); err != nil {
-			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+			httperr.Log(r, err)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
 	}
@@ -810,12 +828,14 @@ func (h *SharingHandler) HandleUpdateShare(w http.ResponseWriter, r *http.Reques
 	// shareToOCS, which would then NPE.
 	rec, err := h.Shares.Get(shareID)
 	if err != nil {
-		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "refetch share: "+err.Error())
+		httperr.Log(r, fmt.Errorf("refetch share: %w", err))
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 		return
 	}
 	owner, err := h.Users.GetByID(rec.OwnerUserID)
 	if err != nil {
-		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "refetch owner: "+err.Error())
+		httperr.Log(r, fmt.Errorf("refetch owner: %w", err))
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 		return
 	}
 	ocs, ocsErr := h.shareToOCS(rec, owner)
@@ -848,7 +868,8 @@ func (h *SharingHandler) HandleDeleteShare(w http.ResponseWriter, r *http.Reques
 	h.logShareActivity(u, rec, "share_deleted", "unshared")
 
 	if err := h.Shares.Delete(shareID); err != nil {
-		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, err.Error())
+		httperr.Log(r, err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 		return
 	}
 

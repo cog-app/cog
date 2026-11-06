@@ -8,6 +8,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -58,7 +59,7 @@ func (h *WebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Ensure the user's root directory exists.
 	if err := h.Files.EnsureRootDir(u.Username); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -155,11 +156,16 @@ func (h *WebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, u
 	}
 
 	var entries []propfindEntry
-	href := hrefPrefix + filePath
-	if rootMeta.IsDir && !strings.HasSuffix(href, "/") {
-		href += "/"
+	// oc:permissions says what the client may do; on a read-only mount
+	// that is read and share, so the client does not offer edits that
+	// would fail.
+	readOnly, err := h.Files.ReadOnlyChecker(u.Username)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
 	}
-	entries = append(entries, metaToEntry(href, rootMeta, u.Username, displayName))
+	href := davHref(hrefPrefix, filePath, rootMeta.IsDir)
+	entries = append(entries, metaToEntry(href, rootMeta, u.Username, displayName, readOnly(filePath)))
 
 	// If depth=1 and target is a directory, list children
 	if depth == "1" && rootMeta.IsDir {
@@ -171,11 +177,8 @@ func (h *WebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, u
 		}
 		for i := range children {
 			child := &children[i]
-			childHref := hrefPrefix + child.Path
-			if child.IsDir && !strings.HasSuffix(childHref, "/") {
-				childHref += "/"
-			}
-			entries = append(entries, metaToEntry(childHref, child, u.Username, displayName))
+			childHref := davHref(hrefPrefix, child.Path, child.IsDir)
+			entries = append(entries, metaToEntry(childHref, child, u.Username, displayName, readOnly(child.Path)))
 		}
 	}
 
@@ -230,15 +233,32 @@ func (h *WebDAVHandler) handleGet(w http.ResponseWriter, r *http.Request, u *use
 	}
 	cogplugin.UntrustedContent(w, meta.MimeType)
 	w.Header().Set("ETag", `"`+meta.ETag+`"`)
+
+	// A seekable file is served with ranges and conditional requests,
+	// which media players and resuming clients depend on; anything else
+	// streams whole.
+	if rs, ok := f.(io.ReadSeeker); ok {
+		http.ServeContent(w, r, meta.Name, time.Unix(meta.MTime, 0).UTC(), rs)
+		return
+	}
 	w.Header().Set("Content-Length", strconv.FormatInt(meta.Size, 10))
 	w.Header().Set("Last-Modified", time.Unix(meta.MTime, 0).UTC().Format(http.TimeFormat))
-
 	if r.Method == http.MethodHead {
 		return
 	}
 	if _, err := io.Copy(w, f); err != nil {
 		h.Log.Error("GET copy error", "err", err)
 	}
+}
+
+// davHref is the href of p under prefix: a URL, so its path is
+// percent-encoded, and a directory's ends in a slash.
+func davHref(prefix, p string, isDir bool) string {
+	href := prefix + (&url.URL{Path: p}).EscapedPath()
+	if isDir && !strings.HasSuffix(href, "/") {
+		href += "/"
+	}
+	return href
 }
 
 // --- PUT ---
@@ -407,7 +427,7 @@ func (h *WebDAVHandler) handleCopy(w http.ResponseWriter, r *http.Request, u *us
 	}
 	if err != nil {
 		h.Log.Error("COPY", "user", u.Username, "from", srcPath, "to", newPath, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -486,7 +506,8 @@ func (h *WebDAVHandler) HandleDirectDownload(baseURL string) http.HandlerFunc {
 
 		token, err := h.createDirectToken(u.ID, fileID)
 		if err != nil {
-			writeOCSError(w, http.StatusInternalServerError, 500, "create token: "+err.Error())
+			httperr.Log(r, fmt.Errorf("create token: %w", err))
+			writeOCSError(w, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
 		url := baseURL + "/remote.php/dav/direct/" + token
@@ -651,7 +672,7 @@ func (h *WebDAVHandler) handleProppatch(w http.ResponseWriter, r *http.Request, 
 			return
 		} else if err != nil {
 			h.Log.Error("PROPPATCH favorite", "user", u.Username, "path", filePath, "err", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 	}
@@ -697,7 +718,7 @@ func (h *WebDAVHandler) handleReport(w http.ResponseWriter, r *http.Request, u *
 	favorites, err := h.Files.Favorites(u.Username)
 	if err != nil {
 		h.Log.Error("REPORT favorites", "user", u.Username, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -707,14 +728,16 @@ func (h *WebDAVHandler) handleReport(w http.ResponseWriter, r *http.Request, u *
 		displayName = u.Username
 	}
 
+	readOnly, err := h.Files.ReadOnlyChecker(u.Username)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
 	var entries []propfindEntry
 	for i := range favorites {
 		f := &favorites[i]
-		href := hrefPrefix + f.Path
-		if f.IsDir && !strings.HasSuffix(href, "/") {
-			href += "/"
-		}
-		entries = append(entries, metaToEntry(href, f, u.Username, displayName))
+		href := davHref(hrefPrefix, f.Path, f.IsDir)
+		entries = append(entries, metaToEntry(href, f, u.Username, displayName, readOnly(f.Path)))
 	}
 
 	writeMultiStatus(h.Log, w, entries)
@@ -770,7 +793,7 @@ func (h *WebDAVHandler) handleUnlock(w http.ResponseWriter, _ *http.Request, _ *
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func metaToEntry(href string, meta *files.FileMeta, ownerID, ownerDisplayName string) propfindEntry {
+func metaToEntry(href string, meta *files.FileMeta, ownerID, ownerDisplayName string, readOnly bool) propfindEntry {
 	var rt resourceType
 	if meta.IsDir {
 		rt.Collection = &struct{}{}
@@ -781,9 +804,9 @@ func metaToEntry(href string, meta *files.FileMeta, ownerID, ownerDisplayName st
 		name = ""
 	}
 
-	permissions := "RGDNVCK" // full permissions for owned files
-	if meta.IsDir {
-		permissions = "RGDNVCK"
+	permissions := "RGDNVCK" // read, share, delete, rename, move, create, mkdir
+	if readOnly {
+		permissions = "RG"
 	}
 
 	favInt := 0
