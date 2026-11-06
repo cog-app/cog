@@ -52,7 +52,19 @@ func (h *adminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
-	ui.Render(w, r, adminUsersPage(pd, h.p.Users.List(), retired, flashMsg, flashKind))
+	// An agent is listed with its owner, so an admin can tell whose it is.
+	owners := map[string]string{}
+	for u, err := range h.p.Users.List() {
+		if err != nil {
+			h.p.Log.Error("list users", "err", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		if !u.IsAgent() {
+			owners[u.ID] = u.Username
+		}
+	}
+	ui.Render(w, r, adminUsersPage(pd, h.p.Users.List(), retired, flashMsg, flashKind, owners))
 }
 
 // ReleaseUsername lets a new account take the name of a deleted one.

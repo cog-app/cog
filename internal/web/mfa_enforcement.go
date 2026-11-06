@@ -17,7 +17,7 @@ func mfaEnforcement(p *services.Providers) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			u := auth.UserFromContext(r.Context())
-			if u == nil || u.MFAMethod != "" || auth.SessionIDFromContext(r.Context()) == "" {
+			if u == nil || u.MFAMethod != "" || u.IsAgent() || auth.SessionIDFromContext(r.Context()) == "" {
 				next.ServeHTTP(w, r)
 				return
 			}

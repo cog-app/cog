@@ -187,10 +187,25 @@ func (h *LoginFlowHandler) HandleGrant(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		var errMsg string
-		if r.URL.Query().Get("error") == "csrf" {
+		switch e := r.URL.Query().Get("error"); e {
+		case "":
+		case "csrf":
 			errMsg = "Your session changed while this page was open. Try again."
+		default:
+			errMsg = e
+		}
+		agents, err := h.Users.ListAgents(u.ID)
+		if err != nil {
+			slog.Error("login flow: list agents", "user", u.Username, "err", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		var options []ui.AgentOption
+		for _, a := range agents {
+			options = append(options, ui.AgentOption{ID: a.ID, Name: a.Username})
 		}
 		h.renderGrantPage(w, r, ui.LoginFlowGrant{
+			Agents:    options,
 			Token:     loginToken,
 			CSRFToken: csrf,
 			Username:  u.Username,
@@ -238,17 +253,38 @@ func (h *LoginFlowHandler) processGrant(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	// Create an app password tied to the authenticated browser session's user.
-	appPW, ap, err := h.AppPWs.Create(u.ID, fmt.Sprintf("%s (%s)", client, h.Clock().Format("2006-01-02 15:04")))
+	// The password is the user's own, or an agent's they own: the app then
+	// signs in as the agent and reaches only what is shared with it.
+	principal := u
+	switch as := r.FormValue("grant_as"); as {
+	case "", "me":
+	case "new":
+		agent, err := h.Users.CreateAgent(u.ID, strings.TrimSpace(r.FormValue("agent_name")))
+		if err != nil {
+			http.Redirect(w, r, "/index.php/login/v2/grant?token="+url.QueryEscape(loginToken)+"&error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			return
+		}
+		principal = agent
+	default:
+		agent, err := h.Users.GetByID(as)
+		if err != nil || agent.OwnerID != u.ID {
+			http.Error(w, "not your agent", http.StatusForbidden)
+			return
+		}
+		principal = agent
+	}
+
+	// Create an app password tied to the principal.
+	appPW, ap, err := h.AppPWs.Create(principal.ID, fmt.Sprintf("%s (%s)", client, h.Clock().Format("2006-01-02 15:04")))
 	if err != nil {
-		slog.Error("login flow: create app password", "user", u.Username, "err", err)
+		slog.Error("login flow: create app password", "user", principal.Username, "err", err)
 		http.Error(w, "Failed to create app password", http.StatusInternalServerError)
 		return
 	}
-	if err := h.flows().grant(loginToken, u.Username, appPW); err != nil {
+	if err := h.flows().grant(loginToken, principal.Username, appPW); err != nil {
 		// Granted twice at once, or expired meanwhile: the password minted
 		// for it would reach nobody.
-		if derr := h.AppPWs.Delete(ap.ID, u.ID); derr != nil {
+		if derr := h.AppPWs.Delete(ap.ID, principal.ID); derr != nil {
 			slog.Error("login flow: remove unused app password", "user", u.Username, "err", derr)
 		}
 		if errors.Is(err, errFlowNotFound) {

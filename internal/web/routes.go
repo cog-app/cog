@@ -153,6 +153,12 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("DELETE /settings/avatar", csrfWeb(http.HandlerFunc(avatarH.Delete)))
 
 	// Settings: groups
+	agentsH := agentsHandler{h}
+	mux.Handle("GET /settings/agents", auth.RequireAuthWeb(http.HandlerFunc(agentsH.Show)))
+	mux.Handle("POST /settings/agents", csrfWeb(http.HandlerFunc(agentsH.Create)))
+	mux.Handle("POST /settings/agents/{id}/tokens", csrfWeb(http.HandlerFunc(agentsH.CreateToken)))
+	mux.Handle("POST /settings/agents/{id}/tokens/{token}/delete", csrfWeb(http.HandlerFunc(agentsH.DeleteToken)))
+	mux.Handle("POST /settings/agents/{id}/delete", csrfWeb(http.HandlerFunc(agentsH.Delete)))
 	mux.Handle("GET /settings/groups", auth.RequireAuthWeb(http.HandlerFunc(groupH.ListGroups)))
 	mux.Handle("GET /settings/groups/{id}", auth.RequireAuthWeb(http.HandlerFunc(groupH.ShowGroup)))
 	mux.Handle("POST /settings/groups", csrfWeb(http.HandlerFunc(groupH.CreateGroup)))
@@ -404,7 +410,26 @@ func New(p *services.Providers) http.Handler {
 	// to opt in. Sync and API clients send neither Sec-Fetch-Site nor Origin
 	// and pass.
 	crossOrigin := http.NewCrossOriginProtection()
-	return bodylimit.Middleware(bodylimit.Default, crossOrigin.Handler(securityHeaders(p, authMW.Wrap(mfaEnforcement(p)(pluginOriginGate(p, htmlNotFound(p, mux)))))))
+	return bodylimit.Middleware(bodylimit.Default, crossOrigin.Handler(securityHeaders(p, authMW.Wrap(agentGate(mfaEnforcement(p)(pluginOriginGate(p, htmlNotFound(p, mux))))))))
+}
+
+// agentGate keeps an agent account to what a user who received a share can
+// do: it has no settings of its own, no admin, and cannot grant an app its
+// own credentials. Its reach is the shares made with it, which every
+// handler already checks by user.
+func agentGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if u := auth.UserFromContext(r.Context()); u != nil && u.IsAgent() {
+			switch {
+			case strings.HasPrefix(r.URL.Path, "/settings/"),
+				strings.HasPrefix(r.URL.Path, "/admin/"),
+				strings.HasPrefix(r.URL.Path, "/index.php/login/v2/grant"):
+				http.Error(w, "an agent account has no settings; its owner manages it", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // pluginOriginGate keeps a plugin origin to the plugin's own routes and the

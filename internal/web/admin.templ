@@ -15,7 +15,7 @@ import (
 )
 
 // --- Users ---
-templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], retired []user.RetiredName, flash string, flashKind string) {
+templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], retired []user.RetiredName, flash string, flashKind string, agentOwners map[string]string) {
 	@ui.AdminSidebarPage(pd, "users") {
 		@ui.PageHeader("Users", nil) {
 			<a class="btn btn-primary" href="/admin/users/new">
@@ -57,6 +57,8 @@ templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], retired 
 								<td>
 									if u.IsAdmin {
 										<span class="badge badge-admin">Admin</span>
+									} else if u.IsAgent() {
+										<span class="text-sm text-muted">Agent of { agentOwners[u.OwnerID] }</span>
 									} else {
 										<span class="text-sm text-muted">User</span>
 									}

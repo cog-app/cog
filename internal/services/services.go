@@ -797,6 +797,17 @@ func (p *Providers) DeleteUser(id string) error {
 	if err != nil {
 		return err
 	}
+	// An owner's agents go with them: nothing else would issue them
+	// credentials or answer for what they do.
+	agents, err := p.Users.ListAgents(id)
+	if err != nil {
+		return fmt.Errorf("list agents of %s: %w", u.Username, err)
+	}
+	for _, a := range agents {
+		if err := p.DeleteUser(a.ID); err != nil {
+			return fmt.Errorf("delete agent %s of %s: %w", a.Username, u.Username, err)
+		}
+	}
 	var shareIDs []string
 	for _, list := range []iter.Seq2[share.Record, error]{p.Shares.ListByOwner(id), p.Shares.ListBySubject(id)} {
 		for rec, err := range list {

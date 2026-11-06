@@ -28,6 +28,9 @@ var ErrPasswordIncorrect = errors.New("incorrect password")
 // neither belong to nor own.
 var ErrSubjectNotAllowed = errors.New("you may not share with that audience")
 
+// ErrAgentCannotShare refuses a share made by an agent account.
+var ErrAgentCannotShare = errors.New("an agent cannot share")
+
 // Record is a canonical global share record.
 type Record struct {
 	ID           string
@@ -116,6 +119,14 @@ func (s *Store) Create(ownerUserID, resourceType, resourceID, subjectType, subje
 // audience without their consent, so a user may not put something before
 // everyone on the server, or before a group they are not part of.
 func (s *Store) mayShareWith(ownerUserID, subjectType, subjectID string) error {
+	// An agent owns nothing to share: what it reaches is shared with it.
+	var agent bool
+	if err := s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM users WHERE id = ? AND owner_id != '')`, ownerUserID).Scan(&agent); err != nil {
+		return fmt.Errorf("check sharer: %w", err)
+	}
+	if agent {
+		return ErrAgentCannotShare
+	}
 	var ok bool
 	var err error
 	switch subjectType {
