@@ -276,7 +276,7 @@ func (g *grpcPlugin) proxy(w http.ResponseWriter, r *http.Request, routeKey, res
 	if err != nil {
 		g.log.Error("plugin request failed",
 			"plugin", g.id, "method", r.Method, "path", r.URL.Path, "err", err)
-		g.errorPage(w, r, statusForRPCError(err))
+		g.errorPage(w, r, statusForRPCError(r.Context(), err))
 		return
 	}
 
@@ -292,11 +292,18 @@ func (g *grpcPlugin) proxy(w http.ResponseWriter, r *http.Request, routeKey, res
 // statusForRPCError maps a failed plugin call to a status for the browser. A
 // transport failure means the process is gone or going, which is temporary;
 // anything else is the plugin reporting a fault, including a panic the plugin's
-// recovery interceptor turned into codes.Internal.
-func statusForRPCError(err error) int {
+// recovery interceptor turned into codes.Internal. A call canceled while the
+// request's own context is still live was canceled by the host closing the
+// connection to a process it just reaped, which is the same outage.
+func statusForRPCError(ctx context.Context, err error) int {
 	switch status.Code(err) {
 	case codes.Unavailable, codes.DeadlineExceeded:
 		return http.StatusServiceUnavailable
+	case codes.Canceled:
+		if ctx.Err() == nil {
+			return http.StatusServiceUnavailable
+		}
+		return http.StatusInternalServerError
 	default:
 		return http.StatusInternalServerError
 	}
