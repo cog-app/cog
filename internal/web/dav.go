@@ -78,7 +78,6 @@ func (a davShares) Create(ownerUserID, resourceType, resourceID, subjectType, su
 	if err != nil {
 		return nil, err
 	}
-	propagateShareCreate(a.p, rec)
 	out := pluginShare(rec)
 	return &out, nil
 }
@@ -88,11 +87,6 @@ func (a davShares) UpdatePermissions(id string, permissions uint32) error {
 }
 
 func (a davShares) Delete(id string) error {
-	rec, err := a.s.Get(id)
-	if err != nil {
-		return err
-	}
-	propagateShareDelete(a.p, rec)
 	return a.s.Delete(id)
 }
 

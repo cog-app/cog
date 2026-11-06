@@ -12,8 +12,6 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
-	"git.duckfam.us/jj-software/cog/internal/search"
-	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -158,14 +156,11 @@ func (h *shareHandler) CreateShareForm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rec, err := h.p.Shares.Create(u.ID, resType, resID, subjectType, subjectID, perms)
-	if err != nil {
+	if _, err := h.p.Shares.Create(u.ID, resType, resID, subjectType, subjectID, perms); err != nil {
 		h.p.Log.Error("share create failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	h.propagateShareCreate(rec)
 
 	// Return the refreshed panel via HTMX.
 	scope := r.FormValue("panel_id")
@@ -228,8 +223,6 @@ func (h *shareHandler) DeleteShareHTMX(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not your share", http.StatusForbidden)
 		return
 	}
-
-	h.propagateShareDelete(rec)
 
 	if err := h.p.Shares.Delete(shareID); err != nil {
 		h.p.Log.Error("delete share", "share", shareID, "err", err)
@@ -463,44 +456,10 @@ func (h *shareHandler) CreateFederatedShareForm(w http.ResponseWriter, r *http.R
 		h.p.Log.Error("record federated share remote id", "id", fs.ID, "remote", remoteHost, "err", err)
 	}
 
-	h.propagateShareCreate(rec)
-
 	// Return refreshed panel.
 	scope := r.FormValue("panel_id")
 	r.URL.RawQuery = fmt.Sprintf("type=%s&id=%s&scope=%s", resType, resID, scope)
 	h.SharePanel(w, r)
-}
-
-func (h *shareHandler) propagateShareCreate(rec *share.Record) { propagateShareCreate(h.p, rec) }
-
-func (h *shareHandler) propagateShareDelete(rec *share.Record) { propagateShareDelete(h.p, rec) }
-
-// propagateShareCreate indexes a new share's resource for its recipients.
-func propagateShareCreate(p *services.Providers, rec *share.Record) {
-	if p.Search == nil || p.Search.Propagator == nil || rec == nil {
-		return
-	}
-	p.Search.Propagator.OnShareCreate(searchShare(rec))
-}
-
-// propagateShareDelete removes a share's resource from its recipients'
-// indexes.
-func propagateShareDelete(p *services.Providers, rec *share.Record) {
-	if p.Search == nil || p.Search.Propagator == nil || rec == nil {
-		return
-	}
-	p.Search.Propagator.OnShareDelete(searchShare(rec))
-}
-
-func searchShare(rec *share.Record) *search.ShareRecord {
-	return &search.ShareRecord{
-		ID:           rec.ID,
-		OwnerUserID:  rec.OwnerUserID,
-		ResourceType: rec.ResourceType,
-		ResourceID:   rec.ResourceID,
-		SubjectType:  rec.SubjectType,
-		SubjectID:    rec.SubjectID,
-	}
 }
 
 func defaultPermissionLevels() []plugin.PermissionLevel {

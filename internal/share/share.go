@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"iter"
@@ -452,6 +453,67 @@ func (s *Store) CheckAccessGrantedBy(userID, resourceType, resourceID string, gr
 	}
 
 	return decision, rows.Err()
+}
+
+// OwnedRef names a resource as it was shared: the username of the share's
+// owner, and the resource's type and ID.
+type OwnedRef struct {
+	Owner        string
+	ResourceType string
+	ResourceID   string
+}
+
+// Readable reports which of refs userID can read now, through a live share
+// its owner made to them, a group they are in, or everyone, and that they
+// have not declined. It is one query however many refs there are, for
+// filtering a page of search results.
+func (s *Store) Readable(userID string, refs []OwnedRef) (map[OwnedRef]bool, error) {
+	out := make(map[OwnedRef]bool, len(refs))
+	if len(refs) == 0 {
+		return out, nil
+	}
+	type ref struct {
+		O string `json:"o"`
+		T string `json:"t"`
+		I string `json:"i"`
+	}
+	list := make([]ref, len(refs))
+	for i, r := range refs {
+		list[i] = ref{r.Owner, r.ResourceType, r.ResourceID}
+	}
+	b, err := json.Marshal(list)
+	if err != nil {
+		return nil, fmt.Errorf("readable: %w", err)
+	}
+	rows, err := s.db.Query(`
+		SELECT DISTINCT u.username, s.resource_type, s.resource_id
+		FROM json_each(?1) r
+		JOIN users u ON u.username = json_extract(r.value, '$.o')
+		JOIN shares s ON s.owner_user_id = u.id
+			AND s.resource_type = json_extract(r.value, '$.t')
+			AND s.resource_id = json_extract(r.value, '$.i')
+		WHERE (
+			(s.subject_type = 'USER' AND s.subject_id = ?2)
+			OR (s.subject_type = 'GROUP' AND s.subject_id IN (
+				SELECT ancestor_group_id FROM group_membership_closure WHERE descendant_user_id = ?2
+			))
+			OR s.subject_type = 'INSTANCE'
+		)
+		AND (s.expiration IS NULL OR s.expiration > ?3)
+		AND s.id NOT IN (SELECT share_id FROM share_declines WHERE user_id = ?2)`,
+		string(b), userID, s.clock().Unix())
+	if err != nil {
+		return nil, fmt.Errorf("readable: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var r OwnedRef
+		if err := rows.Scan(&r.Owner, &r.ResourceType, &r.ResourceID); err != nil {
+			return nil, fmt.Errorf("readable: %w", err)
+		}
+		out[r] = true
+	}
+	return out, rows.Err()
 }
 
 // CheckAccessWithHierarchy checks access for a resource, and if not found,

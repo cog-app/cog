@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"golang.org/x/sync/singleflight"
@@ -42,6 +43,13 @@ type Manager struct {
 
 	// Propagator handles indexing shared resources into recipients' indices.
 	Propagator *Propagator
+
+	// SharedAccess reports which shared resources a user can read now. A
+	// recipient's index holds copies of what was shared with them, and a
+	// copy outlives the access it came from whenever no event removes it —
+	// a share expiring, a member leaving a group — so every shared hit is
+	// checked when it is found. Without it, shared hits are dropped.
+	SharedAccess func(username string, refs []SharedRef) (map[SharedRef]bool, error)
 
 	// drainer moves captured row changes into the per-user collectors.
 	drainer *drainer
@@ -277,13 +285,76 @@ func (m *Manager) SearchSystem(query string, limit, offset int) (*Result, error)
 	return m.systemIndex.Search(query, limit, offset)
 }
 
-// SearchUser queries a user's per-user index.
+// SearchUser queries a user's per-user index. Copies of shared resources
+// the user can no longer read are left out, and removed from the index.
 func (m *Manager) SearchUser(username, query string, limit, offset int) (*Result, error) {
 	us, err := m.ensureUserIndex(username)
 	if err != nil {
 		return nil, err
 	}
-	return us.index.Search(query, limit, offset)
+	res, err := us.index.Search(query, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return m.filterShared(username, us, res)
+}
+
+// SharedRef names a shared resource by its owner's username, its type and
+// its ID: what a copy in a recipient's index was made from.
+type SharedRef struct {
+	Owner        string
+	ResourceType string
+	ResourceID   string
+}
+
+// parseSharedDocID reverses sharedDocID. A username holds no colon and a
+// resource type exactly one, so the ID is everything after the type.
+func parseSharedDocID(id string) (SharedRef, bool) {
+	rest, ok := strings.CutPrefix(id, "shared:")
+	if !ok {
+		return SharedRef{}, false
+	}
+	parts := strings.SplitN(rest, ":", 4)
+	if len(parts) != 4 {
+		return SharedRef{}, false
+	}
+	return SharedRef{Owner: parts[0], ResourceType: parts[1] + ":" + parts[2], ResourceID: parts[3]}, true
+}
+
+func (m *Manager) filterShared(username string, us *userSearch, res *Result) (*Result, error) {
+	var refs []SharedRef
+	for _, h := range res.Hits {
+		if ref, ok := parseSharedDocID(h.ID); ok {
+			refs = append(refs, ref)
+		}
+	}
+	if len(refs) == 0 {
+		return res, nil
+	}
+	readable := map[SharedRef]bool{}
+	if m.SharedAccess != nil {
+		var err error
+		if readable, err = m.SharedAccess(username, refs); err != nil {
+			return nil, fmt.Errorf("check shared results: %w", err)
+		}
+	}
+	kept := res.Hits[:0]
+	var stale []string
+	for _, h := range res.Hits {
+		if ref, ok := parseSharedDocID(h.ID); ok && !readable[ref] {
+			stale = append(stale, h.ID)
+			continue
+		}
+		kept = append(kept, h)
+	}
+	res.Hits = kept
+	res.Total -= len(stale)
+	if len(stale) > 0 {
+		if err := us.index.Batch(nil, stale); err != nil {
+			m.log.Error("remove stale shared results", "user", username, "err", err)
+		}
+	}
+	return res, nil
 }
 
 // IndexSharedDocument indexes a document into a user's search index.

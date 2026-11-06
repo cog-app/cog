@@ -15,9 +15,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/jmap"
 	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/quota"
-	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
-	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/plugin"
 	filesPlugin "git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/ui"
@@ -282,23 +280,6 @@ func New(p *services.Providers) http.Handler {
 			FedClient:  p.FedClient,
 			Activities: p.Activities,
 			BaseURL:    p.Config.BaseURL,
-		}
-		if p.Search != nil && p.Search.Propagator != nil {
-			prop := p.Search.Propagator
-			sharingH.OnShareCreate = func(rec *share.Record) {
-				prop.OnShareCreate(&search.ShareRecord{
-					ID: rec.ID, OwnerUserID: rec.OwnerUserID,
-					ResourceType: rec.ResourceType, ResourceID: rec.ResourceID,
-					SubjectType: rec.SubjectType, SubjectID: rec.SubjectID,
-				})
-			}
-			sharingH.OnShareDelete = func(rec *share.Record) {
-				prop.OnShareDelete(&search.ShareRecord{
-					ID: rec.ID, OwnerUserID: rec.OwnerUserID,
-					ResourceType: rec.ResourceType, ResourceID: rec.ResourceID,
-					SubjectType: rec.SubjectType, SubjectID: rec.SubjectID,
-				})
-			}
 		}
 		for _, prefix := range []string{"/ocs/v1.php", "/ocs/v2.php"} {
 			mux.Handle("GET "+prefix+"/apps/files_sharing/api/v1/shares", auth.RequireAuth(http.HandlerFunc(sharingH.HandleListShares)))

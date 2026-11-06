@@ -43,6 +43,8 @@ type Propagator struct {
 	// named after the table the rows live in. Without this the propagator
 	// looks up a document ID nothing ever wrote.
 	ResolveSourceName func(resourceType string) (string, bool)
+	// LookupShare returns a share as it is now, or nil once it is gone.
+	LookupShare func(id string) (*ShareRecord, error)
 }
 
 type propagateEvent struct {
@@ -93,6 +95,26 @@ func (p *Propagator) Stop() {
 	}
 	close(p.quit)
 	<-p.done
+}
+
+// OnShareChange follows a share that was created, changed, declined or
+// deleted: while it exists its resource is indexed for its recipients, and
+// once it is gone it is removed from theirs. rec is the share as it was, for
+// finding the recipients of one that no longer exists.
+func (p *Propagator) OnShareChange(rec *ShareRecord) {
+	if rec == nil || p.LookupShare == nil {
+		return
+	}
+	now, err := p.LookupShare(rec.ID)
+	if err != nil {
+		p.log.Error("propagate: look up share", "share", rec.ID, "err", err)
+		return
+	}
+	if now == nil {
+		p.OnShareDelete(rec)
+		return
+	}
+	p.OnShareCreate(now)
 }
 
 // OnShareCreate queues a share-create event for propagation.

@@ -203,7 +203,59 @@ func WireSearch(log *slog.Logger, p *Providers, mgr *search.Manager) {
 		return pluginID + ":" + def.Table, true
 	}
 
+	prop.LookupShare = func(id string) (*search.ShareRecord, error) {
+		rec, err := p.Shares.Get(id)
+		if errors.Is(err, share.ErrNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return searchShare(rec), nil
+	}
 	mgr.Propagator = prop
+
+	// Every way of making or removing a share goes through the store, so
+	// its change hook is the one place recipients' indexes follow shares.
+	prev := p.Shares.OnChange
+	p.Shares.OnChange = func(rec share.Record) {
+		if prev != nil {
+			prev(rec)
+		}
+		prop.OnShareChange(searchShare(&rec))
+	}
+
+	mgr.SharedAccess = func(username string, refs []search.SharedRef) (map[search.SharedRef]bool, error) {
+		u, err := p.Users.GetByUsername(username)
+		if err != nil {
+			return nil, fmt.Errorf("shared results for %s: %w", username, err)
+		}
+		owned := make([]share.OwnedRef, len(refs))
+		for i, r := range refs {
+			owned[i] = share.OwnedRef(r)
+		}
+		readable, err := p.Shares.Readable(u.ID, owned)
+		if err != nil {
+			return nil, err
+		}
+		out := make(map[search.SharedRef]bool, len(readable))
+		for r := range readable {
+			out[search.SharedRef(r)] = true
+		}
+		return out, nil
+	}
+}
+
+// searchShare is a share as the search propagator sees it.
+func searchShare(rec *share.Record) *search.ShareRecord {
+	return &search.ShareRecord{
+		ID:           rec.ID,
+		OwnerUserID:  rec.OwnerUserID,
+		ResourceType: rec.ResourceType,
+		ResourceID:   rec.ResourceID,
+		SubjectType:  rec.SubjectType,
+		SubjectID:    rec.SubjectID,
+	}
 }
 
 // NewFromDB constructs providers from an existing database connection.
