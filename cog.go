@@ -105,8 +105,22 @@ func newLogger(cfg config.Config) (*slog.Logger, *logbuf.Buffer) {
 // is parsed, and the command then runs on the same graph: a second would
 // start every process plugin twice and leave the first set running.
 func openProviders(plugins ...plugin.Plugin) (*services.Providers, error) {
+	return open(false, plugins)
+}
+
+// openAdminProviders is openProviders for an admin command, which uses
+// none of what process plugins serve: their binaries are found, so the
+// names they hold stay reserved, but not started.
+func openAdminProviders(plugins ...plugin.Plugin) (*services.Providers, error) {
+	return open(true, plugins)
+}
+
+// open builds the process's one service graph; the first caller decides
+// whether process plugins start.
+func open(namesOnly bool, plugins []plugin.Plugin) (*services.Providers, error) {
 	shared.once.Do(func() {
 		cfg := configFromEnv()
+		cfg.ProcessPluginNamesOnly = namesOnly
 		log, buf := newLogger(cfg)
 		shared.p, shared.err = services.New(log, cfg, plugins...)
 		if shared.err == nil {
@@ -142,20 +156,33 @@ func Main(plugins ...plugin.Plugin) {
 	root.AddCommand(shellCmd(plugins))
 	root.AddCommand(doctorCmd(plugins))
 
-	// Discover and register plugin CLI commands.
-	// Close providers after Execute — not via OnFinalize or PersistentPostRun
-	// which interfere with shell tab-completion and subcommand lifecycle.
-	if pluginProviders := addPluginCommands(root, plugins); pluginProviders != nil {
-		defer func() {
-			if err := pluginProviders.Close(); err != nil {
-				fmt.Fprintf(os.Stderr, "close: %v\n", err)
-			}
-		}()
+	// Discover and register plugin CLI commands, which means starting the
+	// plugins — so only when the command line names no built-in command:
+	// `cog user list` or an SSH login shell should not start every plugin
+	// binary to find commands it will not run. Close providers after
+	// Execute — not via OnFinalize or PersistentPostRun, which interfere
+	// with shell tab-completion and subcommand lifecycle.
+	if !namesBuiltin(root, os.Args[1:]) {
+		if pluginProviders := addPluginCommands(root, plugins); pluginProviders != nil {
+			defer func() {
+				if err := pluginProviders.Close(); err != nil {
+					fmt.Fprintf(os.Stderr, "close: %v\n", err)
+				}
+			}()
+		}
 	}
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// namesBuiltin reports whether args run one of root's own commands, which
+// opens what it needs itself. Bare `cog` (serve), help and anything root
+// does not know may be, or list, a plugin's command.
+func namesBuiltin(root *cobra.Command, args []string) bool {
+	cmd, _, err := root.Find(args)
+	return err == nil && cmd != root && cmd.Name() != "help"
 }
 
 // addPluginCommands registers plugin CLI commands by initializing services

@@ -39,4 +39,9 @@ type Config struct {
 	// DisableProcessPlugins skips loading cog-plugin-* binaries from PATH.
 	// Tests set this so they don't depend on what's installed on the machine.
 	DisableProcessPlugins bool `json:"disable_process_plugins"`
+
+	// ProcessPluginNamesOnly finds the cog-plugin-* binaries on PATH, so
+	// their IDs stay reserved, without starting them: for a command that
+	// uses none of what they serve.
+	ProcessPluginNamesOnly bool `json:"-"`
 }

@@ -48,7 +48,7 @@ func userCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "List all users",
 		Args:  cobra.NoArgs,
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -74,7 +74,7 @@ func userCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "Create a user",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -115,7 +115,7 @@ func userCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "Delete a user",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -139,7 +139,7 @@ func userCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "Set a user's password",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -166,7 +166,7 @@ func userCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "Set a user's admin status",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -191,7 +191,7 @@ func userCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "Print the user owning an SSH key (for sshd AuthorizedKeysCommand)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -222,7 +222,7 @@ func groupCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "List all groups",
 		Args:  cobra.NoArgs,
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -243,7 +243,7 @@ func groupCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "Create a group",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -263,7 +263,7 @@ func groupCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "Delete a group",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -286,7 +286,7 @@ func groupCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "List members of a group",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -311,7 +311,7 @@ func groupCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "Add a user to a group",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -344,7 +344,7 @@ func groupCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "Remove a user from a group",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -382,7 +382,7 @@ func volumeCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "List all volumes",
 		Args:  cobra.NoArgs,
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -403,7 +403,7 @@ func volumeCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "Create a volume",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -426,7 +426,7 @@ func volumeCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "Delete a volume",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -460,7 +460,7 @@ func settingCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "Get a system setting",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -480,7 +480,7 @@ func settingCmd(plugins []plugin.Plugin) *cobra.Command {
 		Short: "Set a system setting",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
-			p, err := openProviders(plugins...)
+			p, err := openAdminProviders(plugins...)
 			if err != nil {
 				return err
 			}

@@ -342,7 +342,11 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	}
 
 	// Discover and load process plugins from PATH.
-	if !cfg.DisableProcessPlugins {
+	switch {
+	case cfg.DisableProcessPlugins:
+	case cfg.ProcessPluginNamesOnly:
+		users.Reserve(registry.ProcessPluginIDs()...)
+	default:
 		registry.DiscoverProcessPlugins()
 	}
 
