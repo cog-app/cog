@@ -7,11 +7,14 @@ import (
 	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/sandbox"
 
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
@@ -41,6 +44,7 @@ func init() {
 	}
 	// Check that Python has Pillow available for PSD support.
 	if pythonPath != "" {
+		// unsandboxed: reads no input, only checks Pillow is installed.
 		if err := exec.Command(pythonPath, "-c", "from PIL import Image").Run(); err != nil {
 			pythonPath = ""
 		}
@@ -263,25 +267,37 @@ func (p *Plugin) convertToPNG(srcPath, mimeType, etag string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
+	// The converters parse what a user uploaded, so each runs sandboxed,
+	// reading only the upload and writing only the cache.
+	spec := sandbox.Spec{Read: []string{srcPath}, Write: []string{cacheDir}}
 	var cmd *exec.Cmd
 	switch {
 	case isInkscapeFormat(mimeType):
-		cmd = exec.CommandContext(ctx, inkscapePath,
+		// Inkscape draws the files an SVG links to into the PNG the uploader
+		// gets back, so links outside the document are refused even where
+		// the sandbox would hide the files.
+		if mimeType == "image/svg+xml" {
+			if err := checkSVG(srcPath); err != nil {
+				return "", err
+			}
+		}
+		cmd = sandbox.CommandContext(ctx, spec, inkscapePath,
 			srcPath, "--export-type=png", "--export-filename="+cachePath)
 	case (isXCF(mimeType) || isPSD(mimeType)) && MagickAvailable() && !magickIsGM:
-		// ImageMagick handles both XCF and PSD.
-		cmd = exec.CommandContext(ctx, magickPath,
-			srcPath+"[0]", "-flatten", cachePath)
+		// ImageMagick handles both XCF and PSD. The coder prefixes stop it
+		// sniffing the content and picking a coder that reads other files,
+		// such as MVG's text:@/path.
+		cmd = sandbox.CommandContext(ctx, spec, magickPath,
+			magickCoder(mimeType)+":"+srcPath+"[0]", "-flatten", "png:"+cachePath)
 	case isXCF(mimeType) && magickIsGM:
 		// GraphicsMagick handles XCF but not PSD.
-		cmd = exec.CommandContext(ctx, magickPath,
-			"convert", srcPath+"[0]", "-flatten", cachePath)
+		cmd = sandbox.CommandContext(ctx, spec, magickPath,
+			"convert", "xcf:"+srcPath+"[0]", "-flatten", "png:"+cachePath)
 	case isPSD(mimeType) && PillowAvailable():
-		// Pillow handles PSD reliably.
-		script := fmt.Sprintf(
-			"from PIL import Image; Image.open(%q).convert('RGBA').save(%q)",
+		// Pillow handles PSD reliably. The paths are arguments, not source.
+		cmd = sandbox.CommandContext(ctx, spec, pythonPath, "-c",
+			"import sys; from PIL import Image; Image.open(sys.argv[1], formats=['PSD']).convert('RGBA').save(sys.argv[2], 'PNG')",
 			srcPath, cachePath)
-		cmd = exec.CommandContext(ctx, pythonPath, "-c", script)
 	default:
 		return "", fmt.Errorf("unsupported format: %s", mimeType)
 	}
@@ -295,6 +311,15 @@ func (p *Plugin) convertToPNG(srcPath, mimeType, etag string) (string, error) {
 	}
 
 	return cachePath, nil
+}
+
+// magickCoder names the ImageMagick coder for a layered format convertToPNG
+// hands it.
+func magickCoder(mimeType string) string {
+	if isPSD(mimeType) {
+		return "psd"
+	}
+	return "xcf"
 }
 
 // PreviewPDF converts an office document to PDF via LibreOffice and caches the result.
@@ -344,14 +369,26 @@ func (p *Plugin) PreviewPDF(username, filePath string) (*os.File, error) {
 		return nil, fmt.Errorf("write temp: %w", err)
 	}
 
-	// Serialize LibreOffice invocations to avoid lock file conflicts.
+	// Each conversion gets a fresh profile, so one document cannot change
+	// how the next is opened, set to run no macros and fetch nothing a
+	// document links to.
+	profile := filepath.Join(tmpDir, "profile")
+	if err := os.MkdirAll(filepath.Join(profile, "user"), 0o700); err != nil {
+		return nil, fmt.Errorf("create libreoffice profile: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(profile, "user", "registrymodifications.xcu"), []byte(libreOfficeSettings), 0o600); err != nil {
+		return nil, fmt.Errorf("create libreoffice profile: %w", err)
+	}
+
+	// One conversion at a time: each is a whole LibreOffice process.
 	loMu.Lock()
 	defer loMu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, libreOfficePath,
+	cmd := sandbox.CommandContext(ctx, sandbox.Spec{Write: []string{tmpDir}}, libreOfficePath,
+		"-env:UserInstallation="+(&url.URL{Scheme: "file", Path: profile}).String(),
 		"--headless", "--convert-to", "pdf", "--outdir", tmpDir, tmpFile)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("libreoffice convert: %w: %s", err, out)
@@ -380,3 +417,20 @@ func (p *Plugin) PreviewPDF(username, filePath string) (*os.File, error) {
 
 	return os.Open(cachePath)
 }
+
+// libreOfficeSettings lock down the profile a conversion runs with: no
+// macros, links in the document never updated (Writer and Calc number
+// "never" differently), formulas never recalculated on load — which is
+// what would run WEBSERVICE or fetch an external reference — and links
+// from documents outside trusted locations blocked.
+const libreOfficeSettings = `<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop></item>
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="DisableMacrosExecution" oor:op="fuse"><value>true</value></prop></item>
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="BlockUntrustedRefererLinks" oor:op="fuse"><value>true</value></prop></item>
+<item oor:path="/org.openoffice.Office.Writer/Content/Update"><prop oor:name="Link" oor:op="fuse"><value>2</value></prop></item>
+<item oor:path="/org.openoffice.Office.Calc/Content/Update"><prop oor:name="Link" oor:op="fuse"><value>1</value></prop></item>
+<item oor:path="/org.openoffice.Office.Calc/Formula/Load"><prop oor:name="OOXMLRecalcMode" oor:op="fuse"><value>1</value></prop></item>
+<item oor:path="/org.openoffice.Office.Calc/Formula/Load"><prop oor:name="ODFRecalcMode" oor:op="fuse"><value>1</value></prop></item>
+</oor:items>
+`

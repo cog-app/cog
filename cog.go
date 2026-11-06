@@ -8,9 +8,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -99,16 +99,42 @@ func newLogger(cfg config.Config) (*slog.Logger, *logbuf.Buffer) {
 	return slog.New(logbuf.NewTeeHandler(handler, buf)), buf
 }
 
-// openProviders creates a services.Providers from env-var config.
+// openProviders returns the process's one service graph for a command,
+// building it on first use. Process plugins serve only HTTP: they register
+// no commands and no doctor checks, so a command finds their binaries, and
+// the names they hold stay reserved, without starting them. That includes
+// cog shell, which an SSH login runs for every session.
 func openProviders(plugins ...plugin.Plugin) (*services.Providers, error) {
-	cfg := configFromEnv()
-	log, buf := newLogger(cfg)
-	p, err := services.New(log, cfg, plugins...)
-	if err != nil {
-		return nil, err
-	}
-	p.LogBuffer = buf
-	return p, nil
+	return open(true, plugins)
+}
+
+// openServerProviders returns the process's one service graph for the
+// server, with the process plugins started.
+func openServerProviders(plugins ...plugin.Plugin) (*services.Providers, error) {
+	return open(false, plugins)
+}
+
+// open builds the process's one service graph from env-var config; the
+// first caller decides whether process plugins start. Main may build it to
+// find plugin commands before the command line is parsed, and the command
+// then runs on the same graph: a second would open everything twice.
+func open(namesOnly bool, plugins []plugin.Plugin) (*services.Providers, error) {
+	shared.once.Do(func() {
+		cfg := configFromEnv()
+		cfg.ProcessPluginNamesOnly = namesOnly
+		log, buf := newLogger(cfg)
+		shared.p, shared.err = services.New(log, cfg, plugins...)
+		if shared.err == nil {
+			shared.p.LogBuffer = buf
+		}
+	})
+	return shared.p, shared.err
+}
+
+var shared struct {
+	once sync.Once
+	p    *services.Providers
+	err  error
 }
 
 // Main starts a Cog server with optional additional plugins.
@@ -131,11 +157,20 @@ func Main(plugins ...plugin.Plugin) {
 	root.AddCommand(shellCmd(plugins))
 	root.AddCommand(doctorCmd(plugins))
 
-	// Discover and register plugin CLI commands.
-	// Close providers after Execute — not via OnFinalize or PersistentPostRun
-	// which interfere with shell tab-completion and subcommand lifecycle.
-	if pluginProviders := addPluginCommands(root, plugins); pluginProviders != nil {
-		defer pluginProviders.DB.Close()
+	// Discover and register plugin CLI commands, which means opening the
+	// service graph — so only when the command line names no built-in
+	// command, which opens what it needs itself. Bare `cog` serves, so its
+	// graph starts the process plugins. Close providers after Execute — not
+	// via OnFinalize or PersistentPostRun, which interfere with shell
+	// tab-completion and subcommand lifecycle.
+	if args := os.Args[1:]; !namesBuiltin(root, args) {
+		if pluginProviders := addPluginCommands(root, plugins, len(args) == 0); pluginProviders != nil {
+			defer func() {
+				if err := pluginProviders.Close(); err != nil {
+					fmt.Fprintf(os.Stderr, "close: %v\n", err)
+				}
+			}()
+		}
 	}
 
 	if err := root.Execute(); err != nil {
@@ -143,10 +178,22 @@ func Main(plugins ...plugin.Plugin) {
 	}
 }
 
+// namesBuiltin reports whether args run one of root's own commands, which
+// opens what it needs itself. Bare `cog` (serve), help and anything root
+// does not know may be, or list, a plugin's command.
+func namesBuiltin(root *cobra.Command, args []string) bool {
+	cmd, _, err := root.Find(args)
+	return err == nil && cmd != root && cmd.Name() != "help"
+}
+
 // addPluginCommands registers plugin CLI commands by initializing services
 // (lightweight — no web server) and querying the registry for registered commands.
-func addPluginCommands(root *cobra.Command, plugins []plugin.Plugin) *services.Providers {
-	p, err := openProviders(plugins...)
+func addPluginCommands(root *cobra.Command, plugins []plugin.Plugin, serving bool) *services.Providers {
+	openGraph := openProviders
+	if serving {
+		openGraph = openServerProviders
+	}
+	p, err := openGraph(plugins...)
 	if err != nil {
 		// The built-in commands still work without services, so this is not
 		// fatal; say why the plugin commands are missing.
@@ -232,5 +279,5 @@ func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 	}
 
 	log.Info("Cog listening", "addr", cfg.Addr)
-	return http.ListenAndServe(cfg.Addr, handler)
+	return serve(ctx, newServer(cfg.Addr, handler), log)
 }

@@ -6,6 +6,7 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"net/smtp"
 	"os"
 	"regexp"
@@ -18,6 +19,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
+	"git.duckfam.us/jj-software/cog/internal/sandbox"
 	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/settings"
@@ -42,7 +44,30 @@ func (h *adminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	ui.Render(w, r, adminUsersPage(pd, h.p.Users.List(), flashMsg, flashKind))
+	retired, err := h.p.Users.Retired()
+	if err != nil {
+		h.p.Log.Error("list retired usernames", "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	ui.Render(w, r, adminUsersPage(pd, h.p.Users.List(), retired, flashMsg, flashKind))
+}
+
+// ReleaseUsername lets a new account take the name of a deleted one.
+func (h *adminHandler) ReleaseUsername(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	err := h.p.Users.Release(name)
+	if errors.Is(err, user.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		setFlash(w, "error", "The name could not be released.", err)
+		http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+		return
+	}
+	setFlash(w, "success", fmt.Sprintf("“%s” can be used by a new account.", name))
+	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
 func (h *adminHandler) NewUserForm(w http.ResponseWriter, r *http.Request) {
@@ -70,8 +95,18 @@ func (h *adminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	u, err := h.p.Users.Create(username, password)
+	if errors.Is(err, user.ErrUsernameRetired) {
+		setFlashForm(w, "error", fmt.Sprintf("“%s” belonged to a deleted account. Release it under Users first if it should be reused.", username), keep)
+		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
+		return
+	}
 	if errors.Is(err, user.ErrUsernameTaken) {
 		setFlashForm(w, "error", fmt.Sprintf("A user named “%s” already exists.", username), keep)
+		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
+		return
+	}
+	if errors.Is(err, user.ErrInvalidUsername) {
+		setFlashForm(w, "error", err.Error(), keep)
 		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
 		return
 	}
@@ -165,7 +200,38 @@ func (h *adminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	displayName := r.FormValue("display_name")
 	isAdmin := r.FormValue("is_admin") == "1"
-	if err := h.p.Users.Update(id, user.UpdateOpts{DisplayName: &displayName, IsAdmin: &isAdmin}); err != nil {
+	// An address an admin sets counts as confirmed: they vouch for it.
+	addr := strings.TrimSpace(r.FormValue("email"))
+	if addr != "" {
+		if parsed, err := mail.ParseAddress(addr); err != nil || parsed.Name != "" || parsed.Address != addr {
+			setFlash(w, "error", "That doesn't look like an email address.")
+			http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
+			return
+		}
+	}
+	// A deleted account's address still reaches this server in replies to
+	// its invitations; it goes to someone else only once its name is
+	// released.
+	if addr != "" && !strings.EqualFold(addr, before.Email) {
+		name, err := h.p.Users.RetiredWithEmail(addr)
+		if err != nil {
+			setFlash(w, "error", "Failed to update user.", err)
+			http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
+			return
+		}
+		if name != "" {
+			setFlash(w, "error", fmt.Sprintf("That address belonged to the deleted account “%s”. Release that name under Users first if the address should be reused.", name))
+			http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
+			return
+		}
+	}
+	err = h.p.Users.Update(id, user.UpdateOpts{DisplayName: &displayName, IsAdmin: &isAdmin, Email: &addr})
+	if errors.Is(err, user.ErrEmailTaken) {
+		setFlash(w, "error", "Another account has that email address.")
+		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
+		return
+	}
+	if err != nil {
 		setFlash(w, "error", "Failed to update user.", err)
 		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 		return
@@ -206,27 +272,19 @@ func (h *adminHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 		return
 	}
-	// Audit security.md #37: revoke the target user's existing sessions so
-	// any captured cookie can't survive an admin-driven password reset.
-	if err := h.p.Sessions.DeleteAllForUser(id); err != nil {
-		h.p.Log.Warn("revoke sessions on admin password reset", "user", id, "err", err)
+	// Audit security.md #37: no captured cookie or app password minted
+	// with the old password survives an admin-driven reset.
+	if err := h.p.SignOutEverywhere(id); err != nil {
+		h.p.Log.Error("sign out on admin password reset", "user", id, "err", err)
 	}
 
-	setFlash(w, "success", "Password reset.")
+	setFlash(w, "success", "Password reset. The user is signed out everywhere, including their apps.")
 	http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 }
 
 func (h *adminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	// Delete mounts before user (no ON DELETE CASCADE).
-	if h.p.Mounts != nil {
-		if err := h.p.Mounts.DeleteByUser(id); err != nil {
-			h.p.Log.Error("delete mounts failed", "user", id, "err", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-	if err := h.p.Users.Delete(id); err != nil {
+	if err := h.p.DeleteUser(id); err != nil {
 		h.p.Log.Error("delete user failed", "user", id, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -436,7 +494,11 @@ func (h *adminHandler) ListPlugins(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-	ui.Render(w, r, adminPluginsPage(pd, plugins))
+	var unsandboxed string
+	if err := sandbox.Status(); err != nil {
+		unsandboxed = "Previews, OCR and media tools run unsandboxed, with access to every user's files: " + err.Error()
+	}
+	ui.Render(w, r, adminPluginsPage(pd, plugins, unsandboxed))
 }
 
 func (h *adminHandler) TogglePlugin(w http.ResponseWriter, r *http.Request) {

@@ -18,6 +18,13 @@ func (q *request) report(c *Collection, owner *User, a access) {
 		http.Error(q.w, "invalid REPORT body", http.StatusBadRequest)
 		return
 	}
+	// A free/busy-only share answers free-busy-query and nothing else
+	// (DESIGN/dav-storage.md section 7): even redacted, the other reports
+	// would list the owner's resources by name.
+	if !a.read() && !n.is(caldav("free-busy-query")) {
+		writeError(q.w, http.StatusForbidden, dav("need-privileges"), "")
+		return
+	}
 	switch {
 	case n.is(caldav("calendar-multiget")) && c.Home == HomeCalendars,
 		n.is(carddav("addressbook-multiget")) && c.Home == HomeAddressBooks:

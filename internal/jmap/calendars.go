@@ -110,13 +110,19 @@ func (c *call) calendarSet(args jsobj.Object) (any, error) {
 
 // --- CalendarEvent ---
 
+// readable returns the calendars whose events may be read: a calendar shared
+// for free/busy only is listed, but its events, even their IDs, are not.
+func readable(cals []dav.Granted) []dav.Granted {
+	return slices.DeleteFunc(slices.Clone(cals), func(g dav.Granted) bool { return !g.Rights.Read })
+}
+
 var calendarEvents = &itemType{
 	name:       "CalendarEvent",
 	capability: CapCalendars,
 	comp:       dav.VEVENT,
 	ext:        ".ics",
 	collProp:   "calendarIds",
-	colls:      func(a *account) []dav.Granted { return a.cals },
+	colls:      func(a *account) []dav.Granted { return readable(a.cals) },
 	serverSet:  []string{"isDraft", "isOrigin", "utcStart", "utcEnd", "baseEventId"},
 	codec:      eventCodec{},
 	decorate: func(c *call, g *dav.Granted, m *dav.Model, obj jsobj.Object) {
@@ -285,7 +291,7 @@ func (c *call) eventQuery(args jsobj.Object) (any, error) {
 		start time.Time
 	}
 	var hits []hit
-	for _, g := range a.cals {
+	for _, g := range readable(a.cals) {
 		models, err := c.req.dav.Models(&g, dav.VEVENT, nil)
 		if err != nil {
 			return nil, err

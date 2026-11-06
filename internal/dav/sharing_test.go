@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
+	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -103,4 +104,28 @@ func TestCalendarServerSharing(t *testing.T) {
 	req(t, env, erin, "POST", path, `<CS:share xmlns:D="DAV:" xmlns:CS="http://calendarserver.org/ns/"><CS:set><D:href>mailto:b@example.com</D:href><CS:read/></CS:set></CS:share>`).Status(403)
 	req(t, env, alice, "POST", path, `<CS:share xmlns:D="DAV:" xmlns:CS="http://calendarserver.org/ns/"><CS:set><D:href>mailto:nobody@example.com</D:href><CS:read/></CS:set></CS:share>`).Status(403)
 	assert.Equal(t, map[string]uint32{erin.ID: plugin.PermRead}, collectionShares(t, env, c))
+}
+
+// TestDeclineGroupShare: a member declines a calendar shared with their
+// group; it stops reaching them and still reaches the others.
+func TestDeclineGroupShare(t *testing.T) {
+	env := davEnv(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	bob := env.CreateUser(t, "bob", "pass")
+	carol := env.CreateUser(t, "carol", "pass")
+	c := personal(t, env, alice)
+	req(t, env, alice, "PUT", cal+"alice/personal/ev.ics", ics("VEVENT", "ev", "Team")).Status(201)
+	g, err := env.Providers.Groups.Create("team", nil, &alice.ID)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(g.ID, bob.ID, group.User))
+	require.NoError(t, env.Providers.Groups.AddMember(g.ID, carol.ID, group.User))
+	_, err = env.Providers.Shares.Create(alice.ID, dav.ShareType, c.ID.String(), "GROUP", g.ID, plugin.PermRead)
+	require.NoError(t, err)
+	path := cal + "alice/personal/"
+	req(t, env, bob, "GET", path+"ev.ics", "").Status(200)
+
+	req(t, env, bob, "POST", cal+"bob/", `<CS:invite-reply xmlns:D="DAV:" xmlns:CS="http://calendarserver.org/ns/">
+<D:href>mailto:x@example.com</D:href><CS:invite-declined/><CS:hosturl><D:href>`+path+`</D:href></CS:hosturl><CS:in-reply-to>x</CS:in-reply-to></CS:invite-reply>`).Status(204)
+	req(t, env, bob, "GET", path+"ev.ics", "").Status(403)
+	req(t, env, carol, "GET", path+"ev.ics", "").Status(200)
 }

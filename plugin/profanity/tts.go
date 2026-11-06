@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/ffargs"
+	"git.duckfam.us/jj-software/cog/internal/sandbox"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
@@ -50,6 +51,7 @@ func generatePiper(ctx context.Context, model, text, outputPath string) error {
 	if model != "" {
 		args = append(args, "--model", model)
 	}
+	// unsandboxed: piper reads only the replacement text and the admin's model.
 	cmd := exec.CommandContext(ctx, "piper", args...)
 	cmd.Stdin = strings.NewReader(text)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -65,6 +67,7 @@ func generateSystem(ctx context.Context, cmdTemplate, text, outputPath string) e
 	// $TEXT and $OUTPUT reach the template as environment variables, which
 	// the shell expands as data. Pasting them into the command instead would
 	// run whatever the text says: it is a user's replacement word.
+	// unsandboxed: the admin's own command, which may need any file.
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdTemplate)
 	cmd.Env = append(os.Environ(), "TEXT="+text, "OUTPUT="+outputPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -131,7 +134,7 @@ func muteSegments(ctx context.Context, inputURL, outputPath string, ranges []plu
 
 	args := append([]string{"-y"}, ffargs.Input(inputURL)...)
 	args = append(args, "-af", filterStr, "-c:v", "copy", outputPath)
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd := sandbox.CommandContext(ctx, sandbox.Spec{Read: []string{inputURL}, Write: []string{filepath.Dir(outputPath)}}, "ffmpeg", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg mute: %w: %s", err, out)
 	}
@@ -201,7 +204,7 @@ func spliceWithTTS(ctx context.Context, cfg TTSConfig, tmpDir, inputURL, outputP
 	args = append(args, "-filter_complex", strings.Join(filterParts, ";"))
 	args = append(args, "-c:v", "copy", outputPath)
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd := sandbox.CommandContext(ctx, sandbox.Spec{Write: []string{tmpDir, filepath.Dir(outputPath)}}, "ffmpeg", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		// Fallback: use muted version without TTS.
 		if rerr := os.Rename(mutedPath, outputPath); rerr != nil {

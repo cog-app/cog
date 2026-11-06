@@ -7,12 +7,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"mime"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/httphdr"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
@@ -261,7 +261,7 @@ func (s *Server) serveFeed(w http.ResponseWriter, r *http.Request, rest string) 
 	if c.Home == HomeAddressBooks {
 		h.Set("Content-Type", "text/vcard; charset=utf-8")
 	}
-	h.Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": c.Name + "." + ext}))
+	h.Set("Content-Disposition", httphdr.Inline(c.Name+"."+ext))
 	if notModified(r, etag, modified) {
 		w.WriteHeader(http.StatusNotModified)
 		return

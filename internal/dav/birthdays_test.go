@@ -221,7 +221,7 @@ func TestBirthdayCalendar(t *testing.T) {
 
 	// Through a group: sharing with it reaches its members; one who
 	// leaves loses the events at the next sweep.
-	grp, err := env.Providers.Groups.Create("family", nil, nil)
+	grp, err := env.Providers.Groups.Create("family", nil, &bob.ID) // one may share only with a group of one's own
 	require.NoError(t, err)
 	require.NoError(t, env.Providers.Groups.AddMember(grp.ID, alice.ID, group.User))
 	_, err = env.Providers.Shares.Create(bob.ID, dav.ShareType, bobBook.ID.String(), "GROUP", grp.ID, plugin.PermRead)

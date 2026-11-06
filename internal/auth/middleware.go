@@ -37,7 +37,7 @@ type Middleware struct {
 	Users        *user.Store
 	Sessions     *SessionStore
 	AppPasswords *AppPasswordStore
-	RateLimiter  *ratelimit.Limiter
+	Guard        *ratelimit.Guard
 	Cookies      cogplugin.CookieConfig
 }
 
@@ -45,6 +45,10 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u, sess := m.authenticate(r)
 		if u != nil {
+			// What a signed-in user is sent is theirs: no shared cache may
+			// keep it for the next client, whatever URL it came from. A
+			// handler may still allow caching in the browser.
+			w.Header().Set("Cache-Control", "private")
 			var sessionID string
 			switch {
 			case sess != nil:
@@ -102,55 +106,50 @@ func (m *Middleware) authenticate(r *http.Request) (*user.User, *Session) {
 		}
 	}
 
-	// Rate-limit credential-based auth by client IP.
 	ip := ratelimit.ClientIP(r)
-	if m.RateLimiter != nil && m.RateLimiter.IsLimited(ip) {
-		return nil, nil
-	}
 
-	// 2. Basic Auth
-	if username, password, ok := r.BasicAuth(); ok {
-		// Try user password first
-		u, err := m.Users.Authenticate(username, password)
+	// 2. Basic Auth. Without a username it names no account: it is a
+	// public link's password, which the link's handler checks.
+	if username, password, ok := r.BasicAuth(); ok && username != "" {
+		var u *user.User
+		_, err := m.Guard.Try(ip, ratelimit.AccountKey(username), func() bool {
+			u = m.basicUser(username, password)
+			return u != nil
+		})
 		logAuthErr("basic auth", err)
-		if u != nil && u.MFAMethod != "" {
-			// The password is only the first of this user's factors, and
-			// Basic auth has no way to ask for the second. Their clients
-			// sign in with an app password, which Login Flow issues after
-			// both.
-			u = nil
-		}
-		if u == nil {
-			// Try app password with username as a hint
-			u = m.appPasswordUser(password)
-		}
-		if u != nil {
-			if m.RateLimiter != nil {
-				m.RateLimiter.Reset(ip)
-			}
-			return u, nil
-		}
-		// Basic auth failed — record failure.
-		if m.RateLimiter != nil {
-			m.RateLimiter.RecordFailure(ip)
-		}
+		return u, nil
 	}
 
 	// 3. Bearer token (app password)
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-		if u := m.appPasswordUser(strings.TrimPrefix(auth, "Bearer ")); u != nil {
-			if m.RateLimiter != nil {
-				m.RateLimiter.Reset(ip)
-			}
-			return u, nil
-		}
-		// Bearer auth failed — record failure.
-		if m.RateLimiter != nil {
-			m.RateLimiter.RecordFailure(ip)
-		}
+		var u *user.User
+		_, err := m.Guard.Try(ip, "", func() bool {
+			u = m.appPasswordUser(strings.TrimPrefix(auth, "Bearer "))
+			return u != nil
+		})
+		logAuthErr("bearer auth", err)
+		return u, nil
 	}
 
 	return nil, nil
+}
+
+// basicUser returns the user Basic credentials sign in as: by their
+// password, or by an app password of theirs. An app password signs in only
+// as its own user, whatever username it is sent with.
+func (m *Middleware) basicUser(username, password string) *user.User {
+	u, err := m.Users.Authenticate(username, password)
+	logAuthErr("basic auth", err)
+	if u != nil && u.MFAMethod == "" {
+		return u
+	}
+	// A password alone is only the first of an MFA user's factors, and
+	// Basic auth has no way to ask for the second. Their clients sign in
+	// with an app password, which Login Flow issues after both.
+	if u = m.appPasswordUser(password); u != nil && strings.EqualFold(u.Username, username) {
+		return u
+	}
+	return nil
 }
 
 // appPasswordUser returns the user an app password belongs to, or nil.
@@ -169,7 +168,7 @@ func (m *Middleware) appPasswordUser(token string) *user.User {
 // request still goes on unauthenticated: the middleware cannot fail it, and
 // a handler that needs a user rejects it.
 func logAuthErr(step string, err error) {
-	if err == nil || errors.Is(err, user.ErrAuthFailed) || errors.Is(err, user.ErrNotFound) || errors.Is(err, ErrInvalidAppPassword) {
+	if err == nil || errors.Is(err, user.ErrAuthFailed) || errors.Is(err, user.ErrNotFound) || errors.Is(err, ErrInvalidAppPassword) || errors.Is(err, ratelimit.ErrLimited) {
 		return
 	}
 	slog.Error("auth: "+step, "err", err)

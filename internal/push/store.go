@@ -63,6 +63,14 @@ var ErrNotFound = errors.New("push: no such subscription")
 // for the same resource.
 var ErrTaken = errors.New("push: endpoint registered by another user")
 
+// ErrTooMany refuses a new registration from a user who has MaxPerUser live
+// ones. Every change is pushed to each of them, so without a limit one
+// account could have the server send requests to any host without end.
+var ErrTooMany = errors.New("push: too many subscriptions")
+
+// MaxPerUser bounds a user's live subscriptions, of every protocol.
+const MaxPerUser = 100
+
 // ErrSkip is returned by a Messenger that owes the subscription nothing it
 // can send now (JMAP's before verification): what was owed is cleared.
 var ErrSkip = errors.New("push: nothing to send")
@@ -147,6 +155,15 @@ func (st *Store) Register(s *Subscription) (created bool, err error) {
 	now := st.clock().Unix()
 	id := newID()
 	var got string
+	var live int
+	if err := st.db.QueryRow(`SELECT COUNT(*) FROM push_subscriptions WHERE user_id = ? AND expires_at > ?
+		AND NOT (protocol = ? AND resource = ? AND endpoint = ?)`,
+		s.UserID, now, s.Protocol, s.Resource, s.Endpoint).Scan(&live); err != nil {
+		return false, fmt.Errorf("count push subscriptions: %w", err)
+	}
+	if live >= MaxPerUser {
+		return false, ErrTooMany
+	}
 	err = st.db.QueryRow(`INSERT INTO push_subscriptions (id, user_id, protocol, resource, endpoint, p256dh, auth, options,
 			expires_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

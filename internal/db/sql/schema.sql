@@ -14,6 +14,67 @@ CREATE TABLE IF NOT EXISTS users (
 	totp_last_step INTEGER NOT NULL DEFAULT 0
 );
 
+-- An address a user asked to change to, kept until they open the link sent
+-- to it. users.email holds only confirmed addresses (or ones an admin set).
+CREATE TABLE IF NOT EXISTS email_verifications (
+	token_hash TEXT PRIMARY KEY,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	email TEXT NOT NULL,
+	expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_email_verifications_user ON email_verifications(user_id);
+
+-- A user's refusal of a share made to a group they are in, or to everyone:
+-- it stops reaching them without being taken from the others.
+CREATE TABLE IF NOT EXISTS share_declines (
+	share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	PRIMARY KEY (share_id, user_id)
+);
+
+-- The usernames of deleted accounts, with the address each last had. Other
+-- servers and people still know the account by them, so no new account may
+-- take one until an admin releases it.
+CREATE TABLE IF NOT EXISTS retired_usernames (
+	username TEXT PRIMARY KEY COLLATE NOCASE,
+	email TEXT NOT NULL DEFAULT '',
+	retired_at INTEGER NOT NULL
+);
+
+-- Nextcloud Login Flow v2 sign-ins waiting for their user to grant them.
+-- The tokens are stored hashed; the app password a grant mints is sealed
+-- (HPKE) to public_key, whose private half only the poll token derives.
+CREATE TABLE IF NOT EXISTS login_flows (
+	poll_hash TEXT PRIMARY KEY,
+	login_hash TEXT NOT NULL UNIQUE,
+	public_key BLOB NOT NULL,
+	client TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	login_name TEXT NOT NULL DEFAULT '',
+	sealed BLOB
+);
+
+-- One-time links to a user's file for Nextcloud apps' media players. The
+-- token is stored hashed; the file is named by ID, so a rename before the
+-- link is used does not break it.
+CREATE TABLE IF NOT EXISTS direct_tokens (
+	token_hash TEXT PRIMARY KEY,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	file_id INTEGER NOT NULL,
+	created_at INTEGER NOT NULL
+);
+
+-- Failed attempts the rate limiters count (internal/ratelimit), kept here
+-- so a restart does not forgive them and every replica counts the same.
+-- at is in milliseconds.
+CREATE TABLE IF NOT EXISTS rate_attempts (
+	limiter TEXT NOT NULL,
+	key TEXT NOT NULL,
+	at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rate_attempts_key ON rate_attempts(limiter, key, at);
+CREATE INDEX IF NOT EXISTS idx_rate_attempts_at ON rate_attempts(limiter, at);
+
 CREATE TABLE IF NOT EXISTS sessions (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id),
@@ -21,7 +82,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 	expires_at INTEGER NOT NULL,
 	last_seen_at INTEGER NOT NULL DEFAULT 0,
 	user_agent TEXT NOT NULL DEFAULT '',
-	ip TEXT NOT NULL DEFAULT ''
+	ip TEXT NOT NULL DEFAULT '',
+	hashed INTEGER NOT NULL DEFAULT 0 -- id is the SHA-256 of the token, not the token
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
@@ -117,7 +179,8 @@ CREATE TABLE IF NOT EXISTS group_invitations (
 	invited_by TEXT NOT NULL REFERENCES users(id),
 	created_at INTEGER NOT NULL,
 	expires_at INTEGER NOT NULL,
-	member_type TEXT NOT NULL DEFAULT 'USER'
+	member_type TEXT NOT NULL DEFAULT 'USER',
+	invitee_id TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_group_invitations_token ON group_invitations(token);
 

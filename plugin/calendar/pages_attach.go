@@ -13,6 +13,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/dav/ical"
+	"git.duckfam.us/jj-software/cog/internal/httphdr"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 )
 
@@ -237,7 +238,7 @@ func (h *Pages) InlineAttachment(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "sandbox")
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+	w.Header().Set("Content-Disposition", httphdr.Attachment(name))
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	if _, err := w.Write(data); err != nil {
 		h.plugin.log.Warn("send attachment", "event", ev.ID, "err", err)

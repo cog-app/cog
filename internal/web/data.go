@@ -12,6 +12,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/dav"
+	"git.duckfam.us/jj-software/cog/internal/httphdr"
 )
 
 // maxImportSize bounds an uploaded .ics or .vcf file.
@@ -137,7 +138,7 @@ func (h *dataHandler) Export(w http.ResponseWriter, r *http.Request) {
 		ct = "text/vcard; charset=utf-8"
 	}
 	w.Header().Set("Content-Type", ct)
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename(c)))
+	w.Header().Set("Content-Disposition", httphdr.Attachment(filename(c)))
 	if _, err := w.Write(buf.Bytes()); err != nil {
 		h.p.Log.Error("send export", "user", u.Username, "err", err)
 	}

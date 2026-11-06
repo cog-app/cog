@@ -47,6 +47,10 @@ func (t MemberType) IsValid() bool {
 
 type Store struct {
 	db *sql.DB
+	// OnMemberAdded, when set, runs after a user or a group joins a group,
+	// so what follows membership (search copies of shares to the group)
+	// can catch up. It handles its own errors.
+	OnMemberAdded func(memberID string, memberType MemberType)
 }
 
 func NewStore(db *sql.DB) *Store {
@@ -258,7 +262,13 @@ func (s *Store) AddMember(groupID, memberID string, memberType MemberType) error
 	if err := rebuildClosureTx(tx); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if s.OnMemberAdded != nil {
+		s.OnMemberAdded(memberID, memberType)
+	}
+	return nil
 }
 
 // isCyclicMembershipTx reports whether making candidateChildGroupID a member
@@ -453,6 +463,19 @@ func (s *Store) IsOwnerMember(groupID, userID string) (bool, error) {
 
 // RebuildClosure recomputes the group_membership_closure table.
 // All members are user IDs (OWNER or USER type), so no recursive walk needed.
+// ShareAGroup reports whether two users are members, directly or through
+// nested groups, of a common group.
+func (s *Store) ShareAGroup(a, b string) (bool, error) {
+	var ok bool
+	err := s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM group_membership_closure x
+		JOIN group_membership_closure y ON x.ancestor_group_id = y.ancestor_group_id
+		WHERE x.descendant_user_id = ? AND y.descendant_user_id = ?)`, a, b).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("share a group: %w", err)
+	}
+	return ok, nil
+}
+
 func (s *Store) RebuildClosure() error {
 	tx, err := s.db.Begin()
 	if err != nil {

@@ -71,6 +71,10 @@ func (a *shareStoreAdapter) Create(ownerUserID, resourceType, resourceID, subjec
 	}, nil
 }
 
+func (a *shareStoreAdapter) Decline(id, userID string) error {
+	return a.s.Decline(id, userID)
+}
+
 func (a *shareStoreAdapter) Delete(id string) error {
 	return a.s.Delete(id)
 }
@@ -81,24 +85,26 @@ type emailSenderAdapter struct {
 }
 
 func (a *emailSenderAdapter) Send(to []string, subject, body string, attachments ...plugin.EmailAttachment) error {
+	return a.send(email.Message{To: to, Subject: subject, Text: body}, attachments)
+}
+
+func (a *emailSenderAdapter) SendWithAttachments(to, subject, textBody, htmlBody string, attachments []plugin.EmailAttachment) error {
+	return a.send(email.Message{To: []string{to}, Subject: subject, Text: textBody, HTML: htmlBody}, attachments)
+}
+
+func (a *emailSenderAdapter) send(m email.Message, attachments []plugin.EmailAttachment) error {
 	s := a.senderFunc()
 	if s == nil {
 		return fmt.Errorf("SMTP not configured")
 	}
-	internal := make([]email.Attachment, len(attachments))
-	for i, att := range attachments {
-		internal[i] = email.Attachment{
+	for _, att := range attachments {
+		m.Attachments = append(m.Attachments, email.Attachment{
 			Filename:    att.Filename,
 			ContentType: att.ContentType,
 			Data:        att.Data,
-		}
+		})
 	}
-	return s.Send(to, subject, body, internal...)
-}
-
-func (a *emailSenderAdapter) SendWithAttachments(to, subject, textBody, htmlBody string, attachments []plugin.EmailAttachment) error {
-	// Delegate to Send for plain text; htmlBody is ignored since the internal sender doesn't support it.
-	return a.Send([]string{to}, subject, textBody, attachments...)
+	return s.SendMessage(m)
 }
 
 // userLookupAdapter adapts *user.Store to plugin.UserLookup.

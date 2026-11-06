@@ -5,8 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
+	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/notes"
 )
 
@@ -128,4 +130,84 @@ func TestShareImmediatelyAfterCreateReachesRecipient(t *testing.T) {
 	}, cookie).Status(200)
 
 	waitForHit(t, env, bob.User.Username, "HASTYSHARE")
+}
+
+// searchHits returns how many results a query finds in a user's index now.
+func searchHits(t *testing.T, env *cogtest.Env, username, query string) int {
+	t.Helper()
+	res, err := env.Providers.Search.SearchUser(username, query, 10, 0)
+	require.NoError(t, err)
+	return len(res.Hits)
+}
+
+// TestSharedResultsFollowAccess: a share made through the store reaches the
+// recipient's search, and leaving the group it went to — which changes no
+// share — or the share expiring takes it out of their results at once (M4).
+func TestSharedResultsFollowAccess(t *testing.T) {
+	env := cogtest.New(t, notes.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	bob := env.CreateUser(t, "bob", "pass")
+	p := env.Providers
+
+	var created map[string]any
+	env.PostJSON(t, "/index.php/apps/notes/api/v1/notes", map[string]any{
+		"title":   "GROUPSECRET",
+		"content": "for the team",
+	}, alice.Auth).Status(200).JSON(&created)
+	noteID := itoa(int64(created["id"].(float64)))
+	waitForHit(t, env, alice.User.Username, "GROUPSECRET")
+
+	g, err := p.Groups.Create("team", nil, &alice.ID)
+	require.NoError(t, err)
+	require.NoError(t, p.Groups.AddMember(g.ID, bob.ID, group.User))
+	rec, err := p.Shares.Create(alice.ID, "notes:note", noteID, "GROUP", g.ID, plugin.PermRead)
+	require.NoError(t, err)
+	waitForHit(t, env, bob.User.Username, "GROUPSECRET")
+
+	require.NoError(t, p.Groups.RemoveMember(g.ID, bob.ID))
+	require.Equal(t, 0, searchHits(t, env, bob.User.Username, "GROUPSECRET"))
+
+	require.NoError(t, p.Groups.AddMember(g.ID, bob.ID, group.User))
+	require.NoError(t, p.Shares.Update(rec.ID, nil, nil))
+	waitForHit(t, env, bob.User.Username, "GROUPSECRET")
+	past := env.Clock.Now().Add(-time.Hour).Unix()
+	pastp := &past
+	require.NoError(t, p.Shares.Update(rec.ID, nil, &pastp))
+	require.Equal(t, 0, searchHits(t, env, bob.User.Username, "GROUPSECRET"))
+}
+
+// TestSharedResultsFollowOwnerAndGroup: a recipient's copy follows the
+// owner's edits, and someone joining a group finds what was shared with it
+// before they joined.
+func TestSharedResultsFollowOwnerAndGroup(t *testing.T) {
+	env := cogtest.New(t, notes.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	bob := env.CreateUser(t, "bob", "pass")
+	carol := env.CreateUser(t, "carol", "pass")
+	p := env.Providers
+
+	var created map[string]any
+	env.PostJSON(t, "/index.php/apps/notes/api/v1/notes", map[string]any{
+		"title":   "FIRSTDRAFT",
+		"content": "agenda",
+	}, alice.Auth).Status(200).JSON(&created)
+	noteID := itoa(int64(created["id"].(float64)))
+	waitForHit(t, env, alice.User.Username, "FIRSTDRAFT")
+
+	g, err := p.Groups.Create("team", nil, &alice.ID)
+	require.NoError(t, err)
+	require.NoError(t, p.Groups.AddMember(g.ID, bob.ID, group.User))
+	_, err = p.Shares.Create(alice.ID, "notes:note", noteID, "GROUP", g.ID, plugin.PermRead)
+	require.NoError(t, err)
+	waitForHit(t, env, bob.User.Username, "FIRSTDRAFT")
+
+	webdavReq(t, env, "PUT", "/index.php/apps/notes/api/v1/notes/"+noteID,
+		`{"title":"SECONDDRAFT","content":"agenda"}`,
+		alice.Auth, cogtest.Header("Content-Type", "application/json")).Status(200)
+	waitForHit(t, env, bob.User.Username, "SECONDDRAFT")
+	require.Equal(t, 0, searchHits(t, env, bob.User.Username, "FIRSTDRAFT"))
+
+	require.Equal(t, 0, searchHits(t, env, carol.User.Username, "SECONDDRAFT"))
+	require.NoError(t, p.Groups.AddMember(g.ID, carol.ID, group.User))
+	waitForHit(t, env, carol.User.Username, "SECONDDRAFT")
 }

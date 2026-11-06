@@ -29,6 +29,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/db"
+	"git.duckfam.us/jj-software/cog/internal/sandbox"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
@@ -196,6 +197,21 @@ func (r *Registry) Stop() {
 			r.log.Error("close plugin db failed", "db", key, "err", err)
 		}
 	}
+}
+
+// CloseUser closes the cached database handles of username, so their files
+// can be removed and a later account of the same name gets new ones.
+func (r *Registry) CloseUser(username string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var errs []error
+	for key, db := range r.dbs {
+		if name, _, ok := strings.Cut(key, ":"); ok && name == username {
+			errs = append(errs, db.Close())
+			delete(r.dbs, key)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // PluginDB returns (or opens) the per-user plugin database, migrated to the
@@ -1068,9 +1084,16 @@ func (r *Registry) UserCommands() map[string][]CommandDef {
 	return cmds
 }
 
-// DoctorChecks runs doctor checks on all plugins that implement the Doctor interface.
+// DoctorChecks runs doctor checks on all plugins that implement the Doctor
+// interface, and reports under "sandbox" whether the programs they run on
+// uploads are confined.
 func (r *Registry) DoctorChecks(ctx context.Context) map[string][]CheckResult {
 	results := make(map[string][]CheckResult)
+	check := CheckResult{Name: "bwrap", Status: CheckOK}
+	if err := sandbox.Status(); err != nil {
+		check = CheckResult{Name: "bwrap", Status: CheckWarn, Message: "converters run unsandboxed: " + err.Error()}
+	}
+	results["sandbox"] = []CheckResult{check}
 	for _, id := range r.order {
 		if d, ok := r.plugins[id].(Doctor); ok {
 			results[id] = d.DoctorChecks(ctx)
@@ -1173,15 +1196,21 @@ func (r *Registry) loadEnabledState() {
 	}
 }
 
-// DiscoverProcessPlugins scans PATH for executables matching "cog-plugin-*",
-// loads enabled ones via LoadExternalTrusted, and records disabled ones for
-// display in the admin UI.
-func (r *Registry) DiscoverProcessPlugins() {
+// processPlugin is a cog-plugin-* executable found on PATH.
+type processPlugin struct {
+	id   string
+	path string
+}
+
+// scanProcessPlugins finds the executables on PATH named cog-plugin-<id>,
+// the first of each ID, leaving out IDs a built-in plugin has.
+func (r *Registry) scanProcessPlugins() []processPlugin {
 	pathEnv := os.Getenv("PATH")
 	if pathEnv == "" {
-		return
+		return nil
 	}
 
+	var found []processPlugin
 	seen := make(map[string]bool) // avoid duplicates from multiple PATH entries
 	for _, dir := range filepath.SplitList(pathEnv) {
 		entries, err := os.ReadDir(dir)
@@ -1211,8 +1240,6 @@ func (r *Registry) DiscoverProcessPlugins() {
 				continue
 			}
 
-			binaryPath := filepath.Join(dir, name)
-
 			// Check if the binary is executable.
 			info, err := entry.Info()
 			if err != nil {
@@ -1222,28 +1249,50 @@ func (r *Registry) DiscoverProcessPlugins() {
 			if info.Mode()&0o111 == 0 {
 				continue
 			}
-
-			if !r.IsEnabled(pluginID) {
-				r.discovered[pluginID] = binaryPath
-				r.log.Info("discovered process plugin (disabled)", "plugin", pluginID, "path", binaryPath)
-				continue
-			}
-
-			r.log.Info("loading process plugin", "plugin", pluginID, "path", binaryPath)
-			if isTrustedProcessPlugin(pluginID) {
-				r.log.Warn("loading process plugin as TRUSTED (host secrets exposed)",
-					"plugin", pluginID, "path", binaryPath)
-				err = r.LoadExternalTrusted(binaryPath)
-			} else {
-				err = r.LoadExternal(binaryPath)
-			}
-			if err != nil {
-				r.log.Error("failed to load process plugin", "plugin", pluginID, "path", binaryPath, "err", err)
-				continue
-			}
-			// Track that this loaded plugin came from discovery.
-			r.discovered[pluginID] = binaryPath
+			found = append(found, processPlugin{id: pluginID, path: filepath.Join(dir, name)})
 		}
+	}
+	return found
+}
+
+// ProcessPluginIDs returns the IDs of the process plugins on PATH without
+// starting them, for a command that needs to know which names they hold
+// but nothing they serve.
+func (r *Registry) ProcessPluginIDs() []string {
+	var ids []string
+	for _, pp := range r.scanProcessPlugins() {
+		ids = append(ids, pp.id)
+	}
+	return ids
+}
+
+// DiscoverProcessPlugins scans PATH for executables matching "cog-plugin-*",
+// loads enabled ones via LoadExternalTrusted, and records disabled ones for
+// display in the admin UI.
+func (r *Registry) DiscoverProcessPlugins() {
+	for _, pp := range r.scanProcessPlugins() {
+		pluginID, binaryPath := pp.id, pp.path
+		if !r.IsEnabled(pluginID) {
+			r.discovered[pluginID] = binaryPath
+			r.log.Info("discovered process plugin (disabled)", "plugin", pluginID, "path", binaryPath)
+			continue
+		}
+
+		r.log.Info("loading process plugin", "plugin", pluginID, "path", binaryPath)
+		var err error
+		if isTrustedProcessPlugin(pluginID) {
+			r.log.Warn("loading process plugin as TRUSTED (host secrets exposed)",
+				"plugin", pluginID, "path", binaryPath)
+			err = r.LoadExternalTrusted(binaryPath)
+		} else {
+			err = r.LoadExternal(binaryPath)
+		}
+		if err != nil {
+			r.log.Error("failed to load process plugin", "plugin", pluginID, "path", binaryPath, "err", err)
+			continue
+		}
+		// Track that this loaded plugin came from discovery.
+		r.discovered[pluginID] = binaryPath
 	}
 }
 

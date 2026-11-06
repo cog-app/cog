@@ -17,6 +17,13 @@ Reset your password: {{.ResetURL}}
 This link expires in 1 hour. If you didn't request this, you can safely ignore this email.
 {{end}}
 
+{{define "email_verify"}}Confirm {{.User.Email}} as the email address of your account ({{.User.Username}}).
+
+Confirm: {{.VerifyURL}}
+
+This link expires in 24 hours. If you didn't ask for this, you can safely ignore this email; your address stays as it was.
+{{end}}
+
 {{define "otp"}}Your verification code is: {{.Code}}
 
 This code expires in 10 minutes. If you didn't request this, you can safely ignore this email.

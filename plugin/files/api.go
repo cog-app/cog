@@ -5,15 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strconv"
-	"strings"
-	"sync"
-	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/bodylimit"
+	"git.duckfam.us/jj-software/cog/internal/httphdr"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -24,42 +23,21 @@ type API struct {
 	files  *Plugin
 	shares *share.Store
 	users  *user.Store
-
-	// shareLockouts tracks consecutive failed password attempts per
-	// (share-token, client-IP) so we can throttle brute-force at the
-	// public-link layer (audit security.md #36).
-	shareLockoutMu sync.Mutex
-	shareLockouts  map[string]shareLockoutEntry
+	// guard throttles guessing at public links' passwords, as at accounts'
+	// (audit security.md #36).
+	guard *ratelimit.Guard
 }
-
-type shareLockoutEntry struct {
-	failures int
-	until    time.Time
-}
-
-// shareLockoutThreshold is the number of wrong-password attempts in a window
-// that triggers a lockout for the (token, IP) pair.
-const shareLockoutThreshold = 5
-
-// shareLockoutCooldown is how long after threshold the (token, IP) is blocked
-// before attempts are allowed again.
-const shareLockoutCooldown = 5 * time.Minute
 
 // NewAPI creates a new files API handler.
-func NewAPI(files *Plugin, shares *share.Store, users *user.Store) *API {
-	return &API{
-		files:         files,
-		shares:        shares,
-		users:         users,
-		shareLockouts: make(map[string]shareLockoutEntry),
-	}
+func NewAPI(files *Plugin, shares *share.Store, users *user.Store, guard *ratelimit.Guard) *API {
+	return &API{files: files, shares: shares, users: users, guard: guard}
 }
 
 // RegisterRoutes mounts the files API on the given mux.
 func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	// File operations
 	mux.Handle("GET /api/files/list", auth.RequireAuth(http.HandlerFunc(a.handleList)))
-	mux.Handle("POST /api/files/upload", auth.RequireAuth(http.HandlerFunc(a.handleUpload)))
+	mux.Handle("POST /api/files/upload", bodylimit.Unlimited(auth.RequireAuth(http.HandlerFunc(a.handleUpload))))
 	mux.Handle("GET /api/files/download", auth.RequireAuth(http.HandlerFunc(a.handleDownload)))
 	mux.Handle("POST /api/files/mkdir", auth.RequireAuth(http.HandlerFunc(a.handleMkdir)))
 	mux.Handle("DELETE /api/files/delete", auth.RequireAuth(http.HandlerFunc(a.handleDelete)))
@@ -152,7 +130,7 @@ func (a *API) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", meta.MimeType)
 	plugin.UntrustedContent(w, meta.MimeType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
+	w.Header().Set("Content-Disposition", httphdr.Attachment(meta.Name))
 	w.Header().Set("ETag", meta.ETag)
 	if _, err := io.Copy(w, f); err != nil {
 		a.files.log.Error("download copy", "err", err)
@@ -725,7 +703,7 @@ func (a *API) handlePublicLinkDownload(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", meta.MimeType)
 	plugin.UntrustedContent(w, meta.MimeType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
+	w.Header().Set("Content-Disposition", httphdr.Attachment(meta.Name))
 	w.Header().Set("ETag", meta.ETag)
 	if _, err := io.Copy(w, f); err != nil {
 		a.files.log.Error("public link download copy", "err", err)
@@ -797,7 +775,7 @@ func (a *API) handleSharedDownload(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", meta.MimeType)
 	plugin.UntrustedContent(w, meta.MimeType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
+	w.Header().Set("Content-Disposition", httphdr.Attachment(meta.Name))
 	w.Header().Set("ETag", meta.ETag)
 	if _, err := io.Copy(w, f); err != nil {
 		a.files.log.Error("shared download copy", "err", err)
@@ -834,17 +812,11 @@ func (a *API) verifyOwnership(u *user.User, resourceType, resourceID string) err
 }
 
 // checkSharePassword extracts a password from the request (Basic auth or query param)
-// and validates it against the share record. Per-token-per-IP brute-force
-// throttling kicks in after shareLockoutThreshold consecutive failures
-// (audit security.md #36).
+// and validates it against the share record, through the guard: the link is
+// the account, and a client that guesses too often is refused.
 func (a *API) checkSharePassword(rec *share.Record, r *http.Request) error {
 	if rec.PasswordHash == nil || *rec.PasswordHash == "" {
 		return nil
-	}
-
-	key := rec.ID + "|" + clientIPForLockout(r)
-	if a.shareLockoutTooHot(key) {
-		return share.ErrPasswordIncorrect
 	}
 
 	var password string
@@ -854,50 +826,12 @@ func (a *API) checkSharePassword(rec *share.Record, r *http.Request) error {
 		password = r.URL.Query().Get("password")
 	}
 
-	err := share.CheckPassword(rec, password)
-	a.recordShareAttempt(key, err == nil)
-	return err
-}
-
-// shareLockoutTooHot returns true if the (token, IP) pair is currently locked
-// out due to too many recent failures.
-func (a *API) shareLockoutTooHot(key string) bool {
-	a.shareLockoutMu.Lock()
-	defer a.shareLockoutMu.Unlock()
-	e := a.shareLockouts[key]
-	return e.failures >= shareLockoutThreshold && time.Now().Before(e.until)
-}
-
-// recordShareAttempt updates the lockout counter for a (token, IP) pair.
-// success clears the counter; failure increments it and arms the cooldown
-// once the threshold is reached.
-func (a *API) recordShareAttempt(key string, success bool) {
-	a.shareLockoutMu.Lock()
-	defer a.shareLockoutMu.Unlock()
-	if success {
-		delete(a.shareLockouts, key)
-		return
+	var checkErr error
+	if _, err := a.guard.Try(ratelimit.ClientIP(r), "share:"+rec.ID, func() bool {
+		checkErr = share.CheckPassword(rec, password)
+		return checkErr == nil
+	}); err != nil {
+		return share.ErrPasswordIncorrect
 	}
-	e := a.shareLockouts[key]
-	e.failures++
-	if e.failures >= shareLockoutThreshold {
-		e.until = time.Now().Add(shareLockoutCooldown)
-	}
-	a.shareLockouts[key] = e
-}
-
-// clientIPForLockout extracts an IP-ish identifier for lockout keying. We
-// don't need DNS-quality accuracy; just a stable per-attacker key.
-func clientIPForLockout(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first hop (leftmost).
-		if i := strings.IndexByte(xff, ','); i > 0 {
-			return strings.TrimSpace(xff[:i])
-		}
-		return strings.TrimSpace(xff)
-	}
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
-	}
-	return r.RemoteAddr
+	return checkErr
 }

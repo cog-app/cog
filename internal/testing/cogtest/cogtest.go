@@ -86,8 +86,12 @@ func (e *Env) Now() time.Time { return e.Clock.Now() }
 // itself, and plugin subprocesses, which render their own pages. The
 // assignment covers this process, whose time.Local may already have been
 // resolved from the old TZ before this runs.
+//
+// COG_SANDBOX=off is set for the same reason: the admin pages warn when
+// converters run unsandboxed, and whether they can depends on the machine.
 func init() {
 	os.Setenv("TZ", "UTC")
+	os.Setenv("COG_SANDBOX", "off")
 	time.Local = time.UTC
 }
 

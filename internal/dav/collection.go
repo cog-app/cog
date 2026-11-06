@@ -129,6 +129,8 @@ var (
 	ErrNotFound     = errors.New("dav: not found")
 	ErrExists       = errors.New("dav: already exists")
 	ErrPrecondition = errors.New("dav: precondition failed")
+	// ErrTooMany refuses a collection beyond MaxCollectionsPerUser.
+	ErrTooMany = errors.New("dav: too many collections")
 )
 
 // Store keeps collections in the system database.
@@ -271,6 +273,11 @@ func encodeDead(props []DeadProp) (string, error) {
 	return string(b), err
 }
 
+// MaxCollectionsPerUser bounds a user's calendars, address books and
+// subscriptions together. Each subscription is polled, and each collection
+// is listed on every sync, so they cannot be free.
+const MaxCollectionsPerUser = 200
+
 // Create inserts c and sets its ID and timestamps. It returns ErrExists when
 // the owner already has a collection of that name in that home.
 func (s *Store) Create(c *Collection) error {
@@ -295,15 +302,21 @@ func (s *Store) Create(c *Collection) error {
 	now := s.clock().Unix()
 	res, err := s.db.Exec(`INSERT INTO dav_collections (owner_user_id, home, kind, name, components, display_name,
 		description, color, sort_order, timezone, dead_props, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+		WHERE (SELECT COUNT(*) FROM dav_collections WHERE owner_user_id = ?) < ?`,
 		c.OwnerID, c.Home, c.Kind, c.Name, encodeComponents(c.Components), c.DisplayName,
-		c.Description, c.Color, c.SortOrder, c.Timezone, dead, now, now)
+		c.Description, c.Color, c.SortOrder, c.Timezone, dead, now, now, c.OwnerID, MaxCollectionsPerUser)
 	if err != nil {
 		var se sqlite3.Error
 		if errors.As(err, &se) && se.ExtendedCode == sqlite3.ErrConstraintUnique {
 			return ErrExists
 		}
 		return fmt.Errorf("create collection %q: %w", c.Name, err)
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return fmt.Errorf("create collection %q: %w", c.Name, err)
+	} else if n == 0 {
+		return ErrTooMany
 	}
 	id, err := res.LastInsertId()
 	if err != nil {

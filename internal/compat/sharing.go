@@ -22,18 +22,16 @@ import (
 
 // SharingHandler implements the OCS files_sharing API.
 type SharingHandler struct {
-	Log           *slog.Logger
-	Files         *files.Plugin
-	Shares        *share.Store
-	Users         *user.Store
-	Groups        *group.Store
-	Federation    *federation.Store
-	FedClient     *federation.Client
-	FedPolicy     *federation.Policy
-	Activities    *activity.Store
-	BaseURL       string
-	OnShareCreate func(rec *share.Record)
-	OnShareDelete func(rec *share.Record)
+	Log        *slog.Logger
+	Files      *files.Plugin
+	Shares     *share.Store
+	Users      *user.Store
+	Groups     *group.Store
+	Federation *federation.Store
+	FedClient  *federation.Client
+	FedPolicy  *federation.Policy
+	Activities *activity.Store
+	BaseURL    string
 }
 
 // ocsShare is the NC-compatible share response format.
@@ -522,9 +520,6 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if h.OnShareCreate != nil {
-		h.OnShareCreate(rec)
-	}
 	h.logShareActivity(u, rec, "share_created", "shared")
 
 	ocs, err := h.shareToOCS(rec, u)
@@ -664,10 +659,6 @@ func (h *SharingHandler) createFederatedShare(w http.ResponseWriter, r *http.Req
 		// The remote accepted the share, so keep it; without its remote ID
 		// a later unshare can't be sent to the remote.
 		h.Log.Error("record federated share remote id", "id", fs.ID, "remote", remoteHost, "err", err)
-	}
-
-	if h.OnShareCreate != nil {
-		h.OnShareCreate(rec)
 	}
 
 	ocs, err := h.shareToOCS(rec, u)
@@ -854,9 +845,6 @@ func (h *SharingHandler) HandleDeleteShare(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if h.OnShareDelete != nil {
-		h.OnShareDelete(rec)
-	}
 	h.logShareActivity(u, rec, "share_deleted", "unshared")
 
 	if err := h.Shares.Delete(shareID); err != nil {

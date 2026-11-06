@@ -302,7 +302,7 @@ func TestBrowserSettingsProfile(t *testing.T) {
 	b.Type(t, `input[name="current_password"]`, "pass")
 	b.Click(t, `form[action="/settings/profile"] button[type="submit"]`)
 
-	b.WaitText(t, "Profile updated")
+	b.WaitText(t, "We sent a link to alice@example.com")
 	b.Snapshot(t)
 	b.Snapshot(t, webtest.Mobile)
 

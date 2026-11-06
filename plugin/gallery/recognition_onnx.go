@@ -22,7 +22,14 @@ import (
 
 	ort "github.com/yalue/onnxruntime_go"
 	_ "golang.org/x/image/webp"
+
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
 )
+
+// modelHTTP downloads models. Their URLs are constants, but the models are
+// large, so the client has no overall timeout; safehttp's idle timeout still
+// gives up on a server that stops sending.
+var modelHTTP = safehttp.Client(0)
 
 // Model download URLs.
 const (
@@ -251,7 +258,7 @@ func ensureModel(path, url string) error {
 		return nil
 	}
 	slog.Info("downloading model", "model", filepath.Base(path))
-	resp, err := http.Get(url) //nolint:gosec
+	resp, err := modelHTTP.Get(url)
 	if err != nil {
 		return fmt.Errorf("download %s: %w", url, err)
 	}

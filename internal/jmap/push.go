@@ -229,6 +229,9 @@ func (c *call) pushSet(args jsobj.Object) (any, error) {
 		if _, err := c.s.Push.Register(sub); errors.Is(err, push.ErrTaken) {
 			notCreated[cid] = &setError{Type: "invalidProperties", Properties: []string{"url"}}
 			continue
+		} else if errors.Is(err, push.ErrTooMany) {
+			notCreated[cid] = &setError{Type: "overQuota"}
+			continue
 		} else if err != nil {
 			return nil, err
 		}
@@ -449,12 +452,21 @@ type hub struct {
 	conns map[string]map[chan struct{}]bool
 }
 
-func (h *hub) subscribe(userID string) (chan struct{}, func()) {
+// maxStreamsPerUser bounds a user's open EventSource connections. Each
+// holds a goroutine and a connection; a client needs one or two.
+const maxStreamsPerUser = 20
+
+// subscribe adds a connection for userID, or reports false when they have
+// maxStreamsPerUser already.
+func (h *hub) subscribe(userID string) (chan struct{}, func(), bool) {
 	ch := make(chan struct{}, 1)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.conns == nil {
 		h.conns = map[string]map[chan struct{}]bool{}
+	}
+	if len(h.conns[userID]) >= maxStreamsPerUser {
+		return nil, nil, false
 	}
 	if h.conns[userID] == nil {
 		h.conns[userID] = map[chan struct{}]bool{}
@@ -467,7 +479,7 @@ func (h *hub) subscribe(userID string) (chan struct{}, func()) {
 		if len(h.conns[userID]) == 0 {
 			delete(h.conns, userID)
 		}
-	}
+	}, true
 }
 
 func (h *hub) wake(users map[string]bool, all bool) {
@@ -507,7 +519,11 @@ func (s *Server) eventSource(w http.ResponseWriter, r *http.Request) {
 	if p, err := strconv.Atoi(r.URL.Query().Get("ping")); err == nil && p > 0 {
 		ping = time.Duration(max(p, 30)) * time.Second
 	}
-	ch, cancel := s.hub.subscribe(u.ID)
+	ch, cancel, ok := s.hub.subscribe(u.ID)
+	if !ok {
+		http.Error(w, "too many event streams", http.StatusTooManyRequests)
+		return
+	}
 	defer cancel()
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")

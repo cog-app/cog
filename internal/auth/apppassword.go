@@ -152,6 +152,14 @@ func (s *AppPasswordStore) Delete(id, userID string) error {
 	return nil
 }
 
+// DeleteAllForUser removes every app password of a user.
+func (s *AppPasswordStore) DeleteAllForUser(userID string) error {
+	if _, err := s.db.Exec(`DELETE FROM app_passwords WHERE user_id = ?`, userID); err != nil {
+		return fmt.Errorf("delete app passwords: %w", err)
+	}
+	return nil
+}
+
 // Validate checks a plaintext token and returns the owning user ID if valid.
 // The token's id selects at most one row by primary key, and its secret is
 // compared against that row's hash in constant time.

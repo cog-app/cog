@@ -421,7 +421,7 @@ func (h *Pages) MediaThumbnail(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 
 	w.Header().Set("Content-Type", "image/jpeg")
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Header().Set("Cache-Control", "private, max-age=86400")
 	http.ServeContent(w, r, "thumbnail.jpg", time.Time{}, f)
 }
 
@@ -481,7 +481,7 @@ func (h *Pages) FaceThumbnail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "image/jpeg")
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Header().Set("Cache-Control", "private, max-age=86400")
 	http.ServeContent(w, r, "face.jpg", time.Time{}, bytes.NewReader(buf.Bytes()))
 }
 

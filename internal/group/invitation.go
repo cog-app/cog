@@ -21,6 +21,18 @@ type Invitation struct {
 	MemberType MemberType
 	CreatedAt  int64
 	ExpiresAt  int64
+	// InviteeID names the existing user the invitation is for, who alone
+	// may accept it; "" for an invitation by email, which anyone holding
+	// the link may accept.
+	InviteeID string
+}
+
+const invitationColumns = `id, group_id, email, token, invited_by, member_type, created_at, expires_at, invitee_id`
+
+func scanInvitation(row interface{ Scan(...any) error }) (Invitation, error) {
+	var inv Invitation
+	err := row.Scan(&inv.ID, &inv.GroupID, &inv.Email, &inv.Token, &inv.InvitedBy, &inv.MemberType, &inv.CreatedAt, &inv.ExpiresAt, &inv.InviteeID)
+	return inv, err
 }
 
 // InvitationStore provides CRUD for group invitations.
@@ -37,6 +49,21 @@ func NewInvitationStore(db *sql.DB, c clock.Clock) *InvitationStore {
 // Create generates a new invitation with the given expiry (in hours) and a 24-byte random token.
 // If expiryHours is <= 0, defaults to 72 hours. memberType should be "USER" or "OWNER".
 func (s *InvitationStore) Create(groupID, email, invitedBy string, expiryHours int, memberType MemberType) (*Invitation, error) {
+	return s.create(groupID, email, "", invitedBy, expiryHours, memberType)
+}
+
+// InviteUser invites an existing user, who joins only if they accept: being
+// put in a group shares with you whatever is shared with it, so nobody is
+// added without saying yes. An earlier invitation of theirs to the group is
+// replaced.
+func (s *InvitationStore) InviteUser(groupID, inviteeID, invitedBy string, memberType MemberType) (*Invitation, error) {
+	if _, err := s.db.Exec(`DELETE FROM group_invitations WHERE group_id = ? AND invitee_id = ?`, groupID, inviteeID); err != nil {
+		return nil, fmt.Errorf("replace invitation: %w", err)
+	}
+	return s.create(groupID, "", inviteeID, invitedBy, 7*24, memberType)
+}
+
+func (s *InvitationStore) create(groupID, email, inviteeID, invitedBy string, expiryHours int, memberType MemberType) (*Invitation, error) {
 	if expiryHours <= 0 {
 		expiryHours = 72
 	}
@@ -56,8 +83,8 @@ func (s *InvitationStore) Create(groupID, email, invitedBy string, expiryHours i
 	expiresAt := now + int64(expiryHours)*60*60
 
 	_, err = s.db.Exec(
-		`INSERT INTO group_invitations (id, group_id, email, token, invited_by, member_type, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, groupID, email, token, invitedBy, memberType, now, expiresAt,
+		`INSERT INTO group_invitations (id, group_id, email, token, invited_by, member_type, created_at, expires_at, invitee_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, groupID, email, token, invitedBy, memberType, now, expiresAt, inviteeID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert invitation: %w", err)
@@ -72,17 +99,16 @@ func (s *InvitationStore) Create(groupID, email, invitedBy string, expiryHours i
 		MemberType: memberType,
 		CreatedAt:  now,
 		ExpiresAt:  expiresAt,
+		InviteeID:  inviteeID,
 	}, nil
 }
 
 // GetByToken retrieves a non-expired invitation by its token.
 func (s *InvitationStore) GetByToken(token string) (*Invitation, error) {
-	var inv Invitation
-	err := s.db.QueryRow(
-		`SELECT id, group_id, email, token, invited_by, member_type, created_at, expires_at
-		FROM group_invitations WHERE token = ? AND expires_at > ?`,
+	inv, err := scanInvitation(s.db.QueryRow(
+		`SELECT `+invitationColumns+` FROM group_invitations WHERE token = ? AND expires_at > ?`,
 		token, s.clock().Unix(),
-	).Scan(&inv.ID, &inv.GroupID, &inv.Email, &inv.Token, &inv.InvitedBy, &inv.MemberType, &inv.CreatedAt, &inv.ExpiresAt)
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -94,12 +120,33 @@ func (s *InvitationStore) GetByToken(token string) (*Invitation, error) {
 
 // ListByGroup returns all pending (non-expired) invitations for a group.
 func (s *InvitationStore) ListByGroup(groupID string) iter.Seq2[Invitation, error] {
+	return s.list(`group_id = ?`, groupID)
+}
+
+// ListForInvitee returns the pending invitations of an existing user.
+func (s *InvitationStore) ListForInvitee(userID string) iter.Seq2[Invitation, error] {
+	return s.list(`invitee_id = ?`, userID)
+}
+
+// Get returns a pending invitation by ID.
+func (s *InvitationStore) Get(id string) (*Invitation, error) {
+	inv, err := scanInvitation(s.db.QueryRow(
+		`SELECT `+invitationColumns+` FROM group_invitations WHERE id = ? AND expires_at > ?`, id, s.clock().Unix()))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get invitation: %w", err)
+	}
+	return &inv, nil
+}
+
+func (s *InvitationStore) list(where string, arg string) iter.Seq2[Invitation, error] {
 	return func(yield func(Invitation, error) bool) {
 		rows, err := s.db.Query(
-			`SELECT id, group_id, email, token, invited_by, member_type, created_at, expires_at
-			FROM group_invitations WHERE group_id = ? AND expires_at > ?
+			`SELECT `+invitationColumns+` FROM group_invitations WHERE `+where+` AND expires_at > ?
 			ORDER BY created_at DESC`,
-			groupID, s.clock().Unix(),
+			arg, s.clock().Unix(),
 		)
 		if err != nil {
 			yield(Invitation{}, fmt.Errorf("list invitations: %w", err))
@@ -107,8 +154,8 @@ func (s *InvitationStore) ListByGroup(groupID string) iter.Seq2[Invitation, erro
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var inv Invitation
-			if err := rows.Scan(&inv.ID, &inv.GroupID, &inv.Email, &inv.Token, &inv.InvitedBy, &inv.MemberType, &inv.CreatedAt, &inv.ExpiresAt); err != nil {
+			inv, err := scanInvitation(rows)
+			if err != nil {
 				yield(Invitation{}, fmt.Errorf("scan invitation: %w", err))
 				return
 			}

@@ -1,14 +1,17 @@
 package compat
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -24,32 +27,99 @@ import (
 //  2. PUT /remote.php/dav/uploads/{userId}/{transferId}/{chunkNum} — upload chunk
 //  3. MOVE /remote.php/dav/uploads/{userId}/{transferId}/.file — assemble to destination
 //  4. DELETE /remote.php/dav/uploads/{userId}/{transferId}/ — cancel upload
+//
+// An upload's chunks are the session: they sit in a directory named for
+// the user and the transfer under TempDir, so a restart, or another replica
+// on the same data directory, picks up where the client left off, and
+// nothing in memory has to agree with the disk.
 type ChunkedUploadHandler struct {
 	Log     *slog.Logger
 	Files   *files.Plugin
-	TempDir string // base temp directory for chunks
+	TempDir string // base directory for chunks: the data directory
 	Clock   clock.Clock
-
-	mu       sync.Mutex
-	sessions map[string]*uploadSession
 }
 
-type uploadSession struct {
-	Username  string
-	Dir       string // temp directory holding chunks
-	CreatedAt time.Time
-	Bytes     int64 // size of the chunks received, guarded by the handler's mu
+// chunkExpiry is how long an upload may sit untouched before it is swept.
+const chunkExpiry = 24 * time.Hour
+
+// chunkRoot is where uploads in progress live, by user and transfer.
+func (h *ChunkedUploadHandler) chunkRoot() string {
+	return filepath.Join(h.TempDir, "cog-chunks")
 }
 
-// staged returns the bytes username's upload sessions hold. h.mu must be held.
-func (h *ChunkedUploadHandler) staged(username string) int64 {
+// sessionDir is the directory of one transfer's chunks. The transfer ID is
+// the client's, so it is hashed into a name that is always one path element.
+func (h *ChunkedUploadHandler) sessionDir(username, transferID string) string {
+	sum := sha256.Sum256([]byte(transferID))
+	return filepath.Join(h.chunkRoot(), username, hex.EncodeToString(sum[:16]))
+}
+
+// staged returns the bytes username's uploads in progress hold.
+func (h *ChunkedUploadHandler) staged(username string) (int64, error) {
 	var n int64
-	for _, s := range h.sessions {
-		if s.Username == username {
-			n += s.Bytes
+	err := filepath.WalkDir(filepath.Join(h.chunkRoot(), username), func(path string, d fs.DirEntry, err error) error {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if d.Type().IsRegular() {
+			info, err := d.Info()
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil // assembled or cancelled meanwhile
+			}
+			if err != nil {
+				return err
+			}
+			n += info.Size()
+		}
+		return nil
+	})
+	return n, err
+}
+
+// sweep removes uploads untouched for chunkExpiry, and the temporary
+// directories chunks were kept in before they were named by transfer.
+func (h *ChunkedUploadHandler) sweep() {
+	cutoff := h.Clock().Add(-chunkExpiry)
+	old := func(path string) bool {
+		info, err := os.Stat(path)
+		return err == nil && info.ModTime().Before(cutoff)
+	}
+	remove := func(path string) {
+		if err := os.RemoveAll(path); err != nil {
+			h.Log.Warn("chunked upload: remove stale upload", "dir", path, "err", err)
 		}
 	}
-	return n
+	legacy, err := filepath.Glob(filepath.Join(h.TempDir, "cog-chunk-*"))
+	if err != nil {
+		h.Log.Warn("chunked upload: find stale uploads", "err", err)
+	}
+	for _, d := range legacy {
+		if old(d) {
+			remove(d)
+		}
+	}
+	users, err := os.ReadDir(h.chunkRoot())
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			h.Log.Warn("chunked upload: find stale uploads", "err", err)
+		}
+		return
+	}
+	for _, u := range users {
+		transfers, err := os.ReadDir(filepath.Join(h.chunkRoot(), u.Name()))
+		if err != nil {
+			h.Log.Warn("chunked upload: find stale uploads", "user", u.Name(), "err", err)
+			continue
+		}
+		for _, t := range transfers {
+			if d := filepath.Join(h.chunkRoot(), u.Name(), t.Name()); old(d) {
+				remove(d)
+			}
+		}
+	}
 }
 
 func (h *ChunkedUploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -79,17 +149,17 @@ func (h *ChunkedUploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		chunk = parts[2]
 	}
 
-	sessionKey := u.Username + "/" + transferID
+	dir := h.sessionDir(u.Username, transferID)
 
 	switch r.Method {
 	case "MKCOL":
-		h.handleMkcol(w, u, sessionKey)
+		h.handleMkcol(w, dir)
 	case http.MethodPut:
-		h.handlePut(w, r, u, sessionKey, chunk)
+		h.handlePut(w, r, u, dir, chunk)
 	case "MOVE":
-		h.handleMove(w, r, u, sessionKey)
+		h.handleMove(w, r, u, dir)
 	case http.MethodDelete:
-		h.handleDelete(w, u, sessionKey)
+		h.handleDelete(w, dir)
 	case "PROPFIND":
 		// NC clients may PROPFIND on the upload dir to check status
 		w.Header().Set("DAV", "1, 3, extended-mkcol")
@@ -100,43 +170,36 @@ func (h *ChunkedUploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-func (h *ChunkedUploadHandler) handleMkcol(w http.ResponseWriter, u *user.User, sessionKey string) {
-	dir, err := os.MkdirTemp(h.TempDir, "cog-chunk-*")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+func (h *ChunkedUploadHandler) handleMkcol(w http.ResponseWriter, dir string) {
+	h.sweep()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		h.Log.Error("chunked upload: create", "dir", dir, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
-
-	h.mu.Lock()
-	if h.sessions == nil {
-		h.sessions = make(map[string]*uploadSession)
-	}
-	// Evict stale sessions (older than 24h). Log cleanup failures so leaked
-	// chunk dirs are visible.
-	for k, s := range h.sessions {
-		if h.Clock().Sub(s.CreatedAt) > 24*time.Hour {
-			if err := os.RemoveAll(s.Dir); err != nil {
-				slog.Warn("chunked upload stale session cleanup", "dir", s.Dir, "err", err)
-			}
-			delete(h.sessions, k)
-		}
-	}
-	h.sessions[sessionKey] = &uploadSession{
-		Username:  u.Username,
-		Dir:       dir,
-		CreatedAt: h.Clock(),
-	}
-	h.mu.Unlock()
-
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (h *ChunkedUploadHandler) handlePut(w http.ResponseWriter, r *http.Request, u *user.User, sessionKey, chunk string) {
-	h.mu.Lock()
-	sess := h.sessions[sessionKey]
-	h.mu.Unlock()
+// sessionExists reports whether an upload was started in dir.
+func sessionExists(dir string) (bool, error) {
+	info, err := os.Stat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return info.IsDir(), nil
+}
 
-	if sess == nil || sess.Username != u.Username {
+func (h *ChunkedUploadHandler) handlePut(w http.ResponseWriter, r *http.Request, u *user.User, dir, chunk string) {
+	ok, err := sessionExists(dir)
+	if err != nil {
+		h.Log.Error("chunked upload: look up", "dir", dir, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
 		http.Error(w, "upload session not found", http.StatusNotFound)
 		return
 	}
@@ -150,7 +213,7 @@ func (h *ChunkedUploadHandler) handlePut(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	chunkPath := filepath.Join(sess.Dir, chunk)
+	chunkPath := filepath.Join(dir, chunk)
 
 	// Chunks sit in the data directory until the upload is assembled, and
 	// assembling is where the quota is checked; without a check here a
@@ -159,9 +222,13 @@ func (h *ChunkedUploadHandler) handlePut(w http.ResponseWriter, r *http.Request,
 	if info, err := os.Stat(chunkPath); err == nil {
 		replaced = info.Size()
 	}
-	h.mu.Lock()
-	staged := h.staged(u.Username) - replaced
-	h.mu.Unlock()
+	staged, err := h.staged(u.Username)
+	if err != nil {
+		h.Log.Error("chunked upload: measure staged chunks", "user", u.Username, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	staged -= replaced
 	if r.ContentLength > 0 {
 		if err := h.Files.QuotaCheck(u.Username, staged+r.ContentLength); err != nil {
 			http.Error(w, err.Error(), http.StatusInsufficientStorage)
@@ -188,26 +255,20 @@ func (h *ChunkedUploadHandler) handlePut(w http.ResponseWriter, r *http.Request,
 		if rmErr := os.Remove(chunkPath); rmErr != nil {
 			h.Log.Error("remove over-quota chunk", "path", chunkPath, "err", rmErr)
 		}
-		// The chunk this one replaced went with it.
-		h.mu.Lock()
-		sess.Bytes -= replaced
-		h.mu.Unlock()
 		http.Error(w, err.Error(), http.StatusInsufficientStorage)
 		return
 	}
-	h.mu.Lock()
-	sess.Bytes += written - replaced
-	h.mu.Unlock()
-
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request, u *user.User, sessionKey string) {
-	h.mu.Lock()
-	sess := h.sessions[sessionKey]
-	h.mu.Unlock()
-
-	if sess == nil || sess.Username != u.Username {
+func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request, u *user.User, dir string) {
+	ok, err := sessionExists(dir)
+	if err != nil {
+		h.Log.Error("chunked upload: look up", "dir", dir, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
 		http.Error(w, "upload session not found", http.StatusNotFound)
 		return
 	}
@@ -232,7 +293,7 @@ func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request
 	destPath = filepath.Clean(destPath)
 
 	// Assemble chunks in sorted order
-	entries, err := os.ReadDir(sess.Dir)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -255,7 +316,7 @@ func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request
 		if entry.IsDir() {
 			continue
 		}
-		f, err := os.Open(filepath.Join(sess.Dir, entry.Name()))
+		f, err := os.Open(filepath.Join(dir, entry.Name()))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -282,12 +343,8 @@ func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Clean up session
-	h.mu.Lock()
-	delete(h.sessions, sessionKey)
-	h.mu.Unlock()
-	if err := os.RemoveAll(sess.Dir); err != nil {
-		slog.Warn("chunked upload session cleanup", "dir", sess.Dir, "err", err)
+	if err := os.RemoveAll(dir); err != nil {
+		h.Log.Warn("chunked upload session cleanup", "dir", dir, "err", err)
 	}
 
 	w.Header().Set("ETag", `"`+meta.ETag+`"`)
@@ -295,21 +352,21 @@ func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (h *ChunkedUploadHandler) handleDelete(w http.ResponseWriter, u *user.User, sessionKey string) {
-	h.mu.Lock()
-	sess := h.sessions[sessionKey]
-	if sess != nil && sess.Username == u.Username {
-		delete(h.sessions, sessionKey)
+func (h *ChunkedUploadHandler) handleDelete(w http.ResponseWriter, dir string) {
+	ok, err := sessionExists(dir)
+	if err != nil {
+		h.Log.Error("chunked upload: look up", "dir", dir, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
 	}
-	h.mu.Unlock()
-
-	if sess == nil {
+	if !ok {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-
-	if err := os.RemoveAll(sess.Dir); err != nil {
-		slog.Warn("chunked upload delete cleanup", "dir", sess.Dir, "err", err)
+	if err := os.RemoveAll(dir); err != nil {
+		h.Log.Error("chunked upload: cancel", "dir", dir, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

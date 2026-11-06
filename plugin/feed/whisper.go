@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
 )
 
 var whisperModelFiles = map[WhisperModel]string{
@@ -17,6 +19,11 @@ var whisperModelFiles = map[WhisperModel]string{
 	WhisperMediumEn: "ggml-medium.en.bin",
 	WhisperLargeV3:  "ggml-large-v3.bin",
 }
+
+// modelHTTP downloads models. Their URLs are constants, but the models are
+// large, so the client has no overall timeout; safehttp's idle timeout still
+// gives up on a server that stops sending.
+var modelHTTP = safehttp.Client(0)
 
 const whisperModelBaseURL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
 
@@ -43,7 +50,7 @@ func EnsureWhisperModel(modelsDir string, model WhisperModel) (string, error) {
 	}
 	url := whisperModelBaseURL + file
 	slog.Info("feed: downloading whisper model", "model", string(model), "url", url, "path", path)
-	resp, err := http.Get(url) //nolint:gosec
+	resp, err := modelHTTP.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("download %s: %w", url, err)
 	}

@@ -486,7 +486,7 @@ func TestAPI_Download_ContentDisposition(t *testing.T) {
 
 	resp := env.Get(t, "/api/files/download?path=/dl.txt", alice.Auth).Status(200)
 	cd := resp.Header.Get("Content-Disposition")
-	assert.True(t, strings.Contains(cd, `filename="dl.txt"`))
+	assert.True(t, strings.Contains(cd, "filename=dl.txt"))
 	assert.True(t, resp.Header.Get("ETag") != "")
 }
 

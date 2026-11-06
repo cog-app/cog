@@ -2,7 +2,11 @@ ARG DEPS_BASE
 ARG BUILD_BASE
 
 FROM ${DEPS_BASE:-debian:trixie-slim} AS dependencies
+# bubblewrap sandboxes the programs that parse uploads (internal/sandbox).
+# It needs to create user namespaces; where the container may not, they run
+# unsandboxed, as the log and Admin > Plugins say.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+	bubblewrap \
 	tesseract-ocr \
 	tesseract-ocr-eng \
 	ffmpeg \

@@ -24,11 +24,7 @@ type Client struct {
 // for remote hosts.
 func NewClient(baseURL string) *Client {
 	return &Client{
-		HTTP: &http.Client{
-			Timeout:       30 * time.Second,
-			Transport:     safehttp.Transport(),
-			CheckRedirect: safehttp.NoRedirect,
-		},
+		HTTP:    safehttp.ClientWith(30*time.Second, safehttp.Options{NoRedirect: true}),
 		BaseURL: strings.TrimSuffix(baseURL, "/"),
 	}
 }

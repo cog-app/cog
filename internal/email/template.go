@@ -36,6 +36,9 @@ type EmailData struct {
 
 	// otp fields
 	Code string
+
+	// email_verify fields; User.Email is the address being confirmed
+	VerifyURL string
 }
 
 // UserInfo holds user details for email templates.
@@ -169,6 +172,8 @@ func SampleData(name, baseURL string) EmailData {
 		d.ResetURL = baseURL + "/reset-password?token=abc123"
 	case "otp":
 		d.Code = "482917"
+	case "email_verify":
+		d.VerifyURL = baseURL + "/settings/email/verify?token=abc123"
 	}
 	return d
 }

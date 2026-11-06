@@ -8,12 +8,13 @@ import (
 	"git.duckfam.us/jj-software/cog/ui"
 	"iter"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 )
 
 // --- Users ---
-templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], flash string, flashKind string) {
+templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], retired []user.RetiredName, flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, "users") {
 		@ui.PageHeader("Users", nil) {
 			<a class="btn btn-primary" href="/admin/users/new">
@@ -65,6 +66,39 @@ templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], flash st
 				</table>
 			</div>
 		</div>
+		if len(retired) > 0 {
+			<div class="card card-flush">
+				<h2 class="card-title">Retired names</h2>
+				<p class="text-muted">These belonged to deleted accounts. Other servers and people may still know someone by them, so no new account can take one until you release it.</p>
+				<div class="table-wrap">
+					<table class="table">
+						<thead>
+							<tr>
+								<th>Name</th>
+								<th>Last email</th>
+								<th>Deleted</th>
+								<th class="col-shrink"><span class="sr-only">Actions</span></th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, n := range retired {
+								<tr>
+									<td class="break-anywhere">{ n.Username }</td>
+									<td class="break-anywhere text-muted">{ n.Email }</td>
+									<td class="text-muted">{ n.RetiredAt.Format("2006-01-02") }</td>
+									<td>
+										<form method="post" action={ templ.SafeURL("/admin/users/retired/" + url.PathEscape(n.Username) + "/release") }>
+											<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+											<button class="btn btn-secondary btn-sm" type="submit">Release</button>
+										</form>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		}
 	}
 }
 
@@ -112,6 +146,7 @@ templ adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind st
 						@ui.FormField("Display name", "display_name", "text", u.DisplayName, "")
 					</div>
 				</div>
+				@ui.FormField("Email", "email", "email", u.Email, "")
 				<div class="form-group">
 					<label class="form-check">
 						<input type="checkbox" name="is_admin" value="1" checked?={ u.IsAdmin }/>
@@ -137,7 +172,7 @@ templ adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind st
 		}
 		<div class="card card-danger">
 			<h2 class="card-title">Danger zone</h2>
-			<p class="text-muted">Deleting a user removes all their data and cannot be undone.</p>
+			<p class="text-muted">Deleting a user removes all their data and cannot be undone. Their username stays reserved until you release it under Users.</p>
 			<button
 				type="button"
 				class="btn btn-danger"
@@ -562,9 +597,10 @@ templ logEntriesPartial(entries []logbuf.Entry) {
 }
 
 // --- Plugins ---
-templ adminPluginsPage(pd ui.PageData, plugins []PluginInfo) {
+templ adminPluginsPage(pd ui.PageData, plugins []PluginInfo, unsandboxed string) {
 	@ui.AdminSidebarPage(pd, "plugins") {
 		@ui.PageHeader("Plugins", nil)
+		@ui.Alert("warning", unsandboxed)
 		<div class="card card-flush">
 			<div class="table-wrap">
 				<table class="table">

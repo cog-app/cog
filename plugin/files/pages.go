@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/httphdr"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -273,7 +273,7 @@ func (h *Pages) serveDownload(w http.ResponseWriter, r *http.Request, username, 
 	}
 	w.Header().Set("Content-Type", ct)
 	plugin.UntrustedContent(w, ct)
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+meta.Name+"\"")
+	w.Header().Set("Content-Disposition", httphdr.Attachment(meta.Name))
 	serveContent(w, r, meta.Name, time.Unix(meta.MTime, 0), rc)
 }
 
@@ -538,7 +538,7 @@ func (h *Pages) serveArchiveFileStream(w http.ResponseWriter, r *http.Request, u
 	w.Header().Set("Content-Type", ct)
 	plugin.UntrustedContent(w, ct)
 	if download {
-		w.Header().Set("Content-Disposition", "attachment; filename=\""+entry.Name+"\"")
+		w.Header().Set("Content-Disposition", httphdr.Attachment(path.Base(entry.Name)))
 	}
 	// Buffer for range request support.
 	data, err := io.ReadAll(rc)
@@ -847,7 +847,7 @@ func (h *Pages) serveZip(w http.ResponseWriter, r *http.Request, username, fp st
 		name = path.Base(path.Clean("/"+paths[0])) + ".zip"
 	}
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+	w.Header().Set("Content-Disposition", httphdr.Attachment(name))
 	if err := h.plugin.writeZip(username, entries, w); err != nil {
 		h.plugin.log.Error("zip download", "user", username, "dir", fp, "err", err)
 		panic(http.ErrAbortHandler)

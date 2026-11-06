@@ -8,8 +8,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
+	"iter"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -79,11 +83,20 @@ type Providers struct {
 	FedPolicy      *federation.Policy // whether, and with whom, this server federates
 	EmailHook      email.SendHook     // if set, all email goes through this instead of SMTP
 	RateLimiter    *ratelimit.Limiter
-	CSRFSecret     []byte
-	Cookies        cogplugin.CookieConfig
-	Clock          clock.Clock
-	StartedAt      time.Time
+	// Guard checks every credential against guessing, over RateLimiter.
+	Guard      *ratelimit.Guard
+	CSRFSecret []byte
+	Cookies    cogplugin.CookieConfig
+	Clock      clock.Clock
+	StartedAt  time.Time
+
+	closeOnce sync.Once
+	closeErr  error
 }
+
+// maxInvitationMailPerHour bounds the invitation email one user's calendar
+// changes send to people outside Cog.
+const maxInvitationMailPerHour = 100
 
 // New opens the system database and constructs all service providers.
 // It sets up the search manager with a hooked system DB for real-time indexing.
@@ -190,7 +203,122 @@ func WireSearch(log *slog.Logger, p *Providers, mgr *search.Manager) {
 		return pluginID + ":" + def.Table, true
 	}
 
+	prop.LookupShare = func(id string) (*search.ShareRecord, error) {
+		rec, err := p.Shares.Get(id)
+		if errors.Is(err, share.ErrNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return searchShare(rec), nil
+	}
 	mgr.Propagator = prop
+
+	// Every way of making or removing a share goes through the store, so
+	// its change hook is the one place recipients' indexes follow shares.
+	prev := p.Shares.OnChange
+	p.Shares.OnChange = func(rec share.Record) {
+		if prev != nil {
+			prev(rec)
+		}
+		prop.OnShareChange(searchShare(&rec))
+	}
+
+	prop.ResolveResourceTypes = func(source string) []string {
+		pluginID, table, ok := strings.Cut(source, ":")
+		if !ok {
+			return nil
+		}
+		var types []string
+		for _, def := range p.Plugins.ResourceDefs()[pluginID] {
+			if def.Table == table {
+				types = append(types, pluginID+":"+def.Type)
+			}
+		}
+		return types
+	}
+	prop.SharesOf = func(owner, resourceType string, resourceIDs []string) ([]*search.ShareRecord, error) {
+		u, err := p.Users.GetByUsername(owner)
+		if err != nil {
+			return nil, fmt.Errorf("shares of %s: %w", owner, err)
+		}
+		recs, err := p.Shares.ListByResources(u.ID, resourceType, resourceIDs)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]*search.ShareRecord, len(recs))
+		for i := range recs {
+			out[i] = searchShare(&recs[i])
+		}
+		return out, nil
+	}
+	prop.SharesFor = func(username string) ([]*search.ShareRecord, error) {
+		u, err := p.Users.GetByUsername(username)
+		if err != nil {
+			return nil, fmt.Errorf("shares for %s: %w", username, err)
+		}
+		var out []*search.ShareRecord
+		for rec, err := range p.Shares.ListBySubject(u.ID) {
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, searchShare(&rec))
+		}
+		return out, nil
+	}
+	// Joining a group brings what was shared with it before.
+	p.Groups.OnMemberAdded = func(memberID string, memberType group.MemberType) {
+		userIDs := []string{memberID}
+		if memberType == group.GroupMember {
+			ids, err := p.Groups.ListClosureUserIDs(memberID)
+			if err != nil {
+				log.Error("search copies for new group members", "group", memberID, "err", err)
+				return
+			}
+			userIDs = ids
+		}
+		members, err := p.Users.GetByIDs(userIDs)
+		if err != nil {
+			log.Error("search copies for new group members", "err", err)
+			return
+		}
+		for _, u := range members {
+			prop.OnRecipientChanged(u.Username)
+		}
+	}
+
+	mgr.SharedAccess = func(username string, refs []search.SharedRef) (map[search.SharedRef]bool, error) {
+		u, err := p.Users.GetByUsername(username)
+		if err != nil {
+			return nil, fmt.Errorf("shared results for %s: %w", username, err)
+		}
+		owned := make([]share.OwnedRef, len(refs))
+		for i, r := range refs {
+			owned[i] = share.OwnedRef(r)
+		}
+		readable, err := p.Shares.Readable(u.ID, owned)
+		if err != nil {
+			return nil, err
+		}
+		out := make(map[search.SharedRef]bool, len(readable))
+		for r := range readable {
+			out[search.SharedRef(r)] = true
+		}
+		return out, nil
+	}
+}
+
+// searchShare is a share as the search propagator sees it.
+func searchShare(rec *share.Record) *search.ShareRecord {
+	return &search.ShareRecord{
+		ID:           rec.ID,
+		OwnerUserID:  rec.OwnerUserID,
+		ResourceType: rec.ResourceType,
+		ResourceID:   rec.ResourceID,
+		SubjectType:  rec.SubjectType,
+		SubjectID:    rec.SubjectID,
+	}
 }
 
 // NewFromDB constructs providers from an existing database connection.
@@ -222,11 +350,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		log.Warn("mount bootstrap failed", "err", err)
 	}
 
-	secret, err := loadOrCreateKey(sysDB, secretSettingKey, func() ([]byte, error) {
-		b := make([]byte, 32)
-		_, err := rand.Read(b)
-		return b, err
-	})
+	secret, err := loadSecret(sysDB, filepath.Join(cfg.DataDir, secretFileName))
 	if err != nil {
 		return nil, err
 	}
@@ -244,9 +368,14 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 
 	// The DAV core owns collections; plugins that hold DAV resources get it
 	// before they register. web.New finishes wiring it.
-	davServer := &dav.Server{Collections: dav.NewStore(sysDB, c), Clock: c, Log: log.With("component", "dav")}
+	davServer := &dav.Server{Collections: dav.NewStore(sysDB, c), Clock: c, Log: log.With("component", "dav"),
+		Secret: secret, MailLimit: ratelimit.NewShared(sysDB, "invitation-mail", maxInvitationMailPerHour, time.Hour, c)}
 
-	registry := plugin.NewRegistry(log, cfg.DataDir, http.NewServeMux(), sysDB, secret, c)
+	// CSRF tokens use a key of their own, derived from the master secret,
+	// because trusted process plugins are given it: a plugin can then mint
+	// form tokens but not decrypt TOTP secrets or forge reset links.
+	csrfKey := auth.DerivedKey(secret, "csrf")
+	registry := plugin.NewRegistry(log, cfg.DataDir, http.NewServeMux(), sysDB, csrfKey, c)
 
 	// WebDAV-Push: every committed write to a collection's sync state, in
 	// any plugin database, is noticed by the DAV core; the deliverer turns
@@ -276,8 +405,23 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	}
 
 	// Discover and load process plugins from PATH.
-	if !cfg.DisableProcessPlugins {
+	switch {
+	case cfg.DisableProcessPlugins:
+	case cfg.ProcessPluginNamesOnly:
+		users.Reserve(registry.ProcessPluginIDs()...)
+	default:
 		registry.DiscoverProcessPlugins()
+	}
+
+	// Plugins keep directories in the data dir under their IDs, beside the
+	// users' own.
+	users.Reserve(registry.PluginIDs()...)
+	bad, err := users.Invalid()
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range bad {
+		log.Error("existing username is not allowed for new accounts and may share a directory with another user or the server; rename or remove it", "username", name)
 	}
 
 	shares := share.NewStore(sysDB, c)
@@ -310,6 +454,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		return nil, err
 	}
 
+	limiter := ratelimit.NewShared(sysDB, "auth", 10, 15*time.Minute, c)
 	return &Providers{
 		Config:         cfg,
 		Log:            log,
@@ -332,7 +477,8 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		PasswordResets: auth.NewPasswordResetStore(sysDB, c, secret),
 		WebAuthn:       newWebAuthnStore(sysDB, c, cfg.BaseURL, secret, log),
 		SSHKeys:        sshKeys,
-		RateLimiter:    ratelimit.New(10, 15*time.Minute, c),
+		RateLimiter:    limiter,
+		Guard:          &ratelimit.Guard{Limiter: limiter, Delay: time.Second},
 		Activities:     activities,
 		DAV:            davServer,
 		JMAP:           jmapServer,
@@ -341,7 +487,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		Federation:     fedStore,
 		FedClient:      fedClient,
 		FedPolicy:      &federation.Policy{Settings: settingsStore, EnvPeers: cfg.FederationPeers},
-		CSRFSecret:     secret,
+		CSRFSecret:     csrfKey,
 		Cookies:        cogplugin.CookieConfigFromBaseURL(cfg.BaseURL),
 		Clock:          c,
 		StartedAt:      c(),
@@ -404,12 +550,17 @@ func (p *Providers) EmailSender() *email.Sender {
 }
 
 // Close releases resources held by the providers.
+// Close stops the background work and closes the database. Only the first
+// call does anything, so a command and Main may both defer it.
 func (p *Providers) Close() error {
-	if p.Search != nil {
-		p.Search.Stop()
-	}
-	p.Plugins.Stop()
-	return p.DB.Close()
+	p.closeOnce.Do(func() {
+		if p.Search != nil {
+			p.Search.Stop()
+		}
+		p.Plugins.Stop()
+		p.closeErr = p.DB.Close()
+	})
+	return p.closeErr
 }
 
 // newWebAuthnStore creates a WebAuthn store, returning nil on error
@@ -438,6 +589,83 @@ const (
 // loadOrCreateKey returns a key persisted in system_settings, generating
 // and storing one with gen on first run. Two processes starting at once
 // both generate; the first to store wins, and both use what was stored.
+// secretFileName is the master secret's file in the data dir. It starts with
+// a dot, so no username can take it.
+const secretFileName = ".cog-secret"
+
+// loadSecret returns the master secret, which encrypts TOTP secrets and
+// keys reset links, CSRF tokens and attachment links. It lives in a file
+// beside the data, not in the database it protects, so a copy of the
+// database alone reveals none of those. A secret from before is moved out of
+// system_settings; otherwise one is made. Back the file up with the
+// database: without it, TOTP secrets cannot be read and links stop working.
+func loadSecret(db *sql.DB, path string) ([]byte, error) {
+	if b, err := readSecret(path); err == nil {
+		return b, dropSetting(db, secretSettingKey)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	var key []byte
+	var hexVal string
+	err := db.QueryRow(`SELECT value FROM system_settings WHERE key = ?`, secretSettingKey).Scan(&hexVal)
+	switch {
+	case err == nil:
+		if key, err = hex.DecodeString(hexVal); err != nil || len(key) == 0 {
+			return nil, fmt.Errorf("system setting %s is not a hex key", secretSettingKey)
+		}
+	case errors.Is(err, sql.ErrNoRows):
+		key = make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return nil, fmt.Errorf("generate secret: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("read system setting %s: %w", secretSettingKey, err)
+	}
+	// Created whole or not at all, and never over another process's: a
+	// link fails if the name exists, and then that one is the secret.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, fmt.Errorf("create data dir: %w", err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".cog-secret-*")
+	if err != nil {
+		return nil, fmt.Errorf("write secret: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.WriteString(hex.EncodeToString(key) + "\n"); err != nil {
+		return nil, errors.Join(fmt.Errorf("write secret: %w", err), tmp.Close())
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, fmt.Errorf("write secret: %w", err)
+	}
+	if err := os.Link(tmp.Name(), path); err != nil && !errors.Is(err, fs.ErrExist) {
+		return nil, fmt.Errorf("store secret: %w", err)
+	}
+	b, err := readSecret(path)
+	if err != nil {
+		return nil, err
+	}
+	return b, dropSetting(db, secretSettingKey)
+}
+
+func readSecret(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read secret: %w", err)
+	}
+	b, err := hex.DecodeString(strings.TrimSpace(string(data)))
+	if err != nil || len(b) < 16 {
+		return nil, fmt.Errorf("%s does not hold a hex key", path)
+	}
+	return b, nil
+}
+
+func dropSetting(db *sql.DB, key string) error {
+	if _, err := db.Exec(`DELETE FROM system_settings WHERE key = ?`, key); err != nil {
+		return fmt.Errorf("remove system setting %s: %w", key, err)
+	}
+	return nil
+}
+
 func loadOrCreateKey(db *sql.DB, name string, gen func() ([]byte, error)) ([]byte, error) {
 	var hexVal string
 	err := db.QueryRow(`SELECT value FROM system_settings WHERE key = ?`, name).Scan(&hexVal)
@@ -478,5 +706,110 @@ func vapidSubject(baseURL string) string {
 func (p *Providers) StartPush(ctx context.Context) {
 	if p.Pusher != nil {
 		go p.Pusher.Run(ctx)
+	}
+}
+
+// SignOutEverywhere ends every sign-in a password reset must end: the user's
+// browser sessions and app passwords. Whoever had the old password may have
+// minted an app password with it, which would otherwise outlive the reset.
+// SSH keys and passkeys stay; the user reviews those in Settings.
+func (p *Providers) SignOutEverywhere(userID string) error {
+	return errors.Join(p.Sessions.DeleteAllForUser(userID), p.AppPasswords.DeleteAllForUser(userID))
+}
+
+// EmailVisible reports whether viewer may see the email address of the user
+// with targetID: their own, any for an admin, and otherwise only that of
+// someone they share a group with. Everyone else is known by name alone, so
+// a signed-in user cannot collect every address on the server.
+func (p *Providers) EmailVisible(viewer *user.User, targetID string) (bool, error) {
+	if viewer == nil {
+		return false, nil
+	}
+	if viewer.ID == targetID || viewer.IsAdmin {
+		return true, nil
+	}
+	return p.Groups.ShareAGroup(viewer.ID, targetID)
+}
+
+// DeleteUser removes an account and everything it kept: its rows, its
+// shares (through the share store, so what they fed is updated), its open
+// database handles and search index, and its directories in the data dir.
+// A later account of the same name starts empty (audit H9).
+func (p *Providers) DeleteUser(id string) error {
+	u, err := p.Users.GetByID(id)
+	if err != nil {
+		return err
+	}
+	var shareIDs []string
+	for _, list := range []iter.Seq2[share.Record, error]{p.Shares.ListByOwner(id), p.Shares.ListBySubject(id)} {
+		for rec, err := range list {
+			if err != nil {
+				return fmt.Errorf("list shares of %s: %w", u.Username, err)
+			}
+			if rec.OwnerUserID == id || rec.SubjectType == "USER" {
+				shareIDs = append(shareIDs, rec.ID)
+			}
+		}
+	}
+	for _, sid := range shareIDs {
+		if err := p.Shares.Delete(sid); err != nil && !errors.Is(err, share.ErrNotFound) {
+			return fmt.Errorf("delete share %s: %w", sid, err)
+		}
+	}
+	var federated []federation.FederatedShare
+	for _, list := range []iter.Seq2[federation.FederatedShare, error]{p.Federation.ListInbound(id, ""), p.Federation.ListOutbound(id)} {
+		for fs, err := range list {
+			if err != nil {
+				return fmt.Errorf("list federated shares of %s: %w", u.Username, err)
+			}
+			federated = append(federated, fs)
+		}
+	}
+	if err := p.Users.Delete(id); err != nil {
+		return err
+	}
+	p.endFederatedShares(federated)
+	// The account is gone; what follows only frees what it left behind, so
+	// it carries on past a failure and reports them all.
+	errs := []error{p.Plugins.CloseUser(u.Username)}
+	if p.Search != nil {
+		errs = append(errs, p.Search.CloseUser(u.Username))
+	}
+	dirs := []string{filepath.Join(p.Config.DataDir, u.Username)}
+	for _, pluginID := range p.Plugins.PluginIDs() {
+		dirs = append(dirs, filepath.Join(p.Config.DataDir, pluginID, u.Username))
+	}
+	for _, dir := range dirs {
+		if err := os.RemoveAll(dir); err != nil {
+			errs = append(errs, fmt.Errorf("remove %s: %w", dir, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// endFederatedShares tells each remote server that a deleted user's share
+// with it has ended, so the remote drops its mount or its copy of the
+// secret instead of keeping a share that now leads nowhere. A remote that
+// cannot be reached is logged: the share is already gone here, and its
+// secret no longer opens anything.
+func (p *Providers) endFederatedShares(shares []federation.FederatedShare) {
+	for _, fs := range shares {
+		if fs.RemoteHost == "" || fs.State == "rejected" || fs.State == "removed" {
+			continue
+		}
+		notif := federation.OCMNotification{
+			NotificationType: federation.NotifyShareUnshared,
+			ResourceType:     fs.ResourceType,
+			ProviderID:       fs.RemoteID,
+			SharedSecret:     fs.Token,
+		}
+		if fs.Direction == "inbound" && fs.State == "pending" {
+			notif.NotificationType = federation.NotifyShareDeclined
+		}
+		go func() {
+			if err := p.FedClient.Notify(context.Background(), fs.RemoteHost, notif); err != nil {
+				p.Log.Warn("notify remote of deleted user's federated share", "remote", fs.RemoteHost, "share", fs.ID, "err", err)
+			}
+		}()
 	}
 }

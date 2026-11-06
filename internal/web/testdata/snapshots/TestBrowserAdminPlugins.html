@@ -5,7 +5,7 @@
     <title>
       Plugins — Cog
     </title>
-    <link href="/static/style.css?v=22be9710446b" rel="stylesheet" />
+    <link href="/static/style.css?v=9bd485c9cf8f" rel="stylesheet" />
     <link href="/static/favicon.svg" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -215,6 +215,12 @@
             </div>
             <div class="page-actions" />
           </header>
+          <div class="alert alert-warning" role="status">
+            <button aria-label="Dismiss" class="alert-dismiss" onclick="this.parentElement.remove()" type="button">
+              ×
+            </button>
+            Previews, OCR and media tools run unsandboxed, with access to every user's files: turned off by COG_SANDBOX=off
+          </div>
           <div class="card card-flush">
             <div class="table-wrap">
               <table class="table">

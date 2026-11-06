@@ -5,7 +5,7 @@
     <title>
       Edit User — Cog
     </title>
-    <link href="/static/style.css?v=22be9710446b" rel="stylesheet" />
+    <link href="/static/style.css?v=9bd485c9cf8f" rel="stylesheet" />
     <link href="/static/favicon.svg" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -253,6 +253,12 @@
                 </div>
               </div>
               <div class="form-group">
+                <label for="email">
+                  Email
+                </label>
+                <input autocomplete="" class="form-control" id="email" name="email" placeholder="" type="email" value="" />
+              </div>
+              <div class="form-group">
                 <label class="form-check">
                   <input name="is_admin" type="checkbox" value="1" />
                   Administrator
@@ -289,7 +295,7 @@
               Danger zone
             </h2>
             <p class="text-muted">
-              Deleting a user removes all their data and cannot be undone.
+              Deleting a user removes all their data and cannot be undone. Their username stays reserved until you release it under Users.
             </p>
             <button class="btn btn-danger" hx-confirm="Delete target and all their data? This cannot be undone." hx-delete="/admin/users/«hex»" hx-on::after-request="window.location='/admin/users'" type="button">
               Delete user

@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -197,10 +199,24 @@ func TestWebDAV_DirectDownload(t *testing.T) {
 	require.Equal(t, "ok", ocsResp.OCS.Meta.Status)
 	require.Contains(t, ocsResp.OCS.Data.URL, "/remote.php/dav/direct/")
 
+	// The link names the file, not its path: renaming it first is fine.
+	webdavReq(t, env, "MOVE", prefix+"/music.mp3", "", alice.Auth,
+		cogtest.Header("Destination", env.Providers.Config.BaseURL+prefix+"/renamed.mp3")).Status(201)
+
 	// Fetch the token URL WITHOUT auth — should return the file content
-	env.Get(t, ocsResp.OCS.Data.URL[len(env.Providers.Config.BaseURL):]).
+	link := ocsResp.OCS.Data.URL[len(env.Providers.Config.BaseURL):]
+	env.Get(t, link).
 		Status(200).
 		Equals("fake mp3 data")
+	// It works once.
+	env.Get(t, link).Status(404)
+
+	// And only for a while.
+	env.PostForm(t, "/ocs/v2.php/apps/dav/api/v1/direct",
+		url.Values{"fileId": {fmt.Sprintf("%d", meta.ID)}}, alice.Auth).
+		Status(200).JSON(&ocsResp)
+	env.Clock.Advance(11 * time.Minute)
+	env.Get(t, ocsResp.OCS.Data.URL[len(env.Providers.Config.BaseURL):]).Status(404)
 }
 
 func TestWebDAV_COPY(t *testing.T) {
@@ -484,4 +500,27 @@ func TestCommentsCRUD(t *testing.T) {
 	resp4 := webdavReq(t, env, "PROPFIND", commentPath+"/", "", alice.Auth)
 	resp4.Status(207)
 	require.NotContains(t, resp4.ReadBody(), "Hello from test")
+}
+
+// TestChunkedUploadSweepsStale: an upload's chunks are its session, kept on
+// disk, and one left untouched for a day — or a temporary chunk directory
+// from before uploads were named by transfer — is swept when another starts.
+func TestChunkedUploadSweepsStale(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	uploadPrefix := "/remote.php/dav/uploads/" + alice.ID
+
+	legacy := filepath.Join(env.Providers.Config.DataDir, "cog-chunk-123")
+	require.NoError(t, os.Mkdir(legacy, 0o700))
+
+	webdavReq(t, env, "MKCOL", uploadPrefix+"/abandoned/", "", alice.Auth).Status(201)
+	webdavReq(t, env, "PUT", uploadPrefix+"/abandoned/00001", "left behind", alice.Auth).Status(201)
+
+	env.Clock.Set(time.Now().Add(25 * time.Hour))
+	webdavReq(t, env, "MKCOL", uploadPrefix+"/fresh/", "", alice.Auth).Status(201)
+
+	webdavReq(t, env, "PUT", uploadPrefix+"/abandoned/00002", "more", alice.Auth).Status(404)
+	webdavReq(t, env, "PUT", uploadPrefix+"/fresh/00001", "new", alice.Auth).Status(201)
+	_, err := os.Stat(legacy)
+	require.True(t, errors.Is(err, fs.ErrNotExist), "legacy chunk dir kept: %v", err)
 }

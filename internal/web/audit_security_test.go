@@ -227,6 +227,7 @@ func TestAuditEmailChangeNeedsPassword(t *testing.T) {
 	env.PostForm(t, "/settings/profile", url.Values{
 		"csrf_token": {token}, "display_name": {"A"}, "email": {"alice@example.com"}, "current_password": {"pass"},
 	}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+	confirmEmail(t, env, cookie, "alice@example.com")
 	u, err = env.Providers.Users.GetByID(alice.ID)
 	require.NoError(t, err)
 	require.Equal(t, "alice@example.com", u.Email)

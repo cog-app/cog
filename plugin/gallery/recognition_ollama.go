@@ -55,6 +55,7 @@ List 5-15 tags describing objects, activities, colors, and setting visible in th
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
+	// trusted URL: an admin sets it, and it is usually on localhost.
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(httpReq)
 	if err != nil {

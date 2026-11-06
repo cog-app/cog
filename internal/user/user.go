@@ -9,6 +9,7 @@ import (
 	"github.com/mattn/go-sqlite3"
 	"iter"
 	"strings"
+	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
@@ -56,6 +57,9 @@ type UpdateOpts struct {
 type Store struct {
 	db    *sql.DB
 	clock clock.Clock
+
+	reservedMu sync.RWMutex
+	reserved   []string // lower-cased, beyond reservedNames
 }
 
 func NewStore(db *sql.DB, c clock.Clock) *Store {
@@ -63,6 +67,9 @@ func NewStore(db *sql.DB, c clock.Clock) *Store {
 }
 
 func (s *Store) Create(username, password string) (*User, error) {
+	if err := s.ValidateUsername(username); err != nil {
+		return nil, err
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
@@ -76,20 +83,29 @@ func (s *Store) Create(username, password string) (*User, error) {
 	now := s.clock().Unix()
 	homeMount := fmt.Sprintf("local://data/%s", username)
 
-	// Auto-admin: first user becomes admin.
-	isAdmin := false
-	count, err := s.Count()
-	if err != nil {
-		return nil, fmt.Errorf("count users: %w", err)
+	// One statement, so two concurrent registrations can neither both become
+	// the first user (who is made admin) nor take names differing only in
+	// case, which would share a directory on a case-insensitive file system.
+	// The name of a deleted account stays taken until an admin releases it.
+	var isAdmin bool
+	err = s.db.QueryRow(
+		`INSERT INTO users (id, username, password_hash, home_mount, created_at, is_admin, display_name)
+		SELECT ?1, ?2, ?3, ?4, ?5, NOT EXISTS (SELECT 1 FROM users), ''
+		WHERE NOT EXISTS (SELECT 1 FROM users WHERE lower(username) = lower(?2))
+		AND NOT EXISTS (SELECT 1 FROM retired_usernames WHERE username = ?2)
+		RETURNING is_admin`,
+		id, username, string(hash), homeMount, now,
+	).Scan(&isAdmin)
+	if errors.Is(err, sql.ErrNoRows) {
+		var retired bool
+		if err := s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM retired_usernames WHERE username = ?)`, username).Scan(&retired); err != nil {
+			return nil, fmt.Errorf("insert user %q: %w", username, err)
+		}
+		if retired {
+			return nil, fmt.Errorf("insert user %q: %w", username, ErrUsernameRetired)
+		}
+		return nil, fmt.Errorf("insert user %q: %w", username, ErrUsernameTaken)
 	}
-	if count == 0 {
-		isAdmin = true
-	}
-
-	_, err = s.db.Exec(
-		`INSERT INTO users (id, username, password_hash, home_mount, created_at, is_admin, display_name) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, username, string(hash), homeMount, now, isAdmin, "",
-	)
 	if err != nil {
 		var se sqlite3.Error
 		if errors.As(err, &se) && se.ExtendedCode == sqlite3.ErrConstraintUnique {
@@ -178,20 +194,20 @@ func (s *Store) getChunk(column string, args []any, key func(*User) string, out 
 	return nil
 }
 
-// GetByEmail looks up a user by exact email match. Empty email returns
+// GetByEmail looks up a user by email, ignoring case. Empty email returns
 // ErrNotFound to prevent matching accounts that haven't set one.
 func (s *Store) GetByEmail(email string) (*User, error) {
 	if email == "" {
 		return nil, ErrNotFound
 	}
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method FROM users WHERE email = ?`, email,
+		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method FROM users WHERE email != '' AND lower(email) = lower(?)`, email,
 	))
 }
 
 // GetByEmails looks users up by email, ignoring case, in one query. The
-// result is keyed by the lower-cased address; when several users share one,
-// the first by username wins. Empty addresses match nobody.
+// result is keyed by the lower-cased address, which at most one user holds.
+// Empty addresses match nobody.
 func (s *Store) GetByEmails(emails []string) (map[string]*User, error) {
 	var args []any
 	for _, e := range emails {
@@ -328,6 +344,9 @@ func (s *Store) Update(id string, opts UpdateOpts) error {
 		return nil
 	}
 	if _, err := s.db.Exec(`UPDATE users SET `+strings.Join(sets, ", ")+` WHERE id = ?`, append(args, id)...); err != nil {
+		if opts.Email != nil && isUniqueViolation(err) {
+			return ErrEmailTaken
+		}
 		return fmt.Errorf("update user: %w", err)
 	}
 	return nil
@@ -349,9 +368,12 @@ func (s *Store) SetMFAMethod(id, method string) (string, error) {
 	return method, err
 }
 
-// Delete removes a user and their sessions, app passwords and group
-// memberships, in one transaction so a failure part way cannot leave a
-// user who can no longer log in but still exists.
+// Delete removes a user and every row that refers to them, in one
+// transaction, so a failure part way leaves the account as it was rather
+// than half gone (audit H9). Groups they own stay, without an owner, for an
+// admin to reassign; volumes they own go, with every mount of them. Shares
+// are the caller's to delete first, through the share store, so the
+// changes they cause (search, birthday calendars) are made.
 func (s *Store) Delete(id string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -359,16 +381,31 @@ func (s *Store) Delete(id string) error {
 	}
 	defer tx.Rollback()
 
-	// No ON DELETE CASCADE in schema, so delete manually.
+	// Tables without ON DELETE CASCADE, or with no foreign key at all.
+	owned := `SELECT id FROM volumes WHERE owner_id = ?1`
 	for _, q := range []struct{ what, sql string }{
 		{"sessions", `DELETE FROM sessions WHERE user_id = ?`},
 		{"app_passwords", `DELETE FROM app_passwords WHERE user_id = ?`},
+		{"mfa_pending", `DELETE FROM mfa_pending WHERE user_id = ?`},
+		{"webauthn_sessions", `DELETE FROM webauthn_sessions WHERE user_id = ?`},
+		{"email_otp", `DELETE FROM email_otp WHERE user_id = ?`},
 		{"group_members", `DELETE FROM group_members WHERE member_type = 'USER' AND member_id = ?`},
 		{"group_membership_closure", `DELETE FROM group_membership_closure WHERE descendant_user_id = ?`},
+		{"group_invitations", `DELETE FROM group_invitations WHERE invited_by = ?1 OR invitee_id = ?1`},
+		{"groups", `UPDATE groups SET owner_id = NULL WHERE owner_id = ?`},
+		{"shares", `DELETE FROM shares WHERE owner_user_id = ?1 OR (subject_type = 'USER' AND subject_id = ?1)`},
+		{"federated_shares", `DELETE FROM federated_shares WHERE local_user_id = ?`},
+		{"mounts", `DELETE FROM mounts WHERE user_id = ?1 OR volume_id IN (` + owned + `)`},
+		{"volume_quotas", `DELETE FROM volume_quotas WHERE (subject_type = 'USER' AND subject_id = ?1) OR volume_id IN (` + owned + `)`},
+		{"volumes", `DELETE FROM volumes WHERE owner_id = ?`},
 	} {
 		if _, err := tx.Exec(q.sql, id); err != nil {
 			return fmt.Errorf("delete %s: %w", q.what, err)
 		}
+	}
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO retired_usernames (username, email, retired_at) SELECT username, email, ? FROM users WHERE id = ?`,
+		s.clock().Unix(), id); err != nil {
+		return fmt.Errorf("retire username: %w", err)
 	}
 	res, err := tx.Exec(`DELETE FROM users WHERE id = ?`, id)
 	if err != nil {

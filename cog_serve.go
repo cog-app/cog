@@ -2,16 +2,23 @@ package cog
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"git.duckfam.us/jj-software/cog/internal/safehttp"
+	"git.duckfam.us/jj-software/cog/internal/sandbox"
 	cogssh "git.duckfam.us/jj-software/cog/internal/ssh"
 	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/plugin"
@@ -31,7 +38,7 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 				safehttp.SetAllowPrivate(true)
 			}
 
-			p, err := openProviders(plugins...)
+			p, err := openServerProviders(plugins...)
 			if err != nil {
 				return err
 			}
@@ -71,10 +78,55 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 				}()
 			}
 
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			if err := sandbox.Status(); err != nil {
+				p.Log.Warn("previews, OCR and media tools run unsandboxed", "reason", err)
+			}
 			p.Log.Info("Cog listening", "addr", cfg.Addr)
-			return http.ListenAndServe(cfg.Addr, handler)
+			return serve(ctx, newServer(cfg.Addr, handler), p.Log)
 		},
 	}
+}
+
+// newServer is the HTTP server for handler. ReadHeaderTimeout stops a client
+// holding connections open by sending its headers slowly. There is no overall
+// read or write timeout: uploads, downloads and event streams run long.
+func newServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
+}
+
+// shutdownGrace is how long requests in flight get to finish once the server
+// is asked to stop.
+const shutdownGrace = 30 * time.Second
+
+// serve runs srv until ctx ends, then stops taking connections and waits up
+// to shutdownGrace for requests in flight. The caller's deferred cleanup
+// (closing search indexes, stopping plugin processes) runs after, instead
+// of the process dying under it.
+func serve(ctx context.Context, srv *http.Server, log *slog.Logger) error {
+	errc := make(chan error, 1)
+	go func() { errc <- srv.ListenAndServe() }()
+	select {
+	case err := <-errc:
+		return err
+	case <-ctx.Done():
+	}
+	log.Info("Cog shutting down")
+	sctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+	defer cancel()
+	if err := srv.Shutdown(sctx); err != nil {
+		return fmt.Errorf("shutdown: %w", err)
+	}
+	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
 func requestLogger(next http.Handler) http.Handler {

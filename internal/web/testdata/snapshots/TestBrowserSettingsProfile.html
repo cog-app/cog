@@ -5,7 +5,7 @@
     <title>
       Profile — Cog
     </title>
-    <link href="/static/style.css?v=22be9710446b" rel="stylesheet" />
+    <link href="/static/style.css?v=9bd485c9cf8f" rel="stylesheet" />
     <link href="/static/favicon.svg" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -214,7 +214,7 @@
             <button aria-label="Dismiss" class="alert-dismiss" onclick="this.parentElement.remove()" type="button">
               ×
             </button>
-            Profile updated.
+            We sent a link to alice@example.com. Your address changes when you open it.
           </div>
           <div class="card">
             <h2 class="card-title">
@@ -254,8 +254,11 @@
                 <label for="email">
                   Email
                 </label>
-                <input autocomplete="" class="form-control" id="email" name="email" placeholder="your@email.com" type="email" value="alice@example.com" />
+                <input autocomplete="" class="form-control" id="email" name="email" placeholder="your@email.com" type="email" value="" />
               </div>
+              <p class="form-help">
+                Waiting for you to open the link sent to alice@example.com.
+              </p>
               <div class="form-group">
                 <label for="profile-current-password">
                   Current password

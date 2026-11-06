@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"iter"
@@ -21,6 +22,11 @@ var ErrNotFound = errors.New("share not found")
 var ErrAccessDenied = errors.New("access denied")
 var ErrPasswordRequired = errors.New("password required")
 var ErrPasswordIncorrect = errors.New("incorrect password")
+
+// ErrSubjectNotAllowed refuses a share with an audience its owner may not
+// reach: everyone on the server, unless they are an admin, or a group they
+// neither belong to nor own.
+var ErrSubjectNotAllowed = errors.New("you may not share with that audience")
 
 // Record is a canonical global share record.
 type Record struct {
@@ -70,6 +76,9 @@ func NewStore(db *sql.DB, c clock.Clock) *Store {
 
 // Create inserts a new share record. Returns the created record.
 func (s *Store) Create(ownerUserID, resourceType, resourceID, subjectType, subjectID string, permissions uint32) (*Record, error) {
+	if err := s.mayShareWith(ownerUserID, subjectType, subjectID); err != nil {
+		return nil, err
+	}
 	id, err := generateID()
 	if err != nil {
 		return nil, err
@@ -100,6 +109,33 @@ func (s *Store) Create(ownerUserID, resourceType, resourceID, subjectType, subje
 	}
 	s.changed(rec)
 	return rec, nil
+}
+
+// mayShareWith checks the audience of a new share. Every way of sharing ends
+// in Create, so this is the one place the rule lives: a share reaches its
+// audience without their consent, so a user may not put something before
+// everyone on the server, or before a group they are not part of.
+func (s *Store) mayShareWith(ownerUserID, subjectType, subjectID string) error {
+	var ok bool
+	var err error
+	switch subjectType {
+	case SubjectInstance:
+		err = s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM users WHERE id = ? AND is_admin != 0)`, ownerUserID).Scan(&ok)
+	case "GROUP":
+		err = s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM group_membership_closure WHERE ancestor_group_id = ? AND descendant_user_id = ?)
+			OR EXISTS (SELECT 1 FROM groups WHERE id = ? AND owner_id = ?)
+			OR EXISTS (SELECT 1 FROM users WHERE id = ? AND is_admin != 0)`,
+			subjectID, ownerUserID, subjectID, ownerUserID, ownerUserID).Scan(&ok)
+	default:
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check share audience: %w", err)
+	}
+	if !ok {
+		return ErrSubjectNotAllowed
+	}
+	return nil
 }
 
 // CreatePublicLink creates a share with a public token.
@@ -218,6 +254,27 @@ func (s *Store) GetByToken(token string) (*Record, error) {
 }
 
 // Delete removes a share record.
+// Decline stops a share reaching userID. A share with them alone is
+// deleted; one with a group they are in, or with everyone, stays for the
+// others and is recorded as declined by them.
+func (s *Store) Decline(id, userID string) error {
+	rec, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+	if rec.SubjectType == "USER" {
+		if rec.SubjectID != userID {
+			return ErrNotFound
+		}
+		return s.Delete(id)
+	}
+	if _, err := s.db.Exec(`INSERT INTO share_declines (share_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING`, id, userID); err != nil {
+		return fmt.Errorf("decline share: %w", err)
+	}
+	s.changed(rec)
+	return nil
+}
+
 func (s *Store) Delete(id string) error {
 	rec := Record{ID: id}
 	err := s.db.QueryRow(`DELETE FROM shares WHERE id = ?
@@ -280,7 +337,8 @@ func (s *Store) ListBySubject(subjectID string) iter.Seq2[Record, error] {
 				))
 			   OR (s.subject_type = 'INSTANCE'))
 			  AND (s.expiration IS NULL OR s.expiration > ?)
-			ORDER BY s.created_at DESC`, subjectID, subjectID, s.clock().Unix())
+			  AND s.id NOT IN (SELECT share_id FROM share_declines WHERE user_id = ?)
+			ORDER BY s.created_at DESC`, subjectID, subjectID, s.clock().Unix(), subjectID)
 		if err != nil {
 			yield(Record{}, fmt.Errorf("list shares by subject: %w", err))
 			return
@@ -365,8 +423,9 @@ func (s *Store) CheckAccessGrantedBy(userID, resourceType, resourceID string, gr
 			))
 			OR (s.subject_type = 'INSTANCE')
 		  )
-		  AND (s.expiration IS NULL OR s.expiration > ?)`,
-		resourceType, resourceID, userID, userID, s.clock().Unix())
+		  AND (s.expiration IS NULL OR s.expiration > ?)
+		  AND s.id NOT IN (SELECT share_id FROM share_declines WHERE user_id = ?)`,
+		resourceType, resourceID, userID, userID, s.clock().Unix(), userID)
 	if err != nil {
 		return nil, fmt.Errorf("check access: %w", err)
 	}
@@ -394,6 +453,103 @@ func (s *Store) CheckAccessGrantedBy(userID, resourceType, resourceID string, gr
 	}
 
 	return decision, rows.Err()
+}
+
+// ListByResources returns the live shares ownerUserID made of the given
+// resources of one type, in one query.
+func (s *Store) ListByResources(ownerUserID, resourceType string, resourceIDs []string) ([]Record, error) {
+	if len(resourceIDs) == 0 {
+		return nil, nil
+	}
+	ids, err := json.Marshal(resourceIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list shares by resources: %w", err)
+	}
+	rows, err := s.db.Query(`
+		SELECT s.id, s.owner_user_id, s.resource_type, s.resource_id,
+			s.subject_type, s.subject_id, s.permissions, s.token, s.password_hash,
+			s.expiration, s.created_at, s.updated_at
+		FROM shares s
+		WHERE s.owner_user_id = ? AND s.resource_type = ?
+		  AND s.resource_id IN (SELECT value FROM json_each(?))
+		  AND (s.expiration IS NULL OR s.expiration > ?)`,
+		ownerUserID, resourceType, string(ids), s.clock().Unix())
+	if err != nil {
+		return nil, fmt.Errorf("list shares by resources: %w", err)
+	}
+	defer rows.Close()
+	var out []Record
+	for rows.Next() {
+		var r Record
+		if err := rows.Scan(&r.ID, &r.OwnerUserID, &r.ResourceType, &r.ResourceID,
+			&r.SubjectType, &r.SubjectID, &r.Permissions, &r.Token, &r.PasswordHash,
+			&r.Expiration, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan share: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// OwnedRef names a resource as it was shared: the username of the share's
+// owner, and the resource's type and ID.
+type OwnedRef struct {
+	Owner        string
+	ResourceType string
+	ResourceID   string
+}
+
+// Readable reports which of refs userID can read now, through a live share
+// its owner made to them, a group they are in, or everyone, and that they
+// have not declined. It is one query however many refs there are, for
+// filtering a page of search results.
+func (s *Store) Readable(userID string, refs []OwnedRef) (map[OwnedRef]bool, error) {
+	out := make(map[OwnedRef]bool, len(refs))
+	if len(refs) == 0 {
+		return out, nil
+	}
+	type ref struct {
+		O string `json:"o"`
+		T string `json:"t"`
+		I string `json:"i"`
+	}
+	list := make([]ref, len(refs))
+	for i, r := range refs {
+		list[i] = ref{r.Owner, r.ResourceType, r.ResourceID}
+	}
+	b, err := json.Marshal(list)
+	if err != nil {
+		return nil, fmt.Errorf("readable: %w", err)
+	}
+	rows, err := s.db.Query(`
+		SELECT DISTINCT u.username, s.resource_type, s.resource_id
+		FROM json_each(?1) r
+		JOIN users u ON u.username = json_extract(r.value, '$.o')
+		JOIN shares s ON s.owner_user_id = u.id
+			AND s.resource_type = json_extract(r.value, '$.t')
+			AND s.resource_id = json_extract(r.value, '$.i')
+		WHERE (
+			(s.subject_type = 'USER' AND s.subject_id = ?2)
+			OR (s.subject_type = 'GROUP' AND s.subject_id IN (
+				SELECT ancestor_group_id FROM group_membership_closure WHERE descendant_user_id = ?2
+			))
+			OR s.subject_type = 'INSTANCE'
+		)
+		AND (s.expiration IS NULL OR s.expiration > ?3)
+		AND s.id NOT IN (SELECT share_id FROM share_declines WHERE user_id = ?2)`,
+		string(b), userID, s.clock().Unix())
+	if err != nil {
+		return nil, fmt.Errorf("readable: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var r OwnedRef
+		if err := rows.Scan(&r.Owner, &r.ResourceType, &r.ResourceID); err != nil {
+			return nil, fmt.Errorf("readable: %w", err)
+		}
+		out[r] = true
+	}
+	return out, rows.Err()
 }
 
 // CheckAccessWithHierarchy checks access for a resource, and if not found,

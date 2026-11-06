@@ -76,6 +76,7 @@ List 5-15 tags describing objects, activities, colors, and setting.`,
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+b.APIKey)
 
+	// trusted URL: an admin sets it, and it may well be on the local network.
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(httpReq)
 	if err != nil {

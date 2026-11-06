@@ -304,6 +304,6 @@ func (a *MemoriesAPI) handleImagePreview(w http.ResponseWriter, r *http.Request,
 	defer f.Close()
 
 	w.Header().Set("Content-Type", "image/jpeg")
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Header().Set("Cache-Control", "private, max-age=86400")
 	http.ServeContent(w, r, "preview.jpg", time.Time{}, f)
 }

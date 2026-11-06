@@ -41,7 +41,8 @@ func NewBackend(vol *Volume) (vfs.FS, error) {
 		}
 		// A user's WebDAV server is a URL the user typed: it may only
 		// reach public addresses, not the server's own network.
-		client := &http.Client{Timeout: webdavTimeout}
+		client := &http.Client{Timeout: webdavTimeout} // trusted URL: an admin's volume
+
 		if vol.OwnerUserID != nil {
 			client = safehttp.Client(webdavTimeout)
 		}

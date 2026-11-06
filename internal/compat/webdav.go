@@ -2,6 +2,8 @@ package compat
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/xml"
 	"errors"
@@ -14,32 +16,29 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
+	"git.duckfam.us/jj-software/cog/internal/httphdr"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/vfs"
 )
 
-// directToken is a short-lived token for unauthenticated file downloads.
-type directToken struct {
-	Username string
-	FilePath string
-	Created  time.Time
-}
+// directTokenLifetime is how long a direct-download link works. It works
+// once.
+const directTokenLifetime = 10 * time.Minute
 
 // WebDAVHandler implements NextCloud-compatible WebDAV for the files plugin.
 type WebDAVHandler struct {
 	Log   *slog.Logger
 	Files *files.Plugin
 	Clock clock.Clock
-
-	directMu     sync.Mutex
-	directTokens map[string]directToken
+	// DB is the system database, which holds direct-download tokens, so
+	// a link outlives a restart and works on any replica.
+	DB *sql.DB
 }
 
 func (h *WebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -429,7 +428,7 @@ func (h *WebDAVHandler) HandleDirectDownload(baseURL string) http.HandlerFunc {
 			return
 		}
 
-		meta, err := h.Files.GetByID(u.Username, fileID)
+		_, err = h.Files.GetByID(u.Username, fileID)
 		if errors.Is(err, files.ErrNotFound) {
 			writeOCSError(w, http.StatusNotFound, 404, "file not found")
 			return
@@ -440,7 +439,7 @@ func (h *WebDAVHandler) HandleDirectDownload(baseURL string) http.HandlerFunc {
 			return
 		}
 
-		token, err := h.createDirectToken(u.Username, meta.Path)
+		token, err := h.createDirectToken(u.ID, fileID)
 		if err != nil {
 			writeOCSError(w, http.StatusInternalServerError, 500, "create token: "+err.Error())
 			return
@@ -452,28 +451,27 @@ func (h *WebDAVHandler) HandleDirectDownload(baseURL string) http.HandlerFunc {
 	}
 }
 
-func (h *WebDAVHandler) createDirectToken(username, filePath string) (string, error) {
+func hashDirectToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+// createDirectToken mints a link to the user's file. It names the file by
+// ID, so a rename before the link is used does not break it; the table
+// keeps only the token's hash.
+func (h *WebDAVHandler) createDirectToken(userID string, fileID int64) (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generate direct token: %w", err)
 	}
 	token := hex.EncodeToString(b)
-
-	h.directMu.Lock()
-	defer h.directMu.Unlock()
-	if h.directTokens == nil {
-		h.directTokens = make(map[string]directToken)
+	now := h.Clock()
+	if _, err := h.DB.Exec(`DELETE FROM direct_tokens WHERE created_at <= ?`, now.Add(-directTokenLifetime).Unix()); err != nil {
+		return "", fmt.Errorf("prune direct tokens: %w", err)
 	}
-	// Evict expired tokens (older than 10 minutes)
-	for k, v := range h.directTokens {
-		if h.Clock().Sub(v.Created) > 10*time.Minute {
-			delete(h.directTokens, k)
-		}
-	}
-	h.directTokens[token] = directToken{
-		Username: username,
-		FilePath: filePath,
-		Created:  h.Clock(),
+	if _, err := h.DB.Exec(`INSERT INTO direct_tokens (token_hash, user_id, file_id, created_at) VALUES (?, ?, ?, ?)`,
+		hashDirectToken(token), userID, fileID, now.Unix()); err != nil {
+		return "", fmt.Errorf("record direct token: %w", err)
 	}
 	return token, nil
 }
@@ -487,21 +485,33 @@ func (h *WebDAVHandler) HandleDirectServe(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	h.directMu.Lock()
-	dt, ok := h.directTokens[token]
-	if ok {
-		delete(h.directTokens, token) // one-time use
-	}
-	h.directMu.Unlock()
-
-	if !ok || h.Clock().Sub(dt.Created) > 10*time.Minute {
+	// One use: the row goes as it is read.
+	var (
+		username string
+		fileID   int64
+	)
+	err := h.DB.QueryRow(`DELETE FROM direct_tokens WHERE token_hash = ? AND created_at > ?
+		RETURNING (SELECT username FROM users WHERE id = user_id), file_id`,
+		hashDirectToken(token), h.Clock().Add(-directTokenLifetime).Unix()).Scan(&username, &fileID)
+	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "invalid or expired token", http.StatusNotFound)
 		return
 	}
-
-	f, meta, err := h.Files.Download(dt.Username, dt.FilePath)
 	if err != nil {
-		h.Log.Warn("direct download", "user", dt.Username, "path", dt.FilePath, "err", err)
+		h.Log.Error("direct download: look up token", "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	meta, err := h.Files.GetByID(username, fileID)
+	if err != nil {
+		h.Log.Warn("direct download", "user", username, "file", fileID, "err", err)
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+	f, meta, err := h.Files.Download(username, meta.Path)
+	if err != nil {
+		h.Log.Warn("direct download", "user", username, "path", meta.Path, "err", err)
 		http.Error(w, "file not found", http.StatusNotFound)
 		return
 	}
@@ -513,7 +523,7 @@ func (h *WebDAVHandler) HandleDirectServe(w http.ResponseWriter, r *http.Request
 	cogplugin.UntrustedContent(w, meta.MimeType)
 	w.Header().Set("ETag", `"`+meta.ETag+`"`)
 	w.Header().Set("Content-Length", strconv.FormatInt(meta.Size, 10))
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, meta.Name))
+	w.Header().Set("Content-Disposition", httphdr.Attachment(meta.Name))
 	if _, err := io.Copy(w, f); err != nil {
 		h.Log.Error("direct download copy error", "err", err)
 	}

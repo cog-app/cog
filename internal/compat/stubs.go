@@ -196,7 +196,7 @@ func (nc *NCCompat) HandleAvatar(w http.ResponseWriter, r *http.Request) {
 			default:
 				w.Header().Set("Content-Type", "image/jpeg")
 			}
-			w.Header().Set("Cache-Control", "public, max-age=3600")
+			w.Header().Set("Cache-Control", "private, max-age=3600")
 			io.Copy(w, f)
 			return
 		}
@@ -477,7 +477,7 @@ func serveInitialsSVG(w http.ResponseWriter, init string, seed string) {
 	color := colors[int(hash[0])%len(colors)]
 
 	w.Header().Set("Content-Type", "image/svg+xml")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
 	fmt.Fprintf(w, `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
   <circle cx="32" cy="32" r="32" fill="%s"/>
   <text x="32" y="32" dy=".35em" text-anchor="middle" fill="white" font-family="sans-serif" font-size="24" font-weight="600">%s</text>
