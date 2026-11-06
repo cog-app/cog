@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -88,12 +89,14 @@ func (h *OCSHandler) HandleListRemoteShares(w http.ResponseWriter, r *http.Reque
 	var shares []ocsRemoteShare
 	for fs, err := range h.Store.ListInbound(u.ID, "accepted") {
 		if err != nil {
-			h.WriteOCSError(w, r, http.StatusInternalServerError, 500, err.Error())
+			httperr.Log(r, err)
+			h.WriteOCSError(w, r, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
 		ocs, err := h.fedToOCS(&fs)
 		if err != nil {
-			h.WriteOCSError(w, r, http.StatusInternalServerError, 500, err.Error())
+			httperr.Log(r, err)
+			h.WriteOCSError(w, r, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
 		shares = append(shares, *ocs)
@@ -115,12 +118,14 @@ func (h *OCSHandler) HandleListPendingShares(w http.ResponseWriter, r *http.Requ
 	var shares []ocsRemoteShare
 	for fs, err := range h.Store.ListInbound(u.ID, "pending") {
 		if err != nil {
-			h.WriteOCSError(w, r, http.StatusInternalServerError, 500, err.Error())
+			httperr.Log(r, err)
+			h.WriteOCSError(w, r, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
 		ocs, err := h.fedToOCS(&fs)
 		if err != nil {
-			h.WriteOCSError(w, r, http.StatusInternalServerError, 500, err.Error())
+			httperr.Log(r, err)
+			h.WriteOCSError(w, r, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
 		shares = append(shares, *ocs)
@@ -169,7 +174,8 @@ func (h *OCSHandler) HandleAcceptShare(w http.ResponseWriter, r *http.Request) {
 
 	mountPath := "/remote-shares/" + fs.ResourceName
 	if err := h.Store.Accept(fs.ID, mountPath); err != nil {
-		h.WriteOCSError(w, r, http.StatusInternalServerError, 500, err.Error())
+		httperr.Log(r, err)
+		h.WriteOCSError(w, r, http.StatusInternalServerError, 500, "internal error")
 		return
 	}
 
@@ -211,7 +217,8 @@ func (h *OCSHandler) HandleDeclineShare(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.Store.Reject(fs.ID); err != nil {
-		h.WriteOCSError(w, r, http.StatusInternalServerError, 500, err.Error())
+		httperr.Log(r, err)
+		h.WriteOCSError(w, r, http.StatusInternalServerError, 500, "internal error")
 		return
 	}
 
@@ -252,7 +259,8 @@ func (h *OCSHandler) HandleRemoveShare(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Store.Remove(fs.ID); err != nil {
-		h.WriteOCSError(w, r, http.StatusInternalServerError, 500, err.Error())
+		httperr.Log(r, err)
+		h.WriteOCSError(w, r, http.StatusInternalServerError, 500, "internal error")
 		return
 	}
 
@@ -276,7 +284,8 @@ func (h *OCSHandler) writeLookupError(w http.ResponseWriter, r *http.Request, er
 		return
 	}
 	h.Log.Error("federated share lookup", "err", err)
-	h.WriteOCSError(w, r, http.StatusInternalServerError, 500, err.Error())
+	httperr.Log(r, err)
+	h.WriteOCSError(w, r, http.StatusInternalServerError, 500, "internal error")
 }
 
 func (h *OCSHandler) resolveID(idStr string) (string, error) {

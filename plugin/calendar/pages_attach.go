@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"mime"
 	"net/http"
@@ -138,12 +139,12 @@ func (h *Pages) changeAttachment(w http.ResponseWriter, r *http.Request, ev *Eve
 	}
 	me, err := h.plugin.me(userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	c, err := h.plugin.dav.Collections.ByID(dav.CollectionID(cal.ID))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	ch.MaySend = true

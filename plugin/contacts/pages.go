@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"git.duckfam.us/jj-software/cog/internal/safeimage"
 	_ "image/gif"
 	"image/jpeg"
@@ -133,12 +134,12 @@ func fail(w http.ResponseWriter, r *http.Request, msg string) {
 	http.Redirect(w, r, "/apps/contacts/", http.StatusSeeOther)
 }
 
-func httpError(w http.ResponseWriter, err error) {
+func httpError(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, dav.ErrNotFound) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	http.Error(w, err.Error(), http.StatusInternalServerError)
+	httperr.Internal(w, r, err)
 }
 
 // listView is what a page of contacts shows: all of them, one book's, or
@@ -160,7 +161,7 @@ type listView struct {
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	u, a, err := h.access(r)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	v := &listView{Title: "Contacts", Active: "all", Path: "/apps/contacts/", Books: a.books(), Writable: a.writableBooks()}
@@ -194,11 +195,11 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	}
 	store, err := h.plugin.Store(u.Username)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	if v.Cards, err = store.In(own, "", 500); err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 
@@ -209,12 +210,12 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 		}
 		owner, err := h.plugin.Store(sb.OwnerUsername)
 		if err != nil {
-			httpError(w, err)
+			httpError(w, r, err)
 			return
 		}
 		sharedCards, err := owner.In(map[int64]AddressBook{sb.Book.ID: sb.Book}, "", 500)
 		if err != nil {
-			httpError(w, err)
+			httpError(w, r, err)
 			return
 		}
 		for i := range sharedCards {
@@ -232,18 +233,18 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
 	u, a, err := h.access(r)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	store, err := h.plugin.Store(u.Username)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	v := &listView{Title: "Starred", Active: "starred", Path: "/apps/contacts/starred", Books: a.books(), Starred: true, Writable: a.writableBooks()}
 	v.CanWrite = len(v.Writable) > 0
 	if v.Cards, err = store.Starred(a.own, 500); err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, "Starred Contacts")
@@ -279,7 +280,7 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 	u := plugin.UserFromContext(r.Context())
 	books, err := h.plugin.Books(u.ID)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	davURL := ""
@@ -294,7 +295,7 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) ContactDetail(w http.ResponseWriter, r *http.Request) {
 	u, a, err := h.access(r)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -304,7 +305,7 @@ func (h *Pages) ContactDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	_, c, book, writable, err := h.card(u, a, id, true)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	d := &detailView{Card: c, Book: book, Writable: writable, CanStar: book.OwnerID == u.ID, Now: h.plugin.ctx.Now()}
@@ -334,7 +335,7 @@ type detailView struct {
 func (h *Pages) CreateContact(w http.ResponseWriter, r *http.Request) {
 	u, a, err := h.access(r)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	bookID, err := strconv.ParseInt(r.FormValue("address_book_id"), 10, 64)
@@ -357,7 +358,7 @@ func (h *Pages) CreateContact(w http.ResponseWriter, r *http.Request) {
 	applyForm(c, f, now)
 	nameFromFN(c)
 	if _, err := s.Save(bookID, nil, c, now); err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	plugin.SetFlash(w, plugin.Flash{Kind: "success", Message: "Added " + c.FN + "."})
@@ -370,7 +371,7 @@ func (h *Pages) CreateContact(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) UpdateContact(w http.ResponseWriter, r *http.Request) {
 	u, a, err := h.access(r)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -380,7 +381,7 @@ func (h *Pages) UpdateContact(w http.ResponseWriter, r *http.Request) {
 	}
 	s, c, book, writable, err := h.card(u, a, id, true)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	if !writable {
@@ -409,7 +410,7 @@ func (h *Pages) UpdateContact(w http.ResponseWriter, r *http.Request) {
 	now := h.plugin.ctx.Now()
 	applyForm(c.VCard, f, now)
 	if _, err := s.Save(bookID, c, c.VCard, now); err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	plugin.SetFlash(w, plugin.Flash{Kind: "success", Message: "Saved " + c.VCard.FN + "."})
@@ -420,7 +421,7 @@ func (h *Pages) UpdateContact(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DeleteContact(w http.ResponseWriter, r *http.Request) {
 	u, a, err := h.access(r)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -430,7 +431,7 @@ func (h *Pages) DeleteContact(w http.ResponseWriter, r *http.Request) {
 	}
 	s, c, _, writable, err := h.card(u, a, id, false)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	if !writable {
@@ -438,7 +439,7 @@ func (h *Pages) DeleteContact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Delete(c, h.plugin.ctx.Now()); err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -450,7 +451,7 @@ func (h *Pages) CreateAddressBookHandler(w http.ResponseWriter, r *http.Request)
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name != "" {
 		if _, err := h.plugin.CreateBook(u.ID, r.FormValue("uid"), name, "", r.FormValue("color")); err != nil {
-			httpError(w, err)
+			httpError(w, r, err)
 			return
 		}
 	}
@@ -468,7 +469,7 @@ func (h *Pages) UpdateAddressBookHandler(w http.ResponseWriter, r *http.Request)
 	}
 	b, err := h.plugin.Book(u.ID, id)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
@@ -480,7 +481,7 @@ func (h *Pages) UpdateAddressBookHandler(w http.ResponseWriter, r *http.Request)
 		color = b.Color
 	}
 	if err := h.plugin.UpdateBook(u.ID, id, name, color); err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	plugin.SetFlash(w, plugin.Flash{Kind: "success", Message: "Saved " + name + "."})
@@ -496,7 +497,7 @@ func (h *Pages) DeleteAddressBookHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := h.plugin.DeleteBook(u.Username, u.ID, id); err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -507,7 +508,7 @@ func (h *Pages) DeleteAddressBookHandler(w http.ResponseWriter, r *http.Request)
 func (h *Pages) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 	u, a, err := h.access(r)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -517,7 +518,7 @@ func (h *Pages) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 	}
 	s, c, _, writable, err := h.card(u, a, id, true)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	if !writable {
@@ -545,13 +546,13 @@ func (h *Pages) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 	}
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 85}); err != nil {
-		httpError(w, fmt.Errorf("encode photo: %w", err))
+		httpError(w, r, fmt.Errorf("encode photo: %w", err))
 		return
 	}
 	now := h.plugin.ctx.Now()
 	setPhoto(c.VCard, buf.Bytes(), now)
 	if _, err := s.Save(c.AddressBookID, c, c.VCard, now); err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	http.Redirect(w, r, "/apps/contacts/", http.StatusSeeOther)
@@ -561,7 +562,7 @@ func (h *Pages) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) ServePhoto(w http.ResponseWriter, r *http.Request) {
 	u, a, err := h.access(r)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -571,7 +572,7 @@ func (h *Pages) ServePhoto(w http.ResponseWriter, r *http.Request) {
 	}
 	s, c, _, _, err := h.card(u, a, id, false)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	if !c.HasPhoto() {
@@ -585,7 +586,7 @@ func (h *Pages) ServePhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	if data == nil {
@@ -608,7 +609,7 @@ func (h *Pages) ServePhoto(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 	u, a, err := h.access(r)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -618,7 +619,7 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 	}
 	s, c, book, _, err := h.card(u, a, id, false)
 	if err != nil {
-		httpError(w, err)
+		httpError(w, r, err)
 		return
 	}
 	if book.OwnerID != u.ID {
@@ -629,7 +630,7 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 	}
 	newStarred := !c.IsStarred
 	if err := s.SetStarred(c.ID, newStarred); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	// Return updated star button for HTMX swap.

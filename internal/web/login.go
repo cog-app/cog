@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"net/http"
 	"net/url"
@@ -543,7 +544,7 @@ func (h *loginHandler) BeginWebAuthnLogin(w http.ResponseWriter, r *http.Request
 	data, err := h.p.WebAuthn.BeginLogin(u.ID, u.Username, displayName)
 	if err != nil {
 		h.p.Log.Error("begin webauthn login", "user", u.ID, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 

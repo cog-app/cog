@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"log/slog"
 	"net/http"
@@ -365,7 +366,7 @@ func (p *Plugin) workerPprof(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		stats, err := client.MemStats()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		status, err := client.GetStatus()
@@ -432,7 +433,7 @@ func (p *Plugin) workerPprof(w http.ResponseWriter, r *http.Request) {
 
 	data, err := client.Profile(name, debug, seconds)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 

@@ -2,6 +2,8 @@ package web
 
 import (
 	"errors"
+	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"mime"
 	"net/http"
@@ -43,7 +45,7 @@ func (h *volumeBrowserHandler) Browse(w http.ResponseWriter, r *http.Request) {
 	all, err := backend.List(dirPath)
 	if err != nil {
 		h.p.Log.Error("volume list", "volume", volID, "path", dirPath, "err", err)
-		http.Error(w, "Failed to list: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("Failed to list: %w", err))
 		return
 	}
 	items := make([]volume.FileInfo, 0, len(all))
@@ -250,7 +252,7 @@ func (h *volumeBrowserHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := backend.Put(dest, file); err != nil {
 		h.p.Log.Error("volume upload", "volume", volID, "path", dest, "err", err)
-		http.Error(w, "upload failed: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("upload failed: %w", err))
 		return
 	}
 
@@ -280,7 +282,7 @@ func (h *volumeBrowserHandler) MkDir(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := backend.Mkdir(dest); err != nil {
 		h.p.Log.Error("volume mkdir", "volume", volID, "path", dest, "err", err)
-		http.Error(w, "mkdir failed: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("mkdir failed: %w", err))
 		return
 	}
 
@@ -303,7 +305,7 @@ func (h *volumeBrowserHandler) DeleteFile(w http.ResponseWriter, r *http.Request
 	}
 	if err := backend.Delete(filePath); err != nil {
 		h.p.Log.Error("volume delete", "volume", volID, "path", filePath, "err", err)
-		http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("delete failed: %w", err))
 		return
 	}
 	w.WriteHeader(http.StatusOK)

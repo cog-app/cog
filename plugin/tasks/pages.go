@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"encoding/json"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"net/http"
 	"strconv"
 	"time"
@@ -54,7 +55,7 @@ func (h *Pages) list(r *http.Request, value string) (*TaskList, error) {
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	sb, err := h.buildSidebar(r, 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if len(sb.Lists) > 0 {
@@ -71,7 +72,7 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) ListView(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	list, err := h.list(r, r.PathValue("id"))
@@ -82,13 +83,13 @@ func (h *Pages) ListView(w http.ResponseWriter, r *http.Request) {
 
 	allTasks, err := ListTasks(db, list.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
 	sb, err := h.buildSidebar(r, list.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, list.Name)
@@ -101,7 +102,7 @@ func (h *Pages) ListView(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) TaskDetail(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	taskID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -121,12 +122,12 @@ func (h *Pages) TaskDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	allTasks, err := ListTasks(db, task.ListID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	sb, err := h.buildSidebar(r, task.ListID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	times := formTimesOf(task.Object, list)
@@ -140,7 +141,7 @@ func (h *Pages) TaskDetail(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) CreateTask(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -188,7 +189,7 @@ func (h *Pages) CreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := CreateTask(db, list, uuid.New().String(), nt, h.plugin.ctx.Now()); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -199,7 +200,7 @@ func (h *Pages) CreateTask(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) UpdateTask(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	taskID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -252,7 +253,7 @@ func (h *Pages) UpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := SaveTask(db, list, task, task.Object, h.plugin.ctx.Now()); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -263,7 +264,7 @@ func (h *Pages) UpdateTask(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) ToggleTask(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	taskID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -284,13 +285,13 @@ func (h *Pages) ToggleTask(w http.ResponseWriter, r *http.Request) {
 	}
 	task, err = ToggleTask(db, list, task, h.plugin.ctx.Now())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
 	allTasks, err := ListTasks(db, task.ListID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	for i := range allTasks {
@@ -334,7 +335,7 @@ func (h *Pages) DeleteTaskForm(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) deleteTask(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return 0, false
 	}
 	taskID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -352,7 +353,7 @@ func (h *Pages) deleteTask(w http.ResponseWriter, r *http.Request) (int64, bool)
 		return 0, false
 	}
 	if err := DeleteTask(db, taskID, h.plugin.ctx.Now()); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return 0, false
 	}
 	return task.ListID, true
@@ -362,7 +363,7 @@ func (h *Pages) deleteTask(w http.ResponseWriter, r *http.Request) (int64, bool)
 func (h *Pages) Reorder(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -382,7 +383,7 @@ func (h *Pages) Reorder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := ReorderTasks(db, list, req.ParentID, req.TaskIDs, h.plugin.ctx.Now()); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -396,7 +397,7 @@ func (h *Pages) CreateList(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := h.plugin.CreateList(plugin.UserFromContext(r.Context()).ID, name, r.FormValue("color"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -414,7 +415,7 @@ func (h *Pages) UpdateList(w http.ResponseWriter, r *http.Request) {
 	name := r.FormValue("name")
 	color := r.FormValue("color")
 	if err := h.plugin.UpdateList(plugin.UserFromContext(r.Context()).ID, listID, name, color); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -430,7 +431,7 @@ func (h *Pages) DeleteList(w http.ResponseWriter, r *http.Request) {
 	}
 	u := plugin.UserFromContext(r.Context())
 	if err := h.plugin.DeleteList(u.Username, u.ID, listID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	w.Header().Set("HX-Redirect", "/apps/tasks/")
@@ -446,7 +447,7 @@ func (h *Pages) ListSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	sb, err := h.buildSidebar(r, list.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, list.Name+" Settings")

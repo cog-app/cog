@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"git.duckfam.us/jj-software/cog/ui"
 	"net/http"
 	"net/url"
@@ -83,12 +84,12 @@ func (h *Pages) buildSidebar(db *sql.DB, activePath string, activeFolder int64) 
 func (h *Pages) pageSetup(w http.ResponseWriter, r *http.Request, activePath string, activeFolder int64) (*sql.DB, sidebarData, bool) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return nil, sidebarData{}, false
 	}
 	sb, err := h.buildSidebar(db, activePath, activeFolder)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return nil, sidebarData{}, false
 	}
 	return db, sb, true
@@ -103,7 +104,7 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("q")
 	bms, _, err := ListBookmarks(db, nil, nil, search, "lastmodified", 0, 100)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, "Bookmarks")
@@ -122,12 +123,12 @@ func pathID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 }
 
 // notFoundOr writes 404 for a missing row and 500 for anything else.
-func notFoundOr(w http.ResponseWriter, err error, what string) {
+func notFoundOr(w http.ResponseWriter, r *http.Request, err error, what string) {
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, what+" not found", http.StatusNotFound)
 		return
 	}
-	http.Error(w, err.Error(), http.StatusInternalServerError)
+	httperr.Internal(w, r, err)
 }
 
 // FolderView shows bookmarks in a folder.
@@ -142,12 +143,12 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 	}
 	folder, err := GetFolder(db, id)
 	if err != nil {
-		notFoundOr(w, err, "folder")
+		notFoundOr(w, r, err, "folder")
 		return
 	}
 	bms, _, err := ListBookmarks(db, &id, nil, "", "lastmodified", 0, 200)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, folder.Title)
@@ -162,7 +163,7 @@ func (h *Pages) TagsView(w http.ResponseWriter, r *http.Request) {
 	}
 	tags, err := ListTagCounts(db)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, "Tags")
@@ -178,7 +179,7 @@ func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
 	}
 	bms, _, err := ListBookmarks(db, nil, []string{tag}, "", "lastmodified", 0, 200)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, "Tag: "+tag)
@@ -204,7 +205,7 @@ func loadBookmark(w http.ResponseWriter, r *http.Request, db *sql.DB) *Bookmark 
 	}
 	bm, err := GetBookmark(db, id)
 	if err != nil {
-		notFoundOr(w, err, "bookmark")
+		notFoundOr(w, r, err, "bookmark")
 		return nil
 	}
 	return bm
@@ -257,7 +258,7 @@ func (h *Pages) NewBookmark(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) CreateBookmark(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -282,7 +283,7 @@ func (h *Pages) CreateBookmark(w http.ResponseWriter, r *http.Request) {
 
 	bm, err := CreateBookmark(db, bmURL, title, r.FormValue("description"), tags, folders)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	http.Redirect(w, r, "/apps/bookmarks/bookmark/"+strconv.FormatInt(bm.ID, 10), http.StatusSeeOther)
@@ -292,7 +293,7 @@ func (h *Pages) CreateBookmark(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) UpdateBookmark(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, ok := pathID(w, r)
@@ -317,7 +318,7 @@ func (h *Pages) UpdateBookmark(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := UpdateBookmark(db, id, &title, &description, tags, folders); err != nil {
-		notFoundOr(w, err, "bookmark")
+		notFoundOr(w, r, err, "bookmark")
 		return
 	}
 	http.Redirect(w, r, "/apps/bookmarks/bookmark/"+r.PathValue("id"), http.StatusSeeOther)
@@ -332,7 +333,7 @@ func (h *Pages) UpdateBookmark(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DeleteBookmark(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	bm := loadBookmark(w, r, db)
@@ -340,7 +341,7 @@ func (h *Pages) DeleteBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := DeleteBookmark(db, bm.ID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if r.Header.Get("HX-Target") != bookmarkRowID(bm.ID) {
@@ -354,7 +355,7 @@ func (h *Pages) DeleteBookmark(w http.ResponseWriter, r *http.Request) {
 	}
 	sb, err := h.buildSidebar(db, page.Path, 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	sb.OOB = true
@@ -369,7 +370,7 @@ func (h *Pages) DeleteBookmark(w http.ResponseWriter, r *http.Request) {
 
 	empty, err := h.emptyView(db, page)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	ui.Render(w, r, rowDeleted(sb, empty))
@@ -430,7 +431,7 @@ func redirectWithFlash(w http.ResponseWriter, r *http.Request, to, msg string) {
 func (h *Pages) OpenBookmark(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	bm := loadBookmark(w, r, db)
@@ -452,7 +453,7 @@ func (h *Pages) RecordClick(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	title := strings.TrimSpace(r.FormValue("title"))
@@ -472,7 +473,7 @@ func (h *Pages) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	}
 	f, err := CreateFolder(db, title, parentID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetFlash(w, plugin.Flash{Kind: "success", Message: fmt.Sprintf("Created folder “%s”.", f.Title)})
@@ -483,7 +484,7 @@ func (h *Pages) CreateFolder(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, ok := pathID(w, r)
@@ -492,7 +493,7 @@ func (h *Pages) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 	}
 	folder, err := GetFolder(db, id)
 	if err != nil {
-		notFoundOr(w, err, "folder")
+		notFoundOr(w, r, err, "folder")
 		return
 	}
 	to := "/apps/bookmarks/folder/" + r.PathValue("id")
@@ -503,7 +504,7 @@ func (h *Pages) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := UpdateFolder(db, id, title, folder.ParentID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetFlash(w, plugin.Flash{Kind: "success", Message: "Folder renamed."})
@@ -515,7 +516,7 @@ func (h *Pages) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, ok := pathID(w, r)
@@ -524,11 +525,11 @@ func (h *Pages) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 	}
 	folder, err := GetFolder(db, id)
 	if err != nil {
-		notFoundOr(w, err, "folder")
+		notFoundOr(w, r, err, "folder")
 		return
 	}
 	if err := DeleteFolder(db, id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	redirectWithFlash(w, r, "/apps/bookmarks/", fmt.Sprintf("Deleted folder “%s”. Its bookmarks were kept.", folder.Title))
@@ -538,7 +539,7 @@ func (h *Pages) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) RenameTag(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	oldTag := r.FormValue("tag")
@@ -554,7 +555,7 @@ func (h *Pages) RenameTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := RenameTag(db, oldTag, newTag); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetFlash(w, plugin.Flash{Kind: "success", Message: fmt.Sprintf("Renamed “%s” to “%s”.", oldTag, newTag)})
@@ -566,12 +567,12 @@ func (h *Pages) RenameTag(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	tag := r.FormValue("tag")
 	if err := DeleteTag(db, tag); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetFlash(w, plugin.Flash{Kind: "success", Message: fmt.Sprintf("Removed the tag “%s”. Its bookmarks were kept.", tag)})
@@ -596,7 +597,7 @@ func parseTags(s string) []string {
 func (h *Pages) ImportBookmarks(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -628,12 +629,12 @@ func (h *Pages) ImportBookmarks(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) ExportBookmarks(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	var buf strings.Builder
 	if err := ExportNetscapeHTML(db, &buf); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

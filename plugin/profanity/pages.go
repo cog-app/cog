@@ -1,6 +1,7 @@
 package profanity
 
 import (
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"git.duckfam.us/jj-software/cog/ui"
 	"net/http"
 
@@ -18,7 +19,7 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 	content, err := h.plugin.readWordListText(username)
 	if err != nil {
 		h.plugin.log.Error("profanity settings", "user", username, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, "Profanity Filter")
@@ -43,12 +44,12 @@ func (h *Pages) SaveSettings(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) AdminSettings(w http.ResponseWriter, r *http.Request) {
 	db, err := h.plugin.rootDB()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	cfg, err := h.plugin.settings(db)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	ui.Render(w, r, profanityAdminPage(cfg, plugin.CSRFToken(r)))
@@ -58,7 +59,7 @@ func (h *Pages) AdminSettings(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) SaveAdminSettings(w http.ResponseWriter, r *http.Request) {
 	db, err := h.plugin.rootDB()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := h.plugin.saveSettings(db, adminSettingsData{

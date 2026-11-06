@@ -3,6 +3,7 @@ package federation
 import (
 	"encoding/xml"
 	"errors"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -171,9 +172,9 @@ func (h *TokenWebDAVHandler) servePublicShare(w http.ResponseWriter, r *http.Req
 	case http.MethodPut:
 		h.handlePut(w, r, owner.Username, targetPath)
 	case "MKCOL":
-		h.handleMkcol(w, owner.Username, targetPath)
+		h.handleMkcol(w, r, owner.Username, targetPath)
 	case http.MethodDelete:
-		h.handleDelete(w, owner.Username, targetPath)
+		h.handleDelete(w, r, owner.Username, targetPath)
 	case "OPTIONS":
 		w.Header().Set("Allow", "OPTIONS, GET, HEAD, PUT, DELETE, MKCOL, PROPFIND")
 		w.Header().Set("DAV", "1, 2")
@@ -347,23 +348,23 @@ func xmlEscape(s string) string {
 
 func (h *TokenWebDAVHandler) handlePut(w http.ResponseWriter, r *http.Request, username, targetPath string) {
 	if _, err := h.Files.Upload(username, targetPath, r.Body); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (h *TokenWebDAVHandler) handleMkcol(w http.ResponseWriter, username, targetPath string) {
+func (h *TokenWebDAVHandler) handleMkcol(w http.ResponseWriter, r *http.Request, username, targetPath string) {
 	if _, err := h.Files.CreateDir(username, targetPath); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (h *TokenWebDAVHandler) handleDelete(w http.ResponseWriter, username, targetPath string) {
+func (h *TokenWebDAVHandler) handleDelete(w http.ResponseWriter, r *http.Request, username, targetPath string) {
 	if err := h.Files.Delete(username, targetPath); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

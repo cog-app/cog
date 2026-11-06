@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -69,7 +70,7 @@ func lookupError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	slog.Error("feed: lookup", "path", r.URL.Path, "err", err)
-	http.Error(w, err.Error(), http.StatusInternalServerError)
+	httperr.Internal(w, r, err)
 }
 
 func (h *Pages) userStore(r *http.Request) (*Store, error) {
@@ -92,20 +93,20 @@ func (h *Pages) SettingsRedirect(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) SettingsSubscriptions(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	subs, err := store.ListSubscriptions()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	folders, err := store.ListFolders()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
-	sb, ok := h.sidebar(w, store, "/apps/feed/settings/subscriptions")
+	sb, ok := h.sidebar(w, r, store, "/apps/feed/settings/subscriptions")
 	if !ok {
 		return
 	}
@@ -116,15 +117,15 @@ func (h *Pages) SettingsSubscriptions(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) SettingsFilters(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	filters, err := store.ListFilters()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
-	sb, ok := h.sidebar(w, store, "/apps/feed/settings/filters")
+	sb, ok := h.sidebar(w, r, store, "/apps/feed/settings/filters")
 	if !ok {
 		return
 	}
@@ -135,15 +136,15 @@ func (h *Pages) SettingsFilters(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) SettingsPlaylists(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	playlists, err := store.ListPlaylists()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
-	sb, ok := h.sidebar(w, store, "/apps/feed/settings/playlists")
+	sb, ok := h.sidebar(w, r, store, "/apps/feed/settings/playlists")
 	if !ok {
 		return
 	}
@@ -162,7 +163,7 @@ var allowedKinds = map[string]bool{
 func (h *Pages) AddSubscription(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -215,7 +216,7 @@ func (h *Pages) AddSubscription(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -241,7 +242,7 @@ func (h *Pages) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) AddFolder(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -263,7 +264,7 @@ func (h *Pages) AddFolder(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -285,7 +286,7 @@ func (h *Pages) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) AddFilter(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -319,7 +320,7 @@ func (h *Pages) AddFilter(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DeleteFilter(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -341,7 +342,7 @@ func (h *Pages) DeleteFilter(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) AddPlaylist(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -372,7 +373,7 @@ func (h *Pages) AddPlaylist(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DeletePlaylist(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -434,10 +435,10 @@ func (h *Pages) buildSidebar(store *Store, activePath string) (sidebarData, erro
 
 // sidebar builds the sidebar for a page. It writes the error response itself
 // and returns ok=false when it fails.
-func (h *Pages) sidebar(w http.ResponseWriter, store *Store, activePath string) (sidebarData, bool) {
+func (h *Pages) sidebar(w http.ResponseWriter, r *http.Request, store *Store, activePath string) (sidebarData, bool) {
 	sb, err := h.buildSidebar(store, activePath)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return sidebarData{}, false
 	}
 	return sb, true
@@ -445,10 +446,10 @@ func (h *Pages) sidebar(w http.ResponseWriter, store *Store, activePath string) 
 
 // prefs loads the user's preferences for a list page. It writes the error
 // response itself and returns ok=false when it fails.
-func (h *Pages) prefs(w http.ResponseWriter, store *Store) (PlayerPrefs, bool) {
+func (h *Pages) prefs(w http.ResponseWriter, r *http.Request, store *Store) (PlayerPrefs, bool) {
 	prefs, err := store.LoadPlayerPrefs()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return PlayerPrefs{}, false
 	}
 	return prefs, true
@@ -472,7 +473,7 @@ func (h *Pages) rows(c viewCtx) rowOpts {
 func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -485,11 +486,11 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 		lookupError(w, r, err)
 		return
 	}
-	sb, ok := h.sidebar(w, store, fmt.Sprintf("/apps/feed/playlists/%d", id))
+	sb, ok := h.sidebar(w, r, store, fmt.Sprintf("/apps/feed/playlists/%d", id))
 	if !ok {
 		return
 	}
-	prefs, ok := h.prefs(w, store)
+	prefs, ok := h.prefs(w, r, store)
 	if !ok {
 		return
 	}
@@ -693,12 +694,12 @@ func (h *Pages) refineItems(store *Store, items []ItemWithSubscription, expr que
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
 	q := r.URL.Query().Get("q")
-	prefs, ok := h.prefs(w, store)
+	prefs, ok := h.prefs(w, r, store)
 	if !ok {
 		return
 	}
@@ -706,11 +707,11 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	items, qErr, err := h.searchItems(store, q, prefs.HideEmpty)
 	if err != nil {
 		slog.Error("feed: index items", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
-	sb, ok := h.sidebar(w, store, "/apps/feed/")
+	sb, ok := h.sidebar(w, r, store, "/apps/feed/")
 	if !ok {
 		return
 	}
@@ -753,7 +754,7 @@ func (h *Pages) searchItems(store *Store, q string, hideRead bool) (items []Item
 func (h *Pages) SubscriptionView(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	idStr := r.PathValue("id")
@@ -767,17 +768,17 @@ func (h *Pages) SubscriptionView(w http.ResponseWriter, r *http.Request) {
 		lookupError(w, r, err)
 		return
 	}
-	sb, ok := h.sidebar(w, store, "/apps/feed/subscription/"+idStr)
+	sb, ok := h.sidebar(w, r, store, "/apps/feed/subscription/"+idStr)
 	if !ok {
 		return
 	}
-	prefs, ok := h.prefs(w, store)
+	prefs, ok := h.prefs(w, r, store)
 	if !ok {
 		return
 	}
 	items, err := store.ListItemsForView(ViewSpec{SubscriptionID: sql.NullInt64{Int64: id, Valid: true}, HideRead: prefs.HideEmpty}, feedViewLimit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -790,7 +791,7 @@ func (h *Pages) SubscriptionView(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	idStr := r.PathValue("id")
@@ -804,17 +805,17 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 		lookupError(w, r, err)
 		return
 	}
-	sb, ok := h.sidebar(w, store, "/apps/feed/folder/"+idStr)
+	sb, ok := h.sidebar(w, r, store, "/apps/feed/folder/"+idStr)
 	if !ok {
 		return
 	}
-	prefs, ok := h.prefs(w, store)
+	prefs, ok := h.prefs(w, r, store)
 	if !ok {
 		return
 	}
 	items, err := store.ListItemsForView(ViewSpec{FolderID: sql.NullInt64{Int64: id, Valid: true}, HideRead: prefs.HideEmpty}, feedViewLimit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -827,16 +828,16 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) StarredView(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
-	sb, ok := h.sidebar(w, store, "/apps/feed/starred")
+	sb, ok := h.sidebar(w, r, store, "/apps/feed/starred")
 	if !ok {
 		return
 	}
 	items, err := store.ListItemsForView(ViewSpec{Starred: true}, feedViewLimit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -849,21 +850,21 @@ func (h *Pages) StarredView(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	tagName := r.PathValue("name")
-	sb, ok := h.sidebar(w, store, "/apps/feed/tag/"+url.PathEscape(tagName))
+	sb, ok := h.sidebar(w, r, store, "/apps/feed/tag/"+url.PathEscape(tagName))
 	if !ok {
 		return
 	}
-	prefs, ok := h.prefs(w, store)
+	prefs, ok := h.prefs(w, r, store)
 	if !ok {
 		return
 	}
 	items, err := store.ListItemsForView(ViewSpec{TagName: tagName, HideRead: prefs.HideEmpty}, feedViewLimit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -876,7 +877,7 @@ func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) RefreshSubscription(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -896,7 +897,7 @@ func (h *Pages) RefreshSubscription(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) MarkSubscriptionRead(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -914,7 +915,7 @@ func (h *Pages) MarkSubscriptionRead(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) MarkFolderRead(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -932,7 +933,7 @@ func (h *Pages) MarkFolderRead(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) MarkAllRead(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := store.MarkAllRead(); err != nil {
@@ -945,7 +946,7 @@ func (h *Pages) MarkAllRead(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) MarkItemRead(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -968,7 +969,7 @@ func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	ip, err := store.GetItemPlayback(id)
@@ -991,7 +992,7 @@ func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
 	artwork := ip.ThumbnailURL
 	tags, err := store.ItemTags(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	c := parseViewCtx(r)
@@ -1000,7 +1001,7 @@ func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
 		slog.Error("feed: resolve view items", "err", rerr)
 	}
 	nav := buildItemNav(store, c, items, id)
-	sb, ok := h.sidebar(w, store, c.path())
+	sb, ok := h.sidebar(w, r, store, c.path())
 	if !ok {
 		return
 	}
@@ -1022,7 +1023,7 @@ func (h *Pages) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 	}
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := store.SetPlayback(id, progressSec, false); err != nil {
@@ -1040,7 +1041,7 @@ func (h *Pages) MarkComplete(w http.ResponseWriter, r *http.Request) {
 	}
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := store.SetPlayback(id, 0, true); err != nil {
@@ -1103,7 +1104,7 @@ func (h *Pages) AdjacentPlayer(w http.ResponseWriter, r *http.Request) {
 	}
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	c := parseViewCtx(r)
@@ -1136,7 +1137,7 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	}
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	it, err := store.GetItem(id)
@@ -1146,7 +1147,8 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	}
 	streamURL, err := ResolveYouTubeStreamURL(r.Context(), it.MediaURL)
 	if err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 	plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": streamURL})
@@ -1162,7 +1164,7 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 	}
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	d, err := store.GetDownload(id)
@@ -1172,7 +1174,7 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -1180,7 +1182,7 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 	u := plugin.UserFromContext(r.Context())
 	space, err := h.plugin.Space(u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -1245,7 +1247,7 @@ func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	it, err := store.GetItem(id)
@@ -1255,7 +1257,7 @@ func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	dl, err := store.FindDownload(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	for _, stored := range []string{dl.CleanAudioPath, dl.LocalPath} {
@@ -1264,7 +1266,7 @@ func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 		}
 		space, err := h.plugin.Space(plugin.Username(r))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		f, err := space.Own.Open(Name(stored))
@@ -1272,13 +1274,13 @@ func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		defer f.Close()
 		info, err := f.Stat()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		http.ServeContent(w, r, info.Name(), info.ModTime(), f)
@@ -1301,7 +1303,7 @@ func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
 	}
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	it, err := store.GetItem(id)
@@ -1310,11 +1312,11 @@ func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := store.MarkRead(id, !it.IsRead); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	it.IsRead = !it.IsRead
@@ -1323,7 +1325,7 @@ func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("HX-Request") == "true" {
 		sub, err := store.GetSubscription(it.SubscriptionID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		page := currentPath(r)
@@ -1343,7 +1345,7 @@ func (h *Pages) ToggleRead(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) AddItemTag(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1365,7 +1367,7 @@ func (h *Pages) AddItemTag(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("HX-Request") == "true" {
 		tags, err := store.ItemTags(id)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		ui.Render(w, r, feedItemTagRow(id, tags, plugin.CSRFToken(r)))
@@ -1378,7 +1380,7 @@ func (h *Pages) AddItemTag(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) RemoveItemTag(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1395,7 +1397,7 @@ func (h *Pages) RemoveItemTag(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("HX-Request") == "true" {
 		tags, err := store.ItemTags(id)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		ui.Render(w, r, feedItemTagRow(id, tags, plugin.CSRFToken(r)))
@@ -1408,7 +1410,7 @@ func (h *Pages) RemoveItemTag(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	q := r.URL.Query().Get("query")
@@ -1427,14 +1429,14 @@ func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := store.ListItemsForView(ViewSpec{All: true}, 200)
 	if err != nil {
-		http.Error(w, "Could not load items: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("Could not load items: %w", err))
 		return
 	}
 	// refineItems batch-loads each row's tags and download state rather than
 	// querying per row.
 	matched, err := h.refineItems(store, items, expr)
 	if err != nil {
-		http.Error(w, "Could not match items: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("Could not match items: %w", err))
 		return
 	}
 	if len(matched) > 10 {
@@ -1447,7 +1449,7 @@ func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	db := store.DB()
@@ -1499,7 +1501,7 @@ func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) Import(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -1551,7 +1553,7 @@ func (h *Pages) Import(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -1591,12 +1593,12 @@ func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) ExportOPML(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	data, err := store.ExportOPML()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/xml")
@@ -1610,15 +1612,15 @@ func (h *Pages) ExportOPML(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) HistoryView(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	items, err := store.ListPlaybackHistory(feedViewLimit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
-	sb, ok := h.sidebar(w, store, "/apps/feed/history")
+	sb, ok := h.sidebar(w, r, store, "/apps/feed/history")
 	if !ok {
 		return
 	}
@@ -1630,7 +1632,7 @@ func (h *Pages) HistoryView(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) SubscriptionSettings(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1645,10 +1647,10 @@ func (h *Pages) SubscriptionSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	folders, err := store.ListFolders()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
-	sb, ok := h.sidebar(w, store, fmt.Sprintf("/apps/feed/subscription/%d", id))
+	sb, ok := h.sidebar(w, r, store, fmt.Sprintf("/apps/feed/subscription/%d", id))
 	if !ok {
 		return
 	}
@@ -1660,7 +1662,7 @@ func (h *Pages) SubscriptionSettings(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) SaveSubscriptionSettings(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1711,7 +1713,7 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 	}
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	it, err := store.GetItem(id)
@@ -1720,11 +1722,11 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := store.MarkStarred(id, !it.IsStarred); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	// If HTMX triggered this, return the updated star button for outerHTML
@@ -1744,12 +1746,12 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	cur, err := store.LoadPlayerPrefs()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	// Only overwrite fields actually present in the form (partial updates).
@@ -1784,11 +1786,11 @@ func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := store.SavePlayerPrefs(cur); err != nil {
 		slog.Error("feed: save player prefs", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if r.Header.Get("HX-Target") == "feed-sidebar" {
-		sb, ok := h.sidebar(w, store, sidebarPath(currentPath(r)))
+		sb, ok := h.sidebar(w, r, store, sidebarPath(currentPath(r)))
 		if !ok {
 			return
 		}
@@ -1802,7 +1804,7 @@ func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 // band, the sidebar with its new counts, highlighted for the page the
 // request came from.
 func (h *Pages) renderRowUpdate(w http.ResponseWriter, r *http.Request, store *Store, swapped templ.Component) {
-	sb, ok := h.sidebar(w, store, sidebarPath(currentPath(r)))
+	sb, ok := h.sidebar(w, r, store, sidebarPath(currentPath(r)))
 	if !ok {
 		return
 	}

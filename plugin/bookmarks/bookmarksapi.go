@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,7 +31,8 @@ func (a *BookmarksAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	db, err := a.plugin.DB(u.Username)
 	if err != nil {
-		apiJSON(w, http.StatusInternalServerError, apiErr(err.Error()))
+		httperr.Log(r, err)
+		apiJSON(w, http.StatusInternalServerError, apiErr(httperr.Message))
 		return
 	}
 
@@ -161,7 +163,8 @@ func (a *BookmarksAPI) createBookmark(w http.ResponseWriter, r *http.Request, db
 
 	bm, err := CreateBookmark(db, body.URL, body.Title, body.Description, body.Tags, body.Folders)
 	if err != nil {
-		apiJSON(w, http.StatusInternalServerError, apiErr(err.Error()))
+		httperr.Log(r, err)
+		apiJSON(w, http.StatusInternalServerError, apiErr(httperr.Message))
 		return
 	}
 	apiJSON(w, http.StatusOK, apiResp("item", bookmarkToAPI(bm)))
@@ -198,7 +201,8 @@ func (a *BookmarksAPI) updateBookmark(w http.ResponseWriter, r *http.Request, db
 
 	bm, err := UpdateBookmark(db, id, body.Title, body.Description, body.Tags, body.Folders)
 	if err != nil {
-		apiJSON(w, http.StatusInternalServerError, apiErr(err.Error()))
+		httperr.Log(r, err)
+		apiJSON(w, http.StatusInternalServerError, apiErr(httperr.Message))
 		return
 	}
 	apiJSON(w, http.StatusOK, apiResp("item", bookmarkToAPI(bm)))
@@ -233,7 +237,8 @@ func (a *BookmarksAPI) recordClick(w http.ResponseWriter, r *http.Request, db *s
 func (a *BookmarksAPI) listFolders(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	folders, err := ListFolders(db)
 	if err != nil {
-		apiJSON(w, http.StatusInternalServerError, apiErr(err.Error()))
+		httperr.Log(r, err)
+		apiJSON(w, http.StatusInternalServerError, apiErr(httperr.Message))
 		return
 	}
 	out := make([]any, len(folders))
@@ -254,7 +259,8 @@ func (a *BookmarksAPI) createFolder(w http.ResponseWriter, r *http.Request, db *
 	}
 	f, err := CreateFolder(db, body.Title, body.ParentFolder)
 	if err != nil {
-		apiJSON(w, http.StatusInternalServerError, apiErr(err.Error()))
+		httperr.Log(r, err)
+		apiJSON(w, http.StatusInternalServerError, apiErr(httperr.Message))
 		return
 	}
 	apiJSON(w, http.StatusOK, apiResp("item", folderToAPI(f)))
@@ -289,7 +295,8 @@ func (a *BookmarksAPI) updateFolder(w http.ResponseWriter, r *http.Request, db *
 		title = *body.Title
 	}
 	if err := UpdateFolder(db, id, title, body.ParentFolder); err != nil {
-		apiJSON(w, http.StatusInternalServerError, apiErr(err.Error()))
+		httperr.Log(r, err)
+		apiJSON(w, http.StatusInternalServerError, apiErr(httperr.Message))
 		return
 	}
 	f, err := GetFolder(db, id)
@@ -318,7 +325,8 @@ func (a *BookmarksAPI) deleteFolder(w http.ResponseWriter, r *http.Request, db *
 func (a *BookmarksAPI) listTags(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	tags, err := ListAllTags(db)
 	if err != nil {
-		apiJSON(w, http.StatusInternalServerError, apiErr(err.Error()))
+		httperr.Log(r, err)
+		apiJSON(w, http.StatusInternalServerError, apiErr(httperr.Message))
 		return
 	}
 	apiJSON(w, http.StatusOK, tags)
@@ -360,7 +368,7 @@ func (a *BookmarksAPI) deleteTag(w http.ResponseWriter, r *http.Request, db *sql
 // serverError logs err and answers 500 in the API's error shape.
 func (a *BookmarksAPI) serverError(w http.ResponseWriter, what string, err error) {
 	a.plugin.log.Error("bookmarks api: "+what, "err", err)
-	apiJSON(w, http.StatusInternalServerError, apiErr(err.Error()))
+	apiJSON(w, http.StatusInternalServerError, apiErr(httperr.Message))
 }
 
 func bookmarkToAPI(bm *Bookmark) map[string]any {

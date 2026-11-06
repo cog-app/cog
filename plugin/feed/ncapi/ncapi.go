@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"net"
 	"net/http"
@@ -59,7 +60,8 @@ func (a *NewsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	db, err := a.backend.DB(u.Username)
 	if err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 
@@ -121,7 +123,7 @@ func (a *NewsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.user(w, u)
 	// Folders
 	case "GET folders":
-		a.listFolders(w, db)
+		a.listFolders(w, r, db)
 	case "POST folders":
 		a.createFolder(w, r, db)
 	case "PUT folders/:id":
@@ -138,7 +140,7 @@ func (a *NewsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	// Feeds (subscriptions WHERE kind='rss')
 	case "GET feeds":
-		a.listFeeds(w, db)
+		a.listFeeds(w, r, db)
 	case "POST feeds":
 		a.createFeed(w, r, db, u.Username)
 	case "DELETE feeds/:id":
@@ -198,10 +200,11 @@ func (a *NewsAPI) user(w http.ResponseWriter, u *user.User) {
 
 // --- Folders ---
 
-func (a *NewsAPI) listFolders(w http.ResponseWriter, db *sql.DB) {
+func (a *NewsAPI) listFolders(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	folders, err := listFolders(db)
 	if err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 	plugin.WriteJSON(w, http.StatusOK, map[string]any{"folders": foldersToAPI(folders)})
@@ -248,15 +251,17 @@ func (a *NewsAPI) deleteFolder(w http.ResponseWriter, db *sql.DB, id int64) {
 
 // --- Feeds (subscriptions WHERE kind='rss') ---
 
-func (a *NewsAPI) listFeeds(w http.ResponseWriter, db *sql.DB) {
+func (a *NewsAPI) listFeeds(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	subs, err := listRSSSubscriptions(db)
 	if err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 	starred, newest, err := feedTotals(db)
 	if err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 	resp := map[string]any{
@@ -365,7 +370,8 @@ func (a *NewsAPI) getItems(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 	items, err := allTextItems(db, batchSize, offset, typ, id, getRead, oldestFirst)
 	if err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 	plugin.WriteJSON(w, http.StatusOK, map[string]any{"items": itemsToAPI(items)})
@@ -378,7 +384,8 @@ func (a *NewsAPI) getUpdatedItems(w http.ResponseWriter, r *http.Request, db *sq
 
 	items, err := updatedTextItems(db, lastModified, typ, id)
 	if err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 	plugin.WriteJSON(w, http.StatusOK, map[string]any{"items": itemsToAPI(items)})
@@ -430,7 +437,8 @@ func (a *NewsAPI) updateItems(w http.ResponseWriter, r *http.Request, db *sql.DB
 		ids = append(body.ItemIDs, refs.ids...)
 		byHash, err := itemIDsByGUIDHash(db, refs.hashes)
 		if err != nil {
-			plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			httperr.Log(r, err)
+			plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 			return
 		}
 		ids = append(ids, byHash...)
@@ -442,7 +450,8 @@ func (a *NewsAPI) updateItems(w http.ResponseWriter, r *http.Request, db *sql.DB
 		}
 		ids, err = itemIDsByGUIDHash(db, []guidRef{{FeedID: feedID, GUIDHash: segs[1]}})
 		if err != nil {
-			plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			httperr.Log(r, err)
+			plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 			return
 		}
 		if len(ids) == 0 {
@@ -459,7 +468,8 @@ func (a *NewsAPI) updateItems(w http.ResponseWriter, r *http.Request, db *sql.DB
 	}
 
 	if err := setItemsBool(db, act.column, act.value, ids); err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -490,7 +500,8 @@ func (a *NewsAPI) markReadWhere(w http.ResponseWriter, r *http.Request, db *sql.
 		args = append(args, body.NewestItemID)
 	}
 	if err := markItemsReadWhere(db, cond, args...); err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 	w.WriteHeader(http.StatusOK)

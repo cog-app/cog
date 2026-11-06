@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"git.duckfam.us/jj-software/cog/ui"
 	"log/slog"
 	"net/http"
@@ -286,7 +287,7 @@ func (h *adminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := h.p.DeleteUser(id); err != nil {
 		h.p.Log.Error("delete user failed", "user", id, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	// Return empty body — HTMX will remove the row.
@@ -388,7 +389,7 @@ func (h *adminHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	memberID := r.PathValue("member_id")
 	if err := h.p.Groups.RemoveMember(groupID, memberID); err != nil {
 		h.p.Log.Error("remove group member", "group", groupID, "member", memberID, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)

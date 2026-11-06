@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -372,7 +373,7 @@ func (h *groupHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.p.Groups.RemoveMember(groupID, memberID); err != nil {
-		http.Error(w, "Failed to remove member: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("Failed to remove member: %w", err))
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -488,7 +489,7 @@ func (h *groupHandler) RevokeInvite(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	} else if err != nil {
-		http.Error(w, "Failed to revoke invite: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("Failed to revoke invite: %w", err))
 		return
 	}
 	w.WriteHeader(http.StatusOK)

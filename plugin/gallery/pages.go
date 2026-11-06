@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"image"
 	"image/jpeg"
 	"net/http"
@@ -40,7 +41,7 @@ func isAdmin(r *http.Request) bool {
 // serverError reports a failure the user cannot fix and logs it.
 func (h *Pages) serverError(w http.ResponseWriter, r *http.Request, err error) {
 	h.plugin.log.Error("gallery page", "path", r.URL.Path, "err", err)
-	http.Error(w, err.Error(), http.StatusInternalServerError)
+	httperr.Internal(w, r, err)
 }
 
 // flashRedirect leaves a message for the page at target and sends the
@@ -347,12 +348,12 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) TimelineAPI(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	days, err := TimelineDays(db)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.WriteJSON(w, http.StatusOK, days)
@@ -362,7 +363,7 @@ func (h *Pages) TimelineAPI(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) MediaDetailAPI(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -386,7 +387,7 @@ func (h *Pages) MediaDetailAPI(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) MediaThumbnail(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -429,7 +430,7 @@ func (h *Pages) MediaThumbnail(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) FaceThumbnail(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	faceID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -768,7 +769,7 @@ func (h *Pages) DeletePhoto(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -784,7 +785,7 @@ func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := MergePeopleRows(db, targetID, id); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", targetID), http.StatusSeeOther)
@@ -797,7 +798,7 @@ func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
 	if contactUID := r.FormValue("contact_uid"); contactUID != "" && h.plugin.contacts != nil {
 		cs, err := h.plugin.contacts.Store(username)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		card, err := cs.FindByUID(contactUID)
@@ -806,15 +807,15 @@ func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		if err := LinkPersonToContact(db, id, contactUID); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		if err := NamePersonRow(db, id, card.FN); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		if !card.HasPhoto() {
@@ -827,7 +828,7 @@ func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
 	// Plain name set — also link/create a contact if the contacts plugin is available.
 	name := r.FormValue("name")
 	if err := NamePersonRow(db, id, name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if name != "" && h.plugin.contacts != nil {
@@ -840,7 +841,7 @@ func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) MergePeople(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	targetID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -854,7 +855,7 @@ func (h *Pages) MergePeople(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := MergePeopleRows(db, targetID, sourceID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", targetID), http.StatusSeeOther)
@@ -962,7 +963,7 @@ func cropFace(img image.Image, face *Face) image.Image {
 func (h *Pages) HidePerson(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -971,7 +972,7 @@ func (h *Pages) HidePerson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := HidePersonRow(db, id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	http.Redirect(w, r, "/apps/gallery/people", http.StatusSeeOther)
@@ -981,7 +982,7 @@ func (h *Pages) HidePerson(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) RemoveFaceFromPerson(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	personID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -995,7 +996,7 @@ func (h *Pages) RemoveFaceFromPerson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := CreatePersonFromFace(db, faceID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", personID), http.StatusSeeOther)
@@ -1005,7 +1006,7 @@ func (h *Pages) RemoveFaceFromPerson(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) AddMediaTagAction(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	mediaID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1020,11 +1021,11 @@ func (h *Pages) AddMediaTagAction(w http.ResponseWriter, r *http.Request) {
 	}
 	tagID, err := UpsertTag(db, tagName, 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := AddMediaTag(db, mediaID, tagID, 1.0); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/photo/%d", mediaID), http.StatusSeeOther)
@@ -1034,7 +1035,7 @@ func (h *Pages) AddMediaTagAction(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) RemoveMediaTagAction(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	mediaID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1048,7 +1049,7 @@ func (h *Pages) RemoveMediaTagAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := RemoveMediaTag(db, mediaID, tagID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/photo/%d", mediaID), http.StatusSeeOther)
@@ -1058,7 +1059,7 @@ func (h *Pages) RemoveMediaTagAction(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DeleteFaceAction(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	mediaID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1072,7 +1073,7 @@ func (h *Pages) DeleteFaceAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := DeleteFace(db, faceID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/photo/%d", mediaID), http.StatusSeeOther)
@@ -1082,7 +1083,7 @@ func (h *Pages) DeleteFaceAction(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) CreatePersonFromFaceAction(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	faceID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1092,7 +1093,7 @@ func (h *Pages) CreatePersonFromFaceAction(w http.ResponseWriter, r *http.Reques
 	}
 	personID, err := CreatePersonFromFace(db, faceID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", personID), http.StatusSeeOther)
@@ -1102,13 +1103,13 @@ func (h *Pages) CreatePersonFromFaceAction(w http.ResponseWriter, r *http.Reques
 func (h *Pages) SearchTagsAPI(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	q := r.URL.Query().Get("q")
 	tags, err := SearchTags(db, q, 10)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	items := make([]ui.PickerItem, len(tags))
@@ -1123,7 +1124,7 @@ func (h *Pages) SearchTagsAPI(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	q := r.URL.Query().Get("name")
@@ -1133,7 +1134,7 @@ func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 	excludeID, _ := strconv.ParseInt(r.URL.Query().Get("exclude"), 10, 64)
 	people, err := SearchPeople(db, q, excludeID, 10)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	items := make([]ui.PickerItem, len(people))
@@ -1221,7 +1222,7 @@ func (h *Pages) ScanFoldersPreview(w http.ResponseWriter, r *http.Request) {
 	username := plugin.Username(r)
 	filesDB, err := h.plugin.ctx.PluginDB(username, plugin.OfPlugin("files"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -1242,7 +1243,7 @@ func (h *Pages) ScanFoldersPreview(w http.ResponseWriter, r *http.Request) {
 	rows, err := filesDB.Query(`SELECT path FROM files
 		WHERE is_dir = 0 AND (mime_type LIKE 'image/%' OR mime_type LIKE 'video/%')`)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	defer rows.Close()
@@ -1288,7 +1289,7 @@ func (h *Pages) SaveRecognitionSettings(w http.ResponseWriter, r *http.Request) 
 func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
 	sysDB, err := h.plugin.SystemDB()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	stats := h.plugin.AggregateRecognitionStats()
@@ -1319,7 +1320,7 @@ func (h *Pages) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
 // PurgeRecognitions purges all recognition data and resets state for all users.
 func (h *Pages) PurgeRecognitions(w http.ResponseWriter, r *http.Request) {
 	if err := h.plugin.PurgeAllRecognitions(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	http.Redirect(w, r, "/admin/plugins/gallery", http.StatusSeeOther)
@@ -1329,7 +1330,7 @@ func (h *Pages) PurgeRecognitions(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 	db, err := h.plugin.SystemDB()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -1383,7 +1384,7 @@ func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	username := plugin.Username(r)
@@ -1412,7 +1413,7 @@ func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) TogglePhotoStar(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1436,7 +1437,7 @@ func (h *Pages) TogglePhotoStar(w http.ResponseWriter, r *http.Request) {
 	username := plugin.Username(r)
 	filesDB, err := h.plugin.ctx.PluginDB(username, plugin.OfPlugin("files"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	// Read current state and toggle.
@@ -1453,7 +1454,7 @@ func (h *Pages) TogglePhotoStar(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) Duplicates(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	groups, err := ListDuplicateGroups(db)
@@ -1469,7 +1470,7 @@ func (h *Pages) Duplicates(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DuplicateGroupView(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1490,7 +1491,7 @@ func (h *Pages) DuplicateGroupView(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) SetDuplicateKeep(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1504,7 +1505,7 @@ func (h *Pages) SetDuplicateKeep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := SetKeepMember(db, groupID, mediaID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/duplicates/%d", groupID), http.StatusSeeOther)
@@ -1514,7 +1515,7 @@ func (h *Pages) SetDuplicateKeep(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) UnmarkDuplicate(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1528,7 +1529,7 @@ func (h *Pages) UnmarkDuplicate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := RemoveDuplicateMember(db, groupID, mediaID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	h.redirectAfterDuplicateChange(w, r, db, groupID, nil)
@@ -1573,7 +1574,7 @@ func pruneDuplicateGroup(db *sql.DB, groupID int64) (bool, error) {
 func (h *Pages) redirectAfterDuplicateChange(w http.ResponseWriter, r *http.Request, db *sql.DB, groupID int64, failed []string) {
 	gone, err := pruneDuplicateGroup(db, groupID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	to := fmt.Sprintf("/apps/gallery/duplicates/%d", groupID)
@@ -1591,7 +1592,7 @@ func (h *Pages) redirectAfterDuplicateChange(w http.ResponseWriter, r *http.Requ
 func (h *Pages) DeleteNonKeepDuplicates(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1602,12 +1603,12 @@ func (h *Pages) DeleteNonKeepDuplicates(w http.ResponseWriter, r *http.Request) 
 	username := plugin.Username(r)
 	members, err := DuplicateGroupMembers(db, groupID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	failed, err := h.deleteDuplicateFiles(db, username, nonKeep(members))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	h.redirectAfterDuplicateChange(w, r, db, groupID, failed)
@@ -1628,21 +1629,21 @@ func nonKeep(members []DuplicateMember) []DuplicateMember {
 func (h *Pages) DeleteAllNonKeep(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	members, err := NonKeepDuplicates(db)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	failed, err := h.deleteDuplicateFiles(db, plugin.Username(r), members)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := PruneDuplicateGroups(db); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if len(failed) > 0 {
@@ -1656,7 +1657,7 @@ func (h *Pages) DeleteAllNonKeep(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DeleteDuplicateMember(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1676,13 +1677,13 @@ func (h *Pages) DeleteDuplicateMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	// Deleting the media drops its membership too (ON DELETE CASCADE).
 	failed, err := h.deleteDuplicateFiles(db, username, []DuplicateMember{{Media: *m}})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	h.redirectAfterDuplicateChange(w, r, db, groupID, failed)
@@ -1692,7 +1693,7 @@ func (h *Pages) DeleteDuplicateMember(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DeleteAllDuplicates(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1703,12 +1704,12 @@ func (h *Pages) DeleteAllDuplicates(w http.ResponseWriter, r *http.Request) {
 	username := plugin.Username(r)
 	members, err := DuplicateGroupMembers(db, groupID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	failed, err := h.deleteDuplicateFiles(db, username, members)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	h.redirectAfterDuplicateChange(w, r, db, groupID, failed)
@@ -1718,7 +1719,7 @@ func (h *Pages) DeleteAllDuplicates(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DismissDuplicateGroup(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1727,7 +1728,7 @@ func (h *Pages) DismissDuplicateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := DeleteDuplicateGroup(db, groupID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)

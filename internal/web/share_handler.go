@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"net/http"
 	"strconv"
 	"strings"
@@ -158,7 +159,7 @@ func (h *shareHandler) CreateShareForm(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := h.p.Shares.Create(u.ID, resType, resID, subjectType, subjectID, perms); err != nil {
 		h.p.Log.Error("share create failed", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -195,7 +196,7 @@ func (h *shareHandler) CreatePublicLinkForm(w http.ResponseWriter, r *http.Reque
 	// isn't needed.
 	if _, err := h.p.Shares.CreatePublicLink(u.ID, resType, resID, perms, nil); err != nil {
 		h.p.Log.Error("public link create failed", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -226,7 +227,7 @@ func (h *shareHandler) DeleteShareHTMX(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.p.Shares.Delete(shareID); err != nil {
 		h.p.Log.Error("delete share", "share", shareID, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -390,7 +391,7 @@ func (h *shareHandler) CreateFederatedShareForm(w http.ResponseWriter, r *http.R
 	rec, err := h.p.Shares.CreatePublicLink(u.ID, resType, resID, perms, nil)
 	if err != nil {
 		h.p.Log.Error("create share for federation", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -413,7 +414,7 @@ func (h *shareHandler) CreateFederatedShareForm(w http.ResponseWriter, r *http.R
 	}
 	if err := h.p.Federation.Create(fs); err != nil {
 		h.p.Log.Error("create federation record", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 

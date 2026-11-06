@@ -3,6 +3,7 @@ package notes
 import (
 	"database/sql"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -81,12 +82,12 @@ func (h *Pages) buildSidebar(db *sql.DB, activePath string) (sidebarData, error)
 func (h *Pages) pageSetup(w http.ResponseWriter, r *http.Request, activePath string) (*sql.DB, sidebarData, bool) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return nil, sidebarData{}, false
 	}
 	sb, err := h.buildSidebar(db, activePath)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return nil, sidebarData{}, false
 	}
 	return db, sb, true
@@ -95,7 +96,7 @@ func (h *Pages) pageSetup(w http.ResponseWriter, r *http.Request, activePath str
 // Index shows all notes.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	if err := h.plugin.ensureNotesDirFor(plugin.Username(r)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	db, sb, ok := h.pageSetup(w, r, "/apps/notes/")
@@ -104,7 +105,7 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	}
 	notes, err := ListNotes(db, 200)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, "Notes")
@@ -120,7 +121,7 @@ func (h *Pages) CategoryView(w http.ResponseWriter, r *http.Request) {
 	}
 	notes, err := NotesByCategory(db, category, 200)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, category)
@@ -135,7 +136,7 @@ func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
 	}
 	notes, err := StarredNotes(db, 200)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, "Starred notes")
@@ -156,7 +157,7 @@ func loadNote(w http.ResponseWriter, r *http.Request, db *sql.DB) *Note {
 		return nil
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return nil
 	}
 	return note
@@ -224,12 +225,12 @@ func (h *Pages) Preview(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) CreateNote(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	username := plugin.Username(r)
 	if err := h.plugin.ensureNotesDirFor(username); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -242,19 +243,19 @@ func (h *Pages) CreateNote(w http.ResponseWriter, r *http.Request) {
 
 	filename, err := h.plugin.freeNoteFilename(db, username, title, nil)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	etag := ComputeETag(content)
 
 	if err := h.plugin.writeNoteContent(username, filename, content); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
 	note, err := CreateNoteMeta(db, filename, category, etag)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -265,7 +266,7 @@ func (h *Pages) CreateNote(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) UpdateNote(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	note := loadNote(w, r, db)
@@ -291,12 +292,12 @@ func (h *Pages) UpdateNote(w http.ResponseWriter, r *http.Request) {
 	if title != "" {
 		newFilename, err := h.plugin.freeNoteFilename(db, username, title, note)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		if newFilename != filename {
 			if err := h.plugin.renameNoteFile(username, filename, newFilename); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				httperr.Internal(w, r, err)
 				return
 			}
 			filename = newFilename
@@ -304,13 +305,13 @@ func (h *Pages) UpdateNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.plugin.writeNoteContent(username, filename, content); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
 	etag := ComputeETag(content)
 	if err := UpdateNoteMeta(db, id, filename, category, etag); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -326,7 +327,7 @@ func (h *Pages) UpdateNote(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DeleteNote(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	note := loadNote(w, r, db)
@@ -334,7 +335,7 @@ func (h *Pages) DeleteNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.plugin.deleteNote(db, plugin.Username(r), note); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -356,7 +357,7 @@ func (h *Pages) DeleteNote(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	note := loadNote(w, r, db)
@@ -364,7 +365,7 @@ func (h *Pages) ToggleStar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := ToggleFavorite(db, note.ID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	note.Favorite = !note.Favorite
@@ -388,7 +389,7 @@ func (h *Pages) renderRowUpdate(w http.ResponseWriter, r *http.Request, db *sql.
 	page := currentPath(r)
 	sb, err := h.buildSidebar(db, page)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	sb.OOB = true
@@ -403,7 +404,7 @@ func (h *Pages) renderRowUpdate(w http.ResponseWriter, r *http.Request, db *sql.
 			n = sb.StarredCount
 		case viewCategory:
 			if n, err = CategoryCount(db, category); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				httperr.Internal(w, r, err)
 				return
 			}
 		}

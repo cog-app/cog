@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"html/template"
 	"net/http"
 	"slices"
@@ -48,7 +49,7 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	u := plugin.UserFromContext(r.Context())
 	calendars, err := h.plugin.Calendars(u.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, "Calendar")
@@ -84,7 +85,7 @@ func (h *Pages) Settings(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 	db, userID, err := h.userDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -103,12 +104,12 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 
 	cals, err := h.plugin.calendarMap(userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	me, err := h.plugin.me(userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if calIDStr != "" {
@@ -126,7 +127,7 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 	}
 	events, err := EventsInRange(db, cals, start.Unix(), end.Unix())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -134,18 +135,18 @@ func (h *Pages) EventsJSON(w http.ResponseWriter, r *http.Request) {
 		// Also include events from calendars shared with this user.
 		shared, err := h.plugin.SharedCalendars(userID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		for _, sc := range shared {
 			ownerDB, err := h.plugin.DB(sc.OwnerUsername)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				httperr.Internal(w, r, err)
 				return
 			}
 			sharedEvents, err := EventsInRange(ownerDB, map[int64]Calendar{sc.ID: sc.Calendar}, start.Unix(), end.Unix())
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				httperr.Internal(w, r, err)
 				return
 			}
 			for _, ev := range sharedEvents {
@@ -364,7 +365,7 @@ func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	calendars, err := h.plugin.Calendars(userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	in, err := occurrenceOf(r, ev, ical.ZonesFor(ev.Object, cal.Zone()))
@@ -381,7 +382,7 @@ func (h *Pages) EventDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	me, err := h.plugin.me(userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	compAt := max(slices.Index(ev.Object.Components, comp),
@@ -479,7 +480,7 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	me, err := h.plugin.me(userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	f.organizer = me
@@ -500,7 +501,7 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		}
 		e, err := o.Override(in.RecurrenceID, z)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		applyForm(o, e, f, z, now, false)
@@ -511,7 +512,7 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		rule := o.Master().RRule
 		n, err := o.Split(in.RecurrenceID, z, uuid.NewString())
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		o.Master().Stamp(now, true)
@@ -534,7 +535,7 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		delta := f.start.Sub(in.Start)
 		start, _, err := m.Span(z)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		applyForm(o, m, f.movedTo(start.Add(delta)), z, now, true)
@@ -547,18 +548,18 @@ func (h *Pages) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	for i, sv := range saves {
 		d, err := h.plugin.plan(userID, olds[i], sv.Object)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		deliveries = append(deliveries, d)
 	}
 	saved, err := SaveEvents(db, now, saves...)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := SetEventColor(db, saved[edited].ID, color); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	for _, d := range deliveries {
@@ -693,7 +694,7 @@ func roleOf(a ical.Attendee) string {
 func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	db, userID, err := h.userDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -724,7 +725,7 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	if len(f.attendees) > 0 {
 		me, err := h.plugin.me(userID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		organizer = organizerOf(me)
@@ -742,16 +743,16 @@ func (h *Pages) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	d, err := h.plugin.plan(userID, nil, o)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	ev, err := SaveEvent(db, cal, nil, o, now)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := SetEventColor(db, ev.ID, r.FormValue("color")); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	d.Send()
@@ -783,7 +784,7 @@ func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	case in == nil || scope == "all":
 	case scope == "following":
 		if remains, err = o.Truncate(in.RecurrenceID, z); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 	default:
@@ -793,11 +794,11 @@ func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	if !remains {
 		d, err := h.plugin.plan(userID, before, nil)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		if err := DeleteEventByID(db, ev.ID, now); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		h.plugin.collected(plugin.UserFromContext(r.Context()).Username)
@@ -808,11 +809,11 @@ func (h *Pages) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	o.Components[0].Stamp(now, true)
 	d, err := h.plugin.plan(userID, before, o)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if _, err := SaveEvent(db, cal, ev, o, now); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	// The occurrence's override may have carried attachments.
@@ -832,7 +833,7 @@ func (h *Pages) CreateCalendar(w http.ResponseWriter, r *http.Request) {
 	}
 	if name != "" {
 		if _, err := h.plugin.CreateCalendar(u.ID, r.FormValue("uid"), name, r.FormValue("color"), "", tz); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 	}
@@ -1102,7 +1103,7 @@ func (h *Pages) RespondToInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	me, err := h.plugin.me(userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	mine := dav.Addresses(me)
@@ -1126,11 +1127,11 @@ func (h *Pages) RespondToInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	d, err := h.plugin.plan(userID, before, ev.Object)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if _, err := SaveEvent(db, cal, ev, ev.Object, now); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	d.Send()
@@ -1150,7 +1151,7 @@ func (h *Pages) DeleteCalendarHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -1161,13 +1162,13 @@ func (h *Pages) DeleteCalendarHandler(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) Notifications(w http.ResponseWriter, r *http.Request) {
 	db, _, err := h.userDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
 	notifications, err := DueNotifications(db, h.plugin.ctx.Now().Unix())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -1185,7 +1186,7 @@ func (h *Pages) Notifications(w http.ResponseWriter, r *http.Request) {
 	}
 	events, err := EventsByID(db, ids)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	result := []notifJSON{}
@@ -1201,7 +1202,7 @@ func (h *Pages) Notifications(w http.ResponseWriter, r *http.Request) {
 			Start:   time.Unix(ev.DTStart, 0).UTC().Format(time.RFC3339),
 		})
 		if err := MarkNotificationFired(db, n.ID); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 	}

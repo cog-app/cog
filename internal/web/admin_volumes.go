@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -190,7 +191,7 @@ func (h *adminVolumeHandler) DeleteVolume(w http.ResponseWriter, r *http.Request
 	}
 	if err := h.p.Volumes.Delete(id); err != nil {
 		h.p.Log.Error("delete volume", "volume", id, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -243,7 +244,7 @@ func (h *adminVolumeHandler) DeleteQuota(w http.ResponseWriter, r *http.Request)
 	quotaID := r.PathValue("quota_id")
 	if err := h.p.Quotas.Delete(quotaID); err != nil {
 		h.p.Log.Error("delete quota", "quota", quotaID, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -473,7 +474,7 @@ func (h *shareHandler) CreateShareAdmin(w http.ResponseWriter, r *http.Request) 
 
 	if _, err := h.p.Shares.Create(u.ID, resType, resID, "USER", subjectID, perms); err != nil {
 		h.p.Log.Error("admin share create failed", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -492,7 +493,7 @@ func (h *shareHandler) DeleteShareAdmin(w http.ResponseWriter, r *http.Request) 
 	}
 	if err != nil {
 		h.p.Log.Error("admin delete share", "share", shareID, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
