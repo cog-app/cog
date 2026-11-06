@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -169,73 +168,35 @@ func (s *Shell) newLsCmd() *cobra.Command {
 				}
 			}
 
+			dr, err := s.dirReader()
+			if err != nil {
+				s.errorf(stderr, "ls: %v\n", err)
+				return exitErr(1)
+			}
 			for _, p := range args {
-				if s.fs != nil {
-					if dr, ok := s.fs.(vfs.DirReader); ok {
-						vp := s.toVirtualPath(dir, p)
-						if dirOnly {
-							info, err := dr.StatInfo(vp)
-							if err != nil {
-								s.errorf(stderr, "ls: %v\n", err)
-								return exitErr(1)
-							}
-							printEntry(stdout, filepath.Base(vp), info.IsDir(), info)
-							continue
-						}
-						entries, err := dr.ReadDirEntries(vp)
-						if err != nil {
-							// Not a directory — stat as a file.
-							info, serr := dr.StatInfo(vp)
-							if serr != nil {
-								s.errorf(stderr, "ls: %v\n", err)
-								return exitErr(1)
-							}
-							printEntry(stdout, filepath.Base(vp), info.IsDir(), info)
-							continue
-						}
-						if len(args) > 1 {
-							fmt.Fprintf(stdout, "%s:\n", vp)
-						}
-						for _, e := range entries {
-							if !showAll && strings.HasPrefix(e.Name(), ".") {
-								continue
-							}
-							if showLong {
-								info, err := e.Info()
-								if err != nil {
-									s.errorf(stderr, "ls: %s: %v\n", e.Name(), err)
-									failed = true
-									continue
-								}
-								printEntry(stdout, e.Name(), e.IsDir(), info)
-							} else {
-								printEntry(stdout, e.Name(), e.IsDir(), nil)
-							}
-						}
-						continue
-					}
-				}
-				resolved, err := s.resolve(dir, p)
-				if err != nil {
-					s.errorf(stderr, "ls: %v\n", err)
-					return exitErr(1)
-				}
+				vp := s.toVirtualPath(dir, p)
 				if dirOnly {
-					info, err := os.Stat(resolved)
+					info, err := dr.StatInfo(vp)
 					if err != nil {
 						s.errorf(stderr, "ls: %v\n", err)
 						return exitErr(1)
 					}
-					printEntry(stdout, filepath.Base(resolved), info.IsDir(), info)
+					printEntry(stdout, path.Base(vp), info.IsDir(), info)
 					continue
 				}
-				entries, err := os.ReadDir(resolved)
+				entries, err := dr.ReadDirEntries(vp)
 				if err != nil {
-					s.errorf(stderr, "ls: %v\n", err)
-					return exitErr(1)
+					// Not a directory — stat as a file.
+					info, serr := dr.StatInfo(vp)
+					if serr != nil {
+						s.errorf(stderr, "ls: %v\n", err)
+						return exitErr(1)
+					}
+					printEntry(stdout, path.Base(vp), info.IsDir(), info)
+					continue
 				}
 				if len(args) > 1 {
-					fmt.Fprintf(stdout, "%s:\n", s.virtualPath(resolved))
+					fmt.Fprintf(stdout, "%s:\n", vp)
 				}
 				for _, e := range entries {
 					if !showAll && strings.HasPrefix(e.Name(), ".") {
@@ -281,32 +242,15 @@ func (s *Shell) newCatCmd() *cobra.Command {
 				return err
 			}
 			for _, name := range args {
-				if s.fs != nil {
-					vp := s.toVirtualPath(dir, name)
-					rc, err := s.fs.Get(vp)
-					if err != nil {
-						s.errorf(stderr, "cat: %s: %v\n", name, err)
-						return exitErr(1)
-					}
-					_, err = io.Copy(stdout, rc)
-					rc.Close()
-					if err != nil {
-						return err
-					}
-					continue
-				}
-				resolved, err := s.resolve(dir, name)
-				if err != nil {
-					s.errorf(stderr, "cat: %v\n", err)
-					return exitErr(1)
-				}
-				f, err := os.Open(resolved)
+				rc, err := s.fs.Get(s.toVirtualPath(dir, name))
 				if err != nil {
 					s.errorf(stderr, "cat: %s: %v\n", name, err)
 					return exitErr(1)
 				}
-				_, err = io.Copy(stdout, f)
-				f.Close()
+				_, err = io.Copy(stdout, rc)
+				if cerr := rc.Close(); err == nil {
+					err = cerr
+				}
 				if err != nil {
 					return err
 				}
@@ -324,53 +268,18 @@ func (s *Shell) newCpCmd() *cobra.Command {
 		ValidArgsFunction: s.completePaths,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, stderr, _, dir := getHC(cmd)
-			if s.fs != nil {
-				srcVP := s.toVirtualPath(dir, args[0])
-				dstVP := s.toVirtualPath(dir, args[1])
-				if fi, err := s.fs.Stat(dstVP); err == nil && fi.IsDir {
-					dstVP = filepath.Join(dstVP, filepath.Base(srcVP))
-				}
-				rc, err := s.fs.Get(srcVP)
-				if err != nil {
-					s.errorf(stderr, "cp: %v\n", err)
-					return exitErr(1)
-				}
-				defer rc.Close()
-				if err := s.fs.Put(dstVP, rc); err != nil {
-					s.errorf(stderr, "cp: %v\n", err)
-					return exitErr(1)
-				}
-				return nil
+			srcVP := s.toVirtualPath(dir, args[0])
+			dstVP := s.toVirtualPath(dir, args[1])
+			if fi, err := s.fs.Stat(dstVP); err == nil && fi.IsDir {
+				dstVP = path.Join(dstVP, path.Base(srcVP))
 			}
-			src, err := s.resolve(dir, args[0])
+			rc, err := s.fs.Get(srcVP)
 			if err != nil {
 				s.errorf(stderr, "cp: %v\n", err)
 				return exitErr(1)
 			}
-			dst, err := s.resolve(dir, args[1])
-			if err != nil {
-				s.errorf(stderr, "cp: %v\n", err)
-				return exitErr(1)
-			}
-			if info, err := os.Stat(dst); err == nil && info.IsDir() {
-				dst = filepath.Join(dst, filepath.Base(src))
-			}
-			in, err := os.Open(src)
-			if err != nil {
-				s.errorf(stderr, "cp: %v\n", err)
-				return exitErr(1)
-			}
-			defer in.Close()
-			out, err := os.Create(dst)
-			if err != nil {
-				s.errorf(stderr, "cp: %v\n", err)
-				return exitErr(1)
-			}
-			_, err = io.Copy(out, in)
-			if cerr := out.Close(); err == nil {
-				err = cerr
-			}
-			if err != nil {
+			defer rc.Close()
+			if err := s.fs.Put(dstVP, rc); err != nil {
 				s.errorf(stderr, "cp: %v\n", err)
 				return exitErr(1)
 			}
@@ -387,32 +296,12 @@ func (s *Shell) newMvCmd() *cobra.Command {
 		ValidArgsFunction: s.completePaths,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, stderr, _, dir := getHC(cmd)
-			if s.fs != nil {
-				srcVP := s.toVirtualPath(dir, args[0])
-				dstVP := s.toVirtualPath(dir, args[1])
-				if fi, err := s.fs.Stat(dstVP); err == nil && fi.IsDir {
-					dstVP = filepath.Join(dstVP, filepath.Base(srcVP))
-				}
-				if err := s.fs.Rename(srcVP, dstVP); err != nil {
-					s.errorf(stderr, "mv: %v\n", err)
-					return exitErr(1)
-				}
-				return nil
+			srcVP := s.toVirtualPath(dir, args[0])
+			dstVP := s.toVirtualPath(dir, args[1])
+			if fi, err := s.fs.Stat(dstVP); err == nil && fi.IsDir {
+				dstVP = path.Join(dstVP, path.Base(srcVP))
 			}
-			src, err := s.resolve(dir, args[0])
-			if err != nil {
-				s.errorf(stderr, "mv: %v\n", err)
-				return exitErr(1)
-			}
-			dst, err := s.resolve(dir, args[1])
-			if err != nil {
-				s.errorf(stderr, "mv: %v\n", err)
-				return exitErr(1)
-			}
-			if info, err := os.Stat(dst); err == nil && info.IsDir() {
-				dst = filepath.Join(dst, filepath.Base(src))
-			}
-			if err := os.Rename(src, dst); err != nil {
+			if err := s.fs.Rename(srcVP, dstVP); err != nil {
 				s.errorf(stderr, "mv: %v\n", err)
 				return exitErr(1)
 			}
@@ -431,33 +320,26 @@ func (s *Shell) newRmCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, stderr, _, dir := getHC(cmd)
 			for _, t := range args {
-				if s.fs != nil {
-					vp := s.toVirtualPath(dir, t)
-					if vp == "/" {
-						s.errorf(stderr, "rm: cannot remove root directory\n")
-						return exitErr(1)
-					}
-					if err := s.fs.Delete(vp); err != nil && !(force && isNotExist(err)) {
-						s.errorf(stderr, "rm: %v\n", err)
-						return exitErr(1)
-					}
-					continue
+				vp := s.toVirtualPath(dir, t)
+				if vp == "/" || vp == home {
+					s.errorf(stderr, "rm: cannot remove %s\n", vp)
+					return exitErr(1)
 				}
-				resolved, err := s.resolve(dir, t)
+				// Deleting a directory takes everything in it, and over
+				// SSH it does not go to the trash.
+				fi, err := s.fs.Stat(vp)
 				if err != nil {
+					if force && isNotExist(err) {
+						continue
+					}
 					s.errorf(stderr, "rm: %v\n", err)
 					return exitErr(1)
 				}
-				if resolved == s.filesDir {
-					s.errorf(stderr, "rm: cannot remove root directory\n")
+				if fi.IsDir && !recursive {
+					s.errorf(stderr, "rm: cannot remove %s: is a directory\n", t)
 					return exitErr(1)
 				}
-				if recursive {
-					err = os.RemoveAll(resolved)
-				} else {
-					err = os.Remove(resolved)
-				}
-				if err != nil && !(force && isNotExist(err)) {
+				if err := s.fs.Delete(vp); err != nil && !(force && isNotExist(err)) {
 					s.errorf(stderr, "rm: %v\n", err)
 					return exitErr(1)
 				}
@@ -480,25 +362,23 @@ func (s *Shell) newMkdirCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, stderr, _, dir := getHC(cmd)
 			for _, d := range args {
-				if s.fs != nil {
-					vp := s.toVirtualPath(dir, d)
-					if err := s.fs.Mkdir(vp); err != nil {
+				vp := s.toVirtualPath(dir, d)
+				if !parents {
+					// The VFS makes missing parents; plain mkdir does not,
+					// and refuses what exists.
+					if _, err := s.fs.Stat(vp); err == nil {
+						s.errorf(stderr, "mkdir: %s: file exists\n", d)
+						return exitErr(1)
+					} else if !isNotExist(err) {
 						s.errorf(stderr, "mkdir: %v\n", err)
 						return exitErr(1)
 					}
-					continue
+					if fi, err := s.fs.Stat(path.Dir(vp)); err != nil || !fi.IsDir {
+						s.errorf(stderr, "mkdir: %s: no such directory\n", path.Dir(d))
+						return exitErr(1)
+					}
 				}
-				resolved, err := s.resolve(dir, d)
-				if err != nil {
-					s.errorf(stderr, "mkdir: %v\n", err)
-					return exitErr(1)
-				}
-				if parents {
-					err = os.MkdirAll(resolved, 0o755)
-				} else {
-					err = os.Mkdir(resolved, 0o755)
-				}
-				if err != nil {
+				if err := s.fs.Mkdir(vp); err != nil {
 					s.errorf(stderr, "mkdir: %v\n", err)
 					return exitErr(1)
 				}
@@ -518,27 +398,13 @@ func (s *Shell) newTouchCmd() *cobra.Command {
 		ValidArgsFunction: s.completePaths,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, stderr, _, dir := getHC(cmd)
+			opener, ok := s.fs.(vfs.FileOpener)
+			if !ok {
+				s.errorf(stderr, "touch: %v\n", errors.ErrUnsupported)
+				return exitErr(1)
+			}
 			for _, name := range args {
-				if s.fs != nil {
-					if opener, ok := s.fs.(vfs.FileOpener); ok {
-						vp := s.toVirtualPath(dir, name)
-						f, err := opener.OpenFile(vp, os.O_CREATE|os.O_WRONLY, 0o644)
-						if err == nil {
-							err = f.Close()
-						}
-						if err != nil {
-							s.errorf(stderr, "touch: %v\n", err)
-							return exitErr(1)
-						}
-						continue
-					}
-				}
-				resolved, err := s.resolve(dir, name)
-				if err != nil {
-					s.errorf(stderr, "touch: %v\n", err)
-					return exitErr(1)
-				}
-				f, err := os.OpenFile(resolved, os.O_CREATE|os.O_WRONLY, 0o644)
+				f, err := opener.OpenFile(s.toVirtualPath(dir, name), os.O_CREATE|os.O_WRONLY, 0o644)
 				if err == nil {
 					err = f.Close()
 				}
@@ -618,33 +484,15 @@ func (s *Shell) headTailRun(cmd *cobra.Command, args []string, n int, isHead boo
 	}
 
 	for _, name := range args {
-		if s.fs != nil {
-			vp := s.toVirtualPath(dir, name)
-			rc, err := s.fs.Get(vp)
-			if err != nil {
-				s.errorf(stderr, "%s: %v\n", name, err)
-				return exitErr(1)
-			}
-			lines, err := readLines(rc)
-			rc.Close()
-			if err != nil {
-				return err
-			}
-			printLines(lines)
-			continue
-		}
-		resolved, err := s.resolve(dir, name)
-		if err != nil {
-			s.errorf(stderr, "%v\n", err)
-			return exitErr(1)
-		}
-		f, err := os.Open(resolved)
+		rc, err := s.fs.Get(s.toVirtualPath(dir, name))
 		if err != nil {
 			s.errorf(stderr, "%s: %v\n", name, err)
 			return exitErr(1)
 		}
-		lines, err := readLines(f)
-		f.Close()
+		lines, err := readLines(rc)
+		if cerr := rc.Close(); err == nil {
+			err = cerr
+		}
 		if err != nil {
 			return err
 		}
@@ -695,39 +543,22 @@ func (s *Shell) treeWalk(stdout, stderr io.Writer, dir, prefix string, showAll b
 	var names []string
 	var isDir []bool
 
-	if s.fs != nil {
-		if dr, isReader := s.fs.(vfs.DirReader); isReader {
-			entries, err := dr.ReadDirEntries(dir)
-			if err != nil {
-				s.errorf(stderr, "tree: %s: %v\n", dir, err)
-				return 0, 0, false
-			}
-			for _, e := range entries {
-				if !showAll && strings.HasPrefix(e.Name(), ".") {
-					continue
-				}
-				names = append(names, e.Name())
-				isDir = append(isDir, e.IsDir())
-			}
+	dr, err := s.dirReader()
+	if err != nil {
+		s.errorf(stderr, "tree: %v\n", err)
+		return 0, 0, false
+	}
+	entries, err := dr.ReadDirEntries(dir)
+	if err != nil {
+		s.errorf(stderr, "tree: %s: %v\n", dir, err)
+		return 0, 0, false
+	}
+	for _, e := range entries {
+		if !showAll && strings.HasPrefix(e.Name(), ".") {
+			continue
 		}
-	} else {
-		resolved, err := s.resolve(s.filesDir, dir)
-		if err != nil {
-			s.errorf(stderr, "tree: %v\n", err)
-			return 0, 0, false
-		}
-		entries, err := os.ReadDir(resolved)
-		if err != nil {
-			s.errorf(stderr, "tree: %s: %v\n", dir, err)
-			return 0, 0, false
-		}
-		for _, e := range entries {
-			if !showAll && strings.HasPrefix(e.Name(), ".") {
-				continue
-			}
-			names = append(names, e.Name())
-			isDir = append(isDir, e.IsDir())
-		}
+		names = append(names, e.Name())
+		isDir = append(isDir, e.IsDir())
 	}
 
 	sort.Sort(treeEntries{names: names, isDir: isDir})
@@ -888,28 +719,20 @@ func (s *Shell) newCdCmd() *cobra.Command {
 			target := s.cdTarget(args)
 
 			vp := s.toVirtualPath(dir, target)
-			// Validate via VFS first — show virtual paths in errors.
-			if s.fs != nil {
-				fi, err := s.fs.Stat(vp)
-				if isNotExist(err) {
-					s.errorf(stderr, "cd: no such file or directory: %s\n", vp)
-					return exitErr(1)
-				}
-				if err != nil {
-					s.errorf(stderr, "cd: %s: %v\n", vp, err)
-					return exitErr(1)
-				}
-				if !fi.IsDir {
-					s.errorf(stderr, "cd: not a directory: %s\n", vp)
-					return exitErr(1)
-				}
-			}
-			realPath := s.virtualToReal(vp)
-			if realPath == "" {
-				s.errorf(stderr, "cd: cannot cd to %s\n", vp)
+			fi, err := s.fs.Stat(vp)
+			if isNotExist(err) {
+				s.errorf(stderr, "cd: no such file or directory: %s\n", vp)
 				return exitErr(1)
 			}
-			s.runner.Dir = realPath
+			if err != nil {
+				s.errorf(stderr, "cd: %s: %v\n", vp, err)
+				return exitErr(1)
+			}
+			if !fi.IsDir {
+				s.errorf(stderr, "cd: not a directory: %s\n", vp)
+				return exitErr(1)
+			}
+			s.runner.Dir = vp
 			return nil
 		},
 	}
@@ -918,14 +741,14 @@ func (s *Shell) newCdCmd() *cobra.Command {
 // cdTarget extracts the target directory from cd arguments.
 func (s *Shell) cdTarget(args []string) string {
 	if len(args) == 0 {
-		return "/files"
+		return home
 	}
 	target := args[0]
 	if target == "~" || target == "-" {
-		return "/files"
+		return home
 	}
 	if after, ok := strings.CutPrefix(target, "~/"); ok {
-		return "/files/" + after
+		return home + "/" + after
 	}
 	return target
 }
@@ -938,7 +761,7 @@ func (s *Shell) newPwdCmd() *cobra.Command {
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			stdout, _, _, dir := getHC(cmd)
-			fmt.Fprintln(stdout, s.virtualPath(dir))
+			fmt.Fprintln(stdout, dir)
 			return nil
 		},
 	}
@@ -1014,51 +837,18 @@ func (s *Shell) completePathsFiltered(cmd *cobra.Command, toComplete string, dir
 
 	var candidates []cobra.Completion
 
-	if s.fs != nil {
-		if dr, ok := s.fs.(vfs.DirReader); ok {
-			vp := s.toVirtualPath(dir, dirPart)
-			if dirPart == "" {
-				vp = s.virtualPath(dir)
-			}
-			entries, err := dr.ReadDirEntries(vp)
-			if err != nil {
-				return nil, cobra.ShellCompDirectiveNoFileComp
-			}
-			for _, e := range entries {
-				name := e.Name()
-				if strings.HasPrefix(name, ".") && !strings.HasPrefix(prefixPart, ".") {
-					continue
-				}
-				if !strings.HasPrefix(name, prefixPart) {
-					continue
-				}
-				if dirsOnly && !e.IsDir() {
-					continue
-				}
-				display := dirPart + name
-				if e.IsDir() {
-					display += "/"
-				}
-				candidates = append(candidates, display)
-			}
-			return candidates, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
-		}
-	}
-
-	searchDir := dir
-	if dirPart != "" {
-		resolved, err := s.resolve(dir, dirPart)
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		}
-		searchDir = resolved
-	}
-
-	entries, err := os.ReadDir(searchDir)
+	dr, err := s.dirReader()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-
+	vp := dir
+	if dirPart != "" {
+		vp = s.toVirtualPath(dir, dirPart)
+	}
+	entries, err := dr.ReadDirEntries(vp)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 	for _, e := range entries {
 		name := e.Name()
 		if strings.HasPrefix(name, ".") && !strings.HasPrefix(prefixPart, ".") {

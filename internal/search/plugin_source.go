@@ -6,14 +6,15 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 // PluginSearchSource adapts a plugin.SearchSourceDef into a SearchSource.
 type PluginSearchSource struct {
 	pluginID string
 	def      plugin.SearchSourceDef
-	// FilesDir is the user's files directory, set by userPluginSource before Enrich.
-	FilesDir string
+	// Files is the user's files, set by userPluginSource before Enrich.
+	Files vfs.FS
 }
 
 // NewPluginSearchSource creates a SearchSource from a plugin's search definition.
@@ -109,12 +110,12 @@ func (s *PluginSearchSource) Enrich(db *sql.DB, rowIDs []int64) ([]Document, err
 		}
 
 		// If ContentFunc is set, build a cols map and call it.
-		if s.def.ContentFunc != nil && s.FilesDir != "" {
+		if s.def.ContentFunc != nil && s.Files != nil {
 			colMap := make(map[string]string, len(cols))
 			for ci, c := range cols {
 				colMap[c] = valString(vals[ci])
 			}
-			if content := s.def.ContentFunc(s.FilesDir, colMap); content != "" {
+			if content := s.def.ContentFunc(s.Files, colMap); content != "" {
 				fields["content"] = content
 			}
 		}

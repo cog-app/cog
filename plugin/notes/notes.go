@@ -11,8 +11,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
+	"path"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -68,11 +67,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterSearchSource(plugin.SearchSourceDef{
 		PrimaryTable: "notes",
 		EnrichSQL:    "SELECT rowid, filename FROM notes WHERE rowid IN (?)",
-		ContentFunc: func(filesDir string, cols map[string]string) string {
-			data, err := os.ReadFile(filepath.Join(filesDir, "Notes", cols["filename"]))
+		ContentFunc: func(files vfs.FS, cols map[string]string) string {
+			data, err := files.ReadFile(path.Join("/Notes", cols["filename"]))
 			if err != nil {
 				// Gone since the change was queued: nothing to index.
-				if !errors.Is(err, fs.ErrNotExist) {
+				if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, vfs.ErrNotFound) {
 					p.log.Error("index note content", "file", cols["filename"], "err", err)
 				}
 				return ""

@@ -17,8 +17,10 @@ import (
 	"github.com/charmbracelet/x/vt"
 
 	"git.duckfam.us/jj-software/cog/internal/search"
+	cogssh "git.duckfam.us/jj-software/cog/internal/ssh"
 	"git.duckfam.us/jj-software/cog/internal/ssh/shell"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
+	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/vfs"
 )
@@ -36,7 +38,6 @@ type Terminal struct {
 type config struct {
 	width, height int
 	username      string
-	filesDir      string
 	userFS        vfs.FS
 	pluginCmds    map[string][]plugin.CommandDef
 	usernames     func() ([]string, error)
@@ -62,7 +63,8 @@ func WithPluginCmds(cmds map[string][]plugin.CommandDef) Option {
 	return func(c *config) { c.pluginCmds = cmds }
 }
 
-// WithUserFS sets the VFS overlay.
+// WithUserFS sets the filesystem the shell works in, with the user's files
+// at /files.
 func WithUserFS(fs vfs.FS) Option {
 	return func(c *config) { c.userFS = fs }
 }
@@ -77,15 +79,22 @@ func WithSearch(m *search.Manager) Option {
 	return func(c *config) { c.search = m }
 }
 
-// New creates a Terminal with a standalone shell backed by a temp directory.
+// New creates a Terminal with a standalone shell whose files are a temp
+// directory.
 func New(t testing.TB, opts ...Option) *Terminal {
 	t.Helper()
 
+	files, err := volume.NewBackend(&volume.Volume{Name: "shelltest", URI: "file://" + t.TempDir()})
+	if err != nil {
+		t.Fatalf("shelltest: files: %v", err)
+	}
+	ofs := vfs.NewOverlayFS(nil)
+	ofs.Mount("/files", files)
 	cfg := config{
 		width:    80,
 		height:   24,
 		username: "testuser",
-		filesDir: t.TempDir(),
+		userFS:   ofs,
 		timeout:  5 * time.Second,
 	}
 	for _, o := range opts {
@@ -105,8 +114,7 @@ func New(t testing.TB, opts ...Option) *Terminal {
 func NewFromEnv(t testing.TB, env *cogtest.Env, user *cogtest.User, opts ...Option) *Terminal {
 	t.Helper()
 
-	filesDir := env.Providers.Plugins.UserFilesDir(user.Username)
-	userFS, err := env.Providers.Plugins.UserFS(user.Username)
+	userFS, err := cogssh.SessionFS(env.Providers, env.Providers.SSHKeys, user.Username)
 	if err != nil {
 		t.Fatalf("shelltest: user fs for %s: %v", user.Username, err)
 	}
@@ -115,7 +123,6 @@ func NewFromEnv(t testing.TB, env *cogtest.Env, user *cogtest.User, opts ...Opti
 		width:      80,
 		height:     24,
 		username:   user.Username,
-		filesDir:   filesDir,
 		userFS:     userFS,
 		pluginCmds: env.Providers.Plugins.UserCommands(),
 		usernames:  env.Providers.Users.Usernames,
@@ -135,7 +142,7 @@ func start(t testing.TB, cfg config) *Terminal {
 	em := vt.NewSafeEmulator(cfg.width, cfg.height)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	sh := shell.New(cfg.username, cfg.filesDir, cfg.userFS, cfg.pluginCmds, cfg.usernames, cfg.search, log)
+	sh := shell.New(cfg.username, cfg.userFS, cfg.pluginCmds, cfg.usernames, cfg.search, log)
 	sh.SetSSHMode(cfg.width, cfg.height)
 
 	// Pipes connecting the VT emulator to the shell:

@@ -6,55 +6,24 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"time"
 
-	"git.duckfam.us/jj-software/cog/internal/ssh/shell"
 	"git.duckfam.us/jj-software/cog/vfs"
 
 	"github.com/pkg/sftp"
 	gossh "golang.org/x/crypto/ssh"
 )
 
-// serveSFTP handles an SFTP subsystem session.
-func (s *Server) serveSFTP(channel gossh.Channel, username, filesDir string, userFS vfs.FS) {
-	// SFTP writes the files directly, not through the files plugin, so it
-	// asks for room itself.
-	quota := func(n int64) error { return s.providers.Plugins.QuotaCheck(username, n) }
-	// If VFS is available, use it; otherwise fall back to direct filesystem.
-	var h sftp.Handlers
-	if userFS != nil {
-		vh := &vfsSFTPHandler{fs: userFS, quota: quota}
-		h = sftp.Handlers{
-			FileGet:  vh,
-			FilePut:  vh,
-			FileCmd:  vh,
-			FileList: vh,
-		}
-	} else {
-		// Resolve symlinks so containment checks work consistently.
-		resolved, err := filepath.EvalSymlinks(filesDir)
-		if err != nil {
-			// Every path is checked against the resolved directory; an
-			// unresolved one would reject them all.
-			s.log.Error("sftp: resolve home directory", "dir", filesDir, "err", err)
-			return
-		}
-		filesDir = resolved
-		dh := &directSFTPHandler{filesDir: filesDir}
-		h = sftp.Handlers{
-			FileGet:  dh,
-			FilePut:  dh,
-			FileCmd:  dh,
-			FileList: dh,
-		}
-	}
-
-	var opts []sftp.RequestServerOption
-	if userFS != nil {
-		opts = append(opts, sftp.WithStartDirectory("/files"))
-	}
-	srv := sftp.NewRequestServer(channel, h, opts...)
+// serveSFTP handles an SFTP subsystem session on userFS, whose /files
+// holds the quota and the files plugin's records itself.
+func (s *Server) serveSFTP(channel gossh.Channel, userFS vfs.FS) {
+	h := &vfsSFTPHandler{fs: userFS}
+	srv := sftp.NewRequestServer(channel, sftp.Handlers{
+		FileGet:  h,
+		FilePut:  h,
+		FileCmd:  h,
+		FileList: h,
+	}, sftp.WithStartDirectory("/files"))
 	if err := srv.Serve(); err != nil {
 		if !errors.Is(err, io.EOF) {
 			s.log.Debug("sftp session ended", "err", err)
@@ -62,39 +31,8 @@ func (s *Server) serveSFTP(channel gossh.Channel, username, filesDir string, use
 	}
 }
 
-// --- VFS-based SFTP handler ---
-
 type vfsSFTPHandler struct {
 	fs vfs.FS
-	// quota reports whether the user has room for a file of the given
-	// size; a written file without room is removed when it is closed.
-	quota func(int64) error
-}
-
-// quotaFile is a file being written over SFTP. Its size is only known when
-// the client closes it, so that is when it is held to the quota.
-type quotaFile struct {
-	vfs.File
-	fs    vfs.FS
-	path  string
-	quota func(int64) error
-}
-
-func (f *quotaFile) Close() error {
-	if err := f.File.Close(); err != nil {
-		return err
-	}
-	info, err := f.fs.Stat(f.path)
-	if err != nil {
-		return fmt.Errorf("stat %s: %w", f.path, err)
-	}
-	if qerr := f.quota(info.Size); qerr != nil {
-		if err := f.fs.Delete(f.path); err != nil {
-			return errors.Join(qerr, fmt.Errorf("remove over-quota %s: %w", f.path, err))
-		}
-		return qerr
-	}
-	return nil
 }
 
 func (h *vfsSFTPHandler) Fileread(r *sftp.Request) (io.ReaderAt, error) {
@@ -130,14 +68,7 @@ func (h *vfsSFTPHandler) Filewrite(r *sftp.Request) (io.WriterAt, error) {
 		if pflags.Excl {
 			osFlags |= os.O_EXCL
 		}
-		f, err := opener.OpenFile(r.Filepath, osFlags, 0644)
-		if err != nil {
-			return nil, err
-		}
-		if h.quota == nil {
-			return f, nil
-		}
-		return &quotaFile{File: f, fs: h.fs, path: r.Filepath, quota: h.quota}, nil
+		return opener.OpenFile(r.Filepath, osFlags, 0644)
 	}
 	return nil, fmt.Errorf("backend does not support file writes")
 }
@@ -278,166 +209,6 @@ func (b readerAtBytes) ReadAt(p []byte, off int64) (int, error) {
 	return n, nil
 }
 
-// --- Direct filesystem SFTP handler (fallback) ---
-
-// directSFTPHandler implements sftp.Handlers interfaces with path sandboxing.
-type directSFTPHandler struct {
-	filesDir string
-}
-
-func (h *directSFTPHandler) resolve(vpath string) (string, error) {
-	cleaned := filepath.Clean("/" + vpath)
-	real := filepath.Join(h.filesDir, cleaned)
-
-	resolved, err := filepath.EvalSymlinks(real)
-	if err != nil {
-		parent, err2 := filepath.EvalSymlinks(filepath.Dir(real))
-		if err2 != nil {
-			return "", fmt.Errorf("path not found: %s", vpath)
-		}
-		resolved = filepath.Join(parent, filepath.Base(real))
-	}
-
-	if !shell.Within(resolved, h.filesDir) {
-		return "", fmt.Errorf("access denied: path outside home directory")
-	}
-	return resolved, nil
-}
-
-func (h *directSFTPHandler) Fileread(r *sftp.Request) (io.ReaderAt, error) {
-	path, err := h.resolve(r.Filepath)
-	if err != nil {
-		return nil, err
-	}
-	return os.Open(path)
-}
-
-func (h *directSFTPHandler) Filewrite(r *sftp.Request) (io.WriterAt, error) {
-	path, err := h.resolve(r.Filepath)
-	if err != nil {
-		return nil, err
-	}
-
-	pflags := r.Pflags()
-	osFlags := os.O_WRONLY
-	if pflags.Creat {
-		osFlags |= os.O_CREATE
-	}
-	if pflags.Trunc {
-		osFlags |= os.O_TRUNC
-	}
-	if pflags.Append {
-		osFlags |= os.O_APPEND
-	}
-	if pflags.Excl {
-		osFlags |= os.O_EXCL
-	}
-
-	return os.OpenFile(path, osFlags, 0644)
-}
-
-func (h *directSFTPHandler) Filecmd(r *sftp.Request) error {
-	path, err := h.resolve(r.Filepath)
-	if err != nil {
-		return err
-	}
-
-	switch r.Method {
-	case "Setstat":
-		flags := r.AttrFlags()
-		attrs := r.Attributes()
-		if flags.Size {
-			if err := os.Truncate(path, int64(attrs.Size)); err != nil {
-				return err
-			}
-		}
-		if flags.Permissions {
-			if err := os.Chmod(path, attrs.FileMode()); err != nil {
-				return err
-			}
-		}
-		if flags.Acmodtime {
-			if err := os.Chtimes(path, attrs.AccessTime(), attrs.ModTime()); err != nil {
-				return err
-			}
-		}
-		return nil
-
-	case "Rename":
-		target, err := h.resolve(r.Target)
-		if err != nil {
-			return err
-		}
-		return os.Rename(path, target)
-
-	case "Rmdir":
-		return os.Remove(path)
-
-	case "Remove":
-		return os.Remove(path)
-
-	case "Mkdir":
-		return os.MkdirAll(path, 0755)
-
-	case "Link":
-		target, err := h.resolve(r.Target)
-		if err != nil {
-			return err
-		}
-		return os.Link(path, target)
-
-	case "Symlink":
-		return fmt.Errorf("symlinks are not allowed")
-
-	default:
-		return fmt.Errorf("unsupported command: %s", r.Method)
-	}
-}
-
-func (h *directSFTPHandler) Filelist(r *sftp.Request) (sftp.ListerAt, error) {
-	path, err := h.resolve(r.Filepath)
-	if err != nil {
-		return nil, err
-	}
-
-	switch r.Method {
-	case "List":
-		entries, err := os.ReadDir(path)
-		if err != nil {
-			return nil, err
-		}
-		infos := make([]fs.FileInfo, 0, len(entries))
-		for _, e := range entries {
-			info, err := e.Info()
-			if errors.Is(err, fs.ErrNotExist) {
-				continue // removed since the directory was read
-			}
-			if err != nil {
-				return nil, err
-			}
-			infos = append(infos, info)
-		}
-		return listAt(infos), nil
-
-	case "Stat":
-		info, err := os.Stat(path)
-		if err != nil {
-			return nil, err
-		}
-		return listAt{info}, nil
-
-	case "Readlink":
-		target, err := os.Readlink(path)
-		if err != nil {
-			return nil, err
-		}
-		return listAt{readlinkInfo(target)}, nil
-
-	default:
-		return nil, fmt.Errorf("unsupported list method: %s", r.Method)
-	}
-}
-
 // listAt implements sftp.ListerAt for a slice of os.FileInfo.
 type listAt []fs.FileInfo
 
@@ -451,13 +222,3 @@ func (l listAt) ListAt(ls []fs.FileInfo, offset int64) (int, error) {
 	}
 	return n, nil
 }
-
-// readlinkInfo is a minimal FileInfo for readlink results.
-type readlinkInfo string
-
-func (r readlinkInfo) Name() string       { return string(r) }
-func (r readlinkInfo) Size() int64        { return 0 }
-func (r readlinkInfo) Mode() fs.FileMode  { return fs.ModeSymlink }
-func (r readlinkInfo) ModTime() time.Time { return time.Time{} }
-func (r readlinkInfo) IsDir() bool        { return false }
-func (r readlinkInfo) Sys() any           { return nil }

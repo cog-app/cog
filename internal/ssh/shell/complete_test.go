@@ -8,8 +8,8 @@ import (
 )
 
 func TestCompleteCommand(t *testing.T) {
-	sh, dir := newTestShell(t)
-	c := &completer{shell: sh, dir: func() string { return dir }}
+	sh, _ := newTestShell(t)
+	c := &completer{shell: sh, dir: func() string { return home }}
 
 	// Partial "ech" should complete to "echo".
 	line := []rune("ech")
@@ -23,8 +23,8 @@ func TestCompleteCommand(t *testing.T) {
 }
 
 func TestCompleteCommandEmpty(t *testing.T) {
-	sh, dir := newTestShell(t)
-	c := &completer{shell: sh, dir: func() string { return dir }}
+	sh, _ := newTestShell(t)
+	c := &completer{shell: sh, dir: func() string { return home }}
 
 	// Empty input should return all commands.
 	candidates, length := c.Do(nil, 0)
@@ -46,8 +46,8 @@ func TestCompleteCommandEmpty(t *testing.T) {
 }
 
 func TestCompletePath(t *testing.T) {
-	sh, dir := newTestShell(t)
-	c := &completer{shell: sh, dir: func() string { return dir }}
+	sh, _ := newTestShell(t)
+	c := &completer{shell: sh, dir: func() string { return home }}
 
 	// "ls " + TAB should list files in current directory.
 	line := []rune("ls ")
@@ -69,8 +69,8 @@ func TestCompletePath(t *testing.T) {
 }
 
 func TestCompletePathPartial(t *testing.T) {
-	sh, dir := newTestShell(t)
-	c := &completer{shell: sh, dir: func() string { return dir }}
+	sh, _ := newTestShell(t)
+	c := &completer{shell: sh, dir: func() string { return home }}
 
 	// "cat Doc" should complete to "Documents/".
 	line := []rune("cat Doc")
@@ -84,8 +84,8 @@ func TestCompletePathPartial(t *testing.T) {
 }
 
 func TestCompletePathSubdir(t *testing.T) {
-	sh, dir := newTestShell(t)
-	c := &completer{shell: sh, dir: func() string { return dir }}
+	sh, _ := newTestShell(t)
+	c := &completer{shell: sh, dir: func() string { return home }}
 
 	// "cat Documents/" should list files inside Documents.
 	line := []rune("cat Documents/")
@@ -99,14 +99,14 @@ func TestCompletePathSubdir(t *testing.T) {
 }
 
 func TestCompletePluginSub(t *testing.T) {
-	sh, dir := newTestShell(t)
+	sh, _ := newTestShell(t)
 	sh.pluginCmds = map[string][]plugin.CommandDef{
 		"files": {
 			{Name: "scan", Short: "scan files", Run: func(context.Context, []string) error { return nil }},
 			{Name: "status", Short: "show status", Run: func(context.Context, []string) error { return nil }},
 		},
 	}
-	c := &completer{shell: sh, dir: func() string { return dir }}
+	c := &completer{shell: sh, dir: func() string { return home }}
 
 	// "files s" should complete to "scan" and "status".
 	line := []rune("files s")
@@ -121,11 +121,11 @@ func TestCompletePluginSub(t *testing.T) {
 }
 
 func TestCompletePluginName(t *testing.T) {
-	sh, dir := newTestShell(t)
+	sh, _ := newTestShell(t)
 	sh.pluginCmds = map[string][]plugin.CommandDef{
 		"files": {{Name: "scan"}},
 	}
-	c := &completer{shell: sh, dir: func() string { return dir }}
+	c := &completer{shell: sh, dir: func() string { return home }}
 
 	// "fi" should complete to "files".
 	line := []rune("fi")
@@ -139,7 +139,7 @@ func TestCompletePluginName(t *testing.T) {
 }
 
 func TestCompleteUsernameArg(t *testing.T) {
-	sh, dir := newTestShell(t)
+	sh, _ := newTestShell(t)
 	sh.usernames = func() ([]string, error) {
 		return []string{"admin", "alice", "bob"}, nil
 	}
@@ -153,7 +153,7 @@ func TestCompleteUsernameArg(t *testing.T) {
 			},
 		},
 	}
-	c := &completer{shell: sh, dir: func() string { return dir }}
+	c := &completer{shell: sh, dir: func() string { return home }}
 
 	// "gallery scan a" should complete to "admin" and "alice".
 	line := []rune("gallery scan a")
@@ -178,7 +178,7 @@ func TestCompleteUsernameArg(t *testing.T) {
 }
 
 func TestCompletePathArg(t *testing.T) {
-	sh, dir := newTestShell(t)
+	sh, _ := newTestShell(t)
 	sh.pluginCmds = map[string][]plugin.CommandDef{
 		"myplugin": {
 			{
@@ -189,7 +189,7 @@ func TestCompletePathArg(t *testing.T) {
 			},
 		},
 	}
-	c := &completer{shell: sh, dir: func() string { return dir }}
+	c := &completer{shell: sh, dir: func() string { return home }}
 
 	// "myplugin process Doc" should complete to "Documents/".
 	line := []rune("myplugin process Doc")
@@ -203,7 +203,7 @@ func TestCompletePathArg(t *testing.T) {
 }
 
 func TestArgLengthExceeded(t *testing.T) {
-	sh, dir := newTestShell(t)
+	sh, _ := newTestShell(t)
 	sh.pluginCmds = map[string][]plugin.CommandDef{
 		"gallery": {
 			{
@@ -214,7 +214,7 @@ func TestArgLengthExceeded(t *testing.T) {
 			},
 		},
 	}
-	c := &completer{shell: sh, dir: func() string { return dir }}
+	c := &completer{shell: sh, dir: func() string { return home }}
 
 	// "gallery scan alice " — already filled the one arg, no more completions.
 	line := []rune("gallery scan alice ")
@@ -225,8 +225,8 @@ func TestArgLengthExceeded(t *testing.T) {
 }
 
 func TestCompleteFlagNames(t *testing.T) {
-	sh, dir := newTestShell(t)
-	c := &completer{shell: sh, dir: func() string { return dir }}
+	sh, _ := newTestShell(t)
+	c := &completer{shell: sh, dir: func() string { return home }}
 
 	// "ls -" should complete flag names.
 	line := []rune("ls -")

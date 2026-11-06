@@ -6,42 +6,25 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
-	"path/filepath"
+	"path"
 	"strconv"
 	"strings"
 
-	"git.duckfam.us/jj-software/cog/internal/ssh/shell"
 	"git.duckfam.us/jj-software/cog/vfs"
 
 	gossh "golang.org/x/crypto/ssh"
 )
 
-// serveSCP handles an SCP exec request. Returns exit code.
-//
-// SCP relies heavily on os.FileInfo and direct file handles. VFS integration
-// for SCP is deferred, so the user's VFS is unused and it works on filesDir.
-func (s *Server) serveSCP(channel gossh.Channel, username, filesDir string, _ vfs.FS, command string) int {
-	// Resolve symlinks for containment: every path is checked against the
-	// resolved directory, so an unresolved one would reject them all.
-	resolved, err := filepath.EvalSymlinks(filesDir)
-	if err != nil {
-		s.log.Error("scp: resolve home directory", "dir", filesDir, "err", err)
-		fmt.Fprintf(channel.Stderr(), "scp: home directory unavailable\n")
-		return 1
-	}
-	filesDir = resolved
-
+// serveSCP handles an SCP exec request on userFS. Returns exit code.
+func (s *Server) serveSCP(channel gossh.Channel, userFS vfs.FS, command string) int {
 	args := parseSCPArgs(command)
 
+	var err error
 	switch {
 	case args.sink:
-		// SCP writes the files directly, not through the files plugin,
-		// so it asks for room itself.
-		quota := func(n int64) error { return s.providers.Plugins.QuotaCheck(username, n) }
-		err = scpSink(channel, filesDir, args, quota)
+		err = scpSink(channel, userFS, args)
 	case args.source:
-		err = scpSource(channel, filesDir, args)
+		err = scpSource(channel, userFS, args)
 	default:
 		err = fmt.Errorf("scp: neither -t nor -f specified")
 	}
@@ -91,51 +74,39 @@ func parseSCPArgs(command string) scpArgs {
 	return a
 }
 
-// scpResolve maps a virtual SCP path to a sandboxed real path.
-func scpResolve(filesDir, vpath string) (string, error) {
-	cleaned := filepath.Clean("/" + vpath)
-	if after, ok := strings.CutPrefix(cleaned, "/files"); ok {
-		cleaned = after
-		if cleaned == "" {
-			cleaned = "/"
-		}
+// scpPath maps the path a client names to one in the session's VFS. The
+// client's home is /files, so a relative path, and an absolute one outside
+// /files, is taken to be within it.
+func scpPath(p string) string {
+	p = strings.TrimPrefix(p, "~")
+	clean := path.Clean("/" + p)
+	if clean == "/files" || strings.HasPrefix(clean, "/files/") {
+		return clean
 	}
-	real := filepath.Join(filesDir, cleaned)
+	return path.Join("/files", clean)
+}
 
-	resolved, err := filepath.EvalSymlinks(real)
-	if err != nil {
-		parent, err2 := filepath.EvalSymlinks(filepath.Dir(real))
-		if err2 != nil {
-			return "", fmt.Errorf("path not found: %s", vpath)
-		}
-		resolved = filepath.Join(parent, filepath.Base(real))
+// scpName checks a name the client sent for a file or directory: it must
+// name an entry of the target directory, not reach elsewhere through it.
+func scpName(name string) error {
+	if name == "" || name == "." || name == ".." || strings.Contains(name, "/") {
+		return fmt.Errorf("invalid name %q", name)
 	}
-
-	if !shell.Within(resolved, filesDir) {
-		return "", fmt.Errorf("access denied: path outside home directory")
-	}
-	return resolved, nil
+	return nil
 }
 
 // scpSink receives files from the client (scp -t).
-// scpSink receives into filesDir; quota reports whether the user has room
-// for a file of the given size.
-func scpSink(rw io.ReadWriter, filesDir string, args scpArgs, quota func(int64) error) error {
-	targetPath, err := scpResolve(filesDir, args.path)
-	if err != nil {
-		return err
-	}
-
+func scpSink(rw io.ReadWriter, fsys vfs.FS, args scpArgs) error {
 	// Signal ready.
 	if _, err := rw.Write([]byte{0}); err != nil {
 		return err
 	}
 
 	reader := bufio.NewReader(rw)
-	return scpSinkLoop(reader, rw, targetPath, filesDir, args.recursive, quota)
+	return scpSinkLoop(reader, rw, fsys, scpPath(args.path), args.recursive)
 }
 
-func scpSinkLoop(reader *bufio.Reader, rw io.Writer, targetPath, filesDir string, recursive bool, quota func(int64) error) error {
+func scpSinkLoop(reader *bufio.Reader, rw io.Writer, fsys vfs.FS, target string, recursive bool) error {
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -153,7 +124,7 @@ func scpSinkLoop(reader *bufio.Reader, rw io.Writer, targetPath, filesDir string
 		switch line[0] {
 		case 'C':
 			// C<mode> <size> <name>
-			if err := scpReceiveFile(reader, rw, targetPath, filesDir, line, quota); err != nil {
+			if err := scpReceiveFile(reader, rw, fsys, target, line); err != nil {
 				return err
 			}
 
@@ -167,17 +138,24 @@ func scpSinkLoop(reader *bufio.Reader, rw io.Writer, targetPath, filesDir string
 				return fmt.Errorf("malformed D line: %s", line)
 			}
 			dirName := parts[2]
-			dirPath := filepath.Join(targetPath, dirName)
-			if !shell.Within(dirPath, filesDir) {
-				return fmt.Errorf("access denied: path outside home directory")
+			if err := scpName(dirName); err != nil {
+				return err
 			}
-			if err := os.MkdirAll(dirPath, 0755); err != nil {
+			// Like the file case: into target if it is a directory,
+			// otherwise as target.
+			dir := target
+			if fi, err := fsys.Stat(target); err == nil && fi.IsDir {
+				dir = path.Join(target, dirName)
+			} else if err != nil && !isNotExist(err) {
+				return fmt.Errorf("stat %s: %w", target, err)
+			}
+			if err := fsys.Mkdir(dir); err != nil {
 				return fmt.Errorf("mkdir %s: %w", dirName, err)
 			}
 			if _, err := rw.Write([]byte{0}); err != nil {
 				return err
 			}
-			if err := scpSinkLoop(reader, rw, dirPath, filesDir, recursive, quota); err != nil {
+			if err := scpSinkLoop(reader, rw, fsys, dir, recursive); err != nil {
 				return err
 			}
 
@@ -198,15 +176,15 @@ func scpSinkLoop(reader *bufio.Reader, rw io.Writer, targetPath, filesDir string
 	}
 }
 
-func scpReceiveFile(reader *bufio.Reader, rw io.Writer, targetPath, filesDir, line string, quota func(int64) error) error {
-	// Parse "C<mode> <size> <name>"
+func scpReceiveFile(reader *bufio.Reader, rw io.Writer, fsys vfs.FS, target, line string) error {
+	// Parse "C<mode> <size> <name>". The mode is checked but not kept:
+	// files take their permissions from the store, not the client.
 	parts := strings.SplitN(line[1:], " ", 3)
 	if len(parts) < 3 {
 		return fmt.Errorf("malformed C line: %s", line)
 	}
 
-	mode, err := strconv.ParseUint(parts[0], 8, 32)
-	if err != nil {
+	if _, err := strconv.ParseUint(parts[0], 8, 32); err != nil {
 		return fmt.Errorf("parse mode: %w", err)
 	}
 
@@ -219,22 +197,16 @@ func scpReceiveFile(reader *bufio.Reader, rw io.Writer, targetPath, filesDir, li
 	if size < 0 {
 		return fmt.Errorf("negative size for %s", name)
 	}
-	if err := quota(size); err != nil {
-		return fmt.Errorf("receive %s: %w", name, err)
+	if err := scpName(name); err != nil {
+		return err
 	}
 
-	// Determine destination: if targetPath is a directory, write inside it.
-	destPath := targetPath
-	info, statErr := os.Stat(targetPath)
-	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
-		return fmt.Errorf("stat %s: %w", targetPath, statErr)
-	}
-	if statErr == nil && info.IsDir() {
-		destPath = filepath.Join(targetPath, name)
-	}
-
-	if !shell.Within(destPath, filesDir) {
-		return fmt.Errorf("access denied: path outside home directory")
+	// Determine destination: if target is a directory, write inside it.
+	dest := target
+	if fi, err := fsys.Stat(target); err == nil && fi.IsDir {
+		dest = path.Join(target, name)
+	} else if err != nil && !isNotExist(err) {
+		return fmt.Errorf("stat %s: %w", target, err)
 	}
 
 	// Signal ready to receive file data.
@@ -242,19 +214,14 @@ func scpReceiveFile(reader *bufio.Reader, rw io.Writer, targetPath, filesDir, li
 		return err
 	}
 
-	// Permission bits only: a client does not get to make a setuid file.
-	f, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode)&os.ModePerm)
-	if err != nil {
-		return fmt.Errorf("create %s: %w", name, err)
+	// The length is known, so a file over quota is refused before any of
+	// it is written.
+	body := &io.LimitedReader{R: reader, N: size}
+	if err := fsys.Put(dest, body); err != nil {
+		return fmt.Errorf("receive %s: %w", name, err)
 	}
-
-	_, copyErr := io.CopyN(f, reader, size)
-	closeErr := f.Close()
-	if copyErr != nil {
-		return fmt.Errorf("receive %s: %w", name, copyErr)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close %s: %w", name, closeErr)
+	if body.N > 0 {
+		return fmt.Errorf("receive %s: %w", name, io.ErrUnexpectedEOF)
 	}
 
 	// Read trailing NUL byte.
@@ -272,30 +239,26 @@ func scpReceiveFile(reader *bufio.Reader, rw io.Writer, targetPath, filesDir, li
 }
 
 // scpSource sends files to the client (scp -f).
-func scpSource(rw io.ReadWriter, filesDir string, args scpArgs) error {
-	srcPath, err := scpResolve(filesDir, args.path)
-	if err != nil {
-		return err
-	}
-
-	info, err := os.Stat(srcPath)
+func scpSource(rw io.ReadWriter, fsys vfs.FS, args scpArgs) error {
+	src := scpPath(args.path)
+	info, err := fsys.Stat(src)
 	if err != nil {
 		return err
 	}
 
 	reader := bufio.NewReader(rw)
 
-	if info.IsDir() {
+	if info.IsDir {
 		if !args.recursive {
 			return fmt.Errorf("%s is a directory (use -r)", args.path)
 		}
-		return scpSendDir(reader, rw, srcPath, info)
+		return scpSendDir(reader, rw, fsys, src)
 	}
-	return scpSendFile(reader, rw, srcPath, info)
+	return scpSendFile(reader, rw, fsys, src, info.Size)
 }
 
-func scpSendFile(reader *bufio.Reader, rw io.Writer, path string, info os.FileInfo) error {
-	header := fmt.Sprintf("C%04o %d %s\n", info.Mode().Perm(), info.Size(), info.Name())
+func scpSendFile(reader *bufio.Reader, rw io.Writer, fsys vfs.FS, p string, size int64) error {
+	header := fmt.Sprintf("C0644 %d %s\n", size, path.Base(p))
 	if _, err := rw.Write([]byte(header)); err != nil {
 		return err
 	}
@@ -304,14 +267,16 @@ func scpSendFile(reader *bufio.Reader, rw io.Writer, path string, info os.FileIn
 		return err
 	}
 
-	f, err := os.Open(path)
+	f, err := fsys.Get(p)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	if _, err := io.Copy(rw, f); err != nil {
-		return err
+	// The header promised size bytes; a file that changed since cannot
+	// send a different number without corrupting the stream.
+	if _, err := io.CopyN(rw, f, size); err != nil {
+		return fmt.Errorf("send %s: %w", p, err)
 	}
 
 	// Send trailing NUL.
@@ -322,8 +287,8 @@ func scpSendFile(reader *bufio.Reader, rw io.Writer, path string, info os.FileIn
 	return scpReadAck(reader)
 }
 
-func scpSendDir(reader *bufio.Reader, rw io.Writer, dirPath string, info os.FileInfo) error {
-	header := fmt.Sprintf("D%04o 0 %s\n", info.Mode().Perm(), info.Name())
+func scpSendDir(reader *bufio.Reader, rw io.Writer, fsys vfs.FS, dir string) error {
+	header := fmt.Sprintf("D0755 0 %s\n", path.Base(dir))
 	if _, err := rw.Write([]byte(header)); err != nil {
 		return err
 	}
@@ -332,28 +297,20 @@ func scpSendDir(reader *bufio.Reader, rw io.Writer, dirPath string, info os.File
 		return err
 	}
 
-	entries, err := os.ReadDir(dirPath)
+	entries, err := fsys.List(dir)
 	if err != nil {
 		return err
 	}
 
 	for _, e := range entries {
-		childPath := filepath.Join(dirPath, e.Name())
-		childInfo, err := e.Info()
-		if errors.Is(err, fs.ErrNotExist) {
-			continue // removed since the directory was read
+		child := path.Join(dir, e.Name)
+		if e.IsDir {
+			err = scpSendDir(reader, rw, fsys, child)
+		} else {
+			err = scpSendFile(reader, rw, fsys, child, e.Size)
 		}
 		if err != nil {
 			return err
-		}
-		if childInfo.IsDir() {
-			if err := scpSendDir(reader, rw, childPath, childInfo); err != nil {
-				return err
-			}
-		} else {
-			if err := scpSendFile(reader, rw, childPath, childInfo); err != nil {
-				return err
-			}
 		}
 	}
 
@@ -362,6 +319,11 @@ func scpSendDir(reader *bufio.Reader, rw io.Writer, dirPath string, info os.File
 		return err
 	}
 	return scpReadAck(reader)
+}
+
+// isNotExist reports whether err means the path does not exist.
+func isNotExist(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, vfs.ErrNotFound)
 }
 
 // scpReadAck reads an SCP acknowledgment byte from the client.

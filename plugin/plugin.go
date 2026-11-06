@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"git.duckfam.us/jj-software/cog/internal/query"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 // Permission bitmask values for share records.
@@ -259,9 +260,9 @@ type SearchSourceDef struct {
 	// and remaining columns are concatenated as "content".
 	EnrichSQL string
 	// ContentFunc optionally returns text content to index for a row.
-	// Receives the user's files directory and all SQL column values (by column name).
+	// Receives the user's files and all SQL column values (by column name).
 	// Return "" to skip content indexing for this row. Internal plugins only.
-	ContentFunc func(filesDir string, cols map[string]string) string
+	ContentFunc func(files vfs.FS, cols map[string]string) string
 	// Schema, when set together with Enricher, opts into the schema-driven
 	// search path. The host builds the bleve mapping from this Schema and
 	// calls Enricher.EnrichSchema instead of running EnrichSQL.

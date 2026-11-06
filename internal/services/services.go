@@ -65,6 +65,7 @@ type Providers struct {
 	Mounts         *mount.Store
 	Access         *volume.Access
 	Quotas         *quota.Store
+	QuotaChecker   *quota.Checker // holds every write to Quotas
 	Settings       *settings.Store
 	Search         *search.Manager
 	LogBuffer      *logbuf.Buffer
@@ -143,7 +144,7 @@ func WireSearch(log *slog.Logger, p *Providers, mgr *search.Manager) {
 
 	p.Plugins.SetDBHookFactory(mgr.UserDBHook)
 	mgr.SetUserDBFunc(p.Plugins.PluginDB)
-	mgr.SetFilesDirFunc(p.Plugins.UserFilesDir)
+	mgr.SetUserFSFunc(p.Plugins.UserFS)
 
 	prop := search.NewPropagator(log, mgr)
 	prop.LookupUsername = func(userID string) (string, error) {
@@ -456,7 +457,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	}
 
 	limiter := ratelimit.NewShared(sysDB, "auth", 10, 15*time.Minute, c)
-	return &Providers{
+	p := &Providers{
 		Config:         cfg,
 		Log:            log,
 		DB:             sysDB,
@@ -492,7 +493,12 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		Cookies:        cogplugin.CookieConfigFromBaseURL(cfg.BaseURL),
 		Clock:          c,
 		StartedAt:      c(),
-	}, nil
+	}
+	// The quota holds for every front end, so it is wired here, not by
+	// whichever of them is built; the web adds its services to it.
+	p.QuotaChecker = newQuotaChecker(p)
+	registry.SetServices(plugin.RegistryServices{QuotaChecker: p.QuotaChecker})
+	return p, nil
 }
 
 func (p *Providers) SeedPlugins(username string) error {

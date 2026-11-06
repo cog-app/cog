@@ -12,7 +12,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/jmap"
 	"git.duckfam.us/jj-software/cog/internal/mount"
-	"git.duckfam.us/jj-software/cog/internal/quota"
+	internalplugin "git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	filesPlugin "git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/ui"
@@ -58,7 +58,11 @@ func New(p *services.Providers) http.Handler {
 	if plug, ok := p.Plugins.Plugin("files"); ok {
 		fp, _ = plug.(*filesPlugin.Plugin)
 	}
-	qc := buildQuotaChecker(p, fp)
+	// Typed nil would make a non-nil interface.
+	var qc internalplugin.QuotaChecker
+	if p.QuotaChecker != nil {
+		qc = p.QuotaChecker
+	}
 
 	// --- Wire optional services for plugins ---
 	p.Plugins.SetServices(buildRegistryServices(p.Shares, p.EmailSender, p.Users, p.Groups, qc, p.Access, p.Activities, p.Cookies))
@@ -429,9 +433,8 @@ func buildOCSQuotaFunc(p *services.Providers, fp *filesPlugin.Plugin) compat.Quo
 	if fp == nil || p.Quotas == nil || p.Mounts == nil {
 		return nil
 	}
-	usage := storageUsage(p, fp)
 	return func(username string) (used, total int64) {
-		used, err := usage(username)
+		used, err := p.StorageUsage(username)
 		if err != nil {
 			p.Log.Error("storage usage", "user", username, "err", err)
 		}
@@ -464,60 +467,5 @@ func buildOCSQuotaFunc(p *services.Providers, fp *filesPlugin.Plugin) compat.Quo
 			return used, -1
 		}
 		return used, total
-	}
-}
-
-// storageUsage is what a user stores: their files, and what plugins keep
-// in their storage.
-func storageUsage(p *services.Providers, fp *filesPlugin.Plugin) quota.UsageFunc {
-	return func(username string) (int64, error) {
-		files, err := fp.Usage(username)
-		if err != nil {
-			return 0, err
-		}
-		kept, err := p.Plugins.Storage().Usage(username)
-		if err != nil {
-			return 0, err
-		}
-		return files + kept, nil
-	}
-}
-
-// buildQuotaChecker creates a QuotaChecker wired to the services layer.
-func buildQuotaChecker(p *services.Providers, fp *filesPlugin.Plugin) *quota.Checker {
-	if fp == nil || p.Quotas == nil || p.Mounts == nil {
-		return nil
-	}
-	return &quota.Checker{
-		Quotas: p.Quotas,
-		Usage:  storageUsage(p, fp),
-		RootVolume: func(username string) (string, error) {
-			u, err := p.Users.GetByUsername(username)
-			if err != nil {
-				return "", err
-			}
-			m, err := p.Mounts.GetUserRoot(u.ID)
-			if err != nil {
-				return "", err
-			}
-			return m.VolumeID, nil
-		},
-		GroupIDs: func(userID string) ([]string, error) {
-			var ids []string
-			for g, err := range p.Groups.ListGroupsForUser(userID) {
-				if err != nil {
-					return nil, err
-				}
-				ids = append(ids, g.ID)
-			}
-			return ids, nil
-		},
-		UserIDFromName: func(username string) (string, error) {
-			u, err := p.Users.GetByUsername(username)
-			if err != nil {
-				return "", err
-			}
-			return u.ID, nil
-		},
 	}
 }

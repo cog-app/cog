@@ -79,13 +79,6 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 			FROM keywords GROUP BY recipe_id
 		) k ON k.recipe_id = r.id
 		WHERE r.rowid IN (?)`,
-		ContentFunc: func(filesDir string, cols map[string]string) string {
-			// We can't query the DB from here, but cols has the enrichment columns.
-			// The description is already in content. For ingredient search, we rely
-			// on the enrichment SQL including description. To get ingredients and
-			// instructions indexed, we use a richer EnrichSQL that includes them.
-			return ""
-		},
 	})
 	ctx.RegisterResource(plugin.ResourceDef{
 		Type:     "recipe",

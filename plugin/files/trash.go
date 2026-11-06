@@ -94,9 +94,9 @@ func (p *Plugin) Trash(username, filePath string) error {
 	// count toward quota.
 	size := meta.Size
 	if meta.IsDir {
-		prefix := filePath + "/"
+		n, prefix := subtree(filePath)
 		if err := db.QueryRow(`SELECT coalesce(sum(size), 0) FROM files WHERE is_dir = 0 AND substr(path, 1, ?) = ?`,
-			len(prefix), prefix).Scan(&size); err != nil {
+			n, prefix).Scan(&size); err != nil {
 			return fmt.Errorf("size of %s: %w", filePath, err)
 		}
 	}
@@ -140,10 +140,8 @@ func (p *Plugin) Trash(username, filePath string) error {
 		return fmt.Errorf("insert trash record: %w", err)
 	}
 
-	prefix := filePath + "/"
-	if _, err := tx.Exec(`DELETE FROM files WHERE path = ? OR substr(path, 1, ?) = ?`,
-		filePath, len(prefix), prefix); err != nil {
-		return fmt.Errorf("delete metadata: %w", err)
+	if err := forgetRows(tx, filePath); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(); err != nil {

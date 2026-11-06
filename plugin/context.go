@@ -154,7 +154,6 @@ type GroupStore interface {
 // FilesAccess provides file-system operations that plugins need.
 type FilesAccess interface {
 	List(username, dirPath string) ([]FileInfo, error)
-	UserFilesDir(username string) string
 }
 
 // VolumeInfo describes a storage volume accessible to a user.

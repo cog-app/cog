@@ -2,6 +2,8 @@ package shell
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -11,75 +13,46 @@ import (
 	"mvdan.cc/sh/v3/interp"
 )
 
-// interpreterToVirtualPath converts a path from the interpreter (which may be
-// a real filesystem absolute path under filesDir) to a virtual VFS path.
-// The interpreter calls absPath(r.Dir, name) before passing paths to stat/readdir
-// handlers, so the path is always absolute — either a real path under filesDir
-// or an absolute virtual path that doesn't live under filesDir (e.g., /.ssh).
-func (s *Shell) interpreterToVirtualPath(name string) string {
-	if Within(name, s.filesDir) {
-		return s.virtualPath(name)
-	}
-	return name
-}
+// The interpreter makes every path absolute against its working directory,
+// which is a VFS path, before it reaches these handlers. Some reach them from
+// builtins (test, [, glob expansion) whose context has no HandlerContext.
 
-// openHandler intercepts file opens for redirects (>, >>, <).
-// All paths are resolved and contained within the user's files directory.
+// openHandler opens files for redirects (>, >>, <).
 func (s *Shell) openHandler(ctx context.Context, path string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
-	if s.fs != nil {
-		if opener, ok := s.fs.(vfs.FileOpener); ok {
-			hc := interp.HandlerCtx(ctx)
-			vp := s.toVirtualPath(hc.Dir, path)
-			return opener.OpenFile(vp, flag, perm)
-		}
+	opener, ok := s.fs.(vfs.FileOpener)
+	if !ok {
+		return nil, fmt.Errorf("open %s: %w", path, errors.ErrUnsupported)
 	}
 	hc := interp.HandlerCtx(ctx)
-	resolved, err := s.resolve(hc.Dir, path)
-	if err != nil {
-		return nil, err
-	}
-	return os.OpenFile(resolved, flag, perm)
+	return opener.OpenFile(s.toVirtualPath(hc.Dir, path), flag, perm)
 }
 
-// statHandler intercepts stat calls for test -f, cd validation, etc.
-// NOTE: The interpreter prepends r.Dir to paths via absPath() before calling
-// this handler, so name is always absolute. It may be called from built-in
-// commands (test, [) whose context does NOT contain a HandlerContext.
+// statHandler stats files for test -f, cd validation, etc.
 func (s *Shell) statHandler(ctx context.Context, name string, followSymlinks bool) (fs.FileInfo, error) {
-	if s.fs != nil {
-		if dr, ok := s.fs.(vfs.DirReader); ok {
-			vp := s.interpreterToVirtualPath(name)
-			if followSymlinks {
-				return dr.StatInfo(vp)
-			}
-			return dr.LstatInfo(vp)
-		}
-	}
-	// The interpreter passes absolute paths (absPath(r.Dir, name)).
-	// Resolve ensures symlink safety and containment within filesDir.
-	resolved, err := s.resolve(s.filesDir, name)
+	dr, err := s.dirReader()
 	if err != nil {
 		return nil, err
 	}
 	if followSymlinks {
-		return os.Stat(resolved)
+		return dr.StatInfo(name)
 	}
-	return os.Lstat(resolved)
+	return dr.LstatInfo(name)
 }
 
-// readDirHandler intercepts directory reads for glob expansion.
-// NOTE: Same as statHandler — name is already absolute from absPath().
-// May be called without HandlerContext from built-in glob expansion.
+// readDirHandler reads directories for glob expansion.
 func (s *Shell) readDirHandler(ctx context.Context, path string) ([]fs.DirEntry, error) {
-	if s.fs != nil {
-		if dr, ok := s.fs.(vfs.DirReader); ok {
-			vp := s.interpreterToVirtualPath(path)
-			return dr.ReadDirEntries(vp)
-		}
-	}
-	resolved, err := s.resolve(s.filesDir, path)
+	dr, err := s.dirReader()
 	if err != nil {
 		return nil, err
 	}
-	return os.ReadDir(resolved)
+	return dr.ReadDirEntries(path)
+}
+
+// dirReader returns the shell's VFS as a DirReader.
+func (s *Shell) dirReader() (vfs.DirReader, error) {
+	dr, ok := s.fs.(vfs.DirReader)
+	if !ok {
+		return nil, fmt.Errorf("read directory: %w", errors.ErrUnsupported)
+	}
+	return dr, nil
 }

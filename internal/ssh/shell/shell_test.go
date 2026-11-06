@@ -19,14 +19,33 @@ import (
 
 func newTestShell(t *testing.T) (*Shell, string) {
 	t.Helper()
+	return newShell(t, nil)
+}
+
+// newShell returns a shell on a VFS like a session's, with the files of a
+// fresh directory at /files, and that directory.
+func newShell(t *testing.T, cmds map[string][]plugin.CommandDef) (*Shell, string) {
+	t.Helper()
 	dir := t.TempDir()
 	// Create some test files and directories.
-	os.MkdirAll(filepath.Join(dir, "Documents"), 0o755)
-	os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hello world\n"), 0o644)
-	os.WriteFile(filepath.Join(dir, "Documents", "notes.txt"), []byte("line1\nline2\nline3\n"), 0o644)
+	if err := os.MkdirAll(filepath.Join(dir, "Documents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hello world\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Documents", "notes.txt"), []byte("line1\nline2\nline3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-	sh := New("testuser", dir, nil, nil, nil, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
-	return sh, dir
+	ofs := vfs.NewOverlayFS(nil) // nil base — pure virtual root
+	ofs.Mount("/files", &testFileFS{root: dir})
+	ofs.Bind("/.ssh/authorized_keys", &stubKeyHandler{content: "ssh-ed25519 AAAA testkey\n"})
+	ofs.Bind("/dev/null", &devNullHandler{})
+	ofs.Bind("/dev/zero", &devZeroHandler{})
+	ofs.Bind("/dev/urandom", &devURandHandler{})
+
+	return New("testuser", ofs, cmds, nil, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))), dir
 }
 
 func runCmd(t *testing.T, sh *Shell, command string) (stdout, stderr string) {
@@ -38,36 +57,6 @@ func runCmd(t *testing.T, sh *Shell, command string) (stdout, stderr string) {
 		_ = err
 	}
 	return out.String(), errBuf.String()
-}
-
-func TestResolveContainment(t *testing.T) {
-	sh, dir := newTestShell(t)
-
-	// Absolute virtual path should resolve within filesDir.
-	got, err := sh.resolve(dir, "/files/hello.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != filepath.Join(dir, "hello.txt") {
-		t.Fatalf("expected %s, got %s", filepath.Join(dir, "hello.txt"), got)
-	}
-
-	// Path traversal must be rejected.
-	_, err = sh.resolve(dir, "../../etc/passwd")
-	if err == nil {
-		t.Fatal("expected error for path traversal")
-	}
-}
-
-func TestVirtualPath(t *testing.T) {
-	sh, dir := newTestShell(t)
-
-	if vp := sh.virtualPath(dir); vp != "/files" {
-		t.Fatalf("expected /files, got %s", vp)
-	}
-	if vp := sh.virtualPath(filepath.Join(dir, "Documents")); vp != "/files/Documents" {
-		t.Fatalf("expected /files/Documents, got %s", vp)
-	}
 }
 
 func TestPwd(t *testing.T) {
@@ -174,8 +163,7 @@ func TestPluginCommand(t *testing.T) {
 		},
 	}
 
-	dir := t.TempDir()
-	sh := New("testuser", dir, nil, cmds, nil, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	sh, _ := newShell(t, cmds)
 	runCmdWith(t, sh, "myplugin greet")
 
 	if !ran {
@@ -395,20 +383,8 @@ func (f *stubKeyFile) Close() error {
 
 func newVFSTestShell(t *testing.T) *Shell {
 	t.Helper()
-	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, "Documents"), 0o755)
-	os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hello world\n"), 0o644)
-	os.WriteFile(filepath.Join(dir, "Documents", "notes.txt"), []byte("line1\nline2\nline3\n"), 0o644)
-
-	base := &testFileFS{root: dir}
-	ofs := vfs.NewOverlayFS(nil) // nil base — pure virtual root
-	ofs.Mount("/files", base)
-	ofs.Bind("/.ssh/authorized_keys", &stubKeyHandler{content: "ssh-ed25519 AAAA testkey\n"})
-	ofs.Bind("/dev/null", &devNullHandler{})
-	ofs.Bind("/dev/zero", &devZeroHandler{})
-	ofs.Bind("/dev/urandom", &devURandHandler{})
-
-	return New("testuser", dir, ofs, nil, nil, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	sh, _ := newTestShell(t)
+	return sh
 }
 
 func TestCatAuthorizedKeys(t *testing.T) {
@@ -684,7 +660,7 @@ func TestTree(t *testing.T) {
 	}
 }
 
-func TestTreeNoVFS(t *testing.T) {
+func TestTreeWorkingDir(t *testing.T) {
 	sh, _ := newTestShell(t)
 	out, stderr := runCmd(t, sh, "tree")
 	if stderr != "" {
@@ -766,5 +742,34 @@ func TestFlagParsing(t *testing.T) {
 	out, _ = runCmd(t, sh, "head -n 1 /files/Documents/notes.txt")
 	if strings.TrimSpace(out) != "line1" {
 		t.Fatalf("expected 'line1', got %q", strings.TrimSpace(out))
+	}
+}
+
+func TestRmDirectoryNeedsRecursive(t *testing.T) {
+	sh, dir := newTestShell(t)
+	_, stderr := runCmd(t, sh, "rm /files/Documents")
+	if !strings.Contains(stderr, "is a directory") {
+		t.Fatalf("expected a refusal, got %q", stderr)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "Documents", "notes.txt")); err != nil {
+		t.Fatalf("rm without -r removed the directory: %v", err)
+	}
+}
+
+func TestMkdirWithoutParents(t *testing.T) {
+	sh, dir := newTestShell(t)
+	_, stderr := runCmd(t, sh, "mkdir /files/a/b")
+	if stderr == "" {
+		t.Fatal("expected mkdir without -p to refuse a missing parent")
+	}
+	_, stderr = runCmd(t, sh, "mkdir -p /files/a/b")
+	if stderr != "" {
+		t.Fatalf("mkdir -p: %s", stderr)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "a", "b")); err != nil {
+		t.Fatal(err)
+	}
+	if _, stderr = runCmd(t, sh, "mkdir /files/a"); !strings.Contains(stderr, "exists") {
+		t.Fatalf("expected mkdir of an existing directory to refuse, got %q", stderr)
 	}
 }

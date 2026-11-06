@@ -12,7 +12,7 @@ import (
 // TestNoteBodyIsSearchable covers content indexing, which reads the note off
 // disk rather than out of the database.
 //
-// The source only calls ContentFunc when it knows the user's files directory,
+// The source only calls ContentFunc when it has the user's files,
 // so a harness that does not wire one indexes titles and silently skips
 // bodies. The search term here appears only in the body: a hit means the file
 // was read, and no hit means content indexing is off.
