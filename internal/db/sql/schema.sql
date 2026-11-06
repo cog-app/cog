@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS login_flows (
 	client TEXT NOT NULL,
 	created_at INTEGER NOT NULL,
 	login_name TEXT NOT NULL DEFAULT '',
-	sealed BLOB
+	sealed BLOB,
+	ip TEXT NOT NULL DEFAULT ''
 );
 
 -- One-time links to a user's file for Nextcloud apps' media players. The

@@ -58,6 +58,17 @@ func (h *LoginFlowHandler) HandleInit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Starting a flow needs no credentials and writes a row, so it counts
+	// against the client like a registration does (M10).
+	ip := ratelimit.ClientIP(r)
+	if h.RateLimiter != nil {
+		if h.RateLimiter.IsLimited(ip) {
+			http.Error(w, "Rate limited", http.StatusTooManyRequests)
+			return
+		}
+		h.RateLimiter.RecordFailure(ip)
+	}
+
 	pollToken, err := randomHex(32)
 	if err != nil {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
@@ -70,7 +81,7 @@ func (h *LoginFlowHandler) HandleInit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.flows().start(pollToken, loginToken, clientName(r.UserAgent())); err != nil {
+	if err := h.flows().start(pollToken, loginToken, clientName(r.UserAgent()), ip); err != nil {
 		slog.Error("login flow: start", "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
@@ -157,7 +168,8 @@ func (h *LoginFlowHandler) HandleGrant(w http.ResponseWriter, r *http.Request) {
 	sessID := auth.SessionIDFromContext(r.Context())
 	csrf := auth.CSRFToken(sessID, h.CSRFSecret)
 
-	client, err := h.flows().pendingClient(loginToken)
+	flow, err := h.flows().pending(loginToken)
+	client := flow.Client
 	if err != nil && !errors.Is(err, errFlowNotFound) {
 		slog.Error("login flow: look up", "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
@@ -183,6 +195,8 @@ func (h *LoginFlowHandler) HandleGrant(w http.ResponseWriter, r *http.Request) {
 			CSRFToken: csrf,
 			Username:  u.Username,
 			Client:    client,
+			From:      flow.IP,
+			When:      ago(h.Clock().Unix() - flow.CreatedAt),
 			Error:     errMsg,
 		})
 	case http.MethodPost:
@@ -212,7 +226,8 @@ func (h *LoginFlowHandler) flows() *loginFlowStore {
 }
 
 func (h *LoginFlowHandler) processGrant(w http.ResponseWriter, r *http.Request, loginToken string, u *user.User) {
-	client, err := h.flows().pendingClient(loginToken)
+	flow, err := h.flows().pending(loginToken)
+	client := flow.Client
 	if errors.Is(err, errFlowNotFound) {
 		http.Error(w, "Login flow expired or not found", http.StatusNotFound)
 		return
@@ -268,6 +283,19 @@ func (h *LoginFlowHandler) renderGrantPage(w http.ResponseWriter, r *http.Reques
 // clientName turns a login-flow client's User-Agent into a name to show the
 // user. Nextcloud's clients identify themselves; anything else is shown as
 // its product token, which is what a person would recognise if anything.
+// ago says how long ago something happened, coarsely: the grant page shows
+// when a flow was started so a user can tell their own from a stale link.
+func ago(seconds int64) string {
+	switch {
+	case seconds < 60:
+		return "just now"
+	case seconds < 120:
+		return "a minute ago"
+	default:
+		return fmt.Sprintf("%d minutes ago", seconds/60)
+	}
+}
+
 func clientName(ua string) string {
 	l := strings.ToLower(ua)
 	switch {

@@ -11,6 +11,7 @@ import (
 	"net/http/httputil"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -131,22 +132,41 @@ func serve(ctx context.Context, srv *http.Server, log *slog.Logger) error {
 	return nil
 }
 
+// credentialHeaders are not written to the request log: a development log
+// is still a file that outlives the session it recorded.
+var credentialHeaders = []string{"Authorization", "Proxy-Authorization", "Cookie", "Set-Cookie"}
+
+// credentialFields are form and JSON fields whose values the request log
+// replaces, by name.
+var credentialFields = regexp.MustCompile(`(?i)("?(?:password|passwd|new_password|current_password|old_password|secret|sharedsecret|token|app_password|totp|code)"?\s*[=:]\s*"?)[^&"\s]*`)
+
+// maxLoggedBody is how much of a request or response body the log keeps.
+const maxLoggedBody = 64 << 10
+
 func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		dump, err := httputil.DumpRequest(r, true)
+		// The body is read into memory to be logged; httputil puts it back.
+		shown := r.Clone(r.Context())
+		for _, h := range credentialHeaders {
+			if shown.Header.Get(h) != "" {
+				shown.Header.Set(h, "[redacted]")
+			}
+		}
+		dump, err := httputil.DumpRequest(shown, r.ContentLength >= 0 && r.ContentLength <= maxLoggedBody)
+		r.Body = shown.Body
 		if err != nil {
 			log.Printf("--- REQUEST (dump error: %v) %s %s", err, r.Method, r.URL)
 		} else {
-			log.Printf("--- REQUEST ---\n%s", dump)
+			log.Printf("--- REQUEST ---\n%s", credentialFields.ReplaceAll(dump, []byte("${1}[redacted]")))
 		}
 
 		rec := &responseRecorder{ResponseWriter: w, statusCode: 200}
 		next.ServeHTTP(rec, r)
 
 		log.Printf("--- RESPONSE --- %d %s (%s)\n%s\n",
-			rec.statusCode, r.URL, time.Since(start), rec.body.String())
+			rec.statusCode, r.URL, time.Since(start), credentialFields.ReplaceAllString(rec.body.String(), "${1}[redacted]"))
 	})
 }
 
@@ -162,7 +182,11 @@ func (r *responseRecorder) WriteHeader(code int) {
 }
 
 func (r *responseRecorder) Write(b []byte) (int, error) {
-	r.body.Write(b)
+	// The log keeps the first maxLoggedBody bytes; a download is not a
+	// thing to hold in memory for the sake of a log line.
+	if room := maxLoggedBody - r.body.Len(); room > 0 {
+		r.body.Write(b[:min(len(b), room)])
+	}
 	return r.ResponseWriter.Write(b)
 }
 

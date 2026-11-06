@@ -54,8 +54,8 @@ func (s *loginFlowStore) cutoff() int64 {
 	return s.clock().Add(-loginFlowExpiry).Unix()
 }
 
-// start records a new flow, dropping expired ones.
-func (s *loginFlowStore) start(pollToken, loginToken, client string) error {
+// start records a new flow from ip, dropping expired ones.
+func (s *loginFlowStore) start(pollToken, loginToken, client, ip string) error {
 	key, err := flowKey(pollToken)
 	if err != nil {
 		return fmt.Errorf("start login flow: %w", err)
@@ -63,27 +63,36 @@ func (s *loginFlowStore) start(pollToken, loginToken, client string) error {
 	if _, err := s.db.Exec(`DELETE FROM login_flows WHERE created_at <= ?`, s.cutoff()); err != nil {
 		return fmt.Errorf("prune login flows: %w", err)
 	}
-	_, err = s.db.Exec(`INSERT INTO login_flows (poll_hash, login_hash, public_key, client, created_at) VALUES (?, ?, ?, ?, ?)`,
-		hashFlowToken(pollToken), hashFlowToken(loginToken), key.PublicKey().Bytes(), client, s.clock().Unix())
+	_, err = s.db.Exec(`INSERT INTO login_flows (poll_hash, login_hash, public_key, client, created_at, ip) VALUES (?, ?, ?, ?, ?, ?)`,
+		hashFlowToken(pollToken), hashFlowToken(loginToken), key.PublicKey().Bytes(), client, s.clock().Unix(), ip)
 	if err != nil {
 		return fmt.Errorf("start login flow: %w", err)
 	}
 	return nil
 }
 
-// pendingClient returns the name of the app waiting on loginToken while its
-// flow is live and not yet granted.
-func (s *loginFlowStore) pendingClient(loginToken string) (string, error) {
-	var client string
-	err := s.db.QueryRow(`SELECT client FROM login_flows WHERE login_hash = ? AND sealed IS NULL AND created_at > ?`,
-		hashFlowToken(loginToken), s.cutoff()).Scan(&client)
+// pendingFlow is what the grant page tells the user about a flow: who is
+// asking, and from where and when, so a link someone sent them looks
+// different from the client they just set up.
+type pendingFlow struct {
+	Client    string
+	IP        string
+	CreatedAt int64
+}
+
+// pending returns the flow waiting on loginToken while it is live and not
+// yet granted.
+func (s *loginFlowStore) pending(loginToken string) (pendingFlow, error) {
+	var f pendingFlow
+	err := s.db.QueryRow(`SELECT client, ip, created_at FROM login_flows WHERE login_hash = ? AND sealed IS NULL AND created_at > ?`,
+		hashFlowToken(loginToken), s.cutoff()).Scan(&f.Client, &f.IP, &f.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", errFlowNotFound
+		return pendingFlow{}, errFlowNotFound
 	}
 	if err != nil {
-		return "", fmt.Errorf("look up login flow: %w", err)
+		return pendingFlow{}, fmt.Errorf("look up login flow: %w", err)
 	}
-	return client, nil
+	return f, nil
 }
 
 // cancel drops a flow not yet granted, so the app's polling ends without

@@ -33,6 +33,13 @@
           </strong>
           : your files, calendars and contacts.
         </p>
+        <p class="login-lead">
+          The request was started just now from
+          <strong>
+            127.0.0.1
+          </strong>
+          . If that is not an app you just set up, cancel: anyone who sends you this link is asking for your account.
+        </p>
         <form action="/index.php/login/v2/grant?token=«hex»" method="post">
           <input name="csrf_token" type="hidden" value="«hex»" />
           <button class="btn btn-primary btn-block" name="action" type="submit" value="grant">
