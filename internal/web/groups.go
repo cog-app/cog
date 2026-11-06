@@ -12,6 +12,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/email"
 	"git.duckfam.us/jj-software/cog/internal/group"
+	pwpolicy "git.duckfam.us/jj-software/cog/internal/password"
 	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -653,8 +654,14 @@ func (h *groupHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	newUser, err := h.p.Users.Create(username, password)
+	if errors.Is(err, pwpolicy.ErrWeak) || errors.Is(err, pwpolicy.ErrUnchecked) || errors.Is(err, user.ErrInvalidUsername) {
+		setFlash(w, "error", err.Error())
+		http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
+		return
+	}
 	if err != nil {
-		setFlash(w, "error", "Registration failed: "+err.Error())
+		httperr.Log(r, err)
+		setFlash(w, "error", "Registration failed.")
 		http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
 		return
 	}

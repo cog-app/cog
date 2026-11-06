@@ -31,6 +31,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/jmap"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/mount"
+	"git.duckfam.us/jj-software/cog/internal/password"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/pluginsvc"
 	"git.duckfam.us/jj-software/cog/internal/push"
@@ -426,6 +427,12 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	quotas := quota.NewStore(sysDB, c)
 	activities := activity.NewStore(sysDB, c)
 	settingsStore := settings.NewStore(sysDB)
+	passwords := &password.Checker{
+		Policy: func() password.Policy { return password.FromSettings(settingsStore) },
+		Breach: &password.BreachList{},
+		Log:    log.With("component", "password"),
+	}
+	users.PasswordPolicy = passwords.Check
 	fedStore := federation.NewStore(sysDB, c)
 	fedClient := federation.NewClient(cfg.BaseURL)
 	sshKeys, err := keys.NewStore(sysDB, registry, users, c)

@@ -142,6 +142,14 @@ func New(t testing.TB, plugins ...plugin.Plugin) *Env {
 	}
 
 	p, err := services.NewFromDB(log, cfg, sysDB, tc.Clock(), plugins...)
+	if err == nil {
+		// Tests choose short passwords and run offline; a test of the
+		// policy sets it back.
+		err = p.Settings.SetMany(map[string]string{
+			settings.KeyPasswordMinLength:   "1",
+			settings.KeyPasswordBreachCheck: "false",
+		})
+	}
 	if err != nil {
 		t.Fatalf("cogtest: providers: %v", err)
 	}

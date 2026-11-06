@@ -24,6 +24,13 @@ const (
 // MFA enforcement: "" (disabled), "all" (all users), "admins" (admin users only).
 const KeyMFARequired = "mfa_required"
 
+// Password policy: the minimum length, and whether a password known from a
+// breach is refused (internal/password).
+const (
+	KeyPasswordMinLength   = "password_min_length"
+	KeyPasswordBreachCheck = "password_breach_check"
+)
+
 // KeyDAVTombstoneDays is how many days CalDAV/CardDAV deletions are kept for
 // incremental sync; older sync tokens make clients resync fully.
 const KeyDAVTombstoneDays = "dav_tombstone_days"
@@ -147,6 +154,19 @@ func (s *Store) SetMany(values map[string]string) (err error) {
 
 // GetBool returns true if the value for key is "true". A database error is
 // logged and reads as false.
+// GetBoolDefault is GetBool with a value for a key never set.
+func (s *Store) GetBoolDefault(key string, def bool) bool {
+	v, err := s.Get(key)
+	if err != nil {
+		slog.Error("settings: read", "key", key, "err", err)
+		return def
+	}
+	if v == "" {
+		return def
+	}
+	return v == "true"
+}
+
 func (s *Store) GetBool(key string) bool {
 	val, err := s.Get(key)
 	if err != nil {

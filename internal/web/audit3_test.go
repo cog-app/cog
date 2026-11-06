@@ -96,3 +96,22 @@ func TestWebDAVHrefsArePercentEncoded(t *testing.T) {
 	resp.Status(http.StatusMultiStatus)
 	resp.Contains(prefix + "/a%20b%23c%2525.txt")
 }
+
+// The admin's password policy holds everywhere a password is set: at
+// registration and on a change, with the reason shown to the user.
+func TestPasswordPolicyEnforced(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	require.NoError(t, env.Providers.Settings.SetBool(settings.KeyPublicRegistration, true))
+	require.NoError(t, env.Providers.Settings.Set(settings.KeyPasswordMinLength, "12"))
+
+	env.PostForm(t, "/register", url.Values{
+		"username": {"bob"}, "password": {"short"}, "confirm_password": {"short"},
+	}, cogtest.StopRedirect).Status(http.StatusSeeOther)
+	_, err := env.Providers.Users.GetByUsername("bob")
+	require.True(t, err != nil, "an account was made with a refused password")
+
+	err = env.Providers.Users.UpdatePassword(alice.ID, "short")
+	require.True(t, err != nil, "a refused password was set")
+	require.NoError(t, env.Providers.Users.UpdatePassword(alice.ID, "long enough now"))
+}

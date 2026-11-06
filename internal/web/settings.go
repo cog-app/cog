@@ -429,6 +429,10 @@ func (h *settingsHandler) UpdatePassword(w http.ResponseWriter, r *http.Request)
 		fail("Enter a new password.", "new_password")
 		return
 	}
+	if err := h.p.Users.CheckPassword(newPass); err != nil {
+		fail(err.Error(), "new_password")
+		return
+	}
 
 	// Verify current password.
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(current)); err != nil {

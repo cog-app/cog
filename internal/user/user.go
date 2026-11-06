@@ -60,6 +60,19 @@ type Store struct {
 
 	reservedMu sync.RWMutex
 	reserved   []string // lower-cased, beyond reservedNames
+
+	// PasswordPolicy, when set, is asked before any password is stored:
+	// a new account's, a change, a reset, an admin's. It returns an error
+	// fit to show the person choosing it.
+	PasswordPolicy func(password string) error
+}
+
+// CheckPassword asks the policy whether password may be set.
+func (s *Store) CheckPassword(password string) error {
+	if s.PasswordPolicy == nil {
+		return nil
+	}
+	return s.PasswordPolicy(password)
 }
 
 func NewStore(db *sql.DB, c clock.Clock) *Store {
@@ -68,6 +81,9 @@ func NewStore(db *sql.DB, c clock.Clock) *Store {
 
 func (s *Store) Create(username, password string) (*User, error) {
 	if err := s.ValidateUsername(username); err != nil {
+		return nil, err
+	}
+	if err := s.CheckPassword(password); err != nil {
 		return nil, err
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -354,6 +370,9 @@ func (s *Store) Update(id string, opts UpdateOpts) error {
 
 // UpdatePassword changes a user's password.
 func (s *Store) UpdatePassword(id, newPassword string) error {
+	if err := s.CheckPassword(newPassword); err != nil {
+		return err
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
