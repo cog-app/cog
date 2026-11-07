@@ -196,8 +196,7 @@ func (s *Server) Plan(ch ScheduleChange) (*Delivery, error) {
 			status = itip.StatusInvalidUser
 		case s.mailer() == nil:
 			status = itip.StatusUnavailable
-		case s.MailLimit != nil && s.MailLimit.IsLimited(ch.Owner.ID):
-			s.Log.Warn("dav: invitation email limit reached", "user", ch.Owner.Username, "to", m.Recipient)
+		case s.mailLimited(ch.Owner):
 			status = itip.StatusUnavailable
 		default:
 			if s.MailLimit != nil {
@@ -948,4 +947,21 @@ func CalendarAddress(u *User) string {
 		return "mailto:" + u.Email
 	}
 	return principalHref(u.Username)
+}
+
+// mailLimited reports whether owner may send no more invitation email now.
+// One that cannot be told sends none either; the error is logged.
+func (s *Server) mailLimited(owner *User) bool {
+	if s.MailLimit == nil {
+		return false
+	}
+	limited, err := s.MailLimit.IsLimited(owner.ID)
+	if err != nil {
+		s.Log.Error("dav: invitation email limit", "user", owner.Username, "err", err)
+		return true
+	}
+	if limited {
+		s.Log.Warn("dav: invitation email limit reached", "user", owner.Username)
+	}
+	return limited
 }

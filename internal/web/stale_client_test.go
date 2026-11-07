@@ -164,3 +164,26 @@ func TestAdminClearsSignInBlocks(t *testing.T) {
 	require.True(t, signInLands(t, env, "alice", "pass") != "/login", "still blocked after clearing")
 	env.Get(t, "/admin/users", cookie).Status(http.StatusOK).NotContains("Blocked sign-ins")
 }
+
+// Credentials that could not be checked are the server's failure: a 500,
+// not a browser logged out, an app refused with 401, or "too many
+// attempts" for a user who made none.
+func TestUncheckableCredentialsAreServerErrors(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	cookie, _ := sessionAndCSRF(t, env, alice.ID)
+	token, _, err := env.Providers.AppPasswords.Create(alice.ID, "phone")
+	require.NoError(t, err)
+
+	_, err = env.Providers.DB.Exec(`DROP TABLE sessions`)
+	require.NoError(t, err)
+	env.Get(t, "/settings/profile", cookie, cogtest.StopRedirect).Status(http.StatusInternalServerError)
+
+	_, err = env.Providers.DB.Exec(`DROP TABLE rate_attempts`)
+	require.NoError(t, err)
+	webdavReq(t, env, "PROPFIND", "/remote.php/dav/files/"+alice.ID+"/", "", cogtest.BasicAuth("alice", "pass"), cogtest.Header("Depth", "0")).Status(http.StatusInternalServerError)
+
+	_, err = env.Providers.DB.Exec(`DROP TABLE app_passwords`)
+	require.NoError(t, err)
+	webdavReq(t, env, "PROPFIND", "/remote.php/dav/files/"+alice.ID+"/", "", cogtest.BasicAuth("alice", token), cogtest.Header("Depth", "0")).Status(http.StatusInternalServerError)
+}

@@ -5,13 +5,15 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 )
 
 // ErrLimited refuses an attempt from a client that has failed too often.
-var ErrLimited = errors.New("too many failed attempts")
+var ErrLimited = httperr.WithStatus(http.StatusTooManyRequests, errors.New("too many failed attempts"))
 
 // Guard is the one place a credential (a password, an app password, a
 // second-factor code) is checked against guessing. Everything that checks
@@ -102,7 +104,8 @@ func ShareKey(shareID string) string {
 // token, when not nil, checks secret as a token that cannot be guessed. It
 // runs first, and runs even when the client or account is limited; only if
 // it refuses is check, which checks secret as anything else (a password),
-// run, subject to the limits. A nil check accepts nothing else.
+// run, subject to the limits. A nil check accepts nothing else. A limit
+// that cannot be counted is an error, not ErrLimited.
 //
 // A secret this client was refused for at this account within the window
 // is refused without either check running or a failure counted. An empty
@@ -133,10 +136,19 @@ func (g *Guard) Try(ip, account, secret string, token, check func() (bool, error
 			return true, nil
 		}
 	}
-	if g.Limiter.IsLimited(ip) {
+	if limited, err := g.Limiter.IsLimited(ip); err != nil {
+		return false, err
+	} else if limited {
 		return false, ErrLimited
 	}
-	if account != "" && g.Limiter.IsLimited(account) {
+	accountLimited := false
+	if account != "" {
+		var err error
+		if accountLimited, err = g.Limiter.IsLimited(account); err != nil {
+			return false, err
+		}
+	}
+	if accountLimited {
 		v, _ := g.queues.LoadOrStore(account, &queue{waiting: make(chan struct{}, MaxWaiting)})
 		q := v.(*queue)
 		select {
@@ -257,9 +269,13 @@ func (g *Guard) remember(account string, a attempt) {
 }
 
 // Limited reports whether the client at ip is refused, for a step that
-// counts attempts without checking a credential, such as registration.
-func (g *Guard) Limited(ip string) bool {
-	return g != nil && g.Limiter != nil && g.Limiter.IsLimited(ip)
+// counts attempts without checking a credential, such as registration, or
+// an error when that could not be told.
+func (g *Guard) Limited(ip string) (bool, error) {
+	if g == nil || g.Limiter == nil {
+		return false, nil
+	}
+	return g.Limiter.IsLimited(ip)
 }
 
 // Record counts an attempt by the client at ip against its limit.

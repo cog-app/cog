@@ -134,7 +134,13 @@ func (h *LoginFlowHandler) HandlePoll(w http.ResponseWriter, r *http.Request) {
 		// expired would cut off the next one its user grants.
 		if h.RateLimiter != nil {
 			ip := ratelimit.ClientIP(r)
-			if h.RateLimiter.IsLimited(ip) {
+			limited, err := h.RateLimiter.IsLimited(ip)
+			if err != nil {
+				slog.Error("login flow: poll limit", "err", err)
+				http.Error(w, "Internal error", http.StatusInternalServerError)
+				return
+			}
+			if limited {
 				http.Error(w, "Rate limited", http.StatusTooManyRequests)
 				return
 			}
