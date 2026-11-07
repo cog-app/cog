@@ -5,7 +5,7 @@
     <title>
       Connect an app — Cog
     </title>
-    <link href="/static/style.css?v=a9bd325ca6ae" rel="stylesheet" />
+    <link href="/static/style.css?v=25f4261a1e17" rel="stylesheet" />
     <link href="/static/favicon.svg?v=f043627311df" rel="icon" type="image/svg+xml" />
   </head>
   <body>
@@ -51,7 +51,7 @@
                 Me (alice): everything in my account
               </option>
               <option value="«hex»">
-                Agent assistant: only what I share with it
+                Agent alice+assistant: only what I share with it
               </option>
               <option value="new">
                 A new agent: only what I share with it
@@ -62,9 +62,14 @@
             <label class="form-label" for="agent_name">
               Name for a new agent
             </label>
-            <input autocomplete="off" class="form-control" id="agent_name" name="agent_name" placeholder="assistant" />
+            <div class="input-group">
+              <span aria-hidden="true" class="input-group-text">
+                alice+
+              </span>
+              <input autocomplete="off" class="form-control" id="agent_name" name="agent_name" placeholder="assistant" />
+            </div>
             <p class="form-help">
-              An agent is an account of its own that you share folders, calendars and contacts with. It can change only what you share, and its changes carry its name.
+              An agent is an account of its own that you share folders, calendars and contacts with. It can change only what you share, and its changes carry its name, which starts with yours.
             </p>
           </div>
           <button class="btn btn-primary btn-block" name="action" type="submit" value="grant">

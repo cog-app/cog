@@ -1,6 +1,10 @@
 package ui
 
-import "strings"
+import (
+	"strings"
+
+	"git.duckfam.us/jj-software/cog/internal/user"
+)
 
 // AuthPage is the frame of every page a visitor sees before or outside the
 // app: sign-in, registration, password reset, invitations and consent
@@ -332,8 +336,11 @@ templ LoginFlowGrantPage(g LoginFlowGrant) {
 			</div>
 			<div class="form-group">
 				<label class="form-label" for="agent_name">Name for a new agent</label>
-				<input class="form-control" id="agent_name" name="agent_name" placeholder="assistant" autocomplete="off"/>
-				<p class="form-help">An agent is an account of its own that you share folders, calendars and contacts with. It can change only what you share, and its changes carry its name.</p>
+				<div class="input-group">
+					<span class="input-group-text" aria-hidden="true">{ g.Username + user.AgentSeparator }</span>
+					<input class="form-control" id="agent_name" name="agent_name" placeholder="assistant" autocomplete="off"/>
+				</div>
+				<p class="form-help">An agent is an account of its own that you share folders, calendars and contacts with. It can change only what you share, and its changes carry its name, which starts with yours.</p>
 			</div>
 			<button class="btn btn-primary btn-block" type="submit" name="action" value="grant">Grant access</button>
 			<button class="btn btn-secondary btn-block" type="submit" name="action" value="cancel" formnovalidate>Cancel</button>

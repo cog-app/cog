@@ -5,7 +5,7 @@
     <title>
       Agents — Cog
     </title>
-    <link href="/static/style.css?v=a9bd325ca6ae" rel="stylesheet" />
+    <link href="/static/style.css?v=25f4261a1e17" rel="stylesheet" />
     <link href="/static/favicon.svg" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -216,37 +216,46 @@
             <button aria-label="Dismiss" class="alert-dismiss" onclick="this.parentElement.remove()" type="button">
               ×
             </button>
-            Agent “helper” created. Share folders, calendars or contacts with it, and issue it a token below.
+            Agent “alice+helper” created. Share folders, calendars or contacts with it, and issue it a token below.
           </div>
           <div class="card">
             <h2 class="card-title">
               Add an agent
             </h2>
             <p class="card-desc">
-              An agent is an account of its own for a script or an assistant. It reaches only the folders, calendars and contacts you share with it, and what it changes carries its name. It cannot sign in with a password, share, or change settings.
+              An agent is an account of its own for a script or an assistant, named after you so anyone can tell whose it is. It reaches only the folders, calendars and contacts you share with it, and what it changes carries its name. It cannot sign in with a password, share, or change settings.
             </p>
             <form action="/settings/agents" class="form-inline" method="post">
               <input name="csrf_token" type="hidden" value="«hex»" />
               <label class="sr-only" for="agent-name">
                 Agent name
               </label>
-              <input autocomplete="off" class="form-control" id="agent-name" name="name" placeholder="Name, e.g. assistant" required="" type="text" />
+              <div class="input-group">
+                <span aria-hidden="true" class="input-group-text">
+                  alice+
+                </span>
+                <input aria-describedby="agent-name-help" autocomplete="off" class="form-control" id="agent-name" name="name" placeholder="assistant" required="" type="text" />
+              </div>
               <button class="btn btn-primary" type="submit">
                 Add agent
               </button>
             </form>
-            <p class="form-help">
-              The name is a username, so it must not be taken.
+            <p class="form-help" id="agent-name-help">
+              Its username will be alice+
+              <em>
+                name
+              </em>
+              .
             </p>
           </div>
           <div class="card">
             <h2 class="card-title">
-              assistant
+              alice+assistant
             </h2>
             <p class="card-desc">
               Added 2026-03-14. Share with
               <strong>
-                assistant
+                alice+assistant
               </strong>
               to give it access.
             </p>
@@ -269,7 +278,7 @@
                 Create token
               </button>
             </form>
-            <form action="/settings/agents/«hex»/delete" class="form-actions" data-confirm="Delete assistant, its tokens and the shares made with it?" method="post" onsubmit="return confirm(this.dataset.confirm)">
+            <form action="/settings/agents/«hex»/delete" class="form-actions" data-confirm="Delete alice+assistant, its tokens and the shares made with it?" method="post" onsubmit="return confirm(this.dataset.confirm)">
               <input name="csrf_token" type="hidden" value="«hex»" />
               <button class="btn btn-outline-danger" type="submit">
                 Delete agent
@@ -278,12 +287,12 @@
           </div>
           <div class="card">
             <h2 class="card-title">
-              helper
+              alice+helper
             </h2>
             <p class="card-desc">
               Added 2026-03-14. Share with
               <strong>
-                helper
+                alice+helper
               </strong>
               to give it access.
             </p>
@@ -306,7 +315,7 @@
                 Create token
               </button>
             </form>
-            <form action="/settings/agents/«hex»/delete" class="form-actions" data-confirm="Delete helper, its tokens and the shares made with it?" method="post" onsubmit="return confirm(this.dataset.confirm)">
+            <form action="/settings/agents/«hex»/delete" class="form-actions" data-confirm="Delete alice+helper, its tokens and the shares made with it?" method="post" onsubmit="return confirm(this.dataset.confirm)">
               <input name="csrf_token" type="hidden" value="«hex»" />
               <button class="btn btn-outline-danger" type="submit">
                 Delete agent

@@ -1320,6 +1320,38 @@ legend {
   width: auto;
 }
 
+/* A control with fixed text before it, joined into one box: the part of a
+   value the user does not choose, such as an agent's owner. */
+.input-group {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+.form-inline > .input-group {
+  flex: 1 1 10rem;
+  max-width: 26rem;
+}
+.input-group-text {
+  display: flex;
+  align-items: center;
+  padding: 0 0.75rem;
+  border: 1px solid var(--color-border-strong);
+  border-right: 0;
+  border-radius: var(--radius) 0 0 var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  font-size: 0.9375rem;
+  white-space: nowrap;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.input-group > .form-control {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
 /* Buttons that end a form. Add .form-actions-sticky to keep them in view at
    the bottom of a long card. */
 .form-actions {

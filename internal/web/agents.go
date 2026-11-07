@@ -57,19 +57,19 @@ func (h *agentsHandler) Show(w http.ResponseWriter, r *http.Request) {
 	ui.Render(w, r, settingsAgentsPage(pd, msg, kind, agents))
 }
 
-// Create makes an agent. Its username is validated like a person's: it is
-// the name its changes carry, and it must not collide with anyone.
+// Create makes an agent. The name given is joined to the owner's username,
+// and the result is the name its changes carry.
 func (h *agentsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	name := strings.TrimSpace(r.FormValue("name"))
-	_, err := h.p.Users.CreateAgent(u.ID, name)
+	a, err := h.p.Users.CreateAgent(u.ID, name)
 	switch {
 	case errors.Is(err, user.ErrInvalidUsername), errors.Is(err, user.ErrUsernameTaken), errors.Is(err, user.ErrUsernameRetired):
 		setFlash(w, "error", err.Error())
 	case err != nil:
 		setFlash(w, "error", "The agent could not be created.", err)
 	default:
-		setFlash(w, "success", "Agent “"+name+"” created. Share folders, calendars or contacts with it, and issue it a token below.")
+		setFlash(w, "success", "Agent “"+a.Username+"” created. Share folders, calendars or contacts with it, and issue it a token below.")
 	}
 	http.Redirect(w, r, "/settings/agents", http.StatusSeeOther)
 }

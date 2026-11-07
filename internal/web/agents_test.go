@@ -22,17 +22,17 @@ func TestAgentIsAUserWithoutSettingsOrShares(t *testing.T) {
 	cookie, csrf := sessionAndCSRF(t, env, alice.ID)
 
 	env.PostForm(t, "/settings/agents", url.Values{"csrf_token": {csrf}, "name": {"bot"}}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
-	bot, err := env.Providers.Users.GetByUsername("bot")
+	bot, err := env.Providers.Users.GetByUsername("alice+bot")
 	require.NoError(t, err)
 	require.Equal(t, alice.ID, bot.OwnerID)
 
 	token := createAgentToken(t, env, bot.ID, "laptop", cookie, csrf)
-	asBot := cogtest.BasicAuth("bot", token)
+	asBot := cogtest.BasicAuth("alice+bot", token)
 
 	// The token signs the agent in; a password never does.
 	webdavReq(t, env, "PROPFIND", "/remote.php/dav/files/"+bot.ID+"/", "", asBot, cogtest.Header("Depth", "0")).Status(http.StatusMultiStatus)
-	webdavReq(t, env, "PROPFIND", "/remote.php/dav/files/"+bot.ID+"/", "", cogtest.BasicAuth("bot", "anything"), cogtest.Header("Depth", "0")).Status(http.StatusUnauthorized)
-	_, err = env.Providers.Users.Authenticate("bot", "")
+	webdavReq(t, env, "PROPFIND", "/remote.php/dav/files/"+bot.ID+"/", "", cogtest.BasicAuth("alice+bot", "anything"), cogtest.Header("Depth", "0")).Status(http.StatusUnauthorized)
+	_, err = env.Providers.Users.Authenticate("alice+bot", "")
 	require.True(t, err != nil)
 
 	// What is shared with it, it reaches; it shares nothing itself.
@@ -54,7 +54,7 @@ func TestAgentIsAUserWithoutSettingsOrShares(t *testing.T) {
 
 	// Its owner's deletion takes it along.
 	require.NoError(t, env.Providers.DeleteUser(alice.ID))
-	_, err = env.Providers.Users.GetByUsername("bot")
+	_, err = env.Providers.Users.GetByUsername("alice+bot")
 	require.True(t, err != nil, "the agent outlived its owner")
 }
 
@@ -83,11 +83,11 @@ func TestLoginFlowGrantsAsNewAgent(t *testing.T) {
 		AppPassword string `json:"appPassword"`
 	}
 	env.PostForm(t, "/index.php/login/v2/poll", url.Values{"token": {init.Poll.Token}}).Status(200).JSON(&granted)
-	require.Equal(t, "helper", granted.LoginName)
-	helper, err := env.Providers.Users.GetByUsername("helper")
+	require.Equal(t, "alice+helper", granted.LoginName)
+	helper, err := env.Providers.Users.GetByUsername("alice+helper")
 	require.NoError(t, err)
 	require.Equal(t, alice.ID, helper.OwnerID)
-	webdavReq(t, env, "PROPFIND", "/remote.php/dav/files/"+helper.ID+"/", "", cogtest.BasicAuth("helper", granted.AppPassword), cogtest.Header("Depth", "0")).Status(http.StatusMultiStatus)
+	webdavReq(t, env, "PROPFIND", "/remote.php/dav/files/"+helper.ID+"/", "", cogtest.BasicAuth("alice+helper", granted.AppPassword), cogtest.Header("Depth", "0")).Status(http.StatusMultiStatus)
 }
 
 // Only an agent's owner shares with it; someone who received a share and
@@ -164,7 +164,7 @@ func TestAgentRevokeAndDelete(t *testing.T) {
 	other, err := env.Providers.Users.CreateAgent(alice.ID, "other")
 	require.NoError(t, err)
 	token := createAgentToken(t, env, bot.ID, "laptop", aliceCookie, aliceCSRF)
-	asBot := cogtest.BasicAuth("bot", token)
+	asBot := cogtest.BasicAuth("alice+bot", token)
 	toks, err := env.Providers.AppPasswords.ListByUser(bot.ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(toks))

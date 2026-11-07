@@ -1,6 +1,9 @@
 package web
 
-import "git.duckfam.us/jj-software/cog/ui"
+import (
+	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/ui"
+)
 
 templ settingsAgentsPage(pd ui.PageData, flash string, flashKind string, agents []agentView) {
 	@ui.SidebarPage(pd, settingsSidebar("agents")) {
@@ -12,14 +15,17 @@ templ settingsAgentsPage(pd ui.PageData, flash string, flashKind string, agents 
 
 templ agentsBody(pd ui.PageData, agents []agentView) {
 	@ui.Card("Add an agent") {
-		<p class="card-desc">An agent is an account of its own for a script or an assistant. It reaches only the folders, calendars and contacts you share with it, and what it changes carries its name. It cannot sign in with a password, share, or change settings.</p>
+		<p class="card-desc">An agent is an account of its own for a script or an assistant, named after you so anyone can tell whose it is. It reaches only the folders, calendars and contacts you share with it, and what it changes carries its name. It cannot sign in with a password, share, or change settings.</p>
 		<form class="form-inline" method="post" action="/settings/agents">
 			<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 			<label class="sr-only" for="agent-name">Agent name</label>
-			<input class="form-control" type="text" id="agent-name" name="name" placeholder="Name, e.g. assistant" required autocomplete="off"/>
+			<div class="input-group">
+				<span class="input-group-text" aria-hidden="true">{ pd.User.Username + user.AgentSeparator }</span>
+				<input class="form-control" type="text" id="agent-name" name="name" placeholder="assistant" required autocomplete="off" aria-describedby="agent-name-help"/>
+			</div>
 			<button class="btn btn-primary" type="submit">Add agent</button>
 		</form>
-		<p class="form-help">The name is a username, so it must not be taken.</p>
+		<p class="form-help" id="agent-name-help">Its username will be { pd.User.Username + user.AgentSeparator }<em>name</em>.</p>
 	}
 	if len(agents) == 0 {
 		@ui.Card("") {

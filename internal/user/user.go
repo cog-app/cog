@@ -293,13 +293,12 @@ func (s *Store) Authenticate(username, password string) (*User, error) {
 // ErrNotAgentOwner refuses an action on an agent by anyone but its owner.
 var ErrNotAgentOwner = errors.New("not the agent's owner")
 
-// CreateAgent makes an agent account owned by ownerID. It has no password:
-// the owner issues it app passwords, and the username is the identity its
-// changes carry, so it is validated like any other.
-func (s *Store) CreateAgent(ownerID, username string) (*User, error) {
-	if err := s.ValidateUsername(username); err != nil {
-		return nil, err
-	}
+// CreateAgent makes ownerID's agent called name. It has no password: the
+// owner issues it app passwords. Its username, the identity its changes
+// carry, is the owner's joined to name by AgentSeparator, so it shows whose
+// agent it is and cannot collide with anyone else's. A name already given
+// as "owner+name" is taken as name.
+func (s *Store) CreateAgent(ownerID, name string) (*User, error) {
 	owner, err := s.GetByID(ownerID)
 	if err != nil {
 		return nil, err
@@ -307,6 +306,11 @@ func (s *Store) CreateAgent(ownerID, username string) (*User, error) {
 	if owner.IsAgent() {
 		return nil, ErrNotAgentOwner
 	}
+	name = strings.TrimPrefix(name, owner.Username+AgentSeparator)
+	if err := s.validateAgentUsername(owner.Username, name); err != nil {
+		return nil, err
+	}
+	username := AgentUsername(owner.Username, name)
 	id, err := generateID()
 	if err != nil {
 		return nil, err

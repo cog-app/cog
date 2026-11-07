@@ -874,7 +874,7 @@ func TestBrowserSettingsAgents(t *testing.T) {
 	b := eng.Start(t)
 	b.Login(t, "alice", "pass")
 	b.Navigate(t, "/settings/agents")
-	b.WaitText(t, "assistant")
+	b.WaitText(t, "alice+assistant")
 	b.Snapshot(t)
 	b.Snapshot(t, webtest.Mobile)
 }
@@ -895,10 +895,10 @@ func TestBrowserSettingsAgentsCreateAndToken(t *testing.T) {
 	b.Navigate(t, "/settings/agents")
 	b.Type(t, `#agent-name`, "helper")
 	b.Click(t, `form[action="/settings/agents"] button[type="submit"]`)
-	b.WaitText(t, "Agent “helper” created")
+	b.WaitText(t, "Agent “alice+helper” created")
 	b.Snapshot(t)
 
-	helper, err := env.Providers.Users.GetByUsername("helper")
+	helper, err := env.Providers.Users.GetByUsername("alice+helper")
 	require.NoError(t, err)
 	b.Type(t, "#agent-token-"+helper.ID, "phone")
 	b.Click(t, `form[hx-post="/settings/agents/`+helper.ID+`/tokens"] button[type="submit"]`)
@@ -908,7 +908,7 @@ func TestBrowserSettingsAgentsCreateAndToken(t *testing.T) {
 	token := b.Text(t, "#agent-new-token-"+helper.ID+" .secret-box code")
 	require.True(t, len(token) > 20, "no token shown: %q", token)
 
-	env.Get(t, "/api/shares/with-me", cogtest.BasicAuth("helper", token)).Status(200)
+	env.Get(t, "/api/shares/with-me", cogtest.BasicAuth("alice+helper", token)).Status(200)
 	toks, err := env.Providers.AppPasswords.ListByUser(helper.ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(toks))
@@ -924,7 +924,7 @@ func TestBrowserSettingsAgentsCreateAndToken(t *testing.T) {
 	b.AcceptConfirms(t)
 	b.Click(t, "#agent-tokens-"+helper.ID+` button[type="submit"]`)
 	b.WaitText(t, "Token revoked")
-	env.Get(t, "/api/shares/with-me", cogtest.BasicAuth("helper", token)).Status(401)
+	env.Get(t, "/api/shares/with-me", cogtest.BasicAuth("alice+helper", token)).Status(401)
 }
 
 // The grant page offers the user's agents, and granting as a new agent
@@ -962,8 +962,8 @@ func TestBrowserNCLoginFlowGrantAsAgent(t *testing.T) {
 		LoginName string `json:"loginName"`
 	}
 	env.PostForm(t, "/index.php/login/v2/poll", url.Values{"token": {init.Poll.Token}}).Status(200).JSON(&granted)
-	require.Equal(t, "helper", granted.LoginName)
-	helper, err := env.Providers.Users.GetByUsername("helper")
+	require.Equal(t, "alice+helper", granted.LoginName)
+	helper, err := env.Providers.Users.GetByUsername("alice+helper")
 	require.NoError(t, err)
 	require.Equal(t, alice.ID, helper.OwnerID)
 }
