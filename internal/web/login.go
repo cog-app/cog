@@ -73,7 +73,7 @@ func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	// slowed.
 	var u *user.User
 	var authErr error
-	ok, err := h.p.Guard.Try(ratelimit.ClientIP(r), ratelimit.AccountKey(username), password, func() (bool, error) {
+	ok, err := h.p.Guard.Try(ratelimit.ClientIP(r), ratelimit.AccountKey(username), password, nil, func() (bool, error) {
 		u, authErr = h.p.Users.Authenticate(username, password)
 		if authErr != nil && !errors.Is(authErr, user.ErrAuthFailed) {
 			return false, authErr
@@ -228,7 +228,7 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate the code based on the user's MFA method.
-	valid, err := h.p.Guard.Try(ratelimit.ClientIP(r), "mfa:"+pending.UserID, "", func() (bool, error) {
+	valid, err := h.p.Guard.Try(ratelimit.ClientIP(r), "mfa:"+pending.UserID, "", nil, func() (bool, error) {
 		var ok bool
 		var vErr error
 		switch u.MFAMethod {

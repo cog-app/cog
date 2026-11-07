@@ -33,20 +33,21 @@ type appPasswordValidator interface {
 func (a *authCallbacks) passwordCallback(conn gossh.ConnMetadata, password []byte) (*gossh.Permissions, error) {
 	var perms *gossh.Permissions
 	var checkErr error
-	// An app password is checked as one alone, even from a limited client:
-	// it cannot be guessed, and refusing it would cut off a working client
-	// because something else at its address failed.
-	try, checkOne := a.guard.Try, a.checkPassword
-	if auth.LooksLikeAppPassword(string(password)) {
-		try, checkOne = a.guard.TryToken, a.checkAppPassword
-	}
-	ok, err := try(remoteIP(conn.RemoteAddr()), ratelimit.AccountKey(conn.User()), string(password), func() (bool, error) {
-		perms, checkErr = checkOne(conn, password)
-		if checkErr != nil && !errors.Is(checkErr, errWrongPassword) {
-			return false, checkErr
+	// An app password is tried first, and even from a limited client: it
+	// cannot be guessed, and refusing it would cut off a working client
+	// because something else at its address failed. Only then is the
+	// secret checked as the account's password, within the limits.
+	asCheck := func(f func(gossh.ConnMetadata, []byte) (*gossh.Permissions, error)) func() (bool, error) {
+		return func() (bool, error) {
+			perms, checkErr = f(conn, password)
+			if checkErr != nil && !errors.Is(checkErr, errWrongPassword) {
+				return false, checkErr
+			}
+			return checkErr == nil, nil
 		}
-		return checkErr == nil, nil
-	})
+	}
+	ok, err := a.guard.Try(remoteIP(conn.RemoteAddr()), ratelimit.AccountKey(conn.User()), string(password),
+		asCheck(a.checkAppPassword), asCheck(a.checkPassword))
 	if err != nil {
 		return nil, err
 	}
@@ -78,29 +79,28 @@ func remoteIP(addr net.Addr) string {
 // account, as opposed to one that could not be checked.
 var errWrongPassword = errors.New("wrong password")
 
+// checkPassword signs in with password as the account password of the user
+// conn names.
 func (a *authCallbacks) checkPassword(conn gossh.ConnMetadata, password []byte) (*gossh.Permissions, error) {
-	// Try user password first.
 	u, err := a.users.Authenticate(conn.User(), string(password))
-	if err != nil && !errors.Is(err, user.ErrAuthFailed) {
+	if errors.Is(err, user.ErrAuthFailed) {
+		return nil, errWrongPassword
+	}
+	if err != nil {
 		// A lookup failure, not a wrong password: don't let it pass for one.
 		return nil, fmt.Errorf("authenticate %q: %w", conn.User(), err)
 	}
-	if err == nil && u.MFAMethod != "" {
+	if u.MFAMethod != "" {
 		// A password is one factor of this account's two; SSH asks for
 		// a key or an app password instead.
-		err = user.ErrAuthFailed
+		return nil, errWrongPassword
 	}
-	if err == nil {
-		return &gossh.Permissions{
-			Extensions: map[string]string{
-				"user_id":  u.ID,
-				"username": u.Username,
-			},
-		}, nil
-	}
-
-	// Fall back to app password.
-	return a.checkAppPassword(conn, password)
+	return &gossh.Permissions{
+		Extensions: map[string]string{
+			"user_id":  u.ID,
+			"username": u.Username,
+		},
+	}, nil
 }
 
 // checkAppPassword signs in with password as an app password of the user

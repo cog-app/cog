@@ -75,7 +75,7 @@ func (h *TokenWebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ok := false
 			if hasAuth && user == token {
 				var err error
-				ok, err = h.Guard.Try(ratelimit.ClientIP(r), ratelimit.ShareKey(shareRec.ID), pass, func() (bool, error) {
+				ok, err = h.Guard.Try(ratelimit.ClientIP(r), ratelimit.ShareKey(shareRec.ID), pass, nil, func() (bool, error) {
 					return share.CheckPassword(shareRec, pass) == nil, nil
 				})
 				if err != nil && !errors.Is(err, ratelimit.ErrLimited) {

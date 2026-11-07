@@ -836,7 +836,7 @@ func (a *API) checkSharePassword(rec *share.Record, r *http.Request) error {
 	// Only ok says the password was right: a repeat of a refused one is
 	// refused without check running, and checkErr is then still nil.
 	var checkErr error
-	ok, err := a.guard.Try(ratelimit.ClientIP(r), ratelimit.ShareKey(rec.ID), password, func() (bool, error) {
+	ok, err := a.guard.Try(ratelimit.ClientIP(r), ratelimit.ShareKey(rec.ID), password, nil, func() (bool, error) {
 		checkErr = share.CheckPassword(rec, password)
 		return checkErr == nil, nil
 	})

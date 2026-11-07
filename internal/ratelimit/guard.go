@@ -28,10 +28,14 @@ var ErrLimited = errors.New("too many failed attempts")
 //   - At most MaxWaiting attempts at a slowed account wait at once. The
 //     delay costs a guesser time; it is not to cost the server a goroutine
 //     per guess, so an attempt past the queue is refused instead.
-//   - A token (TryToken), a secret too long and random to guess, is checked
-//     even when the client or account is limited. Refusing it would cut off
-//     working apps behind an address something else failed from, and
-//     checking it gives a guesser nothing.
+//   - A secret is first checked as a token, such as an app password, when
+//     the caller has a way to: one too long and random to guess. That check
+//     runs even when the client or account is limited, and alone then.
+//     Refusing a right token would cut off working apps behind an address
+//     something else failed from, and checking one gives a guesser nothing,
+//     while a password, which can be guessed, is not checked at all. A
+//     token's success clears nothing: an owner's apps syncing do not wipe
+//     the failures of someone guessing the owner's password.
 //   - A client sending a secret it was refused for at an account within the
 //     window is refused again at once, and not counted again. A guesser has
 //     to vary what it sends, so a repeat teaches it nothing; but an app
@@ -89,44 +93,50 @@ func ShareKey(shareID string) string {
 	return "share:" + shareID
 }
 
-// Try runs check, an attempt by the client at ip to sign in to the account
-// with key account ("" when the credential names no account until it is
-// checked, as a bearer token does) with secret, unless the client is
-// limited. check reports whether the secret was right, or an error when it
-// could not tell, which is returned and counts as nothing. Try returns
-// whether check succeeded, or ErrLimited.
+// Try checks secret, an attempt by the client at ip to sign in to the
+// account with key account ("" when the credential names no account until
+// it is checked, as a bearer token does). It returns whether the secret was
+// right, or ErrLimited, or the error of a check that could not tell, which
+// counts as nothing.
+//
+// token, when not nil, checks secret as a token that cannot be guessed. It
+// runs first, and runs even when the client or account is limited; only if
+// it refuses is check, which checks secret as anything else (a password),
+// run, subject to the limits. A nil check accepts nothing else.
 //
 // A secret this client was refused for at this account within the window
-// is refused without running check or counting a failure. An empty secret
-// is never remembered; nor is one a caller passes as "" because the right
-// answer can change without Forget, as a one-time code's does.
-func (g *Guard) Try(ip, account, secret string, check func() (bool, error)) (bool, error) {
-	return g.try(ip, account, secret, false, check)
-}
-
-// TryToken is Try for a secret too long and random to guess, such as an app
-// password. It is checked even when the client or the account is limited:
-// the limits exist to make guessing slow, and no one guesses a token, so
-// refusing a right one unchecked would only sign out a working app because
-// something else at its address failed. A wrong token still counts, and a
-// repeated one is still refused unchecked, as by Try. Callers decide a
-// secret is a token by its form, never by what it turns out to be.
-func (g *Guard) TryToken(ip, account, secret string, check func() (bool, error)) (bool, error) {
-	return g.try(ip, account, secret, true, check)
-}
-
-func (g *Guard) try(ip, account, secret string, token bool, check func() (bool, error)) (bool, error) {
-	if g == nil || g.Limiter == nil {
-		return check()
+// is refused without either check running or a failure counted. An empty
+// secret is never remembered; nor is one a caller passes as "" because the
+// right answer can change without Forget, as a one-time code's does.
+func (g *Guard) Try(ip, account, secret string, token, check func() (bool, error)) (bool, error) {
+	if check == nil {
+		check = func() (bool, error) { return false, nil }
 	}
-	if !token && g.Limiter.IsLimited(ip) {
-		return false, ErrLimited
+	if g == nil || g.Limiter == nil {
+		if token != nil {
+			if ok, err := token(); ok || err != nil {
+				return ok, err
+			}
+		}
+		return check()
 	}
 	a, remember := g.attempt(ip, account, secret)
 	if remember && g.refusedBefore(account, a) {
 		return false, nil
 	}
-	if !token && account != "" && g.Limiter.IsLimited(account) {
+	if token != nil {
+		ok, err := token()
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			return true, nil
+		}
+	}
+	if g.Limiter.IsLimited(ip) {
+		return false, ErrLimited
+	}
+	if account != "" && g.Limiter.IsLimited(account) {
 		v, _ := g.queues.LoadOrStore(account, &queue{waiting: make(chan struct{}, MaxWaiting)})
 		q := v.(*queue)
 		select {
