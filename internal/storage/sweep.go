@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
+	"path"
 	"time"
 )
 
@@ -59,10 +59,9 @@ func (s *Store) SweepCaches(maxAge time.Duration) (int, error) {
 	}
 	defer data.Close()
 
-	// A user's caches are <user>/app_data/<plugin>/cache.
-	caches, err := fs.Glob(data.FS(), filepath.Join("*", "app_data", "*", Cache.dir()))
+	caches, err := cacheDirs(data)
 	if err != nil {
-		return 0, fmt.Errorf("storage: find caches: %w", err)
+		return 0, err
 	}
 	removed := 0
 	var errs []error
@@ -74,6 +73,53 @@ func (s *Store) SweepCaches(maxAge time.Duration) (int, error) {
 		}
 	}
 	return removed, errors.Join(errs...)
+}
+
+// cacheDirs finds every user's caches, <user>/app_data/<plugin>/cache.
+//
+// It opens directories and nothing else. fs.Glob would try every entry of
+// the data directory as one, and the system database may live there: on
+// Linux, opening and closing a database file outside SQLite drops every
+// lock this process holds on it. Another process's SQLite then believes it
+// is the last connection, checkpoints and deletes the -wal and -shm files
+// this one still has open, and every query after fails with "disk I/O
+// error: no such file or directory".
+func cacheDirs(data *os.Root) ([]string, error) {
+	var dirs []string
+	users, err := fs.ReadDir(data.FS(), ".")
+	if err != nil {
+		return nil, fmt.Errorf("storage: find caches: %w", err)
+	}
+	for _, u := range users {
+		if !u.IsDir() {
+			continue
+		}
+		appData := path.Join(u.Name(), "app_data")
+		plugins, err := fs.ReadDir(data.FS(), appData)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("storage: find caches: %w", err)
+		}
+		for _, pl := range plugins {
+			if !pl.IsDir() {
+				continue
+			}
+			dir := path.Join(appData, pl.Name(), Cache.dir())
+			info, err := data.Lstat(dir)
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return nil, fmt.Errorf("storage: find caches: %w", err)
+			}
+			if info.IsDir() {
+				dirs = append(dirs, dir)
+			}
+		}
+	}
+	return dirs, nil
 }
 
 // sweep removes the files under dir last modified before cutoff, then the
