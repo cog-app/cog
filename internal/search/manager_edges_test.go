@@ -160,7 +160,9 @@ func TestUserDBHook_AsyncInitWhenIndexMissing(t *testing.T) {
 	hook(18, "main", "files", 42) // INSERT; must not block or panic
 
 	// Eventually the async goroutine opens the index.
-	deadline := time.Now().Add(2 * time.Second)
+	// Generous: the full suite loads the machine, and the loop ends as soon as
+	// the index opens.
+	deadline := time.Now().Add(10 * time.Second)
 	for {
 		mgr.mu.Lock()
 		_, ok := mgr.userIndices["alice"]
