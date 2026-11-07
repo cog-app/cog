@@ -52,7 +52,7 @@ func New(p *services.Providers) http.Handler {
 	}
 
 	loginFlow := compat.NewLoginFlowHandler(p.DB, p.Users, p.AppPasswords, p.Sessions, p.Config.BaseURL, p.CSRFSecret)
-	loginFlow.RateLimiter = p.RateLimiter
+	loginFlow.RateLimiter = p.FlowLimiter
 	loginFlow.Clock = p.Clock
 
 	// Use the plugin registry's mux so plugin-registered routes share the same router.
@@ -366,6 +366,7 @@ func New(p *services.Providers) http.Handler {
 		Users:  p.Users,
 		Files:  fp,
 		Policy: p.FedPolicy,
+		Guard:  p.Guard,
 	}
 	mux.Handle("/public.php/webdav/", bodylimit.Unlimited(fedWebDAV))
 

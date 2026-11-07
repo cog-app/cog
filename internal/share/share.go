@@ -64,6 +64,9 @@ type Store struct {
 	// birthday calendars of the users a shared address book reaches)
 	// follows them; it handles its own errors.
 	OnChange func(Record)
+	// OnPasswordChange, when set, runs after a share's password is set,
+	// so the guard against guessing forgets what it refused for it.
+	OnPasswordChange func(shareID string)
 }
 
 func (s *Store) changed(rec *Record) {
@@ -225,6 +228,9 @@ func (s *Store) SetPassword(shareID, password string) error {
 	}
 	if n == 0 {
 		return ErrNotFound
+	}
+	if s.OnPasswordChange != nil {
+		s.OnPasswordChange(shareID)
 	}
 	return nil
 }

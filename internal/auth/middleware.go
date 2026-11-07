@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -172,57 +173,88 @@ func (m *Middleware) authenticate(r *http.Request) (*user.User, *Session) {
 	// 2. Basic Auth. Without a username it names no account: it is a
 	// public link's password, which the link's handler checks.
 	if username, password, ok := r.BasicAuth(); ok && username != "" {
+		// An app password is tried first, and even from a limited client:
+		// it cannot be guessed, and refusing it would sign out a working
+		// app because something else at its address failed. Only then is
+		// the secret checked as the account's password, within the limits.
 		var u *user.User
-		_, err := m.Guard.Try(ip, ratelimit.AccountKey(username), func() bool {
-			u = m.basicUser(username, password)
-			return u != nil
-		})
+		ok, err := m.Guard.Try(ip, ratelimit.AccountKey(username), password,
+			func() (bool, error) {
+				var err error
+				u, err = m.appPasswordUser(password)
+				if u != nil && !strings.EqualFold(u.Username, username) {
+					u = nil // another user's: signs in only as its own
+				}
+				return u != nil, err
+			},
+			func() (bool, error) {
+				var err error
+				u, err = m.passwordUser(username, password)
+				return u != nil, err
+			})
 		logAuthErr("basic auth", err)
+		if !ok {
+			return nil, nil
+		}
 		return u, nil
 	}
 
-	// 3. Bearer token (app password)
+	// 3. Bearer token (app password), checked even from a limited client.
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		token := strings.TrimPrefix(auth, "Bearer ")
 		var u *user.User
-		_, err := m.Guard.Try(ip, "", func() bool {
-			u = m.appPasswordUser(strings.TrimPrefix(auth, "Bearer "))
-			return u != nil
-		})
+		ok, err := m.Guard.Try(ip, "", token, func() (bool, error) {
+			var err error
+			u, err = m.appPasswordUser(token)
+			return u != nil, err
+		}, nil)
 		logAuthErr("bearer auth", err)
+		if !ok {
+			return nil, nil
+		}
 		return u, nil
 	}
 
 	return nil, nil
 }
 
-// basicUser returns the user Basic credentials sign in as: by their
-// password, or by an app password of theirs. An app password signs in only
-// as its own user, whatever username it is sent with.
-func (m *Middleware) basicUser(username, password string) *user.User {
+// passwordUser returns the user Basic credentials sign in as by their
+// password: nil for a wrong one, and an error only when it could not tell.
+func (m *Middleware) passwordUser(username, password string) (*user.User, error) {
 	u, err := m.Users.Authenticate(username, password)
-	logAuthErr("basic auth", err)
-	if u != nil && u.MFAMethod == "" {
-		return u
+	if errors.Is(err, user.ErrAuthFailed) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("authenticate %q: %w", username, err)
 	}
 	// A password alone is only the first of an MFA user's factors, and
 	// Basic auth has no way to ask for the second. Their clients sign in
 	// with an app password, which Login Flow issues after both.
-	if u = m.appPasswordUser(password); u != nil && strings.EqualFold(u.Username, username) {
-		return u
+	if u.MFAMethod != "" {
+		return nil, nil
 	}
-	return nil
+	return u, nil
 }
 
-// appPasswordUser returns the user an app password belongs to, or nil.
-func (m *Middleware) appPasswordUser(token string) *user.User {
+// appPasswordUser returns the user an app password belongs to, nil when it
+// is no app password, or an error when that could not be told.
+func (m *Middleware) appPasswordUser(token string) (*user.User, error) {
 	userID, err := m.AppPasswords.Validate(token)
+	if errors.Is(err, ErrInvalidAppPassword) {
+		return nil, nil
+	}
 	if err != nil {
-		logAuthErr("validate app password", err)
-		return nil
+		return nil, fmt.Errorf("validate app password: %w", err)
 	}
 	u, err := m.Users.GetByID(userID)
-	logAuthErr("app password user", err)
-	return u
+	if errors.Is(err, user.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("app password user: %w", err)
+	}
+	return u, nil
 }
 
 // logAuthErr logs err unless it only says the credentials were wrong. The

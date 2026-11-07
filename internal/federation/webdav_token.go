@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
@@ -29,6 +30,9 @@ type TokenWebDAVHandler struct {
 	Users  *user.Store
 	Files  *files.Plugin
 	Policy *Policy
+	// Guard throttles guessing a public link's password here as it does on
+	// the link's page. A nil Guard allows every attempt.
+	Guard *ratelimit.Guard
 }
 
 func (h *TokenWebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -67,8 +71,19 @@ func (h *TokenWebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// A link with a password asks for it as Nextcloud does: the
 		// token is the Basic username and the password its password.
 		if shareRec.PasswordHash != nil && *shareRec.PasswordHash != "" {
-			user, pass, ok := r.BasicAuth()
-			if !ok || user != token || share.CheckPassword(shareRec, pass) != nil {
+			user, pass, hasAuth := r.BasicAuth()
+			ok := false
+			if hasAuth && user == token {
+				var err error
+				ok, err = h.Guard.Try(ratelimit.ClientIP(r), ratelimit.ShareKey(shareRec.ID), pass, nil, func() (bool, error) {
+					return share.CheckPassword(shareRec, pass) == nil, nil
+				})
+				if err != nil && !errors.Is(err, ratelimit.ErrLimited) {
+					h.serverError(w, "check share password", err)
+					return
+				}
+			}
+			if !ok {
 				w.Header().Set("WWW-Authenticate", `Basic realm="share"`)
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return

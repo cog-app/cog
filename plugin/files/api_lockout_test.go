@@ -27,9 +27,9 @@ func TestPublicLink_PasswordThrottle(t *testing.T) {
 	require.NotNil(t, rec.Token)
 	tok := *rec.Token
 
-	// 10 wrong attempts get individually rejected with 401.
-	for range 10 {
-		env.Get(t, "/s/"+tok, cogtest.BasicAuth("", "wrong")).Status(401)
+	// 10 different wrong attempts get individually rejected with 401.
+	for i := range 10 {
+		env.Get(t, "/s/"+tok, cogtest.BasicAuth("", "wrong"+strconv.Itoa(i))).Status(401)
 	}
 
 	// The next — even with the CORRECT password — is rejected because the
@@ -93,5 +93,28 @@ func TestPublicLink_SuccessClearsFailureCounter(t *testing.T) {
 	for range 4 {
 		env.Get(t, "/s/"+tok, cogtest.BasicAuth("", "wrong")).Status(401)
 	}
+	env.Get(t, "/s/"+tok, cogtest.BasicAuth("", "good")).Status(200)
+}
+
+// A wrong password sent again is refused again. The guard does not check a
+// repeat it refused before, and the link must not read that as a pass.
+func TestPublicLink_RepeatedWrongPasswordRefused(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	meta := uploadFile(t, env, alice, "/p.txt", "p")
+
+	var rec share.Record
+	env.PostJSON(t, "/api/shares/public-link", map[string]any{
+		"resource_type": "files:file",
+		"resource_id":   strconv.FormatInt(meta.ID, 10),
+		"password":      "good",
+	}, alice.Auth).Status(201).JSON(&rec)
+	tok := *rec.Token
+
+	for range 20 {
+		env.Get(t, "/s/"+tok, cogtest.BasicAuth("", "wrong")).Status(401)
+		env.Get(t, "/s/"+tok+"/download", cogtest.BasicAuth("", "wrong")).Status(401)
+	}
+	// Repeats counted once, so the right password still opens it.
 	env.Get(t, "/s/"+tok, cogtest.BasicAuth("", "good")).Status(200)
 }

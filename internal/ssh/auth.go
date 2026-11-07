@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 
+	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -32,14 +33,34 @@ type appPasswordValidator interface {
 func (a *authCallbacks) passwordCallback(conn gossh.ConnMetadata, password []byte) (*gossh.Permissions, error) {
 	var perms *gossh.Permissions
 	var checkErr error
-	_, err := a.guard.Try(remoteIP(conn.RemoteAddr()), ratelimit.AccountKey(conn.User()), func() bool {
-		perms, checkErr = a.checkPassword(conn, password)
-		return checkErr == nil
-	})
+	// An app password is tried first, and even from a limited client: it
+	// cannot be guessed, and refusing it would cut off a working client
+	// because something else at its address failed. Only then is the
+	// secret checked as the account's password, within the limits.
+	asCheck := func(f func(gossh.ConnMetadata, []byte) (*gossh.Permissions, error)) func() (bool, error) {
+		return func() (bool, error) {
+			perms, checkErr = f(conn, password)
+			if checkErr != nil && !errors.Is(checkErr, errWrongPassword) {
+				return false, checkErr
+			}
+			return checkErr == nil, nil
+		}
+	}
+	ok, err := a.guard.Try(remoteIP(conn.RemoteAddr()), ratelimit.AccountKey(conn.User()), string(password),
+		asCheck(a.checkAppPassword), asCheck(a.checkPassword))
 	if err != nil {
 		return nil, err
 	}
-	return perms, checkErr
+	// Only ok says the password was right: a repeat of a refused one is
+	// refused without check running, and perms and checkErr are then nil,
+	// which the SSH library would take for success.
+	if !ok {
+		if checkErr != nil {
+			return nil, checkErr
+		}
+		return nil, errWrongPassword
+	}
+	return perms, nil
 }
 
 // remoteIP is the address part of a client's address, the key its failures
@@ -54,41 +75,56 @@ func remoteIP(addr net.Addr) string {
 	return addr.String()
 }
 
+// errWrongPassword is a password or app password that is not right for the
+// account, as opposed to one that could not be checked.
+var errWrongPassword = errors.New("wrong password")
+
+// checkPassword signs in with password as the account password of the user
+// conn names.
 func (a *authCallbacks) checkPassword(conn gossh.ConnMetadata, password []byte) (*gossh.Permissions, error) {
-	// Try user password first.
 	u, err := a.users.Authenticate(conn.User(), string(password))
-	if err != nil && !errors.Is(err, user.ErrAuthFailed) {
+	if errors.Is(err, user.ErrAuthFailed) {
+		return nil, errWrongPassword
+	}
+	if err != nil {
 		// A lookup failure, not a wrong password: don't let it pass for one.
 		return nil, fmt.Errorf("authenticate %q: %w", conn.User(), err)
 	}
-	if err == nil && u.MFAMethod != "" {
+	if u.MFAMethod != "" {
 		// A password is one factor of this account's two; SSH asks for
 		// a key or an app password instead.
-		err = user.ErrAuthFailed
+		return nil, errWrongPassword
 	}
-	if err == nil {
-		return &gossh.Permissions{
-			Extensions: map[string]string{
-				"user_id":  u.ID,
-				"username": u.Username,
-			},
-		}, nil
-	}
+	return &gossh.Permissions{
+		Extensions: map[string]string{
+			"user_id":  u.ID,
+			"username": u.Username,
+		},
+	}, nil
+}
 
-	// Fall back to app password.
+// checkAppPassword signs in with password as an app password of the user
+// conn names.
+func (a *authCallbacks) checkAppPassword(conn gossh.ConnMetadata, password []byte) (*gossh.Permissions, error) {
 	userID, err := a.appPasswords.Validate(string(password))
+	if errors.Is(err, auth.ErrInvalidAppPassword) {
+		return nil, errWrongPassword
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("validate app password: %w", err)
 	}
 
-	u, err = a.users.GetByID(userID)
+	u, err := a.users.GetByID(userID)
+	if errors.Is(err, user.ErrNotFound) {
+		return nil, errWrongPassword
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("app password user: %w", err)
 	}
 
 	// Verify that the app password belongs to the user logging in.
 	if !strings.EqualFold(u.Username, conn.User()) {
-		return nil, fmt.Errorf("app password does not belong to user %q", conn.User())
+		return nil, fmt.Errorf("app password of another user for %q: %w", conn.User(), errWrongPassword)
 	}
 
 	return &gossh.Permissions{
