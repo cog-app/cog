@@ -589,9 +589,92 @@ input[type="radio"] {
 
 /* Notification bell */
 .notif-dropdown .dropdown-menu {
-  min-width: 280px;
-  max-height: 320px;
+  width: 320px;
+  max-height: min(480px, calc(100vh - var(--navbar-h) - 1rem));
   overflow-y: auto;
+}
+.tray-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-4) var(--space-1);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.dropdown-menu button.tray-clear {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  font-size: var(--font-xs);
+  color: var(--color-primary);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.dropdown-menu button.tray-clear:hover {
+  background: none;
+  text-decoration: underline;
+}
+.tray-notices {
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-1);
+  margin-bottom: var(--space-1);
+}
+.tray-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-4);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.dropdown-menu a.tray-item {
+  flex-direction: column;
+  align-items: stretch;
+}
+.tray-item--error {
+  border-left: 3px solid var(--color-danger);
+}
+.tray-item--unread {
+  font-weight: 600;
+}
+.tray-item-sub {
+  font-size: var(--font-xs);
+  font-weight: normal;
+  color: var(--color-text-muted);
+}
+.tray-filter {
+  font: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: normal;
+  color: var(--color-text);
+  padding: 2px var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+.tray-desktop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.tray-desktop[hidden] {
+  display: none;
+}
+.tray-empty {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
 }
 .notif-badge {
   position: absolute;

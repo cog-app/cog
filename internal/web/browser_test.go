@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
@@ -989,4 +990,104 @@ func TestBrowserNCLoginFlowGrantAsAgent(t *testing.T) {
 	helper, err := env.Providers.Users.GetByUsername("alice+helper")
 	require.NoError(t, err)
 	require.Equal(t, alice.ID, helper.OwnerID)
+}
+
+// --- Notification tray and signed-out pages ---
+
+// TestBrowserSignedOutHTMXLeavesPage verifies that an HTMX request made after
+// the session ended takes the whole page to the login form, and back to the
+// page afterwards, rather than swapping the form into the element.
+func TestBrowserSignedOutHTMXLeavesPage(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "secret")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "secret")
+	b.Navigate(t, "/settings/profile")
+	b.WaitVisible(t, "#notif")
+
+	require.NoError(t, env.Providers.Sessions.DeleteAllForUser(alice.ID))
+	b.Eval(t, `htmx.ajax("GET", "/api/search/partial?q=x", "#search-results")`)
+	b.WaitVisible(t, "#username")
+	require.Equal(t, 0, b.Count(t, "#search-results #password"))
+	u, err := url.Parse(b.URL(t))
+	require.NoError(t, err)
+	require.Equal(t, "/login", u.Path)
+	require.Equal(t, "/settings/profile", u.Query().Get("next"))
+}
+
+// TestBrowserSignedOutFetchLeavesPage verifies that a script's request refused
+// for want of a session takes the page to the login form.
+func TestBrowserSignedOutFetchLeavesPage(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "secret")
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "secret")
+	b.Navigate(t, "/settings/security")
+	b.WaitVisible(t, "#notif")
+
+	require.NoError(t, env.Providers.Sessions.DeleteAllForUser(alice.ID))
+	b.Eval(t, `() => { fetch("/api/activity") }`)
+	b.WaitVisible(t, "#username")
+	u, err := url.Parse(b.URL(t))
+	require.NoError(t, err)
+	require.Equal(t, "/settings/security", u.Query().Get("next"))
+}
+
+// TestBrowserTrayShowsRefusals verifies that a request the user may not make
+// is reported in the tray instead of failing silently, that a notification
+// arriving while the page is open is counted, and that the activity list can
+// be narrowed to notifications.
+func TestBrowserTrayShowsRefusals(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "secret") // the first user is the admin
+	env.CreateUser(t, "alice", "secret")
+	acts := env.Providers.Activities
+	require.NoError(t, acts.Log("alice", "alice", "files", "file_created", "alice uploaded notes.txt", "files", "1", "/notes.txt"))
+	require.NoError(t, acts.Notification("alice", "admin", "sharing", "share_received", `admin shared the folder "Old" with you`, "files:directory", "2", "Old"))
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "alice", "secret")
+	b.Navigate(t, "/settings/profile")
+	b.WaitVisible(t, "#notif")
+	// The first poll marks what is already there as seen: it is not news.
+	for deadline := time.Now().Add(10 * time.Second); b.Eval(t, `localStorage.getItem("cog.tray.seen") === null`) == true; {
+		require.True(t, time.Now().Before(deadline), "tray never polled")
+		time.Sleep(50 * time.Millisecond)
+	}
+	require.True(t, !b.HasElement(t, "#notif-badge:not([hidden])"), "badge shown with nothing new")
+
+	require.NoError(t, acts.Notification("alice", "admin", "sharing", "share_received", `admin shared the file "plan.txt" with you`, "files:file", "3", "plan.txt"))
+	b.Eval(t, `cog.refreshTray()`)
+	b.WaitVisible(t, "#notif-badge")
+	require.Equal(t, "1", b.Text(t, "#notif-badge"))
+
+	b.Eval(t, `htmx.ajax("GET", "/admin/shares/panel", "#search-results")`)
+	b.WaitText(t, "2")
+	require.Equal(t, "2", b.Text(t, "#notif-badge"))
+
+	b.Click(t, "#notif [data-dropdown-toggle]")
+	b.WaitText(t, "You don't have permission to do that.")
+	b.WaitText(t, "alice uploaded notes.txt")
+	require.Equal(t, 2, b.Count(t, "#notif-panel .tray-item--unread"))
+	b.Snapshot(t)
+
+	b.Select(t, "#tray-filter", `[value="notifications"]`)
+	b.WaitNotVisible(t, "#tray-activity .tray-item:nth-child(3)")
+	require.Equal(t, 2, b.Count(t, "#tray-activity .tray-item"))
+	require.True(t, !strings.Contains(b.Text(t, "#tray-activity"), "notes.txt"), "filter kept a non-notification")
+	b.Snapshot(t, webtest.State("notifications"))
+
+	b.Click(t, "[data-tray-clear]")
+	b.WaitNotVisible(t, "#tray-notices")
 }

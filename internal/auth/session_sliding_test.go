@@ -49,6 +49,25 @@ func TestSession_SlidesWithUse(t *testing.T) {
 	require.Equal(t, env.Now().Unix(), got.LastSeenAt.Unix())
 }
 
+// TestSession_BackgroundRequestsDoNotRenew verifies that a page polling on
+// its own does not keep a session alive that nobody is using.
+func TestSession_BackgroundRequestsDoNotRenew(t *testing.T) {
+	env := cogtest.New(t)
+	u := env.CreateUser(t, "alice", "pass")
+	sess, err := env.Providers.Sessions.Create(u.ID)
+	require.NoError(t, err)
+	cookie := cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID)
+	background := cogtest.Header(auth.BackgroundHeader, "1")
+
+	for range 3 {
+		env.Clock.Advance(9 * 24 * time.Hour)
+		resp := env.Get(t, "/api/activity", cookie, background).Status(http.StatusOK)
+		require.Nil(t, sessionCookie(resp))
+	}
+	env.Clock.Advance(4 * 24 * time.Hour)
+	env.Get(t, "/api/activity", cookie, background).Status(http.StatusUnauthorized)
+}
+
 // TestSession_ExpiresWhenIdle verifies that an unused session still expires.
 func TestSession_ExpiresWhenIdle(t *testing.T) {
 	env := cogtest.New(t)

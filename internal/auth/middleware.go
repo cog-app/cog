@@ -21,6 +21,12 @@ type contextKey string
 const userContextKey contextKey = "authenticated_user"
 const sessionContextKey contextKey = "session_id"
 
+// BackgroundHeader marks a request a page makes on its own, such as a poll
+// for notifications, rather than one the user asked for. It does not renew
+// the session: a tab left open is not someone using it, and a session must
+// still expire when nobody has.
+const BackgroundHeader = "X-Cog-Background"
+
 // UserFromContext retrieves the authenticated user from the request context.
 func UserFromContext(ctx context.Context) *user.User {
 	u, _ := ctx.Value(userContextKey).(*user.User)
@@ -77,6 +83,9 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			switch {
 			case sess != nil:
 				sessionID = sess.ID
+				if r.Header.Get(BackgroundHeader) != "" {
+					break
+				}
 				renewed, err := m.Sessions.Renew(sess)
 				if err != nil {
 					slog.Error("auth: renew session", "user", u.ID, "err", err)
@@ -291,11 +300,16 @@ func RequireAuth(next http.Handler) http.Handler {
 		if UserFromContext(r.Context()) == nil {
 			switch {
 			case r.Header.Get("HX-Request") != "":
-				w.Header().Set("HX-Redirect", loginURL(r))
-				w.WriteHeader(http.StatusUnauthorized)
+				redirectHTMXToLogin(w, r)
 			case isBrowserNavigation(r):
 				// Browser page navigation — redirect to login form.
 				http.Redirect(w, r, loginURL(r), http.StatusSeeOther)
+			case isPageScript(r):
+				// A script on one of our pages. A challenge would have the
+				// browser prompt for a password over the page and hold the
+				// request until it is answered; the page sends the user to
+				// the login form instead.
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			default:
 				// API/programmatic client — 401 with Basic challenge.
 				w.Header().Set("WWW-Authenticate", `Basic realm="Cog"`)
@@ -311,11 +325,29 @@ func RequireAuth(next http.Handler) http.Handler {
 func RequireAuthWeb(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if UserFromContext(r.Context()) == nil {
+			if r.Header.Get("HX-Request") != "" {
+				redirectHTMXToLogin(w, r)
+				return
+			}
 			http.Redirect(w, r, loginURL(r), http.StatusSeeOther)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// redirectHTMXToLogin sends a signed-out HTMX request to the login page. A
+// 303 would be followed inside the XHR and the login form swapped into
+// whatever the request was filling, so the whole page is navigated instead,
+// and the user comes back to the page they were on rather than to the
+// fragment it asked for.
+func redirectHTMXToLogin(w http.ResponseWriter, r *http.Request) {
+	target := loginURL(r)
+	if cur, err := url.Parse(r.Header.Get("HX-Current-URL")); err == nil && cur.Path != "" && (cur.Host == "" || cur.Host == r.Host) {
+		target = "/login?next=" + url.QueryEscape(cur.RequestURI())
+	}
+	w.Header().Set("HX-Redirect", target)
+	w.WriteHeader(http.StatusUnauthorized)
 }
 
 // loginURL returns "/login?next=<current_url>" for the given request.
@@ -331,6 +363,13 @@ func isBrowserNavigation(r *http.Request) bool {
 		return false
 	}
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
+}
+
+// isPageScript reports whether r was sent by a script on one of this
+// origin's pages, as browsers mark it. Sync and API clients send no
+// Sec-Fetch headers.
+func isPageScript(r *http.Request) bool {
+	return r.Header.Get("Sec-Fetch-Site") == "same-origin" && r.Header.Get("Sec-Fetch-Mode") != "navigate"
 }
 
 // RequireAdmin wraps a handler and returns 403 if the user is not an admin.

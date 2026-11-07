@@ -107,6 +107,8 @@
       return;
     }
     if (!dd || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
+    // A control in a menu keeps its own arrow keys.
+    if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName)) return;
     var list = items(dd);
     if (!list.length) return;
     e.preventDefault();
@@ -219,61 +221,457 @@
     }).observe(results, { childList: true });
   }
 
-  // --- Notifications ----------------------------------------------------------
-  // The bell stays hidden until there is something to show.
-  function initNotifications() {
-    var wrap = document.getElementById("notif");
-    if (!wrap) return;
-    var badge = document.getElementById("notif-badge");
-    var panel = document.getElementById("notif-panel");
-    var pending = [];
+  // --- Signed-out pages ------------------------------------------------------
+  // When the session ends under an open page, the next request is refused.
+  // The whole page goes to the login form, which brings the user back here,
+  // rather than leaving a fragment to swap the form into a panel or a script
+  // to fail quietly. The server sends HTMX requests an HX-Redirect; this
+  // catches what reaches the page another way: a fetch() answered 401, or a
+  // request that followed a redirect to /login.
+  var BACKGROUND = { "X-Cog-Background": "1" };
+  var leaving = false;
 
-    function render() {
-      panel.textContent = "";
-      pending.forEach(function (n) {
-        var a = document.createElement("a");
-        a.href = "/apps/calendar/?date=" + n.start.slice(0, 10);
-        var name = document.createElement("span");
-        name.className = "search-hit-name";
-        name.textContent = n.summary;
-        var sub = document.createElement("span");
-        sub.className = "search-hit-sub";
-        sub.textContent = new Date(n.start).toLocaleString();
-        a.appendChild(name);
-        a.appendChild(sub);
-        panel.appendChild(a);
+  // signedIn says whether this page belongs to a session: the shell shows
+  // the tray only to a signed-in user, and a plugin frame is only served to
+  // one. The login page and public links have neither.
+  function signedIn() {
+    return !!document.getElementById("notif") || !!document.body.dataset.cogHost;
+  }
+
+  cog.signIn = function () {
+    if (leaving) return;
+    leaving = true;
+    location.href =
+      "/login?next=" + encodeURIComponent(location.pathname + location.search + location.hash);
+  };
+
+  // landedOnLogin says whether a response is the login page, reached by
+  // following a redirect.
+  function landedOnLogin(responseURL) {
+    if (!responseURL) return false;
+    try {
+      var u = new URL(responseURL);
+      return u.origin === location.origin && u.pathname === "/login";
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function sameOrigin(input) {
+    try {
+      var u = new URL(typeof input === "string" ? input : input.url, location.href);
+      return u.origin === location.origin;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function hasAuthorization(input, init) {
+    var h = (init && init.headers) || (typeof input !== "string" && input.headers);
+    if (!h) return false;
+    if (typeof h.has === "function") return h.has("Authorization");
+    return Object.keys(h).some(function (k) {
+      return k.toLowerCase() === "authorization";
+    });
+  }
+
+  if (window.fetch) {
+    var nativeFetch = window.fetch;
+    window.fetch = function (input, init) {
+      return nativeFetch.apply(this, arguments).then(function (resp) {
+        if (
+          signedIn() &&
+          sameOrigin(input) &&
+          ((resp.status === 401 && !hasAuthorization(input, init)) || landedOnLogin(resp.url))
+        ) {
+          cog.signIn();
+        }
+        return resp;
+      });
+    };
+  }
+
+  document.addEventListener("htmx:beforeSwap", function (e) {
+    var xhr = e.detail.xhr;
+    if (!signedIn()) return;
+    if (xhr.status === 401 || landedOnLogin(xhr.responseURL)) {
+      e.detail.shouldSwap = false;
+      cog.signIn();
+      return;
+    }
+    // A page that swaps its own error responses has said what to show.
+    if (e.detail.shouldSwap || xhr.status < 400) return;
+    if (xhr.status === 403) {
+      cog.notify({ kind: "error", title: "You don't have permission to do that." });
+    } else {
+      cog.notify({
+        kind: "error",
+        title: "Something went wrong.",
+        body: "The server answered " + xhr.status + (xhr.statusText ? " " + xhr.statusText : "") + ".",
       });
     }
+  });
 
-    function check() {
-      fetch("/apps/calendar/notifications")
-        .then(function (r) {
-          return r.ok ? r.json() : [];
-        })
-        .then(function (data) {
-          if (!data || !data.length) return;
-          pending = pending.concat(data);
-          wrap.hidden = false;
-          badge.textContent = pending.length;
-          render();
-          if (!("Notification" in window)) return;
-          if (Notification.permission === "granted") {
-            data.forEach(function (n) {
-              new Notification("Reminder: " + n.summary, {
-                body: "Starting " + new Date(n.start).toLocaleString(),
-              });
-            });
-          } else if (Notification.permission !== "denied") {
-            Notification.requestPermission();
-          }
-        })
-        .catch(function (err) {
-          console.warn("cog: notifications:", err);
-        });
+  document.addEventListener("htmx:sendError", function () {
+    cog.notify({ kind: "error", title: "Couldn't reach the server.", body: "Check your connection and try again." });
+  });
+
+  // --- Notification tray ------------------------------------------------------
+  // The bell holds two lists. Notices are raised by the page — a request that
+  // failed, a calendar reminder, or anything a plugin passes to cog.notify —
+  // and last until cleared or the page is left. Below them is the user's
+  // recent activity, which can be narrowed to notifications (activity
+  // addressed to them, such as a share they received) or to one app.
+  //
+  // Notifications are polled; the badge counts those newer than the last the
+  // user looked at, and, if they asked for it, each new one is shown on the
+  // desktop. Both marks are kept per browser.
+  var POLL_EVERY = 5 * 60 * 1000;
+  var REMINDERS_EVERY = 60 * 1000;
+  var KEY_SEEN = "cog.tray.seen";
+  var KEY_SHOWN = "cog.tray.shown";
+  var KEY_FILTER = "cog.tray.filter";
+  var KEY_DESKTOP = "cog.tray.desktop";
+  var tray = null;
+
+  function load(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (err) {
+      return null;
     }
+  }
 
-    setInterval(check, 60000);
-    setTimeout(check, 5000);
+  function save(key, value) {
+    try {
+      localStorage.setItem(key, String(value));
+    } catch (err) {
+      // Private windows may refuse storage; the marks then last a page.
+    }
+  }
+
+  function loadID(key) {
+    var v = load(key);
+    return v === null ? null : Number(v);
+  }
+
+  function trayItem(n, unread) {
+    var el = document.createElement(n.href ? "a" : "div");
+    el.className = "tray-item";
+    if (n.kind === "error") el.className += " tray-item--error";
+    if (unread) el.className += " tray-item--unread";
+    if (n.href) el.href = n.href;
+    var title = document.createElement("span");
+    title.textContent = n.title;
+    el.appendChild(title);
+    if (n.body) {
+      var sub = document.createElement("span");
+      sub.className = "tray-item-sub";
+      sub.textContent = n.body;
+      el.appendChild(sub);
+    }
+    return el;
+  }
+
+  function relativeTime(iso) {
+    var secs = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (secs < 60) return "just now";
+    if (secs < 3600) return Math.floor(secs / 60) + " min ago";
+    if (secs < 86400) return Math.floor(secs / 3600) + " h ago";
+    return new Date(iso).toLocaleDateString();
+  }
+
+  function isOpen() {
+    return tray.wrap.classList.contains("open");
+  }
+
+  // newestID is the id of the latest notification polled, or 0.
+  function newestID() {
+    return tray.notifications.length ? tray.notifications[0].id : 0;
+  }
+
+  function renderBadge() {
+    var count = tray.notices.filter(function (n) {
+      return !n.seen;
+    }).length;
+    tray.notifications.forEach(function (a) {
+      if (tray.seen !== null && a.id > tray.seen) count++;
+    });
+    tray.badge.textContent = count > 99 ? "99+" : String(count);
+    tray.badge.hidden = count === 0 || isOpen();
+    tray.toggle.setAttribute("aria-label", count ? "Notifications (" + count + " new)" : "Notifications");
+  }
+
+  function renderNotices() {
+    tray.noticeList.textContent = "";
+    tray.notices.forEach(function (n) {
+      tray.noticeList.appendChild(trayItem(n, !n.seen));
+    });
+    tray.noticesWrap.hidden = tray.notices.length === 0;
+  }
+
+  function renderActivity() {
+    if (!tray.activity) return;
+    tray.activityList.textContent = "";
+    if (!tray.activity.length) {
+      var empty = document.createElement("p");
+      empty.className = "tray-empty";
+      empty.textContent = tray.filter.value ? "Nothing here yet." : "No activity yet.";
+      tray.activityList.appendChild(empty);
+    }
+    tray.activity.forEach(function (a) {
+      // What was new when the panel opened stays bold while it is open.
+      var unread = a.notify && tray.seenAtOpen !== null && a.id > tray.seenAtOpen;
+      tray.activityList.appendChild(
+        trayItem({ title: a.subject, body: a.app + " · " + relativeTime(a.at) }, unread),
+      );
+    });
+  }
+
+  // setApps adds an option per app the user has activity from.
+  function setApps(apps) {
+    var sel = tray.filter;
+    var want = load(KEY_FILTER) || sel.value;
+    Array.prototype.slice.call(sel.options).forEach(function (o) {
+      if (o.value.indexOf("app:") === 0) o.remove();
+    });
+    (apps || []).forEach(function (app) {
+      var o = document.createElement("option");
+      o.value = "app:" + app;
+      o.textContent = app.charAt(0).toUpperCase() + app.slice(1);
+      sel.appendChild(o);
+    });
+    sel.value = want;
+    if (sel.value !== want) sel.value = "";
+  }
+
+  function markSeen() {
+    tray.notices.forEach(function (n) {
+      n.seen = true;
+    });
+    var id = newestID();
+    if (tray.seen === null || id > tray.seen) {
+      tray.seen = id;
+      save(KEY_SEEN, id);
+    }
+  }
+
+  // cog.notify adds a notice to the tray: {title, body?, href?, kind?}, kind
+  // being "error" or "info". In a plugin frame there is no tray, so the
+  // notice goes to the console.
+  cog.notify = function (n) {
+    if (!tray) {
+      (n.kind === "error" ? console.error : console.info)("cog:", n.title, n.body || "");
+      return;
+    }
+    tray.notices.unshift({ title: n.title, body: n.body, href: n.href, kind: n.kind || "info" });
+    if (tray.notices.length > 50) tray.notices.length = 50;
+    if (isOpen()) markSeen();
+    renderNotices();
+    renderBadge();
+  };
+
+  // --- Desktop notifications ---
+  // Shown only when the user turned them on in the tray, which is when the
+  // browser asks for permission; nothing asks on its own.
+  function desktopOn() {
+    return (
+      "Notification" in window && Notification.permission === "granted" && load(KEY_DESKTOP) === "1"
+    );
+  }
+
+  function desktop(title, body) {
+    if (!desktopOn()) return;
+    try {
+      new Notification(title, { body: body });
+    } catch (err) {
+      console.warn("cog: desktop notification:", err);
+    }
+  }
+
+  function initDesktopToggle() {
+    if (!("Notification" in window)) return;
+    var box = document.getElementById("tray-desktop");
+    document.getElementById("tray-desktop-row").hidden = false;
+    box.checked = desktopOn();
+    box.addEventListener("change", function () {
+      if (!box.checked) {
+        save(KEY_DESKTOP, "0");
+        return;
+      }
+      Promise.resolve(Notification.requestPermission()).then(function (perm) {
+        if (perm === "granted") {
+          save(KEY_DESKTOP, "1");
+          return;
+        }
+        box.checked = false;
+        save(KEY_DESKTOP, "0");
+        cog.notify({
+          title: "Your browser is blocking notifications from this site.",
+          body: "Allow them in the site's settings, then turn this on again.",
+        });
+      });
+    });
+  }
+
+  // background fetches a URL as a poll: it does not renew the session, and a
+  // refusal is handled by the fetch wrapper above. It resolves to the parsed
+  // JSON, or null when there is nothing to read; a 404 is an app that is not
+  // installed.
+  function background(url) {
+    return fetch(url, { headers: BACKGROUND, credentials: "same-origin" }).then(function (r) {
+      if (!r.ok) {
+        if (r.status !== 401 && r.status !== 404) console.warn("cog: " + url + ": " + r.status);
+        return null;
+      }
+      return r.json();
+    });
+  }
+
+  var lastPoll = 0;
+  function pollNotifications() {
+    lastPoll = Date.now();
+    background("/api/activity?filter=notifications")
+      .then(function (data) {
+        if (!data) return;
+        tray.notifications = data.items;
+        var newest = newestID();
+        // The first time this browser sees the tray, what is already there
+        // is history, not news.
+        if (tray.seen === null) {
+          tray.seen = newest;
+          save(KEY_SEEN, newest);
+        }
+        var shown = loadID(KEY_SHOWN);
+        if (shown === null) shown = newest;
+        // Oldest first, so they stack in the order they happened. Another
+        // tab may have shown them already: the mark is shared.
+        tray.notifications
+          .slice()
+          .reverse()
+          .forEach(function (a) {
+            if (a.id > shown) desktop(a.subject, a.app);
+          });
+        save(KEY_SHOWN, Math.max(shown, newest));
+        if (isOpen()) {
+          markSeen();
+          loadActivity();
+        }
+        renderBadge();
+      })
+      .catch(function (err) {
+        console.warn("cog: notifications:", err);
+      });
+  }
+
+  // cog.refreshTray polls for notifications now, as a page may after doing
+  // something that would make one.
+  cog.refreshTray = function () {
+    if (tray) pollNotifications();
+  };
+
+  // loadActivity fetches the list the filter asks for. It runs when the
+  // panel opens, not on a timer: nobody reads a closed panel.
+  function loadActivity() {
+    var q = "/api/activity?apps=1";
+    if (tray.filter.value) q += "&filter=" + encodeURIComponent(tray.filter.value);
+    var asked = tray.filter.value;
+    return fetch(q, { credentials: "same-origin" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("status " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        if (asked !== tray.filter.value) return; // a newer choice is loading
+        setApps(data.apps);
+        tray.activity = data.items;
+        renderActivity();
+      })
+      .catch(function (err) {
+        console.warn("cog: activity:", err);
+      });
+  }
+
+  function pollReminders() {
+    background("/apps/calendar/notifications")
+      .then(function (data) {
+        if (!data || !data.length) return;
+        data.forEach(function (n) {
+          var when = "Starting " + new Date(n.start).toLocaleString();
+          cog.notify({
+            title: "Reminder: " + n.summary,
+            body: when,
+            href: "/apps/calendar/?date=" + n.start.slice(0, 10),
+          });
+          desktop("Reminder: " + n.summary, when);
+        });
+      })
+      .catch(function (err) {
+        console.warn("cog: reminders:", err);
+      });
+  }
+
+  function initTray() {
+    var wrap = document.getElementById("notif");
+    if (!wrap) return;
+    tray = {
+      wrap: wrap,
+      toggle: wrap.querySelector("[data-dropdown-toggle]"),
+      badge: document.getElementById("notif-badge"),
+      noticesWrap: document.getElementById("tray-notices"),
+      noticeList: document.getElementById("tray-notice-list"),
+      activityList: document.getElementById("tray-activity"),
+      filter: document.getElementById("tray-filter"),
+      notices: [],
+      notifications: [],
+      activity: null,
+      seen: loadID(KEY_SEEN),
+      seenAtOpen: null,
+    };
+    setApps([]);
+
+    wrap.addEventListener("cog:dropdown-open", function () {
+      tray.seenAtOpen = tray.seen;
+      markSeen();
+      renderBadge();
+      loadActivity();
+    });
+    // Unread marks are dropped once the panel closes.
+    new MutationObserver(function () {
+      if (isOpen()) return;
+      tray.seenAtOpen = tray.seen;
+      renderNotices();
+      renderActivity();
+      renderBadge();
+    }).observe(wrap, { attributes: true, attributeFilter: ["class"] });
+    wrap.addEventListener("click", function (e) {
+      if (!e.target.closest("[data-tray-clear]")) return;
+      tray.notices = [];
+      renderNotices();
+      renderBadge();
+    });
+    tray.filter.addEventListener("change", function () {
+      save(KEY_FILTER, tray.filter.value);
+      loadActivity();
+    });
+    initDesktopToggle();
+
+    // Polled rarely, and not at all while the tab is hidden unless desktop
+    // notifications are on; a tab coming back checks at once if it has been
+    // a while. A poll also finds a session that ended, so an idle page does
+    // not wait for a click to send the user to the login form.
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden && Date.now() - lastPoll > 60 * 1000) pollNotifications();
+    });
+    setInterval(function () {
+      if (!document.hidden || desktopOn()) pollNotifications();
+    }, POLL_EVERY);
+    pollNotifications();
+
+    // Reminders keep their own pace, hidden or not: they are what desktop
+    // notifications are for.
+    setInterval(pollReminders, REMINDERS_EVERY);
+    setTimeout(pollReminders, 5000);
   }
 
   // --- Sidebar on phones ------------------------------------------------------
@@ -392,7 +790,7 @@
   document.addEventListener("DOMContentLoaded", function () {
     placeFlash();
     initSearch();
-    initNotifications();
+    initTray();
     initSidebars();
   });
 

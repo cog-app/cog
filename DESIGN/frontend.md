@@ -97,6 +97,29 @@ The dropdown toggle displays the user's avatar (small circle) and display name. 
 - Admin link (if user is admin)
 - Logout form
 
+### Notification Tray
+
+The bell beside the user dropdown opens the tray. It holds two lists:
+
+- **Notices**, raised in the page and kept until cleared or the page is left: a request that failed, a calendar reminder, or anything a page script passes to `cog.notify({title, body?, href?, kind?})` (`kind` is `"error"` or `"info"`). HTMX errors that the page did not choose to swap are reported here — a 403 as "You don't have permission to do that" — rather than failing silently. In a plugin frame there is no tray and a notice goes to the console.
+- **Recent activity**, from `GET /api/activity` (the user's latest 20 entries in the activity log), loaded when the panel opens. A select narrows it to notifications (`?filter=notifications`) or one app's entries (`?filter=app:<app>`); `?apps=1` lists the apps there is activity from. The choice is remembered per browser.
+
+A **notification** is activity addressed to the user (`activities.notify`), written with `activity.Store.Notification`. Receiving a share is one: `share.Store.OnCreate` runs for every share with a user or group, and the services layer records a `share_received` notification ("Alice shared the folder "Photos" with you") for the user, or for each member of the group but the owner. A share with everyone on the server notifies no one.
+
+Notifications are polled every five minutes while the tab is visible (and on returning to it); `cog.refreshTray()` polls at once. The badge counts unseen notices and notifications newer than the last the user saw. If the user turns on "Show notifications on the desktop" in the tray — which is when the browser asks for permission; nothing asks on its own — each new notification and calendar reminder is also shown as a browser notification, and polling continues while the tab is hidden. The seen and shown marks are kept per browser, so two tabs do not both show the same one.
+
+Polls send `X-Cog-Background: 1`, which tells the auth middleware not to renew the session: an open tab is not someone using it, and a session must still expire when nobody has.
+
+### Signed-out Pages
+
+When the session ends under an open page, the next request sends the whole page to `/login?next=<page>` instead of putting the login form where a fragment was meant to go:
+
+- `RequireAuth` and `RequireAuthWeb` answer an HTMX request with `401` and `HX-Redirect`, whose `next` is the page (`HX-Current-URL`) rather than the fragment.
+- `cog.js` does the same for a `fetch()` from the page answered `401`, and for any request that followed a redirect to `/login`.
+- A script's request (`Sec-Fetch-Site: same-origin`) is refused without a `WWW-Authenticate` challenge, which would otherwise have the browser prompt for a password over the page.
+
+Because activity is polled, an idle page finds out within five minutes too.
+
 ### Avatars
 
 - Uploaded via `/settings/avatar` (JPEG or PNG)

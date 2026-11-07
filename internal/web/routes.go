@@ -399,6 +399,10 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("GET /api/search/partial", auth.RequireAuth(http.HandlerFunc(searchH.SearchPartial)))
 	mux.Handle("GET /api/admin/search", adminAuth(http.HandlerFunc(searchH.SearchSystem)))
 
+	// --- Notification tray ---
+	activityH := activityHandler{h}
+	mux.Handle("GET /api/activity", auth.RequireAuth(http.HandlerFunc(activityH.Recent)))
+
 	// --- Files & Sharing API ---
 	if fp != nil {
 		filesAPI := filesPlugin.NewAPI(fp, p.Shares, p.Users, p.Guard)
