@@ -935,6 +935,9 @@ templ feedItemDetail(sb sidebarData, nav itemNav, ip ItemPlayback, tags []string
 			</div>
 			<div class="page-actions">
 				@ui.Star(ip.IsStarred, fmt.Sprintf("/apps/feed/items/%d/star", ip.ID))
+				if ip.Type != "text" && ip.MediaURL != "" {
+					@feedDownloadControl(ip, nav, csrfToken)
+				}
 				if ip.URL != "" {
 					<a class="btn" href={ templ.URL(ip.URL) } target="_blank" rel="noopener">
 						@ui.Icon("external")
@@ -954,6 +957,35 @@ templ feedItemDetail(sb sidebarData, nav itemNav, ip ItemPlayback, tags []string
 			@feedPlayer(ip, prefs, artwork, csrfToken, nav)
 		}
 		@feedItemContextBar(nav, true)
+	}
+}
+
+// feedDownloadControl shows where an item's download stands and offers to
+// start it, or to retry one that failed. A queued or running download is
+// "Preparing" until the media and any preprocessing its filters ask for are
+// done.
+templ feedDownloadControl(ip ItemPlayback, nav itemNav, csrfToken string) {
+	switch ip.DownloadState {
+		case "ready":
+			<span class="badge badge-success" data-download-state="ready">Downloaded</span>
+		case "queued", "downloading":
+			<span class="badge badge-neutral" data-download-state={ ip.DownloadState }>Preparing…</span>
+		default:
+			<form method="post" action={ templ.SafeURL(itemActionHref(ip.ID, "download", nav.Ctx)) }>
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				if ip.DownloadState == "error" {
+					<span class="badge badge-danger" data-download-state="error" title={ ip.DownloadError }>Download failed</span>
+					<button class="btn" type="submit">
+						@ui.Icon("download")
+						Retry
+					</button>
+				} else {
+					<button class="btn" type="submit">
+						@ui.Icon("download")
+						Download
+					</button>
+				}
+			</form>
 	}
 }
 
@@ -1374,6 +1406,15 @@ func itemHref(id int64, ctx string) string {
 		return fmt.Sprintf("/apps/feed/items/%d", id)
 	}
 	return fmt.Sprintf("/apps/feed/items/%d?%s", id, ctx)
+}
+
+// itemActionHref builds the URL of an action on an item, carrying the view
+// context so the action can send the browser back to the same view.
+func itemActionHref(id int64, action, ctx string) string {
+	if ctx == "" {
+		return fmt.Sprintf("/apps/feed/items/%d/%s", id, action)
+	}
+	return fmt.Sprintf("/apps/feed/items/%d/%s?%s", id, action, ctx)
 }
 
 func subscriptionDisplayTitle(s Subscription) string {

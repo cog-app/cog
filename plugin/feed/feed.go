@@ -134,6 +134,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "items/{id}/mark-read", http.HandlerFunc(pages.MarkItemRead))
 	ctx.RegisterAction("POST", "items/{id}/progress", http.HandlerFunc(pages.UpdateProgress))
 	ctx.RegisterAction("POST", "items/{id}/complete", http.HandlerFunc(pages.MarkComplete))
+	ctx.RegisterAction("POST", "items/{id}/download", http.HandlerFunc(pages.DownloadItem))
 	ctx.RegisterAction("POST", "items/{id}/tag", http.HandlerFunc(pages.AddItemTag))
 	ctx.RegisterAction("POST", "items/{id}/tag/{name}/delete", http.HandlerFunc(pages.RemoveItemTag))
 	ctx.RegisterAPI("filter-preview", http.HandlerFunc(pages.FilterPreview))

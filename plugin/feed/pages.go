@@ -1009,6 +1009,40 @@ func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
 	ui.Render(w, r, feedItemDetail(sb, nav, ip, tags, prefs, artwork, plugin.CSRFToken(r), h.plugin.ctx.Now()))
 }
 
+// DownloadItem queues an audio or video item for download and the
+// preprocessing its subscription's filters ask for, or retries one that
+// failed. The orchestrator does the work under the plugin's lifetime, so it
+// outlives this request; the item page shows its progress.
+func (h *Pages) DownloadItem(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	store, err := h.userStore(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	it, err := store.GetItem(id)
+	if err != nil {
+		lookupError(w, r, err)
+		return
+	}
+	back := itemHref(id, parseViewCtx(r).encode())
+	if it.Type == "text" || it.MediaURL == "" {
+		h.setFlash(w, "error", "This item has nothing to download.")
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+	if err := store.EnqueueDownload(id); err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	h.plugin.TriggerFetch(plugin.Username(r), 0)
+	http.Redirect(w, r, back, http.StatusSeeOther)
+}
+
 // UpdateProgress handles POST to save playback position.
 func (h *Pages) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)

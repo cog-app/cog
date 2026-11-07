@@ -659,7 +659,8 @@ func (s *Store) DeleteFilter(id int64) error {
 // --- Download methods ---
 
 // EnqueueDownload upserts a download row in state=queued.
-// Does not overwrite a row already in state 'ready' or 'downloading'.
+// Does not overwrite a row already in state 'ready' or 'downloading'; a row
+// that failed is queued again and its error cleared, which is a retry.
 func (s *Store) EnqueueDownload(itemID int64) error {
 	_, err := s.db.Exec(`
 		INSERT INTO downloads (item_id, state) VALUES (?, 'queued')
@@ -667,6 +668,10 @@ func (s *Store) EnqueueDownload(itemID int64) error {
 			state = CASE
 				WHEN downloads.state IN ('ready','downloading') THEN downloads.state
 				ELSE 'queued'
+			END,
+			error = CASE
+				WHEN downloads.state IN ('ready','downloading') THEN downloads.error
+				ELSE ''
 			END`,
 		itemID,
 	)
@@ -1007,6 +1012,7 @@ type ItemPlayback struct {
 	ProgressSec       float64
 	Completed         bool
 	DownloadState     string
+	DownloadError     string // why the last download failed, when DownloadState is "error"
 	HasCleanAudio     bool
 	SourceKind        string // subscription.kind
 }
@@ -1031,6 +1037,7 @@ func (s *Store) GetItemPlayback(itemID int64) (ItemPlayback, error) {
 			COALESCE(pb.progress_sec, 0.0),
 			COALESCE(pb.completed, 0),
 			COALESCE(d.state, ''),
+			COALESCE(d.error, ''),
 			CASE WHEN d.clean_audio_path != '' AND d.clean_audio_path IS NOT NULL THEN 1 ELSE 0 END
 		FROM items i
 		JOIN subscriptions s ON i.subscription_id = s.id
@@ -1045,6 +1052,7 @@ func (s *Store) GetItemPlayback(itemID int64) (ItemPlayback, error) {
 		&progressSec,
 		&completed,
 		&downloadState,
+		&ip.DownloadError,
 		&hasClean,
 	)
 	if err != nil {
