@@ -239,6 +239,21 @@ func (p *Plugin) folderIcon(username, folderPath string) string {
 func (p *Plugin) Stop() error { return nil }
 
 // userFS returns the mount-aware VFS for the given user.
+// ReadOnlyChecker returns a function that reports whether a path of the
+// user's is on a read-only mount. It is built once per listing: the VFS
+// is resolved once and the check itself touches no disk.
+func (p *Plugin) ReadOnlyChecker(username string) (func(path string) bool, error) {
+	fs, err := p.userFS(username)
+	if err != nil {
+		return nil, err
+	}
+	ro, ok := fs.(interface{ ReadOnly(string) bool })
+	if !ok {
+		return func(string) bool { return false }, nil
+	}
+	return func(path string) bool { return ro.ReadOnly(normalizePath(path)) }, nil
+}
+
 func (p *Plugin) userFS(username string) (vfs.FS, error) {
 	return p.ctx.UserVFS(username)
 }
@@ -903,6 +918,12 @@ func RecentFiles(db *sql.DB, limit int) ([]FileMeta, error) {
 	return files, rows.Err()
 }
 
+// likeEscape quotes what LIKE … ESCAPE '\' would otherwise read as a
+// wildcard or an escape, so a query matches the text typed.
+func likeEscape(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
+
 func formatSize(b int64) string {
 	const (
 		kb = 1024
@@ -1214,7 +1235,7 @@ func (p *Plugin) Search(username, query string) ([]FileMeta, error) {
 		return nil, err
 	}
 
-	pattern := "%" + strings.ReplaceAll(query, "%", "\\%") + "%"
+	pattern := "%" + likeEscape(query) + "%"
 	rows, err := db.Query(`
 		SELECT id, path, parent_path, name, size, mtime, mime_type, etag, is_dir, favorite
 		FROM files WHERE name LIKE ? ESCAPE '\'

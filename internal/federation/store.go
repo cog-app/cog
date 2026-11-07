@@ -172,6 +172,17 @@ func (s *Store) ListInbound(userID, state string) iter.Seq2[FederatedShare, erro
 	}
 }
 
+// CountInbound returns how many inbound shares of a user are in state.
+func (s *Store) CountInbound(userID, state string) (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT count(*) FROM federated_shares WHERE direction = 'inbound' AND local_user_id = ? AND state = ?`,
+		userID, state).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count inbound federated shares: %w", err)
+	}
+	return n, nil
+}
+
 // ListOutbound returns outbound federated shares for a user.
 func (s *Store) ListOutbound(userID string) iter.Seq2[FederatedShare, error] {
 	return func(yield func(FederatedShare, error) bool) {

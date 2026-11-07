@@ -2,6 +2,8 @@ package web
 
 import (
 	"errors"
+	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"mime"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/httphdr"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
@@ -42,7 +45,7 @@ func (h *volumeBrowserHandler) Browse(w http.ResponseWriter, r *http.Request) {
 	all, err := backend.List(dirPath)
 	if err != nil {
 		h.p.Log.Error("volume list", "volume", volID, "path", dirPath, "err", err)
-		http.Error(w, "Failed to list: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("Failed to list: %w", err))
 		return
 	}
 	items := make([]volume.FileInfo, 0, len(all))
@@ -104,15 +107,44 @@ func (h *volumeBrowserHandler) open(w http.ResponseWriter, r *http.Request, u *u
 // and deleting one under a running server destroys data. The browser neither
 // lists them nor lets them be read, replaced or deleted.
 func (h *volumeBrowserHandler) serverInternal(vol *volume.Volume, p string) bool {
-	if vol.Scheme() != "file" || h.p.Config.DataDir == "" {
+	return serverInternalPath(&h.p.Config, vol, p)
+}
+
+// isDataDir reports whether vol is the data directory itself.
+func isDataDir(cfg *config.Config, vol *volume.Volume) bool {
+	if vol.Scheme() != "file" || cfg.DataDir == "" {
 		return false
 	}
 	root, err := filepath.Abs(vol.URIPath())
 	if err != nil {
 		return false
 	}
-	dataDir, err := filepath.Abs(h.p.Config.DataDir)
-	if err != nil || root != dataDir {
+	dataDir, err := filepath.Abs(cfg.DataDir)
+	return err == nil && root == dataDir
+}
+
+// mountExposesInternal reports whether a mount of subpath on vol would put
+// one of the server's own files in a user's tree. It refuses the internal
+// files themselves and the directories that hold them: the data directory
+// itself, with the system database, and a user's directory, with their
+// plugin databases. isUser says whether a name is an account's.
+func mountExposesInternal(cfg *config.Config, vol *volume.Volume, subpath string, isUser func(name string) bool) bool {
+	if !isDataDir(cfg, vol) {
+		return false
+	}
+	clean := strings.TrimPrefix(path.Clean("/"+subpath), "/")
+	if clean == "" || serverInternalPath(cfg, vol, clean) {
+		return true
+	}
+	return !strings.Contains(clean, "/") && isUser(clean)
+}
+
+func serverInternalPath(cfg *config.Config, vol *volume.Volume, p string) bool {
+	if !isDataDir(cfg, vol) {
+		return false
+	}
+	dataDir, err := filepath.Abs(cfg.DataDir)
+	if err != nil {
 		return false
 	}
 
@@ -136,8 +168,8 @@ func (h *volumeBrowserHandler) serverInternal(vol *volume.Volume, p string) bool
 		// The system database, when it lives in the data directory: where
 		// COG_DB puts it, or system.db when nothing says otherwise.
 		db := "system.db"
-		if h.p.Config.DBPath != "" {
-			dbPath, err := filepath.Abs(h.p.Config.DBPath)
+		if cfg.DBPath != "" {
+			dbPath, err := filepath.Abs(cfg.DBPath)
 			if err != nil || filepath.Dir(dbPath) != dataDir {
 				return false
 			}
@@ -220,7 +252,7 @@ func (h *volumeBrowserHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := backend.Put(dest, file); err != nil {
 		h.p.Log.Error("volume upload", "volume", volID, "path", dest, "err", err)
-		http.Error(w, "upload failed: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("upload failed: %w", err))
 		return
 	}
 
@@ -250,7 +282,7 @@ func (h *volumeBrowserHandler) MkDir(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := backend.Mkdir(dest); err != nil {
 		h.p.Log.Error("volume mkdir", "volume", volID, "path", dest, "err", err)
-		http.Error(w, "mkdir failed: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("mkdir failed: %w", err))
 		return
 	}
 
@@ -273,7 +305,7 @@ func (h *volumeBrowserHandler) DeleteFile(w http.ResponseWriter, r *http.Request
 	}
 	if err := backend.Delete(filePath); err != nil {
 		h.p.Log.Error("volume delete", "volume", volID, "path", filePath, "err", err)
-		http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("delete failed: %w", err))
 		return
 	}
 	w.WriteHeader(http.StatusOK)

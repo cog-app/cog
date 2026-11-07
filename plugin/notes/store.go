@@ -2,7 +2,6 @@ package notes
 
 import (
 	"database/sql"
-	"fmt"
 	"strings"
 )
 
@@ -164,7 +163,9 @@ func CategoryCount(db *sql.DB, category string) (int, error) {
 
 // SearchNotes returns notes matching a query string in filename.
 func SearchNotes(db *sql.DB, query string, limit int) ([]Note, error) {
+	// The query is text, not a pattern: its wildcards are quoted.
+	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(query)
 	return queryNotes(db, `SELECT id, filename, category, favorite, etag, modified, created_at
-		FROM notes WHERE filename LIKE ? ORDER BY modified DESC, id DESC LIMIT ?`,
-		fmt.Sprintf("%%%s%%", query), limit)
+		FROM notes WHERE filename LIKE ? ESCAPE '\' ORDER BY modified DESC, id DESC LIMIT ?`,
+		"%"+escaped+"%", limit)
 }

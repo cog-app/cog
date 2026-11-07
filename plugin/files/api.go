@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"net/http"
 	"strconv"
@@ -75,13 +76,13 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := a.files.EnsureRootDir(u.Username); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
 	files, err := a.files.List(u.Username, path)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -100,13 +101,13 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := a.files.EnsureRootDir(u.Username); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
 	meta, err := a.files.Upload(u.Username, path, r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -153,13 +154,13 @@ func (a *API) handleMkdir(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := a.files.EnsureRootDir(u.Username); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
 	meta, err := a.files.CreateDir(u.Username, req.Path)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -175,7 +176,7 @@ func (a *API) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := a.files.Delete(u.Username, path); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -200,7 +201,7 @@ func (a *API) handleRename(w http.ResponseWriter, r *http.Request) {
 
 	meta, err := a.files.Rename(u.Username, req.OldPath, req.NewPath)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -217,7 +218,7 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 	results, err := a.files.Search(u.Username, query)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -258,7 +259,7 @@ func (a *API) handleFavorite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := a.files.SetFavorite(u.Username, req.Path, req.Favorite); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -270,7 +271,7 @@ func (a *API) handleFavorites(w http.ResponseWriter, r *http.Request) {
 
 	files, err := a.files.Favorites(u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if files == nil {
@@ -293,7 +294,7 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 
 	comments, err := a.files.ListComments(u.Username, fileID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if comments == nil {
@@ -320,8 +321,12 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	comment, err := a.files.CreateComment(u.Username, req.FileID, u.Username, req.Message)
+	if errors.Is(err, ErrCommentTooLong) {
+		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+		return
+	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		a.serverError(w, "create comment", err)
 		return
 	}
 
@@ -393,7 +398,7 @@ func (a *API) handleShareCreate(w http.ResponseWriter, r *http.Request) {
 		req.SubjectType, req.SubjectID, req.Permissions,
 	)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -405,7 +410,7 @@ func (a *API) handleShareList(w http.ResponseWriter, r *http.Request) {
 
 	records, err := seq.Collect(a.shares.ListByOwner(u.ID))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if records == nil {
@@ -420,7 +425,7 @@ func (a *API) handleSharesWithMe(w http.ResponseWriter, r *http.Request) {
 
 	records, err := seq.Collect(a.shares.ListBySubject(u.ID))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if records == nil {
@@ -515,7 +520,7 @@ func (a *API) handleShareDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := a.shares.Delete(shareID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -558,7 +563,7 @@ func (a *API) handlePublicLinkCreate(w http.ResponseWriter, r *http.Request) {
 		req.Permissions, req.Expiration, req.Password,
 	)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -819,12 +824,14 @@ func (a *API) checkSharePassword(rec *share.Record, r *http.Request) error {
 		return nil
 	}
 
-	var password string
-	if _, p, ok := r.BasicAuth(); ok {
-		password = p
-	} else {
-		password = r.URL.Query().Get("password")
+	// The password travels as Basic credentials, never in the URL, where it
+	// would land in access logs and browser history. A client still sending
+	// it there is logged, so a client that stops working is explained.
+	if r.URL.Query().Has("password") {
+		a.files.log.Warn("share password sent in URL query is ignored; send it as Basic auth",
+			"share", rec.ID, "ip", ratelimit.ClientIP(r))
 	}
+	_, password, _ := r.BasicAuth()
 
 	var checkErr error
 	if _, err := a.guard.Try(ratelimit.ClientIP(r), "share:"+rec.ID, func() bool {

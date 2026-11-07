@@ -36,11 +36,17 @@ func CheckURL(raw string) error {
 	return nil
 }
 
+// Proxy is the loopback proxy yt-dlp's connections go through, so a
+// redirect or a manifest naming an internal address is refused like a
+// URL typed by a user would be.
+var Proxy = &safehttp.Proxy{}
+
 // YTDLP returns the yt-dlp command that fetches raw with args, writing only
 // into the directories in write. yt-dlp makes its own connections, which
-// HTTP cannot guard, so raw must pass CheckURL and name a public address,
-// and yt-dlp runs sandboxed: it reaches the network, but none of the
-// server's files beyond write.
+// HTTP cannot guard directly, so raw must pass CheckURL and name a public
+// address, every connection it then makes goes through Proxy, and it runs
+// sandboxed: it reaches the network, but none of the server's files beyond
+// write.
 func YTDLP(ctx context.Context, raw string, write []string, args ...string) (*exec.Cmd, error) {
 	if err := CheckURL(raw); err != nil {
 		return nil, err
@@ -52,5 +58,10 @@ func YTDLP(ctx context.Context, raw string, write []string, args ...string) (*ex
 	if err := safehttp.CheckHost(ctx, u.Hostname()); err != nil {
 		return nil, err
 	}
+	proxy, err := Proxy.Addr()
+	if err != nil {
+		return nil, err
+	}
+	args = append([]string{"--proxy", proxy}, args...)
 	return sandbox.CommandContext(ctx, sandbox.Spec{Write: write, Network: true}, "yt-dlp", append(args, "--", raw)...), nil
 }

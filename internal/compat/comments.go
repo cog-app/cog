@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"log/slog"
 	"net/http"
@@ -61,7 +62,7 @@ func (h *CommentsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case "PROPFIND":
-		h.handlePropfind(w, u.Username, fileID)
+		h.handlePropfind(w, r, u.Username, fileID)
 	case http.MethodPost:
 		h.handleCreate(w, r, u.Username, fileID)
 	case http.MethodDelete:
@@ -80,11 +81,11 @@ func (h *CommentsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *CommentsHandler) handlePropfind(w http.ResponseWriter, username string, fileID int64) {
+func (h *CommentsHandler) handlePropfind(w http.ResponseWriter, r *http.Request, username string, fileID int64) {
 	comments, err := h.Files.ListComments(username, fileID)
 	if err != nil {
 		h.Log.Error("comments: list", "user", username, "file", fileID, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -198,9 +199,13 @@ func (h *CommentsHandler) handleCreate(w http.ResponseWriter, r *http.Request, u
 	}
 
 	comment, err := h.Files.CreateComment(username, fileID, actorID, message)
+	if errors.Is(err, files.ErrCommentTooLong) {
+		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+		return
+	}
 	if err != nil {
 		h.Log.Error("comments: create", "user", username, "file", fileID, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 

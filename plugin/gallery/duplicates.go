@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/safeimage"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -312,7 +313,7 @@ func (p *Plugin) computeFingerprints(ctx context.Context, db *sql.DB, username s
 			continue
 		}
 
-		img, _, err := image.Decode(f)
+		img, _, err := safeimage.Decode(f)
 		f.Close()
 		if err != nil {
 			p.log.Debug("fingerprint: decode failed", "id", id, "err", err)

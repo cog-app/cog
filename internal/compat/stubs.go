@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -28,6 +29,8 @@ type NCCompat struct {
 	Activities *activity.Store
 	// OpenAvatar opens a stored avatar image by the name users.avatar holds.
 	OpenAvatar func(name string) (io.ReadCloser, error)
+	// EmailVisible says whose addresses a user may see.
+	EmailVisible EmailVisible
 }
 
 // RegisterRoutes registers all NextCloud-compatible OCS and helper routes.
@@ -37,8 +40,9 @@ func (nc *NCCompat) RegisterRoutes(mux *http.ServeMux) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	// Avatar (serves real uploaded avatar or initials SVG)
-	mux.HandleFunc("GET /index.php/avatar/{userID}/{size}", nc.HandleAvatar)
+	// Avatar (serves real uploaded avatar or initials SVG). Signed in only:
+	// the answer says whether the name is an account.
+	mux.Handle("GET /index.php/avatar/{userID}/{size}", auth.RequireAuth(http.HandlerFunc(nc.HandleAvatar)))
 
 	// Notifications (no notification system yet — empty list is correct)
 	handleNotifications := func(w http.ResponseWriter, r *http.Request) {
@@ -450,6 +454,19 @@ func (nc *NCCompat) HandleProfile(w http.ResponseWriter, r *http.Request) {
 		displayName = target.Username
 	}
 
+	// The address is shown to those who would see it on the user's OCS
+	// record: the user, admins, and people in a group with them.
+	email := ""
+	if nc.EmailVisible != nil {
+		ok, err := nc.EmailVisible(auth.UserFromContext(r.Context()), target.ID)
+		if err != nil {
+			slog.Error("nc profile: email visibility", "user", target.Username, "err", err)
+		}
+		if ok {
+			email = target.Email
+		}
+	}
+
 	writeOCSReq(w, r, http.StatusOK, map[string]any{
 		"userId":      target.Username,
 		"displayName": displayName,
@@ -457,7 +474,7 @@ func (nc *NCCompat) HandleProfile(w http.ResponseWriter, r *http.Request) {
 		"website":     "",
 		"twitter":     "",
 		"phone":       "",
-		"email":       target.Email,
+		"email":       email,
 		"actions":     []any{},
 	})
 }
@@ -478,7 +495,7 @@ func serveInitialsSVG(w http.ResponseWriter, init string, seed string) {
 	fmt.Fprintf(w, `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
   <circle cx="32" cy="32" r="32" fill="%s"/>
   <text x="32" y="32" dy=".35em" text-anchor="middle" fill="white" font-family="sans-serif" font-size="24" font-weight="600">%s</text>
-</svg>`, color, init)
+</svg>`, color, html.EscapeString(init))
 }
 
 func userInitials(username, displayName string) string {

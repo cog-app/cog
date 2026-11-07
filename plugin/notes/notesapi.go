@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -33,13 +34,15 @@ func (a *NotesAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	db, err := a.plugin.DB(u.Username)
 	if err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 
 	username := u.Username
 	if err := a.plugin.ensureNotesDirFor(username); err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 
@@ -72,7 +75,7 @@ func (a *NotesAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.updateNote(w, r, db, username, id)
 	case r.Method == "DELETE" && strings.HasPrefix(path, "/notes/"):
 		id := plugin.PathID(path, "/notes/")
-		a.deleteNote(w, db, username, id)
+		a.deleteNote(w, r, db, username, id)
 	case r.Method == "GET" && path == "/settings":
 		a.getSettings(w)
 	case r.Method == "PUT" && path == "/settings":
@@ -94,7 +97,8 @@ func (a *NotesAPI) listNotes(w http.ResponseWriter, r *http.Request, db *sql.DB,
 		notes, err = ListNotes(db, 1000)
 	}
 	if err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 
@@ -147,7 +151,8 @@ func (a *NotesAPI) createNote(w http.ResponseWriter, r *http.Request, db *sql.DB
 	etag := ComputeETag(body.Content)
 
 	if err := a.plugin.writeNoteContent(username, filename, body.Content); err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 
@@ -206,7 +211,8 @@ func (a *NotesAPI) updateNote(w http.ResponseWriter, r *http.Request, db *sql.DB
 		}
 		if newFilename != filename {
 			if err := a.plugin.renameNoteFile(username, filename, newFilename); err != nil {
-				plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				httperr.Log(r, err)
+				plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 				return
 			}
 			filename = newFilename
@@ -215,7 +221,8 @@ func (a *NotesAPI) updateNote(w http.ResponseWriter, r *http.Request, db *sql.DB
 
 	if body.Content != nil {
 		if err := a.plugin.writeNoteContent(username, filename, *body.Content); err != nil {
-			plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			httperr.Log(r, err)
+			plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 			return
 		}
 	}
@@ -233,7 +240,8 @@ func (a *NotesAPI) updateNote(w http.ResponseWriter, r *http.Request, db *sql.DB
 	etag := ComputeETag(content)
 
 	if err := UpdateNoteMeta(db, id, filename, category, etag); err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 
@@ -252,14 +260,15 @@ func (a *NotesAPI) updateNote(w http.ResponseWriter, r *http.Request, db *sql.DB
 	a.writeNote(w, http.StatusOK, note, username)
 }
 
-func (a *NotesAPI) deleteNote(w http.ResponseWriter, db *sql.DB, username string, id int64) {
+func (a *NotesAPI) deleteNote(w http.ResponseWriter, r *http.Request, db *sql.DB, username string, id int64) {
 	note, err := GetNote(db, id)
 	if err != nil {
 		a.noteError(w, err)
 		return
 	}
 	if err := a.plugin.deleteNote(db, username, note); err != nil {
-		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -309,7 +318,7 @@ func (a *NotesAPI) noteError(w http.ResponseWriter, err error) {
 
 func (a *NotesAPI) serverError(w http.ResponseWriter, err error) {
 	a.plugin.log.Error("notes api", "err", err)
-	plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 }
 
 // noteToAPI is a note as the Notes API shows it. A note whose file has gone

@@ -267,9 +267,12 @@ func TestAttachmentQuota(t *testing.T) {
 	require.NoError(t, err)
 	_, err = env.Providers.Mounts.Create(alice.ID, "/", vol.ID, "alice/files", false)
 	require.NoError(t, err)
-	require.NoError(t, env.Providers.Quotas.Set(vol.ID, "USER", alice.ID, 100))
 	ev := cal + "alice/personal/ev.ics"
 	req(t, env, alice, "PUT", ev, ics("VEVENT", "ev", "Ev")).Status(201)
+	// The event's own bytes count (D22); the attachments get 100 beyond.
+	used, err := env.Providers.StorageUsage("alice")
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Quotas.Set(vol.ID, "USER", alice.ID, used+100))
 
 	sixty := strings.Repeat("x", 60)
 	addAttachment(t, env, alice, ev, "action=attachment-add", sixty).Status(201)

@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS users (
 	avatar_updated_at INTEGER NOT NULL DEFAULT 0,
 	totp_secret TEXT NOT NULL DEFAULT '',
 	mfa_method TEXT NOT NULL DEFAULT '',
-	totp_last_step INTEGER NOT NULL DEFAULT 0
+	totp_last_step INTEGER NOT NULL DEFAULT 0,
+	owner_id TEXT NOT NULL DEFAULT ''
 );
 
 -- An address a user asked to change to, kept until they open the link sent
@@ -51,7 +52,8 @@ CREATE TABLE IF NOT EXISTS login_flows (
 	client TEXT NOT NULL,
 	created_at INTEGER NOT NULL,
 	login_name TEXT NOT NULL DEFAULT '',
-	sealed BLOB
+	sealed BLOB,
+	ip TEXT NOT NULL DEFAULT ''
 );
 
 -- One-time links to a user's file for Nextcloud apps' media players. The

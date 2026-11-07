@@ -35,7 +35,13 @@ type User struct {
 	Email           string
 	AvatarUpdatedAt int64
 	MFAMethod       string // "", "totp", "email", "webauthn"
+	// OwnerID names the user an agent account belongs to; "" for a person.
+	OwnerID string
 }
+
+// IsAgent reports whether the account is an agent: one a user owns, that
+// signs in only with app passwords and reaches only what is shared with it.
+func (u *User) IsAgent() bool { return u.OwnerID != "" }
 
 // AvatarURL returns the avatar URL with a cache-busting version parameter.
 func (u *User) AvatarURL() string {
@@ -60,6 +66,19 @@ type Store struct {
 
 	reservedMu sync.RWMutex
 	reserved   []string // lower-cased, beyond reservedNames
+
+	// PasswordPolicy, when set, is asked before any password is stored:
+	// a new account's, a change, a reset, an admin's. It returns an error
+	// fit to show the person choosing it.
+	PasswordPolicy func(password string) error
+}
+
+// CheckPassword asks the policy whether password may be set.
+func (s *Store) CheckPassword(password string) error {
+	if s.PasswordPolicy == nil {
+		return nil
+	}
+	return s.PasswordPolicy(password)
 }
 
 func NewStore(db *sql.DB, c clock.Clock) *Store {
@@ -68,6 +87,9 @@ func NewStore(db *sql.DB, c clock.Clock) *Store {
 
 func (s *Store) Create(username, password string) (*User, error) {
 	if err := s.ValidateUsername(username); err != nil {
+		return nil, err
+	}
+	if err := s.CheckPassword(password); err != nil {
 		return nil, err
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -126,13 +148,13 @@ func (s *Store) Create(username, password string) (*User, error) {
 
 func (s *Store) GetByUsername(username string) (*User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method FROM users WHERE username = ?`, username,
+		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method, owner_id FROM users WHERE username = ?`, username,
 	))
 }
 
 func (s *Store) GetByID(id string) (*User, error) {
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method FROM users WHERE id = ?`, id,
+		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method, owner_id FROM users WHERE id = ?`, id,
 	))
 }
 
@@ -175,7 +197,7 @@ func (s *Store) getByColumn(column string, values []string, key func(*User) stri
 }
 
 func (s *Store) getChunk(column string, args []any, key func(*User) string, out map[string]*User) error {
-	rows, err := s.db.Query(`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method
+	rows, err := s.db.Query(`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method, owner_id
 		FROM users WHERE `+column+` IN (?`+strings.Repeat(",?", len(args)-1)+`)`, args...)
 	if err != nil {
 		return fmt.Errorf("users by %s: %w", column, err)
@@ -201,7 +223,7 @@ func (s *Store) GetByEmail(email string) (*User, error) {
 		return nil, ErrNotFound
 	}
 	return s.scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method FROM users WHERE email != '' AND lower(email) = lower(?)`, email,
+		`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method, owner_id FROM users WHERE email != '' AND lower(email) = lower(?)`, email,
 	))
 }
 
@@ -219,7 +241,7 @@ func (s *Store) GetByEmails(emails []string) (map[string]*User, error) {
 	if len(args) == 0 {
 		return out, nil
 	}
-	rows, err := s.db.Query(`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method
+	rows, err := s.db.Query(`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method, owner_id
 		FROM users WHERE email != '' AND lower(email) IN (?`+strings.Repeat(",?", len(args)-1)+`) ORDER BY username`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("users by email: %w", err)
@@ -256,11 +278,77 @@ func (s *Store) Authenticate(username, password string) (*User, error) {
 		return nil, err
 	}
 
+	if u.IsAgent() {
+		// An agent has no password; its owner issues it app passwords.
+		_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(password))
+		return nil, ErrAuthFailed
+	}
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
 		return nil, ErrAuthFailed
 	}
 
 	return u, nil
+}
+
+// ErrNotAgentOwner refuses an action on an agent by anyone but its owner.
+var ErrNotAgentOwner = errors.New("not the agent's owner")
+
+// CreateAgent makes ownerID's agent called name. It has no password: the
+// owner issues it app passwords. Its username, the identity its changes
+// carry, is the owner's joined to name by AgentSeparator, so it shows whose
+// agent it is and cannot collide with anyone else's. A name already given
+// as "owner+name" is taken as name.
+func (s *Store) CreateAgent(ownerID, name string) (*User, error) {
+	owner, err := s.GetByID(ownerID)
+	if err != nil {
+		return nil, err
+	}
+	if owner.IsAgent() {
+		return nil, ErrNotAgentOwner
+	}
+	name = strings.TrimPrefix(name, owner.Username+AgentSeparator)
+	if err := s.validateAgentUsername(owner.Username, name); err != nil {
+		return nil, err
+	}
+	username := AgentUsername(owner.Username, name)
+	id, err := generateID()
+	if err != nil {
+		return nil, err
+	}
+	now := s.clock().Unix()
+	homeMount := fmt.Sprintf("local://data/%s", username)
+	_, err = s.db.Exec(
+		`INSERT INTO users (id, username, password_hash, home_mount, created_at, is_admin, display_name, owner_id)
+		SELECT ?1, ?2, '', ?3, ?4, 0, '', ?5
+		WHERE NOT EXISTS (SELECT 1 FROM users WHERE lower(username) = lower(?2))
+		AND NOT EXISTS (SELECT 1 FROM retired_usernames WHERE username = ?2)`,
+		id, username, homeMount, now, ownerID)
+	if err != nil {
+		var se sqlite3.Error
+		if errors.As(err, &se) && se.ExtendedCode == sqlite3.ErrConstraintUnique {
+			return nil, fmt.Errorf("insert agent %q: %w", username, ErrUsernameTaken)
+		}
+		return nil, fmt.Errorf("insert agent: %w", err)
+	}
+	u, err := s.GetByID(id)
+	if errors.Is(err, ErrNotFound) {
+		return nil, fmt.Errorf("insert agent %q: %w", username, ErrUsernameTaken)
+	}
+	return u, err
+}
+
+// ListAgents returns the agents ownerID owns.
+func (s *Store) ListAgents(ownerID string) ([]User, error) {
+	var out []User
+	for u, err := range s.List() {
+		if err != nil {
+			return nil, err
+		}
+		if u.OwnerID == ownerID {
+			out = append(out, u)
+		}
+	}
+	return out, nil
 }
 
 // List returns all users ordered by username.
@@ -285,7 +373,7 @@ func (s *Store) Usernames() ([]string, error) {
 func (s *Store) List() iter.Seq2[User, error] {
 	return func(yield func(User, error) bool) {
 		rows, err := s.db.Query(
-			`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method FROM users ORDER BY username`,
+			`SELECT id, username, password_hash, home_mount, created_at, is_admin, display_name, avatar, email, avatar_updated_at, mfa_method, owner_id FROM users ORDER BY username`,
 		)
 		if err != nil {
 			yield(User{}, fmt.Errorf("list users: %w", err))
@@ -296,7 +384,7 @@ func (s *Store) List() iter.Seq2[User, error] {
 			var u User
 			var createdAt int64
 			var isAdmin int
-			if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar, &u.Email, &u.AvatarUpdatedAt, &u.MFAMethod); err != nil {
+			if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar, &u.Email, &u.AvatarUpdatedAt, &u.MFAMethod, &u.OwnerID); err != nil {
 				yield(User{}, fmt.Errorf("scan user: %w", err))
 				return
 			}
@@ -354,6 +442,9 @@ func (s *Store) Update(id string, opts UpdateOpts) error {
 
 // UpdatePassword changes a user's password.
 func (s *Store) UpdatePassword(id, newPassword string) error {
+	if err := s.CheckPassword(newPassword); err != nil {
+		return err
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
@@ -425,7 +516,7 @@ func (s *Store) scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var createdAt int64
 	var isAdmin int
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar, &u.Email, &u.AvatarUpdatedAt, &u.MFAMethod)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HomeMount, &createdAt, &isAdmin, &u.DisplayName, &u.Avatar, &u.Email, &u.AvatarUpdatedAt, &u.MFAMethod, &u.OwnerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

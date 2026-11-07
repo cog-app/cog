@@ -65,6 +65,7 @@ func configFromEnv() config.Config {
 		TrustedProxies:        os.Getenv("COG_TRUSTED_PROXIES"),
 		FederationPeers:       os.Getenv("COG_FEDERATION_PEERS"),
 		TrustedProcessPlugins: os.Getenv("COG_TRUSTED_PROCESS_PLUGINS"),
+		PluginOrigin:          os.Getenv("COG_PLUGIN_ORIGIN"),
 
 		SSHAddr:        envOr("COG_SSH_ADDR", ":8522"),
 		SSHEnabled:     envBoolDefault("COG_SSH_ENABLED", true),

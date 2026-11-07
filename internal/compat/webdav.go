@@ -8,6 +8,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -58,7 +59,7 @@ func (h *WebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Ensure the user's root directory exists.
 	if err := h.Files.EnsureRootDir(u.Username); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -95,7 +96,8 @@ func (h *WebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Path format: /remote.php/dav/files/{user_id}/path/to/file
 // The user_id in the URL may be stale (NC clients cache it), so we return
 // it separately for use in response hrefs while relying on the authenticated
-// user for authorization.
+// user for authorization. urlPath is already decoded, as r.URL.Path is: a
+// name holding a literal "%41" stays "%41".
 func (h *WebDAVHandler) extractPath(urlPath string) (urlUserID string, filePath string) {
 	const prefix = "/remote.php/dav/files/"
 	rest, ok := strings.CutPrefix(urlPath, prefix)
@@ -104,16 +106,26 @@ func (h *WebDAVHandler) extractPath(urlPath string) (urlUserID string, filePath 
 	}
 	// Split into user_id and file path
 	if uid, fp, ok := strings.Cut(rest, "/"); ok {
-		// Unescape percent-encoded characters (e.g. %20 → space).
-		// r.URL.Path is already decoded, but the Destination header in
-		// MOVE/COPY is a raw URL that may contain percent-encoding.
-		decoded, err := url.PathUnescape(fp)
-		if err == nil {
-			fp = decoded
-		}
 		return uid, path.Clean("/" + fp)
 	}
 	return rest, "/"
+}
+
+// destinationPath returns the file path a MOVE or COPY's Destination names,
+// or false when it is not under the files root. The header is a URL, so its
+// path is percent-encoded, unlike the request path.
+func (h *WebDAVHandler) destinationPath(dest string) (string, bool) {
+	if idx := strings.Index(dest, "/remote.php/"); idx >= 0 {
+		dest = dest[idx:]
+	}
+	if decoded, err := url.PathUnescape(dest); err == nil {
+		dest = decoded
+	}
+	if !strings.HasPrefix(dest, "/remote.php/dav/files/") {
+		return "", false
+	}
+	_, p := h.extractPath(dest)
+	return p, true
 }
 
 // --- PROPFIND ---
@@ -144,11 +156,16 @@ func (h *WebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, u
 	}
 
 	var entries []propfindEntry
-	href := hrefPrefix + filePath
-	if rootMeta.IsDir && !strings.HasSuffix(href, "/") {
-		href += "/"
+	// oc:permissions says what the client may do; on a read-only mount
+	// that is read and share, so the client does not offer edits that
+	// would fail.
+	readOnly, err := h.Files.ReadOnlyChecker(u.Username)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
 	}
-	entries = append(entries, metaToEntry(href, rootMeta, u.Username, displayName))
+	href := davHref(hrefPrefix, filePath, rootMeta.IsDir)
+	entries = append(entries, metaToEntry(href, rootMeta, u.Username, displayName, readOnly(filePath)))
 
 	// If depth=1 and target is a directory, list children
 	if depth == "1" && rootMeta.IsDir {
@@ -160,11 +177,8 @@ func (h *WebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, u
 		}
 		for i := range children {
 			child := &children[i]
-			childHref := hrefPrefix + child.Path
-			if child.IsDir && !strings.HasSuffix(childHref, "/") {
-				childHref += "/"
-			}
-			entries = append(entries, metaToEntry(childHref, child, u.Username, displayName))
+			childHref := davHref(hrefPrefix, child.Path, child.IsDir)
+			entries = append(entries, metaToEntry(childHref, child, u.Username, displayName, readOnly(child.Path)))
 		}
 	}
 
@@ -219,15 +233,32 @@ func (h *WebDAVHandler) handleGet(w http.ResponseWriter, r *http.Request, u *use
 	}
 	cogplugin.UntrustedContent(w, meta.MimeType)
 	w.Header().Set("ETag", `"`+meta.ETag+`"`)
+
+	// A seekable file is served with ranges and conditional requests,
+	// which media players and resuming clients depend on; anything else
+	// streams whole.
+	if rs, ok := f.(io.ReadSeeker); ok {
+		http.ServeContent(w, r, meta.Name, time.Unix(meta.MTime, 0).UTC(), rs)
+		return
+	}
 	w.Header().Set("Content-Length", strconv.FormatInt(meta.Size, 10))
 	w.Header().Set("Last-Modified", time.Unix(meta.MTime, 0).UTC().Format(http.TimeFormat))
-
 	if r.Method == http.MethodHead {
 		return
 	}
 	if _, err := io.Copy(w, f); err != nil {
 		h.Log.Error("GET copy error", "err", err)
 	}
+}
+
+// davHref is the href of p under prefix: a URL, so its path is
+// percent-encoded, and a directory's ends in a slash.
+func davHref(prefix, p string, isDir bool) string {
+	href := prefix + (&url.URL{Path: p}).EscapedPath()
+	if isDir && !strings.HasSuffix(href, "/") {
+		href += "/"
+	}
+	return href
 }
 
 // --- PUT ---
@@ -239,9 +270,14 @@ func (h *WebDAVHandler) handlePut(w http.ResponseWriter, r *http.Request, u *use
 	}
 
 	meta, err := h.Files.Upload(u.Username, filePath, r.Body)
+	if errors.Is(err, cogplugin.ErrQuotaExceeded) {
+		// What clients show as "not enough space" rather than a failure.
+		http.Error(w, err.Error(), http.StatusInsufficientStorage)
+		return
+	}
 	if err != nil {
 		h.Log.Error("PUT", "user", u.Username, "path", filePath, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
@@ -289,19 +325,23 @@ func (h *WebDAVHandler) handleMkcol(w http.ResponseWriter, _ *http.Request, u *u
 // --- MOVE ---
 
 func (h *WebDAVHandler) handleMove(w http.ResponseWriter, r *http.Request, u *user.User, filePath string) {
-	dest := r.Header.Get("Destination")
-	if dest == "" {
-		http.Error(w, "missing Destination header", http.StatusBadRequest)
+	if r.Header.Get("Destination") == "" {
+		http.Error(w, "Destination header required", http.StatusBadRequest)
 		return
 	}
-
-	// Destination is a full URL; extract the path portion
-	destPath := dest
-	if idx := strings.Index(dest, "/remote.php/"); idx >= 0 {
-		destPath = dest[idx:]
+	newPath, ok := h.destinationPath(r.Header.Get("Destination"))
+	if !ok {
+		http.Error(w, "Destination must be under /remote.php/dav/files/", http.StatusBadGateway)
+		return
 	}
-	// Strip the /remote.php/dav/files/{user_id}/ prefix
-	_, newPath := h.extractPath(destPath)
+	if filePath == "/" || newPath == "/" {
+		http.Error(w, "the root cannot be moved or replaced", http.StatusForbidden)
+		return
+	}
+	if newPath == filePath || strings.HasPrefix(newPath, filePath+"/") {
+		http.Error(w, "a folder cannot be moved into itself", http.StatusForbidden)
+		return
+	}
 
 	// RFC 4918 §10.6: without Overwrite: F a MOVE replaces what is at the
 	// destination; with it, it must not.
@@ -331,17 +371,25 @@ func (h *WebDAVHandler) handleMove(w http.ResponseWriter, r *http.Request, u *us
 // --- COPY ---
 
 func (h *WebDAVHandler) handleCopy(w http.ResponseWriter, r *http.Request, u *user.User, srcPath string) {
-	dest := r.Header.Get("Destination")
-	if dest == "" {
-		http.Error(w, "missing Destination header", http.StatusBadRequest)
+	if r.Header.Get("Destination") == "" {
+		http.Error(w, "Destination header required", http.StatusBadRequest)
 		return
 	}
-
-	destPath := dest
-	if idx := strings.Index(dest, "/remote.php/"); idx >= 0 {
-		destPath = dest[idx:]
+	newPath, ok := h.destinationPath(r.Header.Get("Destination"))
+	if !ok {
+		http.Error(w, "Destination must be under /remote.php/dav/files/", http.StatusBadGateway)
+		return
 	}
-	_, newPath := h.extractPath(destPath)
+	if newPath == "/" {
+		http.Error(w, "the root cannot be replaced", http.StatusForbidden)
+		return
+	}
+	// A copy of a folder into itself would copy its own output until the
+	// disk filled.
+	if newPath == srcPath || strings.HasPrefix(newPath, srcPath+"/") {
+		http.Error(w, "a folder cannot be copied into itself", http.StatusForbidden)
+		return
+	}
 
 	overwrite := r.Header.Get("Overwrite")
 	if overwrite == "" {
@@ -379,7 +427,7 @@ func (h *WebDAVHandler) handleCopy(w http.ResponseWriter, r *http.Request, u *us
 	}
 	if err != nil {
 		h.Log.Error("COPY", "user", u.Username, "from", srcPath, "to", newPath, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -458,7 +506,8 @@ func (h *WebDAVHandler) HandleDirectDownload(baseURL string) http.HandlerFunc {
 
 		token, err := h.createDirectToken(u.ID, fileID)
 		if err != nil {
-			writeOCSError(w, http.StatusInternalServerError, 500, "create token: "+err.Error())
+			httperr.Log(r, fmt.Errorf("create token: %w", err))
+			writeOCSError(w, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
 		url := baseURL + "/remote.php/dav/direct/" + token
@@ -623,7 +672,7 @@ func (h *WebDAVHandler) handleProppatch(w http.ResponseWriter, r *http.Request, 
 			return
 		} else if err != nil {
 			h.Log.Error("PROPPATCH favorite", "user", u.Username, "path", filePath, "err", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 	}
@@ -669,7 +718,7 @@ func (h *WebDAVHandler) handleReport(w http.ResponseWriter, r *http.Request, u *
 	favorites, err := h.Files.Favorites(u.Username)
 	if err != nil {
 		h.Log.Error("REPORT favorites", "user", u.Username, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -679,14 +728,16 @@ func (h *WebDAVHandler) handleReport(w http.ResponseWriter, r *http.Request, u *
 		displayName = u.Username
 	}
 
+	readOnly, err := h.Files.ReadOnlyChecker(u.Username)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
 	var entries []propfindEntry
 	for i := range favorites {
 		f := &favorites[i]
-		href := hrefPrefix + f.Path
-		if f.IsDir && !strings.HasSuffix(href, "/") {
-			href += "/"
-		}
-		entries = append(entries, metaToEntry(href, f, u.Username, displayName))
+		href := davHref(hrefPrefix, f.Path, f.IsDir)
+		entries = append(entries, metaToEntry(href, f, u.Username, displayName, readOnly(f.Path)))
 	}
 
 	writeMultiStatus(h.Log, w, entries)
@@ -742,7 +793,7 @@ func (h *WebDAVHandler) handleUnlock(w http.ResponseWriter, _ *http.Request, _ *
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func metaToEntry(href string, meta *files.FileMeta, ownerID, ownerDisplayName string) propfindEntry {
+func metaToEntry(href string, meta *files.FileMeta, ownerID, ownerDisplayName string, readOnly bool) propfindEntry {
 	var rt resourceType
 	if meta.IsDir {
 		rt.Collection = &struct{}{}
@@ -753,9 +804,9 @@ func metaToEntry(href string, meta *files.FileMeta, ownerID, ownerDisplayName st
 		name = ""
 	}
 
-	permissions := "RGDNVCK" // full permissions for owned files
-	if meta.IsDir {
-		permissions = "RGDNVCK"
+	permissions := "RGDNVCK" // read, share, delete, rename, move, create, mkdir
+	if readOnly {
+		permissions = "RG"
 	}
 
 	favInt := 0

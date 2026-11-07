@@ -97,6 +97,15 @@ func (p *ParsedURI) EnsureDir(subpath string) error {
 type Store struct {
 	db    *sql.DB
 	clock clock.Clock
+	// Changed runs after a volume is changed or removed, for whoever keeps
+	// something built from the volumes.
+	Changed []func()
+}
+
+func (s *Store) changed() {
+	for _, f := range s.Changed {
+		f()
+	}
 }
 
 func NewStore(db *sql.DB, c clock.Clock) *Store {
@@ -261,6 +270,7 @@ func (s *Store) Update(id, name, description, uri, config string) error {
 	if n == 0 {
 		return ErrNotFound
 	}
+	s.changed()
 	return nil
 }
 
@@ -285,6 +295,7 @@ func (s *Store) Delete(id string) error {
 	if n == 0 {
 		return ErrNotFound
 	}
+	s.changed()
 	return nil
 }
 

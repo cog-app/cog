@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"git.duckfam.us/jj-software/cog/ui"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/federation"
 	"git.duckfam.us/jj-software/cog/internal/group"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
+	pwpolicy "git.duckfam.us/jj-software/cog/internal/password"
 	"git.duckfam.us/jj-software/cog/internal/sandbox"
 	"git.duckfam.us/jj-software/cog/internal/seq"
 	"git.duckfam.us/jj-software/cog/internal/services"
@@ -50,7 +52,19 @@ func (h *adminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
-	ui.Render(w, r, adminUsersPage(pd, h.p.Users.List(), retired, flashMsg, flashKind))
+	// An agent is listed with its owner, so an admin can tell whose it is.
+	owners := map[string]string{}
+	for u, err := range h.p.Users.List() {
+		if err != nil {
+			h.p.Log.Error("list users", "err", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		if !u.IsAgent() {
+			owners[u.ID] = u.Username
+		}
+	}
+	ui.Render(w, r, adminUsersPage(pd, h.p.Users.List(), retired, flashMsg, flashKind, owners))
 }
 
 // ReleaseUsername lets a new account take the name of a deleted one.
@@ -95,6 +109,11 @@ func (h *adminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	u, err := h.p.Users.Create(username, password)
+	if errors.Is(err, pwpolicy.ErrWeak) || errors.Is(err, pwpolicy.ErrUnchecked) {
+		setFlashForm(w, "error", err.Error(), keep)
+		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
+		return
+	}
 	if errors.Is(err, user.ErrUsernameRetired) {
 		setFlashForm(w, "error", fmt.Sprintf("“%s” belonged to a deleted account. Release it under Users first if it should be reused.", username), keep)
 		http.Redirect(w, r, "/admin/users/new", http.StatusSeeOther)
@@ -268,6 +287,11 @@ func (h *adminHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.p.Users.UpdatePassword(id, newPass); err != nil {
+		if errors.Is(err, pwpolicy.ErrWeak) || errors.Is(err, pwpolicy.ErrUnchecked) {
+			setFlash(w, "error", err.Error())
+			http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
+			return
+		}
 		setFlash(w, "error", "Failed to reset password.", err)
 		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
 		return
@@ -286,7 +310,7 @@ func (h *adminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := h.p.DeleteUser(id); err != nil {
 		h.p.Log.Error("delete user failed", "user", id, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	// Return empty body — HTMX will remove the row.
@@ -388,7 +412,7 @@ func (h *adminHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	memberID := r.PathValue("member_id")
 	if err := h.p.Groups.RemoveMember(groupID, memberID); err != nil {
 		h.p.Log.Error("remove group member", "group", groupID, "member", memberID, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -534,6 +558,12 @@ type envConfigData struct {
 	DataDir string
 }
 
+// passwordPolicyData is the password policy card of the admin settings page.
+type passwordPolicyData struct {
+	MinLength   int
+	BreachCheck bool
+}
+
 // federationData is the federation card of the admin settings page.
 type federationData struct {
 	Enabled bool
@@ -621,8 +651,11 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 
 	var mfaRequired string
 	fed := federationData{EnvPeers: h.p.Config.FederationPeers}
+	pw := passwordPolicyData{MinLength: pwpolicy.DefaultMinLength, BreachCheck: true}
 	if h.p.Settings != nil {
 		var err error
+		pol := pwpolicy.FromSettings(h.p.Settings)
+		pw = passwordPolicyData{MinLength: pol.MinLength, BreachCheck: pol.BreachCheck}
 		if mfaRequired, err = h.p.Settings.Get(settings.KeyMFARequired); err != nil {
 			h.p.Log.Error("admin settings: read mfa setting", "err", err)
 			http.Error(w, "Internal error", http.StatusInternalServerError)
@@ -656,7 +689,7 @@ func (h *adminHandler) ShowSettings(w http.ResponseWriter, r *http.Request) {
 	if flash != nil {
 		flashMsg, flashKind = flash.Message, flash.Kind
 	}
-	ui.Render(w, r, adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), strconv.Itoa(tombstoneDays), env, status, flashMsg, flashKind, mfaRequired, fed))
+	ui.Render(w, r, adminSettingsPage(pd, pubReg, strconv.Itoa(expiryHours), strconv.Itoa(tombstoneDays), env, status, flashMsg, flashKind, mfaRequired, fed, pw))
 }
 
 func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -675,13 +708,19 @@ func (h *adminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		if mfaRequired != "all" && mfaRequired != "admins" {
 			mfaRequired = ""
 		}
+		minLength, err := strconv.Atoi(r.FormValue("password_min_length"))
+		if err != nil || minLength < 1 || minLength > pwpolicy.MaxLength {
+			minLength = pwpolicy.DefaultMinLength
+		}
 		if err := h.p.Settings.SetMany(map[string]string{
-			settings.KeyPublicRegistration: settings.FormatBool(pubReg),
-			settings.KeyInviteExpiryHours:  strconv.Itoa(expiryHours),
-			settings.KeyDAVTombstoneDays:   strconv.Itoa(days),
-			settings.KeyMFARequired:        mfaRequired,
-			settings.KeyFederationEnabled:  settings.FormatBool(r.FormValue("federation_enabled") == "1"),
-			settings.KeyFederationPeers:    strings.Join(federation.ParsePeers(r.FormValue("federation_peers")), ","),
+			settings.KeyPasswordMinLength:   strconv.Itoa(minLength),
+			settings.KeyPasswordBreachCheck: settings.FormatBool(r.FormValue("password_breach_check") == "1"),
+			settings.KeyPublicRegistration:  settings.FormatBool(pubReg),
+			settings.KeyInviteExpiryHours:   strconv.Itoa(expiryHours),
+			settings.KeyDAVTombstoneDays:    strconv.Itoa(days),
+			settings.KeyMFARequired:         mfaRequired,
+			settings.KeyFederationEnabled:   settings.FormatBool(r.FormValue("federation_enabled") == "1"),
+			settings.KeyFederationPeers:     strings.Join(federation.ParsePeers(r.FormValue("federation_peers")), ","),
 		}); err != nil {
 			setFlash(w, "error", "Settings could not be saved.", err)
 			http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"io/fs"
 	"net/http"
@@ -45,17 +46,17 @@ type recipeListItem struct {
 func (a *CookbookAPI) ListRecipes(w http.ResponseWriter, r *http.Request) {
 	db, err := a.userDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	recipes, err := ListRecipes(db, 1000)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	keywords, err := KeywordsByRecipe(db)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	items := make([]recipeListItem, 0, len(recipes))
@@ -75,7 +76,7 @@ func (a *CookbookAPI) ListRecipes(w http.ResponseWriter, r *http.Request) {
 func (a *CookbookAPI) GetRecipe(w http.ResponseWriter, r *http.Request) {
 	db, err := a.userDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -89,7 +90,7 @@ func (a *CookbookAPI) GetRecipe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -103,17 +104,17 @@ func (a *CookbookAPI) GetRecipe(w http.ResponseWriter, r *http.Request) {
 	// Otherwise, build JSON-LD from stored data
 	ingredients, err := GetIngredients(db, id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	instructions, err := GetInstructions(db, id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	keywords, err := GetKeywords(db, id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -125,7 +126,7 @@ func (a *CookbookAPI) GetRecipe(w http.ResponseWriter, r *http.Request) {
 func (a *CookbookAPI) GetRecipeImage(w http.ResponseWriter, r *http.Request) {
 	db, err := a.userDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -139,12 +140,12 @@ func (a *CookbookAPI) GetRecipeImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	store, err := a.plugin.ctx.UserStorage(a.username(r))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	f, err := store.Open(imageName(recipe.ImagePath))
@@ -153,13 +154,13 @@ func (a *CookbookAPI) GetRecipeImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	http.ServeContent(w, r, info.Name(), info.ModTime(), f)
@@ -169,12 +170,12 @@ func (a *CookbookAPI) GetRecipeImage(w http.ResponseWriter, r *http.Request) {
 func (a *CookbookAPI) ListCategories(w http.ResponseWriter, r *http.Request) {
 	db, err := a.userDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	cats, err := ListCategories(db)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if cats == nil {
@@ -187,12 +188,12 @@ func (a *CookbookAPI) ListCategories(w http.ResponseWriter, r *http.Request) {
 func (a *CookbookAPI) ListKeywords(w http.ResponseWriter, r *http.Request) {
 	db, err := a.userDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	kws, err := ListKeywords(db)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if kws == nil {
@@ -205,7 +206,7 @@ func (a *CookbookAPI) ListKeywords(w http.ResponseWriter, r *http.Request) {
 func (a *CookbookAPI) CreateRecipe(w http.ResponseWriter, r *http.Request) {
 	db, err := a.userDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -223,7 +224,7 @@ func (a *CookbookAPI) CreateRecipe(w http.ResponseWriter, r *http.Request) {
 
 	id, err := SaveImportedRecipe(db, parsed)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -234,7 +235,7 @@ func (a *CookbookAPI) CreateRecipe(w http.ResponseWriter, r *http.Request) {
 func (a *CookbookAPI) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 	db, err := a.userDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -249,7 +250,7 @@ func (a *CookbookAPI) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -283,7 +284,7 @@ func (a *CookbookAPI) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 		return saveParsedLists(tx, id, parsed)
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -294,7 +295,7 @@ func (a *CookbookAPI) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 func (a *CookbookAPI) DeleteRecipe(w http.ResponseWriter, r *http.Request) {
 	db, err := a.userDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -303,7 +304,7 @@ func (a *CookbookAPI) DeleteRecipe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := DeleteRecipe(db, id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -313,7 +314,7 @@ func (a *CookbookAPI) DeleteRecipe(w http.ResponseWriter, r *http.Request) {
 func (a *CookbookAPI) ImportFromURL(w http.ResponseWriter, r *http.Request) {
 	db, err := a.userDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 

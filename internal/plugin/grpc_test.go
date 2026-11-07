@@ -3,6 +3,7 @@ package plugin_test
 import (
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -187,9 +188,60 @@ func TestGRPCBridge_FormBodySurvivesCSRFCheck(t *testing.T) {
 	cookie := cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID)
 
 	form := url.Values{
-		"csrf_token": {auth.CSRFToken(sess.ID, env.Providers.CSRFSecret)},
+		"csrf_token": {auth.CSRFTokenFor(sess.ID, "grpcform", env.Providers.CSRFSecret)},
 		"field":      {"kept"},
 	}
 	body := env.PostForm(t, "/apps/grpcform/echo", form, cookie).Status(200).ReadBody()
 	assert.Equal(t, `field="kept"`, body)
+
+	// A process plugin's forms carry a token bound to the plugin. The
+	// session-wide token, which would let the plugin's pages post to the
+	// host, is not accepted in its place.
+	form.Set("csrf_token", auth.CSRFToken(sess.ID, env.Providers.CSRFSecret))
+	env.PostForm(t, "/apps/grpcform/echo", form, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+}
+
+// D14: with a plugin origin configured, a process plugin's page is framed
+// from that origin. The host renders only the frame, with a handoff token;
+// the origin signs the user in by that token alone, never by the host's
+// session, and serves nothing but the plugin.
+func TestGRPCBridge_PagesRenderOnPluginOrigin(t *testing.T) {
+	t.Setenv("COG_PLUGIN_ORIGIN", "http://plugins.localhost")
+	binPath := testplugins.Build(t, "grpcform")
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	require.NoError(t, env.Providers.Plugins.LoadExternal(binPath))
+
+	sess, err := env.Providers.Sessions.Create(alice.ID)
+	require.NoError(t, err)
+	cookie := cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID)
+
+	// The host page holds a frame, not the plugin's HTML.
+	body := env.Get(t, "/apps/grpcform/hello", cookie).Status(200).ReadBody()
+	assert.Contains(t, body, `<iframe class="plugin-frame" src="http://plugins.localhost/apps/grpcform/hello?cog_frame=`)
+	assert.True(t, !strings.Contains(body, `id="hello"`), "the plugin's HTML was rendered in the host")
+	m := regexp.MustCompile(`cog_frame=([^"&]+)`).FindStringSubmatch(body)
+	require.True(t, m != nil)
+	token := m[1]
+
+	onOrigin := func(path string, opts ...cogtest.HTTPOpt) *cogtest.Response {
+		req, err := http.NewRequest(http.MethodGet, env.Providers.Config.BaseURL+path, nil)
+		require.NoError(t, err)
+		req.Host = "plugins.localhost"
+		return env.Do(t, req, opts...)
+	}
+	// The host's session means nothing on the plugin origin.
+	onOrigin("/apps/grpcform/hello", cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+	// The handoff token signs the user in there, as a document of its own.
+	resp := onOrigin("/apps/grpcform/hello?cog_frame=" + token)
+	resp.Status(200).Contains(`id="hello">hello alice`).Contains(`data-cog-host="` + env.Providers.Config.BaseURL)
+	assert.True(t, !strings.Contains(resp.ReadBody(), "<nav"), "the shell was rendered inside the frame")
+	assert.Equal(t, "frame-ancestors "+env.Providers.Config.BaseURL, resp.Header.Get("Content-Security-Policy"))
+	set := resp.Header.Get("Set-Cookie")
+	assert.Contains(t, set, auth.FrameCookieName+"=")
+	assert.Contains(t, set, "SameSite=None")
+	assert.Contains(t, set, "Secure")
+	// The origin serves nothing but the plugin.
+	onOrigin("/settings/security?cog_frame=" + token).Status(http.StatusNotFound).Contains("data-cog-path=\"/settings/security")
+	onOrigin("/apps/other/x?cog_frame=" + token).Status(http.StatusNotFound)
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"net/http"
 	"net/url"
@@ -84,7 +85,7 @@ func (h *Pages) ServeVolumes(w http.ResponseWriter, r *http.Request) {
 
 	volumes, err := va.ListAccessible(u.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -97,13 +98,13 @@ func (h *Pages) ServeFavorites(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 
 	if err := h.plugin.EnsureRootDir(u.Username); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
 	files, err := h.plugin.Favorites(u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -123,7 +124,7 @@ func (h *Pages) ServeGet(w http.ResponseWriter, r *http.Request) {
 	fp := filePath(r)
 
 	if err := h.plugin.EnsureRootDir(u.Username); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
@@ -160,7 +161,7 @@ func (h *Pages) ServeGet(w http.ResponseWriter, r *http.Request) {
 	if meta.IsDir {
 		items, err := h.plugin.List(u.Username, fp)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		iconMap := h.buildIconMap(u.Username, items)
@@ -207,7 +208,7 @@ func (h *Pages) ServeGet(w http.ResponseWriter, r *http.Request) {
 	if kind == "text" {
 		content, err := h.readText(u.Username, fp)
 		if err != nil {
-			http.Error(w, "read file: "+err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, fmt.Errorf("read file: %w", err))
 			return
 		}
 		textContent = content
@@ -217,7 +218,7 @@ func (h *Pages) ServeGet(w http.ResponseWriter, r *http.Request) {
 	if kind == "image" {
 		siblings, err := h.plugin.List(u.Username, parentDir(fp))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		nav = imageNeighbours(siblings, fp)
@@ -295,19 +296,34 @@ func (h *Pages) serveRaw(w http.ResponseWriter, r *http.Request, username, fp st
 }
 
 // serveContent serves an io.ReadCloser via http.ServeContent. If the reader
-// implements io.ReadSeeker (e.g. *os.File), it is used directly; otherwise
-// the content is buffered into a bytes.ReadSeeker.
+// implements io.ReadSeeker (e.g. *os.File), it is used directly, with
+// ranges and conditional requests; otherwise the bytes are streamed as they
+// come, since a file on a remote volume may be larger than memory.
 func serveContent(w http.ResponseWriter, r *http.Request, name string, modtime time.Time, rc io.ReadCloser) {
 	if rs, ok := rc.(io.ReadSeeker); ok {
 		http.ServeContent(w, r, name, modtime, rs)
 		return
 	}
-	data, err := io.ReadAll(rc)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	streamContent(w, r, modtime, -1, rc)
+}
+
+// streamContent sends rc as the whole response, with its length when known
+// (size >= 0). It is for a reader that cannot seek, which ServeContent
+// needs; the status is sent before the first byte, so a read failure can
+// only cut the body short, which the length lets the client notice.
+func streamContent(w http.ResponseWriter, r *http.Request, modtime time.Time, size int64, rc io.Reader) {
+	if !modtime.IsZero() {
+		w.Header().Set("Last-Modified", modtime.UTC().Format(http.TimeFormat))
+	}
+	if size >= 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	}
+	if r.Method == http.MethodHead {
 		return
 	}
-	http.ServeContent(w, r, name, modtime, bytes.NewReader(data))
+	if _, err := io.Copy(w, rc); err != nil {
+		panic(http.ErrAbortHandler)
+	}
 }
 
 func (h *Pages) servePreview(w http.ResponseWriter, r *http.Request, username, fp string, meta *FileMeta) {
@@ -325,7 +341,7 @@ func (h *Pages) servePreview(w http.ResponseWriter, r *http.Request, username, f
 
 	f, err := h.plugin.Preview(username, fp, size)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	defer f.Close()
@@ -341,7 +357,7 @@ func (h *Pages) servePreview(w http.ResponseWriter, r *http.Request, username, f
 func (h *Pages) serveDocumentPreview(w http.ResponseWriter, r *http.Request, username, fp string, meta *FileMeta) {
 	f, err := h.plugin.PreviewPDF(username, fp)
 	if err != nil {
-		http.Error(w, "preview unavailable: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("preview unavailable: %w", err))
 		return
 	}
 	defer f.Close()
@@ -419,7 +435,7 @@ func (h *Pages) openArchiveSeeker(username, archivePath string, meta *FileMeta) 
 func (h *Pages) serveArchiveListing(w http.ResponseWriter, r *http.Request, username string, meta *FileMeta, archivePath, innerPath string) {
 	ar, closer, err := h.openArchiveSeeker(username, archivePath, meta)
 	if err != nil {
-		http.Error(w, "open archive: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("open archive: %w", err))
 		return
 	}
 	defer closer.Close()
@@ -427,7 +443,7 @@ func (h *Pages) serveArchiveListing(w http.ResponseWriter, r *http.Request, user
 	format := ArchiveFormat(meta.Name)
 	entries, err := ListArchive(ar, meta.Size, format, innerPath)
 	if err != nil {
-		http.Error(w, "list archive: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("list archive: %w", err))
 		return
 	}
 
@@ -448,7 +464,7 @@ func (h *Pages) serveArchiveContent(w http.ResponseWriter, r *http.Request, user
 	// Determine if innerPath is a directory or file within the archive.
 	ar, closer, err := h.openArchiveSeeker(username, archivePath, meta)
 	if err != nil {
-		http.Error(w, "open archive: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("open archive: %w", err))
 		return
 	}
 	defer closer.Close()
@@ -458,18 +474,18 @@ func (h *Pages) serveArchiveContent(w http.ResponseWriter, r *http.Request, user
 	// Check if it's a directory (has children).
 	isDir, err := isArchiveEntryDir(ar, meta.Size, format, innerPath)
 	if err != nil {
-		http.Error(w, "list archive: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("list archive: %w", err))
 		return
 	}
 	if isDir {
 		// Reset reader position for listing.
 		if _, err := ar.Seek(0, io.SeekStart); err != nil {
-			http.Error(w, "seek: "+err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, fmt.Errorf("seek: %w", err))
 			return
 		}
 		entries, err := ListArchive(ar, meta.Size, format, innerPath)
 		if err != nil {
-			http.Error(w, "list archive: "+err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, fmt.Errorf("list archive: %w", err))
 			return
 		}
 		pd := h.pageData(w, r, path.Base(innerPath))
@@ -479,7 +495,7 @@ func (h *Pages) serveArchiveContent(w http.ResponseWriter, r *http.Request, user
 
 	// It's a file — show view page.
 	if _, err := ar.Seek(0, io.SeekStart); err != nil {
-		http.Error(w, "seek: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("seek: %w", err))
 		return
 	}
 	rc, entry, err := ReadArchiveFile(ar, meta.Size, format, innerPath)
@@ -498,7 +514,7 @@ func (h *Pages) serveArchiveContent(w http.ResponseWriter, r *http.Request, user
 		b, err := io.ReadAll(io.LimitReader(rc, 1<<20))
 		rc.Close()
 		if err != nil {
-			http.Error(w, "read archive entry: "+err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, fmt.Errorf("read archive entry: %w", err))
 			return
 		}
 		textContent = string(b)
@@ -514,7 +530,7 @@ func (h *Pages) serveArchiveContent(w http.ResponseWriter, r *http.Request, user
 func (h *Pages) serveArchiveFileStream(w http.ResponseWriter, r *http.Request, username string, meta *FileMeta, archivePath, innerPath string, download bool) {
 	ar, closer, err := h.openArchiveSeeker(username, archivePath, meta)
 	if err != nil {
-		http.Error(w, "open archive: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("open archive: %w", err))
 		return
 	}
 	defer closer.Close()
@@ -540,13 +556,10 @@ func (h *Pages) serveArchiveFileStream(w http.ResponseWriter, r *http.Request, u
 	if download {
 		w.Header().Set("Content-Disposition", httphdr.Attachment(path.Base(entry.Name)))
 	}
-	// Buffer for range request support.
-	data, err := io.ReadAll(rc)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	http.ServeContent(w, r, entry.Name, time.Unix(entry.MTime, 0), bytes.NewReader(data))
+	// An entry decompresses as it is read: it is never held whole, so an
+	// archive that expands to more than memory cannot take the server
+	// down. Ranges are not offered; a compressed entry has no offsets.
+	streamContent(w, r, time.Unix(entry.MTime, 0), entry.Size, rc)
 }
 
 // handleExtract extracts an archive to the filesystem.
@@ -804,7 +817,7 @@ func (h *Pages) serveFolderPicker(w http.ResponseWriter, r *http.Request, userna
 	folders, err := h.plugin.ListDirs(username, fp)
 	if err != nil {
 		h.plugin.log.Error("folder picker", "user", username, "dir", fp, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	sel := map[string]bool{}
@@ -867,7 +880,7 @@ func (h *Pages) handleStar(w http.ResponseWriter, r *http.Request, username, fp 
 		return
 	}
 	if err := h.plugin.SetFavorite(username, fp, !meta.Favorite); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := favoriteButton(fp, !meta.Favorite).Render(r.Context(), w); err != nil {
@@ -917,7 +930,7 @@ func (h *Pages) ServeDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.plugin.Delete(u.Username, fp); err != nil {
-		http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, fmt.Errorf("delete failed: %w", err))
 		return
 	}
 	w.WriteHeader(http.StatusOK)

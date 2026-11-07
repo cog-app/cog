@@ -389,3 +389,42 @@ func TestGetByNameAndIDs(t *testing.T) {
 	require.Equal(t, "devs", byID[devs.ID].Name)
 	require.Equal(t, "ops", byID[ops1.ID].Name)
 }
+
+// A membership names a user or group that exists: a row for an ID nobody
+// holds would be a grant to whoever gets it next.
+func TestAddMemberUnknownRefused(t *testing.T) {
+	env := cogtest.New(t)
+	owner := env.CreateUser(t, "owner", "pass")
+	grp, err := env.Providers.Groups.Create("devs", nil, &owner.ID)
+	require.NoError(t, err)
+
+	err = env.Providers.Groups.AddMember(grp.ID, "no-such-user", group.User)
+	require.True(t, errors.Is(err, group.ErrMemberNotFound), "got %v", err)
+	err = env.Providers.Groups.AddMember(grp.ID, "no-such-group", group.GroupMember)
+	require.True(t, errors.Is(err, group.ErrMemberNotFound), "got %v", err)
+}
+
+// Nesting a group extends the closure incrementally: the parent's ancestors
+// reach the child's users without the table being rebuilt.
+func TestNestedMembershipReachesAncestors(t *testing.T) {
+	env := cogtest.New(t)
+	owner := env.CreateUser(t, "owner", "pass")
+	u := env.CreateUser(t, "user1", "pass")
+	top, err := env.Providers.Groups.Create("top", nil, &owner.ID)
+	require.NoError(t, err)
+	mid, err := env.Providers.Groups.Create("mid", nil, &owner.ID)
+	require.NoError(t, err)
+	leaf, err := env.Providers.Groups.Create("leaf", nil, &owner.ID)
+	require.NoError(t, err)
+	require.NoError(t, env.Providers.Groups.AddMember(top.ID, mid.ID, group.GroupMember))
+	require.NoError(t, env.Providers.Groups.AddMember(leaf.ID, u.ID, group.User))
+	require.NoError(t, env.Providers.Groups.AddMember(mid.ID, leaf.ID, group.GroupMember))
+
+	ids, err := env.Providers.Groups.EffectiveGroupIDs(u.ID)
+	require.NoError(t, err)
+	got := map[string]bool{}
+	for _, id := range ids {
+		got[id] = true
+	}
+	require.True(t, got[top.ID] && got[mid.ID] && got[leaf.ID], "got %v", ids)
+}

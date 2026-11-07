@@ -3,12 +3,14 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"net/http"
 	"net/url"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/email"
+	pwpolicy "git.duckfam.us/jj-software/cog/internal/password"
 	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -327,7 +329,7 @@ func (h *loginHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	u, err := h.p.Users.Create(username, password)
-	if errors.Is(err, user.ErrInvalidUsername) {
+	if errors.Is(err, user.ErrInvalidUsername) || errors.Is(err, pwpolicy.ErrWeak) || errors.Is(err, pwpolicy.ErrUnchecked) {
 		// Says nothing about other accounts, so it is safe to show.
 		setFlashForm(w, "error", err.Error(), keep)
 		http.Redirect(w, r, loginRedirect("/register", next), http.StatusSeeOther)
@@ -470,6 +472,13 @@ func (h *loginHandler) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		http.Redirect(w, r, back, http.StatusSeeOther)
 		return
 	}
+	// The policy is asked before the link is spent, so a refused password
+	// costs the user another try, not another link.
+	if err := h.p.Users.CheckPassword(password); err != nil {
+		setFlash(w, "error", err.Error())
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
 
 	// Using the token and checking it are one step, so the same link cannot
 	// set two passwords.
@@ -543,7 +552,7 @@ func (h *loginHandler) BeginWebAuthnLogin(w http.ResponseWriter, r *http.Request
 	data, err := h.p.WebAuthn.BeginLogin(u.ID, u.Username, displayName)
 	if err != nil {
 		h.p.Log.Error("begin webauthn login", "user", u.ID, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 

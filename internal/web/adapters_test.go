@@ -8,13 +8,13 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
-// The adapter types live in package `web` and aren't exported. We exercise
-// them indirectly via the runtime wiring: every cogtest.New invocation builds
-// the adapter chain through buildRegistryServices, and any plugin that uses
+// The adapter types live in package pluginsvc and aren't exported. We
+// exercise them through the runtime wiring: every cogtest.New invocation
+// builds the adapter chain through pluginsvc.Build, and any plugin that uses
 // ctx.ShareStore/UserLookup/GroupStore/VolumeAccess hits the adapter methods.
 
 func TestAdapter_ShareStore_LiveWiring(t *testing.T) {
-	// The shareStoreAdapter is wrapped by SetServices during web.New. We
+	// The shareStoreAdapter is wrapped by SetServices in services.New. We
 	// don't have a direct handle on it, but we can confirm it's been wired
 	// by hitting an endpoint that ultimately calls into a plugin context.
 	// Since the files plugin uses *share.Store directly (not via adapter),

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/safeimage"
 	"image"
 	_ "image/gif"
 	"image/jpeg"
@@ -198,7 +199,7 @@ func (p *Plugin) Preview(username, filePath string, size int) (plugin.StoredFile
 	}
 	defer srcFile.Close()
 
-	src, _, err := image.Decode(srcFile)
+	src, _, err := safeimage.Decode(srcFile)
 	if err != nil {
 		return nil, fmt.Errorf("decode image: %w", err)
 	}

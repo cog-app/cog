@@ -28,6 +28,9 @@ var ErrPasswordIncorrect = errors.New("incorrect password")
 // neither belong to nor own.
 var ErrSubjectNotAllowed = errors.New("you may not share with that audience")
 
+// ErrAgentCannotShare refuses a share made by an agent account.
+var ErrAgentCannotShare = errors.New("an agent cannot share")
+
 // Record is a canonical global share record.
 type Record struct {
 	ID           string
@@ -116,9 +119,22 @@ func (s *Store) Create(ownerUserID, resourceType, resourceID, subjectType, subje
 // audience without their consent, so a user may not put something before
 // everyone on the server, or before a group they are not part of.
 func (s *Store) mayShareWith(ownerUserID, subjectType, subjectID string) error {
+	// An agent owns nothing to share: what it reaches is shared with it.
+	var agent bool
+	if err := s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM users WHERE id = ? AND owner_id != '')`, ownerUserID).Scan(&agent); err != nil {
+		return fmt.Errorf("check sharer: %w", err)
+	}
+	if agent {
+		return ErrAgentCannotShare
+	}
 	var ok bool
 	var err error
 	switch subjectType {
+	case "USER":
+		// An agent is shared with by its owner alone. A user who received
+		// a share and may reshare it reaches their own agents the same way.
+		err = s.db.QueryRow(`SELECT NOT EXISTS (SELECT 1 FROM users WHERE id = ? AND owner_id != '' AND owner_id != ?)`,
+			subjectID, ownerUserID).Scan(&ok)
 	case SubjectInstance:
 		err = s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM users WHERE id = ? AND is_admin != 0)`, ownerUserID).Scan(&ok)
 	case "GROUP":
@@ -140,6 +156,13 @@ func (s *Store) mayShareWith(ownerUserID, subjectType, subjectID string) error {
 
 // CreatePublicLink creates a share with a public token.
 func (s *Store) CreatePublicLink(ownerUserID, resourceType, resourceID string, permissions uint32, expiration *int64) (*Record, error) {
+	return s.CreatePublicLinkWithPassword(ownerUserID, resourceType, resourceID, permissions, expiration, "")
+}
+
+// CreatePublicLinkWithPassword creates a public link, protected by password
+// when one is given. The link and its password are one insert, so there is
+// no moment at which the link is open without it.
+func (s *Store) CreatePublicLinkWithPassword(ownerUserID, resourceType, resourceID string, permissions uint32, expiration *int64, password string) (*Record, error) {
 	id, err := generateID()
 	if err != nil {
 		return nil, err
@@ -148,14 +171,23 @@ func (s *Store) CreatePublicLink(ownerUserID, resourceType, resourceID string, p
 	if err != nil {
 		return nil, err
 	}
+	var passwordHash *string
+	if password != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("hash password: %w", err)
+		}
+		h := string(hash)
+		passwordHash = &h
+	}
 	now := s.clock().Unix()
 
 	_, err = s.db.Exec(`
 		INSERT INTO shares (id, owner_user_id, resource_type, resource_id,
-			subject_type, subject_id, permissions, token, expiration, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 'PUBLIC', '', ?, ?, ?, ?, ?)`,
+			subject_type, subject_id, permissions, token, password_hash, expiration, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'PUBLIC', '', ?, ?, ?, ?, ?, ?)`,
 		id, ownerUserID, resourceType, resourceID,
-		permissions, token, expiration, now, now,
+		permissions, token, passwordHash, expiration, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert public share: %w", err)
@@ -169,24 +201,11 @@ func (s *Store) CreatePublicLink(ownerUserID, resourceType, resourceID string, p
 		SubjectType:  "PUBLIC",
 		Permissions:  permissions,
 		Token:        &token,
+		PasswordHash: passwordHash,
 		Expiration:   expiration,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}, nil
-}
-
-// CreatePublicLinkWithPassword creates a password-protected public link.
-func (s *Store) CreatePublicLinkWithPassword(ownerUserID, resourceType, resourceID string, permissions uint32, expiration *int64, password string) (*Record, error) {
-	rec, err := s.CreatePublicLink(ownerUserID, resourceType, resourceID, permissions, expiration)
-	if err != nil {
-		return nil, err
-	}
-	if password != "" {
-		if err := s.SetPassword(rec.ID, password); err != nil {
-			return nil, err
-		}
-	}
-	return rec, nil
 }
 
 // SetPassword sets a bcrypt-hashed password on a share.

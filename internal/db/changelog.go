@@ -184,6 +184,34 @@ func DrainChanges(ctx context.Context, sdb *sql.DB, limit int) ([]RowChange, err
 	return out, nil
 }
 
+// QueuedChanges reports how many changes wait in sdb's queue, or zero when
+// nothing has been captured for it.
+func QueuedChanges(ctx context.Context, sdb *sql.DB) (int, error) {
+	var n int
+	err := sdb.QueryRowContext(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s`, ChangeTable)).Scan(&n)
+	if err != nil && strings.Contains(err.Error(), "no such table") {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("count queued changes: %w", err)
+	}
+	return n, nil
+}
+
+// DiscardChanges empties sdb's queue. It is for a database whose index
+// nobody has open: the full sync that opening it runs covers every change,
+// so the queue holds nothing a drainer will ever need.
+func DiscardChanges(ctx context.Context, sdb *sql.DB) error {
+	_, err := sdb.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s`, ChangeTable))
+	if err != nil && strings.Contains(err.Error(), "no such table") {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("discard queued changes: %w", err)
+	}
+	return nil
+}
+
 // safeIdent reports whether an identifier can be interpolated into DDL.
 // Table names come from plugin registrations rather than user input, but
 // they are still interpolated, so they are checked rather than trusted.

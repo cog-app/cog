@@ -813,3 +813,20 @@ func (q *request) collectionProps(c *Collection, a access, ownerName string, tok
 	}
 	return props, extra, nil
 }
+
+// Usage returns the bytes owner's calendar objects and cards hold across
+// every backend, which count toward their quota (D22).
+func (s *Server) Usage(owner string) (int64, error) {
+	if s.Backends == nil {
+		return 0, nil // no DAV plugin is loaded
+	}
+	var total int64
+	for _, b := range s.Backends() {
+		n, err := b.Usage(owner)
+		if err != nil {
+			return 0, err
+		}
+		total += n
+	}
+	return total, nil
+}

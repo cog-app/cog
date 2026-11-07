@@ -10,6 +10,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/dav"
+	"git.duckfam.us/jj-software/cog/internal/pluginsvc"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/share"
@@ -59,14 +60,14 @@ func (a davUsers) ByEmails(emails []string) (map[string]*dav.User, error) {
 // davShares adapts *share.Store to dav.Shares. Shares made over DAV are
 // indexed for search like those made in the share panel.
 type davShares struct {
-	*shareStoreAdapter
+	*pluginsvc.ShareStoreAdapter
 	p *services.Providers
 }
 
 func (a davShares) ListByOwner(ownerID string) iter.Seq2[plugin.ShareRecord, error] {
 	return func(yield func(plugin.ShareRecord, error) bool) {
-		for rec, err := range a.s.ListByOwner(ownerID) {
-			if !yield(pluginShare(&rec), err) {
+		for rec, err := range a.S.ListByOwner(ownerID) {
+			if !yield(pluginsvc.Share(&rec), err) {
 				return
 			}
 		}
@@ -74,20 +75,20 @@ func (a davShares) ListByOwner(ownerID string) iter.Seq2[plugin.ShareRecord, err
 }
 
 func (a davShares) Create(ownerUserID, resourceType, resourceID, subjectType, subjectID string, permissions uint32) (*plugin.ShareRecord, error) {
-	rec, err := a.s.Create(ownerUserID, resourceType, resourceID, subjectType, subjectID, permissions)
+	rec, err := a.S.Create(ownerUserID, resourceType, resourceID, subjectType, subjectID, permissions)
 	if err != nil {
 		return nil, err
 	}
-	out := pluginShare(rec)
+	out := pluginsvc.Share(rec)
 	return &out, nil
 }
 
 func (a davShares) UpdatePermissions(id string, permissions uint32) error {
-	return a.s.Update(id, &permissions, nil)
+	return a.S.Update(id, &permissions, nil)
 }
 
 func (a davShares) Delete(id string) error {
-	return a.s.Delete(id)
+	return a.S.Delete(id)
 }
 
 // davLinks adapts *share.Store to dav.Links: a feed's secret is a public
@@ -206,7 +207,7 @@ func mountDAV(mux *http.ServeMux, p *services.Providers, shares dav.Shares) {
 		if p.EmailSender() == nil {
 			return nil
 		}
-		return &emailSenderAdapter{p.EmailSender}
+		return &pluginsvc.EmailSenderAdapter{SenderFunc: p.EmailSender}
 	}
 	srv.Retention = func() time.Duration {
 		days := settings.DefaultDAVTombstoneDays

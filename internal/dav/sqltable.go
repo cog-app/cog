@@ -77,6 +77,20 @@ func (t *Table) Query(q davsql.Querier, c *Collection, withData bool, where stri
 
 func (t *Table) Components() []Component { return []Component{t.Component} }
 
+// Usage sums the size column over every row of owner's table: a recount
+// each time, so nothing a write path forgets can drift it.
+func (t *Table) Usage(owner string) (int64, error) {
+	db, err := t.DB(owner)
+	if err != nil {
+		return 0, err
+	}
+	var n int64
+	if err := db.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM ` + t.Name).Scan(&n); err != nil {
+		return 0, fmt.Errorf("dav: usage of %s for %s: %w", t.Name, owner, err)
+	}
+	return n, nil
+}
+
 func (t *Table) List(owner string, c *Collection, withData bool) ([]Resource, error) {
 	db, err := t.DB(owner)
 	if err != nil {

@@ -4,19 +4,25 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
@@ -238,17 +244,17 @@ func (h *ChunkedUploadHandler) handlePut(w http.ResponseWriter, r *http.Request,
 
 	f, err := os.Create(chunkPath)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	written, err := io.Copy(f, r.Body)
 	if err != nil {
 		f.Close()
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := f.Close(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := h.Files.QuotaCheck(u.Username, staged+written); err != nil {
@@ -259,6 +265,29 @@ func (h *ChunkedUploadHandler) handlePut(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+}
+
+// consumedChunk is a chunk removed as soon as it has been read in full, so
+// assembling an upload holds about one chunk beyond the file's own size
+// rather than the whole upload twice. An assembly that fails after that
+// point has lost its chunks, and the client starts the upload again; a
+// client does not retry the MOVE on a 5xx, so nothing is lost that would
+// have been kept.
+type consumedChunk struct {
+	*os.File
+	log  *slog.Logger
+	done bool
+}
+
+func (c *consumedChunk) Read(p []byte) (int, error) {
+	n, err := c.File.Read(p)
+	if errors.Is(err, io.EOF) && !c.done {
+		c.done = true
+		if rmErr := os.Remove(c.File.Name()); rmErr != nil {
+			c.log.Error("chunked upload: remove consumed chunk", "path", c.File.Name(), "err", rmErr)
+		}
+	}
+	return n, err
 }
 
 func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request, u *user.User, dir string) {
@@ -280,28 +309,20 @@ func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Extract the file path from the Destination URL
-	destPath := dest
-	if _, after, ok := strings.Cut(dest, "/remote.php/dav/files/"); ok {
-		rest := after
-		if _, fp, ok := strings.Cut(rest, "/"); ok {
-			destPath = "/" + fp
-		} else {
-			destPath = "/"
-		}
-	}
-	destPath = filepath.Clean(destPath)
-
-	// Assemble chunks in sorted order
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// The Destination is a URL: its path is percent-encoded, so "My%20File"
+	// is "My File". Only the part under the files root names the file.
+	destPath, ok := chunkDestination(dest)
+	if !ok {
+		http.Error(w, "Destination is not under /remote.php/dav/files/", http.StatusBadRequest)
 		return
 	}
 
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Name() < entries[j].Name()
-	})
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	sortChunks(entries)
 
 	// Create a concatenated reader
 	readers := make([]io.Reader, 0, len(entries))
@@ -318,10 +339,10 @@ func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request
 		}
 		f, err := os.Open(filepath.Join(dir, entry.Name()))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
-		readers = append(readers, f)
+		readers = append(readers, &consumedChunk{File: f, log: h.Log})
 		closers = append(closers, f)
 	}
 
@@ -333,13 +354,18 @@ func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request
 	combined := io.MultiReader(readers...)
 
 	if err := h.Files.EnsureRootDir(u.Username); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 
 	meta, err := h.Files.Upload(u.Username, destPath, combined)
+	if errors.Is(err, cogplugin.ErrQuotaExceeded) {
+		http.Error(w, err.Error(), http.StatusInsufficientStorage)
+		return
+	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.Log.Error("chunked upload: assemble", "user", u.Username, "path", destPath, "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -348,8 +374,46 @@ func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("ETag", `"`+meta.ETag+`"`)
-	w.Header().Set("OC-FileId", strings.Repeat("0", max(0, 8-len(meta.ETag)))+meta.ETag)
+	w.Header().Set("OC-FileId", fmt.Sprintf("%08d", meta.ID))
 	w.WriteHeader(http.StatusCreated)
+}
+
+// chunkDestination returns the file path a MOVE's Destination names under
+// the files root, decoded, or false when it names something else.
+func chunkDestination(dest string) (string, bool) {
+	_, after, ok := strings.Cut(dest, "/remote.php/dav/files/")
+	if !ok {
+		return "", false
+	}
+	// The user segment is the client's idea of its ID; the authenticated
+	// user decides whose files these are.
+	_, fp, _ := strings.Cut(after, "/")
+	if decoded, err := url.PathUnescape(fp); err == nil {
+		fp = decoded
+	}
+	return path.Clean("/" + fp), true
+}
+
+// sortChunks orders chunks as they were sent. Nextcloud clients name them
+// by number, unpadded ("1" … "10000"), so names are compared as numbers
+// when every one is a number, and as strings otherwise.
+func sortChunks(entries []os.DirEntry) {
+	numeric := true
+	nums := make(map[string]int64, len(entries))
+	for _, e := range entries {
+		n, err := strconv.ParseInt(e.Name(), 10, 64)
+		if err != nil {
+			numeric = false
+			break
+		}
+		nums[e.Name()] = n
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if numeric {
+			return nums[entries[i].Name()] < nums[entries[j].Name()]
+		}
+		return entries[i].Name() < entries[j].Name()
+	})
 }
 
 func (h *ChunkedUploadHandler) handleDelete(w http.ResponseWriter, dir string) {

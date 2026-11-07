@@ -3,6 +3,7 @@ package compat
 import (
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -48,7 +49,7 @@ func (h *TrashbinHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "PROPFIND":
 		h.handlePropfind(w, r, u, urlUserID, trashName)
 	case http.MethodDelete:
-		h.handleDelete(w, u, trashName)
+		h.handleDelete(w, r, u, trashName)
 	case "MOVE":
 		h.handleRestore(w, r, u, trashName)
 	default:
@@ -154,12 +155,12 @@ func (h *TrashbinHandler) writeMultiStatus(w http.ResponseWriter, entries []prop
 	writeMultiStatus(h.Log, w, entries)
 }
 
-func (h *TrashbinHandler) handleDelete(w http.ResponseWriter, u *user.User, trashName string) {
+func (h *TrashbinHandler) handleDelete(w http.ResponseWriter, r *http.Request, u *user.User, trashName string) {
 	if trashName == "" {
 		// Empty entire trash
 		if err := h.Files.EmptyTrash(u.Username); err != nil {
 			h.Log.Error("empty trash", "user", u.Username, "err", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

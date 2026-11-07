@@ -2,9 +2,17 @@ package files
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
+
+// MaxCommentLength bounds a comment, which is read whole into every listing
+// of its file's comments.
+const MaxCommentLength = 16 << 10
+
+// ErrCommentTooLong is a comment over MaxCommentLength.
+var ErrCommentTooLong = errors.New("the comment is too long")
 
 // Comment represents a user comment on a file.
 type Comment struct {
@@ -46,6 +54,9 @@ func (p *Plugin) ListComments(username string, fileID int64) ([]Comment, error) 
 
 // CreateComment adds a comment to a file.
 func (p *Plugin) CreateComment(username string, fileID int64, actorID, message string) (*Comment, error) {
+	if len(message) > MaxCommentLength {
+		return nil, ErrCommentTooLong
+	}
 	db, err := p.DB(username)
 	if err != nil {
 		return nil, err

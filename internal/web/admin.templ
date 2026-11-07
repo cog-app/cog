@@ -9,12 +9,13 @@ import (
 	"iter"
 	"log/slog"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
 
 // --- Users ---
-templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], retired []user.RetiredName, flash string, flashKind string) {
+templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], retired []user.RetiredName, flash string, flashKind string, agentOwners map[string]string) {
 	@ui.AdminSidebarPage(pd, "users") {
 		@ui.PageHeader("Users", nil) {
 			<a class="btn btn-primary" href="/admin/users/new">
@@ -56,6 +57,8 @@ templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], retired 
 								<td>
 									if u.IsAdmin {
 										<span class="badge badge-admin">Admin</span>
+									} else if u.IsAgent() {
+										<span class="text-sm text-muted">Agent of { agentOwners[u.OwnerID] }</span>
 									} else {
 										<span class="text-sm text-muted">User</span>
 									}
@@ -202,7 +205,7 @@ templ adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashK
 }
 
 // --- Settings ---
-templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, davTombstoneDays string, env envConfigData, status statusData, flash string, flashKind string, mfaRequired string, fed federationData) {
+templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHours string, davTombstoneDays string, env envConfigData, status statusData, flash string, flashKind string, mfaRequired string, fed federationData, pw passwordPolicyData) {
 	@ui.AdminSidebarPage(pd, "settings") {
 		@ui.PageHeader("General", nil)
 		@ui.Alert(flashKind, flash)
@@ -271,6 +274,19 @@ templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHou
 					<p class="form-help">When enabled, users without MFA are sent to set it up when they log in.</p>
 				</div>
 			}
+			@ui.Card("Passwords") {
+				<div class="form-group">
+					<label class="form-label" for="password_min_length">Minimum length</label>
+					<input class="form-control w-sm" type="number" id="password_min_length" name="password_min_length" min="1" max="72" value={ strconv.Itoa(pw.MinLength) }/>
+					<p class="form-help">Applies to new passwords: registration, changes, resets and accounts admins create. Length is the rule that helps; there are no character-class rules.</p>
+				</div>
+				<div class="form-group mb-0">
+					<label class="form-check">
+						<input type="checkbox" name="password_breach_check" value="1" checked?={ pw.BreachCheck }/> Refuse passwords found in known breaches
+					</label>
+					<p class="form-help">Checks against Pwned Passwords by k-anonymity: only the first five characters of the password's SHA-1 leave this server. When the service cannot be reached the password is refused rather than set unchecked.</p>
+				</div>
+			}
 			@ui.Card("Federation") {
 				<div class="form-group">
 					<label class="form-check">
@@ -282,7 +298,7 @@ templ adminSettingsPage(pd ui.PageData, publicRegistration bool, inviteExpiryHou
 				<div class="form-group mb-0">
 					<label class="form-label" for="federation_peers">Allowed servers</label>
 					<textarea class="form-control" id="federation_peers" name="federation_peers" rows="3" placeholder="cloud.example.com">{ fed.Peers }</textarea>
-					<p class="form-help">One host name per line. Leave empty to allow any server.</p>
+					<p class="form-help">One host name per line. Shares from any other server are refused. A line of <code>*</code> accepts shares from any server that runs federation; anyone can then put a share in a user's pending list.</p>
 					if fed.EnvPeers != "" {
 						<p class="form-help">Also allowed, by COG_FEDERATION_PEERS: <code>{ fed.EnvPeers }</code></p>
 					}

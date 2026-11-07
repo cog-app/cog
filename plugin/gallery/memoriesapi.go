@@ -3,6 +3,7 @@ package gallery
 import (
 	"database/sql"
 	"errors"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"net/http"
 	"strconv"
 	"strings"
@@ -54,12 +55,12 @@ func (a *MemoriesAPI) handleDays(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	db, err := a.plugin.DB(u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	days, err := TimelineDays(db)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	type dayResp struct {
@@ -77,7 +78,7 @@ func (a *MemoriesAPI) handleDay(w http.ResponseWriter, r *http.Request, dayIDStr
 	u := auth.UserFromContext(r.Context())
 	db, err := a.plugin.DB(u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	dayID, err := strconv.ParseInt(dayIDStr, 10, 64)
@@ -87,7 +88,7 @@ func (a *MemoriesAPI) handleDay(w http.ResponseWriter, r *http.Request, dayIDStr
 	}
 	media, err := TimelineMedia(db, dayID, 500, 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	type photoResp struct {
@@ -120,12 +121,12 @@ func (a *MemoriesAPI) handleAlbums(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	db, err := a.plugin.DB(u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	albums, err := ListAlbums(db, -1)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	type albumResp struct {
@@ -144,7 +145,7 @@ func (a *MemoriesAPI) handleAlbum(w http.ResponseWriter, r *http.Request, idStr 
 	u := auth.UserFromContext(r.Context())
 	db, err := a.plugin.DB(u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -154,7 +155,7 @@ func (a *MemoriesAPI) handleAlbum(w http.ResponseWriter, r *http.Request, idStr 
 	}
 	media, err := AlbumMedia(db, id, 500, 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.WriteJSON(w, http.StatusOK, media)
@@ -164,12 +165,12 @@ func (a *MemoriesAPI) handleTags(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	db, err := a.plugin.DB(u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	tags, err := ListTags(db)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	type tagResp struct {
@@ -187,12 +188,12 @@ func (a *MemoriesAPI) handleFaces(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	db, err := a.plugin.DB(u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	people, err := ListPeople(db)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	type faceResp struct {
@@ -210,13 +211,13 @@ func (a *MemoriesAPI) handlePlaces(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	db, err := a.plugin.DB(u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	rows, err := db.Query(`SELECT city, country, COUNT(*) AS cnt FROM media
 		WHERE city != '' GROUP BY city, country ORDER BY cnt DESC`)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	defer rows.Close()
@@ -230,13 +231,13 @@ func (a *MemoriesAPI) handlePlaces(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var p placeResp
 		if err := rows.Scan(&p.Name, &p.Country, &p.Count); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 		result = append(result, p)
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.WriteJSON(w, http.StatusOK, result)
@@ -246,7 +247,7 @@ func (a *MemoriesAPI) handleImageInfo(w http.ResponseWriter, r *http.Request, id
 	u := auth.UserFromContext(r.Context())
 	db, err := a.plugin.DB(u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -260,7 +261,7 @@ func (a *MemoriesAPI) handleImageInfo(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.WriteJSON(w, http.StatusOK, m)
@@ -270,7 +271,7 @@ func (a *MemoriesAPI) handleImagePreview(w http.ResponseWriter, r *http.Request,
 	u := auth.UserFromContext(r.Context())
 	db, err := a.plugin.DB(u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -284,7 +285,7 @@ func (a *MemoriesAPI) handleImagePreview(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 

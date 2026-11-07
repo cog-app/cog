@@ -1,6 +1,10 @@
 package ui
 
-import "strings"
+import (
+	"strings"
+
+	"git.duckfam.us/jj-software/cog/internal/user"
+)
 
 // AuthPage is the frame of every page a visitor sees before or outside the
 // app: sign-in, registration, password reset, invitations and consent
@@ -291,7 +295,17 @@ type LoginFlowGrant struct {
 	CSRFToken string
 	Username  string
 	Client    string // who is asking, from the client's User-Agent
+	From      string // the address the flow was started from
+	When      string // how long ago it was started
 	Error     string
+	// Agents are the user's agent accounts the app may be signed in as.
+	Agents []AgentOption
+}
+
+// AgentOption is an agent the grant page offers.
+type AgentOption struct {
+	ID   string
+	Name string
 }
 
 // LoginFlowGrantPage asks a signed-in user whether an app may have an app
@@ -304,9 +318,30 @@ templ LoginFlowGrantPage(g LoginFlowGrant) {
 		<p class="login-lead">
 			<strong>{ g.Client }</strong> wants to access your Cog account <strong>{ g.Username }</strong>: your files, calendars and contacts.
 		</p>
+		<p class="login-lead">
+			The request was started { g.When } from <strong>{ g.From }</strong>. If that is not an app you just set up, cancel: anyone who sends you this link is asking for your account.
+		</p>
 		@authAlert("error", g.Error)
 		<form method="post" action={ templ.SafeURL("/index.php/login/v2/grant?token=" + g.Token) }>
 			<input type="hidden" name="csrf_token" value={ g.CSRFToken }/>
+			<div class="form-group">
+				<label class="form-label" for="grant_as">Sign the app in as</label>
+				<select class="form-control" id="grant_as" name="grant_as">
+					<option value="me">Me ({ g.Username }): everything in my account</option>
+					for _, a := range g.Agents {
+						<option value={ a.ID }>Agent { a.Name }: only what I share with it</option>
+					}
+					<option value="new">A new agent: only what I share with it</option>
+				</select>
+			</div>
+			<div class="form-group">
+				<label class="form-label" for="agent_name">Name for a new agent</label>
+				<div class="input-group">
+					<span class="input-group-text" aria-hidden="true">{ g.Username + user.AgentSeparator }</span>
+					<input class="form-control" id="agent_name" name="agent_name" placeholder="assistant" autocomplete="off"/>
+				</div>
+				<p class="form-help">An agent is an account of its own that you share folders, calendars and contacts with. It can change only what you share, and its changes carry its name, which starts with yours.</p>
+			</div>
 			<button class="btn btn-primary btn-block" type="submit" name="action" value="grant">Grant access</button>
 			<button class="btn btn-secondary btn-block" type="submit" name="action" value="cancel" formnovalidate>Cancel</button>
 		</form>

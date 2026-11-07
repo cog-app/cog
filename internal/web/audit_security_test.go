@@ -251,3 +251,43 @@ func TestAuditInviteRegistrationNeedsAdminInviter(t *testing.T) {
 	_, err = env.Providers.Users.GetByUsername("sneaky")
 	require.True(t, err != nil, "a non-admin's invitation opened an account")
 }
+
+// N12 (third audit): an admin may share the data-directory volume, but a
+// mount of it stops at the server's own files: not the directory itself,
+// not a user's directory (their plugin databases), and nothing the browser
+// hides. A user's files directory is fine.
+func TestAuditMountOfSharedSystemVolumeStopsAtInternalFiles(t *testing.T) {
+	env := cogtest.New(t)
+	admin := env.CreateUser(t, "admin", "pass")
+	bob := env.CreateUser(t, "bob", "pass")
+	vol, err := env.Providers.Volumes.GetByName(volume.DefaultVolumeName)
+	require.NoError(t, err)
+	// A system volume has no owner; an admin's share of it counts.
+	_, err = env.Providers.Shares.Create(admin.ID, volume.ShareResourceType, vol.ID, "USER", bob.ID, 1)
+	require.NoError(t, err)
+	cookie, token := sessionAndCSRF(t, env, bob.ID)
+
+	mount := func(userPath, subpath string) {
+		env.PostForm(t, "/settings/mounts", url.Values{
+			"csrf_token":     {token},
+			"volume_id":      {vol.ID},
+			"user_path":      {userPath},
+			"volume_subpath": {subpath},
+		}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+	}
+	mount("/root", "")
+	mount("/adminhome", "/admin")
+	mount("/appdata", "/admin/app_data")
+	mount("/db", "system.db")
+	mount("/adminfiles", "/admin/files")
+
+	mounted := map[string]bool{}
+	for m, err := range env.Providers.Mounts.ListByUser(bob.ID) {
+		require.NoError(t, err)
+		mounted[m.UserPath] = true
+	}
+	for _, p := range []string{"/root", "/adminhome", "/appdata", "/db"} {
+		require.False(t, mounted[p], "bob mounted %s", p)
+	}
+	require.True(t, mounted["/adminfiles"], "a user's files directory did not mount")
+}

@@ -28,6 +28,15 @@ type Mount struct {
 type Store struct {
 	db    *sql.DB
 	clock clock.Clock
+	// Changed runs after a mount is made or removed, for whoever keeps
+	// something built from the mounts.
+	Changed []func()
+}
+
+func (s *Store) changed() {
+	for _, f := range s.Changed {
+		f()
+	}
 }
 
 func NewStore(db *sql.DB, c clock.Clock) *Store {
@@ -53,6 +62,7 @@ func (s *Store) Create(userID, userPath, volumeID, volumeSubpath string, readOnl
 	if err != nil {
 		return nil, fmt.Errorf("insert mount: %w", err)
 	}
+	s.changed()
 
 	return &Mount{
 		ID:            id,
@@ -146,6 +156,7 @@ func (s *Store) Delete(id string) error {
 	if n == 0 {
 		return ErrNotFound
 	}
+	s.changed()
 	return nil
 }
 
@@ -154,6 +165,7 @@ func (s *Store) DeleteByUser(userID string) error {
 	if err != nil {
 		return fmt.Errorf("delete user mounts: %w", err)
 	}
+	s.changed()
 	return nil
 }
 

@@ -22,12 +22,25 @@ var ErrLimited = errors.New("too many failed attempts")
 //     refusal would let anyone lock them out.
 //   - A success clears the account's failures and nothing else. A client
 //     signing in to one account does not wipe what it tried against others.
+//   - At most MaxWaiting attempts at a slowed account wait at once. The
+//     delay costs a guesser time; it is not to cost the server a goroutine
+//     per guess, so an attempt past the queue is refused instead.
 type Guard struct {
 	Limiter *Limiter
 	// Delay is how long each attempt at an account over the limit waits.
 	Delay time.Duration
 
-	locks sync.Map // account key → *sync.Mutex
+	queues sync.Map // account key → *queue
+}
+
+// MaxWaiting is how many attempts at a slowed account may wait their turn.
+const MaxWaiting = 8
+
+// queue serializes the attempts at one slowed account. waiting admits at
+// most MaxWaiting of them; mu lets one through at a time.
+type queue struct {
+	mu      sync.Mutex
+	waiting chan struct{}
 }
 
 // AccountKey is the key an account's failures are counted under, the same
@@ -48,9 +61,18 @@ func (g *Guard) Try(ip, account string, check func() bool) (bool, error) {
 		return false, ErrLimited
 	}
 	if account != "" && g.Limiter.IsLimited(account) {
-		mu, _ := g.locks.LoadOrStore(account, &sync.Mutex{})
-		mu.(*sync.Mutex).Lock()
-		defer mu.(*sync.Mutex).Unlock()
+		v, _ := g.queues.LoadOrStore(account, &queue{waiting: make(chan struct{}, MaxWaiting)})
+		q := v.(*queue)
+		select {
+		case q.waiting <- struct{}{}:
+		default:
+			return false, ErrLimited
+		}
+		q.mu.Lock()
+		defer func() {
+			q.mu.Unlock()
+			<-q.waiting
+		}()
 		time.Sleep(g.Delay)
 	}
 	if !check() {
@@ -62,7 +84,7 @@ func (g *Guard) Try(ip, account string, check func() bool) (bool, error) {
 	}
 	if account != "" {
 		g.Limiter.Reset(account)
-		g.locks.Delete(account)
+		g.queues.Delete(account)
 	}
 	return true, nil
 }

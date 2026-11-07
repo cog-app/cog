@@ -394,11 +394,12 @@ func TestAPI_PublicLink_PasswordRequired(t *testing.T) {
 	// Correct password via basic auth → 200.
 	env.Get(t, "/s/"+*rec.Token, cogtest.BasicAuth("", "letmein")).Status(200)
 
-	// Correct password via query param → 200.
-	env.Get(t, "/s/"+*rec.Token+"?password=letmein").Status(200)
+	// The password is not taken from the URL, where it would land in logs
+	// and history (M8).
+	env.Get(t, "/s/"+*rec.Token+"?password=letmein").Status(401)
 
 	// Download with correct password.
-	env.Get(t, "/s/"+*rec.Token+"/download?password=letmein").
+	env.Get(t, "/s/"+*rec.Token+"/download", cogtest.BasicAuth("", "letmein")).
 		Status(200).Equals("secret")
 }
 

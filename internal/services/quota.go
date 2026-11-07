@@ -7,8 +7,8 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
-// StorageUsage is what username stores: their files, and what plugins keep
-// in their storage.
+// StorageUsage is what username stores: their files, what plugins keep in
+// their storage, and their calendar objects and cards.
 func (p *Providers) StorageUsage(username string) (int64, error) {
 	plug, ok := p.Plugins.Plugin(files.PluginID)
 	if !ok {
@@ -26,7 +26,13 @@ func (p *Providers) StorageUsage(username string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return inFiles + kept, nil
+	var inDAV int64
+	if p.DAV != nil {
+		if inDAV, err = p.DAV.Usage(username); err != nil {
+			return 0, err
+		}
+	}
+	return inFiles + kept + inDAV, nil
 }
 
 // newQuotaChecker returns the checker every writer is held to, whichever

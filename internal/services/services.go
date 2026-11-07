@@ -31,7 +31,9 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/jmap"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/mount"
+	"git.duckfam.us/jj-software/cog/internal/password"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/pluginsvc"
 	"git.duckfam.us/jj-software/cog/internal/push"
 	"git.duckfam.us/jj-software/cog/internal/quota"
 	"git.duckfam.us/jj-software/cog/internal/ratelimit"
@@ -399,34 +401,6 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	pusher.Messages[push.JMAP] = jmapServer.PushMessage
 	davServer.UserListeners = append(davServer.UserListeners, jmapServer.UsersChanged)
 	registry.SetTxObserverFactory(davServer.SyncObserver)
-	for _, p := range plugins {
-		if dp, ok := p.(dav.Provider); ok {
-			dp.SetDAV(davServer)
-		}
-		if err := registry.Add(p); err != nil {
-			log.Error("register plugin", "plugin", p.ID(), "err", err)
-		}
-	}
-
-	// Discover and load process plugins from PATH.
-	switch {
-	case cfg.DisableProcessPlugins:
-	case cfg.ProcessPluginNamesOnly:
-		users.Reserve(registry.ProcessPluginIDs()...)
-	default:
-		registry.DiscoverProcessPlugins()
-	}
-
-	// Plugins keep directories in the data dir under their IDs, beside the
-	// users' own.
-	users.Reserve(registry.PluginIDs()...)
-	bad, err := users.Invalid()
-	if err != nil {
-		return nil, err
-	}
-	for _, name := range bad {
-		log.Error("existing username is not allowed for new accounts and may share a directory with another user or the server; rename or remove it", "username", name)
-	}
 
 	shares := share.NewStore(sysDB, c)
 	access := &volume.Access{Volumes: volumes, Shares: shares, Users: users}
@@ -435,8 +409,10 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	resolver := mount.NewResolver(users, mounts, volumes, access)
 	registry.SetMountResolver(resolver)
 
-	// A shared address book's cards reach its sharees' birthday calendars.
+	// A share decides what a mount of a volume may do; the birthday
+	// calendars of a shared address book's sharees follow it too.
 	shares.OnChange = func(rec share.Record) {
+		resolver.InvalidateAll()
 		if rec.ResourceType != dav.ShareType {
 			return
 		}
@@ -451,6 +427,12 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	quotas := quota.NewStore(sysDB, c)
 	activities := activity.NewStore(sysDB, c)
 	settingsStore := settings.NewStore(sysDB)
+	passwords := &password.Checker{
+		Policy: func() password.Policy { return password.FromSettings(settingsStore) },
+		Breach: &password.BreachList{},
+		Log:    log.With("component", "password"),
+	}
+	users.PasswordPolicy = passwords.Check
 	fedStore := federation.NewStore(sysDB, c)
 	fedClient := federation.NewClient(cfg.BaseURL)
 	sshKeys, err := keys.NewStore(sysDB, registry, users, c)
@@ -500,7 +482,38 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	// whichever of them is built; the web adds its services to it.
 	p.QuotaChecker = newQuotaChecker(p)
 	p.QuotaChecker.NewWrites()
-	registry.SetServices(plugin.RegistryServices{QuotaChecker: p.QuotaChecker})
+	registry.SetServices(pluginsvc.Build(shares, p.EmailSender, users, p.Groups, p.QuotaChecker, access, activities, p.Cookies))
+
+	// Plugins register last, with every service they may read during
+	// Register in place.
+	for _, p := range plugins {
+		if dp, ok := p.(dav.Provider); ok {
+			dp.SetDAV(davServer)
+		}
+		if err := registry.Add(p); err != nil {
+			return nil, fmt.Errorf("register plugin %s: %w", p.ID(), err)
+		}
+	}
+
+	// Discover and load process plugins from PATH.
+	switch {
+	case cfg.DisableProcessPlugins:
+	case cfg.ProcessPluginNamesOnly:
+		users.Reserve(registry.ProcessPluginIDs()...)
+	default:
+		registry.DiscoverProcessPlugins()
+	}
+
+	// Plugins keep directories in the data dir under their IDs, beside the
+	// users' own.
+	users.Reserve(registry.PluginIDs()...)
+	bad, err := users.Invalid()
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range bad {
+		log.Error("existing username is not allowed for new accounts and may share a directory with another user or the server; rename or remove it", "username", name)
+	}
 	return p, nil
 }
 
@@ -783,6 +796,17 @@ func (p *Providers) DeleteUser(id string) error {
 	u, err := p.Users.GetByID(id)
 	if err != nil {
 		return err
+	}
+	// An owner's agents go with them: nothing else would issue them
+	// credentials or answer for what they do.
+	agents, err := p.Users.ListAgents(id)
+	if err != nil {
+		return fmt.Errorf("list agents of %s: %w", u.Username, err)
+	}
+	for _, a := range agents {
+		if err := p.DeleteUser(a.ID); err != nil {
+			return fmt.Errorf("delete agent %s of %s: %w", a.Username, u.Username, err)
+		}
 	}
 	var shareIDs []string
 	for _, list := range []iter.Seq2[share.Record, error]{p.Shares.ListByOwner(id), p.Shares.ListBySubject(id)} {

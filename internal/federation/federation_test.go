@@ -31,14 +31,19 @@ func TestFederationOCMDiscovery(t *testing.T) {
 }
 
 func TestFederationInboundShare(t *testing.T) {
+	// The receiver asks the sender's host whether it federates, and the
+	// sender is an httptest server on 127.0.0.1, which the SSRF guard
+	// normally blocks.
+	safehttp.SetAllowPrivate(true)
+	t.Cleanup(func() { safehttp.SetAllowPrivate(false) })
+
 	// Set up two Cog instances.
 	sender := cogtest.New(t)
 	enableFederation(t, sender)
 	receiver := cogtest.New(t)
 	enableFederation(t, receiver)
 
-	alice := sender.CreateUser(t, "alice", "pass")
-	_ = alice
+	sender.CreateUser(t, "alice", "pass")
 	bob := receiver.CreateUser(t, "bob", "pass")
 
 	// Simulate: sender's server sends an OCM share to receiver's /ocm/shares.
@@ -46,7 +51,7 @@ func TestFederationInboundShare(t *testing.T) {
 		ShareWith:        "bob",
 		Name:             "SharedFolder",
 		ProviderID:       "test-provider-123",
-		Owner:            "alice@" + stripScheme(sender.Providers.Config.BaseURL),
+		Owner:            "alice@" + sender.Providers.Config.BaseURL,
 		OwnerDisplayName: "Alice",
 		ShareType:        "user",
 		ResourceType:     "file",
@@ -246,9 +251,61 @@ func TestFederationNotification(t *testing.T) {
 	assert.Equal(t, "accepted", updated.State)
 }
 
-func stripScheme(u string) string {
-	if parsed, err := url.Parse(u); err == nil {
-		return parsed.Host
+// A share from a host that answers no OCM discovery is refused: the sender
+// is whoever the request claims, so the claim is at least checked against
+// the host it names.
+func TestFederationInboundShareFromUnverifiableHost(t *testing.T) {
+	safehttp.SetAllowPrivate(true)
+	t.Cleanup(func() { safehttp.SetAllowPrivate(false) })
+
+	env := cogtest.New(t)
+	enableFederation(t, env)
+	env.CreateUser(t, "alice", "pass")
+
+	env.PostJSON(t, "/ocm/shares", map[string]any{
+		"shareWith": "alice", "name": "x.txt", "owner": "bob@http://127.0.0.1:1",
+		"protocol": map[string]any{"name": "webdav", "options": map[string]any{"sharedSecret": "s"}},
+	}).Status(403)
+}
+
+// A share claiming to come from a server that has federation off is refused
+// as well: that server sent nothing.
+func TestFederationInboundShareFromHostWithFederationOff(t *testing.T) {
+	safehttp.SetAllowPrivate(true)
+	t.Cleanup(func() { safehttp.SetAllowPrivate(false) })
+
+	sender := cogtest.New(t)
+	receiver := cogtest.New(t)
+	enableFederation(t, receiver)
+	receiver.CreateUser(t, "alice", "pass")
+
+	receiver.PostJSON(t, "/ocm/shares", map[string]any{
+		"shareWith": "alice", "name": "x.txt", "owner": "bob@" + sender.Providers.Config.BaseURL,
+		"protocol": map[string]any{"name": "webdav", "options": map[string]any{"sharedSecret": "s"}},
+	}).Status(403)
+}
+
+// A user's pending inbound shares are capped: nothing proves who sent one,
+// so past the cap the sender waits for the user to answer some.
+func TestFederationInboundPendingCap(t *testing.T) {
+	safehttp.SetAllowPrivate(true)
+	t.Cleanup(func() { safehttp.SetAllowPrivate(false) })
+
+	sender := cogtest.New(t)
+	enableFederation(t, sender)
+	receiver := cogtest.New(t)
+	enableFederation(t, receiver)
+	alice := receiver.CreateUser(t, "alice", "pass")
+
+	for range federation.MaxPendingInbound {
+		require.NoError(t, receiver.Providers.Federation.Create(&federation.FederatedShare{
+			Direction: "inbound", State: "pending", RemoteHost: "remote.example.com",
+			RemoteUser: "bob", LocalUserID: alice.ID, Token: "t", ResourceName: "x", ResourceType: "file",
+		}))
 	}
-	return u
+
+	receiver.PostJSON(t, "/ocm/shares", map[string]any{
+		"shareWith": "alice", "name": "one-more.txt", "owner": "bob@" + sender.Providers.Config.BaseURL,
+		"protocol": map[string]any{"name": "webdav", "options": map[string]any{"sharedSecret": "s"}},
+	}).Status(429)
 }

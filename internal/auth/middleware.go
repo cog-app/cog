@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/ratelimit"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -39,10 +40,24 @@ type Middleware struct {
 	AppPasswords *AppPasswordStore
 	Guard        *ratelimit.Guard
 	Cookies      cogplugin.CookieConfig
+	// PluginOriginHost says whether a request's host is a plugin origin
+	// (D14). On one, only a frame token signs a user in; the host's
+	// session cookie, Basic and Bearer credentials are not consulted.
+	PluginOriginHost func(host string) (pluginID string, ok bool)
+	// FrameKey signs frame tokens.
+	FrameKey []byte
+	// Now is the clock frame tokens expire by; time.Now when nil.
+	Now func() time.Time
 }
 
 func (m *Middleware) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if m.PluginOriginHost != nil {
+			if originPlugin, ok := m.PluginOriginHost(r.Host); ok {
+				m.serveFrame(w, r, next, originPlugin)
+				return
+			}
+		}
 		u, sess := m.authenticate(r)
 		if u != nil {
 			// What a signed-in user is sent is theirs: no shared cache may
@@ -82,6 +97,52 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// serveFrame authenticates a request on a plugin origin by its frame token:
+// the one in the URL the shell handed the frame, or the one the origin's
+// cookie keeps. The token must name the plugin the path belongs to, and the
+// origin's plugin when there is one per plugin.
+func (m *Middleware) serveFrame(w http.ResponseWriter, r *http.Request, next http.Handler, originPlugin string) {
+	pathPlugin := PluginIDFromPath(r.URL.Path)
+	now := time.Now()
+	if m.Now != nil {
+		now = m.Now()
+	}
+	admit := func(token string) (*user.User, bool) {
+		userID, pluginID, ok := ParseFrameToken(m.FrameKey, token, now)
+		if !ok || pluginID != pathPlugin || (originPlugin != "" && pluginID != originPlugin) {
+			return nil, false
+		}
+		u, err := m.Users.GetByID(userID)
+		logAuthErr("frame user", err)
+		return u, u != nil
+	}
+	var u *user.User
+	token := r.URL.Query().Get(FrameParam)
+	if token != "" {
+		var ok bool
+		if u, ok = admit(token); ok {
+			// The handoff is spent on a cookie of the origin's own. It is
+			// sent cross-site, from inside the shell's frame, so SameSite
+			// is None; browsers then require Secure, which the origin is.
+			token = FrameToken(m.FrameKey, u.ID, pathPlugin, now.Add(FrameCookieTTL))
+			http.SetCookie(w, &http.Cookie{
+				Name: FrameCookieName, Value: token, Path: "/apps/" + pathPlugin + "/",
+				MaxAge: int(FrameCookieTTL.Seconds()), HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode,
+			})
+		}
+	} else if c, err := r.Cookie(FrameCookieName); err == nil {
+		u, _ = admit(c.Value)
+	}
+	if u == nil {
+		next.ServeHTTP(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "private")
+	ctx := context.WithValue(r.Context(), userContextKey, u)
+	ctx = context.WithValue(ctx, sessionContextKey, token)
+	next.ServeHTTP(w, r.WithContext(ctx))
 }
 
 // wantsPage reports whether r is a browser loading a page or an HTMX

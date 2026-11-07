@@ -15,6 +15,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/internal/services"
+	"git.duckfam.us/jj-software/cog/internal/settings"
 	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 
@@ -47,6 +48,8 @@ func newTestEnv(t *testing.T) *testEnv {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	p, err := services.NewFromDB(log, cfg, sysDB, clock.System())
 	require.NoError(t, err)
+	// Tests choose short passwords and run offline.
+	require.NoError(t, p.Settings.SetMany(map[string]string{settings.KeyPasswordMinLength: "1", settings.KeyPasswordBreachCheck: "false"}))
 	t.Cleanup(p.Plugins.Stop)
 	if err := p.Plugins.Start(context.Background()); err != nil {
 		t.Fatalf("start plugins: %v", err)

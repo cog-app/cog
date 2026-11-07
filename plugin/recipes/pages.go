@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"git.duckfam.us/jj-software/cog/ui"
 	"net/http"
 	"net/url"
@@ -72,12 +73,12 @@ func (h *Pages) buildSidebar(db *sql.DB, activePath string) (sidebarData, error)
 func (h *Pages) pageSetup(w http.ResponseWriter, r *http.Request, activePath string) (*sql.DB, sidebarData, bool) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return nil, sidebarData{}, false
 	}
 	sb, err := h.buildSidebar(db, activePath)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return nil, sidebarData{}, false
 	}
 	return db, sb, true
@@ -91,7 +92,7 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	}
 	recipes, err := ListRecipes(db, 200)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, "Recipes")
@@ -107,7 +108,7 @@ func (h *Pages) CategoryView(w http.ResponseWriter, r *http.Request) {
 	}
 	recipes, err := RecipesByCategory(db, name, 200)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, name)
@@ -123,7 +124,7 @@ func (h *Pages) KeywordView(w http.ResponseWriter, r *http.Request) {
 	}
 	recipes, err := RecipesByKeyword(db, name, 200)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetTitle(w, "Tagged "+name)
@@ -152,20 +153,20 @@ func loadRecipe(w http.ResponseWriter, r *http.Request, db *sql.DB) *recipeDetai
 		return nil
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return nil
 	}
 	d := &recipeDetail{Recipe: recipe}
 	if d.Ingredients, err = GetIngredients(db, id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return nil
 	}
 	if d.Instructions, err = GetInstructions(db, id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return nil
 	}
 	if d.Keywords, err = GetKeywords(db, id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return nil
 	}
 	return d
@@ -278,7 +279,7 @@ func (h *Pages) formOrDraft(w http.ResponseWriter, r *http.Request, db *sql.DB, 
 	}
 	form, err := TakeDraft(db, id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return nil, false
 	}
 	if form == nil {
@@ -299,7 +300,7 @@ func (h *Pages) saveRejected(w http.ResponseWriter, r *http.Request, db *sql.DB,
 	}
 	id, err := SaveDraft(db, form)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	plugin.SetFlash(w, plugin.Flash{
@@ -352,7 +353,7 @@ func saveLists(db execer, id int64, r *http.Request) error {
 func (h *Pages) CreateRecipe(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	recipe := &Recipe{}
@@ -369,7 +370,7 @@ func (h *Pages) CreateRecipe(w http.ResponseWriter, r *http.Request) {
 		return saveLists(tx, id, r)
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	http.Redirect(w, r, "/apps/recipes/recipe/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
@@ -379,7 +380,7 @@ func (h *Pages) CreateRecipe(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -393,7 +394,7 @@ func (h *Pages) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := recipeFromForm(r, recipe); err != nil {
@@ -407,7 +408,7 @@ func (h *Pages) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 		return saveLists(tx, id, r)
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	http.Redirect(w, r, "/apps/recipes/recipe/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
@@ -422,7 +423,7 @@ func (h *Pages) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 func (h *Pages) DeleteRecipe(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -436,11 +437,11 @@ func (h *Pages) DeleteRecipe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if err := DeleteRecipe(db, id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	if recipe.ImagePath != "" {
@@ -466,7 +467,7 @@ func (h *Pages) DeleteRecipe(w http.ResponseWriter, r *http.Request) {
 	}
 	sb, err := h.buildSidebar(db, page)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	sb.OOB = true
@@ -513,7 +514,7 @@ func keywordCountOf(kws []KeywordCount, name string) int {
 func (h *Pages) ImportFromURL(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httperr.Internal(w, r, err)
 		return
 	}
 	rawURL := r.FormValue("url")

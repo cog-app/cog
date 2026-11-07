@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"net/http"
 	"strconv"
@@ -286,7 +287,7 @@ func (p *Plugin) SaveLayoutHandler() http.Handler {
 
 		db, err := p.DB(u.Username)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 
@@ -298,7 +299,7 @@ func (p *Plugin) SaveLayoutHandler() http.Handler {
 		widgetOrder := r.Form["widget_order"]
 
 		if err := SaveLayout(db, &Layout{Columns: cols, WidgetOrder: widgetOrder}); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httperr.Internal(w, r, err)
 			return
 		}
 

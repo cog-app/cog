@@ -95,6 +95,13 @@ func (m *MountFS) match(p string) (*mountEntry, string, error) {
 
 // atMountRoot reports whether p is the root of a mount, whose listing hides
 // the trash.
+// ReadOnly reports whether p is on a mount that may not be written, so a
+// listing can say so before a client tries.
+func (m *MountFS) ReadOnly(p string) bool {
+	me, _, err := m.match(p)
+	return err == nil && me.readOnly
+}
+
 func (m *MountFS) atMountRoot(p string) bool {
 	_, sub, err := m.match(p)
 	return err == nil && sub == "/"

@@ -236,6 +236,9 @@ func (s *Store) Delete(id string) error {
 
 var ErrCyclicMembership = errors.New("adding this group would create a cycle")
 
+// ErrMemberNotFound refuses a membership for a user or group that does not exist.
+var ErrMemberNotFound = errors.New("member not found")
+
 func (s *Store) AddMember(groupID, memberID string, memberType MemberType) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -253,13 +256,27 @@ func (s *Store) AddMember(groupID, memberID string, memberType MemberType) error
 		}
 	}
 
+	// The member must exist: a row for a user or group that does not is a
+	// grant to whoever gets that ID next.
+	table := "users"
+	if memberType == GroupMember {
+		table = "groups"
+	}
+	var exists int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM `+table+` WHERE id = ?`, memberID).Scan(&exists); err != nil {
+		return fmt.Errorf("look up member: %w", err)
+	}
+	if exists == 0 {
+		return ErrMemberNotFound
+	}
+
 	if _, err := tx.Exec(
 		`INSERT OR IGNORE INTO group_members (group_id, member_id, member_type) VALUES (?, ?, ?)`,
 		groupID, memberID, memberType,
 	); err != nil {
 		return fmt.Errorf("add member: %w", err)
 	}
-	if err := rebuildClosureTx(tx); err != nil {
+	if err := extendClosureTx(tx, groupID, memberID, memberType); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -384,6 +401,25 @@ func (s *Store) ListMembers(groupID string) iter.Seq2[Member, error] {
 	}
 }
 
+// EffectiveGroupIDs lists every group that reaches userID, directly or
+// through nested groups, from the closure table.
+func (s *Store) EffectiveGroupIDs(userID string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT ancestor_group_id FROM group_membership_closure WHERE descendant_user_id = ? ORDER BY ancestor_group_id`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("effective groups: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("effective groups: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (s *Store) ListGroupsForUser(userID string) iter.Seq2[Group, error] {
 	return func(yield func(Group, error) bool) {
 		rows, err := s.db.Query(`
@@ -490,6 +526,34 @@ func (s *Store) RebuildClosure() error {
 
 // rebuildClosureTx recomputes the closure table within an existing transaction.
 // Handles recursive group nesting via fixed-point expansion.
+// extendClosureTx adds what a new membership reaches: every group above
+// groupID (itself included) now reaches memberID, or, for a group member,
+// every user that group reaches. Only a removal needs the table rebuilt.
+func extendClosureTx(tx *sql.Tx, groupID, memberID string, memberType MemberType) error {
+	const ancestors = `WITH RECURSIVE anc(group_id, depth) AS (
+		SELECT ?, 0
+		UNION ALL
+		SELECT gm.group_id, anc.depth + 1 FROM group_members gm
+		JOIN anc ON gm.member_id = anc.group_id AND gm.member_type = 'GROUP'
+		WHERE anc.depth < 100
+	)`
+	var err error
+	if memberType == GroupMember {
+		_, err = tx.Exec(ancestors+`
+			INSERT OR IGNORE INTO group_membership_closure (ancestor_group_id, descendant_user_id, depth)
+			SELECT anc.group_id, c.descendant_user_id, anc.depth + c.depth + 1
+			FROM anc, group_membership_closure c WHERE c.ancestor_group_id = ?`, groupID, memberID)
+	} else {
+		_, err = tx.Exec(ancestors+`
+			INSERT OR IGNORE INTO group_membership_closure (ancestor_group_id, descendant_user_id, depth)
+			SELECT anc.group_id, ?, anc.depth FROM anc`, groupID, memberID)
+	}
+	if err != nil {
+		return fmt.Errorf("extend closure: %w", err)
+	}
+	return nil
+}
+
 func rebuildClosureTx(tx *sql.Tx) error {
 	if _, err := tx.Exec(`DELETE FROM group_membership_closure`); err != nil {
 		return fmt.Errorf("clear closure: %w", err)

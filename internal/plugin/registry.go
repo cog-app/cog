@@ -70,6 +70,8 @@ type RegistryServices struct {
 // Registry manages plugin lifecycle, per-user database provisioning,
 // and HTTP route mounting.
 type Registry struct {
+	// frame is where process plugins' pages render (D14); nil renders them in the host.
+	frame         *Frame
 	log           *slog.Logger
 	dataDir       string
 	rootDataDir   string
@@ -170,6 +172,10 @@ func (r *Registry) Add(p Plugin) error {
 		resources:  make(map[string]ResourceDef),
 		hooks:      make(map[string][]HookCallback),
 	}
+	// A process plugin is handed its own CSRF token, good for its routes
+	// alone: with the session's token it could submit any form on the
+	// server as the user.
+	_, reg.scopedCSRF = p.(*grpcPlugin)
 	r.registrars[id] = reg
 
 	return p.Register(reg)
@@ -436,6 +442,42 @@ func (r *Registry) SetMountResolver(mr MountResolver) {
 	r.mountResolver = mr
 }
 
+// Frame is how process plugins' pages are kept on an origin of their own
+// (D14): where each plugin's is, how to tell a request is on one, and the
+// token the shell hands a frame so the user is signed in there.
+type Frame struct {
+	// Host is the shell's origin.
+	Host string
+	// OriginFor is the plugin's origin, or "" to render in the host.
+	OriginFor func(pluginID string) string
+	// IsOrigin reports whether a request host is a plugin origin.
+	IsOrigin func(host string) bool
+	// Token signs a short-lived handoff for userID into pluginID's origin.
+	Token func(userID, pluginID string) string
+}
+
+// SetFrame configures plugin origins; before it, pages render in the host.
+func (r *Registry) SetFrame(f Frame) {
+	r.frame = &f
+}
+
+// IsProcessPlugin reports whether pluginID is an out-of-process plugin.
+func (r *Registry) IsProcessPlugin(pluginID string) bool {
+	reg, ok := r.registrars[pluginID]
+	return ok && reg.scopedCSRF
+}
+
+// ProcessPluginsLoaded lists the out-of-process plugins registered.
+func (r *Registry) ProcessPluginsLoaded() []string {
+	var ids []string
+	for _, id := range r.order {
+		if r.IsProcessPlugin(id) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 // UserFilesDir returns the path to the user's files directory.
 // If a mount resolver is set, it delegates to it; otherwise falls back to the hardcoded path.
 func (r *Registry) UserFilesDir(username string) string {
@@ -661,6 +703,25 @@ type pluginRegistrar struct {
 	adminCommands []CommandDef
 	settingsPages []SettingsPage
 	schema        fs.FS
+	// scopedCSRF issues and checks tokens bound to this plugin rather than
+	// the session's, for a plugin that runs out of process.
+	scopedCSRF bool
+}
+
+// csrfToken is the token this plugin's forms carry for sessID.
+func (pr *pluginRegistrar) csrfToken(sessID string) string {
+	if pr.scopedCSRF {
+		return auth.CSRFTokenFor(sessID, pr.pluginID, pr.csrfSecret)
+	}
+	return auth.CSRFToken(sessID, pr.csrfSecret)
+}
+
+// requireCSRF checks the token this plugin's forms carry on a mutation.
+func (pr *pluginRegistrar) requireCSRF(h http.Handler) http.Handler {
+	if pr.scopedCSRF {
+		return pr.csrf().RequireFor(pr.pluginID, h)
+	}
+	return pr.csrf().Require(h)
 }
 
 // --- PluginContext service methods ---
@@ -876,7 +937,7 @@ func (pr *pluginRegistrar) injectPluginContext(handler http.Handler) http.Handle
 		sessID := auth.SessionIDFromContext(r.Context())
 		var csrf string
 		if sessID != "" {
-			csrf = auth.CSRFToken(sessID, pr.csrfSecret)
+			csrf = pr.csrfToken(sessID)
 		}
 
 		ctx := cogplugin.WithCSRFToken(r.Context(), csrf)
@@ -901,6 +962,20 @@ func (pr *pluginRegistrar) injectPluginContext(handler http.Handler) http.Handle
 // HTMX partial requests (HX-Request: true) skip the shell entirely.
 func (pr *pluginRegistrar) shellMiddleware(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A process plugin's page is framed from its own origin (D14): on
+		// the host the shell holds only the frame, and on the plugin
+		// origin the page is a document of its own.
+		if f := pr.registry.frame; f != nil && pr.scopedCSRF {
+			if origin := f.OriginFor(pr.pluginID); origin != "" {
+				if f.IsOrigin(r.Host) {
+					pr.serveFrameDoc(w, r, handler, f)
+				} else {
+					pr.serveFrameShell(w, r, f, origin)
+				}
+				return
+			}
+		}
+
 		// HTMX partials: serve the fragment directly, no shell.
 		if r.Header.Get("HX-Request") == "true" {
 			handler.ServeHTTP(w, r)
@@ -970,6 +1045,63 @@ func (pr *pluginRegistrar) shellMiddleware(handler http.Handler) http.Handler {
 
 		ui.Render(w, r, ui.Shell(pd, templ.Raw(rec.Body.String())))
 	})
+}
+
+// serveFrameShell renders the shell around a frame of the plugin's page on
+// its own origin, with a handoff token for the user in the frame's URL.
+func (pr *pluginRegistrar) serveFrameShell(w http.ResponseWriter, r *http.Request, f *Frame, origin string) {
+	u := auth.UserFromContext(r.Context())
+	csrf := cogplugin.CSRFTokenFromContext(r.Context())
+	q := r.URL.Query()
+	q.Set(auth.FrameParam, f.Token(u.ID, pr.pluginID))
+	src := origin + r.URL.Path + "?" + q.Encode()
+
+	var nav []ui.NavItem
+	var title, favicon string
+	for _, item := range pr.registry.NavItems() {
+		active := r.URL.Path == item.URL || (item.URL != "/" && strings.HasPrefix(r.URL.Path, item.URL))
+		nav = append(nav, ui.NavItem{Label: item.Label, URL: item.URL, Active: active, Icon: item.Icon})
+		if active && title == "" {
+			title, favicon = item.Label, ui.IconToFavicon(item.Icon)
+		}
+	}
+	if title == "" {
+		title = "Cog"
+	}
+	pd := ui.PageData{
+		Title: title, User: u, CSRFToken: csrf, Nav: nav, RequestPath: r.URL.Path,
+		IsAdmin: u != nil && u.IsAdmin, PluginID: pr.pluginID, Favicon: favicon,
+		Flash: pr.Cookies().TakeFlash(w, r),
+	}
+	ui.Render(w, r, ui.Shell(pd, ui.PluginFrame(src, origin)))
+}
+
+// serveFrameDoc renders the plugin's page as a document on its own origin.
+func (pr *pluginRegistrar) serveFrameDoc(w http.ResponseWriter, r *http.Request, handler http.Handler, f *Frame) {
+	if r.Header.Get("HX-Request") == "true" {
+		handler.ServeHTTP(w, r)
+		return
+	}
+	csrf := cogplugin.CSRFTokenFromContext(r.Context())
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, r)
+	if rec.Code >= 300 {
+		maps.Copy(w.Header(), rec.Header())
+		w.WriteHeader(rec.Code)
+		w.Write(rec.Body.Bytes())
+		return
+	}
+	title := rec.Header().Get("X-Page-Title")
+	if title == "" {
+		title = "Cog"
+	}
+	for k, v := range rec.Header() {
+		if k == "X-Page-Title" || k == "Content-Length" || k == "Content-Type" {
+			continue
+		}
+		w.Header()[k] = v
+	}
+	ui.Render(w, r, ui.FrameDoc(title, f.Host, "/apps/"+pr.pluginID+"/", csrf, templ.Raw(rec.Body.String())))
 }
 
 // adminSettingsShellMiddleware wraps a fragment handler with the HTML shell and admin sidebar.
@@ -1043,7 +1175,7 @@ func (pr *pluginRegistrar) RegisterAPI(path string, handler http.Handler) {
 
 func (pr *pluginRegistrar) RegisterAction(method, path string, handler http.Handler) {
 	pattern := fmt.Sprintf("%s /apps/%s/%s", method, pr.pluginID, path)
-	wrapped := auth.RequireAuthWeb(pr.injectPluginContext(pr.csrf().Require(pr.carryFlash(handler))))
+	wrapped := auth.RequireAuthWeb(pr.injectPluginContext(pr.requireCSRF(pr.carryFlash(handler))))
 	pr.mux.Handle(pattern, pr.wrap(wrapped))
 }
 
@@ -1108,16 +1240,19 @@ func (pr *pluginRegistrar) Plugins() iter.Seq[Plugin] {
 func (pr *pluginRegistrar) RegisterResource(def ResourceDef) {
 	pr.resources[def.Type] = def
 	if def.Handler != nil {
-		// Mount the resource handler at /apps/{plugin_id}/{type}/{id}
+		// Mount the resource handler at /apps/{plugin_id}/{type}/{id}. A
+		// resource is a user's, so the route is theirs to open, and a
+		// change to one carries the plugin's form token like any action.
 		pattern := fmt.Sprintf("/apps/%s/%s/", pr.pluginID, def.Type)
-		pr.mux.Handle(pattern, pr.wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serve := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resourceID := r.PathValue("id")
 			if resourceID == "" {
 				// Extract from URL path
 				resourceID = filepath.Base(r.URL.Path)
 			}
 			def.Handler.ServeResource(w, r, resourceID)
-		})))
+		})
+		pr.mux.Handle(pattern, pr.wrap(auth.RequireAuth(pr.injectPluginContext(pr.requireCSRF(serve)))))
 	}
 }
 
@@ -1241,7 +1376,10 @@ func (r *Registry) IsPluginProtected(pluginID string) bool {
 	return r.protected[pluginID]
 }
 
-// IsEnabled returns true if the plugin is currently enabled.
+// IsEnabled returns true if the plugin is currently enabled. A plugin
+// nobody has configured is enabled when it was built in, and disabled when
+// it was found on PATH: an executable someone dropped in a directory on the
+// path runs only once an admin turns it on, or names it trusted.
 func (r *Registry) IsEnabled(pluginID string) bool {
 	if r.IsPluginProtected(pluginID) {
 		return true
@@ -1249,10 +1387,13 @@ func (r *Registry) IsEnabled(pluginID string) bool {
 	r.mu.Lock()
 	enabled, ok := r.enabled[pluginID]
 	r.mu.Unlock()
-	if !ok {
-		return true // default enabled
+	if ok {
+		return enabled
 	}
-	return enabled
+	if _, found := r.discovered[pluginID]; found {
+		return isTrustedProcessPlugin(pluginID)
+	}
+	return true
 }
 
 // SetEnabled enables or disables a plugin and persists the state.
@@ -1393,9 +1534,11 @@ func (r *Registry) ProcessPluginIDs() []string {
 func (r *Registry) DiscoverProcessPlugins() {
 	for _, pp := range r.scanProcessPlugins() {
 		pluginID, binaryPath := pp.id, pp.path
+		// Recorded first, so IsEnabled knows it was found rather than
+		// built in and treats "never configured" as off.
+		r.discovered[pluginID] = binaryPath
 		if !r.IsEnabled(pluginID) {
-			r.discovered[pluginID] = binaryPath
-			r.log.Info("discovered process plugin (disabled)", "plugin", pluginID, "path", binaryPath)
+			r.log.Info("discovered process plugin (disabled until an admin enables it)", "plugin", pluginID, "path", binaryPath)
 			continue
 		}
 
@@ -1412,8 +1555,6 @@ func (r *Registry) DiscoverProcessPlugins() {
 			r.log.Error("failed to load process plugin", "plugin", pluginID, "path", binaryPath, "err", err)
 			continue
 		}
-		// Track that this loaded plugin came from discovery.
-		r.discovered[pluginID] = binaryPath
 	}
 }
 
@@ -1422,8 +1563,11 @@ func (r *Registry) DiscoverProcessPlugins() {
 var trustedProcessPlugins map[string]bool
 
 // SetTrustedProcessPlugins configures which discovered process plugin IDs are
-// loaded as trusted (handed the host CSRF secret and direct DB access).
-// Comma-separated list of plugin IDs.
+// loaded as trusted (handed the host CSRF secret and direct DB access), and
+// which run at all before an admin enables them. Comma-separated list of
+// plugin IDs; "*" trusts every plugin found, which is for development: a
+// process plugin runs as the server, so trusting whatever is on PATH is
+// trusting whatever can write to PATH.
 func SetTrustedProcessPlugins(spec string) {
 	out := make(map[string]bool)
 	for raw := range strings.SplitSeq(spec, ",") {
@@ -1436,7 +1580,7 @@ func SetTrustedProcessPlugins(spec string) {
 }
 
 func isTrustedProcessPlugin(id string) bool {
-	return trustedProcessPlugins[id]
+	return trustedProcessPlugins[id] || trustedProcessPlugins["*"]
 }
 
 // NavItems returns nav items from all enabled plugins.

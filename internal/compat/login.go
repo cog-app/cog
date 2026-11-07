@@ -58,6 +58,17 @@ func (h *LoginFlowHandler) HandleInit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Starting a flow needs no credentials and writes a row, so it counts
+	// against the client like a registration does (M10).
+	ip := ratelimit.ClientIP(r)
+	if h.RateLimiter != nil {
+		if h.RateLimiter.IsLimited(ip) {
+			http.Error(w, "Rate limited", http.StatusTooManyRequests)
+			return
+		}
+		h.RateLimiter.RecordFailure(ip)
+	}
+
 	pollToken, err := randomHex(32)
 	if err != nil {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
@@ -70,7 +81,7 @@ func (h *LoginFlowHandler) HandleInit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.flows().start(pollToken, loginToken, clientName(r.UserAgent())); err != nil {
+	if err := h.flows().start(pollToken, loginToken, clientName(r.UserAgent()), ip); err != nil {
 		slog.Error("login flow: start", "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
@@ -157,7 +168,8 @@ func (h *LoginFlowHandler) HandleGrant(w http.ResponseWriter, r *http.Request) {
 	sessID := auth.SessionIDFromContext(r.Context())
 	csrf := auth.CSRFToken(sessID, h.CSRFSecret)
 
-	client, err := h.flows().pendingClient(loginToken)
+	flow, err := h.flows().pending(loginToken)
+	client := flow.Client
 	if err != nil && !errors.Is(err, errFlowNotFound) {
 		slog.Error("login flow: look up", "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
@@ -175,14 +187,31 @@ func (h *LoginFlowHandler) HandleGrant(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		var errMsg string
-		if r.URL.Query().Get("error") == "csrf" {
+		switch e := r.URL.Query().Get("error"); e {
+		case "":
+		case "csrf":
 			errMsg = "Your session changed while this page was open. Try again."
+		default:
+			errMsg = e
+		}
+		agents, err := h.Users.ListAgents(u.ID)
+		if err != nil {
+			slog.Error("login flow: list agents", "user", u.Username, "err", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		var options []ui.AgentOption
+		for _, a := range agents {
+			options = append(options, ui.AgentOption{ID: a.ID, Name: a.Username})
 		}
 		h.renderGrantPage(w, r, ui.LoginFlowGrant{
+			Agents:    options,
 			Token:     loginToken,
 			CSRFToken: csrf,
 			Username:  u.Username,
 			Client:    client,
+			From:      flow.IP,
+			When:      ago(h.Clock().Unix() - flow.CreatedAt),
 			Error:     errMsg,
 		})
 	case http.MethodPost:
@@ -212,7 +241,8 @@ func (h *LoginFlowHandler) flows() *loginFlowStore {
 }
 
 func (h *LoginFlowHandler) processGrant(w http.ResponseWriter, r *http.Request, loginToken string, u *user.User) {
-	client, err := h.flows().pendingClient(loginToken)
+	flow, err := h.flows().pending(loginToken)
+	client := flow.Client
 	if errors.Is(err, errFlowNotFound) {
 		http.Error(w, "Login flow expired or not found", http.StatusNotFound)
 		return
@@ -223,17 +253,38 @@ func (h *LoginFlowHandler) processGrant(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	// Create an app password tied to the authenticated browser session's user.
-	appPW, ap, err := h.AppPWs.Create(u.ID, fmt.Sprintf("%s (%s)", client, h.Clock().Format("2006-01-02 15:04")))
+	// The password is the user's own, or an agent's they own: the app then
+	// signs in as the agent and reaches only what is shared with it.
+	principal := u
+	switch as := r.FormValue("grant_as"); as {
+	case "", "me":
+	case "new":
+		agent, err := h.Users.CreateAgent(u.ID, strings.TrimSpace(r.FormValue("agent_name")))
+		if err != nil {
+			http.Redirect(w, r, "/index.php/login/v2/grant?token="+url.QueryEscape(loginToken)+"&error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			return
+		}
+		principal = agent
+	default:
+		agent, err := h.Users.GetByID(as)
+		if err != nil || agent.OwnerID != u.ID {
+			http.Error(w, "not your agent", http.StatusForbidden)
+			return
+		}
+		principal = agent
+	}
+
+	// Create an app password tied to the principal.
+	appPW, ap, err := h.AppPWs.Create(principal.ID, fmt.Sprintf("%s (%s)", client, h.Clock().Format("2006-01-02 15:04")))
 	if err != nil {
-		slog.Error("login flow: create app password", "user", u.Username, "err", err)
+		slog.Error("login flow: create app password", "user", principal.Username, "err", err)
 		http.Error(w, "Failed to create app password", http.StatusInternalServerError)
 		return
 	}
-	if err := h.flows().grant(loginToken, u.Username, appPW); err != nil {
+	if err := h.flows().grant(loginToken, principal.Username, appPW); err != nil {
 		// Granted twice at once, or expired meanwhile: the password minted
 		// for it would reach nobody.
-		if derr := h.AppPWs.Delete(ap.ID, u.ID); derr != nil {
+		if derr := h.AppPWs.Delete(ap.ID, principal.ID); derr != nil {
 			slog.Error("login flow: remove unused app password", "user", u.Username, "err", derr)
 		}
 		if errors.Is(err, errFlowNotFound) {
@@ -268,6 +319,19 @@ func (h *LoginFlowHandler) renderGrantPage(w http.ResponseWriter, r *http.Reques
 // clientName turns a login-flow client's User-Agent into a name to show the
 // user. Nextcloud's clients identify themselves; anything else is shown as
 // its product token, which is what a person would recognise if anything.
+// ago says how long ago something happened, coarsely: the grant page shows
+// when a flow was started so a user can tell their own from a stale link.
+func ago(seconds int64) string {
+	switch {
+	case seconds < 60:
+		return "just now"
+	case seconds < 120:
+		return "a minute ago"
+	default:
+		return fmt.Sprintf("%d minutes ago", seconds/60)
+	}
+}
+
 func clientName(ua string) string {
 	l := strings.ToLower(ua)
 	switch {
