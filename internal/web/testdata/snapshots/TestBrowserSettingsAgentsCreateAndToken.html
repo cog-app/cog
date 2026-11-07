@@ -241,6 +241,43 @@
           </div>
           <div class="card">
             <h2 class="card-title">
+              assistant
+            </h2>
+            <p class="card-desc">
+              Added 2026-03-14. Share with
+              <strong>
+                assistant
+              </strong>
+              to give it access.
+            </p>
+            <div id="agent-tokens-«hex»">
+              <p class="empty-state empty-state-sm">
+                No tokens yet. The agent cannot sign in until it has one.
+              </p>
+            </div>
+            <h3 class="card-subtitle">
+              Create a token
+            </h3>
+            <div id="agent-new-token-«hex»" />
+            <form class="form-inline" hx-on::after-request="if(event.detail.successful) this.reset()" hx-post="/settings/agents/«hex»/tokens" hx-swap="innerHTML" hx-target="#agent-new-token-«hex»">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <label class="sr-only" for="agent-token-«hex»">
+                Token name
+              </label>
+              <input autocomplete="off" class="form-control" id="agent-token-«hex»" name="name" placeholder="Name, e.g. Laptop" required="" type="text" />
+              <button class="btn btn-secondary" type="submit">
+                Create token
+              </button>
+            </form>
+            <form action="/settings/agents/«hex»/delete" class="form-actions" data-confirm="Delete assistant, its tokens and the shares made with it?" method="post" onsubmit="return confirm(this.dataset.confirm)">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <button class="btn btn-outline-danger" type="submit">
+                Delete agent
+              </button>
+            </form>
+          </div>
+          <div class="card">
+            <h2 class="card-title">
               helper
             </h2>
             <p class="card-desc">
@@ -250,23 +287,26 @@
               </strong>
               to give it access.
             </p>
-            <p class="empty-state empty-state-sm">
-              No tokens yet. The agent cannot sign in until it has one.
-            </p>
+            <div id="agent-tokens-«hex»">
+              <p class="empty-state empty-state-sm">
+                No tokens yet. The agent cannot sign in until it has one.
+              </p>
+            </div>
             <h3 class="card-subtitle">
               Create a token
             </h3>
-            <form action="/settings/agents/«hex»/tokens" class="form-inline" method="post">
+            <div id="agent-new-token-«hex»" />
+            <form class="form-inline" hx-on::after-request="if(event.detail.successful) this.reset()" hx-post="/settings/agents/«hex»/tokens" hx-swap="innerHTML" hx-target="#agent-new-token-«hex»">
               <input name="csrf_token" type="hidden" value="«hex»" />
               <label class="sr-only" for="agent-token-«hex»">
                 Token name
               </label>
-              <input autocomplete="off" class="form-control" id="agent-token-«hex»" name="name" placeholder="Name, e.g. Laptop" type="text" />
+              <input autocomplete="off" class="form-control" id="agent-token-«hex»" name="name" placeholder="Name, e.g. Laptop" required="" type="text" />
               <button class="btn btn-secondary" type="submit">
                 Create token
               </button>
             </form>
-            <form action="/settings/agents/«hex»/delete" class="form-actions" method="post" onsubmit="return confirm('Delete this agent, its tokens and the shares made with it?')">
+            <form action="/settings/agents/«hex»/delete" class="form-actions" data-confirm="Delete helper, its tokens and the shares made with it?" method="post" onsubmit="return confirm(this.dataset.confirm)">
               <input name="csrf_token" type="hidden" value="«hex»" />
               <button class="btn btn-outline-danger" type="submit">
                 Delete agent

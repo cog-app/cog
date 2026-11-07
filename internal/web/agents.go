@@ -2,10 +2,12 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -81,8 +83,10 @@ func (h *agentsHandler) own(u *user.User, id string) (*user.User, bool) {
 	return a, true
 }
 
-// CreateToken issues an agent an app password. The token is shown once,
-// in the page the request returns, never kept in a cookie.
+// CreateToken issues an agent an app password. The token is shown once, in
+// the HTMX response body, and never kept in a cookie or a page a refresh
+// could post again. A plain form post creates nothing: a token it made could
+// not be shown, and would be a working credential nobody has seen.
 func (h *agentsHandler) CreateToken(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	a, ok := h.own(u, r.PathValue("id"))
@@ -90,24 +94,30 @@ func (h *agentsHandler) CreateToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	name := strings.TrimSpace(r.FormValue("name"))
-	if name == "" {
-		name = "token"
-	}
-	plaintext, _, err := h.p.AppPasswords.Create(a.ID, name)
-	if err != nil {
-		setFlash(w, "error", "The token could not be created.", err)
+	if r.Header.Get("HX-Request") != "true" {
+		setFlash(w, "error", "Tokens are shown once, so they are created only from this page with scripts on.")
 		http.Redirect(w, r, "/settings/agents", http.StatusSeeOther)
 		return
 	}
-	pd := pageDataWithNav(r, "Agents", h.p.CSRFSecret, h.p.Plugins)
-	agents, err := h.list(u.ID)
-	if err != nil {
-		h.p.Log.Error("list agents", "user", u.Username, "err", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		ui.Render(w, r, ui.Alert("error", "A token needs a name."))
 		return
 	}
-	ui.Render(w, r, settingsAgentsPageWithToken(pd, agents, a.Username, plaintext))
+	plaintext, _, err := h.p.AppPasswords.Create(a.ID, name)
+	if err != nil {
+		httperr.Log(r, fmt.Errorf("create token for agent %s: %w", a.ID, err))
+		ui.Render(w, r, ui.Alert("error", "The token could not be created."))
+		return
+	}
+	tokens, err := h.p.AppPasswords.ListByUser(a.ID)
+	if err != nil {
+		httperr.Internal(w, r, fmt.Errorf("list tokens of agent %s: %w", a.ID, err))
+		return
+	}
+	pd := pageDataWithNav(r, "Agents", h.p.CSRFSecret, h.p.Plugins)
+	ui.Render(w, r, agentTokenCreated(pd, agentView{User: *a, Tokens: tokens}, plaintext))
 }
 
 func (h *agentsHandler) DeleteToken(w http.ResponseWriter, r *http.Request) {

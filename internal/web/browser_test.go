@@ -879,11 +879,13 @@ func TestBrowserSettingsAgents(t *testing.T) {
 	b.Snapshot(t, webtest.Mobile)
 }
 
-// Creating an agent and issuing it a token through the page. The token
-// page is not snapshotted: the token is random.
+// Creating an agent and issuing it a token through the page. With two
+// agents, the token shows in the card of the one it was issued to.
 func TestBrowserSettingsAgentsCreateAndToken(t *testing.T) {
 	env := cogtest.New(t)
-	env.CreateUser(t, "alice", "pass")
+	alice := env.CreateUser(t, "alice", "pass")
+	_, err := env.Providers.Users.CreateAgent(alice.ID, "assistant")
+	require.NoError(t, err)
 
 	eng := webtest.New(env)
 	t.Cleanup(eng.Close)
@@ -891,25 +893,38 @@ func TestBrowserSettingsAgentsCreateAndToken(t *testing.T) {
 	b := eng.Start(t)
 	b.Login(t, "alice", "pass")
 	b.Navigate(t, "/settings/agents")
-	b.WaitText(t, "No agents yet")
-	b.Type(t, `form[action="/settings/agents"] input[name="name"]`, "helper")
+	b.Type(t, `#agent-name`, "helper")
 	b.Click(t, `form[action="/settings/agents"] button[type="submit"]`)
 	b.WaitText(t, "Agent “helper” created")
 	b.Snapshot(t)
 
-	b.Type(t, `form[action$="/tokens"] input[name="name"]`, "phone")
-	b.Click(t, `form[action$="/tokens"] button[type="submit"]`)
-	b.WaitText(t, "Token created")
-	b.WaitText(t, "Copy it now")
-	token := b.Text(t, ".secret-box code")
-	require.True(t, len(token) > 20, "no token shown: %q", token)
-
 	helper, err := env.Providers.Users.GetByUsername("helper")
 	require.NoError(t, err)
+	b.Type(t, "#agent-token-"+helper.ID, "phone")
+	b.Click(t, `form[hx-post="/settings/agents/`+helper.ID+`/tokens"] button[type="submit"]`)
+	b.WaitVisible(t, "#agent-new-token-"+helper.ID+" .secret-box code")
+	require.Equal(t, 1, b.Count(t, ".secret-box"))
+	b.WaitVisible(t, "#agent-tokens-"+helper.ID+" table")
+	token := b.Text(t, "#agent-new-token-"+helper.ID+" .secret-box code")
+	require.True(t, len(token) > 20, "no token shown: %q", token)
+
 	env.Get(t, "/api/shares/with-me", cogtest.BasicAuth("helper", token)).Status(200)
 	toks, err := env.Providers.AppPasswords.ListByUser(helper.ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(toks))
+
+	// The token is random; the page around it is not. Its text is replaced
+	// so the golden holds still, at its real length so a phone still has to
+	// wrap it.
+	b.Eval(t, `() => { const c = document.querySelector(".secret-box code"); c.textContent = "x".repeat(c.textContent.length) }`)
+	b.Snapshot(t, webtest.State("token"))
+	b.Snapshot(t, webtest.State("token"), webtest.Mobile)
+
+	// Revoking it takes it off the list and signs it out.
+	b.AcceptConfirms(t)
+	b.Click(t, "#agent-tokens-"+helper.ID+` button[type="submit"]`)
+	b.WaitText(t, "Token revoked")
+	env.Get(t, "/api/shares/with-me", cogtest.BasicAuth("helper", token)).Status(401)
 }
 
 // The grant page offers the user's agents, and granting as a new agent

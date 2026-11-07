@@ -26,10 +26,7 @@ func TestAgentIsAUserWithoutSettingsOrShares(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, alice.ID, bot.OwnerID)
 
-	page := env.PostForm(t, "/settings/agents/"+bot.ID+"/tokens", url.Values{"csrf_token": {csrf}, "name": {"laptop"}}, cookie).Status(200).ReadBody()
-	m := regexp.MustCompile(`secret-box[^>]*><code>([^<]+)<`).FindStringSubmatch(page)
-	require.True(t, m != nil, "no token shown")
-	token := m[1]
+	token := createAgentToken(t, env, bot.ID, "laptop", cookie, csrf)
 	asBot := cogtest.BasicAuth("bot", token)
 
 	// The token signs the agent in; a password never does.
@@ -121,4 +118,72 @@ func TestOnlyOwnerSharesWithAgent(t *testing.T) {
 
 	env.Get(t, "/api/users/search?q=bot", bob.Auth).Status(200).Contains("bbot").NotContains("abot")
 	env.Get(t, "/ocs/v2.php/apps/files_sharing/api/v1/sharees?search=bot&itemType=file&format=json", bob.Auth).Status(200).Contains("bbot").NotContains("abot")
+}
+
+// createAgentToken issues a token through the page, as its HTMX form does,
+// and returns the token the response shows.
+func createAgentToken(t *testing.T, env *cogtest.Env, agentID, name string, cookie cogtest.HTTPOpt, csrf string) string {
+	t.Helper()
+	body := env.PostForm(t, "/settings/agents/"+agentID+"/tokens", url.Values{"csrf_token": {csrf}, "name": {name}}, cookie, cogtest.Header("HX-Request", "true")).Status(200).ReadBody()
+	m := regexp.MustCompile(`(?s)class="secret-box".*?<code>([^<]+)</code>`).FindStringSubmatch(body)
+	require.True(t, m != nil, "no token shown: %s", body)
+	require.Contains(t, body, `id="agent-tokens-`+agentID+`"`)
+	return m[1]
+}
+
+// A plain form post would make a token nobody could see; it makes none.
+func TestAgentTokenNeedsHTMX(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	cookie, csrf := sessionAndCSRF(t, env, alice.ID)
+	bot, err := env.Providers.Users.CreateAgent(alice.ID, "bot")
+	require.NoError(t, err)
+
+	env.PostForm(t, "/settings/agents/"+bot.ID+"/tokens", url.Values{"csrf_token": {csrf}, "name": {"laptop"}}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+	toks, err := env.Providers.AppPasswords.ListByUser(bot.ID)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(toks))
+
+	// Nor does a nameless one.
+	env.PostForm(t, "/settings/agents/"+bot.ID+"/tokens", url.Values{"csrf_token": {csrf}}, cookie, cogtest.Header("HX-Request", "true")).Status(200).Contains("needs a name")
+	toks, err = env.Providers.AppPasswords.ListByUser(bot.ID)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(toks))
+}
+
+// Revoking a token signs it out; deleting an agent removes it. Neither
+// reaches an agent someone else owns, nor a token of another agent.
+func TestAgentRevokeAndDelete(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	mallory := env.CreateUser(t, "mallory", "pass")
+	aliceCookie, aliceCSRF := sessionAndCSRF(t, env, alice.ID)
+	malCookie, malCSRF := sessionAndCSRF(t, env, mallory.ID)
+	bot, err := env.Providers.Users.CreateAgent(alice.ID, "bot")
+	require.NoError(t, err)
+	other, err := env.Providers.Users.CreateAgent(alice.ID, "other")
+	require.NoError(t, err)
+	token := createAgentToken(t, env, bot.ID, "laptop", aliceCookie, aliceCSRF)
+	asBot := cogtest.BasicAuth("bot", token)
+	toks, err := env.Providers.AppPasswords.ListByUser(bot.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(toks))
+	revoke := "/settings/agents/" + bot.ID + "/tokens/" + toks[0].ID + "/delete"
+	del := "/settings/agents/" + bot.ID + "/delete"
+
+	// Someone else's agent is not found, to revoke or to delete.
+	env.PostForm(t, revoke, url.Values{"csrf_token": {malCSRF}}, malCookie, cogtest.StopRedirect).Status(http.StatusNotFound)
+	env.PostForm(t, del, url.Values{"csrf_token": {malCSRF}}, malCookie, cogtest.StopRedirect).Status(http.StatusNotFound)
+	// A token is revoked only through the agent it belongs to.
+	env.PostForm(t, "/settings/agents/"+other.ID+"/tokens/"+toks[0].ID+"/delete", url.Values{"csrf_token": {aliceCSRF}}, aliceCookie, cogtest.StopRedirect).Status(http.StatusNotFound)
+	env.Get(t, "/api/shares/with-me", asBot).Status(200)
+
+	env.PostForm(t, revoke, url.Values{"csrf_token": {aliceCSRF}}, aliceCookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+	env.Get(t, "/api/shares/with-me", asBot).Status(http.StatusUnauthorized)
+
+	env.PostForm(t, del, url.Values{"csrf_token": {aliceCSRF}}, aliceCookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+	_, err = env.Providers.Users.GetByID(bot.ID)
+	require.True(t, err != nil, "agent still there")
+	_, err = env.Providers.Users.GetByID(other.ID)
+	require.NoError(t, err)
 }

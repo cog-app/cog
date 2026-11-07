@@ -18,12 +18,21 @@ import (
 type SnapshotOption func(*snapshotConfig)
 
 type snapshotConfig struct {
+	// state names one of several snapshots a test takes; suffix names the
+	// device it was taken on.
+	state  string
 	suffix string
 	width  int
 	height int
 	// noOverflow fails the snapshot when the page is wider than the
 	// viewport, which on a phone means the whole page scrolls sideways.
 	noOverflow bool
+}
+
+// State names a snapshot when a test takes more than one, appending
+// "_<name>" to the filename before any device suffix.
+func State(name string) SnapshotOption {
+	return func(cfg *snapshotConfig) { cfg.state = name }
 }
 
 // Mobile captures at 375×812 (iPhone) and appends "_mobile" to the filename.
@@ -528,6 +537,9 @@ func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
 	}
 	dir := filepath.Join(filepath.Dir(file), "testdata", "snapshots")
 	name := strings.NewReplacer("/", "_", "\\", "_", " ", "_").Replace(t.Name())
+	if cfg.state != "" {
+		name += "_" + cfg.state
+	}
 	if cfg.suffix != "" {
 		name += "_" + cfg.suffix
 	}

@@ -244,57 +244,60 @@
               </strong>
               to give it access.
             </p>
-            <div class="table-wrap">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>
-                      Token
-                    </th>
-                    <th class="col-shrink">
-                      Created
-                    </th>
-                    <th class="col-actions">
-                      <span class="sr-only">
-                        Actions
-                      </span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td class="break-anywhere">
-                      laptop
-                    </td>
-                    <td class="nowrap">
-                      2026-03-14
-                    </td>
-                    <td class="col-actions">
-                      <form action="/settings/agents/«hex»/tokens/«hex»/delete" method="post" onsubmit="return confirm('Revoke this token? Anything using it will be signed out.')">
-                        <input name="csrf_token" type="hidden" value="«hex»" />
-                        <button class="btn btn-outline-danger btn-sm" type="submit">
-                          Revoke
-                        </button>
-                      </form>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <div id="agent-tokens-«hex»">
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>
+                        Token
+                      </th>
+                      <th class="col-shrink">
+                        Created
+                      </th>
+                      <th class="col-actions">
+                        <span class="sr-only">
+                          Actions
+                        </span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="break-anywhere">
+                        laptop
+                      </td>
+                      <td class="nowrap">
+                        2026-03-14
+                      </td>
+                      <td class="col-actions">
+                        <form action="/settings/agents/«hex»/tokens/«hex»/delete" data-confirm="Revoke laptop? Anything using it will be signed out." method="post" onsubmit="return confirm(this.dataset.confirm)">
+                          <input name="csrf_token" type="hidden" value="«hex»" />
+                          <button class="btn btn-outline-danger btn-sm" type="submit">
+                            Revoke
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
             <h3 class="card-subtitle">
               Create a token
             </h3>
-            <form action="/settings/agents/«hex»/tokens" class="form-inline" method="post">
+            <div id="agent-new-token-«hex»" />
+            <form class="form-inline" hx-on::after-request="if(event.detail.successful) this.reset()" hx-post="/settings/agents/«hex»/tokens" hx-swap="innerHTML" hx-target="#agent-new-token-«hex»">
               <input name="csrf_token" type="hidden" value="«hex»" />
               <label class="sr-only" for="agent-token-«hex»">
                 Token name
               </label>
-              <input autocomplete="off" class="form-control" id="agent-token-«hex»" name="name" placeholder="Name, e.g. Laptop" type="text" />
+              <input autocomplete="off" class="form-control" id="agent-token-«hex»" name="name" placeholder="Name, e.g. Laptop" required="" type="text" />
               <button class="btn btn-secondary" type="submit">
                 Create token
               </button>
             </form>
-            <form action="/settings/agents/«hex»/delete" class="form-actions" method="post" onsubmit="return confirm('Delete this agent, its tokens and the shares made with it?')">
+            <form action="/settings/agents/«hex»/delete" class="form-actions" data-confirm="Delete assistant, its tokens and the shares made with it?" method="post" onsubmit="return confirm(this.dataset.confirm)">
               <input name="csrf_token" type="hidden" value="«hex»" />
               <button class="btn btn-outline-danger" type="submit">
                 Delete agent

@@ -6,20 +6,11 @@ templ settingsAgentsPage(pd ui.PageData, flash string, flashKind string, agents 
 	@ui.SidebarPage(pd, settingsSidebar("agents")) {
 		@ui.PageHeader("Agents", nil)
 		@ui.Alert(flashKind, flash)
-		@agentsBody(pd, agents, "", "")
+		@agentsBody(pd, agents)
 	}
 }
 
-// settingsAgentsPageWithToken is the page right after a token is issued: the
-// token is in the body once, beside the agent it signs in as, and nowhere else.
-templ settingsAgentsPageWithToken(pd ui.PageData, agents []agentView, agentName string, token string) {
-	@ui.SidebarPage(pd, settingsSidebar("agents")) {
-		@ui.PageHeader("Agents", nil)
-		@agentsBody(pd, agents, agentName, token)
-	}
-}
-
-templ agentsBody(pd ui.PageData, agents []agentView, tokenFor string, token string) {
+templ agentsBody(pd ui.PageData, agents []agentView) {
 	@ui.Card("Add an agent") {
 		<p class="card-desc">An agent is an account of its own for a script or an assistant. It reaches only the folders, calendars and contacts you share with it, and what it changes carries its name. It cannot sign in with a password, share, or change settings.</p>
 		<form class="form-inline" method="post" action="/settings/agents">
@@ -36,57 +27,78 @@ templ agentsBody(pd ui.PageData, agents []agentView, tokenFor string, token stri
 		}
 	}
 	for _, a := range agents {
-		@agentCard(pd, a, tokenFor, token)
+		@agentCard(pd, a)
 	}
 }
 
 // agentCard is one agent: the tokens it signs in with, a form for another,
 // and the way to remove it.
-templ agentCard(pd ui.PageData, a agentView, tokenFor string, token string) {
+templ agentCard(pd ui.PageData, a agentView) {
 	@ui.Card(a.Username) {
 		<p class="card-desc">Added { a.CreatedAt.Format("2006-01-02") }. Share with <strong>{ a.Username }</strong> to give it access.</p>
-		if token != "" && tokenFor == a.Username {
-			@ui.SecretAlert("Token created. Copy it now; it will not be shown again.", token)
-		}
-		if len(a.Tokens) == 0 {
-			<p class="empty-state empty-state-sm">No tokens yet. The agent cannot sign in until it has one.</p>
-		} else {
-			<div class="table-wrap">
-				<table class="table">
-					<thead>
-						<tr>
-							<th>Token</th>
-							<th class="col-shrink">Created</th>
-							<th class="col-actions"><span class="sr-only">Actions</span></th>
-						</tr>
-					</thead>
-					<tbody>
-						for _, t := range a.Tokens {
-							<tr>
-								<td class="break-anywhere">{ t.Name }</td>
-								<td class="nowrap">{ t.CreatedAt.Format("2006-01-02") }</td>
-								<td class="col-actions">
-									<form method="post" action={ templ.SafeURL("/settings/agents/" + a.ID + "/tokens/" + t.ID + "/delete") } onsubmit="return confirm('Revoke this token? Anything using it will be signed out.')">
-										<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
-										<button class="btn btn-outline-danger btn-sm" type="submit">Revoke</button>
-									</form>
-								</td>
-							</tr>
-						}
-					</tbody>
-				</table>
-			</div>
-		}
+		<div id={ "agent-tokens-" + a.ID }>
+			@agentTokenList(pd, a)
+		</div>
 		<h3 class="card-subtitle">Create a token</h3>
-		<form class="form-inline" method="post" action={ templ.SafeURL("/settings/agents/" + a.ID + "/tokens") }>
+		<div id={ "agent-new-token-" + a.ID }></div>
+		<form
+			class="form-inline"
+			hx-post={ "/settings/agents/" + a.ID + "/tokens" }
+			hx-target={ "#agent-new-token-" + a.ID }
+			hx-swap="innerHTML"
+			hx-on::after-request="if(event.detail.successful) this.reset()"
+		>
 			<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 			<label class="sr-only" for={ "agent-token-" + a.ID }>Token name</label>
-			<input class="form-control" type="text" id={ "agent-token-" + a.ID } name="name" placeholder="Name, e.g. Laptop" autocomplete="off"/>
+			<input class="form-control" type="text" id={ "agent-token-" + a.ID } name="name" placeholder="Name, e.g. Laptop" required autocomplete="off"/>
 			<button class="btn btn-secondary" type="submit">Create token</button>
 		</form>
-		<form class="form-actions" method="post" action={ templ.SafeURL("/settings/agents/" + a.ID + "/delete") } onsubmit="return confirm('Delete this agent, its tokens and the shares made with it?')">
+		<form class="form-actions" method="post" action={ templ.SafeURL("/settings/agents/" + a.ID + "/delete") } data-confirm={ "Delete " + a.Username + ", its tokens and the shares made with it?" } onsubmit="return confirm(this.dataset.confirm)">
 			<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 			<button class="btn btn-outline-danger" type="submit">Delete agent</button>
 		</form>
 	}
+}
+
+// agentTokenList is an agent's tokens. It is swapped in after a create, so
+// the new one appears beside the alert showing it.
+templ agentTokenList(pd ui.PageData, a agentView) {
+	if len(a.Tokens) == 0 {
+		<p class="empty-state empty-state-sm">No tokens yet. The agent cannot sign in until it has one.</p>
+	} else {
+		<div class="table-wrap">
+			<table class="table">
+				<thead>
+					<tr>
+						<th>Token</th>
+						<th class="col-shrink">Created</th>
+						<th class="col-actions"><span class="sr-only">Actions</span></th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, t := range a.Tokens {
+						<tr>
+							<td class="break-anywhere">{ t.Name }</td>
+							<td class="nowrap">{ t.CreatedAt.Format("2006-01-02") }</td>
+							<td class="col-actions">
+								<form method="post" action={ templ.SafeURL("/settings/agents/" + a.ID + "/tokens/" + t.ID + "/delete") } data-confirm={ "Revoke " + t.Name + "? Anything using it will be signed out." } onsubmit="return confirm(this.dataset.confirm)">
+									<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+									<button class="btn btn-outline-danger btn-sm" type="submit">Revoke</button>
+								</form>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+// agentTokenCreated answers a token create: the token, shown once in the
+// response body, and the agent's list with the new one in it.
+templ agentTokenCreated(pd ui.PageData, a agentView, token string) {
+	@ui.SecretAlert("Token created. Copy it now; it will not be shown again.", token)
+	<div id={ "agent-tokens-" + a.ID } hx-swap-oob="true">
+		@agentTokenList(pd, a)
+	</div>
 }
