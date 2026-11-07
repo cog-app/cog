@@ -45,10 +45,30 @@ func TestPasswordCallback_RateLimited(t *testing.T) {
 		guard: &ratelimit.Guard{Limiter: ratelimit.New(3, time.Minute, clock.System())},
 	}
 	conn := &stubConnMeta{user: "alice", remoteAddr: &net.TCPAddr{IP: net.ParseIP("203.0.113.9"), Port: 2222}}
-	for range 3 {
-		_, err := ac.passwordCallback(conn, []byte("wrong"))
+	for _, guess := range []string{"wrong1", "wrong2", "wrong3"} {
+		_, err := ac.passwordCallback(conn, []byte(guess))
 		require.True(t, err != nil)
 	}
 	_, err := ac.passwordCallback(conn, []byte("secret"))
 	require.True(t, err == ratelimit.ErrLimited, "got %v", err)
+}
+
+// The guard refuses a repeated wrong password without checking it, and the
+// callback must not take the check's untouched results for a success: the
+// SSH library treats nil permissions with a nil error as signed in.
+func TestPasswordCallback_RepeatedWrongPasswordRefused(t *testing.T) {
+	env := newTestEnv(t)
+	env.createUser(t, "alice", "secret")
+	ac := &authCallbacks{
+		users: env.providers.Users, appPasswords: env.providers.AppPasswords, keys: env.keys,
+		guard: &ratelimit.Guard{Limiter: ratelimit.New(3, time.Minute, clock.System())},
+	}
+	conn := &stubConnMeta{user: "alice", remoteAddr: &net.TCPAddr{IP: net.ParseIP("203.0.113.9"), Port: 2222}}
+	for range 5 {
+		perms, err := ac.passwordCallback(conn, []byte("wrong"))
+		require.True(t, err != nil && perms == nil, "repeat let in: %v %v", perms, err)
+	}
+	perms, err := ac.passwordCallback(conn, []byte("secret"))
+	require.NoError(t, err)
+	require.True(t, perms != nil)
 }

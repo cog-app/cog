@@ -380,8 +380,8 @@ func TestPasswordCallback_AppPasswordWrongUserRejected(t *testing.T) {
 	}
 	// Alice's app password presented as bob — must be refused.
 	_, err = ac.passwordCallback(&stubConnMeta{user: "bob"}, []byte(appPW))
-	require.True(t, err != nil)
-	require.True(t, strings.Contains(err.Error(), "does not belong"))
+	require.True(t, errors.Is(err, errWrongPassword), "got %v", err)
+	require.True(t, strings.Contains(err.Error(), "another user"))
 }
 
 func TestPublicKeyCallback_Happy(t *testing.T) {

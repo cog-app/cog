@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
 	"net/http"
@@ -72,19 +73,25 @@ func (h *loginHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	// slowed.
 	var u *user.User
 	var authErr error
-	_, err := h.p.Guard.Try(ratelimit.ClientIP(r), ratelimit.AccountKey(username), func() bool {
+	ok, err := h.p.Guard.Try(ratelimit.ClientIP(r), ratelimit.AccountKey(username), password, func() (bool, error) {
 		u, authErr = h.p.Users.Authenticate(username, password)
-		return authErr == nil
+		if authErr != nil && !errors.Is(authErr, user.ErrAuthFailed) {
+			return false, authErr
+		}
+		return authErr == nil, nil
 	})
 	if errors.Is(err, ratelimit.ErrLimited) {
 		setFlash(w, "error", "Too many failed login attempts. Please try again later.")
 		http.Redirect(w, r, loginRedirect("/login", next), http.StatusSeeOther)
 		return
 	}
-	if authErr != nil {
-		if !errors.Is(authErr, user.ErrAuthFailed) {
-			h.p.Log.Error("authenticate", "username", username, "err", authErr)
-		}
+	if err != nil {
+		h.p.Log.Error("authenticate", "username", username, "err", err)
+		setFlash(w, "error", "Signing in failed. Please try again.")
+		http.Redirect(w, r, loginRedirect("/login", next), http.StatusSeeOther)
+		return
+	}
+	if !ok {
 		setFlashForm(w, "error", "Invalid username or password.", map[string]string{"username": username})
 		http.Redirect(w, r, loginRedirect("/login", next), http.StatusSeeOther)
 		return
@@ -221,7 +228,7 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate the code based on the user's MFA method.
-	valid, err := h.p.Guard.Try(ratelimit.ClientIP(r), "mfa:"+pending.UserID, func() bool {
+	valid, err := h.p.Guard.Try(ratelimit.ClientIP(r), "mfa:"+pending.UserID, "", func() (bool, error) {
 		var ok bool
 		var vErr error
 		switch u.MFAMethod {
@@ -231,12 +238,18 @@ func (h *loginHandler) HandleMFA(w http.ResponseWriter, r *http.Request) {
 			ok, vErr = h.p.EmailOTP.Validate(pending.UserID, code)
 		}
 		if vErr != nil {
-			h.p.Log.Error("validate mfa code", "user", pending.UserID, "method", u.MFAMethod, "err", vErr)
+			return false, fmt.Errorf("validate %s code: %w", u.MFAMethod, vErr)
 		}
-		return vErr == nil && ok
+		return ok, nil
 	})
 	if errors.Is(err, ratelimit.ErrLimited) {
 		setFlash(w, "error", "Too many failed attempts. Please try again later.")
+		http.Redirect(w, r, loginRedirect("/login/mfa", next), http.StatusSeeOther)
+		return
+	}
+	if err != nil {
+		h.p.Log.Error("validate mfa code", "user", pending.UserID, "err", err)
+		setFlash(w, "error", "The code could not be checked. Please try again.")
 		http.Redirect(w, r, loginRedirect("/login/mfa", next), http.StatusSeeOther)
 		return
 	}

@@ -1,6 +1,7 @@
 package ratelimit_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -13,8 +14,8 @@ func newGuard(max int) *ratelimit.Guard {
 	return &ratelimit.Guard{Limiter: ratelimit.New(max, time.Hour, clock.System()), Delay: time.Millisecond}
 }
 
-func pass() bool { return true }
-func fail() bool { return false }
+func pass() (bool, error) { return true, nil }
+func fail() (bool, error) { return false, nil }
 
 // A client's success against one account does not clear its failures
 // against others (audit H7): guessing interleaved with good logins to an
@@ -22,16 +23,16 @@ func fail() bool { return false }
 func TestGuardSuccessDoesNotClearClient(t *testing.T) {
 	g := newGuard(3)
 	for range 3 {
-		_, err := g.Try("203.0.113.1", ratelimit.AccountKey("victim"), fail)
+		_, err := g.Try("203.0.113.1", ratelimit.AccountKey("victim"), "", fail)
 		require.NoError(t, err)
-		ok, err := g.Try("203.0.113.1", ratelimit.AccountKey("mine"), pass)
+		ok, err := g.Try("203.0.113.1", ratelimit.AccountKey("mine"), "", pass)
 		if err != nil {
 			require.Equal(t, ratelimit.ErrLimited, err)
 			return
 		}
 		require.True(t, ok)
 	}
-	_, err := g.Try("203.0.113.1", ratelimit.AccountKey("victim"), pass)
+	_, err := g.Try("203.0.113.1", ratelimit.AccountKey("victim"), "", pass)
 	require.Equal(t, ratelimit.ErrLimited, err)
 }
 
@@ -40,7 +41,7 @@ func TestGuardSuccessDoesNotClearClient(t *testing.T) {
 func TestGuardSlowedAccountCapsWaiters(t *testing.T) {
 	g := &ratelimit.Guard{Limiter: ratelimit.New(3, time.Hour, clock.System()), Delay: 300 * time.Millisecond}
 	for i := range 5 {
-		_, err := g.Try("198.51.100."+string(rune('1'+i)), ratelimit.AccountKey("alice"), fail)
+		_, err := g.Try("198.51.100."+string(rune('1'+i)), ratelimit.AccountKey("alice"), "", fail)
 		require.NoError(t, err)
 	}
 
@@ -51,7 +52,7 @@ func TestGuardSlowedAccountCapsWaiters(t *testing.T) {
 	done := make(chan error, n)
 	for i := range n {
 		go func() {
-			_, err := g.Try("192.0.2."+string(rune('1'+i)), ratelimit.AccountKey("alice"), fail)
+			_, err := g.Try("192.0.2."+string(rune('1'+i)), ratelimit.AccountKey("alice"), "", fail)
 			done <- err
 		}()
 	}
@@ -70,10 +71,99 @@ func TestGuardSlowedAccountCapsWaiters(t *testing.T) {
 func TestGuardAccountIsSlowedNotLocked(t *testing.T) {
 	g := newGuard(3)
 	for i := range 5 {
-		_, err := g.Try("198.51.100."+string(rune('1'+i)), ratelimit.AccountKey("alice"), fail)
+		_, err := g.Try("198.51.100."+string(rune('1'+i)), ratelimit.AccountKey("alice"), "", fail)
 		require.NoError(t, err)
 	}
-	ok, err := g.Try("192.0.2.7", ratelimit.AccountKey("Alice"), pass)
+	ok, err := g.Try("192.0.2.7", ratelimit.AccountKey("Alice"), "", pass)
+	require.NoError(t, err)
+	require.True(t, ok)
+}
+
+// An app retrying a revoked token or an old password sends the same wrong
+// secret over and over. Only its first refusal counts: its owner, behind
+// the same address, can still sign in, and the repeat is not even checked.
+func TestGuardRepeatedSecretCountsOnce(t *testing.T) {
+	g := newGuard(3)
+	checks := 0
+	stale := func() (bool, error) { checks++; return false, nil }
+	for range 50 {
+		ok, err := g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "old-token", stale)
+		require.NoError(t, err)
+		require.False(t, ok)
+	}
+	require.Equal(t, 1, checks)
+	ok, err := g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "right", pass)
+	require.NoError(t, err)
+	require.True(t, ok)
+}
+
+// Varying the secret is guessing, and every guess counts.
+func TestGuardDistinctSecretsCount(t *testing.T) {
+	g := newGuard(3)
+	for i := range 3 {
+		_, err := g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "guess"+string(rune('a'+i)), fail)
+		require.NoError(t, err)
+	}
+	_, err := g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "right", pass)
+	require.Equal(t, ratelimit.ErrLimited, err)
+}
+
+// A repeat is remembered per client and per account: the same wrong
+// secret from another address, or at another account, is a new attempt.
+func TestGuardRepeatIsPerClientAndAccount(t *testing.T) {
+	g := newGuard(10)
+	checks := 0
+	wrong := func() (bool, error) { checks++; return false, nil }
+	for _, c := range []struct{ ip, user string }{
+		{"203.0.113.1", "alice"}, {"203.0.113.1", "alice"},
+		{"203.0.113.2", "alice"}, {"203.0.113.1", "bob"},
+	} {
+		_, err := g.Try(c.ip, ratelimit.AccountKey(c.user), "same", wrong)
+		require.NoError(t, err)
+	}
+	require.Equal(t, 3, checks)
+}
+
+// A refusal is remembered for the window, then the secret is checked (and
+// counted) again.
+func TestGuardRepeatExpiresWithWindow(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	g := &ratelimit.Guard{Limiter: ratelimit.New(10, time.Minute, func() time.Time { return now }), Delay: time.Millisecond}
+	checks := 0
+	wrong := func() (bool, error) { checks++; return false, nil }
+	g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "x", wrong)
+	g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "x", wrong)
+	require.Equal(t, 1, checks)
+	now = now.Add(time.Minute)
+	g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "x", wrong)
+	require.Equal(t, 2, checks)
+}
+
+// Forget makes a refused secret worth checking again: the password may
+// have just been set to it.
+func TestGuardForget(t *testing.T) {
+	g := newGuard(10)
+	right := false
+	check := func() (bool, error) { return right, nil }
+	ok, _ := g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "p", check)
+	require.False(t, ok)
+	right = true
+	ok, _ = g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "p", check)
+	require.False(t, ok, "repeat was checked")
+	g.Forget(ratelimit.AccountKey("alice"))
+	ok, err := g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "p", check)
+	require.NoError(t, err)
+	require.True(t, ok)
+}
+
+// A check that cannot tell is neither counted nor remembered: a database
+// hiccup must not hold a right password refused.
+func TestGuardCheckErrorIsNotARefusal(t *testing.T) {
+	g := newGuard(1)
+	broken := errors.New("database is locked")
+	_, err := g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "p", func() (bool, error) { return false, broken })
+	require.True(t, errors.Is(err, broken), "got %v", err)
+	ok, err := g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "p", pass)
 	require.NoError(t, err)
 	require.True(t, ok)
 }

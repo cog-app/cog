@@ -447,3 +447,24 @@ func TestTokenWebDAV_PublicLink_OtherTypeRefused(t *testing.T) {
 	env.Get(t, "/public.php/webdav/", cogtest.BasicAuth("", *rec.Token)).
 		Status(http.StatusUnauthorized).NotContains("private")
 }
+
+// Guessing a link's password here is throttled as on the link's page:
+// past the limit even the right one is refused, and a repeated wrong one
+// is refused every time.
+func TestTokenWebDAV_PublicLink_PasswordThrottled(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	meta := putFileViaAPI(t, env, alice, "/secret.txt", "secret")
+	rec, err := env.Providers.Shares.CreatePublicLinkWithPassword(
+		alice.ID, "files:file", strconv.FormatInt(meta.ID, 10), 1, nil, "letmein",
+	)
+	require.NoError(t, err)
+
+	for range 3 {
+		env.Get(t, "/public.php/webdav/", cogtest.BasicAuth(*rec.Token, "same")).Status(http.StatusUnauthorized)
+	}
+	for i := range 10 {
+		env.Get(t, "/public.php/webdav/", cogtest.BasicAuth(*rec.Token, "guess"+strconv.Itoa(i))).Status(http.StatusUnauthorized)
+	}
+	env.Get(t, "/public.php/webdav/", cogtest.BasicAuth(*rec.Token, "letmein")).Status(http.StatusUnauthorized)
+}

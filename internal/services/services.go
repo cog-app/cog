@@ -441,6 +441,11 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	}
 
 	limiter := ratelimit.NewShared(sysDB, "auth", 10, 15*time.Minute, c)
+	guard := &ratelimit.Guard{Limiter: limiter, Delay: time.Second}
+	// A secret the guard refused may be right once a password is set or
+	// an account made; it forgets those refusals then.
+	users.OnCredentialsChange = func(username string) { guard.Forget(ratelimit.AccountKey(username)) }
+	shares.OnPasswordChange = func(shareID string) { guard.Forget(ratelimit.ShareKey(shareID)) }
 	p := &Providers{
 		Config:         cfg,
 		Log:            log,
@@ -464,7 +469,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		WebAuthn:       newWebAuthnStore(sysDB, c, cfg.BaseURL, secret, log),
 		SSHKeys:        sshKeys,
 		RateLimiter:    limiter,
-		Guard:          &ratelimit.Guard{Limiter: limiter, Delay: time.Second},
+		Guard:          guard,
 		Activities:     activities,
 		DAV:            davServer,
 		JMAP:           jmapServer,

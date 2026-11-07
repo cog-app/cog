@@ -71,6 +71,18 @@ type Store struct {
 	// a new account's, a change, a reset, an admin's. It returns an error
 	// fit to show the person choosing it.
 	PasswordPolicy func(password string) error
+	// OnCredentialsChange, when set, runs after the password that signs in
+	// as username may have become one it was not: the account was made, or
+	// its password set. The guard against guessing forgets what it refused
+	// there, or a client refused a minute ago would stay refused with what
+	// is now the right password.
+	OnCredentialsChange func(username string)
+}
+
+func (s *Store) credentialsChanged(username string) {
+	if s.OnCredentialsChange != nil {
+		s.OnCredentialsChange(username)
+	}
 }
 
 // CheckPassword asks the policy whether password may be set.
@@ -135,6 +147,7 @@ func (s *Store) Create(username, password string) (*User, error) {
 		}
 		return nil, fmt.Errorf("insert user: %w", err)
 	}
+	s.credentialsChanged(username)
 
 	return &User{
 		ID:           id,
@@ -449,8 +462,16 @@ func (s *Store) UpdatePassword(id, newPassword string) error {
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}
-	_, err = s.db.Exec(`UPDATE users SET password_hash = ? WHERE id = ?`, string(hash), id)
-	return err
+	var username string
+	err = s.db.QueryRow(`UPDATE users SET password_hash = ? WHERE id = ? RETURNING username`, string(hash), id).Scan(&username)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	s.credentialsChanged(username)
+	return nil
 }
 
 // SetMFAMethod updates the user's MFA method.

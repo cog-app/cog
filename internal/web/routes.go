@@ -366,6 +366,7 @@ func New(p *services.Providers) http.Handler {
 		Users:  p.Users,
 		Files:  fp,
 		Policy: p.FedPolicy,
+		Guard:  p.Guard,
 	}
 	mux.Handle("/public.php/webdav/", bodylimit.Unlimited(fedWebDAV))
 
