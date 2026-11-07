@@ -770,6 +770,13 @@ func (p *Providers) StartCacheSweep(ctx context.Context) {
 	}()
 }
 
+// StartLockWatch checks, until ctx ends, that the process still holds its
+// lock on every database it has open, and logs an error for any it lost
+// (db.WatchLocks).
+func (p *Providers) StartLockWatch(ctx context.Context) {
+	go db.WatchLocks(ctx, p.Log)
+}
+
 // StartPush runs push delivery until ctx ends.
 func (p *Providers) StartPush(ctx context.Context) {
 	if p.Pusher != nil {

@@ -265,6 +265,7 @@ func Run(ctx context.Context, cfg Config, plugins ...plugin.Plugin) error {
 	}
 	p.StartPush(ctx)
 	p.StartCacheSweep(ctx)
+	p.StartLockWatch(ctx)
 
 	// Start SSH server if enabled.
 	if cfg.SSHEnabled {
