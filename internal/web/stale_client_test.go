@@ -3,8 +3,10 @@ package web_test
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 	"testing"
 
+	"git.duckfam.us/jj-software/cog/internal/compat"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 )
@@ -104,4 +106,61 @@ func TestLoginFlowsDoNotBlockSignIn(t *testing.T) {
 	}
 	env.Post(t, "/index.php/login/v2").Status(http.StatusTooManyRequests)
 	require.True(t, signInLands(t, env, "alice", "pass") != "/login", "flows blocked the web sign-in")
+}
+
+// An app signed in and out again many times is never refused a new flow:
+// only flows still waiting for a grant count. Nor does an app polling a
+// flow that expired cut off the next one its user grants.
+func TestFinishedLoginFlowsDoNotCount(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	cookie, csrf := sessionAndCSRF(t, env, alice.ID)
+
+	signIn := func() {
+		t.Helper()
+		var init struct {
+			Poll  struct{ Token string } `json:"poll"`
+			Login string                 `json:"login"`
+		}
+		env.Post(t, "/index.php/login/v2").Status(http.StatusOK).JSON(&init)
+		loginURL, err := url.Parse(init.Login)
+		require.NoError(t, err)
+		env.PostForm(t, "/index.php/login/v2/grant?token="+loginURL.Query().Get("token"), url.Values{
+			"csrf_token": {csrf}, "action": {"grant"},
+		}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+		env.PostForm(t, "/index.php/login/v2/poll", url.Values{"token": {init.Poll.Token}}).Status(http.StatusOK)
+	}
+	for range 2 * compat.MaxWaitingFlows {
+		signIn()
+	}
+
+	for range 30 {
+		env.PostForm(t, "/index.php/login/v2/poll", url.Values{"token": {"expired"}})
+	}
+	signIn()
+}
+
+// An admin sees what is blocked under Users and can clear it all with one
+// button, with no shell to reach the database from.
+func TestAdminClearsSignInBlocks(t *testing.T) {
+	env := cogtest.New(t)
+	admin := env.CreateUser(t, "admin", "pass")
+	env.CreateUser(t, "alice", "pass")
+	cookie, csrf := sessionAndCSRF(t, env, admin.ID)
+	for i := range 10 {
+		require.Equal(t, "/login", signInLands(t, env, "alice", "wrong"+strconv.Itoa(i)))
+	}
+	require.Equal(t, "/login", signInLands(t, env, "alice", "pass"))
+
+	env.Get(t, "/admin/users", cookie).Status(http.StatusOK).Contains("Blocked sign-ins").Contains("Account <strong class=\"break-anywhere\">alice</strong>")
+
+	// Not for anyone but an admin.
+	bob := env.CreateUser(t, "bob", "pass")
+	bobCookie, bobCSRF := sessionAndCSRF(t, env, bob.ID)
+	env.PostForm(t, "/admin/sign-in-limits/clear", url.Values{"csrf_token": {bobCSRF}}, bobCookie, cogtest.StopRedirect).Status(http.StatusForbidden)
+	require.Equal(t, "/login", signInLands(t, env, "alice", "pass"))
+
+	env.PostForm(t, "/admin/sign-in-limits/clear", url.Values{"csrf_token": {csrf}}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+	require.True(t, signInLands(t, env, "alice", "pass") != "/login", "still blocked after clearing")
+	env.Get(t, "/admin/users", cookie).Status(http.StatusOK).NotContains("Blocked sign-ins")
 }

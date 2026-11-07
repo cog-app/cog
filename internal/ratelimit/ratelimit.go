@@ -78,6 +78,17 @@ type store interface {
 	record(key string, at, cutoff time.Time) error
 	count(key string, cutoff time.Time) (int, error)
 	reset(key string) error
+	// over returns the keys with at least max attempts since cutoff.
+	over(max int, cutoff time.Time) ([]Over, error)
+	clear() error
+}
+
+// Over is a key a limiter is limiting: Attempts failures within the window,
+// the last at Last.
+type Over struct {
+	Key      string
+	Attempts int
+	Last     time.Time
 }
 
 // New creates a rate limiter that keeps its attempts in memory.
@@ -115,6 +126,21 @@ func (l *Limiter) Reset(key string) {
 	if err := l.store.reset(key); err != nil {
 		slog.Error("rate limit: reset", "err", err)
 	}
+}
+
+// Over returns the keys the limiter is limiting now, most recent first.
+func (l *Limiter) Over() ([]Over, error) {
+	over, err := l.store.over(l.MaxAttempts, l.clock().Add(-l.Window))
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(over, func(a, b Over) int { return b.Last.Compare(a.Last) })
+	return over, nil
+}
+
+// Clear forgets every attempt the limiter holds, so nothing is limited.
+func (l *Limiter) Clear() error {
+	return l.store.clear()
 }
 
 // memStore keeps attempts in a map. Each record drops the attempts that
@@ -158,6 +184,34 @@ func (m *memStore) reset(key string) error {
 	return nil
 }
 
+func (m *memStore) over(max int, cutoff time.Time) ([]Over, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var over []Over
+	for k, a := range m.attempts {
+		o := Over{Key: k}
+		for _, t := range a {
+			if !t.Before(cutoff) {
+				o.Attempts++
+				if t.After(o.Last) {
+					o.Last = t
+				}
+			}
+		}
+		if o.Attempts >= max {
+			over = append(over, o)
+		}
+	}
+	return over, nil
+}
+
+func (m *memStore) clear() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	clear(m.attempts)
+	return nil
+}
+
 // dbStore keeps attempts in the rate_attempts table. Recording drops the
 // limiter's attempts that have left the window: only failures are recorded,
 // so the table stays small.
@@ -188,6 +242,38 @@ func (d *dbStore) count(key string, cutoff time.Time) (int, error) {
 func (d *dbStore) reset(key string) error {
 	if _, err := d.db.Exec(`DELETE FROM rate_attempts WHERE limiter = ? AND key = ?`, d.name, key); err != nil {
 		return fmt.Errorf("reset %s: %w", d.name, err)
+	}
+	return nil
+}
+
+func (d *dbStore) over(max int, cutoff time.Time) ([]Over, error) {
+	rows, err := d.db.Query(`SELECT key, count(*), max(at) FROM rate_attempts WHERE limiter = ? AND at >= ? GROUP BY key HAVING count(*) >= ?`,
+		d.name, cutoff.UnixMilli(), max)
+	if err != nil {
+		return nil, fmt.Errorf("list %s: %w", d.name, err)
+	}
+	defer rows.Close()
+	var over []Over
+	for rows.Next() {
+		var (
+			o    Over
+			last int64
+		)
+		if err := rows.Scan(&o.Key, &o.Attempts, &last); err != nil {
+			return nil, fmt.Errorf("list %s: %w", d.name, err)
+		}
+		o.Last = time.UnixMilli(last)
+		over = append(over, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list %s: %w", d.name, err)
+	}
+	return over, nil
+}
+
+func (d *dbStore) clear() error {
+	if _, err := d.db.Exec(`DELETE FROM rate_attempts WHERE limiter = ?`, d.name); err != nil {
+		return fmt.Errorf("clear %s: %w", d.name, err)
 	}
 	return nil
 }

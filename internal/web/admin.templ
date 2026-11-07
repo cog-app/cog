@@ -15,7 +15,7 @@ import (
 )
 
 // --- Users ---
-templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], retired []user.RetiredName, flash string, flashKind string, agentOwners map[string]string) {
+templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], retired []user.RetiredName, flash string, flashKind string, agentOwners map[string]string, blocked []blockedSignIn) {
 	@ui.AdminSidebarPage(pd, "users") {
 		@ui.PageHeader("Users", nil) {
 			<a class="btn btn-primary" href="/admin/users/new">
@@ -69,6 +69,40 @@ templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], retired 
 				</table>
 			</div>
 		</div>
+		if len(blocked) > 0 {
+			<div class="card">
+				<h2 class="card-title">Blocked sign-ins</h2>
+				<p class="text-muted">Too many failed attempts in the last 15 minutes. Blocks lift on their own once the attempts are older than that.</p>
+				<div class="table-wrap">
+					<table class="table">
+						<thead>
+							<tr>
+								<th>Who</th>
+								<th>Last failure</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, b := range blocked {
+								<tr>
+									<td>
+										<div>{ b.Kind } <strong class="break-anywhere">{ b.Name }</strong></div>
+										<div class="text-sm text-muted">{ b.Effect }</div>
+									</td>
+									<td>
+										<div>{ b.Last.UTC().Format("15:04 UTC") }</div>
+										<div class="text-sm text-muted">{ strconv.Itoa(b.Count) } failures</div>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+				<form method="post" action="/admin/sign-in-limits/clear" data-confirm="Clear every sign-in block? Anyone guessing passwords starts again with a full allowance." onsubmit="return confirm(this.dataset.confirm)">
+					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+					<button class="btn btn-outline-danger" type="submit">Clear all blocks</button>
+				</form>
+			</div>
+		}
 		if len(retired) > 0 {
 			<div class="card card-flush">
 				<h2 class="card-title">Retired names</h2>

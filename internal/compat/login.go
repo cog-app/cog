@@ -29,15 +29,16 @@ import (
 // minting an app password against their (the victim's) account, since the
 // granted credentials always come from the browser session, not form input.
 type LoginFlowHandler struct {
-	DB          *sql.DB // the system database, which holds pending flows
-	Users       *user.Store
-	AppPWs      *auth.AppPasswordStore
-	Sessions    *auth.SessionStore
-	BaseURL     string
-	// RateLimiter caps the flows a client may start; a client over it can
-	// neither start nor poll one. It is the server's flow limiter, not its
-	// sign-in one: a client refused for wrong passwords may still sign an
-	// app in.
+	DB       *sql.DB // the system database, which holds pending flows
+	Users    *user.Store
+	AppPWs   *auth.AppPasswordStore
+	Sessions *auth.SessionStore
+	BaseURL  string
+	// RateLimiter counts polls for flows that do not exist, and refuses a
+	// client over it any more answers to them. A live flow's poll is always
+	// answered, so an app waiting on its grant is never cut off. It is the
+	// server's flow limiter, not its sign-in one: a client refused for
+	// wrong passwords may still sign an app in.
 	RateLimiter *ratelimit.Limiter
 	Clock       clock.Clock
 	CSRFSecret  []byte
@@ -62,15 +63,19 @@ func (h *LoginFlowHandler) HandleInit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Starting a flow needs no credentials and writes a row, so it counts
-	// against the client like a registration does (M10).
+	// Starting a flow needs no credentials and writes a row, so a client
+	// may have only so many waiting at once (M10). Counting starts instead
+	// would refuse an app its next sign-in for having signed in before.
 	ip := ratelimit.ClientIP(r)
-	if h.RateLimiter != nil {
-		if h.RateLimiter.IsLimited(ip) {
-			http.Error(w, "Rate limited", http.StatusTooManyRequests)
-			return
-		}
-		h.RateLimiter.RecordFailure(ip)
+	n, err := h.flows().waiting(ip)
+	if err != nil {
+		slog.Error("login flow: count", "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if n >= MaxWaitingFlows {
+		http.Error(w, "Rate limited", http.StatusTooManyRequests)
+		return
 	}
 
 	pollToken, err := randomHex(32)
@@ -111,18 +116,6 @@ func (h *LoginFlowHandler) HandlePoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Rate-limit by client IP. NextCloud clients poll once or twice per
-	// second; an attacker can spam this to lock contention on the pending
-	// map (audit security.md #22). A client that has started too many flows
-	// is refused here too.
-	if h.RateLimiter != nil {
-		ip := ratelimit.ClientIP(r)
-		if h.RateLimiter.IsLimited(ip) {
-			http.Error(w, "Rate limited", http.StatusTooManyRequests)
-			return
-		}
-	}
-
 	token := r.FormValue("token")
 	if token == "" {
 		http.Error(w, "Missing token", http.StatusBadRequest)
@@ -135,6 +128,18 @@ func (h *LoginFlowHandler) HandlePoll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not yet granted", http.StatusNotFound)
 		return
 	case errors.Is(err, errFlowNotFound):
+		// NextCloud clients poll once or twice per second. Polls for flows
+		// that do not exist are limited by IP (audit security.md #22); a
+		// poll for a live flow never is, or an app still polling one that
+		// expired would cut off the next one its user grants.
+		if h.RateLimiter != nil {
+			ip := ratelimit.ClientIP(r)
+			if h.RateLimiter.IsLimited(ip) {
+				http.Error(w, "Rate limited", http.StatusTooManyRequests)
+				return
+			}
+			h.RateLimiter.RecordFailure(ip)
+		}
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	case err != nil:

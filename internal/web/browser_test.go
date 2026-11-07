@@ -629,6 +629,29 @@ func TestBrowserAdminUsersLongNames(t *testing.T) {
 	b.Snapshot(t, webtest.Mobile)
 }
 
+// The blocked sign-ins card, which an admin locked out of a client reaches
+// from a phone.
+func TestBrowserAdminUsersBlockedSignIns(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "admin", "pass")
+	env.CreateUser(t, "alice", "pass")
+	for range 10 {
+		env.Providers.RateLimiter.RecordFailure("203.0.113.7")
+		env.Providers.RateLimiter.RecordFailure("user:alice")
+		env.Providers.FlowLimiter.RecordFailure("198.51.100.20")
+	}
+
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	b := eng.Start(t)
+	b.Login(t, "admin", "pass")
+	b.Navigate(t, "/admin/users")
+	b.WaitText(t, "Blocked sign-ins")
+	b.Snapshot(t)
+	b.Snapshot(t, webtest.Mobile)
+}
+
 // Creating a user whose name is taken: the error path of the new-user form.
 func TestBrowserAdminNewUserDuplicate(t *testing.T) {
 	env := cogtest.New(t)
