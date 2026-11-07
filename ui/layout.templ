@@ -141,18 +141,48 @@ templ navbar(pd PageData) {
 		}
 		<div class="navbar-end">
 			if pd.User != nil {
-				<div class="dropdown notif-dropdown" id="notif" hidden>
-					<button type="button" class="btn-icon" data-dropdown-toggle aria-expanded="false" aria-controls="notif-panel" aria-label="Notifications">
-						@Icon("bell")
-						<span id="notif-badge" class="notif-badge"></span>
-					</button>
-					<div class="dropdown-menu" id="notif-panel"></div>
-				</div>
+				@notificationTray()
 				@UserDropdown(pd)
 			}
 		</div>
 	</nav>
 	<script>cog.fitNavbar();</script>
+}
+
+// notificationTray renders the bell and its panel. cog.js fills the panel:
+// messages the page raised (a failed request, a reminder) above the user's
+// recent activity, which can be narrowed to notifications or one app. The
+// badge counts notifications not yet seen.
+templ notificationTray() {
+	<div class="dropdown notif-dropdown" id="notif">
+		<button type="button" class="btn-icon" data-dropdown-toggle aria-expanded="false" aria-controls="notif-panel" aria-label="Notifications">
+			@Icon("bell")
+			<span id="notif-badge" class="notif-badge" hidden></span>
+		</button>
+		<div class="dropdown-menu" id="notif-panel">
+			<div id="tray-notices" class="tray-notices" hidden>
+				<div class="tray-heading">
+					Notifications
+					<button type="button" class="tray-clear" data-tray-clear>Clear</button>
+				</div>
+				<div id="tray-notice-list"></div>
+			</div>
+			<div class="tray-heading">
+				<label for="tray-filter">Recent activity</label>
+				<select id="tray-filter" class="tray-filter" aria-label="Show">
+					<option value="">All</option>
+					<option value="notifications">Notifications</option>
+				</select>
+			</div>
+			<div id="tray-activity">
+				<p class="tray-empty">No activity yet.</p>
+			</div>
+			<label class="tray-desktop" id="tray-desktop-row" hidden>
+				<input type="checkbox" id="tray-desktop"/>
+				Show notifications on the desktop
+			</label>
+		</div>
+	</div>
 }
 
 // AdminSidebarPage renders a page with the admin sidebar, a divider, and plugin settings items.

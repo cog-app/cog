@@ -493,6 +493,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	// whichever of them is built; the web adds its services to it.
 	p.QuotaChecker = newQuotaChecker(p)
 	p.QuotaChecker.NewWrites()
+	shares.OnCreate = p.notifyShare
 	registry.SetServices(pluginsvc.Build(shares, p.EmailSender, users, p.Groups, p.QuotaChecker, access, activities, p.Cookies))
 
 	// Plugins register last, with every service they may read during

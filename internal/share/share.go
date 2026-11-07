@@ -64,6 +64,10 @@ type Store struct {
 	// birthday calendars of the users a shared address book reaches)
 	// follows them; it handles its own errors.
 	OnChange func(Record)
+	// OnCreate, when set, runs after a share with a user, a group or
+	// everyone is created (not a public link), so its audience can be told.
+	// It handles its own errors.
+	OnCreate func(Record)
 	// OnPasswordChange, when set, runs after a share's password is set,
 	// so the guard against guessing forgets what it refused for it.
 	OnPasswordChange func(shareID string)
@@ -114,6 +118,9 @@ func (s *Store) Create(ownerUserID, resourceType, resourceID, subjectType, subje
 		UpdatedAt:    now,
 	}
 	s.changed(rec)
+	if s.OnCreate != nil {
+		s.OnCreate(*rec)
+	}
 	return rec, nil
 }
 
