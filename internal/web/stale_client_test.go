@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"testing"
 
+	"git.duckfam.us/jj-software/cog/internal/compat"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 )
@@ -104,4 +105,36 @@ func TestLoginFlowsDoNotBlockSignIn(t *testing.T) {
 	}
 	env.Post(t, "/index.php/login/v2").Status(http.StatusTooManyRequests)
 	require.True(t, signInLands(t, env, "alice", "pass") != "/login", "flows blocked the web sign-in")
+}
+
+// An app signed in and out again many times is never refused a new flow:
+// only flows still waiting for a grant count. Nor does an app polling a
+// flow that expired cut off the next one its user grants.
+func TestFinishedLoginFlowsDoNotCount(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	cookie, csrf := sessionAndCSRF(t, env, alice.ID)
+
+	signIn := func() {
+		t.Helper()
+		var init struct {
+			Poll  struct{ Token string } `json:"poll"`
+			Login string                 `json:"login"`
+		}
+		env.Post(t, "/index.php/login/v2").Status(http.StatusOK).JSON(&init)
+		loginURL, err := url.Parse(init.Login)
+		require.NoError(t, err)
+		env.PostForm(t, "/index.php/login/v2/grant?token="+loginURL.Query().Get("token"), url.Values{
+			"csrf_token": {csrf}, "action": {"grant"},
+		}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+		env.PostForm(t, "/index.php/login/v2/poll", url.Values{"token": {init.Poll.Token}}).Status(http.StatusOK)
+	}
+	for range 2 * compat.MaxWaitingFlows {
+		signIn()
+	}
+
+	for range 30 {
+		env.PostForm(t, "/index.php/login/v2/poll", url.Values{"token": {"expired"}})
+	}
+	signIn()
 }

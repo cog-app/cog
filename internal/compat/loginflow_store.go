@@ -71,6 +71,15 @@ func (s *loginFlowStore) start(pollToken, loginToken, client, ip string) error {
 	return nil
 }
 
+// waiting counts the live flows started from ip that no one has granted.
+func (s *loginFlowStore) waiting(ip string) (int, error) {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM login_flows WHERE ip = ? AND sealed IS NULL AND created_at > ?`, ip, s.cutoff()).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count login flows: %w", err)
+	}
+	return n, nil
+}
+
 // pendingFlow is what the grant page tells the user about a flow: who is
 // asking, and from where and when, so a link someone sent them looks
 // different from the client they just set up.
@@ -173,3 +182,7 @@ func (s *loginFlowStore) collect(pollToken string) (string, string, error) {
 
 // loginFlowExpiry is how long a flow waits to be granted and collected.
 const loginFlowExpiry = 10 * time.Minute
+
+// MaxWaitingFlows is how many flows a client may have waiting for a grant at
+// once. A flow granted or expired frees its place.
+const MaxWaitingFlows = 10

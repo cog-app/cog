@@ -87,10 +87,10 @@ type Providers struct {
 	FedPolicy      *federation.Policy // whether, and with whom, this server federates
 	EmailHook      email.SendHook     // if set, all email goes through this instead of SMTP
 	RateLimiter    *ratelimit.Limiter
-	// FlowLimiter caps the Login Flow v2 sessions a client may start. It is
-	// apart from RateLimiter: starting a flow is not a wrong password, and a
-	// client refused for wrong passwords must still be able to sign an app
-	// in again.
+	// FlowLimiter caps a client's polls for Login Flow v2 sessions that do
+	// not exist. It is apart from RateLimiter: a poll is not a wrong
+	// password, and a client refused for wrong passwords must still be able
+	// to sign an app in again.
 	FlowLimiter *ratelimit.Limiter
 	// Guard checks every credential against guessing, over RateLimiter.
 	Guard      *ratelimit.Guard
