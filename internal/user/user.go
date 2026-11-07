@@ -6,8 +6,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"github.com/mattn/go-sqlite3"
 	"iter"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -16,8 +18,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var ErrNotFound = errors.New("user not found")
-var ErrAuthFailed = errors.New("authentication failed")
+var ErrNotFound = httperr.WithStatus(http.StatusNotFound, errors.New("user not found"))
+var ErrAuthFailed = httperr.WithStatus(http.StatusUnauthorized, errors.New("authentication failed"))
 
 // ErrUsernameTaken is returned by Create when another account already has the
 // username.

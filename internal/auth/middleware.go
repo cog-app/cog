@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -59,7 +60,14 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 				return
 			}
 		}
-		u, sess := m.authenticate(r)
+		u, sess, err := m.authenticate(r)
+		if err != nil && httperr.Status(err) >= 500 {
+			// The credentials could not be checked. Going on signed out
+			// would log a browser out, refuse an app's password with 401,
+			// and show neither that the fault is the server's.
+			httperr.Internal(w, r, err)
+			return
+		}
 		if u != nil {
 			// What a signed-in user is sent is theirs: no shared cache may
 			// keep it for the next client, whatever URL it came from. A
@@ -110,20 +118,25 @@ func (m *Middleware) serveFrame(w http.ResponseWriter, r *http.Request, next htt
 	if m.Now != nil {
 		now = m.Now()
 	}
-	admit := func(token string) (*user.User, bool) {
+	admit := func(token string) (*user.User, error) {
 		userID, pluginID, ok := ParseFrameToken(m.FrameKey, token, now)
 		if !ok || pluginID != pathPlugin || (originPlugin != "" && pluginID != originPlugin) {
-			return nil, false
+			return nil, nil
 		}
 		u, err := m.Users.GetByID(userID)
-		logAuthErr("frame user", err)
-		return u, u != nil
+		if err != nil {
+			return nil, fmt.Errorf("frame user: %w", err)
+		}
+		return u, nil
 	}
-	var u *user.User
+	var (
+		u   *user.User
+		err error
+	)
 	token := r.URL.Query().Get(FrameParam)
 	if token != "" {
-		var ok bool
-		if u, ok = admit(token); ok {
+		u, err = admit(token)
+		if u != nil {
 			// The handoff is spent on a cookie of the origin's own. It is
 			// sent cross-site, from inside the shell's frame, so SameSite
 			// is None; browsers then require Secure, which the origin is.
@@ -133,8 +146,12 @@ func (m *Middleware) serveFrame(w http.ResponseWriter, r *http.Request, next htt
 				MaxAge: int(FrameCookieTTL.Seconds()), HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode,
 			})
 		}
-	} else if c, err := r.Cookie(FrameCookieName); err == nil {
-		u, _ = admit(c.Value)
+	} else if c, cerr := r.Cookie(FrameCookieName); cerr == nil {
+		u, err = admit(c.Value)
+	}
+	if err != nil && httperr.Status(err) >= 500 {
+		httperr.Internal(w, r, err)
+		return
 	}
 	if u == nil {
 		next.ServeHTTP(w, r)
@@ -153,18 +170,23 @@ func wantsPage(r *http.Request) bool {
 }
 
 // authenticate returns the request's user, and its session when the user was
-// authenticated by the session cookie.
-func (m *Middleware) authenticate(r *http.Request) (*user.User, *Session) {
+// authenticated by the session cookie. An error that says a status below
+// 500 (httperr.Status) is the client's: wrong, unknown or limited
+// credentials, which leave the request signed out. Any other error is the
+// server's: they could not be checked.
+func (m *Middleware) authenticate(r *http.Request) (*user.User, *Session, error) {
 	// 1. Session cookie
 	if cookie, err := r.Cookie(SessionCookieName); err == nil {
 		sess, err := m.Sessions.Validate(cookie.Value)
-		logAuthErr("validate session", err)
+		if err != nil {
+			return nil, nil, err
+		}
 		if sess != nil {
 			u, err := m.Users.GetByID(sess.UserID)
-			logAuthErr("session user", err)
-			if u != nil {
-				return u, sess
+			if err != nil {
+				return nil, nil, fmt.Errorf("session user: %w", err)
 			}
+			return u, sess, nil
 		}
 	}
 
@@ -192,11 +214,13 @@ func (m *Middleware) authenticate(r *http.Request) (*user.User, *Session) {
 				u, err = m.passwordUser(username, password)
 				return u != nil, err
 			})
-		logAuthErr("basic auth", err)
-		if !ok {
-			return nil, nil
+		if err != nil {
+			return nil, nil, fmt.Errorf("basic auth: %w", err)
 		}
-		return u, nil
+		if !ok {
+			return nil, nil, nil
+		}
+		return u, nil, nil
 	}
 
 	// 3. Bearer token (app password), checked even from a limited client.
@@ -208,14 +232,16 @@ func (m *Middleware) authenticate(r *http.Request) (*user.User, *Session) {
 			u, err = m.appPasswordUser(token)
 			return u != nil, err
 		}, nil)
-		logAuthErr("bearer auth", err)
-		if !ok {
-			return nil, nil
+		if err != nil {
+			return nil, nil, fmt.Errorf("bearer auth: %w", err)
 		}
-		return u, nil
+		if !ok {
+			return nil, nil, nil
+		}
+		return u, nil, nil
 	}
 
-	return nil, nil
+	return nil, nil, nil
 }
 
 // passwordUser returns the user Basic credentials sign in as by their
@@ -255,16 +281,6 @@ func (m *Middleware) appPasswordUser(token string) (*user.User, error) {
 		return nil, fmt.Errorf("app password user: %w", err)
 	}
 	return u, nil
-}
-
-// logAuthErr logs err unless it only says the credentials were wrong. The
-// request still goes on unauthenticated: the middleware cannot fail it, and
-// a handler that needs a user rejects it.
-func logAuthErr(step string, err error) {
-	if err == nil || errors.Is(err, user.ErrAuthFailed) || errors.Is(err, user.ErrNotFound) || errors.Is(err, ErrInvalidAppPassword) || errors.Is(err, ratelimit.ErrLimited) {
-		return
-	}
-	slog.Error("auth: "+step, "err", err)
 }
 
 // RequireAuth wraps a handler and returns 401 if no user is authenticated.

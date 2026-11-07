@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/httperr"
+	"net/http"
 	"strings"
 	"time"
 
@@ -31,7 +33,7 @@ const MaxAppPasswordsPerUser = 32
 var ErrTooManyAppPasswords = errors.New("too many app passwords for user")
 
 // ErrInvalidAppPassword is returned by Validate when no app password matches.
-var ErrInvalidAppPassword = errors.New("invalid app password")
+var ErrInvalidAppPassword = httperr.WithStatus(http.StatusUnauthorized, errors.New("invalid app password"))
 
 // ErrAppPasswordNotFound is returned by Delete when the user has no app
 // password with that id.

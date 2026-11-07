@@ -200,7 +200,7 @@ func TestGuardTokenSuccessKeepsAccountFailures(t *testing.T) {
 	ok, err := g.Try("192.0.2.1", ratelimit.AccountKey("alice"), "token", pass, nil)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.True(t, g.Limiter.IsLimited(ratelimit.AccountKey("alice")), "a token cleared the account's failures")
+	require.True(t, isLimited(t, g.Limiter, ratelimit.AccountKey("alice")), "a token cleared the account's failures")
 }
 
 // A secret the token check refuses is then checked as a password, so a
@@ -215,10 +215,10 @@ func TestGuardFallsBackFromTokenToPassword(t *testing.T) {
 	g = newGuard(2)
 	_, err = g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "x", fail, fail)
 	require.NoError(t, err)
-	require.False(t, g.Limited("203.0.113.1"))
+	require.False(t, guardLimited(t, g, "203.0.113.1"))
 	_, err = g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "y", fail, fail)
 	require.NoError(t, err)
-	require.True(t, g.Limited("203.0.113.1"))
+	require.True(t, guardLimited(t, g, "203.0.113.1"))
 }
 
 // A revoked token is a refusal like any other: counted once, and refused
@@ -233,5 +233,5 @@ func TestGuardRevokedTokenCountsOnce(t *testing.T) {
 		require.False(t, ok)
 	}
 	require.Equal(t, 1, checks)
-	require.False(t, g.Limited("203.0.113.2"))
+	require.False(t, guardLimited(t, g, "203.0.113.2"))
 }

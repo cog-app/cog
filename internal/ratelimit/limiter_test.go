@@ -26,20 +26,20 @@ func TestLimiter(t *testing.T) {
 			tc := clock.NewTest(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 			l := make(tc.Clock())
 			for range 3 {
-				require.False(t, l.IsLimited("a"), "limited early")
+				require.False(t, isLimited(t, l, "a"), "limited early")
 				l.RecordFailure("a")
 			}
-			require.True(t, l.IsLimited("a"), "not limited after 3 failures")
-			require.False(t, l.IsLimited("b"), "keys share a count")
+			require.True(t, isLimited(t, l, "a"), "not limited after 3 failures")
+			require.False(t, isLimited(t, l, "b"), "keys share a count")
 
 			tc.Advance(61 * time.Second)
-			require.False(t, l.IsLimited("a"), "attempts outlived the window")
+			require.False(t, isLimited(t, l, "a"), "attempts outlived the window")
 
 			l.RecordFailure("a")
 			l.RecordFailure("a")
 			l.RecordFailure("a")
 			l.Reset("a")
-			require.False(t, l.IsLimited("a"), "reset did not clear the key")
+			require.False(t, isLimited(t, l, "a"), "reset did not clear the key")
 		})
 	}
 }
@@ -59,7 +59,23 @@ func TestSharedLimiterOutlivesRestart(t *testing.T) {
 	before.RecordFailure("1.2.3.4")
 
 	after := ratelimit.NewShared(sys, "auth", 2, time.Minute, tc.Clock())
-	require.True(t, after.IsLimited("1.2.3.4"), "a restart forgave the guesser")
+	require.True(t, isLimited(t, after, "1.2.3.4"), "a restart forgave the guesser")
 	other := ratelimit.NewShared(sys, "invitation-mail", 2, time.Minute, tc.Clock())
-	require.False(t, other.IsLimited("1.2.3.4"), "limiters share a count")
+	require.False(t, isLimited(t, other, "1.2.3.4"), "limiters share a count")
+}
+
+// isLimited is l.IsLimited, failing the test on an error.
+func isLimited(t *testing.T, l *ratelimit.Limiter, key string) bool {
+	t.Helper()
+	limited, err := l.IsLimited(key)
+	require.NoError(t, err)
+	return limited
+}
+
+// guardLimited is g.Limited, failing the test on an error.
+func guardLimited(t *testing.T, g *ratelimit.Guard, ip string) bool {
+	t.Helper()
+	limited, err := g.Limited(ip)
+	require.NoError(t, err)
+	return limited
 }

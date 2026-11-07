@@ -317,7 +317,11 @@ func (h *loginHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	// Every registration counts against the client's limit, so one client
 	// cannot create accounts without end.
 	ip := ratelimit.ClientIP(r)
-	if h.p.Guard.Limited(ip) {
+	if limited, err := h.p.Guard.Limited(ip); err != nil {
+		setFlash(w, "error", "Something went wrong on the server. Please try again later.", err)
+		http.Redirect(w, r, "/register", http.StatusSeeOther)
+		return
+	} else if limited {
 		setFlash(w, "error", "Too many attempts. Please try again later.")
 		http.Redirect(w, r, "/register", http.StatusSeeOther)
 		return
@@ -383,7 +387,11 @@ func (h *loginHandler) ShowForgotPassword(w http.ResponseWriter, r *http.Request
 func (h *loginHandler) HandleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	// Each request may send an email, so each counts against the client.
 	ip := ratelimit.ClientIP(r)
-	if h.p.Guard.Limited(ip) {
+	if limited, err := h.p.Guard.Limited(ip); err != nil {
+		setFlash(w, "error", "Something went wrong on the server. Please try again later.", err)
+		http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
+		return
+	} else if limited {
 		setFlash(w, "error", "Too many attempts. Please try again later.")
 		http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
 		return

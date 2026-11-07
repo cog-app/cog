@@ -110,15 +110,16 @@ func (l *Limiter) RecordFailure(key string) {
 	}
 }
 
-// IsLimited returns true if the key has exceeded the rate limit. A limiter
-// that cannot count says yes: refusing is what keeps guessing slow.
-func (l *Limiter) IsLimited(key string) bool {
+// IsLimited reports whether the key has exceeded the rate limit, or an
+// error when the attempts could not be counted. A caller refuses what it
+// was asked on an error too, but as the server's failure, not the
+// client's: told "too many attempts", a user who made none is misled.
+func (l *Limiter) IsLimited(key string) (bool, error) {
 	n, err := l.store.count(key, l.clock().Add(-l.Window))
 	if err != nil {
-		slog.Error("rate limit: count attempts", "err", err)
-		return true
+		return false, fmt.Errorf("rate limit: %w", err)
 	}
-	return n >= l.MaxAttempts
+	return n >= l.MaxAttempts, nil
 }
 
 // Reset clears rate limit state for a key (e.g. after successful login).

@@ -428,10 +428,18 @@ func (h *groupHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
 			return
 		}
-		if h.p.EmailSender() != nil && h.p.DAV.MailLimit != nil && h.p.DAV.MailLimit.IsLimited(u.ID) {
-			setFlash(w, "error", "You have sent too many invitations recently. Try again later.")
-			http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
-			return
+		if h.p.EmailSender() != nil && h.p.DAV.MailLimit != nil {
+			limited, err := h.p.DAV.MailLimit.IsLimited(u.ID)
+			if err != nil {
+				setFlash(w, "error", "The invitation could not be sent. Try again later.", err)
+				http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
+				return
+			}
+			if limited {
+				setFlash(w, "error", "You have sent too many invitations recently. Try again later.")
+				http.Redirect(w, r, base+"/"+groupID, http.StatusSeeOther)
+				return
+			}
 		}
 	}
 	expiryHours := settings.DefaultInviteExpiryHours
