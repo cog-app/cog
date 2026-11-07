@@ -173,6 +173,8 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "playlists/{id}/delete", http.HandlerFunc(pages.DeletePlaylist))
 	ctx.RegisterAction("POST", "import", http.HandlerFunc(pages.Import))
 	ctx.RegisterAction("POST", "opml/import", http.HandlerFunc(pages.ImportOPML))
+	ctx.RegisterAction("POST", "talks/preview", http.HandlerFunc(pages.TalksPreview))
+	ctx.RegisterAction("POST", "talks", http.HandlerFunc(pages.AddTalks))
 	ctx.RegisterAPI("opml/export", http.HandlerFunc(pages.ExportOPML))
 
 	ctx.RegisterSettingsPage(plugin.SettingsPage{

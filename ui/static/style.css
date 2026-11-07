@@ -5814,6 +5814,28 @@ html:has(dialog.gallery-lightbox[open]) {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* Talks found on a page: one per row, title, speaker and kind wrapping. */
+#talks-preview:not(:empty) {
+  margin-top: var(--space-4);
+}
+.feed-talks-list {
+  list-style: none;
+  margin: var(--space-3) 0;
+}
+.feed-talks-list > li {
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+}
+.feed-talks-list .form-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  overflow-wrap: anywhere;
+}
+.feed-talks-failed code {
+  overflow-wrap: anywhere;
+}
 .feed-sub-list .list-row-actions > form,
 .feed-folder-list form,
 .feed-rule-list form {

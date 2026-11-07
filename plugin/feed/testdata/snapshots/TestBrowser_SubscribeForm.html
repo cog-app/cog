@@ -5,7 +5,7 @@
     <title>
       Subscriptions — Cog
     </title>
-    <link href="/static/style.css?v=b9468ebdfd89" rel="stylesheet" />
+    <link href="/static/style.css?v=7fa68eae9330" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik00IDExYTkgOSAwIDAgMSA5IDkiPjwvcGF0aD48cGF0aCBkPSJNNCA0YTE2IDE2IDAgMCAxIDE2IDE2Ij48L3BhdGg+PGNpcmNsZSBjeD0iNSIgY3k9IjE5IiByPSIxIj48L2NpcmNsZT48L3N2Zz4=" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -425,6 +425,29 @@
                 An RSS or Atom feed, a podcast, a YouTube channel, or any page that links to a feed.
               </p>
             </form>
+          </section>
+          <section class="card">
+            <h2 class="card-title">
+              Add talks from a page
+            </h2>
+            <form action="/apps/feed/talks/preview" hx-disabled-elt="find button" hx-post="/apps/feed/talks/preview" hx-swap="innerHTML" hx-target="#talks-preview" id="talks-scan" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="talks-url">
+                    Page
+                  </label>
+                  <input class="form-control" id="talks-url" name="url" placeholder="https://example.com/conference/2026/04" required="" type="url" />
+                </div>
+                <button class="btn" type="submit">
+                  Find talks
+                </button>
+              </div>
+              <p class="form-help">
+                A conference or playlist page that links to a page for each talk. Choose the talks to download.
+              </p>
+            </form>
+            <div aria-live="polite" id="talks-preview" />
           </section>
           <section class="card">
             <details class="feed-sub-details" id="subscription-details" open="">
