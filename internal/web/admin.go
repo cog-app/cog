@@ -64,7 +64,13 @@ func (h *adminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 			owners[u.ID] = u.Username
 		}
 	}
-	ui.Render(w, r, adminUsersPage(pd, h.p.Users.List(), retired, flashMsg, flashKind, owners))
+	blocked, err := h.blockedSignIns()
+	if err != nil {
+		h.p.Log.Error("list sign-in blocks", "err", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	ui.Render(w, r, adminUsersPage(pd, h.p.Users.List(), retired, flashMsg, flashKind, owners, blocked))
 }
 
 // ReleaseUsername lets a new account take the name of a deleted one.

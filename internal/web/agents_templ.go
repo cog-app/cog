@@ -116,7 +116,7 @@ func agentsBody(pd ui.PageData, agents []agentView) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 20, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 20, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -129,7 +129,7 @@ func agentsBody(pd ui.PageData, agents []agentView) templ.Component {
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(pd.User.Username + user.AgentSeparator)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 23, Col: 94}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 23, Col: 94}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
@@ -142,7 +142,7 @@ func agentsBody(pd ui.PageData, agents []agentView) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(pd.User.Username + user.AgentSeparator)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 28, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 28, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -234,7 +234,7 @@ func agentCard(pd ui.PageData, a agentView) templ.Component {
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(a.CreatedAt.Format("2006-01-02"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 44, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 44, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -247,7 +247,7 @@ func agentCard(pd ui.PageData, a agentView) templ.Component {
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(a.Username)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 44, Col: 98}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 44, Col: 98}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -260,7 +260,7 @@ func agentCard(pd ui.PageData, a agentView) templ.Component {
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs("agent-tokens-" + a.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 45, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 45, Col: 34}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -281,7 +281,7 @@ func agentCard(pd ui.PageData, a agentView) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs("agent-new-token-" + a.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 49, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 49, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -294,7 +294,7 @@ func agentCard(pd ui.PageData, a agentView) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs("/settings/agents/" + a.ID + "/tokens")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 52, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 52, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {
@@ -307,7 +307,7 @@ func agentCard(pd ui.PageData, a agentView) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs("#agent-new-token-" + a.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 53, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 53, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -320,7 +320,7 @@ func agentCard(pd ui.PageData, a agentView) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 57, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 57, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -333,7 +333,7 @@ func agentCard(pd ui.PageData, a agentView) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs("agent-token-" + a.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 58, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 58, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -346,7 +346,7 @@ func agentCard(pd ui.PageData, a agentView) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs("agent-token-" + a.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 59, Col: 69}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 59, Col: 69}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -359,7 +359,7 @@ func agentCard(pd ui.PageData, a agentView) templ.Component {
 			var templ_7745c5c3_Var20 templ.SafeURL
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/settings/agents/" + a.ID + "/delete"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 62, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 62, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -372,7 +372,7 @@ func agentCard(pd ui.PageData, a agentView) templ.Component {
 			var templ_7745c5c3_Var21 string
 			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs("Delete " + a.Username + ", its tokens and the shares made with it?")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 62, Col: 191}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 62, Col: 191}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 			if templ_7745c5c3_Err != nil {
@@ -385,7 +385,7 @@ func agentCard(pd ui.PageData, a agentView) templ.Component {
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 63, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 63, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 			if templ_7745c5c3_Err != nil {
@@ -446,7 +446,7 @@ func agentTokenList(pd ui.PageData, a agentView) templ.Component {
 				var templ_7745c5c3_Var24 string
 				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(t.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 87, Col: 42}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 87, Col: 42}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 				if templ_7745c5c3_Err != nil {
@@ -459,7 +459,7 @@ func agentTokenList(pd ui.PageData, a agentView) templ.Component {
 				var templ_7745c5c3_Var25 string
 				templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(t.CreatedAt.Format("2006-01-02"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 88, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 88, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 				if templ_7745c5c3_Err != nil {
@@ -472,7 +472,7 @@ func agentTokenList(pd ui.PageData, a agentView) templ.Component {
 				var templ_7745c5c3_Var26 templ.SafeURL
 				templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/settings/agents/" + a.ID + "/tokens/" + t.ID + "/delete"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 90, Col: 110}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 90, Col: 110}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 				if templ_7745c5c3_Err != nil {
@@ -485,7 +485,7 @@ func agentTokenList(pd ui.PageData, a agentView) templ.Component {
 				var templ_7745c5c3_Var27 string
 				templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs("Revoke " + t.Name + "? Anything using it will be signed out.")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 90, Col: 190}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 90, Col: 190}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 				if templ_7745c5c3_Err != nil {
@@ -498,7 +498,7 @@ func agentTokenList(pd ui.PageData, a agentView) templ.Component {
 				var templ_7745c5c3_Var28 string
 				templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 91, Col: 68}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 91, Col: 68}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 				if templ_7745c5c3_Err != nil {
@@ -552,7 +552,7 @@ func agentTokenCreated(pd ui.PageData, a agentView, token string) templ.Componen
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs("agent-tokens-" + a.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/agents.templ`, Line: 107, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `agents.templ`, Line: 107, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {

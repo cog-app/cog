@@ -105,7 +105,7 @@ func adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], f
 				var templ_7745c5c3_Var4 templ.SafeURL
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/admin/volumes/" + v.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 38, Col: 75}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 38, Col: 75}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -118,7 +118,7 @@ func adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], f
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(v.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 38, Col: 86}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 38, Col: 86}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -141,7 +141,7 @@ func adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], f
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(v.URI)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 43, Col: 57}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 43, Col: 57}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -154,7 +154,7 @@ func adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], f
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(v.URI)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 43, Col: 67}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 43, Col: 67}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -167,7 +167,7 @@ func adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], f
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(v.Description)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 44, Col: 58}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 44, Col: 58}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {
@@ -338,7 +338,7 @@ func adminVolumeEditPage(pd ui.PageData, v *volume.Volume, fd volumeFormData, is
 				var templ_7745c5c3_Var15 templ.SafeURL
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/volumes/" + v.ID + "/browse"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 77, Col: 84}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 77, Col: 84}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -452,7 +452,7 @@ func adminVolumeEditPage(pd ui.PageData, v *volume.Volume, fd volumeFormData, is
 				var templ_7745c5c3_Var19 string
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs("/admin/volumes/" + v.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 96, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 96, Col: 41}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
@@ -465,7 +465,7 @@ func adminVolumeEditPage(pd ui.PageData, v *volume.Volume, fd volumeFormData, is
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs("Delete the volume " + v.Name + "? This cannot be undone.")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 97, Col: 76}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 97, Col: 76}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -524,7 +524,7 @@ func adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, l
 				var templ_7745c5c3_Var22 string
 				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs("share-" + s.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 119, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 119, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 				if templ_7745c5c3_Err != nil {
@@ -537,7 +537,7 @@ func adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, l
 				var templ_7745c5c3_Var23 string
 				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(s.SubjectName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 120, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 120, Col: 50}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 				if templ_7745c5c3_Err != nil {
@@ -550,7 +550,7 @@ func adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, l
 				var templ_7745c5c3_Var24 string
 				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(s.SubjectType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 120, Col: 102}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 120, Col: 102}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 				if templ_7745c5c3_Err != nil {
@@ -563,7 +563,7 @@ func adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, l
 				var templ_7745c5c3_Var25 string
 				templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(s.PermLabel)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 121, Col: 40}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 121, Col: 40}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 				if templ_7745c5c3_Err != nil {
@@ -576,7 +576,7 @@ func adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, l
 				var templ_7745c5c3_Var26 string
 				templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs("/admin/shares/" + s.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 126, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 126, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 				if templ_7745c5c3_Err != nil {
@@ -589,7 +589,7 @@ func adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, l
 				var templ_7745c5c3_Var27 string
 				templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs("#share-" + s.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 127, Col: 38}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 127, Col: 38}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 				if templ_7745c5c3_Err != nil {
@@ -602,7 +602,7 @@ func adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, l
 				var templ_7745c5c3_Var28 string
 				templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs("Stop sharing with " + s.SubjectName + "?")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 129, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 129, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 				if templ_7745c5c3_Err != nil {
@@ -630,7 +630,7 @@ func adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, l
 		var templ_7745c5c3_Var29 string
 		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 148, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 148, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 		if templ_7745c5c3_Err != nil {
@@ -643,7 +643,7 @@ func adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, l
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(volumeID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 150, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 150, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
@@ -669,7 +669,7 @@ func adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, l
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(permStr(l.Permissions))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 161, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 161, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
@@ -682,7 +682,7 @@ func adminSharePanel(volumeID, csrfToken string, shares []ui.ShareDisplayItem, l
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(l.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 161, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 161, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
@@ -739,7 +739,7 @@ func adminQuotaPanel(volumeID, csrfToken string, quotas []quotaDisplayItem) temp
 				var templ_7745c5c3_Var34 string
 				templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs("quota-" + q.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 186, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 186, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 				if templ_7745c5c3_Err != nil {
@@ -752,7 +752,7 @@ func adminQuotaPanel(volumeID, csrfToken string, quotas []quotaDisplayItem) temp
 				var templ_7745c5c3_Var35 string
 				templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(q.SubjectName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 187, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 187, Col: 50}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 				if templ_7745c5c3_Err != nil {
@@ -765,7 +765,7 @@ func adminQuotaPanel(volumeID, csrfToken string, quotas []quotaDisplayItem) temp
 				var templ_7745c5c3_Var36 string
 				templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(q.SubjectType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 188, Col: 42}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 188, Col: 42}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 				if templ_7745c5c3_Err != nil {
@@ -778,7 +778,7 @@ func adminQuotaPanel(volumeID, csrfToken string, quotas []quotaDisplayItem) temp
 				var templ_7745c5c3_Var37 string
 				templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(q.QuotaLabel)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 189, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 189, Col: 52}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 				if templ_7745c5c3_Err != nil {
@@ -791,7 +791,7 @@ func adminQuotaPanel(volumeID, csrfToken string, quotas []quotaDisplayItem) temp
 				var templ_7745c5c3_Var38 string
 				templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs("/admin/volumes/" + volumeID + "/quotas/" + q.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 194, Col: 70}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 194, Col: 70}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 				if templ_7745c5c3_Err != nil {
@@ -804,7 +804,7 @@ func adminQuotaPanel(volumeID, csrfToken string, quotas []quotaDisplayItem) temp
 				var templ_7745c5c3_Var39 string
 				templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs("#quota-" + q.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 195, Col: 38}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 195, Col: 38}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 				if templ_7745c5c3_Err != nil {
@@ -832,7 +832,7 @@ func adminQuotaPanel(volumeID, csrfToken string, quotas []quotaDisplayItem) temp
 		var templ_7745c5c3_Var40 templ.SafeURL
 		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/admin/volumes/" + volumeID + "/quotas"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 209, Col: 86}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 209, Col: 86}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 		if templ_7745c5c3_Err != nil {
@@ -845,7 +845,7 @@ func adminQuotaPanel(volumeID, csrfToken string, quotas []quotaDisplayItem) temp
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/admin_volumes.templ`, Line: 210, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin_volumes.templ`, Line: 210, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {

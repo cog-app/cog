@@ -98,7 +98,7 @@ func settingsProfilePage(pd ui.PageData, flash string, flashKind string, pending
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(pd.User.AvatarURL())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 31, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 31, Col: 52}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -151,7 +151,7 @@ func settingsProfilePage(pd ui.PageData, flash string, flashKind string, pending
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 50, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 50, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -177,7 +177,7 @@ func settingsProfilePage(pd ui.PageData, flash string, flashKind string, pending
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(pendingEmail)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 54, Col: 81}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 54, Col: 81}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 					if templ_7745c5c3_Err != nil {
@@ -273,7 +273,7 @@ func settingsSecurityPage(pd ui.PageData, flash securityFlash, appPasswords []au
 					var templ_7745c5c3_Var10 string
 					templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(strings.ReplaceAll(flash.Message[len("totp_enabled:"):], ",", "\n"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 91, Col: 109}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 91, Col: 109}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 					if templ_7745c5c3_Err != nil {
@@ -337,7 +337,7 @@ func settingsSecurityPage(pd ui.PageData, flash securityFlash, appPasswords []au
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 106, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 106, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -350,7 +350,7 @@ func settingsSecurityPage(pd ui.PageData, flash securityFlash, appPasswords []au
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(ariaInvalid(flash.Invalid == "current_password"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 109, Col: 204}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 109, Col: 204}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -363,7 +363,7 @@ func settingsSecurityPage(pd ui.PageData, flash securityFlash, appPasswords []au
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(ariaInvalid(flash.Invalid == "new_password"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 113, Col: 188}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 113, Col: 188}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -376,7 +376,7 @@ func settingsSecurityPage(pd ui.PageData, flash securityFlash, appPasswords []au
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(ariaInvalid(flash.Invalid == "confirm_password"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 117, Col: 200}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 117, Col: 200}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -431,7 +431,7 @@ func settingsSecurityPage(pd ui.PageData, flash securityFlash, appPasswords []au
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 145, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 145, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
@@ -524,7 +524,7 @@ func settingsSessionsCard(pd ui.PageData, flash securityFlash, sessions []signed
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs("session-" + s.Handle())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 178, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 178, Col: 39}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -537,7 +537,7 @@ func settingsSessionsCard(pd ui.PageData, flash securityFlash, sessions []signed
 				var templ_7745c5c3_Var21 string
 				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(s.UserAgent)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 179, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 179, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 				if templ_7745c5c3_Err != nil {
@@ -550,7 +550,7 @@ func settingsSessionsCard(pd ui.PageData, flash securityFlash, sessions []signed
 				var templ_7745c5c3_Var22 string
 				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(s.Device())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 180, Col: 21}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 180, Col: 21}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 				if templ_7745c5c3_Err != nil {
@@ -568,7 +568,7 @@ func settingsSessionsCard(pd ui.PageData, flash securityFlash, sessions []signed
 					var templ_7745c5c3_Var23 string
 					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(s.IP)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 182, Col: 63}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 182, Col: 63}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 					if templ_7745c5c3_Err != nil {
@@ -586,7 +586,7 @@ func settingsSessionsCard(pd ui.PageData, flash securityFlash, sessions []signed
 				var templ_7745c5c3_Var24 string
 				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(s.LastSeenAt.Format("2006-01-02"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 185, Col: 62}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 185, Col: 62}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 				if templ_7745c5c3_Err != nil {
@@ -599,7 +599,7 @@ func settingsSessionsCard(pd ui.PageData, flash securityFlash, sessions []signed
 				var templ_7745c5c3_Var25 string
 				templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(s.CreatedAt.Format("2006-01-02"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 186, Col: 73}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 186, Col: 73}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 				if templ_7745c5c3_Err != nil {
@@ -622,7 +622,7 @@ func settingsSessionsCard(pd ui.PageData, flash securityFlash, sessions []signed
 					var templ_7745c5c3_Var26 string
 					templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs("/settings/sessions/" + s.Handle())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 194, Col: 57}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 194, Col: 57}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 					if templ_7745c5c3_Err != nil {
@@ -635,7 +635,7 @@ func settingsSessionsCard(pd ui.PageData, flash securityFlash, sessions []signed
 					var templ_7745c5c3_Var27 string
 					templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs("#session-" + s.Handle())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 195, Col: 47}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 195, Col: 47}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 					if templ_7745c5c3_Err != nil {
@@ -648,7 +648,7 @@ func settingsSessionsCard(pd ui.PageData, flash securityFlash, sessions []signed
 					var templ_7745c5c3_Var28 string
 					templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs("Sign out " + s.Device() + "?")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 197, Col: 54}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 197, Col: 54}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 					if templ_7745c5c3_Err != nil {
@@ -676,7 +676,7 @@ func settingsSessionsCard(pd ui.PageData, flash securityFlash, sessions []signed
 				var templ_7745c5c3_Var29 string
 				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 208, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 208, Col: 64}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 				if templ_7745c5c3_Err != nil {
@@ -764,7 +764,7 @@ func settingsSSHKeysCard(pd ui.PageData, flash securityFlash, sshKeys []keys.SSH
 					var templ_7745c5c3_Var32 string
 					templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs("sshkey-" + k.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 240, Col: 33}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 240, Col: 33}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 					if templ_7745c5c3_Err != nil {
@@ -777,7 +777,7 @@ func settingsSSHKeysCard(pd ui.PageData, flash securityFlash, sshKeys []keys.SSH
 					var templ_7745c5c3_Var33 string
 					templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(sshKeyName(k))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 241, Col: 51}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 241, Col: 51}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 					if templ_7745c5c3_Err != nil {
@@ -790,7 +790,7 @@ func settingsSSHKeysCard(pd ui.PageData, flash securityFlash, sshKeys []keys.SSH
 					var templ_7745c5c3_Var34 string
 					templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(k.Fingerprint)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 242, Col: 57}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 242, Col: 57}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 					if templ_7745c5c3_Err != nil {
@@ -803,7 +803,7 @@ func settingsSSHKeysCard(pd ui.PageData, flash securityFlash, sshKeys []keys.SSH
 					var templ_7745c5c3_Var35 string
 					templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(k.CreatedAt.Format("2006-01-02"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 243, Col: 62}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 243, Col: 62}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 					if templ_7745c5c3_Err != nil {
@@ -816,7 +816,7 @@ func settingsSSHKeysCard(pd ui.PageData, flash securityFlash, sshKeys []keys.SSH
 					var templ_7745c5c3_Var36 string
 					templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs("/settings/ssh-keys/" + k.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 248, Col: 51}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 248, Col: 51}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 					if templ_7745c5c3_Err != nil {
@@ -829,7 +829,7 @@ func settingsSSHKeysCard(pd ui.PageData, flash securityFlash, sshKeys []keys.SSH
 					var templ_7745c5c3_Var37 string
 					templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs("#sshkey-" + k.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 249, Col: 40}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 249, Col: 40}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 					if templ_7745c5c3_Err != nil {
@@ -842,7 +842,7 @@ func settingsSSHKeysCard(pd ui.PageData, flash securityFlash, sshKeys []keys.SSH
 					var templ_7745c5c3_Var38 string
 					templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs("Remove " + sshKeyName(k) + "? It will no longer sign in.")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 251, Col: 82}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 251, Col: 82}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 					if templ_7745c5c3_Err != nil {
@@ -865,7 +865,7 @@ func settingsSSHKeysCard(pd ui.PageData, flash securityFlash, sshKeys []keys.SSH
 			var templ_7745c5c3_Var39 string
 			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 262, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 262, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 			if templ_7745c5c3_Err != nil {
@@ -878,7 +878,7 @@ func settingsSSHKeysCard(pd ui.PageData, flash securityFlash, sshKeys []keys.SSH
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(flash.Fields["name"])
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 265, Col: 162}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 265, Col: 162}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
@@ -891,7 +891,7 @@ func settingsSSHKeysCard(pd ui.PageData, flash securityFlash, sshKeys []keys.SSH
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(ariaInvalid(flash.For == "ssh-key" && flash.Invalid == "public_key"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 269, Col: 239}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 269, Col: 239}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -904,7 +904,7 @@ func settingsSSHKeysCard(pd ui.PageData, flash securityFlash, sshKeys []keys.SSH
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(flash.Fields["public_key"])
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 269, Col: 270}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 269, Col: 270}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
@@ -1046,7 +1046,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 				var templ_7745c5c3_Var47 string
 				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(usage.UsedLabel)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 316, Col: 29}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 316, Col: 29}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 				if templ_7745c5c3_Err != nil {
@@ -1064,7 +1064,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 					var templ_7745c5c3_Var48 string
 					templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(usage.QuotaLabel)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 318, Col: 26}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 318, Col: 26}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 					if templ_7745c5c3_Err != nil {
@@ -1092,7 +1092,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 					var templ_7745c5c3_Var49 string
 					templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(usage.Percent))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 324, Col: 126}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 324, Col: 126}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 					if templ_7745c5c3_Err != nil {
@@ -1105,7 +1105,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 					var templ_7745c5c3_Var50 string
 					templ_7745c5c3_Var50, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues("width:" + strconv.Itoa(usage.Percent) + "%")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 325, Col: 83}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 325, Col: 83}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 					if templ_7745c5c3_Err != nil {
@@ -1160,7 +1160,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 						var templ_7745c5c3_Var52 string
 						templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs("mount-" + m.ID)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 347, Col: 32}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 347, Col: 32}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 						if templ_7745c5c3_Err != nil {
@@ -1173,7 +1173,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 						var templ_7745c5c3_Var53 string
 						templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(m.UserPath)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 348, Col: 54}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 348, Col: 54}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 						if templ_7745c5c3_Err != nil {
@@ -1186,7 +1186,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 						var templ_7745c5c3_Var54 string
 						templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(m.VolumeName)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 349, Col: 50}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 349, Col: 50}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 						if templ_7745c5c3_Err != nil {
@@ -1204,7 +1204,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 							var templ_7745c5c3_Var55 string
 							templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(m.VolumeSubpath)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 352, Col: 34}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 352, Col: 34}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 							if templ_7745c5c3_Err != nil {
@@ -1242,7 +1242,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 							var templ_7745c5c3_Var56 string
 							templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs("/settings/mounts/" + m.ID)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 367, Col: 50}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 367, Col: 50}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 							if templ_7745c5c3_Err != nil {
@@ -1255,7 +1255,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 							var templ_7745c5c3_Var57 string
 							templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs("#mount-" + m.ID)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 368, Col: 40}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 368, Col: 40}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 							if templ_7745c5c3_Err != nil {
@@ -1268,7 +1268,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 							var templ_7745c5c3_Var58 string
 							templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs("Remove the mount at " + m.UserPath + "? The files stay on the volume.")
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 370, Col: 96}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 370, Col: 96}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 							if templ_7745c5c3_Err != nil {
@@ -1306,7 +1306,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 					var templ_7745c5c3_Var59 string
 					templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 385, Col: 64}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 385, Col: 64}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 					if templ_7745c5c3_Err != nil {
@@ -1324,7 +1324,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 						var templ_7745c5c3_Var60 string
 						templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 395, Col: 29}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 395, Col: 29}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 						if templ_7745c5c3_Err != nil {
@@ -1337,7 +1337,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 						var templ_7745c5c3_Var61 string
 						templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(v.Name)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 395, Col: 40}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 395, Col: 40}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 						if templ_7745c5c3_Err != nil {
@@ -1393,7 +1393,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 						var templ_7745c5c3_Var63 string
 						templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs("uservol-" + v.ID)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 423, Col: 34}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 423, Col: 34}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 						if templ_7745c5c3_Err != nil {
@@ -1406,7 +1406,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 						var templ_7745c5c3_Var64 string
 						templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(v.Name)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 424, Col: 56}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 424, Col: 56}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 						if templ_7745c5c3_Err != nil {
@@ -1419,7 +1419,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 						var templ_7745c5c3_Var65 string
 						templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(v.URI)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 425, Col: 46}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 425, Col: 46}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 						if templ_7745c5c3_Err != nil {
@@ -1432,7 +1432,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 						var templ_7745c5c3_Var66 templ.SafeURL
 						templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/volumes/" + v.ID + "/browse"))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 428, Col: 99}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 428, Col: 99}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 						if templ_7745c5c3_Err != nil {
@@ -1445,7 +1445,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 						var templ_7745c5c3_Var67 string
 						templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs("/api/shares/panel?type=files:volume&id=" + v.ID + "&scope=vol-share")
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 432, Col: 90}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 432, Col: 90}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 						if templ_7745c5c3_Err != nil {
@@ -1458,7 +1458,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 						var templ_7745c5c3_Var68 string
 						templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs("/settings/volumes/" + v.ID)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 439, Col: 51}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 439, Col: 51}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 						if templ_7745c5c3_Err != nil {
@@ -1471,7 +1471,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 						var templ_7745c5c3_Var69 string
 						templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs("#uservol-" + v.ID)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 440, Col: 42}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 440, Col: 42}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 						if templ_7745c5c3_Err != nil {
@@ -1484,7 +1484,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 						var templ_7745c5c3_Var70 string
 						templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs("Delete the volume " + v.Name + "?")
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 442, Col: 60}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 442, Col: 60}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 						if templ_7745c5c3_Err != nil {
@@ -1571,7 +1571,7 @@ func settingsTOTPCard(pd ui.PageData, flash string, flashKind string, mfaMethod 
 				var templ_7745c5c3_Var73 string
 				templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(backupCodeCount))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 471, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 471, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 				if templ_7745c5c3_Err != nil {
@@ -1584,7 +1584,7 @@ func settingsTOTPCard(pd ui.PageData, flash string, flashKind string, mfaMethod 
 				var templ_7745c5c3_Var74 string
 				templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 474, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 474, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 				if templ_7745c5c3_Err != nil {
@@ -1602,7 +1602,7 @@ func settingsTOTPCard(pd ui.PageData, flash string, flashKind string, mfaMethod 
 				var templ_7745c5c3_Var75 string
 				templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 488, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 488, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 				if templ_7745c5c3_Err != nil {
@@ -1625,7 +1625,7 @@ func settingsTOTPCard(pd ui.PageData, flash string, flashKind string, mfaMethod 
 					var templ_7745c5c3_Var76 string
 					templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(flash[:pipeIdx])
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 497, Col: 31}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 497, Col: 31}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 					if templ_7745c5c3_Err != nil {
@@ -1638,7 +1638,7 @@ func settingsTOTPCard(pd ui.PageData, flash string, flashKind string, mfaMethod 
 					var templ_7745c5c3_Var77 string
 					templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.JoinStringErrs(flash[pipeIdx+1:])
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 500, Col: 92}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 500, Col: 92}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var77))
 					if templ_7745c5c3_Err != nil {
@@ -1656,7 +1656,7 @@ func settingsTOTPCard(pd ui.PageData, flash string, flashKind string, mfaMethod 
 				var templ_7745c5c3_Var78 string
 				templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 504, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 504, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 				if templ_7745c5c3_Err != nil {
@@ -1674,7 +1674,7 @@ func settingsTOTPCard(pd ui.PageData, flash string, flashKind string, mfaMethod 
 				var templ_7745c5c3_Var79 string
 				templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 513, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 513, Col: 64}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
 				if templ_7745c5c3_Err != nil {
@@ -1692,7 +1692,7 @@ func settingsTOTPCard(pd ui.PageData, flash string, flashKind string, mfaMethod 
 					var templ_7745c5c3_Var80 string
 					templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 518, Col: 65}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 518, Col: 65}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 					if templ_7745c5c3_Err != nil {
@@ -1770,7 +1770,7 @@ func settingsWebAuthnCard(pd ui.PageData, mfaMethod string, creds []auth.WebAuth
 					var templ_7745c5c3_Var83 string
 					templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs("webauthn-" + c.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 544, Col: 34}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 544, Col: 34}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 					if templ_7745c5c3_Err != nil {
@@ -1783,7 +1783,7 @@ func settingsWebAuthnCard(pd ui.PageData, mfaMethod string, creds []auth.WebAuth
 					var templ_7745c5c3_Var84 string
 					templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 545, Col: 43}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 545, Col: 43}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 					if templ_7745c5c3_Err != nil {
@@ -1796,7 +1796,7 @@ func settingsWebAuthnCard(pd ui.PageData, mfaMethod string, creds []auth.WebAuth
 					var templ_7745c5c3_Var85 string
 					templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(c.CreatedAt.Format("2006-01-02"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 546, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 546, Col: 61}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
 					if templ_7745c5c3_Err != nil {
@@ -1809,7 +1809,7 @@ func settingsWebAuthnCard(pd ui.PageData, mfaMethod string, creds []auth.WebAuth
 					var templ_7745c5c3_Var86 string
 					templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs("/settings/webauthn/" + c.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 551, Col: 50}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 551, Col: 50}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
 					if templ_7745c5c3_Err != nil {
@@ -1822,7 +1822,7 @@ func settingsWebAuthnCard(pd ui.PageData, mfaMethod string, creds []auth.WebAuth
 					var templ_7745c5c3_Var87 string
 					templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs("#webauthn-" + c.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 552, Col: 41}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 552, Col: 41}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
 					if templ_7745c5c3_Err != nil {
@@ -1835,7 +1835,7 @@ func settingsWebAuthnCard(pd ui.PageData, mfaMethod string, creds []auth.WebAuth
 					var templ_7745c5c3_Var88 string
 					templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs("Remove the passkey " + c.Name + "?")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 554, Col: 59}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 554, Col: 59}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 					if templ_7745c5c3_Err != nil {
@@ -1899,7 +1899,7 @@ func appPasswordRow(ap auth.AppPassword) templ.Component {
 		var templ_7745c5c3_Var90 string
 		templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs("apppass-" + ap.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 660, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 660, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
 		if templ_7745c5c3_Err != nil {
@@ -1912,7 +1912,7 @@ func appPasswordRow(ap auth.AppPassword) templ.Component {
 		var templ_7745c5c3_Var91 string
 		templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs(ap.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 661, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 661, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
 		if templ_7745c5c3_Err != nil {
@@ -1925,7 +1925,7 @@ func appPasswordRow(ap auth.AppPassword) templ.Component {
 		var templ_7745c5c3_Var92 string
 		templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(ap.CreatedAt.Format("2006-01-02"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 662, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 662, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
 		if templ_7745c5c3_Err != nil {
@@ -1938,7 +1938,7 @@ func appPasswordRow(ap auth.AppPassword) templ.Component {
 		var templ_7745c5c3_Var93 string
 		templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs("/settings/app-passwords/" + ap.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 667, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 667, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
 		if templ_7745c5c3_Err != nil {
@@ -1951,7 +1951,7 @@ func appPasswordRow(ap auth.AppPassword) templ.Component {
 		var templ_7745c5c3_Var94 string
 		templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs("#apppass-" + ap.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 668, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 668, Col: 35}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
 		if templ_7745c5c3_Err != nil {
@@ -1964,7 +1964,7 @@ func appPasswordRow(ap auth.AppPassword) templ.Component {
 		var templ_7745c5c3_Var95 string
 		templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.JoinStringErrs("Revoke " + ap.Name + "? Apps using it will be signed out.")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 670, Col: 76}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 670, Col: 76}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var95))
 		if templ_7745c5c3_Err != nil {
@@ -2126,7 +2126,7 @@ func settingsDataPage(pd ui.PageData, flash string, flashKind string, collection
 					var templ_7745c5c3_Var101 string
 					templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 711, Col: 17}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 711, Col: 17}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var101))
 					if templ_7745c5c3_Err != nil {
@@ -2139,7 +2139,7 @@ func settingsDataPage(pd ui.PageData, flash string, flashKind string, collection
 					var templ_7745c5c3_Var102 string
 					templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs(c.Kind)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 712, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 712, Col: 61}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
 					if templ_7745c5c3_Err != nil {
@@ -2152,7 +2152,7 @@ func settingsDataPage(pd ui.PageData, flash string, flashKind string, collection
 					var templ_7745c5c3_Var103 string
 					templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs(c.Kind)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 714, Col: 40}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 714, Col: 40}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
 					if templ_7745c5c3_Err != nil {
@@ -2165,7 +2165,7 @@ func settingsDataPage(pd ui.PageData, flash string, flashKind string, collection
 					var templ_7745c5c3_Var104 templ.SafeURL
 					templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/settings/data/export/" + strconv.FormatInt(c.ID, 10)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 716, Col: 121}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 716, Col: 121}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var104))
 					if templ_7745c5c3_Err != nil {
@@ -2182,7 +2182,7 @@ func settingsDataPage(pd ui.PageData, flash string, flashKind string, collection
 					var templ_7745c5c3_Var105 string
 					templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.JoinStringErrs(c.Filename)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 718, Col: 22}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 718, Col: 22}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var105))
 					if templ_7745c5c3_Err != nil {
@@ -2234,7 +2234,7 @@ func settingsDataPage(pd ui.PageData, flash string, flashKind string, collection
 				var templ_7745c5c3_Var107 string
 				templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.JoinStringErrs(pd.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 736, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 736, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var107))
 				if templ_7745c5c3_Err != nil {
@@ -2253,7 +2253,7 @@ func settingsDataPage(pd ui.PageData, flash string, flashKind string, collection
 						var templ_7745c5c3_Var108 string
 						templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(c.ID, 10))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 746, Col: 51}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 746, Col: 51}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var108))
 						if templ_7745c5c3_Err != nil {
@@ -2266,7 +2266,7 @@ func settingsDataPage(pd ui.PageData, flash string, flashKind string, collection
 						var templ_7745c5c3_Var109 string
 						templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 746, Col: 62}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 746, Col: 62}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var109))
 						if templ_7745c5c3_Err != nil {
@@ -2279,7 +2279,7 @@ func settingsDataPage(pd ui.PageData, flash string, flashKind string, collection
 						var templ_7745c5c3_Var110 string
 						templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.JoinStringErrs(c.Kind)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/settings.templ`, Line: 746, Col: 74}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `settings.templ`, Line: 746, Col: 74}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var110))
 						if templ_7745c5c3_Err != nil {

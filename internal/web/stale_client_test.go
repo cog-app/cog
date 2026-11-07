@@ -3,6 +3,7 @@ package web_test
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/compat"
@@ -137,4 +138,29 @@ func TestFinishedLoginFlowsDoNotCount(t *testing.T) {
 		env.PostForm(t, "/index.php/login/v2/poll", url.Values{"token": {"expired"}})
 	}
 	signIn()
+}
+
+// An admin sees what is blocked under Users and can clear it all with one
+// button, with no shell to reach the database from.
+func TestAdminClearsSignInBlocks(t *testing.T) {
+	env := cogtest.New(t)
+	admin := env.CreateUser(t, "admin", "pass")
+	env.CreateUser(t, "alice", "pass")
+	cookie, csrf := sessionAndCSRF(t, env, admin.ID)
+	for i := range 10 {
+		require.Equal(t, "/login", signInLands(t, env, "alice", "wrong"+strconv.Itoa(i)))
+	}
+	require.Equal(t, "/login", signInLands(t, env, "alice", "pass"))
+
+	env.Get(t, "/admin/users", cookie).Status(http.StatusOK).Contains("Blocked sign-ins").Contains("Account <strong class=\"break-anywhere\">alice</strong>")
+
+	// Not for anyone but an admin.
+	bob := env.CreateUser(t, "bob", "pass")
+	bobCookie, bobCSRF := sessionAndCSRF(t, env, bob.ID)
+	env.PostForm(t, "/admin/sign-in-limits/clear", url.Values{"csrf_token": {bobCSRF}}, bobCookie, cogtest.StopRedirect).Status(http.StatusForbidden)
+	require.Equal(t, "/login", signInLands(t, env, "alice", "pass"))
+
+	env.PostForm(t, "/admin/sign-in-limits/clear", url.Values{"csrf_token": {csrf}}, cookie, cogtest.StopRedirect).Status(http.StatusSeeOther)
+	require.True(t, signInLands(t, env, "alice", "pass") != "/login", "still blocked after clearing")
+	env.Get(t, "/admin/users", cookie).Status(http.StatusOK).NotContains("Blocked sign-ins")
 }
