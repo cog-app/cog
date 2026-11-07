@@ -66,3 +66,42 @@ func TestRefusalForgottenWhenAccountMade(t *testing.T) {
 	env.CreateUser(t, "carol", "carols-password")
 	require.True(t, signInLands(t, env, "carol", "carols-password") != "/login", "refusal outlived the account's creation")
 }
+
+// A client address blocked for wrong passwords keeps its working apps: an
+// app password is checked even then, over Basic and Bearer alike, while a
+// password, even the right one, is refused.
+func TestBlockedAddressKeepsWorkingApps(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	token, _, err := env.Providers.AppPasswords.Create(alice.ID, "phone")
+	require.NoError(t, err)
+	for i := range 10 {
+		require.Equal(t, "/login", signInLands(t, env, "alice", "guess"+string(rune('a'+i))))
+	}
+	require.Equal(t, "/login", signInLands(t, env, "alice", "pass"))
+	webdavReq(t, env, "PROPFIND", "/remote.php/dav/files/"+alice.ID+"/", "", cogtest.BasicAuth("alice", "pass"), cogtest.Header("Depth", "0")).Status(http.StatusUnauthorized)
+
+	webdavReq(t, env, "PROPFIND", "/remote.php/dav/files/"+alice.ID+"/", "", cogtest.BasicAuth("alice", token), cogtest.Header("Depth", "0")).Status(http.StatusMultiStatus)
+	env.Get(t, "/ocs/v2.php/cloud/user?format=json", cogtest.Header("Authorization", "Bearer "+token), cogtest.Header("OCS-APIRequest", "true")).Status(http.StatusOK)
+
+	// Another user's token under alice's name is still refused.
+	bob := env.CreateUser(t, "bob", "pass")
+	bobToken, _, err := env.Providers.AppPasswords.Create(bob.ID, "laptop")
+	require.NoError(t, err)
+	webdavReq(t, env, "PROPFIND", "/remote.php/dav/files/"+alice.ID+"/", "", cogtest.BasicAuth("alice", bobToken), cogtest.Header("Depth", "0")).Status(http.StatusUnauthorized)
+
+	// And a blocked address may still start signing an app in again.
+	env.Post(t, "/index.php/login/v2").Status(http.StatusOK)
+}
+
+// Starting sign-in flows is capped on its own count, and doesn't use up the
+// address's allowance for passwords.
+func TestLoginFlowsDoNotBlockSignIn(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "alice", "pass")
+	for range 10 {
+		env.Post(t, "/index.php/login/v2").Status(http.StatusOK)
+	}
+	env.Post(t, "/index.php/login/v2").Status(http.StatusTooManyRequests)
+	require.True(t, signInLands(t, env, "alice", "pass") != "/login", "flows blocked the web sign-in")
+}

@@ -33,8 +33,15 @@ type appPasswordValidator interface {
 func (a *authCallbacks) passwordCallback(conn gossh.ConnMetadata, password []byte) (*gossh.Permissions, error) {
 	var perms *gossh.Permissions
 	var checkErr error
-	ok, err := a.guard.Try(remoteIP(conn.RemoteAddr()), ratelimit.AccountKey(conn.User()), string(password), func() (bool, error) {
-		perms, checkErr = a.checkPassword(conn, password)
+	// An app password is checked as one alone, even from a limited client:
+	// it cannot be guessed, and refusing it would cut off a working client
+	// because something else at its address failed.
+	try, checkOne := a.guard.Try, a.checkPassword
+	if auth.LooksLikeAppPassword(string(password)) {
+		try, checkOne = a.guard.TryToken, a.checkAppPassword
+	}
+	ok, err := try(remoteIP(conn.RemoteAddr()), ratelimit.AccountKey(conn.User()), string(password), func() (bool, error) {
+		perms, checkErr = checkOne(conn, password)
 		if checkErr != nil && !errors.Is(checkErr, errWrongPassword) {
 			return false, checkErr
 		}
@@ -93,6 +100,12 @@ func (a *authCallbacks) checkPassword(conn gossh.ConnMetadata, password []byte) 
 	}
 
 	// Fall back to app password.
+	return a.checkAppPassword(conn, password)
+}
+
+// checkAppPassword signs in with password as an app password of the user
+// conn names.
+func (a *authCallbacks) checkAppPassword(conn gossh.ConnMetadata, password []byte) (*gossh.Permissions, error) {
 	userID, err := a.appPasswords.Validate(string(password))
 	if errors.Is(err, auth.ErrInvalidAppPassword) {
 		return nil, errWrongPassword
@@ -101,7 +114,7 @@ func (a *authCallbacks) checkPassword(conn gossh.ConnMetadata, password []byte) 
 		return nil, fmt.Errorf("validate app password: %w", err)
 	}
 
-	u, err = a.users.GetByID(userID)
+	u, err := a.users.GetByID(userID)
 	if errors.Is(err, user.ErrNotFound) {
 		return nil, errWrongPassword
 	}

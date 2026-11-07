@@ -167,3 +167,35 @@ func TestGuardCheckErrorIsNotARefusal(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 }
+
+// A token is checked even from a limited client: refusing it would cut off
+// a working app because something else at its address failed. A wrong one
+// still counts.
+func TestGuardTokenCheckedWhileLimited(t *testing.T) {
+	g := newGuard(3)
+	for i := range 3 {
+		_, err := g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "guess"+string(rune('a'+i)), fail)
+		require.NoError(t, err)
+	}
+	_, err := g.Try("203.0.113.1", ratelimit.AccountKey("alice"), "password", pass)
+	require.Equal(t, ratelimit.ErrLimited, err)
+
+	ok, err := g.TryToken("203.0.113.1", ratelimit.AccountKey("alice"), "token", pass)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	checks := 0
+	wrong := func() (bool, error) { checks++; return false, nil }
+	ok, err = g.TryToken("203.0.113.2", "", "revoked", wrong)
+	require.NoError(t, err)
+	require.False(t, ok)
+	ok, err = g.TryToken("203.0.113.2", "", "revoked", wrong)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Equal(t, 1, checks)
+	for i := range 2 {
+		_, err := g.TryToken("203.0.113.2", "", "other"+string(rune('a'+i)), wrong)
+		require.NoError(t, err)
+	}
+	require.True(t, g.Limited("203.0.113.2"), "wrong tokens were not counted")
+}

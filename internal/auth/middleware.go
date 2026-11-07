@@ -174,11 +174,25 @@ func (m *Middleware) authenticate(r *http.Request) (*user.User, *Session) {
 	// public link's password, which the link's handler checks.
 	if username, password, ok := r.BasicAuth(); ok && username != "" {
 		var u *user.User
-		ok, err := m.Guard.Try(ip, ratelimit.AccountKey(username), password, func() (bool, error) {
+		try, check := m.Guard.Try, func() (bool, error) {
 			var err error
 			u, err = m.basicUser(username, password)
 			return u != nil, err
-		})
+		}
+		// An app password is checked as one alone, even from a limited
+		// client: it cannot be guessed, and refusing it would sign out a
+		// working app because something else at its address failed.
+		if LooksLikeAppPassword(password) {
+			try, check = m.Guard.TryToken, func() (bool, error) {
+				var err error
+				u, err = m.appPasswordUser(password)
+				if u != nil && !strings.EqualFold(u.Username, username) {
+					u = nil
+				}
+				return u != nil, err
+			}
+		}
+		ok, err := try(ip, ratelimit.AccountKey(username), password, check)
 		logAuthErr("basic auth", err)
 		if !ok {
 			return nil, nil
@@ -190,7 +204,11 @@ func (m *Middleware) authenticate(r *http.Request) (*user.User, *Session) {
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 		token := strings.TrimPrefix(auth, "Bearer ")
 		var u *user.User
-		ok, err := m.Guard.Try(ip, "", token, func() (bool, error) {
+		try := m.Guard.Try
+		if LooksLikeAppPassword(token) {
+			try = m.Guard.TryToken
+		}
+		ok, err := try(ip, "", token, func() (bool, error) {
 			var err error
 			u, err = m.appPasswordUser(token)
 			return u != nil, err

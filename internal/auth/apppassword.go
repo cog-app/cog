@@ -51,6 +51,25 @@ func hashAppPasswordSecret(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// LooksLikeAppPassword reports whether s has the form of an app password:
+// a 16-byte id and a 32-byte secret, hex, joined by appPasswordSep. A secret
+// that long cannot be guessed, so one of this form may be checked even from a
+// client limited for guessing: refusing it unchecked would only cut a working
+// app off. No password anyone types has this form by accident.
+func LooksLikeAppPassword(s string) bool {
+	id, secret, ok := strings.Cut(s, appPasswordSep)
+	return ok && len(id) == 32 && len(secret) == 64 && isLowerHex(id) && isLowerHex(secret)
+}
+
+func isLowerHex(s string) bool {
+	for _, c := range []byte(s) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // splitAppPassword returns the id and secret of a token, or ok=false if the
 // token is not in the "<id>.<secret>" form.
 func splitAppPassword(token string) (id, secret string, ok bool) {

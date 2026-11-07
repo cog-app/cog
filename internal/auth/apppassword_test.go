@@ -175,3 +175,21 @@ func TestAppPasswordOldFormatRejected(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, u.ID, uid)
 }
+
+// Every app password has the form LooksLikeAppPassword accepts, and nothing
+// a person types does.
+func TestLooksLikeAppPassword(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	for range 5 {
+		token, _, err := env.Providers.AppPasswords.Create(alice.ID, "x")
+		require.NoError(t, err)
+		require.True(t, auth.LooksLikeAppPassword(token), "%q", token)
+		require.False(t, auth.LooksLikeAppPassword(strings.ToUpper(token)))
+		require.False(t, auth.LooksLikeAppPassword(token[:len(token)-1]))
+		require.False(t, auth.LooksLikeAppPassword(token+"0"))
+	}
+	for _, s := range []string{"", "pass", "correct horse battery staple", ".", "abc.def", strings.Repeat("a", 97)} {
+		require.False(t, auth.LooksLikeAppPassword(s), "%q", s)
+	}
+}

@@ -28,6 +28,10 @@ var ErrLimited = errors.New("too many failed attempts")
 //   - At most MaxWaiting attempts at a slowed account wait at once. The
 //     delay costs a guesser time; it is not to cost the server a goroutine
 //     per guess, so an attempt past the queue is refused instead.
+//   - A token (TryToken), a secret too long and random to guess, is checked
+//     even when the client or account is limited. Refusing it would cut off
+//     working apps behind an address something else failed from, and
+//     checking it gives a guesser nothing.
 //   - A client sending a secret it was refused for at an account within the
 //     window is refused again at once, and not counted again. A guesser has
 //     to vary what it sends, so a repeat teaches it nothing; but an app
@@ -97,17 +101,32 @@ func ShareKey(shareID string) string {
 // is never remembered; nor is one a caller passes as "" because the right
 // answer can change without Forget, as a one-time code's does.
 func (g *Guard) Try(ip, account, secret string, check func() (bool, error)) (bool, error) {
+	return g.try(ip, account, secret, false, check)
+}
+
+// TryToken is Try for a secret too long and random to guess, such as an app
+// password. It is checked even when the client or the account is limited:
+// the limits exist to make guessing slow, and no one guesses a token, so
+// refusing a right one unchecked would only sign out a working app because
+// something else at its address failed. A wrong token still counts, and a
+// repeated one is still refused unchecked, as by Try. Callers decide a
+// secret is a token by its form, never by what it turns out to be.
+func (g *Guard) TryToken(ip, account, secret string, check func() (bool, error)) (bool, error) {
+	return g.try(ip, account, secret, true, check)
+}
+
+func (g *Guard) try(ip, account, secret string, token bool, check func() (bool, error)) (bool, error) {
 	if g == nil || g.Limiter == nil {
 		return check()
 	}
-	if g.Limiter.IsLimited(ip) {
+	if !token && g.Limiter.IsLimited(ip) {
 		return false, ErrLimited
 	}
 	a, remember := g.attempt(ip, account, secret)
 	if remember && g.refusedBefore(account, a) {
 		return false, nil
 	}
-	if account != "" && g.Limiter.IsLimited(account) {
+	if !token && account != "" && g.Limiter.IsLimited(account) {
 		v, _ := g.queues.LoadOrStore(account, &queue{waiting: make(chan struct{}, MaxWaiting)})
 		q := v.(*queue)
 		select {

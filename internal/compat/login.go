@@ -34,6 +34,10 @@ type LoginFlowHandler struct {
 	AppPWs      *auth.AppPasswordStore
 	Sessions    *auth.SessionStore
 	BaseURL     string
+	// RateLimiter caps the flows a client may start; a client over it can
+	// neither start nor poll one. It is the server's flow limiter, not its
+	// sign-in one: a client refused for wrong passwords may still sign an
+	// app in.
 	RateLimiter *ratelimit.Limiter
 	Clock       clock.Clock
 	CSRFSecret  []byte
@@ -109,7 +113,8 @@ func (h *LoginFlowHandler) HandlePoll(w http.ResponseWriter, r *http.Request) {
 
 	// Rate-limit by client IP. NextCloud clients poll once or twice per
 	// second; an attacker can spam this to lock contention on the pending
-	// map (audit security.md #22). Apply the same limiter used for /login.
+	// map (audit security.md #22). A client that has started too many flows
+	// is refused here too.
 	if h.RateLimiter != nil {
 		ip := ratelimit.ClientIP(r)
 		if h.RateLimiter.IsLimited(ip) {

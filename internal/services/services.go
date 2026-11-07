@@ -87,6 +87,11 @@ type Providers struct {
 	FedPolicy      *federation.Policy // whether, and with whom, this server federates
 	EmailHook      email.SendHook     // if set, all email goes through this instead of SMTP
 	RateLimiter    *ratelimit.Limiter
+	// FlowLimiter caps the Login Flow v2 sessions a client may start. It is
+	// apart from RateLimiter: starting a flow is not a wrong password, and a
+	// client refused for wrong passwords must still be able to sign an app
+	// in again.
+	FlowLimiter *ratelimit.Limiter
 	// Guard checks every credential against guessing, over RateLimiter.
 	Guard      *ratelimit.Guard
 	CSRFSecret []byte
@@ -469,6 +474,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		WebAuthn:       newWebAuthnStore(sysDB, c, cfg.BaseURL, secret, log),
 		SSHKeys:        sshKeys,
 		RateLimiter:    limiter,
+		FlowLimiter:    ratelimit.NewShared(sysDB, "login-flow", 10, 15*time.Minute, c),
 		Guard:          guard,
 		Activities:     activities,
 		DAV:            davServer,
