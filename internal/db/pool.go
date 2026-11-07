@@ -36,6 +36,7 @@ func TunePool(sdb *sql.DB, dsn string) {
 		return
 	}
 	sdb.SetConnMaxIdleTime(IdleConnTimeout)
+	watch(sdb, dsn)
 }
 
 func isMemoryDSN(dsn string) bool {

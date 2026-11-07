@@ -62,6 +62,7 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 			p.StartPush(context.Background())
 			// Remove cache entries nothing has used in a while.
 			p.StartCacheSweep(context.Background())
+			p.StartLockWatch(context.Background())
 
 			if envBool("COG_LOG_REQUESTS") {
 				handler = requestLogger(handler)
