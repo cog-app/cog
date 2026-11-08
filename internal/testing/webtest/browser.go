@@ -484,6 +484,14 @@ func (b *Browser) Login(t testing.TB, user, pass string) {
 // their URL, so editing one changes the DOM.
 //
 // With WEBTEST_UPDATE=1, or when no golden exists, both files are written.
+// imagesSettledJS reports whether every image in the viewport has loaded
+// or failed.
+const imagesSettledJS = `() => [...document.images].every(img => {
+	const r = img.getBoundingClientRect();
+	const inView = r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
+	return !inView || img.complete;
+})`
+
 func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
 	t.Helper()
 
@@ -514,6 +522,16 @@ func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
 	// settles is still captured, and the golden will say what moved.
 	if err := b.tp().WaitStable(300 * time.Millisecond); err != nil {
 		t.Logf("webtest: snapshot: page did not settle: %v", err)
+	}
+	// A lazy image does not hold up the load event, and on a loaded machine
+	// its request can outlast the quiet period above; its load or error
+	// handler (a placeholder for a missing thumbnail) then changes the page
+	// after it was captured. Wait for every image in view to finish, then
+	// for what its handlers do. Lazy images out of view never start.
+	if err := b.tp().Wait(rod.Eval(imagesSettledJS)); err != nil {
+		t.Logf("webtest: snapshot: images did not finish loading: %v", err)
+	} else if err := b.tp().WaitStable(100 * time.Millisecond); err != nil {
+		t.Logf("webtest: snapshot: page did not settle after images: %v", err)
 	}
 
 	if cfg.noOverflow {
