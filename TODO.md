@@ -101,10 +101,13 @@ the choices; this is what Cog needs for it, in the order the app needs it.
 
 ## Playback
 
-- [ ] `ReportProgress` with the client's timestamp: `SetPlayback` takes
-      `at`, and an update older than the stored `last_played_at` is ignored
-      (last writer wins by when it happened, not when it arrived). The
-      gpodder triggers already read `last_played_at`.
+- [x] Progress with the client's timestamp: `SetPlayback` takes `at`, and
+      an update older than the stored `last_played_at` is ignored (last
+      writer wins by when it happened, not when it arrived); a future time is
+      taken as now so a fast clock cannot lock out later updates
+      (`TestPlaybackLastWriterWinsByWhenItPlayed`). The gpodder triggers
+      already read `last_played_at`.
+- [ ] `ReportProgress` passing the client's `at` through to `SetPlayback`.
 
 ## Media
 

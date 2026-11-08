@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/a-h/templ"
 
@@ -1166,7 +1167,7 @@ func (h *Pages) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
-	if err := store.SetPlayback(id, progressSec, false); err != nil {
+	if err := store.SetPlayback(id, progressSec, false, time.Now()); err != nil {
 		slog.Error("feed: update progress", "id", id, "err", err)
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -1184,7 +1185,7 @@ func (h *Pages) MarkComplete(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
-	if err := store.SetPlayback(id, 0, true); err != nil {
+	if err := store.SetPlayback(id, 0, true, time.Now()); err != nil {
 		slog.Error("feed: mark complete playback", "id", id, "err", err)
 	}
 	if err := store.MarkRead(id, true); err != nil {

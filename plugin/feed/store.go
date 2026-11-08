@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/query"
 )
@@ -1055,16 +1056,25 @@ func scanInt64IDs(rows *sql.Rows, ctx string) ([]int64, error) {
 
 // --- Playback methods ---
 
-// SetPlayback upserts playback progress for an item.
-func (s *Store) SetPlayback(itemID int64, progressSec float64, completed bool) error {
+// SetPlayback records playback progress for an item as of at, when it
+// happened on the client that played it. An update older than the one stored
+// is ignored, so a device syncing offline progress late cannot rewind a
+// position set since; last writer wins by when it played, not when it
+// arrived. A time in the future is taken as now, so a client with a fast
+// clock cannot lock out every later update.
+func (s *Store) SetPlayback(itemID int64, progressSec float64, completed bool, at time.Time) error {
+	if now := time.Now(); at.After(now) {
+		at = now
+	}
 	_, err := s.db.Exec(`
 		INSERT INTO playback (item_id, progress_sec, completed, last_played_at)
-		VALUES (?, ?, ?, unixepoch())
+		VALUES (?, ?, ?, ?)
 		ON CONFLICT(item_id) DO UPDATE SET
 			progress_sec = excluded.progress_sec,
 			completed = excluded.completed,
-			last_played_at = unixepoch()`,
-		itemID, progressSec, boolToInt(completed),
+			last_played_at = excluded.last_played_at
+		WHERE excluded.last_played_at >= playback.last_played_at`,
+		itemID, progressSec, boolToInt(completed), at.Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("set playback: %w", err)
