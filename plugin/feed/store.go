@@ -1594,6 +1594,72 @@ func (s *Store) TagsByItems(ids []int64) (map[int64][]string, error) {
 	return out, nil
 }
 
+// idArgs is ids as a placeholder list and its arguments, for IN (…).
+func idArgs(ids []int64) (string, []any) {
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	return strings.TrimSuffix(strings.Repeat("?,", len(ids)), ","), args
+}
+
+// PlaybackByItems returns playback progress per item ID in one query. Items
+// never played are absent from the map.
+func (s *Store) PlaybackByItems(ids []int64) (map[int64]Playback, error) {
+	out := make(map[int64]Playback)
+	if len(ids) == 0 {
+		return out, nil
+	}
+	in, args := idArgs(ids)
+	rows, err := s.db.Query(`
+		SELECT item_id, progress_sec, completed, last_played_at
+		FROM playback WHERE item_id IN (`+in+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("playback by items: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var pb Playback
+		if err := rows.Scan(&pb.ItemID, &pb.ProgressSec, &pb.Completed, &pb.LastPlayedAt); err != nil {
+			return nil, fmt.Errorf("playback by items scan: %w", err)
+		}
+		out[pb.ItemID] = pb
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("playback by items rows: %w", err)
+	}
+	return out, nil
+}
+
+// DownloadsByItems returns the download row per item ID in one query, with
+// what a client is shown of it: state, error, size and captions. Items with
+// no download are absent from the map.
+func (s *Store) DownloadsByItems(ids []int64) (map[int64]Download, error) {
+	out := make(map[int64]Download)
+	if len(ids) == 0 {
+		return out, nil
+	}
+	in, args := idArgs(ids)
+	rows, err := s.db.Query(`
+		SELECT item_id, state, error, bytes, captions_path
+		FROM downloads WHERE item_id IN (`+in+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("downloads by items: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var d Download
+		if err := rows.Scan(&d.ItemID, &d.State, &d.Error, &d.Bytes, &d.CaptionsPath); err != nil {
+			return nil, fmt.Errorf("downloads by items scan: %w", err)
+		}
+		out[d.ItemID] = d
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("downloads by items rows: %w", err)
+	}
+	return out, nil
+}
+
 // DownloadStateByItems returns the download state per item ID in one query.
 // Items with no download row map to "".
 func (s *Store) DownloadStateByItems(ids []int64) (map[int64]string, error) {

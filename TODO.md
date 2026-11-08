@@ -92,8 +92,11 @@ the choices; this is what Cog needs for it, in the order the app needs it.
       in one query for all playlists (not one per playlist).
 - [x] `GetLibrary` (`TestGetLibraryOverGRPC`); playlist counts wait on the
       playlist tiles item above.
-- [ ] Browse and item-state RPCs: `ListItems`, `GetItem`,
-      `SetRead`, `SetStarred`, `MarkAllRead`, `SetTags`.
+- [x] Item-state RPCs: `GetItem`, `SetRead`, `SetStarred`, `SetTags`
+      (`TestItemStateOverGRPC`). Items are converted in batches — tags,
+      playback and downloads one query each — ready for `ListItems`.
+- [ ] Browse RPCs: `ListItems`, `MarkAllRead` (wait on the shared view logic
+      above).
 - [ ] Article bodies as Markdown (`ItemDetail.content_markdown`), converted
       from the sanitized HTML at ingest or on read, so every client renders
       them with SNGL's Markdown widget.
@@ -112,7 +115,9 @@ the choices; this is what Cog needs for it, in the order the app needs it.
       taken as now so a fast clock cannot lock out later updates
       (`TestPlaybackLastWriterWinsByWhenItPlayed`). The gpodder triggers
       already read `last_played_at`.
-- [ ] `ReportProgress` passing the client's `at` through to `SetPlayback`.
+- [x] `ReportProgress` passes the client's `at` through, answers with what
+      is stored (not what was sent, when a later update won), and marks a
+      completed item read (`TestReportProgressOverGRPC`).
 
 ## Media
 

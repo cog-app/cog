@@ -2,8 +2,11 @@ package feed
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -167,4 +170,225 @@ func unixPB(sec int64) *timestamppb.Timestamp {
 		return nil
 	}
 	return &timestamppb.Timestamp{Seconds: sec}
+}
+
+// getItem loads an item, or answers NotFound.
+func getItem(store *Store, id int64) (Item, error) {
+	it, err := store.GetItem(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Item{}, connect.NewError(connect.CodeNotFound, fmt.Errorf("item %d not found", id))
+	}
+	return it, err
+}
+
+// itemPB converts one item as a client sees it, and returns its download.
+func itemPB(store *Store, it Item) (*feedpb.Item, Download, error) {
+	sub, err := store.GetSubscription(it.SubscriptionID)
+	if err != nil {
+		return nil, Download{}, err
+	}
+	pbs, downloads, err := itemsPB(store, []ItemWithSubscription{{Item: it, SubscriptionTitle: sub.Title}})
+	if err != nil {
+		return nil, Download{}, err
+	}
+	return pbs[0], downloads[it.ID], nil
+}
+
+// itemsPB converts items as a client sees them, loading their tags,
+// playback and downloads in one query each. It also returns the downloads,
+// for what an RPC tells beyond the Item.
+func itemsPB(store *Store, items []ItemWithSubscription) ([]*feedpb.Item, map[int64]Download, error) {
+	ids := make([]int64, len(items))
+	for i, it := range items {
+		ids[i] = it.ID
+	}
+	tags, err := store.TagsByItems(ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	playback, err := store.PlaybackByItems(ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	downloads, err := store.DownloadsByItems(ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	out := make([]*feedpb.Item, len(items))
+	for i, it := range items {
+		typ, ok := itemTypes[it.Type]
+		if !ok {
+			return nil, nil, fmt.Errorf("item %d: unknown type %q", it.ID, it.Type)
+		}
+		pb := &feedpb.Item{
+			Id:                it.ID,
+			SubscriptionId:    it.SubscriptionID,
+			SubscriptionTitle: it.SubscriptionTitle,
+			Type:              typ,
+			Title:             it.Title,
+			Author:            it.Author,
+			Url:               it.URL,
+			ThumbnailUrl:      it.ThumbnailURL,
+			DurationSec:       it.DurationSec,
+			PublishedAt:       unixPB(it.PublishedAt),
+			Read:              it.IsRead,
+			Starred:           it.IsStarred,
+			Tags:              tags[it.ID],
+		}
+		if p, ok := playback[it.ID]; ok {
+			pb.Playback = playbackPB(p)
+		}
+		if d, ok := downloads[it.ID]; ok {
+			pb.ServerDownload = &feedpb.DownloadState{State: downloadStates[d.State], Error: d.Error, Bytes: d.Bytes}
+		}
+		out[i] = pb
+	}
+	return out, downloads, nil
+}
+
+var itemTypes = map[string]feedpb.ItemType{
+	"text":  feedpb.ItemType_ITEM_TYPE_TEXT,
+	"audio": feedpb.ItemType_ITEM_TYPE_AUDIO,
+	"video": feedpb.ItemType_ITEM_TYPE_VIDEO,
+}
+
+var downloadStates = map[string]feedpb.DownloadState_State{
+	"queued":      feedpb.DownloadState_STATE_QUEUED,
+	"downloading": feedpb.DownloadState_STATE_DOWNLOADING,
+	"ready":       feedpb.DownloadState_STATE_READY,
+	"error":       feedpb.DownloadState_STATE_ERROR,
+}
+
+func playbackPB(p Playback) *feedpb.Playback {
+	return &feedpb.Playback{ItemId: p.ItemID, ProgressSec: p.ProgressSec, Completed: p.Completed, At: unixPB(p.LastPlayedAt)}
+}
+
+// GetItem returns an item with its article body.
+func (s *FeedService) GetItem(ctx context.Context, req *connect.Request[feedpb.GetItemRequest]) (*connect.Response[feedpb.ItemDetail], error) {
+	store, err := s.store(ctx)
+	if err != nil {
+		return nil, err
+	}
+	it, err := getItem(store, req.Msg.Id)
+	if err != nil {
+		return nil, err
+	}
+	pb, d, err := itemPB(store, it)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&feedpb.ItemDetail{
+		Item:        pb,
+		ContentHtml: it.ContentHTML,
+		HasCaptions: d.CaptionsPath != "",
+	}), nil
+}
+
+// changeItem checks the item exists, applies change, and returns the item
+// as it is after.
+func (s *FeedService) changeItem(ctx context.Context, id int64, change func(*Store) error) (*connect.Response[feedpb.Item], error) {
+	store, err := s.store(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := getItem(store, id); err != nil {
+		return nil, err
+	}
+	if err := change(store); err != nil {
+		return nil, err
+	}
+	it, err := getItem(store, id)
+	if err != nil {
+		return nil, err
+	}
+	pb, _, err := itemPB(store, it)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(pb), nil
+}
+
+func (s *FeedService) SetRead(ctx context.Context, req *connect.Request[feedpb.SetReadRequest]) (*connect.Response[feedpb.Item], error) {
+	return s.changeItem(ctx, req.Msg.Id, func(store *Store) error {
+		return store.MarkRead(req.Msg.Id, req.Msg.Read)
+	})
+}
+
+func (s *FeedService) SetStarred(ctx context.Context, req *connect.Request[feedpb.SetStarredRequest]) (*connect.Response[feedpb.Item], error) {
+	return s.changeItem(ctx, req.Msg.Id, func(store *Store) error {
+		return store.MarkStarred(req.Msg.Id, req.Msg.Starred)
+	})
+}
+
+// SetTags adds and removes tags on an item. Names are trimmed, and an empty
+// one is refused, as the web form does.
+func (s *FeedService) SetTags(ctx context.Context, req *connect.Request[feedpb.SetTagsRequest]) (*connect.Response[feedpb.Item], error) {
+	add, err := tagNames(req.Msg.Add)
+	if err != nil {
+		return nil, err
+	}
+	remove, err := tagNames(req.Msg.Remove)
+	if err != nil {
+		return nil, err
+	}
+	return s.changeItem(ctx, req.Msg.Id, func(store *Store) error {
+		for _, name := range add {
+			if err := store.AddTag(req.Msg.Id, name); err != nil {
+				return err
+			}
+		}
+		for _, name := range remove {
+			if err := store.RemoveTag(req.Msg.Id, name); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func tagNames(names []string) ([]string, error) {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = strings.TrimSpace(n)
+		if out[i] == "" {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("tag name is required"))
+		}
+	}
+	return out, nil
+}
+
+// ReportProgress records where a client is in an item, as of when it
+// played there; see Store.SetPlayback. A client with no clock reading sends
+// no at, and is taken as playing now. Completing an item marks it read, as
+// finishing it in the web player does.
+func (s *FeedService) ReportProgress(ctx context.Context, req *connect.Request[feedpb.ReportProgressRequest]) (*connect.Response[feedpb.Playback], error) {
+	store, err := s.store(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id := req.Msg.ItemId
+	if _, err := getItem(store, id); err != nil {
+		return nil, err
+	}
+	at := time.Now()
+	if req.Msg.At != nil {
+		if err := req.Msg.At.CheckValid(); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("at: %w", err))
+		}
+		at = req.Msg.At.AsTime()
+	}
+	if err := store.SetPlayback(id, req.Msg.ProgressSec, req.Msg.Completed, at); err != nil {
+		return nil, err
+	}
+	if req.Msg.Completed {
+		if err := store.MarkRead(id, true); err != nil {
+			return nil, err
+		}
+	}
+	// What is stored, which is not what was sent when a later update won.
+	pb, err := store.GetPlayback(id)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(playbackPB(pb)), nil
 }

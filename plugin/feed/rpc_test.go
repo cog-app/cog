@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/testing/assert"
@@ -119,6 +121,86 @@ func TestFeedServiceUnimplementedRPC(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	u := env.CreateUser(t, "alice", "pass")
 	_, err := feedClient(t, env, u.AppPassword(t, "phone")).
-		GetItem(context.Background(), connect.NewRequest(&feedpb.GetItemRequest{Id: 1}))
+		ExportOPML(context.Background(), connect.NewRequest(&feedpb.ExportOPMLRequest{}))
 	assert.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err))
+}
+
+func TestItemStateOverGRPC(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, u.Username)
+	id := seedAudioItem(t, store, "https://cdn.example.com/ep1.mp3")
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	ctx := context.Background()
+
+	got, err := client.GetItem(ctx, connect.NewRequest(&feedpb.GetItemRequest{Id: id}))
+	require.NoError(t, err)
+	assert.Equal(t, "Episode 1", got.Msg.Item.Title)
+	assert.Equal(t, "Test Podcast", got.Msg.Item.SubscriptionTitle)
+	assert.Equal(t, feedpb.ItemType_ITEM_TYPE_AUDIO, got.Msg.Item.Type)
+
+	item, err := client.SetRead(ctx, connect.NewRequest(&feedpb.SetReadRequest{Id: id, Read: true}))
+	require.NoError(t, err)
+	assert.True(t, item.Msg.Read)
+	item, err = client.SetStarred(ctx, connect.NewRequest(&feedpb.SetStarredRequest{Id: id, Starred: true}))
+	require.NoError(t, err)
+	assert.True(t, item.Msg.Starred)
+
+	item, err = client.SetTags(ctx, connect.NewRequest(&feedpb.SetTagsRequest{Id: id, Add: []string{" later ", "car"}}))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"car", "later"}, item.Msg.Tags)
+	item, err = client.SetTags(ctx, connect.NewRequest(&feedpb.SetTagsRequest{Id: id, Remove: []string{"car"}}))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"later"}, item.Msg.Tags)
+	_, err = client.SetTags(ctx, connect.NewRequest(&feedpb.SetTagsRequest{Id: id, Add: []string{"  "}}))
+	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+
+	stored, err := store.GetItem(id)
+	require.NoError(t, err)
+	assert.True(t, stored.IsRead && stored.IsStarred)
+
+	for _, call := range []func() error{
+		func() error {
+			_, err := client.GetItem(ctx, connect.NewRequest(&feedpb.GetItemRequest{Id: id + 100}))
+			return err
+		},
+		func() error {
+			_, err := client.SetRead(ctx, connect.NewRequest(&feedpb.SetReadRequest{Id: id + 100, Read: true}))
+			return err
+		},
+	} {
+		assert.Equal(t, connect.CodeNotFound, connect.CodeOf(call()))
+	}
+}
+
+func TestReportProgressOverGRPC(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, u.Username)
+	id := seedAudioItem(t, store, "https://cdn.example.com/ep1.mp3")
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	ctx := context.Background()
+
+	now := time.Now()
+	pb, err := client.ReportProgress(ctx, connect.NewRequest(&feedpb.ReportProgressRequest{
+		ItemId: id, ProgressSec: 300, At: timestamppb.New(now.Add(-time.Minute)),
+	}))
+	require.NoError(t, err)
+	assert.Equal(t, 300.0, pb.Msg.ProgressSec)
+
+	// Offline progress from an hour ago arrives late and loses; the reply
+	// says what is stored.
+	pb, err = client.ReportProgress(ctx, connect.NewRequest(&feedpb.ReportProgressRequest{
+		ItemId: id, ProgressSec: 120, At: timestamppb.New(now.Add(-time.Hour)),
+	}))
+	require.NoError(t, err)
+	assert.Equal(t, 300.0, pb.Msg.ProgressSec)
+
+	pb, err = client.ReportProgress(ctx, connect.NewRequest(&feedpb.ReportProgressRequest{ItemId: id, Completed: true}))
+	require.NoError(t, err)
+	assert.True(t, pb.Msg.Completed)
+	item, err := client.GetItem(ctx, connect.NewRequest(&feedpb.GetItemRequest{Id: id}))
+	require.NoError(t, err)
+	assert.True(t, item.Msg.Item.Read)
+	assert.True(t, item.Msg.Item.Playback.Completed)
 }
