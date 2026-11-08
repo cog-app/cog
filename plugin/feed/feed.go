@@ -129,7 +129,9 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	pages := NewPages(p)
 	ctx.RegisterPage("{$}", http.HandlerFunc(pages.Index))
 	ctx.RegisterPage("items/{id}", http.HandlerFunc(pages.ItemDetail))
-	ctx.RegisterPage("items/{id}/media", http.HandlerFunc(pages.ItemMedia))
+	// Media is served as itself, ranges included: the media element's source
+	// and a native client's download, never a page in the shell.
+	ctx.RegisterAPI("items/{id}/media", http.HandlerFunc(pages.ItemMedia))
 	ctx.RegisterAction("POST", "items/{id}/read", http.HandlerFunc(pages.ToggleRead))
 	ctx.RegisterAction("POST", "items/{id}/star", http.HandlerFunc(pages.ToggleStar))
 	ctx.RegisterAction("POST", "items/{id}/mark-read", http.HandlerFunc(pages.MarkItemRead))

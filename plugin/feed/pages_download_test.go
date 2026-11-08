@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -131,4 +132,37 @@ func TestItemDownloadRefusesTextItems(t *testing.T) {
 	d, err := store.FindDownload(itemID)
 	require.NoError(t, err)
 	assert.Equal(t, "", d.State)
+}
+
+// A downloaded file is served as itself, ranges included: it is the media
+// element's source and a native client's download, never a page. Registered
+// as a page, it went through the shell, which wraps any status below 300.
+func TestItemMediaServesTheDownloadedFile(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "dave", "pass")
+	store := feedStore(t, env, u.Username)
+	itemID := seedAudioItem(t, store, "https://cdn.example.com/ep1.mp3")
+
+	raw, ok := env.Providers.Plugins.Plugin(feed.PluginID)
+	require.True(t, ok, "feed plugin not registered")
+	space, err := raw.(*feed.Plugin).Space(u.Username)
+	require.NoError(t, err)
+	n, err := space.Own.Put("media/1.mp3", strings.NewReader("0123456789"))
+	require.NoError(t, err)
+	require.NoError(t, store.EnqueueDownload(itemID))
+	require.NoError(t, store.MarkDownloadStart(itemID))
+	require.NoError(t, store.MarkDownloadReady(itemID, "media/1.mp3", n))
+
+	path := "/apps/feed/items/" + strconv.FormatInt(itemID, 10) + "/media"
+	env.Get(t, path, u.Auth).Status(http.StatusOK).Equals("0123456789")
+	env.Get(t, path, u.Auth, cogtest.Header("Range", "bytes=2-5")).Status(http.StatusPartialContent).Equals("2345")
+}
+
+// A client without a session, a native app or a media player, is told it is
+// not signed in rather than sent to the login page.
+func TestItemMediaRefusesWithoutCredentials(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "erin", "pass")
+	itemID := seedAudioItem(t, feedStore(t, env, u.Username), "https://cdn.example.com/ep1.mp3")
+	env.Get(t, "/apps/feed/items/"+strconv.FormatInt(itemID, 10)+"/media", cogtest.StopRedirect).Status(http.StatusUnauthorized)
 }

@@ -108,16 +108,12 @@ the choices; this is what Cog needs for it, in the order the app needs it.
 
 ## Media
 
-- [ ] **Serve `items/{id}/media` as an API route, not a page.** It is
-      registered with `RegisterPage`, so a request that is not HTMX goes
-      through `shellMiddleware`, which buffers the whole response in an
-      `httptest.Recorder` and wraps any status below 300 in the HTML shell —
-      a downloaded file (200, or 206 for a Range) would come back inside the
-      page. Only the redirect path is tested
-      (`ItemMedia_RedirectsToMediaURL`). Read from the code, not reproduced;
-      a test serving a ready download with a Range header would confirm it.
-      `RequireAuthWeb` also answers a missing credential with a redirect to
-      the login page instead of 401.
+- [x] **Serve `items/{id}/media` as an API route, not a page.** As a page,
+      a request that was not HTMX went through `shellMiddleware`, which
+      buffered the whole file and wrapped it in the HTML shell, and a missing
+      credential was a redirect to the login page instead of 401
+      (`TestItemMediaServesTheDownloadedFile`,
+      `TestItemMediaRefusesWithoutCredentials`).
 - [ ] `ResolveMedia(item, variant, max_height)`: the URL to play from, with
       headers and expiry. Cog's media URL for downloaded or cleaned media and
       RSS enclosures; for YouTube a resolved stream — `bestaudio` for the
