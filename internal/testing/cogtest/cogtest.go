@@ -241,6 +241,44 @@ func (e *Env) CreateUser(t testing.TB, username, password string) *User {
 	}
 }
 
+// AppPassword creates an app password for the user and returns the
+// Authorization header value that signs in with it.
+func (u *User) AppPassword(t testing.TB, name string) string {
+	t.Helper()
+	token, _, err := u.e.Providers.AppPasswords.Create(u.ID, name)
+	require.NoError(t, err)
+	return "Bearer " + token
+}
+
+// RPCClient serves the handler over HTTP/2 and returns a client for it and
+// its base URL, for Connect and gRPC clients (gRPC needs HTTP/2, which
+// routing straight through the handler cannot give it). Every request the
+// client sends carries authorization as its Authorization header, unless
+// that is empty.
+func (e *Env) RPCClient(t testing.TB, authorization string) (*http.Client, string) {
+	t.Helper()
+	srv := httptest.NewUnstartedServer(e.Handler)
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	client := srv.Client()
+	client.Transport = authTransport{authorization, client.Transport}
+	return client, srv.URL
+}
+
+type authTransport struct {
+	authorization string
+	next          http.RoundTripper
+}
+
+func (a authTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if a.authorization != "" {
+		r = r.Clone(r.Context())
+		r.Header.Set("Authorization", a.authorization)
+	}
+	return a.next.RoundTrip(r)
+}
+
 // --- HTTP helpers ---
 
 // Get performs a GET request.

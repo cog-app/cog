@@ -3,10 +3,12 @@ module git.duckfam.us/jj-software/cog
 go 1.26.0
 
 tool (
+	connectrpc.com/connect/cmd/protoc-gen-connect-go
 	git.duckfam.us/jj-software/cog/internal/cmd/davfixtures
 	git.duckfam.us/jj-software/cog/internal/cmd/dev
 	git.duckfam.us/jj-software/cog/internal/cmd/docs
 	git.duckfam.us/jj-software/cog/internal/cmd/migratesql
+	git.duckfam.us/jj-software/cog/internal/cmd/protoc
 	git.duckfam.us/jj-software/cog/internal/cmd/verify
 	github.com/a-h/templ/cmd/templ
 	github.com/duckbrain/goprotoc
@@ -15,6 +17,7 @@ tool (
 )
 
 require (
+	connectrpc.com/connect v1.21.1
 	github.com/PuerkitoBio/goquery v1.8.0
 	github.com/a-h/templ v0.3.1001
 	github.com/ajdnik/imghash v1.1.0

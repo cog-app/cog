@@ -1243,6 +1243,8 @@ func (s *Store) CountUnread() (int64, error) {
 type SidebarCounts struct {
 	TotalUnread    int
 	StarredCount   int
+	TotalItems     int
+	Downloaded     int // items whose download is ready to play
 	BySubscription map[int64]int
 	ByFolder       map[int64]int
 }
@@ -1278,8 +1280,11 @@ func (s *Store) LoadSidebarCounts() (SidebarCounts, error) {
 	if err := rows.Err(); err != nil {
 		return sc, fmt.Errorf("sidebar counts rows: %w", err)
 	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM items WHERE is_starred = 1`).Scan(&sc.StarredCount); err != nil {
-		return sc, fmt.Errorf("sidebar starred count: %w", err)
+	if err := s.db.QueryRow(`
+		SELECT COUNT(*), COALESCE(SUM(is_starred), 0),
+		       (SELECT COUNT(*) FROM downloads WHERE state = 'ready')
+		FROM items`).Scan(&sc.TotalItems, &sc.StarredCount, &sc.Downloaded); err != nil {
+		return sc, fmt.Errorf("sidebar item counts: %w", err)
 	}
 	return sc, nil
 }
@@ -1509,6 +1514,36 @@ func (s *Store) ListTags() ([]string, error) {
 		out = append(out, n)
 	}
 	return out, rows.Err()
+}
+
+// TagCount is a tag and how many items carry it.
+type TagCount struct {
+	Name  string
+	Count int64
+}
+
+// ListTagCounts returns every tag with its item count, ordered by name.
+func (s *Store) ListTagCounts() ([]TagCount, error) {
+	rows, err := s.db.Query(`
+		SELECT t.name, COUNT(it.item_id)
+		FROM tags t LEFT JOIN item_tags it ON it.tag_id = t.id
+		GROUP BY t.id ORDER BY t.name`)
+	if err != nil {
+		return nil, fmt.Errorf("list tag counts: %w", err)
+	}
+	defer rows.Close()
+	var out []TagCount
+	for rows.Next() {
+		var tc TagCount
+		if err := rows.Scan(&tc.Name, &tc.Count); err != nil {
+			return nil, fmt.Errorf("scan tag count: %w", err)
+		}
+		out = append(out, tc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("tag counts rows: %w", err)
+	}
+	return out, nil
 }
 
 // RemoveTag removes the association between an item and a tag.

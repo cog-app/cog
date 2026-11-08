@@ -321,6 +321,24 @@ func RequireAuth(next http.Handler) http.Handler {
 	})
 }
 
+// RequireToken admits a request signed in by a credential it carries — an
+// app password as Bearer or Basic, or an account password as Basic — and
+// refuses one signed in only by the session cookie. A browser attaches the
+// cookie to any site's request, so a route that takes it needs a CSRF
+// token; a cross-site page cannot set Authorization, so a route that takes
+// only credentials needs none. RPC clients are apps, which never had the
+// cookie to send.
+func RequireToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if UserFromContext(r.Context()) == nil || SessionIDFromContext(r.Context()) != "" {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Cog"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // RequireAuthWeb wraps a handler and redirects to /login if not authenticated.
 func RequireAuthWeb(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

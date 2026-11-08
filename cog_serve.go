@@ -96,10 +96,20 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 // newServer is the HTTP server for handler. ReadHeaderTimeout stops a client
 // holding connections open by sending its headers slowly. There is no overall
 // read or write timeout: uploads, downloads and event streams run long.
+//
+// It speaks unencrypted HTTP/2 beside HTTP/1 on the same port. gRPC needs
+// HTTP/2, and Cog serves plain HTTP behind a proxy that terminates TLS, so
+// without it a gRPC client could reach Cog only through a proxy that
+// re-encrypts.
 func newServer(addr string, handler http.Handler) *http.Server {
+	var protocols http.Protocols
+	protocols.SetHTTP1(true)
+	protocols.SetHTTP2(true)
+	protocols.SetUnencryptedHTTP2(true)
 	return &http.Server{
 		Addr:              addr,
 		Handler:           handler,
+		Protocols:         &protocols,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}

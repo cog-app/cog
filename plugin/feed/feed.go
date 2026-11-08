@@ -126,6 +126,8 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	})
 
 	// Main app pages and item actions
+	p.registerService(ctx)
+
 	pages := NewPages(p)
 	ctx.RegisterPage("{$}", http.HandlerFunc(pages.Index))
 	ctx.RegisterPage("items/{id}", http.HandlerFunc(pages.ItemDetail))

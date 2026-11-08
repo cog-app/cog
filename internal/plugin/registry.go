@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -1291,6 +1292,17 @@ func (pr *pluginRegistrar) RegisterSchema(fsys fs.FS) {
 func (pr *pluginRegistrar) RootDB() (*sql.DB, error) {
 	return pr.registry.RootDB(pr.pluginID)
 }
+
+func (pr *pluginRegistrar) RegisterService(path string, handler http.Handler) {
+	if !servicePath.MatchString(path) {
+		panic(fmt.Sprintf("plugin %s: service path %q is not /<package>.<Service>/", pr.pluginID, path))
+	}
+	pr.mux.Handle(path, pr.wrap(auth.RequireToken(pr.injectPluginContext(handler))))
+}
+
+// servicePath is what an RPC service is addressed by: its fully qualified
+// name, which has a package, so it can never claim a page's path.
+var servicePath = regexp.MustCompile(`^/[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+/$`)
 
 func (pr *pluginRegistrar) RegisterDAVHandler(prefix string, handler http.Handler) {
 	pattern := "/remote.php/dav/" + prefix + "/"

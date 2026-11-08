@@ -53,31 +53,34 @@ the choices; this is what Cog needs for it, in the order the app needs it.
 
 ## Serving gRPC
 
-- [ ] Serve gRPC on the main port. Mount `connectrpc.com/connect` handlers on
-      the mux — they speak gRPC, gRPC-Web and Connect over `net/http`, so the
-      auth chain, rate limits and logging apply unchanged — and enable
-      unencrypted HTTP/2 on the server (`http.Server.Protocols` with
-      `SetUnencryptedHTTP2`) for h2c deployments; TLS deployments get h2 from
-      the proxy. Pin `protoc-gen-connect-go` as a tool beside
-      `protoc-gen-go-grpc`.
-- [ ] Plugin API for it: `RegisterService(path string, h http.Handler)` (the
-      pair `connect.New…Handler` returns), routed at `/<package>.<Service>/`
-      rather than under `/apps/<id>/`, wrapped in `RequireAuth` (token auth;
-      no CSRF, no shell).
-- [ ] The out-of-process bridge's `HandleHTTPRequest` is unary, so a
-      server-streaming RPC cannot pass through it. Feed is in-process, so this
-      only blocks external plugins; record it in `DESIGN/plugins/grpc_bridge.md`
-      or stream bodies over the bridge.
-- [ ] A `cogtest` helper that returns a Connect/gRPC client wired to the test
-      handler (an `httptest` server with HTTP/2 for streaming tests).
+- [x] Serve gRPC on the main port. `connectrpc.com/connect` handlers on the
+      mux speak gRPC, gRPC-Web and Connect over `net/http`, so the auth chain
+      and logging apply unchanged, and the server speaks h2c beside HTTP/1
+      (`TestServerSpeaksCleartextHTTP2`). `go tool protoc` runs goprotoc with
+      the pinned `protoc-gen-connect-go` (goprotoc only knows the go and
+      go-grpc generators by name).
+- [x] Plugin API for it: `RegisterService(path string, h http.Handler)` (the
+      pair `connect.New…Handler` returns), routed at `/<package>.<Service>/`,
+      wrapped in `auth.RequireToken`: credentials only, the session cookie
+      refused, so no CSRF (`TestFeedServiceRefusesTheSessionCookie`).
+- [x] The out-of-process bridge's `HandleHTTPRequest` is unary, so a
+      server-streaming RPC cannot pass through it. Recorded in
+      `DESIGN/plugins/grpc_bridge.md`; an external plugin's `RegisterService`
+      warns and mounts nothing.
+- [x] A `cogtest` helper: `env.RPCClient(t, authorization)` serves the
+      handler over HTTP/2 and returns a client and base URL;
+      `user.AppPassword(t, name)` makes the credential.
 - [ ] Verify an app password from Login Flow v2 authenticates a gRPC call
       (`authorization: Bearer …`), and name the app password after the device
       the flow reports.
 
 ## FeedService
 
-- [ ] Move the proto to `plugin/feed/feedpb/feed.proto` with a
+- [x] Move the proto to `plugin/feed/feedpb/feed.proto` with a
       `go:generate` like `plugin/plugpb`'s; the app imports it from here.
+      FeedService is mounted; RPCs not yet written answer Unimplemented, and
+      errors that are not `connect.Error`s are logged and sent as a generic
+      Internal.
 - [ ] Pull the view logic out of the handlers so web and gRPC share it:
       `resolveViewItems`, `refineItems`, `searchItems`, `buildItemNav` and the
       sidebar counts become store/service methods taking a `ViewSpec`.
@@ -87,7 +90,9 @@ the choices; this is what Cog needs for it, in the order the app needs it.
 - [ ] `unfinished_only` for play queues (join `playback`, `completed = 0`).
 - [ ] Playlist tiles: unfinished count and unfinished duration per playlist,
       in one query for all playlists (not one per playlist).
-- [ ] Browse and item-state RPCs: `GetLibrary`, `ListItems`, `GetItem`,
+- [x] `GetLibrary` (`TestGetLibraryOverGRPC`); playlist counts wait on the
+      playlist tiles item above.
+- [ ] Browse and item-state RPCs: `ListItems`, `GetItem`,
       `SetRead`, `SetStarred`, `MarkAllRead`, `SetTags`.
 - [ ] Article bodies as Markdown (`ItemDetail.content_markdown`), converted
       from the sanitized HTML at ingest or on read, so every client renders
