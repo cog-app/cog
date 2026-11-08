@@ -108,8 +108,8 @@ github.com/dlclark/regexp2 v1.7.0 h1:7lJfhqlPssTb1WQx4yvTHN0uElPEv52sbaECrAQxjAo
 github.com/dlclark/regexp2 v1.7.0/go.mod h1:DHkYz0B9wPfa6wondMfaivmHpzrQ3v9q8cnmRbL6yW8=
 github.com/duckbrain/goprotoc v0.0.0-20250112085431-c9d6f3c6ef37 h1:lBROhYx15O5xVOrX1sqjF5+lLReNJpNPtBvThpBZQMk=
 github.com/duckbrain/goprotoc v0.0.0-20250112085431-c9d6f3c6ef37/go.mod h1:ri6lVV6KHXeAS7bX7yDyQubP77Z0YmSCDxPVCCRurgk=
-github.com/duckbrain/rsync v0.0.0-20261107233229-d8b884f66b88 h1:BrPV0yEchQ1eGVUz6biYFtZyYq7Y/STi2eo5N1rTkvU=
-github.com/duckbrain/rsync v0.0.0-20261107233229-d8b884f66b88/go.mod h1:7O8VPeK1P7vqJp11yhfI3j8dbCR/As5flK52hLJ7yJ0=
+github.com/duckbrain/rsync v0.0.0-20261108011626-da5096bb3f2d h1:g3RRjxb0J9FasubqztsQyh3m4CWNACXezsZDGgesCcE=
+github.com/duckbrain/rsync v0.0.0-20261108011626-da5096bb3f2d/go.mod h1:7O8VPeK1P7vqJp11yhfI3j8dbCR/As5flK52hLJ7yJ0=
 github.com/envoyproxy/go-control-plane v0.9.0/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.9-0.20210217033140-668b12f5399d/go.mod h1:cXg6YxExXjJnVBQHBLXeUAgxn2UodCpnH306RInaBQk=

@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/maildev"
 	"git.duckfam.us/jj-software/cog/internal/settings"
@@ -175,17 +176,26 @@ func build(bin string) {
 
 func seedUser(bin, dbPath, devDir string) {
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		log.Printf("Creating test user %s:%s (admin)", testUser, testPass)
-		cmd := exec.Command(bin, "user", "create", "--admin", testUser, testPass)
-		cmd.Env = append(os.Environ(),
-			"COG_DB="+dbPath,
-			"COG_DATA_DIR="+filepath.Join(devDir, "data"),
-		)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			log.Fatalf("user create failed: %v", err)
+		run := func(args ...string) {
+			cmd := exec.Command(bin, args...)
+			cmd.Env = append(os.Environ(),
+				"COG_DB="+dbPath,
+				"COG_DATA_DIR="+filepath.Join(devDir, "data"),
+			)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				log.Fatalf("cog %s failed: %v", strings.Join(args[:2], " "), err)
+			}
 		}
+		// The password policy would refuse admin:admin as too short and as
+		// breached, and the breach check needs the network. A dev server's
+		// test user is meant to be easy to type.
+		log.Printf("Relaxing the password policy for the dev server")
+		run("setting", "set", settings.KeyPasswordMinLength, "1")
+		run("setting", "set", settings.KeyPasswordBreachCheck, "false")
+		log.Printf("Creating test user %s:%s (admin)", testUser, testPass)
+		run("user", "create", "--admin", testUser, testPass)
 	} else {
 		log.Printf("Using existing DB (user: %s)", testUser)
 	}

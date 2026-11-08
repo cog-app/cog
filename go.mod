@@ -142,4 +142,4 @@ require (
 	kernel.org/pub/linux/libs/security/libcap/psx v1.2.70 // indirect
 )
 
-replace github.com/gokrazy/rsync => github.com/duckbrain/rsync v0.0.0-20261107233229-d8b884f66b88
+replace github.com/gokrazy/rsync => github.com/duckbrain/rsync v0.0.0-20261108011626-da5096bb3f2d
