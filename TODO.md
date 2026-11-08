@@ -37,11 +37,118 @@ These tasks should be completed by Claude in priority order. Check them off the 
   - [ ] Cache content locally
   - [ ] Skip media by patterns (search patterns?)
   - [ ] Content filtering (ad skipping; profanity blocking)
-  - [ ] Includes a mobile app
+  - [-] Includes a mobile app — see "Feed: native app API" below
   - Calendar
     - Allow subscribing to iCal subscriptions; expose those via CalDAV (so I don't need to configure it on each device and can make edits)
 
 ---
+
+# Feed: native app API
+
+[cog-feed-sngl](https://git.duckfam.us/jj-software/cog-feed-sngl) is a native
+Feed client (gtk4, Android, terminal) written in SNGL. It talks to Cog over
+gRPC with the service drafted in its `proto/cogfeed/v1/feed.proto`, and fetches
+media bytes over plain HTTP. Its `DESIGN.md` and `design/protocol.md` explain
+the choices; this is what Cog needs for it, in the order the app needs it.
+
+## Serving gRPC
+
+- [ ] Serve gRPC on the main port. Mount `connectrpc.com/connect` handlers on
+      the mux — they speak gRPC, gRPC-Web and Connect over `net/http`, so the
+      auth chain, rate limits and logging apply unchanged — and enable
+      unencrypted HTTP/2 on the server (`http.Server.Protocols` with
+      `SetUnencryptedHTTP2`) for h2c deployments; TLS deployments get h2 from
+      the proxy. Pin `protoc-gen-connect-go` as a tool beside
+      `protoc-gen-go-grpc`.
+- [ ] Plugin API for it: `RegisterService(path string, h http.Handler)` (the
+      pair `connect.New…Handler` returns), routed at `/<package>.<Service>/`
+      rather than under `/apps/<id>/`, wrapped in `RequireAuth` (token auth;
+      no CSRF, no shell).
+- [ ] The out-of-process bridge's `HandleHTTPRequest` is unary, so a
+      server-streaming RPC cannot pass through it. Feed is in-process, so this
+      only blocks external plugins; record it in `DESIGN/plugins/grpc_bridge.md`
+      or stream bodies over the bridge.
+- [ ] A `cogtest` helper that returns a Connect/gRPC client wired to the test
+      handler (an `httptest` server with HTTP/2 for streaming tests).
+- [ ] Verify an app password from Login Flow v2 authenticates a gRPC call
+      (`authorization: Bearer …`), and name the app password after the device
+      the flow reports.
+
+## FeedService
+
+- [ ] Move the proto to `plugin/feed/feedpb/feed.proto` with a
+      `go:generate` like `plugin/plugpb`'s; the app imports it from here.
+- [ ] Pull the view logic out of the handlers so web and gRPC share it:
+      `resolveViewItems`, `refineItems`, `searchItems`, `buildItemNav` and the
+      sidebar counts become store/service methods taking a `ViewSpec`.
+- [ ] Keyset pagination for `ListItems` (`published_at, id`) — today
+      `ListItemsForView` takes only a limit — that still works when a query
+      needs the search refine step.
+- [ ] `unfinished_only` for play queues (join `playback`, `completed = 0`).
+- [ ] Playlist tiles: unfinished count and unfinished duration per playlist,
+      in one query for all playlists (not one per playlist).
+- [ ] Browse and item-state RPCs: `GetLibrary`, `ListItems`, `GetItem`,
+      `SetRead`, `SetStarred`, `MarkAllRead`, `SetTags`.
+- [ ] Article bodies as Markdown (`ItemDetail.content_markdown`), converted
+      from the sanitized HTML at ingest or on read, so every client renders
+      them with SNGL's Markdown widget.
+- [ ] `PreviewQuery`, sharing `FilterPreview`'s code, with a positioned parse
+      error.
+- [ ] Management RPCs with web parity: subscriptions (add with detection,
+      update folder/title/interval/paused, delete, refresh), folders, filters,
+      playlists, `Import` taking bytes and a format, `ExportOPML`.
+- [ ] Player prefs get/set (`LoadPlayerPrefs` / `SavePlayerPrefs`).
+
+## Playback
+
+- [ ] `ReportProgress` with the client's timestamp: `SetPlayback` takes
+      `at`, and an update older than the stored `last_played_at` is ignored
+      (last writer wins by when it happened, not when it arrived). The
+      gpodder triggers already read `last_played_at`.
+
+## Media
+
+- [ ] **Serve `items/{id}/media` as an API route, not a page.** It is
+      registered with `RegisterPage`, so a request that is not HTMX goes
+      through `shellMiddleware`, which buffers the whole response in an
+      `httptest.Recorder` and wraps any status below 300 in the HTML shell —
+      a downloaded file (200, or 206 for a Range) would come back inside the
+      page. Only the redirect path is tested
+      (`ItemMedia_RedirectsToMediaURL`). Read from the code, not reproduced;
+      a test serving a ready download with a Range header would confirm it.
+      `RequireAuthWeb` also answers a missing credential with a redirect to
+      the login page instead of 401.
+- [ ] `ResolveMedia(item, variant, max_height)`: the URL to play from, with
+      headers and expiry. Cog's media URL for downloaded or cleaned media and
+      RSS enclosures; for YouTube a resolved stream — `bestaudio` for the
+      audio variant, best video up to `max_height` otherwise — cached until it
+      expires. Generalises `api/stream-url/{id}`.
+- [ ] `?variant=audio` on the media route for a downloaded video: an audio
+      sidecar remuxed once (`ffmpeg -vn -c:a copy`) and kept beside the
+      download, so background play and audio-only offline copies do not move
+      the video bytes.
+- [ ] `GetRanges` that never runs ffmpeg in the request. `Ranges` currently
+      calls `detectSilence` synchronously on first request; move silence
+      detection into the download pipeline and answer `pending` until it is
+      done.
+- [ ] `RequestDownload(item, variant)` and the download state on `Item`, so a
+      client can ask the server to fetch (and run profanity/silence on) a
+      YouTube item before downloading it to the device.
+- [ ] Captions (VTT) over the API for offline use.
+
+## Sync
+
+- [ ] A change sequence per feed database: triggers on `items`, `playback`,
+      `item_tags`, `subscriptions`, `folders`, `playlists` and
+      `feed_settings` bump a `change_seq` and write tombstones for deletes,
+      in the writing transaction (the pattern `gpodder_episode_actions` and
+      `internal/db/changelog.go` already use). Tombstones are pruned after a
+      retention window; a token older than that answers `reset`.
+- [ ] `Changes(token)` returning changed rows and tombstones in batches.
+- [ ] `Watch(token)`: a server stream that emits the new token whenever the
+      sequence moves, driven by the update hooks the search drainer already
+      uses to wake up, so open clients refresh within a second without
+      polling.
 
 # Audit findings — 2026-11-04
 
