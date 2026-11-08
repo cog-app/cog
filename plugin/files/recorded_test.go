@@ -269,3 +269,48 @@ func TestReconcileBothWays(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, meta.ETag, again.ETag)
 }
+
+// TestReplaceKeepsIdentity: a new version renamed into place by Replace is
+// an update of the file there, as a PUT is, not a delete and a new file: the
+// row, its ID and what hangs from it stay. Rename keeps its meaning.
+func TestReplaceKeepsIdentity(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	plug := getFilesPlugin(t, env)
+	require.NoError(t, plug.EnsureRootDir(alice.Username))
+
+	orig, err := plug.Upload(alice.Username, "/doc.txt", strings.NewReader("v1"))
+	require.NoError(t, err)
+	require.NoError(t, plug.SetFavorite(alice.Username, "/doc.txt", true))
+	_, err = plug.CreateComment(alice.Username, orig.ID, alice.ID, "keep me")
+	require.NoError(t, err)
+	_, err = plug.Upload(alice.Username, "/.doc.txt.tmp", strings.NewReader("version two"))
+	require.NoError(t, err)
+
+	got, err := plug.Replace(alice.Username, "/.doc.txt.tmp", "/doc.txt")
+	require.NoError(t, err)
+	require.Equal(t, orig.ID, got.ID)
+	require.Equal(t, int64(len("version two")), got.Size)
+	require.True(t, got.ETag != orig.ETag, "the etag did not change")
+	_, err = plug.GetByPath(alice.Username, "/.doc.txt.tmp")
+	require.True(t, errors.Is(err, files.ErrNotFound), "the temporary file still has a row: %v", err)
+	favs, err := plug.Favorites(alice.Username)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(favs))
+	require.Equal(t, orig.ID, favs[0].ID)
+	comments, err := plug.ListComments(alice.Username, orig.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(comments))
+
+	// Onto a name with nothing there, Replace is a rename.
+	moved, err := plug.Replace(alice.Username, "/doc.txt", "/renamed.txt")
+	require.NoError(t, err)
+	require.Equal(t, orig.ID, moved.ID)
+
+	// Rename over a file still replaces it with the one moved.
+	other, err := plug.Upload(alice.Username, "/other.txt", strings.NewReader("other"))
+	require.NoError(t, err)
+	renamed, err := plug.Rename(alice.Username, "/other.txt", "/renamed.txt")
+	require.NoError(t, err)
+	require.Equal(t, other.ID, renamed.ID)
+}

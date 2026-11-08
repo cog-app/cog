@@ -284,6 +284,21 @@ func (o *OverlayFS) Rename(oldPath, newPath string) error {
 	return o.base.Rename(oldPath, newPath)
 }
 
+// Replace is Rename, passing the update through to a mount that keeps a
+// file's identity across one.
+func (o *OverlayFS) Replace(oldPath, newPath string) error {
+	oldPath = o.clean(oldPath)
+	newPath = o.clean(newPath)
+	if mfs, subOld, ok := o.resolveMount(oldPath); ok {
+		if mfs2, subNew, ok2 := o.resolveMount(newPath); ok2 && mfs2 == mfs {
+			if _, virtual := o.files[newPath]; !virtual {
+				return Replace(mfs, subOld, subNew)
+			}
+		}
+	}
+	return o.Rename(oldPath, newPath)
+}
+
 // --- vfs.FileOpener ---
 
 func (o *OverlayFS) OpenFile(p string, flag int, perm os.FileMode) (File, error) {

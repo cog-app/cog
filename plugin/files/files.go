@@ -687,6 +687,52 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 	return p.GetByPath(username, newPath)
 }
 
+// Replace moves srcPath over dstPath as an update of dstPath, for a client
+// that writes a new version beside a file and renames it into place to
+// replace it atomically (rsync, editors). When dstPath is a file, its row
+// stays, and with it its ID and what hangs from that (shares, comments, the
+// favorite flag); it takes srcPath's content, and srcPath's row goes. When
+// it is not, Replace is Rename.
+func (p *Plugin) Replace(username, srcPath, dstPath string) (*FileMeta, error) {
+	srcPath = normalizePath(srcPath)
+	dstPath = normalizePath(dstPath)
+	db, err := p.DB(username)
+	if err != nil {
+		return nil, err
+	}
+	dst, err := getByPath(db, dstPath)
+	if errors.Is(err, ErrNotFound) {
+		return p.Rename(username, srcPath, dstPath)
+	}
+	if err != nil {
+		return nil, err
+	}
+	fs, err := p.userFS(username)
+	if err != nil {
+		return nil, err
+	}
+	src, err := fs.Stat(srcPath)
+	if err != nil {
+		return nil, fmt.Errorf("stat %s: %w", srcPath, err)
+	}
+	if dst.IsDir || src.IsDir || srcPath == dstPath {
+		return p.Rename(username, srcPath, dstPath)
+	}
+
+	if err := fs.Rename(srcPath, dstPath); err != nil {
+		return nil, fmt.Errorf("rename: %w", err)
+	}
+	if err := forgetRows(db, srcPath); err != nil {
+		return nil, err
+	}
+	meta, err := p.record(db, fs, dstPath)
+	if err != nil {
+		return nil, err
+	}
+	p.logActivity(username, "file_changed", username+" updated "+meta.Name, "", dstPath)
+	return meta, nil
+}
+
 // ParentID returns the parent file ID for a given file ID.
 // Used by the sharing system for hierarchical permission checks.
 func (p *Plugin) ParentID(username string, fileID int64) (string, error) {

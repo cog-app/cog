@@ -193,6 +193,11 @@ func (f *recordedFS) Rename(oldPath, newPath string) error {
 	return err
 }
 
+func (f *recordedFS) Replace(oldPath, newPath string) error {
+	_, err := f.p.Replace(f.username, oldPath, newPath)
+	return err
+}
+
 func (f *recordedFS) StatInfo(path string) (iofs.FileInfo, error) {
 	dr, err := f.dirReader()
 	if err != nil {

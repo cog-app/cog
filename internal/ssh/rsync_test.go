@@ -122,6 +122,12 @@ func TestSSHRsyncPush(t *testing.T) {
 	out, err = rsyncOverSSH(t, client, []string{"-a"}, true, "backup/", src+"/")
 	require.NoError(t, err, out)
 	assert.Equal(t, "alpha and omega", readCog(t, fp, "erin", "/backup/a.txt"))
+
+	// It is an update of the file, as a PUT is: its ID, and so its shares
+	// and comments, stay.
+	updated, err := fp.GetByPath("erin", "/backup/a.txt")
+	require.NoError(t, err)
+	assert.Equal(t, meta.ID, updated.ID)
 }
 
 // TestRsyncRootDelete covers what --delete does to the root: walk its fs.FS

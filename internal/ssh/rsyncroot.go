@@ -138,7 +138,9 @@ func (r rsyncRoot) Rename(oldname, newname string) error {
 	if err != nil {
 		return err
 	}
-	return notExist(oldname, r.fsys.Rename(from, to))
+	// The receiver renames only to move a file it received into place,
+	// which is an update of the file there, not a delete and a new file.
+	return notExist(oldname, vfs.Replace(r.fsys, from, to))
 }
 
 func (r rsyncRoot) Remove(name string) error {
