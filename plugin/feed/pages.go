@@ -1294,8 +1294,8 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": streamURL})
 }
 
-// Ranges returns the unified mute (profanity) + skip (silence) ranges for an item.
-// Silence ranges are computed lazily on first request when a local file exists.
+// Ranges returns the unified mute (profanity) + skip (silence) ranges for an
+// item, and whether the silence ranges are still to be computed.
 func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -1343,39 +1343,25 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Skip ranges from silence detection (lazy, cached, requires local file).
+	// Skip ranges from silence detection, which the pipeline runs once a
+	// download is ready. Until it has, the ranges are pending: running
+	// ffmpeg over a whole episode here held the request for as long as
+	// the file took to decode.
+	pending := false
 	if d.LocalPath != "" {
-		skips, derr := h.silenceRanges(r.Context(), store, space, id, d)
-		if derr != nil {
-			slog.Error("feed: silence ranges", "id", id, "err", derr)
+		if d.SilenceState == "done" {
+			skips, err := store.GetSilenceRanges(id)
+			if err != nil {
+				httperr.Internal(w, r, err)
+				return
+			}
+			ranges = append(ranges, skips...)
+		} else {
+			pending = true
 		}
-		ranges = append(ranges, skips...)
 	}
 
-	plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": ranges})
-}
-
-// silenceRanges returns cached silence ranges, computing them once if not yet done.
-func (h *Pages) silenceRanges(ctx context.Context, store *Store, space Space, id int64, d Download) ([]Range, error) {
-	if d.SilenceState == "done" {
-		return store.GetSilenceRanges(id)
-	}
-	media, err := space.Path(d.LocalPath)
-	if err != nil {
-		return nil, err
-	}
-	rs, err := detectSilence(ctx, media)
-	if err != nil {
-		// Cache an empty "done" result so we don't recompute in a tight loop.
-		if serr := store.SetSilenceRanges(id, nil); serr != nil {
-			slog.Error("feed: cache empty silence ranges", "id", id, "err", serr)
-		}
-		return nil, err
-	}
-	if serr := store.SetSilenceRanges(id, rs); serr != nil {
-		return rs, serr
-	}
-	return rs, nil
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": ranges, "pending": pending})
 }
 
 // ItemMedia serves item media: prefers clean_audio_path, then local_path, then 302 to media_url.

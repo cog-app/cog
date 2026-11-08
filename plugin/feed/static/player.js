@@ -125,16 +125,22 @@
 		});
 
 		// --- ranges (mute + skip) ---
+		// The silence ranges are pending until the server has analysed the
+		// download, so ask again while the player is still on the page.
 		var ranges = [];
-		fetch("/apps/feed/api/ranges/" + cfg.itemID, {
-			headers: { "X-CSRF-Token": cfg.csrf },
-		})
-			.then(function (r) { return r.json(); })
-			.then(function (d) {
-				ranges = (d.ranges || []);
-				renderMarkers();
+		function loadRanges() {
+			fetch("/apps/feed/api/ranges/" + cfg.itemID, {
+				headers: { "X-CSRF-Token": cfg.csrf },
 			})
-			.catch(function (e) { console.error("feed: ranges", e); });
+				.then(function (r) { return r.json(); })
+				.then(function (d) {
+					ranges = (d.ranges || []);
+					renderMarkers();
+					if (d.pending && root.isConnected) setTimeout(loadRanges, 30000);
+				})
+				.catch(function (e) { console.error("feed: ranges", e); });
+		}
+		loadRanges();
 
 		function renderMarkers() {
 			if (!markers || !el.duration) return;

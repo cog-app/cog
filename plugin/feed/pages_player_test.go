@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
@@ -232,4 +233,32 @@ func TestAdjacentPlayerCarriesCtx(t *testing.T) {
 	resp.Status(200)
 	resp.Contains(`data-ctx="ctx=all"`)
 	resp.Contains(fmt.Sprintf(`data-item-id="%d"`, older))
+}
+
+// The ranges endpoint never analyses a file itself: until the pipeline has,
+// a ready download's silence ranges are pending, and afterwards they are read
+// from its row.
+func TestRangesPendingUntilAnalysed(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "frank", "pass")
+	store := feedStore(t, env, u.Username)
+	itemID := seedAudioItem(t, store, "https://cdn.example.com/ep5.mp3")
+	require.NoError(t, store.EnqueueDownload(itemID))
+	require.NoError(t, store.MarkDownloadStart(itemID))
+	require.NoError(t, store.MarkDownloadReady(itemID, "media/5.mp3", 10))
+	path := "/apps/feed/api/ranges/" + strconv.FormatInt(itemID, 10)
+
+	var got struct {
+		Ranges  []feed.Range `json:"ranges"`
+		Pending bool         `json:"pending"`
+	}
+	env.Get(t, path, u.Auth).Status(http.StatusOK).JSON(&got)
+	assert.True(t, got.Pending)
+	assert.Equal(t, 0, len(got.Ranges))
+
+	require.NoError(t, store.SetSilenceRanges(itemID, []feed.Range{{Start: 1, End: 2, Action: "skip"}}))
+	got.Pending, got.Ranges = true, nil
+	env.Get(t, path, u.Auth).Status(http.StatusOK).JSON(&got)
+	assert.False(t, got.Pending)
+	assert.Equal(t, []feed.Range{{Start: 1, End: 2, Action: "skip"}}, got.Ranges)
 }

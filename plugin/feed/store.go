@@ -882,6 +882,19 @@ func (s *Store) GetSilenceRanges(itemID int64) ([]Range, error) {
 	return rs, nil
 }
 
+// PendingSilence returns up to limit item IDs whose download is ready on disk
+// and whose silence ranges have not been computed.
+func (s *Store) PendingSilence(limit int) ([]int64, error) {
+	rows, err := s.db.Query(
+		`SELECT item_id FROM downloads
+		 WHERE state = 'ready' AND local_path != '' AND silence_state = ''
+		 ORDER BY item_id LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("pending silence: %w", err)
+	}
+	return scanInt64IDs(rows, "pending silence")
+}
+
 // SetSilenceRanges caches silence ranges for an item and marks detection done.
 func (s *Store) SetSilenceRanges(itemID int64, ranges []Range) error {
 	buf, err := json.Marshal(ranges)

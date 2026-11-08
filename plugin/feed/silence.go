@@ -19,10 +19,10 @@ const (
 	silenceMinDur  = "0.5"
 )
 
-// detectSilence runs ffmpeg silencedetect on a local media file and returns the
+// DetectSilence runs ffmpeg silencedetect on a local media file and returns the
 // detected silent spans as skip ranges. Returns (nil, nil) when no silence is
 // found. ffmpeg writes silencedetect output to stderr.
-func detectSilence(ctx context.Context, mediaPath string) ([]Range, error) {
+func DetectSilence(ctx context.Context, mediaPath string) ([]Range, error) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		return nil, fmt.Errorf("ffmpeg not found: %w", err)
 	}

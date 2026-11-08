@@ -1,0 +1,8 @@
+#!/bin/sh
+# ffmpeg stub for silencedetect: reports one silent span on stderr, as the
+# real filter does.
+cat >&2 <<'OUT'
+[silencedetect @ 0x0] silence_start: 12.5
+[silencedetect @ 0x0] silence_end: 15 | silence_duration: 2.5
+OUT
+exit 0

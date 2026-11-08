@@ -112,6 +112,11 @@ func processUser(ctx context.Context, plug *feed.Plugin, prof *profanity.Plugin,
 		log.Error("feed orchestrator: download", "user", username, "err", err)
 	}
 
+	sil := pipeline.NewSilence(store, space)
+	if err := sil.RunOnce(ctx); err != nil {
+		log.Error("feed orchestrator: silence", "user", username, "err", err)
+	}
+
 	tx := pipeline.NewTranscribe(store, space)
 	if err := tx.RunOnce(ctx); err != nil {
 		log.Error("feed orchestrator: transcribe", "user", username, "err", err)

@@ -123,10 +123,11 @@ the choices; this is what Cog needs for it, in the order the app needs it.
       sidecar remuxed once (`ffmpeg -vn -c:a copy`) and kept beside the
       download, so background play and audio-only offline copies do not move
       the video bytes.
-- [ ] `GetRanges` that never runs ffmpeg in the request. `Ranges` currently
-      calls `detectSilence` synchronously on first request; move silence
-      detection into the download pipeline and answer `pending` until it is
-      done.
+- [x] Ranges that never run ffmpeg in the request. Silence detection is a
+      pipeline worker after the downloader (`pipeline.Silence`); the endpoint
+      reads the row and answers `pending` until it has run, and the web
+      player asks again while it is pending
+      (`TestSilenceRecordsSkipRanges`, `TestRangesPendingUntilAnalysed`).
 - [ ] `RequestDownload(item, variant)` and the download state on `Item`, so a
       client can ask the server to fetch (and run profanity/silence on) a
       YouTube item before downloading it to the device.
