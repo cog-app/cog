@@ -658,18 +658,93 @@ func (s *Store) DeleteFilter(id int64) error {
 
 // --- Download methods ---
 
+const enqueueDownloadSQL = `
+	INSERT INTO downloads (item_id, state) VALUES (?, 'queued')
+	ON CONFLICT(item_id) DO UPDATE SET
+		state = CASE
+			WHEN downloads.state IN ('ready','downloading') THEN downloads.state
+			ELSE 'queued'
+		END,
+		error = CASE
+			WHEN downloads.state IN ('ready','downloading') THEN downloads.error
+			ELSE ''
+		END`
+
+// ErrNotTalksPage is returned by AddPageTalks when the page's URL is already
+// a subscription of another sort, which its talks must not be mixed into.
+var ErrNotTalksPage = errors.New("already subscribed to this address")
+
+// AddPageTalks files talks found on a page of talks under a subscription for
+// that page, creating it if needed, and queues each talk for download. The
+// subscription is a paused "url" one: its items come from the page's links,
+// not from polling the page, which would add the page itself as an article.
+// Adding a page again adds the talks it lacks and retries failed downloads.
+// Talks are dated from now down in page order, so lists show them as the page
+// does. It returns the subscription and how many talks were new.
+func (s *Store) AddPageTalks(pageURL, title string, folderID sql.NullInt64, talks []PageTalk, now int64) (int64, int, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, 0, fmt.Errorf("add page talks begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+		INSERT INTO subscriptions (folder_id, kind, url, title, site_url, paused)
+		VALUES (?, 'url', ?, ?, ?, 1)
+		ON CONFLICT(url) DO NOTHING`,
+		folderID, pageURL, title, pageURL); err != nil {
+		return 0, 0, fmt.Errorf("add page talks subscription: %w", err)
+	}
+	var subID int64
+	var kind string
+	var paused bool
+	if err := tx.QueryRow(`SELECT id, kind, paused FROM subscriptions WHERE url = ?`, pageURL).
+		Scan(&subID, &kind, &paused); err != nil {
+		return 0, 0, fmt.Errorf("add page talks find subscription: %w", err)
+	}
+	if kind != "url" || !paused {
+		return 0, 0, ErrNotTalksPage
+	}
+
+	insert, err := tx.Prepare(`
+		INSERT INTO items (subscription_id, guid, type, title, author, url, media_url, published_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(subscription_id, guid) DO NOTHING
+		RETURNING id`)
+	if err != nil {
+		return 0, 0, fmt.Errorf("add page talks prepare: %w", err)
+	}
+	defer insert.Close()
+
+	added := 0
+	for i, t := range talks {
+		var id int64
+		err := insert.QueryRow(subID, t.PageURL, t.Type, t.Title, t.Speaker, t.PageURL, t.MediaURL, now-int64(i)).Scan(&id)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			if err := tx.QueryRow(`SELECT id FROM items WHERE subscription_id = ? AND guid = ?`, subID, t.PageURL).Scan(&id); err != nil {
+				return 0, 0, fmt.Errorf("add page talks find %s: %w", t.PageURL, err)
+			}
+		case err != nil:
+			return 0, 0, fmt.Errorf("add page talks insert %s: %w", t.PageURL, err)
+		default:
+			added++
+		}
+		if _, err := tx.Exec(enqueueDownloadSQL, id); err != nil {
+			return 0, 0, fmt.Errorf("add page talks enqueue %s: %w", t.PageURL, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, 0, fmt.Errorf("add page talks commit: %w", err)
+	}
+	return subID, added, nil
+}
+
 // EnqueueDownload upserts a download row in state=queued.
-// Does not overwrite a row already in state 'ready' or 'downloading'.
+// Does not overwrite a row already in state 'ready' or 'downloading'; a row
+// that failed is queued again and its error cleared, which is a retry.
 func (s *Store) EnqueueDownload(itemID int64) error {
-	_, err := s.db.Exec(`
-		INSERT INTO downloads (item_id, state) VALUES (?, 'queued')
-		ON CONFLICT(item_id) DO UPDATE SET
-			state = CASE
-				WHEN downloads.state IN ('ready','downloading') THEN downloads.state
-				ELSE 'queued'
-			END`,
-		itemID,
-	)
+	_, err := s.db.Exec(enqueueDownloadSQL, itemID)
 	if err != nil {
 		return fmt.Errorf("enqueue download: %w", err)
 	}
@@ -1007,6 +1082,7 @@ type ItemPlayback struct {
 	ProgressSec       float64
 	Completed         bool
 	DownloadState     string
+	DownloadError     string // why the last download failed, when DownloadState is "error"
 	HasCleanAudio     bool
 	SourceKind        string // subscription.kind
 }
@@ -1031,6 +1107,7 @@ func (s *Store) GetItemPlayback(itemID int64) (ItemPlayback, error) {
 			COALESCE(pb.progress_sec, 0.0),
 			COALESCE(pb.completed, 0),
 			COALESCE(d.state, ''),
+			COALESCE(d.error, ''),
 			CASE WHEN d.clean_audio_path != '' AND d.clean_audio_path IS NOT NULL THEN 1 ELSE 0 END
 		FROM items i
 		JOIN subscriptions s ON i.subscription_id = s.id
@@ -1045,6 +1122,7 @@ func (s *Store) GetItemPlayback(itemID int64) (ItemPlayback, error) {
 		&progressSec,
 		&completed,
 		&downloadState,
+		&ip.DownloadError,
 		&hasClean,
 	)
 	if err != nil {

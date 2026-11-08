@@ -82,6 +82,13 @@ Implements the SCP protocol (source/sink modes) by translating to VFS operations
 
 Supports the rsync-over-SSH protocol. The server spawns an internal rsync receiver/sender that operates on the VFS. This enables efficient incremental sync without requiring rsync to be installed on the server.
 
+It is gokrazy/rsync's server, run in process on the session's channel (`internal/ssh/rsync.go`). Upstream's receiver writes only through `*os.Root`, so `go.mod` replaces it with a fork (`github.com/duckbrain/rsync`, branch `cog-root-interface`) that writes through a `DestRoot` interface; `rsyncRoot` implements it over the session's VFS. Files are written in place through the files plugin, as SFTP's are, so they are recorded and held to the quota with no staging on the server's disk.
+
+- Paths are relative to `/files`, as for SCP, and cannot climb out of it.
+- rsync writes a changed file beside the old one and renames it into place. That is an update, as a WebDAV PUT is (which writes beside and renames too), so it goes through `vfs.Replace`: the file keeps its ID, and with it its shares, comments and favorite. A plain rename over a file (WebDAV MOVE with Overwrite, SFTP rename) still deletes the file there and moves the other to its name.
+- Modification times are kept, which is what lets the next run skip unchanged files. Modes and owners are accepted and ignored; symlinks and devices are refused, each reported and the rest of the transfer carried on. `-H` (hard links) is refused outright, as upstream does.
+- The server must be built with `rsyncd.DontRestrict()`: otherwise gokrazy/rsync confines the whole process with Landlock to the directories it serves.
+
 ### SFTP
 
 Uses the existing SFTP subsystem described in `file_protocols.md`. The SSH daemon routes `subsystem "sftp"` requests to it.

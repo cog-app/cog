@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -27,7 +26,6 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
-	"git.duckfam.us/jj-software/cog/internal/safehttp"
 	"git.duckfam.us/jj-software/cog/internal/user"
 )
 
@@ -1019,7 +1017,10 @@ func md5Hex(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// validateURL checks that a URL is safe to fetch (SSRF protection).
+// validateURL checks that a URL names a web resource. Which addresses may be
+// fetched is safehttp's to decide, after resolution and on every redirect: a
+// check here would resolve the host a second time, and a DNS answer that
+// changed in between would pass it.
 func validateURL(rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -1031,22 +1032,6 @@ func validateURL(rawURL string) error {
 	host := u.Hostname()
 	if host == "" {
 		return errors.New("empty hostname")
-	}
-	ips, err := net.LookupHost(host)
-	if err != nil {
-		return fmt.Errorf("resolve host: %w", err)
-	}
-	for _, ipStr := range ips {
-		ip := net.ParseIP(ipStr)
-		if ip == nil {
-			continue
-		}
-		if safehttp.AllowPrivate() {
-			continue
-		}
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			return fmt.Errorf("host %s resolves to private/loopback address %s", host, ipStr)
-		}
 	}
 	return nil
 }

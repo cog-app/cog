@@ -81,7 +81,7 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 			case strings.HasPrefix(command, "scp "):
 				exitCode = s.serveSCP(channel, userFS, command)
 			case strings.HasPrefix(command, "rsync "):
-				exitCode = s.serveRsync(channel, command)
+				exitCode = s.serveRsync(ctx, channel, userFS, command)
 			default:
 				exitCode = s.execShell(ctx, channel, username, userFS, command, hasPTY, termWidth, termHeight)
 			}

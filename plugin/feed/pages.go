@@ -1009,6 +1009,146 @@ func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
 	ui.Render(w, r, feedItemDetail(sb, nav, ip, tags, prefs, artwork, plugin.CSRFToken(r), h.plugin.ctx.Now()))
 }
 
+// TalksPreview reads a page of talks and answers, for HTMX, with the talks
+// it found to choose from, the talks without media, and the talk pages that
+// failed to load.
+func (h *Pages) TalksPreview(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	pageURL := strings.TrimSpace(r.FormValue("url"))
+	if err := CheckURL(pageURL); err != nil {
+		ui.Render(w, r, feedTalksMessage("error", "Enter a web address starting with http:// or https://."))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), talksScanTimeout)
+	defer cancel()
+	scan, err := ScanTalksPage(ctx, pageURL)
+	if err != nil {
+		slog.Info("feed: scan talks page", "url", pageURL, "err", err)
+		ui.Render(w, r, feedTalksMessage("error", "Could not read that page: "+err.Error()))
+		return
+	}
+	folders, err := store.ListFolders()
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, feedTalksPreview(pageURL, scan, folders, plugin.CSRFToken(r)))
+}
+
+// AddTalks adds the talks chosen from a preview under a subscription for
+// their page and queues them for download.
+func (h *Pages) AddTalks(w http.ResponseWriter, r *http.Request) {
+	const back = "/apps/feed/settings/subscriptions"
+	fail := func(msg string) {
+		h.setFlash(w, "error", msg)
+		http.Redirect(w, r, back, http.StatusSeeOther)
+	}
+	store, err := h.userStore(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		fail("The form could not be read.")
+		return
+	}
+	pageURL := r.FormValue("page_url")
+	if err := CheckURL(pageURL); err != nil {
+		fail("The page address is missing or invalid.")
+		return
+	}
+	var folderID sql.NullInt64
+	if fid := r.FormValue("folder_id"); fid != "" {
+		id, err := strconv.ParseInt(fid, 10, 64)
+		if err != nil {
+			fail("Choose a folder from the list.")
+			return
+		}
+		folderID = sql.NullInt64{Int64: id, Valid: true}
+	}
+
+	// Only what was ticked is added; nothing ticked adds nothing.
+	var talks []PageTalk
+	for _, i := range r.Form["talk"] {
+		t := PageTalk{
+			PageURL:  r.FormValue("page_" + i),
+			Title:    r.FormValue("title_" + i),
+			Speaker:  r.FormValue("speaker_" + i),
+			MediaURL: r.FormValue("media_" + i),
+			Type:     r.FormValue("type_" + i),
+		}
+		if (t.Type != "audio" && t.Type != "video") || CheckURL(t.PageURL) != nil || CheckURL(t.MediaURL) != nil {
+			fail("A chosen talk has no media to download.")
+			return
+		}
+		talks = append(talks, t)
+	}
+	if len(talks) == 0 {
+		fail("Choose at least one talk to add.")
+		return
+	}
+
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		title = pageURL
+	}
+	subID, added, err := store.AddPageTalks(pageURL, title, folderID, talks, h.plugin.ctx.Now().Unix())
+	if errors.Is(err, ErrNotTalksPage) {
+		fail("You already subscribe to that page as a feed.")
+		return
+	}
+	if err != nil {
+		slog.Error("feed: add talks", "url", pageURL, "err", err)
+		fail("Could not add the talks.")
+		return
+	}
+	h.plugin.TriggerFetch(plugin.Username(r), 0)
+	msg := fmt.Sprintf("Added %d talks. They will download in the background.", added)
+	if again := len(talks) - added; again > 0 {
+		msg = fmt.Sprintf("Added %d talks; %d were already here. They will download in the background.", added, again)
+	}
+	h.setFlash(w, "success", msg)
+	http.Redirect(w, r, fmt.Sprintf("/apps/feed/subscription/%d", subID), http.StatusSeeOther)
+}
+
+// DownloadItem queues an audio or video item for download and the
+// preprocessing its subscription's filters ask for, or retries one that
+// failed. The orchestrator does the work under the plugin's lifetime, so it
+// outlives this request; the item page shows its progress.
+func (h *Pages) DownloadItem(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	store, err := h.userStore(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	it, err := store.GetItem(id)
+	if err != nil {
+		lookupError(w, r, err)
+		return
+	}
+	back := itemHref(id, parseViewCtx(r).encode())
+	if it.Type == "text" || it.MediaURL == "" {
+		h.setFlash(w, "error", "This item has nothing to download.")
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+	if err := store.EnqueueDownload(id); err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	h.plugin.TriggerFetch(plugin.Username(r), 0)
+	http.Redirect(w, r, back, http.StatusSeeOther)
+}
+
 // UpdateProgress handles POST to save playback position.
 func (h *Pages) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)

@@ -64,6 +64,26 @@ type AttrSetter interface {
 	Link(oldname, newname string) error
 }
 
+// Replacer is implemented by file systems that keep a file's identity
+// across an update made by writing a new version beside it and renaming that
+// over it, as rsync and many editors do to replace a file atomically.
+//
+// Rename over an existing file deletes that file and moves another to its
+// name; Replace updates the file at newPath with oldPath's content. When
+// newPath is not an existing file, the two are the same.
+type Replacer interface {
+	Replace(oldPath, newPath string) error
+}
+
+// Replace moves oldPath over newPath as an update of newPath when fsys
+// supports it, and renames otherwise.
+func Replace(fsys FS, oldPath, newPath string) error {
+	if r, ok := fsys.(Replacer); ok {
+		return r.Replace(oldPath, newPath)
+	}
+	return fsys.Rename(oldPath, newPath)
+}
+
 // DirReader provides os-level fs.FileInfo/fs.DirEntry (SFTP, shell stat/readdir).
 type DirReader interface {
 	StatInfo(path string) (fs.FileInfo, error)

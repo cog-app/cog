@@ -645,6 +645,21 @@ templ feedSettingsSubscriptionsPage(sb sidebarData, subs []Subscription, folders
 			</form>
 		</section>
 		<section class="card">
+			<h2 class="card-title">Add talks from a page</h2>
+			<form id="talks-scan" method="post" action="/apps/feed/talks/preview" hx-post="/apps/feed/talks/preview" hx-target="#talks-preview" hx-swap="innerHTML" hx-disabled-elt="find button">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<div class="form-row">
+					<div class="form-group">
+						<label for="talks-url">Page</label>
+						<input class="form-control" type="url" id="talks-url" name="url" required placeholder="https://example.com/conference/2026/04"/>
+					</div>
+					<button class="btn" type="submit">Find talks</button>
+				</div>
+				<p class="form-help">A conference or playlist page that links to a page for each talk. Choose the talks to download.</p>
+			</form>
+			<div id="talks-preview" aria-live="polite"></div>
+		</section>
+		<section class="card">
 			<details class="feed-sub-details" id="subscription-details" open?={ len(subs) < 20 }>
 				<summary class="card-title">Your subscriptions <span class="count">{ strconv.Itoa(len(subs)) }</span></summary>
 				if len(subs) == 0 {
@@ -721,6 +736,93 @@ templ feedSettingsSubscriptionsPage(sb sidebarData, subs []Subscription, folders
 // feedImportButton uploads a file as soon as it is chosen. The label is the
 // button; the file input stays focusable (sr-only), so it works from the
 // keyboard.
+// feedTalksMessage is a talks preview that found nothing to choose from.
+templ feedTalksMessage(kind, msg string) {
+	<div class={ "alert", "alert-" + kind } role="status">{ msg }</div>
+}
+
+// feedTalksPreview lists the talks a page of talks links to, ticked, for the
+// user to choose which to add. A talk with no media is listed but cannot be
+// chosen, and a talk page that failed to load is listed with its error.
+templ feedTalksPreview(pageURL string, scan *TalksScan, folders []Folder, csrfToken string) {
+	if len(scan.Talks) == 0 && len(scan.Failed) == 0 {
+		@feedTalksMessage("error", "No talks found on that page.")
+	} else {
+		<form id="talks-add" method="post" action="/apps/feed/talks">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="page_url" value={ pageURL }/>
+			<div class="form-row">
+				<div class="form-group">
+					<label for="talks-title">Name</label>
+					<input class="form-control" type="text" id="talks-title" name="title" value={ scan.Title }/>
+				</div>
+				if len(folders) > 0 {
+					<div class="form-group form-group-auto">
+						<label for="talks-folder">Folder</label>
+						<select id="talks-folder" name="folder_id" class="form-control">
+							<option value="">No folder</option>
+							for _, f := range folders {
+								<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Name }</option>
+							}
+						</select>
+					</div>
+				}
+			</div>
+			if len(scan.Talks) > 0 {
+				<ul class="feed-talks-list">
+					for i, t := range scan.Talks {
+						<li data-talk-page={ t.PageURL }>
+							if t.Type == "" {
+								<label class="form-check" aria-disabled="true">
+									<input type="checkbox" disabled/>
+									<span>{ t.Title }</span>
+									if t.Speaker != "" {
+										<span class="text-muted">{ t.Speaker }</span>
+									}
+									<span class="badge badge-warning">No media found</span>
+								</label>
+							} else {
+								<label class="form-check">
+									<input type="checkbox" name="talk" value={ strconv.Itoa(i) } checked/>
+									<span>{ t.Title }</span>
+									if t.Speaker != "" {
+										<span class="text-muted">{ t.Speaker }</span>
+									}
+									<span class="badge badge-outline">{ t.Type }</span>
+								</label>
+								<input type="hidden" name={ "page_" + strconv.Itoa(i) } value={ t.PageURL }/>
+								<input type="hidden" name={ "title_" + strconv.Itoa(i) } value={ t.Title }/>
+								<input type="hidden" name={ "speaker_" + strconv.Itoa(i) } value={ t.Speaker }/>
+								<input type="hidden" name={ "media_" + strconv.Itoa(i) } value={ t.MediaURL }/>
+								<input type="hidden" name={ "type_" + strconv.Itoa(i) } value={ t.Type }/>
+							}
+						</li>
+					}
+				</ul>
+			}
+			if len(scan.Failed) > 0 {
+				<div class="alert alert-warning" role="status">
+					<div class="alert-title">
+						if len(scan.Failed) == 1 {
+							1 talk page could not be loaded
+						} else {
+							{ strconv.Itoa(len(scan.Failed)) } talk pages could not be loaded
+						}
+					</div>
+					<ul class="feed-talks-failed">
+						for _, f := range scan.Failed {
+							<li><code>{ f.URL }</code>: { f.Err }</li>
+						}
+					</ul>
+				</div>
+			}
+			if len(scan.Talks) > 0 {
+				<button class="btn btn-primary" type="submit">Add chosen talks</button>
+			}
+		</form>
+	}
+}
+
 templ feedImportButton(action, field, format, accept, label, csrfToken string) {
 	<form method="post" action={ templ.SafeURL(action) } enctype="multipart/form-data" class="upload-form">
 		<input type="hidden" name="csrf_token" value={ csrfToken }/>
@@ -935,6 +1037,9 @@ templ feedItemDetail(sb sidebarData, nav itemNav, ip ItemPlayback, tags []string
 			</div>
 			<div class="page-actions">
 				@ui.Star(ip.IsStarred, fmt.Sprintf("/apps/feed/items/%d/star", ip.ID))
+				if ip.Type != "text" && ip.MediaURL != "" {
+					@feedDownloadControl(ip, nav, csrfToken)
+				}
 				if ip.URL != "" {
 					<a class="btn" href={ templ.URL(ip.URL) } target="_blank" rel="noopener">
 						@ui.Icon("external")
@@ -954,6 +1059,35 @@ templ feedItemDetail(sb sidebarData, nav itemNav, ip ItemPlayback, tags []string
 			@feedPlayer(ip, prefs, artwork, csrfToken, nav)
 		}
 		@feedItemContextBar(nav, true)
+	}
+}
+
+// feedDownloadControl shows where an item's download stands and offers to
+// start it, or to retry one that failed. A queued or running download is
+// "Preparing" until the media and any preprocessing its filters ask for are
+// done.
+templ feedDownloadControl(ip ItemPlayback, nav itemNav, csrfToken string) {
+	switch ip.DownloadState {
+		case "ready":
+			<span class="badge badge-success" data-download-state="ready">Downloaded</span>
+		case "queued", "downloading":
+			<span class="badge badge-neutral" data-download-state={ ip.DownloadState }>Preparing…</span>
+		default:
+			<form method="post" action={ templ.SafeURL(itemActionHref(ip.ID, "download", nav.Ctx)) }>
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				if ip.DownloadState == "error" {
+					<span class="badge badge-danger" data-download-state="error" title={ ip.DownloadError }>Download failed</span>
+					<button class="btn" type="submit">
+						@ui.Icon("download")
+						Retry
+					</button>
+				} else {
+					<button class="btn" type="submit">
+						@ui.Icon("download")
+						Download
+					</button>
+				}
+			</form>
 	}
 }
 
@@ -1374,6 +1508,15 @@ func itemHref(id int64, ctx string) string {
 		return fmt.Sprintf("/apps/feed/items/%d", id)
 	}
 	return fmt.Sprintf("/apps/feed/items/%d?%s", id, ctx)
+}
+
+// itemActionHref builds the URL of an action on an item, carrying the view
+// context so the action can send the browser back to the same view.
+func itemActionHref(id int64, action, ctx string) string {
+	if ctx == "" {
+		return fmt.Sprintf("/apps/feed/items/%d/%s", id, action)
+	}
+	return fmt.Sprintf("/apps/feed/items/%d/%s?%s", id, action, ctx)
 }
 
 func subscriptionDisplayTitle(s Subscription) string {
