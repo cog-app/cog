@@ -34,6 +34,24 @@ CREATE TABLE IF NOT EXISTS folders (
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
+CREATE TABLE IF NOT EXISTS gpodder_episode_actions (
+    episode TEXT NOT NULL,
+    action TEXT NOT NULL CHECK(action IN ('new','download','play','delete')),
+    podcast TEXT NOT NULL,
+    guid TEXT NOT NULL DEFAULT '',
+    timestamp INTEGER NOT NULL,
+    started INTEGER NOT NULL DEFAULT -1,
+    position INTEGER NOT NULL DEFAULT -1,
+    total INTEGER NOT NULL DEFAULT -1,
+    changed_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (episode, action)
+);
+
+CREATE TABLE IF NOT EXISTS gpodder_removed_subscriptions (
+    url TEXT PRIMARY KEY,
+    removed_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
 CREATE TABLE IF NOT EXISTS item_tags (
     item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
     tag_id  INTEGER NOT NULL REFERENCES tags(id)  ON DELETE CASCADE,
@@ -107,6 +125,10 @@ CREATE INDEX IF NOT EXISTS idx_downloads_state ON downloads(state);
 
 CREATE INDEX IF NOT EXISTS idx_filters_order ON filters(sort_order);
 
+CREATE INDEX IF NOT EXISTS idx_gpodder_episode_actions_changed ON gpodder_episode_actions(changed_at);
+
+CREATE INDEX IF NOT EXISTS idx_items_media_url ON items(media_url);
+
 CREATE INDEX IF NOT EXISTS idx_items_published ON items(published_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_items_starred ON items(is_starred, published_at DESC);
@@ -122,3 +144,39 @@ CREATE INDEX IF NOT EXISTS idx_playback_last ON playback(last_played_at DESC);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_folder ON subscriptions(folder_id);
 
 CREATE INDEX IF NOT EXISTS idx_subscriptions_next_check ON subscriptions(next_check_at);
+
+CREATE TRIGGER IF NOT EXISTS gpodder_playback_inserted AFTER INSERT ON playback
+BEGIN
+    DELETE FROM gpodder_episode_actions
+    WHERE action = 'play' AND episode = (SELECT media_url FROM items WHERE id = NEW.item_id);
+    INSERT INTO gpodder_episode_actions (episode, action, podcast, guid, timestamp, started, position, total)
+    SELECT i.media_url, 'play', s.url, i.guid, NEW.last_played_at, 0,
+           CASE WHEN NEW.completed AND i.duration_sec > 0 THEN i.duration_sec ELSE CAST(NEW.progress_sec AS INTEGER) END,
+           MAX(i.duration_sec, CAST(NEW.progress_sec AS INTEGER))
+    FROM items i JOIN subscriptions s ON s.id = i.subscription_id
+    WHERE i.id = NEW.item_id AND i.media_url != '' AND s.kind = 'rss';
+END;
+
+CREATE TRIGGER IF NOT EXISTS gpodder_playback_updated AFTER UPDATE ON playback
+BEGIN
+    DELETE FROM gpodder_episode_actions
+    WHERE action = 'play' AND episode = (SELECT media_url FROM items WHERE id = NEW.item_id);
+    INSERT INTO gpodder_episode_actions (episode, action, podcast, guid, timestamp, started, position, total)
+    SELECT i.media_url, 'play', s.url, i.guid, NEW.last_played_at, 0,
+           CASE WHEN NEW.completed AND i.duration_sec > 0 THEN i.duration_sec ELSE CAST(NEW.progress_sec AS INTEGER) END,
+           MAX(i.duration_sec, CAST(NEW.progress_sec AS INTEGER))
+    FROM items i JOIN subscriptions s ON s.id = i.subscription_id
+    WHERE i.id = NEW.item_id AND i.media_url != '' AND s.kind = 'rss';
+END;
+
+CREATE TRIGGER IF NOT EXISTS gpodder_subscription_added AFTER INSERT ON subscriptions
+BEGIN
+    DELETE FROM gpodder_removed_subscriptions WHERE url = NEW.url;
+END;
+
+CREATE TRIGGER IF NOT EXISTS gpodder_subscription_removed AFTER DELETE ON subscriptions
+WHEN OLD.kind = 'rss'
+BEGIN
+    DELETE FROM gpodder_removed_subscriptions WHERE url = OLD.url;
+    INSERT INTO gpodder_removed_subscriptions (url) VALUES (OLD.url);
+END;

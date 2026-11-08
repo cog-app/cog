@@ -15,6 +15,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/assets"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/plugin/feed/gpoddersync"
 	"git.duckfam.us/jj-software/cog/plugin/feed/ncapi"
 	"git.duckfam.us/jj-software/cog/plugin/profanity"
 )
@@ -182,10 +183,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		Action:  http.HandlerFunc(pages.SaveSystemSettings),
 	})
 
-	// NextCloud News API compatibility + content-hashed static assets.
-	newsAPI := ncapi.New(ncapiBackend{p})
+	// NextCloud News and GPodder Sync API compatibility + content-hashed
+	// static assets.
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
-		priv.RegisterRoute("/index.php/apps/news/api/", newsAPI)
+		priv.RegisterRoute("/index.php/apps/news/api/", ncapi.New(ncapiBackend{p}))
+		priv.RegisterRoute(gpoddersync.Prefix, gpoddersync.New(ncapiBackend{p}))
 
 		sub, err := fs.Sub(staticFS, "static")
 		if err != nil {
@@ -242,7 +244,8 @@ func (p *Plugin) Users() ([]string, error) {
 }
 
 // ncapiBackend adapts the plugin to the narrow interface the NextCloud News
-// API needs, so ncapi depends on two methods rather than the whole plugin.
+// and GPodder Sync APIs need, so they depend on two methods rather than the
+// whole plugin.
 type ncapiBackend struct{ p *Plugin }
 
 func (b ncapiBackend) DB(username string) (*sql.DB, error) { return b.p.DB(username) }
