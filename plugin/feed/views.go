@@ -253,3 +253,35 @@ func (s *Store) PlaylistCounts(playlists []Playlist, now time.Time, limit int) (
 	}
 	return out, nil
 }
+
+// Preview counts the items expr matches and returns the first sample of
+// them, newest first: the filter and playlist editors' live preview. A query
+// that needs the refine step is counted over the newest limit items.
+func (s *Store) Preview(expr query.Expr, now time.Time, sample, limit int) (int64, []ItemWithSubscription, error) {
+	expr = query.ResolveRelativeDates(expr, *SearchSchema(), now)
+	if queryNeedsRefine(expr) {
+		items, err := s.ListItemsMatching(ViewSpec{}, expr, now, limit)
+		if err != nil {
+			return 0, nil, err
+		}
+		return int64(len(items)), items[:min(sample, len(items))], nil
+	}
+	spec := ViewSpec{All: true, Query: expr, Schema: SearchSchema()}
+	joins, where, args, err := spec.from()
+	if err != nil {
+		return 0, nil, fmt.Errorf("preview: %w", err)
+	}
+	q := `SELECT COUNT(*) FROM items i JOIN subscriptions s ON i.subscription_id = s.id` + joins
+	if len(where) > 0 {
+		q += " WHERE " + strings.Join(where, " AND ")
+	}
+	var n int64
+	if err := s.db.QueryRow(q, args...).Scan(&n); err != nil {
+		return 0, nil, fmt.Errorf("preview count: %w", err)
+	}
+	items, err := s.ListItemsForView(spec, sample)
+	if err != nil {
+		return 0, nil, fmt.Errorf("preview: %w", err)
+	}
+	return n, items, nil
+}

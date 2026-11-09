@@ -1472,6 +1472,13 @@ func (h *Pages) RemoveItemTag(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, r.Header.Get("Referer"), http.StatusSeeOther)
 }
 
+// A filter preview shows this many matches; a query that needs the refine
+// step is matched against the newest filterPreviewLimit items.
+const (
+	filterPreviewSample = 10
+	filterPreviewLimit  = 200
+)
+
 // FilterPreview returns a preview of items matching a filter query (HTMX partial).
 func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
@@ -1493,20 +1500,10 @@ func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Parse error: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	items, err := store.ListItemsForView(ViewSpec{All: true}, 200)
-	if err != nil {
-		httperr.Internal(w, r, fmt.Errorf("Could not load items: %w", err))
-		return
-	}
-	// Refine batch-loads each row's tags and download state rather than
-	// querying per row.
-	matched, err := store.Refine(items, expr)
+	_, matched, err := store.Preview(expr, h.plugin.ctx.Now(), filterPreviewSample, filterPreviewLimit)
 	if err != nil {
 		httperr.Internal(w, r, fmt.Errorf("Could not match items: %w", err))
 		return
-	}
-	if len(matched) > 10 {
-		matched = matched[:10]
 	}
 	ui.Render(w, r, feedFilterPreviewResults(matched))
 }
@@ -1823,17 +1820,17 @@ func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 	// Only overwrite fields actually present in the form (partial updates).
 	if v := r.FormValue("speed"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			cur.Speed = min(max(f, 0.25), 4.0)
+			cur.Speed = min(max(f, MinSpeed), MaxSpeed)
 		}
 	}
 	if v := r.FormValue("skip_back_sec"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
-			cur.SkipBackSec = min(max(n, 1), 120)
+			cur.SkipBackSec = min(max(n, MinSkipSec), MaxSkipSec)
 		}
 	}
 	if v := r.FormValue("skip_fwd_sec"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
-			cur.SkipFwdSec = min(max(n, 1), 120)
+			cur.SkipFwdSec = min(max(n, MinSkipSec), MaxSkipSec)
 		}
 	}
 	if v := r.FormValue("volume"); v != "" {

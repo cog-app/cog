@@ -244,13 +244,16 @@ message GetItemRequest {
 
 message PreviewQueryRequest {
   string query = 1;
-  int32 sample = 2;
+  int32 sample = 2; // how many matches to return; 0 is 10, at most 50
 }
 
 message PreviewQueryResponse {
-  string error = 1; // parse error, positioned; empty when valid
+  string error = 1; // why the query is not valid; empty when it is
   int64 count = 2;
-  repeated Item sample = 3;
+  repeated Item sample = 3; // the first matches, newest first
+  // Where in the query a parse error is, as a byte offset; unset for an error
+  // that is not about one place.
+  optional int32 error_position = 4;
 }
 
 message SetReadRequest {

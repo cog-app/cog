@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/query"
 	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb"
 	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb/feedpbconnect"
 )
@@ -504,4 +505,131 @@ func (s *FeedService) DeletePlaylist(ctx context.Context, req *connect.Request[f
 		return nil, err
 	}
 	return connect.NewResponse(&feedpb.DeleteResponse{}), nil
+}
+
+// maxQueryLen bounds a query a client sends, as the web's forms do.
+const maxQueryLen = 1000
+
+// PreviewQuery validates a query and returns how many items it matches and
+// the first of them: the filter and playlist editors' live preview. A query
+// that is not valid is an answer, not an error: it comes back in error, with
+// error_position when the parser can say where.
+func (s *FeedService) PreviewQuery(ctx context.Context, req *connect.Request[feedpb.PreviewQueryRequest]) (*connect.Response[feedpb.PreviewQueryResponse], error) {
+	q := strings.TrimSpace(req.Msg.Query)
+	if len(q) > maxQueryLen {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("query is longer than %d bytes", maxQueryLen))
+	}
+	sample := int(req.Msg.Sample)
+	switch {
+	case sample < 0:
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("sample must not be negative"))
+	case sample == 0:
+		sample = 10
+	case sample > 50:
+		sample = 50
+	}
+	res := &feedpb.PreviewQueryResponse{}
+	if q == "" {
+		return connect.NewResponse(res), nil
+	}
+	expr, err := query.Parse(q)
+	if err != nil {
+		res.Error = err.Error()
+		if se, ok := errors.AsType[*query.SyntaxError](err); ok {
+			pos := int32(se.Pos)
+			res.ErrorPosition = &pos
+		}
+		return connect.NewResponse(res), nil
+	}
+	// A query that parses can still name a comparison a field does not
+	// support; that is the client's to fix too.
+	if _, _, _, err := query.Compile(expr, *SearchSchema()); err != nil {
+		res.Error = err.Error()
+		return connect.NewResponse(res), nil
+	}
+
+	store, err := s.store(ctx)
+	if err != nil {
+		return nil, err
+	}
+	n, items, err := store.Preview(expr, s.plugin.ctx.Now(), sample, feedViewLimit)
+	if err != nil {
+		return nil, err
+	}
+	res.Count = n
+	if res.Sample, _, err = itemsPB(store, items); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(res), nil
+}
+
+func (s *FeedService) GetPlayerPrefs(ctx context.Context, _ *connect.Request[feedpb.GetPlayerPrefsRequest]) (*connect.Response[feedpb.PlayerPrefs], error) {
+	store, err := s.store(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := store.LoadPlayerPrefs()
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(playerPrefsPB(p)), nil
+}
+
+// SetPlayerPrefs replaces the player preferences: a client sends all of them,
+// as GetPlayerPrefs returned them with its changes. A value out of range is
+// refused rather than clamped, so a client that sent a zero it did not mean
+// finds out.
+func (s *FeedService) SetPlayerPrefs(ctx context.Context, req *connect.Request[feedpb.PlayerPrefs]) (*connect.Response[feedpb.PlayerPrefs], error) {
+	m := req.Msg
+	switch {
+	case m.Speed < MinSpeed || m.Speed > MaxSpeed:
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("speed must be in [%g, %g]", MinSpeed, MaxSpeed))
+	case m.SkipBackSec < MinSkipSec || m.SkipBackSec > MaxSkipSec, m.SkipFwdSec < MinSkipSec || m.SkipFwdSec > MaxSkipSec:
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("skips must be in [%d, %d] seconds", MinSkipSec, MaxSkipSec))
+	case m.Volume < 0 || m.Volume > 1:
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("volume must be in [0, 1]"))
+	}
+	store, err := s.store(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p := PlayerPrefs{
+		Speed:        m.Speed,
+		SkipBackSec:  int(m.SkipBackSec),
+		SkipFwdSec:   int(m.SkipFwdSec),
+		Volume:       m.Volume,
+		AutoplayNext: m.AutoplayNext,
+		SkipSilence:  m.SkipSilence,
+		HideEmpty:    m.HideEmpty,
+	}
+	if err := store.SavePlayerPrefs(p); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(playerPrefsPB(p)), nil
+}
+
+func playerPrefsPB(p PlayerPrefs) *feedpb.PlayerPrefs {
+	return &feedpb.PlayerPrefs{
+		Speed:        p.Speed,
+		SkipBackSec:  int32(p.SkipBackSec),
+		SkipFwdSec:   int32(p.SkipFwdSec),
+		Volume:       p.Volume,
+		AutoplayNext: p.AutoplayNext,
+		SkipSilence:  p.SkipSilence,
+		HideEmpty:    p.HideEmpty,
+	}
+}
+
+// ExportOPML returns the user's RSS subscriptions as OPML, as the web's
+// export does.
+func (s *FeedService) ExportOPML(ctx context.Context, _ *connect.Request[feedpb.ExportOPMLRequest]) (*connect.Response[feedpb.ExportOPMLResponse], error) {
+	store, err := s.store(ctx)
+	if err != nil {
+		return nil, err
+	}
+	data, err := store.ExportOPML()
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&feedpb.ExportOPMLResponse{Opml: data}), nil
 }

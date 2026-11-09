@@ -1919,6 +1919,14 @@ var (
 	settingHideEmpty     = BoolSetting("hide_empty", false)
 )
 
+// The bounds of the player preferences a client may set.
+const (
+	MinSpeed   = 0.25
+	MaxSpeed   = 4.0
+	MinSkipSec = 1
+	MaxSkipSec = 120
+)
+
 // PlayerPrefs is the per-user set of media-player preferences.
 type PlayerPrefs struct {
 	Speed        float64 `json:"speed"`

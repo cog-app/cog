@@ -3,7 +3,11 @@ package feed_test
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -121,7 +125,7 @@ func TestFeedServiceUnimplementedRPC(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	u := env.CreateUser(t, "alice", "pass")
 	_, err := feedClient(t, env, u.AppPassword(t, "phone")).
-		ExportOPML(context.Background(), connect.NewRequest(&feedpb.ExportOPMLRequest{}))
+		ResolveMedia(context.Background(), connect.NewRequest(&feedpb.ResolveMediaRequest{}))
 	assert.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err))
 }
 
@@ -203,4 +207,146 @@ func TestReportProgressOverGRPC(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, item.Msg.Item.Read)
 	assert.True(t, item.Msg.Item.Playback.Completed)
+}
+
+func TestPreviewQueryOverGRPC(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, u.Username)
+	ids, video, _ := playlistItems(t, store)
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	preview := func(q string, sample int32) *feedpb.PreviewQueryResponse {
+		t.Helper()
+		res, err := client.PreviewQuery(context.Background(), connect.NewRequest(&feedpb.PreviewQueryRequest{Query: q, Sample: sample}))
+		require.NoError(t, err)
+		return res.Msg
+	}
+
+	got := preview("type:audio", 2)
+	assert.Equal(t, "", got.Error)
+	assert.Equal(t, int64(4), got.Count)
+	require.Equal(t, 2, len(got.Sample))
+	assert.Equal(t, ids[3], got.Sample[0].Id) // newest first
+
+	// A text search goes through the refine step.
+	got = preview("ep4", 0)
+	assert.Equal(t, int64(1), got.Count)
+	require.Equal(t, 1, len(got.Sample))
+	assert.Equal(t, video, got.Sample[0].Id)
+
+	got = preview("(type:audio", 0)
+	assert.True(t, got.Error != "", "no error")
+	require.True(t, got.ErrorPosition != nil, "no position")
+	assert.Equal(t, int32(11), got.GetErrorPosition())
+	assert.Equal(t, int64(0), got.Count)
+
+	// A comparison the field cannot do parses but is still the client's to fix.
+	got = preview("type>3", 0)
+	assert.True(t, got.Error != "", "no error for a range on a keyword")
+	assert.True(t, got.ErrorPosition == nil, "a compile error has no position")
+
+	got = preview("  ", 0)
+	assert.True(t, got.Error == "" && got.Count == 0 && len(got.Sample) == 0, "an empty query previews nothing")
+
+	_, err := client.PreviewQuery(context.Background(), connect.NewRequest(&feedpb.PreviewQueryRequest{Query: strings.Repeat("a", 1001)}))
+	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+}
+
+func TestPlayerPrefsOverGRPC(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	ctx := context.Background()
+
+	res, err := client.GetPlayerPrefs(ctx, connect.NewRequest(&feedpb.GetPlayerPrefsRequest{}))
+	require.NoError(t, err)
+	prefs := res.Msg
+	assert.Equal(t, 1.0, prefs.Speed)
+	assert.Equal(t, int32(15), prefs.SkipBackSec)
+	assert.True(t, prefs.AutoplayNext)
+
+	prefs.Speed, prefs.SkipFwdSec, prefs.SkipSilence = 1.5, 45, true
+	_, err = client.SetPlayerPrefs(ctx, connect.NewRequest(prefs))
+	require.NoError(t, err)
+	res, err = client.GetPlayerPrefs(ctx, connect.NewRequest(&feedpb.GetPlayerPrefsRequest{}))
+	require.NoError(t, err)
+	assert.Equal(t, 1.5, res.Msg.Speed)
+	assert.Equal(t, int32(45), res.Msg.SkipFwdSec)
+	assert.True(t, res.Msg.SkipSilence)
+
+	stored, err := feedStore(t, env, u.Username).LoadPlayerPrefs()
+	require.NoError(t, err)
+	assert.Equal(t, 1.5, stored.Speed)
+
+	// Prefs a client did not fill in are refused, not stored as zeros.
+	for _, bad := range []*feedpb.PlayerPrefs{
+		{Speed: 0, SkipBackSec: 15, SkipFwdSec: 30, Volume: 1},
+		{Speed: 1, SkipBackSec: 0, SkipFwdSec: 30, Volume: 1},
+		{Speed: 1, SkipBackSec: 15, SkipFwdSec: 121, Volume: 1},
+		{Speed: 1, SkipBackSec: 15, SkipFwdSec: 30, Volume: 1.5},
+	} {
+		_, err := client.SetPlayerPrefs(ctx, connect.NewRequest(bad))
+		assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "%+v", bad)
+	}
+}
+
+func TestExportOPMLOverGRPC(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, u.Username)
+	_, err := store.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://pod.example.com/feed", Title: "Pod"})
+	require.NoError(t, err)
+	res, err := feedClient(t, env, u.AppPassword(t, "phone")).
+		ExportOPML(context.Background(), connect.NewRequest(&feedpb.ExportOPMLRequest{}))
+	require.NoError(t, err)
+	want, err := store.ExportOPML()
+	require.NoError(t, err)
+	assert.Equal(t, string(want), string(res.Msg.Opml))
+	assert.True(t, strings.Contains(string(res.Msg.Opml), "https://pod.example.com/feed"), "feed missing from the OPML")
+}
+
+// A phone signs in with Login Flow v2 and calls the service with the app
+// password it collects, as a Bearer token or with Basic auth; the password
+// is named after the app and the device.
+func TestLoginFlowAppPasswordCallsFeedService(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	const ua = "CogFeed/0.1 (Pixel 8; Android 15)"
+
+	var start struct {
+		Poll struct {
+			Token string `json:"token"`
+		} `json:"poll"`
+		Login string `json:"login"`
+	}
+	env.Post(t, "/index.php/login/v2", cogtest.Header("User-Agent", ua)).Status(http.StatusOK).JSON(&start)
+	login, err := url.Parse(start.Login)
+	require.NoError(t, err)
+
+	sess, err := env.Providers.Sessions.Create(u.ID)
+	require.NoError(t, err)
+	env.PostForm(t, "/index.php/login/v2/grant?token="+url.QueryEscape(login.Query().Get("token")),
+		url.Values{"csrf_token": {auth.CSRFToken(sess.ID, env.Providers.CSRFSecret)}},
+		cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID),
+	).Status(http.StatusOK).Contains("Access granted")
+
+	var collected struct {
+		LoginName   string `json:"loginName"`
+		AppPassword string `json:"appPassword"`
+	}
+	env.PostForm(t, "/index.php/login/v2/poll", url.Values{"token": {start.Poll.Token}}).
+		Status(http.StatusOK).JSON(&collected)
+	require.Equal(t, "alice", collected.LoginName)
+
+	pws, err := env.Providers.AppPasswords.ListByUser(u.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(pws))
+	assert.True(t, strings.HasPrefix(pws[0].Name, "CogFeed on Pixel 8 ("), "app password named %q", pws[0].Name)
+
+	basic := "Basic " + base64.StdEncoding.EncodeToString([]byte(collected.LoginName+":"+collected.AppPassword))
+	for _, authorization := range []string{"Bearer " + collected.AppPassword, basic} {
+		_, err := feedClient(t, env, authorization).
+			GetLibrary(context.Background(), connect.NewRequest(&feedpb.GetLibraryRequest{}))
+		assert.NoError(t, err)
+	}
 }

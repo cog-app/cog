@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
@@ -348,6 +349,11 @@ func ago(seconds int64) string {
 	}
 }
 
+// clientName is what an app password made by a login flow is called: the
+// app, from its User-Agent, and the device when the User-Agent's comment
+// starts with one ("CogFeed/1.0 (Pixel 8; Android 15)" is "CogFeed on Pixel
+// 8"), so a user with the app on two devices can tell the passwords apart.
+// A browser's comment names a platform, not a device, and is left out.
 func clientName(ua string) string {
 	l := strings.ToLower(ua)
 	switch {
@@ -367,10 +373,31 @@ func clientName(ua string) string {
 	if i := strings.IndexByte(name, '/'); i > 0 {
 		name = name[:i]
 	}
-	if len(name) > 40 {
-		name = name[:40]
+	name = truncate(name, 40)
+	if name == "Mozilla" {
+		return name
+	}
+	if open := strings.IndexByte(ua, '('); open >= 0 {
+		comment := ua[open+1:]
+		if end := strings.IndexAny(comment, ";)"); end >= 0 {
+			comment = comment[:end]
+		}
+		if device := truncate(strings.TrimSpace(comment), 40); device != "" {
+			return name + " on " + device
+		}
 	}
 	return name
+}
+
+// truncate cuts s to at most n bytes, on a rune boundary.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 func randomHex(n int) (string, error) {

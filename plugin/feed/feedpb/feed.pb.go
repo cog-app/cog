@@ -1671,7 +1671,7 @@ func (x *GetItemRequest) GetId() int64 {
 type PreviewQueryRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Query         string                 `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
-	Sample        int32                  `protobuf:"varint,2,opt,name=sample,proto3" json:"sample,omitempty"`
+	Sample        int32                  `protobuf:"varint,2,opt,name=sample,proto3" json:"sample,omitempty"` // how many matches to return; 0 is 10, at most 50
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1721,10 +1721,13 @@ func (x *PreviewQueryRequest) GetSample() int32 {
 }
 
 type PreviewQueryResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Error         string                 `protobuf:"bytes,1,opt,name=error,proto3" json:"error,omitempty"` // parse error, positioned; empty when valid
-	Count         int64                  `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
-	Sample        []*Item                `protobuf:"bytes,3,rep,name=sample,proto3" json:"sample,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Error  string                 `protobuf:"bytes,1,opt,name=error,proto3" json:"error,omitempty"` // why the query is not valid; empty when it is
+	Count  int64                  `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	Sample []*Item                `protobuf:"bytes,3,rep,name=sample,proto3" json:"sample,omitempty"` // the first matches, newest first
+	// Where in the query a parse error is, as a byte offset; unset for an error
+	// that is not about one place.
+	ErrorPosition *int32 `protobuf:"varint,4,opt,name=error_position,json=errorPosition,proto3,oneof" json:"error_position,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1778,6 +1781,13 @@ func (x *PreviewQueryResponse) GetSample() []*Item {
 		return x.Sample
 	}
 	return nil
+}
+
+func (x *PreviewQueryResponse) GetErrorPosition() int32 {
+	if x != nil && x.ErrorPosition != nil {
+		return *x.ErrorPosition
+	}
+	return 0
 }
 
 type SetReadRequest struct {
@@ -3783,11 +3793,13 @@ const file_feed_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\"C\n" +
 	"\x13PreviewQueryRequest\x12\x14\n" +
 	"\x05query\x18\x01 \x01(\tR\x05query\x12\x16\n" +
-	"\x06sample\x18\x02 \x01(\x05R\x06sample\"l\n" +
+	"\x06sample\x18\x02 \x01(\x05R\x06sample\"\xab\x01\n" +
 	"\x14PreviewQueryResponse\x12\x14\n" +
 	"\x05error\x18\x01 \x01(\tR\x05error\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x03R\x05count\x12(\n" +
-	"\x06sample\x18\x03 \x03(\v2\x10.cogfeed.v1.ItemR\x06sample\"4\n" +
+	"\x06sample\x18\x03 \x03(\v2\x10.cogfeed.v1.ItemR\x06sample\x12*\n" +
+	"\x0eerror_position\x18\x04 \x01(\x05H\x00R\rerrorPosition\x88\x01\x01B\x11\n" +
+	"\x0f_error_position\"4\n" +
 	"\x0eSetReadRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
 	"\x04read\x18\x02 \x01(\bR\x04read\"=\n" +
@@ -4200,6 +4212,7 @@ func file_feed_proto_init() {
 		(*View_Tag)(nil),
 		(*View_PlaylistId)(nil),
 	}
+	file_feed_proto_msgTypes[15].OneofWrappers = []any{}
 	file_feed_proto_msgTypes[35].OneofWrappers = []any{}
 	file_feed_proto_msgTypes[36].OneofWrappers = []any{}
 	file_feed_proto_msgTypes[46].OneofWrappers = []any{}

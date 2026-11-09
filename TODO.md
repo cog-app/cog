@@ -70,9 +70,10 @@ the choices; this is what Cog needs for it, in the order the app needs it.
 - [x] A `cogtest` helper: `env.RPCClient(t, authorization)` serves the
       handler over HTTP/2 and returns a client and base URL;
       `user.AppPassword(t, name)` makes the credential.
-- [ ] Verify an app password from Login Flow v2 authenticates a gRPC call
-      (`authorization: Bearer …`), and name the app password after the device
-      the flow reports.
+- [x] An app password from Login Flow v2 authenticates a gRPC call, as a
+      Bearer token or with Basic auth, and is named after the app and the
+      device its User-Agent's comment starts with ("CogFeed on Pixel 8")
+      (`TestLoginFlowAppPasswordCallsFeedService`, `TestClientName`).
 
 ## FeedService
 
@@ -113,12 +114,17 @@ the choices; this is what Cog needs for it, in the order the app needs it.
 - [ ] Article bodies as Markdown (`ItemDetail.content_markdown`), converted
       from the sanitized HTML at ingest or on read, so every client renders
       them with SNGL's Markdown widget.
-- [ ] `PreviewQuery`, sharing `FilterPreview`'s code, with a positioned parse
-      error.
+- [x] `PreviewQuery`, sharing `Store.Preview` with the web's filter preview:
+      a count and the newest matches, an invalid query as an answer with
+      `error_position` from the parser's new `query.SyntaxError`
+      (`TestPreviewQueryOverGRPC`, `TestParseErrorPosition`).
 - [ ] Management RPCs with web parity: subscriptions (add with detection,
       update folder/title/interval/paused, delete, refresh), folders, filters,
-      `Import` taking bytes and a format, `ExportOPML`. Playlists are done.
-- [ ] Player prefs get/set (`LoadPlayerPrefs` / `SavePlayerPrefs`).
+      `Import` taking bytes and a format. Playlists and `ExportOPML`
+      (`TestExportOPMLOverGRPC`) are done.
+- [x] Player prefs: `GetPlayerPrefs`, and `SetPlayerPrefs` replacing them
+      all and refusing a value outside the web's bounds rather than clamping it
+      (`TestPlayerPrefsOverGRPC`).
 
 ## Playback
 

@@ -1,6 +1,7 @@
 package query
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -386,5 +387,26 @@ func TestFieldCompareMatchTime(t *testing.T) {
 	}
 	if (&FieldCompareExpr{Field: "published", Op: OpLt, Value: "2026-01-01T00:00:00Z"}).Match(r) {
 		t.Fatal("May < Jan should not match")
+	}
+}
+
+func TestParseErrorPosition(t *testing.T) {
+	for _, c := range []struct {
+		in  string
+		pos int
+	}{
+		{"(type:audio", 11}, // the end, where ')' was wanted
+		{"a :", 3},
+		{"a )", 2},
+	} {
+		_, err := Parse(c.in)
+		se, ok := errors.AsType[*SyntaxError](err)
+		if !ok {
+			t.Errorf("Parse(%q) = %v, want a *SyntaxError", c.in, err)
+			continue
+		}
+		if se.Pos != c.pos {
+			t.Errorf("Parse(%q): position %d, want %d (%v)", c.in, se.Pos, c.pos, err)
+		}
 	}
 }
