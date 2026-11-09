@@ -317,7 +317,7 @@ func (h *Pages) UpdateBookmark(w http.ResponseWriter, r *http.Request) {
 		folders = []int64{}
 	}
 
-	if _, err := UpdateBookmark(db, id, &title, &description, tags, folders); err != nil {
+	if _, err := UpdateBookmark(db, id, nil, &title, &description, tags, folders); err != nil {
 		notFoundOr(w, r, err, "bookmark")
 		return
 	}

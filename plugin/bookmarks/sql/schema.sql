@@ -24,6 +24,11 @@ CREATE TABLE IF NOT EXISTS folders (
     title      TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+, sort_order INTEGER NOT NULL DEFAULT 0);
+
+CREATE TABLE IF NOT EXISTS sync_lock (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    expires_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS tags (
@@ -35,5 +40,7 @@ CREATE TABLE IF NOT EXISTS tags (
 CREATE INDEX IF NOT EXISTS idx_bookmark_folders_folder ON bookmark_folders(folder_id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_bookmarks_url ON bookmarks(url);
+
+CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);
 
 CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
