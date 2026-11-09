@@ -88,6 +88,11 @@ the choices; this is what Cog needs for it, in the order the app needs it.
       `ListItemsForView` takes only a limit — that still works when a query
       needs the search refine step.
 - [ ] `unfinished_only` for play queues (join `playback`, `completed = 0`).
+- [ ] Playlists carry how they play, the same on every device: `order`
+      (newest, oldest, shortest, shuffled — a shuffle is a seed, so it holds
+      still until reshuffled) and `listen_only` (videos play and download as
+      audio). A migration, the proto's `Playlist`, `SavePlaylist`, and the web
+      player honouring both. What a device downloads stays on the device.
 - [ ] Playlist tiles: unfinished count and unfinished duration per playlist,
       in one query for all playlists (not one per playlist).
 - [x] `GetLibrary` (`TestGetLibraryOverGRPC`); playlist counts wait on the
