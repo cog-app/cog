@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -20,7 +21,6 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/query"
-	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/plugin/profanity"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -362,12 +362,69 @@ func (h *Pages) AddPlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := store.CreatePlaylist(name, queryStr); err != nil {
+	order := PlayOrder(r.FormValue("order"))
+	if order == "" {
+		order = OrderNewest
+	}
+	if !order.Valid() {
+		h.setFlash(w, "error", "Unknown order.")
+		http.Redirect(w, r, "/apps/feed/settings/playlists", http.StatusSeeOther)
+		return
+	}
+
+	if _, err := store.CreatePlaylist(Playlist{
+		Name:        name,
+		Query:       queryStr,
+		Order:       order,
+		ShuffleSeed: newShuffleSeed(),
+		ListenOnly:  r.FormValue("listen_only") == "on",
+	}); err != nil {
 		h.setFlash(w, "error", "Could not create playlist: "+err.Error())
 		slog.Error("feed: create playlist", "err", err)
 	}
 
 	http.Redirect(w, r, "/apps/feed/settings/playlists", http.StatusSeeOther)
+}
+
+// newShuffleSeed is a fresh shuffle, below the 10^9 ViewSpec.orderBy needs.
+func newShuffleSeed() int64 { return rand.Int64N(1_000_000_000) }
+
+// SetPlaylistPlay handles POST /playlists/{id}/play: the playlist's order and
+// whether it is listen only, or (with reshuffle) a new shuffle.
+func (h *Pages) SetPlaylistPlay(w http.ResponseWriter, r *http.Request) {
+	const back = "/apps/feed/settings/playlists"
+	store, err := h.userStore(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	pl, err := store.GetPlaylist(id)
+	if err != nil {
+		lookupError(w, r, err)
+		return
+	}
+	if r.FormValue("reshuffle") != "" {
+		pl.Order, pl.ShuffleSeed = OrderShuffled, newShuffleSeed()
+	} else {
+		order := PlayOrder(r.FormValue("order"))
+		if !order.Valid() {
+			h.setFlash(w, "error", "Unknown order.")
+			http.Redirect(w, r, back, http.StatusSeeOther)
+			return
+		}
+		pl.Order = order
+		pl.ListenOnly = r.FormValue("listen_only") == "on"
+	}
+	if err := store.UpdatePlaylist(pl); err != nil {
+		h.setFlash(w, "error", "Could not save the playlist.")
+		slog.Error("feed: update playlist", "id", id, "err", err)
+	}
+	http.Redirect(w, r, back, http.StatusSeeOther)
 }
 
 // DeletePlaylist handles POST /playlists/{id}/delete.
@@ -495,34 +552,10 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var expr query.Expr
-	if pl.Query != "" {
-		if e, perr := query.Parse(pl.Query); perr == nil {
-			expr = e
-		} else {
-			slog.Warn("feed: playlist query does not parse; showing all items", "playlist_id", pl.ID, "query", pl.Query, "err", perr)
-		}
-	}
-	if expr != nil {
-		expr = query.ResolveRelativeDates(expr, *SearchSchema(), h.plugin.ctx.Now())
-	}
-	items, plErr := store.ListItemsForView(ViewSpec{
-		All:      true,
-		HideRead: prefs.HideEmpty,
-		Query:    expr,
-		Schema:   SearchSchema(),
-	}, feedViewLimit)
-	if plErr != nil {
-		http.Error(w, "could not list items: "+plErr.Error(), http.StatusInternalServerError)
+	items, err := store.PlaylistItems(pl, ViewSpec{HideRead: prefs.HideEmpty}, h.plugin.ctx.Now(), feedViewLimit)
+	if err != nil {
+		httperr.Internal(w, r, err)
 		return
-	}
-	if expr != nil && queryNeedsRefine(expr) {
-		items, plErr = h.refineItems(store, items, expr)
-		if plErr != nil {
-			slog.Error("feed: playlist refine", "err", plErr)
-			http.Error(w, "could not refine items: "+plErr.Error(), http.StatusInternalServerError)
-			return
-		}
 	}
 	c := viewCtx{Kind: "playlist", ID: id}
 	plugin.SetTitle(w, "Feed — "+pl.Name)
@@ -553,29 +586,7 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 		if perr != nil {
 			return nil, fmt.Errorf("resolve playlist %d: %w", c.ID, perr)
 		}
-		var expr query.Expr
-		if pl.Query != "" {
-			if e, qerr := query.Parse(pl.Query); qerr == nil {
-				expr = e
-			} else {
-				slog.Warn("feed: playlist query does not parse; showing all items", "playlist_id", pl.ID, "query", pl.Query, "err", qerr)
-			}
-		}
-		if expr != nil {
-			expr = query.ResolveRelativeDates(expr, *SearchSchema(), h.plugin.ctx.Now())
-		}
-		items, err = store.ListItemsForView(ViewSpec{
-			All: true, Query: expr, Schema: SearchSchema(),
-		}, limit)
-		if err != nil {
-			return nil, fmt.Errorf("resolve playlist items: %w", err)
-		}
-		if expr != nil && queryNeedsRefine(expr) {
-			items, err = h.refineItems(store, items, expr)
-			if err != nil {
-				return nil, fmt.Errorf("resolve playlist refine: %w", err)
-			}
-		}
+		items, err = store.PlaylistItems(pl, ViewSpec{}, h.plugin.ctx.Now(), limit)
 	case "history":
 		items, err = store.PlaybackHistoryItems(limit)
 		if err != nil {
@@ -603,7 +614,7 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 			return nil, fmt.Errorf("resolve all items: %w", err)
 		}
 		if expr != nil && queryNeedsRefine(expr) {
-			items, err = h.refineItems(store, items, expr)
+			items, err = store.Refine(items, expr)
 			if err != nil {
 				return nil, fmt.Errorf("resolve all items refine: %w", err)
 			}
@@ -617,79 +628,6 @@ func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscriptio
 
 // validID wraps an int64 as a valid sql.NullInt64.
 func validID(id int64) sql.NullInt64 { return sql.NullInt64{Int64: id, Valid: true} }
-
-// queryNeedsRefine reports whether e contains a TextExpr/PhraseExpr — the only
-// nodes the SQL compiler evaluates as a permissive superset. When false, the
-// SQL result is already exact and no Go refine is needed.
-func queryNeedsRefine(e query.Expr) bool {
-	switch x := e.(type) {
-	case *query.TextExpr, *query.PhraseExpr:
-		return true
-	case *query.NotExpr:
-		return queryNeedsRefine(x.Inner)
-	case *query.AndExpr:
-		return queryNeedsRefine(x.Left) || queryNeedsRefine(x.Right)
-	case *query.OrExpr:
-		return queryNeedsRefine(x.Left) || queryNeedsRefine(x.Right)
-	default:
-		return false
-	}
-}
-
-// refineItems filters the SQL-prefiltered rows down to an exact match of expr
-// using bleve-exact semantics. Caller guarantees queryNeedsRefine(expr)==true.
-// Builds a full query.Record per row (subscription/folder memoized by id;
-// tags + download-state batch-loaded) and keeps rows where search.ExactMatch
-// holds. Order preserved.
-func (h *Pages) refineItems(store *Store, items []ItemWithSubscription, expr query.Expr) ([]ItemWithSubscription, error) {
-	if len(items) == 0 {
-		return items, nil
-	}
-	ids := make([]int64, len(items))
-	for i, it := range items {
-		ids[i] = it.ID
-	}
-	tagsByItem, err := store.TagsByItems(ids)
-	if err != nil {
-		return nil, fmt.Errorf("refine tags: %w", err)
-	}
-	dlByItem, err := store.DownloadStateByItems(ids)
-	if err != nil {
-		return nil, fmt.Errorf("refine downloads: %w", err)
-	}
-	subCache := map[int64]Subscription{}
-	folderCache := map[int64]string{}
-	out := items[:0]
-	for _, it := range items {
-		sub, ok := subCache[it.SubscriptionID]
-		if !ok {
-			sub, err = store.GetSubscription(it.SubscriptionID)
-			if err != nil {
-				return nil, fmt.Errorf("refine subscription: %w", err)
-			}
-			subCache[it.SubscriptionID] = sub
-		}
-		folderName := ""
-		if sub.FolderID.Valid {
-			fn, ok := folderCache[sub.FolderID.Int64]
-			if !ok {
-				f, err := store.GetFolder(sub.FolderID.Int64)
-				if err != nil {
-					return nil, fmt.Errorf("refine folder: %w", err)
-				}
-				fn = f.Name
-				folderCache[sub.FolderID.Int64] = fn
-			}
-			folderName = fn
-		}
-		rec := BuildRecord(it.Item, sub, folderName, tagsByItem[it.ID],
-			!it.IsRead, it.IsStarred, dlByItem[it.ID] == "ready")
-		if search.ExactMatch(expr, rec, *SearchSchema()) {
-			out = append(out, it)
-		}
-	}
-	return out, nil
-}
 
 // Index shows the main feed item list with optional query filtering.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
@@ -744,7 +682,7 @@ func (h *Pages) searchItems(store *Store, q string, hideRead bool) (items []Item
 		return nil, "", fmt.Errorf("could not list items: %w", err)
 	}
 	if expr != nil && queryNeedsRefine(expr) {
-		if items, err = h.refineItems(store, items, expr); err != nil {
+		if items, err = store.Refine(items, expr); err != nil {
 			return nil, "", fmt.Errorf("could not refine items: %w", err)
 		}
 	}
@@ -1269,7 +1207,8 @@ func (h *Pages) AdjacentPlayer(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// StreamURL returns the direct stream URL for a YouTube item.
+// StreamURL returns the direct stream URL for a YouTube item; with
+// ?variant=audio, its best audio-only stream.
 func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -1286,7 +1225,7 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 		lookupError(w, r, err)
 		return
 	}
-	streamURL, err := ResolveYouTubeStreamURL(r.Context(), it.MediaURL)
+	streamURL, err := ResolveYouTubeStreamURL(r.Context(), it.MediaURL, r.URL.Query().Get("variant") == "audio")
 	if err != nil {
 		httperr.Log(r, err)
 		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
@@ -1559,9 +1498,9 @@ func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, fmt.Errorf("Could not load items: %w", err))
 		return
 	}
-	// refineItems batch-loads each row's tags and download state rather than
+	// Refine batch-loads each row's tags and download state rather than
 	// querying per row.
-	matched, err := h.refineItems(store, items, expr)
+	matched, err := store.Refine(items, expr)
 	if err != nil {
 		httperr.Internal(w, r, fmt.Errorf("Could not match items: %w", err))
 		return
@@ -1951,7 +1890,8 @@ func sidebarPath(page string) string {
 // buildItemNav works out an item's place in the list it was opened from.
 func buildItemNav(store *Store, c viewCtx, items []ItemWithSubscription, id int64) itemNav {
 	prev, next := neighbors(items, id, false)
-	nav := itemNav{Ctx: c.encode(), Label: c.label(store), Path: c.path(), Total: len(items)}
+	nav := itemNav{Ctx: c.encode(), Path: c.path(), Total: len(items)}
+	nav.Label, nav.ListenOnly = c.label(store)
 	for i := range items {
 		if items[i].ID == id {
 			nav.Pos = i + 1

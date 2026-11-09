@@ -44,6 +44,7 @@
 			itemID: root.dataset.itemId,
 			type: root.dataset.mediaType,
 			sourceKind: root.dataset.sourceKind,
+			variant: root.dataset.variant || "",
 			resume: parseFloat(root.dataset.resume) || 0,
 			csrf: root.dataset.csrf,
 			title: root.dataset.title || "",
@@ -97,7 +98,8 @@
 
 		// --- source loading (YouTube resolves a stream URL) ---
 		if (cfg.sourceKind === "youtube") {
-			fetch("/apps/feed/api/stream-url/" + cfg.itemID, {
+			var variant = cfg.variant ? "?variant=" + cfg.variant : "";
+			fetch("/apps/feed/api/stream-url/" + cfg.itemID + variant, {
 				headers: { "X-CSRF-Token": cfg.csrf },
 			})
 				.then(function (r) { return r.json(); })

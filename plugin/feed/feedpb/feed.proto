@@ -139,14 +139,30 @@ message Subscription {
   int64 unread = 13;
 }
 
+// How a playlist plays, the same on every device. What a device downloads
+// of it is kept on the device.
+enum PlayOrder {
+  PLAY_ORDER_UNSPECIFIED = 0; // newest first
+  PLAY_ORDER_NEWEST = 1;
+  PLAY_ORDER_OLDEST = 2;
+  PLAY_ORDER_SHORTEST = 3; // least time left first
+  PLAY_ORDER_SHUFFLED = 4;
+}
+
 message Playlist {
-  int64 id = 1;
+  int64 id = 1; // 0 in SavePlaylist creates one
   string name = 2;
   string query = 3; // Cog query grammar
-  int64 sort_order = 4;
+  int64 sort_order = 4; // its place in the library
+  // Counts are filled by the server and ignored by SavePlaylist.
   int64 count = 5;
-  int64 unfinished_count = 6;
-  int64 unfinished_duration_sec = 7;
+  int64 unfinished_count = 6; // audio and video not played to the end
+  int64 unfinished_duration_sec = 7; // the time left to play of those
+  PlayOrder order = 8;
+  // The shuffle, which holds still until it changes. SavePlaylist with a
+  // shuffled order and 0 here picks a new one: that is a reshuffle.
+  int64 shuffle_seed = 9;
+  bool listen_only = 10; // its videos play and download as audio
 }
 
 message TagCount {

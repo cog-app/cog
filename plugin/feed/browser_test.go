@@ -144,12 +144,21 @@ func TestBrowser(t *testing.T) {
 	env.CreateUser(t, "subs", "pass")
 	env.CreateUser(t, "sub", "pass")
 	env.CreateUser(t, "star", "pass")
+	env.CreateUser(t, "lists", "pass")
 	seedBrowserFeed(t, env, "star")
 	seedBrowserFeed(t, env, "index")
 	seedBrowserFeed(t, env, "expand")
 	articleID := seedBrowserFeed(t, env, "reader")
 	seedBrowserFeed(t, env, "subs")
 	seedBrowserFeed(t, env, "sub")
+	lists := feedStore(t, env, "lists")
+	for _, pl := range []feed.Playlist{
+		{Name: "Commute", Query: "type:audio is:unread", Order: feed.OrderOldest},
+		{Name: "Listen only", Query: "kind:youtube OR type:audio", Order: feed.OrderShuffled, ShuffleSeed: 3, ListenOnly: true},
+	} {
+		_, err := lists.CreatePlaylist(pl)
+		require.NoError(t, err)
+	}
 
 	t.Run("EmptyState", func(t *testing.T) {
 		b := eng.Start(t)
@@ -226,6 +235,15 @@ func TestBrowser(t *testing.T) {
 		b.WaitVisible(t, "#add-subscription")
 		b.Eval(t, `() => { document.querySelector("#subscription-details").open = true }`)
 		b.WaitVisible(t, "#subscription-list")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("Playlists", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "lists", "pass")
+		b.Navigate(t, "/apps/feed/settings/playlists")
+		b.WaitText(t, "Reshuffle")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})

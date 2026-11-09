@@ -930,6 +930,14 @@ templ feedSettingsPlaylistsPage(sb sidebarData, playlists []Playlist, csrfToken 
 						<label for="query">Query</label>
 						<input class="form-control mono" type="text" id="query" name="query" placeholder=":type=audio is:unread"/>
 					</div>
+					<div class="form-group">
+						<label for="order">Order</label>
+						@feedPlayOrderSelect("order", OrderNewest)
+					</div>
+					<label class="form-check">
+						<input type="checkbox" name="listen_only"/>
+						Listen only
+					</label>
 					<button class="btn btn-primary" type="submit">Add playlist</button>
 				</div>
 			</form>
@@ -941,14 +949,28 @@ templ feedSettingsPlaylistsPage(sb sidebarData, playlists []Playlist, csrfToken 
 			} else {
 				<ul class="divided-list feed-rule-list">
 					for _, pl := range playlists {
-						<li>
-							<a class="font-medium" href={ templ.SafeURL(fmt.Sprintf("/apps/feed/playlists/%d", pl.ID)) }>{ pl.Name }</a>
-							<code>{ pl.Query }</code>
+						<li class="feed-playlist">
+							<div class="feed-playlist-head">
+								<a class="font-medium" href={ templ.SafeURL(fmt.Sprintf("/apps/feed/playlists/%d", pl.ID)) }>{ pl.Name }</a>
+								<code>{ pl.Query }</code>
+							</div>
 							<form method="post" action={ templ.SafeURL("/apps/feed/playlists/" + strconv.FormatInt(pl.ID, 10) + "/delete") }>
 								<input type="hidden" name="csrf_token" value={ csrfToken }/>
 								<button type="submit" class="btn-icon btn-icon-sm btn-icon-danger" aria-label={ "Delete playlist " + pl.Name } title="Delete">
 									@ui.Icon("trash")
 								</button>
+							</form>
+							<form class="feed-playlist-play" method="post" action={ templ.SafeURL("/apps/feed/playlists/" + strconv.FormatInt(pl.ID, 10) + "/play") }>
+								<input type="hidden" name="csrf_token" value={ csrfToken }/>
+								@feedPlayOrderSelect("order-"+strconv.FormatInt(pl.ID, 10), pl.Order)
+								<label class="form-check">
+									<input type="checkbox" name="listen_only" checked?={ pl.ListenOnly }/>
+									Listen only
+								</label>
+								<button class="btn btn-sm" type="submit">Save</button>
+								if pl.Order == OrderShuffled {
+									<button class="btn btn-sm" type="submit" name="reshuffle" value="1">Reshuffle</button>
+								}
 							</form>
 						</li>
 					}
@@ -956,6 +978,15 @@ templ feedSettingsPlaylistsPage(sb sidebarData, playlists []Playlist, csrfToken 
 			}
 		</section>
 	}
+}
+
+// feedPlayOrderSelect picks a playlist's order; its field is "order".
+templ feedPlayOrderSelect(id string, cur PlayOrder) {
+	<select class="form-control" id={ id } name="order" aria-label="Order">
+		for _, o := range PlayOrders {
+			<option value={ string(o) } selected?={ o == cur }>{ o.Label() }</option>
+		}
+	</select>
 }
 
 // feedItemTagRow renders the tag chips plus an add-tag form for HTMX swap.
@@ -1096,8 +1127,11 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 		id="feed-player"
 		class="card feed-player"
 		data-item-id={ strconv.FormatInt(ip.ID, 10) }
-		data-media-type={ ip.Type }
+		data-media-type={ playerType(ip, nav) }
 		data-source-kind={ ip.SourceKind }
+		if nav.ListenOnly {
+			data-variant="audio"
+		}
 		data-resume={ strconv.FormatFloat(ip.ProgressSec, 'f', 1, 64) }
 		data-csrf={ csrfToken }
 		data-title={ ip.Title }
@@ -1303,7 +1337,7 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 		</style>
 		<div style="font-weight:600;margin-bottom:0.25rem">{ ip.Title }</div>
 		<div class="text-muted" style="font-size:0.85rem;margin-bottom:0.5rem">{ ip.SubscriptionTitle }</div>
-		if ip.Type == "video" {
+		if playerType(ip, nav) == "video" {
 			<div id="player-surface" class="player-surface">
 				<video
 					id="player-el"

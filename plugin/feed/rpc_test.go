@@ -51,7 +51,7 @@ func TestGetLibraryOverGRPC(t *testing.T) {
 	require.NoError(t, store.AddTag(ids[2], "later"))
 	require.NoError(t, store.EnqueueDownload(ids[2]))
 	require.NoError(t, store.MarkDownloadReady(ids[2], "/x/c.mp3", 10))
-	_, err = store.CreatePlaylist("Commute", "type:audio")
+	_, err = store.CreatePlaylist(feed.Playlist{Name: "Commute", Query: "type:audio"})
 	require.NoError(t, err)
 
 	res, err := feedClient(t, env, u.AppPassword(t, "phone")).

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/mattn/go-sqlite3"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
@@ -105,6 +106,10 @@ func (s *FeedService) GetLibrary(ctx context.Context, _ *connect.Request[feedpb.
 	if err != nil {
 		return nil, err
 	}
+	plCounts, err := store.PlaylistCounts(playlists, s.plugin.ctx.Now(), feedViewLimit)
+	if err != nil {
+		return nil, err
+	}
 
 	lib := &feedpb.Library{
 		Counts: &feedpb.Counts{
@@ -126,12 +131,34 @@ func (s *FeedService) GetLibrary(ctx context.Context, _ *connect.Request[feedpb.
 		lib.Subscriptions = append(lib.Subscriptions, pb)
 	}
 	for _, pl := range playlists {
-		lib.Playlists = append(lib.Playlists, &feedpb.Playlist{Id: pl.ID, Name: pl.Name, Query: pl.Query, SortOrder: pl.SortOrder})
+		lib.Playlists = append(lib.Playlists, playlistPB(pl, plCounts[pl.ID]))
 	}
 	for _, t := range tags {
 		lib.Tags = append(lib.Tags, &feedpb.TagCount{Name: t.Name, Count: t.Count})
 	}
 	return connect.NewResponse(lib), nil
+}
+
+var playOrders = map[PlayOrder]feedpb.PlayOrder{
+	OrderNewest:   feedpb.PlayOrder_PLAY_ORDER_NEWEST,
+	OrderOldest:   feedpb.PlayOrder_PLAY_ORDER_OLDEST,
+	OrderShortest: feedpb.PlayOrder_PLAY_ORDER_SHORTEST,
+	OrderShuffled: feedpb.PlayOrder_PLAY_ORDER_SHUFFLED,
+}
+
+func playlistPB(pl Playlist, c PlaylistCounts) *feedpb.Playlist {
+	return &feedpb.Playlist{
+		Id:                    pl.ID,
+		Name:                  pl.Name,
+		Query:                 pl.Query,
+		SortOrder:             pl.SortOrder,
+		Count:                 c.Items,
+		UnfinishedCount:       c.Unfinished,
+		UnfinishedDurationSec: c.UnfinishedSec,
+		Order:                 playOrders[pl.Order],
+		ShuffleSeed:           pl.ShuffleSeed,
+		ListenOnly:            pl.ListenOnly,
+	}
 }
 
 var subscriptionKinds = map[string]feedpb.SubscriptionKind{
@@ -391,4 +418,90 @@ func (s *FeedService) ReportProgress(ctx context.Context, req *connect.Request[f
 		return nil, err
 	}
 	return connect.NewResponse(playbackPB(pb)), nil
+}
+
+// SavePlaylist creates a playlist (id 0) or replaces one, and returns it with
+// its counts. The name is trimmed and required, and must be unused; the query
+// must parse. A shuffled order with no seed gets a new one, so a client
+// reshuffles by sending 0.
+func (s *FeedService) SavePlaylist(ctx context.Context, req *connect.Request[feedpb.Playlist]) (*connect.Response[feedpb.Playlist], error) {
+	m := req.Msg
+	pl := Playlist{
+		ID:          m.Id,
+		Name:        strings.TrimSpace(m.Name),
+		Query:       strings.TrimSpace(m.Query),
+		SortOrder:   m.SortOrder,
+		ShuffleSeed: m.ShuffleSeed,
+		ListenOnly:  m.ListenOnly,
+	}
+	if pl.Name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name is required"))
+	}
+	if pl.Query == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("query is required"))
+	}
+	if _, err := ParseFilterQuery(pl.Query); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("query: %w", err))
+	}
+	switch m.Order {
+	case feedpb.PlayOrder_PLAY_ORDER_UNSPECIFIED:
+		pl.Order = OrderNewest
+	default:
+		for o, pb := range playOrders {
+			if pb == m.Order {
+				pl.Order = o
+			}
+		}
+		if pl.Order == "" {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown order %v", m.Order))
+		}
+	}
+	if pl.ShuffleSeed < 0 || pl.ShuffleSeed >= 1_000_000_000 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("shuffle_seed must be in [0, 10^9)"))
+	}
+	if pl.Order == OrderShuffled && pl.ShuffleSeed == 0 {
+		pl.ShuffleSeed = newShuffleSeed()
+	}
+
+	store, err := s.store(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if pl.ID == 0 {
+		pl.ID, err = store.CreatePlaylist(pl)
+	} else {
+		err = store.UpdatePlaylist(pl)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("playlist %d not found", pl.ID))
+	}
+	if se, ok := errors.AsType[sqlite3.Error](err); ok && se.ExtendedCode == sqlite3.ErrConstraintUnique {
+		return nil, connect.NewError(connect.CodeAlreadyExists, fmt.Errorf("a playlist is already named %q", pl.Name))
+	}
+	if err != nil {
+		return nil, err
+	}
+	saved, err := store.GetPlaylist(pl.ID)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := store.PlaylistCounts([]Playlist{saved}, s.plugin.ctx.Now(), feedViewLimit)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(playlistPB(saved, counts[saved.ID])), nil
+}
+
+// DeletePlaylist removes a playlist. Removing one that is not there is not an
+// error: the outcome is the same, and a client retrying a delete it lost the
+// answer to should not see one.
+func (s *FeedService) DeletePlaylist(ctx context.Context, req *connect.Request[feedpb.DeletePlaylistRequest]) (*connect.Response[feedpb.DeleteResponse], error) {
+	store, err := s.store(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.DeletePlaylist(req.Msg.Id); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&feedpb.DeleteResponse{}), nil
 }

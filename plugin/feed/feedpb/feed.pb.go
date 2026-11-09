@@ -81,6 +81,63 @@ func (SubscriptionKind) EnumDescriptor() ([]byte, []int) {
 	return file_feed_proto_rawDescGZIP(), []int{0}
 }
 
+// How a playlist plays, the same on every device. What a device downloads
+// of it is kept on the device.
+type PlayOrder int32
+
+const (
+	PlayOrder_PLAY_ORDER_UNSPECIFIED PlayOrder = 0 // newest first
+	PlayOrder_PLAY_ORDER_NEWEST      PlayOrder = 1
+	PlayOrder_PLAY_ORDER_OLDEST      PlayOrder = 2
+	PlayOrder_PLAY_ORDER_SHORTEST    PlayOrder = 3 // least time left first
+	PlayOrder_PLAY_ORDER_SHUFFLED    PlayOrder = 4
+)
+
+// Enum value maps for PlayOrder.
+var (
+	PlayOrder_name = map[int32]string{
+		0: "PLAY_ORDER_UNSPECIFIED",
+		1: "PLAY_ORDER_NEWEST",
+		2: "PLAY_ORDER_OLDEST",
+		3: "PLAY_ORDER_SHORTEST",
+		4: "PLAY_ORDER_SHUFFLED",
+	}
+	PlayOrder_value = map[string]int32{
+		"PLAY_ORDER_UNSPECIFIED": 0,
+		"PLAY_ORDER_NEWEST":      1,
+		"PLAY_ORDER_OLDEST":      2,
+		"PLAY_ORDER_SHORTEST":    3,
+		"PLAY_ORDER_SHUFFLED":    4,
+	}
+)
+
+func (x PlayOrder) Enum() *PlayOrder {
+	p := new(PlayOrder)
+	*p = x
+	return p
+}
+
+func (x PlayOrder) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PlayOrder) Descriptor() protoreflect.EnumDescriptor {
+	return file_feed_proto_enumTypes[1].Descriptor()
+}
+
+func (PlayOrder) Type() protoreflect.EnumType {
+	return &file_feed_proto_enumTypes[1]
+}
+
+func (x PlayOrder) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PlayOrder.Descriptor instead.
+func (PlayOrder) EnumDescriptor() ([]byte, []int) {
+	return file_feed_proto_rawDescGZIP(), []int{1}
+}
+
 type ItemType int32
 
 const (
@@ -117,11 +174,11 @@ func (x ItemType) String() string {
 }
 
 func (ItemType) Descriptor() protoreflect.EnumDescriptor {
-	return file_feed_proto_enumTypes[1].Descriptor()
+	return file_feed_proto_enumTypes[2].Descriptor()
 }
 
 func (ItemType) Type() protoreflect.EnumType {
-	return &file_feed_proto_enumTypes[1]
+	return &file_feed_proto_enumTypes[2]
 }
 
 func (x ItemType) Number() protoreflect.EnumNumber {
@@ -130,7 +187,7 @@ func (x ItemType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ItemType.Descriptor instead.
 func (ItemType) EnumDescriptor() ([]byte, []int) {
-	return file_feed_proto_rawDescGZIP(), []int{1}
+	return file_feed_proto_rawDescGZIP(), []int{2}
 }
 
 type Variant int32
@@ -166,11 +223,11 @@ func (x Variant) String() string {
 }
 
 func (Variant) Descriptor() protoreflect.EnumDescriptor {
-	return file_feed_proto_enumTypes[2].Descriptor()
+	return file_feed_proto_enumTypes[3].Descriptor()
 }
 
 func (Variant) Type() protoreflect.EnumType {
-	return &file_feed_proto_enumTypes[2]
+	return &file_feed_proto_enumTypes[3]
 }
 
 func (x Variant) Number() protoreflect.EnumNumber {
@@ -179,7 +236,7 @@ func (x Variant) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Variant.Descriptor instead.
 func (Variant) EnumDescriptor() ([]byte, []int) {
-	return file_feed_proto_rawDescGZIP(), []int{2}
+	return file_feed_proto_rawDescGZIP(), []int{3}
 }
 
 type Range_Action int32
@@ -215,11 +272,11 @@ func (x Range_Action) String() string {
 }
 
 func (Range_Action) Descriptor() protoreflect.EnumDescriptor {
-	return file_feed_proto_enumTypes[3].Descriptor()
+	return file_feed_proto_enumTypes[4].Descriptor()
 }
 
 func (Range_Action) Type() protoreflect.EnumType {
-	return &file_feed_proto_enumTypes[3]
+	return &file_feed_proto_enumTypes[4]
 }
 
 func (x Range_Action) Number() protoreflect.EnumNumber {
@@ -273,11 +330,11 @@ func (x DownloadState_State) String() string {
 }
 
 func (DownloadState_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_feed_proto_enumTypes[4].Descriptor()
+	return file_feed_proto_enumTypes[5].Descriptor()
 }
 
 func (DownloadState_State) Type() protoreflect.EnumType {
-	return &file_feed_proto_enumTypes[4]
+	return &file_feed_proto_enumTypes[5]
 }
 
 func (x DownloadState_State) Number() protoreflect.EnumNumber {
@@ -331,11 +388,11 @@ func (x Filter_Action) String() string {
 }
 
 func (Filter_Action) Descriptor() protoreflect.EnumDescriptor {
-	return file_feed_proto_enumTypes[5].Descriptor()
+	return file_feed_proto_enumTypes[6].Descriptor()
 }
 
 func (Filter_Action) Type() protoreflect.EnumType {
-	return &file_feed_proto_enumTypes[5]
+	return &file_feed_proto_enumTypes[6]
 }
 
 func (x Filter_Action) Number() protoreflect.EnumNumber {
@@ -386,11 +443,11 @@ func (x ImportRequest_Format) String() string {
 }
 
 func (ImportRequest_Format) Descriptor() protoreflect.EnumDescriptor {
-	return file_feed_proto_enumTypes[6].Descriptor()
+	return file_feed_proto_enumTypes[7].Descriptor()
 }
 
 func (ImportRequest_Format) Type() protoreflect.EnumType {
-	return &file_feed_proto_enumTypes[6]
+	return &file_feed_proto_enumTypes[7]
 }
 
 func (x ImportRequest_Format) Number() protoreflect.EnumNumber {
@@ -791,16 +848,22 @@ func (x *Subscription) GetUnread() int64 {
 }
 
 type Playlist struct {
-	state                 protoimpl.MessageState `protogen:"open.v1"`
-	Id                    int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name                  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Query                 string                 `protobuf:"bytes,3,opt,name=query,proto3" json:"query,omitempty"` // Cog query grammar
-	SortOrder             int64                  `protobuf:"varint,4,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
-	Count                 int64                  `protobuf:"varint,5,opt,name=count,proto3" json:"count,omitempty"`
-	UnfinishedCount       int64                  `protobuf:"varint,6,opt,name=unfinished_count,json=unfinishedCount,proto3" json:"unfinished_count,omitempty"`
-	UnfinishedDurationSec int64                  `protobuf:"varint,7,opt,name=unfinished_duration_sec,json=unfinishedDurationSec,proto3" json:"unfinished_duration_sec,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"` // 0 in SavePlaylist creates one
+	Name      string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Query     string                 `protobuf:"bytes,3,opt,name=query,proto3" json:"query,omitempty"`                           // Cog query grammar
+	SortOrder int64                  `protobuf:"varint,4,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"` // its place in the library
+	// Counts are filled by the server and ignored by SavePlaylist.
+	Count                 int64     `protobuf:"varint,5,opt,name=count,proto3" json:"count,omitempty"`
+	UnfinishedCount       int64     `protobuf:"varint,6,opt,name=unfinished_count,json=unfinishedCount,proto3" json:"unfinished_count,omitempty"`                     // audio and video not played to the end
+	UnfinishedDurationSec int64     `protobuf:"varint,7,opt,name=unfinished_duration_sec,json=unfinishedDurationSec,proto3" json:"unfinished_duration_sec,omitempty"` // the time left to play of those
+	Order                 PlayOrder `protobuf:"varint,8,opt,name=order,proto3,enum=cogfeed.v1.PlayOrder" json:"order,omitempty"`
+	// The shuffle, which holds still until it changes. SavePlaylist with a
+	// shuffled order and 0 here picks a new one: that is a reshuffle.
+	ShuffleSeed   int64 `protobuf:"varint,9,opt,name=shuffle_seed,json=shuffleSeed,proto3" json:"shuffle_seed,omitempty"`
+	ListenOnly    bool  `protobuf:"varint,10,opt,name=listen_only,json=listenOnly,proto3" json:"listen_only,omitempty"` // its videos play and download as audio
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Playlist) Reset() {
@@ -880,6 +943,27 @@ func (x *Playlist) GetUnfinishedDurationSec() int64 {
 		return x.UnfinishedDurationSec
 	}
 	return 0
+}
+
+func (x *Playlist) GetOrder() PlayOrder {
+	if x != nil {
+		return x.Order
+	}
+	return PlayOrder_PLAY_ORDER_UNSPECIFIED
+}
+
+func (x *Playlist) GetShuffleSeed() int64 {
+	if x != nil {
+		return x.ShuffleSeed
+	}
+	return 0
+}
+
+func (x *Playlist) GetListenOnly() bool {
+	if x != nil {
+		return x.ListenOnly
+	}
+	return false
 }
 
 type TagCount struct {
@@ -3627,7 +3711,7 @@ const file_feed_proto_rawDesc = "" +
 	"\x0flast_success_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\rlastSuccessAt\x12\x16\n" +
 	"\x06unread\x18\r \x01(\x03R\x06unreadB\f\n" +
 	"\n" +
-	"_folder_id\"\xdc\x01\n" +
+	"_folder_id\"\xcd\x02\n" +
 	"\bPlaylist\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -3636,7 +3720,12 @@ const file_feed_proto_rawDesc = "" +
 	"sort_order\x18\x04 \x01(\x03R\tsortOrder\x12\x14\n" +
 	"\x05count\x18\x05 \x01(\x03R\x05count\x12)\n" +
 	"\x10unfinished_count\x18\x06 \x01(\x03R\x0funfinishedCount\x126\n" +
-	"\x17unfinished_duration_sec\x18\a \x01(\x03R\x15unfinishedDurationSec\"4\n" +
+	"\x17unfinished_duration_sec\x18\a \x01(\x03R\x15unfinishedDurationSec\x12+\n" +
+	"\x05order\x18\b \x01(\x0e2\x15.cogfeed.v1.PlayOrderR\x05order\x12!\n" +
+	"\fshuffle_seed\x18\t \x01(\x03R\vshuffleSeed\x12\x1f\n" +
+	"\vlisten_only\x18\n" +
+	" \x01(\bR\n" +
+	"listenOnly\"4\n" +
 	"\bTagCount\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x03R\x05count\"\x97\x04\n" +
@@ -3865,7 +3954,13 @@ const file_feed_proto_rawDesc = "" +
 	"\x1dSUBSCRIPTION_KIND_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15SUBSCRIPTION_KIND_RSS\x10\x01\x12\x1d\n" +
 	"\x19SUBSCRIPTION_KIND_YOUTUBE\x10\x02\x12\x19\n" +
-	"\x15SUBSCRIPTION_KIND_URL\x10\x03*c\n" +
+	"\x15SUBSCRIPTION_KIND_URL\x10\x03*\x87\x01\n" +
+	"\tPlayOrder\x12\x1a\n" +
+	"\x16PLAY_ORDER_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11PLAY_ORDER_NEWEST\x10\x01\x12\x15\n" +
+	"\x11PLAY_ORDER_OLDEST\x10\x02\x12\x17\n" +
+	"\x13PLAY_ORDER_SHORTEST\x10\x03\x12\x17\n" +
+	"\x13PLAY_ORDER_SHUFFLED\x10\x04*c\n" +
 	"\bItemType\x12\x19\n" +
 	"\x15ITEM_TYPE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eITEM_TYPE_TEXT\x10\x01\x12\x13\n" +
@@ -3924,167 +4019,169 @@ func file_feed_proto_rawDescGZIP() []byte {
 	return file_feed_proto_rawDescData
 }
 
-var file_feed_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_feed_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
 var file_feed_proto_msgTypes = make([]protoimpl.MessageInfo, 51)
 var file_feed_proto_goTypes = []any{
 	(SubscriptionKind)(0),              // 0: cogfeed.v1.SubscriptionKind
-	(ItemType)(0),                      // 1: cogfeed.v1.ItemType
-	(Variant)(0),                       // 2: cogfeed.v1.Variant
-	(Range_Action)(0),                  // 3: cogfeed.v1.Range.Action
-	(DownloadState_State)(0),           // 4: cogfeed.v1.DownloadState.State
-	(Filter_Action)(0),                 // 5: cogfeed.v1.Filter.Action
-	(ImportRequest_Format)(0),          // 6: cogfeed.v1.ImportRequest.Format
-	(*GetLibraryRequest)(nil),          // 7: cogfeed.v1.GetLibraryRequest
-	(*Library)(nil),                    // 8: cogfeed.v1.Library
-	(*Counts)(nil),                     // 9: cogfeed.v1.Counts
-	(*Folder)(nil),                     // 10: cogfeed.v1.Folder
-	(*Subscription)(nil),               // 11: cogfeed.v1.Subscription
-	(*Playlist)(nil),                   // 12: cogfeed.v1.Playlist
-	(*TagCount)(nil),                   // 13: cogfeed.v1.TagCount
-	(*Item)(nil),                       // 14: cogfeed.v1.Item
-	(*ItemDetail)(nil),                 // 15: cogfeed.v1.ItemDetail
-	(*Playback)(nil),                   // 16: cogfeed.v1.Playback
-	(*View)(nil),                       // 17: cogfeed.v1.View
-	(*ListItemsRequest)(nil),           // 18: cogfeed.v1.ListItemsRequest
-	(*ListItemsResponse)(nil),          // 19: cogfeed.v1.ListItemsResponse
-	(*GetItemRequest)(nil),             // 20: cogfeed.v1.GetItemRequest
-	(*PreviewQueryRequest)(nil),        // 21: cogfeed.v1.PreviewQueryRequest
-	(*PreviewQueryResponse)(nil),       // 22: cogfeed.v1.PreviewQueryResponse
-	(*SetReadRequest)(nil),             // 23: cogfeed.v1.SetReadRequest
-	(*SetStarredRequest)(nil),          // 24: cogfeed.v1.SetStarredRequest
-	(*MarkAllReadRequest)(nil),         // 25: cogfeed.v1.MarkAllReadRequest
-	(*MarkAllReadResponse)(nil),        // 26: cogfeed.v1.MarkAllReadResponse
-	(*SetTagsRequest)(nil),             // 27: cogfeed.v1.SetTagsRequest
-	(*ReportProgressRequest)(nil),      // 28: cogfeed.v1.ReportProgressRequest
-	(*ResolveMediaRequest)(nil),        // 29: cogfeed.v1.ResolveMediaRequest
-	(*MediaSource)(nil),                // 30: cogfeed.v1.MediaSource
-	(*GetRangesRequest)(nil),           // 31: cogfeed.v1.GetRangesRequest
-	(*Range)(nil),                      // 32: cogfeed.v1.Range
-	(*Ranges)(nil),                     // 33: cogfeed.v1.Ranges
-	(*RequestDownloadRequest)(nil),     // 34: cogfeed.v1.RequestDownloadRequest
-	(*DownloadState)(nil),              // 35: cogfeed.v1.DownloadState
-	(*GetPlayerPrefsRequest)(nil),      // 36: cogfeed.v1.GetPlayerPrefsRequest
-	(*PlayerPrefs)(nil),                // 37: cogfeed.v1.PlayerPrefs
-	(*ChangesRequest)(nil),             // 38: cogfeed.v1.ChangesRequest
-	(*ChangesResponse)(nil),            // 39: cogfeed.v1.ChangesResponse
-	(*WatchRequest)(nil),               // 40: cogfeed.v1.WatchRequest
-	(*WatchEvent)(nil),                 // 41: cogfeed.v1.WatchEvent
-	(*AddSubscriptionRequest)(nil),     // 42: cogfeed.v1.AddSubscriptionRequest
-	(*UpdateSubscriptionRequest)(nil),  // 43: cogfeed.v1.UpdateSubscriptionRequest
-	(*DeleteSubscriptionRequest)(nil),  // 44: cogfeed.v1.DeleteSubscriptionRequest
-	(*RefreshSubscriptionRequest)(nil), // 45: cogfeed.v1.RefreshSubscriptionRequest
-	(*DeleteFolderRequest)(nil),        // 46: cogfeed.v1.DeleteFolderRequest
-	(*Filter)(nil),                     // 47: cogfeed.v1.Filter
-	(*ListFiltersRequest)(nil),         // 48: cogfeed.v1.ListFiltersRequest
-	(*ListFiltersResponse)(nil),        // 49: cogfeed.v1.ListFiltersResponse
-	(*DeleteFilterRequest)(nil),        // 50: cogfeed.v1.DeleteFilterRequest
-	(*DeletePlaylistRequest)(nil),      // 51: cogfeed.v1.DeletePlaylistRequest
-	(*DeleteResponse)(nil),             // 52: cogfeed.v1.DeleteResponse
-	(*ImportRequest)(nil),              // 53: cogfeed.v1.ImportRequest
-	(*ImportResponse)(nil),             // 54: cogfeed.v1.ImportResponse
-	(*ExportOPMLRequest)(nil),          // 55: cogfeed.v1.ExportOPMLRequest
-	(*ExportOPMLResponse)(nil),         // 56: cogfeed.v1.ExportOPMLResponse
-	nil,                                // 57: cogfeed.v1.MediaSource.HeadersEntry
-	(*timestamppb.Timestamp)(nil),      // 58: google.protobuf.Timestamp
+	(PlayOrder)(0),                     // 1: cogfeed.v1.PlayOrder
+	(ItemType)(0),                      // 2: cogfeed.v1.ItemType
+	(Variant)(0),                       // 3: cogfeed.v1.Variant
+	(Range_Action)(0),                  // 4: cogfeed.v1.Range.Action
+	(DownloadState_State)(0),           // 5: cogfeed.v1.DownloadState.State
+	(Filter_Action)(0),                 // 6: cogfeed.v1.Filter.Action
+	(ImportRequest_Format)(0),          // 7: cogfeed.v1.ImportRequest.Format
+	(*GetLibraryRequest)(nil),          // 8: cogfeed.v1.GetLibraryRequest
+	(*Library)(nil),                    // 9: cogfeed.v1.Library
+	(*Counts)(nil),                     // 10: cogfeed.v1.Counts
+	(*Folder)(nil),                     // 11: cogfeed.v1.Folder
+	(*Subscription)(nil),               // 12: cogfeed.v1.Subscription
+	(*Playlist)(nil),                   // 13: cogfeed.v1.Playlist
+	(*TagCount)(nil),                   // 14: cogfeed.v1.TagCount
+	(*Item)(nil),                       // 15: cogfeed.v1.Item
+	(*ItemDetail)(nil),                 // 16: cogfeed.v1.ItemDetail
+	(*Playback)(nil),                   // 17: cogfeed.v1.Playback
+	(*View)(nil),                       // 18: cogfeed.v1.View
+	(*ListItemsRequest)(nil),           // 19: cogfeed.v1.ListItemsRequest
+	(*ListItemsResponse)(nil),          // 20: cogfeed.v1.ListItemsResponse
+	(*GetItemRequest)(nil),             // 21: cogfeed.v1.GetItemRequest
+	(*PreviewQueryRequest)(nil),        // 22: cogfeed.v1.PreviewQueryRequest
+	(*PreviewQueryResponse)(nil),       // 23: cogfeed.v1.PreviewQueryResponse
+	(*SetReadRequest)(nil),             // 24: cogfeed.v1.SetReadRequest
+	(*SetStarredRequest)(nil),          // 25: cogfeed.v1.SetStarredRequest
+	(*MarkAllReadRequest)(nil),         // 26: cogfeed.v1.MarkAllReadRequest
+	(*MarkAllReadResponse)(nil),        // 27: cogfeed.v1.MarkAllReadResponse
+	(*SetTagsRequest)(nil),             // 28: cogfeed.v1.SetTagsRequest
+	(*ReportProgressRequest)(nil),      // 29: cogfeed.v1.ReportProgressRequest
+	(*ResolveMediaRequest)(nil),        // 30: cogfeed.v1.ResolveMediaRequest
+	(*MediaSource)(nil),                // 31: cogfeed.v1.MediaSource
+	(*GetRangesRequest)(nil),           // 32: cogfeed.v1.GetRangesRequest
+	(*Range)(nil),                      // 33: cogfeed.v1.Range
+	(*Ranges)(nil),                     // 34: cogfeed.v1.Ranges
+	(*RequestDownloadRequest)(nil),     // 35: cogfeed.v1.RequestDownloadRequest
+	(*DownloadState)(nil),              // 36: cogfeed.v1.DownloadState
+	(*GetPlayerPrefsRequest)(nil),      // 37: cogfeed.v1.GetPlayerPrefsRequest
+	(*PlayerPrefs)(nil),                // 38: cogfeed.v1.PlayerPrefs
+	(*ChangesRequest)(nil),             // 39: cogfeed.v1.ChangesRequest
+	(*ChangesResponse)(nil),            // 40: cogfeed.v1.ChangesResponse
+	(*WatchRequest)(nil),               // 41: cogfeed.v1.WatchRequest
+	(*WatchEvent)(nil),                 // 42: cogfeed.v1.WatchEvent
+	(*AddSubscriptionRequest)(nil),     // 43: cogfeed.v1.AddSubscriptionRequest
+	(*UpdateSubscriptionRequest)(nil),  // 44: cogfeed.v1.UpdateSubscriptionRequest
+	(*DeleteSubscriptionRequest)(nil),  // 45: cogfeed.v1.DeleteSubscriptionRequest
+	(*RefreshSubscriptionRequest)(nil), // 46: cogfeed.v1.RefreshSubscriptionRequest
+	(*DeleteFolderRequest)(nil),        // 47: cogfeed.v1.DeleteFolderRequest
+	(*Filter)(nil),                     // 48: cogfeed.v1.Filter
+	(*ListFiltersRequest)(nil),         // 49: cogfeed.v1.ListFiltersRequest
+	(*ListFiltersResponse)(nil),        // 50: cogfeed.v1.ListFiltersResponse
+	(*DeleteFilterRequest)(nil),        // 51: cogfeed.v1.DeleteFilterRequest
+	(*DeletePlaylistRequest)(nil),      // 52: cogfeed.v1.DeletePlaylistRequest
+	(*DeleteResponse)(nil),             // 53: cogfeed.v1.DeleteResponse
+	(*ImportRequest)(nil),              // 54: cogfeed.v1.ImportRequest
+	(*ImportResponse)(nil),             // 55: cogfeed.v1.ImportResponse
+	(*ExportOPMLRequest)(nil),          // 56: cogfeed.v1.ExportOPMLRequest
+	(*ExportOPMLResponse)(nil),         // 57: cogfeed.v1.ExportOPMLResponse
+	nil,                                // 58: cogfeed.v1.MediaSource.HeadersEntry
+	(*timestamppb.Timestamp)(nil),      // 59: google.protobuf.Timestamp
 }
 var file_feed_proto_depIdxs = []int32{
-	10, // 0: cogfeed.v1.Library.folders:type_name -> cogfeed.v1.Folder
-	11, // 1: cogfeed.v1.Library.subscriptions:type_name -> cogfeed.v1.Subscription
-	12, // 2: cogfeed.v1.Library.playlists:type_name -> cogfeed.v1.Playlist
-	13, // 3: cogfeed.v1.Library.tags:type_name -> cogfeed.v1.TagCount
-	9,  // 4: cogfeed.v1.Library.counts:type_name -> cogfeed.v1.Counts
+	11, // 0: cogfeed.v1.Library.folders:type_name -> cogfeed.v1.Folder
+	12, // 1: cogfeed.v1.Library.subscriptions:type_name -> cogfeed.v1.Subscription
+	13, // 2: cogfeed.v1.Library.playlists:type_name -> cogfeed.v1.Playlist
+	14, // 3: cogfeed.v1.Library.tags:type_name -> cogfeed.v1.TagCount
+	10, // 4: cogfeed.v1.Library.counts:type_name -> cogfeed.v1.Counts
 	0,  // 5: cogfeed.v1.Subscription.kind:type_name -> cogfeed.v1.SubscriptionKind
-	58, // 6: cogfeed.v1.Subscription.last_success_at:type_name -> google.protobuf.Timestamp
-	1,  // 7: cogfeed.v1.Item.type:type_name -> cogfeed.v1.ItemType
-	58, // 8: cogfeed.v1.Item.published_at:type_name -> google.protobuf.Timestamp
-	16, // 9: cogfeed.v1.Item.playback:type_name -> cogfeed.v1.Playback
-	35, // 10: cogfeed.v1.Item.server_download:type_name -> cogfeed.v1.DownloadState
-	14, // 11: cogfeed.v1.ItemDetail.item:type_name -> cogfeed.v1.Item
-	58, // 12: cogfeed.v1.Playback.at:type_name -> google.protobuf.Timestamp
-	17, // 13: cogfeed.v1.ListItemsRequest.view:type_name -> cogfeed.v1.View
-	14, // 14: cogfeed.v1.ListItemsResponse.items:type_name -> cogfeed.v1.Item
-	14, // 15: cogfeed.v1.PreviewQueryResponse.sample:type_name -> cogfeed.v1.Item
-	17, // 16: cogfeed.v1.MarkAllReadRequest.view:type_name -> cogfeed.v1.View
-	58, // 17: cogfeed.v1.ReportProgressRequest.at:type_name -> google.protobuf.Timestamp
-	2,  // 18: cogfeed.v1.ResolveMediaRequest.variant:type_name -> cogfeed.v1.Variant
-	57, // 19: cogfeed.v1.MediaSource.headers:type_name -> cogfeed.v1.MediaSource.HeadersEntry
-	2,  // 20: cogfeed.v1.MediaSource.variant:type_name -> cogfeed.v1.Variant
-	58, // 21: cogfeed.v1.MediaSource.expires_at:type_name -> google.protobuf.Timestamp
-	3,  // 22: cogfeed.v1.Range.action:type_name -> cogfeed.v1.Range.Action
-	32, // 23: cogfeed.v1.Ranges.ranges:type_name -> cogfeed.v1.Range
-	2,  // 24: cogfeed.v1.RequestDownloadRequest.variant:type_name -> cogfeed.v1.Variant
-	4,  // 25: cogfeed.v1.DownloadState.state:type_name -> cogfeed.v1.DownloadState.State
-	14, // 26: cogfeed.v1.ChangesResponse.items:type_name -> cogfeed.v1.Item
-	11, // 27: cogfeed.v1.ChangesResponse.subscriptions:type_name -> cogfeed.v1.Subscription
-	10, // 28: cogfeed.v1.ChangesResponse.folders:type_name -> cogfeed.v1.Folder
-	12, // 29: cogfeed.v1.ChangesResponse.playlists:type_name -> cogfeed.v1.Playlist
-	37, // 30: cogfeed.v1.ChangesResponse.prefs:type_name -> cogfeed.v1.PlayerPrefs
-	5,  // 31: cogfeed.v1.Filter.action:type_name -> cogfeed.v1.Filter.Action
-	47, // 32: cogfeed.v1.ListFiltersResponse.filters:type_name -> cogfeed.v1.Filter
-	6,  // 33: cogfeed.v1.ImportRequest.format:type_name -> cogfeed.v1.ImportRequest.Format
-	7,  // 34: cogfeed.v1.FeedService.GetLibrary:input_type -> cogfeed.v1.GetLibraryRequest
-	18, // 35: cogfeed.v1.FeedService.ListItems:input_type -> cogfeed.v1.ListItemsRequest
-	20, // 36: cogfeed.v1.FeedService.GetItem:input_type -> cogfeed.v1.GetItemRequest
-	21, // 37: cogfeed.v1.FeedService.PreviewQuery:input_type -> cogfeed.v1.PreviewQueryRequest
-	23, // 38: cogfeed.v1.FeedService.SetRead:input_type -> cogfeed.v1.SetReadRequest
-	24, // 39: cogfeed.v1.FeedService.SetStarred:input_type -> cogfeed.v1.SetStarredRequest
-	25, // 40: cogfeed.v1.FeedService.MarkAllRead:input_type -> cogfeed.v1.MarkAllReadRequest
-	27, // 41: cogfeed.v1.FeedService.SetTags:input_type -> cogfeed.v1.SetTagsRequest
-	28, // 42: cogfeed.v1.FeedService.ReportProgress:input_type -> cogfeed.v1.ReportProgressRequest
-	29, // 43: cogfeed.v1.FeedService.ResolveMedia:input_type -> cogfeed.v1.ResolveMediaRequest
-	31, // 44: cogfeed.v1.FeedService.GetRanges:input_type -> cogfeed.v1.GetRangesRequest
-	34, // 45: cogfeed.v1.FeedService.RequestDownload:input_type -> cogfeed.v1.RequestDownloadRequest
-	36, // 46: cogfeed.v1.FeedService.GetPlayerPrefs:input_type -> cogfeed.v1.GetPlayerPrefsRequest
-	37, // 47: cogfeed.v1.FeedService.SetPlayerPrefs:input_type -> cogfeed.v1.PlayerPrefs
-	38, // 48: cogfeed.v1.FeedService.Changes:input_type -> cogfeed.v1.ChangesRequest
-	40, // 49: cogfeed.v1.FeedService.Watch:input_type -> cogfeed.v1.WatchRequest
-	42, // 50: cogfeed.v1.FeedService.AddSubscription:input_type -> cogfeed.v1.AddSubscriptionRequest
-	43, // 51: cogfeed.v1.FeedService.UpdateSubscription:input_type -> cogfeed.v1.UpdateSubscriptionRequest
-	44, // 52: cogfeed.v1.FeedService.DeleteSubscription:input_type -> cogfeed.v1.DeleteSubscriptionRequest
-	45, // 53: cogfeed.v1.FeedService.RefreshSubscription:input_type -> cogfeed.v1.RefreshSubscriptionRequest
-	10, // 54: cogfeed.v1.FeedService.SaveFolder:input_type -> cogfeed.v1.Folder
-	46, // 55: cogfeed.v1.FeedService.DeleteFolder:input_type -> cogfeed.v1.DeleteFolderRequest
-	48, // 56: cogfeed.v1.FeedService.ListFilters:input_type -> cogfeed.v1.ListFiltersRequest
-	47, // 57: cogfeed.v1.FeedService.SaveFilter:input_type -> cogfeed.v1.Filter
-	50, // 58: cogfeed.v1.FeedService.DeleteFilter:input_type -> cogfeed.v1.DeleteFilterRequest
-	12, // 59: cogfeed.v1.FeedService.SavePlaylist:input_type -> cogfeed.v1.Playlist
-	51, // 60: cogfeed.v1.FeedService.DeletePlaylist:input_type -> cogfeed.v1.DeletePlaylistRequest
-	53, // 61: cogfeed.v1.FeedService.Import:input_type -> cogfeed.v1.ImportRequest
-	55, // 62: cogfeed.v1.FeedService.ExportOPML:input_type -> cogfeed.v1.ExportOPMLRequest
-	8,  // 63: cogfeed.v1.FeedService.GetLibrary:output_type -> cogfeed.v1.Library
-	19, // 64: cogfeed.v1.FeedService.ListItems:output_type -> cogfeed.v1.ListItemsResponse
-	15, // 65: cogfeed.v1.FeedService.GetItem:output_type -> cogfeed.v1.ItemDetail
-	22, // 66: cogfeed.v1.FeedService.PreviewQuery:output_type -> cogfeed.v1.PreviewQueryResponse
-	14, // 67: cogfeed.v1.FeedService.SetRead:output_type -> cogfeed.v1.Item
-	14, // 68: cogfeed.v1.FeedService.SetStarred:output_type -> cogfeed.v1.Item
-	26, // 69: cogfeed.v1.FeedService.MarkAllRead:output_type -> cogfeed.v1.MarkAllReadResponse
-	14, // 70: cogfeed.v1.FeedService.SetTags:output_type -> cogfeed.v1.Item
-	16, // 71: cogfeed.v1.FeedService.ReportProgress:output_type -> cogfeed.v1.Playback
-	30, // 72: cogfeed.v1.FeedService.ResolveMedia:output_type -> cogfeed.v1.MediaSource
-	33, // 73: cogfeed.v1.FeedService.GetRanges:output_type -> cogfeed.v1.Ranges
-	35, // 74: cogfeed.v1.FeedService.RequestDownload:output_type -> cogfeed.v1.DownloadState
-	37, // 75: cogfeed.v1.FeedService.GetPlayerPrefs:output_type -> cogfeed.v1.PlayerPrefs
-	37, // 76: cogfeed.v1.FeedService.SetPlayerPrefs:output_type -> cogfeed.v1.PlayerPrefs
-	39, // 77: cogfeed.v1.FeedService.Changes:output_type -> cogfeed.v1.ChangesResponse
-	41, // 78: cogfeed.v1.FeedService.Watch:output_type -> cogfeed.v1.WatchEvent
-	11, // 79: cogfeed.v1.FeedService.AddSubscription:output_type -> cogfeed.v1.Subscription
-	11, // 80: cogfeed.v1.FeedService.UpdateSubscription:output_type -> cogfeed.v1.Subscription
-	52, // 81: cogfeed.v1.FeedService.DeleteSubscription:output_type -> cogfeed.v1.DeleteResponse
-	11, // 82: cogfeed.v1.FeedService.RefreshSubscription:output_type -> cogfeed.v1.Subscription
-	10, // 83: cogfeed.v1.FeedService.SaveFolder:output_type -> cogfeed.v1.Folder
-	52, // 84: cogfeed.v1.FeedService.DeleteFolder:output_type -> cogfeed.v1.DeleteResponse
-	49, // 85: cogfeed.v1.FeedService.ListFilters:output_type -> cogfeed.v1.ListFiltersResponse
-	47, // 86: cogfeed.v1.FeedService.SaveFilter:output_type -> cogfeed.v1.Filter
-	52, // 87: cogfeed.v1.FeedService.DeleteFilter:output_type -> cogfeed.v1.DeleteResponse
-	12, // 88: cogfeed.v1.FeedService.SavePlaylist:output_type -> cogfeed.v1.Playlist
-	52, // 89: cogfeed.v1.FeedService.DeletePlaylist:output_type -> cogfeed.v1.DeleteResponse
-	54, // 90: cogfeed.v1.FeedService.Import:output_type -> cogfeed.v1.ImportResponse
-	56, // 91: cogfeed.v1.FeedService.ExportOPML:output_type -> cogfeed.v1.ExportOPMLResponse
-	63, // [63:92] is the sub-list for method output_type
-	34, // [34:63] is the sub-list for method input_type
-	34, // [34:34] is the sub-list for extension type_name
-	34, // [34:34] is the sub-list for extension extendee
-	0,  // [0:34] is the sub-list for field type_name
+	59, // 6: cogfeed.v1.Subscription.last_success_at:type_name -> google.protobuf.Timestamp
+	1,  // 7: cogfeed.v1.Playlist.order:type_name -> cogfeed.v1.PlayOrder
+	2,  // 8: cogfeed.v1.Item.type:type_name -> cogfeed.v1.ItemType
+	59, // 9: cogfeed.v1.Item.published_at:type_name -> google.protobuf.Timestamp
+	17, // 10: cogfeed.v1.Item.playback:type_name -> cogfeed.v1.Playback
+	36, // 11: cogfeed.v1.Item.server_download:type_name -> cogfeed.v1.DownloadState
+	15, // 12: cogfeed.v1.ItemDetail.item:type_name -> cogfeed.v1.Item
+	59, // 13: cogfeed.v1.Playback.at:type_name -> google.protobuf.Timestamp
+	18, // 14: cogfeed.v1.ListItemsRequest.view:type_name -> cogfeed.v1.View
+	15, // 15: cogfeed.v1.ListItemsResponse.items:type_name -> cogfeed.v1.Item
+	15, // 16: cogfeed.v1.PreviewQueryResponse.sample:type_name -> cogfeed.v1.Item
+	18, // 17: cogfeed.v1.MarkAllReadRequest.view:type_name -> cogfeed.v1.View
+	59, // 18: cogfeed.v1.ReportProgressRequest.at:type_name -> google.protobuf.Timestamp
+	3,  // 19: cogfeed.v1.ResolveMediaRequest.variant:type_name -> cogfeed.v1.Variant
+	58, // 20: cogfeed.v1.MediaSource.headers:type_name -> cogfeed.v1.MediaSource.HeadersEntry
+	3,  // 21: cogfeed.v1.MediaSource.variant:type_name -> cogfeed.v1.Variant
+	59, // 22: cogfeed.v1.MediaSource.expires_at:type_name -> google.protobuf.Timestamp
+	4,  // 23: cogfeed.v1.Range.action:type_name -> cogfeed.v1.Range.Action
+	33, // 24: cogfeed.v1.Ranges.ranges:type_name -> cogfeed.v1.Range
+	3,  // 25: cogfeed.v1.RequestDownloadRequest.variant:type_name -> cogfeed.v1.Variant
+	5,  // 26: cogfeed.v1.DownloadState.state:type_name -> cogfeed.v1.DownloadState.State
+	15, // 27: cogfeed.v1.ChangesResponse.items:type_name -> cogfeed.v1.Item
+	12, // 28: cogfeed.v1.ChangesResponse.subscriptions:type_name -> cogfeed.v1.Subscription
+	11, // 29: cogfeed.v1.ChangesResponse.folders:type_name -> cogfeed.v1.Folder
+	13, // 30: cogfeed.v1.ChangesResponse.playlists:type_name -> cogfeed.v1.Playlist
+	38, // 31: cogfeed.v1.ChangesResponse.prefs:type_name -> cogfeed.v1.PlayerPrefs
+	6,  // 32: cogfeed.v1.Filter.action:type_name -> cogfeed.v1.Filter.Action
+	48, // 33: cogfeed.v1.ListFiltersResponse.filters:type_name -> cogfeed.v1.Filter
+	7,  // 34: cogfeed.v1.ImportRequest.format:type_name -> cogfeed.v1.ImportRequest.Format
+	8,  // 35: cogfeed.v1.FeedService.GetLibrary:input_type -> cogfeed.v1.GetLibraryRequest
+	19, // 36: cogfeed.v1.FeedService.ListItems:input_type -> cogfeed.v1.ListItemsRequest
+	21, // 37: cogfeed.v1.FeedService.GetItem:input_type -> cogfeed.v1.GetItemRequest
+	22, // 38: cogfeed.v1.FeedService.PreviewQuery:input_type -> cogfeed.v1.PreviewQueryRequest
+	24, // 39: cogfeed.v1.FeedService.SetRead:input_type -> cogfeed.v1.SetReadRequest
+	25, // 40: cogfeed.v1.FeedService.SetStarred:input_type -> cogfeed.v1.SetStarredRequest
+	26, // 41: cogfeed.v1.FeedService.MarkAllRead:input_type -> cogfeed.v1.MarkAllReadRequest
+	28, // 42: cogfeed.v1.FeedService.SetTags:input_type -> cogfeed.v1.SetTagsRequest
+	29, // 43: cogfeed.v1.FeedService.ReportProgress:input_type -> cogfeed.v1.ReportProgressRequest
+	30, // 44: cogfeed.v1.FeedService.ResolveMedia:input_type -> cogfeed.v1.ResolveMediaRequest
+	32, // 45: cogfeed.v1.FeedService.GetRanges:input_type -> cogfeed.v1.GetRangesRequest
+	35, // 46: cogfeed.v1.FeedService.RequestDownload:input_type -> cogfeed.v1.RequestDownloadRequest
+	37, // 47: cogfeed.v1.FeedService.GetPlayerPrefs:input_type -> cogfeed.v1.GetPlayerPrefsRequest
+	38, // 48: cogfeed.v1.FeedService.SetPlayerPrefs:input_type -> cogfeed.v1.PlayerPrefs
+	39, // 49: cogfeed.v1.FeedService.Changes:input_type -> cogfeed.v1.ChangesRequest
+	41, // 50: cogfeed.v1.FeedService.Watch:input_type -> cogfeed.v1.WatchRequest
+	43, // 51: cogfeed.v1.FeedService.AddSubscription:input_type -> cogfeed.v1.AddSubscriptionRequest
+	44, // 52: cogfeed.v1.FeedService.UpdateSubscription:input_type -> cogfeed.v1.UpdateSubscriptionRequest
+	45, // 53: cogfeed.v1.FeedService.DeleteSubscription:input_type -> cogfeed.v1.DeleteSubscriptionRequest
+	46, // 54: cogfeed.v1.FeedService.RefreshSubscription:input_type -> cogfeed.v1.RefreshSubscriptionRequest
+	11, // 55: cogfeed.v1.FeedService.SaveFolder:input_type -> cogfeed.v1.Folder
+	47, // 56: cogfeed.v1.FeedService.DeleteFolder:input_type -> cogfeed.v1.DeleteFolderRequest
+	49, // 57: cogfeed.v1.FeedService.ListFilters:input_type -> cogfeed.v1.ListFiltersRequest
+	48, // 58: cogfeed.v1.FeedService.SaveFilter:input_type -> cogfeed.v1.Filter
+	51, // 59: cogfeed.v1.FeedService.DeleteFilter:input_type -> cogfeed.v1.DeleteFilterRequest
+	13, // 60: cogfeed.v1.FeedService.SavePlaylist:input_type -> cogfeed.v1.Playlist
+	52, // 61: cogfeed.v1.FeedService.DeletePlaylist:input_type -> cogfeed.v1.DeletePlaylistRequest
+	54, // 62: cogfeed.v1.FeedService.Import:input_type -> cogfeed.v1.ImportRequest
+	56, // 63: cogfeed.v1.FeedService.ExportOPML:input_type -> cogfeed.v1.ExportOPMLRequest
+	9,  // 64: cogfeed.v1.FeedService.GetLibrary:output_type -> cogfeed.v1.Library
+	20, // 65: cogfeed.v1.FeedService.ListItems:output_type -> cogfeed.v1.ListItemsResponse
+	16, // 66: cogfeed.v1.FeedService.GetItem:output_type -> cogfeed.v1.ItemDetail
+	23, // 67: cogfeed.v1.FeedService.PreviewQuery:output_type -> cogfeed.v1.PreviewQueryResponse
+	15, // 68: cogfeed.v1.FeedService.SetRead:output_type -> cogfeed.v1.Item
+	15, // 69: cogfeed.v1.FeedService.SetStarred:output_type -> cogfeed.v1.Item
+	27, // 70: cogfeed.v1.FeedService.MarkAllRead:output_type -> cogfeed.v1.MarkAllReadResponse
+	15, // 71: cogfeed.v1.FeedService.SetTags:output_type -> cogfeed.v1.Item
+	17, // 72: cogfeed.v1.FeedService.ReportProgress:output_type -> cogfeed.v1.Playback
+	31, // 73: cogfeed.v1.FeedService.ResolveMedia:output_type -> cogfeed.v1.MediaSource
+	34, // 74: cogfeed.v1.FeedService.GetRanges:output_type -> cogfeed.v1.Ranges
+	36, // 75: cogfeed.v1.FeedService.RequestDownload:output_type -> cogfeed.v1.DownloadState
+	38, // 76: cogfeed.v1.FeedService.GetPlayerPrefs:output_type -> cogfeed.v1.PlayerPrefs
+	38, // 77: cogfeed.v1.FeedService.SetPlayerPrefs:output_type -> cogfeed.v1.PlayerPrefs
+	40, // 78: cogfeed.v1.FeedService.Changes:output_type -> cogfeed.v1.ChangesResponse
+	42, // 79: cogfeed.v1.FeedService.Watch:output_type -> cogfeed.v1.WatchEvent
+	12, // 80: cogfeed.v1.FeedService.AddSubscription:output_type -> cogfeed.v1.Subscription
+	12, // 81: cogfeed.v1.FeedService.UpdateSubscription:output_type -> cogfeed.v1.Subscription
+	53, // 82: cogfeed.v1.FeedService.DeleteSubscription:output_type -> cogfeed.v1.DeleteResponse
+	12, // 83: cogfeed.v1.FeedService.RefreshSubscription:output_type -> cogfeed.v1.Subscription
+	11, // 84: cogfeed.v1.FeedService.SaveFolder:output_type -> cogfeed.v1.Folder
+	53, // 85: cogfeed.v1.FeedService.DeleteFolder:output_type -> cogfeed.v1.DeleteResponse
+	50, // 86: cogfeed.v1.FeedService.ListFilters:output_type -> cogfeed.v1.ListFiltersResponse
+	48, // 87: cogfeed.v1.FeedService.SaveFilter:output_type -> cogfeed.v1.Filter
+	53, // 88: cogfeed.v1.FeedService.DeleteFilter:output_type -> cogfeed.v1.DeleteResponse
+	13, // 89: cogfeed.v1.FeedService.SavePlaylist:output_type -> cogfeed.v1.Playlist
+	53, // 90: cogfeed.v1.FeedService.DeletePlaylist:output_type -> cogfeed.v1.DeleteResponse
+	55, // 91: cogfeed.v1.FeedService.Import:output_type -> cogfeed.v1.ImportResponse
+	57, // 92: cogfeed.v1.FeedService.ExportOPML:output_type -> cogfeed.v1.ExportOPMLResponse
+	64, // [64:93] is the sub-list for method output_type
+	35, // [35:64] is the sub-list for method input_type
+	35, // [35:35] is the sub-list for extension type_name
+	35, // [35:35] is the sub-list for extension extendee
+	0,  // [0:35] is the sub-list for field type_name
 }
 
 func init() { file_feed_proto_init() }
@@ -4111,7 +4208,7 @@ func file_feed_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_feed_proto_rawDesc), len(file_feed_proto_rawDesc)),
-			NumEnums:      7,
+			NumEnums:      8,
 			NumMessages:   51,
 			NumExtensions: 0,
 			NumServices:   1,

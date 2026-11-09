@@ -87,16 +87,24 @@ the choices; this is what Cog needs for it, in the order the app needs it.
 - [ ] Keyset pagination for `ListItems` (`published_at, id`) — today
       `ListItemsForView` takes only a limit — that still works when a query
       needs the search refine step.
-- [ ] `unfinished_only` for play queues (join `playback`, `completed = 0`).
-- [ ] Playlists carry how they play, the same on every device: `order`
-      (newest, oldest, shortest, shuffled — a shuffle is a seed, so it holds
-      still until reshuffled) and `listen_only` (videos play and download as
-      audio). A migration, the proto's `Playlist`, `SavePlaylist`, and the web
-      player honouring both. What a device downloads stays on the device.
-- [ ] Playlist tiles: unfinished count and unfinished duration per playlist,
-      in one query for all playlists (not one per playlist).
-- [x] `GetLibrary` (`TestGetLibraryOverGRPC`); playlist counts wait on the
-      playlist tiles item above.
+- [x] `ViewSpec.Unfinished` for play queues: audio and video whose
+      `playback` is not completed (`TestUnfinishedKeepsMediaNotPlayedToTheEnd`);
+      `ListItems`' `unfinished_only` maps to it.
+- [x] Playlists carry how they play, the same on every device: `order`
+      (newest, oldest, shortest — least time left — and shuffled, a seed so it
+      holds still until reshuffled) and `listen_only` (videos play as audio).
+      `migration002`, the proto's `Playlist`, `SavePlaylist` (a shuffled
+      order with no seed reshuffles) and `DeletePlaylist`; on the web, the
+      playlists page sets both, the playlist page and the player's next
+      follow the order, and a video in a listen-only playlist plays in an
+      `<audio>` element from YouTube's best audio stream
+      (`TestPlaylistPlaysInItsOrder`, `TestSavePlaylistOverGRPC`,
+      `TestWebPlaylistOrderAndListenOnly`, `TestPlaylistPlayMigration`).
+      Playlist queries moved from the handlers to `Store.PlaylistItems`.
+- [x] Playlist tiles: count, unfinished count and time left, for every
+      playlist whose SQL is exact in one `UNION ALL` query; one whose query
+      needs the refine step counts what it lists (`TestPlaylistCounts`).
+- [x] `GetLibrary` (`TestGetLibraryOverGRPC`), with the playlist counts.
 - [x] Item-state RPCs: `GetItem`, `SetRead`, `SetStarred`, `SetTags`
       (`TestItemStateOverGRPC`). Items are converted in batches — tags,
       playback and downloads one query each — ready for `ListItems`.
@@ -109,7 +117,7 @@ the choices; this is what Cog needs for it, in the order the app needs it.
       error.
 - [ ] Management RPCs with web parity: subscriptions (add with detection,
       update folder/title/interval/paused, delete, refresh), folders, filters,
-      playlists, `Import` taking bytes and a format, `ExportOPML`.
+      `Import` taking bytes and a format, `ExportOPML`. Playlists are done.
 - [ ] Player prefs get/set (`LoadPlayerPrefs` / `SavePlayerPrefs`).
 
 ## Playback

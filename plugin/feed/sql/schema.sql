@@ -91,7 +91,10 @@ CREATE TABLE IF NOT EXISTS playlists (
     name TEXT NOT NULL UNIQUE,
     query TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    play_order TEXT NOT NULL DEFAULT 'newest' CHECK(play_order IN ('newest','oldest','shortest','shuffled')),
+    shuffle_seed INTEGER NOT NULL DEFAULT 0,
+    listen_only INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS subscriptions (

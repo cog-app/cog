@@ -57,10 +57,11 @@ func (c viewCtx) encode() string {
 	return out.String()
 }
 
-// label returns a human-readable name for the context, doing best-effort store
-// lookups for folder/sub/playlist names. Errors degrade to a generic label,
-// and are logged unless the thing named no longer exists.
-func (c viewCtx) label(store *Store) string {
+// label returns a human-readable name for the context, and whether it is a
+// listen-only playlist, doing best-effort store lookups for folder/sub/playlist
+// names. Errors degrade to a generic label, and are logged unless the thing
+// named no longer exists.
+func (c viewCtx) label(store *Store) (label string, listenOnly bool) {
 	logErr := func(err error) {
 		if !errors.Is(err, sql.ErrNoRows) {
 			slog.Error("feed: view label", "kind", c.Kind, "id", c.ID, "err", err)
@@ -68,34 +69,34 @@ func (c viewCtx) label(store *Store) string {
 	}
 	switch c.Kind {
 	case "starred":
-		return "Starred"
+		return "Starred", false
 	case "history":
-		return "History"
+		return "History", false
 	case "folder":
 		f, err := store.GetFolder(c.ID)
 		if err != nil {
 			logErr(err)
-			return "Folder"
+			return "Folder", false
 		}
-		return f.Name
+		return f.Name, false
 	case "sub":
 		s, err := store.GetSubscription(c.ID)
 		if err != nil {
 			logErr(err)
-			return "Subscription"
+			return "Subscription", false
 		}
-		return subscriptionDisplayTitle(s)
+		return subscriptionDisplayTitle(s), false
 	case "tag":
-		return "Tag: " + c.Name
+		return "Tag: " + c.Name, false
 	case "playlist":
 		pl, err := store.GetPlaylist(c.ID)
 		if err != nil {
 			logErr(err)
-			return "Playlist"
+			return "Playlist", false
 		}
-		return "Playlist: " + pl.Name
+		return "Playlist: " + pl.Name, pl.ListenOnly
 	default:
-		return "All articles"
+		return "All articles", false
 	}
 }
 
@@ -132,6 +133,17 @@ type itemNav struct {
 	PrevTitle string
 	NextID    int64
 	NextTitle string
+	// ListenOnly is a listen-only playlist's: its videos play as audio.
+	ListenOnly bool
+}
+
+// playerType is the element the player uses: a video plays as audio in a
+// listen-only playlist.
+func playerType(ip ItemPlayback, nav itemNav) string {
+	if ip.Type == "video" && nav.ListenOnly {
+		return "audio"
+	}
+	return ip.Type
 }
 
 // neighbors returns the items immediately before and after id in items. When

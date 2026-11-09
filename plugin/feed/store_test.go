@@ -236,7 +236,7 @@ func TestDownloadsAndPlayback(t *testing.T) {
 
 func TestPlaylistsCRUD(t *testing.T) {
 	s := newStore(t)
-	id, err := s.CreatePlaylist("Morning", "type:audio AND tag:morning")
+	id, err := s.CreatePlaylist(feed.Playlist{Name: "Morning", Query: "type:audio AND tag:morning"})
 	require.NoError(t, err)
 	pls, err := s.ListPlaylists()
 	require.NoError(t, err)

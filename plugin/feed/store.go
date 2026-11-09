@@ -584,13 +584,20 @@ type Playback struct {
 
 // --- Playlist type ---
 
-// Playlist is a saved query that produces an ordered list of items.
+// Playlist is a saved query that produces an ordered list of items. How it
+// plays — its order and whether videos play as audio — is the same on every
+// device; what a device downloads of it is the device's business.
 type Playlist struct {
 	ID        int64
 	Name      string
 	Query     string
-	SortOrder int64
+	SortOrder int64 // its place in the sidebar
 	CreatedAt int64
+	Order     PlayOrder
+	// ShuffleSeed holds a shuffled order still until it is reshuffled.
+	ShuffleSeed int64
+	// ListenOnly plays (and downloads) its videos as audio.
+	ListenOnly bool
 }
 
 // --- Filter methods ---
@@ -1162,9 +1169,14 @@ func (s *Store) GetItemPlayback(itemID int64) (ItemPlayback, error) {
 
 // --- Playlist methods ---
 
-// CreatePlaylist inserts a new playlist and returns its ID.
-func (s *Store) CreatePlaylist(name, query string) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO playlists (name, query) VALUES (?, ?)`, name, query)
+// CreatePlaylist inserts a new playlist and returns its ID. Its order is
+// newest first unless p says otherwise.
+func (s *Store) CreatePlaylist(p Playlist) (int64, error) {
+	if p.Order == "" {
+		p.Order = OrderNewest
+	}
+	res, err := s.db.Exec(`INSERT INTO playlists (name, query, sort_order, play_order, shuffle_seed, listen_only) VALUES (?, ?, ?, ?, ?, ?)`,
+		p.Name, p.Query, p.SortOrder, p.Order, p.ShuffleSeed, p.ListenOnly)
 	if err != nil {
 		return 0, fmt.Errorf("create playlist: %w", err)
 	}
@@ -1175,19 +1187,25 @@ func (s *Store) CreatePlaylist(name, query string) (int64, error) {
 	return id, nil
 }
 
+const playlistColumns = `id, name, query, sort_order, created_at, play_order, shuffle_seed, listen_only`
+
+func scanPlaylist(row interface{ Scan(...any) error }) (Playlist, error) {
+	var p Playlist
+	err := row.Scan(&p.ID, &p.Name, &p.Query, &p.SortOrder, &p.CreatedAt, &p.Order, &p.ShuffleSeed, &p.ListenOnly)
+	return p, err
+}
+
 // ListPlaylists returns all playlists ordered by sort_order, name.
 func (s *Store) ListPlaylists() ([]Playlist, error) {
-	rows, err := s.db.Query(`
-		SELECT id, name, query, sort_order, created_at
-		FROM playlists ORDER BY sort_order, name, id`)
+	rows, err := s.db.Query(`SELECT ` + playlistColumns + ` FROM playlists ORDER BY sort_order, name, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list playlists: %w", err)
 	}
 	defer rows.Close()
 	var playlists []Playlist
 	for rows.Next() {
-		var p Playlist
-		if err := rows.Scan(&p.ID, &p.Name, &p.Query, &p.SortOrder, &p.CreatedAt); err != nil {
+		p, err := scanPlaylist(rows)
+		if err != nil {
 			return nil, fmt.Errorf("list playlists scan: %w", err)
 		}
 		playlists = append(playlists, p)
@@ -1198,24 +1216,34 @@ func (s *Store) ListPlaylists() ([]Playlist, error) {
 	return playlists, nil
 }
 
-// UpdatePlaylist updates an existing playlist.
+// UpdatePlaylist updates an existing playlist. It returns sql.ErrNoRows
+// when there is none with p's ID.
 func (s *Store) UpdatePlaylist(p Playlist) error {
-	_, err := s.db.Exec(`
-		UPDATE playlists SET name = ?, query = ?, sort_order = ?
+	if p.Order == "" {
+		p.Order = OrderNewest
+	}
+	res, err := s.db.Exec(`
+		UPDATE playlists SET name = ?, query = ?, sort_order = ?, play_order = ?, shuffle_seed = ?, listen_only = ?
 		WHERE id = ?`,
-		p.Name, p.Query, p.SortOrder, p.ID,
+		p.Name, p.Query, p.SortOrder, p.Order, p.ShuffleSeed, p.ListenOnly, p.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update playlist: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update playlist rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("update playlist %d: %w", p.ID, sql.ErrNoRows)
 	}
 	return nil
 }
 
 // GetPlaylist returns a single playlist by ID.
 func (s *Store) GetPlaylist(id int64) (Playlist, error) {
-	var p Playlist
-	row := s.db.QueryRow(`SELECT id, name, query, sort_order, created_at FROM playlists WHERE id = ?`, id)
-	if err := row.Scan(&p.ID, &p.Name, &p.Query, &p.SortOrder, &p.CreatedAt); err != nil {
+	p, err := scanPlaylist(s.db.QueryRow(`SELECT `+playlistColumns+` FROM playlists WHERE id = ?`, id))
+	if err != nil {
 		return p, fmt.Errorf("get playlist: %w", err)
 	}
 	return p, nil
@@ -1305,22 +1333,27 @@ type ViewSpec struct {
 	HideRead       bool
 	Query          query.Expr    // optional cog-grammar filter; compiled to SQL.
 	Schema         *query.Schema // required when Query != nil.
+	// Unfinished keeps audio and video not yet played to the end: what a
+	// play queue holds.
+	Unfinished bool
+	Order      PlayOrder // "" is newest first
+	Seed       int64     // the shuffle, when Order is OrderShuffled
+
+	joinPlayback bool // join playback as pb whatever else needs it
 }
 
-// ListItemsForView returns items (with subscription title) according to the ViewSpec.
-func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscription, error) {
-	var base strings.Builder
-	base.WriteString(`
-		SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
-		       i.content_html, i.media_url, i.media_mime, i.duration_sec, i.thumbnail_url,
-		       i.published_at, i.fetched_at, i.is_read, i.is_starred, i.content_hash,
-		       COALESCE(s.title, s.url) AS subscription_title
-		FROM items i
-		JOIN subscriptions s ON i.subscription_id = s.id`)
+// unfinishedSQL is ViewSpec.Unfinished's condition; it needs playbackJoin.
+const unfinishedSQL = "i.type != 'text' AND COALESCE(pb.completed, 0) = 0"
 
-	var where []string
-	var args []any
+const playbackJoin = " LEFT JOIN playback pb ON pb.item_id = i.id"
 
+// leftSQL is the seconds left to play of an item; it needs playbackJoin.
+const leftSQL = "MAX(i.duration_sec - CAST(COALESCE(pb.progress_sec, 0) AS INTEGER), 0)"
+
+// from returns the joins and conditions after `FROM items i JOIN
+// subscriptions s`, shared by the item list and the playlist counts.
+func (spec ViewSpec) from() (joins string, where []string, args []any, err error) {
+	var b strings.Builder
 	switch {
 	case spec.Starred:
 		where = append(where, "i.is_starred = 1")
@@ -1331,7 +1364,7 @@ func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscripti
 		where = append(where, "s.folder_id = ?")
 		args = append(args, spec.FolderID.Int64)
 	case spec.TagName != "":
-		base.WriteString(" JOIN item_tags it ON it.item_id = i.id JOIN tags t ON t.id = it.tag_id")
+		b.WriteString(" JOIN item_tags it ON it.item_id = i.id JOIN tags t ON t.id = it.tag_id")
 		where = append(where, "t.name = ?")
 		args = append(args, spec.TagName)
 	}
@@ -1340,31 +1373,72 @@ func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscripti
 	if spec.HideRead {
 		where = append(where, "i.is_read = 0")
 	}
+	if spec.Unfinished || spec.Order == OrderShortest || spec.joinPlayback {
+		b.WriteString(playbackJoin)
+	}
+	if spec.Unfinished {
+		where = append(where, unfinishedSQL)
+	}
 
 	if spec.Query != nil {
 		if spec.Schema == nil {
-			return nil, fmt.Errorf("list items for view: Query set but Schema is nil")
+			return "", nil, nil, fmt.Errorf("Query set but Schema is nil")
 		}
 		w, qArgs, joinNames, err := query.Compile(spec.Query, *spec.Schema)
 		if err != nil {
-			return nil, fmt.Errorf("list items for view: compile: %w", err)
+			return "", nil, nil, fmt.Errorf("compile: %w", err)
 		}
 		for _, name := range joinNames {
-			base.WriteByte(' ')
-			base.WriteString(spec.Schema.Joins[name])
+			b.WriteByte(' ')
+			b.WriteString(spec.Schema.Joins[name])
 		}
 		if w != "" {
 			where = append(where, w)
 			args = append(args, qArgs...)
 		}
 	}
+	return b.String(), where, args, nil
+}
 
-	q := base.String()
+// orderBy is the ORDER BY for spec.Order, and its arguments.
+func (spec ViewSpec) orderBy() (string, []any) {
+	switch spec.Order {
+	case OrderOldest:
+		return "i.published_at ASC, i.id ASC", nil
+	case OrderShortest:
+		return leftSQL + " ASC, i.published_at DESC, i.id DESC", nil
+	case OrderShuffled:
+		// A hash of the id and the seed, so the order holds still until the
+		// seed changes: x spreads the id and the seed, and squaring it mod a
+		// prime breaks up the arithmetic progression x alone leaves. x stays
+		// below 2^31 and its square below 2^63 for seeds below 10^9.
+		x := "((i.id * 48271 + ? * 69621) % 1000000007)"
+		seed := spec.Seed % 1000000007
+		return x + " * " + x + " % 1000000007, i.id", []any{seed, seed}
+	default:
+		return "i.published_at DESC, i.id DESC", nil
+	}
+}
+
+// ListItemsForView returns items (with subscription title) according to the ViewSpec.
+func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscription, error) {
+	joins, where, args, err := spec.from()
+	if err != nil {
+		return nil, fmt.Errorf("list items for view: %w", err)
+	}
+	q := `
+		SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
+		       i.content_html, i.media_url, i.media_mime, i.duration_sec, i.thumbnail_url,
+		       i.published_at, i.fetched_at, i.is_read, i.is_starred, i.content_hash,
+		       COALESCE(s.title, s.url) AS subscription_title
+		FROM items i
+		JOIN subscriptions s ON i.subscription_id = s.id` + joins
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
-	q += " ORDER BY i.published_at DESC, i.id DESC LIMIT ?"
-	args = append(args, limit)
+	order, orderArgs := spec.orderBy()
+	q += " ORDER BY " + order + " LIMIT ?"
+	args = append(append(args, orderArgs...), limit)
 
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
