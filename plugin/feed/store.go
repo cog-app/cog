@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -1330,16 +1331,29 @@ type ViewSpec struct {
 	FolderID       sql.NullInt64
 	SubscriptionID sql.NullInt64
 	TagName        string
-	HideRead       bool
-	Query          query.Expr    // optional cog-grammar filter; compiled to SQL.
-	Schema         *query.Schema // required when Query != nil.
+	// History keeps the items played, most recently played first, whatever
+	// Order says.
+	History  bool
+	HideRead bool
+	Query    query.Expr    // optional cog-grammar filter; compiled to SQL.
+	Schema   *query.Schema // required when Query != nil.
 	// Unfinished keeps audio and video not yet played to the end: what a
 	// play queue holds.
 	Unfinished bool
 	Order      PlayOrder // "" is newest first
 	Seed       int64     // the shuffle, when Order is OrderShuffled
+	// After continues a list from the item it last returned (keyset
+	// pagination): only items after it in this order are listed.
+	After *Cursor
 
 	joinPlayback bool // join playback as pb whatever else needs it
+}
+
+// Cursor is an item's place in a list's order: its sort key and, to break
+// ties, its id.
+type Cursor struct {
+	Key int64
+	ID  int64
 }
 
 // unfinishedSQL is ViewSpec.Unfinished's condition; it needs playbackJoin.
@@ -1351,7 +1365,7 @@ const playbackJoin = " LEFT JOIN playback pb ON pb.item_id = i.id"
 const leftSQL = "MAX(i.duration_sec - CAST(COALESCE(pb.progress_sec, 0) AS INTEGER), 0)"
 
 // from returns the joins and conditions after `FROM items i JOIN
-// subscriptions s`, shared by the item list and the playlist counts.
+// subscriptions s`, shared by the item list and the counts.
 func (spec ViewSpec) from() (joins string, where []string, args []any, err error) {
 	var b strings.Builder
 	switch {
@@ -1373,7 +1387,10 @@ func (spec ViewSpec) from() (joins string, where []string, args []any, err error
 	if spec.HideRead {
 		where = append(where, "i.is_read = 0")
 	}
-	if spec.Unfinished || spec.Order == OrderShortest || spec.joinPlayback {
+	switch {
+	case spec.History:
+		b.WriteString(" JOIN playback pb ON pb.item_id = i.id")
+	case spec.Unfinished || spec.Order == OrderShortest || spec.joinPlayback:
 		b.WriteString(playbackJoin)
 	}
 	if spec.Unfinished {
@@ -1400,72 +1417,93 @@ func (spec ViewSpec) from() (joins string, where []string, args []any, err error
 	return b.String(), where, args, nil
 }
 
-// orderBy is the ORDER BY for spec.Order, and its arguments.
-func (spec ViewSpec) orderBy() (string, []any) {
-	switch spec.Order {
-	case OrderOldest:
-		return "i.published_at ASC, i.id ASC", nil
-	case OrderShortest:
-		return leftSQL + " ASC, i.published_at DESC, i.id DESC", nil
-	case OrderShuffled:
+// sortKey is the integer the list is ordered by, then by id in the same
+// direction; one key and the id are what a Cursor holds.
+func (spec ViewSpec) sortKey() (expr string, args []any, desc bool) {
+	switch {
+	case spec.History:
+		return "pb.last_played_at", nil, true
+	case spec.Order == OrderOldest:
+		return "i.published_at", nil, false
+	case spec.Order == OrderShortest:
+		return leftSQL, nil, false
+	case spec.Order == OrderShuffled:
 		// A hash of the id and the seed, so the order holds still until the
 		// seed changes: x spreads the id and the seed, and squaring it mod a
 		// prime breaks up the arithmetic progression x alone leaves. x stays
 		// below 2^31 and its square below 2^63 for seeds below 10^9.
 		x := "((i.id * 48271 + ? * 69621) % 1000000007)"
 		seed := spec.Seed % 1000000007
-		return x + " * " + x + " % 1000000007, i.id", []any{seed, seed}
+		return "(" + x + " * " + x + " % 1000000007)", []any{seed, seed}, false
 	default:
-		return "i.published_at DESC, i.id DESC", nil
+		return "i.published_at", nil, true
 	}
 }
 
 // ListItemsForView returns items (with subscription title) according to the ViewSpec.
 func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscription, error) {
+	items, _, err := s.listItems(spec, limit)
+	return items, err
+}
+
+// listItems is ListItemsForView, with each item's place in the order.
+func (s *Store) listItems(spec ViewSpec, limit int) ([]ItemWithSubscription, []Cursor, error) {
 	joins, where, args, err := spec.from()
 	if err != nil {
-		return nil, fmt.Errorf("list items for view: %w", err)
+		return nil, nil, fmt.Errorf("list items for view: %w", err)
 	}
+	key, keyArgs, desc := spec.sortKey()
 	q := `
 		SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
 		       i.content_html, i.media_url, i.media_mime, i.duration_sec, i.thumbnail_url,
 		       i.published_at, i.fetched_at, i.is_read, i.is_starred, i.content_hash,
-		       COALESCE(s.title, s.url) AS subscription_title
+		       COALESCE(s.title, s.url) AS subscription_title, ` + key + `
 		FROM items i
 		JOIN subscriptions s ON i.subscription_id = s.id` + joins
+	args = append(slices.Clone(keyArgs), args...)
+	dir, cmp := "ASC", ">"
+	if desc {
+		dir, cmp = "DESC", "<"
+	}
+	if spec.After != nil {
+		where = append(where, "("+key+", i.id) "+cmp+" (?, ?)")
+		args = append(append(args, keyArgs...), spec.After.Key, spec.After.ID)
+	}
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
-	order, orderArgs := spec.orderBy()
-	q += " ORDER BY " + order + " LIMIT ?"
-	args = append(append(args, orderArgs...), limit)
+	q += " ORDER BY " + key + " " + dir + ", i.id " + dir + " LIMIT ?"
+	args = append(append(args, keyArgs...), limit)
 
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list items for view: %w", err)
+		return nil, nil, fmt.Errorf("list items for view: %w", err)
 	}
 	defer rows.Close()
 
 	var items []ItemWithSubscription
+	var keys []Cursor
 	for rows.Next() {
 		var iws ItemWithSubscription
 		var isRead, isStarred int
+		var k int64
 		if err := rows.Scan(
 			&iws.ID, &iws.SubscriptionID, &iws.GUID, &iws.Type, &iws.Title, &iws.Author,
 			&iws.URL, &iws.ContentHTML, &iws.MediaURL, &iws.MediaMIME, &iws.DurationSec,
 			&iws.ThumbnailURL, &iws.PublishedAt, &iws.FetchedAt, &isRead, &isStarred,
-			&iws.ContentHash, &iws.SubscriptionTitle,
+			&iws.ContentHash, &iws.SubscriptionTitle, &k,
 		); err != nil {
-			return nil, fmt.Errorf("list items for view scan: %w", err)
+			return nil, nil, fmt.Errorf("list items for view scan: %w", err)
 		}
 		iws.IsRead = isRead != 0
 		iws.IsStarred = isStarred != 0
 		items = append(items, iws)
+		keys = append(keys, Cursor{Key: k, ID: iws.ID})
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list items for view rows: %w", err)
+		return nil, nil, fmt.Errorf("list items for view rows: %w", err)
 	}
-	return items, nil
+	return items, keys, nil
 }
 
 // MarkAllRead marks all items as read.
@@ -2059,45 +2097,6 @@ func (s *Store) ListPlaybackHistory(limit int) ([]PlayedItem, error) {
 		pi.IsStarred = isStarred != 0
 		pi.Completed = completed != 0
 		out = append(out, pi)
-	}
-	return out, rows.Err()
-}
-
-// PlaybackHistoryItems returns played items joined with their subscription
-// title, ordered by last-played descending. Same shape as ListItemsForView's
-// return, so callers that need the view shape don't need to remap from
-// PlayedItem.
-func (s *Store) PlaybackHistoryItems(limit int) ([]ItemWithSubscription, error) {
-	rows, err := s.db.Query(`
-		SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
-		       i.content_html, i.media_url, i.media_mime, i.duration_sec,
-		       i.thumbnail_url, i.published_at, i.fetched_at, i.is_read, i.is_starred,
-		       i.content_hash,
-		       COALESCE(s.title, s.url) AS subscription_title
-		FROM playback p
-		JOIN items i ON i.id = p.item_id
-		JOIN subscriptions s ON s.id = i.subscription_id
-		ORDER BY p.last_played_at DESC, i.id DESC
-		LIMIT ?`, limit)
-	if err != nil {
-		return nil, fmt.Errorf("playback history items: %w", err)
-	}
-	defer rows.Close()
-	var out []ItemWithSubscription
-	for rows.Next() {
-		var iws ItemWithSubscription
-		var isRead, isStarred int
-		if err := rows.Scan(
-			&iws.ID, &iws.SubscriptionID, &iws.GUID, &iws.Type, &iws.Title, &iws.Author,
-			&iws.URL, &iws.ContentHTML, &iws.MediaURL, &iws.MediaMIME, &iws.DurationSec,
-			&iws.ThumbnailURL, &iws.PublishedAt, &iws.FetchedAt, &isRead, &isStarred,
-			&iws.ContentHash, &iws.SubscriptionTitle,
-		); err != nil {
-			return nil, fmt.Errorf("playback history items scan: %w", err)
-		}
-		iws.IsRead = isRead != 0
-		iws.IsStarred = isStarred != 0
-		out = append(out, iws)
 	}
 	return out, rows.Err()
 }

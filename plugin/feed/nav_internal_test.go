@@ -10,17 +10,26 @@ import (
 
 func newStoreInternal(t *testing.T) *Store {
 	t.Helper()
+	_, s := newPagesInternal(t)
+	return s
+}
+
+// newPagesInternal is a user's store and the plugin's pages, registered with
+// a server so they have its clock.
+func newPagesInternal(t *testing.T) (*Pages, *Store) {
+	t.Helper()
 	env := cogtest.New(t, New())
 	u := env.CreateUser(t, "u", "pass")
 	raw, ok := env.Providers.Plugins.Plugin(PluginID)
 	if !ok {
 		t.Fatal("feed plugin not registered")
 	}
-	db, err := raw.(*Plugin).DB(u.User.Username)
+	p := raw.(*Plugin)
+	db, err := p.DB(u.User.Username)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewStore(db)
+	return NewPages(p), NewStore(db)
 }
 
 func TestParseViewCtxAndEncode(t *testing.T) {
@@ -76,7 +85,7 @@ func TestNeighborsBoundariesAndAbsent(t *testing.T) {
 }
 
 func TestResolveViewItemsAllMatchesListItemsForView(t *testing.T) {
-	s := newStoreInternal(t)
+	h, s := newPagesInternal(t)
 	subID, err := s.CreateSubscription(Subscription{Kind: "rss", URL: "https://x.test/f"})
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +101,6 @@ func TestResolveViewItemsAllMatchesListItemsForView(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	h := &Pages{}
 	got, err := h.resolveViewItems(s, viewCtx{Kind: "all"})
 	if err != nil {
 		t.Fatal(err)

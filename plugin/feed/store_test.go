@@ -506,14 +506,14 @@ func TestListSubscriptionsErrorsFirst(t *testing.T) {
 	}
 }
 
-func TestPlaybackHistoryItemsJoined(t *testing.T) {
+func TestHistoryViewJoined(t *testing.T) {
 	s := newStore(t)
 	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/f", Title: "SubT"})
 	require.NoError(t, err)
 	id, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g", Type: "audio", Title: "T"})
 	require.NoError(t, err)
 	require.NoError(t, s.SetPlayback(id, 5.0, true, time.Now()))
-	got, err := s.PlaybackHistoryItems(10)
+	got, err := s.ListItemsForView(feed.ViewSpec{History: true}, 10)
 	require.NoError(t, err)
 	if len(got) != 1 || got[0].SubscriptionTitle != "SubT" || got[0].Title != "T" {
 		t.Fatalf("%+v", got)

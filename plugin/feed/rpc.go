@@ -3,6 +3,7 @@ package feed
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -632,4 +633,170 @@ func (s *FeedService) ExportOPML(ctx context.Context, _ *connect.Request[feedpb.
 		return nil, err
 	}
 	return connect.NewResponse(&feedpb.ExportOPMLResponse{Opml: data}), nil
+}
+
+// viewOf is the View a request names; unset is all.
+func viewOf(v *feedpb.View) View {
+	switch k := v.GetKind().(type) {
+	case *feedpb.View_Unread:
+		return View{Kind: ViewUnread}
+	case *feedpb.View_Starred:
+		return View{Kind: ViewStarred}
+	case *feedpb.View_History:
+		return View{Kind: ViewHistory}
+	case *feedpb.View_FolderId:
+		return View{Kind: ViewFolder, ID: k.FolderId}
+	case *feedpb.View_SubscriptionId:
+		return View{Kind: ViewSubscription, ID: k.SubscriptionId}
+	case *feedpb.View_Tag:
+		return View{Kind: ViewTag, Tag: k.Tag}
+	case *feedpb.View_PlaylistId:
+		return View{Kind: ViewPlaylist, ID: k.PlaylistId}
+	default:
+		return View{Kind: ViewAll}
+	}
+}
+
+// resolveView resolves a request's view, answering NotFound for a playlist
+// that is not there.
+func resolveView(store *Store, v View) (ViewSpec, query.Expr, error) {
+	spec, expr, err := store.ResolveView(v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return spec, nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("playlist %d not found", v.ID))
+	}
+	return spec, expr, err
+}
+
+// clientQuery parses a query a client sent; one that is too long, does not
+// parse, or asks a field for what it cannot do is InvalidArgument. "" is
+// nil, every item.
+func clientQuery(q string, now time.Time) (query.Expr, error) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return nil, nil
+	}
+	if len(q) > maxQueryLen {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("query is longer than %d bytes", maxQueryLen))
+	}
+	expr, err := query.Parse(q)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("query: %w", err))
+	}
+	resolved := query.ResolveRelativeDates(expr, *SearchSchema(), now)
+	if _, _, _, err := query.Compile(resolved, *SearchSchema()); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("query: %w", err))
+	}
+	return expr, nil
+}
+
+// orderTag names the order a page token belongs to, so a token is not used
+// to continue a list in another order: the order, and a shuffle's seed.
+func orderTag(spec ViewSpec) string {
+	switch {
+	case spec.History:
+		return "history"
+	case spec.Order == OrderShuffled:
+		return fmt.Sprintf("shuffled.%d", spec.Seed)
+	case spec.Order == "":
+		return string(OrderNewest)
+	default:
+		return string(spec.Order)
+	}
+}
+
+func pageToken(spec ViewSpec, c *Cursor) string {
+	if c == nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(fmt.Appendf(nil, "%s:%d:%d", orderTag(spec), c.Key, c.ID))
+}
+
+func parsePageToken(spec ViewSpec, token string) (*Cursor, error) {
+	if token == "" {
+		return nil, nil
+	}
+	bad := connect.NewError(connect.CodeInvalidArgument, errors.New("page_token is not valid"))
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return nil, bad
+	}
+	tag, rest, ok := strings.Cut(string(raw), ":")
+	if !ok {
+		return nil, bad
+	}
+	if tag != orderTag(spec) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("page_token is from another order; start again"))
+	}
+	var c Cursor
+	if _, err := fmt.Sscanf(rest, "%d:%d", &c.Key, &c.ID); err != nil {
+		return nil, bad
+	}
+	return &c, nil
+}
+
+// ListItems lists a view's items a page at a time, in the view's order,
+// narrowed by a query. Pages are keyset pages: an item that arrives or
+// changes while a client pages does not shift what the next page holds.
+func (s *FeedService) ListItems(ctx context.Context, req *connect.Request[feedpb.ListItemsRequest]) (*connect.Response[feedpb.ListItemsResponse], error) {
+	m := req.Msg
+	size := int(m.PageSize)
+	switch {
+	case size < 0:
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("page_size must not be negative"))
+	case size == 0:
+		size = 50
+	case size > feedViewLimit:
+		size = feedViewLimit
+	}
+	now := s.plugin.ctx.Now()
+	q, err := clientQuery(m.Query, now)
+	if err != nil {
+		return nil, err
+	}
+	store, err := s.store(ctx)
+	if err != nil {
+		return nil, err
+	}
+	spec, expr, err := resolveView(store, viewOf(m.View))
+	if err != nil {
+		return nil, err
+	}
+	expr = and(expr, q)
+	spec.HideRead = spec.HideRead || m.HideRead
+	spec.Unfinished = m.UnfinishedOnly
+	res := &feedpb.ListItemsResponse{}
+	if m.PageToken == "" {
+		if res.Total, err = store.CountView(spec, expr, now); err != nil {
+			return nil, err
+		}
+	}
+	if spec.After, err = parsePageToken(spec, m.PageToken); err != nil {
+		return nil, err
+	}
+	items, next, err := store.ViewPage(spec, expr, now, size)
+	if err != nil {
+		return nil, err
+	}
+	if res.Items, _, err = itemsPB(store, items); err != nil {
+		return nil, err
+	}
+	res.NextPageToken = pageToken(spec, next)
+	return connect.NewResponse(res), nil
+}
+
+// MarkAllRead marks every item of a view read and says how many it changed.
+func (s *FeedService) MarkAllRead(ctx context.Context, req *connect.Request[feedpb.MarkAllReadRequest]) (*connect.Response[feedpb.MarkAllReadResponse], error) {
+	store, err := s.store(ctx)
+	if err != nil {
+		return nil, err
+	}
+	spec, expr, err := resolveView(store, viewOf(req.Msg.View))
+	if err != nil {
+		return nil, err
+	}
+	n, err := store.MarkViewRead(spec, expr, s.plugin.ctx.Now())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&feedpb.MarkAllReadResponse{Changed: n}), nil
 }

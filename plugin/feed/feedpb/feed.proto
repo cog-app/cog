@@ -224,18 +224,20 @@ message View {
 }
 
 message ListItemsRequest {
-  View view = 1;
+  View view = 1; // unset is all
   string query = 2; // ANDed with the view
   bool hide_read = 3;
-  bool unfinished_only = 4; // play queues
-  int32 page_size = 5;
+  bool unfinished_only = 4; // play queues: audio and video not played to the end
+  int32 page_size = 5; // 0 is 50, at most 500
+  // From the last page's next_page_token. A token from another order (a
+  // playlist reordered or reshuffled since) is refused: start again.
   string page_token = 6;
 }
 
 message ListItemsResponse {
-  repeated Item items = 1;
-  string next_page_token = 2;
-  int64 total = 3;
+  repeated Item items = 1; // in the view's order: a playlist's own, history by last played, newest first otherwise
+  string next_page_token = 2; // empty on the last page
+  int64 total = 3; // every item that matches; counted on the first page only
 }
 
 message GetItemRequest {
@@ -267,7 +269,7 @@ message SetStarredRequest {
 }
 
 message MarkAllReadRequest {
-  View view = 1;
+  View view = 1; // unset is all
 }
 
 message MarkAllReadResponse {

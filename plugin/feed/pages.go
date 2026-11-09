@@ -569,65 +569,28 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 // neighbors are stable. List-page handlers apply their own HideRead via their
 // own ViewSpec — this function intentionally omits it.
 func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscription, error) {
-	const limit = feedViewLimit
-	var items []ItemWithSubscription
-	var err error
-	switch c.Kind {
-	case "starred":
-		items, err = store.ListItemsForView(ViewSpec{Starred: true}, limit)
-	case "folder":
-		items, err = store.ListItemsForView(ViewSpec{FolderID: validID(c.ID)}, limit)
-	case "sub":
-		items, err = store.ListItemsForView(ViewSpec{SubscriptionID: validID(c.ID)}, limit)
-	case "tag":
-		items, err = store.ListItemsForView(ViewSpec{TagName: c.Name}, limit)
-	case "playlist":
-		pl, perr := store.GetPlaylist(c.ID)
-		if perr != nil {
-			return nil, fmt.Errorf("resolve playlist %d: %w", c.ID, perr)
-		}
-		items, err = store.PlaylistItems(pl, ViewSpec{}, h.plugin.ctx.Now(), limit)
-	case "history":
-		items, err = store.PlaybackHistoryItems(limit)
-		if err != nil {
-			return nil, fmt.Errorf("resolve history: %w", err)
-		}
-	default: // all
-		var expr query.Expr
-		if c.Q != "" {
-			e, qerr := query.Parse(c.Q)
-			if qerr != nil {
-				// The list this came from showed the parse error and no
-				// items, so there is nothing to step through.
-				slog.Warn("feed: search query in view context does not parse", "query", c.Q, "err", qerr)
-				return nil, nil
-			}
-			expr = e
-		}
-		if expr != nil {
-			expr = query.ResolveRelativeDates(expr, *SearchSchema(), h.plugin.ctx.Now())
-		}
-		items, err = store.ListItemsForView(ViewSpec{
-			All: true, Query: expr, Schema: SearchSchema(),
-		}, limit)
-		if err != nil {
-			return nil, fmt.Errorf("resolve all items: %w", err)
-		}
-		if expr != nil && queryNeedsRefine(expr) {
-			items, err = store.Refine(items, expr)
-			if err != nil {
-				return nil, fmt.Errorf("resolve all items refine: %w", err)
-			}
+	v := View{Kind: ViewKind(c.Kind), ID: c.ID, Tag: c.Name}
+	if !v.Kind.Valid() {
+		v.Kind = ViewAll
+	}
+	spec, expr, err := store.ResolveView(v)
+	if err != nil {
+		return nil, fmt.Errorf("resolve view items: %w", err)
+	}
+	if v.Kind == ViewAll && c.Q != "" {
+		if expr, err = query.Parse(c.Q); err != nil {
+			// The list this came from showed the parse error and no
+			// items, so there is nothing to step through.
+			slog.Warn("feed: search query in view context does not parse", "query", c.Q, "err", err)
+			return nil, nil
 		}
 	}
+	items, err := store.ListItemsMatching(spec, expr, h.plugin.ctx.Now(), feedViewLimit)
 	if err != nil {
 		return nil, fmt.Errorf("resolve view items: %w", err)
 	}
 	return items, nil
 }
-
-// validID wraps an int64 as a valid sql.NullInt64.
-func validID(id int64) sql.NullInt64 { return sql.NullInt64{Int64: id, Valid: true} }
 
 // Index shows the main feed item list with optional query filtering.
 func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
@@ -670,21 +633,11 @@ func (h *Pages) searchItems(store *Store, q string, hideRead bool) (items []Item
 		if perr != nil {
 			return nil, perr.Error(), nil
 		}
-		expr = query.ResolveRelativeDates(e, *SearchSchema(), h.plugin.ctx.Now())
+		expr = e
 	}
-	items, err = store.ListItemsForView(ViewSpec{
-		All:      true,
-		HideRead: hideRead,
-		Query:    expr,
-		Schema:   SearchSchema(),
-	}, feedViewLimit)
+	items, err = store.ListItemsMatching(ViewSpec{All: true, HideRead: hideRead}, expr, h.plugin.ctx.Now(), feedViewLimit)
 	if err != nil {
 		return nil, "", fmt.Errorf("could not list items: %w", err)
-	}
-	if expr != nil && queryNeedsRefine(expr) {
-		if items, err = store.Refine(items, expr); err != nil {
-			return nil, "", fmt.Errorf("could not refine items: %w", err)
-		}
 	}
 	return items, "", nil
 }

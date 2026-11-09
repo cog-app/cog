@@ -82,12 +82,18 @@ the choices; this is what Cog needs for it, in the order the app needs it.
       FeedService is mounted; RPCs not yet written answer Unimplemented, and
       errors that are not `connect.Error`s are logged and sent as a generic
       Internal.
-- [ ] Pull the view logic out of the handlers so web and gRPC share it:
-      `resolveViewItems`, `refineItems`, `searchItems`, `buildItemNav` and the
-      sidebar counts become store/service methods taking a `ViewSpec`.
-- [ ] Keyset pagination for `ListItems` (`published_at, id`) — today
-      `ListItemsForView` takes only a limit — that still works when a query
-      needs the search refine step.
+- [x] The view logic is the store's, shared by web and gRPC: a `View` (the
+      web's view context, a client's `View`) resolves to a `ViewSpec` and a
+      playlist's query (`Store.ResolveView`), and `ViewPage`, `CountView` and
+      `MarkViewRead` list, count and mark it. The web's item navigation, search
+      and playlist pages list through them, so a search fills its 500 rather
+      than refining the newest 500 down. History is `ViewSpec.History`.
+      `buildItemNav` stays in the handlers: it only reads the list.
+- [x] Keyset pagination: every order is one integer key and the id, so a
+      page token is `(key, id)` and an arrival does not shift the next page; a
+      query that needs the refine step reads SQL a batch at a time until its
+      page is full (`TestListItemsPagesASparseSearch`). A token from another
+      order — a playlist reordered or reshuffled — is refused.
 - [x] `ViewSpec.Unfinished` for play queues: audio and video whose
       `playback` is not completed (`TestUnfinishedKeepsMediaNotPlayedToTheEnd`);
       `ListItems`' `unfinished_only` maps to it.
@@ -109,8 +115,9 @@ the choices; this is what Cog needs for it, in the order the app needs it.
 - [x] Item-state RPCs: `GetItem`, `SetRead`, `SetStarred`, `SetTags`
       (`TestItemStateOverGRPC`). Items are converted in batches — tags,
       playback and downloads one query each — ready for `ListItems`.
-- [ ] Browse RPCs: `ListItems`, `MarkAllRead` (wait on the shared view logic
-      above).
+- [x] Browse RPCs: `ListItems` (view, query, hide read, unfinished only,
+      pages, total on the first page) and `MarkAllRead` of a view
+      (`TestListItemsOverGRPC`, `TestMarkAllReadOverGRPC`).
 - [ ] Article bodies as Markdown (`ItemDetail.content_markdown`), converted
       from the sanitized HTML at ingest or on read, so every client renders
       them with SNGL's Markdown widget.

@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -120,24 +121,12 @@ func (s *Store) Refine(items []ItemWithSubscription, expr query.Expr) ([]ItemWit
 	return out, nil
 }
 
-// ListItemsMatching is ListItemsForView with spec.Query set to expr, refined
-// to an exact match when the SQL alone is a superset. Relative dates in expr
-// are taken from now.
+// ListItemsMatching lists up to limit items of spec matching expr, refined
+// to an exact match when the SQL alone is a superset; see ViewPage. Relative
+// dates in expr are taken from now.
 func (s *Store) ListItemsMatching(spec ViewSpec, expr query.Expr, now time.Time, limit int) ([]ItemWithSubscription, error) {
-	if expr != nil {
-		expr = query.ResolveRelativeDates(expr, *SearchSchema(), now)
-		spec.Query, spec.Schema = expr, SearchSchema()
-	}
-	items, err := s.ListItemsForView(spec, limit)
-	if err != nil {
-		return nil, err
-	}
-	if expr != nil && queryNeedsRefine(expr) {
-		if items, err = s.Refine(items, expr); err != nil {
-			return nil, err
-		}
-	}
-	return items, nil
+	items, _, err := s.ViewPage(spec, expr, now, limit)
+	return items, err
 }
 
 // playlistQuery parses a playlist's query. One that no longer parses — the
@@ -284,4 +273,238 @@ func (s *Store) Preview(expr query.Expr, now time.Time, sample, limit int) (int6
 		return 0, nil, fmt.Errorf("preview: %w", err)
 	}
 	return n, items, nil
+}
+
+// ViewKind is one of the lists the sidebar offers.
+type ViewKind string
+
+const (
+	ViewAll          ViewKind = "all"
+	ViewUnread       ViewKind = "unread"
+	ViewStarred      ViewKind = "starred"
+	ViewHistory      ViewKind = "history"
+	ViewFolder       ViewKind = "folder"
+	ViewSubscription ViewKind = "sub"
+	ViewTag          ViewKind = "tag"
+	ViewPlaylist     ViewKind = "playlist"
+)
+
+// Valid reports whether k is one of the kinds above.
+func (k ViewKind) Valid() bool {
+	switch k {
+	case ViewAll, ViewUnread, ViewStarred, ViewHistory, ViewFolder, ViewSubscription, ViewTag, ViewPlaylist:
+		return true
+	}
+	return false
+}
+
+// View names a list of items: what the web's view context and a client's
+// ListItems both ask for.
+type View struct {
+	Kind ViewKind
+	ID   int64  // the folder, subscription or playlist
+	Tag  string // the tag
+}
+
+// ResolveView turns a view into what lists it: a ViewSpec, and the
+// playlist's query for a playlist (nil otherwise). A playlist that is not
+// there is sql.ErrNoRows.
+func (s *Store) ResolveView(v View) (ViewSpec, query.Expr, error) {
+	switch v.Kind {
+	case ViewAll, "":
+		return ViewSpec{All: true}, nil, nil
+	case ViewUnread:
+		return ViewSpec{All: true, HideRead: true}, nil, nil
+	case ViewStarred:
+		return ViewSpec{Starred: true}, nil, nil
+	case ViewHistory:
+		return ViewSpec{History: true}, nil, nil
+	case ViewFolder:
+		return ViewSpec{FolderID: sql.NullInt64{Int64: v.ID, Valid: true}}, nil, nil
+	case ViewSubscription:
+		return ViewSpec{SubscriptionID: sql.NullInt64{Int64: v.ID, Valid: true}}, nil, nil
+	case ViewTag:
+		return ViewSpec{TagName: v.Tag}, nil, nil
+	case ViewPlaylist:
+		pl, err := s.GetPlaylist(v.ID)
+		if err != nil {
+			return ViewSpec{}, nil, err
+		}
+		return ViewSpec{All: true, Order: pl.Order, Seed: pl.ShuffleSeed}, playlistQuery(pl), nil
+	default:
+		return ViewSpec{}, nil, fmt.Errorf("unknown view %q", v.Kind)
+	}
+}
+
+// and is a AND b, either of which may be nil (every item).
+func and(a, b query.Expr) query.Expr {
+	switch {
+	case a == nil:
+		return b
+	case b == nil:
+		return a
+	default:
+		return &query.AndExpr{Left: a, Right: b}
+	}
+}
+
+// refineBatch is how many rows a page of a query that needs the refine step
+// reads from SQL at a time.
+const refineBatch = 200
+
+// ViewPage lists up to n items of spec matching expr, after spec.After, and
+// returns where the next page starts, or nil at the end. A query that needs
+// the refine step reads SQL in batches until the page is full, so a sparse
+// search still fills its pages. Relative dates in expr are taken from now.
+func (s *Store) ViewPage(spec ViewSpec, expr query.Expr, now time.Time, n int) ([]ItemWithSubscription, *Cursor, error) {
+	if expr != nil {
+		expr = query.ResolveRelativeDates(expr, *SearchSchema(), now)
+		spec.Query, spec.Schema = expr, SearchSchema()
+	}
+	if expr == nil || !queryNeedsRefine(expr) {
+		items, keys, err := s.listItems(spec, n+1)
+		if err != nil || len(items) <= n {
+			return items, nil, err
+		}
+		return items[:n], &keys[n-1], nil
+	}
+	var out []ItemWithSubscription
+	var outKeys []Cursor
+	for {
+		batch, keys, err := s.listItems(spec, refineBatch)
+		if err != nil {
+			return nil, nil, err
+		}
+		keyOf := make(map[int64]Cursor, len(keys))
+		for _, k := range keys {
+			keyOf[k.ID] = k
+		}
+		end := len(batch) < refineBatch
+		if len(keys) > 0 {
+			spec.After = &keys[len(keys)-1]
+		}
+		matched, err := s.Refine(batch, expr)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, it := range matched {
+			out = append(out, it)
+			outKeys = append(outKeys, keyOf[it.ID])
+		}
+		if len(out) > n {
+			return out[:n], &outKeys[n-1], nil
+		}
+		if end {
+			return out, nil, nil
+		}
+	}
+}
+
+// CountView counts spec's items matching expr: in one query when the SQL is
+// exact, by refining every candidate when it is not.
+func (s *Store) CountView(spec ViewSpec, expr query.Expr, now time.Time) (int64, error) {
+	if expr != nil {
+		expr = query.ResolveRelativeDates(expr, *SearchSchema(), now)
+		spec.Query, spec.Schema = expr, SearchSchema()
+	}
+	if expr != nil && queryNeedsRefine(expr) {
+		var n int64
+		spec.After = nil
+		for {
+			items, next, err := s.ViewPage(spec, nil, now, refineBatch)
+			if err != nil {
+				return 0, err
+			}
+			matched, err := s.Refine(items, expr)
+			if err != nil {
+				return 0, err
+			}
+			n += int64(len(matched))
+			if next == nil {
+				return n, nil
+			}
+			spec.After = next
+		}
+	}
+	joins, where, args, err := spec.from()
+	if err != nil {
+		return 0, fmt.Errorf("count view: %w", err)
+	}
+	q := `SELECT COUNT(*) FROM items i JOIN subscriptions s ON i.subscription_id = s.id` + joins
+	if len(where) > 0 {
+		q += " WHERE " + strings.Join(where, " AND ")
+	}
+	var n int64
+	if err := s.db.QueryRow(q, args...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count view: %w", err)
+	}
+	return n, nil
+}
+
+// MarkViewRead marks every unread item of spec matching expr read, and
+// returns how many it changed: in one statement when the SQL is exact, a
+// batch at a time when the query needs the refine step.
+func (s *Store) MarkViewRead(spec ViewSpec, expr query.Expr, now time.Time) (int64, error) {
+	spec.HideRead, spec.After = true, nil
+	if expr != nil {
+		expr = query.ResolveRelativeDates(expr, *SearchSchema(), now)
+	}
+	if expr != nil && queryNeedsRefine(expr) {
+		var n int64
+		// Each batch is read before it is marked, and marking takes it out
+		// of the unread items, so the next batch starts after it anyway.
+		for {
+			items, next, err := s.ViewPage(spec, expr, now, refineBatch)
+			if err != nil {
+				return 0, err
+			}
+			ids := make([]int64, len(items))
+			for i, it := range items {
+				ids[i] = it.ID
+			}
+			changed, err := s.markRead(ids)
+			if err != nil {
+				return 0, err
+			}
+			n += changed
+			if next == nil {
+				return n, nil
+			}
+			spec.After = next
+		}
+	}
+	spec.Query, spec.Schema = expr, SearchSchema()
+	joins, where, args, err := spec.from()
+	if err != nil {
+		return 0, fmt.Errorf("mark view read: %w", err)
+	}
+	q := `UPDATE items SET is_read = 1, fetched_at = unixepoch() WHERE id IN (
+		SELECT i.id FROM items i JOIN subscriptions s ON i.subscription_id = s.id` + joins +
+		" WHERE " + strings.Join(where, " AND ") + ")"
+	res, err := s.db.Exec(q, args...)
+	if err != nil {
+		return 0, fmt.Errorf("mark view read: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("mark view read rows affected: %w", err)
+	}
+	return n, nil
+}
+
+// markRead marks ids read and returns how many were unread.
+func (s *Store) markRead(ids []int64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	in, args := idArgs(ids)
+	res, err := s.db.Exec(`UPDATE items SET is_read = 1, fetched_at = unixepoch() WHERE is_read = 0 AND id IN (`+in+`)`, args...)
+	if err != nil {
+		return 0, fmt.Errorf("mark read: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("mark read rows affected: %w", err)
+	}
+	return n, nil
 }

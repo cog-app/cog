@@ -1482,14 +1482,16 @@ func (*View_PlaylistId) isView_Kind() {}
 
 type ListItemsRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	View           *View                  `protobuf:"bytes,1,opt,name=view,proto3" json:"view,omitempty"`
+	View           *View                  `protobuf:"bytes,1,opt,name=view,proto3" json:"view,omitempty"`   // unset is all
 	Query          string                 `protobuf:"bytes,2,opt,name=query,proto3" json:"query,omitempty"` // ANDed with the view
 	HideRead       bool                   `protobuf:"varint,3,opt,name=hide_read,json=hideRead,proto3" json:"hide_read,omitempty"`
-	UnfinishedOnly bool                   `protobuf:"varint,4,opt,name=unfinished_only,json=unfinishedOnly,proto3" json:"unfinished_only,omitempty"` // play queues
-	PageSize       int32                  `protobuf:"varint,5,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	PageToken      string                 `protobuf:"bytes,6,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	UnfinishedOnly bool                   `protobuf:"varint,4,opt,name=unfinished_only,json=unfinishedOnly,proto3" json:"unfinished_only,omitempty"` // play queues: audio and video not played to the end
+	PageSize       int32                  `protobuf:"varint,5,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`                   // 0 is 50, at most 500
+	// From the last page's next_page_token. A token from another order (a
+	// playlist reordered or reshuffled since) is refused: start again.
+	PageToken     string `protobuf:"bytes,6,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListItemsRequest) Reset() {
@@ -1566,9 +1568,9 @@ func (x *ListItemsRequest) GetPageToken() string {
 
 type ListItemsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Items         []*Item                `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
-	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
-	Total         int64                  `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
+	Items         []*Item                `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`                                        // in the view's order: a playlist's own, history by last played, newest first otherwise
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"` // empty on the last page
+	Total         int64                  `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`                                       // every item that matches; counted on the first page only
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1896,7 +1898,7 @@ func (x *SetStarredRequest) GetStarred() bool {
 
 type MarkAllReadRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	View          *View                  `protobuf:"bytes,1,opt,name=view,proto3" json:"view,omitempty"`
+	View          *View                  `protobuf:"bytes,1,opt,name=view,proto3" json:"view,omitempty"` // unset is all
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
