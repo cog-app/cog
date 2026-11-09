@@ -73,7 +73,7 @@ func TestBookmarksAPI_List(t *testing.T) {
 	}, alice.Auth).Status(200)
 
 	var listResp struct {
-		Bookmarks []map[string]any `json:"bookmarks"`
+		Bookmarks []map[string]any `json:"data"`
 	}
 	env.Get(t, bmAPI+"/bookmark", alice.Auth).Status(200).JSON(&listResp)
 	require.Equal(t, 2, len(listResp.Bookmarks))
@@ -177,7 +177,7 @@ func TestBookmarksAPI_ClickCount(t *testing.T) {
 
 	// List and check click count.
 	var resp struct {
-		Bookmarks []map[string]any `json:"bookmarks"`
+		Bookmarks []map[string]any `json:"data"`
 	}
 	env.Get(t, bmAPI+"/bookmark?url=https://example.com", alice.Auth).
 		Status(200).JSON(&resp)
@@ -292,7 +292,7 @@ func TestBookmarksImportExport(t *testing.T) {
 
 	// Verify via API.
 	var listResp struct {
-		Bookmarks []map[string]any `json:"bookmarks"`
+		Bookmarks []map[string]any `json:"data"`
 	}
 	env.Get(t, bmAPI+"/bookmark?limit=50", alice.Auth).Status(200).JSON(&listResp)
 	require.Equal(t, 2, len(listResp.Bookmarks))
