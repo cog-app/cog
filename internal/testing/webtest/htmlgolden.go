@@ -11,8 +11,10 @@ import (
 	"golang.org/x/net/html"
 )
 
-// Volatile values that differ between runs of an identical page. Everything
-// else the browser serialises is stable, including the ?v= cache-busting
+// Volatile values that differ between runs of an identical page. They are
+// masked in the page itself before a snapshot reads it (maskJS), so the golden
+// and the image show the same thing. Everything else the browser serialises
+// is stable, including the ?v= cache-busting
 // hashes on assets — those are content hashes, so a stylesheet edit changes
 // the DOM and a snapshot is re-taken. That is deliberate: it is what keeps the
 // screenshot honest about CSS changes, which never touch the markup.
@@ -45,13 +47,20 @@ func normalizeDOM(raw string) (string, error) {
 	var b strings.Builder
 	writeNode(&b, doc, 0)
 
-	out := b.String()
-	out = volatileTempRoot.ReplaceAllString(out, "«tmp»")
-	out = volatileLoopback.ReplaceAllString(out, "127.0.0.1:«port»")
-	out = volatileUUID.ReplaceAllString(out, "«uuid»")
-	out = volatileHex.ReplaceAllString(out, "«hex»")
+	return b.String(), nil
+}
 
-	return out, nil
+// volatileMasks replace the volatile values, in order: the temp directory
+// before the hex run its random suffix could contain. Go's syntax for these
+// patterns is also JavaScript's, which is where they run.
+var volatileMasks = []struct {
+	re   *regexp.Regexp
+	with string
+}{
+	{volatileTempRoot, "«tmp»"},
+	{volatileLoopback, "127.0.0.1:«port»"},
+	{volatileUUID, "«uuid»"},
+	{volatileHex, "«hex»"},
 }
 
 // voidElements have no closing tag in HTML, so they are always written in the
