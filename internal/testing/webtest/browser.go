@@ -541,14 +541,15 @@ func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
 		}
 	}
 
-	raw, err := b.page.HTML()
-	if err != nil {
-		t.Fatalf("webtest: snapshot html: %v", err)
-	}
-	dom, err := normalizeDOM(raw)
+	dom, unmask, err := b.maskedDOM()
 	if err != nil {
 		t.Fatalf("webtest: snapshot: %v", err)
 	}
+	defer func() {
+		if err := unmask(); err != nil {
+			t.Errorf("webtest: snapshot: %v", err)
+		}
+	}()
 
 	_, file, _, ok := runtime.Caller(1)
 	if !ok {
@@ -648,40 +649,53 @@ func (b *Browser) horizontalOverflow(t testing.TB) string {
 
 // captureImage writes a full-page screenshot. It exists so the DOM comparison
 // above never pays for one it does not need.
-//
-// The page is masked as its golden is while the picture is taken: a temp
-// directory or a port on screen would otherwise put a new image in every
-// commit that re-takes the snapshot, though the page had not changed. The
-// masks come off again before the test goes on, so nothing it does next
-// reads or submits a masked value.
 func (b *Browser) captureImage(path string) error {
-	masks := make([][2]string, len(volatileMasks))
-	for i, m := range volatileMasks {
-		masks[i] = [2]string{m.re.String(), m.with}
-	}
-	if _, err := b.page.Eval(maskJS, masks); err != nil {
-		return fmt.Errorf("mask page: %w", err)
-	}
-	buf, shotErr := b.page.Screenshot(true, nil)
-	if _, err := b.page.Eval(unmaskJS); err != nil {
-		return errors.Join(shotErr, fmt.Errorf("unmask page: %w", err))
-	}
-	if shotErr != nil {
-		return shotErr
+	buf, err := b.page.Screenshot(true, nil)
+	if err != nil {
+		return err
 	}
 
 	return os.WriteFile(path, buf, 0o644)
 }
 
-// maskJS applies the golden's masks, given as [regexp source, replacement]
-// pairs, to what the page shows: its text and the values in its fields. Go's
-// patterns here are also valid JavaScript ones. What it changed is kept for
-// unmaskJS.
+// maskedDOM masks the volatile values in the page and returns its golden
+// form, with a function that puts the page back. The golden and the image are
+// both taken while it is masked, so they say the same thing; restoring it
+// keeps what the test does next from reading or submitting a masked value.
+func (b *Browser) maskedDOM() (dom string, unmask func() error, err error) {
+	masks := make([][2]string, len(volatileMasks))
+	for i, m := range volatileMasks {
+		masks[i] = [2]string{m.re.String(), m.with}
+	}
+	if _, err := b.page.Eval(maskJS, masks); err != nil {
+		return "", nil, fmt.Errorf("mask page: %w", err)
+	}
+	unmask = func() error {
+		if _, err := b.page.Eval(unmaskJS); err != nil {
+			return fmt.Errorf("unmask page: %w", err)
+		}
+		return nil
+	}
+	raw, err := b.page.HTML()
+	if err != nil {
+		return "", nil, errors.Join(fmt.Errorf("snapshot html: %w", err), unmask())
+	}
+	dom, err = normalizeDOM(raw)
+	if err != nil {
+		return "", nil, errors.Join(err, unmask())
+	}
+	return dom, unmask, nil
+}
+
+// maskJS applies the masks, given as [regexp source, replacement] pairs, to
+// the page: its text, its attributes, and the values in its fields, which a
+// field the test typed into no longer keeps in its attribute. What it changed
+// is kept for unmaskJS.
 const maskJS = `(masks) => {
 	const res = masks.map(([src, with_]) => [new RegExp(src, "g"), with_]);
 	const mask = (s) => res.reduce((out, [re, with_]) => out.replace(re, with_), s);
 	const undo = [];
-	const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+	const walker = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_TEXT, {
 		acceptNode: (n) => n.parentElement && n.parentElement.closest("script, style")
 			? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
 	});
@@ -692,22 +706,26 @@ const maskJS = `(masks) => {
 			undo.push(() => { n.data = old; });
 		}
 	}
+	for (const el of document.querySelectorAll("*")) {
+		for (const a of [...el.attributes]) {
+			const old = a.value, masked = mask(old);
+			if (masked !== old) {
+				el.setAttribute(a.name, masked);
+				undo.push(() => el.setAttribute(a.name, old));
+			}
+		}
+	}
 	for (const el of document.querySelectorAll("input, textarea")) {
 		const old = el.value, masked = mask(old);
 		if (masked !== old) {
 			el.value = masked;
 			undo.push(() => { el.value = old; });
 		}
-		const ph = el.getAttribute("placeholder");
-		if (ph !== null && mask(ph) !== ph) {
-			el.setAttribute("placeholder", mask(ph));
-			undo.push(() => el.setAttribute("placeholder", ph));
-		}
 	}
 	window.__webtestUnmask = undo;
 }`
 
-// unmaskJS puts back what maskJS changed.
+// unmaskJS puts back what maskJS changed, last change first.
 const unmaskJS = `() => {
 	for (const f of (window.__webtestUnmask || []).reverse()) f();
 	delete window.__webtestUnmask;
