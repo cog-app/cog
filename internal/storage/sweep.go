@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"slices"
 	"time"
 )
 
@@ -167,8 +168,8 @@ func sweep(data *os.Root, dir string, cutoff time.Time) (int, error) {
 	}
 	// Deepest first, so a parent is empty by the time it is tried. One still
 	// holding something stays.
-	for i := len(dirs) - 1; i >= 0; i-- {
-		if err := r.Remove(dirs[i]); err != nil && !errors.Is(err, fs.ErrNotExist) && !isNotEmpty(err) {
+	for _, d := range slices.Backward(dirs) {
+		if err := r.Remove(d); err != nil && !errors.Is(err, fs.ErrNotExist) && !isNotEmpty(err) {
 			return removed, fmt.Errorf("storage: sweep %s: %w", dir, err)
 		}
 	}

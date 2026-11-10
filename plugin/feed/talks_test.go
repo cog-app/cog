@@ -40,9 +40,9 @@ func talksServer(t *testing.T) *httptest.Server {
 		"/conf/2026/tag": `<html><body><h1>Faith</h1><p class="author-name">Elder A</p>
 			<audio><source src="/media/faith.mp3"></audio><video src="/media/faith.mp4"></video></body></html>`,
 		"/conf/2026/mp3-link": `<html><body><h1>Hope</h1><a href="https://cdn.example.com/hope.mp3">Download</a></body></html>`,
-		"/conf/2026/state": `<html><body><h1>Charity</h1><script>window.__INITIAL_STATE__="` + state + `";</script></body></html>`,
-		"/conf/2026/none":  `<html><body><h1>Silence</h1><p>Transcript only.</p></body></html>`,
-		"/conf/2026/xss":   `<html><body><h1>&lt;img src=x onerror=alert(1)&gt;</h1><video src="/media/x.mp4"></video></body></html>`,
+		"/conf/2026/state":    `<html><body><h1>Charity</h1><script>window.__INITIAL_STATE__="` + state + `";</script></body></html>`,
+		"/conf/2026/none":     `<html><body><h1>Silence</h1><p>Transcript only.</p></body></html>`,
+		"/conf/2026/xss":      `<html><body><h1>&lt;img src=x onerror=alert(1)&gt;</h1><video src="/media/x.mp4"></video></body></html>`,
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, ok := pages[r.URL.Path]

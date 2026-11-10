@@ -63,8 +63,6 @@ func insertItem(t *testing.T, db *sql.DB, subID int64, guid, typ, mediaURL strin
 	return id
 }
 
-func i64(v int64) *int64 { return &v }
-
 func TestSubscriptions(t *testing.T) {
 	env, auth, db := setup(t)
 
@@ -148,7 +146,7 @@ func TestEpisodeActions(t *testing.T) {
 	// A play matched by GUID, though the client's episode URL differs.
 	env.PostJSON(t, api+"/episode_action/create", []episodeAction{{
 		Podcast: feedURL, Episode: "https://cdn.example/ep1.mp3?track=1", GUID: "ep1", Action: "PLAY",
-		Timestamp: "2026-11-01T10:00:00", Started: i64(0), Position: i64(120), Total: i64(600),
+		Timestamp: "2026-11-01T10:00:00", Started: new(int64(0)), Position: new(int64(120)), Total: new(int64(600)),
 	}}, auth).Status(200)
 	progress, completed, _ := playback(ep1)
 	require.Equal(t, 120.0, progress)
@@ -157,7 +155,7 @@ func TestEpisodeActions(t *testing.T) {
 	// An older play from another device does not rewind it.
 	env.PostJSON(t, api+"/episode_action/create", []episodeAction{{
 		Podcast: feedURL, Episode: "https://pod.example/ep1.mp3", Action: "play",
-		Timestamp: "2026-10-01T10:00:00", Position: i64(30), Total: i64(600),
+		Timestamp: "2026-10-01T10:00:00", Position: new(int64(30)), Total: new(int64(600)),
 	}}, auth).Status(200)
 	progress, _, _ = playback(ep1)
 	require.Equal(t, 120.0, progress)
@@ -165,7 +163,7 @@ func TestEpisodeActions(t *testing.T) {
 	// Finished: position == total.
 	env.PostJSON(t, api+"/episode_action/create", []episodeAction{{
 		Podcast: feedURL, Episode: "https://pod.example/ep2.mp3", Action: "play",
-		Timestamp: "2026-11-01T11:00:00", Position: i64(300), Total: i64(300),
+		Timestamp: "2026-11-01T11:00:00", Position: new(int64(300)), Total: new(int64(300)),
 	}}, auth).Status(200)
 	_, completed, read := playback(ep2)
 	require.True(t, completed)
@@ -216,7 +214,7 @@ func TestEpisodeActions(t *testing.T) {
 func TestEpisodeActions_BadRequests(t *testing.T) {
 	env, auth, _ := setup(t)
 	for _, body := range [][]episodeAction{
-		{{Podcast: "https://p.example/f", Action: "play", Position: i64(1)}},
+		{{Podcast: "https://p.example/f", Action: "play", Position: new(int64(1))}},
 		{{Podcast: "https://p.example/f", Episode: "https://p.example/e", Action: "skip"}},
 		{{Podcast: "https://p.example/f", Episode: "https://p.example/e", Action: "play"}},
 		{{Podcast: "https://p.example/f", Episode: "https://p.example/e", Action: "new", Timestamp: "yesterday"}},
