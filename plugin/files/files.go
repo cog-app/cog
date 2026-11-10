@@ -343,6 +343,10 @@ func (p *Plugin) ensureDir(username, dirPath string) error {
 
 // Upload writes a file to disk and records its metadata.
 func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta, error) {
+	return p.upload(username, filePath, content, nil)
+}
+
+func (p *Plugin) upload(username, filePath string, content io.Reader, pre Precondition) (*FileMeta, error) {
 	filePath = normalizePath(filePath)
 	defer p.lockPath(username, filePath)()
 	parentPath := filepath.Dir(filePath)
@@ -353,15 +357,24 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 		return nil, err
 	}
 
+	old, err := currentMeta(db, filePath)
+	if err != nil {
+		return nil, err
+	}
+	// Before a byte is read: a client told no is told before it sends the
+	// file, when it waits for 100 Continue.
+	if pre != nil {
+		if err := pre(old); err != nil {
+			return nil, err
+		}
+	}
 	// The quota is checked as the bytes arrive, against the room left plus
 	// what the file replaces, so an edit near the quota is not refused for
 	// counting both, and a write that would go over fails before it
 	// replaces anything: Put writes beside the file and renames.
 	var replaced int64
-	if old, err := getByPath(db, filePath); err == nil && !old.IsDir {
+	if old != nil && !old.IsDir {
 		replaced = old.Size
-	} else if err != nil && !errors.Is(err, ErrNotFound) {
-		return nil, err
 	}
 	// The bytes are drawn from the budget writers in progress share as they
 	// arrive, so uploads at once cannot each take the whole of what is left.
@@ -647,6 +660,10 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 	// What the rename replaced on disk is gone; its rows would collide.
 	if newPath != oldPath {
 		if err := forgetRows(tx, newPath); err != nil {
+			return nil, err
+		}
+		// A lock covers what is at a path, and does not move with it.
+		if err := forgetLocks(tx, oldPath); err != nil {
 			return nil, err
 		}
 	}

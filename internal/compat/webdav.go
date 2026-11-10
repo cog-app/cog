@@ -69,27 +69,63 @@ func (h *WebDAVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet, http.MethodHead:
 		h.handleGet(w, r, u, filePath)
 	case http.MethodPut:
-		h.handlePut(w, r, u, filePath)
+		h.handlePut(w, r, u, urlUserID, filePath)
 	case http.MethodDelete:
-		h.handleDelete(w, r, u, filePath)
+		h.handleDelete(w, r, u, urlUserID, filePath)
 	case "MKCOL":
-		h.handleMkcol(w, r, u, filePath)
+		h.handleMkcol(w, r, u, urlUserID, filePath)
 	case "MOVE":
-		h.handleMove(w, r, u, filePath)
+		h.handleMove(w, r, u, urlUserID, filePath)
 	case "COPY":
-		h.handleCopy(w, r, u, filePath)
+		h.handleCopy(w, r, u, urlUserID, filePath)
 	case "PROPPATCH":
 		h.handleProppatch(w, r, u, urlUserID, filePath)
 	case "REPORT":
 		h.handleReport(w, r, u, urlUserID, filePath)
 	case "LOCK":
-		h.handleLock(w, r, u, filePath)
+		h.handleLock(w, r, u, urlUserID, filePath)
 	case "UNLOCK":
-		h.handleUnlock(w, r, u, filePath)
+		h.handleUnlock(w, r, u, urlUserID, filePath)
+	case http.MethodOptions:
+		w.Header().Set("DAV", davCompliance)
+		w.Header().Set("Allow", davAllow)
+		// Office edits in place over WebDAV only when told it may.
+		w.Header().Set("MS-Author-Via", "DAV")
+		w.WriteHeader(http.StatusOK)
 	default:
-		w.Header().Set("DAV", "1, 3, extended-mkcol")
+		w.Header().Set("DAV", davCompliance)
+		w.Header().Set("Allow", davAllow)
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+// davAllow is the methods the files tree answers.
+const davAllow = "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, PROPPATCH, MKCOL, MOVE, COPY, REPORT, LOCK, UNLOCK"
+
+// conditions starts checking a request's conditional headers and lock tokens,
+// answering 400 when its If header cannot be read.
+func (h *WebDAVHandler) conditions(w http.ResponseWriter, r *http.Request, u *user.User) (*davConditions, bool) {
+	c, err := newDAVConditions(r, h.Files, u.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return nil, false
+	}
+	return c, true
+}
+
+// writeError answers the error of a write: a failed condition or a missing
+// lock token with its status, a missing file with 404, and anything else as
+// a server error, logged as what.
+func (h *WebDAVHandler) writeError(w http.ResponseWriter, r *http.Request, u *user.User, urlUserID, what string, err error) {
+	if writeCondError(w, "/remote.php/dav/files/"+urlUserID, err) {
+		return
+	}
+	if errors.Is(err, files.ErrNotFound) {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	h.Log.Error(what, "user", u.Username, "path", r.URL.Path, "err", err)
+	httperr.Internal(w, r, err)
 }
 
 // extractPath strips the WebDAV prefix to get the user ID and file path.
@@ -164,11 +200,21 @@ func (h *WebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, u
 		httperr.Internal(w, r, err)
 		return
 	}
+	// One query for the locks of the target and everything it lists.
+	listing := depth == "1" && rootMeta.IsDir
+	locks, err := h.Files.LocksFor(u.Username, filePath, listing)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	now := h.Clock()
 	href := davHref(hrefPrefix, filePath, rootMeta.IsDir)
-	entries = append(entries, metaToEntry(href, rootMeta, u.Username, displayName, readOnly(filePath)))
+	entry := metaToEntry(href, rootMeta, u.Username, displayName, readOnly(filePath))
+	entry.Propstat.Prop.LockDiscovery = lockDiscoveryFor(hrefPrefix, filePath, locks, now)
+	entries = append(entries, entry)
 
 	// If depth=1 and target is a directory, list children
-	if depth == "1" && rootMeta.IsDir {
+	if listing {
 		children, err := h.Files.List(u.Username, filePath)
 		if err != nil {
 			h.Log.Error("PROPFIND list", "user", u.Username, "path", filePath, "err", err)
@@ -178,11 +224,13 @@ func (h *WebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, u
 		for i := range children {
 			child := &children[i]
 			childHref := davHref(hrefPrefix, child.Path, child.IsDir)
-			entries = append(entries, metaToEntry(childHref, child, u.Username, displayName, readOnly(child.Path)))
+			entry := metaToEntry(childHref, child, u.Username, displayName, readOnly(child.Path))
+			entry.Propstat.Prop.LockDiscovery = lockDiscoveryFor(hrefPrefix, child.Path, locks, now)
+			entries = append(entries, entry)
 		}
 	}
 
-	w.Header().Set("DAV", "1, 3, extended-mkcol")
+	w.Header().Set("DAV", davCompliance)
 	writeMultiStatus(h.Log, w, entries)
 }
 
@@ -192,7 +240,7 @@ func (h *WebDAVHandler) handleGet(w http.ResponseWriter, r *http.Request, u *use
 	if filePath == "/" {
 		// HEAD on root is a presence check; GET on a directory is not supported.
 		if r.Method == http.MethodHead {
-			w.Header().Set("DAV", "1, 3, extended-mkcol")
+			w.Header().Set("DAV", davCompliance)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -211,7 +259,7 @@ func (h *WebDAVHandler) handleGet(w http.ResponseWriter, r *http.Request, u *use
 			h.Log.Error("GET", "user", u.Username, "path", filePath, "err", merr)
 			w.WriteHeader(http.StatusInternalServerError)
 		case m.IsDir && r.Method == http.MethodHead:
-			w.Header().Set("DAV", "1, 3, extended-mkcol")
+			w.Header().Set("DAV", davCompliance)
 			w.WriteHeader(http.StatusOK)
 		case m.IsDir:
 			w.WriteHeader(http.StatusNotFound)
@@ -263,21 +311,33 @@ func davHref(prefix, p string, isDir bool) string {
 
 // --- PUT ---
 
-func (h *WebDAVHandler) handlePut(w http.ResponseWriter, r *http.Request, u *user.User, filePath string) {
+func (h *WebDAVHandler) handlePut(w http.ResponseWriter, r *http.Request, u *user.User, urlUserID, filePath string) {
 	if filePath == "/" {
 		http.Error(w, "cannot PUT to root", http.StatusBadRequest)
 		return
 	}
+	c, ok := h.conditions(w, r, u)
+	if !ok {
+		return
+	}
 
-	meta, err := h.Files.Upload(u.Username, filePath, r.Body)
+	// The conditions are checked against what the upload replaces, while
+	// no other write can change it: If-Match is how a sync client avoids
+	// overwriting an edit it has not seen.
+	meta, err := h.Files.UploadIf(u.Username, filePath, r.Body, func(cur *files.FileMeta) error {
+		scope := lockScope{member: cur == nil}
+		if err := c.check(filePath, cur, scope); err != nil {
+			return err
+		}
+		return c.requireTokens(filePath, scope)
+	})
 	if errors.Is(err, cogplugin.ErrQuotaExceeded) {
 		// What clients show as "not enough space" rather than a failure.
 		http.Error(w, err.Error(), http.StatusInsufficientStorage)
 		return
 	}
 	if err != nil {
-		h.Log.Error("PUT", "user", u.Username, "path", filePath, "err", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		h.writeError(w, r, u, urlUserID, "PUT", err)
 		return
 	}
 
@@ -288,18 +348,28 @@ func (h *WebDAVHandler) handlePut(w http.ResponseWriter, r *http.Request, u *use
 
 // --- DELETE ---
 
-func (h *WebDAVHandler) handleDelete(w http.ResponseWriter, _ *http.Request, u *user.User, filePath string) {
+func (h *WebDAVHandler) handleDelete(w http.ResponseWriter, r *http.Request, u *user.User, urlUserID, filePath string) {
 	if filePath == "/" {
 		http.Error(w, "cannot delete root", http.StatusForbidden)
 		return
 	}
-
-	if err := h.Files.Delete(u.Username, filePath); errors.Is(err, files.ErrNotFound) {
-		w.WriteHeader(http.StatusNotFound)
+	c, ok := h.conditions(w, r, u)
+	if !ok {
 		return
-	} else if err != nil {
-		h.Log.Error("DELETE", "user", u.Username, "path", filePath, "err", err)
-		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	err := h.Files.DeleteIf(u.Username, filePath, func(cur *files.FileMeta) error {
+		scope := lockScope{member: true, beneath: true}
+		if err := c.check(filePath, cur, scope); err != nil {
+			return err
+		}
+		if cur == nil {
+			return files.ErrNotFound
+		}
+		return c.requireTokens(filePath, scope)
+	})
+	if err != nil {
+		h.writeError(w, r, u, urlUserID, "DELETE", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -307,14 +377,34 @@ func (h *WebDAVHandler) handleDelete(w http.ResponseWriter, _ *http.Request, u *
 
 // --- MKCOL ---
 
-func (h *WebDAVHandler) handleMkcol(w http.ResponseWriter, _ *http.Request, u *user.User, filePath string) {
+func (h *WebDAVHandler) handleMkcol(w http.ResponseWriter, r *http.Request, u *user.User, urlUserID, filePath string) {
 	if filePath == "/" {
 		http.Error(w, "cannot MKCOL root", http.StatusMethodNotAllowed)
 		return
 	}
-
-	_, err := h.Files.CreateDir(u.Username, filePath)
+	c, ok := h.conditions(w, r, u)
+	if !ok {
+		return
+	}
+	cur, err := h.Files.GetByPath(u.Username, filePath)
+	if err != nil && !errors.Is(err, files.ErrNotFound) {
+		h.writeError(w, r, u, urlUserID, "MKCOL", err)
+		return
+	}
 	if err != nil {
+		cur = nil
+	}
+	scope := lockScope{member: true}
+	if err := c.check(filePath, cur, scope); err != nil {
+		h.writeError(w, r, u, urlUserID, "MKCOL", err)
+		return
+	}
+	if err := c.requireTokens(filePath, scope); err != nil {
+		h.writeError(w, r, u, urlUserID, "MKCOL", err)
+		return
+	}
+
+	if _, err := h.Files.CreateDir(u.Username, filePath); err != nil {
 		h.Log.Warn("MKCOL", "user", u.Username, "path", filePath, "err", err)
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
@@ -324,7 +414,7 @@ func (h *WebDAVHandler) handleMkcol(w http.ResponseWriter, _ *http.Request, u *u
 
 // --- MOVE ---
 
-func (h *WebDAVHandler) handleMove(w http.ResponseWriter, r *http.Request, u *user.User, filePath string) {
+func (h *WebDAVHandler) handleMove(w http.ResponseWriter, r *http.Request, u *user.User, urlUserID, filePath string) {
 	if r.Header.Get("Destination") == "" {
 		http.Error(w, "Destination header required", http.StatusBadRequest)
 		return
@@ -355,8 +445,37 @@ func (h *WebDAVHandler) handleMove(w http.ResponseWriter, r *http.Request, u *us
 		http.Error(w, "destination exists", http.StatusPreconditionFailed)
 		return
 	}
+	c, ok := h.conditions(w, r, u)
+	if !ok {
+		return
+	}
 
-	if _, err := h.Files.Rename(u.Username, filePath, newPath); err != nil {
+	// The conditional headers are about the source, the request's own
+	// resource. The source leaves its folder and the destination joins one,
+	// and what each covers goes with it, so both need their locks' tokens.
+	_, err = h.Files.RenameIf(u.Username, filePath, newPath, func(src, dst *files.FileMeta) error {
+		srcScope := lockScope{member: true, beneath: true}
+		dstScope := lockScope{member: true, beneath: dst != nil}
+		c.also(newPath, dstScope)
+		if err := c.check(filePath, src, srcScope); err != nil {
+			return err
+		}
+		if src == nil {
+			return files.ErrNotFound
+		}
+		if err := c.requireTokens(filePath, srcScope); err != nil {
+			return err
+		}
+		return c.requireTokens(newPath, dstScope)
+	})
+	if writeCondError(w, "/remote.php/dav/files/"+urlUserID, err) {
+		return
+	}
+	if errors.Is(err, files.ErrNotFound) {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if err != nil {
 		h.Log.Warn("MOVE", "user", u.Username, "from", filePath, "to", newPath, "err", err)
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
@@ -370,7 +489,7 @@ func (h *WebDAVHandler) handleMove(w http.ResponseWriter, r *http.Request, u *us
 
 // --- COPY ---
 
-func (h *WebDAVHandler) handleCopy(w http.ResponseWriter, r *http.Request, u *user.User, srcPath string) {
+func (h *WebDAVHandler) handleCopy(w http.ResponseWriter, r *http.Request, u *user.User, urlUserID, srcPath string) {
 	if r.Header.Get("Destination") == "" {
 		http.Error(w, "Destination header required", http.StatusBadRequest)
 		return
@@ -417,6 +536,21 @@ func (h *WebDAVHandler) handleCopy(w http.ResponseWriter, r *http.Request, u *us
 	if err != nil {
 		h.Log.Error("COPY: look up source", "user", u.Username, "path", srcPath, "err", err)
 		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	// A copy changes only the destination, so only its locks need tokens.
+	c, ok := h.conditions(w, r, u)
+	if !ok {
+		return
+	}
+	dstScope := lockScope{member: true, beneath: exists}
+	c.also(newPath, dstScope)
+	if err := c.check(srcPath, srcMeta, lockScope{}); err != nil {
+		h.writeError(w, r, u, urlUserID, "COPY", err)
+		return
+	}
+	if err := c.requireTokens(newPath, dstScope); err != nil {
+		h.writeError(w, r, u, urlUserID, "COPY", err)
 		return
 	}
 
@@ -616,24 +750,26 @@ type propstat struct {
 }
 
 type prop struct {
-	DisplayName        string        `xml:"D:displayname"`
-	ContentType        string        `xml:"D:getcontenttype,omitempty"`
-	ContentLength      int64         `xml:"D:getcontentlength"`
-	ETag               string        `xml:"D:getetag,omitempty"`
-	LastModified       string        `xml:"D:getlastmodified,omitempty"`
-	ResourceType       *resourceType `xml:"D:resourcetype"`
-	OCId               string        `xml:"oc:id"`
-	OCFileID           string        `xml:"oc:fileid"`
-	OCPermissions      string        `xml:"oc:permissions"`
-	OCSize             int64         `xml:"oc:size"`
-	NCHasPreview       bool          `xml:"nc:has-preview"`
-	OCFavorite         int           `xml:"oc:favorite"`
-	OCCommentsCount    int           `xml:"oc:comments-count"`
-	OCCommentsUnread   int           `xml:"oc:comments-unread"`
-	NCMountType        string        `xml:"nc:mount-type"`
-	OCOwnerID          string        `xml:"oc:owner-id"`
-	OCOwnerDisplayName string        `xml:"oc:owner-display-name"`
-	NCSharees          *struct{}     `xml:"nc:sharees"`
+	DisplayName        string         `xml:"D:displayname"`
+	ContentType        string         `xml:"D:getcontenttype,omitempty"`
+	ContentLength      int64          `xml:"D:getcontentlength"`
+	ETag               string         `xml:"D:getetag,omitempty"`
+	LastModified       string         `xml:"D:getlastmodified,omitempty"`
+	ResourceType       *resourceType  `xml:"D:resourcetype"`
+	OCId               string         `xml:"oc:id"`
+	OCFileID           string         `xml:"oc:fileid"`
+	OCPermissions      string         `xml:"oc:permissions"`
+	OCSize             int64          `xml:"oc:size"`
+	NCHasPreview       bool           `xml:"nc:has-preview"`
+	OCFavorite         int            `xml:"oc:favorite"`
+	OCCommentsCount    int            `xml:"oc:comments-count"`
+	OCCommentsUnread   int            `xml:"oc:comments-unread"`
+	NCMountType        string         `xml:"nc:mount-type"`
+	OCOwnerID          string         `xml:"oc:owner-id"`
+	OCOwnerDisplayName string         `xml:"oc:owner-display-name"`
+	NCSharees          *struct{}      `xml:"nc:sharees"`
+	SupportedLock      *supportedLock `xml:"D:supportedlock,omitempty"`
+	LockDiscovery      *lockDiscovery `xml:"D:lockdiscovery,omitempty"`
 }
 
 type resourceType struct {
@@ -662,6 +798,27 @@ func (h *WebDAVHandler) handleProppatch(w http.ResponseWriter, r *http.Request, 
 	var req proppatchReq
 	if err := xml.Unmarshal(body, &req); err != nil {
 		http.Error(w, "parse xml", http.StatusBadRequest)
+		return
+	}
+	c, ok := h.conditions(w, r, u)
+	if !ok {
+		return
+	}
+	cur, err := h.Files.GetByPath(u.Username, filePath)
+	if errors.Is(err, files.ErrNotFound) {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.writeError(w, r, u, urlUserID, "PROPPATCH", err)
+		return
+	}
+	if err := c.check(filePath, cur, lockScope{}); err != nil {
+		h.writeError(w, r, u, urlUserID, "PROPPATCH", err)
+		return
+	}
+	if err := c.requireTokens(filePath, lockScope{}); err != nil {
+		h.writeError(w, r, u, urlUserID, "PROPPATCH", err)
 		return
 	}
 
@@ -763,36 +920,6 @@ func writeMultiStatus(log *slog.Logger, w http.ResponseWriter, entries []propfin
 	}
 }
 
-// --- LOCK (stub) ---
-
-func (h *WebDAVHandler) handleLock(w http.ResponseWriter, r *http.Request, u *user.User, filePath string) {
-	// Stub: return a valid lock-discovery response so clients think locking succeeded.
-	// username and filePath are user-controlled; escape both for XML output.
-	token := "opaquelocktoken:stub-" + u.Username + "-" + filePath
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	w.Header().Set("Lock-Token", "<"+token+">")
-	w.WriteHeader(http.StatusOK)
-	io.WriteString(w, xml.Header)
-	fmt.Fprintf(w, `<D:prop xmlns:D="DAV:">
-  <D:lockdiscovery>
-    <D:activelock>
-      <D:locktype><D:write/></D:locktype>
-      <D:lockscope><D:exclusive/></D:lockscope>
-      <D:depth>0</D:depth>
-      <D:owner><D:href>%s</D:href></D:owner>
-      <D:timeout>Second-1800</D:timeout>
-      <D:locktoken><D:href>%s</D:href></D:locktoken>
-    </D:activelock>
-  </D:lockdiscovery>
-</D:prop>`, xmlEscape(u.Username), xmlEscape(token))
-}
-
-// --- UNLOCK (stub) ---
-
-func (h *WebDAVHandler) handleUnlock(w http.ResponseWriter, _ *http.Request, _ *user.User, _ string) {
-	w.WriteHeader(http.StatusNoContent)
-}
-
 func metaToEntry(href string, meta *files.FileMeta, ownerID, ownerDisplayName string, readOnly bool) propfindEntry {
 	var rt resourceType
 	if meta.IsDir {
@@ -835,6 +962,7 @@ func metaToEntry(href string, meta *files.FileMeta, ownerID, ownerDisplayName st
 				OCOwnerID:          ownerID,
 				OCOwnerDisplayName: ownerDisplayName,
 				NCSharees:          &struct{}{},
+				SupportedLock:      supportedLocks,
 			},
 		},
 	}

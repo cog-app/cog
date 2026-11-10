@@ -358,9 +358,26 @@ func (h *ChunkedUploadHandler) handleMove(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	meta, err := h.Files.Upload(u.Username, destPath, combined)
+	// The Nextcloud desktop client sends the ETag it last saw of the file,
+	// in an If header tagged with the destination, so an edit made since is
+	// not overwritten; and the file may be locked.
+	c, err := newDAVConditions(r, h.Files, u.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	meta, err := h.Files.UploadIf(u.Username, destPath, combined, func(cur *files.FileMeta) error {
+		scope := lockScope{member: cur == nil}
+		if err := c.check(destPath, cur, scope); err != nil {
+			return err
+		}
+		return c.requireTokens(destPath, scope)
+	})
 	if errors.Is(err, cogplugin.ErrQuotaExceeded) {
 		http.Error(w, err.Error(), http.StatusInsufficientStorage)
+		return
+	}
+	if writeCondError(w, "/remote.php/dav/files/"+u.ID, err) {
 		return
 	}
 	if err != nil {
