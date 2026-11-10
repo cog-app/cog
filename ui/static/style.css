@@ -5306,6 +5306,24 @@ html:has(dialog.gallery-lightbox[open]) {
 .bm-row .list-row-meta .badge {
   margin-right: var(--space-1);
 }
+/* A subfolder in the sidebar is indented by its depth, up to four levels. */
+.sidebar-item.bm-depth-1 {
+  padding-left: calc(var(--space-3) + 0.85rem);
+}
+.sidebar-item.bm-depth-2 {
+  padding-left: calc(var(--space-3) + 1.7rem);
+}
+.sidebar-item.bm-depth-3 {
+  padding-left: calc(var(--space-3) + 2.55rem);
+}
+.sidebar-item.bm-depth-4 {
+  padding-left: calc(var(--space-3) + 3.4rem);
+}
+/* A folder's folders come before its bookmarks, as a list of their own. */
+.bm-subfolders .list-row > svg {
+  flex: none;
+  color: var(--color-text-muted);
+}
 /* A long folder name wraps inside its chip instead of widening the form. */
 .bm-folder-picker .chip {
   white-space: normal;
