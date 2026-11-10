@@ -2,6 +2,7 @@ package webtest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -647,14 +648,70 @@ func (b *Browser) horizontalOverflow(t testing.TB) string {
 
 // captureImage writes a full-page screenshot. It exists so the DOM comparison
 // above never pays for one it does not need.
+//
+// The page is masked as its golden is while the picture is taken: a temp
+// directory or a port on screen would otherwise put a new image in every
+// commit that re-takes the snapshot, though the page had not changed. The
+// masks come off again before the test goes on, so nothing it does next
+// reads or submits a masked value.
 func (b *Browser) captureImage(path string) error {
-	buf, err := b.page.Screenshot(true, nil)
-	if err != nil {
-		return err
+	masks := make([][2]string, len(volatileMasks))
+	for i, m := range volatileMasks {
+		masks[i] = [2]string{m.re.String(), m.with}
+	}
+	if _, err := b.page.Eval(maskJS, masks); err != nil {
+		return fmt.Errorf("mask page: %w", err)
+	}
+	buf, shotErr := b.page.Screenshot(true, nil)
+	if _, err := b.page.Eval(unmaskJS); err != nil {
+		return errors.Join(shotErr, fmt.Errorf("unmask page: %w", err))
+	}
+	if shotErr != nil {
+		return shotErr
 	}
 
 	return os.WriteFile(path, buf, 0o644)
 }
+
+// maskJS applies the golden's masks, given as [regexp source, replacement]
+// pairs, to what the page shows: its text and the values in its fields. Go's
+// patterns here are also valid JavaScript ones. What it changed is kept for
+// unmaskJS.
+const maskJS = `(masks) => {
+	const res = masks.map(([src, with_]) => [new RegExp(src, "g"), with_]);
+	const mask = (s) => res.reduce((out, [re, with_]) => out.replace(re, with_), s);
+	const undo = [];
+	const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+		acceptNode: (n) => n.parentElement && n.parentElement.closest("script, style")
+			? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+	});
+	for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+		const old = n.data, masked = mask(old);
+		if (masked !== old) {
+			n.data = masked;
+			undo.push(() => { n.data = old; });
+		}
+	}
+	for (const el of document.querySelectorAll("input, textarea")) {
+		const old = el.value, masked = mask(old);
+		if (masked !== old) {
+			el.value = masked;
+			undo.push(() => { el.value = old; });
+		}
+		const ph = el.getAttribute("placeholder");
+		if (ph !== null && mask(ph) !== ph) {
+			el.setAttribute("placeholder", mask(ph));
+			undo.push(() => el.setAttribute("placeholder", ph));
+		}
+	}
+	window.__webtestUnmask = undo;
+}`
+
+// unmaskJS puts back what maskJS changed.
+const unmaskJS = `() => {
+	for (const f of (window.__webtestUnmask || []).reverse()) f();
+	delete window.__webtestUnmask;
+}`
 
 // AcceptConfirms overrides window.confirm to always return true.
 // This is needed for hx-confirm delete buttons.

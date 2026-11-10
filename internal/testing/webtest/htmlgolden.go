@@ -46,12 +46,23 @@ func normalizeDOM(raw string) (string, error) {
 	writeNode(&b, doc, 0)
 
 	out := b.String()
-	out = volatileTempRoot.ReplaceAllString(out, "«tmp»")
-	out = volatileLoopback.ReplaceAllString(out, "127.0.0.1:«port»")
-	out = volatileUUID.ReplaceAllString(out, "«uuid»")
-	out = volatileHex.ReplaceAllString(out, "«hex»")
-
+	for _, m := range volatileMasks {
+		out = m.re.ReplaceAllString(out, m.with)
+	}
 	return out, nil
+}
+
+// volatileMasks replace the volatile values, in order: the temp directory
+// before the hex run its random suffix could contain. The screenshot applies
+// the same masks to the page, so the image shows what the golden says.
+var volatileMasks = []struct {
+	re   *regexp.Regexp
+	with string
+}{
+	{volatileTempRoot, "«tmp»"},
+	{volatileLoopback, "127.0.0.1:«port»"},
+	{volatileUUID, "«uuid»"},
+	{volatileHex, "«hex»"},
 }
 
 // voidElements have no closing tag in HTML, so they are always written in the
