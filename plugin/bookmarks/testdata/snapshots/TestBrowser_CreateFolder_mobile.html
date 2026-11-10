@@ -5,7 +5,7 @@
     <title>
       My Folder — Cog
     </title>
-    <link href="/static/style.css?v=7fa68eae9330" rel="stylesheet" />
+    <link href="/static/style.css?v=c3a3de100d00" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik0xOSAyMWwtNy01LTcgNVY1YTIgMiAwIDAgMSAyLTJoMTBhMiAyIDAgMCAxIDIgMnoiPjwvcGF0aD48L3N2Zz4=" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -385,11 +385,24 @@
         <form action="/apps/bookmarks/folders" method="post">
           <input name="csrf_token" type="hidden" value="«hex»" />
           <div class="modal-body">
-            <div class="form-group mb-0">
+            <div class="form-group">
               <label for="new-folder-title">
                 Name
               </label>
               <input class="form-control" id="new-folder-title" name="title" required="" type="text" />
+            </div>
+            <div class="form-group mb-0">
+              <label for="new-folder-parent">
+                Inside
+              </label>
+              <select class="form-control" id="new-folder-parent" name="parent_id">
+                <option value="">
+                  Top level
+                </option>
+                <option selected="" value="1">
+                  My Folder
+                </option>
+              </select>
             </div>
           </div>
           <div class="modal-footer">

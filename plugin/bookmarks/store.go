@@ -102,7 +102,14 @@ func ListBookmarks(db *sql.DB, folderID *int64, tags []string, search string, so
 	// Every order ends on the id, so rows that tie (created in the same
 	// second, say) still come back in the same order every time.
 	order := "b.updated_at DESC, b.id DESC"
+	var orderArgs []any
 	switch sortBy {
+	case "position":
+		// A bookmark's place in the folder it is listed from.
+		if folderID != nil {
+			order = "(SELECT sort_order FROM bookmark_folders WHERE bookmark_id = b.id AND folder_id = ?), b.id"
+			orderArgs = []any{*folderID}
+		}
 	case "title":
 		order = "b.title COLLATE NOCASE ASC, b.id ASC"
 	case "clickcount":
@@ -114,7 +121,7 @@ func ListBookmarks(db *sql.DB, folderID *int64, tags []string, search string, so
 	}
 
 	query := fmt.Sprintf("SELECT b.id, b.url, b.title, b.description, b.click_count, b.available, b.created_at, b.updated_at FROM bookmarks b WHERE %s ORDER BY %s LIMIT ? OFFSET ?", whereClause, order)
-	args = append(args, limit, offset)
+	args = append(append(args, orderArgs...), limit, offset)
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -468,6 +475,15 @@ func folderExists(q queryer, id int64) error {
 // queryer is a *sql.DB or a *sql.Tx.
 type queryer interface {
 	QueryRow(query string, args ...any) *sql.Row
+}
+
+// hasSubfolders reports whether any folder is directly inside id.
+func hasSubfolders(db *sql.DB, id int64) (bool, error) {
+	var has bool
+	if err := db.QueryRow(`SELECT EXISTS (SELECT 1 FROM folders WHERE parent_id = ?)`, id).Scan(&has); err != nil {
+		return false, fmt.Errorf("find subfolders: %w", err)
+	}
+	return has, nil
 }
 
 // FolderCounts returns how many bookmarks each folder holds, by folder id.

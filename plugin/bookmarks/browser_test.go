@@ -25,6 +25,8 @@ func TestBrowser(t *testing.T) {
 	env.CreateUser(t, "tags", "pass")
 	env.CreateUser(t, "many", "pass")
 	env.CreateUser(t, "rowdelete", "pass")
+	env.CreateUser(t, "nested", "pass")
+	seedNestedFolders(t, env, "nested")
 	seedBookmark(t, env, "rowdelete", "https://example.com/only", "Only Bookmark")
 	longID := seedManyBookmarks(t, env, "many")
 
@@ -137,6 +139,23 @@ func TestBrowser(t *testing.T) {
 		b.WaitText(t, "My Folder")
 		b.Click(t, `a[href*="/apps/bookmarks/folder/"]`)
 		b.WaitVisible(t, ".sidebar-content")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	// A synced tree: the sidebar opens the way down to the folder, the
+	// crumbs lead back up, and its own folders come before its bookmarks,
+	// which are in the folder's order rather than by date.
+	t.Run("NestedFolders", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "nested", "pass")
+		b.Navigate(t, "/apps/bookmarks/")
+		b.WaitText(t, "Toolbar")
+		require.False(t, b.HasElement(t, `.sidebar a[href*="/folder/"].bm-depth-1`), "a closed folder's subfolders are in the sidebar")
+		b.ClickText(t, "Toolbar")
+		b.WaitText(t, "Dev")
+		b.ClickText(t, "Dev")
+		b.WaitText(t, "Go docs")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
@@ -255,4 +274,35 @@ func seedBookmark(t *testing.T, env *cogtest.Env, username, url, title string) {
 	require.NoError(t, err)
 	_, err = bookmarks.CreateBookmark(db, url, title, "", nil, nil)
 	require.NoError(t, err)
+}
+
+// seedNestedFolders gives a user a tree as a browser sync leaves it: folders
+// within folders, and bookmarks in the folder's own order.
+func seedNestedFolders(t *testing.T, env *cogtest.Env, username string) {
+	t.Helper()
+	raw, ok := env.Providers.Plugins.Plugin(bookmarks.PluginID)
+	require.True(t, ok, "bookmarks plugin not registered")
+	db, err := raw.(*bookmarks.Plugin).DB(username)
+	require.NoError(t, err)
+
+	toolbar, err := bookmarks.CreateFolder(db, "Toolbar", nil)
+	require.NoError(t, err)
+	_, err = bookmarks.CreateFolder(db, "Other", nil)
+	require.NoError(t, err)
+	dev, err := bookmarks.CreateFolder(db, "Dev", &toolbar.ID)
+	require.NoError(t, err)
+	_, err = bookmarks.CreateFolder(db, "News", &toolbar.ID)
+	require.NoError(t, err)
+	_, err = bookmarks.CreateFolder(db, "Go", &dev.ID)
+	require.NoError(t, err)
+	// Not advancing the clock: the tests share it, and the folder's order
+	// differs from the newest-first order all the same.
+	for _, bm := range []struct{ url, title string }{
+		{"https://go.dev/doc/", "Go docs"},
+		{"https://pkg.go.dev/", "Go packages"},
+		{"https://github.com/", "GitHub"},
+	} {
+		_, err := bookmarks.CreateBookmark(db, bm.url, bm.title, "", nil, []int64{dev.ID})
+		require.NoError(t, err)
+	}
 }
