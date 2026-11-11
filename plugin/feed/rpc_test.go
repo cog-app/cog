@@ -177,6 +177,37 @@ func TestItemStateOverGRPC(t *testing.T) {
 	}
 }
 
+// TestGetItemContentAsMarkdown checks an article body reaches a client as
+// Markdown too, with relative links made absolute against the item's page,
+// and an item with no body has none.
+func TestGetItemContentAsMarkdown(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, u.Username)
+	subID, err := store.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://blog.example.com/feed", Title: "Blog"})
+	require.NoError(t, err)
+	article, _, err := store.UpsertItem(feed.Item{
+		SubscriptionID: subID,
+		GUID:           "post",
+		Type:           "text",
+		Title:          "Post",
+		URL:            "https://blog.example.com/2026/post",
+		ContentHTML:    `<h2>Intro</h2><p>Read <a href="/about">this</a> and <strong>that</strong>.</p><ul><li>one</li><li>two</li></ul><img src="pic.png" alt="pic">`,
+	})
+	require.NoError(t, err)
+	empty := seedAudioItem(t, store, "https://cdn.example.com/ep1.mp3")
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	ctx := context.Background()
+
+	got, err := client.GetItem(ctx, connect.NewRequest(&feedpb.GetItemRequest{Id: article}))
+	require.NoError(t, err)
+	assert.Equal(t, "## Intro\n\nRead [this](https://blog.example.com/about) and **that**.\n\n- one\n- two\n\n![pic](https://blog.example.com/2026/pic.png)", got.Msg.ContentMarkdown)
+
+	got, err = client.GetItem(ctx, connect.NewRequest(&feedpb.GetItemRequest{Id: empty}))
+	require.NoError(t, err)
+	assert.Equal(t, "", got.Msg.ContentMarkdown)
+}
+
 func TestReportProgressOverGRPC(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	u := env.CreateUser(t, "alice", "pass")

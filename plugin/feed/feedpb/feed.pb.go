@@ -1175,12 +1175,15 @@ func (x *Item) GetServerDownload() *DownloadState {
 }
 
 type ItemDetail struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Item          *Item                  `protobuf:"bytes,1,opt,name=item,proto3" json:"item,omitempty"`
-	ContentHtml   string                 `protobuf:"bytes,2,opt,name=content_html,json=contentHtml,proto3" json:"content_html,omitempty"` // sanitized by the server
-	HasCaptions   bool                   `protobuf:"varint,3,opt,name=has_captions,json=hasCaptions,proto3" json:"has_captions,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Item        *Item                  `protobuf:"bytes,1,opt,name=item,proto3" json:"item,omitempty"`
+	ContentHtml string                 `protobuf:"bytes,2,opt,name=content_html,json=contentHtml,proto3" json:"content_html,omitempty"` // sanitized by the server
+	HasCaptions bool                   `protobuf:"varint,3,opt,name=has_captions,json=hasCaptions,proto3" json:"has_captions,omitempty"`
+	// content_html as CommonMark, with links and images made absolute against
+	// the item's URL, for clients that render Markdown rather than HTML.
+	ContentMarkdown string `protobuf:"bytes,4,opt,name=content_markdown,json=contentMarkdown,proto3" json:"content_markdown,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ItemDetail) Reset() {
@@ -1232,6 +1235,13 @@ func (x *ItemDetail) GetHasCaptions() bool {
 		return x.HasCaptions
 	}
 	return false
+}
+
+func (x *ItemDetail) GetContentMarkdown() string {
+	if x != nil {
+		return x.ContentMarkdown
+	}
+	return ""
 }
 
 type Playback struct {
@@ -3757,12 +3767,13 @@ const file_feed_proto_rawDesc = "" +
 	"\astarred\x18\f \x01(\bR\astarred\x12\x12\n" +
 	"\x04tags\x18\r \x03(\tR\x04tags\x120\n" +
 	"\bplayback\x18\x0e \x01(\v2\x14.cogfeed.v1.PlaybackR\bplayback\x12B\n" +
-	"\x0fserver_download\x18\x0f \x01(\v2\x19.cogfeed.v1.DownloadStateR\x0eserverDownload\"x\n" +
+	"\x0fserver_download\x18\x0f \x01(\v2\x19.cogfeed.v1.DownloadStateR\x0eserverDownload\"\xa3\x01\n" +
 	"\n" +
 	"ItemDetail\x12$\n" +
 	"\x04item\x18\x01 \x01(\v2\x10.cogfeed.v1.ItemR\x04item\x12!\n" +
 	"\fcontent_html\x18\x02 \x01(\tR\vcontentHtml\x12!\n" +
-	"\fhas_captions\x18\x03 \x01(\bR\vhasCaptions\"\x90\x01\n" +
+	"\fhas_captions\x18\x03 \x01(\bR\vhasCaptions\x12)\n" +
+	"\x10content_markdown\x18\x04 \x01(\tR\x0fcontentMarkdown\"\x90\x01\n" +
 	"\bPlayback\x12\x17\n" +
 	"\aitem_id\x18\x01 \x01(\x03R\x06itemId\x12!\n" +
 	"\fprogress_sec\x18\x02 \x01(\x01R\vprogressSec\x12\x1c\n" +

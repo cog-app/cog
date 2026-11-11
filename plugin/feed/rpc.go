@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
+	"github.com/JohannesKaufmann/html-to-markdown/v2/converter"
 	"github.com/mattn/go-sqlite3"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -60,8 +62,7 @@ func (e serverErrors) check(procedure string, err error) error {
 	if err == nil {
 		return nil
 	}
-	var ce *connect.Error
-	if errors.As(err, &ce) {
+	if _, ok := errors.AsType[*connect.Error](err); ok {
 		return err
 	}
 	e.plugin.log.Error("feed: rpc", "procedure", procedure, "err", err)
@@ -306,11 +307,27 @@ func (s *FeedService) GetItem(ctx context.Context, req *connect.Request[feedpb.G
 	if err != nil {
 		return nil, err
 	}
+	md, err := articleMarkdown(it.ContentHTML, it.URL)
+	if err != nil {
+		return nil, fmt.Errorf("item %d content as markdown: %w", it.ID, err)
+	}
 	return connect.NewResponse(&feedpb.ItemDetail{
-		Item:        pb,
-		ContentHtml: it.ContentHTML,
-		HasCaptions: d.CaptionsPath != "",
+		Item:            pb,
+		ContentHtml:     it.ContentHTML,
+		ContentMarkdown: md,
+		HasCaptions:     d.CaptionsPath != "",
 	}), nil
+}
+
+// articleMarkdown converts an item's sanitized HTML to Markdown on read, so
+// every item has it without a migration and a better converter reaches old
+// items too. Relative links resolve against the item's URL, since a client
+// has no page to resolve them against.
+func articleMarkdown(content, base string) (string, error) {
+	if content == "" {
+		return "", nil
+	}
+	return htmltomarkdown.ConvertString(content, converter.WithDomain(base))
 }
 
 // changeItem checks the item exists, applies change, and returns the item

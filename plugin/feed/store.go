@@ -391,11 +391,12 @@ type Item struct {
 // existing id with inserted=false. On success returns the new id with inserted=true.
 func (s *Store) UpsertItem(it Item) (int64, bool, error) {
 	res, err := s.db.Exec(`
-		INSERT OR IGNORE INTO items
+		INSERT INTO items
 			(subscription_id, guid, type, title, author, url, content_html,
 			 media_url, media_mime, duration_sec, thumbnail_url, published_at,
 			 is_read, is_starred, content_hash)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(subscription_id, guid) DO NOTHING`,
 		it.SubscriptionID, it.GUID, it.Type, it.Title, it.Author, it.URL, it.ContentHTML,
 		it.MediaURL, it.MediaMIME, it.DurationSec, it.ThumbnailURL, it.PublishedAt,
 		boolToInt(it.IsRead), boolToInt(it.IsStarred), it.ContentHash,

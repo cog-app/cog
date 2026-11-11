@@ -201,6 +201,9 @@ message ItemDetail {
   Item item = 1;
   string content_html = 2; // sanitized by the server
   bool has_captions = 3;
+  // content_html as CommonMark, with links and images made absolute against
+  // the item's URL, for clients that render Markdown rather than HTML.
+  string content_markdown = 4;
 }
 
 message Playback {

@@ -118,9 +118,11 @@ the choices; this is what Cog needs for it, in the order the app needs it.
 - [x] Browse RPCs: `ListItems` (view, query, hide read, unfinished only,
       pages, total on the first page) and `MarkAllRead` of a view
       (`TestListItemsOverGRPC`, `TestMarkAllReadOverGRPC`).
-- [ ] Article bodies as Markdown (`ItemDetail.content_markdown`), converted
-      from the sanitized HTML at ingest or on read, so every client renders
-      them with SNGL's Markdown widget.
+- [x] Article bodies as Markdown (`ItemDetail.content_markdown`), converted
+      from the sanitized HTML on read — no migration, and a better converter
+      reaches old items — with links and images made absolute against the
+      item's URL (`TestGetItemContentAsMarkdown`). `UpsertItem` ignores only
+      the duplicate, so an invalid item is a CHECK error, not "no rows".
 - [x] `PreviewQuery`, sharing `Store.Preview` with the web's filter preview:
       a count and the newest matches, an invalid query as an answer with
       `error_position` from the parser's new `query.SyntaxError`

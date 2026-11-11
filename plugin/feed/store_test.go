@@ -107,6 +107,12 @@ func TestItemsAndTags(t *testing.T) {
 		t.Fatalf("dedup returned wrong id: %d vs %d", id2, id)
 	}
 
+	// Only the duplicate is ignored: an invalid item is an error that says so,
+	// not a missing row.
+	_, _, err = s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "guid-2", Type: "article"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "CHECK constraint failed")
+
 	require.NoError(t, s.AddTag(id, "sunday"))
 	require.NoError(t, s.AddTag(id, "weekly"))
 	tags, err := s.ItemTags(id)
