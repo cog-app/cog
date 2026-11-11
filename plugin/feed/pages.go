@@ -1542,25 +1542,24 @@ func (h *Pages) Import(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var n int
-	switch format {
-	case "antennapod":
-		n, err = ImportAntennaPod(store, data)
-	case "newpipe":
-		n, err = ImportNewPipe(store, data)
-	case "youtube-csv":
-		n, err = ImportYouTubeTakeout(store, data)
+	switch format := ImportFormat(format); format {
+	case ImportAntennaPod, ImportNewPipe, ImportYouTubeCSV:
+		h.importAndRedirect(w, r, store, format, data)
 	default:
-		h.setFlash(w, "error", "Unknown import format: "+format)
+		h.setFlash(w, "error", "Unknown import format: "+string(format))
 		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
-		return
 	}
+}
+
+// importAndRedirect imports data, starts fetching what it added, and
+// redirects to the subscriptions page saying how it went.
+func (h *Pages) importAndRedirect(w http.ResponseWriter, r *http.Request, store *Store, format ImportFormat, data []byte) {
+	res, err := store.Import(format, data, sql.NullInt64{})
 	if err != nil {
 		h.setFlash(w, "error", "Import failed: "+err.Error())
 	} else {
-		u := plugin.UserFromContext(r.Context())
-		go h.plugin.TriggerFetch(u.Username, 0)
-		h.setFlash(w, "success", fmt.Sprintf("Imported %d subscriptions.", n))
+		go h.plugin.TriggerFetch(plugin.Username(r), 0)
+		h.setFlash(w, "success", fmt.Sprintf("Imported %d subscriptions.", res.Added))
 	}
 	http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 }
@@ -1593,16 +1592,7 @@ func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, err := store.ImportOPML(data)
-	if err != nil {
-		h.setFlash(w, "error", "OPML parse error: "+err.Error())
-		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
-		return
-	}
-	u := plugin.UserFromContext(r.Context())
-	go h.plugin.TriggerFetch(u.Username, 0)
-	h.setFlash(w, "success", fmt.Sprintf("Imported %d subscriptions.", n))
-	http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
+	h.importAndRedirect(w, r, store, ImportOPML, data)
 }
 
 // ExportOPML returns the user's RSS subscriptions as an OPML file download.
@@ -1687,32 +1677,37 @@ func (h *Pages) SaveSubscriptionSettings(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	paused := r.FormValue("paused") == "on"
-	if err := store.PauseSubscription(id, paused); err != nil {
-		h.setFlash(w, "error", err.Error())
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+	sub, err := store.GetSubscription(id)
+	if err != nil {
+		lookupError(w, r, err)
 		return
 	}
-	if iv := r.FormValue("poll_interval_sec"); iv != "" {
-		if n, parseErr := strconv.ParseInt(iv, 10, 64); parseErr == nil && n > 0 {
-			if err := store.UpdateSubscriptionPollInterval(id, n); err != nil {
-				h.setFlash(w, "error", err.Error())
-				http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
-				return
-			}
-		}
-	}
-	fv := r.FormValue("folder_id")
+	paused := r.FormValue("paused") == "on"
 	var folderID sql.NullInt64
-	if fv != "" {
+	if fv := r.FormValue("folder_id"); fv != "" {
 		if n, parseErr := strconv.ParseInt(fv, 10, 64); parseErr == nil {
 			folderID = sql.NullInt64{Int64: n, Valid: true}
 		}
 	}
-	if err := store.UpdateSubscriptionFolder(id, folderID); err != nil {
-		h.setFlash(w, "error", err.Error())
+	c := SubscriptionChanges{Folder: &folderID, Paused: &paused}
+	if iv := r.FormValue("poll_interval_sec"); iv != "" {
+		if n, parseErr := strconv.ParseInt(iv, 10, 64); parseErr == nil && n > 0 {
+			c.PollIntervalSec = &n
+		}
+	}
+	// Only a title the user changed becomes theirs: saving the other
+	// settings leaves the feed's own title following the feed.
+	if title := strings.TrimSpace(r.FormValue("title")); title != sub.Title {
+		c.Title = &title
+	}
+	if err := store.UpdateSubscription(id, c); err != nil {
+		h.setFlash(w, "error", "Could not save the subscription.")
+		slog.Error("feed: save subscription settings", "id", id, "err", err)
 		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
 		return
+	}
+	if c.Title != nil && *c.Title == "" {
+		go h.plugin.TriggerFetch(plugin.Username(r), id)
 	}
 	h.setFlash(w, "success", "Saved.")
 	http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)

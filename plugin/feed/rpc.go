@@ -31,7 +31,9 @@ type FeedService struct {
 // registerService mounts FeedService at /cogfeed.v1.FeedService/.
 func (p *Plugin) registerService(ctx plugin.PluginContext) {
 	path, h := feedpbconnect.NewFeedServiceHandler(&FeedService{plugin: p},
-		connect.WithInterceptors(serverErrors{p}))
+		connect.WithInterceptors(serverErrors{p}),
+		// The largest request is an Import; refuse more before reading it.
+		connect.WithReadMaxBytes(maxImportBytes+64<<10))
 	ctx.RegisterService(path, h)
 }
 

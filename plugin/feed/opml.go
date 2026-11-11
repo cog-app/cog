@@ -1,7 +1,6 @@
 package feed
 
 import (
-	"database/sql"
 	"encoding/xml"
 	"fmt"
 )
@@ -101,84 +100,33 @@ func subOutline(sub Subscription) opmlOutline {
 	}
 }
 
-// ImportOPML parses an OPML document and creates folders and RSS subscriptions
-// (kind="rss"). Returns the number of subscriptions successfully created.
-// Existing subscriptions with the same URL are skipped (the UNIQUE constraint
-// on subscriptions.url rejects duplicates).
-func (s *Store) ImportOPML(data []byte) (int, error) {
+// parseOPML lists an OPML document's feeds: a top-level outline with a feed
+// URL, and the feeds one level inside an outline without one, which is their
+// folder.
+func parseOPML(data []byte) ([]importEntry, error) {
 	var doc opmlDoc
 	if err := xml.Unmarshal(data, &doc); err != nil {
-		return 0, fmt.Errorf("parse opml: %w", err)
+		return nil, fmt.Errorf("parse opml: %w", err)
 	}
-
-	count := 0
+	var entries []importEntry
+	add := func(o opmlOutline, folder string) {
+		entries = append(entries, importEntry{
+			Subscription: Subscription{Kind: "rss", URL: o.XMLURL, Title: outlineTitle(o), SiteURL: o.HTMLURL},
+			Folder:       folder,
+		})
+	}
 	for _, outline := range doc.Body.Outlines {
 		if outline.XMLURL != "" {
-			// Top-level subscription, no folder.
-			created, err := s.importSubscription(Subscription{
-				Kind:            "rss",
-				URL:             outline.XMLURL,
-				Title:           outlineTitle(outline),
-				SiteURL:         outline.HTMLURL,
-				PollIntervalSec: 1800,
-				NextCheckAt:     1,
-			})
-			if err != nil {
-				return count, fmt.Errorf("import opml: %w", err)
-			}
-			if created {
-				count++
-			}
+			add(outline, "")
 			continue
 		}
-
-		// Folder with child feeds.
-		var folderID sql.NullInt64
-		if outline.Text != "" {
-			id, createErr := s.CreateFolder(outline.Text)
-			if createErr == nil {
-				folderID = sql.NullInt64{Int64: id, Valid: true}
-			} else {
-				// Folder might already exist — look it up.
-				folders, err := s.ListFolders()
-				if err != nil {
-					return count, fmt.Errorf("import opml: %w", err)
-				}
-				for _, f := range folders {
-					if f.Name == outline.Text {
-						folderID = sql.NullInt64{Int64: f.ID, Valid: true}
-						break
-					}
-				}
-				if !folderID.Valid {
-					return count, fmt.Errorf("import opml: folder %q: %w", outline.Text, createErr)
-				}
-			}
-		}
-
 		for _, child := range outline.Outlines {
-			if child.XMLURL == "" {
-				continue
-			}
-			created, err := s.importSubscription(Subscription{
-				Kind:            "rss",
-				URL:             child.XMLURL,
-				Title:           outlineTitle(child),
-				SiteURL:         child.HTMLURL,
-				FolderID:        folderID,
-				PollIntervalSec: 1800,
-				NextCheckAt:     1,
-			})
-			if err != nil {
-				return count, fmt.Errorf("import opml: %w", err)
-			}
-			if created {
-				count++
+			if child.XMLURL != "" {
+				add(child, outline.Text)
 			}
 		}
 	}
-
-	return count, nil
+	return entries, nil
 }
 
 func outlineTitle(o opmlOutline) string {

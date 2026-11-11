@@ -87,13 +87,27 @@ func (s *Store) ListFolders() ([]Folder, error) {
 	return folders, nil
 }
 
-// RenameFolder updates a folder's name.
-func (s *Store) RenameFolder(id int64, name string) error {
-	_, err := s.db.Exec(`UPDATE folders SET name = ? WHERE id = ?`, name, id)
+// updatedOne wraps an UPDATE's error, and reports sql.ErrNoRows if it
+// changed no row, so a caller can tell a missing row from a failure.
+func updatedOne(res sql.Result, err error, format string, args ...any) error {
 	if err != nil {
-		return fmt.Errorf("rename folder: %w", err)
+		return fmt.Errorf(format+": %w", append(args, err)...)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf(format+" rows affected: %w", append(args, err)...)
+	}
+	if n == 0 {
+		return fmt.Errorf(format+": %w", append(args, sql.ErrNoRows)...)
 	}
 	return nil
+}
+
+// RenameFolder updates a folder's name, or returns sql.ErrNoRows if there is
+// none.
+func (s *Store) RenameFolder(id int64, name string) error {
+	res, err := s.db.Exec(`UPDATE folders SET name = ? WHERE id = ?`, name, id)
+	return updatedOne(res, err, "rename folder %d", id)
 }
 
 // GetFolder returns a single folder by ID.
@@ -140,28 +154,6 @@ func (s *Store) CreateSubscription(sub Subscription) (int64, error) {
 		return 0, fmt.Errorf("create subscription last insert id: %w", err)
 	}
 	return id, nil
-}
-
-// importSubscription creates sub unless a subscription with the same URL
-// already exists, reporting whether a row was added. Importers use it so that
-// a duplicate is skipped while any other failure is reported.
-func (s *Store) importSubscription(sub Subscription) (bool, error) {
-	res, err := s.db.Exec(`
-		INSERT INTO subscriptions
-			(folder_id, kind, url, title, site_url, image_url, poll_interval_sec, next_check_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(url) DO NOTHING`,
-		sub.FolderID, sub.Kind, sub.URL, sub.Title, sub.SiteURL, sub.ImageURL,
-		sub.PollIntervalSec, sub.NextCheckAt,
-	)
-	if err != nil {
-		return false, fmt.Errorf("import subscription %q: %w", sub.URL, err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("import subscription %q rows affected: %w", sub.URL, err)
-	}
-	return n > 0, nil
 }
 
 // GetSubscription returns a single subscription by ID.
@@ -259,7 +251,12 @@ func (s *Store) UpdateSubscriptionMetadata(id int64, updates map[string]string) 
 		if !allowedMetadataKeys[key] {
 			continue
 		}
-		setClauses = append(setClauses, key+" = ?")
+		if key == "title" {
+			// A title the user gave it stays.
+			setClauses = append(setClauses, "title = CASE WHEN title_locked THEN title ELSE ? END")
+		} else {
+			setClauses = append(setClauses, key+" = ?")
+		}
 		args = append(args, val)
 	}
 	if len(setClauses) == 0 {
@@ -644,17 +641,15 @@ func (s *Store) ListFilters() ([]Filter, error) {
 	return filters, nil
 }
 
-// UpdateFilter updates an existing filter.
+// UpdateFilter updates an existing filter, or returns sql.ErrNoRows if there
+// is none.
 func (s *Store) UpdateFilter(f Filter) error {
-	_, err := s.db.Exec(`
+	res, err := s.db.Exec(`
 		UPDATE filters SET sort_order = ?, query = ?, action = ?, action_value = ?
 		WHERE id = ?`,
 		f.SortOrder, f.Query, f.Action, f.ActionValue, f.ID,
 	)
-	if err != nil {
-		return fmt.Errorf("update filter: %w", err)
-	}
-	return nil
+	return updatedOne(res, err, "update filter %d", f.ID)
 }
 
 // DeleteFilter removes a filter by ID.
@@ -2104,20 +2099,47 @@ func (s *Store) ListPlaybackHistory(limit int) ([]PlayedItem, error) {
 
 // --- Per-subscription settings store helpers ---
 
-// UpdateSubscriptionPollInterval updates the poll_interval_sec for a subscription.
-func (s *Store) UpdateSubscriptionPollInterval(id, sec int64) error {
-	_, err := s.db.Exec(`UPDATE subscriptions SET poll_interval_sec = ? WHERE id = ?`, sec, id)
-	if err != nil {
-		return fmt.Errorf("update poll interval: %w", err)
-	}
-	return nil
+// SubscriptionChanges are the settings a user changes on a subscription; a
+// nil field is left as it is.
+type SubscriptionChanges struct {
+	Folder *sql.NullInt64 // NULL takes it out of its folder
+	// Title is the user's name for it, which the poller then leaves alone.
+	// "" goes back to the feed's own title, from a full fetch the next time
+	// it is polled.
+	Title           *string
+	PollIntervalSec *int64
+	Paused          *bool
 }
 
-// UpdateSubscriptionFolder sets the folder for a subscription (NULL clears it).
-func (s *Store) UpdateSubscriptionFolder(id int64, folderID sql.NullInt64) error {
-	_, err := s.db.Exec(`UPDATE subscriptions SET folder_id = ? WHERE id = ?`, folderID, id)
-	if err != nil {
-		return fmt.Errorf("update folder: %w", err)
+// UpdateSubscription applies c to a subscription in one statement, and
+// returns sql.ErrNoRows if there is none.
+func (s *Store) UpdateSubscription(id int64, c SubscriptionChanges) error {
+	var set []string
+	var args []any
+	if c.Folder != nil {
+		set = append(set, "folder_id = ?")
+		args = append(args, *c.Folder)
 	}
-	return nil
+	if c.Title != nil {
+		if *c.Title == "" {
+			set = append(set, "title_locked = 0", "etag = ''", "last_modified = ''", "next_check_at = 1")
+		} else {
+			set = append(set, "title = ?", "title_locked = 1")
+			args = append(args, *c.Title)
+		}
+	}
+	if c.PollIntervalSec != nil {
+		set = append(set, "poll_interval_sec = ?")
+		args = append(args, *c.PollIntervalSec)
+	}
+	if c.Paused != nil {
+		set = append(set, "paused = ?")
+		args = append(args, boolToInt(*c.Paused))
+	}
+	if len(set) == 0 {
+		_, err := s.GetSubscription(id) // still reports a missing subscription
+		return err
+	}
+	res, err := s.db.Exec(`UPDATE subscriptions SET `+strings.Join(set, ", ")+` WHERE id = ?`, append(args, id)...)
+	return updatedOne(res, err, "update subscription %d", id)
 }

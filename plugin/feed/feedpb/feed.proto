@@ -405,11 +405,14 @@ message AddSubscriptionRequest {
   optional int64 folder_id = 2;
 }
 
+// An unset field is left as it is.
 message UpdateSubscriptionRequest {
   int64 id = 1;
-  optional int64 folder_id = 2;
+  optional int64 folder_id = 2; // 0 takes it out of its folder
+  // The user's name for it, which polling then leaves alone; "" goes back to
+  // the feed's own title from its next fetch.
   optional string title = 3;
-  optional int64 poll_interval_sec = 4;
+  optional int64 poll_interval_sec = 4; // at least 60
   optional bool paused = 5;
 }
 
@@ -466,14 +469,18 @@ message ImportRequest {
     FORMAT_YOUTUBE_CSV = 4;
   }
   Format format = 1;
-  bytes data = 2;
+  bytes data = 2; // at most 20 MiB
+  // Where subscriptions the export does not put in a folder go; one it does
+  // goes in the folder of that name, created if need be.
   optional int64 folder_id = 3;
 }
 
+// An import adds everything or nothing: an export the server cannot read is
+// InvalidArgument.
 message ImportResponse {
   int64 added = 1;
-  int64 skipped = 2;
-  repeated string errors = 3;
+  int64 skipped = 2; // already subscribed to
+  reserved 3;
 }
 
 message ExportOPMLRequest {}

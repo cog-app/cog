@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     error_count INTEGER NOT NULL DEFAULT 0,
     last_error TEXT NOT NULL DEFAULT '',
     paused INTEGER NOT NULL DEFAULT 0,
+    title_locked INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 

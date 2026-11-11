@@ -127,10 +127,19 @@ the choices; this is what Cog needs for it, in the order the app needs it.
       a count and the newest matches, an invalid query as an answer with
       `error_position` from the parser's new `query.SyntaxError`
       (`TestPreviewQueryOverGRPC`, `TestParseErrorPosition`).
-- [ ] Management RPCs with web parity: subscriptions (add with detection,
-      update folder/title/interval/paused, delete, refresh), folders, filters,
-      `Import` taking bytes and a format. Playlists and `ExportOPML`
-      (`TestExportOPMLOverGRPC`) are done.
+- [x] Management RPCs with web parity: subscriptions (add with detection,
+      update folder/title/interval/paused in one statement, delete, refresh),
+      folders, filters, `Import` (`TestSubscriptionsOverGRPC`,
+      `TestFoldersOverGRPC`, `TestFiltersOverGRPC`, `TestImportOverGRPC`).
+      A title the user gives a subscription is locked (`migration003`), so
+      polling no longer overwrites it; clearing it refetches the feed's. The
+      web's settings form edits it too, and only a title the user changed
+      locks (`TestWebSubscriptionSettingsTitle`). The four importers are one
+      `Store.Import` in one transaction: it detects the format by its first
+      bytes, counts what it skipped, puts unfiled subscriptions in a folder
+      the client names, and reports an unreadable export as
+      `ErrUnreadableImport` (InvalidArgument) rather than a server fault.
+      Requests are bounded to the largest import before they are read.
 - [x] Player prefs: `GetPlayerPrefs`, and `SetPlayerPrefs` replacing them
       all and refusing a value outside the web's bounds rather than clamping it
       (`TestPlayerPrefsOverGRPC`).

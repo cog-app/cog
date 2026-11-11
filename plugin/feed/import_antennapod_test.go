@@ -49,10 +49,10 @@ func TestImportAntennaPod(t *testing.T) {
 	s := newStore(t)
 	data := makeAntennaPodDB(t)
 
-	n, err := feed.ImportAntennaPod(s, data)
+	res, err := s.Import(feed.ImportAntennaPod, data, sql.NullInt64{})
 	require.NoError(t, err)
-	if n != 2 {
-		t.Fatalf("expected 2 created, got %d", n)
+	if res.Added != 2 {
+		t.Fatalf("expected 2 created, got %d", res.Added)
 	}
 
 	subs, err := s.ListSubscriptions()
@@ -74,12 +74,12 @@ func TestImportAntennaPodSkipsDuplicates(t *testing.T) {
 	s := newStore(t)
 	data := makeAntennaPodDB(t)
 
-	_, _ = feed.ImportAntennaPod(s, data)
-	n, err := feed.ImportAntennaPod(s, data)
+	_, err := s.Import(feed.ImportAntennaPod, data, sql.NullInt64{})
 	require.NoError(t, err)
-	if n != 0 {
-		t.Errorf("second import should create 0, got %d", n)
-	}
+	res, err := s.Import(feed.ImportAntennaPod, data, sql.NullInt64{})
+	require.NoError(t, err)
+	require.Equal(t, 0, res.Added)
+	require.Equal(t, 2, res.Skipped)
 }
 
 // makeNewPipeZip creates a minimal NewPipe ZIP export containing a newpipe.db.
@@ -132,10 +132,10 @@ func TestImportNewPipe(t *testing.T) {
 	s := newStore(t)
 	data := makeNewPipeZip(t)
 
-	n, err := feed.ImportNewPipe(s, data)
+	res, err := s.Import(feed.ImportNewPipe, data, sql.NullInt64{})
 	require.NoError(t, err)
-	if n != 2 {
-		t.Fatalf("expected 2 created, got %d", n)
+	if res.Added != 2 {
+		t.Fatalf("expected 2 created, got %d", res.Added)
 	}
 
 	subs, err := s.ListSubscriptions()
@@ -154,12 +154,12 @@ func TestImportNewPipeSkipsDuplicates(t *testing.T) {
 	s := newStore(t)
 	data := makeNewPipeZip(t)
 
-	_, _ = feed.ImportNewPipe(s, data)
-	n, err := feed.ImportNewPipe(s, data)
+	_, err := s.Import(feed.ImportNewPipe, data, sql.NullInt64{})
 	require.NoError(t, err)
-	if n != 0 {
-		t.Errorf("second import should create 0, got %d", n)
-	}
+	res, err := s.Import(feed.ImportNewPipe, data, sql.NullInt64{})
+	require.NoError(t, err)
+	require.Equal(t, 0, res.Added)
+	require.Equal(t, 2, res.Skipped)
 }
 
 func TestImportNewPipeMissingDB(t *testing.T) {
@@ -169,10 +169,11 @@ func TestImportNewPipeMissingDB(t *testing.T) {
 	zw := zip.NewWriter(&buf)
 	fw, err := zw.Create("other_file.txt")
 	require.NoError(t, err)
-	_, _ = fw.Write([]byte("not a db"))
+	_, err = fw.Write([]byte("not a db"))
+	require.NoError(t, err)
 	require.NoError(t, zw.Close())
 
-	_, err = feed.ImportNewPipe(s, buf.Bytes())
+	_, err = s.Import(feed.ImportNewPipe, buf.Bytes(), sql.NullInt64{})
 	if err == nil {
 		t.Fatal("expected error when newpipe.db is absent from ZIP")
 	}

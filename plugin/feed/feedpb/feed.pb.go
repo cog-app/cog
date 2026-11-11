@@ -3002,13 +3002,16 @@ func (x *AddSubscriptionRequest) GetFolderId() int64 {
 	return 0
 }
 
+// An unset field is left as it is.
 type UpdateSubscriptionRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Id              int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	FolderId        *int64                 `protobuf:"varint,2,opt,name=folder_id,json=folderId,proto3,oneof" json:"folder_id,omitempty"`
-	Title           *string                `protobuf:"bytes,3,opt,name=title,proto3,oneof" json:"title,omitempty"`
-	PollIntervalSec *int64                 `protobuf:"varint,4,opt,name=poll_interval_sec,json=pollIntervalSec,proto3,oneof" json:"poll_interval_sec,omitempty"`
-	Paused          *bool                  `protobuf:"varint,5,opt,name=paused,proto3,oneof" json:"paused,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Id       int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	FolderId *int64                 `protobuf:"varint,2,opt,name=folder_id,json=folderId,proto3,oneof" json:"folder_id,omitempty"` // 0 takes it out of its folder
+	// The user's name for it, which polling then leaves alone; "" goes back to
+	// the feed's own title from its next fetch.
+	Title           *string `protobuf:"bytes,3,opt,name=title,proto3,oneof" json:"title,omitempty"`
+	PollIntervalSec *int64  `protobuf:"varint,4,opt,name=poll_interval_sec,json=pollIntervalSec,proto3,oneof" json:"poll_interval_sec,omitempty"` // at least 60
+	Paused          *bool   `protobuf:"varint,5,opt,name=paused,proto3,oneof" json:"paused,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -3491,10 +3494,12 @@ func (*DeleteResponse) Descriptor() ([]byte, []int) {
 }
 
 type ImportRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Format        ImportRequest_Format   `protobuf:"varint,1,opt,name=format,proto3,enum=cogfeed.v1.ImportRequest_Format" json:"format,omitempty"`
-	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
-	FolderId      *int64                 `protobuf:"varint,3,opt,name=folder_id,json=folderId,proto3,oneof" json:"folder_id,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Format ImportRequest_Format   `protobuf:"varint,1,opt,name=format,proto3,enum=cogfeed.v1.ImportRequest_Format" json:"format,omitempty"`
+	Data   []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"` // at most 20 MiB
+	// Where subscriptions the export does not put in a folder go; one it does
+	// goes in the folder of that name, created if need be.
+	FolderId      *int64 `protobuf:"varint,3,opt,name=folder_id,json=folderId,proto3,oneof" json:"folder_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3550,11 +3555,12 @@ func (x *ImportRequest) GetFolderId() int64 {
 	return 0
 }
 
+// An import adds everything or nothing: an export the server cannot read is
+// InvalidArgument.
 type ImportResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Added         int64                  `protobuf:"varint,1,opt,name=added,proto3" json:"added,omitempty"`
-	Skipped       int64                  `protobuf:"varint,2,opt,name=skipped,proto3" json:"skipped,omitempty"`
-	Errors        []string               `protobuf:"bytes,3,rep,name=errors,proto3" json:"errors,omitempty"`
+	Skipped       int64                  `protobuf:"varint,2,opt,name=skipped,proto3" json:"skipped,omitempty"` // already subscribed to
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3601,13 +3607,6 @@ func (x *ImportResponse) GetSkipped() int64 {
 		return x.Skipped
 	}
 	return 0
-}
-
-func (x *ImportResponse) GetErrors() []string {
-	if x != nil {
-		return x.Errors
-	}
-	return nil
 }
 
 type ExportOPMLRequest struct {
@@ -3967,11 +3966,10 @@ const file_feed_proto_rawDesc = "" +
 	"\x0eFORMAT_NEWPIPE\x10\x03\x12\x16\n" +
 	"\x12FORMAT_YOUTUBE_CSV\x10\x04B\f\n" +
 	"\n" +
-	"_folder_id\"X\n" +
+	"_folder_id\"F\n" +
 	"\x0eImportResponse\x12\x14\n" +
 	"\x05added\x18\x01 \x01(\x03R\x05added\x12\x18\n" +
-	"\askipped\x18\x02 \x01(\x03R\askipped\x12\x16\n" +
-	"\x06errors\x18\x03 \x03(\tR\x06errors\"\x13\n" +
+	"\askipped\x18\x02 \x01(\x03R\askippedJ\x04\b\x03\x10\x04\"\x13\n" +
 	"\x11ExportOPMLRequest\"(\n" +
 	"\x12ExportOPMLResponse\x12\x12\n" +
 	"\x04opml\x18\x01 \x01(\fR\x04opml*\x8a\x01\n" +
