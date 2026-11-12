@@ -10,6 +10,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
+	"git.duckfam.us/jj-software/cog/plugin/feed/syncprefs"
 )
 
 // Clients read the server version from /version and probe /status and /user
@@ -147,4 +148,43 @@ func TestNewsAPI_UpdatedStarredItems(t *testing.T) {
 	env.Get(t, newsAPI+"/items/updated?lastModified=0&type=2", alice.Auth).Status(200).JSON(&resp)
 	require.Equal(t, 1, len(resp.Items))
 	require.Equal(t, "A", resp.Items[0]["title"])
+}
+
+// A feed added outside any folder goes in the folder chosen for news apps;
+// one added to a folder stays there.
+func TestNewsAPI_CreateFeedInChosenFolder(t *testing.T) {
+	safehttp.SetAllowPrivate(true) // the feed server is on loopback
+	t.Cleanup(func() { safehttp.SetAllowPrivate(false) })
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>T</title></channel></rss>`))
+	}))
+	defer srv.Close()
+
+	env := cogtest.New(t, feed.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	db, err := feedPlugin(t, env).DB(alice.Username)
+	require.NoError(t, err)
+	store := feed.NewStore(db)
+	news, err := store.CreateFolder("News")
+	require.NoError(t, err)
+	other, err := store.CreateFolder("Other")
+	require.NoError(t, err)
+	tx, err := db.Begin()
+	require.NoError(t, err)
+	require.NoError(t, syncprefs.SaveFolder(tx, syncprefs.NCNews, sql.NullInt64{Int64: news, Valid: true}))
+	require.NoError(t, tx.Commit())
+
+	folderOf := func(path string, folderID int64) any {
+		t.Helper()
+		var resp struct {
+			Feeds []map[string]any `json:"feeds"`
+		}
+		doReq(t, env, "POST", newsAPI+"/feeds", map[string]any{"url": srv.URL + path, "folderId": folderID}, alice.Auth).
+			Status(200).JSON(&resp)
+		require.Equal(t, 1, len(resp.Feeds))
+		return resp.Feeds[0]["folderId"]
+	}
+	require.Equal(t, any(float64(news)), folderOf("/a.xml", 0))
+	require.Equal(t, any(float64(other)), folderOf("/b.xml", other))
 }

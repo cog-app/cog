@@ -1,0 +1,634 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      Subscriptions — Cog
+    </title>
+    <link href="/static/style.css?v=85fc94749f86" rel="stylesheet" />
+    <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik00IDExYTkgOSAwIDAgMSA5IDkiPjwvcGF0aD48cGF0aCBkPSJNNCA0YTE2IDE2IDAgMCAxIDE2IDE2Ij48L3BhdGg+PGNpcmNsZSBjeD0iNSIgY3k9IjE5IiByPSIxIj48L2NpcmNsZT48L3N2Zz4=" rel="icon" type="image/svg+xml" />
+    <style>
+      .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
+  <body hx-headers="{\"X-CSRF-Token\":\"«hex»\"}">
+    <nav aria-label="Main" class="navbar">
+      <a aria-label="Cog home" class="navbar-brand" href="/">
+        <svg aria-hidden="true" fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        <span class="brand-text">
+          Cog
+        </span>
+      </a>
+      <ul class="navbar-nav">
+        <li>
+          <a aria-current="page" class="active" href="/apps/feed/" title="Feed">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M4 11a9 9 0 0 1 9 9" />
+              <path d="M4 4a16 16 0 0 1 16 16" />
+              <circle cx="5" cy="19" r="1" />
+            </svg>
+            <span class="nav-label">
+              Feed
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="/" title="Dashboard">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            <span class="nav-label">
+              Dashboard
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="/apps/files" title="Files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <span class="nav-label">
+              Files
+            </span>
+          </a>
+        </li>
+      </ul>
+      <div class="dropdown navbar-apps">
+        <button aria-controls="apps-menu" aria-expanded="false" aria-label="Apps" class="btn-icon" data-dropdown-toggle="" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <rect height="7" width="7" x="3" y="3" />
+            <rect height="7" width="7" x="14" y="3" />
+            <rect height="7" width="7" x="3" y="14" />
+            <rect height="7" width="7" x="14" y="14" />
+          </svg>
+        </button>
+        <div class="dropdown-menu" id="apps-menu">
+          <a aria-current="page" class="active" href="/apps/feed/">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M4 11a9 9 0 0 1 9 9" />
+              <path d="M4 4a16 16 0 0 1 16 16" />
+              <circle cx="5" cy="19" r="1" />
+            </svg>
+            Feed
+          </a>
+          <a href="/">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            Dashboard
+          </a>
+          <a href="/apps/files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            Files
+          </a>
+          <div class="dropdown-divider" />
+          <button data-search-open="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" x2="16.65" y1="21" y2="16.65" />
+            </svg>
+            Search
+          </button>
+          <a class="" href="/settings/profile">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="4" x2="4" y1="21" y2="14" />
+              <line x1="4" x2="4" y1="10" y2="3" />
+              <line x1="12" x2="12" y1="21" y2="12" />
+              <line x1="12" x2="12" y1="8" y2="3" />
+              <line x1="20" x2="20" y1="21" y2="16" />
+              <line x1="20" x2="20" y1="12" y2="3" />
+              <line x1="1" x2="7" y1="14" y2="14" />
+              <line x1="9" x2="15" y1="8" y2="8" />
+              <line x1="17" x2="23" y1="16" y2="16" />
+            </svg>
+            Settings
+          </a>
+          <a class="" href="/admin/">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            Admin
+          </a>
+        </div>
+      </div>
+      <div class="navbar-spacer" />
+      <div class="navbar-search" role="search">
+        <label class="sr-only" for="search-box">
+          Search
+        </label>
+        <input aria-controls="search-results" autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)…" type="search" />
+        <div aria-live="polite" class="search-results" id="search-results" />
+      </div>
+      <button aria-controls="search-box" aria-expanded="false" aria-label="Search" class="btn-icon search-toggle" data-search-open="" type="button">
+        <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+          <circle cx="11" cy="11" r="7" />
+          <line x1="21" x2="16.65" y1="21" y2="16.65" />
+        </svg>
+      </button>
+      <div class="navbar-end">
+        <div class="dropdown notif-dropdown" id="notif">
+          <button aria-controls="notif-panel" aria-expanded="false" aria-label="Notifications" class="btn-icon" data-dropdown-toggle="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <span class="notif-badge" hidden="" id="notif-badge">
+              0
+            </span>
+          </button>
+          <div class="dropdown-menu" id="notif-panel">
+            <div class="tray-notices" hidden="" id="tray-notices">
+              <div class="tray-heading">
+                Notifications
+                <button class="tray-clear" data-tray-clear="" type="button">
+                  Clear
+                </button>
+              </div>
+              <div id="tray-notice-list" />
+            </div>
+            <div class="tray-heading">
+              <label for="tray-filter">
+                Recent activity
+              </label>
+              <select aria-label="Show" class="tray-filter" id="tray-filter">
+                <option value="">
+                  All
+                </option>
+                <option value="notifications">
+                  Notifications
+                </option>
+              </select>
+            </div>
+            <div id="tray-activity">
+              <p class="tray-empty">
+                No activity yet.
+              </p>
+            </div>
+            <label class="tray-desktop" id="tray-desktop-row">
+              <input id="tray-desktop" type="checkbox" />
+              Show notifications on the desktop
+            </label>
+          </div>
+        </div>
+        <div class="dropdown">
+          <button aria-controls="user-menu" aria-expanded="false" aria-label="Account menu for u" class="dropdown-toggle" data-dropdown-toggle="" type="button">
+            <img alt="" class="avatar-sm" src="/avatar/«hex»" />
+            <span class="dropdown-username">
+              u
+            </span>
+            <span aria-hidden="true" class="dropdown-caret">
+              ▾
+            </span>
+          </button>
+          <div class="dropdown-menu" id="user-menu">
+            <div class="dropdown-header">
+              <strong>
+                u
+              </strong>
+            </div>
+            <div class="dropdown-divider" />
+            <a class="" href="/settings/profile">
+              Profile
+            </a>
+            <a class="" href="/settings/security">
+              Security
+            </a>
+            <a class="" href="/settings/storage">
+              Storage
+            </a>
+            <a class="" href="/settings/groups">
+              Groups
+            </a>
+            <a class="" href="/settings/data">
+              Import and export
+            </a>
+            <div class="dropdown-divider" />
+            <a class="" href="/admin/">
+              Admin
+            </a>
+            <div class="dropdown-divider" />
+            <form action="/logout" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <button type="submit">
+                Log out
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <main class="content" data-plugin="feed">
+      <div class="sidebar-layout has-sidebar-toggle">
+        <button aria-controls="feed-sidebar" aria-expanded="false" aria-label="Menu: Subscriptions" class="sidebar-toggle" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <line x1="3" x2="21" y1="6" y2="6" />
+            <line x1="3" x2="21" y1="12" y2="12" />
+            <line x1="3" x2="21" y1="18" y2="18" />
+          </svg>
+          <span class="sidebar-toggle-label" data-label="Subscriptions" />
+          <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        <nav aria-label="Feed" class="sidebar" id="feed-sidebar">
+          <a class="sidebar-item" href="/apps/feed/">
+            <span class="break-anywhere">
+              All articles
+            </span>
+            <span class="count">
+              1
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/feed/starred">
+            <span class="break-anywhere">
+              Starred
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/feed/history">
+            <span class="break-anywhere">
+              History
+            </span>
+          </a>
+          <div class="sidebar-heading feed-sidebar-heading">
+            <span>
+              Feeds
+            </span>
+            <label class="feed-hide-read">
+              <input hx-post="/apps/feed/player/prefs" hx-swap="outerHTML" hx-target="#feed-sidebar" hx-vals="js:{hide_empty: event.target.checked ? \"1\" : \"0\"}" name="hide_empty" type="checkbox" />
+              Unread only
+            </label>
+          </div>
+          <a class="sidebar-item feed-sub" href="/apps/feed/subscription/2" title="A Blog">
+            <span class="feed-sub-icon">
+              <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
+                <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
+                <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
+                <circle cx="5.5" cy="18.5" r="2.5" />
+              </svg>
+            </span>
+            <span class="feed-sub-name">
+              A Blog
+            </span>
+          </a>
+          <a class="sidebar-item feed-sub" href="/apps/feed/subscription/1" title="A Podcast">
+            <span class="feed-sub-icon">
+              <svg aria-hidden="true" fill="#888" height="16" viewBox="0 0 24 24" width="16">
+                <path d="M4 11a9 9 0 0 1 9 9h2.5A11.5 11.5 0 0 0 4 8.5z" />
+                <path d="M4 4a16 16 0 0 1 16 16h2.5A18.5 18.5 0 0 0 4 1.5z" />
+                <circle cx="5.5" cy="18.5" r="2.5" />
+              </svg>
+            </span>
+            <span class="feed-sub-name">
+              A Podcast
+            </span>
+            <span class="count">
+              1
+            </span>
+          </a>
+          <div class="sidebar-heading">
+            Settings
+          </div>
+          <a aria-current="page" class="sidebar-item active" href="/apps/feed/settings/subscriptions">
+            <span class="break-anywhere">
+              Subscriptions
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/feed/settings/filters">
+            <span class="break-anywhere">
+              Filters
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/feed/settings/playlists">
+            <span class="break-anywhere">
+              Playlists
+            </span>
+          </a>
+          <a class="sidebar-item" href="/apps/feed/settings/sync">
+            <span class="break-anywhere">
+              Sync
+            </span>
+          </a>
+        </nav>
+        <div class="sidebar-content">
+          <header class="page-header">
+            <div class="page-heading">
+              <nav aria-label="Breadcrumb" class="breadcrumbs">
+                <ol>
+                  <li>
+                    <a href="/apps/feed/">
+                      Feed
+                    </a>
+                  </li>
+                  <li>
+                    <span aria-current="page">
+                      Subscriptions
+                    </span>
+                  </li>
+                </ol>
+              </nav>
+              <h1>
+                Subscriptions
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
+          <section class="card">
+            <h2 class="card-title">
+              Add a subscription
+            </h2>
+            <form action="/apps/feed/subscriptions" id="add-subscription" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="sub-url">
+                    URL
+                  </label>
+                  <input class="form-control" id="sub-url" name="url" placeholder="https://example.com/feed.xml" required="" type="url" />
+                </div>
+                <button class="btn btn-primary" type="submit">
+                  Subscribe
+                </button>
+              </div>
+              <p class="form-help">
+                An RSS or Atom feed, a podcast, a YouTube channel, or any page that links to a feed.
+              </p>
+            </form>
+          </section>
+          <section class="card">
+            <h2 class="card-title">
+              Add talks from a page
+            </h2>
+            <form action="/apps/feed/talks/preview" hx-disabled-elt="find button" hx-post="/apps/feed/talks/preview" hx-swap="innerHTML" hx-target="#talks-preview" id="talks-scan" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="talks-url">
+                    Page
+                  </label>
+                  <input class="form-control" id="talks-url" name="url" placeholder="https://example.com/conference/2026/04" required="" type="url" />
+                </div>
+                <button class="btn" type="submit">
+                  Find talks
+                </button>
+              </div>
+              <p class="form-help">
+                A conference or playlist page that links to a page for each talk. Choose the talks to download.
+              </p>
+            </form>
+            <div aria-live="polite" id="talks-preview" />
+          </section>
+          <section class="card">
+            <details class="feed-sub-details" id="subscription-details" open="">
+              <summary class="card-title">
+                Your subscriptions
+                <span class="count">
+                  2
+                </span>
+              </summary>
+              <form action="/apps/feed/subscriptions/bulk" class="feed-sub-bulk" id="bulk-subscriptions" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <button aria-hidden="true" disabled="" hidden="" type="submit" />
+                <div class="feed-sub-toolbar">
+                  <label class="sr-only" for="sub-filter">
+                    Filter subscriptions
+                  </label>
+                  <input autocomplete="off" class="form-control" id="sub-filter" placeholder="Filter by name or URL" type="search" />
+                  <div aria-label="Show" class="chip-group" role="radiogroup">
+                    <label class="chip">
+                      <input checked="" name="sub-type" type="radio" value="" />
+                      All
+                    </label>
+                    <label class="chip">
+                      <input name="sub-type" type="radio" value="podcast" />
+                      Podcasts
+                    </label>
+                    <label class="chip">
+                      <input name="sub-type" type="radio" value="articles" />
+                      Articles
+                    </label>
+                  </div>
+                </div>
+                <fieldset class="feed-sub-group">
+                  <legend>
+                    <label class="form-check">
+                      <input aria-label="Select all in No folder" data-group-toggle="" type="checkbox" />
+                      No folder
+                      <span class="count">
+                        2
+                      </span>
+                    </label>
+                  </legend>
+                  <ul class="feed-sub-list">
+                    <li data-search="a blog https://blog.example/rss" data-type="articles">
+                      <input aria-label="Select A Blog" name="id" type="checkbox" value="2" />
+                      <div class="feed-sub-list-main">
+                        <a class="font-medium" href="/apps/feed/subscription/2">
+                          A Blog
+                        </a>
+                        <div class="feed-sub-list-meta">
+                          <span class="badge badge-outline">
+                            rss
+                          </span>
+                          <code>
+                            https://blog.example/rss
+                          </code>
+                        </div>
+                      </div>
+                      <div class="list-row-actions">
+                        <a aria-label="Settings for A Blog" class="btn-icon btn-icon-sm" href="/apps/feed/subscription/2/settings" title="Settings">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <line x1="4" x2="4" y1="21" y2="14" />
+                            <line x1="4" x2="4" y1="10" y2="3" />
+                            <line x1="12" x2="12" y1="21" y2="12" />
+                            <line x1="12" x2="12" y1="8" y2="3" />
+                            <line x1="20" x2="20" y1="21" y2="16" />
+                            <line x1="20" x2="20" y1="12" y2="3" />
+                            <line x1="1" x2="7" y1="14" y2="14" />
+                            <line x1="9" x2="15" y1="8" y2="8" />
+                            <line x1="17" x2="23" y1="16" y2="16" />
+                          </svg>
+                        </a>
+                        <button aria-label="Delete A Blog" class="btn-icon btn-icon-sm btn-icon-danger" formaction="/apps/feed/subscriptions/2/delete" onclick="__templ_feedConfirm_f4b0(\"Unsubscribe from “A Blog” and delete its articles?\")" title="Delete" type="submit">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6" />
+                            <path d="M14 11v6" />
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                          </svg>
+                        </button>
+                      </div>
+                    </li>
+                    <li data-search="a podcast https://pod.example/feed.xml" data-type="podcast">
+                      <input aria-label="Select A Podcast" name="id" type="checkbox" value="1" />
+                      <div class="feed-sub-list-main">
+                        <a class="font-medium" href="/apps/feed/subscription/1">
+                          A Podcast
+                        </a>
+                        <div class="feed-sub-list-meta">
+                          <span class="badge badge-outline">
+                            rss
+                          </span>
+                          <code>
+                            https://pod.example/feed.xml
+                          </code>
+                        </div>
+                      </div>
+                      <div class="list-row-actions">
+                        <a aria-label="Settings for A Podcast" class="btn-icon btn-icon-sm" href="/apps/feed/subscription/1/settings" title="Settings">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <line x1="4" x2="4" y1="21" y2="14" />
+                            <line x1="4" x2="4" y1="10" y2="3" />
+                            <line x1="12" x2="12" y1="21" y2="12" />
+                            <line x1="12" x2="12" y1="8" y2="3" />
+                            <line x1="20" x2="20" y1="21" y2="16" />
+                            <line x1="20" x2="20" y1="12" y2="3" />
+                            <line x1="1" x2="7" y1="14" y2="14" />
+                            <line x1="9" x2="15" y1="8" y2="8" />
+                            <line x1="17" x2="23" y1="16" y2="16" />
+                          </svg>
+                        </a>
+                        <button aria-label="Delete A Podcast" class="btn-icon btn-icon-sm btn-icon-danger" formaction="/apps/feed/subscriptions/1/delete" onclick="__templ_feedConfirm_f4b0(\"Unsubscribe from “A Podcast” and delete its articles?\")" title="Delete" type="submit">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6" />
+                            <path d="M14 11v6" />
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                          </svg>
+                        </button>
+                      </div>
+                    </li>
+                  </ul>
+                </fieldset>
+                <p class="empty-state empty-state-sm" hidden="" id="sub-filter-empty">
+                  No subscriptions match.
+                </p>
+                <div class="feed-sub-bulk-bar" hidden="" id="bulk-bar">
+                  <span>
+                    <span id="bulk-count">
+                      0
+                    </span>
+                    selected
+                  </span>
+                  <label class="sr-only" for="bulk-folder">
+                    Folder
+                  </label>
+                  <select class="form-control" id="bulk-folder" name="folder_id">
+                    <option value="">
+                      No folder
+                    </option>
+                    <option value="new">
+                      New folder…
+                    </option>
+                  </select>
+                  <label class="sr-only" for="bulk-new-folder">
+                    New folder name
+                  </label>
+                  <input class="form-control" hidden="" id="bulk-new-folder" name="new_folder" placeholder="New folder name" type="text" />
+                  <button class="btn btn-primary" name="action" type="submit" value="move">
+                    Move
+                  </button>
+                  <button class="btn btn-danger" name="action" onclick="__templ_feedConfirm_f4b0(\"Unsubscribe from the selected subscriptions and delete their articles?\")" type="submit" value="delete">
+                    Unsubscribe
+                  </button>
+                </div>
+              </form>
+            </details>
+          </section>
+          <section class="card">
+            <h2 class="card-title">
+              Import and export
+            </h2>
+            <p class="card-desc">
+              Bring subscriptions from another app, or take them with you as OPML.
+            </p>
+            <div class="btn-group">
+              <form action="/apps/feed/opml/import" class="upload-form" enctype="multipart/form-data" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <label class="btn">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" x2="12" y1="3" y2="15" />
+                  </svg>
+                  Import OPML
+                  <input accept=".opml,.xml,application/xml" class="sr-only" name="opml" onchange="this.form.submit()" type="file" />
+                </label>
+              </form>
+              <form action="/apps/feed/import" class="upload-form" enctype="multipart/form-data" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <input name="format" type="hidden" value="antennapod" />
+                <label class="btn">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" x2="12" y1="3" y2="15" />
+                  </svg>
+                  Import AntennaPod
+                  <input accept=".db,.sqlite" class="sr-only" name="file" onchange="this.form.submit()" type="file" />
+                </label>
+              </form>
+              <form action="/apps/feed/import" class="upload-form" enctype="multipart/form-data" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <input name="format" type="hidden" value="newpipe" />
+                <label class="btn">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" x2="12" y1="3" y2="15" />
+                  </svg>
+                  Import NewPipe
+                  <input accept=".zip" class="sr-only" name="file" onchange="this.form.submit()" type="file" />
+                </label>
+              </form>
+              <form action="/apps/feed/import" class="upload-form" enctype="multipart/form-data" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <input name="format" type="hidden" value="youtube-csv" />
+                <label class="btn">
+                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" x2="12" y1="3" y2="15" />
+                  </svg>
+                  Import YouTube Takeout
+                  <input accept=".csv" class="sr-only" name="file" onchange="this.form.submit()" type="file" />
+                </label>
+              </form>
+              <a class="btn" href="/apps/feed/opml/export">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" x2="12" y1="15" y2="3" />
+                </svg>
+                Export OPML
+              </a>
+            </div>
+          </section>
+          <section class="card">
+            <h2 class="card-title">
+              Folders
+            </h2>
+            <form action="/apps/feed/folders" class="form-inline" id="add-folder" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <label class="sr-only" for="folder-name">
+                Folder name
+              </label>
+              <input class="form-control" id="folder-name" name="name" placeholder="Folder name" required="" type="text" />
+              <button class="btn" type="submit">
+                Add folder
+              </button>
+            </form>
+          </section>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

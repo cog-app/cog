@@ -4,9 +4,10 @@
 // NextCloud server.
 //
 // It works on the feed plugin's schema:
-//   - subscriptions → subscriptions WHERE kind='rss', less text-only feeds;
-//     removals come from gpodder_removed_subscriptions, which a trigger fills
-//     however a subscription is deleted
+//   - subscriptions → subscriptions WHERE kind='rss' with an episode the
+//     user's sync filter lets through, or not fetched yet; removals come from
+//     gpodder_removed_subscriptions, which a trigger fills however a
+//     subscription is deleted
 //   - episode actions → gpodder_episode_actions, one row per episode and
 //     action; play actions from Cog's own player are written there by
 //     triggers on playback, and uploaded ones are applied to playback
@@ -30,6 +31,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/plugin/feed/syncprefs"
 )
 
 // Prefix is the path the API is served under.
@@ -50,6 +52,8 @@ type Backend interface {
 	// TriggerFetch schedules a fetch of one subscription, or with subID 0 a
 	// pass over all of the user's, which also collects orphaned downloads.
 	TriggerFetch(username string, subID int64)
+	// SyncFilter returns the user's filter for a sync protocol.
+	SyncFilter(db *sql.DB, p syncprefs.Protocol) (syncprefs.Filter, error)
 }
 
 // API serves the GPodder Sync endpoints.
@@ -116,26 +120,49 @@ func internalError(w http.ResponseWriter, r *http.Request, err error) {
 // inclusively: the response's timestamp is the current second, and a change
 // made later in that second must not be lost. Repeating one is harmless.
 //
-// A feed whose items are all text is a blog, not a podcast, and is left out.
-// One with no items yet has not been fetched, and is included.
+// A feed is a podcast to the client if it has an episode (an audio or video
+// item) that the user's sync filter lets through. A feed whose items are all
+// text is a blog, and is left out; one with no items yet has not been
+// fetched, and is included.
+//
+// When the filter has changed since the client last synced, the answer is
+// the whole state rather than what changed: every podcast it lets through,
+// and every other feed as removed, since a feed the old filter let through
+// may be on the client however long ago it was added.
 func (a *API) subscriptions(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	from, ok := since(w, r)
 	if !ok {
 		return
 	}
 	now := a.now().Unix()
+	f, err := a.backend.SyncFilter(db, syncprefs.GPodder)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	refiltered := from > 0 && from <= f.ChangedAt
+	addedFrom := from
+	if refiltered {
+		addedFrom = 0
+	}
+	cond, args := f.Cond("i.id")
+	podcast := `(EXISTS (SELECT 1 FROM items i WHERE i.subscription_id = s.id AND i.type IN ('audio','video') AND ` + cond + `)
+		OR NOT EXISTS (SELECT 1 FROM items i WHERE i.subscription_id = s.id))`
 	add, err := queryStrings(db, `
 		SELECT url FROM subscriptions s
-		WHERE kind = 'rss' AND created_at >= ?
-		  AND (EXISTS (SELECT 1 FROM items WHERE subscription_id = s.id AND type IN ('audio','video'))
-		       OR NOT EXISTS (SELECT 1 FROM items WHERE subscription_id = s.id))
-		ORDER BY id`, from)
+		WHERE kind = 'rss' AND created_at >= ? AND `+podcast+`
+		ORDER BY id`, append([]any{addedFrom}, args...)...)
 	if err != nil {
 		internalError(w, r, fmt.Errorf("gpoddersync: added subscriptions: %w", err))
 		return
 	}
-	remove, err := queryStrings(db, `
-		SELECT url FROM gpodder_removed_subscriptions WHERE removed_at >= ? ORDER BY url`, from)
+	removedQuery := `SELECT url FROM gpodder_removed_subscriptions WHERE removed_at >= ?`
+	removedArgs := []any{from}
+	if refiltered {
+		removedQuery += ` UNION SELECT url FROM subscriptions s WHERE kind = 'rss' AND NOT ` + podcast
+		removedArgs = append(removedArgs, args...)
+	}
+	remove, err := queryStrings(db, removedQuery+` ORDER BY url`, removedArgs...)
 	if err != nil {
 		internalError(w, r, fmt.Errorf("gpoddersync: removed subscriptions: %w", err))
 		return
@@ -199,7 +226,8 @@ func (a *API) changeSubscriptions(w http.ResponseWriter, r *http.Request, db *sq
 
 // applySubscriptionChanges subscribes to add and unsubscribes from remove in
 // one transaction, returning the IDs of new subscriptions and whether any were
-// deleted. A URL that is not a web address cannot be fetched; it is skipped,
+// deleted. New subscriptions go in the folder the user chose for podcast
+// apps. A URL that is not a web address cannot be fetched; it is skipped,
 // since refusing the request would fail the client's every sync until it
 // unsubscribed.
 func applySubscriptionChanges(db *sql.DB, add, remove []string) ([]int64, bool, error) {
@@ -213,6 +241,10 @@ func applySubscriptionChanges(db *sql.DB, add, remove []string) ([]int64, bool, 
 		}
 	}()
 
+	folder, err := syncprefs.Folder(tx, syncprefs.GPodder)
+	if err != nil {
+		return nil, false, err
+	}
 	var added []int64
 	for _, u := range add {
 		if err := validateURL(u); err != nil {
@@ -221,9 +253,9 @@ func applySubscriptionChanges(db *sql.DB, add, remove []string) ([]int64, bool, 
 		}
 		var id int64
 		err := tx.QueryRow(`
-			INSERT INTO subscriptions (kind, url) VALUES ('rss', ?)
+			INSERT INTO subscriptions (kind, url, folder_id) VALUES ('rss', ?, ?)
 			ON CONFLICT(url) DO NOTHING
-			RETURNING id`, u).Scan(&id)
+			RETURNING id`, u, folder).Scan(&id)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
@@ -451,13 +483,21 @@ func applyAction(tx *sql.Tx, act action) error {
 		return nil
 	}
 	// Match on the feed's GUID first: an enclosure URL can change (tracking
-	// redirects, CDN moves) while the GUID does not.
+	// redirects, CDN moves) while the GUID does not. An episode's item GUID
+	// is the entry's with "#" and the enclosure's hash appended (see the
+	// gpodder_episodes view); the range finds it through the
+	// (subscription_id, guid) index. Of an entry's enclosures, the one the
+	// client names wins. Items whose play was missed here pick it up from
+	// gpodder_episode_plays when they are fetched.
 	var itemID int64
 	err := tx.QueryRow(`
-		SELECT i.id FROM items i JOIN subscriptions s ON s.id = i.subscription_id
-		WHERE ?1 != '' AND s.url = ?2 AND i.guid = ?1
+		SELECT id FROM (
+			SELECT i.id, i.media_url = ?3 AS named FROM items i JOIN subscriptions s ON s.id = i.subscription_id
+			WHERE ?1 != '' AND s.url = ?2 AND i.type IN ('audio', 'video')
+			  AND (i.guid = ?1 OR (i.guid > ?1 || '#' AND i.guid < ?1 || '$'))
+			ORDER BY named DESC LIMIT 1)
 		UNION ALL
-		SELECT id FROM items WHERE media_url = ?3
+		SELECT id FROM items WHERE media_url = ?3 AND type IN ('audio', 'video')
 		LIMIT 1`, act.guid, act.podcast, act.episode).Scan(&itemID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil

@@ -1,3 +1,4 @@
+-- ONCE
 -- Playback recorded before the gpodder sync triggers existed becomes play
 -- actions, so a podcast app's first sync learns what was already listened to.
 INSERT OR IGNORE INTO gpodder_episode_actions (episode, action, podcast, guid, timestamp, started, position, total)

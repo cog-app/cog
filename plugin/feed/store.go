@@ -1915,3 +1915,92 @@ func (s *Store) UpdateSubscriptionFolder(id int64, folderID sql.NullInt64) error
 	}
 	return nil
 }
+
+// --- Bulk subscription changes ---
+
+// idsJSON encodes ids for json_each, which takes any number of them as one
+// bind argument.
+func idsJSON(ids []int64) (string, error) {
+	b, err := json.Marshal(ids)
+	if err != nil {
+		return "", fmt.Errorf("encode ids: %w", err)
+	}
+	return string(b), nil
+}
+
+// MoveSubscriptions puts the given subscriptions in a folder (none when
+// folderID is invalid), returning how many there were. A folder deleted in
+// the meantime moves them to none.
+func (s *Store) MoveSubscriptions(ids []int64, folderID sql.NullInt64) (int64, error) {
+	j, err := idsJSON(ids)
+	if err != nil {
+		return 0, err
+	}
+	res, err := s.db.Exec(`
+		UPDATE subscriptions SET folder_id = (SELECT id FROM folders WHERE id = ?)
+		WHERE id IN (SELECT value FROM json_each(?))`, folderID, j)
+	if err != nil {
+		return 0, fmt.Errorf("move subscriptions: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("move subscriptions rows affected: %w", err)
+	}
+	return n, nil
+}
+
+// DeleteSubscriptions removes the given subscriptions, returning how many
+// there were.
+func (s *Store) DeleteSubscriptions(ids []int64) (int64, error) {
+	j, err := idsJSON(ids)
+	if err != nil {
+		return 0, err
+	}
+	res, err := s.db.Exec(`DELETE FROM subscriptions WHERE id IN (SELECT value FROM json_each(?))`, j)
+	if err != nil {
+		return 0, fmt.Errorf("delete subscriptions: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("delete subscriptions rows affected: %w", err)
+	}
+	return n, nil
+}
+
+// EnsureFolder returns the ID of the folder with the given name, creating it
+// if there is none.
+func (s *Store) EnsureFolder(name string) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(`
+		INSERT INTO folders (name) VALUES (?)
+		ON CONFLICT (name) DO UPDATE SET name = excluded.name
+		RETURNING id`, name).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("ensure folder %q: %w", name, err)
+	}
+	return id, nil
+}
+
+// SubscriptionsWithMedia returns the IDs of subscriptions that have an audio
+// or video item: the podcasts, among RSS feeds.
+func (s *Store) SubscriptionsWithMedia() (map[int64]bool, error) {
+	rows, err := s.db.Query(`
+		SELECT id FROM subscriptions s
+		WHERE EXISTS (SELECT 1 FROM items i WHERE i.subscription_id = s.id AND i.type IN ('audio', 'video'))`)
+	if err != nil {
+		return nil, fmt.Errorf("subscriptions with media: %w", err)
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("subscriptions with media scan: %w", err)
+		}
+		out[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("subscriptions with media rows: %w", err)
+	}
+	return out, nil
+}

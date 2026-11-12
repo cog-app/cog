@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/plugin/feed/syncprefs"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
@@ -113,6 +114,7 @@ templ feedSidebar(sb sidebarData) {
 		@feedLink(sb.ActivePath, "/apps/feed/settings/subscriptions", "Subscriptions", 0)
 		@feedLink(sb.ActivePath, "/apps/feed/settings/filters", "Filters", 0)
 		@feedLink(sb.ActivePath, "/apps/feed/settings/playlists", "Playlists", 0)
+		@feedLink(sb.ActivePath, "/apps/feed/settings/sync", "Sync", 0)
 	</nav>
 }
 
@@ -616,7 +618,7 @@ templ feedFilterPreviewResults(items []ItemWithSubscription) {
 	}
 }
 
-templ feedSettingsSubscriptionsPage(sb sidebarData, subs []Subscription, folders []Folder, csrfToken string) {
+templ feedSettingsSubscriptionsPage(sb sidebarData, groups []subGroup, total int, folders []Folder, csrfToken string) {
 	@feedLayout(sb) {
 		@ui.PageHeader("Subscriptions", []ui.Crumb{{Label: "Feed", URL: "/apps/feed/"}})
 		<section class="card">
@@ -660,35 +662,12 @@ templ feedSettingsSubscriptionsPage(sb sidebarData, subs []Subscription, folders
 			<div id="talks-preview" aria-live="polite"></div>
 		</section>
 		<section class="card">
-			<details class="feed-sub-details" id="subscription-details" open?={ len(subs) < 20 }>
-				<summary class="card-title">Your subscriptions <span class="count">{ strconv.Itoa(len(subs)) }</span></summary>
-				if len(subs) == 0 {
+			<details class="feed-sub-details" id="subscription-details" open?={ total < 20 }>
+				<summary class="card-title">Your subscriptions <span class="count">{ strconv.Itoa(total) }</span></summary>
+				if total == 0 {
 					<p class="empty-state empty-state-sm">No subscriptions yet.</p>
 				} else {
-					<ul class="feed-sub-list" id="subscription-list">
-						for _, s := range subs {
-							<li>
-								<div class="feed-sub-list-main">
-									<a class="font-medium" href={ templ.SafeURL(fmt.Sprintf("/apps/feed/subscription/%d", s.ID)) }>{ subscriptionDisplayTitle(s) }</a>
-									<div class="feed-sub-list-meta">
-										<span class="badge badge-outline">{ s.Kind }</span>
-										<code>{ s.URL }</code>
-									</div>
-								</div>
-								<div class="list-row-actions">
-									<a class="btn-icon btn-icon-sm" href={ templ.SafeURL(fmt.Sprintf("/apps/feed/subscription/%d/settings", s.ID)) } aria-label={ "Settings for " + subscriptionDisplayTitle(s) } title="Settings">
-										@ui.Icon("settings")
-									</a>
-									<form method="post" action={ templ.SafeURL("/apps/feed/subscriptions/" + strconv.FormatInt(s.ID, 10) + "/delete") } onsubmit={ feedConfirm(fmt.Sprintf("Unsubscribe from “%s” and delete its articles?", subscriptionDisplayTitle(s))) }>
-										<input type="hidden" name="csrf_token" value={ csrfToken }/>
-										<button type="submit" class="btn-icon btn-icon-sm btn-icon-danger" aria-label={ "Delete " + subscriptionDisplayTitle(s) } title="Delete">
-											@ui.Icon("trash")
-										</button>
-									</form>
-								</div>
-							</li>
-						}
-					</ul>
+					@feedSubscriptionList(groups, folders, csrfToken)
 				}
 			</details>
 		</section>
@@ -956,6 +935,134 @@ templ feedSettingsPlaylistsPage(sb sidebarData, playlists []Playlist, csrfToken 
 			}
 		</section>
 	}
+}
+
+// feedSubscriptionList lists subscriptions grouped by folder, each with a
+// checkbox, and a bar that moves the selected ones to a folder or
+// unsubscribes from them. Without scripts it is a plain form; with them,
+// subscriptions.js filters the list, selects a folder's worth at once and
+// shows the bar only while something is selected.
+templ feedSubscriptionList(groups []subGroup, folders []Folder, csrfToken string) {
+	<form id="bulk-subscriptions" class="feed-sub-bulk" method="post" action="/apps/feed/subscriptions/bulk">
+		<input type="hidden" name="csrf_token" value={ csrfToken }/>
+		// Enter in a field submits with the form's first submit button, which
+		// would otherwise be the first row's Delete. A disabled one does
+		// nothing.
+		<button type="submit" disabled hidden aria-hidden="true"></button>
+		<div class="feed-sub-toolbar">
+			<label class="sr-only" for="sub-filter">Filter subscriptions</label>
+			<input class="form-control" type="search" id="sub-filter" placeholder="Filter by name or URL" autocomplete="off"/>
+			<div class="chip-group" role="radiogroup" aria-label="Show">
+				<label class="chip"><input type="radio" name="sub-type" value="" checked/> All</label>
+				for _, t := range subTypes {
+					if groupsHaveType(groups, t.Type) {
+						<label class="chip"><input type="radio" name="sub-type" value={ string(t.Type) }/> { t.Label }</label>
+					}
+				}
+			</div>
+		</div>
+		for _, g := range groups {
+			<fieldset class="feed-sub-group">
+				<legend>
+					<label class="form-check">
+						<input type="checkbox" data-group-toggle aria-label={ "Select all in " + g.Name }/>
+						{ g.Name }
+						<span class="count">{ strconv.Itoa(len(g.Subs)) }</span>
+					</label>
+				</legend>
+				<ul class="feed-sub-list">
+					for _, s := range g.Subs {
+						<li data-type={ string(s.Type) } data-search={ strings.ToLower(subscriptionDisplayTitle(s.Subscription) + " " + s.URL) }>
+							<input type="checkbox" name="id" value={ strconv.FormatInt(s.ID, 10) } aria-label={ "Select " + subscriptionDisplayTitle(s.Subscription) }/>
+							<div class="feed-sub-list-main">
+								<a class="font-medium" href={ templ.SafeURL(fmt.Sprintf("/apps/feed/subscription/%d", s.ID)) }>{ subscriptionDisplayTitle(s.Subscription) }</a>
+								<div class="feed-sub-list-meta">
+									<span class="badge badge-outline">{ s.Kind }</span>
+									<code>{ s.URL }</code>
+								</div>
+							</div>
+							<div class="list-row-actions">
+								<a class="btn-icon btn-icon-sm" href={ templ.SafeURL(fmt.Sprintf("/apps/feed/subscription/%d/settings", s.ID)) } aria-label={ "Settings for " + subscriptionDisplayTitle(s.Subscription) } title="Settings">
+									@ui.Icon("settings")
+								</a>
+								<button
+									type="submit"
+									class="btn-icon btn-icon-sm btn-icon-danger"
+									formaction={ templ.SafeURL("/apps/feed/subscriptions/" + strconv.FormatInt(s.ID, 10) + "/delete") }
+									onclick={ feedConfirm(fmt.Sprintf("Unsubscribe from “%s” and delete its articles?", subscriptionDisplayTitle(s.Subscription))) }
+									aria-label={ "Delete " + subscriptionDisplayTitle(s.Subscription) }
+									title="Delete"
+								>
+									@ui.Icon("trash")
+								</button>
+							</div>
+						</li>
+					}
+				</ul>
+			</fieldset>
+		}
+		<p class="empty-state empty-state-sm" id="sub-filter-empty" hidden>No subscriptions match.</p>
+		<div class="feed-sub-bulk-bar" id="bulk-bar">
+			<span><span id="bulk-count">0</span> selected</span>
+			<label class="sr-only" for="bulk-folder">Folder</label>
+			<select id="bulk-folder" name="folder_id" class="form-control">
+				<option value="">No folder</option>
+				for _, f := range folders {
+					<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Name }</option>
+				}
+				<option value="new">New folder…</option>
+			</select>
+			<label class="sr-only" for="bulk-new-folder">New folder name</label>
+			<input class="form-control" type="text" id="bulk-new-folder" name="new_folder" placeholder="New folder name"/>
+			<button class="btn btn-primary" type="submit" name="action" value="move">Move</button>
+			<button class="btn btn-danger" type="submit" name="action" value="delete" onclick={ feedConfirm("Unsubscribe from the selected subscriptions and delete their articles?") }>Unsubscribe</button>
+		</div>
+	</form>
+	<script src={ feedAssetURL("subscriptions.js") } defer></script>
+}
+
+// feedSettingsSyncPage edits each sync protocol's settings: the query that
+// narrows what it exposes, and the folder that subscriptions added from its
+// apps go in.
+templ feedSettingsSyncPage(sb sidebarData, settings map[syncprefs.Protocol]syncSetting, folders []Folder, csrfToken string) {
+	@feedLayout(sb) {
+		@ui.PageHeader("Sync", []ui.Crumb{{Label: "Feed", URL: "/apps/feed/"}})
+		<form method="post" action="/apps/feed/settings/sync">
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<section class="card">
+				<h2 class="card-title">NextCloud News</h2>
+				<p class="card-desc">News apps get articles.</p>
+				@feedSyncFields(syncprefs.NCNews, settings[syncprefs.NCNews], folders, "NOT folder:Podcasts",
+					"A feed is listed once one of its articles matches, and before it is first fetched. Leave empty to sync everything.")
+			</section>
+			<section class="card">
+				<h2 class="card-title">GPodder Sync (AntennaPod)</h2>
+				<p class="card-desc">Podcast apps get subscriptions and listening progress.</p>
+				@feedSyncFields(syncprefs.GPodder, settings[syncprefs.GPodder], folders, "folder:Podcasts",
+					"A feed is listed once one of its episodes matches, and before it is first fetched. Feeds a new query no longer matches are removed from the app. Leave empty to sync everything.")
+			</section>
+			<div class="form-actions">
+				<button class="btn btn-primary" type="submit">Save</button>
+			</div>
+		</form>
+	}
+}
+
+templ feedSyncFields(p syncprefs.Protocol, s syncSetting, folders []Folder, placeholder, filterHelp string) {
+	<div class="form-group">
+		<label for={ "sync-" + string(p) }>Filter</label>
+		<input class="form-control mono" type="text" id={ "sync-" + string(p) } name={ string(p) } value={ s.Query } placeholder={ placeholder }/>
+		<p class="form-help">{ filterHelp }</p>
+	</div>
+	<div class="form-group">
+		<label for={ "sync-" + string(p) + "-folder" }>Folder for subscriptions added from the app</label>
+		<select class="form-control" id={ "sync-" + string(p) + "-folder" } name={ string(p) + "_folder" }>
+			<option value="" selected?={ !s.Folder.Valid }>No folder</option>
+			for _, f := range folders {
+				<option value={ strconv.FormatInt(f.ID, 10) } selected?={ s.Folder.Valid && s.Folder.Int64 == f.ID }>{ f.Name }</option>
+			}
+		</select>
+	</div>
 }
 
 // feedItemTagRow renders the tag chips plus an add-tag form for HTMX swap.

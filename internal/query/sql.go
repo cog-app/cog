@@ -58,7 +58,11 @@ func (c *sqlCompiler) expr(e Expr) (string, error) {
 		if inner == "" {
 			return "0", nil
 		}
-		return "NOT (" + inner + ")", nil
+		// A field from an outer join is NULL where the row has no value
+		// (an item whose feed is in no folder), and so is a comparison with
+		// it; NOT NULL is NULL, which would leave out the very rows that
+		// lack the value. Not matching is false, as ExactMatch has it.
+		return "NOT COALESCE(" + inner + ", 0)", nil
 	case *AndExpr:
 		return c.binary(x.Left, x.Right, " AND ")
 	case *OrExpr:
