@@ -56,6 +56,73 @@ func TestVolatileValuesAreMasked(t *testing.T) {
 	}
 }
 
+// An image's src is masked in the golden but not in the page: changing it
+// would load another URL, and the picture would show what that serves (a "?"
+// avatar for a user called «hex») instead of what the page showed.
+func TestLoadingAttributesStayInThePage(t *testing.T) {
+	const avatar = "69474ee7baf0372a133b61095fe862d4"
+	b := maskPages(t, map[string]string{
+		"/": `<html><body><img id="a" src="/avatar/` + avatar + `"><a id="l" href="/u/` + avatar + `">me</a></body></html>`,
+	})
+	b.Navigate(t, "/")
+	dom, unmask, err := b.maskedDOM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := unmask(); err != nil {
+			t.Error(err)
+		}
+	}()
+	if got := b.Eval(t, `document.getElementById("a").getAttribute("src")`); got != "/avatar/"+avatar {
+		t.Errorf("masking changed the image's src in the page to %v", got)
+	}
+	if got := b.Eval(t, `document.getElementById("l").getAttribute("href")`); got != "/u/«hex»" {
+		t.Errorf("a link's href = %v, want it masked in the page", got)
+	}
+	if !strings.Contains(dom, `src="/avatar/«hex»"`) || strings.Contains(dom, avatar) {
+		t.Errorf("the avatar's src was not masked in the golden:\n%s", dom)
+	}
+}
+
+// The picture is taken of a still page: no transition or animation part way
+// and no caret, which differ between runs of the same page. The page moves
+// again afterwards, and the stylesheet that stilled it never reaches the DOM.
+func TestPictureIsTakenStill(t *testing.T) {
+	b := maskPages(t, map[string]string{
+		"/": `<html><head><style>
+			@keyframes spin { to { transform: rotate(360deg); } }
+			#s { animation: spin 1s linear infinite; }
+			input { transition: box-shadow 2s; }
+		</style></head><body><div id="s">x</div><input id="i"></body></html>`,
+	})
+	b.Navigate(t, "/")
+	if _, err := b.page.Eval(stillJS); err != nil {
+		t.Fatal(err)
+	}
+	style := b.Eval(t, `() => {
+		const s = getComputedStyle(document.getElementById("s")), i = getComputedStyle(document.getElementById("i"));
+		return [s.animationName, i.transitionDuration, i.caretColor].join(" ");
+	}`)
+	if style != "none 0s rgba(0, 0, 0, 0)" {
+		t.Errorf("stilled page: animation, transition, caret = %v", style)
+	}
+	if html := b.Eval(t, `document.documentElement.outerHTML`).(string); strings.Contains(html, "!important") {
+		t.Errorf("the stilling stylesheet reached the DOM:\n%s", html)
+	}
+	if _, err := b.page.Eval(unstillJS); err != nil {
+		t.Fatal(err)
+	}
+
+	b.Screenshot(t, filepath.Join(t.TempDir(), "still.png"))
+	if got := b.Eval(t, `getComputedStyle(document.getElementById("s")).animationName`); got != "spin" {
+		t.Errorf("animation after the picture = %v, want spin", got)
+	}
+	if got := b.Eval(t, `document.adoptedStyleSheets.length`); got != 0.0 {
+		t.Errorf("%v adopted stylesheets left after the picture", got)
+	}
+}
+
 // The test's temp directory, which has a random suffix, and the test server's
 // random port stay out of pages that show a path or an absolute URL.
 func TestTempDirAndPortAreMasked(t *testing.T) {

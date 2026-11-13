@@ -63,6 +63,15 @@ var volatileMasks = []struct {
 	{volatileHex, "«hex»"},
 }
 
+// maskVolatile applies volatileMasks to s. A value the page already masked
+// passes through unchanged.
+func maskVolatile(s string) string {
+	for _, m := range volatileMasks {
+		s = m.re.ReplaceAllString(s, m.with)
+	}
+	return s
+}
+
 // voidElements have no closing tag in HTML, so they are always written in the
 // self-closing form.
 var voidElements = map[string]bool{
@@ -133,7 +142,9 @@ func attrs(n *html.Node) string {
 		if a.Namespace != "" {
 			name = a.Namespace + ":" + name
 		}
-		value := strings.Join(strings.Fields(a.Val), " ")
+		// The page masked everything but what loads a resource (maskJS);
+		// that is masked here, where changing it fetches nothing.
+		value := maskVolatile(strings.Join(strings.Fields(a.Val), " "))
 		pairs = append(pairs, fmt.Sprintf("%s=%q", name, value))
 	}
 	sort.Strings(pairs)
