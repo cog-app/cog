@@ -115,7 +115,19 @@ func TestCompileAndOrNot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(w, " AND ") || !strings.Contains(w, "NOT (") {
+	if !strings.Contains(w, " AND ") || !strings.Contains(w, "NOT COALESCE(") {
+		t.Fatalf("%q", w)
+	}
+}
+
+// A negated field from an outer join must hold where the join found nothing:
+// NOT NULL is NULL, which leaves the row out.
+func TestCompileNotOuterJoinField(t *testing.T) {
+	w, _, _, err := Compile(&NotExpr{Inner: &FieldEqExpr{Field: "folder", Value: "Podcasts"}}, compileTestSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w != "NOT COALESCE(LOWER(f.name) = LOWER(?), 0)" {
 		t.Fatalf("%q", w)
 	}
 }

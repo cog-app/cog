@@ -14,12 +14,15 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/a-h/templ"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/query"
 	"git.duckfam.us/jj-software/cog/internal/search"
+	"git.duckfam.us/jj-software/cog/plugin/feed/ncapi"
+	"git.duckfam.us/jj-software/cog/plugin/feed/syncprefs"
 	"git.duckfam.us/jj-software/cog/plugin/profanity"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -106,12 +109,196 @@ func (h *Pages) SettingsSubscriptions(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
+	media, err := store.SubscriptionsWithMedia()
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
 	sb, ok := h.sidebar(w, r, store, "/apps/feed/settings/subscriptions")
 	if !ok {
 		return
 	}
 	plugin.SetTitle(w, "Subscriptions")
-	ui.Render(w, r, feedSettingsSubscriptionsPage(sb, subs, folders, plugin.CSRFToken(r)))
+	ui.Render(w, r, feedSettingsSubscriptionsPage(sb, groupSubscriptions(subs, folders, media), len(subs), folders, plugin.CSRFToken(r)))
+}
+
+// subType is what a subscription brings, for filtering the subscription
+// list: kind alone does not tell a podcast from a blog.
+type subType string
+
+const (
+	subTypePodcast  subType = "podcast"
+	subTypeArticles subType = "articles"
+	subTypeYouTube  subType = "youtube"
+	subTypePage     subType = "page"
+)
+
+// subTypes is every subType with its filter label, in the order shown.
+var subTypes = []struct {
+	Type  subType
+	Label string
+}{
+	{subTypePodcast, "Podcasts"},
+	{subTypeArticles, "Articles"},
+	{subTypeYouTube, "YouTube"},
+	{subTypePage, "Pages"},
+}
+
+func subscriptionType(s Subscription, hasMedia bool) subType {
+	switch {
+	case s.Kind == "youtube":
+		return subTypeYouTube
+	case hasMedia:
+		return subTypePodcast
+	case s.Kind == "rss":
+		return subTypeArticles
+	default:
+		return subTypePage
+	}
+}
+
+type subRow struct {
+	Subscription
+	Type subType
+}
+
+// subGroup is the subscriptions in one folder, or in none.
+type subGroup struct {
+	Name string
+	Subs []subRow
+}
+
+// groupSubscriptions groups subs by folder: those in none first, then each
+// folder by name, leaving out folders with none.
+func groupSubscriptions(subs []Subscription, folders []Folder, media map[int64]bool) []subGroup {
+	byFolder := map[int64][]subRow{}
+	var loose []subRow
+	for _, s := range subs {
+		row := subRow{s, subscriptionType(s, media[s.ID])}
+		if s.FolderID.Valid {
+			byFolder[s.FolderID.Int64] = append(byFolder[s.FolderID.Int64], row)
+		} else {
+			loose = append(loose, row)
+		}
+	}
+	var groups []subGroup
+	if len(loose) > 0 {
+		groups = append(groups, subGroup{Name: "No folder", Subs: loose})
+	}
+	for _, f := range folders {
+		if rows := byFolder[f.ID]; len(rows) > 0 {
+			groups = append(groups, subGroup{Name: f.Name, Subs: rows})
+		}
+	}
+	return groups
+}
+
+// BulkSubscriptions handles POST /subscriptions/bulk: moving the selected
+// subscriptions to a folder (a new one when folder_id is "new"), or
+// unsubscribing from them.
+func (h *Pages) BulkSubscriptions(w http.ResponseWriter, r *http.Request) {
+	const back = "/apps/feed/settings/subscriptions"
+	store, err := h.userStore(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	ids := make([]int64, 0, len(r.Form["id"]))
+	for _, v := range r.Form["id"] {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		h.setFlash(w, "error", "Select the subscriptions first.")
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+
+	switch r.FormValue("action") {
+	case "move":
+		var folder sql.NullInt64
+		name := "no folder"
+		switch v := r.FormValue("folder_id"); v {
+		case "":
+		case "new":
+			name = strings.TrimSpace(r.FormValue("new_folder"))
+			if name == "" {
+				h.setFlash(w, "error", "Name the new folder.")
+				http.Redirect(w, r, back, http.StatusSeeOther)
+				return
+			}
+			id, err := store.EnsureFolder(name)
+			if err != nil {
+				httperr.Internal(w, r, err)
+				return
+			}
+			folder = sql.NullInt64{Int64: id, Valid: true}
+		default:
+			id, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				http.Error(w, "invalid folder", http.StatusBadRequest)
+				return
+			}
+			f, err := store.GetFolder(id)
+			if errors.Is(err, sql.ErrNoRows) {
+				h.setFlash(w, "error", "That folder no longer exists.")
+				http.Redirect(w, r, back, http.StatusSeeOther)
+				return
+			}
+			if err != nil {
+				httperr.Internal(w, r, err)
+				return
+			}
+			folder, name = sql.NullInt64{Int64: id, Valid: true}, f.Name
+		}
+		n, err := store.MoveSubscriptions(ids, folder)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		h.setFlash(w, "success", fmt.Sprintf("Moved %s to %s.", plural(n, "subscription"), name))
+	case "delete":
+		n, err := store.DeleteSubscriptions(ids)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		// Their downloads count toward the user's quota; have the
+		// orchestrator collect them now rather than on its next tick.
+		h.plugin.TriggerFetch(plugin.Username(r), 0)
+		h.setFlash(w, "success", fmt.Sprintf("Unsubscribed from %s.", plural(n, "subscription")))
+	default:
+		http.Error(w, "unknown action", http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, back, http.StatusSeeOther)
+}
+
+func groupsHaveType(groups []subGroup, t subType) bool {
+	for _, g := range groups {
+		for _, s := range g.Subs {
+			if s.Type == t {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// plural renders a count with its noun: "1 subscription", "2 subscriptions".
+func plural(n int64, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return strconv.FormatInt(n, 10) + " " + noun + "s"
 }
 
 func (h *Pages) SettingsFilters(w http.ResponseWriter, r *http.Request) {
@@ -150,6 +337,130 @@ func (h *Pages) SettingsPlaylists(w http.ResponseWriter, r *http.Request) {
 	}
 	plugin.SetTitle(w, "Playlists")
 	ui.Render(w, r, feedSettingsPlaylistsPage(sb, playlists, plugin.CSRFToken(r)))
+}
+
+// SettingsSync shows the per-protocol sync filters.
+func (h *Pages) SettingsSync(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	settings := make(map[syncprefs.Protocol]syncSetting, len(syncprefs.Protocols))
+	for _, p := range syncprefs.Protocols {
+		var s syncSetting
+		if s.Query, _, err = syncprefs.Stored(store.DB(), p); err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		if s.Folder, err = syncprefs.Folder(store.DB(), p); err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		settings[p] = s
+	}
+	folders, err := store.ListFolders()
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	sb, ok := h.sidebar(w, r, store, "/apps/feed/settings/sync")
+	if !ok {
+		return
+	}
+	plugin.SetTitle(w, "Sync")
+	ui.Render(w, r, feedSettingsSyncPage(sb, settings, folders, plugin.CSRFToken(r)))
+}
+
+// syncSetting is one protocol's settings as the Sync page shows them.
+type syncSetting struct {
+	Query  string
+	Folder sql.NullInt64
+}
+
+// SaveSyncSettings handles POST /settings/sync. Every query is checked
+// before anything is saved, so a mistake in one leaves all as they were.
+func (h *Pages) SaveSyncSettings(w http.ResponseWriter, r *http.Request) {
+	const back = "/apps/feed/settings/sync"
+	store, err := h.userStore(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	now := h.plugin.ctx.Now()
+	var changes []syncFilterChange
+	folders := map[syncprefs.Protocol]sql.NullInt64{}
+	for _, p := range syncprefs.Protocols {
+		if v := r.FormValue(string(p) + "_folder"); v != "" {
+			id, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				http.Error(w, "invalid folder", http.StatusBadRequest)
+				return
+			}
+			folders[p] = sql.NullInt64{Int64: id, Valid: true}
+		}
+		nf, err := syncprefs.Compile(r.FormValue(string(p)), *SearchSchema(), now)
+		if err != nil {
+			h.setFlash(w, "error", "Invalid query: "+err.Error())
+			http.Redirect(w, r, back, http.StatusSeeOther)
+			return
+		}
+		of, err := syncprefs.Load(store.DB(), p, *SearchSchema(), now)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		if of.Query != nf.Query {
+			changes = append(changes, syncFilterChange{p, of, nf})
+		}
+	}
+	if err := saveSyncSettings(store.DB(), changes, folders, now); err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	h.setFlash(w, "success", "Sync settings saved.")
+	http.Redirect(w, r, back, http.StatusSeeOther)
+}
+
+type syncFilterChange struct {
+	p        syncprefs.Protocol
+	old, new syncprefs.Filter
+}
+
+// saveSyncSettings stores each protocol's folder and its changed filters in
+// one transaction, with what each protocol needs to carry a filter change
+// over to clients that sync only changes.
+func saveSyncSettings(db *sql.DB, changes []syncFilterChange, folders map[syncprefs.Protocol]sql.NullInt64, now time.Time) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("save sync settings: begin: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			slog.Error("save sync settings: rollback", "err", err)
+		}
+	}()
+	for _, p := range syncprefs.Protocols {
+		if err := syncprefs.SaveFolder(tx, p, folders[p]); err != nil {
+			return err
+		}
+	}
+	for _, c := range changes {
+		if err := syncprefs.Save(tx, c.p, c.new, now); err != nil {
+			return err
+		}
+		// GPodder Sync compares the filter's change time with the client's
+		// last sync instead.
+		if c.p == syncprefs.NCNews {
+			if err := ncapi.Refilter(tx, c.old, c.new); err != nil {
+				return err
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("save sync settings: commit: %w", err)
+	}
+	return nil
 }
 
 // allowedKinds is the set of subscription kinds accepted on the add form.

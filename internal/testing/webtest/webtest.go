@@ -59,7 +59,16 @@ func acquireBrowser() (*rod.Browser, error) {
 		if err != nil {
 			return nil, err
 		}
-		u, err := launcher.New().Bin(path).Headless(true).NoSandbox(true).Launch()
+		// Rasterise the same page the same way every run: decode images
+		// before painting rather than beside it, repaint whole tiles, and
+		// use one colour profile whatever the machine's is. Otherwise a
+		// snapshot re-taken for an unrelated reason differs from the last
+		// in a few pixels of an image's edge.
+		u, err := launcher.New().Bin(path).Headless(true).NoSandbox(true).
+			Set("disable-checker-imaging").
+			Set("disable-partial-raster").
+			Set("force-color-profile", "srgb").
+			Launch()
 		if err != nil {
 			release()
 			return nil, err

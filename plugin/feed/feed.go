@@ -17,6 +17,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/feed/gpoddersync"
 	"git.duckfam.us/jj-software/cog/plugin/feed/ncapi"
+	"git.duckfam.us/jj-software/cog/plugin/feed/syncprefs"
 	"git.duckfam.us/jj-software/cog/plugin/profanity"
 )
 
@@ -34,15 +35,17 @@ const PluginID = "feed"
 // busting. Set in Register via the registrar's RegisterAssets helper.
 var pkgAssets *assets.Assets
 
-// playerAssetURL returns the versioned URL for player.js (used by the templ).
-// Falls back to the unversioned path if assets weren't registered (e.g. a
-// non-privileged context).
-func playerAssetURL() string {
+// feedAssetURL returns the versioned URL for one of the plugin's static
+// files (used by the templ). Falls back to the unversioned path if assets
+// weren't registered (e.g. a non-privileged context).
+func feedAssetURL(name string) string {
 	if pkgAssets != nil {
-		return pkgAssets.URL("player.js")
+		return pkgAssets.URL(name)
 	}
-	return "/apps/feed/static/player.js"
+	return "/apps/feed/static/" + name
 }
+
+func playerAssetURL() string { return feedAssetURL("player.js") }
 
 // OrchestratorRunner is a function that drives background workers until ctx is
 // canceled. It is swappable so the orchestrator sub-package can be injected
@@ -164,8 +167,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterPage("settings/subscriptions", http.HandlerFunc(pages.SettingsSubscriptions))
 	ctx.RegisterPage("settings/filters", http.HandlerFunc(pages.SettingsFilters))
 	ctx.RegisterPage("settings/playlists", http.HandlerFunc(pages.SettingsPlaylists))
+	ctx.RegisterPage("settings/sync", http.HandlerFunc(pages.SettingsSync))
+	ctx.RegisterAction("POST", "settings/sync", http.HandlerFunc(pages.SaveSyncSettings))
 	ctx.RegisterAction("POST", "subscriptions", http.HandlerFunc(pages.AddSubscription))
 	ctx.RegisterAction("POST", "subscriptions/{id}/delete", http.HandlerFunc(pages.DeleteSubscription))
+	ctx.RegisterAction("POST", "subscriptions/bulk", http.HandlerFunc(pages.BulkSubscriptions))
 	ctx.RegisterAction("POST", "folders", http.HandlerFunc(pages.AddFolder))
 	ctx.RegisterAction("POST", "folders/{id}/delete", http.HandlerFunc(pages.DeleteFolder))
 	ctx.RegisterAction("POST", "filters", http.HandlerFunc(pages.AddFilter))
@@ -252,6 +258,10 @@ func (b ncapiBackend) DB(username string) (*sql.DB, error) { return b.p.DB(usern
 
 func (b ncapiBackend) TriggerFetch(username string, subID int64) {
 	b.p.TriggerFetch(username, subID)
+}
+
+func (b ncapiBackend) SyncFilter(db *sql.DB, proto syncprefs.Protocol) (syncprefs.Filter, error) {
+	return syncprefs.Load(db, proto, *SearchSchema(), b.p.ctx.Now())
 }
 
 // TriggerFetch nudges the orchestrator to process a user (or single subscription) before its next tick.

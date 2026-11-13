@@ -442,15 +442,11 @@ func (b *Browser) Eval(t testing.TB, js string) any {
 // Screenshot captures a full-page screenshot and saves it to path.
 func (b *Browser) Screenshot(t testing.TB, path string) {
 	t.Helper()
-	buf, err := b.page.Screenshot(true, nil)
-	if err != nil {
-		t.Fatalf("webtest: screenshot: %v", err)
-	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("webtest: mkdir for screenshot: %v", err)
 	}
-	if err := os.WriteFile(path, buf, 0o644); err != nil {
-		t.Fatalf("webtest: write screenshot: %v", err)
+	if err := b.captureImage(path); err != nil {
+		t.Fatalf("webtest: screenshot: %v", err)
 	}
 }
 
@@ -487,11 +483,21 @@ func (b *Browser) Login(t testing.TB, user, pass string) {
 // With WEBTEST_UPDATE=1, or when no golden exists, both files are written.
 // imagesSettledJS reports whether every image in the viewport has loaded
 // or failed.
-const imagesSettledJS = `() => [...document.images].every(img => {
-	const r = img.getBoundingClientRect();
-	const inView = r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
-	return !inView || img.complete;
-})`
+//
+// A video or audio element counts too: until it has its metadata or has
+// given up on its source, the player draws a loading spinner, caught at a
+// different angle in every picture.
+const imagesSettledJS = `() => {
+	const inView = (el) => {
+		const r = el.getBoundingClientRect();
+		return r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
+	};
+	const imagesDone = [...document.images].every((img) => !inView(img) || img.complete);
+	const mediaDone = [...document.querySelectorAll("video, audio")].every((m) =>
+		!inView(m) || m.readyState >= HTMLMediaElement.HAVE_METADATA || m.error ||
+		m.networkState === HTMLMediaElement.NETWORK_NO_SOURCE || m.networkState === HTMLMediaElement.NETWORK_IDLE);
+	return imagesDone && mediaDone;
+}`
 
 func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
 	t.Helper()
@@ -650,13 +656,68 @@ func (b *Browser) horizontalOverflow(t testing.TB) string {
 // captureImage writes a full-page screenshot. It exists so the DOM comparison
 // above never pays for one it does not need.
 func (b *Browser) captureImage(path string) error {
-	buf, err := b.page.Screenshot(true, nil)
+	// Stop the document's clock first: what page CSS cannot reach, such as
+	// a video player's loading spinner in the browser's own shadow tree,
+	// stops with it, and stillJS restarts the player so it stops at its
+	// first frame.
+	if err := (proto.AnimationSetPlaybackRate{PlaybackRate: 0}).Call(b.page); err != nil {
+		return fmt.Errorf("stop animations: %w", err)
+	}
+	buf, err := func() ([]byte, error) {
+		if _, err := b.tp().Eval(stillJS); err != nil {
+			return nil, fmt.Errorf("still page: %w", err)
+		}
+		return b.page.Screenshot(true, nil)
+	}()
+	if _, stirErr := b.page.Eval(unstillJS); stirErr != nil {
+		err = errors.Join(err, fmt.Errorf("unstill page: %w", stirErr))
+	}
+	if stirErr := (proto.AnimationSetPlaybackRate{PlaybackRate: 1}).Call(b.page); stirErr != nil {
+		err = errors.Join(err, fmt.Errorf("restart animations: %w", stirErr))
+	}
 	if err != nil {
 		return err
 	}
 
 	return os.WriteFile(path, buf, 0o644)
 }
+
+// stillJS holds the page still for its picture. A transition or animation
+// caught part way (a field's focus ring easing in, a spinner, a shimmer) and
+// a blinking caret make the same page look different from one run to the
+// next. The sheet is adopted rather than inserted, so it never appears in the
+// DOM, and it waits two frames so what it stopped is painted stopped.
+const stillJS = `async () => {
+	const sheet = new CSSStyleSheet();
+	sheet.replaceSync("*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; scroll-behavior: auto !important; }");
+	document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+	window.__webtestStill = sheet;
+	// A player still loading, or with nothing it can play, spins. The
+	// clock is stopped, so taking its controls away and giving them back
+	// starts the spinner again at its first frame and holds it there.
+	for (const m of document.querySelectorAll("video[controls], audio[controls]")) {
+		if (m.readyState >= HTMLMediaElement.HAVE_METADATA) continue;
+		m.controls = false;
+		m.getBoundingClientRect();
+		m.controls = true;
+	}
+	// An image decoded while it was painted may have been decoded at the
+	// size it was drawn, or at its own, depending on timing, and the two
+	// scale to slightly different pixels. Decode them all whole first. One
+	// that has not loaded (a lazy image out of view) would hold decode()
+	// until it does, which is never; it is not in the picture anyway.
+	await Promise.all([...document.images]
+		.filter((img) => img.complete && img.naturalWidth > 0)
+		.map((img) => img.decode().catch(() => {})));
+	await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+}`
+
+// unstillJS lets the page move again, for whatever the test does next.
+const unstillJS = `() => {
+	const sheet = window.__webtestStill;
+	document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
+	delete window.__webtestStill;
+}`
 
 // maskedDOM masks the volatile values in the page and returns its golden
 // form, with a function that puts the page back. The golden and the image are
@@ -691,9 +752,16 @@ func (b *Browser) maskedDOM() (dom string, unmask func() error, err error) {
 // the page: its text, its attributes, and the values in its fields, which a
 // field the test typed into no longer keeps in its attribute. What it changed
 // is kept for unmaskJS.
+//
+// Attributes that make the browser fetch something are left alone: changing
+// an avatar's src loads /avatar/«hex», which is nobody's, and the picture
+// shows a "?" where the user's initial was. Those are masked in the golden
+// alone (attrs).
 const maskJS = `(masks) => {
 	const res = masks.map(([src, with_]) => [new RegExp(src, "g"), with_]);
 	const mask = (s) => res.reduce((out, [re, with_]) => out.replace(re, with_), s);
+	const loads = (el, name) => name === "src" || name === "srcset" || name === "poster" ||
+		(name === "href" && el.tagName === "LINK");
 	const undo = [];
 	const walker = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_TEXT, {
 		acceptNode: (n) => n.parentElement && n.parentElement.closest("script, style")
@@ -708,6 +776,7 @@ const maskJS = `(masks) => {
 	}
 	for (const el of document.querySelectorAll("*")) {
 		for (const a of [...el.attributes]) {
+			if (loads(el, a.name)) continue;
 			const old = a.value, masked = mask(old);
 			if (masked !== old) {
 				el.setAttribute(a.name, masked);
