@@ -45,19 +45,18 @@ func TestSyncFilters(t *testing.T) {
 			rawURL, folder).Scan(&id))
 		return id
 	}
-	item := func(subID int64, guid, typ, mediaURL string) int64 {
+	item := func(subID int64, guid, typ, mediaURL, content string) int64 {
 		t.Helper()
-		id, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: guid, Type: typ, Title: guid, MediaURL: mediaURL})
+		id, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: guid, Type: typ, Title: guid, MediaURL: mediaURL, ContentHTML: content})
 		require.NoError(t, err)
 		return id
 	}
 	blog := sub("https://blog.example/rss", sql.NullInt64{})
-	item(blog, "post1", "text", "")
+	item(blog, "post1", "text", "", "<p>post</p>")
 	pod := sub("https://pod.example/feed.xml", sql.NullInt64{Int64: podcasts, Valid: true})
-	notes := item(pod, "ep1", "text", "")
-	item(pod, "ep1#0123456789ab", "audio", "https://pod.example/ep1.mp3")
+	episode := item(pod, "ep1", "audio", "https://pod.example/ep1.mp3", "<p>notes</p>")
 	other := sub("https://other.example/feed.xml", sql.NullInt64{})
-	item(other, "x1#0123456789ab", "audio", "https://other.example/x1.mp3")
+	item(other, "x1", "audio", "https://other.example/x1.mp3", "")
 
 	newsFeeds := func() map[string]int {
 		t.Helper()
@@ -99,8 +98,8 @@ func TestSyncFilters(t *testing.T) {
 		return got
 	}
 
-	// Without filters: feeds with articles in News, with episodes in GPodder.
-	require.Equal(t, map[string]int{"https://blog.example/rss": 1, "https://pod.example/feed.xml": 1}, newsFeeds())
+	// Without filters: every feed in News, feeds with episodes in GPodder.
+	require.Equal(t, map[string]int{"https://blog.example/rss": 1, "https://pod.example/feed.xml": 1, "https://other.example/feed.xml": 1}, newsFeeds())
 	require.Equal(t, []string{"https://pod.example/feed.xml", "https://other.example/feed.xml"}, podcastSubs(0).Add)
 
 	t.Run("RejectsBadQuery", func(t *testing.T) {
@@ -118,12 +117,12 @@ func TestSyncFilters(t *testing.T) {
 	require.True(t, changedAt > 0)
 
 	t.Run("NewsSeesOnlyMatchingArticles", func(t *testing.T) {
-		require.Equal(t, map[string]int{"https://blog.example/rss": 1}, newsFeeds())
-		require.Equal(t, []string{"post1"}, newsItems("items?type=3&batchSize=-1"))
+		require.Equal(t, map[string]int{"https://blog.example/rss": 1, "https://other.example/feed.xml": 1}, newsFeeds())
+		require.Equal(t, []string{"x1", "post1"}, newsItems("items?type=3&batchSize=-1"))
 
 		// Marking everything read leaves alone what the client never saw.
 		env.Do(t, cogtest.NewRequest(t, "PUT", env.Providers.Config.BaseURL+"/index.php/apps/news/api/v1-2/items/read", nil), u.Auth).Status(200)
-		it, err := store.GetItem(notes)
+		it, err := store.GetItem(episode)
 		require.NoError(t, err)
 		require.False(t, it.IsRead)
 	})
@@ -146,6 +145,14 @@ func TestSyncFilters(t *testing.T) {
 		require.NoError(t, err)
 		save("", "folder:Podcasts")
 		require.Equal(t, []string{"ep1"}, newsItems("items/updated?type=3&lastModified=100"))
-		require.Equal(t, map[string]int{"https://blog.example/rss": 0, "https://pod.example/feed.xml": 1}, newsFeeds())
+		require.Equal(t, map[string]int{"https://blog.example/rss": 0, "https://pod.example/feed.xml": 1, "https://other.example/feed.xml": 0}, newsFeeds())
+	})
+
+	// An episode is one item whatever app reads it, so its type keeps
+	// podcasts out of News without putting them in a folder.
+	t.Run("TypeKeepsPodcastsOut", func(t *testing.T) {
+		save("NOT type:audio", "")
+		require.Equal(t, map[string]int{"https://blog.example/rss": 0}, newsFeeds())
+		require.Equal(t, []string{"post1"}, newsItems("items?type=3&batchSize=-1"))
 	})
 }

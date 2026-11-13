@@ -264,6 +264,21 @@ func (b ncapiBackend) SyncFilter(db *sql.DB, proto syncprefs.Protocol) (syncpref
 	return syncprefs.Load(db, proto, *SearchSchema(), b.p.ctx.Now())
 }
 
+// ItemPage returns the absolute address of an item's page in Cog, for the
+// request r a sync client made: the configured base URL, or else the address
+// the client reached.
+func (b ncapiBackend) ItemPage(r *http.Request, id int64) string {
+	base := b.p.ctx.BaseURL()
+	if base == "" {
+		scheme := "https"
+		if r.TLS == nil {
+			scheme = "http"
+		}
+		base = scheme + "://" + r.Host
+	}
+	return base + itemHref(id, "")
+}
+
 // TriggerFetch nudges the orchestrator to process a user (or single subscription) before its next tick.
 // SubID=0 means "scan all subscriptions for this user".
 func (p *Plugin) TriggerFetch(username string, subID int64) {

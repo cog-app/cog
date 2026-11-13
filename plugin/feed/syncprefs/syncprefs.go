@@ -25,7 +25,8 @@ import (
 type Protocol string
 
 const (
-	// NCNews is the NextCloud News API, which carries articles (text items).
+	// NCNews is the NextCloud News API, which carries articles: text items,
+	// and episodes with show notes.
 	NCNews Protocol = "ncnews"
 	// GPodder is the NextCloud GPodder Sync API, which carries podcast
 	// subscriptions and episode actions.

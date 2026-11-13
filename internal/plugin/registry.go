@@ -65,6 +65,7 @@ type RegistryServices struct {
 	VolumeAccess VolumeAccess
 	ActivityLog  ActivityLogger
 	Cookies      CookieConfig
+	BaseURL      string
 }
 
 // Registry manages plugin lifecycle, per-user database provisioning,
@@ -794,6 +795,10 @@ func (pr *pluginRegistrar) ActivityLog() ActivityLogger {
 
 func (pr *pluginRegistrar) Cookies() CookieConfig {
 	return pr.registry.services.Cookies
+}
+
+func (pr *pluginRegistrar) BaseURL() string {
+	return pr.registry.services.BaseURL
 }
 
 // csrf is the token check every action route this plugin registers goes

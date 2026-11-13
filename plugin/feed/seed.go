@@ -71,19 +71,21 @@ func (p *Plugin) Seed(username string) error {
 	}
 
 	// Audio items on the podcast (give the player neighbors to navigate).
+	// An episode carries its show notes, as the fetcher stores them.
 	audioItems := []struct {
-		guid, title string
-		dur         int64
-		ageHours    int
+		guid, title, notes string
+		dur                int64
+		ageHours           int
 	}{
-		{"pod-1", "Episode 1: Getting Started", 1800, 2},
-		{"pod-2", "Episode 2: Going Deeper", 3600, 28},
-		{"pod-3", "Episode 3: Wrapping Up", 600, 50},
+		{"pod-1", "Episode 1: Getting Started", "<p>We introduce the show and the hosts.</p>", 1800, 2},
+		{"pod-2", "Episode 2: Going Deeper", "", 3600, 28},
+		{"pod-3", "Episode 3: Wrapping Up", "", 600, 50},
 	}
 	for _, ai := range audioItems {
 		_, _, err := store.UpsertItem(Item{
 			SubscriptionID: pod, GUID: ai.guid, Type: "audio", Title: ai.title,
 			Author:      "Hosts",
+			ContentHTML: ai.notes,
 			MediaURL:    "https://download.samplelib.com/mp3/sample-15s.mp3",
 			MediaMIME:   "audio/mpeg",
 			DurationSec: ai.dur,

@@ -1032,7 +1032,7 @@ templ feedSettingsSyncPage(sb sidebarData, settings map[syncprefs.Protocol]syncS
 			<section class="card">
 				<h2 class="card-title">NextCloud News</h2>
 				<p class="card-desc">News apps get articles.</p>
-				@feedSyncFields(syncprefs.NCNews, settings[syncprefs.NCNews], folders, "NOT folder:Podcasts",
+				@feedSyncFields(syncprefs.NCNews, settings[syncprefs.NCNews], folders, "NOT type:audio",
 					"A feed is listed once one of its articles matches, and before it is first fetched. Leave empty to sync everything.")
 			</section>
 			<section class="card">
@@ -1164,6 +1164,13 @@ templ feedItemDetail(sb sidebarData, nav itemNav, ip ItemPlayback, tags []string
 			</article>
 		} else {
 			@feedPlayer(ip, prefs, artwork, csrfToken, nav)
+			if ip.ContentHTML != "" {
+				<article class="card" aria-label="Show notes">
+					<div class="prose feed-article">
+						@templ.Raw(ip.ContentHTML)
+					</div>
+				</article>
+			}
 		}
 		@feedItemContextBar(nav, true)
 	}
