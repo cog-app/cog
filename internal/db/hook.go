@@ -64,7 +64,7 @@ func OpenWithHooksMode(path, mode string, hooks ...ConnectHook) (*sql.DB, error)
 	if strings.Contains(path, "?") {
 		sep = "&"
 	}
-	dsn := path + sep + "_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000"
+	dsn := path + sep + "_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000&_synchronous=" + Synchronous
 	if mode != "" {
 		dsn += "&mode=" + mode
 	} else {

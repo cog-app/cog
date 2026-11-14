@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
+	passwd "git.duckfam.us/jj-software/cog/internal/password"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -106,7 +107,7 @@ func (s *Store) Create(username, password string) (*User, error) {
 	if err := s.CheckPassword(password); err != nil {
 		return nil, err
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := passwd.Hash(password)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
@@ -275,27 +276,19 @@ func (s *Store) GetByEmails(emails []string) (map[string]*User, error) {
 	return out, rows.Err()
 }
 
-// dummyBcryptHash is a pre-computed bcrypt hash for the empty password.
-// Used to make Authenticate run bcrypt even for unknown usernames so the
-// caller can't distinguish "no such user" from "wrong password" via timing
-// (audit security.md #25).
-var dummyBcryptHash = []byte("$2a$10$abcdefghijklmnopqrstuOuukDpEPiQyGyDk/JFFwjVjVnKEZRiou")
-
+// Authenticate checks a password. An unknown user, or an agent (which has no
+// password; its owner issues it app passwords), still costs one bcrypt
+// comparison, so the caller can't tell "no such user" from "wrong password"
+// by the response time (audit security.md #25).
 func (s *Store) Authenticate(username, password string) (*User, error) {
 	u, err := s.GetByUsername(username)
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			// Run bcrypt against a dummy hash so the response time matches
-			// the wrong-password path. Result is discarded.
-			_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(password))
-			return nil, ErrAuthFailed
-		}
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
-
-	if u.IsAgent() {
-		// An agent has no password; its owner issues it app passwords.
-		_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(password))
+	if err != nil || u.IsAgent() {
+		if err := passwd.Waste(password); err != nil {
+			return nil, err
+		}
 		return nil, ErrAuthFailed
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
@@ -460,7 +453,7 @@ func (s *Store) UpdatePassword(id, newPassword string) error {
 	if err := s.CheckPassword(newPassword); err != nil {
 		return err
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hash, err := passwd.Hash(newPassword)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}

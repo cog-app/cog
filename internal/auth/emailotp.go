@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
+	"git.duckfam.us/jj-software/cog/internal/password"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -33,7 +34,7 @@ func (s *EmailOTPStore) Create(userID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
+	hash, err := password.Hash(code)
 	if err != nil {
 		return "", fmt.Errorf("hash otp: %w", err)
 	}

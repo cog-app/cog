@@ -5,9 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/password"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // TestAuthenticate_TimingForUnknownUserApproximatesWrongPassword pins the
@@ -19,6 +21,11 @@ import (
 // path must be in the same order of magnitude as wrong-password — both
 // dominated by a single bcrypt invocation (~80ms at DefaultCost).
 func TestAuthenticate_TimingForUnknownUserApproximatesWrongPassword(t *testing.T) {
+	// cogtest lowers the cost to bcrypt's minimum, where a comparison is
+	// too quick to time against the database lookup.
+	cost := password.Cost
+	password.Cost = bcrypt.DefaultCost
+	t.Cleanup(func() { password.Cost = cost })
 	env := cogtest.New(t)
 	_, err := env.Providers.Users.Create("alice", "hunter2")
 	require.NoError(t, err)

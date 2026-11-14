@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
+	passwd "git.duckfam.us/jj-software/cog/internal/password"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -183,7 +184,7 @@ func (s *Store) CreatePublicLinkWithPassword(ownerUserID, resourceType, resource
 	}
 	var passwordHash *string
 	if password != "" {
-		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		hash, err := passwd.Hash(password)
 		if err != nil {
 			return nil, fmt.Errorf("hash password: %w", err)
 		}
@@ -220,7 +221,7 @@ func (s *Store) CreatePublicLinkWithPassword(ownerUserID, resourceType, resource
 
 // SetPassword sets a bcrypt-hashed password on a share.
 func (s *Store) SetPassword(shareID, password string) error {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := passwd.Hash(password)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}

@@ -1,6 +1,22 @@
 ARG DEPS_BASE
 ARG BUILD_BASE
 
+# The image the test and pages jobs run in (docker build --target ci): the Go
+# toolchain, a C compiler for go-sqlite3, Chromium for the browser tests, git
+# for go tool stamp, and every module go.sum names, so a job neither installs
+# packages nor downloads modules. The ci-image job rebuilds it when this file,
+# go.mod or go.sum changes (.gitlab-ci.yml).
+#
+# It is the first stage because the legacy builder builds every stage above
+# the target, whether the target needs it or not.
+FROM golang:1.26-alpine AS ci
+RUN apk add --no-cache gcc musl-dev chromium git
+WORKDIR /tmp/modules
+COPY go.mod go.sum ./
+RUN go mod download && rm -rf /tmp/modules
+WORKDIR /
+ENV CGO_ENABLED=1
+
 FROM ${DEPS_BASE:-debian:trixie-slim} AS dependencies
 # bubblewrap sandboxes the programs that parse uploads (internal/sandbox).
 # It needs to create user namespaces; where the container may not, they run

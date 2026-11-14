@@ -9,6 +9,7 @@ tool (
 	git.duckfam.us/jj-software/cog/internal/cmd/docs
 	git.duckfam.us/jj-software/cog/internal/cmd/migratesql
 	git.duckfam.us/jj-software/cog/internal/cmd/protoc
+	git.duckfam.us/jj-software/cog/internal/cmd/stamp
 	git.duckfam.us/jj-software/cog/internal/cmd/verify
 	github.com/a-h/templ/cmd/templ
 	github.com/duckbrain/goprotoc
